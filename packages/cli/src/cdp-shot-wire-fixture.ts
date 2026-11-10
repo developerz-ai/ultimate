@@ -3,8 +3,8 @@
 
 import type { SleepClock } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
-import type { CdpTransport } from '@ultimat3/testing';
-import { cdpConnectOver } from '@ultimat3/testing';
+import type { CdpTransport } from '@ultimat3/scraping/cdp';
+import { cdpConnectOver } from '@ultimat3/scraping/cdp';
 import type { ShotSessionInit } from './browser-launcher-port';
 import { cdpShotDriver } from './cdp-shot-driver';
 

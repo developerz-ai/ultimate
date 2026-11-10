@@ -19,7 +19,7 @@ export const auth = defineAuth({
 });
 
 const { actor, token, cookie } = await login(auth, { email, password, ip });
-const { start, callback } = oauthLogin(auth);   // /auth/oauth/:provider and its callback
+const { start, callback } = oauthLogin(auth);   // /auth/sso/:provider and its callback
 ```
 
 The tables (`x_users`, `x_sessions`, `x_accounts`, `x_verifications`, `x_api_keys`, and the
@@ -79,6 +79,82 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | `discoverOAuthProvider` | refuses a document whose `issuer` is not the one asked for (a trailing slash aside) |
 | a public client (`As of 2026-10-18`) | `tokenEndpointAuth: 'none'` on the provider, `discoverOAuthProvider` or `credentials`: no `<PROVIDER>_CLIENT_SECRET` is read and no `client_secret` is sent; PKCE still is. `'client_secret_basic'` sends the pair in `Authorization: Basic`. Absent: `'client_secret_post'`, unchanged |
 | `apple` | not a built-in since 26.0.0 ([#709](https://github.com/developerz-ai/ultimate/issues/709)): Apple POSTs its callback and both callback routes are GET, so it could never complete a sign-in. An app that needs it registers its own with `registerOAuthProvider` |
+
+## SSO: OIDC and SAML behind one `IdentityProvider` port
+
+Rule: every federated sign-in is an `IdentityProvider` (`@ultimat3/auth`), and `signInWithIdentity(auth, identity)` is the one path from it to a session — the same account-link, MFA and grant rules as [OAuth](#oauth). `As of 2026-11-09`.
+
+| Member | Shape |
+|---|---|
+| `begin({ callbackUrl, clock })` | `{ location, state }` |
+| `answers(state, params)` | whether `params` answer THIS browser's state — RelayState for SAML, `state` for OIDC — in constant time, nothing verified beyond it. The routes clear the state cookie only on an answer bound to it, so a junk cross-site form cannot end a sign-in in flight |
+| `complete({ state, params, callbackUrl, clock, replay })` | `{ profile, expiresAt, claims }` |
+| adapters | `samlIdentityProvider(config)`, `oidcIdentityProvider({ provider })` |
+| your own | `behavesLike(identityProviderConformance, () => harness)` from `@ultimat3/testing/conformance` |
+
+`identityProviderRoutes(auth, { providers })` mounts both kinds:
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/auth/sso/:provider` | GET | `begin`, seal the state in `__Host-x_sso_<id>`, 302 to the IdP |
+| `/auth/sso/:provider/callback` | POST | the SAML ACS — register this URL at the IdP. The state cookie is `SameSite=None`: the IdP posts cross-site |
+| `/auth/sso/:provider/callback` | GET | the OIDC `redirect_uri` |
+
+```ts
+import type { Auth } from '@ultimat3/auth';
+import {
+  identityProviderRoutes,
+  oidcIdentityProvider,
+  parseSamlMetadata,
+  samlIdentityProvider,
+} from '@ultimat3/auth';
+
+declare const auth: Auth;
+declare const corpMetadataXml: string; // the IdP's metadata document, read at boot
+
+export const sso = identityProviderRoutes(auth, {
+  providers: [
+    samlIdentityProvider({
+      id: 'corp',
+      idp: parseSamlMetadata(corpMetadataXml),
+      spEntityId: 'https://app.example/saml/metadata',
+      trustEmail: true,
+      emailDomains: ['corp.example'], // the exact domains this IdP owns
+    }),
+    oidcIdentityProvider({ provider: 'github' }),
+  ],
+  successPath: '/app',
+});
+```
+
+`defineAuth({ providers })` lists both ids; an unknown or not-enabled id is `X_IDENTITY_PROVIDER_UNKNOWN` (404).
+
+**OIDC replay.** `oidcIdentityProvider` claims the handshake's `state` once in the shared replay store before it spends the code, keyed on when the handshake was issued: a callback lifted from a browser is `X_OAUTH_STATE_INVALID` even inside the cookie's lifetime, and so is any answer more than 10 minutes after `begin` (`DEFAULT_HANDSHAKE_TTL_MS`).
+
+Mount each leg with its `meta` verbatim — `{ method: leg.method, path: leg.path, handler: (request) => leg.handle(request.raw), meta: leg.meta }`. The ACS (POST) declares `csrf: 'cookieless'` and `authenticate: () => null`: the IdP answers with an auto-submitted cross-site form, which the csrf stage refuses on any other route (`403 X_CSRF_BLOCKED`). CSRF is held there by the protocol instead — the answer must carry this browser's RelayState, checked against the HMAC-sealed state cookie, and its assertion must answer this request's ID.
+
+**SAML scope.** SP-initiated only: an AuthnRequest over HTTP-Redirect with RelayState, the response over HTTP-POST. Signed assertions are required; encrypted assertions, SHA-1 and RSA under 2,048 bits are refused; `trustEmail` is required, because SAML has no `email_verified`, and `trustEmail: true` requires `emailDomains` — an IdP's admin can assert any address, so only an address in a listed domain (exact; list each subdomain) is verified, and one outside it can neither link to an existing account nor create one (`trustEmail: true` with no domains is a type error and `X_CONFIG_INVALID` at construction); clock skew is ±60 s (`skewMs`). `parseSamlMetadata(xml)` → `{ entityId, ssoUrl, certificates }`, refused as `X_SAML_METADATA_INVALID` with no HTTP-Redirect SSO, no signing certificate, or an RSA key under 2,048 bits. Verification is in-package, no dependency ([build vs wrap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/18-build-vs-wrap.md)). Every refusal is `X_SAML_RESPONSE_INVALID` with `meta.check`:
+
+| Check | `meta.check` |
+|---|---|
+| a DOCTYPE, an entity, a processing instruction, over 512 KiB, more than 64 namespace declarations, one attribute twice | `xml` |
+| more than one Assertion, one not a direct child, a `ds:Object` in a Signature | `structure` |
+| one ID on two elements | `id-duplicate` |
+| an EncryptedAssertion or EncryptedID | `encrypted` |
+| the assertion unsigned (a signed response alone is refused) | `signature-missing` |
+| not RSA-SHA256 / SHA-256 / exc-c14n + enveloped | `algorithm` |
+| the Reference URI is not the assertion's own ID | `reference` |
+| no metadata certificate verifies (KeyInfo is never read) | `signature` |
+| content altered | `digest` |
+| Status is not Success | `status` |
+| Issuer is not the metadata's entityID | `issuer` |
+| Destination / Recipient is not the ACS URL | `destination` / `recipient` |
+| InResponseTo is not our AuthnRequest's ID | `in-response-to` |
+| Audience is not `spEntityId` | `audience` |
+| NotBefore / NotOnOrAfter | `not-before` / `expired` |
+| a transient or empty NameID | `subject` |
+| RelayState is not the browser's | `relay-state` |
+| an assertion already consumed (`auth.totpReplay`, shared) | `replay` |
 
 ## Passkeys
 

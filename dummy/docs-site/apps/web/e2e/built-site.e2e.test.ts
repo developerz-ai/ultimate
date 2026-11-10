@@ -12,15 +12,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { findChrome, LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eTab } from '@ultimat3/testing';
 import {
   allowHost,
   DEFAULT_CDP_TIMEOUT_MS,
-  E2E_BROWSER_CLOSE_MS,
   E2E_BROWSER_OPEN_MS,
   E2E_GOTO_MS,
   E2E_TAB_OPEN_MS,
-  findChrome,
   openE2eBrowser,
 } from '@ultimat3/testing';
 
@@ -80,7 +79,7 @@ describe.skipIf(noBrowser)('the published site, as files', () => {
     await browser?.close();
     server?.stop(true);
     if (out !== undefined) await rm(out, { recursive: true, force: true });
-  }, E2E_BROWSER_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
+  }, LAUNCHED_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
   test('/errors/X_DB_DRIFT is 200 with its row, and its .md sibling is served', async () => {
     const page = await fetch(`${base}/errors/X_DB_DRIFT`, { signal: AbortSignal.timeout(5_000) });

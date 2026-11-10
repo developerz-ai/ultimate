@@ -17,6 +17,7 @@
 
 import type { RealtimeConfig, Role } from '@ultimat3/core';
 import { isUltimateError, logger, registerReadinessCheck } from '@ultimat3/core';
+import { redisUrlSource } from '@ultimat3/core/redis';
 import { installChannelTransport } from '@ultimat3/realtime/adapter';
 import type { BusUse, SelectTransportOptions, Transport } from '@ultimat3/realtime/server';
 import { selectTransport } from '@ultimat3/realtime/server';
@@ -108,9 +109,14 @@ export interface SelectBusInput {
 function warnInProcessInProduction(input: SelectBusInput, mode: 'embedded' | 'external'): void {
   if (input.env['NODE_ENV'] !== 'production' || mode !== 'embedded') return;
   if (input.override !== undefined) return;
+  // With Redis the cache hop rides Redis pub/sub (`runtime-cache-bus.ts`): saying busts stay
+  // local would send an operator after a fault that is not there.
+  const redis = redisUrlSource(input.env);
   logger.warn('ultimate bus is the in-process bus', {
     cause:
-      'NATS_URL is unset and apps/<app>/runtime.ts supplies no transport, so channel events, live queries and cache invalidations reach this replica only',
+      redis === undefined
+        ? 'NATS_URL is unset and apps/<app>/runtime.ts supplies no transport, so channel events, live queries and cache invalidations reach this replica only'
+        : `NATS_URL is unset and apps/<app>/runtime.ts supplies no transport, so channel events and live queries reach this replica only (cache invalidations ride ${redis.key}: see the cache.broadcast boot line)`,
     fix: 'NATS_URL=nats://<host>:4222   # in the deploy environment of every role; or `transport` in apps/<app>/runtime.ts — leave both unset only for a single-replica deploy',
   });
 }

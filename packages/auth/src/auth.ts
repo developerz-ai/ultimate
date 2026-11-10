@@ -162,7 +162,7 @@ export interface AuthConfigInput {
   readonly totpReplay?: TotpReplayGuard | undefined;
   /**
    * The OAuth providers this app serves login routes for. Defaults to `[]` — an empty list is
-   * "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live
+   * "no OAuth", and every `/auth/sso/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live
    * registry, which a dependency can write into.
    */
   readonly providers?: readonly OAuthProviderId[] | undefined;

@@ -9,7 +9,7 @@ import { COVERAGE_BAR } from '../coverage-floor';
 import { hasExecutableCode, TEST_FILE } from '../coverage-source';
 import { parseVerifyFloor, VERIFY_FLOOR_FILE } from '../verify-floor';
 import { ownerOf } from '../verify-tests';
-import { SCAFFOLD_COVERAGE_EXCLUDE } from './scaffold-repo';
+import { SCAFFOLD_COVERAGE_EXCLUDE } from './scaffold-verify-floor';
 
 const emitted = (path: string, example: boolean): string => {
   const file = planNewApp({ name: 'demo-app', example }).find((one) => one.path === path);

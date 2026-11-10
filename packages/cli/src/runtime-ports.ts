@@ -67,6 +67,7 @@ const WIRED: { readonly [P in WiredPort]: true } = {
   authServerStore: true,
   cacheTiers: true,
   clock: true,
+  embedder: true,
   errorReporter: true,
   eventBus: true,
   failureStore: true,
@@ -83,10 +84,14 @@ const WIRED: { readonly [P in WiredPort]: true } = {
   pushSubscriptionStore: true,
   rateLimitStore: true,
   scrapeDriver: true,
+  searchIndex: true,
   secretSource: true,
+  semanticCache: true,
+  smsTransport: true,
   storage: true,
   totpReplay: true,
   transport: true,
+  uploadScanner: true,
 };
 
 /** Whether a row is a `RuntimeOverrides` field — the scaffold marks the rest as pending. */

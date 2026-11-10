@@ -47,11 +47,11 @@ export type { CassetteEntry, CassetteFile } from './cassette-format';
 // `@ultimat3/cli` in 22.0.0. `installE2eDriver` is the ONE entry point an app's test preload calls;
 // `openE2eBrowserIfAvailable()` answers `undefined` on a machine with no Chrome, so a
 // browser-backed suite SKIPS rather than turning a gate red. RAW CDP over Bun's own `WebSocket`:
-// no dependency, and no `@ultimat3/scraping` / `puppeteer-core` behind it.
+// no dependency. The launcher, the connection, their errors and `LAUNCHED_CLOSE_MS` are imported
+// from `@ultimat3/scraping/cdp` since 31.0.0 — their one home, which `pdf()` prints through.
 export type { E2eBrowser, OpenE2eBrowserOptions } from './cdp-browser';
 export {
   DEFAULT_CDP_TIMEOUT_MS,
-  E2E_BROWSER_CLOSE_MS,
   E2E_BROWSER_OPEN_MS,
   E2E_GOTO_MS,
   E2E_TAB_OPEN_MS,
@@ -60,42 +60,10 @@ export {
 } from './cdp-browser';
 export type { E2eBrowserLease, RunEndHook } from './cdp-browser-lease';
 export { closeE2eBrowsersAtRunEnd, leaseE2eBrowser } from './cdp-browser-lease';
-export type {
-  CdpConnection,
-  CdpConnectionOptions,
-  CdpEventListener,
-  CdpResult,
-  CdpTransport,
-} from './cdp-connection';
-export { cdpConnect, cdpConnectOver } from './cdp-connection';
 export type { CdpE2eTabOptions, E2eTab } from './cdp-e2e-page';
 export { cdpE2eTab } from './cdp-e2e-page';
 export type { CdpE2eSessionOptions, E2eSession } from './cdp-e2e-session';
 export { cdpE2eSession } from './cdp-e2e-session';
-export type {
-  CdpLaunchAttempt,
-  CdpTargetGone,
-  CdpTimeoutObservation,
-  CdpTimeoutReading,
-} from './cdp-errors';
-export {
-  CdpBrowserMissingError,
-  CdpCallFailedError,
-  CdpLaunchFailedError,
-  CdpTimeoutError,
-} from './cdp-errors';
-export type { LaunchedBrowser, LaunchOptions } from './cdp-launch';
-export {
-  CHROME_CANDIDATES,
-  CHROME_PATH_ENV,
-  CONTAINER_CHROME_ARGS,
-  findChrome,
-  LAUNCH_ATTEMPTS,
-  LAUNCH_BUDGET_MS,
-  LAUNCH_TIMEOUT_MS,
-  launchChrome,
-  launchFoundChrome,
-} from './cdp-launch';
 // The exercise pass (plan 101 / 40, phase 2): an app's per-primitive overrides — 39's
 // `.contract({ exercise })` option, one shape — and the pass over every action, query and job.
 export type { ExerciseAppOptions, ExerciseOverride, ExerciseOverrides } from './define-exercise';

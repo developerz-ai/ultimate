@@ -27,6 +27,7 @@ import { routeQuery } from './isr-query-guard';
 import { navigationTagsOf } from './page-navigation';
 import { servedPins } from './page-pins';
 import { bootScript, collectorFor } from './route-islands';
+import { preloadTags } from './route-islands-preload';
 import { siteAssetTable } from './site-assets';
 import { styleBundle } from './style-bundle';
 
@@ -197,8 +198,10 @@ export async function documentFrom(
     headFor(entry, ctx, data, options, scope),
     routeBody(entry, ctx, data, islands),
   ]);
+  const boot = bootScript(entry, islands, options, scope);
+  const preloads = preloadTags(entry, islands, options, boot !== '');
   return (
     `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head>` +
-    `<body>${body}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}</body></html>`
+    `<body>${body}${boot}${preloads}${hydrateRuntime(islands.directives)}</body></html>`
   );
 }

@@ -203,6 +203,20 @@ describe('resolverFor', () => {
     expect(codeOf(thrown)).toBe('X_ISLAND_INVALID');
     expect((thrown as UltimateError).message).toContain('apps/web/site/missing.island.tsx');
   });
+
+  test('importsOf answers the shared chunks an entry loads — what its document preloads', () => {
+    const chunk = {
+      file: 'apps/web/app/form.island.tsx',
+      moduleId: 'form',
+      url: '/islands/form-1.js',
+      code: '',
+      bytes: 0,
+      imports: ['/islands/chunk-11111111.js', '/islands/page-runtime.abc.js'],
+    };
+    const resolve = islandBundle([chunk]).resolverFor('apps/web/app/page.tsx');
+    expect(resolve.importsOf?.(resolve('./form.island.tsx'))).toEqual(chunk.imports);
+    expect(resolve.importsOf?.('/islands/unknown-0.js')).toEqual([]);
+  });
 });
 
 const ISLAND = 'apps/web/site/counter.island.tsx';

@@ -6,7 +6,7 @@
 
 import type { SleepClock } from '@ultimat3/core';
 import { hostDecision } from '@ultimat3/core';
-import type { CdpConnection } from '@ultimat3/testing';
+import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import type {
   ConsoleLine,
   NetworkEntry,

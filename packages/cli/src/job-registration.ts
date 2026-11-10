@@ -1,9 +1,10 @@
-// The `manifest` step's job half: a job or a task still carrying the positional name `job()` or
-// `task()` minted (`anonymous-job-2`) was never handed to `defineApi`. That name is what the queue
-// row, `x.manifest.json`, `x jobs show` and every dead-letter trace carry, and it moves whenever the
-// import order does — so a retry scheduled under one deploy's name lands on another deploy's job.
+// The `manifest` step's job half: a job or task under the positional name `job()`/`task()` minted
+// (`anonymous-job-2`) was never handed to `defineApi`, and that name — on the queue row, the manifest
+// and every dead-letter trace — moves with the import order (`X_JOB_UNREGISTERED`). And an entity
+// declaring `partitionBy` with no `partitions()` job registered (`X_PARTITIONS_UNMAINTAINED`).
 
-import { registeredJobs, registeredTasks } from '@ultimat3/jobs';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { partitionedEntities, registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import { loadApp } from './app-load';
 import type { AppLoader } from './app-permissions';
 import type { Finding } from './output';
@@ -38,5 +39,41 @@ export async function unregisteredJobFindings(
   load: AppLoader = loadApp,
 ): Promise<readonly Finding[]> {
   if ((await load(root)).findings.length > 0) return [];
-  return positionalNames().map(unregisteredJobFinding);
+  return [
+    ...positionalNames().map(unregisteredJobFinding),
+    ...unmaintainedPartitionFindings(
+      partitionedEntities().map((described) => described.table),
+      registeredJobs(),
+    ),
+  ];
+}
+
+/** What a registered job has to look like for this rule: a name, and maybe a `.schedule` task. */
+interface JobShape {
+  readonly name: string;
+  readonly schedule?: { readonly name: string };
+}
+
+/**
+ * Recognised by SHAPE, so a renamed `partitions({ name })` counts: the handle carries the
+ * `.schedule` task the factory minted, named `<job>.schedule`. Nothing else does — `consumer()`
+ * carries `.supervisor`.
+ */
+const isPartitionsJob = (job: JobShape): boolean => job.schedule?.name === `${job.name}.schedule`;
+
+/** Pure: the partitioned tables and the registered jobs in, one finding when none maintains them. */
+export function unmaintainedPartitionFindings(
+  tables: readonly string[],
+  jobs: readonly JobShape[],
+): readonly Finding[] {
+  if (tables.length === 0 || jobs.some(isPartitionsJob)) return [];
+  return [
+    {
+      code: 'X_PARTITIONS_UNMAINTAINED',
+      cause: `${[...tables].sort().join(', ')} declare${tables.length === 1 ? 's' : ''} partitionBy and no partitions() job is registered: no partition is created ahead, so the first insert past the last migrated one fails, and retention never drops one`,
+      fix: 'x verify --only manifest --json   # after exporting partitions() from @ultimat3/jobs in a module listed under jobs in apps/web/api/index.ts, and its .schedule under tasks',
+      docs: ERROR_DOCS_URL,
+      at: 'apps/web/api/index.ts',
+    },
+  ];
 }

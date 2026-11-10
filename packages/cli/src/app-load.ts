@@ -5,22 +5,15 @@
 
 // Bun ships no `Bun.*` path API: `join`/`resolve` reach the files a scan imports.
 import { join, resolve } from 'node:path';
-import { isAction, isMutator, listActions, registerActions } from '@ultimat3/action';
+import { listActions } from '@ultimat3/action';
 import { APP_CONFIG_FILE } from '@ultimat3/core';
-import { describeEntities, registeredEntities } from '@ultimat3/entity';
+import { describeEntities } from '@ultimat3/entity';
 import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { appLocaleSet, UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
-import { isJobHandle, isTaskHandle, registeredJobs, registeredTasks } from '@ultimat3/jobs';
+import { registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
-import { isQuery, listQueries, registerQueries } from '@ultimat3/query';
-import type { RouteConfig } from '@ultimat3/render';
-import {
-  isRouteConfig,
-  pageComponentOf,
-  registerRoute,
-  routeEntries,
-  setAssetResolver,
-} from '@ultimat3/render';
+import { listQueries } from '@ultimat3/query';
+import { routeEntries, setAssetResolver } from '@ultimat3/render';
 // For the SIDE EFFECT, and it is this module's to hold: importing `@ultimat3/render/server`
 // installs the `.tsx`/`.scss` Bun plugin, a plugin only transforms modules loaded AFTER it, and
 // every app module below is loaded by the dynamic `import()` in this file. Before the render
@@ -29,14 +22,11 @@ import {
 // accident one refactor away from compiling every app's `.tsx` to `React.createElement`. The named
 // import is a value import, so the side effect holds without the bare line it replaced.
 import { setStylesheetRoot } from '@ultimat3/render/server';
+import { asyncModules } from './app-load-async';
+import { importInOrder } from './app-load-batch';
+import { isFirstPass, registeredAny, registerModule } from './app-load-register';
 import { unresolvedImportFinding } from './app-load-unresolved';
-import {
-  evictChanged,
-  pinModule,
-  resetReloadGraph,
-  trackModule,
-  trackStylesheets,
-} from './app-reload-graph';
+import { evictChanged, trackModule, trackStylesheets } from './app-reload-graph';
 import { API_INDEX } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
@@ -104,32 +94,8 @@ export interface LoadedApp {
   readonly findings: readonly Finding[];
 }
 
-// A module is imported and registered once per PROCESS: `import()` caches, and a registry rejects
-// a second registration of a name. So a rescan refreshes the facts DERIVED from the registries —
-// the manifest and its build id — and, for exactly one kind of module, the registration itself. A
-// rescan first evicts every changed module, and everything that imports it, from Bun's registry
-// (`app-reload-graph.ts`), so the loop's own `import()` evaluates the new chain; a ROUTE module
-// that comes back as a different instance has its entry replaced. A module that defines a
-// primitive (an action, a query, an entity, a job, a task) is pinned instead — its exports are held
-// by every importer and a second instance would be a duplicate name in its registry — so those
-// edits still need a restart. Until 2026-09-27 only the route module itself was re-imported, under
-// `?x-reload=<hash>`, and every component it imports stayed the cached one: `x dev` logged
-// "reloaded" and served the old component.
-const registered = new Set<string>();
-// A registration failure is sticky: the file is never retried, so the finding is replayed.
-const failures = new Map<string, Finding>();
-// Route modules only: the module instance each one registered from. A rescan that imports the same
-// instance registers nothing; a different one (the file or something it imports was evicted) is
-// the page the author saved.
-const routeModules = new Map<string, Record<string, unknown>>();
-
-/** Test seam, and what `x dev` would call if it ever restarted the registries in-process. */
-export function resetAppLoad(): void {
-  registered.clear();
-  failures.clear();
-  routeModules.clear();
-  resetReloadGraph();
-}
+// Registration, and the once-per-process state behind it, is `app-load-register.ts`'s.
+export { resetAppLoad } from './app-load-register';
 
 /**
  * One glob's hits in code-unit order of their POSIX spelling — never the host's. Sorted raw, `\`
@@ -197,6 +163,27 @@ export interface ScanOptions {
  * `loadAppForRole`, which decides what the role imports.
  */
 export async function scanAppModules(root: string, options: ScanOptions): Promise<AppScan> {
+  prepareAppImport(root);
+  // A rescan: whatever changed on disk since the last one, and everything importing it, leaves
+  // Bun's module registry before the loop below imports it again.
+  const rescan = options.track && registeredAny();
+  if (rescan) await evictChanged(root);
+  const candidates = (await appModulePaths(root)).filter((absolute) =>
+    isScannedModule(root, absolute),
+  );
+  // `include` is asked before each import, of the process as the PREVIOUS import left it — the
+  // role load and the gate's probe both read that state — so a scan that asks it is serial. A
+  // rescan is too: it imports what it evicted, and every other module answers from the cache.
+  const scan =
+    options.include === undefined && !rescan
+      ? await scanBatched(root, candidates, options.track)
+      : await scanSerial(root, candidates, options);
+  scan.files.sort();
+  return scan;
+}
+
+/** What every import of the app's modules needs first: the scan's, and the prebuilt registry's. */
+export function prepareAppImport(root: string): void {
   // Before any import: a stylesheet's surface is read below the app root, never off its absolute
   // path — under the container's `WORKDIR /app` that path's first segment is `app/`, and every
   // sheet, the site's included, classified as app CSS.
@@ -205,28 +192,115 @@ export async function scanAppModules(root: string, options: ScanOptions): Promis
   // `x dev`, the container and the static build alike — one install, three processes.
   const assets = siteAssetTable(root);
   setAssetResolver((path) => assets.resolve(path).url);
-  const files: string[] = [];
-  const findings: Finding[] = [];
-  // A rescan: whatever changed on disk since the last one, and everything importing it, leaves
-  // Bun's module registry before the loop below imports it again.
-  if (options.track && registered.size > 0) await evictChanged(root);
+}
 
-  for (const absolute of await appModulePaths(root)) {
-    // A SEGMENT, never a substring: an app checked out under
-    // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
-    // file it holds, so this loop imported none of them and the app registered nothing.
-    // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
-    // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
+/** Mutable while a scan fills it; handed out as an `AppScan`. */
+interface ScanResult {
+  readonly files: string[];
+  readonly findings: Finding[];
+}
+
+/**
+ * Whether the scan imports `absolute` at all — the one rule, for the scan, the prebuilt registry
+ * and `x g`'s "does this write change the manifest?" (`generate-refresh.ts`).
+ */
+export function isScannedModule(root: string, absolute: string): boolean {
+  // A SEGMENT, never a substring: an app checked out under
+  // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
+  // file it holds, so this loop imported none of them and the app registered nothing.
+  // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
+  // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
+  const file = posixRelative(root, absolute);
+  if (hasPathSegment(absolute, 'node_modules') || isTest(file)) return false;
+  return !(
+    ENTRY_POINT.test(file) ||
+    EXERCISE_FILE.test(file) ||
+    CLIENT_ENTRY_POINT.test(file) ||
+    STATES_FILE.test(file)
+  );
+}
+
+/**
+ * Whether the scan would import the file at `path` (app-root-relative) if it existed: one of the
+ * scan's globs matches it and `isScannedModule` admits it. For a caller holding a path, not a
+ * glob's answer — `x g` asking whether a file it wrote is an app module (`generate-refresh.ts`).
+ */
+export function isAppModulePath(root: string, path: string): boolean {
+  const file = toPosix(path);
+  return (
+    APP_GLOBS.some((pattern) => new Bun.Glob(pattern).match(file)) &&
+    isScannedModule(root, resolve(root, file))
+  );
+}
+
+/** Every module the scan would import, in its order — what `x build` writes the registry from. */
+export async function scannedModulePaths(root: string): Promise<readonly string[]> {
+  return (await appModulePaths(root)).filter((absolute) => isScannedModule(root, absolute));
+}
+
+/** A module that would not import, keyed by its file. */
+const importFinding = (error: unknown, root: string, file: string): Finding =>
+  unresolvedImportFinding(error, root) ?? { ...findingFrom(error), at: file };
+
+/** Reads at most this many sources at once: a 12k-module app opened 12k descriptors otherwise. */
+const READ_BATCH = 64;
+
+/**
+ * Every candidate imported in `importInOrder`'s batches and registered as it evaluates — before
+ * the next module evaluates, as `scanSerial` does. The sources of a tracked scan are all read
+ * BEFORE any import, for the reason `scanSerial` reads each one before its own: what is recorded
+ * is bound to the bytes that module was evaluated from.
+ */
+async function scanBatched(
+  root: string,
+  candidates: readonly string[],
+  track: boolean,
+): Promise<ScanResult> {
+  if (track) {
+    const first = candidates.filter(isFirstPass);
+    for (let start = 0; start < first.length; start += READ_BATCH) {
+      const batch = first.slice(start, start + READ_BATCH);
+      const sources = await Promise.all(batch.map((absolute) => Bun.file(absolute).text()));
+      for (const [index, absolute] of batch.entries()) {
+        await trackModule(absolute, sources[index] as string, root);
+      }
+    }
+  }
+  const registered = new Map<number, Finding>();
+  const register = (index: number, module: Record<string, unknown>): void => {
+    const absolute = candidates[index] as string;
     const file = posixRelative(root, absolute);
-    if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
-    if (
-      ENTRY_POINT.test(file) ||
-      EXERCISE_FILE.test(file) ||
-      CLIENT_ENTRY_POINT.test(file) ||
-      STATES_FILE.test(file)
-    ) {
+    const finding = registerModule(module, { absolute, file, track });
+    if (finding !== undefined) registered.set(index, finding);
+  };
+  // A module that can suspend is imported on its own, or a sibling would evaluate before it ends.
+  const alone = await asyncModules(root, candidates);
+  const imported = await importInOrder(candidates, alone, register);
+  const result: ScanResult = { files: [], findings: [] };
+  for (const [index, absolute] of candidates.entries()) {
+    const file = posixRelative(root, absolute);
+    const one = imported[index];
+    if (one === undefined) continue;
+    if (!one.ok) {
+      result.findings.push(importFinding(one.error, root, file));
       continue;
     }
+    result.files.push(file);
+    const finding = registered.get(index);
+    if (finding !== undefined) result.findings.push(finding);
+  }
+  return result;
+}
+
+/** One module at a time: `include` asked, the source read, the module imported and registered. */
+async function scanSerial(
+  root: string,
+  candidates: readonly string[],
+  options: ScanOptions,
+): Promise<ScanResult> {
+  const result: ScanResult = { files: [], findings: [] };
+  for (const absolute of candidates) {
+    const file = posixRelative(root, absolute);
     if (options.include !== undefined && !(await options.include(absolute))) continue;
     // The source is read BEFORE the import, on the file's first pass — a rescan of a registered
     // module reads nothing here. What is recorded is bound to the bytes the module was evaluated
@@ -234,23 +308,21 @@ export async function scanAppModules(root: string, options: ScanOptions): Promis
     // the two bound V1's component to V2's hash, so the next scan saw nothing to do and served V1
     // until the save after. Read first, the worst case is one re-import the next tick, of a file
     // that did change. An untracked scan reads nothing here: no save lands in an image.
-    const first = !registered.has(absolute) && !failures.has(absolute);
+    const first = isFirstPass(absolute);
     const snapshot = options.track && first ? await Bun.file(absolute).text() : undefined;
     if (first && snapshot !== undefined) await trackModule(absolute, snapshot, root);
     let module: Record<string, unknown>;
     try {
       module = (await import(absolute)) as Record<string, unknown>;
     } catch (error) {
-      findings.push(unresolvedImportFinding(error, root) ?? { ...findingFrom(error), at: file });
+      result.findings.push(importFinding(error, root, file));
       continue;
     }
-    files.push(file);
-    const finding = await register(absolute, file, module, options.track);
-    if (finding !== undefined) findings.push(finding);
+    result.files.push(file);
+    const finding = registerModule(module, { absolute, file, track: options.track });
+    if (finding !== undefined) result.findings.push(finding);
   }
-
-  files.sort();
-  return { files, findings };
+  return result;
 }
 
 export async function loadApp(root: string): Promise<LoadedApp> {
@@ -308,110 +380,6 @@ const emptyAppFinding = (root: string): Finding => ({
   fix: 'x doctor --json',
   at: APP_CONFIG_FILE,
 });
-
-/**
- * Registers a module once; every later call replays whatever the first one reported — except for
- * a route module, which a later call re-registers when the import handed back a new instance.
- */
-async function register(
-  absolute: string,
-  file: string,
-  module: Record<string, unknown>,
-  track: boolean,
-): Promise<Finding | undefined> {
-  const previous = failures.get(absolute);
-  if (previous !== undefined) return previous;
-  if (registered.has(absolute)) return track ? reloadRoute(absolute, file, module) : undefined;
-  registered.add(absolute);
-  try {
-    const config = module['config'];
-    const route = isRouteConfig(config) ? config : undefined;
-    if (route !== undefined) {
-      registerRouteModule(file, module, route);
-      routeModules.set(absolute, module);
-    }
-    // A pin is the reload graph's: it stops an eviction a process that never rescans never runs,
-    // and deciding it walks every export of every module against the entity registry.
-    if (track && (definesPrimitive(module, route !== undefined) || file === API_INDEX)) {
-      pinModule(absolute);
-    }
-    registerActions(module);
-    registerQueries(module);
-    return undefined;
-  } catch (error) {
-    const finding: Finding = { ...findingFrom(error), at: file };
-    failures.set(absolute, finding);
-    return finding;
-  }
-}
-
-/**
- * A module whose instance must be the one every importer and every registry holds. A route module
- * may export an action beside its page — it has always been re-imported, and its actions stayed
- * registered from the first instance — so only an entity, a job or a task pins a route.
- */
-function definesPrimitive(module: Record<string, unknown>, route: boolean): boolean {
-  // The registry holds an entry per entity; the value a module exports is the entry's `core`.
-  const entities = new Set<unknown>(registeredEntities().flatMap((entry) => [entry, entry.core]));
-  const defines = (value: unknown): boolean =>
-    entities.has(value) ||
-    isJobHandle(value) ||
-    isTaskHandle(value) ||
-    (!route && (isAction(value) || isQuery(value) || isMutator(value)));
-  return Object.values(module).some((value) => {
-    // A brand check reads a property, and an export may be a proxy whose every read throws until
-    // the env is set — examples/dummy's typed client throws X_ENV_MISSING without APP_URL. A value
-    // that cannot be asked is not a primitive: every primitive is a plain branded object.
-    try {
-      return defines(value);
-    } catch {
-      return false;
-    }
-  });
-}
-
-/** The route half of a registration, and the whole of a re-registration. */
-function registerRouteModule(
-  file: string,
-  module: Record<string, unknown>,
-  config: RouteConfig,
-): void {
-  // The page component comes from the same module as its config, resolved by render's own
-  // rule — the CLI does not decide which export is a page any more than it decides what a
-  // route is. A module with no component registers without one, and renders a bare shell.
-  const component = pageComponentOf(module);
-  registerRoute({
-    file,
-    config,
-    ...(component === undefined ? {} : { component }),
-  });
-}
-
-/**
- * A registered route module, on a rescan: re-registered when the import handed back a different
- * instance — the file or something it imports was evicted — and left alone otherwise. A save that
- * will not import never reaches here (the loop reports it, not sticky), so the last page that did
- * import is the one served meanwhile.
- */
-function reloadRoute(
-  absolute: string,
-  file: string,
-  module: Record<string, unknown>,
-): Finding | undefined {
-  const held = routeModules.get(absolute);
-  if (held === undefined || held === module) return undefined;
-  try {
-    const config = module['config'];
-    // A file that stopped being a route is not un-registered — the table has no verb for it, and a
-    // deleted file needs a restart either way. Its instance is recorded so the same save is not
-    // re-registered on every later tick.
-    if (isRouteConfig(config)) registerRouteModule(file, module, config);
-    routeModules.set(absolute, module);
-    return undefined;
-  } catch (error) {
-    return { ...findingFrom(error), at: file };
-  }
-}
 
 /**
  * `packages/db/src/errors.ts` → `packages/db`; `apps/web/app/posts/errors.ts` → `apps/web` — on

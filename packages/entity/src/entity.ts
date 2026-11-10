@@ -27,6 +27,7 @@ import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant } from './invariants';
 import { describeLifecycle, lifecycleHistory } from './lifecycle';
+import { type PartitionInit, partitionOf } from './partition';
 import { assertReadOnly } from './read-only';
 import { recordProjection } from './record-projection';
 import type { EntityDescription, ReferenceDescription } from './registry';
@@ -127,6 +128,12 @@ export interface EntityInit<C extends ColumnMap> {
   readonly retain?: RetainInit<keyof C & string>;
   /** Every row change recorded into `<table>_history` by trigger (`history.ts`, `$history`). */
   readonly history?: HistoryInit;
+  /**
+   * Range-partitioned by a `timestamp()`/`date()` in the primary key, one partition per `interval`
+   * (`partition.ts`). `x db gen` writes `partition by range` and the first partitions; a scheduled
+   * maintenance run creates `ahead` more and drops what `retain` expired. Never beside `retain`.
+   */
+  readonly partitionBy?: PartitionInit<keyof C & string>;
   /** Set by `history.ts` on the history entity it declares: the parent's name. Never by hand. */
   readonly historyOf?: string;
 }
@@ -354,6 +361,15 @@ export const entity = <const C extends ColumnMap>(
   );
 
   const retain = retainOf(name, init.retain, entries, indexes, appendOnly);
+  const partition = partitionOf(name, init.partitionBy, {
+    table,
+    columns: entries,
+    primaryKey,
+    indexes,
+    uniques: invariants.filter((inv) => inv.kind === 'unique').map((inv) => inv.columns),
+    retain: init.retain !== undefined,
+    view: init.view != null,
+  });
   const sealed = sealedFields({ $name: name, $table: table, $columns: init.columns });
   assertSealedDeclaration({
     name,
@@ -393,6 +409,7 @@ export const entity = <const C extends ColumnMap>(
       readOnly: init.readOnly,
       view: viewQuery,
       lifecycle: describeLifecycle(core as EntityCore, retain, init.historyOf),
+      partition,
     });
   assertNotRetired(name, entries, init.retired);
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);

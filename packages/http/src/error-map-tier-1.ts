@@ -108,4 +108,8 @@ export const TIER_1_ERROR_STATUS = {
   X_SEO_OG_IMAGE_CONFLICT: 500,
   // @ultimat3/money — a fromDecimal input that is not a plain decimal string
   X_MONEY_NOT_DECIMAL: 422,
+  // @ultimat3/storage — the upload scanner found malware in the file
+  X_STORAGE_UPLOAD_INFECTED: 422,
+  // @ultimat3/storage — the upload scanner could not give a verdict
+  X_STORAGE_SCAN_UNAVAILABLE: 503,
 } satisfies Readonly<Record<string, number>>;

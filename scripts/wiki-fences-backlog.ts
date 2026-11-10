@@ -109,7 +109,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'N-Plus-One-Detection: // one statement for the page': 1,
   "N-Plus-One-Detection: test('the feed reads its authors once', async ({ statements }) => {": 1,
   "Notify: import { inAppChannel, mailChannel, notifier, t } from '@ultimat3/notify';": 1,
-  "Observability: import { collectMetrics, configureMetrics, exportMetrics, startMetricExport } from '@ultimat3/core';": 1,
   'PWA-And-Offline: // app.config.ts — every member optional; text is a string or one per locale': 1,
   'PWA-And-Offline: // app.config.ts — omitting `offline.fallback` is a compile error': 1,
   'PWA-And-Offline: // app.config.ts: the two capabilities an app can switch on, both booleans': 1,

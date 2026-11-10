@@ -5,7 +5,7 @@
 // as the first arm of `overrides?.x ?? <the env-selected default>`.
 
 import type { IdempotencyStore, MeterStore } from '@ultimat3/action/adapter';
-import type { Gateway } from '@ultimat3/ai/adapter';
+import type { Embedder, Gateway, SemanticCacheFactory } from '@ultimat3/ai/adapter';
 import type { AuthLimiterFactory, AuthServerStore, TotpReplayGuard } from '@ultimat3/auth/adapter';
 import type { CacheTier, PurgeDriver } from '@ultimat3/cache/adapter';
 import type {
@@ -15,19 +15,20 @@ import type {
   SecretSource,
   SleepClock,
 } from '@ultimat3/core/adapter';
+import type { SearchIndex } from '@ultimat3/entity/adapter';
 import type { Middleware, Route } from '@ultimat3/http';
 import type { RateLimitStore } from '@ultimat3/http/adapter';
 import type { OutboxStore } from '@ultimat3/jobs';
 import type { EventBus, JobDriver } from '@ultimat3/jobs/adapter';
 import type { MailDriver } from '@ultimat3/mail/adapter';
 import type { McpConfirmationStore } from '@ultimat3/mcp/adapter';
-import type { NotifyStores } from '@ultimat3/notify/adapter';
+import type { NotifyStores, SmsTransport } from '@ultimat3/notify/adapter';
 import type { PushSubscriptionStore } from '@ultimat3/pwa/adapter';
 import type { Transport } from '@ultimat3/realtime/adapter';
 import type { IsrStore } from '@ultimat3/render/adapter';
 import type { ScrapeDriver } from '@ultimat3/scraping/adapter';
 import type { ImageTransformDriver } from '@ultimat3/seo/adapter';
-import type { StorageDriver } from '@ultimat3/storage/adapter';
+import type { StorageDriver, UploadScanner } from '@ultimat3/storage/adapter';
 
 /**
  * One field per `ADAPTER_PORTS` row this boot honours, named by the row's `port`. Every field is
@@ -57,6 +58,11 @@ export interface PortValues {
   readonly cacheTiers: readonly CacheTier[];
   /** The process's clock: every "now" and every wait not handed one. Default `systemClock`. */
   readonly clock: SleepClock;
+  /**
+   * What the semantic cache keys on. Default `hashEmbedder`: offline and lexical — a near-exact
+   * match cache. `remoteEmbedder({ … })` for paraphrase hits.
+   */
+  readonly embedder: Embedder;
   /**
    * Where every caught error is reported. `SENTRY_DSN` still adds the boot's transport BESIDE it
    * when this is a local sink (`localErrorSink`), and none when it is the app's own Sentry
@@ -119,10 +125,25 @@ export interface PortValues {
   /** The browser a `scrape()` declaring no driver of its own runs on. No default: refused at run. */
   readonly scrapeDriver: ScrapeDriver;
   /**
+   * Where full-text search is answered (`searchIndex()`, `reindex`). Default `postgresSearchIndex`:
+   * `.searchable()`'s generated `tsvector` over the app's pool. Meilisearch or Typesense is an app's.
+   */
+  readonly searchIndex: SearchIndex;
+  /**
    * Where the secrets master key comes from. Installed before `app.config.ts` evaluates, so its
    * `installSecrets()` asks this. Default `ULTIMATE_SECRETS_KEY`, then `.secrets.key`.
    */
   readonly secretSource: SecretSource;
+  /**
+   * One semantic cache per scope (`llm({ cache: { semantic } })`). Default a `memorySemanticCache`
+   * per scope, per process; a pgvector-backed factory in production.
+   */
+  readonly semanticCache: SemanticCacheFactory;
+  /**
+   * The provider `smsChannel()` sends through — Twilio, Vonage, SNS: the app's adapter, proved by
+   * `smsTransportConformance`. Default memory in development/test, refused elsewhere.
+   */
+  readonly smsTransport: SmsTransport;
   /**
    * The boot's default disk, registered under the driver's own `name`: replaces the
    * `S3_ENDPOINT`/embedded-disk decision. Several disks are the app's `defineStorage()`, which wins.
@@ -135,6 +156,11 @@ export interface PortValues {
    * NOT closed by `stop()`: whoever built it owns its socket.
    */
   readonly transport: Transport;
+  /**
+   * Asked by `promoteAttachment` about every attached upload: infected is refused and deleted, no
+   * verdict fails closed unless `uploadPolicy({ onScanUnavailable: 'accept' })`. Default: no scan.
+   */
+  readonly uploadScanner: UploadScanner;
 }
 
 /**

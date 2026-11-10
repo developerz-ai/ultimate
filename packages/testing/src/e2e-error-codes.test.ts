@@ -2,7 +2,7 @@
 // that throws them — the two ways a process reaches a CDP refusal.
 import { expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
-import { CdpTimeoutError } from './cdp-errors';
+import { CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import { E2E_ERROR_CODES, E2E_ERROR_TITLES } from './index';
 
 test('every e2e and CDP code is registered with its own title', () => {

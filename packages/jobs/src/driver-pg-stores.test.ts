@@ -239,12 +239,14 @@ describe('the pg lease store — fleet-wide slots', () => {
     expect(executor.calls[0]?.params).toEqual(['sendInvite', 'w-1', 2, 30_000]);
   });
 
-  test('a granted slot arrives as a NUMBER even when the client typed the column as text', async () => {
-    const executor = executorFor({ x_job_leases: [{ slot: '1' }] });
+  test('a granted slot and its fence arrive as NUMBERS even when the client typed them as text', async () => {
+    // `fence` is a `bigint` column: the pg client hands it back as text.
+    const executor = executorFor({ x_job_leases: [{ slot: '1', fence: '42' }] });
     expect(await driverWith(executor).leases?.acquire('sendInvite', 2, 30_000, 'w-1')).toEqual({
       key: 'sendInvite',
       slot: 1,
       holder: 'w-1',
+      fence: 42,
     });
   });
 

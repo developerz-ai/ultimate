@@ -18,6 +18,7 @@ import { type ReadAggregates, readAggregates } from './read-aggregates';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
+import { searchedRepo } from './search-repo';
 import { type TableLocks, tableLocks } from './table-locks';
 import type { Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import { stampedColumns, touch } from './touch';
@@ -74,6 +75,10 @@ export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys>
    * chain can serve: `ts_rank` is a computed value and the cursor carries columns, so the order
    * stays the one the caller declared. An entity with no searchable column is `X_SEARCH_UNDECLARED`
    * and the in-memory driver is `X_SEARCH_IN_MEMORY` — never a different answer from the two.
+   *
+   * The match is the INSTALLED `SearchIndex`'s (`searchIndex()`, `runtime.ts`'s `searchIndex`).
+   * The built-in Postgres one is this predicate in the statement, as above; any other index is
+   * asked for ids first (at most `MAX_PAGE_SIZE`), which the chain then reads (`search-repo.ts`).
    */
   search(term: string): ReadBuilder<Row, S>;
   orderBy(
@@ -379,10 +384,14 @@ export const tableFor = <Row, C extends ColumnMap>(
   related?: RelatedTables,
 ): Table<Row, C> => ({
   // One cast: `sealed-repo.ts` refuses at runtime, `SealedKeysOf<C>` is the same rule as a type.
-  ...(builder<Row, Row>(entity, repo, EMPTY, (row) => row, related) as ReadBuilder<
-    Row,
-    SealedKeysOf<C>
-  >),
+  // Reads go through `searchedRepo`: a `.search()` asks the installed `SearchIndex` (`search-repo.ts`).
+  ...(builder<Row, Row>(
+    entity,
+    searchedRepo(entity, repo),
+    EMPTY,
+    (row) => row,
+    related,
+  ) as ReadBuilder<Row, SealedKeysOf<C>>),
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
   insertAll: async (rows, options) =>
     repo.insertAll(

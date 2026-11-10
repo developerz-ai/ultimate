@@ -12,6 +12,7 @@ import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { type ConstraintPlans, foreignKeyPlan, type Plan } from './foreign-key-plan';
 import { appendOnlyBackfillRefused, appendOnlyPlan } from './generate-append-only';
+import { partitionByClause, partitionPlan } from './generate-partition';
 import { type RowSecurityOption, rowSecurityInput } from './generate-row-security';
 import { snapshotOf } from './generate-snapshot';
 import { assembleSteps } from './generate-steps';
@@ -76,8 +77,9 @@ function createTable(entity: EntityDescriptionLike): readonly string[] {
   }
   // After the key, so a table declaring no invariant emits the statement it always emitted.
   clauses.push(...checkClauses(entity));
+  const by = entity.partition === undefined ? '' : partitionByClause(entity.partition);
   const statements = [
-    `create table ${identifier(entity.table).text} (\n  ${clauses.join(',\n  ')}\n);`,
+    `create table ${identifier(entity.table).text} (\n  ${clauses.join(',\n  ')}\n)${by};`,
   ];
   // Every column of a new table carries its own clause, so every `unique` one brings its index.
   const added = new Set(entity.columns.map((column) => column.column));
@@ -205,6 +207,7 @@ function diffTable(
 export { snapshotOf } from './generate-snapshot';
 
 export interface GenerateOptions {
+  /** `partition` rides on the description when `entity({ partitionBy })` declares one. */
   readonly entities: readonly EntityDescriptionLike[];
   /** The schema migrations already declare — `expectedSchema(migrations, ledger)`. */
   readonly current?: SchemaDescription | undefined;
@@ -405,6 +408,8 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
   appendOnlyPlan(plan, options.entities, current, created);
   // History, its guard and counters, the same way: after every table they name exists.
   triggerPlan(plan, options.entities, current);
+  // The partitions a new partitioned table starts with, after its indexes so each clones them.
+  partitionPlan(plan, options.entities, current);
   // Then each tenant table's policy, both directions (`row-security-plan.ts`), on tables that exist.
   const rowSecurity = rowSecurityInput(options.entities, current, options.rowSecurity);
   rowSecurityPlan(plan, rowSecurity);

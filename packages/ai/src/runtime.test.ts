@@ -7,8 +7,17 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { memorySemanticCache } from '@ultimat3/cache';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import { echoProvider } from './echo-provider';
+import { hashEmbedder } from './embeddings';
 import { providerGateway } from './gateway';
-import { configureAi, installAiGateway, resetAiRuntime, semanticCacheFor } from './runtime';
+import {
+  aiEmbedder,
+  configureAi,
+  installAiEmbedder,
+  installAiGateway,
+  installSemanticCache,
+  resetAiRuntime,
+  semanticCacheFor,
+} from './runtime';
 
 const built: string[] = [];
 
@@ -16,11 +25,9 @@ beforeEach(() => {
   resetAiRuntime();
   built.length = 0;
   installAiGateway(providerGateway({ providers: [echoProvider()] }));
-  configureAi({
-    semanticCache: (scope) => {
-      built.push(scope);
-      return memorySemanticCache();
-    },
+  installSemanticCache((scope) => {
+    built.push(scope);
+    return memorySemanticCache();
   });
 });
 
@@ -55,16 +62,55 @@ describe('semanticCacheFor', () => {
     // its first caller rather than its contract.
   });
 
-  test('a new runtime drops every instance — vectors from two embedders are not comparable', () => {
+  test('a new embedder drops every instance — vectors from two embedders are not comparable', () => {
     semanticCacheFor('org-a');
-    installAiGateway(providerGateway({ providers: [echoProvider()] }));
-    configureAi({
-      semanticCache: (scope) => {
-        built.push(scope);
-        return memorySemanticCache();
-      },
-    });
+    const release = installAiEmbedder(hashEmbedder({ dimension: 8 }));
+    semanticCacheFor('org-a');
+    // And back: the release restores the old embedder, whose vectors the new caches never held.
+    release();
+    semanticCacheFor('org-a');
+    expect(built).toEqual(['org-a', 'org-a', 'org-a']);
+  });
+
+  test('configureAi() starts from empty caches and keeps the installed factory', () => {
+    semanticCacheFor('org-a');
+    configureAi();
     semanticCacheFor('org-a');
     expect(built).toEqual(['org-a', 'org-a']);
+  });
+});
+
+describe('the embedder and semanticCache ports', () => {
+  test('nothing installed: the hash embedder and a memory cache per scope', () => {
+    resetAiRuntime();
+    expect(aiEmbedder().name).toBe('hash');
+    expect(semanticCacheFor('org-a').name).toBe('memory');
+  });
+
+  test('installs stack and each release removes its own frame, in any order', () => {
+    resetAiRuntime();
+    const a = hashEmbedder({ dimension: 4 });
+    const b = hashEmbedder({ dimension: 8 });
+    const releaseA = installAiEmbedder(a);
+    const releaseB = installAiEmbedder(b);
+    expect(aiEmbedder()).toBe(b);
+    releaseA();
+    expect(aiEmbedder()).toBe(b);
+    releaseB();
+    expect(aiEmbedder().name).toBe('hash');
+    expect(aiEmbedder().dimension).toBe(256);
+  });
+
+  test('a released cache factory builds nothing more', () => {
+    resetAiRuntime();
+    const scopes: string[] = [];
+    const release = installSemanticCache((scope) => {
+      scopes.push(scope);
+      return memorySemanticCache();
+    });
+    semanticCacheFor('org-a');
+    release();
+    semanticCacheFor('org-a');
+    expect(scopes).toEqual(['org-a']);
   });
 });

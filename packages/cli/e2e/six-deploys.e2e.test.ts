@@ -9,13 +9,12 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
+import { findChrome, LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from '@ultimat3/testing';
 import {
-  E2E_BROWSER_CLOSE_MS,
   E2E_BROWSER_OPEN_MS,
   e2eFixtures,
   e2ePage,
-  findChrome,
   openE2eBrowser,
   openE2eBrowserIfAvailable,
   paced,
@@ -143,7 +142,7 @@ afterAll(
     await reapIn(BASE);
     await rm(BASE, { recursive: true, force: true });
   },
-  3 * E2E_BROWSER_CLOSE_MS + TIMEOUT_MS,
+  3 * LAUNCHED_CLOSE_MS + TIMEOUT_MS,
 ); // a close per `sixDeploys` run, each held open until here
 
 interface Outcome {

@@ -16,7 +16,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   action: 25,
   admin: 30,
   ai: 21,
-  auth: 47,
+  auth: 46,
   cache: 10,
   cli: 78,
   core: 51,
@@ -41,10 +41,10 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   // why: the edit it names is to write release notes into CHANGELOG.md, which no command in this
   // repo performs, so the line cannot open with a command — the seven sibling findings that edit
   // that same file are already inside this number.
-  scripts: 173,
+  scripts: 172,
   seo: 13,
-  storage: 26,
-  testing: 28,
+  storage: 25,
+  testing: 25,
   time: 8,
   ui: 13,
 };

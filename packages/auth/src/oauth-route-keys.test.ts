@@ -47,12 +47,12 @@ async function callback(
     baseUrl: 'https://app.test',
     ...(idTokenKeys === undefined ? {} : { idTokenKeys }),
   });
-  const start = await login.start.handle(new Request('https://app.test/auth/oauth/google'));
+  const start = await login.start.handle(new Request('https://app.test/auth/sso/google'));
   const authorize = new URL(start.headers.get('location') ?? '');
   nonce = authorize.searchParams.get('nonce') ?? '';
   return await login.callback.handle(
     new Request(
-      `https://app.test/auth/oauth/google/callback?code=c&state=${authorize.searchParams.get('state')}`,
+      `https://app.test/auth/sso/google/callback?code=c&state=${authorize.searchParams.get('state')}`,
       { headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') } },
     ),
   );

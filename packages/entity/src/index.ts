@@ -101,7 +101,22 @@ export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export { isOperator, OPERATORS } from './operator';
+// `entity({ partitionBy })`, checked at declaration (`partition.ts`); the SQL is `@ultimat3/db`'s.
+export type {
+  PartitionContext,
+  PartitionDescription,
+  PartitionInit,
+} from './partition';
+export { DEFAULT_PARTITIONS_AHEAD, partitionInvalid, partitionOf } from './partition';
 export { persistedRecordTypes } from './persisted-types';
+// GDPR: the personal-data column marker and its readers (`personal-data.ts`).
+export type { PersonalDataColumn, PersonalDataEntity, PersonalDataKind } from './personal-data';
+export {
+  PERSONAL_DATA_KINDS,
+  personalDataEntities,
+  personalDataKindOf,
+  personalDataOf,
+} from './personal-data';
 // For a change feed holding a table name and raw columns: `entityForTable` + `decodeRow` is the row
 // the app declared, money and all. Exported for `@ultimat3/realtime` (plan 101, 06 i).
 export type { PgArray } from './pg-array-literal';
@@ -182,6 +197,20 @@ export {
   SEARCH_LANGUAGES,
   SEARCH_WEIGHTS,
 } from './search';
+// The searchIndex port: types, the document builder, the installed index, the two shipped ones.
+export type {
+  SearchDocument,
+  SearchHit,
+  SearchIndex,
+  SearchQuery,
+  SearchScope,
+} from './search-index';
+export { DEFAULT_SEARCH_LIMIT, searchDocumentOf } from './search-index';
+export { searchIndex } from './search-index-installed';
+export { memorySearchIndex } from './search-index-memory';
+export type { PostgresSearchIndexOptions } from './search-index-postgres';
+export { postgresSearchIndex } from './search-index-postgres';
+export { searchVersionColumn, searchVersionOf } from './search-index-version';
 export type {
   Seed,
   SeedContext,

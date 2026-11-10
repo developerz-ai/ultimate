@@ -99,7 +99,7 @@ The container boot (`startOtlpExport`) installs one exporter per signal an endpo
 |---|---|---|
 | traces | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, else `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/traces` | `subscribe('span.end', (e) => otlpSpanExporter().export(e.payload))` |
 | logs | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, else `…_ENDPOINT` + `/v1/logs` | `subscribe('log.record', (e) => otlpLogExporter().export(e.payload))` — the process logger's lines, redacted, joined to the active trace |
-| metrics | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, else `…_ENDPOINT` + `/v1/metrics` | `configureMetrics({ exporter: otlpMetricExporter() })`, pushed every 60 s |
+| metrics | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, else `…_ENDPOINT` + `/v1/metrics` | `subscribe('metric.export', (e) => otlpMetricExporter().export(e.payload))`, pushed every 60 s |
 
 Every boot, collector or not, also subscribes `subscribeSemconvMetrics()`: `db_client_operation_duration_seconds` (from `db.statement`), `job_duration_seconds` (from `job.perform`) and `gen_ai_client_token_usage` (from `ai.llm`) — on `/metrics` and over OTLP alike. OTLP/HTTP JSON over `fetch`, no dependency; `_HEADERS` and `_PROTOCOL` are read too. **gRPC on `:4317` is refused** with `X_OTLP_PROTOCOL_UNSUPPORTED` and will stay refused — HTTP/2 plus protobuf is a dependency and a second wire format, so point the collector's HTTP receiver at `:4318`. Scraping `metricsText()` remains equally supported.
 
@@ -147,12 +147,15 @@ Dotted OTel names survive OTLP but not a Prometheus scrape, and the autoscaler r
 ## Reading them
 
 ```ts
-import { collectMetrics, configureMetrics, exportMetrics, startMetricExport } from '@ultimat3/core';
+import type { MetricExporter } from '@ultimat3/core';
+import { collectMetrics, exportMetrics, startMetricExport, subscribe } from '@ultimat3/core';
 
-collectMetrics();                            // a MetricCollection: { at, resource, metrics }
-configureMetrics({ exporter: myExporter });  // install the seam
-exportMetrics();                             // collect + hand to the exporter, once
-const stop = startMetricExport(60_000);      // periodic; the timer is unref'd. Default 60s
+declare const myExporter: MetricExporter;
+
+collectMetrics(); // a MetricCollection: { at, resource, metrics }
+const release = subscribe('metric.export', (event) => myExporter.export(event.payload)); // the seam
+exportMetrics(); // one `metric.export` tick; nothing is collected while nobody subscribes
+const stop = startMetricExport(60_000); // periodic; the timer is unref'd. Default 60s
 ```
 
 | Type | Shape |
@@ -164,7 +167,7 @@ const stop = startMetricExport(60_000);      // periodic; the timer is unref'd. 
 | `MetricPoint` | `{ attributes, value }` |
 | `HistogramPoint` | adds `count`, `min`, `max`, `bounds`, `buckets` — `buckets` is one longer than `bounds`, the last being the `+Inf` overflow |
 
-Temporality is **cumulative**. Shipped exporters: `noopMetricExporter` (the default) and `memoryMetricExporter()` for tests. `resetMetrics()` restores the defaults and clears the series while keeping declarations — test-only.
+Temporality is **cumulative**. An exporter is a `metric.export` subscriber on the instrumentation bus, like the span and log exporters, released by its own unsubscribe; `configureMetrics({ clock, enabled })` is configuration only — its `exporter` option left in 31.0.0 ([Upgrading](Upgrading)). `memoryMetricExporter()` is the test double. `resetMetrics()` restores the defaults and clears the series while keeping declarations — test-only.
 
 ## The Prometheus body
 

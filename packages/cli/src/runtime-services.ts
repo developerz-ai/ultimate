@@ -353,6 +353,7 @@ export async function startServices(
         notifyStores: notifyStoresWithLedger(overrides?.notifyStores, executor),
         rateLimitStore,
         scrapeDriver: overrides?.scrapeDriver,
+        smsTransport: overrides?.smsTransport,
         totpReplay: totpReplay.value,
       })),
     );

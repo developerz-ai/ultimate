@@ -3,7 +3,7 @@
 // the condition (two pipes, no order between them), so a `fetch` on the next line went through under
 // a cut the page already read as offline — `browser-harness.e2e.test.ts`, CI run 39223207154.
 
-import type { CdpResult } from './cdp-connection';
+import type { CdpResult } from '@ultimat3/scraping/cdp';
 
 type Send = (
   method: string,

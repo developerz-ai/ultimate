@@ -195,9 +195,9 @@ describe('unit · this repo', () => {
   );
 
   test('checks every committed run, so none can drift unwatched', () => {
-    // The two realtime runs, the first hour, http-hello's two targets, the big-page render and the
-    // span overhead.
-    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(7);
+    // The two realtime runs, the first hour, http-hello's two targets, the big-page render, the
+    // span overhead, and the scale ladder's four (workers, fan-out, boot, the production image).
+    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(11);
     expect(CLAIMS.length).toBeGreaterThan(9);
   });
 });
@@ -215,7 +215,7 @@ describe('unit · a figure stated on another page (README.md, wiki/Compared.md)'
   test('off by one is refused, and the finding names that page', () => {
     const found = check(PROSE, 1_666_883);
     expect(found.map((finding) => finding.at)).toEqual(['README.md']);
-    expect(found[0]?.fix).toContain('edit README.md: write 1,666,883');
+    expect(found[0]?.fix).toContain('after editing README.md: write 1,666,883');
   });
 
   test('agrees when that page states the measured figure — the claims page is not read for it', () => {

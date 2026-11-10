@@ -5,5 +5,6 @@ create table "x_job_leases" (
   "slot" integer not null,
   "holder" text not null,
   "expires_at" timestamp with time zone not null,
+  "fence" bigint,
   constraint "x_job_leases_pkey" PRIMARY KEY (lease_key, slot)
 );

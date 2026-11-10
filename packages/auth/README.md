@@ -24,7 +24,7 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
 // a normalised handle to the auth user's id, and `register(auth, { id, ... })` links the two rows.
 const byHandle = await login(auth, { handle: 'ada', password, ip });
 
-// "Log in with GitHub" is a link to /auth/oauth/github. These two routes are what serves it.
+// "Log in with GitHub" is a link to /auth/sso/github. These two routes are what serves it.
 const { start, callback } = oauthLogin(auth);
 ```
 
@@ -317,11 +317,9 @@ registerOAuthProvider(
 PKCE stays mandatory for all three: for a public client it is the only thing binding the code to
 the browser that started the flow.
 
-**SAML is out of scope and will stay out of scope.** XML-DSig canonicalisation has no Bun native
-and implementing it would mean a real dependency in the primitive vocabulary, which
-[`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md) does not permit. The honest
-answer is to put an OIDC-speaking SAML bridge (Okta, Entra, Keycloak, Dex, a SAML-to-OIDC proxy) in
-front and register **that** as a provider.
+**SAML 2.0 is supported natively since 31.0.0** — see [SSO: one IdentityProvider port, OIDC and
+SAML](#sso-one-identityprovider-port-oidc-and-saml). No dependency: the XML reader, exclusive c14n
+and XML-DSig verification are this package's own, held to xmlsec-signed vectors.
 
 ## Id token signatures
 
@@ -845,7 +843,9 @@ const mounted = (leg: AuthRouteDescriptor): Route => ({
   method: leg.method,
   path: leg.path,
   handler: (request) => leg.handle(request.raw),
-  meta: { name: leg.name, auth: leg.auth },
+  // Verbatim: the SAML ACS (POST) declares `csrf: 'cookieless'` + `authenticate: () => null`,
+  // because the IdP answers with a cross-site form. Hand-copy `name`/`auth` and it is a 403.
+  meta: leg.meta,
 });
 
 export const runtime: NonNullable<ServeOptions['runtime']> = {
@@ -855,8 +855,8 @@ export const runtime: NonNullable<ServeOptions['runtime']> = {
 
 | | `start` | `callback` |
 |---|---|---|
-| path | `/auth/oauth/:provider` | `/auth/oauth/:provider/callback` |
-| success | `302` to the provider, `Set-Cookie: __Host-x_oauth_<provider>` | `303` to `successPath`, `Set-Cookie: __Host-x_session` **and** the handshake cleared |
+| path | `/auth/sso/:provider` | `/auth/sso/:provider/callback` |
+| success | `302` to the provider, `Set-Cookie: __Host-x_sso_<provider>` | `303` to `successPath`, `Set-Cookie: __Host-x_session` **and** the handshake cleared |
 | failure | coded JSON, status per code: `code` + `title` + `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json` | the same, handshake cleared either way |
 
 A **descriptor**, never a mounted handler — the same category as `mcpHttpRoute()`. `@ultimat3/http`
@@ -866,9 +866,11 @@ router that can match a `:param` — and `runtime.routes` is the one an app has.
 framework's own routes and before the pages; every field it shares the file with is in
 [`wiki/Configuration.md`](../../wiki/Configuration.md#runtime-overrides--appsappruntimets).
 
-**The paths are not configurable.** `X_OAUTH_STATE_INVALID` has always told the caller to restart
-at `GET /auth/oauth/<provider>`; it now quotes `oauthStartPath()`, the same declaration the mount
-reads. A movable base path is that sentence going stale again.
+**The paths are not configurable.** `X_OAUTH_STATE_INVALID` quotes `oauthStartPath()`, the same
+declaration the mount reads. A movable base path is that sentence going stale again. Since 31.0.0
+the base is `/auth/sso`: `oauthLogin` is a front door over `identityProviderRoutes`' legs, so OAuth
+and SAML share the paths, the sealed state cookie and the refusal body (re-register the callback
+URL at each IdP — `wiki/Upgrading.md`).
 
 `oauthLogin` needs an origin to build the provider's `redirect_uri` from: `baseUrl`, or `APP_URL`.
 With neither, the start leg refuses with `X_ENV_MISSING` rather than trust a request header.
@@ -904,6 +906,10 @@ home. `handshakeCookie` is that home — sealed with `SESSION_SECRET`, `HttpOnly
 SameSite=Lax` under a `__Host-` name, and expired against the server's clock rather than the
 client's copy of `Max-Age`. `sealHandshake` / `openHandshake` are the same codec without the
 cookie, for an app that would rather keep it server-side.
+
+`oauthLogin` itself no longer uses this cookie (31.0.0): its state rides the sign-in routes' own
+`__Host-x_sso_<provider>`, sealed the same way and claimed once in `auth.totpReplay`. The
+`handshakeCookie` family stays for a hand-built flow over `beginOAuth` / `completeOAuthLogin`.
 
 **One cookie per provider:** `handshakeCookieName(provider)` → `__Host-x_oauth_github`. A browser
 is one cookie jar and a user is allowed two tabs, so a single shared name means the `google`
@@ -948,6 +954,64 @@ both callback routes are GET. An app that needs it registers its own with `regis
 - An address the provider did **not** verify never creates an account either — it is the same
   `loginFailed()` the taken-address case answers. Minting one is a pre-hijack: the owner's
   `register()` then collides and their verified login is refused, with the attacker still linked.
+
+## SSO: one IdentityProvider port, OIDC and SAML
+
+Every federated sign-in is an `IdentityProvider`: `begin` sends the browser out, `complete` takes
+the answer back and proves one `OAuthProfile`. Two adapters, one set of routes, one session path.
+
+```ts
+import {
+  defineAuth,
+  identityProviderRoutes,
+  memoryAuthAdapter,
+  oidcIdentityProvider,
+  parseSamlMetadata,
+  samlIdentityProvider,
+} from '@ultimat3/auth';
+
+// The app's group → role mapping: business convention, so it is yours (axiom 8).
+declare function groupsToRoles(claims: Readonly<Record<string, unknown>>): string[];
+
+const auth = defineAuth({ adapter: memoryAuthAdapter(), providers: ['corp', 'github'] });
+const routes = identityProviderRoutes(auth, {
+  providers: [
+    samlIdentityProvider({
+      id: 'corp',
+      idp: parseSamlMetadata(await Bun.file('config/corp-idp-metadata.xml').text()),
+      spEntityId: 'https://app.example.com/saml/metadata',
+      trustEmail: true, // required: does this IdP vouch for the addresses it asserts?
+      emailDomains: ['corp.example'], // required with true: only these domains are believed
+    }),
+    oidcIdentityProvider({ provider: 'github' }),
+  ],
+  resolveGrants: (identity) => ({ roles: groupsToRoles(identity.claims) }), // yours, never shipped
+});
+// routes.start  GET  /auth/sso/:provider           → 302 to the IdP
+// routes.acs    POST /auth/sso/:provider/callback  → SAML ACS (register this URL at the IdP)
+// routes.callback GET /auth/sso/:provider/callback → OIDC redirect_uri
+```
+
+| Rule | Why |
+|---|---|
+| The assertion **itself** must be signed; a signed response around an unsigned assertion is refused | the node that is read is the node that was verified — no wrapping |
+| Exactly one `saml:Assertion` in the whole document, a direct child of the Response; no ID twice; no `ds:Object` | the signature-wrapping (XSW) attacks all need a second candidate |
+| The `Reference` must name the enveloping element's own `ID`; transforms exactly enveloped-signature + exc-c14n | no XPath/XSLT, no detached reference |
+| RSA-SHA256 with SHA-256 digests, RSA ≥ 2048 | SHA-1 is refused |
+| Keys come from metadata only; `KeyInfo` is never read | a self-signed cert in the response proves nothing |
+| NameID text is every text node concatenated | `a@corp.com<!---->.evil.com` reads as what was signed |
+| Recipient, Destination, InResponseTo, Audience, NotBefore/NotOnOrAfter (±`skewMs`, 60 s) | SP-initiated only: an unsolicited response has no InResponseTo to match |
+| One answer completes once: claimed in `auth.totpReplay` (the shared replay store) until it expires | replay across replicas |
+| DOCTYPE, entities, processing instructions refused by the reader | XXE, billion laughs |
+| An address is verified only inside `emailDomains` (exact; list subdomains); outside, it can neither link nor create an account. `trustEmail: true` with no domains does not compile, and refuses at construction (`X_CONFIG_INVALID`) | an IdP's admin can assert ANY address — unbound, one tenant's IdP signs in as another tenant's verified user |
+| Transient NameIDs refused | linked by a per-login id, every sign-in is a stranger |
+| Encrypted assertions refused (`meta.check: 'encrypted'`) | not supported |
+
+Every SAML refusal is `X_SAML_RESPONSE_INVALID` with the failed check in `meta.check` and a fix per
+check, logged as `auth.sso.refused`; the anonymous caller gets the code and title only. Bad metadata
+is `X_SAML_METADATA_INVALID` at boot. An id the routes do not serve is `X_IDENTITY_PROVIDER_UNKNOWN`.
+An adapter of your own is held to the same contract by
+`identityProviderConformance` (`@ultimat3/testing/conformance`).
 
 ## API keys — how an agent authenticates
 

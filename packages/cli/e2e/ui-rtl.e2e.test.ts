@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
 import type { SleepClock } from '@ultimat3/core';
-import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
+import { findChrome } from '@ultimat3/scraping/cdp';
+import { E2E_BROWSER_OPEN_MS } from '@ultimat3/testing';
 import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 

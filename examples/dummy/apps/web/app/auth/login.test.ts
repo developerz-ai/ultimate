@@ -74,7 +74,7 @@ afterEach(() => {
   setLogSink(previousSink);
 });
 
-/** `/auth/oauth/:provider` → the URL a browser is actually sent to. The mount, filled in. */
+/** `/auth/sso/:provider` → the URL a browser is actually sent to. The mount, filled in. */
 const mounted = (pattern: string, provider: string): string =>
   pattern.replace(':provider', provider);
 
@@ -171,15 +171,17 @@ describe('log in with GitHub', () => {
     // at the start descriptor's own path, which it already holds — never at text parsed out of
     // a failure body.
     expect(body['fix']).toBe('x errors explain X_OAUTH_STATE_INVALID --json');
-    expect(JSON.stringify(body)).not.toContain('/auth/oauth/');
+    expect(JSON.stringify(body)).not.toContain('/auth/sso/');
 
     // Axiom 4, checked as a round trip, where the authored fix now lives: the `auth.oauth.refused`
     // log line. The path it tells the developer to restart at has to be the one this app mounts.
     const refused = logged.find((line) => line.includes('auth.oauth.refused')) ?? '';
     expect(/GET (\/[^\s"\\]+)/.exec(refused)?.[1] ?? '').toBe(mounted(login.start.path, 'github'));
 
-    // The code the handshake authorised is spent whether or not the callback succeeded.
-    expect(done.headers.getSetCookie().some((c) => c.includes('=;'))).toBe(true);
+    // A forged state is not this browser's answer, so its sign-in state cookie stays: a request
+    // carrying the cookie cross-site cannot end the real sign-in in flight. Only an answer bound
+    // to the state (`answers()`) clears it, on any outcome.
+    expect(done.headers.getSetCookie().some((c) => c.includes('=;'))).toBe(false);
   });
 
   test('a completed login lands on Postly and mints a session Postly can authenticate', async () => {

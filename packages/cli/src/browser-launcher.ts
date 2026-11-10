@@ -6,7 +6,7 @@
 
 import { existsSync } from 'node:fs';
 import { UltimateError } from '@ultimat3/core';
-import { CHROME_CANDIDATES } from '@ultimat3/testing';
+import { CHROME_CANDIDATES } from '@ultimat3/scraping/cdp';
 import type { ShotDriver } from './browser-launcher-port';
 import { cdpShotDriver } from './cdp-shot-driver';
 

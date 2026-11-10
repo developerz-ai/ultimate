@@ -28,7 +28,8 @@ export const posts = entity('posts', {
       .tenant(),
     authorId: uuid().references(() => members.id, { onDelete: 'restrict' }),
     slug: text({ max: SLUG_MAX }),
-    title: text({ max: TITLE_MAX }),
+    /** What a search box matches, ranked first (`reindex-posts` rebuilds the index from it). */
+    title: text({ max: TITLE_MAX }).searchable('A'),
     excerpt: text({ max: EXCERPT_MAX }),
     body: text(),
     /** Nullable: a post without a cover renders the generated OG image instead. */

@@ -33,7 +33,7 @@ x version              # CLI version
 | `x stop [--timeout 30s]` | stop this checkout's `x dev` (the pid its `.x/dev.lock` names, nothing else) and return once the next `x dev` can boot | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill, diagnostics | shipped |
-| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
+| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]] \| --changed [--base <ref>] [--dirty]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example\|init]` | validate the process env against `envSchema`, regenerate `.env.example` from it, or write `.env.production` (`init --production`) | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
@@ -320,14 +320,18 @@ x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen
 x g guard <name>                            # a convention this app enforces, as a build error
 x g sign-in --password | --oidc <provider>  # the app's one sign-in: pages, actions, boot guard
 x g chart-alerts [--print]                  # the chart's ServiceMonitor + alert rules, backfilled
+x g app <name>                              # one more app workspace: apps/<name>/
+x g package <name>                          # one more shared package: packages/<name>/
 ```
+
+**`x g app <name>` / `x g package <name>`** (`As of 2026-11`) add a workspace to the monorepo: `apps/<name>/` (`package.json` + `tsconfig.json`) or `packages/<name>/` (manifest, README, `src/index.ts` and its test), named `@<scope>/<name>` with the scope read off the root `package.json` (`@acme/root` → `acme`). Nothing outside the new directory is edited: the root `workspaces` globs and tsconfig alias already reach it. A name the other kind already holds is `X_WORKSPACE_NAME_TAKEN` (both would install as `@<scope>/<name>`); one the same kind holds is `X_GENERATE_CONFLICT`. The run prints `bun install` then `bunx x verify --changed --dirty` (`data.next`).
 
 **`x g sign-in`** (`As of 2026-11`) is what a deployed scaffold needs to issue a session: before it, a production `web` role answered every policy-protected route `401` (`packages/cli/e2e/sign-in.e2e.test.ts` proves the after). Exactly one of the two flags, and no `<name>` — an app has one sign-in; anything else is `X_CLI_BAD_FLAG`, and so is any other `x g` flag it would ignore (`--feature`, `--surface`, `--at`, `--permission`, `--live`, `--admin`), and either flag on another generator. Its keys land in every catalog the app ships, or the ones `--locales` names, as every other generator's do. The auth slice lands under `apps/web/app/auth/` beside `x new`'s `auth.ts`, plus `apps/web/runtime.ts` and the edits in the last column. A dry run lists the deletions in `data.removed`, apart from `data.files`; a real run reports them under the same key:
 
 | Shape | Writes | Also edits |
 |---|---|---|
 | `--password` | `sign-in/page.tsx` (a native form, 0 kB) posting to `createSession` over `login()`; `sign-in/second-factor/page.tsx` posting to `confirmSession` over `completeMfa()` (the sealed challenge travels in an HttpOnly cookie); `destroySession` over `logout()` + `signOutHeaders()`; `sign-in-guard.ts`; `apps/web/runtime.ts` — 22 files on a dry run in the default scaffold, 24 after setup | `apps/web/api/index.ts` (the three actions), `app.config.ts` (`auth: { signInPath: '/auth/sign-in' }`), the catalogs |
-| `--oidc <provider>` | `oidc.ts` — `discoverOAuthProvider` on the FIRST sign-in, never at import — and `sign-in-routes.ts`, the `oauthLogin` legs on `runtime.routes`; the sign-in page (one link to `/auth/oauth/<provider>`); `destroySession`; the guard — 20 files on a dry run (plus the two in `data.removed`), 22 after setup | as above, plus `<PROVIDER>_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET` in `envSchema`; and **the authenticator swap**: `authenticator.ts` loses the development fallback and `dev-actor.ts` is deleted, only while all four files are byte-for-byte what `x new` wrote — an edited one is an `X_GENERATE_CONFLICT` finding naming the line to delete by hand |
+| `--oidc <provider>` | `oidc.ts` — `discoverOAuthProvider` on the FIRST sign-in, never at import — and `sign-in-routes.ts`, the `oauthLogin` legs on `runtime.routes`; the sign-in page (one link to `/auth/sso/<provider>`); `destroySession`; the guard — 20 files on a dry run (plus the two in `data.removed`), 22 after setup | as above, plus `<PROVIDER>_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET` in `envSchema`; and **the authenticator swap**: `authenticator.ts` loses the development fallback and `dev-actor.ts` is deleted, only while all four files are byte-for-byte what `x new` wrote — an edited one is an `X_GENERATE_CONFLICT` finding naming the line to delete by hand |
 
 The boot guard is generated, app-owned: `apps/web/runtime.ts` calls `assertSignInConfigured(process.env)` before the boot binds a port, and outside `development`/`test` a `web` or `sync` role with a sign-in key unset refuses to start — `X_AUTH_SIGN_IN_UNCONFIGURED`, fix `export <KEY>="<value>"` in the role's deployed environment, then restart it (`x env example` lists the keys). The keys: `ULTIMATE_SECRETS_KEY` for `--password` (it seals the second-factor challenge); the provider's three plus `SESSION_SECRET` and `APP_URL` for `--oidc`. A second `x g sign-in` is `X_GENERATE_CONFLICT` and writes nothing. `--password` keeps the development viewer: it ships no sign-up page, so the first user is `register(appAuth(), { email, password, orgId, roles })`. An app that already has an `apps/web/runtime.ts` is that conflict too — merge the two `runtime` objects by hand.
 
@@ -346,6 +350,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 |---|---|---|---|
 | `--feature` | string | derived from the name | feature slice to write into. Not for `resource`: its name IS the slice (`app/<name>/`, page at `app/<names>/`), and a `--feature` naming anything else is `X_CLI_BAD_FLAG` |
 | `--surface` | string | `app` | `site` or `app` |
+| `--app` | string | `web` | `route`, `island`, `query` only: the app workspace under `apps/` the files land in (`x g route reports --app admin` → `apps/admin/app/reports/page.tsx`). An app that is not there is `X_CLI_BAD_FLAG`, fix `x g app <app>`; any other generator registers in files only `apps/web` holds (API index, roles, exercise file, db handle) and refuses it, fix the same run without the flag |
 | `--permission` | string | `<name>:read` | `admin:page` only: the permission the page's own work needs, on top of the frame's `admin:read`. A `<resource>:<verb>`, or namespaced with more segments (`admin:blog:write`, `As of 27.6.2` — one colon exactly was required, which refused every `admin:<area>:<verb>` a staff console declares); an empty segment, a space or a quote is `X_CLI_BAD_FLAG` before a file is written — the value reaches the emitted source three times and `Permission` is `${string}:${string}` |
 | `--live` | boolean | `false` | `query` only: make it subscribable. On any other generator it is `X_CLI_BAD_FLAG` naming the `x g query … --live` to run instead |
 | `--admin` | boolean | `false` | `resource` only: also emit the per-entity admin override **and list it** under `resources:` in `apps/admin/app/admin/admin.ts`. The screen itself needs no flag — an entity in the handle is an admin screen |
@@ -593,9 +598,28 @@ Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is no
 ## x verify
 
 ```bash
-x verify [--only <step>[,<step>…] [--shard i/n [--timings file]]] [--workers N] [--isolate] [--json]
+x verify [--only <step>[,<step>…] [--shard i/n [--timings file]] | --changed [--base <ref>] [--dirty]] [--workers N] [--isolate] [--json]
 x verify merge <part.json…> [--json]
 ```
+
+**`--changed`**, `As of 31.0` — the steps whose inputs the diff touches, NOT A GATE RUN like `--only`
+and never beside it (`X_CLI_BAD_FLAG`). The diff is `x affected`'s: `<base>...HEAD`, `--base` default
+`main`, `--dirty` adds uncommitted and untracked work. Each file gets one rule, each rule selects
+steps; `data.changed` carries `{ base, dirty, files: [{ path, rule }], steps: [{ name, files }] }` and
+the human render one `step ← files` line per step. Fail-open: a path no rule speaks for runs the gate.
+Each suite but `eval` then runs only the test files the diff's import closure reaches — `x test
+--affected`'s selection, `data.changed.tests` — a suite none of them belongs to is dropped, and the
+`unit` coverage floor is not judged on the subset; a file the import graph cannot speak for (a root
+config, a catalog) runs every test.
+
+| rule | files | steps |
+|---|---|---|
+| `doc` | `*.md`, `docs/`, `wiki/` | package-shape, errors, unit, manifest, roadmap |
+| `test` | `*.test.ts(x)`, `e2e/` | typecheck, lint, filesize, package-shape, errors + the suite that owns the file |
+| `generated` | `x.manifest.json` | lint, contract-diff, manifest |
+| `source` | `apps/`, `packages/`, `guards/`, `scripts/`, `types/`, `bin/` | every step but `drift` |
+| `drift-input` | `packages/db/**`, `apps/*/clients/**`, `openapi.json`, any module importing `@ultimat3/entity` and everything it imports | every step |
+| `root-config` · `deleted` · `unknown` · `outside` | a root file, any `app.config.ts`, a vanished module, another directory, a path outside the app | every step |
 
 **`As of 22.7`** — the width is a memory budget (`max(2.75 GiB, 25% of RAM)` at 1.25 GiB a worker — no fixed 4 GiB cap since 2026-11-07,
 at most one per core, printed on the step line; `ULTIMATE_TEST_MEMORY_BUDGET` /

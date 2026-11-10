@@ -66,9 +66,9 @@ export const SET_COOKIE_PINS: Readonly<Record<string, SetCookiePin>> = {};
  * its own serializer-built lines on the `Headers` it returns. May fall, never rise.
  */
 export const SET_COOKIE_RELAY_PINS: Readonly<Record<string, SetCookiePin>> = {
-  'packages/auth/src/oauth-route.ts': {
+  'packages/auth/src/identity-provider-route-core.ts': {
     sites: 4,
-    why: 'appends handshakeCookie(), clearHandshakeCookie() and sessionCookie() output — each a serializeSetCookie line in oauth-cookie.ts / session.ts — onto the redirect and problem Responses this route builds itself',
+    why: 'appends identityStateCookie(), clearIdentityStateCookie() and sessionCookie() output — each a serializeSetCookie line in identity-provider-cookie.ts / session.ts — onto the redirect and problem Responses the sign-in routes build themselves (oauthLogin moved onto these routes in 31.0.0)',
   },
   'packages/auth/src/sign-out.ts': {
     sites: 1,

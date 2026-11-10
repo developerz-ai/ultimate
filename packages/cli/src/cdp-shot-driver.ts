@@ -2,14 +2,15 @@
 // (`@ultimat3/testing`'s launcher, the one the e2e step already runs on) or ATTACH to one somebody
 // else runs over `--cdp-url`. One `open()` is one browser and one page, so a picture's console and
 // network are its own. The page is `cdp-shot-page.ts`; this file is the session around it.
-import type { CdpConnection, LaunchedBrowser } from '@ultimat3/testing';
+
+import type { CdpConnection, LaunchedBrowser } from '@ultimat3/scraping/cdp';
 import {
   CdpBrowserMissingError,
   CdpCallFailedError,
   CHROME_CANDIDATES,
   cdpConnect,
   launchChrome,
-} from '@ultimat3/testing';
+} from '@ultimat3/scraping/cdp';
 import type { ShotDriver, ShotSession, ShotSessionInit } from './browser-launcher-port';
 import { cdpShotPage } from './cdp-shot-page';
 import { watchPage } from './cdp-shot-watch';

@@ -5,9 +5,7 @@
 
 import type { OtlpSignal, ShutdownReason } from '@ultimat3/core';
 import {
-  configureMetrics,
   logger,
-  noopMetricExporter,
   onShutdown,
   otlpEndpointLabel,
   otlpLogExporter,
@@ -58,8 +56,8 @@ export const METRIC_EXPORT_INTERVAL_MS = 60_000;
  * core's instrumentation bus and the release is its unsubscribe, so a second `serveApp` in the same
  * process never exports into a released exporter, and `x dev`'s trace RECORDER — its own subscriber
  * — is untouched. Each exporter is SHUT DOWN before it is unsubscribed — its queued batch goes out
- * and its timer stops, rather than being dropped and leaked. `configureMetrics` still merges into
- * process-global state, so its release hands back `noopMetricExporter`.
+ * and its timer stops, rather than being dropped and leaked. Metrics are the same shape since
+ * 31.0.0: a `metric.export` subscription, released by its unsubscribe.
  */
 export function startOtlpExport(env: Env = process.env): () => void {
   const releases: (() => void)[] = [];
@@ -89,11 +87,10 @@ export function startOtlpExport(env: Env = process.env): () => void {
   const metrics = signalEndpoint('metrics', env);
   if (metrics !== undefined) {
     const exporter = otlpMetricExporter({ endpoint: metrics });
-    configureMetrics({ exporter });
-    releases.push(() => configureMetrics({ exporter: noopMetricExporter }));
-    // The push loop, and not only the exporter: `configureMetrics` names where a snapshot goes
-    // and nothing decides when one is taken, so without this the collector receives one export —
-    // the drain's — for the whole life of the process.
+    releases.push(subscribe('metric.export', (event) => exporter.export(event.payload)));
+    // The push loop, and not only the subscription: it names where a snapshot goes and nothing
+    // decides when one is taken, so without this the collector receives one export — the
+    // drain's — for the whole life of the process.
     const stopTimer = startMetricExport(METRIC_EXPORT_INTERVAL_MS);
     releases.push(stopTimer);
     flushes.push(() => exporter.flush());

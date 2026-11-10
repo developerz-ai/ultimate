@@ -13,6 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { hasErrorCode } from '@ultimat3/core';
 import {
+  oauthDenied,
   oauthExchangeFailed,
   oauthProviderUnknown,
   oauthStateInvalid,
@@ -21,7 +22,6 @@ import {
 } from './oauth-errors';
 import { emailVerifiedNotStored, oauthAccountNotLinked, oauthLinkingDisabled } from './oauth-login';
 import { oauthProviderDuplicate } from './oauth-registry';
-import { oauthDenied } from './oauth-route';
 
 /**
  * Every OAuth factory, against the code it carries. Codes are forever; `emailVerifiedNotStored`
@@ -71,7 +71,7 @@ describe('the oauth error factories, wherever each lives', () => {
   test('restartAt still quotes the mounted start path, never a hand-written one', () => {
     // The whole reason this phrase is a function: the fix line named a route the package did not
     // mount, and every caller who followed it got a 404.
-    expect(restartAt('github')).toContain('/auth/oauth/github');
+    expect(restartAt('github')).toContain('/auth/sso/github');
     expect(oauthStateInvalid('github', 'nonce').fix).toContain(restartAt('github'));
   });
 

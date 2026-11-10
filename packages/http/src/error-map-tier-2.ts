@@ -141,4 +141,10 @@ export const TIER_2_ERROR_STATUS = {
   X_DRIVER_UNSUPPORTED: 501,
   // @ultimat3/entity — a custom driver returned a row outside the plan it was given
   X_DRIVER_ROW_OUT_OF_SCOPE: 500,
+  // @ultimat3/auth — a saml response failed its signature, wrapping, audience, recipient, time, InResponseTo or replay check
+  X_SAML_RESPONSE_INVALID: 400,
+  // @ultimat3/auth — saml IdP metadata has no entity id, HTTP-Redirect sign-on endpoint or signing certificate
+  X_SAML_METADATA_INVALID: 500,
+  // @ultimat3/auth — the URL named an identity provider the sso routes were not given
+  X_IDENTITY_PROVIDER_UNKNOWN: 404,
 } satisfies Readonly<Record<string, number>>;

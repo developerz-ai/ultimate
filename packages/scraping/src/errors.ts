@@ -43,6 +43,10 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_EGRESS_IN_PAYLOAD',
   'X_SCRAPE_LAUNCH_ARGS_INVALID',
   'X_SCRAPE_PDF_OPTIONS_INVALID',
+  'X_SCRAPE_PDF_ORIGIN_MISSING',
+  'X_SCRAPE_PDF_ROUTE_INVALID',
+  'X_SCRAPE_PDF_ROUTE_FAILED',
+  'X_SCRAPE_PDF_BUSY',
 ] as const;
 
 /**
@@ -101,6 +105,10 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
     'the launch options carry arguments this driver cannot hand the browser',
   X_SCRAPE_PDF_OPTIONS_INVALID:
     'the PDF request names no single page size a print engine can lay out',
+  X_SCRAPE_PDF_ORIGIN_MISSING: 'pdf() has no origin to render the route on',
+  X_SCRAPE_PDF_ROUTE_INVALID: 'a pdf() route is not a path on this app',
+  X_SCRAPE_PDF_ROUTE_FAILED: 'the route pdf() printed answered an error status',
+  X_SCRAPE_PDF_BUSY: 'every pdf() render slot stayed busy past the queue deadline',
 };
 
 // One unconditional call, so a second package claiming one of these codes throws
@@ -214,6 +222,14 @@ export const SCRAPE_ERROR_RETRY = {
   // The request is the caller's literal, refused before any driver sees it: attempt 2 asks for the
   // same two sizes and is refused identically.
   X_SCRAPE_PDF_OPTIONS_INVALID: 'terminal',
+  // The deploy's environment and the declaration's own `route()`: attempt 2 reads the same ones.
+  X_SCRAPE_PDF_ORIGIN_MISSING: 'terminal',
+  X_SCRAPE_PDF_ROUTE_INVALID: 'terminal',
+  // The page answered an error: a 503 mid-deploy is the moment, so a `.job()` run tries again.
+  // The throw site narrows a 4xx to terminal — a missing record is missing on attempt 2 too.
+  X_SCRAPE_PDF_ROUTE_FAILED: 'retryable',
+  // Every slot busy is the moment, never the request: the same render fits once one ends.
+  X_SCRAPE_PDF_BUSY: 'retryable',
 } as const satisfies Readonly<Record<ScrapeOwnedErrorCode, 'retryable' | 'terminal'>>;
 
 registerErrorRetry(SCRAPE_ERROR_RETRY);

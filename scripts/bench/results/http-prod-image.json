@@ -1,0 +1,87 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "path": "/",
+  "seconds": 30,
+  "concurrencyPerPod": 16,
+  "runs": [
+    {
+      "pods": 1,
+      "rps": 1439,
+      "worstP50Ms": 9.4,
+      "worstP99Ms": 38.09,
+      "perPod": [
+        {
+          "requests": 43176,
+          "ok": 43176,
+          "non2xx": 0,
+          "errors": 0,
+          "statuses": {
+            "200": 43176
+          },
+          "durationMs": 30006.77,
+          "rps": 1438.88,
+          "p50Ms": 9.4,
+          "p99Ms": 38.09,
+          "bytes": 171970008
+        }
+      ]
+    },
+    {
+      "pods": 3,
+      "rps": 1196,
+      "worstP50Ms": 27.46,
+      "worstP99Ms": 203.89,
+      "perPod": [
+        {
+          "requests": 11929,
+          "ok": 11929,
+          "non2xx": 0,
+          "errors": 0,
+          "statuses": {
+            "200": 11929
+          },
+          "durationMs": 30027.74,
+          "rps": 397.27,
+          "p50Ms": 26.78,
+          "p99Ms": 203.89,
+          "bytes": 47513207
+        },
+        {
+          "requests": 12025,
+          "ok": 12025,
+          "non2xx": 0,
+          "errors": 0,
+          "statuses": {
+            "200": 12025
+          },
+          "durationMs": 30033.94,
+          "rps": 400.38,
+          "p50Ms": 26.63,
+          "p99Ms": 194.21,
+          "bytes": 47895575
+        },
+        {
+          "requests": 11977,
+          "ok": 11977,
+          "non2xx": 0,
+          "errors": 0,
+          "statuses": {
+            "200": 11977
+          },
+          "durationMs": 30030.26,
+          "rps": 398.83,
+          "p50Ms": 27.46,
+          "p99Ms": 187.77,
+          "bytes": 47704391
+        }
+      ]
+    }
+  ]
+}

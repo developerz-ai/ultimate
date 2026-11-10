@@ -3,7 +3,7 @@
 // `evaluate()` from a recorded table, and a click follows `data-goto` or an `<a href>`. What it
 // cannot know it refuses by name rather than inventing: no layout box, and no accessibility tree.
 import { hostDecision, notImplemented } from '@ultimat3/core';
-import { CdpCallFailedError } from '@ultimat3/testing';
+import { CdpCallFailedError } from '@ultimat3/scraping/cdp';
 import { queryHtml } from './browser-launcher-fake-html-fixture';
 import type {
   CaptureClip,

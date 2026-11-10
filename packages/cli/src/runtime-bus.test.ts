@@ -369,6 +369,24 @@ describe('the in-process bus in production', () => {
     expect(fields).toContain('runtime.ts');
   });
 
+  test('without Redis it says cache invalidations stay on this replica too', () => {
+    const fields = JSON.stringify(pick({ NODE_ENV: 'production' })[0]?.[1]);
+    expect(fields).toContain('cache invalidations reach this replica only');
+  });
+
+  // Rung 1: REDIS_URL carries the cache hop (`runtime-cache-bus.ts`), so the warning must not
+  // claim busts stay local — it names channel events and live queries, and points at the line
+  // that says which bus the cache rides.
+  test('with REDIS_URL it does not claim cache invalidations stay local', () => {
+    for (const key of ['REDIS_URL', 'VALKEY_URL']) {
+      const calls = pick({ NODE_ENV: 'production', [key]: 'redis://cache.internal:6379' });
+      expect(calls).toHaveLength(1);
+      const fields = JSON.stringify(calls[0]?.[1]);
+      expect(fields).not.toContain('cache invalidations reach this replica only');
+      expect(fields).toContain('cache.broadcast');
+    }
+  });
+
   test('is not warned about in development, with NATS_URL, or with a runtime.ts transport', () => {
     expect(pick({})).toHaveLength(0);
     expect(pick({ NODE_ENV: 'production', NATS_URL: 'nats://bus.test:4222' })).toHaveLength(0);

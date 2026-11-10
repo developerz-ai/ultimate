@@ -12,8 +12,8 @@
 // restore; one it never told gets one from `RESTORE_ONLINE`, so a page reconnects exactly once.
 
 import { stringField } from '@ultimat3/core';
-import type { CdpResult } from './cdp-connection';
-import { CdpCallFailedError } from './cdp-errors';
+import type { CdpResult } from '@ultimat3/scraping/cdp';
+import { CdpCallFailedError } from '@ultimat3/scraping/cdp';
 
 type Send = (
   method: string,

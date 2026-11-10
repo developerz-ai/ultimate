@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CdpCallFailedError } from './cdp-errors';
+import { CdpCallFailedError } from '@ultimat3/scraping/cdp';
 import { offlineScripts } from './cdp-offline-script';
 
 // Row aa: `offline(true)` twice registered the script twice and kept one id, so `online()` removed

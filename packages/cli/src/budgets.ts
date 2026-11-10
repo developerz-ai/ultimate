@@ -17,7 +17,9 @@ import {
   artifactPath,
   carriesJson,
   ENTRY_ATTR,
+  HREF_ATTR,
   loadedBy,
+  MODULEPRELOAD_TAG,
   SCRIPT_TAG,
   SRC_ATTR,
 } from './budgets-scan';
@@ -79,8 +81,9 @@ export interface BuildStats {
  * `5`: a URL is weighed at the path a browser resolves it to (`\` is `/`, `//host` is another
  * origin), so two spellings of one fetch are charged once; and an app/ page is weighed as SERVED
  * — its page boot charged, the runtime chunk that boot makes unfetched not (plan 101 sweep 9).
+ * `6`: a `<link rel="modulepreload">` is a fetch and is charged, deduped with every other (B4).
  */
-export const BUILD_STATS_RULES = 5;
+export const BUILD_STATS_RULES = 6;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');
@@ -412,6 +415,12 @@ export async function measureDocumentJs(
     const url = match.groups?.['url'];
     if (url === undefined) continue;
     await weigh(url);
+  }
+  // Charged even when the boot supplies it: the boot rule says an island never FETCHES the runtime
+  // chunk, and a preload of it is a fetch. What the preloaded file loads follows the rule in `weigh`.
+  for (const match of html.matchAll(MODULEPRELOAD_TAG)) {
+    const href = HREF_ATTR.exec(match[0])?.groups?.['href'];
+    if (href !== undefined) await weigh(href);
   }
   return { jsBytes, frameworkBytes, inlineBytes, entries };
 }

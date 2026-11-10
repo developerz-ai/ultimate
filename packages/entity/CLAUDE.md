@@ -228,12 +228,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null`. `bigint`/`decimal`/`timestamp` columns ride `text`/`instants`: the image is the memory driver's strings (`history-values.test.ts`) |
 | `countedIn` on a key | `counter.ts` | the target is a NOT NULL `integer()` of the entity the key points at (Postgres' `NULL + 1` stays NULL), by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
 | all three, described | `lifecycle.ts` | each `$describe()` key ABSENT unless declared, so no other entity's hash moves |
-| the memory driver | `memory-lifecycle.ts` | mirrors both triggers through the table's raw store, so a unit test answers what Postgres answers |
+| the memory driver | `memory-lifecycle.ts` | mirrors both triggers through the table's raw store |
+| `partitionBy` | `partition.ts` | Postgres' rules, at declaration (`X_ENTITY_PARTITION_INVALID`); SQL in db |
 
 - **Known gap: the row observer does not see trigger writes.** A history row and a counter move
   are the trigger's (memory: `memoryLifecycle`'s raw store), never a repository write, so
   `entity.row` reports neither; a live counter on PGlite or memory moves on the parent's next
-  write. The WAL replicator does report them. As of 2026-11.
+  write. The WAL replicator reports them. As of 2026-11.
 - **`read-capture.ts` is failure capture's read half**: `observedRepo`'s `findById`/`findMany` hand
   rows to core's `recordFailureFact` — sealed properties dropped first; one check when off.
 
@@ -274,7 +275,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Files
 
-Each file's header states its one job; `ls packages/entity/src` is the map, kept by no hand.
+Each file's header states its job; `ls packages/entity/src` is the map.
 
 ## Commands
 

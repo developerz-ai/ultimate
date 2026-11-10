@@ -28,7 +28,7 @@ import { armWorkerCutoff, type DrainCutoff } from './worker-drain-cutoff';
 import { assertConcurrencyEnforceable, createFleetSlots } from './worker-fleet-slots';
 import { createHeldRuns } from './worker-held';
 import type { ClaimLoop } from './worker-loop';
-import { createClaimLoop } from './worker-loop';
+import { createClaimLoop, fillsAsk } from './worker-loop';
 import { resolveWorkerTimings } from './worker-options';
 import { createProcessCap } from './worker-process-cap';
 import { createQueueDepthPublisher } from './worker-queue-depth';
@@ -143,6 +143,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     await publishQueueDepth();
     const started: Promise<JobExecution>[] = [];
     let found = false;
+    let full = false; // an ask whose every row STARTED: a backlog (`worker-loop.ts`)
 
     // One ask; WHICH queue, how many and in what order is `worker-claim-sweep.ts`'s (`maxInFlight`
     // and the turn). It re-reads `claiming()` per ask: a `stop()` mid-pass stops claiming now.
@@ -218,9 +219,8 @@ export function jobWorker(options: WorkerOptions): Worker {
           .finally(async () => {
             lease.release();
             returnCap();
-            // The slot is free NOW. A full worker asks the queue for nothing, so its loop backs
-            // off like an idle one — and waiting that out with a backlog behind the job that
-            // just finished is throughput lost to a timer.
+            // The slot is free NOW: behind a FULL pass, or a backed-off loop, the next pass runs at
+            // once (`worker-loop.ts`) — a backlog never waits out a timer for its next row.
             loop.kick();
             // AWAITED, never `void`: the slot is a row in `x_job_leases`, and a DELETE still on the
             // wire at `driver.close()` left a `concurrency: 1` job unclaimable by the replacement
@@ -257,6 +257,7 @@ export function jobWorker(options: WorkerOptions): Worker {
           },
         );
       }
+      if (fillsAsk(admitted, ask.limit)) full = true;
       return admitted;
     };
 
@@ -269,9 +270,8 @@ export function jobWorker(options: WorkerOptions): Worker {
       claim: claimOne,
     });
 
-    // The loop's next wait: the floor while passes find work, doubling to the ceiling while they
-    // do not (`idle-backoff.ts`). Reported by the pass itself, so `tick()` and the timer agree.
-    loop.passed(found);
+    // The next wait (`idle-backoff.ts`), reported by the pass itself: `tick()` and the timer agree.
+    loop.passed(found, full);
     return started;
   };
 

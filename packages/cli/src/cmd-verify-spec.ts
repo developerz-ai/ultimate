@@ -1,6 +1,7 @@
 // `x verify`'s declaration, apart from its body: the parser, `x help` and the `errors` step
 // read it without loading `cmd-verify.ts`, which `registry.ts` imports only when the command runs.
 
+import { DEFAULT_BASE } from './affected';
 import type { CommandSpec } from './parse';
 import { BUDGET_RULE, WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 
@@ -11,7 +12,7 @@ export const verifySpec: CommandSpec = {
   name: 'verify',
   summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
   usage:
-    'x verify [--only <step>[,<step>…] [--shard i/n [--timings file]]] [--workers N] [--isolate] [--json] · x verify merge <part.json…> [--json]',
+    'x verify [--only <step>[,<step>…] [--shard i/n [--timings file]] | --changed [--base <ref>] [--dirty]] [--workers N] [--isolate] [--json] · x verify merge <part.json…> [--json]',
   requiresApp: true,
   subcommands: VERIFY_SUBCOMMANDS,
   defaultSubcommand: 'run',
@@ -32,6 +33,25 @@ export const verifySpec: CommandSpec = {
       subcommands: ['run'],
       summary:
         'run the named step(s), comma-separated, in one process — an iteration loop or one CI job, NOT A GATE RUN; the gate is this command with no flag, or `x verify merge` over every job',
+    },
+    {
+      name: 'changed',
+      type: 'boolean',
+      subcommands: ['run'],
+      summary:
+        'run only the steps whose inputs the diff touches, each named with the files that chose it (data.changed) — NOT A GATE RUN; never with --only',
+    },
+    {
+      name: 'base',
+      type: 'string',
+      subcommands: ['run'],
+      summary: `with --changed: git ref to diff against, merge-base style, as x affected reads it (default: ${DEFAULT_BASE})`,
+    },
+    {
+      name: 'dirty',
+      type: 'boolean',
+      subcommands: ['run'],
+      summary: 'with --changed: also count uncommitted and untracked work',
     },
     {
       name: 'shard',

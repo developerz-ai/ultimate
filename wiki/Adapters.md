@@ -32,6 +32,7 @@ export const runtime = {
 | [`authServerStore`](#authserverstore) | `AuthServerStore` | `@ultimat3/auth` |
 | [`cacheTiers`](#cachetiers) | `CacheTier` | `@ultimat3/cache` |
 | [`clock`](#clock) | `SleepClock` | `@ultimat3/core` |
+| [`embedder`](#embedder) | `Embedder` | `@ultimat3/ai` |
 | [`errorReporter`](#errorreporter) | `ErrorReporter` | `@ultimat3/core` |
 | [`eventBus`](#eventbus) | `EventBus` | `@ultimat3/jobs` |
 | [`failureStore`](#failurestore) | `FailureStore` | `@ultimat3/core` |
@@ -48,10 +49,14 @@ export const runtime = {
 | [`pushSubscriptionStore`](#pushsubscriptionstore) | `PushSubscriptionStore` | `@ultimat3/pwa` |
 | [`rateLimitStore`](#ratelimitstore) | `RateLimitStore` | `@ultimat3/http` |
 | [`scrapeDriver`](#scrapedriver) | `ScrapeDriver` | `@ultimat3/scraping` |
+| [`searchIndex`](#searchindex) | `SearchIndex` | `@ultimat3/entity` |
 | [`secretSource`](#secretsource) | `SecretSource` | `@ultimat3/core` |
+| [`semanticCache`](#semanticcache) | `SemanticCacheFactory` | `@ultimat3/ai` |
+| [`smsTransport`](#smstransport) | `SmsTransport` | `@ultimat3/notify` |
 | [`storage`](#storage) | `StorageDriver` | `@ultimat3/storage` |
 | [`totpReplay`](#totpreplay) | `TotpReplayGuard` | `@ultimat3/auth` |
 | [`transport`](#transport) | `Transport` | `@ultimat3/realtime` |
+| [`uploadScanner`](#uploadscanner) | `UploadScanner` | `@ultimat3/storage` |
 
 ## aiGateway
 
@@ -118,6 +123,17 @@ export const runtime = {
 | Prove | `behavesLike(sleepClockConformance, () => clock)` |
 | Wire | `clock: …` in `apps/web/runtime.ts`, typed `SleepClock` |
 | Boot | installed by `installClock` (boot phase) |
+
+## embedder
+
+| Part | Value |
+|---|---|
+| Interface | `Embedder` from `@ultimat3/ai/adapter` |
+| Default | hashEmbedder: deterministic, offline and lexical, never a network call |
+| Copy | [`hashEmbedder`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/embeddings.ts) in `packages/ai/src/embeddings.ts` — a network embedder is `remoteEmbedder` (`packages/ai/src/remote-embedder.ts`) |
+| Prove | `behavesLike(embedderConformance, () => embedder)` |
+| Wire | `embedder: …` in `apps/web/runtime.ts`, typed `Embedder` |
+| Boot | installed by `installAiEmbedder` (services phase) |
 
 ## errorReporter
 
@@ -295,6 +311,17 @@ export const runtime = {
 | Wire | `scrapeDriver: …` in `apps/web/runtime.ts`, typed `ScrapeDriver` |
 | Boot | installed by `installScrapeDriver` (services phase) |
 
+## searchIndex
+
+| Part | Value |
+|---|---|
+| Interface | `SearchIndex` from `@ultimat3/entity/adapter` |
+| Default | postgresSearchIndex: .searchable()'s generated tsvector, over the app's pool |
+| Copy | [`memorySearchIndex`](https://github.com/developerz-ai/ultimate/blob/main/packages/entity/src/search-index-memory.ts) in `packages/entity/src/search-index-memory.ts` — the built-in `postgresSearchIndex` (`search-index-postgres.ts`) reads `.searchable()`'s generated tsvector and writes nothing on `index` |
+| Prove | `behavesLike(searchIndexConformance, () => ({ index, entity, store, drop }))` |
+| Wire | `searchIndex: …` in `apps/web/runtime.ts`, typed `SearchIndex` |
+| Boot | installed by `installSearchIndex` (services phase) |
+
 ## secretSource
 
 | Part | Value |
@@ -305,6 +332,28 @@ export const runtime = {
 | Prove | `behavesLike(secretSourceConformance, () => ({ source, holding, empty }))` |
 | Wire | `secretSource: …` in `apps/web/runtime.ts`, typed `SecretSource` |
 | Boot | installed by `installSecretSource` (boot phase) |
+
+## semanticCache
+
+| Part | Value |
+|---|---|
+| Interface | `SemanticCacheFactory` from `@ultimat3/ai/adapter` |
+| Default | a memorySemanticCache per scope, per process |
+| Copy | [`memorySemanticCache`](https://github.com/developerz-ai/ultimate/blob/main/packages/cache/src/semantic.ts) in `packages/cache/src/semantic.ts` — the port is the factory: `(scope) => memorySemanticCache()`, one cache per scope |
+| Prove | `behavesLike(semanticCacheFactoryConformance, () => factory)` |
+| Wire | `semanticCache: …` in `apps/web/runtime.ts`, typed `SemanticCacheFactory` |
+| Boot | installed by `installSemanticCache` (services phase) |
+
+## smsTransport
+
+| Part | Value |
+|---|---|
+| Interface | `SmsTransport` from `@ultimat3/notify/adapter` |
+| Default | memory in development/test; refused at the first send elsewhere (X_NOTIFY_SMS_TRANSPORT_MISSING) |
+| Copy | [`memorySmsTransport`](https://github.com/developerz-ai/ultimate/blob/main/packages/notify/src/sms-transport.ts) in `packages/notify/src/sms-transport.ts` |
+| Prove | `behavesLike(smsTransportConformance, () => transport)` |
+| Wire | `smsTransport: …` in `apps/web/runtime.ts`, typed `SmsTransport` |
+| Boot | installed by `installSmsTransport` (services phase) |
 
 ## storage
 
@@ -338,3 +387,14 @@ export const runtime = {
 | Prove | `behavesLike(transportConformance, () => transport)` |
 | Wire | `transport: …` in `apps/web/runtime.ts`, typed `Transport` |
 | Boot | read as a value by `runtime-bus.ts, which installs the channel transport it dials` |
+
+## uploadScanner
+
+| Part | Value |
+|---|---|
+| Interface | `UploadScanner` from `@ultimat3/storage/adapter` |
+| Default | none: promoteAttachment scans nothing |
+| Copy | [`memoryUploadScanner`](https://github.com/developerz-ai/ultimate/blob/main/packages/storage/src/upload-scanner-memory.ts) in `packages/storage/src/upload-scanner-memory.ts` |
+| Prove | `behavesLike(uploadScannerConformance, () => scanner)` |
+| Wire | `uploadScanner: …` in `apps/web/runtime.ts`, typed `UploadScanner` |
+| Boot | installed by `installUploadScanner` (services phase) |

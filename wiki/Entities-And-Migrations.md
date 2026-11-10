@@ -872,6 +872,23 @@ vocabulary cannot express, said precisely rather than approximated:
 | Not authz | an invariant is about data shape. Permission belongs in [Policies and authz](Policies-And-Authz) |
 | Duplicate entity | two entities on one table name is `X_ENTITY_DUPLICATE` — rename or merge |
 
+## Full-text search — the `searchIndex` port
+
+Rule: `.search(term)` on a chain asks the INSTALLED `SearchIndex` — one search path. `As of 2026-11-09`. Canonical wording: `packages/entity/README.md`, "Search index".
+
+| Index | How `.search(term)` answers |
+|---|---|
+| the built-in Postgres one (default) | inside the statement, its `matches` predicate over the `.searchable()` columns — the same SQL as before the port; costs a write nothing |
+| an external one (`searchIndex` in `apps/<app>/runtime.ts`: Meilisearch, Typesense, the app's adapter) | ids first, then the chain reads those rows — tenancy, soft delete, order and cursor still apply, so a hit can never widen what the chain sees |
+
+| Fact | Detail |
+|---|---|
+| the version | every `SearchDocument` carries `version`, the row's `onUpdateNow()` instant in epoch ms. A searchable entity declares `updatedAt: timestamp().defaultNow().onUpdateNow()`; without one `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
+| keep only newer | an adapter applies a document only when its version is newer than the document or tombstone it holds for that id; `remove(scope, ids, version)` leaves a tombstone at the delete's instant; an equal version is a replay and changes nothing. `searchIndexConformance` (`@ultimat3/testing/conformance`) checks a stale write after a newer one, a stale write after a remove, and a re-create after a remove |
+| the write path | with an external index installed, a committed insert, upsert, update or transition of a searchable entity indexes the row, and a delete (soft or hard) removes it — fed by the post-commit `entity.row` event, so a rolled-back write indexes nothing |
+| a failed index write | never fails the business write: one `entity.search-index.write-failed` log line; repair with `reindex()` ([Jobs](Jobs-And-Workflows#rebuilding-a-search-index--reindex)) |
+| not mirrored | `updateWhere` / `deleteWhere` (an `entity.bulk`, no rows), and a delete on an entity whose primary key is not `id` (the row is not read). Each is logged the same way. `reindex()` re-indexes what an `updateWhere` changed; it removes nothing, so ids a `deleteWhere` or a non-`id` delete left behind stay in the index until the app removes them |
+
 ## Embeddings
 
 ```ts

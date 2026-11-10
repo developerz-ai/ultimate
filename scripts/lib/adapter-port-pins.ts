@@ -5,7 +5,7 @@
 //
 // why: these tables are new with the guard (plan 101 slice 21); each row's VALUE is its reason, and
 // every BARREL_INSTALLERS row is a name a barrel exports today — one that selects no backend, or a
-// move scheduled for wave F (`pending —`). PENDING_PARTS is empty: every port ships whole.
+// move still scheduled (`pending —`). PENDING_PARTS is empty: every port ships whole.
 
 /** The five parts every port owes (plan 101 slice 21): one key per part, in this order. */
 export const PORT_PARTS = ['field', 'binding', 'adapter', 'conformance', 'docs'] as const;
@@ -27,14 +27,14 @@ export const BARREL_INSTALLERS = Object.freeze<Record<string, string>>({
     'why: declares the scope and ceiling the store is checked against; the store is the idempotencyStore port',
   '@ultimat3/action#configureActionPathStyle': 'why: the app pathStyle, configuration',
   '@ultimat3/ai#configureAi':
-    'why: pending — wave F: takes the embedder and the semantic-cache factory, two backends with no ADAPTER_PORTS row; each becomes a row with a runtime.ts field, and configureAi keeps redact only',
+    'why: the redactor only, configuration; the gateway, embedder and semantic cache are the aiGateway, embedder and semanticCache ports',
   '@ultimat3/core#configureErrorReporting':
     'why: clock, release, environment and enabled only (reporter?: never): the reporter is the errorReporter port',
   '@ultimat3/core#setLogSink':
     'why: pending — wave F: installLogSink sweep across ~47 test files + scaffold-auth template',
   '@ultimat3/core#configureCursorSigning': 'why: installs a secret, not a backend',
   '@ultimat3/core#configureMetrics':
-    'why: pending — wave F: takes a MetricExporter, a backend slot beside the instrumentation bus; it becomes a subscribe() on the bus (slice 20) or an ADAPTER_PORTS row, and configureMetrics keeps clock/enabled only',
+    "why: clock and enabled only, configuration; an exporter is a subscribe('metric.export', …) on the instrumentation bus, as spans and logs are",
   '@ultimat3/core#configureTelemetry': 'why: service name, sampler and clock: configuration',
   '@ultimat3/core#setLoggerContextFields':
     'why: internal wiring, context.ts hands the logger its field provider',

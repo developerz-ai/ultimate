@@ -14,6 +14,7 @@ create table "posts" (
   "published_at" timestamp with time zone,
   "created_at" timestamp with time zone default now() not null,
   "updated_at" timestamp with time zone default now() not null,
+  "search_tsv" tsvector generated always as (setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::"char")) stored not null,
   constraint "posts_pkey" PRIMARY KEY (id),
   constraint "posts_cover_url_check" CHECK ((cover_url ~ '^https?://'::text)),
   constraint "posts_excerpt_check" CHECK ((char_length(excerpt) <= 200)),

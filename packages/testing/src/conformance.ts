@@ -3,7 +3,8 @@
 // off the `.` barrel: these suites statically import the packages whose ports they hold to.
 // Grouped by the package that owns the interface; names match `ADAPTER_PORTS[].conformance`.
 
-// @ultimat3/ai — Gateway (aiGateway), BudgetStore; Provider, VectorStore (no rows)
+// @ultimat3/ai — Gateway (aiGateway), Embedder (embedder), SemanticCacheFactory (semanticCache),
+// BudgetStore; Provider, VectorStore (no rows)
 export type { GatewayCheck, GatewaySubject } from './ai-gateway-conformance';
 export { GATEWAY_CHECKS, gatewayConformance } from './ai-gateway-conformance';
 export type { ProviderCheck, ProviderSubject } from './ai-provider-conformance';
@@ -39,6 +40,8 @@ export type { CacheTierCheck } from './cache-tier-conformance';
 export { CACHE_TIER_CHECKS, cacheTierConformance } from './cache-tier-conformance';
 export type { SleepClockCheck } from './clock-conformance';
 export { SLEEP_CLOCK_CHECKS, sleepClockConformance } from './clock-conformance';
+export type { EmbedderCheck } from './embedder-conformance';
+export { EMBEDDER_CHECKS, embedderConformance } from './embedder-conformance';
 // @ultimat3/entity — the Driver behind `database()` (no row: chosen per `database()` call)
 export { ENTITY_DRIVER_CHECKS } from './entity-conformance-checks';
 export type {
@@ -85,6 +88,15 @@ export {
   idempotencyKeyOf,
   idempotencyStoreConformance,
 } from './idempotency-store-conformance';
+// @ultimat3/auth — IdentityProvider (no row: an app holds several at once, by id)
+export type {
+  IdentityProviderCheck,
+  IdentityProviderHarness,
+} from './identity-provider-conformance';
+export {
+  IDENTITY_PROVIDER_CHECKS,
+  identityProviderConformance,
+} from './identity-provider-conformance';
 // @ultimat3/seo — ImageTransformDriver (images)
 export type { ImageTransformCheck, ImageTransformSubject } from './image-transform-conformance';
 export {
@@ -107,7 +119,6 @@ export {
   MAIL_DRIVER_CHECKS,
   mailDriverConformance,
 } from './mail-driver-conformance';
-
 // @ultimat3/mcp — McpConfirmationStore
 export type { McpConfirmationStoreCheck } from './mcp-confirmation-store-conformance';
 export {
@@ -160,8 +171,38 @@ export {
   SCRAPE_CONFORMANCE_PAGES,
   SCRAPE_CONFORMANCE_URLS,
 } from './scrape-driver-conformance-site';
+// @ultimat3/entity — SearchIndex (searchIndex)
+export {
+  SEARCH_INDEX_ALL_CHECKS,
+  SEARCH_INDEX_CHECKS,
+  searchIndexConformance,
+} from './search-index-conformance';
+export type {
+  SearchDocOptions,
+  SearchIndexCheck,
+  SearchIndexSubject,
+} from './search-index-conformance-support';
+export {
+  SEARCH_TENANT_A,
+  SEARCH_TENANT_B,
+  searchDoc,
+  searchDocId,
+} from './search-index-conformance-support';
+export { SEARCH_INDEX_VERSION_CHECKS } from './search-index-conformance-versions';
 export type { SecretSourceCheck, SecretSourceSubject } from './secret-source-conformance';
 export { SECRET_SOURCE_CHECKS, secretSourceConformance } from './secret-source-conformance';
+export type { SemanticCacheFactoryCheck } from './semantic-cache-factory-conformance';
+export {
+  SEMANTIC_CACHE_FACTORY_CHECKS,
+  semanticCacheFactoryConformance,
+} from './semantic-cache-factory-conformance';
+// @ultimat3/notify — SmsTransport (smsTransport)
+export type { SmsTransportCheck } from './sms-transport-conformance';
+export {
+  conformanceSms,
+  SMS_TRANSPORT_CHECKS,
+  smsTransportConformance,
+} from './sms-transport-conformance';
 export type { StepStoreCheck, StepStoreSubject } from './step-store-conformance';
 export { STEP_STORE_CHECKS, stepStoreConformance } from './step-store-conformance';
 // @ultimat3/storage — StorageDriver
@@ -172,10 +213,20 @@ export {
   TOTP_REPLAY_GUARD_CHECKS,
   totpReplayGuardConformance,
 } from './totp-replay-guard-conformance';
-
 // @ultimat3/realtime — Transport
 export type { TransportCheck } from './transport-conformance';
 export { TRANSPORT_CHECKS, transportConformance } from './transport-conformance';
+// @ultimat3/storage — UploadScanner (uploadScanner), structural
+export type {
+  ScanVerdictLike,
+  UploadScannerCheck,
+  UploadScannerLike,
+} from './upload-scanner-conformance';
+export {
+  UPLOAD_SCANNER_CHECKS,
+  UPLOAD_SCANNER_EICAR,
+  uploadScannerConformance,
+} from './upload-scanner-conformance';
 export { vectorStoreConformance } from './vector-store-conformance';
 export type { VectorStoreCheck } from './vector-store-conformance-checks';
 export {

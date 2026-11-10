@@ -190,7 +190,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The pump has one way out, `#die`**: failure, timer, connection, then `onEnd`. **A walsender
   that stops answering is dead** — 3 intervals read-silent, or a confirm unsettled
   (`pg-replication-liveness.ts`): destroyed, no goodbye. A run is fenced by its connection.
-- **A stream that ENDS, or a LOST lock, is restarted** from `lastLsn` on `retryDelayMs`, feed then
+- **A stream that ENDS, or a LOST lock, is restarted** from `lastLsn` on `retryDelayMs`; a lost
+  connection (`connectionLost`) redials at once, then ≤ 2 s (`replicator-reconnect.ts`); feed then
   lock ABANDONED; `running` = pumping and no refused change owed (history, 2026-11-09).
 - **A slot is asked its `wal_status`**: `lost` is `X_REPLICATION_SLOT_INVALIDATED`; one created under
   a resume is `X_REPLICATION_SLOT_RECREATED`, drops `from`, and owes `x.change.-resync` (a node

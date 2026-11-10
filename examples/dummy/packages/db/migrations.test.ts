@@ -202,7 +202,8 @@ function walk(statements: readonly string[]): ChainState {
       continue;
     }
     const index = statement.match(
-      /^create (unique )?index (?:concurrently )?(?:if not exists )?"?(\w+)"? on "?(\w+)"? ?\(([^)]*)\)/i,
+      // `using gin` (a `.searchable()` vector's index) names the method between table and columns.
+      /^create (unique )?index (?:concurrently )?(?:if not exists )?"?(\w+)"? on "?(\w+)"? (?:using \w+ )?\(([^)]*)\)/i,
     );
     if (index !== null) {
       indexes.set(index[2] ?? '', {
@@ -235,11 +236,13 @@ function walk(statements: readonly string[]): ChainState {
       // Everything before an inline column CHECK is the type and its modifiers; the predicate
       // itself says `is null`, which a nullability test run over the whole tail would misread.
       const rest = (column[3] ?? '').split(/\s+check\s*\(/i)[0] ?? '';
+      // A generated column's expression is not its type: `tsvector generated always as (…) stored`.
+      const typed = rest.split(/\s+generated\s+always\b/i)[0] ?? '';
       const fallback = rest.match(/\bdefault\s+(\S+)/i);
       added.push({
         table: column[1] ?? '',
         name: column[2] ?? '',
-        dataType: (rest.split(/\s+(?:not null|null|default)\b/i)[0] ?? '').trim(),
+        dataType: (typed.split(/\s+(?:not null|null|default)\b/i)[0] ?? '').trim(),
         nullable: !/\bnot null\b/i.test(rest),
         fallback: fallback === null ? null : (fallback[1] ?? ''),
       });
@@ -340,6 +343,7 @@ describe('the newest migration records the schema this chain creates', () => {
       'comments',
       'connections',
       'daily_likes',
+      'ledger_lines',
       'likes',
       'members',
       'orgs',

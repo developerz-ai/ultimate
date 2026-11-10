@@ -169,3 +169,17 @@ describe('unit · x g resource · the slice it composes reads one handle', () =>
     expect(live).not.toContain('sql`');
   });
 });
+
+// `partitionBy` is the author's edit — no generator sees it — so the entity the generator writes
+// names the one thing that edit also needs: `partitions()`, or no partition is ever made ahead.
+describe('unit · x g entity · a partitioned table names its maintenance job', () => {
+  test('the emitted entity points at partitions() and where it is registered', () => {
+    const entity = fileOf(
+      { kind: 'entity', name: 'widget', dbModule: DB },
+      'apps/web/app/widget/entity.ts',
+    );
+    expect(entity).toContain('partitionBy');
+    expect(entity).toContain("`partitions()` from '@ultimat3/jobs'");
+    expect(entity).toContain('apps/web/api/index.ts');
+  });
+});

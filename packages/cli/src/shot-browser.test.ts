@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { UltimateError } from '@ultimat3/core';
-import { CHROME_CANDIDATES } from '@ultimat3/testing';
+import { CHROME_CANDIDATES } from '@ultimat3/scraping/cdp';
 import { BROWSER_CDP_URL_VAR } from './browser-launcher';
 import { shotBrowserChoice } from './shot-browser';
 

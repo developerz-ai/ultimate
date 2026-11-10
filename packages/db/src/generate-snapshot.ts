@@ -22,6 +22,11 @@ export function snapshotOf(
 ): SchemaDescription {
   // A view is recorded as its statements (`generate-view.ts`), never as a table it is not.
   const split = splitViews(entities);
+  const partitioned = new Map(
+    entities.flatMap((entity) =>
+      entity.partition === undefined ? [] : [[entity.table, entity.partition.interval] as const],
+    ),
+  );
   const tables = [...withSameTenantIndexes(split.tables)]
     .sort((a, b) => (a.table < b.table ? -1 : 1))
     .map((entity): TableDescription => {
@@ -73,6 +78,10 @@ export function snapshotOf(
         ...(entity.appendOnly === true ? { appendOnly: true as const } : {}),
         // And again: the record that makes the tenant policy a one-time statement.
         ...(rowSecurity.has(entity.table) ? { rowSecurity: true as const } : {}),
+        // `entity({ partitionBy })`: the record the next `x db gen` refuses its removal against.
+        ...(partitioned.has(entity.table)
+          ? { partitioned: true as const, partitionInterval: partitioned.get(entity.table) }
+          : {}),
       };
     });
   // `views` absent when none is declared, so no snapshot written before views existed moves.

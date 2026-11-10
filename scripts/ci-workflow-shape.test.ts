@@ -280,11 +280,16 @@ describe('unit · ci.yml · scaffold-smoke opens the app it scaffolded', () => {
 
   // A shape `x new` accepts is one a stranger can pick, so it gates on a runner of its own: a
   // name in `NEW_SHAPES` with no row here is a scaffold nothing has ever run `bun run verify` on.
-  test('the matrix is the default, --no-example, and one row per x new --shape', () => {
-    const rows = listOf(job('scaffold-smoke').strategy?.matrix?.['include']).map((row) =>
-      text(record(row)['flags']),
-    );
-    expect(rows).toEqual(['', '--no-example', ...NEW_SHAPES.map((shape) => `--shape ${shape}`)]);
+  test('the matrix is the default, --no-example, one row per x new --shape, and the monorepo', () => {
+    const include = listOf(job('scaffold-smoke').strategy?.matrix?.['include']).map(record);
+    expect(include.map((row) => text(row['flags']))).toEqual([
+      '',
+      '--no-example',
+      ...NEW_SHAPES.map((shape) => `--shape ${shape}`),
+      // `multiapp`: the default scaffold grown by `x g app` and `x g package` (plan 101, 22 M1).
+      '',
+    ]);
+    expect(text(include.at(-1)?.['app'])).toBe('multiapp');
   });
 });
 

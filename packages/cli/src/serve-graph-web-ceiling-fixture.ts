@@ -184,5 +184,10 @@
  * raised 1503 → 1507, measured 1507 (2026-11-09, same wave): `SERVING_ROLE_CEILING`'s 4. Nothing web-only.
  * raised 1507 → 1508, measured 1508 (2026-11-09, wave E e-portsB): `mcp/src/confirmation-installed.ts`,
  * the `mcpConfirmationStore` port's slot `mcpConfirmations()` reads per use. Web-only, as `mcp/src` is.
+ * raised 1508 → 1570, measured 1570 (2026-11-09, plan 101 v31 wave F, metafile diff against HEAD
+ * de915544e): `SERVING_ROLE_CEILING`'s 61, plus `cli/src/route-islands-preload.ts` (web-only: a
+ * modulepreload per rendered eager island's imports, with the shared island chunk).
+ * raised 1570 → 1576, measured 1576 (2026-11-10, wave F review fixes): `SERVING_ROLE_CEILING`'s 6.
+ * Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1508;
+export const WEB_ROLE_CEILING = 1576;

@@ -3,6 +3,7 @@
 // this package's answer and the reader on disk is `@ultimat3/cli`'s — two owners of that question
 // is a sidecar one of them accepts and the other cannot use.
 
+import { PARTITION_INTERVALS, type PartitionInterval } from './entity-shape';
 import type {
   CheckDescription,
   ColumnDescription,
@@ -24,6 +25,9 @@ const bool = (value: unknown): value is boolean => typeof value === 'boolean';
 const nullableStr = (value: unknown): value is string | null => value === null || str(value);
 const strings = (value: unknown): value is readonly string[] =>
   Array.isArray(value) && value.every(str);
+
+const INTERVALS: readonly unknown[] = PARTITION_INTERVALS;
+const interval = (value: unknown): value is PartitionInterval => INTERVALS.includes(value);
 
 /** `null` is Postgres' own default; anything else must be one of the two directions. */
 const order = (value: unknown): value is 'asc' | 'desc' | null =>
@@ -138,6 +142,12 @@ function tableOf(value: unknown): TableDescription | undefined {
   if (!(rowSecurity === undefined || bool(rowSecurity))) return undefined;
   const retain = value['retain'];
   if (!(retain === undefined || bool(retain))) return undefined;
+  // `partitioned` by the same rule; its interval absent, or one of the set — the record
+  // `partitionPlan` refuses a removal and a change of width against.
+  const partitioned = value['partitioned'];
+  if (!(partitioned === undefined || bool(partitioned))) return undefined;
+  const width = value['partitionInterval'];
+  if (!(width === undefined || interval(width))) return undefined;
   // Absent is none recorded; anything present must be a list of `{ name, install }`.
   const rawTriggers = value['triggers'];
   const triggers = rawTriggers === undefined ? undefined : all(rawTriggers, trigger);
@@ -148,6 +158,8 @@ function tableOf(value: unknown): TableDescription | undefined {
     ...(identity === true ? { replicaIdentityFull: true as const } : {}),
     ...(appendOnly === true ? { appendOnly: true as const } : {}),
     ...(rowSecurity === true ? { rowSecurity: true as const } : {}),
+    ...(partitioned === true ? { partitioned: true as const } : {}),
+    ...(width === undefined ? {} : { partitionInterval: width }),
   };
   const raw = value['checks'];
   if (raw === undefined) {

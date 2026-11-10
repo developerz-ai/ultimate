@@ -25,7 +25,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./adapter": "./src/adapter.ts"
+    "./adapter": "./src/adapter.ts",
+    "./cdp": "./src/cdp.ts"
   },
   "files": [
     "src",
@@ -42,6 +43,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@ultimat3/action": "30.9.0",
     "@ultimat3/core": "30.9.0",
     "@ultimat3/jobs": "30.9.0",
     "@ultimat3/schema": "30.9.0",

@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { APP_CONFIG_FILE } from '@ultimat3/core';
 import type { TestType } from '@ultimat3/testing';
 import { TEST_TYPES } from '@ultimat3/testing';
+import { narrowToApp } from './affected-tests';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { judgeCoverage } from './coverage-floor';
 import { msg } from './messages';
@@ -32,7 +33,7 @@ import { readVerifyFloor } from './verify-floor';
 import type { MachinePace } from './verify-pace';
 import { DECLARED_PACE, defaultTimeoutArgs, pacedMs, paceEnv } from './verify-pace';
 import { shardFiles } from './verify-shard';
-import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
+import type { ChangedTestSelection, StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
 import { runParallel } from './verify-test-run';
 
@@ -257,9 +258,34 @@ const runSerial = async (
   };
 };
 
+/**
+ * `--changed`'s selection, through `x test --affected`'s own rule (`narrowToApp`: a test the module
+ * graph never read is KEPT). Never for `eval` (its rules reach past its files) or a suite a doc
+ * selected (`whole`): those run every test.
+ */
+const selectionFor = (ctx: VerifyContext, type: TestType): ChangedTestSelection | undefined =>
+  ctx.tests === undefined || type === 'eval' || ctx.tests.whole.includes(type)
+    ? undefined
+    : ctx.tests;
+
 const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
-  if (isSerial(type) && ctx.shard === undefined) return runSerial(ctx, type);
-  const discoveredFiles = await filesFor(ctx.root, type);
+  const selected = selectionFor(ctx, type);
+  if (isSerial(type) && ctx.shard === undefined && selected === undefined) {
+    return runSerial(ctx, type);
+  }
+  const all = await filesFor(ctx.root, type);
+  const discoveredFiles =
+    selected === undefined ? all : narrowToApp(all, ctx.root, selected.scope).kept;
+  if (selected !== undefined) {
+    // No `tests` on the outcome: nothing was spawned, which is not a suite that ran zero tests.
+    if (discoveredFiles.length === 0) return { ok: true, findings: [], workers: 0 };
+    if (isSerial(type))
+      return runSerial(
+        ctx,
+        type,
+        discoveredFiles.map((file) => file.path),
+      );
+  }
   // Under `--shard`, this job runs its slice and says which — `x verify merge` checks the slices.
   // An EMPTY slice is a pass with zero tests, never the serial fallback below (which would run
   // the whole type): the zero-tests floor is `merge`'s to apply, on the summed counts.
@@ -293,7 +319,8 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
       : files.length < plan.workers
         ? `${String(files.length)} of ${plan.reason}`
         : plan.reason;
-  if (type === 'unit' && isApp(ctx.root)) {
+  // A subset cannot hold the whole tree's coverage floor: only a full unit run is judged.
+  if (type === 'unit' && isApp(ctx.root) && selected === undefined) {
     return coveredUnit(ctx, {
       files: files.map((file) => file.path),
       workers,

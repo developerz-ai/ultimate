@@ -19,8 +19,8 @@ import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';
 import { ADAPTER_PORTS, ERROR_DOCS_URL } from '@ultimat3/core';
-import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
-import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
+import type { BoundaryRule, ImportGraph, ImportRef } from '@ultimat3/render';
+import { checkSurfaceBoundary, importGraph, SURFACES, surfaceOf } from '@ultimat3/render';
 import { commentSafe } from './comment-safe';
 import { scanRuntimeImports, stripShebang } from './import-scan';
 import type { Finding } from './output';
@@ -104,13 +104,28 @@ export function resolveSpecifier(
   specifier: string,
   keys: ReadonlySet<string>,
 ): string {
-  if (!specifier.startsWith('.')) return specifier;
+  if (!specifier.startsWith('.')) return workspaceKey(specifier, keys) ?? specifier;
   const base = normalize(join(dirname(fromFile), specifier));
   for (const suffix of CANDIDATE_SUFFIXES) {
     if (keys.has(`${base}${suffix}`)) return `${base}${suffix}`;
   }
   return base;
 }
+
+/**
+ * `@<scope>/<app>/<rest>` → `apps/<app>/<rest>` when that lands on an app source: the spelling one
+ * app workspace reaches another by (`x new`'s root alias `@<app>/*` → `packages/*\/src`, then
+ * `apps/*`). Left unresolved, `apps/api/site/` importing `@acme/web/app/…` was an edge to nowhere
+ * and `X_BOUNDARY_SITE_TO_APP` never fired. Matched against the graph's own keys — a framework or
+ * package specifier lands on none — so a workspace whose package name differs from its directory
+ * is the one spelling this cannot see.
+ */
+const workspaceKey = (specifier: string, keys: ReadonlySet<string>): string | undefined => {
+  const [, app, rest] = /^@[^/]+\/([^/]+)\/(.+)$/.exec(specifier) ?? [];
+  if (app === undefined || rest === undefined) return undefined;
+  const base = `apps/${app}/${rest}`;
+  return CANDIDATE_SUFFIXES.map((suffix) => `${base}${suffix}`).find((key) => keys.has(key));
+};
 
 /**
  * The specifier `fromFile` must write to reach `target` — `resolveSpecifier` run backwards, and
@@ -139,9 +154,36 @@ function scan(files: readonly SourceFile[]): readonly ScannedFile[] {
   }));
 }
 
+/** `apps/<ws>/…` → `<ws>`, or `undefined` outside an app workspace. */
+const workspaceOf = (path: string): string | undefined => /^apps\/([^/]+)\//.exec(path)?.[1];
+
+/**
+ * An `app/` module reaching a SIBLING app's `api/` registry. `app/ → api/` is types-only inside
+ * one app because that app's `api/index.ts` imports its own `app/` slices — a value edge back is a
+ * cycle. Across workspaces there is none: `apps/admin` projecting `apps/web`'s actions through its
+ * `api` is the documented pattern. Such an edge enters the graph as declaration-only, which the
+ * table admits for `app` and still refuses for `site` (`SURFACE_SPECS`).
+ */
+const isSiblingRegistry = (from: string, to: string): boolean => {
+  const own = workspaceOf(from);
+  const other = workspaceOf(to);
+  return (
+    own !== undefined &&
+    other !== undefined &&
+    own !== other &&
+    surfaceOf(from) === 'app' &&
+    surfaceOf(to) === 'api'
+  );
+};
+
 function graphOf(scanned: readonly ScannedFile[]): ImportGraph {
-  const record: Record<string, readonly string[]> = {};
-  for (const file of scanned) record[file.path] = file.imports;
+  const record: Record<string, readonly ImportRef[]> = {};
+  for (const file of scanned) {
+    record[file.path] = file.imports.map((to) => ({
+      file: to,
+      type: isSiblingRegistry(file.path, to),
+    }));
+  }
   return importGraph(record);
 }
 

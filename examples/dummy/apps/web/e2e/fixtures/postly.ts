@@ -7,15 +7,14 @@
 
 import { expect } from 'bun:test';
 import { seedId } from '@ultimat3/entity';
+import { findChrome, LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eApp, E2eSession } from '@ultimat3/testing';
 import {
   allowHost,
   DEFAULT_CDP_TIMEOUT_MS,
   E2E_APP_START_MS,
   E2E_APP_STOP_MS,
-  E2E_BROWSER_CLOSE_MS,
   E2E_BROWSER_OPEN_MS,
-  findChrome,
   openE2eBrowser,
   startE2eApp,
 } from '@ultimat3/testing';
@@ -50,7 +49,7 @@ export const SIGN_IN_MS = DEFAULT_CDP_TIMEOUT_MS;
  * bounded stop. Left at Bun's 5 s default, a close cut short by the run's end leaves the Chrome
  * profile half-removed in the temp root. A suite that closes a tab first adds one call.
  */
-export const ACCEPTANCE_CLOSE_MS = E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS;
+export const ACCEPTANCE_CLOSE_MS = LAUNCHED_CLOSE_MS + E2E_APP_STOP_MS;
 
 /** The demo sign-in (`app/auth/demo-actor.ts`): a cookie naming one of four seeded members. */
 export const DEMO_MEMBER_COOKIE = 'postly_demo_member';

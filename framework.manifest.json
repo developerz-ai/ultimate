@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9ef63267ec866704a68588df5ed80ced17d4d07dc292419fe6a82092879ca211",
+  "buildId": "2ddd151207d184bf092e7e28b4df66fbf7ceb012a458a926f63ec0f1b5f43a90",
   "tiers": {
     "0": [
       "core",
@@ -560,6 +560,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_APP_ROOT_NESTED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_APP_URL_PORT_MISMATCH",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -697,7 +702,7 @@
     {
       "code": "X_BENCH_RUN_FAILED",
       "owner": "scripts",
-      "at": "scripts/bench/first-hour.ts"
+      "at": "scripts/bench/boot-vs-files-child.ts"
     },
     {
       "code": "X_BENCH_RUN_TOO_SHORT",
@@ -966,23 +971,23 @@
     },
     {
       "code": "X_CDP_BROWSER_MISSING",
-      "owner": "testing",
-      "at": "packages/testing/src/e2e-error-codes.ts"
+      "owner": "scraping",
+      "at": "packages/scraping/src/cdp-error-codes.ts"
     },
     {
       "code": "X_CDP_CALL_FAILED",
-      "owner": "testing",
-      "at": "packages/testing/src/e2e-error-codes.ts"
+      "owner": "scraping",
+      "at": "packages/scraping/src/cdp-error-codes.ts"
     },
     {
       "code": "X_CDP_LAUNCH_FAILED",
-      "owner": "testing",
-      "at": "packages/testing/src/e2e-error-codes.ts"
+      "owner": "scraping",
+      "at": "packages/scraping/src/cdp-error-codes.ts"
     },
     {
       "code": "X_CDP_TIMEOUT",
-      "owner": "testing",
-      "at": "packages/testing/src/e2e-error-codes.ts"
+      "owner": "scraping",
+      "at": "packages/scraping/src/cdp-error-codes.ts"
     },
     {
       "code": "X_CHANGELOG_HIGHLIGHTS_MISSING",
@@ -1885,6 +1890,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_PARTITION_INVALID",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_READ_ONLY",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
@@ -2465,6 +2475,11 @@
       "at": "packages/action/src/error-titles.ts"
     },
     {
+      "code": "X_IDENTITY_PROVIDER_UNKNOWN",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
       "code": "X_IMAGE_CONTENT_UNIGNORED",
       "owner": "scripts",
       "at": "scripts/lib/image-content-ignores.ts"
@@ -2810,6 +2825,21 @@
       "at": "packages/seo/src/errors.ts"
     },
     {
+      "code": "X_LEDGER_ENTRY_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_LEDGER_POSTING_CONFLICT",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_LEDGER_UNBALANCED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
       "code": "X_LIFECYCLE_DRAINED",
       "owner": "core",
       "at": "packages/core/src/lifecycle-errors.ts"
@@ -2898,6 +2928,21 @@
       "code": "X_LOCALE_UNSUPPORTED",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
+    },
+    {
+      "code": "X_LOCK_LOST",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_LOCK_NOT_ACQUIRED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_LOCK_STORE_MISSING",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
     },
     {
       "code": "X_LOCK_UNSUPPORTED",
@@ -3390,6 +3435,11 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_MIGRATION_PARTITION_CHANGE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_MIGRATION_ROLLBACK_DESTRUCTIVE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -3590,6 +3640,16 @@
       "at": "packages/notify/src/errors.ts"
     },
     {
+      "code": "X_NOTIFY_SMS_NUMBER_INVALID",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_SMS_TRANSPORT_MISSING",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
       "code": "X_NOTIFY_STORE_MISSING",
       "owner": "notify",
       "at": "packages/notify/src/errors.ts"
@@ -3750,6 +3810,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_PARTITIONS_UNMAINTAINED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_PASSKEY_CHALLENGE_EXPIRED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
@@ -3793,6 +3858,16 @@
       "code": "X_PERMISSION_UNKNOWN",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
+    },
+    {
+      "code": "X_PERSONAL_DATA_UNERASED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_PERSONAL_DATA_UNREACHED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
     },
     {
       "code": "X_PIN_BASE_MISSING",
@@ -3851,6 +3926,11 @@
     },
     {
       "code": "X_PR_NOT_FOUND",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PREBUILT_REGISTRY_STALE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -4530,6 +4610,16 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_SAML_METADATA_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_SAML_RESPONSE_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
       "code": "X_SCAFFOLD_FIRST_RUN_FAILED",
       "owner": "scripts",
       "at": "scripts/lib/admin-walk.ts"
@@ -4700,7 +4790,27 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_PDF_BUSY",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_PDF_OPTIONS_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_PDF_ORIGIN_MISSING",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_PDF_ROUTE_FAILED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_PDF_ROUTE_INVALID",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },
@@ -5335,6 +5445,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_SCAN_UNAVAILABLE",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_SECRET_DEV",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -5356,6 +5471,11 @@
     },
     {
       "code": "X_STORAGE_UPLOAD_FAILED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_UPLOAD_INFECTED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },
@@ -6248,6 +6368,11 @@
       "code": "X_WORKSPACE_MANIFEST_UNREADABLE",
       "owner": "scripts",
       "at": "scripts/lib/workspaces.ts"
+    },
+    {
+      "code": "X_WORKSPACE_NAME_TAKEN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_WRITE_UNFILTERED",

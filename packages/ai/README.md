@@ -870,8 +870,29 @@ The boot installs it through `installAiGateway(gateway): () => void`, on `@ultim
 only — with the `Gateway` interface, its request/answer types and the errors a gateway driver
 throws (`AiProviderUnavailableError`, `AiKeyMissingError`, `AiModelUnknownError`,
 `AiRequestInvalidError`). A test swaps the gateway the same way and calls the release to put the
-previous one back. `configureAi` configures the rest (`embedder`, `semanticCache`, `redact`) and
-takes no `gateway`.
+previous one back.
+
+The embedder and the semantic cache are ports the same way — `embedder` (an `Embedder`; default
+`hashEmbedder()`, offline and lexical) and `semanticCache` (a `SemanticCacheFactory`,
+`(scope) => SemanticCache`; default a `memorySemanticCache()` per scope), installed with
+`installAiEmbedder` / `installSemanticCache` from `@ultimat3/ai/adapter`. Each install clears the
+per-scope caches: vectors from two embedders are not comparable. Prove one with
+`embedderConformance` / `semanticCacheFactoryConformance` (`@ultimat3/testing/conformance`).
+
+```ts
+// apps/web/runtime.ts
+import { remoteEmbedder } from '@ultimat3/ai';
+import { memorySemanticCache } from '@ultimat3/cache';
+
+export const runtime = {
+  embedder: remoteEmbedder({ name: 'voyage-3', dimension: 1_024 }),  // EMBEDDINGS_API_KEY
+  // One cache per scope; a pgvector-backed factory of your own takes the same shape.
+  semanticCache: () => memorySemanticCache({ threshold: 0.95 }),
+};
+```
+
+`configureAi` configures the rest — `redact` only — and takes no `gateway`, `embedder` or
+`semanticCache` (31.0.0).
 
 Missing at call time is `X_AI_GATEWAY_MISSING`, never a silent default provider.
 

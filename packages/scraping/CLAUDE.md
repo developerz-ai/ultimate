@@ -7,7 +7,8 @@ Tier 4. May import tiers 0-3. Never sideways, never upward.
 | Exports | `src/index.ts`, explicit, no `export *` — and complete enough that a third party implements `ScrapeDriver` from it alone. A driver author needing a deep import means the seam is not a seam |
 | Errors | `src/errors.ts` owns the codes and their **retry classification**; `src/error-throws.ts` owns one constructor per failure mode, `src/error-throws-session.ts` the session ones (the first file is at its size ceiling) |
 | Files | one responsibility each, tests beside the source |
-| Dependencies | `@ultimat3/core`, `@ultimat3/jobs`, `@ultimat3/schema`, `@ultimat3/storage`. **No third-party runtime dependency at all** |
+| Dependencies | `@ultimat3/action` (`pdf()`, a factory over `action`), `@ultimat3/core`, `@ultimat3/jobs`, `@ultimat3/schema`, `@ultimat3/storage`; `@ultimat3/policy` for tests only. **No third-party runtime dependency at all** |
+| Entry points | `.`, `./adapter` (the `scrapeDriver` port), `./cdp` (the raw-CDP launcher and connection — `cdp.ts`, imports `core` only, so `@ultimat3/testing`'s barrel and `x shot` load nothing else for it) |
 | Opt-in suite | `session.job.test.ts` — the pg driver and the stored event bus on a real Postgres (`TEST_DATABASE_URL`, its own database), a second OS process publishing the answer. Skips without the env. No `@ultimat3/db` here, so its `PgExecutor` is `Bun.SQL` with `prepare: false` and a hand-written array literal |
 
 Commands: `bun test ./packages/scraping/` from the repo root, `bunx tsc --noEmit -p tsconfig.json`.
@@ -21,7 +22,15 @@ claims and that page does not carry is a capability an app author cannot find.
 reserve room for `recover: 'agent'` to import `@ultimat3/ai`; 26.0.0 deleted that variant (#709). A
 recover hook is a function — one that asks a model is the app's own, wrapping `llm()` (axiom 8).
 
-Nothing in the framework imports it (`x shot` left in 22.0.0), so no sideways edge exists.
+`@ultimat3/testing` (tier 5) imports `./cdp`, downward; nothing at tier 4 imports it, so no sideways edge exists.
+
+## The raw-CDP launcher lives here since 31.0.0
+
+`cdp-launch*.ts`, `cdp-connection.ts`, `cdp-pipe.ts`, `cdp-wire-watch.ts`, `cdp-errors.ts` moved from
+`@ultimat3/testing`: `pdf()` prints at RUNTIME and a runtime package cannot import a test one. The
+four `X_CDP_*` codes are registered by `cdp-error-codes.ts`; testing lists them in `E2E_ERROR_CODES`
+and registers only its own. These files speak raw CDP over Bun's own pipe and `WebSocket` — no
+puppeteer type, so the puppeteer rule below does not reach them.
 
 ## puppeteer-core is NOT a dependency
 
@@ -50,7 +59,8 @@ and a value cannot leak. `driver-parity.test.ts` runs the real driver's code pat
 
 | Rule | Enforced by |
 |---|---|
-| no wait outside `clock.ts` | `clock-discipline.test.ts` scans `src/*.ts` for `setTimeout`/`setInterval`/`Bun.sleep`. `http.ts` and `robots-fetch.ts` are pinned as the exceptions — the two files that dial `fetch`, one `AbortSignal.timeout` each. The exemption covers `AbortSignal.timeout` only; a real timer in either still offends |
+| no wait outside `clock.ts` | `clock-discipline.test.ts` scans `src/*.ts` for `setTimeout`/`setInterval`/`Bun.sleep`. `http.ts` and `robots-fetch.ts` are pinned as the exceptions — the two files that dial `fetch`, one `AbortSignal.timeout` each. The exemption covers `AbortSignal.timeout` only; a real timer in either still offends. The raw-CDP launcher's files are pinned BY NAME (`PROCESS_DEADLINE_FILES`): their deadlines are on a child Chrome, the OS's time, and a frozen clock would kill a starting browser |
+| a PDF is the app's own route, never an error page | `pdf()` (`pdf-action.ts`) joins `route()` onto the origin and refuses anything that leaves it (`X_SCRAPE_PDF_ROUTE_INVALID`); `pdf-render.ts` reads the document's status after `load` + `document.fonts.ready` and refuses 4xx/5xx (`X_SCRAPE_PDF_ROUTE_FAILED`), and closes the browser it launched in a `finally` (`pdf-render.test.ts`, `pdf-action.test.ts`). At most `maxConcurrent` browsers live per renderer (`pdf-slots.ts`, queue bounded, `X_SCRAPE_PDF_BUSY`), the request's signal kills its own, and `pdf-fence.ts` sends headers to the route's origin only and blocks every other origin (`pdf-render-slots.test.ts`, `pdf-render-fence.test.ts`) |
 | the fake never drifts from the real driver | `driver-parity.test.ts` runs one suite against `fake`, `fixture` and the puppeteer path, and pins the one honest divergence (no layout engine offline, so no box and no hit-target) |
 | an unrecorded request throws | `html-target.ts` and `http-recorded.ts`. **One request escapes: the robots read.** Offline drivers under the default `robots: 'obey'` fire a real `fetch` for `/robots.txt` (the gate is built in `scrape-run.ts`, blind to the driver), and under `bun test` the sealed network refuses it: unreachable, so `X_SCRAPE_ROBOTS_DISALLOWED`. Declare `robots: { ignore: '<reason>' }` on an offline scrape → `wiki/Known-Gaps.md` |
 | `allowHosts` is enforced, never advisory | `intercept.ts` is the single decision, asked by every driver AND by the HTTP leg, before a byte leaves. The CDP driver asks it at the BROWSER too (`armBrowser`: `Fetch` on `browser.target()`), so a popup is screened (`cdp-arm-targets.test.ts`). A wildcard-admitted name is resolved and pinned on the HTTP leg and robots read (`pinned-host.ts`), and screened on the browser leg (`browser-dial.ts`). Open: Chrome's rebinding, WebSockets (`wiki/Known-Gaps.md`) |

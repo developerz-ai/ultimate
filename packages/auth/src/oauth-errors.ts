@@ -1,6 +1,6 @@
 // Single responsibility: the OAuth refusals more than one OAuth module raises, and the one phrase
-// every "start over" fix is built from. A refusal with one thrower lives beside it (`oauthDenied`
-// in `oauth-route.ts`, the linking ones in `oauth-login.ts`); the codes, titles and the single
+// every "start over" fix is built from. A refusal with one thrower lives beside it (the linking ones
+// in `oauth-login.ts`); the codes, titles and the single
 // `registerErrorCodes()` call stay in `errors.ts`, so this file adds no code and registers nothing.
 
 import { renderCauseValue, renderFixLiteral } from '@ultimat3/core';
@@ -95,4 +95,28 @@ export const oauthTokenInvalid = (provider: string, reason: string, fix: string)
     cause: `${provider} id token rejected: ${reason}`,
     fix,
     meta: { provider },
+  });
+
+/**
+ * The provider came back with `error=` and no code — almost always the user pressing Cancel.
+ * A separate code from `X_OAUTH_EXCHANGE_FAILED` on purpose: nothing was exchanged, nothing is
+ * misconfigured, and folding the single commonest non-success outcome of a login into the code
+ * that means "the client secret is wrong" makes both unreadable in a log and pages the wrong person.
+ */
+export const oauthDenied = (
+  provider: string,
+  reason: string,
+  description: string | null,
+): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_DENIED',
+    // `reason` and `description` are query parameters off the callback URL — whatever the browser
+    // was redirected with, newlines and quotes included. `renderCauseValue` renders them as JSON
+    // string literals, so a forged `error_description` cannot forge a second log line or break the
+    // sentence around it. Both are already `string` by type: this is escaping, not throw-safety.
+    cause: `${provider} declined the authorization: ${renderCauseValue(reason)}${
+      description === null ? '' : ` (${renderCauseValue(description)})`
+    }`,
+    fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
+    meta: { provider, reason },
   });

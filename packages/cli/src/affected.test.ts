@@ -227,6 +227,19 @@ describe('unit · affected reads its diff from a ref, not from the working tree'
     expect(files).toHaveLength(2);
   });
 
+  test('x verify --changed is the invocation its own fix re-runs', async () => {
+    const { runner } = recorder({});
+    await expect(
+      changedFiles(runner, {
+        cwd: '/repo',
+        command: 'verify',
+        selection: { base: 'origin/nope', dirty: false },
+      }),
+    ).rejects.toMatchObject({
+      fix: 'git fetch --no-tags origin origin/nope:origin/nope, then re-run: x verify --changed --base origin/nope --json',
+    });
+  });
+
   test('a base git cannot resolve is refused before any diff runs, with a fetch to paste', async () => {
     const { calls, runner } = recorder({});
     await expect(

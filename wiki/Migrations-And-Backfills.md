@@ -140,16 +140,41 @@ A hand-written migration with `create index concurrently`, `drop index concurren
 
 ## Partitioned tables
 
-Rule: a partitioned table is a table. Declare it as an entity, `x db gen`, then hand-edit the
-generated `create table`'s closing `);` to `) partition by range ("at");`. `As of 2026-11-06`.
-No `entity({ partition })`: attach, default partition and retention are the app's choices.
+Rule: declare it on the entity — `partitionBy: { column, interval, ahead?, retain? }` — and
+`x db gen` writes the partitioned table. `As of 2026-11-09`. The hand edit at the end of this
+section is the pre-31 recipe, still valid for a table `partitionBy` cannot describe (list or hash
+partitioning, a non-time key).
+
+```ts
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+export const events = entity('events', {
+  columns: { id: uuid(), at: timestamp().defaultNow(), orgId: uuid().tenant(), kind: text() },
+  primaryKey: ['id', 'at'],
+  partitionBy: { column: 'at', interval: 'month', ahead: 3, retain: { after: '400d' } },
+});
+```
+
+| Question | Answer |
+|---|---|
+| Refused at declaration | `X_ENTITY_PARTITION_INVALID`: the key or a unique index/invariant lacks the column; the column is no `timestamp()`/`date()`; an interval outside `day` · `week` · `month` · `year`; a row `retain` beside it; a view |
+| What `x db gen` writes | `create table … partition by range ("at")`, the function `ultimate_partitions`, and a call creating the current partition plus `ahead` more AT APPLY TIME |
+| Names | `<table>_pYYYYMMDD` (the lower bound, UTC); `week` is ISO, Monday first |
+| Creating ahead, dropping old | `partitions()` from `@ultimat3/jobs`, daily ([Jobs](Jobs-And-Workflows#partition-maintenance--partitions)), runs `@ultimat3/db`'s `maintainPartitions`: creation under a 5 s `lock_timeout` (`X_DB_LOCK_TIMEOUT`, retried), then `retain.after` retires whole partitions whose upper bound it passed by `detach … concurrently`, then `drop` — never an ACCESS EXCLUSIVE queue on the parent. Idempotent; only `_pYYYYMMDD` children are touched |
+| A row past every partition | refused by Postgres (`23514`). No default partition, by decision: one forbids `detach … concurrently`, and creating the month it caught moves rows under ACCESS EXCLUSIVE. Size `ahead × interval` to at least the scheduler outage you tolerate |
+| Moving older rows in | enqueue `partitions()` once with `{ from: '<the oldest row’s ISO instant>' }` — it creates every partition back to it and retires nothing — then `backfill()` |
+| Adopting on an existing plain table | refused at migrate time, `X_MIGRATION_PARTITION_CHANGE` (Postgres cannot partition in place: a new entity plus a `backfill()`); changing the interval or removing `partitionBy` is refused by `x db gen`, same code. A table the hand recipe already partitioned adopts cleanly |
+
+The hand recipe: declare it as an entity, `x db gen`, then hand-edit the generated `create table`'s
+closing `);` to `) partition by range ("at");`. Attach, default partition and retention are then the
+app's choices.
 
 | Question | Answer |
 |---|---|
 | Primary key | must hold the partition key — `primaryKey: ['id', 'at']`. Postgres refuses any unique index that does not (`0A000`) |
 | Drift | the PARENT is judged: columns, key, indexes, checks, triggers. A partition is not app schema (`pg_class.relispartition`), so next month's is no `unexpected-table` and its `fix:` is never `drop table`. A key Postgres clones per partition (`conparentid <> 0`) is not counted. `introspectSchema()` marks the parent `partitioned: true` |
 | A reference INTO one | no `.references()`. A one-column key is `42830` (no unique index on `id` alone can exist) and a same-tenant key's `(org_id, id)` index is `0A000`. Hand-write the composite key into the migration — `alter table "notes" add constraint "notes_event_fkey" foreign key ("event_id", "event_at") references "events" ("id", "at");` — drift judges declared keys only, so it is no finding. The repository's tenant filter still holds on reads; the database does not enforce the same tenant |
-| Retention | `detach`, then `drop`, in the app's own job — never `retain`, never a `delete` |
+| Retention | `partitionBy.retain` — never row `retain`, never a `delete`. By hand: `detach`, then `drop`, in the app's own job |
 | Next month | an app `task` on a monthly cron (`tz: 'UTC'`) enqueuing a job that runs the statement below, `if not exists` so a double fire is a no-op |
 | `create index concurrently` | refused on a parent (`0A000`): `X_MIGRATION_CONCURRENT_PARTITIONED`, whose fix is the sequence — each partition concurrently, the parent `on only`, then `alter index … attach partition`, in a `-- transaction: false` migration |
 | Schema dump | rendered: the parent with `partition by`, each partition `partition of … for values` in the parent's file. A partition's attached indexes, cloned keys and cloned triggers are not written: the parent's recreate them |

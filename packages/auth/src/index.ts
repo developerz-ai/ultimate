@@ -150,6 +150,25 @@ export {
   verifyIdToken,
 } from './id-token';
 export type {
+  IdentityBeginInput,
+  IdentityCompleteInput,
+  IdentityProvider,
+  IdentityRedirect,
+  IdentitySignInOptions,
+  ResolveIdentityGrants,
+  VerifiedIdentity,
+} from './identity-provider';
+export { signInWithIdentity } from './identity-provider';
+export type { OidcIdentityProviderConfig } from './identity-provider-oidc';
+export { oidcIdentityProvider } from './identity-provider-oidc';
+export type {
+  IdentityProviderRoutes,
+  IdentityProviderRoutesOptions,
+  IdentityRouteDescriptor,
+} from './identity-provider-routes';
+export { identityProviderRoutes } from './identity-provider-routes';
+export { OAUTH_ROUTE_STATUS } from './identity-provider-status';
+export type {
   IdTokenKeys,
   JwksClientOptions,
   JwksKeySource,
@@ -265,6 +284,7 @@ export { discoverOAuthProvider, discoveryUrl } from './oauth-discovery';
 // from that module, below.
 export type { OAuthExchangeFailure } from './oauth-errors';
 export {
+  oauthDenied,
   oauthExchangeFailed,
   oauthProviderUnknown,
   oauthStateInvalid,
@@ -309,7 +329,7 @@ export {
   registerOAuthProvider,
 } from './oauth-registry';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
-export { OAUTH_ROUTE_STATUS, oauthDenied, oauthLogin } from './oauth-route';
+export { oauthLogin } from './oauth-route';
 // Passkeys (WebAuthn): sign-in and digest-bound step-up. The browser half is `@ultimat3/auth/client`.
 export type {
   PasskeyPolicy,
@@ -391,6 +411,16 @@ export {
   revokeSessionsCreatedBefore,
   revokeUserSessions,
 } from './revocation';
+export type { SamlCheck } from './saml-errors';
+export type { SamlIdpMetadata } from './saml-metadata';
+export { parseSamlMetadata } from './saml-metadata';
+export type { SamlIdentityProviderConfig } from './saml-provider';
+export {
+  DEFAULT_SAML_EMAIL_ATTRIBUTES,
+  DEFAULT_SAML_NAME_ATTRIBUTES,
+  DEFAULT_SAML_SKEW_MS,
+  samlIdentityProvider,
+} from './saml-provider';
 export type {
   CookieJar,
   CreateSessionInput,

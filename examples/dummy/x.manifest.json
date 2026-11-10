@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "08366c8bb04227af",
+  "buildId": "8905100dc383093c",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -725,6 +725,56 @@
       "invariants": []
     },
     {
+      "name": "ledger_lines",
+      "table": "ledger_lines",
+      "columns": [
+        {
+          "name": "account",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "amount_currency",
+          "type": "char",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "amount_scale",
+          "type": "integer",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "line",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "orgs.id"
+        },
+        {
+          "name": "posting_key",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": true
+        }
+      ],
+      "invariants": []
+    },
+    {
       "name": "likes",
       "table": "likes",
       "columns": [
@@ -1123,6 +1173,12 @@
           "name": "published_at",
           "type": "timestamptz",
           "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "search_tsv",
+          "type": "tsvector",
+          "nullable": false,
           "primaryKey": false
         },
         {
@@ -3236,6 +3292,60 @@
       },
       "policy": "passkey-sign-in",
       "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "printPost",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "format": "slug",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        },
+        "required": [
+          "orgId",
+          "slug"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bytes": {
+            "type": "number"
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key",
+          "bytes",
+          "contentType"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
       "cacheInvalidates": [],
       "mcp": {
         "expose": false
@@ -7181,6 +7291,79 @@
       "steps": []
     },
     {
+      "name": "billing.post-charge",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "amount": {
+                  "type": "object",
+                  "properties": {
+                    "minor": {
+                      "type": "integer",
+                      "description": "amount in minor units, never a float",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string",
+                      "pattern": "^[A-Z]{3}$"
+                    },
+                    "scale": {
+                      "type": "integer",
+                      "description": "decimal places `minor` counts; absent means the currency’s own",
+                      "minimum": 0,
+                      "maximum": 15
+                    }
+                  },
+                  "required": [
+                    "minor",
+                    "currency"
+                  ],
+                  "additionalProperties": false,
+                  "description": "integer minor units plus an ISO 4217 currency code"
+                }
+              },
+              "required": [
+                "account",
+                "amount"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 2
+          },
+          "orgId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "deliverDigest",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7934,6 +8117,26 @@
       "steps": []
     },
     {
+      "name": "reindex-posts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "runs.statement",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -8459,6 +8662,7 @@
         "action:completePostsImport",
         "action:grantPostsImport",
         "action:listPostsImportParts",
+        "action:printPost",
         "action:requestPostsExport",
         "action:signPostsImportPart"
       ]

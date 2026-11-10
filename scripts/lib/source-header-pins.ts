@@ -89,7 +89,6 @@ export const SOURCE_HEADER_PINS: Readonly<Record<string, SourceHeaderPin>> = {
   'packages/testing/src/island-scratch.ts': { count: 1, reason: TOO_LONG },
   'packages/testing/src/failure-context.ts': { count: 1, reason: TOO_LONG },
   'packages/testing/src/fixture-push.ts': { count: 1, reason: TOO_LONG },
-  'packages/testing/src/cdp-connection.ts': { count: 1, reason: TOO_LONG },
   'packages/testing/src/cdp-offline-script.ts': { count: 1, reason: TOO_LONG },
   'packages/jobs/src/purge.ts': { count: 1, reason: TOO_LONG },
   'packages/jobs/src/driver-pg-wake-sql.ts': { count: 1, reason: TOO_LONG },

@@ -110,6 +110,7 @@ export {
 export { multipartUnsupported, partsInvalid, uploadUnknown } from './errors-multipart';
 export { alreadyPromoted, quarantined } from './errors-promote';
 export { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
+export { scanUnavailable, uploadInfected } from './errors-scan';
 export type {
   AbortResult,
   AbortStaleUploadsInput,
@@ -159,6 +160,14 @@ export {
   variantRevision,
   variantSourceOf,
 } from './image';
+export type {
+  StoredVariant,
+  VariantBytes,
+  VariantOptions,
+  VariantRequest,
+  VariantTransformer,
+} from './image-variant';
+export { variant } from './image-variant';
 export type { WarmFailure, WarmVariantsInput, WarmVariantsResult } from './image-warm';
 export { warmVariants } from './image-warm';
 export type {
@@ -235,6 +244,7 @@ export type {
 } from './subject-target';
 export { STORAGE_SUBJECT_COLUMNS, storageSubjectTarget } from './subject-target';
 export type {
+  ScanUnavailablePolicy,
   StoredHeadCandidate,
   UploadCandidate,
   UploadPolicy,
@@ -279,3 +289,5 @@ export {
   PART_CONCURRENCY,
   uploadInParts,
 } from './upload-client-multipart';
+// The `uploadScanner` port's reference: the interface and its installer are on `./adapter`.
+export { EICAR_TEST_STRING, memoryUploadScanner } from './upload-scanner-memory';

@@ -1,7 +1,7 @@
 // The two halves of an image build that are this framework's. On the host, `x build --target
 // docker` stamps the image with the manifest's build id. INSIDE the image build, `x build --target
-// prebuilt` writes what every web pod would otherwise make on every boot: the island chunks and
-// the compiled stylesheets (`serve-prebuilt-paths.ts` names the store and why it is where it is).
+// prebuilt` writes what every web pod would otherwise make on every boot: the island chunks, the
+// compiled stylesheets and the module registry (`serve-prebuilt-paths.ts` names the store).
 
 // why: Bun ships no recursive remove; a previous store must not survive beside the new one.
 import { rm } from 'node:fs/promises';
@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { sassCompilations, setSassCacheDir } from '@ultimat3/render/server';
 import { scanAppModules } from './app-load';
 import { appManifest } from './app-manifest';
+import { prebuildRegistry } from './build-registry';
 import { buildIslands } from './island-bundle';
 import { writeIslandStore } from './island-store';
 import type { Finding } from './output';
@@ -46,6 +47,9 @@ export async function prebuildImage(root: string): Promise<PrebuiltImage> {
   setSassCacheDir(join(root, PREBUILT_SASS_DIR));
   const compiled = sassCompilations();
   const scan = await scanAppModules(root, { track: false });
+  // What a serving role imports instead of scanning (`app-load-prebuilt.ts`) — none over a load
+  // with a finding, so that boot scans and refuses with the module's own cause.
+  await prebuildRegistry(root, scan);
   const bundle = await buildIslands(root);
   await writeIslandStore(root, bundle);
   return {

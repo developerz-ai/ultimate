@@ -1,0 +1,44 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "intervalMs": 250,
+  "run": {
+    "nodes": 3,
+    "subscribers": 10000,
+    "events": 20,
+    "delivered": 200000,
+    "expected": 200000,
+    "overall": {
+      "deliveries": 200000,
+      "p50Ms": 4.32,
+      "p99Ms": 23.26,
+      "maxMs": 31.45
+    },
+    "perNode": [
+      {
+        "deliveries": 66680,
+        "p50Ms": 4.04,
+        "p99Ms": 31.1,
+        "maxMs": 31.45
+      },
+      {
+        "deliveries": 66660,
+        "p50Ms": 4.88,
+        "p99Ms": 22.5,
+        "maxMs": 22.96
+      },
+      {
+        "deliveries": 66660,
+        "p50Ms": 4.17,
+        "p99Ms": 23.11,
+        "maxMs": 23.66
+      }
+    ]
+  }
+}

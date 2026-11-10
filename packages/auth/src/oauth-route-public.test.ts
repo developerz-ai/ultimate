@@ -50,7 +50,7 @@ describe('the body a stranger reads is the code and a fixed sentence', () => {
       await (
         await login().callback.handle(
           new Request(
-            `https://app.test/auth/oauth/github/callback?error=${reason}&error_description=${reason}-text`,
+            `https://app.test/auth/sso/github/callback?error=${reason}&error_description=${reason}-text`,
           ),
         )
       ).text();
@@ -61,7 +61,7 @@ describe('the body a stranger reads is the code and a fixed sentence', () => {
 
   test('the cause and the fix go to the log, under one event', async () => {
     const response = await login().callback.handle(
-      new Request('https://app.test/auth/oauth/github/callback?code=the-code&state=forged'),
+      new Request('https://app.test/auth/sso/github/callback?code=the-code&state=forged'),
     );
     const body = await bodyOf(response);
     expect(response.status).toBe(400);
@@ -76,7 +76,7 @@ describe('the body a stranger reads is the code and a fixed sentence', () => {
     expect(String(body['title'])).not.toBe('');
     // The developer's two lines are where only an operator reads them.
     expect(refusedLine()).toContain('X_OAUTH_STATE_INVALID');
-    expect(refusedLine()).toContain('GET /auth/oauth/github');
+    expect(refusedLine()).toContain('GET /auth/sso/github');
   });
 
   test('a short SESSION_SECRET is refused without its length, in the body or the cause', async () => {
@@ -85,7 +85,7 @@ describe('the body a stranger reads is the code and a fixed sentence', () => {
       credentials,
       baseUrl: 'https://app.test',
       env: { SESSION_SECRET: short },
-    }).start.handle(new Request('https://app.test/auth/oauth/github'));
+    }).start.handle(new Request('https://app.test/auth/sso/github'));
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain('17');
 
@@ -104,7 +104,7 @@ describe('the body a stranger reads is the code and a fixed sentence', () => {
 describe('redirect_uri is built from a declared origin, never from the Host header', () => {
   test('with neither baseUrl nor APP_URL the start leg refuses, whatever the Host says', async () => {
     const response = await oauthLogin(auth, { credentials, secret: SECRET, env: {} }).start.handle(
-      new Request('https://attacker.test/auth/oauth/github'),
+      new Request('https://attacker.test/auth/sso/github'),
     );
     expect(response.status).toBe(500);
     expect(response.headers.get('location')).toBeNull();
@@ -114,8 +114,8 @@ describe('redirect_uri is built from a declared origin, never from the Host head
 
   test('an unknown provider answers that same refusal, so the gap is not an oracle', async () => {
     const routes = oauthLogin(auth, { credentials, secret: SECRET, env: { APP_URL: '  ' } });
-    const known = await routes.start.handle(new Request('https://app.test/auth/oauth/github'));
-    const unknown = await routes.start.handle(new Request('https://app.test/auth/oauth/nope'));
+    const known = await routes.start.handle(new Request('https://app.test/auth/sso/github'));
+    const unknown = await routes.start.handle(new Request('https://app.test/auth/sso/nope'));
     expect(unknown.status).toBe(known.status);
     expect(await unknown.text()).toBe(await known.text());
   });
@@ -129,11 +129,11 @@ describe('redirect_uri is built from a declared origin, never from the Host head
       credentials,
       secret: SECRET,
       ...origin,
-    }).start.handle(new Request('https://attacker.test/auth/oauth/github'));
+    }).start.handle(new Request('https://attacker.test/auth/sso/github'));
     expect(response.status).toBe(302);
     const authorize = new URL(response.headers.get('location') ?? '');
     expect(authorize.searchParams.get('redirect_uri')).toBe(
-      'https://app.test/auth/oauth/github/callback',
+      'https://app.test/auth/sso/github/callback',
     );
   });
 });

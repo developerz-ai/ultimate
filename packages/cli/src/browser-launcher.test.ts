@@ -3,7 +3,7 @@
 // library is resolved from the app any more, so there is no install to be told about.
 
 import { describe, expect, test } from 'bun:test';
-import { CHROME_CANDIDATES } from '@ultimat3/testing';
+import { CHROME_CANDIDATES } from '@ultimat3/scraping/cdp';
 import {
   appBrowser,
   BROWSER_CDP_URL_VAR,

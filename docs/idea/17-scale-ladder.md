@@ -28,6 +28,22 @@ Each rung below states what you run, what forces the next one, and what the app 
 
 Costs are order-of-magnitude, not quotes. No price in this table is verified against a vendor bill.
 
+## Each rung, measured
+
+`As of 2026-11-09`. Every figure is one committed result, held to the prose by `bun run scripts/bench-claims.ts` (`X_BENCH_CLAIM_STALE`); the box, the method and the caveats are on [the claims page](../../scripts/bench/results/README.md). One busy 12-core machine unless the row says otherwise — an order of magnitude, never a ceiling.
+
+| Rung | What was measured | Figure | Result |
+|---|---|---|---|
+| 0 | `x dev` on a fresh scaffold, `/` | 267 req/s median, p99 181.85 ms | [`http-hello.json`](../../scripts/bench/results/http-hello.json) |
+| 0 → 2 | `x build --target docker` on a fresh scaffold, the production image, one `web` pod: 1,439 req/s | p99 on the claims page; three pods on one host did not scale, and no scaling figure is claimed | [`http-prod-image.json`](../../scripts/bench/results/http-prod-image.json) |
+| 1 | the Postgres job queue, 1 / 4 / 16 worker processes | defaults: 799 / 1,618 / 2,277 claims/s; tuned, the queue itself plateaus near 3,724 claims/s | [`worker-throughput.json`](../../scripts/bench/results/worker-throughput.json) |
+| 1 | scheduler failover | a live test, not a bench: no double fire, no skip | [`scheduler-failover.live.test.ts`](../../packages/jobs/src/scheduler-failover.live.test.ts) |
+| 1–3 | boot: module load against file count | 5,000 modules batched vs serial on the claims page | [`boot-vs-files.json`](../../scripts/bench/results/boot-vs-files.json) |
+| 3 | 10,000 subscribers across 3 `sync` nodes over NATS: p99 23.26 ms | every one of 200,000 deliveries arrived | [`fanout-3-nodes.json`](../../scripts/bench/results/fanout-3-nodes.json) |
+| 3 | one `sync` node, 50,000 sockets SIGKILLed | p50 54.0s to the first patch after reconnect | [`50k-restart.json`](../../scripts/bench/results/50k-restart.json) |
+| 3 | a `helm upgrade` under load on kind | 0 of 8,686 requests failed | `deploy-proof`, [`14-roadmap.md`](./14-roadmap.md) milestone 11 |
+| 4 | — | **nothing measured**: no distributed SQL, no multi-region run, no clustered cache node | — |
+
 ---
 
 ## Rung 0 — a free PaaS plan, not a container you operate
@@ -71,6 +87,8 @@ Same platform. The change is `ROLE` and two env vars. This is also the rung a fr
 | `worker` | a job that must survive the request that queued it, and must not compete with it for CPU |
 | `scheduler` | cron dispatch, fixed at one — leader election is an expiring lease row, so a second instance is an idle standby. **Must be always-on**: a plan that sleeps it drops the cron |
 | `migrate` | run-once, before anything serves the new schema |
+
+**Invalidations reach every replica on this rung**, `As of 2026-11-09`. With no `NATS_URL` and `REDIS_URL` (else `VALKEY_URL`) set, cache and ISR invalidations ride Redis pub/sub; NATS, once configured, stays the path, never both. The boot says which in one `cache.broadcast` log line, naming the bus and the variable that chose it, and a replica whose subscription dropped flushes its own tiers on reconnect rather than serve what it may have missed ([`runtime-cache-bus.ts`](../../packages/cli/src/runtime-cache-bus.ts), [`redis-pubsub.ts`](../../packages/cache/src/redis-pubsub.ts)). Until then this rung's second web replica served a stale page or `cache:` read until its TTL: the bus was the in-process one.
 
 Add the shared cache tier when there is more than one web replica **and** a measured cross-replica miss. `cache.tiers: ['request-memo', 'lru', 'redis']` plus `REDIS_URL`. Redis, Valkey or Dragonfly `As of 2026-08` — the key layout is slot-clean, so no engine is excluded and no server flag is needed ([below](#dragonfly-honestly)).
 
@@ -136,13 +154,13 @@ Every scale component, and exactly what to swap.
 | Embedded dev DB | `@ultimat3/db` · `PgliteClient` | `pgliteClient()` | — | unset `DATABASE_URL` | shipped, `x dev` only |
 | Repository | `@ultimat3/entity` · `Repo`, `Driver` | `postgresRepo()`; `memoryRepo()` for tests | — | — | shipped |
 | Pool sizing | `@ultimat3/db` · `POOL_PROFILES` | per-`ROLE` max / statement timeout / idle timeout | — | `ROLE`, `DATABASE_POOL_MAX` | shipped |
-| Read replicas | `@ultimat3/db` · `replicatedClient()`, `isPlainRead()`, `withReplicaReads()` | primary + standby behind one `DbClient`; a plain read inside an open scope goes to the standby, everything else and every transaction to the primary. Read-your-writes by scope, 3-failure/10s breaker back to the primary | — | `DATABASE_REPLICA_URL` | shipped `As of 2026-08-24` — the pool is env, the SCOPE is the app's, and nothing opens one yet |
+| Read replicas | `@ultimat3/db` · `replicatedClient()`, `isPlainRead()`, `withReplicaReads()`; `@ultimat3/cli` · `attachReplica()`, `positionStage()` | primary + standby behind one `DbClient`; a plain read inside an open scope goes to the standby, everything else and every transaction to the primary, 3-failure/10s breaker back to the primary. **The boot opens the scope per request** ([`runtime-replica.ts`](../../packages/cli/src/runtime-replica.ts)): a write early in a request pins its later reads to the primary, and the write's WAL position rides a `__Host-x-pos` cookie / `x-ultimate-position` header, so the NEXT request reads a standby only once it has replayed past it ([`replica-position.ts`](../../packages/db/src/replica-position.ts), [`runtime-replica-position.ts`](../../packages/cli/src/runtime-replica-position.ts)) | — | `DATABASE_REPLICA_URL` | shipped and wired `As of 2026-11-09` — the env is the only switch; `replica-position.live.test.ts` and `runtime-replica-roundtrip.live.test.ts` run against the standby in `docker-compose.test.yml` |
 | Cache, per-request | `@ultimat3/cache` · `CacheTier` | request memo | `cache.tiers: ['request-memo']` | — | shipped |
 | Cache, per-process | `@ultimat3/cache` · `CacheTier` | LRU | `cache.tiers: ['lru']` | — | shipped |
 | Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `redisTier()` over `Bun.redis` | `cache.tiers: ['redis']` | `REDIS_URL` | shipped |
 | Cache, edge | `@ultimat3/cache` · `CacheTier` | CDN headers + purge (Cloudflare, Fastly, HTTP) | `cache.tiers: ['cdn']` | purge-provider env | shipped |
 | Job queue | `@ultimat3/jobs` · `JobDriver` (`enqueue`/`claim`/`ack`/`nack`/`heartbeat`/`stats`) | `postgresJobDriver()`, which the boot installs | **none** — `jobs.driver` was deleted in 5.0.0; `jobs:` in `apps/<app>/runtime.ts` is the only switch | `DATABASE_URL` | shipped |
-| Job queue, Redis | same interface | a future `redisJobDriver()` — Streams + consumer groups + `XAUTOCLAIM` | none; `jobs: redisJobDriver()` in `apps/<app>/runtime.ts` | `REDIS_URL` | **not shipped** — the all-throw stub was deleted in 25.0.0; a real driver arrives as a minor |
+| Job queue, Redis | same interface | `redisJobDriver()` on `@ultimat3/jobs/redis` — one Lua script per operation, every key under one hash tag, over core's `redisClient()`; held to the pg driver's contract by `@ultimat3/testing`'s `jobDriverConformance` | none; `jobs: redisJobDriver()` in `apps/<app>/runtime.ts` | `REDIS_URL` | shipped `As of 2026-11-09` ([`driver-redis.ts`](../../packages/jobs/src/driver-redis.ts)); unmeasured — the worker bench below is the Postgres queue's |
 | Scheduler leader | `@ultimat3/jobs` · `postgresLeaseLeader` | `SQL_LEADER_ACQUIRE` / `SQL_LEADER_RELEASE` — an expiring row in `x_scheduler_leader`, TTL 30s, `acquire()` doubling as the renewal. **Never `pg_try_advisory_lock`**: it is session-scoped, and the executor is a pool, so the grant dies when the connection returns and every node reads itself as leader | — | — | shipped |
 | Realtime fanout | `@ultimat3/realtime` · `Transport`, via `selectTransport(env)` | `InProcessTransport` \| `NatsTransport` | `NATS_URL` set or not — **decides**, as of 31.0.0 (`transport` in `runtime.ts` for a bus of the app's own) | `NATS_URL` | shipped |
 | Presence | `@ultimat3/realtime` · JetStream KV | bucket, default `x_presence`, TTL 30s | — | `NATS_KV_BUCKET` | shipped |
@@ -323,7 +341,7 @@ The most valuable advice on this page.
 | your own box (rung 2) | the PaaS bill exceeds a server plus the hours to run it, or a platform limit actually blocks you |
 | NATS (rung 3) | you run more than one `sync` replica. `InProcessTransport` is correct and free at one node — and the measured 50k-socket result was taken on one node, in process |
 | the `replicator` role (rung 3) | you use live queries. The chart ships it disabled |
-| a read replica (rung 3) | the primary's CPU is read-bound and you have measured which reads. It is two opt-ins — `DATABASE_REPLICA_URL` and a `withReplicaReads` scope — and it doubles the connection arithmetic, because the standby inherits the role's pool profile and `DATABASE_POOL_MAX` |
+| a read replica (rung 3) | the primary's CPU is read-bound and you have measured which reads. It is one opt-in — `DATABASE_REPLICA_URL`; the boot opens the per-request scope and carries read-your-writes across requests — and it doubles the connection arithmetic, because the standby inherits the role's pool profile and `DATABASE_POOL_MAX` |
 | Kubernetes (rung 3) | you have roughly three nodes of real workload. One 6-vCPU / 12-GiB host runs Postgres, a cache, NATS and all six roles under Compose |
 | splitting a database off (rung 4) | a database sustains >50% CPU or >75% IO utilisation, or an app needs an extension that is not safe cluster-wide, or compliance forces separation. Until then: share |
 | distributed SQL (rung 4) | you need multi-region write locality, or must survive a zone loss without a manual failover. Throughput alone is not a reason |
@@ -340,10 +358,15 @@ Two rules underneath all of them:
 |---|---|
 | one image, `ROLE` selects the process | **true** — `packages/core/src/roles.ts`, `docker/Dockerfile` |
 | Postgres job queue with `SKIP LOCKED`, partial-unique idempotency, lease-row leader | **true** — `packages/jobs/src/driver-pg-sql.ts` |
-| Redis job driver | **stub** — interface-complete, every method throws `X_NOT_IMPLEMENTED`. There is no NATS job driver (deleted in 25.0.0) |
+| Redis job driver | **true, unmeasured** — `redisJobDriver()` on `@ultimat3/jobs/redis`, the conformance suite's contract. There is no NATS job driver (deleted in 25.0.0) |
 | shared cache tier over the Redis protocol, tag sets, declared-key invalidation | **true** — `packages/cache/src/redis.ts`; one call per tag over `{entity}`-tagged buckets, then the value keys one `DEL` each, plus single-flight, TTL jitter and a bucket lease |
 | NATS fanout and JetStream KV presence | **true** — `packages/realtime/src/nats-transport.ts`, selected by `NATS_URL` |
 | Postgres logical replication change feed, `pgoutput`, own wire client | **true** — `packages/realtime/src/pg-replication.ts` |
+| Postgres job queue throughput | **measured, one box** — defaults bounded by the queue, not the poll floor, since a full pass marks a backlog (As of 2026-11-09), plateau of the queue itself between 4 and 16 tuned workers, `scripts/bench/results/worker-throughput.json` |
+| scheduler failover: the leader dies mid-fire, a standby takes over | **proved live** — `packages/jobs/src/scheduler-failover.live.test.ts`: the standby fires only after the lease expires, fires the occurrence the dead leader held, the dead leader's late fire is refused by the watermark, and every occurrence is queued exactly once |
+| cross-node fan-out over NATS | **measured at 10k subscribers, 3 nodes, one box** — `scripts/bench/results/fanout-3-nodes.json`; in-process sockets, a real nats-server |
+| read replicas with read-your-writes | **true and wired** — the boot opens the scope per request and carries the write's WAL position to the next one (`runtime-replica.ts`) |
+| cache/ISR invalidation across replicas without NATS | **true** — Redis pub/sub on `REDIS_URL` (`runtime-cache-bus.ts`) |
 | 50k sockets, forced restart, p50 54.0s to the first patch on the reconnected socket | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json`. Reachability; it cannot see a lost patch |
 | channel patches delivered across a forced restart, no client observing a gap | **measured at 10k, not at 50k** — 1,666,882 received, 0 observed sequence gaps, a lower bound on loss, `scripts/bench/results/10k-restart-seq.json` |
 | Compose prod topology | **true, and emitted by `x new`** — `web` and `sync` at `replicas: 1` because each publishes a host port; `worker` scales freely |

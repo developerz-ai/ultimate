@@ -75,8 +75,8 @@ export const routeParams = (path: string): readonly string[] =>
  * only this function knows where `x g resource`'s page went — a second copy of the formula in the
  * resource generator is how the specifier it prints stops matching the file it writes.
  */
-export const routeDir = (surface: Surface, path: string): string =>
-  `apps/web/${surface}/${segmentsOf(path).join('/')}`;
+export const routeDir = (surface: Surface, path: string, app = 'web'): string =>
+  `apps/${app}/${surface}/${segmentsOf(path).join('/')}`;
 
 /**
  * How the generated page reaches a string, and it is the whole reason this generator takes an app
@@ -260,11 +260,13 @@ export interface RouteOptions {
    * generated page fall back to importing `t` from `@ultimat3/i18n`.
    */
   readonly catalogModule?: string;
+  /** The app workspace the page lands in, `apps/<app>/` — `x g route --app`. Default `web`. */
+  readonly app?: string;
 }
 
 export function routeFiles(rawPath: string, options: RouteOptions): readonly GeneratedFile[] {
   const path = rawPath.replace(/^\/+/, '');
-  const dir = routeDir(options.surface, path);
+  const dir = routeDir(options.surface, path, options.app);
   const locales = resolveLocales(options.locales);
   return [
     { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path, options.catalogModule) },

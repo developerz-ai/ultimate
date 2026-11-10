@@ -319,6 +319,35 @@ export const approvalRequested = notifier({
 | another 4xx | `X_NOTIFY_PUSH_PROVIDER_REFUSED`, logged; the next device is tried. When no device took it, the refusal fails the delivery |
 | 429, 5xx, timeout | rethrown after every other device was tried — the job's retry |
 
+### SMS — the `smsTransport` port
+
+```ts
+import { smsChannel } from '@ultimat3/notify';
+import type { SmsTransport } from '@ultimat3/notify/adapter';
+
+interface LoginCode {
+  readonly code: string;
+}
+
+// a notifier's channel: the body is a catalog key, rendered in the recipient's locale
+export const loginCodeSms = smsChannel<LoginCode>({
+  message: ({ event }) => ({ key: 'sms.login_code', params: { code: event.params.code } }),
+  numberOf: (recipient) => recipient.to, // the default: E.164, `+4915112345678`
+});
+
+// apps/<app>/runtime.ts — the provider is the app's adapter (Twilio, Vonage, SNS)
+declare function twilioSms(config: { readonly from: string }): SmsTransport;
+export const runtime = { smsTransport: twilioSms({ from: '+15550100000' }) };
+```
+
+| Rule | Detail |
+|---|---|
+| one port | `SmsTransport` (`send(message) → { transport, id, to, idempotencyKey }`) on `@ultimat3/notify/adapter`, installed from `smsTransport:` in `runtime.ts` (`installSmsTransport`, an `adapterSlot`). Proved by `smsTransportConformance` (`@ultimat3/testing/conformance`) |
+| default | `memorySmsTransport()` in development/test; anywhere else the first send is `X_NOTIFY_SMS_TRANSPORT_MISSING` (terminal) — a heap that swallows a login code is not a default |
+| the text is a catalog key | `message` answers `{ key, params }`, rendered in `recipient.locale` (else the app's fallback) by `translatorFor` — never text |
+| E.164 or refused | `assertSmsNumber` before render or send: a local spelling is `X_NOTIFY_SMS_NUMBER_INVALID` (terminal), the number never in the cause. Every transport calls it too (the suite checks). No number is skipped and logged `notify.address_missing`, as mail |
+| one key per delivery | `smsIdempotencyKey(notifier, key, channel, recipient)` — the same on every attempt, no number in it |
+
 
 ## The inbox
 
@@ -374,6 +403,8 @@ without bound and every replay would re-send the whole audience.
 | `X_NOTIFY_PUSH_DEVICE_GONE` | APNs 410 / FCM `UNREGISTERED`: the device row is deleted, nothing fails |
 | `X_NOTIFY_PUSH_PROVIDER_REFUSED` | APNs or FCM refused for good: a credential, a topic or project, a payload limit |
 | `X_NOTIFY_PUSH_MESSAGE_INVALID` | a data-only push carrying more than ids |
+| `X_NOTIFY_SMS_TRANSPORT_MISSING` | an SMS sent outside development/test with no `smsTransport:` installed |
+| `X_NOTIFY_SMS_NUMBER_INVALID` | an SMS number that is not E.164 |
 
 ### Error classes
 
@@ -390,6 +421,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `NotifyPushDeviceGoneError` | `X_NOTIFY_PUSH_DEVICE_GONE` | `src/push-errors.ts` |
 | `NotifyPushMessageInvalidError` | `X_NOTIFY_PUSH_MESSAGE_INVALID` | `src/push-errors.ts` |
 | `NotifyPushProviderRefusedError` | `X_NOTIFY_PUSH_PROVIDER_REFUSED` | `src/push-errors.ts` |
+| `NotifySmsNumberInvalidError` | `X_NOTIFY_SMS_NUMBER_INVALID` | `src/sms-errors.ts` |
+| `NotifySmsTransportMissingError` | `X_NOTIFY_SMS_TRANSPORT_MISSING` | `src/sms-errors.ts` |
 | `NotifyStoreMissingError` | `X_NOTIFY_STORE_MISSING` | `src/errors.ts` |
 
 ## Boundary

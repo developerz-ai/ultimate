@@ -343,6 +343,36 @@ does not pass. Bytes past the window are not sniffed on any path through promoti
 
 A grant with a `target` has no promotion step: [Known gaps](Known-Gaps).
 
+## Scanning uploads — the `uploadScanner` port
+
+Rule: an `uploadScanner` returned from `apps/<app>/runtime.ts` is asked about every upload `promoteAttachment` attaches. `As of 2026-11-09`. It scans a copy THIS call made: under `pending/scan/`, server-named — so no presigned URL can rewrite it after the scan — and its own, so a doubled confirm never scans or deletes another attempt's bytes. That copy is what is attached; one scan is final.
+
+| Verdict | `promoteAttachment` |
+|---|---|
+| `{ verdict: 'clean' }` | promotes |
+| `{ verdict: 'infected', signature }` | deletes the pending upload and the scan copy; `X_STORAGE_UPLOAD_INFECTED` (422, `meta.signature`) |
+| the scanner rejects, or the copy cannot be read for it (daemon down, timeout, a reset read) | deletes the scan copy, the upload stays pending — a retry once the scanner is back is a fresh confirm; `X_STORAGE_SCAN_UNAVAILABLE` (503). Fail closed in every environment; `uploadPolicy({ onScanUnavailable: 'accept' })` promotes unscanned instead. Infected is refused under either |
+
+| Fact | Detail |
+|---|---|
+| the port | `UploadScanner = { name, scan({ key, size, contentType, body }) → Promise<ScanVerdict> }` on `@ultimat3/storage/adapter`. "Cannot decide" is a rejection, never a verdict |
+| the reference | `memoryUploadScanner()` flags the EICAR test string (`EICAR_TEST_STRING`), across chunk boundaries |
+| prove yours | `behavesLike(uploadScannerConformance, () => yours)` from `@ultimat3/testing/conformance` |
+| ClamAV | the app's adapter (axiom 8): stream `body` to clamd's `INSTREAM` over `Bun.connect`; `stream: OK` → clean, `stream: <sig> FOUND` → infected, anything else → reject |
+| no scanner installed | nothing is scanned; the deferred `quarantine: true` + `releaseQuarantine` flow below is unchanged |
+
+```ts
+// apps/web/runtime.ts
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
+import type { UploadScanner } from '@ultimat3/storage/adapter';
+
+declare function clamdScanner(options: { host: string; port: number }): UploadScanner;
+
+export const runtime = {
+  uploadScanner: clamdScanner({ host: 'clamav', port: 3310 }),
+} satisfies Partial<RuntimeOverrides>;
+```
+
 ## Images
 
 A variant's key is the whole source key plus the transform — `photos/hero.png` at width 640 is
@@ -362,6 +392,26 @@ unknowable etag, is served and never stored. Old-revision variants are bytes nob
 encode `png`, `jpeg` and `webp`; `avif` is key and `srcset` math only. `variantKey()`,
 `srcsetDescriptors()` and `fitDimensions()` are pure, which is how [SEO](SEO) builds `srcset`
 without decoding a byte.
+
+### One kept variant — `variant()`
+
+`variant(key, { disk, images, width, format? })` → `{ key, object, created }`. `As of 2026-11-09`. Made by the `images` driver you pass (any `@ultimat3/seo` `ImageTransformDriver` — `runtime.ts`'s `images`, `builtinImageDriver({ read })`, a CDN's), stored under `variantKey(key, { width, format, revision })`. A second call is a `stat`, never a decode; an overwritten source is a new revision, hence a new key. `format` omitted keeps a png/jpeg/webp source's encoding.
+
+| Refusal | Code |
+|---|---|
+| source missing | `X_STORAGE_NOT_FOUND` |
+| source not a raster image (PDF, SVG), a gif/avif source with no `format`, a driver that answered another encoding | `X_IMAGE_UNSUPPORTED` |
+| source overwritten while the driver read it (nothing stored) | `X_STORAGE_OBJECT_CHANGED` |
+
+```ts
+import { builtinImageDriver } from '@ultimat3/seo';
+import { disk, variant } from '@ultimat3/storage';
+
+declare const coverKey: string;
+
+const images = builtinImageDriver({ read: async (src) => (await disk().get(src)).bytes });
+export const thumbnail = await variant(coverKey, { disk: disk(), images, width: 640, format: 'webp' });
+```
 
 ### Warm the variants after the upload — `warmVariants`
 

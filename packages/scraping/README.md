@@ -396,6 +396,61 @@ The offline drivers honour it, so the crop is provable with no Chrome — `fakeB
 different deterministic bytes per rectangle, which is what lets a component screenshot be tested
 on a machine with no browser — the case CI is.
 
+## A route printed to PDF — `pdf()`, a factory over `action`
+
+```ts
+import type { Ctx } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
+import { pdf } from '@ultimat3/scraping';
+import { disk } from '@ultimat3/storage';
+
+/** The app's own short-lived signer for the print route — never the framework's. */
+declare function printToken(ctx: Ctx): string;
+
+export const invoicePdf = pdf({
+  input: t.object({ id: t.uuid }),
+  policy: can('invoices:read'),
+  route: ({ input }) => `/invoices/${input.id}/print`,       // a PATH on this app, never a URL
+  key: ({ input, ctx }) => `invoices/${ctx.actor.orgId}/${input.id}.pdf`,
+  storage: () => disk('documents'),                             // a thunk: read per call
+  layout: { format: 'a4', marginMm: { top: 12, bottom: 12 }, printBackground: true },
+  headers: ({ ctx }) => ({ authorization: `Bearer ${printToken(ctx)}` }), // the app's own token
+});
+// → { key, bytes, contentType: 'application/pdf' } — HTTP, OpenAPI, MCP, .job(), .as() included
+```
+
+| Rule | Detail |
+|---|---|
+| it is an `action` | input schema, policy, `rateLimit`, `meter`, `audit` are the action's: refused before a browser starts (`pdf-action.test.ts`). `PRIMITIVE_FACTORIES` row `pdf` |
+| only the app's own origin | `route()` must answer a path; a URL, `//host` or a backslash is `X_SCRAPE_PDF_ROUTE_INVALID` (500, terminal). The origin is `APP_URL`, read per call, or `origin: () => …`; neither is `X_SCRAPE_PDF_ORIGIN_MISSING` (500, terminal) |
+| an error page is never a document | the page's own status is read after `load` and `document.fonts.ready`: 4xx/5xx is `X_SCRAPE_PDF_ROUTE_FAILED` (502; a 4xx terminal, a 5xx/429 retryable) |
+| the layout is checked where `pdf()` is written | `pdfLayoutOf`, as `page.pdf()`: `X_SCRAPE_PDF_OPTIONS_INVALID` at module load |
+| one browser per render | `chromePdfRenderer()` launches Chrome through `@ultimat3/scraping/cdp`, prints over raw CDP (`Page.printToPDF`, `pdf-render.ts`, `pdf-cdp-params.ts`) and closes it in a `finally`; no browser outlives a request, none is shared between tenants. A pool is a measured next step, not shipped |
+| a bounded number of browsers | at most `maxConcurrent` (default 2 — each Chrome is 150-300 MB) per renderer, and every `pdf()` naming no `renderer` shares ONE. The rest queue for `queueTimeoutMs` (default `timeoutMs`) on the clock, then `X_SCRAPE_PDF_BUSY` (503, retryable) — `pdf-slots.ts`, `pdf-render-slots.test.ts` |
+| a dropped request ends its render | the action's `ctx.signal` reaches the renderer: aborted in the queue, it leaves without a slot; aborted mid-print, its browser is killed and the slot freed, and the request's own reason is thrown |
+| headers reach the route's origin only | `Fetch.enable` on the page's session (`pdf-fence.ts`): a request to the route's exact origin (scheme, host, port) continues with `headers` added; every other — a user's `<img src="https://elsewhere">`, a redirect off-site, `169.254.169.254` — is failed `BlockedByClient` before it leaves. Never `Network.setExtraHTTPHeaders`, which sent the token everywhere (`pdf-render-fence.test.ts`) |
+| the sandbox stays on | the default launch keeps Chrome's sandbox (`pdfLaunchOptions`): a print renders user content. The runtime image ships no Chrome; the app's image supplies it and runs it as non-root, which needs unprivileged user namespaces (or Chrome's setuid helper). A container that cannot grant them fails `X_CDP_LAUNCH_FAILED` quoting "No usable sandbox" — opt out there in one visible line, `chromePdfRenderer({ sandbox: false })`. The e2e driver and `x shot` keep `--no-sandbox` for CI runners |
+| the bytes go to storage | `storage().put(key, bytes, { contentType: 'application/pdf' })`; the answer is the key, never the bytes. Serve it with a signed URL |
+| tested with no Chrome | `renderer:` takes any `PdfRenderer`; `chromePdfRenderer({ launch })` takes any `{ connection, close }` — `pdf-render.test.ts` drives it over a fake CDP connection |
+
+Open (`As of 2026-11`): the route must be readable by the printing browser — a private one forwards
+the app's own short-lived credential through `headers`; no session is minted for it.
+
+## The raw-CDP browser — `@ultimat3/scraping/cdp`
+
+The launcher and connection the e2e driver and `x shot` have used since 22.0.0, moved here from
+`@ultimat3/testing` in 31.0.0 because `pdf()` needs them at RUNTIME and testing is a test package.
+Its own entry, off `.`, so a caller that only launches loads no job or storage module.
+This is every name's one home: `@ultimat3/testing` no longer re-exports them (31.0.0, `X_HELPER_COPY`); its `E2E_ERROR_CODES` still lists the four codes.
+
+| Export | What |
+|---|---|
+| `findChrome(env)` · `launchChrome({ executable, timeoutMs })` · `launchFoundChrome(env, timeoutMs)` | `CHROME_PATH`, then the platform's install paths; a throwaway profile, the pipe wire, one relaunch |
+| `cdpConnect({ endpoint, timeoutMs })` · `cdpConnectOver(transport, timeoutMs)` | a CDP connection over a remote WebSocket or any whole-message transport |
+| `CdpBrowserMissingError` · `CdpLaunchFailedError` · `CdpCallFailedError` · `CdpTimeoutError` | `X_CDP_BROWSER_MISSING` · `X_CDP_LAUNCH_FAILED` · `X_CDP_CALL_FAILED` · `X_CDP_TIMEOUT`, registered by `cdp-error-codes.ts` |
+| `CHROME_CANDIDATES` · `CONTAINER_CHROME_ARGS` · `chromeLaunchFlags` · `LAUNCH_*` · `CLOSE_GRACE_MS` · `LAUNCHED_CLOSE_MS` | the flags and the deadlines, derived, never restated |
+
 ## What it owns
 
 | Module | Owns |
@@ -414,6 +469,8 @@ on a machine with no browser — the case CI is.
 | `secrets.ts` / `url-secrets.ts` / `browser-record.ts` | what may leave this package — declared secrets, values learned mid-run (`conceal`), the credential-bearing parts of a URL — and how a browser's own string map is read |
 | `expect.ts` | the silent-green alarm |
 | `watchdog.ts` | the wedge and zombie discipline |
+| `pdf-action.ts` / `pdf-render.ts` / `pdf-cdp-params.ts` / `pdf-slots.ts` / `pdf-fence.ts` | `pdf()` over `action`; one page printed over raw CDP; a layout in the protocol's words; the bound on live browsers; the request fence |
+| `cdp.ts` / `cdp-launch*.ts` / `cdp-connection.ts` / `cdp-pipe.ts` / `cdp-wire-watch.ts` / `cdp-errors.ts` | `@ultimat3/scraping/cdp`: the raw-CDP launcher and connection (moved from `@ultimat3/testing` in 31.0.0) |
 | `capture-clip.ts` | the one framing rule — crop, whole page, or a refusal — checked before any driver sees it |
 | `errors.ts` / `error-throws.ts` / `error-throws-session.ts` | this package's `X_*` codes and their retry classification |
 

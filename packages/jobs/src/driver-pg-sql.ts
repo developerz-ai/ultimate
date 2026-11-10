@@ -196,22 +196,27 @@ on conflict (task_name) do update
  * `(lease_key, slot)` primary key serialises two workers that picked the same slot, and the
  * loser's `do update` is guarded on the slot having expired — a live slot returns no row, so the
  * grant is never doubled. Under contention this can refuse a slot that is genuinely free; a
- * refusal costs one poll interval and an over-grant costs the guarantee.
+ * refusal costs one poll interval and an over-grant costs the guarantee. `nextval` runs on the ONE
+ * candidate the inner `limit 1` kept, and a takeover takes the new number too: the fence.
  */
 export const SQL_LEASE_ACQUIRE = `
-insert into x_job_leases (lease_key, slot, holder, expires_at)
-select $1, s.slot, $2, now() + ($4::bigint * interval '1 millisecond')
-  from generate_series(0, $3::int - 1) as s(slot)
- where not exists (
-   select 1 from x_job_leases l
-    where l.lease_key = $1 and l.slot = s.slot and l.expires_at > now()
- )
- order by s.slot
- limit 1
+insert into x_job_leases (lease_key, slot, holder, expires_at, fence)
+select f.lease_key, f.slot, f.holder, f.expires_at, nextval('x_job_lease_fence')
+  from (
+    select $1::text as lease_key, s.slot, $2::text as holder,
+           now() + ($4::bigint * interval '1 millisecond') as expires_at
+      from generate_series(0, $3::int - 1) as s(slot)
+     where not exists (
+       select 1 from x_job_leases l
+        where l.lease_key = $1 and l.slot = s.slot and l.expires_at > now()
+     )
+     order by s.slot
+     limit 1
+  ) as f
 on conflict (lease_key, slot) do update
-   set holder = excluded.holder, expires_at = excluded.expires_at
+   set holder = excluded.holder, expires_at = excluded.expires_at, fence = excluded.fence
  where x_job_leases.expires_at <= now()
-returning slot
+returning slot, fence
 `.trim();
 
 /**

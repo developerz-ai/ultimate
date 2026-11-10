@@ -124,6 +124,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **The retry decision reads the ERROR, on core's backoff curve** (`retry-classification.ts`,
   `backoffDelayMs`): `docs/history/jobs.md`, "Moved 2026-10-01 — retry and bounds".
 - **The claim loop re-arms on the PASS, never the jobs**; `tick()` resolves with that pass's executions.
+- **A FULL pass marks a backlog**: the next freed slot claims at once (`worker-backlog.test.ts`).
 - **The scheduler runs one dispatch round at a time**; `stop()` waits it out before `leader.release()`. Full rule: `docs/history/jobs.md`.
 - **`run-once` fires ONE catch-up**: the watermark rides the fire (`ScheduledFire.watermarkMs`),
   never a `markFired` behind it; `skip` fires the latest missed occurrence (`latestOccurrenceBy`).
@@ -274,6 +275,11 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `import-format.ts` / `-source.ts` / `-errors.ts` | record boundaries on bytes; the `ImportSource` seam; the `X_IMPORT_*` classes |
 | `driver-redis-refusal.ts` | `typedRefusals`: a send refused for want of a connection → `X_DRIVER_UNAVAILABLE` |
 | `subject*.ts` | `subjectExport`/`subjectErase`; reach only via DELETED tables (README) |
+| `gdpr-*.ts` | `.personalData()` coverage (thrown by `plannedSubject`, listed by `x exercise`); the erase's audit record |
+| `ledger*.ts` | `ledger()`: balanced per currency, ONE step; a key is one posting per tenant, re-used with other lines `X_LEDGER_POSTING_CONFLICT` |
+| `lock*.ts` | `withLock`: one `lock:<key>` slot; token = the store's `fence`; renewal as `worker-fleet-slots.ts` |
+| `reindex.ts` | `reindex()`: a `backfill()` into the `searchIndex` port via `searchDocumentOf` |
+| `partitions.ts` | `partitions()` + `.schedule`: db's `partitionMaintenance` per partitioned entity, job clock |
 | `webhook-receiver.ts` / `-route.ts` / `-types.ts` / `-errors.ts` | `webhookReceiver()` and `webhookReceiverRoutes`; the route; `ReceivedEvent`, `WebhookInbound`; its three refusals |
 
 Commands: `bun test ./packages/jobs/` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:

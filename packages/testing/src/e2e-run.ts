@@ -4,8 +4,9 @@
 // hooks and the real app and browser; a test is this with doubles, which is how it is measured.
 
 import { finiteCount } from '@ultimat3/core';
+import { LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from './cdp-browser';
-import { E2E_BROWSER_CLOSE_MS, E2E_BROWSER_OPEN_MS } from './cdp-browser';
+import { E2E_BROWSER_OPEN_MS } from './cdp-browser';
 import type { E2eApp } from './e2e-app';
 import { E2E_APP_STOP_MS } from './e2e-app';
 import { e2eBrowser, publishE2eRun, republishE2eBrowser } from './e2e-browser-handle';
@@ -91,7 +92,7 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
       browser = await deps.openBrowser();
       republishE2eBrowser(browser);
     },
-    probeMs + E2E_BROWSER_CLOSE_MS + E2E_BROWSER_OPEN_MS,
+    probeMs + LAUNCHED_CLOSE_MS + E2E_BROWSER_OPEN_MS,
   );
 
   deps.afterAll(async () => {
@@ -99,5 +100,5 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
     uninstall();
     await browser.close();
     await app.stop();
-  }, E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS);
+  }, LAUNCHED_CLOSE_MS + E2E_APP_STOP_MS);
 }

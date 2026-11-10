@@ -7,10 +7,10 @@
 // through it: `ScrapePage` is a full scraping surface whose intended implementation is
 // `puppeteer-core`, and an e2e driver needs none of it.
 
+import type { CdpConnection } from '@ultimat3/scraping/cdp';
+import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import type { AxTreeNode } from './ax-node';
 import { axRecord, toAxTreeNodes } from './ax-node';
-import type { CdpConnection } from './cdp-connection';
-import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import type { AxTreeRequest, E2eBrowserPage } from './e2e-page';
 
 /** What the page threw, when `Runtime.evaluate` answered with an exception rather than a value. */

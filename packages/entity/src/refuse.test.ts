@@ -118,6 +118,8 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   // A JS caller reaching the weight refusal — the union makes it unwritable in TypeScript, and
   // `.searchable(input.weight)` from parsed JSON is exactly how it arrives anyway.
   ['searchable weight', () => text().searchable('Z' as 'A')],
+  // Same arrival path as the weight: a JS caller, or a kind read from configuration.
+  ['personal data kind', () => text().personalData('secret' as 'contact')],
   ['transitions table', () => enumerated(['a', 'b']).transitions({ a: ['c'], b: [] } as never)],
   [
     'transitions nullable',

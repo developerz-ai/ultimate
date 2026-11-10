@@ -66,6 +66,9 @@ export const ${name.camel} = entity('${table}', {
     invariant('${snake}_price_non_negative', c.price.minor.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'createdAt'] }],
+  // PARTITIONED? \`partitionBy: { column: 'createdAt', interval: 'month' }\` needs its maintenance
+  // job too, or no partition is created ahead: export \`partitions()\` from '@ultimat3/jobs' in a
+  // module listed under \`jobs\` in apps/web/api/index.ts, and its \`.schedule\` under \`tasks\`.
 });
 
 export type ${name.pascal} = typeof ${name.camel}.$row;

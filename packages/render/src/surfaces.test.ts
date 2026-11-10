@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { SurfaceBoundaryError } from './errors';
+import type { Surface } from './surfaces';
 import {
   assertSurfaceBoundary,
   checkSurfaceBoundary,
   importGraph,
+  locateSurface,
   surfaceOf,
   surfaceUnder,
 } from './surfaces';
@@ -182,5 +184,30 @@ describe('checkSurfaceBoundary derives every edge from SURFACE_SPECS', () => {
         'shared/x.ts': [],
       }),
     ).toEqual([]);
+  });
+});
+
+// An app WORKSPACE may carry a surface's name: `apps/api/` is the natural name for an API app.
+// The surface is the segment directly under `apps/<name>/`, never the workspace name itself —
+// `apps/api/site/x/page.tsx` read as surface `api` was `X_ROUTE_FILE_INVALID` for every route.
+/** A path, the surface it is in, and what follows the surface segment. */
+const WORKSPACE_CASES: [string, Surface, string][] = [
+  ['apps/api/site/x/page.tsx', 'site', 'x/page.tsx'],
+  ['apps/app/app/dashboard/page.tsx', 'app', 'dashboard/page.tsx'],
+  ['apps/site/api/index.ts', 'api', 'index.ts'],
+  ['apps/shared/shared/theme.ts', 'shared', 'theme.ts'],
+  ['/srv/app/apps/web/site/page.tsx', 'site', 'page.tsx'],
+  // A checkout root that itself holds `apps/<x>/<surface>/`: the app's own segment is the LAST.
+  ['/home/u/apps/acme/app/apps/web/site/x/page.tsx', 'site', 'x/page.tsx'],
+];
+
+describe('a workspace named like a surface', () => {
+  test.each(WORKSPACE_CASES)('%s is surface %s', (path, surface, rest) => {
+    expect(locateSurface(path)).toEqual({ surface, rest });
+  });
+
+  test('a path outside apps/ is read as before', () => {
+    expect(surfaceOf('site/pricing/page.tsx')).toBe('site');
+    expect(surfaceOf('packages/ui/src/card.tsx')).toBeNull();
   });
 });

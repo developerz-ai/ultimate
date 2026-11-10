@@ -1,5 +1,6 @@
 // The ambient AI runtime an `llm()` action calls into: the gateway that serves every model
-// call, the embedder the semantic cache keys on, and one semantic cache per declared scope.
+// call, the embedder the semantic cache keys on, and one semantic cache per declared scope. All
+// three are adapter ports, filled from `apps/<app>/runtime.ts` through `@ultimat3/ai/adapter`.
 //
 // Ambient rather than injected, for the same reason the budget ledger is: an `llm()`
 // declaration is evaluated at module scope, long before a provider, an API key or a request
@@ -10,26 +11,19 @@
 import type { SemanticCache } from '@ultimat3/cache';
 import { memorySemanticCache } from '@ultimat3/cache';
 import { asyncContext, cachedFormatter } from '@ultimat3/core';
-import { adapterSlot } from '@ultimat3/core/adapter';
+import { type AdapterSlot, adapterSlot } from '@ultimat3/core/adapter';
 import type { Embedder } from './embeddings';
 import { hashEmbedder } from './embeddings';
 import { AiGatewayMissingError } from './errors';
 import type { Gateway } from './gateway';
 
 /**
- * Everything about the AI runtime EXCEPT the gateway, which is a port with one way in:
- * `aiGateway` in `apps/<app>/runtime.ts`, installed by the boot through `installAiGateway`
- * (`@ultimat3/ai/adapter`). `gateway` left this input in 31.0.0 — two ways to set one slot.
+ * The AI runtime's configuration — the redactor, and nothing that selects a backend. The gateway,
+ * the embedder and the semantic-cache factory are ports with one way in each: `aiGateway`,
+ * `embedder` and `semanticCache` in `apps/<app>/runtime.ts`, installed by the boot through
+ * `@ultimat3/ai/adapter`. `gateway`, `embedder` and `semanticCache` left this input in 31.0.0.
  */
 export interface AiRuntimeInput {
-  /**
-   * Keys the semantic cache. Defaults to `HashEmbedder`: deterministic, offline, and lexical
-   * rather than semantic — at the thresholds an LLM cache runs at that is a near-exact-match
-   * cache, which is the safe way to be wrong. Install a real embedder to get paraphrase hits.
-   */
-  readonly embedder?: Embedder;
-  /** One cache per scope key. Defaults to the in-memory driver; pgvector in production. */
-  readonly semanticCache?: (scope: string) => SemanticCache;
   /**
    * The last thing that runs over a prompt before it leaves the process. Declared here, in the
    * one place the framework already owns, because `vars()` is the one declared place a model call
@@ -54,25 +48,39 @@ export type Redactor = (text: string) => string;
 /** No app redactor installed. Named rather than inline so `ultimate.llm.redacted` has one thing to mean. */
 const noRedaction: Redactor = (text) => text;
 
-interface AiRuntime {
-  readonly embedder: Embedder;
-  readonly semanticCache: (scope: string) => SemanticCache;
-  readonly redact: Redactor;
-}
+/**
+ * The `semanticCache` port: one cache per scope key. A FACTORY, because scopes are separate cache
+ * instances (`semanticCacheFor`). Default: a `memorySemanticCache()` per scope, per process.
+ */
+export type SemanticCacheFactory = (scope: string) => SemanticCache;
 
-let runtime: AiRuntime | undefined;
+let redactor: Redactor = noRedaction;
 /** The `aiGateway` port's ONE slot, written only by `installAiGateway`. */
 const gatewaySlot = /* @__PURE__ */ adapterSlot<Gateway | undefined>(() => undefined);
+/**
+ * The `embedder` port. Default `hashEmbedder()`: deterministic, offline and lexical rather than
+ * semantic — at the thresholds an LLM cache runs at that is a near-exact-match cache, which is the
+ * safe way to be wrong. Install a real embedder (`remoteEmbedder`) to get paraphrase hits.
+ */
+const embedderSlot = /* @__PURE__ */ adapterSlot<Embedder>(() => fallbackEmbedder());
+/** The `semanticCache` port. Default the in-memory driver; pgvector in production. */
+const semanticCacheSlot = /* @__PURE__ */ adapterSlot<SemanticCacheFactory>(() => memoryPerScope);
+const memoryPerScope: SemanticCacheFactory = () => memorySemanticCache();
+let hashed: Embedder | undefined;
+/** One default embedder per process, built on first use rather than at import. */
+const fallbackEmbedder = (): Embedder => {
+  hashed ??= hashEmbedder();
+  return hashed;
+};
 const caches = new Map<string, SemanticCache>();
 
 /**
- * The boot's install of the `aiGateway` port, from `@ultimat3/ai/adapter` only. Answers the release
- * that removes THIS install and no other (core's `adapterSlot`), in any order, once.
+ * Install into a slot whose value every cached `SemanticCache` was built against, and clear the
+ * caches on the install and on the release alike: vectors from two embedders are not comparable,
+ * and a test's double must never be served what the real backend answered (and back).
  */
-export function installAiGateway(gateway: Gateway): () => void {
-  const release = gatewaySlot.install(gateway);
-  // A cached answer is one gateway's: kept across a swap, a test's double would be served what
-  // the real gateway answered (and back). Cleared on install and on release alike.
+function installClearing<T>(slot: AdapterSlot<T>, value: T): () => void {
+  const release = slot.install(value);
   caches.clear();
   return () => {
     release();
@@ -80,14 +88,30 @@ export function installAiGateway(gateway: Gateway): () => void {
   };
 }
 
+/**
+ * The boot's install of the `aiGateway` port, from `@ultimat3/ai/adapter` only. Answers the release
+ * that removes THIS install and no other (core's `adapterSlot`), in any order, once.
+ */
+export function installAiGateway(gateway: Gateway): () => void {
+  // A cached answer is one gateway's: kept across a swap, a test's double would be served what
+  // the real gateway answered (and back).
+  return installClearing(gatewaySlot, gateway);
+}
+
+/** The boot's install of the `embedder` port, from `@ultimat3/ai/adapter` only. Answers its release. */
+export function installAiEmbedder(embedder: Embedder): () => void {
+  return installClearing(embedderSlot, embedder);
+}
+
+/** The boot's install of the `semanticCache` port, from `@ultimat3/ai/adapter` only. */
+export function installSemanticCache(factory: SemanticCacheFactory): () => void {
+  return installClearing(semanticCacheSlot, factory);
+}
+
+/** Replace the runtime's configuration; an omitted field takes its default. Clears the caches. */
 export function configureAi(input: AiRuntimeInput = {}): void {
-  runtime = {
-    embedder: input.embedder ?? hashEmbedder(),
-    semanticCache: input.semanticCache ?? (() => memorySemanticCache()),
-    redact: input.redact ?? noRedaction,
-  };
-  // A new runtime means a new embedder; vectors from the old one are not
-  // comparable to vectors from the new one, and a stale hit would answer the wrong question.
+  redactor = input.redact ?? noRedaction;
+  // What a test calls between cases to start from empty caches; harmless anywhere else.
   caches.clear();
 }
 
@@ -138,13 +162,14 @@ export function installedGateway(): Gateway | undefined {
   return evalScopes.get()?.gateway ?? gatewaySlot.current();
 }
 
+/** The installed embedder (`embedder` port), or the process's hash embedder. */
 export function aiEmbedder(): Embedder {
-  return runtime?.embedder ?? hashEmbedder();
+  return embedderSlot.current();
 }
 
 /** The installed redactor, or the identity. Never absent, so the call site has no branch. */
 export function aiRedactor(): Redactor {
-  return runtime?.redact ?? noRedaction;
+  return redactor;
 }
 
 /**
@@ -160,16 +185,14 @@ export function aiRedactor(): Redactor {
  * no entries at all and the memory one loses a cache.
  */
 export function semanticCacheFor(scope: string): SemanticCache {
-  return cachedFormatter(
-    caches,
-    scope,
-    () => runtime?.semanticCache(scope) ?? memorySemanticCache(),
-  );
+  return cachedFormatter(caches, scope, () => semanticCacheSlot.current()(scope));
 }
 
 /** Test-only reset. Module-level state otherwise leaks between test files. */
 export function resetAiRuntime(): void {
-  runtime = undefined;
+  redactor = noRedaction;
   gatewaySlot.reset();
+  embedderSlot.reset();
+  semanticCacheSlot.reset();
   caches.clear();
 }

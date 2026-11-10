@@ -23,6 +23,7 @@
 import { basename, join, posix, relative, sep } from 'node:path';
 import { ISLAND_EXTENSION, islandModuleId } from '@ultimat3/render';
 import { loadAppConfig } from './app-config-load';
+import type { IslandResolve } from './document-options';
 import { IslandBuildFailedError } from './errors';
 import { refuseDuplicatedModules } from './island-duplicate-refusal';
 import { entryMissing, onlyMissing } from './island-entry-missing';
@@ -108,7 +109,7 @@ export interface IslandBundle {
    * Every island on that page goes through it, so an unbuildable specifier fails the render rather
    * than emitting a `data-x-entry` no browser can import.
    */
-  resolverFor(routeFile: string): (src: string) => string;
+  resolverFor(routeFile: string): IslandResolve;
   /** Every realtime island of THIS app, by file: what a document's page boot and holds are read from. */
   readonly realtime: ReadonlyMap<string, IslandRealtime>;
   /** The chunk a URL names — for serving it, and for naming the island a budget finding blames. */
@@ -465,14 +466,17 @@ export function islandBundle(
     chunks,
     shared,
     realtime,
-    resolverFor(routeFile: string): (src: string) => string {
+    resolverFor(routeFile: string): IslandResolve {
       const dir = posix.dirname(routeFile);
-      return (src: string): string => {
+      const resolve = (src: string): string => {
         const target = posix.normalize(posix.join(dir, src));
         const chunk = byFile.get(target);
         if (chunk === undefined) throw entryMissing(routeFile, src, target, chunks);
         return chunk.url;
       };
+      // What the document preloads for each island it rendered (`route-islands-preload.ts`).
+      const importsOf = (url: string): readonly string[] => byUrl.get(url)?.imports ?? [];
+      return Object.assign(resolve, { importsOf });
     },
     chunkAt: (url: string): IslandChunk | undefined => byUrl.get(url),
     assetAt: (url: string): IslandChunk | SharedChunk | undefined =>

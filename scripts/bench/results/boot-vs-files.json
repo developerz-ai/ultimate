@@ -1,0 +1,34 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "runs": 3,
+  "results": [
+    {
+      "files": 500,
+      "serialMs": 804,
+      "batchedMs": 393,
+      "serialMsPer1k": 1608,
+      "batchedMsPer1k": 786
+    },
+    {
+      "files": 2000,
+      "serialMs": 1133,
+      "batchedMs": 645,
+      "serialMsPer1k": 567,
+      "batchedMsPer1k": 323
+    },
+    {
+      "files": 5000,
+      "serialMs": 3258,
+      "batchedMs": 1259,
+      "serialMsPer1k": 652,
+      "batchedMsPer1k": 252
+    }
+  ]
+}

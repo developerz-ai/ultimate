@@ -1,7 +1,7 @@
-// `@ultimat3/storage/adapter`: the `storage` port (`ADAPTER_PORTS`) as a driver author needs it —
-// `StorageDriver` and the shapes it reads and answers, the errors a driver raises, and the helpers
-// every driver must refuse with the same way. No installer: the boot READS `runtime.ts`'s `storage`
-// driver as its default disk (`@ultimat3/cli`'s `runtime-storage-boot.ts`).
+// `@ultimat3/storage/adapter`: two ports as an adapter author needs them. `storage`: `StorageDriver`,
+// its shapes, errors and shared refusal helpers — no installer, the boot READS `runtime.ts`'s
+// driver as its default disk (`@ultimat3/cli`'s `runtime-storage-boot.ts`). `uploadScanner`:
+// `UploadScanner`, what it is asked and answers, and the boot's installer.
 
 export type {
   ByteLimit,
@@ -39,3 +39,5 @@ export type { ObjectLock, ObjectLockOptions } from './object-lock';
 export type { PutStreamOptions } from './put-stream';
 export type { ByteRange, GetOptions } from './range';
 export type { SignedPart, SignedUrlVerification } from './signed-url';
+export type { ScanInput, ScanVerdict, UploadScanner } from './upload-scanner';
+export { installUploadScanner, resetUploadScanner } from './upload-scanner';

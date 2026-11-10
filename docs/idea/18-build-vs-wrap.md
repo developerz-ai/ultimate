@@ -154,6 +154,20 @@ every axis, which is what makes the criterion a criterion rather than a preferen
 The one-line form: NATS was protocol with no integration; the agent layer is integration with almost
 no protocol.
 
+### SAML response verification — BUILD, decided 2026-11-09
+
+`samlIdentityProvider()` (`packages/auth/src/saml-*.ts`) verifies XML-DSig itself; no dependency.
+
+| Axis | Reading |
+|---|---|
+| a Bun native | none — no SAML or XML-DSig in Bun |
+| the candidates | `xml-crypto` + `@xmldom/xmldom`, `node-saml`, `samlify`: Node-centric, with a long CVE history on exactly this surface — signature wrapping (XSW), comment injection into a signed value, `DigestValue` confusion, multi-root documents |
+| integration benefit of owning it | high: sessions, the shared replay store (`auth.totpReplay`), coded refusals with `meta.check` — all ours whichever library parsed the bytes |
+| the XML actually needed | a small subset: SP-initiated, one signed assertion, exc-c14n + enveloped, RSA-SHA256 / SHA-256. Everything outside it is refused, not parsed (DOCTYPE, entities, processing instructions, encrypted assertions, SHA-1) |
+| what earns it | known-answer tests against a REAL signer: our c14n reproduces every `DigestValue` of three xmlsec-signed responses (python3-saml's vectors, MIT) and their `SignedInfo` verifies under the published certificate, so a bug symmetric between our signer and our verifier cannot pass; the test IdP writes canonical form by hand |
+
+Revisit if a Bun-native, maintained XML-DSig verifier appears.
+
 ## Dependency ledger
 
 Every dependency admitted at a driver/transport seam under this criterion, in one place.

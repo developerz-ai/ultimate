@@ -91,6 +91,16 @@ Fan-out runs **after the handler resolves, in the same call** — `bustAfterComm
 >
 > **As of 31.0.0 a bust runs no script at all**, and every command names one key. Tag buckets are sorted sets (`t2:`/`e2:`) scored by the member's expiry plus 60 s; every write prunes members past their score, so a bucket holds live keys only. Before, only a bust removed members: an entity written constantly and never invalidated collected every key it ever wrote, and its first bust read millions in one reply. A value over `redisTier({ maxValueBytes })` (1 MiB) is refused with `X_CACHE_TOO_LARGE`.
 
+**Across replicas without NATS.** `As of 2026-11-09`. The tier-2 message rides whichever bus reaches the other processes, decided once at boot ([`runtime-cache-bus.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/runtime-cache-bus.ts)):
+
+| Configured | Invalidations ride | `cache.broadcast` log line |
+|---|---|---|
+| `NATS_URL`, or a `transport` in `runtime.ts` | that transport | `bus: 'nats'` (the transport's name) |
+| no NATS, `REDIS_URL` (else `VALKEY_URL`) | Redis pub/sub (`redisPubSubAt`) | `bus: 'redis', source: 'REDIS_URL'` |
+| neither | the in-process bus: this replica only | `bus: 'in-process'` |
+
+Never both: a second hop beside NATS would deliver every bust twice through two systems that fail independently. A replica whose Redis subscription dropped flushes its own tiers on reconnect rather than serve what it may have missed. This is what makes rung 1 of the [scale ladder](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md) — roles split, Redis, no NATS — safe with two web replicas.
+
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 
 The write side holds the same rule one layer up: a fan-out that refuses outright — a tag no entity declared, `X_CACHE_TAG_UNKNOWN` — is absorbed rather than raised: one `action.invalidate.failed` error line, entries live until their TTL, and the caller keeps the write it already made. A replayed idempotent call (`idempotent: true` + a repeated `Idempotency-Key`) busts nothing at all: no handler ran, and the first call already did.

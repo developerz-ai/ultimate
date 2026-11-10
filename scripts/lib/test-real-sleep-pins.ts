@@ -30,8 +30,10 @@ export const REAL_SLEEP_PINS: Readonly<Record<string, number>> = {
   pwa: 6,
   realtime: 57,
   render: 7,
-  scraping: 2,
+  // why: moved from testing with the CDP launcher (testing −4): the same four waits on a real
+  // child process, socket or pipe that the launcher's own deadlines run on, no new one (31.0.0).
+  scraping: 6,
   scripts: 2,
-  testing: 7,
+  testing: 3,
   ui: 3,
 };

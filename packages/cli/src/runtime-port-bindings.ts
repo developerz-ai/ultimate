@@ -9,11 +9,13 @@ import {
 } from '@ultimat3/auth/adapter';
 import type { PgExecutor } from '@ultimat3/core';
 import { installAuditSink, installErrorReporter } from '@ultimat3/core/adapter';
+import { installSearchIndex } from '@ultimat3/entity/adapter';
 import { installRateLimitStore } from '@ultimat3/http/adapter';
 import { installMailDriver } from '@ultimat3/mail/adapter';
 import { postgresDeliveryLedger } from '@ultimat3/notify';
 import type { NotifyStores } from '@ultimat3/notify/adapter';
-import { installNotifyStores } from '@ultimat3/notify/adapter';
+import { installNotifyStores, installSmsTransport } from '@ultimat3/notify/adapter';
+import { installUploadScanner } from '@ultimat3/storage/adapter';
 import { BOOT_PORT_BINDINGS, QUEUE_PORT_BINDINGS } from './runtime-port-bindings-queue';
 import type { PortBindings } from './runtime-ports';
 
@@ -34,6 +36,11 @@ export const PORT_BINDINGS: PortBindings = {
   authServerStore: { phase: 'services', install: (store) => installAuthServerStore(store) },
   cacheTiers: { phase: 'read', at: 'runtime-cache.ts, each replacing the rung of its own name' },
   clock: BOOT_PORT_BINDINGS.clock,
+  // Imported only when supplied, for `aiGateway`'s reason.
+  embedder: {
+    phase: 'services',
+    install: async (embedder) => (await import('@ultimat3/ai/adapter')).installAiEmbedder(embedder),
+  },
   // Before `loadApp`; `serve-env.ts`'s `configureReporting` later chains its `SENTRY_DSN`
   // transport in a frame above it, so this counts as the app's reporter there.
   errorReporter: { phase: 'services', install: (reporter) => installErrorReporter(reporter) },
@@ -73,13 +80,24 @@ export const PORT_BINDINGS: PortBindings = {
     install: async (driver) =>
       (await import('@ultimat3/scraping/adapter')).installScrapeDriver(driver),
   },
+  // Installed only when supplied: unset, entity's own slot answers `postgresSearchIndex()`.
+  searchIndex: { phase: 'services', install: (index) => installSearchIndex(index) },
   secretSource: BOOT_PORT_BINDINGS.secretSource,
+  semanticCache: {
+    phase: 'services',
+    install: async (factory) =>
+      (await import('@ultimat3/ai/adapter')).installSemanticCache(factory),
+  },
+  // Installed only when supplied: unset, notify's own slot answers memory locally, a refusal elsewhere.
+  smsTransport: { phase: 'services', install: (transport) => installSmsTransport(transport) },
   storage: { phase: 'read', at: 'runtime-storage-boot.ts, the default disk' },
   totpReplay: {
     phase: 'services',
     install: (guard) => installTotpReplay(() => guard),
   },
   transport: { phase: 'read', at: 'runtime-bus.ts, which installs the channel transport it dials' },
+  // Installed only when supplied: unset, storage's slot answers no scanner and nothing is scanned.
+  uploadScanner: { phase: 'services', install: (scanner) => installUploadScanner(scanner) },
 };
 
 /**

@@ -7,11 +7,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Node's path module, as every e2e here resolves a package file by path.
 import { resolve } from 'node:path';
 import { compileStylesheet, registeredStylesheets } from '@ultimat3/render/server';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from '@ultimat3/testing';
 import {
   DEFAULT_CDP_TIMEOUT_MS,
   E2E_BROWSER_OPEN_MS,
-  findChrome,
   openE2eBrowser,
   openE2eBrowserIfAvailable,
 } from '@ultimat3/testing';

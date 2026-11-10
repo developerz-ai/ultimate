@@ -25,7 +25,10 @@ const REFERENCE_APP = 'examples/dummy';
  * ratchet, never an allow-list: a name here that the app now uses is a failure ("delete the row"),
  * so the list only shrinks. Adding a row is a reviewable diff with its reason beside it.
  */
-export const PENDING_IN_REFERENCE_APP: Readonly<Record<string, string>> = {};
+export const PENDING_IN_REFERENCE_APP: Readonly<Record<string, string>> = {
+  partitions:
+    "needs an append-only, time-keyed table that is NEW: Postly's (run_events, webhook_deliveries, daily_likes) exist unpartitioned, Postgres cannot partition one in place (X_MIGRATION_PARTITION_CHANGE), and a partitioned table nothing writes would be weight without function — the first time-series table Postly adds is declared with partitionBy and maintained by partitions()",
+};
 
 /** Shipped app source: no tests (a test calling a factory proves nothing about the app), no deps. */
 const appSources = async (): Promise<readonly { path: string; source: string }[]> => {

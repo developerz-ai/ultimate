@@ -30,7 +30,7 @@ export const discoveryUrl = (issuer: string): string =>
   `${bareIssuer(issuer)}/.well-known/openid-configuration`;
 
 export interface DiscoverOAuthProviderInput {
-  /** The id the URL segment carries: `/auth/oauth/<id>`. Also names the two env vars. */
+  /** The id the URL segment carries: `/auth/sso/<id>`. Also names the two env vars. */
   readonly id: string;
   readonly issuer: string;
   /** Defaults to the OIDC minimum this package needs to identify somebody. */

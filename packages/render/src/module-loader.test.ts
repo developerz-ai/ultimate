@@ -336,8 +336,11 @@ describe('an app served from /app', () => {
   // The order `x build` meets: a sheet can register before `loadApp` names the root, and a
   // classification frozen at registration would keep the answer the wrong root gave.
   test('naming the root reclassifies what registered before it, and moves the revision', () => {
+    // A sheet outside `apps/<name>/`, whose surface only the root can decide: under `apps/` the
+    // workspace segment already names it (`surfaces.ts`'s `WORKSPACE_SURFACE`), whatever the root.
+    const bare = '/app/site/page.module.scss';
     setStylesheetRoot('/');
-    loadStylesheet(SITE_SHEET, '.hero{color:red}');
+    loadStylesheet(bare, '.hero{color:red}');
     expect(stylesFor('site')).toBe('');
 
     const before = stylesheetsRevision();

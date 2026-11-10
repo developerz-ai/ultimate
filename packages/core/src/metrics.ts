@@ -1,10 +1,12 @@
 // Single responsibility: the OpenTelemetry-shaped metrics seam — counter, gauge and histogram
-// aggregated in process, read through one `collectMetrics()`. Shaped exactly like `telemetry.ts`:
-// always on, a no-op exporter by default, and the wire format supplied by a driver, never here.
+// aggregated in process, read through one `collectMetrics()`, and pushed as `metric.export` on the
+// instrumentation bus. An exporter is a subscriber there, like the span and log exporters: always
+// on, free until something subscribes, and the wire format supplied by a driver, never here.
 
 import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { renderThrowable } from './error-render';
+import { instrument, subscribed } from './instrument';
 import { logger } from './logger';
 import { finite, MetricValueInvalidError } from './metric-errors';
 import { declare, type Instrument, instruments } from './metric-registry';
@@ -49,7 +51,7 @@ export type {
 
 export const noopMetricExporter: MetricExporter = Object.freeze({
   export(): void {
-    // Intentionally empty: instruments are always live, and free until an exporter is configured.
+    // Intentionally empty: a subscriber that drops every collection.
   },
 });
 
@@ -58,7 +60,10 @@ export interface MemoryMetricExporter extends MetricExporter {
   reset(): void;
 }
 
-/** For tests: assert an export tick without a collector. `metricsText()` is the shipped read. */
+/**
+ * For tests: assert an export tick without a collector — `subscribe('metric.export', (event) =>
+ * memory.export(event.payload))`. `metricsText()` is the shipped read.
+ */
 export function memoryMetricExporter(): MemoryMetricExporter {
   const collections: MetricCollection[] = [];
   return {
@@ -72,18 +77,20 @@ export function memoryMetricExporter(): MemoryMetricExporter {
   };
 }
 
+/**
+ * Configuration only. `exporter` left in 31.0.0: an exporter is a `metric.export` subscriber on the
+ * instrumentation bus, released by its own unsubscribe — never a slot one boot hands back under
+ * another's feet.
+ */
 export interface MetricsOptions {
-  readonly exporter?: MetricExporter | undefined;
   readonly clock?: Clock | undefined;
   readonly enabled?: boolean | undefined;
 }
 
-let exporter: MetricExporter = noopMetricExporter;
 let clock: Clock = systemClock;
 let enabled = true;
 
 export function configureMetrics(options: MetricsOptions): void {
-  if (options.exporter !== undefined) exporter = options.exporter;
   if (options.clock !== undefined) clock = options.clock;
   if (options.enabled !== undefined) enabled = options.enabled;
 }
@@ -94,7 +101,6 @@ export function configureMetrics(options: MetricsOptions): void {
  * writing into a registry nothing reads.
  */
 export function resetMetrics(): void {
-  exporter = noopMetricExporter;
   clock = systemClock;
   enabled = true;
   for (const instrument of instruments.values()) {
@@ -229,10 +235,13 @@ export function collectMetrics(): MetricCollection {
   };
 }
 
-/** One push tick. A driver decides when — `startMetricExport()` is the batteries-included when. */
+/**
+ * One push tick: the collection, published as `metric.export`. Nothing is collected while nobody
+ * subscribes. A driver decides when — `startMetricExport()` is the batteries-included when.
+ */
 export function exportMetrics(): void {
-  if (!enabled) return;
-  exporter.export(collectMetrics());
+  if (!enabled || !subscribed('metric.export')) return;
+  instrument('metric.export', collectMetrics());
 }
 
 /**

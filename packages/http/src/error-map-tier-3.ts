@@ -129,4 +129,16 @@ export const TIER_3_ERROR_STATUS = {
   X_METER_INVALID: 500,
   // @ultimat3/realtime — a channel's catch-up read decides with another policy
   X_CHANNEL_CATCHUP_POLICY_MISMATCH: 500,
+  // @ultimat3/jobs — withLock could not take the lock within its wait bound
+  X_LOCK_NOT_ACQUIRED: 409,
+  // @ultimat3/jobs — a lock withLock held expired before its work finished
+  X_LOCK_LOST: 409,
+  // @ultimat3/jobs — withLock found no lease store to hold the lock in
+  X_LOCK_STORE_MISSING: 500,
+  // @ultimat3/jobs — a ledger posting does not sum to zero in every currency
+  X_LEDGER_UNBALANCED: 422,
+  // @ultimat3/jobs — a ledger entry is not a whole-minor Money amount on a named account
+  X_LEDGER_ENTRY_INVALID: 422,
+  // @ultimat3/jobs — a ledger posting key is already stored with other entries
+  X_LEDGER_POSTING_CONFLICT: 409,
 } satisfies Readonly<Record<string, number>>;

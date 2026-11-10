@@ -10,6 +10,7 @@ import { currencyCheck, scaleCheck } from './columns';
 import { EntityError, invariantViolated } from './errors';
 import type { Invariant } from './invariants';
 import type { LifecycleDescription } from './lifecycle';
+import type { PartitionDescription } from './partition';
 import type {
   ColumnDescription,
   EntityDescription,
@@ -48,6 +49,8 @@ export interface DescribeInput<Row> {
   readonly view?: ViewQuery | null | undefined;
   /** `retain`, `history`, `countedIn` counters — each projected only when declared (`lifecycle.ts`). */
   readonly lifecycle?: LifecycleDescription | undefined;
+  /** `entity({ partitionBy })`, checked (`partition.ts`) — projected only when declared. */
+  readonly partition?: PartitionDescription | null | undefined;
 }
 
 /**
@@ -385,5 +388,7 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
           },
         }),
     ...input.lifecycle,
+    // Absent unless declared: no entity that never said `partitionBy` moves the hash.
+    ...(input.partition == null ? {} : { partition: input.partition }),
   };
 };

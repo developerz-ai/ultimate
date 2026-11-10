@@ -67,6 +67,14 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_SUBJECT_TABLE_UNDECLARED',
   'X_SUBJECT_TREATMENT_INVALID',
   'X_SUBJECT_CYCLE',
+  'X_LOCK_NOT_ACQUIRED',
+  'X_LOCK_LOST',
+  'X_LOCK_STORE_MISSING',
+  'X_LEDGER_UNBALANCED',
+  'X_LEDGER_ENTRY_INVALID',
+  'X_PERSONAL_DATA_UNERASED',
+  'X_PERSONAL_DATA_UNREACHED',
+  'X_LEDGER_POSTING_CONFLICT',
 ] as const;
 
 /**
@@ -150,6 +158,15 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
     'a table reaches the declared subject and defineSubject gives it no treatment',
   X_SUBJECT_TREATMENT_INVALID: 'a defineSubject treatment cannot be carried out',
   X_SUBJECT_CYCLE: 'the subject erase has no deletion order',
+  X_LOCK_NOT_ACQUIRED: 'withLock could not take the lock within its wait bound',
+  X_LOCK_LOST: 'a lock withLock held expired before its work finished',
+  X_LOCK_STORE_MISSING: 'withLock found no lease store to hold the lock in',
+  X_LEDGER_UNBALANCED: 'a ledger posting does not sum to zero in every currency',
+  X_LEDGER_ENTRY_INVALID: 'a ledger entry is not a whole-minor Money amount on a named account',
+  X_PERSONAL_DATA_UNERASED:
+    'a subject erase would leave a personalData() column of a reached table',
+  X_PERSONAL_DATA_UNREACHED: 'an entity carries personalData() columns no declared subject reaches',
+  X_LEDGER_POSTING_CONFLICT: 'a ledger posting key is already stored with other entries',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -230,4 +247,14 @@ registerErrorRetry({
   X_SUBJECT_TABLE_UNDECLARED: 'terminal',
   X_SUBJECT_TREATMENT_INVALID: 'terminal',
   X_SUBJECT_CYCLE: 'terminal',
+  // A posting is the job's input: the same entries are refused on every attempt.
+  X_LEDGER_UNBALANCED: 'terminal',
+  X_LEDGER_ENTRY_INVALID: 'terminal',
+  // A stored posting does not change between attempts: the repair is a new key.
+  X_LEDGER_POSTING_CONFLICT: 'terminal',
+  // No store is a wiring fact; contention (`X_LOCK_NOT_ACQUIRED`) and a lost lock stay retryable.
+  X_LOCK_STORE_MISSING: 'terminal',
+  // Read off the declarations, as the `X_SUBJECT_*` refusals are: the same every attempt.
+  X_PERSONAL_DATA_UNERASED: 'terminal',
+  X_PERSONAL_DATA_UNREACHED: 'terminal',
 });

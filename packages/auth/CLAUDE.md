@@ -96,9 +96,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `deleteSessionsForOrg` joins through `x_users`; `x_sessions` does **not** gain an `org_id`.
 - The code flow carries `nonce` inside the id token. `assertOAuthCallback` checks an echoed one when
   present and never requires it; `verifyIdToken` is the real gate.
-- The handshake is sealed (`sealHandshake`); `openHandshake` takes the provider as an argument.
-  Expiry is the server's clock, not `Max-Age`. One handshake cookie **per provider**
-  (`handshakeCookieName`), and `clearHandshakeCookie(provider)`.
+- `sealHandshake`/`openHandshake` (a hand-built flow's cookie, not `oauthLogin`'s): the provider is
+  an argument, expiry the server's clock, one cookie per provider (`handshakeCookieName`).
 - `takeVerification(purpose, identifier, tokenHash)` consumes **only on a hash match**, in one
   conditional statement (`consumed_at is null` on the UPDATE and its subselect,
   `order by created_at desc limit 1`); `consumeVerification` still compares in constant time.
@@ -113,14 +112,13 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - A token endpoint's HTTP 200 is not success — read `error`.
 - Link by address only when the provider **and** the local account both verified it
   (`link: 'verified-email'`, default; `'never'` is the only other value).
-- **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is read by
-  both `oauth-errors.ts` and `oauth-route.ts`; every "start over" fix is `restartAt(provider)`.
-- The routes are **descriptors** (`AuthRouteDescriptor`), never mounted handlers.
-- The callback answers failure as **coded JSON** — a fixed body per code (`code`, `title`, `docs`,
-  one `cause`, `fix: x errors explain <CODE> --json`); the authored cause and fix are the
-  `auth.oauth.refused` log line — and success redirects to a fixed `successPath` —
-  never `?next=` (`nextAfterSignIn` in `@ultimat3/http` is the one open-redirect check).
-- The handshake cookie is cleared on **every** callback outcome.
+- **One sign-in route implementation** (`identity-provider-route-core.ts`): `identityProviderRoutes`
+  and `oauthLogin` are two policies over it, at `/auth/sso/:provider[/callback]` (`oauth-paths.ts`,
+  imports nothing, not configurable; every "start over" fix is `restartAt(provider)`). Descriptors,
+  never mounted handlers. Failure is **coded JSON** (`code`, `title`, `docs`, one fixed `cause`,
+  `fix: x errors explain <CODE> --json`); the authored cause/fix is the `<event>.refused` log line.
+  Success is 303 to a fixed `successPath`, never `?next=`. `__Host-x_sso_<id>` clears only for an
+  answer bound to it (`answers()`). The ACS `meta` is `csrf: 'cookieless'`; mount `meta: leg.meta`.
 - Refresh is **not implemented**, so the framework **stores no provider token**: `accountFor`
   (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`. The columns and `AuthAccount`
   fields stay; an app that stores tokens implements `linkAccount` itself.
@@ -200,14 +198,14 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   compare-and-set, challenges single-use in `x_passkey_challenges` (never a process map). A step-up
   challenge is DERIVED (`stepUpChallenge`), never supplied. Browser half: `./client`, two modules
   (`client-bundle.test.ts`); never import the barrel there. `docs/history/auth.md`.
-- SAML is out of scope permanently (XML-DSig canonicalisation has no Bun native). Put an
-  OIDC-speaking bridge in front and register that.
+- **SAML = `samlIdentityProvider`**, no dependency: assertion signature required, one assertion,
+  metadata keys only, replay via `auth.totpReplay`, `trustEmail: true` needs `emailDomains`.
 
 ## Files
 
 | File | Job |
 |---|---|
-| `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout`. Three suites, split at the line ceiling along the three subjects: `auth.test.ts` (the credential flow), `auth-config.test.ts` (`defineAuth`'s defaults and refusals) and `auth-lockout.test.ts` (the tenant and address buckets) |
+| `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout`. Suites: `auth.test.ts` (credential flow), `auth-config.test.ts` (defaults, refusals), `auth-lockout.test.ts` (tenant and address buckets) |
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
@@ -238,10 +236,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile`; `userinfoBody`, the one userinfo reader |
 | `oauth-grant-context.ts` | `resolveGrants`' second argument: tokens, every id-token claim, a lazy subject-checked `userinfo()` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
-| `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
 | `errors.ts` | the codes this package owns and borrows, their titles, the one `registerErrorCodes()` call, `AuthError`, and every non-OAuth factory |
 | `oauth-errors.ts` | the OAuth refusals more than one OAuth module raises, and `restartAt`. A refusal with one thrower lives beside it; declares no code and registers nothing |
-| `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
+| `oauth-route.ts` | `oauthLogin(auth)`, the OAuth policy over the sign-in route core |
 | `kdf-gate.ts` | the one bound on concurrent argon2 work: core's `flightGate`, auth's `X_OVERLOADED` |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
@@ -249,6 +246,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `subject-target.ts` | `authSubjectTarget({ executor, user })`: the identity tables as a `defineSubject({ targets })` entry, structural (`@ultimat3/jobs` imports nothing from here). Export = `AUTH_SUBJECT_COLUMNS` (never `password_hash`, `mfa_secret`, a recovery digest); erase = api keys, pending verifications, then the user (sessions, accounts cascade). Three idempotent statements, no transaction of its own |
 | `passkey-login.ts` / `passkey-step-up.ts` / `passkey-evidence.ts` | the factories; the offline re-check. `passkey-verify.ts` + `passkey-assertion.ts` are every check; `*-postgres`/`*-memory` the store; `soft-authenticator.ts` (`./soft-authenticator`) the WebCrypto authenticator tests sign with |
 | `client-scope.ts` | `clientScopeOf(actor)`, the OPAQUE id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`, else a per-process key and one warning) over kind, id, impersonator; `''` anonymous |
+| `identity-provider*.ts` | SSO port, `signInWithIdentity`, OIDC adapter, route core, state cookie, status table |
+| `saml-*.ts` | SAML adapter: strict XML reader, exc-c14n, XML-DSig, response checks, metadata, AuthnRequest |
 
 ```bash
 bun test ./packages/auth/

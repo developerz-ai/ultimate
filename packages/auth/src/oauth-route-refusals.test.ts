@@ -86,11 +86,11 @@ describe('an internal exception is logged, never published', () => {
   const callbackBody = async (
     login: ReturnType<typeof oauthLogin>,
   ): Promise<Record<string, unknown>> => {
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
     const state = new URL(start.headers.get('location') ?? '').searchParams.get('state') ?? '';
     return bodyOf(
       await login.callback.handle(
-        new Request(`https://app.test/auth/oauth/github/callback?code=c&state=${state}`, {
+        new Request(`https://app.test/auth/sso/github/callback?code=c&state=${state}`, {
           headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') },
         }),
       ),
@@ -196,11 +196,11 @@ describe('the token leg quotes only the OAuth error fields', () => {
       secret: SECRET,
       baseUrl: 'https://app.test',
     });
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
     const state = new URL(start.headers.get('location') ?? '').searchParams.get('state') ?? '';
     return bodyOf(
       await login.callback.handle(
-        new Request(`https://app.test/auth/oauth/github/callback?code=c&state=${state}`, {
+        new Request(`https://app.test/auth/sso/github/callback?code=c&state=${state}`, {
           headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') },
         }),
       ),
