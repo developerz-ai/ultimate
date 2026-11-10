@@ -66,15 +66,15 @@ const ANNOTATION = /^::(?:error|warning|notice|debug)(?:\s[^:]*)?::(.*)$/;
 /**
  * An annotation's message, decoded: GitHub's encoding writes a newline as `%0A` (and `%` as
  * `%25`), so a three-line finding inside one `::error` is one line of the log until this splits it
- * back into the lines `renderFinding` wrote.
+ * back into the lines `renderFinding` wrote. MESSAGE data escapes only `%`, CR and LF — `%3A` and
+ * `%2C` are property escapes, and decoding them here would corrupt a URL in a fix. `%25` goes
+ * last, so an escaped `%250A` comes back as the text `%0A` rather than a line break.
  */
 function unannotated(text: string): readonly string[] {
   const message = ANNOTATION.exec(text)?.[1];
   if (message === undefined) return [text];
   return message
     .replaceAll('%0D', '')
-    .replaceAll('%3A', ':')
-    .replaceAll('%2C', ',')
     .split('%0A')
     .map((part) => part.replaceAll('%25', '%'))
     .filter((part) => part.trim() !== '');

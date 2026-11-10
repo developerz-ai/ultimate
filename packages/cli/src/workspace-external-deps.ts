@@ -7,9 +7,11 @@
 import { isBuiltin } from 'node:module';
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
 import { ERROR_DOCS_URL, renderFixShellArg } from '@ultimat3/core';
+import { scanRuntimeImports, stripShebang } from './import-scan';
 import type { Finding } from './output';
 import { FIXTURE_SUFFIX } from './publish-closure';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
+import { tsconfigAliases } from './tsconfig-aliases';
 import { importedPackages, packageOfSpecifier, scanWorkspaces } from './workspace-graph';
 
 /** Every field a package manager installs from — the same four `workspace-graph` reads. */
@@ -54,21 +56,20 @@ const typesPackageFor = (name: string): string =>
   `@types/${name.startsWith('@') ? name.slice(1).replace('/', '__') : name}`;
 
 /**
- * The package names a tsconfig `paths` alias answers for. They resolve through the compiler and
- * Bun's own tsconfig reading, never through `node_modules`, so no manifest can declare them.
+ * `@types/<pkg>` types a package; it does not install it. It covers a TYPE-ONLY import (`import
+ * type`, `typeof import()`) and never a runtime one, which still needs the package itself.
  */
-async function aliasedPackages(root: string): Promise<ReadonlySet<string>> {
-  const options = asRecord((await readObject(join(root, 'tsconfig.json')))?.['compilerOptions']);
-  const aliases = new Set<string>();
-  for (const key of Object.keys(asRecord(options?.['paths']) ?? {})) {
-    const name = packageOfSpecifier(key.replace(/\/?\*.*$/, ''));
-    if (name !== undefined) aliases.add(name);
-  }
-  return aliases;
-}
+const covers = (declared: ReadonlyMap<string, string>, name: string, typeOnly: boolean): boolean =>
+  declared.has(name) || (typeOnly && declared.has(typesPackageFor(name)));
 
-const covers = (declared: ReadonlyMap<string, string>, name: string): boolean =>
-  declared.has(name) || declared.has(typesPackageFor(name));
+/** The packages a file needs at RUNTIME: what survives type erasure. */
+const runtimePackages = (source: string, path: string): ReadonlySet<string> =>
+  new Set(
+    scanRuntimeImports({ path, source: stripShebang(source) }).flatMap((specifier) => {
+      const name = packageOfSpecifier(specifier);
+      return name === undefined ? [] : [name];
+    }),
+  );
 
 /**
  * Whether the file names the package itself. Bun's transpiler injects `react/jsx-dev-runtime` into
@@ -82,6 +83,8 @@ interface Owner {
   readonly dir: string;
   readonly name: string;
   readonly declared: ReadonlyMap<string, string>;
+  /** Root and workspace tsconfig `paths` aliases, each read through its `extends` chain. */
+  readonly aliases: ReadonlySet<string>;
 }
 
 export const undeclaredExternalDepFinding = (
@@ -116,14 +119,16 @@ export async function checkExternalDependencies(root: string): Promise<readonly 
   const { nodes } = await scanWorkspaces(root);
   if (nodes.length === 0) return [];
   const workspaceNames = new Set(nodes.map((node) => node.name));
-  const aliases = await aliasedPackages(root);
   // The root's own declarations resolve from every workspace under every linker: the root
   // `node_modules` is on each one's lookup path, hoisted or isolated. A SIBLING's is not.
   const rootDeclared = declaredOf(await readObject(join(root, 'package.json')));
   const owners: Owner[] = [];
   for (const node of nodes) {
     const manifest = await readObject(join(root, node.dir, 'package.json'));
-    owners.push({ dir: node.dir, name: node.name, declared: declaredOf(manifest) });
+    // Unioned rather than the workspace's alone: `tsc -b` compiles a file under the workspace's
+    // tsconfig, while a root-level `tsc` or Bun's resolver may read the root's.
+    const aliases = await tsconfigAliases([root, join(root, node.dir)]);
+    owners.push({ dir: node.dir, name: node.name, declared: declaredOf(manifest), aliases });
   }
   // Deepest directory first: a nested workspace's files are its own, never its parent's.
   owners.sort((left, right) => right.dir.length - left.dir.length);
@@ -140,10 +145,12 @@ export async function checkExternalDependencies(root: string): Promise<readonly 
     const owner = owners.find((candidate) => path.startsWith(`${candidate.dir}/`));
     if (owner === undefined) continue;
     const source = await Bun.file(join(root, path)).text();
+    const runtime = runtimePackages(source, path);
     for (const name of importedPackages(source, path)) {
-      if (isBuiltin(name) || workspaceNames.has(name) || aliases.has(name)) continue;
+      if (isBuiltin(name) || workspaceNames.has(name) || owner.aliases.has(name)) continue;
       if (!spelledIn(source, name)) continue;
-      if (covers(owner.declared, name) || covers(rootDeclared, name)) continue;
+      const typeOnly = !runtime.has(name);
+      if (covers(owner.declared, name, typeOnly) || covers(rootDeclared, name, typeOnly)) continue;
       const pair = `${owner.dir} ${name}`;
       if (reported.has(pair)) continue;
       reported.add(pair);

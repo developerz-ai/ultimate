@@ -60,7 +60,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`x new`, `x g guard`, `doctor-guards.ts`) † |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize` ‡ |
-| `workspace-external-deps.ts` · `error-codes-package.ts` | `package-shape`: a registry import neither the workspace nor the root declares (`X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`); fix `bun add <pkg> --cwd <workspace>`. The step family's codes and titles, split out of `error-codes.ts` |
+| `workspace-external-deps.ts` · `tsconfig-aliases.ts` · `error-codes-package.ts` | `package-shape`: a registry import neither the workspace nor the root declares (`X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`); fix `bun add <pkg> --cwd <workspace>`. The step family's codes and titles, split out of `error-codes.ts` |
 | `app-permissions*.ts` / `permission-grants.ts` | `policy`: `X_PERMISSION_UNGRANTED`, `X_PERMISSION_BORROWED` † |
 | `job-registration.ts` | `manifest`: no job or task under a positional `anonymous-*` name (`X_JOB_UNREGISTERED`) |
 | `unscanned-admin.ts` | `manifest`: a `defineAdmin()` outside the app scan (`apps/*/src/`) is `X_ADMIN_UNSCANNED` |

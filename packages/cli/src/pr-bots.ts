@@ -25,36 +25,45 @@ export interface BotSummary {
 }
 
 /**
- * The notices known by their wording, in the order they are tried. CodeRabbit's own HTML markers
- * (`rate limited by coderabbit.ai`, `skip review by coderabbit.ai`) come first; the prose rules
- * catch the same notice from a bot that words it the usual way.
+ * The notices, known by their MARKERS and never by a phrase in prose: a review that discusses
+ * "rate limit exceeded" in an upstream API is a review, not a bot refusing to give one.
+ * CodeRabbit's own HTML comment tags come first; otherwise the notice is a markdown heading
+ * (quoted or not) that BEGINS with the notice's title.
  */
-const NOTICES: readonly { readonly kind: BotNoticeKind; readonly pattern: RegExp }[] = [
-  { kind: 'rate-limited', pattern: /rate limited by coderabbit\.ai/i },
-  { kind: 'skipped', pattern: /skip review by coderabbit\.ai/i },
-  { kind: 'rate-limited', pattern: /rate limit exceeded|review limit|exceeded the limit for/i },
-  { kind: 'skipped', pattern: /review skipped|too many files|max files limit/i },
+const MARKERS: readonly { readonly kind: BotNoticeKind; readonly pattern: RegExp }[] = [
+  { kind: 'rate-limited', pattern: /<!--[^>]*rate limited by coderabbit\.ai[^>]*-->/i },
+  { kind: 'skipped', pattern: /<!--[^>]*skip review by coderabbit\.ai[^>]*-->/i },
+];
+const HEADINGS: readonly { readonly kind: BotNoticeKind; readonly pattern: RegExp }[] = [
+  { kind: 'rate-limited', pattern: /^(?:rate limit exceeded|review limit reached)\b/i },
+  { kind: 'skipped', pattern: /^review skipped\b/i },
 ];
 
-/** A line that is a heading, a quote or an admonition, read as the words it carries. */
-const plain = (line: string): string =>
-  line
-    .replace(/^[>\s]*/, '')
-    .replace(/^#+\s*/, '')
-    .trim();
+/** A markdown heading line, quoted or not, as its title text; `undefined` for any other line. */
+const headingOf = (line: string): string | undefined => {
+  const match = /^[>\s]*#{1,6}\s+(.+)$/.exec(line);
+  return match?.[1]?.replaceAll('*', '').trim();
+};
 
-const isProse = (line: string): boolean =>
-  line !== '' && !line.startsWith('<!--') && !/^\[![A-Z]+\]$/.test(line);
-
-/** The notice a body states, or `null` for every body that is an ordinary review or comment. */
+/**
+ * The notice an ISSUE COMMENT states, or `null` for every ordinary body. A formal review is never
+ * passed here: whatever its body says, a submitted review is the bot having reviewed.
+ */
 export function botNotice(body: string): BotNotice | null {
-  const rule = NOTICES.find((candidate) => candidate.pattern.test(body));
-  if (rule === undefined) return null;
-  const lines = body.replaceAll('\r\n', '\n').split('\n').map(plain).filter(isProse);
-  const excerpt = (lines.find((line) => /limit|skipped|too many/i.test(line)) ?? lines[0] ?? '')
-    .replaceAll('*', '')
-    .slice(0, 200);
-  return { kind: rule.kind, excerpt };
+  const headings = body
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .flatMap((line) => {
+      const title = headingOf(line);
+      return title === undefined ? [] : [title];
+    });
+  for (const title of headings) {
+    const rule = HEADINGS.find((candidate) => candidate.pattern.test(title));
+    if (rule !== undefined) return { kind: rule.kind, excerpt: title.slice(0, 200) };
+  }
+  const marker = MARKERS.find((candidate) => candidate.pattern.test(body));
+  if (marker === undefined) return null;
+  return { kind: marker.kind, excerpt: (headings[0] ?? '').slice(0, 200) };
 }
 
 interface Spoken {
@@ -78,23 +87,13 @@ export function botsSummary(
   return logins.map((login) => {
     const own = reviews.filter((review) => review.isBot && review.author === login);
     const said = comments.filter((comment) => comment.isBot && comment.author === login);
-    const spoken: readonly Spoken[] = [
-      ...own.map((review) => ({
-        at: review.submittedAt ?? '',
-        url: review.url,
-        notice: botNotice(review.body),
-      })),
-      ...said.map((comment) => ({
-        at: comment.updatedAt,
-        url: comment.url,
-        notice: botNotice(comment.body),
-      })),
-    ];
-    const lastReview = newest(
-      own
-        .filter((review) => botNotice(review.body) === null)
-        .map((r) => ({ at: r.submittedAt ?? '' })),
-    );
+    // Issue comments only: a submitted review is the bot having reviewed, whatever it says.
+    const spoken: readonly Spoken[] = said.map((comment) => ({
+      at: comment.updatedAt,
+      url: comment.url,
+      notice: botNotice(comment.body),
+    }));
+    const lastReview = newest(own.map((review) => ({ at: review.submittedAt ?? '' })));
     const latest = newest(spoken.filter((entry) => entry.notice !== null));
     const notice =
       latest?.notice == null ? null : { ...latest.notice, at: latest.at, url: latest.url };

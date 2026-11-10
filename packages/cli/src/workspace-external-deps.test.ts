@@ -153,3 +153,60 @@ describe('checkExternalDependencies', () => {
     );
   });
 });
+
+describe('checkExternalDependencies · what counts as declared', () => {
+  let app = '';
+  const put = (path: string, text: string) => Bun.write(join(app, path), text);
+
+  beforeAll(async () => {
+    app = await mkdtemp(join(tmpdir(), 'ultimate-external-deps-decl-'));
+    await put('package.json', '{"name":"r","private":true,"workspaces":["packages/*"]}');
+    // The root's aliases come through two `extends` hops: a relative file, then a package.
+    await put('tsconfig.json', '{ "extends": ["./tsconfig.base.json"] }');
+    await put('tsconfig.base.json', '{ "extends": "@acme/tsconfig" }');
+    await put('node_modules/@acme/tsconfig/package.json', '{"name":"@acme/tsconfig"}');
+    await put(
+      'node_modules/@acme/tsconfig/tsconfig.json',
+      '{ "compilerOptions": { "paths": { "~pkg/*": ["./lib/*"] } } }',
+    );
+    // A workspace's own tsconfig, inheriting its alias from a sibling file.
+    await put('packages/w/tsconfig.json', '{ "extends": "./tsconfig.local.json" }');
+    await put(
+      'packages/w/tsconfig.local.json',
+      '{ "compilerOptions": { "paths": { "~ws/*": ["./src/*"] } } }',
+    );
+    await put(
+      'packages/w/package.json',
+      '{"name":"@d/w","version":"0.0.0","devDependencies":{"@types/lodash":"4.17.0"}}',
+    );
+    await put(
+      'packages/w/src/aliases.ts',
+      "import { a } from '~pkg/a';\nimport { b } from '~ws/b';\nexport const ab = [a, b];\n",
+    );
+    // `@types/lodash` types lodash; it does not install it. A type-only import needs only types.
+    await put(
+      'packages/w/src/types.ts',
+      "import type { Dictionary } from 'lodash';\nexport type D = Dictionary<typeof import('lodash')>;\n",
+    );
+    await put(
+      'packages/w/src/runtime.ts',
+      "import { chunk } from 'lodash';\nexport const c = chunk;\n",
+    );
+  });
+
+  afterAll(async () => {
+    await rm(app, { recursive: true, force: true });
+  });
+
+  test('a runtime import is not covered by its @types package alone', async () => {
+    const findings = await checkExternalDependencies(app);
+    expect(findings.map((finding) => finding.cause.split(',')[0])).toEqual([
+      'packages/w/src/runtime.ts imports lodash',
+    ]);
+  });
+
+  test('aliases inherited through extends, at the root and in a workspace, are not packages', async () => {
+    const causes = (await checkExternalDependencies(app)).map((finding) => finding.cause);
+    expect(causes.some((cause) => cause.includes('~pkg') || cause.includes('~ws'))).toBe(false);
+  });
+});

@@ -101,6 +101,23 @@ describe('unit · ci-log reads a finding out of every wrapper the log puts on it
     ]);
   });
 
+  // Message data escapes only `%`, CR and LF; `%3A`/`%2C` are PROPERTY escapes, so in a message
+  // they are the bytes the step wrote — a URL in a fix must come back exactly as printed.
+  test('an annotation message decodes %0A, %0D and %25 only, %25 last', () => {
+    const found = read([
+      row(
+        "::error::X_A%0A  cause: 50%25 of it%0D%0A  fix:   curl 'https://example.com/a%2Cb%3Ac' # %250A stays",
+      ),
+    ]);
+    expect(found).toEqual([
+      {
+        code: 'X_A',
+        cause: '50% of it',
+        fix: "curl 'https://example.com/a%2Cb%3Ac' # %0A stays",
+      },
+    ]);
+  });
+
   test('a plain fix is carried through untouched', () => {
     const found = read([
       row('X_A'),

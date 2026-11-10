@@ -72,6 +72,19 @@ describe('unit · a bot notice is recognised by what it says', () => {
     });
   });
 
+  test('a notice heading without a marker still counts', () => {
+    expect(botNotice('> [!WARNING]\n> ## Rate limit exceeded\n> wait 5 minutes')).toEqual({
+      kind: 'rate-limited',
+      excerpt: 'Rate limit exceeded',
+    });
+  });
+
+  test('the phrases in prose, or a heading that merely mentions them, are no notice', () => {
+    expect(botNotice('Handle rate limit exceeded from the upstream API')).toBeNull();
+    expect(botNotice('Too many files changed here; the review limit is fine')).toBeNull();
+    expect(botNotice('## Handle rate limit exceeded responses')).toBeNull();
+  });
+
   test('an ordinary review body is no notice', () => {
     expect(botNotice('**Actionable comments posted: 2**\n\nsee the threads')).toBeNull();
     expect(botNotice('')).toBeNull();
@@ -143,12 +156,33 @@ describe('unit · the bots summary', () => {
     ]);
   });
 
-  test('a notice posted as a review body counts too', () => {
+  // A formal review IS a review: whatever its body says, the bot reviewed. Only an issue comment
+  // can be the notice that it did not.
+  test('a review body is never a notice, whatever it says', () => {
     const [bot] = botsSummary(
       [review({ body: CODERABBIT_RATE_LIMITED, submittedAt: '2026-11-09T09:00:00Z' })],
       [],
     );
-    expect(bot?.notice?.url).toBe('https://github.com/o/r/pull/1#pullrequestreview-1');
-    expect(bot?.blocked).toBe(true);
+    expect(bot?.notice).toBeNull();
+    expect(bot?.blocked).toBe(false);
+    expect(bot?.lastReviewAt).toBe('2026-11-09T09:00:00Z');
+  });
+
+  test('an ordinary review discussing rate limits and skipped files is not blocked', () => {
+    const prose = [
+      '**Actionable comments posted: 2**',
+      '',
+      'Handle rate limit exceeded from the upstream API before retrying.',
+      'The review limit and max files limit in `config.ts` are never read; too many files are',
+      'skipped. Review skipped paths in the loader too.',
+      '',
+      '### Handle rate limit exceeded responses',
+    ].join('\n');
+    const [bot] = botsSummary(
+      [review({ body: prose })],
+      [comment({ body: prose, updatedAt: '2026-11-09T10:30:00Z' })],
+    );
+    expect(bot?.notice).toBeNull();
+    expect(bot?.blocked).toBe(false);
   });
 });

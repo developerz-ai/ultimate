@@ -148,21 +148,26 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       });
     }
     const bytes = await page.screenshot({ fullPage: options.fullPage });
-    // Read AFTER the capture: an error logged while the page settled ships with its picture.
+    // Read AFTER the capture, so an error logged while the page settled ships with its picture —
+    // and copied BEFORE the gpu probe: `requestAdapter()` may take seconds, and a page that
+    // redirects meanwhile must not have its new URL or its new logs reported beside the old picture.
+    const captured = {
+      finalUrl: page.url(),
+      capturedAt: (options.now ?? (() => new Date()))().toISOString(),
+      console: [...page.console()],
+      pageErrors: [...page.pageErrors()],
+      pageErrorsDropped: page.pageErrorsDropped(),
+      network: [...page.network()],
+      networkDropped: page.networkDropped(),
+    };
     const gpu = await readShotGpu(page);
     const verdict = buildVerdict({
       route: options.route,
       requestedUrl,
-      finalUrl: page.url(),
       server: server.origin,
-      capturedAt: (options.now ?? (() => new Date()))().toISOString(),
       screenshot: SHOT_IMAGE,
       bytes,
-      console: page.console(),
-      pageErrors: page.pageErrors(),
-      pageErrorsDropped: page.pageErrorsDropped(),
-      network: page.network(),
-      networkDropped: page.networkDropped(),
+      ...captured,
       islands,
       gpu,
       landedStatus,

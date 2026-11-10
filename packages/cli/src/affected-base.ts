@@ -1,18 +1,18 @@
 // The ref a diff is measured against when `--base` says nothing: the REMOTE-TRACKING default branch
-// (`origin/HEAD` → `origin/main`), never local `main` while a remote exists. Local `main` is
+// (`origin/HEAD` → `origin/main`), never local `main` while a remote-tracking ref exists. Local `main` is
 // whatever was last pulled, and in a checkout nobody pulls (or a worktree) it lags origin: the diff
 // then counts files already merged upstream as this branch's work, and the "affected" set widens.
 
 import type { Runner } from './exec';
 
-/** The branch a change is measured against when there is no remote to read one from. */
+/** The branch a change is measured against when no remote-tracking ref names one. */
 export const DEFAULT_BASE = 'main';
 
 /** The remote whose default branch is the base. One name: a second guess is a second answer. */
 export const DEFAULT_REMOTE = 'origin';
 
 /** What `--help` says the default is, for every command that reads `--base`. */
-export const DEFAULT_BASE_HELP = `${DEFAULT_REMOTE}/HEAD's branch (e.g. ${DEFAULT_REMOTE}/${DEFAULT_BASE}), else local ${DEFAULT_BASE} when there is no ${DEFAULT_REMOTE}`;
+export const DEFAULT_BASE_HELP = `${DEFAULT_REMOTE}/HEAD's branch (e.g. ${DEFAULT_REMOTE}/${DEFAULT_BASE}), else local ${DEFAULT_BASE} when there is no remote-tracking ref (${DEFAULT_REMOTE}/HEAD or ${DEFAULT_REMOTE}/${DEFAULT_BASE})`;
 
 /**
  * The default base, read from what the checkout already has — never fetched: a command that
@@ -20,7 +20,8 @@ export const DEFAULT_BASE_HELP = `${DEFAULT_REMOTE}/HEAD's branch (e.g. ${DEFAUL
  * than a stale local `main` (`git fetch` moves the first; only a pull moves the second).
  *
  * In order: `origin/HEAD`'s target (a clone sets it), then `origin/main` (a remote added by hand
- * leaves `origin/HEAD` unset), then local `main` — a checkout with no remote at all.
+ * leaves `origin/HEAD` unset), then local `main` — when there is no remote-tracking ref (`origin/HEAD`
+ * or `origin/main`): no remote at all, an `origin` never fetched, or one whose branch is not `main`.
  */
 export async function defaultBase(runner: Runner, cwd: string): Promise<string> {
   const head = await runner(

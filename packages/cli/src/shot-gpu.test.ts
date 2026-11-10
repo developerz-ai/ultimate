@@ -134,4 +134,52 @@ describe('unit · runShot asks the page, and the artifact on disk carries the an
     expect(artifacts.verdict.gpu).toEqual(gpu);
     expect(await Bun.file(join(dir, SHOT_VERDICT)).json()).toMatchObject({ gpu });
   });
+
+  // The probe runs after the picture exists, so anything it lets the page do — a redirect while
+  // `requestAdapter()` hangs — may not rewrite what the verdict says about that picture.
+  test('a page that navigates during the gpu probe does not move the verdict off the picture', async () => {
+    const url = 'http://localhost:4321/scene';
+    const base = fakeShotDriver([{ url, html: '<!doctype html><canvas></canvas>' }]);
+    let current: string | undefined;
+    let pictured = '';
+    const driver = {
+      name: base.name,
+      open: async (init: Parameters<typeof base.open>[0]) => {
+        const session = await base.open(init);
+        const page = session.page;
+        return {
+          ...session,
+          page: {
+            ...page,
+            url: () => current ?? page.url(),
+            screenshot: async (options: Parameters<typeof page.screenshot>[0]) => {
+              pictured = page.url();
+              return page.screenshot(options);
+            },
+            evaluate: async (expression: string): Promise<unknown> => {
+              if (expression !== GPU_PROBE) return page.evaluate(expression);
+              current = 'http://localhost:4321/sign-in';
+              return null;
+            },
+          },
+        };
+      },
+    };
+    const server = {
+      url: 'http://localhost:4321',
+      origin: 'booted' as const,
+      stop: async () => {},
+    };
+    const artifacts = await runShot({
+      route: '/scene',
+      outDir: join(dir, 'redirect'),
+      driver,
+      boot: () => Promise.resolve(server),
+      settleMs: 0,
+      timeoutMs: 1_000,
+      fullPage: true,
+      now: () => new Date('2026-11-10T00:00:00.000Z'),
+    });
+    expect([artifacts.verdict.finalUrl, artifacts.verdict.redirected]).toEqual([pictured, false]);
+  });
 });
