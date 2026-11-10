@@ -349,7 +349,7 @@ Fifty *counts* collapse neither way — one `count()` per row is fifty different
 
 ## Audit: who saw what
 
-`query({ audit: true })` writes one record per call into the sink an action's `audit: true` writes to — one contract, `@ultimat3/core`'s `AuditRecord` / `AuditSink`, one installed sink (`setAuditSink` from `@ultimat3/core` — `@ultimat3/action` no longer re-exports it, `As of 25.0.0`). `As of 2026-10`.
+`query({ audit: true })` writes one record per call into the sink an action's `audit: true` writes to — one contract, `@ultimat3/core`'s `AuditRecord` / `AuditSink`, one installed sink — the `auditSink` adapter port, set as `auditSink:` in `apps/<app>/runtime.ts` ([Adapters](Adapters#auditsink); 31.0.0 deleted `setAuditSink`). `As of 2026-10`.
 
 | Rule | |
 |---|---|

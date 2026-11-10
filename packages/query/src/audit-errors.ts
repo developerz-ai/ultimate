@@ -18,7 +18,7 @@ export class QueryAuditSinkMissingError extends UltimateError {
       code: 'X_QUERY_AUDIT_SINK_MISSING',
       cause: `query "${query}" declares \`audit: true\` and no audit sink is installed`,
       // The registered fix, verbatim: code first, so the line can be pasted (`wiki/Error-Codes.md`).
-      fix: 'setAuditSink(sink)   # from @ultimat3/core, at boot before defineApi()',
+      fix: 'auditSink: postgresAuditSink({ executor })   # in export const runtime = { … }, apps/<app>/runtime.ts',
     });
   }
 }
@@ -35,7 +35,7 @@ export class QueryAuditSinkFailedError extends UltimateError {
       code: 'X_QUERY_AUDIT_SINK_FAILED',
       cause: `"${query}" was read and its audit sink refused the record, so the rows were withheld — a read commits nothing, so nothing is left to reconcile`,
       // The sink's own error is `sourceError`; a read commits nothing, so the retry is safe.
-      fix: 'setAuditSink(sink)   # install a sink that accepts the record, then retry the read',
+      fix: 'auditSink: postgresAuditSink({ executor })   # apps/<app>/runtime.ts — a sink that accepts the record; then retry the read',
       meta: { query },
       sourceError,
     });

@@ -1,4 +1,4 @@
-// Single responsibility: the value rules `invariant-parity.test.ts` proves on an embedded engine,
+// Single responsibility: the value rules `invariant-check.test.ts` proves on an embedded engine,
 // against a REAL server — a numeric rule over `bigint()`/`decimal()` rows, `trimmed()` against
 // `btrim()`, and an app-only rule whose refusal has to take the statement with it. Skips unless
 // `TEST_DATABASE_URL` is set.

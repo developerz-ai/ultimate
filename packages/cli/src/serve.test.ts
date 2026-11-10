@@ -6,7 +6,6 @@ import { errorGroupsSink, memoryErrorGroupsStore } from '@ultimat3/admin/error-g
 import type { ErrorReport } from '@ultimat3/core';
 import {
   chainErrorReporters,
-  configureErrorReporting,
   errorReportersOf,
   InternalError,
   installedErrorReporter,
@@ -18,6 +17,7 @@ import {
   sentryErrorReporter,
   sentryTransport,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { processRoot } from './process-root-fixture';
 import {
@@ -152,7 +152,7 @@ test('runRole refuses a bad ROLE before it starts a single service', async () =>
 
 test('every report a container sends is tagged with the build id this boot computed', () => {
   const reporter = memoryErrorReporter();
-  configureErrorReporting({ reporter });
+  installErrorReporter(reporter);
   configureReporting({}, 'build-abc');
   reportError(new InternalError({ cause: 'boom', fix: 'x doctor --json' }), { source: 'http' });
 
@@ -211,7 +211,7 @@ test("an app's own Sentry transport is the only one, so each error is sent once,
     fetch: recordingFetch(sent),
     beforeSend: (event) => ({ ...event, scrubbed: true }),
   });
-  configureErrorReporting({ reporter: chainErrorReporters(groups, scrubbing) });
+  installErrorReporter(chainErrorReporters(groups, scrubbing));
   const { warned, members } = bootAndReport();
   expect(members).toEqual([groups, scrubbing]);
   expect(warned).toEqual([]);
@@ -233,7 +233,7 @@ test('a wrapper marked with sentryTransport is the app transport: one send, no w
     report: (report: ErrorReport) =>
       inner.report({ ...report, meta: { ...report.meta, team: 'core' } }),
   });
-  configureErrorReporting({ reporter: wrapper });
+  installErrorReporter(wrapper);
   const { warned, members } = bootAndReport();
   expect(members).toEqual([wrapper]);
   expect(warned).toEqual([]);
@@ -251,7 +251,7 @@ test('an unmarked app reporter keeps the boot transport out, and the boot says s
     fetch: recordingFetch(sent),
   });
   const wrapper = { report: (report: ErrorReport) => inner.report(report) };
-  configureErrorReporting({ reporter: wrapper });
+  installErrorReporter(wrapper);
   const { warned, members } = bootAndReport();
   expect(members).toEqual([wrapper]);
   expect(warned).toEqual(['X_ERROR_REPORTER_DSN_UNCLAIMED']);
@@ -265,7 +265,7 @@ test('local sinks (errorGroupsSink, a memory reporter) get the DSN transport cha
   resetErrorReporting();
   const memory = memoryErrorReporter();
   const groups = errorGroupsSink({ store: memoryErrorGroupsStore() });
-  configureErrorReporting({ reporter: chainErrorReporters(groups, memory) });
+  installErrorReporter(chainErrorReporters(groups, memory));
   const { warned, members } = bootAndReport();
   expect(members).toHaveLength(3);
   expect(members.slice(0, 2)).toEqual([groups, memory]);

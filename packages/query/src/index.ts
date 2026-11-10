@@ -33,7 +33,7 @@ export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 /**
  * The two refusals `query({ audit: true })` adds. The record and the sink are `@ultimat3/core`'s
- * (`setAuditSink`) — one sink for every audited primitive, so this package re-exports neither.
+ * (`runtime.ts`'s `auditSink`) — one sink for every audited primitive, so this package re-exports neither.
  */
 export { QueryAuditSinkFailedError, QueryAuditSinkMissingError } from './audit-errors';
 export type { QueryCacheScope } from './cache';

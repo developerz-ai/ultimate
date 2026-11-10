@@ -3,9 +3,9 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
-  configureErrorReporting,
   type ErrorReport,
   type ErrorReporter,
+  installErrorReporter,
   installedErrorReporter,
   memoryErrorReporter,
   noopErrorReporter,
@@ -30,9 +30,7 @@ describe('chainErrorReporters', () => {
         into.report(event);
       },
     });
-    configureErrorReporting({
-      reporter: chainErrorReporters(tagged('a', first), tagged('b', second)),
-    });
+    installErrorReporter(chainErrorReporters(tagged('a', first), tagged('b', second)));
     reportError(boom(), { source: 'http' });
     expect(order).toEqual(['a', 'b']);
     expect(first.events[0]).toBe(second.events[0] as ErrorReport);
@@ -45,7 +43,7 @@ describe('chainErrorReporters', () => {
         throw new InternalError({ cause: 'vendor down', fix: 'x doctor --json' });
       },
     };
-    configureErrorReporting({ reporter: chainErrorReporters(throwing, after) });
+    installErrorReporter(chainErrorReporters(throwing, after));
     reportError(boom(), { source: 'job' });
     expect(after.events).toHaveLength(1);
   });
@@ -58,7 +56,7 @@ describe('chainErrorReporters', () => {
     chained.report(
       (() => {
         const sink = memoryErrorReporter();
-        configureErrorReporting({ reporter: sink });
+        installErrorReporter(sink);
         reportError(boom(), { source: 'cli' });
         return sink.events[0] as ErrorReport;
       })(),
@@ -77,7 +75,7 @@ describe('chainErrorReporters', () => {
   test('the installed reporter is readable, so a boot composes with what the app installed', () => {
     expect(installedErrorReporter()).toBe(noopErrorReporter);
     const app = memoryErrorReporter();
-    configureErrorReporting({ reporter: app });
+    installErrorReporter(app);
     expect(installedErrorReporter()).toBe(app);
   });
 });

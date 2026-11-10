@@ -3,7 +3,8 @@
 // same name, and the idempotency store — and a global key table fails exactly that half.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { ctxOf, REDACTED, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
+import { ctxOf, REDACTED, userActor } from '@ultimat3/core';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -44,14 +45,14 @@ afterEach(() => {
 describe('a .sensitive() input field in the audit record', () => {
   test('reaches the sink as [redacted], with its neighbours readable', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     await invoke(chargeCard, { cardPan: PAN, note: 'lunch' }, { ctx: editor });
     expect(sink.records()[0]?.input).toEqual({ cardPan: REDACTED, note: 'lunch' });
   });
 
   test('a denied attempt records the masked input too', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     await expect(
       invoke(chargeCard, { cardPan: PAN, note: 'lunch' }, { ctx: stranger }),
     ).rejects.toThrow();
@@ -61,7 +62,7 @@ describe('a .sensitive() input field in the audit record', () => {
 
   test('another action’s same-named field, and its idempotency record, are untouched', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const store = memoryIdempotencyStore();
     await invoke(chargeCard, { cardPan: PAN, note: 'a' }, { ctx: editor });
     const answer = await invoke(
@@ -77,7 +78,7 @@ describe('a .sensitive() input field in the audit record', () => {
 
   test('the handler still receives the value the caller sent', async () => {
     let seen: unknown;
-    setAuditSink(memoryAuditSink());
+    installAuditSink(memoryAuditSink());
     const target = action({
       input: t.object({ cardPan: t.string.sensitive() }),
       output: t.object({ ok: t.boolean }),

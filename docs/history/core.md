@@ -751,3 +751,10 @@ The cause quotes at most `MAX_LOCALE_EXCERPT` (35) code points; the whole tag ri
   same bug. `KEYED_HASHER_EXEMPT` holds one row, the bug pin in `hmac.test.ts`, which asserts the
   raw hasher STILL throws; when Bun fixes it that test goes red — delete the test, the row
   (`X_KEYED_HASHER_EXEMPT_STALE` otherwise) and the `why:`. The helper stays.
+
+## Moved out 2026-11-09 (plan 101 v31, the CLAUDE.md ceiling)
+
+- **`finiteOption` / `finiteCount` (`finite-option.ts`) are the framework's ONE screen for a numeric
+  option.** `finiteCount(subject, option, value, min)` takes `min: 0 | 1` because only the caller
+  knows what zero means. `bun run finite-bounds` recognises a repair by the call's shape, so a
+  package screen carries `Finite` in its name.

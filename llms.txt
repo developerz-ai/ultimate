@@ -269,6 +269,7 @@ The single documentation source. Source of truth is `wiki/` in this repo, mirror
 - [CLI reference](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/CLI-Reference.md): every `x` command and flag, with `--json` examples.
 - [Error codes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Error-Codes.md): every `X_*` code: meaning, cause, exact fix.
 - [Configuration](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Configuration.md): every `app.config.ts` field and every env var.
+- [Adapters](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Adapters.md): every swappable backend — one `runtime.ts` field each: the interface, the reference to copy, the conformance suite, the default.
 - [Deployment](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Deployment.md): one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, the prebuilt island store, `docs/ops/`.
 - [Deploy recipes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Deploy-Recipes.md): per host — Compose, the chart, Fly.io, Render, Railway, Heroku, bare VM — the build source, port, health path, release command and services, each marked executed or not.
 - [Observability](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Observability.md): counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach.

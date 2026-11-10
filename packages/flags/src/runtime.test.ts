@@ -6,12 +6,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { MemoryErrorReporter, SleepClock, UltimateError } from '@ultimat3/core';
 import {
   UltimateError as CoreError,
-  configureErrorReporting,
   frozenClock,
   memoryErrorReporter,
   resetErrorReporting,
 } from '@ultimat3/core';
-import { installClock } from '@ultimat3/core/adapter';
+import { installClock, installErrorReporter } from '@ultimat3/core/adapter';
 import {
   configureFlags,
   DEFAULT_REPORT_INTERVAL_MS,
@@ -40,7 +39,7 @@ beforeEach(() => {
   sink = memoryErrorReporter();
   resetErrorReporting();
   resetFlagReporting();
-  configureErrorReporting({ reporter: sink });
+  installErrorReporter(sink);
 });
 
 afterEach(() => {

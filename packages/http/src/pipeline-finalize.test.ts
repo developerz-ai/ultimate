@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorReport } from '@ultimat3/core';
 import {
   collectMetrics,
-  configureErrorReporting,
   memoryErrorReporter,
   resetErrorReporting,
   resetMetrics,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { defineHttpConfig } from './config';
 import type { RequestContext } from './context';
 import { problemTypeFor, toProblem } from './error-facts';
@@ -140,7 +140,7 @@ describe('a finalize stage that throws', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
     resetMetrics();
   });
 
@@ -239,7 +239,7 @@ describe('a recover stage that throws', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(() => {
@@ -315,7 +315,7 @@ describe('a throwable that fights being read', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(() => {

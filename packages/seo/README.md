@@ -132,6 +132,10 @@ No sitemap line either — advertising one invites the crawl that was just refus
 
 ## Image transforms
 
+A CDN or `sharp`-backed transform implements `ImageTransformDriver` from `@ultimat3/seo/adapter`
+(types only, with `TransformRequest` / `TransformedImage`) and is handed to the boot as
+`images: myDriver()` in `apps/web/runtime.ts`.
+
 `builtinImageDriver({ read })` is the one built-in `ImageTransformDriver`, and it runs
 `@ultimat3/core`'s pipeline — zero dependencies, no `sharp`, no native binary.
 

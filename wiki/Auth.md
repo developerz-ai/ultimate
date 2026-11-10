@@ -179,7 +179,7 @@ const resolveToken = oauthBearerResolver(oauth, { actor: (grant) => actorFor(gra
 |---|---|
 | redirect URIs match byte for byte | `authorization-server-request.test.ts` |
 | S256 only; an absent method is `plain` and refused | same |
-| a code lives 2 minutes, is stored hashed, is single use; a replay revokes what it minted | `authorization-server.test.ts`, `authorization-server-store.contract.test.ts` (racing redemptions on Postgres) |
+| a code lives 2 minutes, is stored hashed, is single use; a replay revokes what it minted | `authorization-server.test.ts`, `authServerStoreConformance` from `@ultimat3/testing/conformance` (racing redemptions, run on memory and on Postgres by `auth-server-store-conformance-postgres.live.test.ts`) |
 | refresh rotates; a retired one's replay revokes the grant; idle past `refreshIdleDays` is dead | `authorization-server.test.ts` |
 | `resource` (RFC 8707) binds the grant; one not in `resources` is `invalid_target` | `authorization-server-request.test.ts`, `oauth-bearer-resolver.test.ts` |
 | tokens are opaque and stored hashed, never a JWT, so `revoke` holds on the next lookup | `token-endpoints.test.ts` |

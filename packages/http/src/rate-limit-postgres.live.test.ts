@@ -1,7 +1,7 @@
-// The SQL's own arithmetic, against a real server. The scripted-executor twin proves the protocol
-// and can prove nothing about the statement: a rate limiter whose refill maths was never executed
-// is a security control nobody has run. The case that only a server can answer is the last one —
-// eight concurrent takes against a bucket of four allow exactly four.
+// What only this table can show, against a real server: the purge's clock, and a peek that leaves no
+// row. Every answer the store owes through its port — refill maths, the race, a one-key reset — is
+// `@ultimat3/testing`'s `rateLimitStoreConformance`, run over this store in
+// `packages/testing/src/rate-limit-store-conformance-postgres.live.test.ts`.
 //
 // Skips unless `TEST_DATABASE_URL` is set — never `DATABASE_URL`, because this file drops its
 // table. Locally:
@@ -60,17 +60,6 @@ afterAll(async () => {
 });
 
 describeLive('live · postgres · the shared rate-limit store', () => {
-  test('spends, refuses, refills and caps exactly as the memory store does', async () => {
-    const memory = memoryRateLimitStore();
-    // Every instant the two are asked about, including a clock that ran backwards.
-    const instants = [1_000, 1_000, 1_000, 1_000, 1_000, 2_000, 9_000, 500];
-    for (const nowMs of instants) {
-      const fromPostgres = await store.take('parity', bucket, 1, nowMs);
-      const fromMemory = await memory.take('parity', bucket, 1, nowMs);
-      expect({ nowMs, ...fromPostgres }).toEqual({ nowMs, ...fromMemory });
-    }
-  });
-
   // `Date.now()` is the framework preload's FROZEN clock here, which is months away from the
   // server's — and that is the point: the purge must measure against the clock the takes wrote,
   // or the offset between the two reads as refill and deletes a bucket holding zero tokens.
@@ -84,39 +73,6 @@ describeLive('live · postgres · the shared rate-limit store', () => {
     const keys = (rows as { readonly key: string }[]).map((row) => row.key);
     expect(keys).toContain('held');
     expect(keys).not.toContain('forgettable');
-  });
-
-  // The reason the refill expression is repeated inside `on conflict do update` rather than
-  // computed once in a CTE: a CTE reads the statement's own snapshot, so concurrent takes would
-  // each spend from the same pre-refill row and the losers' spends would vanish.
-  test('eight concurrent takes against a bucket of four allow exactly four', async () => {
-    const nowMs = Date.now();
-    const decisions = await Promise.all(
-      Array.from({ length: 8 }, () => store.take('contended', bucket, 1, nowMs)),
-    );
-    expect(decisions.filter((decision) => decision.allowed)).toHaveLength(4);
-    const rows = await sql.unsafe('select tokens from x_rate_limit where key = $1', ['contended']);
-    expect(Number((rows as { readonly tokens: number }[])[0]?.tokens)).toBe(0);
-  });
-
-  // The second key is the assertion, not scenery: `delete from x_rate_limit` with no `where` also
-  // empties the target, so a test that only looks at `resettable` passes on a store that drops
-  // every bucket in the fleet — one caller's reset handing every other caller a full allowance.
-  test('reset empties one key and leaves the others', async () => {
-    const nowMs = Date.now();
-    await store.take('resettable', bucket, 4, nowMs);
-    await store.take('untouched', bucket, 4, nowMs);
-
-    await store.reset('resettable');
-
-    const rows = await sql.unsafe(
-      'select key from x_rate_limit where key in ($1, $2) order by key',
-      ['resettable', 'untouched'],
-    );
-    expect((rows as { readonly key: string }[]).map((row) => row.key)).toEqual(['untouched']);
-    // And the survivor kept its SPEND, not just its row: a reset that refilled a neighbour's
-    // bucket is the same free allowance one `delete` further along.
-    expect((await store.take('untouched', bucket, 1, nowMs)).allowed).toBe(false);
   });
 
   // The peek runs on every request to a required route, so it must agree with the memory store AND

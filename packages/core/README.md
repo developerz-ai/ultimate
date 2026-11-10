@@ -45,7 +45,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | a poll a hidden tab and a lost session stop — `visibleInterval(run, ms, { maxMs? })`: no call while hidden, one when shown, a failed run doubling the wait up to `maxMs` (jittered) and a success resetting it, an idempotent disposer; on `./page` (6,045 B alone, `page-bundle.test.ts`) | `visible-interval.ts` |
 | which row survives a conflict — `server-wins`, `last-write-wins`, `custom` | `conflict-policy.ts` |
 | the four shapes an async region can be in | `async-state.ts` |
-| the audit seam `action` and `query` share — `AuditRecord` (`name`, `primitive`, `surface`, `outcome`, the parsed `input`; `action` is a deprecated alias of `name` until 25.0.0), `AuditSink<TRecord = AuditRecord>` (the framework's one sink interface — `@ultimat3/admin` writes `AuditSink<AuditEntry>`), the ONE installed sink (`setAuditSink` / `getAuditSink` / `resetAuditSink`, re-exported by `@ultimat3/action`), and `AUDIT_RECORD_FIELDS`, the field list both primitives' tests pin their records to | `audit.ts` |
+| the audit seam `action` and `query` share — `AuditRecord` (`name`, `primitive`, `surface`, `outcome`, the parsed `input`; `action` is a deprecated alias of `name` until 25.0.0), `AuditSink<TRecord = AuditRecord>` (the framework's one sink interface — `@ultimat3/admin` writes `AuditSink<AuditEntry>`), the ONE installed sink (`getAuditSink()` reads it; the boot installs `runtime.ts`'s `auditSink` through `installAuditSink` on `@ultimat3/core/adapter`, 31.0), and `AUDIT_RECORD_FIELDS`, the field list both primitives' tests pin their records to | `audit.ts` |
 | is this `unknown` a keyed record? | `json-object.ts` |
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
@@ -655,24 +655,25 @@ A no-op by default, one transport on the wire, one memory double for tests — `
 `metrics.ts`' shape a third time. What a monitor receives is the framework's error contract
 verbatim, so it groups on `code` and shows `fix` to whoever is paged.
 
-**An Ultimate app installs nothing.** `@ultimat3/cli`'s `serve.ts` calls
-`configureErrorReporting` at boot from one env var — `SENTRY_DSN`, unset meaning the no-op stays
-and nobody is paged — and passes the build id it already computed as `release`. The call below is
-for a host that boots something other than `runRole`.
+**An Ultimate app installs nothing.** The reporter is the `errorReporter` port: `runtime.ts`'s
+`errorReporter` field, installed by the boot before `loadApp`; `@ultimat3/cli`'s `serve.ts` then
+chains its `SENTRY_DSN` transport beside a local sink (unset, nobody is paged) and passes the build
+id it already computed as `release`. The calls below are for a host that boots something other
+than `runRole`.
 
 ```ts
 import { configureErrorReporting, reportError, sentryErrorReporter } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 
 declare const sentryDsn: string;
 declare const buildId: string;
 declare const failure: unknown;
 
-configureErrorReporting({
-  reporter: sentryErrorReporter({ dsn: sentryDsn }),   // config, never a constant in this package
-  release: buildId,                                    // the id `x-ultimate-build` carries
-});
+const release = installErrorReporter(sentryErrorReporter({ dsn: sentryDsn })); // its undo
+configureErrorReporting({ release: buildId }); // the id `x-ultimate-build` carries
 
 reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'POST /api/posts' } });
+release();
 ```
 
 | | |
@@ -682,7 +683,7 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | `ErrorSeverity` | `warning` `error` `fatal`. `warning` is a failure the framework already recovered from — a retry, not a dead letter |
 | `ErrorScope` | `requestId` `traceId` `spanId` `role` `operation` `actorId` `extra`. `operation` is a route **pattern** or a job name, never a concrete path or a row id |
 | `ErrorReport` | `code` `title` `cause` `fix` `docs` + `meta` `stack` `resource` `environment` `release` `scope`, and the thrown value under `error` |
-| `configureErrorReporting({ reporter, clock, release, environment, enabled })` | the one install point; `resetErrorReporting()` puts the no-op back |
+| `configureErrorReporting({ clock, release, environment, enabled })` | the settings around the port — never the reporter (31.0: `reporter` is `never`). The reporter is `installErrorReporter(reporter)` on `./adapter`, returning its release; `resetErrorReporting()` drops every install and setting |
 | Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName?, beforeSend?, ignore?, fingerprint?, sampleRate? })`; `isSentryErrorReporter(reporter)` — whether one was built by it, so the container's `SENTRY_DSN` boot skips its own transport when the app installed one (31.0) |
 | Sentry hooks | `beforeSend(event)` → the event (rewritten or not) or `null` to drop — scrub by value here; a hook that throws drops the event. `ignore(code)` → `true` drops before the event is built. `fingerprint(report)` → the grouping, replacing `errorFingerprint`'s. `sampleRate` 0..1 (`X_CONFIG_INVALID` outside it). A throwing `ignore`/`fingerprint` falls back to the default |
 | Several at once | `chainErrorReporters(...reporters)` — one reporter handing each report to every member in order; a member that throws is logged and costs only itself; chains flatten, a member listed twice reports once, none is the no-op. `errorReportersOf(reporter)` reads the members back; `installedErrorReporter()` the one installed now. The container chains its `SENTRY_DSN` transport after what the app installed (`As of 2026-11`) |
@@ -975,7 +976,8 @@ trips against itself proves nothing. Never regenerate a fixture with our own enc
 Interfaces (`AuditSink`, `SleepClock`, `ErrorReporter`, `FailureStore`, `SecretSource`), the
 built-ins to copy or compose (`systemClock`, `noWaitClock`, `envSecretSource`, `fileSecretSource`,
 `defaultSecretSource`), the error a source raises (`SecretsKeyMissingError`), and the INSTALLERS —
-`installClock`, `installFailureStore`, `installSecretSource` — and `adapterSlot(fallback)`, the one
+`installAuditSink` (+ `resetAuditSink`), `installClock`, `installErrorReporter`,
+`installFailureStore`, `installSecretSource` — and `adapterSlot(fallback)`, the one
 slot every package's installer is built on. Every installer returns its release (`() => void`), which
 removes ITS install alone: installers may stop in any order, and a second release is a no-op.
 `ctxOf()` and the logger read the installed clock at each call, so `runtime.ts`'s `clock` reaches

@@ -6,23 +6,14 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { secret } from '@ultimat3/core';
 import type { AiMediaBlock } from './content-blocks';
-import type { AiFetch } from './fetch-seam';
-import {
-  FIXTURE_ANTHROPIC_IDS,
-  FIXTURE_OPENAI_IDS,
-  registerFixtureModels,
-  useFixtureModels,
-} from './model-fixture';
+import { FIXTURE_ANTHROPIC_IDS, registerFixtureModels, useFixtureModels } from './model-fixture';
 import { chatCompletionBody } from './openai-body';
-import { openAiProvider } from './openai-provider';
 import { type AiMessage, anthropicProvider } from './provider';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
 
-const KEY = 'sk-live-do-not-log-me';
 const OPENAI_MODEL = 'gpt-5.6-sol';
 const ANTHROPIC_MODEL = 'claude-opus-5-5';
 
@@ -143,33 +134,5 @@ describe('an image or a document reads the same on both wires, or is refused the
     }
   });
 
-  test('a refusal happens before the socket, on both providers', async () => {
-    let sent = 0;
-    const counting: AiFetch = async () => {
-      sent += 1;
-      return new Response('{}');
-    };
-    const bad = [{ role: 'assistant', content: [pdf] }] as const satisfies readonly AiMessage[];
-    const anthropic = anthropicProvider({
-      models: FIXTURE_ANTHROPIC_IDS,
-      apiKey: KEY,
-      fetch: counting,
-    });
-    const openai = openAiProvider({
-      apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...FIXTURE_OPENAI_IDS],
-      fetch: counting,
-    });
-    for (const call of [
-      () => anthropic.generate({ model: ANTHROPIC_MODEL, messages: bad, maxTokens: 16 }),
-      () => openai.generate({ model: OPENAI_MODEL, messages: bad, maxTokens: 16 }),
-    ]) {
-      const failure = await call().then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect((failure as { code?: string }).code).toBe('X_AI_CONTENT_UNSUPPORTED');
-    }
-    expect(sent).toBe(0);
-  });
+  // A refusal happens before the socket: `providerTransportConformance` (`@ultimat3/testing`).
 });

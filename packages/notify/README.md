@@ -131,7 +131,7 @@ export const runtime = { notifyStores };
 
 | Store | Default | Why |
 |---|---|---|
-| `ledger` | `memoryDeliveryLedger()` | one process is genuinely deduped by a heap map, and no ledger at all means a replay sends twice |
+| `ledger` | `memoryDeliveryLedger()` in development and test; in staging and production the first claim refuses `X_NOTIFY_STORE_MISSING` | one process is deduped by a heap map; two replicas or a restart are not, so a deploy names `postgresDeliveryLedger({ executor: dbExecutor() })` |
 | `preferences` | `allowAllPreferences()` | denying by default is a notifier that silently delivers nothing |
 | `inbox` | **none** — `X_NOTIFY_STORE_MISSING` | a message written to nowhere is worse than a refusal |
 | `digest` | **none** — `X_NOTIFY_STORE_MISSING` | same. `memoryDigestStore()` for one process; `postgresDigestStore({ executor })` keeps a window across a restart and gives two replicas ONE window (a partial unique index on the open one), so exactly one run owns its flush |
@@ -353,7 +353,8 @@ A job body runs before its checkpoint lands. Two layers stop a double send: the 
 `(notifier, key, channel, coalesce(recipient, ''))` — taken before the send, settled after. A claim
 that already reads `sent` answers `false`. `memoryDeliveryLedger` keys and settles exactly as the
 Postgres ledger does — a null and an empty recipient are one row, and a `settle` with no claim
-records nothing (`ledger-parity.live.test.ts` runs one script against both).
+records nothing (`deliveryLedgerConformance` in `@ultimat3/testing/conformance` runs one suite
+against both).
 
 A bulk channel claims **one** row for the whole audience, with a null recipient: half a bulk POST is
 not a state this package can represent. That null is why the key coalesces rather than naming the

@@ -6,21 +6,28 @@
 
 import type { IdempotencyStore, MeterStore } from '@ultimat3/action/adapter';
 import type { Gateway } from '@ultimat3/ai/adapter';
-import type { AuthLimiterFactory, TotpReplayGuard } from '@ultimat3/auth/adapter';
-import type { PurgeDriver } from '@ultimat3/cache';
-import type { AuditSink, FailureStore, SecretSource, SleepClock } from '@ultimat3/core/adapter';
+import type { AuthLimiterFactory, AuthServerStore, TotpReplayGuard } from '@ultimat3/auth/adapter';
+import type { CacheTier, PurgeDriver } from '@ultimat3/cache/adapter';
+import type {
+  AuditSink,
+  ErrorReporter,
+  FailureStore,
+  SecretSource,
+  SleepClock,
+} from '@ultimat3/core/adapter';
 import type { Middleware, Route } from '@ultimat3/http';
 import type { RateLimitStore } from '@ultimat3/http/adapter';
 import type { OutboxStore } from '@ultimat3/jobs';
 import type { EventBus, JobDriver } from '@ultimat3/jobs/adapter';
 import type { MailDriver } from '@ultimat3/mail/adapter';
+import type { McpConfirmationStore } from '@ultimat3/mcp/adapter';
 import type { NotifyStores } from '@ultimat3/notify/adapter';
-import type { PushSubscriptionStore } from '@ultimat3/pwa';
+import type { PushSubscriptionStore } from '@ultimat3/pwa/adapter';
 import type { Transport } from '@ultimat3/realtime/adapter';
-import type { IsrStore } from '@ultimat3/render/server';
+import type { IsrStore } from '@ultimat3/render/adapter';
 import type { ScrapeDriver } from '@ultimat3/scraping/adapter';
-import type { ImageTransformDriver } from '@ultimat3/seo';
-import type { Storage } from '@ultimat3/storage';
+import type { ImageTransformDriver } from '@ultimat3/seo/adapter';
+import type { StorageDriver } from '@ultimat3/storage/adapter';
 
 /**
  * One field per `ADAPTER_PORTS` row this boot honours, named by the row's `port`. Every field is
@@ -37,8 +44,25 @@ export interface PortValues {
    * declares `maxAttempts`/`windowMs`/`lockoutMs` after this boot. Default `postgresAuthLimiter`.
    */
   readonly authLimiter: AuthLimiterFactory;
+  /**
+   * Where `authorizationServer()` keeps clients, codes, grants and tokens when it names no `store`.
+   * Default `postgresAuthServerStore` over the app's pool.
+   */
+  readonly authServerStore: AuthServerStore;
+  /**
+   * Rung implementations. `cache.tiers` still NAMES the ladder: a tier here replaces the rung of
+   * its own `name` (a `redis` tier needs no `REDIS_URL`), the boot builds every other named rung,
+   * and a tier whose name `cache.tiers` does not list is logged (`cache.tier.unnamed`) and unused.
+   */
+  readonly cacheTiers: readonly CacheTier[];
   /** The process's clock: every "now" and every wait not handed one. Default `systemClock`. */
   readonly clock: SleepClock;
+  /**
+   * Where every caught error is reported. `SENTRY_DSN` still adds the boot's transport BESIDE it
+   * when this is a local sink (`localErrorSink`), and none when it is the app's own Sentry
+   * transport (`sentryTransport`). Default: no reporter but the log line.
+   */
+  readonly errorReporter: ErrorReporter;
   /** The durable bus `step.waitForEvent` resumes from. Default `postgresEventBus`. */
   readonly eventBus: EventBus;
   /** Where `failureCapture` keeps a 5xx's bundle, while it is on. Default `postgresFailureStore`. */
@@ -63,9 +87,17 @@ export interface PortValues {
   readonly jobs: JobDriver;
   /** Replaces the `SMTP_URL` / `RESEND_API_KEY` selection. */
   readonly mail: MailDriver;
+  /**
+   * Where `mcpConfirmations()` keeps pending rows when it names no `store`. Default
+   * `postgresConfirmationStore` over the app's pool.
+   */
+  readonly mcpConfirmationStore: McpConfirmationStore;
   /** `meter:` counters. Default `postgresMeterStore`, one row per tenant-day on every replica. */
   readonly meterStore: MeterStore;
-  /** A notifier's ledger, preferences, inbox and digest. Omitted, notify's memory defaults. */
+  /**
+   * A notifier's ledger, preferences, inbox and digest. A missing `ledger` is the boot's
+   * `postgresDeliveryLedger` over its pool (`runtime-port-bindings.ts`); the rest default in notify.
+   */
   readonly notifyStores: NotifyStores;
   /** The `x_outbox` store behind `handle.enqueue()`. Default `postgresOutboxStore`. */
   readonly outboxStore: OutboxStore;
@@ -91,8 +123,11 @@ export interface PortValues {
    * `installSecrets()` asks this. Default `ULTIMATE_SECRETS_KEY`, then `.secrets.key`.
    */
   readonly secretSource: SecretSource;
-  /** Replaces the `S3_ENDPOINT`/embedded-disk decision whole: disks, default disk and all. */
-  readonly storage: Storage;
+  /**
+   * The boot's default disk, registered under the driver's own `name`: replaces the
+   * `S3_ENDPOINT`/embedded-disk decision. Several disks are the app's `defineStorage()`, which wins.
+   */
+  readonly storage: StorageDriver;
   /** Where spent TOTP steps are kept, fleet-wide. Default `postgresTotpReplayGuard`. */
   readonly totpReplay: TotpReplayGuard;
   /**

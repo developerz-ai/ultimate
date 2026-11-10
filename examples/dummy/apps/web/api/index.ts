@@ -125,9 +125,6 @@ import * as postPublishedWebhook from '../app/webhooks/jobs/post-published-webho
 // `defineService(...)` and the channel declaration run on import — the same "importing IS the
 // boot" rule as the registration below, so `ctx.orgs`, `ctx.posts`, `ctx.runs` and `ctx.webhooks`
 // are installed wherever this module has run, including tests.
-// Postly's error sink, installed beside any reporter already there — every role loads this module,
-// so a worker's failures are grouped as a request's are.
-import '../app/errors/reporting';
 import '../app/orgs/service';
 import '../app/posts/channels';
 import '../app/posts/service';

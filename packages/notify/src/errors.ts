@@ -144,20 +144,34 @@ export class NotifyFanoutTooWideError extends UltimateError {
  * and a digest window have no such default — there is nowhere to put the row — so they refuse.
  */
 export class NotifyStoreMissingError extends UltimateError {
-  constructor(input: { notifier: string; store: 'inbox' | 'digest' }) {
-    const what =
-      input.store === 'inbox' ? 'a channel that writes the in-app inbox' : 'a digest window';
+  constructor(input: { notifier: string; store: 'inbox' | 'digest' | 'ledger' }) {
     super({
       code: 'X_NOTIFY_STORE_MISSING',
-      cause: `notifier "${input.notifier}" delivers through ${what} and no ${input.store} store is installed, so the rows have nowhere to go`,
-      fix:
-        input.store === 'inbox'
-          ? 'memoryInboxStore()   # notifyStores: { inbox } in apps/<app>/runtime.ts — postgresInboxStore({ executor }) to share it across replicas'
-          : 'memoryDigestStore()   # notifyStores: { digest } in apps/<app>/runtime.ts — postgresDigestStore({ executor }) to share it across replicas',
+      cause: STORE_MISSING_CAUSE[input.store](input.notifier),
+      fix: STORE_MISSING_FIX[input.store],
       meta: { notifier: input.notifier, store: input.store },
     });
   }
 }
+
+const STORE_MISSING_CAUSE = {
+  inbox: (notifier: string) =>
+    `notifier "${notifier}" delivers through a channel that writes the in-app inbox and no inbox store is installed, so the rows have nowhere to go`,
+  digest: (notifier: string) =>
+    `notifier "${notifier}" delivers through a digest window and no digest store is installed, so the rows have nowhere to go`,
+  // The memory ledger is one process's heap: behind replicas or across a restart a replay sends twice.
+  ledger: (notifier: string) =>
+    `notifier "${notifier}" claimed a delivery outside development and no delivery ledger is installed; a memory ledger is one process's heap, so a replayed attempt on another replica or after a restart would send twice`,
+} as const;
+
+const STORE_MISSING_FIX = {
+  inbox:
+    'memoryInboxStore()   # notifyStores: { inbox } in apps/<app>/runtime.ts — postgresInboxStore({ executor }) to share it across replicas',
+  digest:
+    'memoryDigestStore()   # notifyStores: { digest } in apps/<app>/runtime.ts — postgresDigestStore({ executor }) to share it across replicas',
+  ledger:
+    'notifyStores: { ledger: postgresDeliveryLedger({ executor: dbExecutor() }) }   # apps/<app>/runtime.ts — the x_notify_deliveries table the boot already applies',
+} as const;
 
 /**
  * A digest window declared on a bulk channel. Refused where it is written: a bulk send has one

@@ -178,6 +178,11 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **The purge URL in a `fix:` goes through `renderFixShellArg`** — it is operator data, and
   `renderFixLiteral`'s double quotes leave `$(…)` live.
 
+- **`./adapter` (`adapter.ts`) is the `cacheTiers` and `purge` ports for an adapter author**:
+  `CacheTier`, `PurgeDriver`, their shapes and the two errors a tier or driver raises. No installer:
+  `@ultimat3/cli` READS `runtime.ts`'s `cacheTiers` (each replaces the rung of its own name;
+  `cache.tiers` still names the ladder) and `purge`. Type moves: none — every name stays on `.` too.
+
 ## Files
 
 | File | Owns |

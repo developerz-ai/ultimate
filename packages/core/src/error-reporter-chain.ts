@@ -1,6 +1,6 @@
 // Single responsibility: several `ErrorReporter`s behind the ONE seam — a vendor transport beside
 // an app's own sink (`@ultimat3/admin`'s `errorGroupsSink`). Not a second seam: the chain IS a
-// reporter, installed through `configureErrorReporting` like any other.
+// reporter, installed through `installErrorReporter` (`./adapter`) like any other.
 
 import { renderThrowable } from './error-render';
 import { type ErrorReport, type ErrorReporter, noopErrorReporter } from './error-reporter';

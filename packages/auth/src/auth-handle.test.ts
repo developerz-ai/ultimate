@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth, login, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { configureKdfGate, resetKdfGate } from './kdf-gate';
+import { installKdfGate, resetKdfGate } from './kdf-gate';
 import { memoryAuthAdapter } from './memory-adapter';
 
 const USER_ID = '01900000-0000-7000-8000-00000000ada0';
@@ -54,7 +54,7 @@ describe('login by handle', () => {
 
   test('an unknown handle still runs the KDF: a gate with no room sheds it', async () => {
     const auth = await withAda(handleAuth());
-    configureKdfGate({ maxConcurrent: 0, maxQueued: 0 });
+    installKdfGate({ maxConcurrent: 0, maxQueued: 0 });
     try {
       const shed = await caught(() => login(auth, { handle: 'nobody', password: PASSWORD }));
       expect(shed?.code).toBe('X_OVERLOADED');

@@ -181,6 +181,16 @@ do {
 
 Before 25.0.0 it was `ListPage { objects, truncated, cursor? }`, its own shape beside core's.
 
+### Writing a driver: `@ultimat3/storage/adapter`
+
+`StorageDriver`, the shapes it reads and answers, the error factories a driver raises
+(`objectNotFound`, `putFailed`, `readFailed`, …) and the helpers every driver refuses with the same
+way (`assertPutOptions`, `toBytes`, `resolveListLimit`, `etagOf`). Hand one to the boot as
+`storage: myDriver()` in `apps/web/runtime.ts`: it becomes the default disk, registered under the
+driver's `name`, in place of the `S3_ENDPOINT`/embedded-disk decision (31.0 — the field took a whole
+`Storage` before). Several disks stay the app's `defineStorage()`. The suite is
+`@ultimat3/testing/conformance`'s `storageDriverConformance`.
+
 ## `put()` is for objects that fit in memory
 
 `put()` buffers the whole body — size and checksum have to be known before the object exists —

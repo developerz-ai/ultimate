@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  configureErrorReporting,
-  memoryErrorReporter,
-  resetErrorReporting,
-  UltimateError,
-} from '@ultimat3/core';
+import { memoryErrorReporter, resetErrorReporting, UltimateError } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { CURRENCY_CODE_PATTERN, isCurrencyCode } from '@ultimat3/schema';
 import { defineHttpConfig } from './config';
 import { toProblem } from './error-facts';
@@ -330,7 +326,7 @@ describe('a currency this process has no row for', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(resetErrorReporting);

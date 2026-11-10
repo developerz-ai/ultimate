@@ -76,15 +76,15 @@ status = 'sending'` as `SQL_IDEMPOTENCY_SETTLE` is, and `false` is logged `notif
 in `meta.retryAfterSeconds`, deferred by jobs' `rateLimitDeferralMs` with the attempt uncounted) and
 never returns `false` for it: `false` checkpoints the step, and a
 holder that then dies is a notification no retry is left to send (`attempt.test.ts`,
-`ledger-parity.live.test.ts`).
+`deliveryLedgerConformance` in `@ultimat3/testing/conformance` (`notify-stores-conformance-postgres.live.test.ts`)).
 
 The **one at-most-once seam** is a digest flush: `DigestStore.drain` empties the window, and a
 process killed between the drain and its checkpoint loses that batch. It is stated in `digest.ts`
 rather than hidden. `postgresDigestStore` makes the window itself durable and shared — the
 partial unique index `x_notify_digests_open_idx` lets two replicas' first appends collide so ONE
 opens the window and owns the flush; an elapsed open window is sealed and the append retried — but
-its `drain` is still a delete, so the seam is unchanged (`digest-parity.live.test.ts` runs one
-suite against both stores).
+its `drain` is still a delete, so the seam is unchanged (`digestStoreConformance` in `@ultimat3/testing/conformance` (`notify-stores-conformance-postgres.live.test.ts`)
+runs one suite against both stores).
 
 **A digest append is ONE STEP PER RECIPIENT, and idempotent per appender** (`As of 2026-10-05`).
 The append pass was one `step.run`, and a step that fails part-way re-runs WHOLE: recipients already
@@ -96,7 +96,7 @@ durable fence; one row per recipient, as `deliver:` already writes), and behind 
 opener first — so an append whose answer was lost, or a run whose step history is gone, gets back
 the window it landed in while that window exists. Two executions of one appender at once (a lapsed
 lease) cannot both join: the `do update` refuses an appender already in the row. Pinned by
-`fanout-digest.test.ts` and `digest-parity.live.test.ts`.
+`fanout-digest.test.ts` and `@ultimat3/testing/conformance` (`notify-stores-conformance-postgres.live.test.ts`).
 
 **The audience is deduplicated by `id` once, as it leaves the `open` step** (`As of 2026-10-02`).
 Every per-recipient step is named by the id, so a resolver that named one person twice failed

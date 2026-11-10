@@ -269,8 +269,9 @@ a current fact: the rules that still hold are in that file, and where the two di
   connection torn down between the `#ensure` and the call, a permissions violation on the subject.
   A raw `NatsError` escaped `publish()` into `ChannelHub`'s bridge, `SocketRegistry` and the
   replicator — no code, no `fix:`, nothing an operator can act on — while `InProcessTransport`
-  answered `X_TRANSPORT_UNAVAILABLE` for its own one refusal. `transport-parity.test.ts` asserts
-  both transports in one test, and a third case proves the wrap still DELIVERS: a translation that
+  answered `X_TRANSPORT_UNAVAILABLE` for its own one refusal. `transportConformance` (`packages/testing/src/transport-conformance.ts`, run on both
+  transports by `transport-conformance.test.ts` and `transport-conformance-nats.live.test.ts`;
+  it replaced `transport-parity.test.ts` in 31.0.0) asserts both in one suite, and a third case proves the wrap still DELIVERS: a translation that
   swallowed a working publish would satisfy the two refusal cases and fan out nothing. An
   `UltimateError` passes through untouched — the port raises its own for a closed client, and
   re-wrapping buries the code a caller branches on. `nats-lib-client.ts`'s header claim that every

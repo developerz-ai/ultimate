@@ -172,11 +172,10 @@ describe('money', () => {
     ).toThrow(/past ±2\^53/);
   });
 
-  test('narrowRow lower-cases a uuid Postgres would accept, and leaves a malformed one alone', () => {
+  test('narrowRow lower-cases a uuid Postgres would accept, and refuses a malformed one', () => {
     // The narrowing exists to make the in-memory row the one Postgres holds, and Postgres holds
-    // NOTHING for a malformed uuid — it refuses the insert. So a value that is not a uuid is left
-    // exactly as the caller spelled it: the memory driver stores what `$assert` was shown, and a
-    // lower-cased malformation is a third spelling neither driver has.
+    // NOTHING for a malformed uuid — it refuses the insert. So both drivers refuse it here, before
+    // the store: memory used to keep the caller's spelling of a row production never had.
     interface Row {
       readonly id: string;
       readonly ref: string;
@@ -190,7 +189,7 @@ describe('money', () => {
     expect(narrowed).toEqual({ id: '018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f', ref: 'KEEP-ME' });
 
     const malformed: RowWrite<Row> = { id: 'NOT-A-UUID', ref: 'x' };
-    expect(Object.is(narrowRow<Row>(columns, malformed), malformed)).toBe(true);
+    expect(() => narrowRow<Row>(columns, malformed)).toThrow(/expected a uuid/);
   });
 
   test('is minor units plus an ISO-4217 code — never one column, never a float', () => {

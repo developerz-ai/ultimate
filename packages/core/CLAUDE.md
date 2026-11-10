@@ -86,7 +86,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
 | where a visitor's light/dark choice is stored | `theme-storage.ts` (`THEME_STORAGE_KEY`, also on `./page`) | render's boot script reads it, ui's toggle writes it — both tier 4, so the one literal lives here. Persisted in browsers: never respelled |
 | the four shapes of an async region | `async-state.ts` (`AsyncState`) | `realtime` returns it, `ui` renders it. `bun run render-modes` refuses a second status union sharing three members |
-| the audit record + one sink | `audit.ts` | `action` + `query`; `AUDIT_RECORD_FIELDS` pins both |
+| the audit record + one sink | `audit.ts` | `action` + `query` read `getAuditSink()`; the boot installs (`installAuditSink`, `./adapter`); `AUDIT_RECORD_FIELDS` pins both |
 | gate shapes | `gate-shapes.ts` | shared by `action` and `query`: the audit outcome, the rate-limit subject/scope/limit. One copy, never one per primitive |
 | is this `unknown` a keyed record? | `json-object.ts` (`isJsonObject`) | narrows a shape; does not certify provenance |
 | may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
@@ -123,10 +123,7 @@ top-level `UltimateError` use in `error-codes.ts`.
   `generation-fence.ts`, `retryable-status.ts`, `client-flight.ts`, `client-wire.ts`) imports
   nothing but this package, runs nothing at import, and injects every source of non-determinism
   (roll, sleep, clock, timer). `classifyThrown` / `statedDelayMs` live beside `error-retry.ts`'s table.
-- **`finiteOption` / `finiteCount` (`finite-option.ts`) are the framework's ONE screen for a numeric
-  option.** `finiteCount(subject, option, value, min)` takes `min: 0 | 1` because only the caller
-  knows what zero means. `bun run finite-bounds` recognises a repair by the call's shape, so a
-  package screen carries `Finite` in its name.
+- **`finiteOption` / `finiteCount` (`finite-option.ts`) are the framework's ONE screen for a numeric option.** Full rule: `docs/history/core.md`.
 - **`mcp-exposure.ts`'s `isMcpExposed` is the ONE answer to "did this opt into MCP?"**, read by
   `action`, `query`, `mcp`, `ai`, `manifest`. `@ultimat3/cli`'s `mcp-exposure-pin.test.ts` checks
   it; `isAgentOffered` adds `agents: true`; `@ultimat3/admin`'s own catalog is the one opt-OUT exception (`mcp-tools.ts`).
@@ -171,7 +168,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
 - **A cause is cut at 4 KiB in the constructor** (`boundedCause`); schema's copy is pinned by `single-line-pin.test.ts`.
-- `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.
+- `error-reporter.ts`: `ErrorReporter`, an `adapterSlot` (`installErrorReporter` on `./adapter`; `configureErrorReporting` keeps clock/release/environment/enabled only), no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.
 - `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts` on `METRICS_PORT` (9090), never
   the role's HTTP port; every role opens it.
 

@@ -676,9 +676,9 @@ export const patientChart = query({
 
 Every **call** is one record in the installed `AuditSink` — allowed, denied (before or after the
 input parse) and failed. The sink, the record and the installed slot are `@ultimat3/core`'s, the
-same ones an action's `audit: true` writes to: `setAuditSink(sink)` from `@ultimat3/core` (or
-`@ultimat3/action` — the same function) installs one sink for both, and `record.primitive` tells a
-read from a write.
+same ones an action's `audit: true` writes to: `auditSink` in `apps/web/runtime.ts` (the boot
+installs it through core's `installAuditSink`, `@ultimat3/core/adapter`) is one sink for both, and
+`record.primitive` tells a read from a write.
 
 **A memo or cache hit is recorded too**, with `replayed: true`. An audit of a read is about who saw
 what, not what was computed: a reader handed rows by the request memo saw them exactly as much as
@@ -767,7 +767,7 @@ or a stream with `size`, served without buffering.
 
 | Code | When | Fix |
 |---|---|---|
-| `X_QUERY_AUDIT_SINK_MISSING` | `audit: true` and no audit sink installed — refused before the parse | `setAuditSink(sink)` from `@ultimat3/core` at boot |
+| `X_QUERY_AUDIT_SINK_MISSING` | `audit: true` and no audit sink installed — refused before the parse | `auditSink: postgresAuditSink({ executor })` in `apps/web/runtime.ts` |
 | `X_QUERY_AUDIT_SINK_FAILED` | the sink refused the record of an allowed read; the rows were withheld | fix the sink, then retry the read |
 | `X_QUERY_DOWNLOAD_INVALID` | `download:` beside a rows option, a `handle` that is not a function, `expiresInMs` outside 1 000 … 3 600 000 | declare `download: { handle }` alone |
 | `X_QUERY_DOWNLOAD_ONLY` | rows asked of a download (`.live()`, `.page()`, `.as()`, `sourceFor`) | `await q.url(input)`, or `await q(input)` for the file |

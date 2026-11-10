@@ -3,13 +3,14 @@
 // driver by default, and the wire format supplied by a transport, never here. The framework names
 // no vendor (axiom 7); a transport takes its endpoint from the app's typed env.
 
+import { adapterSlot } from './adapter-slot';
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
 import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from './environment';
 import { renderThrowable } from './error-render';
 import { localErrorSink } from './error-reporter-sentry';
 import { failureStack } from './error-stack';
-import { toUltimateError } from './errors';
+import { ConfigInvalidError, toUltimateError } from './errors';
 import { releaseHeldFailure } from './failure-capture-flush';
 import { logger } from './logger';
 import type { Role } from './roles';
@@ -95,8 +96,13 @@ export function memoryErrorReporter(): MemoryErrorReporter {
   });
 }
 
+/**
+ * The settings around the port — never the reporter itself: that is the `errorReporter` port's,
+ * installed by the boot from `runtime.ts` through `installErrorReporter` (`@ultimat3/core/adapter`).
+ */
 export interface ErrorReportingOptions {
-  readonly reporter?: ErrorReporter | undefined;
+  /** Removed in 31.0.0: `runtime.ts`'s `errorReporter` field, or `installErrorReporter` in a boot. */
+  readonly reporter?: never;
   readonly clock?: Clock | undefined;
   /** The deploy's build id. `serve.ts` passes the one it already computed; never a second one. */
   readonly release?: string | null | undefined;
@@ -104,14 +110,23 @@ export interface ErrorReportingOptions {
   readonly enabled?: boolean | undefined;
 }
 
-let reporter: ErrorReporter = noopErrorReporter;
+/** Core's one slot shape: installs stack, each release removes its own frame (`adapter-slot.ts`). */
+const reporters = /* @__PURE__ */ adapterSlot<ErrorReporter>(() => noopErrorReporter);
 let clock: Clock = systemClock;
 let release: string | null = null;
 let environment: Environment | undefined;
 let enabled = true;
 
 export function configureErrorReporting(options: ErrorReportingOptions): void {
-  if (options.reporter !== undefined) reporter = options.reporter;
+  // `never` stops a typed caller; this stops the rest (a `.js` module, a cast) — ignored, its
+  // reporter would never hear a report and nothing would say so.
+  if (Object.hasOwn(options, 'reporter')) {
+    throw new ConfigInvalidError({
+      cause:
+        'configureErrorReporting({ reporter }) was removed in 31.0.0: the reporter is the errorReporter port, and a reporter passed here would never receive a report',
+      fix: 'errorReporter: sentryErrorReporter({ dsn })   # your reporter, in export const runtime = { … }, apps/<app>/runtime.ts — or installErrorReporter(reporter) from @ultimat3/core/adapter in a test',
+    });
+  }
   if (options.clock !== undefined) clock = options.clock;
   if (options.release !== undefined) release = options.release;
   if (options.environment !== undefined) environment = options.environment;
@@ -119,16 +134,27 @@ export function configureErrorReporting(options: ErrorReportingOptions): void {
 }
 
 /**
- * The reporter installed now. Read by a boot that adds its own (`@ultimat3/cli`'s `SENTRY_DSN`
- * transport) so it composes with an app's sink through `chainErrorReporters` instead of
- * replacing it — the app's modules import, and install, before that boot line runs.
+ * The `errorReporter` port's installer — on `@ultimat3/core/adapter` only. The boot installs
+ * `runtime.ts`'s reporter before `loadApp`, then its `SENTRY_DSN` transport as a frame above it
+ * that chains whatever is installed (`@ultimat3/cli`'s `configureReporting`). Answers the release
+ * that removes THIS install and no other, in any order.
  */
-export function installedErrorReporter(): ErrorReporter {
-  return reporter;
+export function installErrorReporter(next: ErrorReporter): () => void {
+  return reporters.install(next);
 }
 
+/**
+ * The reporter installed now. Read by a boot that adds its own (`@ultimat3/cli`'s `SENTRY_DSN`
+ * transport) so it composes with the app's reporter through `chainErrorReporters` instead of
+ * replacing it — `runtime.ts`'s `errorReporter` is installed before that boot line runs.
+ */
+export function installedErrorReporter(): ErrorReporter {
+  return reporters.current();
+}
+
+/** Test seam: every install dropped and every setting back to its default. */
 export function resetErrorReporting(): void {
-  reporter = noopErrorReporter;
+  reporters.reset();
   clock = systemClock;
   release = null;
   environment = undefined;
@@ -215,7 +241,7 @@ export function reportError(error: unknown, options: ReportErrorOptions): void {
   releaseHeldFailure(error, () => errorReport(error, options));
   if (!enabled) return;
   try {
-    reporter.report(errorReport(error, options));
+    reporters.current().report(errorReport(error, options));
   } catch (failure) {
     logger.warn('error reporter failed', {
       source: options.source,

@@ -1,6 +1,6 @@
 // The JSON value `null` in a `jsonb` column against a real server through Bun's `sql`: a NOT NULL
 // column whose schema admits `null` stores `'null'::jsonb` and reads it back; a nullable column's
-// `null` stays SQL NULL. `json-null-parity.test.ts` holds memory to PGlite; this is the production
+// `null` stays SQL NULL. `entityDriverConformance` (`@ultimat3/testing`) holds every driver to it; this is the production
 // client. Skips unless `TEST_DATABASE_URL` is set, as the live suite does.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';

@@ -47,18 +47,16 @@ export const mcp = defineAppMcp({ include: 'exposed', resolveToken: () => null }
 
   // The app's own middleware, in the contract `app-runtime.ts` reads: a header on every response
   // is the cheapest proof that the chain `x dev` composed is the app's and not only the replica's.
-  // Its disks too: `x dev` built its own embedded disk and ignored this one until 22.4.
-  'apps/web/runtime.ts': `import { defineStorage, localDriver } from '@ultimat3/storage';
+  // Its disk too: `x dev` built its own embedded disk and ignored this one until 22.4. Since 31.0
+  // the field is a driver, the boot's default disk under the driver's own name (`local`).
+  'apps/web/runtime.ts': `import { localDriver } from '@ultimat3/storage';
 const stamp = async (request, ctx, next) => {
   const response = await next(request, ctx);
   const headers = new Headers(response.headers);
   headers.set('x-dev-runtime', 'app');
   return new Response(response.body, { status: response.status, headers });
 };
-const storage = defineStorage({
-  disks: { appdisk: localDriver({ root: Bun.fileURLToPath(new URL('../../.app-disk', import.meta.url)) }) },
-  default: 'appdisk',
-});
+const storage = localDriver({ root: Bun.fileURLToPath(new URL('../../.app-disk', import.meta.url)) });
 export const runtime = { middleware: [stamp], storage };
 `,
 

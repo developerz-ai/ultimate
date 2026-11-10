@@ -4,7 +4,9 @@ Owns: the `route` primitive, the four render modes, the route table, the surface
 islands + budgets, hydration directives, `<head>` merge, **the server JSX runtime and the two Bun
 loaders that make an app's `.tsx` and `.scss` runnable**.
 
-**Three entry points**; `"."` and `"./server"` disjoint. `"."` (`index.ts`) is the CLIENT half and bundles for the browser;
+**Entry points**: `"."`, `"./server"`, `"./client"`, `"./navigation"`, and `"./adapter"` (`adapter.ts`, the
+`isrStore` port's TYPES — `IsrStore` and its entry shapes; no installer: `@ultimat3/cli` reads
+`runtime.ts`'s `isrStore`). `"."` and `"./server"` disjoint. `"."` (`index.ts`) is the CLIENT half and bundles for the browser;
 `"./server"` (`server.ts`) is the build-time half — `css-modules`, `module-loader`, `render-html`,
 `render-isr`, `render-ssr`, `render-static`, `render-stream` — and does not (`css-modules.ts` needs
 `node:url`, which a browser build cannot link; no `sideEffects` value repairs that). Never re-export
@@ -63,7 +65,7 @@ axiom 6). Never `cli` (upward).
 | A runtime that calls `boot` | TERMINATES the chain: `idle`/`visible` end in `.catch(hush)`, `interaction` passes `off` as the rejection arm. `hydrate-runtime.test.ts` reds on an unhandled rejection. |
 | `idle` replays too | `idle` and `interaction` share ONE `catchUp(el)` in `hydrate.ts` (capture listeners for `data-x-events`, default `click`; a queue; `aim`; one flush). A caught event wakes an `idle` island early; each event replays once. `hydrate-replay.test.ts`. |
 | Where `interaction` replays | `aim(el, ev)`, never `ev.target` (`mount` detaches the pressed node). Fallback order: `docs/history/render.md`. `hydrate-replay.test.ts`. |
-| A held island | `hold` on the collector (the host decides — the CLI holds store-reading realtime islands on a page-boot document); `island-hold.ts` owns the attribute, the inline `visibility:hidden`, the cap `ISLAND_HOLD_MS` and the runtime part. Emitted right after the prelude; booted at once, revealed TOGETHER on both mount arms, at the cap, or by CSS (`ISLAND_HOLD_REVEAL`, keyframes in `@ultimat3/ui`'s `global.scss`) — never hidden for good. `catchUp`'s `on` lets go after a mount it did not flush. `island-hold.test.ts`, `island-hold-replay.test.ts`. |
+| A held island | `island-hold.ts`: `hold` on the collector, revealed together, never hidden for good. Full rule: `docs/history/render.md` |
 | `idle`'s deadline | `IDLE_HYDRATE_TIMEOUT_MS`, interpolated INTO the runtime string and exported for `x shot`'s settle. |
 | Route truth | `registry.ts`. Never a second route list and never a second matcher — `@ultimat3/http`'s trie (`stages.ts`) serves requests. `routeFor` is an exact-path `Map` lookup. |
 | Route filename | `page.tsx` under `site/`/`app/` — `ROUTE_FILENAME`, keyed by `RouteSurface`. Anything else is `X_ROUTE_FILE_INVALID`, any file under `api/` or `shared/` included. |

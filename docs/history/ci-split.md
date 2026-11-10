@@ -235,6 +235,42 @@ red over unchanged code. The halves were also uneven (229–255 s against 407–
 12-core box), so a split by file count would not halve the wall time anyway. Reopens when Bun's
 lcov carries function identity; until then `packages (1/2)` holds the run over five minutes.
 
+## `cli` cheaper, not split: e2e suites out of coverage, 2026-11-09
+
+Run 42717817244 (green PR, three `packages` shards): `packages (1/3)` 353 s, `cli` alone 338 s on
+four workers; the next slowest jobs `gate (unit-3)` 288 s and `gate (e2e)` 266 s. `cli` was the
+run's end on its own.
+
+Where `cli`'s time went, local junit profile (759 `src` files, six workers, Bun 1.4.4): no single
+file dominates — the top ten are 24% — but `./packages/cli` also runs `packages/cli/e2e/` (34
+files, ~286 core-s) and the `.contract.`/`.live.`/`.job.` suites in `src` (~174 core-s), each
+already run by its own gate step. `upgrade.e2e` 76 s, `six-deploys.e2e` 46 s,
+`generate-sign-in.contract` 43 s, `sign-in.e2e` 33 s, `db-fix-truth.job` 32 s.
+
+Measured on one frozen copy of HEAD, `coverage-gate.ts --package`, four workers, no services:
+
+| Left out of every unit's coverage | `cli` | `cli` lines / functions | the other units |
+|---|---|---|---|
+| nothing (before) | 285 s | 96.15 / 95.46 | green |
+| **e2e paths** (shipped) | **195 s** | 96.14 / 95.42 | `testing`, `http`, `admin`, `core`, `scraping` (the rest carrying e2e) green |
+| every typed suite | ~126 s (−49%, six workers) | 96.04 / 95.56 | **red**: `jobs` 92.13 / 91.22 (its `.job.` suites are its tests), `mcp` 94.97 lines, five fixtures unimported (`X_COVERAGE_UNMEASURED`) |
+
+| Change | Why |
+|---|---|
+| `testCommand` passes `--path-ignore-patterns` for each of `E2E_PATH_GLOBS` (`packages/cli/src/verify-tests.ts`) | the e2e step's own substrings spelt as globs — one definition read by the e2e step, the unit step and this gate (`verify-tests.test.ts`, `coverage-gate-parallel.test.ts`). An e2e suite drives a built app through a browser and child processes, which no in-process lcov sees |
+| contract, live and job suites stay in | the third row |
+| plain unit tests for what only typed suites reached (`compile-executable`, `generate-sign-in-fixture`, `client-emit-customer`, `static-cards-serve`, `dev-live-fixture`, `scaffold-typecheck-fixture`, `cdp-shot-page`) | `cli`'s unit-only reading now equals the all-suites one (lines 96.04 vs 96.03; functions 3 short of 5,883), so the third row is open for `cli` once `jobs` and `mcp` are |
+
+Expected on CI: `cli` ≈ 338 × 0.68 ≈ 230 s, `packages (1/3)` ≈ 245 s; the run's end moves to
+`gate (unit-3)` / `gate (e2e)`, ~5 minutes with the merge. `UNIT_SECONDS` is left for the next CI
+refresh: `cli` at ~830 still gets a shard to itself.
+
+Next lever, not done: **an on-disk embedded database restored from the PGlite snapshot.**
+`pglite-snapshot.ts` serves only `memory://`; `x dev` and every `startDev`/`startDb` test boot
+an on-disk data directory, an `initdb` each — ~3 s against ~1 s restored, measured 2026-11-09.
+77 `cli` test files boot one (~256 local core-s). The change is `@ultimat3/db`'s `pgliteClient`
+plus `runtime-queue.ts`'s `startDb`.
+
 ## Fault drills, 2026-11-06
 
 `fault-drills` asks one question no other job can: does the reference app keep the framework's

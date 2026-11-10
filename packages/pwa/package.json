@@ -25,6 +25,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
     "./client": "./src/client.ts",
     "./schema": "./src/push-schema.ts"
   },

@@ -25,7 +25,7 @@ describe('users', () => {
 
     expect((await adapter.findUserByEmail('A@Example.com'))?.id).toBe('user-1');
     // Folding case HERE is what made this the one adapter that finds an account Postgres does not.
-    // `normaliseEmail` is the caller's, above the seam — see `adapter-parity.test.ts`.
+    // `normaliseEmail` is the caller's, above the seam — see `authAdapterConformance` (`@ultimat3/testing/conformance`).
     expect(await adapter.findUserByEmail('  a@example.com  ')).toBeNull();
     expect(await adapter.findUserByEmail('nobody@example.com')).toBeNull();
   });

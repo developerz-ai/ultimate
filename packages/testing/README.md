@@ -490,26 +490,66 @@ failure line reads `publishPost > behaves like an authenticated action > denies 
 — which subject, and which shared rule. `behavesLike` calls `describe`, so it goes at declaration
 scope, never inside a test body.
 
-Two ship, for the ports an app may implement itself — a `JobDriver` and `@ultimat3/ai`'s
-`BudgetStore`:
+### Conformance: a port's contract
+
+Every interface an app may implement has a suite on its own entry point,
+`@ultimat3/testing/conformance` (off `.`: the suites statically import the packages they hold to).
+A custom adapter proves itself with one file; the shipped ones run the same suite, memory in
+`unit`, Postgres / Redis / S3 / NATS in `live`. Names match `ADAPTER_PORTS[].conformance`.
 
 ```ts
-import { memoryBudgetStore } from '@ultimat3/ai';
-import { memoryJobDriver } from '@ultimat3/jobs';
-import { behavesLike, budgetStoreConformance, describe, jobDriverConformance } from '@ultimat3/testing';
+import { memoryStorageDriver } from '@ultimat3/storage';
+import { behavesLike, describe } from '@ultimat3/testing';
+import { storageDriverConformance } from '@ultimat3/testing/conformance';
 
-// The shipped ports pass; put your own driver or store where these are.
-describe('my queue', () => behavesLike(jobDriverConformance, () => memoryJobDriver()));
-describe('my budget store', () => behavesLike(budgetStoreConformance, () => memoryBudgetStore()));
+// The shipped memory driver passes; put your own `StorageDriver` where it is.
+describe('my disk', () => behavesLike(storageDriverConformance, () => memoryStorageDriver()));
 ```
 
-| Suite | Holds a store to |
-|---|---|
-| `jobDriverConformance` | claim once · ack/nack fenced on the claim · a live key dedupes · `queues: []` refused · dead-letter never re-claimed · a lapsed lease re-claimed, the loser unable to renew · a lease lapsed on the final attempt buried, reported through `onExhausted` once, `failed` under `dropExhausted` |
-| `budgetStoreConformance` | 24 concurrent `take`s on one key never overspend · a refused take spends nothing · negative `add` · `reset(key)` scoped |
+Each suite also exports its checks (`<PORT>_CHECKS`), so a test can run one against a subject that
+is meant to FAIL it. The subject is called once per test.
 
-The subject is called once per test. Each check claims from a queue — or counts under a key — of
-its own, so one shared store is enough.
+| Interface (package) | Suite, as you call it |
+|---|---|
+| `AuditSink` (core) | `behavesLike(auditSinkConformance, () => ({ sink, kept, persists }))` |
+| `AuthAdapter` (auth) | `behavesLike(authAdapterConformance, () => ({ adapter, clock }))` — `clock` is the `FrozenClock` it stamps from |
+| `AuthLimiterFactory` (auth) | `behavesLike(authLimiterFactoryConformance, () => ({ factory, clock }))` |
+| `AuthServerStore` (auth) | `behavesLike(authServerStoreConformance, () => store)` |
+| `BudgetStore` (ai) | `behavesLike(budgetStoreConformance, () => store)` |
+| `CacheTier` (cache) | `behavesLike(cacheTierConformance, () => tier)` — each check runs inside a request |
+| entity `Driver` (entity) | `behavesLike(entityDriverConformance, () => ({ open: (entities) => driver, capabilities, foreignKeys }))` — `open` hands a driver over EMPTY tables for `entities`; an undeclared capability is asserted REFUSED |
+| `ErrorGroupsStore` (admin) | `behavesLike(errorGroupsStoreConformance, () => store)` |
+| `ErrorReporter` (core) | `behavesLike(errorReporterConformance, () => ({ reporter, delivered }))` — `delivered()` is the text each report left as; only a `localErrorSink`-marked reporter may carry a secret |
+| `EventBus` (jobs) | `behavesLike(eventBusConformance, () => ({ bus, elapse }))` |
+| `FailureStore` (core) | `behavesLike(failureStoreConformance, () => ({ store, find, client }))` |
+| `Gateway` (ai) | `behavesLike(gatewayConformance, () => ({ gateway, model }))` |
+| `IdempotencyStore` (action) | `behavesLike(idempotencyStoreConformance, () => ({ store, client, reclaimAfterMs, … }))` |
+| `ImageTransformDriver` (seo) | `behavesLike(imageTransformDriverConformance, () => ({ driver, src }))` — `src` reads as `IMAGE_CONFORMANCE_SOURCE` (64×32 PNG) |
+| `IsrStore` (render) | `behavesLike(isrStoreConformance, () => store)` — the tag-fence check runs only when `store.tagFence` exists |
+| `JobDriver` (jobs) | `behavesLike(jobDriverConformance, () => driver)` |
+| `LeaseStore` (jobs) | `behavesLike(leaseStoreConformance, () => ({ store, elapse }))` |
+| `MailDriver` (mail) | `behavesLike(mailDriverConformance, () => driver)` |
+| `McpConfirmationStore` (mcp) | `behavesLike(mcpConfirmationStoreConformance, () => store)` |
+| `MeterStore` (action) | `behavesLike(meterStoreConformance, () => store)` |
+| `NotifyStores` (notify) | `behavesLike(notifyStoresConformance, () => ({ ledger, inbox, preferences, digest }))`; one store alone: `deliveryLedgerConformance`, `inboxStoreConformance`, `preferenceStoreConformance`, `digestStoreConformance` |
+| `OutboxStore` (jobs) | `behavesLike(outboxStoreConformance, () => ({ relay, claimLeaseMs, transaction, elapse }))` |
+| `Provider` (ai) | `behavesLike(providerConformance, () => ({ provider, model }))`; over HTTP also `providerTransportConformance` |
+| `PurgeDriver` (cache) | `behavesLike(purgeDriverConformance, () => ({ driver, refused }))` — omit `refused` for noop |
+| `PushDeviceStore` (notify) | `behavesLike(pushDeviceStoreConformance, () => store)` |
+| `PushSubscriptionStore` (pwa) | `behavesLike(pushSubscriptionStoreConformance, () => store)` |
+| `RateLimitStore` (http) | `behavesLike(rateLimitStoreConformance, () => store)` |
+| `ScrapeDriver` (scraping) | `behavesLike(scrapeDriverConformance, () => driver)` — serving `SCRAPE_CONFORMANCE_PAGES` on `shop.test` |
+| `SecretSource` (core) | `behavesLike(secretSourceConformance, () => ({ source, holding, empty }))` |
+| `SleepClock` (core) | `behavesLike(sleepClockConformance, () => clock)` |
+| `StepStore` (jobs) | `behavesLike(stepStoreConformance, () => driver)` — any `JobDriver`; a lone store: `memoryJobDriver({ steps })` |
+| `StorageDriver` (storage) | `behavesLike(storageDriverConformance, () => disk)` — checks write under `conformance/<uuid>/` |
+| `TotpReplayGuard` (auth) | `behavesLike(totpReplayGuardConformance, () => guard)` |
+| `Transport` (realtime) | `behavesLike(transportConformance, () => bus)` — fresh and open per test; the suite closes it |
+| `VectorStore` (ai) | `behavesLike(vectorStoreConformance, () => store)` — unbound, `VECTOR_CONFORMANCE_DIMENSION` wide |
+
+`elapse(ms)` is required — there is no real-time fallback: a memory store on a frozen clock passes
+`clock.advance`; a database-clocked store moves its own rows back by `ms` (the Postgres
+suites age `expires_at` / `claimed_at` / `published_at`), never a real sleep.
 
 ## Parallel databases
 

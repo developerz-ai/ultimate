@@ -5,6 +5,7 @@
 import type { Clock } from '@ultimat3/core';
 import { liveClock, renderCauseValue } from '@ultimat3/core';
 import type { DialResolve, OutboundFetch } from '@ultimat3/core/outbound';
+import { installedAuthServerStore } from './authorization-server-installed';
 import type { AuthServerStore } from './authorization-server-store';
 import type { AuthServerGrant } from './authorization-server-types';
 import { DEVICE_GRANT } from './authorization-server-types';
@@ -40,7 +41,11 @@ export interface AuthServerEvent {
 export interface AuthorizationServerOptions {
   /** RFC 8414 issuer: https (http only on loopback), no query, no fragment. */
   readonly issuer: string;
-  readonly store: AuthServerStore;
+  /**
+   * Where clients, codes, grants and tokens live. Omitted: the `authServerStore` port — what
+   * `runtime.ts` installed, else Postgres over the app's pool (`installedAuthServerStore`).
+   */
+  readonly store?: AuthServerStore | undefined;
   /** The app's consent PAGE: the advertised `authorization_endpoint`. */
   readonly consentPath: string;
   readonly lifetimes: AuthServerLifetimes;
@@ -208,7 +213,11 @@ export function resolveAuthServerConfig(
     issuer: options.issuer,
     basePath: url.pathname === '/' ? '' : url.pathname,
     origin: url.origin,
-    store: options.store,
+    // A getter, read per call: `runtime.ts` may import the module that builds this server BEFORE
+    // the boot installs `runtime.authServerStore`, and a captured default would ignore it.
+    get store(): AuthServerStore {
+      return options.store ?? installedAuthServerStore();
+    },
     consentPath: pagePath('consentPath', options.consentPath),
     devicePath:
       options.devicePath === undefined ? null : pagePath('devicePath', options.devicePath),

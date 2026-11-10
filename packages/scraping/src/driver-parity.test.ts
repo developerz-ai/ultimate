@@ -1,11 +1,8 @@
-// One question, one answer, whichever DRIVER is asked. `fakeBrowser` is what every test in every
-// app runs against, `fixtureBrowser` is what a recorded suite runs against, and the puppeteer
-// driver is what production runs against — so a semantic only one of them holds is a guarantee
-// that passes CI and fails on deploy.
-//
-// This is the highest-value file in the package: it is what stops the fake drifting from the real
-// one. Where the three genuinely CANNOT agree — a parsed HTML string has no layout engine, so no
-// box and no hit-target — the divergence is pinned HERE, in one place, with the reason.
+// The REAL driver's half of driver parity: `localBrowser` over an injected CDP browser, held to the
+// vocabulary `scrapeDriverConformance` (`@ultimat3/testing`) asserts on `fakeBrowser` and
+// `fixtureBrowser`. That suite cannot reach this subject — the CDP fake is this package's own, and
+// `scraping` cannot import `testing` — so its cases are repeated here for this one driver. Where the
+// drivers genuinely CANNOT agree (no layout engine offline), the divergence is pinned here.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -68,32 +65,34 @@ const open = (driver: ScrapeDriver): Promise<ScrapeSession> =>
     timeoutMs: 5_000,
   });
 
-/** The two offline drivers plus the real driver's code path over an injected CDP browser. */
+/** The real driver's code path over an injected CDP browser. */
+const realDriver = (): ScrapeDriver =>
+  localBrowser({
+    launcher: fakeCdpLauncher({
+      url: URL_A,
+      html: HTML_A,
+      routes: {
+        '#next': { url: URL_B, html: HTML_B },
+        // Keyed by SELECTOR, not by element: this fake has no DOM index for clicks, which is
+        // exactly why the `index` divergence below could hide from every existing test.
+        '.go': { url: URL_B, html: HTML_B },
+      },
+      covered: ['#covered'],
+    }),
+  });
+
+/** All three, for the divergences pinned below — the one place they are compared side by side. */
 const drivers = (): readonly (readonly [string, ScrapeDriver])[] => [
   ['fake', fakeBrowser(PAGES, { http: HTTP })],
   ['fixture', fixtureBrowser(dir)],
-  [
-    'puppeteer',
-    localBrowser({
-      launcher: fakeCdpLauncher({
-        url: URL_A,
-        html: HTML_A,
-        routes: {
-          '#next': { url: URL_B, html: HTML_B },
-          // Keyed by SELECTOR, not by element: this fake has no DOM index for clicks, which is
-          // exactly why the `index` divergence below could hide from every existing test.
-          '.go': { url: URL_B, html: HTML_B },
-        },
-        covered: ['#covered'],
-      }),
-    }),
-  ],
+  ['puppeteer', realDriver()],
 ];
 
 const forEachDriver = async (
   run: (session: ScrapeSession, name: string) => Promise<void>,
+  each: readonly (readonly [string, ScrapeDriver])[] = [['puppeteer', realDriver()]],
 ): Promise<void> => {
-  for (const [name, driver] of drivers()) {
+  for (const [name, driver] of each) {
     const session = await open(driver);
     try {
       await run(session, name);
@@ -103,8 +102,8 @@ const forEachDriver = async (
   }
 };
 
-describe('unit · every driver answers the vocabulary the same way', () => {
-  test('text, values and count read the same document on all three', async () => {
+describe('unit · the real driver answers the vocabulary', () => {
+  test('text, values and count read the same document on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       expect(await session.page.text('#title'), name).toBe('Orders');
@@ -131,7 +130,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
    * port member no app could reach and one driver ignored. This is the test that would have
    * caught the divergence — a multi-match selector, driven through the page, on all three.
    */
-  test('a multi-match selector clicks the FIRST match on all three', async () => {
+  test('a multi-match selector clicks the FIRST match on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       await session.page.click('.go');
@@ -144,7 +143,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
     });
   });
 
-  test('a disabled control is refused with X_SCRAPE_NOT_ACTIONABLE on all three', async () => {
+  test('a disabled control is refused with X_SCRAPE_NOT_ACTIONABLE on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       let code: string | undefined;
@@ -157,7 +156,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
     });
   });
 
-  test('a missing selector is X_SCRAPE_SELECTOR_MISSING on all three', async () => {
+  test('a missing selector is X_SCRAPE_SELECTOR_MISSING on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       let code: string | undefined;
@@ -176,7 +175,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
    * after a `goto`. `x shot` reads it as `finalUrl` and so called every route a redirect to
    * `about:blank`; `auth.ts` handed the same string to a `PromptHandler`. Nothing asserted on it.
    */
-  test('page.url() answers the navigated URL, before and after a click, on all three', async () => {
+  test('page.url() answers the navigated URL, before and after a click, on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       expect(session.page.url(), name).toBe(URL_A);
@@ -189,7 +188,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
     });
   });
 
-  test('a click that navigates lands on the same page on all three', async () => {
+  test('a click that navigates lands on the same page on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       await session.page.click('#next');
@@ -197,7 +196,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
     });
   });
 
-  test('a host allowHosts does not list is REFUSED before the navigation, on all three', async () => {
+  test('a host allowHosts does not list is REFUSED before the navigation, on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       let code: string | undefined;
       try {
@@ -209,7 +208,7 @@ describe('unit · every driver answers the vocabulary the same way', () => {
     });
   });
 
-  test('the HTTP leg enforces the SAME allow list — the guarantee has no second door', async () => {
+  test('the real HTTP leg enforces the SAME allow list — the guarantee has no second door', async () => {
     await forEachDriver(async (session, name) => {
       let code: string | undefined;
       try {
@@ -231,7 +230,7 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
       expect(row, name).toBeDefined();
       const snapshot = await session.page.waitFor('#title', { state: 'attached' });
       boxes[name] = snapshot.box !== undefined;
-    });
+    }, drivers());
     // The offline drivers parse markup; nothing is laid out, so they answer `undefined` rather
     // than a fabricated `{ x: 0, y: 0 }` — which is what would make a covered button read as
     // clickable in the only suite that could have caught it. `actionability.ts` treats an unknown
@@ -239,7 +238,7 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
     expect(boxes).toEqual({ fake: false, fixture: false, puppeteer: true });
   });
 
-  test('every driver ANSWERS pageErrors(); only a JS engine can ever fill it', async () => {
+  test('the real driver ANSWERS pageErrors(), empty on a page that threw nothing', async () => {
     // The divergence, pinned beside the box one: `fake` and `fixture` parse markup and execute
     // none of it, so nothing there can throw an uncaught exception — but the method answers on all
     // three, or `page.pageErrors()` would be a call an author has to know their driver to make.
@@ -303,23 +302,6 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
   });
 });
 
-describe('unit · one fixture directory replays both legs of a hybrid run', () => {
-  test('browser walk, then the JSON endpoint behind it', async () => {
-    for (const driver of [fakeBrowser(PAGES, { http: HTTP }), fixtureBrowser(dir)]) {
-      const session = await open(driver);
-      try {
-        await session.page.goto(URL_A);
-        expect(await session.page.count('.row')).toBe(2);
-        const response = await session.http.request(API);
-        expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ orders: [{ id: 1 }] });
-      } finally {
-        await session.close();
-      }
-    }
-  });
-});
-
 /**
  * `query()` on the vocabulary, and the reason it is not a convenience: `ScrapeTarget.query`
  * already answered `visible`, and `ScrapeFrame` did not expose it — so `packages/cli`'s e2e
@@ -329,8 +311,8 @@ describe('unit · one fixture directory replays both legs of a hybrid run', () =
  * `flight-copies` exist to refuse. `values()` stays the PROJECTION for row assembly; this is the
  * snapshot, actionability fields included.
  */
-describe('unit · query() answers the port`s snapshot, on every driver', () => {
-  test('every match, with visible and enabled, on all three', async () => {
+describe('unit · query() answers the port`s snapshot, on the real driver', () => {
+  test('every match, with visible and enabled, on the real driver', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       const rows = await session.page.query('.row');
@@ -372,24 +354,6 @@ describe('unit · offline() is set on the browser or refused by name — never a
       await session.page.offline(false);
       expect(launcher.browser.offline).toBe(false);
     } finally {
-      await session.close();
-    }
-  });
-
-  test('an offline driver REFUSES with X_NOT_IMPLEMENTED, so the test cannot lie', async () => {
-    for (const [name, driver] of [
-      ['fake', fakeBrowser(PAGES, { http: HTTP })],
-      ['fixture', fixtureBrowser(dir)],
-    ] as const) {
-      const session = await open(driver);
-      let code: string | undefined;
-      // The caller's own shape. That it REJECTS rather than throwing synchronously is the
-      // target's rule and is pinned where it can fail — `html-target.test.ts`; the page's
-      // `async` forward would mask a sync throw from here.
-      await session.page.offline(true).catch((thrown: unknown) => {
-        code = (thrown as { code?: string }).code;
-      });
-      expect(code, name).toBe('X_NOT_IMPLEMENTED');
       await session.close();
     }
   });

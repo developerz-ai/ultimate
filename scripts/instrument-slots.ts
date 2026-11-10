@@ -29,8 +29,6 @@ export const INSTRUMENT_BUS = 'packages/core/src/instrument.ts';
  * adapter that must persist, slice 21 wires it) or a test seam that decides where output goes.
  */
 export const INSTRUMENT_SLOT_ALLOWED = Object.freeze<Record<string, string>>({
-  'packages/core/src/audit.ts#setAuditSink':
-    'a durable port, not an observer: audit rows must persist, and adapter wiring replaces the setter',
   'packages/core/src/logger.ts#setLogSink':
     'the test seam that decides WHERE a line goes instead of stdout; the tee is log.record on the bus',
 });

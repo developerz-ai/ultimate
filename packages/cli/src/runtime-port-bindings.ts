@@ -1,11 +1,18 @@
-// Where this boot honours each `ADAPTER_PORTS` row: its installer and its undo, the module that
-// reads it as a value, or — for a row whose package exposes no installer yet — the owner that must
-// ship one. Typed `PortBindings`, so a row core adds is a build error HERE until it is bound.
+// Where this boot honours each `ADAPTER_PORTS` row: its installer and its undo, or the module that
+// reads it as a value. Typed `PortBindings`, so a row core adds is a build error HERE until it is
+// bound.
 
-import { installAuthLimiters, installTotpReplay } from '@ultimat3/auth/adapter';
-import { getAuditSink, resetAuditSink, setAuditSink } from '@ultimat3/core';
+import {
+  installAuthLimiters,
+  installAuthServerStore,
+  installTotpReplay,
+} from '@ultimat3/auth/adapter';
+import type { PgExecutor } from '@ultimat3/core';
+import { installAuditSink, installErrorReporter } from '@ultimat3/core/adapter';
 import { installRateLimitStore } from '@ultimat3/http/adapter';
 import { installMailDriver } from '@ultimat3/mail/adapter';
+import { postgresDeliveryLedger } from '@ultimat3/notify';
+import type { NotifyStores } from '@ultimat3/notify/adapter';
 import { installNotifyStores } from '@ultimat3/notify/adapter';
 import { BOOT_PORT_BINDINGS, QUEUE_PORT_BINDINGS } from './runtime-port-bindings-queue';
 import type { PortBindings } from './runtime-ports';
@@ -17,34 +24,19 @@ export const PORT_BINDINGS: PortBindings = {
     // Imported only when supplied: most apps run no model, and no role should load `@ultimat3/ai`.
     install: async (gateway) => (await import('@ultimat3/ai/adapter')).installAiGateway(gateway),
   },
-  auditSink: {
-    phase: 'services',
-    // Restores the sink it found, never the empty default: core's slot has no release of its own
-    // (a shared `adapterSlot` helper replaces this when core lands it).
-    install: (sink) => {
-      const found = getAuditSink();
-      setAuditSink(sink);
-      return () => (found === null ? resetAuditSink() : setAuditSink(found));
-    },
-  },
+  auditSink: { phase: 'services', install: (sink) => installAuditSink(sink) },
   authLimiter: {
     phase: 'services',
     install: (factory) => installAuthLimiters(factory),
   },
-  authServerStore: {
-    phase: 'pending',
-    owner:
-      '@ultimat3/auth: authorizationServer({ store }) requires the store; needs an installed default',
-  },
-  cacheTiers: {
-    phase: 'pending',
-    owner: '@ultimat3/cli: cache.tiers names the rungs and runtime-cache.ts builds them from names',
-  },
+  // Installed only when supplied: unset, auth's own slot answers its env default — Postgres over
+  // the ambient pool, the pool this boot installed (`runtime-queue.ts`'s `setDbClient`).
+  authServerStore: { phase: 'services', install: (store) => installAuthServerStore(store) },
+  cacheTiers: { phase: 'read', at: 'runtime-cache.ts, each replacing the rung of its own name' },
   clock: BOOT_PORT_BINDINGS.clock,
-  errorReporter: {
-    phase: 'pending',
-    owner: '@ultimat3/core + serve-env.ts: the SENTRY_DSN transport composes with an app reporter',
-  },
+  // Before `loadApp`; `serve-env.ts`'s `configureReporting` later chains its `SENTRY_DSN`
+  // transport in a frame above it, so this counts as the app's reporter there.
+  errorReporter: { phase: 'services', install: (reporter) => installErrorReporter(reporter) },
   eventBus: QUEUE_PORT_BINDINGS.eventBus,
   failureStore: { phase: 'read', at: 'failure-capture-boot.ts, while failureCapture is on' },
   idempotencyStore: QUEUE_PORT_BINDINGS.idempotencyStore,
@@ -56,13 +48,16 @@ export const PORT_BINDINGS: PortBindings = {
     install: (driver) => installMailDriver(driver),
   },
   mcpConfirmationStore: {
-    phase: 'pending',
-    owner:
-      '@ultimat3/mcp: mcpConfirmations({ store }) requires the store; needs an installed default',
+    phase: 'services',
+    // Imported only when supplied, for `aiGateway`'s reason: most roles load no MCP module, and
+    // unset, mcp's own slot answers its env default (Postgres over the ambient pool).
+    install: async (store) =>
+      (await import('@ultimat3/mcp/adapter')).installConfirmationStore(store),
   },
   meterStore: QUEUE_PORT_BINDINGS.meterStore,
   notifyStores: {
     phase: 'services',
+    // Always a value: `startServices` fills a missing ledger with Postgres over its pool.
     install: (stores) => installNotifyStores(stores),
   },
   outboxStore: { phase: 'read', at: 'runtime-queue.ts, behind the jobs facade with the jobs port' },
@@ -79,10 +74,26 @@ export const PORT_BINDINGS: PortBindings = {
       (await import('@ultimat3/scraping/adapter')).installScrapeDriver(driver),
   },
   secretSource: BOOT_PORT_BINDINGS.secretSource,
-  storage: { phase: 'read', at: 'runtime-storage-boot.ts, the disks' },
+  storage: { phase: 'read', at: 'runtime-storage-boot.ts, the default disk' },
   totpReplay: {
     phase: 'services',
     install: (guard) => installTotpReplay(() => guard),
   },
   transport: { phase: 'read', at: 'runtime-bus.ts, which installs the channel transport it dials' },
 };
+
+/**
+ * The `notifyStores` value with zero config: a booted app has a database, so a MISSING ledger is
+ * Postgres over the boot's pool — an app's own ledger, inbox, preferences and digest are never
+ * replaced. `x_notify_deliveries` is applied every boot (`framework-schema.ts`) and swept hourly
+ * (`runtime-purge.ts`). Notify's own default (memory in development/test, `X_NOTIFY_STORE_MISSING`
+ * elsewhere) stays the net for a process no boot installed into. Here, beside the binding, so the
+ * serving graph pays no module for it.
+ */
+export function notifyStoresWithLedger(
+  supplied: NotifyStores | undefined,
+  executor: PgExecutor,
+): NotifyStores {
+  if (supplied?.ledger !== undefined) return supplied;
+  return { ...supplied, ledger: postgresDeliveryLedger({ executor }) };
+}

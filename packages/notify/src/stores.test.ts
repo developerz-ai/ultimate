@@ -64,3 +64,48 @@ describe('unit · notify stores', () => {
     expect(preferences.allowsMany({ ...query, channel: 'push' })).toEqual(['ana', 'ben']);
   });
 });
+
+/**
+ * The memory ledger is one process's heap: behind two replicas, or across a restart, a replayed
+ * attempt claims cleanly and sends twice. So it is the default only where that is acceptable —
+ * development and test — and anywhere else the first claim is refused by name.
+ */
+describe('unit · the default delivery ledger outside development', () => {
+  const claim = { notifier: 'post.liked', key: 'k', recipient: 'ana', channel: 'email' };
+  const saved = { ultimate: Bun.env['ULTIMATE_ENV'] };
+
+  afterEach(() => {
+    if (saved.ultimate === undefined) delete Bun.env['ULTIMATE_ENV'];
+    else Bun.env['ULTIMATE_ENV'] = saved.ultimate;
+  });
+
+  for (const environment of ['production', 'staging'] as const) {
+    test(`${environment}: the first claim refuses with X_NOTIFY_STORE_MISSING, naming runtime.ts`, async () => {
+      Bun.env['ULTIMATE_ENV'] = environment;
+      const error = await notifyStores()
+        .ledger.claim(claim, new Date(0))
+        .then(
+          () => undefined,
+          (thrown: unknown) => thrown,
+        );
+      expect(error).toBeUltimateError('X_NOTIFY_STORE_MISSING');
+      expect(String((error as { fix: unknown }).fix)).toContain('postgresDeliveryLedger');
+      await expect(notifyStores().ledger.find(claim)).rejects.toThrow(/X_NOTIFY_STORE_MISSING/);
+    });
+  }
+
+  test('test: the memory default dedupes within the process, as it always did', async () => {
+    Bun.env['ULTIMATE_ENV'] = 'test';
+    const ledger = notifyStores().ledger;
+    const first = await ledger.claim(claim, new Date(0));
+    if (first.outcome !== 'owned') return expect.unreachable(`got ${first.outcome}`);
+    await ledger.settle(claim, 'sent', new Date(0), first.claimId);
+    expect(await notifyStores().ledger.claim(claim, new Date(0))).toEqual({ outcome: 'sent' });
+  });
+
+  test('an installed ledger is used in production, whatever the default does', async () => {
+    Bun.env['ULTIMATE_ENV'] = 'production';
+    installNotifyStores({ ledger: memoryDeliveryLedger() });
+    expect((await notifyStores().ledger.claim(claim, new Date(0))).outcome).toBe('owned');
+  });
+});

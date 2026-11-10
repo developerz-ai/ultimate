@@ -648,6 +648,7 @@
         "@ultimat3/render": "30.9.0",
         "@ultimat3/schema": "30.9.0",
         "@ultimat3/scraping": "30.9.0",
+        "@ultimat3/seo": "30.9.0",
         "@ultimat3/time": "30.9.0",
       },
     },

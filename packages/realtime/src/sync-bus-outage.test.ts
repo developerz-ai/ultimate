@@ -11,6 +11,7 @@ import {
   memoryErrorReporter,
   resetErrorReporting,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { ChannelHub } from './channel';
 import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
@@ -176,7 +177,8 @@ describe('what a sync node says while its bus is away', () => {
     const info = spyOn(logger, 'info').mockImplementation(() => undefined);
     spies.push(error, info);
     const reports = memoryErrorReporter();
-    configureErrorReporting({ reporter: reports, enabled: true });
+    installErrorReporter(reports);
+    configureErrorReporting({ enabled: true });
     const clock = frozenClock(1_700_000_000_000);
     const broker = new FakeNatsBroker({ clock });
     const transport = new NatsTransport({

@@ -3,15 +3,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { AuditSink } from '@ultimat3/core';
-import {
-  frozenClock,
-  getAuditSink,
-  isUltimateError,
-  resetAuditSink,
-  setAuditSink,
-  UltimateError,
-} from '@ultimat3/core';
+import { frozenClock, getAuditSink, isUltimateError, UltimateError } from '@ultimat3/core';
 import type { SecretSource } from '@ultimat3/core/adapter';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import { PORT_BINDINGS } from './runtime-port-bindings';
 import type { PortBindings } from './runtime-ports';
 import { installPorts } from './runtime-ports';
@@ -58,7 +52,7 @@ describe('unit · installPorts', () => {
   test('the auditSink release restores the sink it found, not the empty default', async () => {
     const found: AuditSink = { write: () => undefined };
     const mine: AuditSink = { write: () => undefined };
-    setAuditSink(found);
+    installAuditSink(found);
     try {
       const [release] = await installPorts(PORT_BINDINGS, 'services', { auditSink: mine });
       expect(getAuditSink()).toBe(mine);

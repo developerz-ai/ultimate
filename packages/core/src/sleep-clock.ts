@@ -5,14 +5,20 @@
 
 import type { SleepClock } from './clock';
 import { installedClocks, systemClock as wallClock } from './clock';
+import { finiteOption } from './finite-option';
 
 /**
  * A timer raced against the signal, never `Bun.sleep(ms).then(check)`: a watchdog aborts a wedged
  * run precisely so nothing waits out the rest of its budget. An already-aborted signal throws inside
  * the executor, which rejects with its reason without arming a timer.
+ *
+ * Screened once, here, as `frozenClock.sleep` screens it: `setTimeout(fn, NaN)` fires at once, so an
+ * unscreened broken delay turned a retry loop into a spin. A negative wait is zero on both clocks.
  */
 function sleepFor(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    // Inside the executor: a refusal is a rejection, never a synchronous throw from `sleep()`.
+    finiteOption('systemClock.sleep', 'ms', ms);
     signal?.throwIfAborted();
     const onAbort = (): void => {
       clearTimeout(timer);
@@ -45,7 +51,12 @@ export const systemClock: SleepClock = /* @__PURE__ */ Object.freeze({
 export const noWaitClock: SleepClock = /* @__PURE__ */ Object.freeze({
   now: () => systemClock.now(),
   monotonic: () => systemClock.monotonic(),
-  sleep: (_ms: number, signal?: AbortSignal) => sleepFor(0, signal),
+  // Screened like every `SleepClock` (a rejection, as `async`), then one loop turn: a broken delay
+  // is refused, never skipped.
+  sleep: async (ms: number, signal?: AbortSignal): Promise<void> => {
+    finiteOption('noWaitClock.sleep', 'ms', ms);
+    await sleepFor(0, signal);
+  },
 });
 
 export const ambientClock = (): SleepClock => installedClocks.current() ?? systemClock;

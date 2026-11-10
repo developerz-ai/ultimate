@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
 import { parseLcov } from '../packages/cli/src/coverage-lcov';
+import { E2E_PATH_GLOBS } from '../packages/cli/src/verify-tests';
 import { testCommand } from './coverage-gate';
 import { unitOf } from './lib/coverage-units';
 
@@ -96,8 +97,21 @@ describe("a widened unit reads what one process reads — Bun's merge is by func
       '--coverage',
       '--coverage-reporter=lcov',
       '--coverage-dir=/out',
+      ...E2E_PATH_GLOBS.map((glob) => `--path-ignore-patterns=${glob}`),
       './packages/money',
     ]);
+  });
+
+  // An e2e suite already runs in its own gate step and measures a built app through a browser and
+  // child processes, which no in-process lcov sees: measured 2026-11-09, `cli` 285 s → 195 s on
+  // four workers for 96.15/95.46 → 96.14/95.42, every other unit unmoved.
+  test('every e2e path is left out, spelt as the one definition the e2e step selects by', () => {
+    const argv = testCommand(unitOf('cli'), '/out', 4);
+    expect(E2E_PATH_GLOBS.length).toBeGreaterThan(0);
+    for (const glob of E2E_PATH_GLOBS) expect(argv).toContain(`--path-ignore-patterns=${glob}`);
+    expect(argv.filter((arg) => arg.startsWith('--path-ignore-patterns='))).toHaveLength(
+      E2E_PATH_GLOBS.length,
+    );
   });
 
   test('more than one is --parallel, every file isolated — never a registry shared by the clock', () => {

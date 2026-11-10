@@ -59,7 +59,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent (a `limit` resolved per call from `ctx`, through `toBucket`) |
 | `meter*.ts`, `errors-meter.ts` | `meter:` — declaration (`meter.ts`), UTC window, store seam + memory + Postgres (`x_meter`), and `meter-gate.ts`, **the one place** it is drawn |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
-| `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`setAuditSink`) is core's alone |
+| `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`installAuditSink`, `@ultimat3/core/adapter`) is core's alone |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
 | `audit-postgres.ts` | the DURABLE sink — one append-only `x_audit` table, one insert per record |
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
@@ -204,13 +204,6 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   is SETTLED as a failure and a retry replays it; `release()` is only for a pre-handler failure. A
   `settle` that refuses leaves the record in flight. `idempotency-failure.test.ts`.
 - **A keyed run is owed its end**: `completeTransaction()`, then `runToCompletion(run)` under `idempotencyCeilingMs()` (`X_IDEMPOTENCY_RUN_CEILING`); `invoke` reads the handler's `ctx` inside it. `idempotency-orphan.test.ts`.
-- **A record belongs to ONE CALLER**: the key is
-  `JSON.stringify([action, actor.kind, actor.id, actor.orgId ?? null, key])` — a JSON tuple, never a
-  joined string. A blank header is `X_IDEMPOTENCY_KEY_INVALID` (4xx, before the handler), never "no
-  key". Anonymous callers still share one key space.
-- **The `idempotency-key` header also NAMES the write, on every action**: `http.ts` runs `invoke`
-  inside `withWriteOrigin(writeDigest(key))` so the page recognises its own `records` echo. A label,
-  never a gate.
 - **Both stores FENCE a settlement on the reservation `id` AND `in-flight`**:
   `settle(key, value, reservationId, redacted)` / `fail(key, failure, reservationId)` /
   `release(key, reservationId)`. A fenced no-op is never thrown; an autocommit `settle`/`fail` logs `action.idempotency.settlement-fenced` on BOTH stores (`idempotency-memory-fenced.test.ts`).
@@ -218,15 +211,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   (core's `isRedactedKey` + `isSecret`) and `redacted` as `settle`'s REQUIRED 4th argument. A
   flagged replay is `X_IDEMPOTENT_REPLAY_REDACTED`, by the FLAG, never by scanning. Full rule: `docs/history/action.md`.
 - **A finished record skips the row half; a stale peek judges it in `beforeRun`** (`idempotency-row.test.ts`). **A `bigint` answer settles failed** (`X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE`).
-- **A stored status is NARROWED** (`isIdempotencyStatus`; unknown is
-  `X_IDEMPOTENCY_STATUS_UNKNOWN`), never cast.
-- **Where records live is DECLARED and refused at registration**: `IdempotencyStore.scope` vs
-  `configureIdempotency({ scope })`, compared by `assertIdempotencyScope` in `registerAction`
-  (`X_IDEMPOTENCY_NOT_SHARED`). Default `'process'`.
-- **The memory store is bounded; `in-flight` records are the last evicted.** Never an LRU.
-- **`postgresIdempotencyStore` is the shared store** over `@ultimat3/core`'s structural `PgExecutor`; the
-  reservation is ONE `insert … on conflict` statement. The CLI boot installs it.
-- **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`). `idempotency-parity.test.ts`. Full rule: `docs/history/action.md`.
+- **Caller keying, the write-origin label, status narrowing, declared scope, eviction order, the shared store**: `docs/history/action.md#idempotency-invariants-moved-from-claudemd`.
+- **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`). `idempotencyStoreConformance` (`@ultimat3/testing/conformance`). Full rule: `docs/history/action.md`.
 - **The deadline is `reclaimAfterMs: () => number`, REQUIRED on the Postgres store** and read per
   reservation (`requestDeadlineMs`, never a number here); `origin: () => object` is required too. Full rule: `docs/history/action.md`.
 
@@ -252,7 +238,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `locale`, `tz`, `buildId`, `role`, actor `id`/`kind`/`orgId`/`onBehalfOf`) and keeps
   `failure.code`, never the error.
 - **`x_audit` ships no purge**, deliberately. **`SQL_AUDIT_INSERT` is positional**, pinned by
-  `audit-parity.test.ts` with a distinct value per field. Only `*_TABLE` DDL is exported
+  `audit-postgres-columns.test.ts` (a distinct value per field) and `auditSinkConformance` live. Only `*_TABLE` DDL is exported
   (`X_SQL_EXPORT_UNREAD`).
 - **The two failure policies are opposites**: `X_AUDIT_SINK_MISSING` before the input parse; a sink refusing an ALLOWED record is `X_AUDIT_SINK_FAILED`; refusing a denied or failed one is logged. Full rule: `docs/history/action.md`.
 - **`auditSettled` sits outside the `catch`**, and **`auditOutcomeFor` is TOTAL** (fails closed to

@@ -1,13 +1,13 @@
-// `PasskeyStore` on both adapters, one suite: the Postgres half on PGlite over `AUTH_TABLES`, so the
-// constraints are the real ones. Single-use takes, ceremony scoping, the counter compare-and-set,
-// a duplicate credential id, owner-scoped deletes, the expiry sweep — and a whole sign-in on SQL.
+// A whole passkey sign-in and step-up on both adapters, the Postgres half on PGlite over
+// `AUTH_TABLES`. The store's own contract — single-use challenges, ceremony scoping, the counter
+// compare-and-set, owner-scoped deletes, the sweep — is `@ultimat3/testing`'s
+// `authAdapterConformance`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
-import type { AuthAdapter, PasskeyChallengeRecord, PasskeyCredential } from './adapter';
+import type { AuthAdapter } from './adapter';
 import { defineAuth } from './auth';
-import { caught } from './auth-fixture';
 import { postgresAuthAdapter } from './builtin-adapter';
 import { memoryAuthAdapter } from './memory-adapter';
 import { passkeyLogin } from './passkey-login';
@@ -71,74 +71,7 @@ const seeded = async (make: () => Promise<AuthAdapter>): Promise<AuthAdapter> =>
   return adapter;
 };
 
-const credential = (id: string, userId = ADA, signCount = 0): PasskeyCredential => ({
-  id,
-  userId,
-  publicKey: 'pQECAyYgASFYIA',
-  algorithm: -7,
-  signCount,
-  transports: ['internal'],
-  createdAt: NOW,
-  lastUsedAt: null,
-});
-
-const challenge = (id: string, expiresInMs = 60_000, createdAt = NOW): PasskeyChallengeRecord => ({
-  id,
-  ceremony: 'login',
-  userId: null,
-  digest: null,
-  nonce: null,
-  expiresAt: new Date(createdAt.getTime() + expiresInMs),
-  createdAt,
-});
-
 describe.each(ADAPTERS)('%s · PasskeyStore', (_name, make) => {
-  test('a credential round-trips, lists oldest first, and a second one at one id is refused', async () => {
-    const adapter = await seeded(make);
-    await adapter.putPasskey(credential('cred-B'));
-    await adapter.putPasskey({ ...credential('cred-a'), createdAt: new Date(NOW.getTime() + 1) });
-    expect((await adapter.listPasskeys(ADA)).map((row) => row.id)).toEqual(['cred-B', 'cred-a']);
-    expect(await adapter.findPasskey('cred-B')).toEqual(credential('cred-B'));
-    const error = await caught(() => adapter.putPasskey(credential('cred-B', GRACE)));
-    expect(`${error?.code} ${String(error?.meta?.['table'])}`).toBe(
-      'X_AUTH_WRITE_FAILED x_passkeys',
-    );
-  });
-
-  test('the counter advances only from the value it was read at', async () => {
-    const adapter = await seeded(make);
-    await adapter.putPasskey(credential('cred-1', ADA, 4));
-    expect(await adapter.advancePasskeyCounter('cred-1', 4, 5, NOW)).toBe(true);
-    expect(await adapter.advancePasskeyCounter('cred-1', 4, 6, NOW)).toBe(false);
-    const row = await adapter.findPasskey('cred-1');
-    expect([row?.signCount, row?.lastUsedAt?.toISOString()]).toEqual([5, NOW.toISOString()]);
-  });
-
-  test('a passkey is deleted only by its owner', async () => {
-    const adapter = await seeded(make);
-    await adapter.putPasskey(credential('cred-1'));
-    expect(await adapter.deletePasskey(GRACE, 'cred-1')).toBe(false);
-    expect(await adapter.deletePasskey(ADA, 'cred-1')).toBe(true);
-    expect(await adapter.findPasskey('cred-1')).toBeNull();
-  });
-
-  test('a challenge is taken once, and only for its own ceremony', async () => {
-    const adapter = await seeded(make);
-    await adapter.putPasskeyChallenge(challenge('c1'));
-    expect(await adapter.takePasskeyChallenge('c1', 'step-up')).toBeNull();
-    expect((await adapter.takePasskeyChallenge('c1', 'login'))?.id).toBe('c1');
-    expect(await adapter.takePasskeyChallenge('c1', 'login')).toBeNull();
-  });
-
-  test('issuing a challenge sweeps the ones already expired, and keeps the live ones', async () => {
-    const adapter = await seeded(make);
-    await adapter.putPasskeyChallenge(challenge('stale', 1_000));
-    await adapter.putPasskeyChallenge(challenge('live', 600_000));
-    await adapter.putPasskeyChallenge(challenge('new', 60_000, new Date(NOW.getTime() + 5_000)));
-    expect(await adapter.takePasskeyChallenge('stale', 'login')).toBeNull();
-    expect((await adapter.takePasskeyChallenge('live', 'login'))?.id).toBe('live');
-  });
-
   test('a whole sign-in and a step-up run on this adapter', async () => {
     const adapter = await seeded(make);
     const auth = defineAuth({

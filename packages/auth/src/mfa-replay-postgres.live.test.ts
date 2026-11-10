@@ -1,6 +1,7 @@
-// The replay guard's SQL, against a real server. A claim is one statement, so the only thing that
-// can answer "exactly one of twenty wins" is the primary key it conflicts on; the scripted twin
-// (`mfa-replay-postgres.test.ts`) can prove the protocol and nothing about the statement.
+// The replay guard's SQL, against a real server: two replicas over one table, the sweep's clock, a
+// whole sign-in. The claim's own contract — single use, per subject, exactly one of a race — is
+// `@ultimat3/testing`'s `totpReplayGuardConformance`, run over this guard in
+// `packages/testing/src/totp-replay-guard-conformance-postgres.live.test.ts`.
 //
 // Skips unless `TEST_DATABASE_URL` is set — never `DATABASE_URL`, because this file drops its
 // table. `docker compose -f docker/docker-compose.test.yml up -d --wait` starts one.
@@ -67,22 +68,6 @@ afterEach(() => {
 });
 
 describeLive('live · postgres · the shared TOTP replay guard', () => {
-  test('twenty concurrent claims of one step: exactly one wins', async () => {
-    const claims = await Promise.all(
-      Array.from({ length: 20 }, () => guard.claim('user-1', STEP, AT)),
-    );
-    expect(claims.filter((won) => won)).toHaveLength(1);
-    expect(await rowCount()).toBe(1);
-  });
-
-  test('a second subject and a second step are unaffected', async () => {
-    expect(await guard.claim('user-1', STEP, AT)).toBe(true);
-    expect(await guard.claim('user-2', STEP, AT)).toBe(true);
-    expect(await guard.claim('user-1', STEP + 1, AT)).toBe(true);
-    expect(await guard.claim('user-1', STEP, AT)).toBe(false);
-    expect(await rowCount()).toBe(3);
-  });
-
   test('a second replica over the same table loses the claim', async () => {
     const other = postgresTotpReplayGuard({ executor: executorOn(sql) });
     expect(await guard.claim('user-1', STEP, AT)).toBe(true);

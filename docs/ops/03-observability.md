@@ -195,8 +195,11 @@ root-relative path, no line or column), and never the cause, an id or the releas
 from one line differing only in a row id are one issue, and the same fault after a deploy is the
 same issue. A reporter of your own groups on the same call.
 
-To send somewhere else, implement `ErrorReporter` and call `configureErrorReporting({ reporter })`
-in the app entry. `memoryErrorReporter()` is the one to use in tests.
+To send somewhere else, implement `ErrorReporter` (from `@ultimat3/core/adapter`) and set it as
+`errorReporter:` in `export const runtime = { … }`, `apps/web/runtime.ts` — the `errorReporter`
+adapter port ([`wiki/Adapters.md`](../../wiki/Adapters.md#errorreporter)); `SENTRY_DSN` still
+chains the boot's transport beside it. `configureErrorReporting` takes no `reporter` (31.0.0). In a
+test, `await swapAdapter('errorReporter', memoryErrorReporter())` from `@ultimat3/testing`.
 
 ### Failure bundles (`failureCapture`)
 

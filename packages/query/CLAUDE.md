@@ -148,7 +148,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 - **`audit: true` observes the read path, never forks it**: `buildSource` fills the trace (`input`,
   parsed-or-nothing on a pre-parse denial); `readRowsIn` sets `replayed`. The record shape and the
-  sink are `@ultimat3/core`'s (`AuditRecord`, `setAuditSink`) — shared with `@ultimat3/action`, and
+  sink are `@ultimat3/core`'s (`AuditRecord`, `installAuditSink` on `./adapter`) — shared with `@ultimat3/action`, and
   `AUDIT_RECORD_FIELDS` is the parity pin both packages' tests assert (`audit.test.ts`).
 - **A memo or cache hit is recorded** (`replayed: true`): an audit of a read is who saw what.
 - **One record per CALL**: `runQuery` and `readCall` (`.page()`) record the whole call;

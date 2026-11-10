@@ -12,10 +12,9 @@ import {
   anonymousActor,
   ctxOf,
   isUltimateError,
-  resetAuditSink,
-  setAuditSink,
   userActor,
 } from '@ultimat3/core';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -74,7 +73,7 @@ afterEach(() => {
 describe('unit · an audited read is recorded once per call', () => {
   test('an allowed read: the full record, every field core declares and no other', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const ctx = ctxOf({ actor: reader });
 
     await runQuery(postList(), { limit: 5 }, { ctx });
@@ -100,7 +99,7 @@ describe('unit · an audited read is recorded once per call', () => {
 
   test('the record never carries the rows — who saw what, not a copy of what was seen', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await runQuery(postList(), { limit: 5 }, { ctx: ctxOf({ actor: reader }) });
 
@@ -112,7 +111,7 @@ describe('unit · an audited read is recorded once per call', () => {
 
   test('a read that declares no audit records nothing — opt-in, never a global switch', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await runQuery(postList(false), { limit: 5 }, { ctx: ctxOf({ actor: reader }) });
 
@@ -127,7 +126,7 @@ describe('unit · an audited read is recorded once per call', () => {
     expect(isUltimateError(error) && error.code).toBe('X_QUERY_AUDIT_SINK_MISSING');
     // The fix opens with the call to paste, the registered line verbatim.
     expect(isUltimateError(error) && error.fix).toBe(
-      'setAuditSink(sink)   # from @ultimat3/core, at boot before defineApi()',
+      'auditSink: postgresAuditSink({ executor })   # in export const runtime = { … }, apps/<app>/runtime.ts',
     );
     expect(executed).toBe(0);
   });
@@ -147,7 +146,7 @@ describe('unit · an audited read is recorded once per call', () => {
 describe('unit · denied and failed reads are recorded, and the caller still gets its error', () => {
   test('denied before the input parse: the record still names what was attempted', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     const error = await thrown(() =>
       runQuery(postList(), { limit: 5 }, { ctx: ctxOf({ actor: stranger }) }),
@@ -166,7 +165,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
 
   test('denied before the parse with an unparseable payload is a record with no input', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await thrown(() =>
       runQuery(postList(), { limit: 'lots' }, { ctx: ctxOf({ actor: anonymousActor() }) }),
@@ -178,7 +177,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
 
   test('denied by the row half, after the parse: the parsed input is on the record', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await thrown(() =>
       runQuery(postList(), { limit: 5, open: false }, { ctx: ctxOf({ actor: reader }) }),
@@ -190,7 +189,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
 
   test('an input that never parsed is FAILED, X_INPUT_INVALID, with no input', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await thrown(() => runQuery(postList(), { limit: 0 }, { ctx: ctxOf({ actor: reader }) }));
 
@@ -200,7 +199,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
 
   test('a read that throws while executing is FAILED, and the throwable is the caller’s own', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const boom = new TypeError('the replica is gone');
     const broken = query({
       input: t.object({ limit: t.number }),

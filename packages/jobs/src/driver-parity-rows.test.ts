@@ -1,5 +1,5 @@
-// Memory and Postgres agree on what a row limit counts and on what a step answers. Split out of
-// `driver-parity.test.ts` at the file ceiling.
+// Memory and Postgres agree on what a row limit counts. Split out of `driver-parity.test.ts` at the
+// file ceiling. What a step answers is `stepStoreConformance` (`@ultimat3/testing`), on every driver.
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
@@ -7,8 +7,6 @@ import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { postgresJobDriver } from './driver-pg';
-import { SQL_STEP_LIST, SQL_STEP_PUT } from './driver-pg-sql';
-import { stepRunner } from './steps';
 
 /**
  * The pg driver compiles its SQL against this seam, so the statement it issues is readable — and
@@ -138,54 +136,4 @@ describe('a row limit is a count of rows, in both', () => {
     await postgresJobDriver({ executor }).introspect?.list({ limit: 25 });
     expect(executor.params[0]?.[3]).toBe(25);
   });
-});
-
-describe('a step answers one value, whichever store holds it', () => {
-  /** `x_job_steps` as the pg store reads and writes it: the bound JSON, parsed back as jsonb is. */
-  const stepTable = (): PgExecutor => {
-    const rows = new Map<string, Record<string, unknown>>();
-    return {
-      query<R>(text: string, values: readonly unknown[] = []): Promise<readonly R[]> {
-        if (text === SQL_STEP_PUT) {
-          const [run_id, name, status, output, started_at, completed_at] = values;
-          rows.set(String(name), {
-            run_id,
-            name,
-            status,
-            output: JSON.parse(String(output)),
-            started_at,
-            completed_at,
-            wake_at: null,
-            event: null,
-            correlation_key: null,
-            attempts: values[9],
-            error: null,
-          });
-        }
-        return Promise.resolve((text === SQL_STEP_LIST ? [...rows.values()] : []) as R[]);
-      },
-    };
-  };
-
-  const AT = new Date('2026-11-02T09:00:00.000Z');
-  const cases: readonly (readonly [string, () => unknown, unknown])[] = [
-    ['a Date', () => ({ at: AT }), { at: AT.toISOString() }],
-    ['undefined', () => undefined, null],
-    ['a member undefined', () => ({ a: undefined, b: 1 }), { b: 1 }],
-    ['a Map', () => new Map([['k', 1]]), {}],
-  ];
-
-  for (const [label, body, stored] of cases) {
-    test(`${label}: memory and Postgres, first run and replay`, async () => {
-      for (const steps of [
-        memoryJobDriver().steps,
-        postgresJobDriver({ executor: stepTable() }).steps,
-      ]) {
-        const attempt = () =>
-          stepRunner({ runId: 'r', jobName: 'j', store: steps }).step.run('s', body);
-        expect(await attempt()).toEqual(stored as never);
-        expect(await attempt()).toEqual(stored as never);
-      }
-    });
-  }
 });

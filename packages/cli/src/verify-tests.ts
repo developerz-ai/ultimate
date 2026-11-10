@@ -152,6 +152,17 @@ export const typeFiltersOf = (type: Exclude<TestType, 'unit'>): readonly string[
   OWNERSHIP.filter(([owner]) => owner === type).map(([, filter]) => filter);
 
 /**
+ * What an e2e test's path is, as globs: the e2e step's own substrings (`typeFiltersOf('e2e')`),
+ * each spelt as the glob matching the same paths. One definition, read three ways — the e2e step
+ * selects by the substrings, the unit step ignores these globs, and `scripts/coverage-gate.ts`
+ * leaves them out of a package's coverage: an e2e suite drives a built app through a browser and
+ * child processes no in-process lcov sees, and it already runs in its own gate step.
+ */
+export const E2E_PATH_GLOBS: readonly string[] = typeFiltersOf('e2e').map((filter) =>
+  filter.endsWith('/') ? `**/*${filter}**` : `**/*${filter}*`,
+);
+
+/**
  * An e2e test's own budget: a first navigation waits on `x dev` compiling the route and its island,
  * which bun's default 5 s does not cover — a timeout there reads as an app bug that is not one.
  */
@@ -167,7 +178,7 @@ export const testStepCommand = (type: TestType, pace?: MachinePace): readonly st
         'bun',
         'test',
         ...defaultTimeoutArgs(pace),
-        ...ignoreFlags([...NEVER_A_TEST, '**/e2e/**', `**/*.${TYPED_SUFFIXES}.test.*`]),
+        ...ignoreFlags([...NEVER_A_TEST, ...E2E_PATH_GLOBS, `**/*.${TYPED_SUFFIXES}.test.*`]),
       ]
     : [
         'bun',

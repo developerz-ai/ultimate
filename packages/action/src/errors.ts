@@ -365,7 +365,7 @@ export class AuditSinkMissingError extends UltimateError {
     super({
       code: 'X_AUDIT_SINK_MISSING',
       cause: `action "${action}" declares \`audit: true\` and no audit sink is installed`,
-      fix: "call setAuditSink(yourSink) from '@ultimat3/core' at boot, before registerActions()",
+      fix: 'auditSink: postgresAuditSink({ executor })   # in export const runtime = { … }, apps/<app>/runtime.ts',
     });
   }
 }
@@ -396,8 +396,8 @@ export class AuditSinkFailedError extends UltimateError {
       code: 'X_AUDIT_SINK_FAILED',
       cause: `"${action}" ran and its audit sink refused the record, so the change is unrecorded — the handler had already committed`,
       fix: replayable
-        ? `fix the sink installed by setAuditSink, then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
-        : `fix the sink installed by setAuditSink, then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
+        ? `fix the sink runtime.ts installs as auditSink (apps/<app>/runtime.ts), then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
+        : `fix the sink runtime.ts installs as auditSink (apps/<app>/runtime.ts), then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
       // Read by `--json` and the error reporter: whether a retry is safe is the one decision an
       // operator makes here, so it is a field and not only a sentence.
       meta: { action, replayable },

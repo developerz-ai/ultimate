@@ -148,8 +148,9 @@ describe('a RE-EXPORT of a core helper from another package is a second home', (
       ),
     ).toEqual(['clientFlight', 'DEFAULT_CLIENT_RETRY', 'isSuperseded', 'isTransientFailure']);
     expect(
-      helpersIn('export { getAuditSink, resetAuditSink, setAuditSink } from "@ultimat3/core";'),
-    ).toEqual(['getAuditSink', 'resetAuditSink', 'setAuditSink']);
+      // 31.0.0: the installer and reset are `@ultimat3/core/adapter`'s; the barrel keeps the reader.
+      helpersIn('export { AUDIT_RECORD_FIELDS, getAuditSink } from "@ultimat3/core";'),
+    ).toEqual(['AUDIT_RECORD_FIELDS', 'getAuditSink']);
   });
 
   // Widened 2026-10-06: the rule was a seven-name list matching one spelling, so `fnv1a`,
@@ -190,11 +191,11 @@ describe('a RE-EXPORT of a core helper from another package is a second home', (
   test('the finding asks for the import at the caller and the re-export deleted', () => {
     const [finding] = checkHelperHomes({
       at,
-      text: "\nexport { setAuditSink } from '@ultimat3/core';",
+      text: "\nexport { getAuditSink } from '@ultimat3/core';",
     });
     expect(finding?.cause).toContain(`${at}:2`);
     expect(finding?.cause).toContain('re-export');
-    expect(finding?.fix).toContain("import { setAuditSink } from '@ultimat3/core'");
+    expect(finding?.fix).toContain("import { getAuditSink } from '@ultimat3/core'");
     expect(finding?.fix).toContain(`delete the re-export in ${at}`);
   });
 });

@@ -5,6 +5,7 @@
  * (retention, hash chain, subject index, "who" under impersonation) is the app's; none of it is here.
  */
 
+import { adapterSlot } from './adapter-slot';
 import type { Ctx } from './context';
 
 /**
@@ -129,18 +130,25 @@ export interface AuditSink<TRecord = AuditRecord> {
  * No default. A logger-backed default would satisfy `audit: true` with a line nobody stores, which
  * is the silent pass this seam exists to remove: an audited primitive with no sink installed is
  * refused before it reads its input (`X_AUDIT_SINK_MISSING`, `X_QUERY_AUDIT_SINK_MISSING`).
+ * Core's one slot shape (`adapter-slot.ts`), so two boots in one process release in any order.
  */
-let installed: AuditSink | null = null;
+const installed = /* @__PURE__ */ adapterSlot<AuditSink | null>(() => null);
 
-export function setAuditSink(sink: AuditSink): void {
-  installed = sink;
+/**
+ * The `auditSink` port's installer — on `@ultimat3/core/adapter` only: the boot calls it with
+ * `runtime.ts`'s `auditSink`, a test through `@ultimat3/testing`'s `swapAdapter('auditSink', …)`.
+ * Answers the release that removes THIS install and no other.
+ */
+export function installAuditSink(sink: AuditSink): () => void {
+  return installed.install(sink);
 }
 
+/** The sink `action` and `query` write to, or `null` when the boot installed none. */
 export function getAuditSink(): AuditSink | null {
-  return installed;
+  return installed.current();
 }
 
-/** Test seam: back to "nothing installed", which restoring a literal cannot express. */
+/** Test seam: back to "nothing installed", whatever is stacked. On `./adapter`, beside the installer. */
 export function resetAuditSink(): void {
-  installed = null;
+  installed.reset();
 }

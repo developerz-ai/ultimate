@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorReport, HttpRequestEvent, ReadableSpan } from '@ultimat3/core';
 import {
   collectMetrics,
-  configureErrorReporting,
   memoryErrorReporter,
   memoryExporter,
   resetErrorReporting,
@@ -16,6 +15,7 @@ import {
   SEMCONV,
   subscribe,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
 import { httpPipeline } from './pipeline';
@@ -348,7 +348,7 @@ describe('a server fault reaches the error reporter', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(() => {

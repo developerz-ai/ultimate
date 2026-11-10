@@ -338,7 +338,7 @@ describe('policyTestStubFor', () => {
       .catch((error: unknown) => error);
 
     expect((failure as { code?: string }).code).toBe('X_AUDIT_SINK_MISSING');
-    expect((failure as { fix?: string }).fix).toContain('setAuditSink');
+    expect((failure as { fix?: string }).fix).toContain('auditSink: postgresAuditSink(');
   });
 
   test('names whichever action is passed, not a fixed literal', () => {

@@ -416,17 +416,14 @@ const narrowUuid = <Row>(columns: ColumnMap, row: Row): Row => {
   for (const [property, column] of Object.entries(columns)) {
     if (column.$meta.kind !== 'uuid') continue;
     const value = record[property];
-    // Untouched unless it is a string that actually carries an upper-case character: a malformed
-    // value is the column parser's to refuse, with its own message, and no allocation is paid by
-    // the overwhelmingly common case (axiom 6).
+    // A string Postgres would refuse is refused HERE, in both drivers, with the column parser's
+    // message: a repository write is not parsed, so memory stored `…-0000000000p0` that Postgres
+    // answered 22P02 for. Anything else non-string is the column parser's (or the server's).
     if (typeof value !== 'string') continue;
+    parseUuid(value);
     const lower = value.toLowerCase();
+    // No allocation for the overwhelmingly common case, an id already lower-cased (axiom 6).
     if (lower === value) continue;
-    // And only a value Postgres would have accepted, which is the whole justification for touching
-    // it: the memory driver stores what `$assert` was shown, so a malformed id lower-cased here is
-    // a spelling NEITHER driver holds — Postgres refuses that insert outright. Asked last, so the
-    // regex is paid only by the rare value that carries an upper-case character at all.
-    if (!UUID.test(value)) continue;
     narrowed ??= { ...record };
     narrowed[property] = lower;
   }

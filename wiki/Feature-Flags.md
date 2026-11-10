@@ -56,7 +56,7 @@ fallback to the actor or to `default`.
 `applyFlagSnapshot({ key: targeting })` lands targeting from outside — a poller, a job, a channel —
 so evaluation never loads anything. Keys this build does not declare come back in `unknown` rather
 than throwing: a control plane is often ahead of a deploy. An overdue flag is reported through
-core's one error-reporting seam (`configureErrorReporting`), at most once an hour per flag.
+core's `reportError` — to whatever the `errorReporter` port installed ([Adapters](Adapters#errorreporter)) — at most once an hour per flag.
 
 `flagsReport()` projects every flag with its kind, owner and expiry. Nothing reads it yet: no CLI
 command prints it and no manifest section carries it.

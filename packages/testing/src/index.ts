@@ -31,8 +31,6 @@ export { authRequest } from './auth-request';
 // tree, its rules, and the reasoned per-test `allow`.
 export type { AxNode, AxTreeNode } from './ax-node';
 export { toAxNode, toAxTreeNodes } from './ax-node';
-export type { BudgetStoreLike } from './budget-store-conformance';
-export { budgetStoreConformance } from './budget-store-conformance';
 // Recorded vendor answers, replayed through `mockFetch` with the network sealed; recorded only by
 // hand (`ULTIMATE_CASSETTE=record`, never under CI), with the written bytes scanned for secrets.
 export type { Cassette, CassetteOptions } from './cassette';
@@ -406,7 +404,6 @@ export type {
   CrashRerun,
 } from './job-crash-proof';
 export { crashProof } from './job-crash-proof';
-export { jobDriverConformance } from './job-driver-conformance';
 export type { SimEffect } from './job-sim-effects';
 export {
   crashEffectPlace,

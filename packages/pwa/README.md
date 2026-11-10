@@ -169,6 +169,11 @@ export const channel = pushChannel<{ postId: string }>({
 | Endpoints | dialled only on a push service: `https:`, and a host that is one of `PUSH_SERVICE_HOSTS` (FCM, Mozilla, Apple, WNS) or `pwa.vapid.pushHosts`, or a subdomain of one on a dot boundary — checked when stored and before every send (`assertPushEndpoint`), never by where the name resolves, since the endpoint came from a request body (`X_PWA_PUSH_HOST_UNLISTED`; a stored one is deleted unsent). One POST waits at most `PUSH_SEND_TIMEOUT_MS` (30 s); a caller's abort is rethrown as is, never the retryable class |
 | `renotify` | dropped, with a warning, without a `tag` — at both ends |
 
+A store of your own implements `PushSubscriptionStore` from `@ultimat3/pwa/adapter` (types only,
+with `PushSubscriptionRecord`) and is handed to the boot as `pushSubscriptionStore: myStore()` in
+`apps/web/runtime.ts`; the suite is `@ultimat3/testing/conformance`'s
+`pushSubscriptionStoreConformance`.
+
 ## Error classes
 
 Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or

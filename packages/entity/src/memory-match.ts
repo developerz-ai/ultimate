@@ -41,14 +41,26 @@ export const byCodePoint = (left: string, right: string): number => {
 };
 
 /**
+ * An `integer()` operand written as TEXT is the number Postgres parses it as: the parameter takes
+ * the column's type, so `id = '007'` finds row 7 there, and `===` against `7` found nothing here.
+ * Only an integer literal is read; anything else stays as written and compares as text.
+ */
+const INTEGER_TEXT = /^\s*[+-]?\d+\s*$/;
+const asInteger = (kind: ColumnKind | undefined, value: unknown): unknown =>
+  kind === 'integer' && typeof value === 'string' && INTEGER_TEXT.test(value)
+    ? Number(value)
+    : value;
+
+/**
  * Two values of one column, ordered as Postgres orders that column. `-1`, `0` or `1` — never a
  * difference, so a `bigint` pair needs no subtraction it cannot express in a `number`.
  */
 export const compareByKind = (
   kind: ColumnKind | undefined,
-  left: unknown,
-  right: unknown,
+  given: unknown,
+  operand: unknown,
 ): number => {
+  const [left, right] = [asInteger(kind, given), asInteger(kind, operand)];
   // NULL is the LARGEST value, which is what `order by` means in Postgres and what `nulls last`
   // ascending / `nulls first` descending spell out (`pg-sql.ts`'s `orderSql`, `@ultimat3/query`'s
   // `compareValues`). Two absences are equal, so the next sort key decides — without this rule a
@@ -93,9 +105,10 @@ export const compareByKind = (
  */
 export const sameValueOfKind = (
   kind: ColumnKind | undefined,
-  left: unknown,
-  right: unknown,
+  given: unknown,
+  operand: unknown,
 ): boolean => {
+  const [left, right] = [asInteger(kind, given), asInteger(kind, operand)];
   if (left instanceof Date && right instanceof Date) return left.getTime() === right.getTime();
   // An instant handed over as ISO text is the instant it names, as Postgres parses the bound
   // parameter: `eq` against a stored `Date` compared an object to a string and matched no row.

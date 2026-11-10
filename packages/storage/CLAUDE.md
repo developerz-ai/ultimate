@@ -34,7 +34,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | Keys | every driver method starts with `assertSafeKey()`. No exceptions, no sanitising. `META_DIR` (`.meta`) is a reserved first segment on every driver — see below |
 | Time | take a `Clock`; never `Date.now()` |
 | Bytes | `Uint8Array \| ReadableStream \| Blob`. Never a base64 string, never unbounded — `toBytes(body, limit)` |
-| Exports | explicit in `src/index.ts`; no `export *` |
+| Exports | explicit in `src/index.ts`; no `export *`. `./adapter` (`adapter.ts`): `StorageDriver`, its shapes, the errors and helpers a driver raises with — the `storage` port; no installer (the boot reads `runtime.ts`'s `storage` driver as its default disk) |
 
 | File | Owns |
 |---|---|
@@ -111,16 +111,19 @@ Gotchas:
   sees a path — and `signedUrlBasePath` is how an absolute `baseUrl` is compared.
 - **`isWithinOrg` never throws**: an org id that cannot be one contains nothing.
 - **A variant key keeps the whole source key** (`hero.png@w640.webp`): two cache identities.
-- **A driver's semantics are pinned in ONE test with the other driver beside them.**
+- **A driver's semantics are `storageDriverConformance`'s** (`@ultimat3/testing/conformance`, run
+  over memory, local and s3); what only two disks share is pinned beside each other —
   `driver-parity.test.ts` drives `localDriver` over a temp dir and `s3Driver` over `FakeS3Client`
   in a single `test()` per claim, so neither disk can move alone. Where the two genuinely cannot
   agree it pins the DIVERGENCE, with the reason — that is the honest form, and it still fails the
   day either half changes.
 - **The local `list()` globs with `dot: true`, and the `META_DIR` skip is the real filter.**
   Without `dot`, dot-prefixed keys were missing from the listing while `put`/`get` handled them —
-  and `sweepOrphans` pages through `list()`. Pinned in `driver-parity.test.ts`.
+  and `sweepOrphans` pages through `list()`. Pinned on every disk by `@ultimat3/testing/conformance`'s
+  `storageDriverConformance`.
 - **A `list({ limit })` is a positive integer or a refusal** — `resolveListLimit` at the
-  `ListOptions` seam, so both disks answer one way. Core's `assert` (`X_INVARIANT`).
+  `ListOptions` seam, so every disk answers one way. Core's `assert` (`X_INVARIANT`);
+  `storageDriverConformance` holds each driver to it.
 - **`list()` answers core's `Page<StorageListEntry>`, and no storage-local page type exists**
   (`As of 25.0.0`; `ListPage` is deleted). Every driver builds it with core's `pageOf`, so
   `hasMore` is derived from the cursor and cannot disagree with it. The cursor is minted only when
@@ -160,11 +163,7 @@ Gotchas:
   read chunk-by-chunk and **cancelled** past the line, so at most one chunk over is ever held.
   Default `maxPutBytes` is `DEFAULT_MAX_UPLOAD_BYTES` — one constant, imported by both drivers
   from `upload.ts`, because the server-side ceiling and the upload ceiling are the same fact.
-- **`serverSideEncryption` is declared and refused by BOTH drivers.** Bun exposes `acl`,
-  `storageClass` and `type` and nothing for `x-amz-server-side-encryption*`, and a POSIX file is
-  not encrypted at all. Refusing on the dev disk too is deliberate: a `put()` that works in `x dev`
-  and throws in production is two rules. Bucket lifecycle (the app sweeps with `expire.ts`), storage classes and replication stay out
-  entirely — bucket-side, terraform's, axiom 7.
+- **`serverSideEncryption` is declared and refused by BOTH drivers.** Full rule: `docs/history/storage.md`.
 - **Quarantine is `pending/quarantine/`, INSIDE the pending prefix.** So `sweepOrphans` collects a
   never-scanned upload with no second prefix to walk, and `isPendingKey` stays true for it.
   `promoteAttachment` refuses a quarantined key (`X_STORAGE_QUARANTINED`); `releaseQuarantine` is
@@ -213,12 +212,7 @@ Gotchas:
   whole path exists to prevent. That is why it derives the box itself and asks core for
   `fit: 'cover'` — core's `contain` letterboxes to the requested box, this API fits inside it.
 - Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse.
-- **No `region` signs for `auto`.** R2 wants that; AWS and a gateway that checks the scope answer
-  `AuthorizationHeaderMalformed … expecting "<region>"`. `put`/`copy`/`list`/`delete` ask
-  `regionMismatch()` BEFORE their own verdict, so the code is `X_CONFIG_INVALID` and the fix is the
-  region — never `X_STORAGE_LIST_FAILED` with a fix about `s3:ListBucket`. The captured region is
-  held to `[A-Za-z0-9-]`: a provider's sentence may put nothing else into a `fix:`. A HEAD has no
-  body, so `exists()`/`stat()` never see it. `driver-s3.live.test.ts` runs with no region on purpose.
+- **No `region` signs for `auto`** (R2's; AWS refuses it) — `regionMismatch()` makes it `X_CONFIG_INVALID` naming `S3_REGION`. Full rule: `docs/history/storage.md`.
 - The signature check runs BEFORE the expiry check. Do not reorder.
 - `timingSafeEqual` is `@ultimat3/core`'s (`signed-url.ts` imports it) — the same
   implementation `@ultimat3/auth` uses, not a second copy. Add new secret comparisons through it.

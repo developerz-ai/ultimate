@@ -98,7 +98,7 @@ export class MemoryAuthAdapter implements AuthAdapter {
    * address, and the second was unreachable forever, since `findUserByEmail` returns the first.
    *
    * Over the STORED string, exactly as Postgres compares it. No case folding: that is the
-   * divergence `adapter-parity.test.ts`'s first case pins, and `normaliseEmail` above the seam is
+   * divergence `authAdapterConformance`'s first case pins, and `normaliseEmail` above the seam is
    * what makes two spellings one address.
    */
   async createUser(input: CreateUserInput): Promise<AuthUser> {

@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorReport } from '@ultimat3/core';
 import {
   collectMetrics,
-  configureErrorReporting,
   ctxOf,
   memoryErrorReporter,
   resetErrorReporting,
   resetMetrics,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -246,7 +246,7 @@ describe('the worker counts what it finished', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(() => {

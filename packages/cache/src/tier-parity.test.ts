@@ -1,14 +1,10 @@
-// One question, one answer, whichever RUNG is asked. `tagMatches` is this package's declared
-// invalidation semantic and three tiers implement it independently — the memo through
-// `tagsIntersect`, the LRU through two indexes, the shared tier through bucket keys on a wire.
-// Each case drives every tier that can hold the entry, in ONE test, so no rung can move alone.
-//
-// The memo and the LRU are real objects and answer with real behaviour. The shared tier runs on the
-// fake, which holds its sorted sets as state (plain commands, no Lua), so it answers with
-// survivors too; `redis.live.test.ts` runs the same two busts against a real server.
+// What the rungs answer beyond the port: the shared tier's BUCKETS on the wire (the reason a row
+// bust spares its neighbours there), the memo's refusal outside a request, and each bounded rung's
+// byte budget, which is a constructor option. Every verdict the memo, the LRU and Redis answer
+// through the port alone — row and collection busts, the ttl screen, the value shape — is
+// `cacheTierConformance` (`@ultimat3/testing`), run over memo and LRU in unit and Redis live.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext } from '@ultimat3/core';
 import { CacheTooLargeError, CacheTtlInvalidError } from './errors';
 import { lruTier } from './lru';
 import { memoTier } from './memo';
@@ -32,32 +28,13 @@ const survivors = async (tier: CacheTier): Promise<string[]> => {
 };
 
 describe('a ROW bust spares the other rows of its entity', () => {
-  test('memo, lru and the shared tier all read `tagMatches`, not "everything post"', async () => {
-    // `tagMatches(tag('post','1'), tag('post','2'))` is FALSE and this is the one place three
-    // implementations of it are compared. The shared tier used to join a row-tagged key to the
-    // COLLECTION bucket and then read that bucket back on a row bust, so `invalidateTags([tag(
-    // 'post','1')])` deleted every post-tagged key in Redis while the LRU one rung closer kept
-    // exactly the row that changed — every single-row write emptied the shared tier.
-    const memo = memoTier();
-    await runWithContext(ctxOf(), async () => {
-      await seed(memo);
-      expect([...(await memo.invalidateTags([tag('post', '1')])).keys].sort()).toEqual([
-        'feed',
-        'post-1',
-      ]);
-      expect(await survivors(memo)).toEqual(['post-2']);
-    });
-
-    const lru = lruTier({ rng: () => 0 });
-    await seed(lru);
-    expect([...(await lru.invalidateTags([tag('post', '1')])).keys].sort()).toEqual([
-      'feed',
-      'post-1',
-    ]);
-    expect(await survivors(lru)).toEqual(['post-2']);
-
-    // The same verdict from the shared tier, and the reason on the wire: the bust reads the row's
-    // bucket and the bare collection tag's — never the entity index that holds `post-2`.
+  test('the shared tier reads the row bucket and the bare collection bucket, never the index', async () => {
+    // `tagMatches(tag('post','1'), tag('post','2'))` is FALSE. The shared tier used to join a
+    // row-tagged key to the COLLECTION bucket and then read that bucket back on a row bust, so
+    // `invalidateTags([tag('post','1')])` deleted every post-tagged key in Redis while the LRU one
+    // rung closer kept exactly the row that changed. The verdict is the conformance suite's; the
+    // reason on the wire is this test's: the row's bucket and the bare collection tag's are read —
+    // never the entity index that holds `post-2`.
     const client = fakeRedis();
     const redis = tierFor(client);
     await seed(redis);
@@ -73,23 +50,11 @@ describe('a ROW bust spares the other rows of its entity', () => {
 });
 
 describe('a COLLECTION bust takes every row of its entity', () => {
-  test('memo, lru and the shared tier all clear the rows as well as the list', async () => {
+  test('the shared tier reads the entity index alone, and empties it', async () => {
     // The other half of `tagMatches`: `tagMatches(tag('post'), tag('post','2'))` is TRUE. A tier
     // that read only the bare collection tag's bucket here would leave every row cached with
     // nothing left to clear it — the failure the entity index exists to prevent, and the reason
     // it is a second bucket rather than a narrowing of the first.
-    const memo = memoTier();
-    await runWithContext(ctxOf(), async () => {
-      await seed(memo);
-      await memo.invalidateTags([tag('post')]);
-      expect(await survivors(memo)).toEqual([]);
-    });
-
-    const lru = lruTier({ rng: () => 0 });
-    await seed(lru);
-    await lru.invalidateTags([tag('post')]);
-    expect(await survivors(lru)).toEqual([]);
-
     const client = fakeRedis();
     const redis = tierFor(client);
     await seed(redis);
@@ -117,23 +82,7 @@ describe('a COLLECTION bust takes every row of its entity', () => {
   });
 });
 
-describe('ttlMs is positive and finite on EVERY rung', () => {
-  test('memo, lru and the shared tier all refuse a zero lease', async () => {
-    // `0` used to mean "never expires" in one tier and `EX 1` in another; the memo took it
-    // silently long after both were fixed. In a stack that is worse than either, because
-    // `bestEffort` swallows the two refusals and the read still hits — out of the one tier that
-    // should never have held it.
-    const memo = memoTier();
-    await runWithContext(ctxOf(), async () => {
-      await expect(memo.set('k', 'v', { ttlMs: 0 })).rejects.toThrow(CacheTtlInvalidError);
-    });
-
-    await expect(lruTier().set('k', 'v', { ttlMs: 0 })).rejects.toThrow(CacheTtlInvalidError);
-    await expect(tierFor(fakeRedis()).set('k', 'v', { ttlMs: 0 })).rejects.toThrow(
-      CacheTtlInvalidError,
-    );
-  });
-
+describe('ttlMs is positive and finite even where nothing is stored', () => {
   test('the memo refuses it OUTSIDE a request too, where it stores nothing at all', async () => {
     // The refusal is the caller's miswiring, not a property of the store: a no-op tier that
     // accepted `ttlMs: 0` would make the same call throw or resolve depending on whether a

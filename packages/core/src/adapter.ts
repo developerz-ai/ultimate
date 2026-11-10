@@ -6,9 +6,11 @@
 export type { AdapterSlot } from './adapter-slot';
 export { adapterSlot } from './adapter-slot';
 export type { AuditRecord, AuditSink } from './audit';
+export { installAuditSink, resetAuditSink } from './audit';
 export type { Clock, FrozenClock, SleepClock } from './clock';
 
 export type { ErrorReport, ErrorReporter } from './error-reporter';
+export { installErrorReporter } from './error-reporter';
 export type { FailureBundle, FailureCaptureLimits, FailureStore } from './failure-capture';
 export { installFailureStore } from './failure-capture';
 export type { MasterKeyRef, SecretSource, SecretSourceContext } from './secret-source';

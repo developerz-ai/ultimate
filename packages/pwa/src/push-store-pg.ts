@@ -6,6 +6,7 @@
 import type { PgExecutor } from '@ultimat3/core';
 import type { PushSubscriptionRecord } from './push';
 import type { PushSubscriptionStore } from './push-store';
+import { assertSubscriber } from './push-store';
 
 /** A re-subscribe moves the endpoint to this actor and its new keys; `created_at` stays first. */
 const SQL_PUSH_SAVE = `
@@ -64,6 +65,7 @@ export function postgresPushSubscriptionStore(
   const { executor } = options;
   return {
     async save(record) {
+      assertSubscriber(record);
       await executor.query(SQL_PUSH_SAVE, [
         record.endpoint,
         record.actorId,

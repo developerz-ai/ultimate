@@ -118,7 +118,7 @@ describe('flightGate', () => {
           new UltimateError({
             code: 'X_OVERLOADED',
             cause: `${state.active} running`,
-            fix: 'retry after the Retry-After header, or widen the ceiling with configureKdfGate({ maxConcurrent, maxQueued })',
+            fix: 'retry after the Retry-After header, or widen the ceiling with installKdfGate({ maxConcurrent, maxQueued })',
           }),
       },
     );

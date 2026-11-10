@@ -1,21 +1,13 @@
-// The KEYBOARD and ACCESSIBILITY half of driver parity: `press`, `focus` and `accessibility`, one
-// answer whichever driver is asked — and where the three genuinely cannot agree, the divergence
-// pinned here with its reason, beside the box/hit-target one `driver-parity.test.ts` carries.
-//
-// Its own file because `driver-parity.test.ts` is at the 500-line ceiling.
+// The REAL driver's half of keyboard and accessibility parity: `press`, `focus` and `accessibility`
+// on `localBrowser` over an injected CDP browser. `scrapeDriverConformance` (`@ultimat3/testing`)
+// holds the offline drivers to the same vocabulary and cannot reach this subject — the CDP fake is
+// this package's own. The offline refusals are pinned in `html-target.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// why: Bun ships no temp-directory API, so mkdtemp/rm/writeFile come from node:fs.
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
+import { describe, expect, test } from 'bun:test';
 import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
-import { fakeBrowser } from './driver-fake';
-import { fixtureBrowser, recordingFilename } from './driver-recorded';
-import type { PageRecording } from './recording';
 import type { AxNode } from './target';
 
 const URL_A = 'https://shop.test/search';
@@ -25,32 +17,15 @@ const HTML_A = `<html><body>
   <div id="fake-button" onclick="go()">Looks clickable</div>
 </body></html>`;
 
-const PAGES: readonly PageRecording[] = [{ url: URL_A, html: HTML_A }];
-
 /** What the browser WOULD compute — canned, because a fake cannot compute a role honestly. */
 const AX: Readonly<Record<string, readonly AxNode[]>> = {
   '#go': [{ role: 'button', name: 'Run search', ignored: false, focused: false }],
   '#fake-button': [{ role: '', name: '', ignored: false }],
 };
 
-let dir = '';
-
-beforeAll(async () => {
-  dir = await mkdtemp(`${tmpdir()}/ultimate-scrape-keys-`);
-  for (const page of PAGES) {
-    await writeFile(`${dir}/${recordingFilename(page.url)}`, JSON.stringify(page));
-  }
-});
-
-afterAll(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
-
 const launcher = () => fakeCdpLauncher({ url: URL_A, html: HTML_A, accessibility: AX });
 
 const drivers = (): readonly (readonly [string, ScrapeDriver])[] => [
-  ['fake', fakeBrowser(PAGES)],
-  ['fixture', fixtureBrowser(dir)],
   ['puppeteer', localBrowser({ launcher: launcher() })],
 ];
 
@@ -85,15 +60,15 @@ const codeOf = async (run: () => Promise<unknown>): Promise<string | undefined> 
   }
 };
 
-describe('unit · focus() and press() agree on every driver', () => {
-  test('a focus on a present control resolves on all three', async () => {
+describe('unit · focus() and press() on the real driver', () => {
+  test('a focus on a present control resolves', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       await expect(session.page.focus('#q'), name).resolves.toBeUndefined();
     });
   });
 
-  test('a focus on a missing selector is X_SCRAPE_SELECTOR_MISSING on all three', async () => {
+  test('a focus on a missing selector is X_SCRAPE_SELECTOR_MISSING', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       expect(await codeOf(() => session.page.focus('#nothing', { timeout: 50 })), name).toBe(
@@ -102,7 +77,7 @@ describe('unit · focus() and press() agree on every driver', () => {
     });
   });
 
-  test('a well-formed chord resolves on all three — the offline drivers parse it and stop', async () => {
+  test('a well-formed chord resolves', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       await expect(session.page.press('Meta+K'), name).resolves.toBeUndefined();
@@ -110,7 +85,7 @@ describe('unit · focus() and press() agree on every driver', () => {
     });
   });
 
-  test("a bad chord is X_SCRAPE_KEY_INVALID on all three — 'Ctrl' is not a modifier", async () => {
+  test("a bad chord is X_SCRAPE_KEY_INVALID, 'Ctrl' is not a modifier", async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       expect(await codeOf(() => session.page.press('Ctrl+K')), name).toBe('X_SCRAPE_KEY_INVALID');
@@ -166,26 +141,7 @@ describe('unit · accessibility() is answered by the browser or refused by name'
     }
   });
 
-  test('an offline driver REFUSES with X_NOT_IMPLEMENTED, so a role is never invented', async () => {
-    for (const [name, driver] of [
-      ['fake', fakeBrowser(PAGES)],
-      ['fixture', fixtureBrowser(dir)],
-    ] as const) {
-      const session = await open(driver);
-      try {
-        await session.page.goto(URL_A);
-        let code: string | undefined;
-        await session.page.accessibility('#go').catch((thrown: unknown) => {
-          code = (thrown as { code?: string }).code;
-        });
-        expect(code, name).toBe('X_NOT_IMPLEMENTED');
-      } finally {
-        await session.close();
-      }
-    }
-  });
-
-  test('a non-finite max is refused before any driver is asked, on all three', async () => {
+  test('a non-finite max is refused before the browser is asked', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);
       expect(await codeOf(() => session.page.accessibility('#go', { max: Number.NaN })), name).toBe(

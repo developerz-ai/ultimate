@@ -57,7 +57,7 @@ export { apiDeclaration } from './api-declaration';
  * The audit seam. `AuditSink` is the whole extension point: the framework supplies the record
  * and never the row. `audit-gate.ts` stays unexported — the sink has one caller, and that
  * absence is what keeps it one. The record and the sink are `@ultimat3/core`'s, re-exported as
- * TYPES only because this barrel's sinks name them; the slot (`setAuditSink`) is core's alone.
+ * TYPES only because this barrel's sinks name them; the slot (`installAuditSink`) is core's alone.
  */
 export type { AuditRecord, AuditSink } from './audit';
 export { AUDIT_INPUT_MAX_DEPTH, auditableInput, UNREPRESENTABLE } from './audit-input';

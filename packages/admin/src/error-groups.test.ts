@@ -5,7 +5,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ErrorReport } from '@ultimat3/core';
 import {
-  configureErrorReporting,
   errorReport,
   frozenClock,
   REDACTED,
@@ -13,6 +12,7 @@ import {
   resetErrorReporting,
   UltimateError,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { STORE_CASES } from './error-groups-fixture';
 import { type ErrorGroupNotice, errorGroupsSink } from './error-groups-sink';
 import {
@@ -57,7 +57,7 @@ describe('errorGroupsSink', () => {
   test('one fault across two requests is one group of two, and one onNewGroup', async () => {
     const store = memoryErrorGroupsStore();
     const sink = errorGroupsSink({ store, onNewGroup });
-    configureErrorReporting({ reporter: sink });
+    installErrorReporter(sink);
     reportError(fault('POST /orders', { orderId: 'o_1' }).error, {
       source: 'http',
       scope: { operation: 'POST /orders' },
@@ -131,12 +131,10 @@ describe('errorGroupsSink', () => {
     };
     const sink = errorGroupsSink({ store: failing });
     let reports = 0;
-    configureErrorReporting({
-      reporter: {
-        report: (event) => {
-          reports += 1;
-          sink.report(event);
-        },
+    installErrorReporter({
+      report: (event) => {
+        reports += 1;
+        sink.report(event);
       },
     });
     reportError(fault('POST /orders').error, { source: 'http' });

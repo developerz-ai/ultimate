@@ -182,5 +182,7 @@
  * raised 1501 → 1502, measured 1502 (2026-11-09, same slice): `cli/src/runtime-boot-ports.ts`.
  * raised 1502 → 1503, measured 1503 (2026-11-09, same slice): `core/src/sleep-clock.ts`.
  * raised 1503 → 1507, measured 1507 (2026-11-09, same wave): `SERVING_ROLE_CEILING`'s 4. Nothing web-only.
+ * raised 1507 → 1508, measured 1508 (2026-11-09, wave E e-portsB): `mcp/src/confirmation-installed.ts`,
+ * the `mcpConfirmationStore` port's slot `mcpConfirmations()` reads per use. Web-only, as `mcp/src` is.
  */
-export const WEB_ROLE_CEILING = 1507;
+export const WEB_ROLE_CEILING = 1508;

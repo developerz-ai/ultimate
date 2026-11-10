@@ -136,11 +136,12 @@
   enforced by the provider. That asymmetry is a transport DIFFERENCE and is pinned as one.
   `mailMessageIdToken` is a one-way digest of `mailIdempotencyKey`, never the key itself: the key
   holds the recipient list, bcc included, and a `Message-ID` is visible to all of them.
-- **`driver-parity.test.ts` asserts every driver's behaviour in ONE test.** Both production drivers
-  run for real — SMTP over a fake `SmtpStream`, Resend over an injected `fetch` — so a case compares
-  what each did rather than a proxy for it, and neither side can move alone. The memory driver joins
-  the cases about the MESSAGE and none about a wire: it dials nothing, maps no status and carries no
-  idempotency header, and that is documented difference, not defect.
+- **`mailDriverConformance` (`@ultimat3/testing/conformance`) asks every driver one contract.**
+  memory and log in `mail-driver-conformance.test.ts`; smtp, resend and ses run for real over fake
+  wires in `mail-driver-conformance-transports.test.ts`, which also pins the wire facts the port
+  cannot ask: `send()` refuses a header break before any transport dials, a retry carries one
+  identity, the `Message-ID` is a digest of the key. A driver of your own:
+  `behavesLike(mailDriverConformance, () => yours)`.
 - **`assertHeaderSafe` gates the ADDRESS LISTS too — `to` and `cc`** (`As of 2026-08-23`). It
   checked `subject` and `Object.entries(messageHeaders(message))`, and `messageHeaders` emits only
   `Auto-Submitted`, `Reply-To` and the two `List-Unsubscribe` lines — while `to` and `cc` become

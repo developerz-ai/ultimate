@@ -65,7 +65,7 @@ export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
   jobs: 2,
   manifest: 11,
   render: 15,
-  scraping: 4,
+  scraping: 2,
   scripts: 25,
   testing: 6,
   time: 1,

@@ -251,3 +251,17 @@ Verbatim from [`packages/storage/CLAUDE.md`](../../packages/storage/CLAUDE.md), 
 - **s3 `putStream` parts came from the declared ceiling** (`maxBytes / 10000`): a 1 TB ceiling cut
   100 MB parts for a 1 KB body, sent one at a time, each held twice. Now 8 MiB doubling per 1,000
   parts, at most four held.
+
+## Moved out 2026-11-09 (plan 101 v31, the CLAUDE.md ceiling)
+
+- **`serverSideEncryption` is declared and refused by BOTH drivers.** Bun exposes `acl`,
+  `storageClass` and `type` and nothing for `x-amz-server-side-encryption*`, and a POSIX file is
+  not encrypted at all. Refusing on the dev disk too is deliberate: a `put()` that works in `x dev`
+  and throws in production is two rules. Bucket lifecycle (the app sweeps with `expire.ts`), storage classes and replication stay out
+  entirely — bucket-side, terraform's, axiom 7.
+- **No `region` signs for `auto`.** R2 wants that; AWS and a gateway that checks the scope answer
+  `AuthorizationHeaderMalformed … expecting "<region>"`. `put`/`copy`/`list`/`delete` ask
+  `regionMismatch()` BEFORE their own verdict, so the code is `X_CONFIG_INVALID` and the fix is the
+  region — never `X_STORAGE_LIST_FAILED` with a fix about `s3:ListBucket`. The captured region is
+  held to `[A-Za-z0-9-]`: a provider's sentence may put nothing else into a `fix:`. A HEAD has no
+  body, so `exists()`/`stat()` never see it. `driver-s3.live.test.ts` runs with no region on purpose.
