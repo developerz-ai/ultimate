@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/core",
-  "version": "30.9.0",
+  "version": "31.0.0",
   "description": "Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle",
   "keywords": [
     "ultimate",
@@ -54,6 +54,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/schema": "30.9.0"
+    "@ultimat3/schema": "31.0.0"
   }
 }

@@ -2,7 +2,7 @@
 
 **From v31: at most one major every 90 days, the previous major gets security fixes for 6 months after its successor, and a removal is deprecated for at least one minor first.** Each rule is refused by a script, not remembered by a person — the table at the bottom names the code.
 
-**Next major window:** 90 days after the date on the `## 31.0.0` heading. The bump that ships a major rewrites this line (`scripts/release.ts`).
+**Next major window:** opens on `2027-02-08`, 90 days after 31.0.0 (2026-11-10). The bump that ships a major rewrites this line (`scripts/release.ts`).
 
 ## What is covered
 
@@ -46,7 +46,7 @@ Never "stable forever": a covered surface can change, in a scheduled major, with
 | patch to the previous major | security fixes only, until 6 months after its successor shipped | `release/<major>.x` | `maint-<major>` |
 | prerelease of the next major — **planned, nothing ships one yet** | `release-tag.yml` cuts only `X.Y.Z` release commits, so no workflow publishes from `next` | `next` | `next` (`scripts/dist-tag.ts` already names it) |
 
-v31 is the exception that starts the clock: it carries every break queued before the promise bound anyone, and `scripts/release.ts` does not refuse it. Until it ships, a `BREAKING —` entry may land on `main` and a removal needs no deprecation minor.
+**v31 is the stable line**, dated 2026-11-10 by its `CHANGELOG.md` heading. It was the exception that starts the clock: it carried every break queued before the promise bound anyone (74, [Upgrading](Upgrading#30x--3100-entry-by-entry)), and `scripts/release.ts` does not refuse it (`WINDOW_OPENS_AT_MAJOR` in `scripts/lib/major-window.ts`). From it on, a `BREAKING —` entry waits on `next` and a removal ships its deprecation minor first.
 
 Ruling 2026-11-09: the clock moved from v30 to v31. v30 shipped 2026-11-07 while only our own apps ran Ultimate in production, so the window protected no one yet; v31 carries the breaks of plan 101-final-hardening-before-v31, and the window protects adopters from there.
 

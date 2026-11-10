@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"
 owner: sebi
-percent: 66
-current_focus: "wave G: slice 29 deletions (D1, D5–D9, D11, N1, setLogSink, noopMetricExporter, storage quarantine) + slice 27 trust docs, with the wave F carry-overs (worker/scheduler prebuilt registry, deleteWhere search mirroring, AuditPrimitive 'job', shared DER walk)"
+percent: 72
+current_focus: "slice 39: the v31.0.0 release — bump PR, annotated tag, publish; then adopters 40–48 and infra F6/F7"
 slices:
   - file: 28-open-prs.md
     tier: 5
@@ -145,18 +145,21 @@ slices:
   - file: 29-v31-deletions.md
     tier: 0
     sweep: "14"
-    status: in_progress
-    percent: 0
+    status: complete
+    percent: 100
+    notes: "Wave G #1044 (D1, D5–D9, D11, N1, setLogSink, noopMetricExporter, storage quarantine) and D10 #1045 (each package's `.` barrel is its app API); 74 breaking entries in 31.0.0"
   - file: 27-trust-docs.md
     tier: 5
     sweep: "16"
-    status: in_progress
-    percent: 0
+    status: complete
+    percent: 100
+    notes: "#1044: README, OpenSSF Scorecard workflow + badge, private vulnerability reporting (SECURITY.md); the README's v31 line flipped to released in the 31.0.0 bump (slice 39)"
   - file: 39-v31-release.md
     tier: 5
     sweep: "17"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 40
+    notes: "Steps 1–3 and 6 in the tree: Upgrading 30 → 31 released (74 entries), CHANGELOG 31.0.0 - 2026-11-10 with Highlights, release.ts --bump major (manifest, bun.lock, footer) and --check 31.0.0 green, Stability next window 2027-02-08. Owed: the bump PR merged, the annotated tag, registry-audit at 31.0.0"
   - file: 40-adopter-a.md
     tier: 5
     sweep: "18"
@@ -213,6 +216,6 @@ slices:
     sweep: "18"
     status: not_started
     percent: 0
-evidence: ["#1035", "#1037", "#1038", "#1040", "#1042", "#1043"]
+evidence: ["#1035", "#1037", "#1038", "#1040", "#1042", "#1043", "#1044", "#1045"]
 notes: "Sweeps 10 (19 part 9b + 21 part B), 13 (23 part 12b) and 15 (29 D10) carry second halves of slices listed above under their first sweep. Adopter letter mapping is off-tree with the owner."
 last_updated: 2026-11-10
