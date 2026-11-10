@@ -134,6 +134,13 @@ describe('the manifest is deterministic', () => {
     expect(surface).not.toHaveProperty('contentHash');
   });
 
+  // 31.0.0 (plan 101, D10): internal helpers and error classes left the barrel.
+  test('the barrel carries no internal helper or error class', () => {
+    for (const name of ['formatDiff', 'manifestJson', 'ManifestDriftError', 'isCompatible']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+  });
+
   test("buildId is core's fingerprint of the body, so no stamped manifest moves", () => {
     const { buildId, ...body } = buildManifest(sources);
     expect(buildId).toBe(fingerprint(body));

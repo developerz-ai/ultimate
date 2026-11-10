@@ -222,7 +222,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
 | `loader.ts` | `@ultimat3/query/loader` — `registerQuery`/`registerQueries`, for `x`'s loader and framework fixtures; never the barrel |
-| `adapter.ts` | `@ultimat3/query/adapter` — `overrideRows`, the test seam `@ultimat3/testing`'s `stub()` drives |
+| `adapter.ts` | `@ultimat3/query/adapter` — `overrideRows`, the test seam `@ultimat3/testing`'s `stub()` drives, and `QueryClient` / `QueryClientOptions`, the client's own shape |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `MAX_WIRE_PAGE_SIZE` (500) or the read's `maxPage`; `assertMaxPage` |
 | `validate.ts` | the input parse: `X_INPUT_INVALID` carrying `issues` (by path) and `issuesTruncated` — action's `validate.ts` twin |
@@ -799,28 +799,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `CursorValueUnsupportedError` | `X_CURSOR_VALUE_UNSUPPORTED` | `src/errors.ts` |
-| `MatcherUnsupportedError` | `X_MATCHER_UNSUPPORTED` | `src/errors.ts` |
-| `QueryAuditSinkFailedError` | `X_QUERY_AUDIT_SINK_FAILED` | `src/audit-errors.ts` |
-| `QueryAuditSinkMissingError` | `X_QUERY_AUDIT_SINK_MISSING` | `src/audit-errors.ts` |
 | `QueryDeniedError` | the policy denial's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`, …), kept on `.denial` | `src/errors.ts` |
-| `QueryDeprecationInvalidError` | `X_QUERY_DEPRECATION_INVALID` | `src/errors.ts` |
-| `QueryDownloadInvalidError` | `X_QUERY_DOWNLOAD_INVALID` | `src/download-errors.ts` |
-| `QueryDownloadOnlyError` | `X_QUERY_DOWNLOAD_ONLY` | `src/download-errors.ts` |
-| `QueryDownloadTokenExpiredError` | `X_QUERY_DOWNLOAD_TOKEN_EXPIRED` | `src/download-errors.ts` |
-| `QueryDownloadTokenInvalidError` | `X_QUERY_DOWNLOAD_TOKEN_INVALID` | `src/download-errors.ts` |
-| `QueryDuplicateError` | `X_QUERY_DUPLICATE` | `src/errors.ts` |
-| `QueryForeignError` | `X_QUERY_FOREIGN` | `src/errors.ts` |
 | `QueryInputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |
-| `QueryMaxPageInvalidError` | `X_QUERY_MAX_PAGE_INVALID` | `src/page-controls.ts` |
-| `QueryInputUnencodableError` | `X_QUERY_INPUT_UNENCODABLE` | `src/errors.ts` |
-| `QueryNotPageableError` | `X_QUERY_NOT_PAGEABLE` | `src/errors.ts` |
-| `QueryPolicyMissingError` | `X_QUERY_POLICY_MISSING` | `src/errors.ts` |
 | `QueryRowNotFoundError` | `X_NOT_FOUND` | `src/errors.ts` |
 | `QuerySingleInvalidError` | `X_QUERY_SINGLE_INVALID` | `src/errors.ts` |
-| `QuerySubscribesDriftError` | `X_QUERY_SUBSCRIBES_DRIFT` | `src/errors.ts` |
-| `QuerySubscribesInvalidError` | `X_QUERY_SUBSCRIBES_INVALID` | `src/errors.ts` |
-| `QueryUnregisteredError` | `X_QUERY_UNREGISTERED` | `src/errors.ts` |
 
 ## `@ultimat3/query/adapter` — canned rows for a test
 

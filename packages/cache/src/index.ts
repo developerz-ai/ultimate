@@ -16,25 +16,17 @@ export {
 } from './cdn';
 export type { CacheErrorCode } from './errors';
 export {
-  CACHE_ERROR_CODES,
-  CACHE_ERROR_TITLES,
   CacheDriverUnavailableError,
-  CacheJitterInvalidError,
-  CacheLimitInvalidError,
   CachePurgeFailedError,
-  CacheTagUnknownError,
   CacheTooLargeError,
-  CacheTtlInvalidError,
   CacheValueUnencodableError,
 } from './errors';
 export type { CacheFence, FenceScope } from './fence';
-export { FENCE_MEMORY, markInvalidated, sampleFence } from './fence';
+export { markInvalidated, sampleFence } from './fence';
 export type { CacheDependent, DependentKind } from './graph';
 export {
   dependentsOf,
   dependentsOfKind,
-  graphSize,
-  graphSnapshot,
   isolateGraph,
   registerDependent,
   resetGraph,
@@ -61,23 +53,18 @@ export {
   registerTier,
   resetTiers,
 } from './invalidate';
-export type { LruOptions, LruStats } from './lru';
+export type { LruOptions } from './lru';
 export { estimateBytes, LruCache, lruTier } from './lru';
-export { clearMemo, memoSize, memoTier } from './memo';
+export { memoTier } from './memo';
 export type { CloudflarePurgeOptions } from './purge-cloudflare';
-export {
-  CLOUDFLARE_API_URL,
-  CLOUDFLARE_MAX_TAGS_PER_REQUEST,
-  cloudflarePurgeDriver,
-} from './purge-cloudflare';
+export { CLOUDFLARE_API_URL, cloudflarePurgeDriver } from './purge-cloudflare';
 export type { PurgeEnvironment, PurgeSelection } from './purge-env';
-export { CDN_PURGE_ENV_KEYS, selectPurgeDriver } from './purge-env';
+export { selectPurgeDriver } from './purge-env';
 export type { FastlyPurgeOptions } from './purge-fastly';
-export { FASTLY_API_URL, FASTLY_MAX_KEYS_PER_REQUEST, fastlyPurgeDriver } from './purge-fastly';
+export { fastlyPurgeDriver } from './purge-fastly';
 export type { PurgeFetch } from './purge-http';
-export { DEFAULT_PURGE_TIMEOUT_MS } from './purge-http';
 export type { RedisLike, RedisTierOptions } from './redis';
-export { DEFAULT_REDIS_MAX_VALUE_BYTES, namespaceFor, redisTier } from './redis';
+export { namespaceFor, redisTier } from './redis';
 export type {
   InvalidationBus,
   InvalidationSubscription,
@@ -86,7 +73,7 @@ export type {
   RedisPubSubOptions,
   RedisSubscriberLike,
 } from './redis-pubsub';
-export { PUBLISHER_CONNECT_WAIT_MS, redisPubSub, redisPubSubAt } from './redis-pubsub';
+export { redisPubSub, redisPubSubAt } from './redis-pubsub';
 export type {
   Embedding,
   SemanticCache,
@@ -94,7 +81,7 @@ export type {
   SemanticHit,
   SemanticRememberOptions,
 } from './semantic';
-export { cosineSimilarity, memorySemanticCache } from './semantic';
+export { memorySemanticCache } from './semantic';
 export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';
 export {
   assertKnownTags,
@@ -108,7 +95,6 @@ export {
   tag,
   tagKeys,
   tagMatches,
-  tagsFor,
   tagsIntersect,
 } from './tags';
 export type { TierOperation } from './tier-failures';

@@ -5,14 +5,7 @@ export type {
   FixtureRegistration,
   Fixtures,
 } from './fixtures';
-export {
-  clearFixtures,
-  defineFixtures,
-  fixtureSnapshot,
-  fixtureTest,
-  registeredFixtures,
-  requestedFixtures,
-} from './fixtures';
+export { defineFixtures, fixtureSnapshot, fixtureTest, requestedFixtures } from './fixtures';
 // Public API of @ultimat3/testing. Explicit re-exports: the preload has its own entry point so a
 // bunfig can load side effects without importing the whole harness.
 
@@ -34,15 +27,7 @@ export { toAxNode, toAxTreeNodes } from './ax-node';
 // Recorded vendor answers, replayed through `mockFetch` with the network sealed; recorded only by
 // hand (`ULTIMATE_CASSETTE=record`, never under CI), with the written bytes scanned for secrets.
 export type { Cassette, CassetteOptions } from './cassette';
-export { CASSETTE_ENV, cassette } from './cassette';
-export type { RecordRefusal, UnusedEntry } from './cassette-errors';
-export {
-  CassetteMissingError,
-  CassetteRecordRefusedError,
-  CassetteSecretError,
-  CassetteUnusedError,
-} from './cassette-errors';
-export type { CassetteEntry, CassetteFile } from './cassette-format';
+export { cassette } from './cassette';
 // The browser-backed e2e driver and the raw-CDP browser under it — moved here from
 // `@ultimat3/cli` in 22.0.0. `installE2eDriver` is the ONE entry point an app's test preload calls;
 // `openE2eBrowserIfAvailable()` answers `undefined` on a machine with no Chrome, so a
@@ -88,7 +73,6 @@ export {
   restoreCapturedDeterminism,
   restoreDeterminism,
   seededRandom,
-  seededUuid,
   setFrozenClock,
   withFrozenClock,
 } from './determinism';
@@ -103,13 +87,13 @@ export type { DrillTarget } from './drill-load';
 export type { DrillReport } from './drill-run';
 export { runDrill } from './drill-run';
 export type { DrillDeclarations } from './drill-services';
-export { DRILL_SERVICE_ENV, drillServices } from './drill-services';
+export { drillServices } from './drill-services';
 export type { DrillSyncEvidence, DrillSyncLane, DrillSyncOptions } from './drill-sync';
 export { startDrillSync } from './drill-sync';
 export type { DrillBudgets, DrillEvidence, DrillFailure, DrillProperty } from './drill-verdict';
 export { judgeDrill } from './drill-verdict';
-export type { DrillWriteCandidate, DrillWrites } from './drill-writes';
-export { DRILL_DRAW_SEED, drillWriteTargets } from './drill-writes';
+export type { DrillWrites } from './drill-writes';
+export { drillWriteTargets } from './drill-writes';
 export type { Drill, DrillName, DrillRole, DrillService } from './drills';
 export { DRILL_NAMES, DRILLS, drillNamed, drillRoles } from './drills';
 export type { A11yFinding, A11yRule } from './e2e-a11y';
@@ -126,8 +110,7 @@ export { E2E_APP_START_MS, E2E_APP_STOP_MS, startE2eApp } from './e2e-app';
 export { E2E_ROOT_ENV, e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
 export type { E2eDriverOptions } from './e2e-driver';
 export { e2eFixtures, installE2eDriver } from './e2e-driver';
-export type { E2eErrorCode } from './e2e-error-codes';
-export { E2E_ERROR_CODES, E2E_ERROR_TITLES } from './e2e-error-codes';
+export { E2E_ERROR_CODES } from './e2e-error-codes';
 export {
   E2eAppFailedError,
   E2eEvaluateCapturedError,
@@ -137,20 +120,11 @@ export {
   E2eLocatorEmptyError,
   E2eServiceWorkerAbsentError,
 } from './e2e-errors';
-export type { EvaluablePage } from './e2e-evaluate';
-export { closureSource, evaluateClosure, evaluateExpression } from './e2e-evaluate';
 export type { LocatablePage } from './e2e-locator';
-export { e2eLocator, resetLocatorMarks } from './e2e-locator';
+export { e2eLocator } from './e2e-locator';
 export type { AxTreeRequest, E2eBrowserPage, E2ePageOptions } from './e2e-page';
 export { DEFAULT_E2E_TIMEOUT_MS, DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage } from './e2e-page';
-export type { E2eResolution, E2eSelection } from './e2e-selection';
-export {
-  MARK_ATTRIBUTE,
-  markSelector,
-  selectionCall,
-  selectionExpression,
-  unmarkExpression,
-} from './e2e-selection';
+export type { E2eSelection } from './e2e-selection';
 export type { TestingErrorCode } from './errors';
 export {
   AppNotBootedError,
@@ -159,24 +133,16 @@ export {
   NetworkSealedError,
   NondeterministicError,
   RegistryLeakError,
-  TESTING_ERROR_CODES,
-  TESTING_ERROR_TITLES,
   TestDatabaseUnavailableError,
 } from './errors';
 export type { ExercisePassOptions } from './exercise';
 export { runExercisePass } from './exercise';
 export type { ActorChoice, RoleGrants } from './exercise-actor';
 export type { ExerciseDefect } from './exercise-defect';
-export {
-  type OverrideActor,
-  type OverrideHint,
-  overrideLine,
-  UNBOUND_ID,
-} from './exercise-override-line';
+export { type OverrideActor, type OverrideHint, overrideLine } from './exercise-override-line';
 export type {
   CrashFinding,
   CrashProof,
-  EffectPayload,
   ExerciseEffect,
   ExerciseOutcome,
   ExercisePhaseMs,
@@ -187,12 +153,11 @@ export type {
   TenantProof,
 } from './exercise-report';
 export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
-export { defineFactory, seedFor } from './factories';
+export { defineFactory } from './factories';
 export type { AnyFactory, Factory, FactoryExtension, FactoryOptions } from './factory-api';
 export type { BelongsToOptions, HasManyOptions } from './factory-associations';
 export { belongsTo, hasMany } from './factory-associations';
 export type { FactoryFinding } from './factory-errors';
-export { FactoryInvalidError } from './factory-errors';
 export type { FactorySet } from './factory-lint';
 export { assertFactoriesValid, lintFactories } from './factory-lint';
 export type { Persister, PersisterTarget } from './factory-persist';
@@ -232,12 +197,11 @@ export type {
 } from './fake-identity-provider';
 export { fakeIdentityProvider } from './fake-identity-provider';
 export type { FaultMode, FaultProxy, FaultProxyCounts } from './fault-proxy';
-export { faultProxy, throughFaultProxy } from './fault-proxy';
+export { faultProxy } from './fault-proxy';
 export type { TestClock, TestDuration } from './fixture-clock';
 export { testClock } from './fixture-clock';
 export type {
   DriverFixtureName,
-  DriverFixtures,
   LiveFeed,
   LiveFeedPatch,
   LiveTarget,
@@ -246,7 +210,7 @@ export type {
   TestBudget,
   TestDeploy,
 } from './fixture-drivers';
-export { DRIVER_FIXTURE_NEEDS, driverFixtures, unavailableFixture } from './fixture-drivers';
+export { unavailableFixture } from './fixture-drivers';
 // The island fixture. `build` is a PARAMETER — `buildIslands` lives in `@ultimat3/cli`, which is
 // tier 5 like this package and whose one declared edge points the other way, so an app supplies it:
 // `mountIsland({ build: buildIslands, root, file })`.
@@ -273,7 +237,6 @@ export { testMail } from './fixture-mail';
 export type { TestNetwork } from './fixture-network';
 export { testNetwork } from './fixture-network';
 export type { TestPush, TestPushMessage } from './fixture-push';
-export { testPush } from './fixture-push';
 export type { SeededRow, SeedFixtureOptions, SeedHandle } from './fixture-seed';
 export { seedFixture } from './fixture-seed';
 export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
@@ -282,7 +245,6 @@ export type { SubscribeDriver } from './fixture-subscribe';
 export { subscribeDriver } from './fixture-subscribe';
 export { fixtureTest as test } from './fixtures';
 export {
-  ALL_FIXTURE_NAMES,
   DRIVER_FIXTURE_NAMES,
   FRAMEWORK_FIXTURE_NAMES,
   registerFrameworkFixtures,
@@ -291,10 +253,9 @@ export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 // Type-only: the micro-DOM is the fixture's to build, and a test only ever names what it handed back.
 export type { FakeElement, FakeNode, FakeText } from './island-dom';
-export type { FakeResizeObserverEntry, ResizeInput, ResizeRect } from './island-observers';
+export type { ResizeInput } from './island-observers';
 export type { IslandAddress, IslandShotTarget } from './island-shot-targets';
 export {
-  isIslandTheme,
   islandAddress,
   islandShotFile,
   islandShotPlan,
@@ -307,11 +268,7 @@ export { islandStatesFile } from './island-state-errors';
 // One declared state, mounted: `describeIslandState` owns a block's mount and teardown,
 // `mountIslandState` is the one mount a single test asks for with `using`.
 export type { IslandStateMountOptions, IslandStateSuiteOptions } from './island-state-mount';
-export {
-  describeIslandState,
-  ISLAND_MOUNT_TIMEOUT_MS,
-  mountIslandState,
-} from './island-state-mount';
+export { describeIslandState, mountIslandState } from './island-state-mount';
 export type {
   IslandRouteStub,
   IslandState,
@@ -322,45 +279,16 @@ export type {
   IslandTheme,
   IslandViewport,
 } from './island-states';
-export {
-  DEFAULT_ISLAND_THEME,
-  DEFAULT_ISLAND_VIEWPORT,
-  ISLAND_SHOT_TIME_ZONE,
-  ISLAND_STATES,
-  ISLAND_THEMES,
-  isIslandStatesManifest,
-  islandStatesName,
-} from './island-states';
+export { ISLAND_SHOT_TIME_ZONE, isIslandStatesManifest } from './island-states';
 export type { JsonFault } from './island-states-check';
-export {
-  isPinnedInstant,
-  isStateId,
-  isStubMatch,
-  isTimeZone,
-  jsonFault,
-  slugifyStateId,
-} from './island-states-check';
-export type {
-  IslandFaultKind,
-  IslandStatesFault,
-  ModuleEdge,
-} from './island-states-pure';
-export {
-  assertIslandStatesPure,
-  importSpecifiers,
-  impureSpecifier,
-  islandStatesFault,
-  islandStatesImportFault,
-  moduleEdges,
-} from './island-states-pure';
+export { isPinnedInstant, isStubMatch, isTimeZone, jsonFault } from './island-states-check';
+export { assertIslandStatesPure } from './island-states-pure';
 export {
   assertIslandFiles,
   assertUniqueIslandStates,
   findIslandStates,
   islandStatesMatching,
   islandStatesNames,
-  missingIslandFiles,
-  normalizeIslandName,
 } from './island-states-resolve';
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 export { CRASH_POINT_BOUND } from './job-crash-points';
@@ -373,15 +301,9 @@ export type {
 } from './job-crash-proof';
 export { crashProof } from './job-crash-proof';
 export type { SimEffect } from './job-sim-effects';
-export {
-  crashEffectPlace,
-  JobCrashDivergedError,
-  JobCrashUnboundedError,
-  JobSimInvariantError,
-  JobSimNondeterministicError,
-} from './job-sim-errors';
+export { crashEffectPlace, JobCrashDivergedError, JobCrashUnboundedError } from './job-sim-errors';
 export type { JobFaultKind } from './job-sim-schedule';
-export { ALL_FAULTS, JOB_FAULT_KINDS } from './job-sim-schedule';
+export { ALL_FAULTS } from './job-sim-schedule';
 export type {
   SimulatedJob,
   SimulatedRun,
@@ -402,17 +324,14 @@ export type { EnqueuedJobRef, MatcherMailRef, SentMailMatch } from './matcher-su
  * and an export nothing calls is the unwired declaration this matcher exists to have closed.
  */
 export type { VisibleOptions } from './matcher-visible';
-export type { MatcherResult } from './matchers';
-export { matchersInstalled, recordSteps } from './matchers';
+export { recordSteps } from './matchers';
 export type { MockHandler, MockRoute } from './mock-route';
 // The plan and scale sweeps (plan 101 / 40-next-query-plans): every statement the pass sent planned
 // with no index but the declared ones, every reached primitive again at 2 and 8 rows a table.
-export type { PlanTableColumns, PlanVerdict, PlanVerdictCode } from './plan-oracle';
-export { judgePlan, planRoot } from './plan-oracle';
+export type { PlanVerdictCode } from './plan-oracle';
 export type { PlanExempt, PlanProof, SentStatement } from './plan-sweep';
 export { QueryPlanUnavailableError, sweepPlans } from './plan-sweep';
 export type { PlanFinding } from './plan-sweep-fix';
-export { planFindings } from './plan-sweep-fix';
 export type { SweepFinding } from './plan-sweep-report';
 export { planSweepFindings, planSweepLines } from './plan-sweep-report';
 // `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.
@@ -421,10 +340,9 @@ export { planSweepFindings, planSweepLines } from './plan-sweep-report';
 // registry into every test in the framework. Every other package this harness touches is imported
 // dynamically inside the fixture that needs it; a helper that must stay synchronous cannot do that,
 // so it gets its own entry point instead.
-export type { RegistryLeak, RegistrySample } from './registry-leak-guard';
-export { installRegistryLeakGuard, leakBetween, sampleRegistries } from './registry-leak-guard';
+export type { RegistryLeak } from './registry-leak-guard';
+export { installRegistryLeakGuard } from './registry-leak-guard';
 export type { ProcessRegistrySnapshot } from './registry-snapshot';
-export { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
 // What the server renders, for a unit test. `@ultimat3/render` is imported inside the two
 // functions, so a tier-0 test importing this barrel for `expect` still loads no renderer.
 export type { RenderedRoute, RenderedView, RouteModule, RouteRequest } from './render-view';
@@ -433,8 +351,7 @@ export { renderRoute, renderView } from './render-view';
 export type { JobFailure, ReproduceOptions, ReproOutcome } from './repro';
 export { reproduce, reproJob } from './repro';
 export type { LoggedRequest } from './request-log';
-export type { DatabaseSnapshot } from './reusable-database';
-export { restoreDatabase, reusableDatabase, snapshotDatabase } from './reusable-database';
+export { reusableDatabase } from './reusable-database';
 export type { ScaleProof, ScaleShape, StatementTally } from './scale-sweep';
 export { judgeScale, SCALE_SIZES } from './scale-sweep';
 export type { NetworkSnapshot, NetworkState } from './sealed-network';
@@ -444,14 +361,11 @@ export type { NetworkSnapshot, NetworkState } from './sealed-network';
 export {
   allowHost,
   captureNetwork,
-  isNetworkSealed,
   MOCKED_HOST_ADDRESS,
   mockFetch,
   mockJson,
-  networkState,
   requestLog,
   resetNetwork,
-  restoreCapturedNetwork,
   sealNetwork,
   unsealNetwork,
 } from './sealed-network';
@@ -462,7 +376,7 @@ export { seedGraph } from './seed-graph';
 export type { SeedGraphUnsatisfiedInput } from './seed-graph-error';
 // A seed graph written through each entity's own repository — a pinned client (Postgres, PGlite) or
 // the app's driver (memory, `testDriver()`). Loads `@ultimat3/entity` on its first write, not here.
-export { SeedGraphEntityUnknownError, SeedGraphUnsatisfiedError } from './seed-graph-error';
+export { SeedGraphUnsatisfiedError } from './seed-graph-error';
 export type {
   SeedCanary,
   SeedFactory,
@@ -482,19 +396,9 @@ export { behavesLike, sharedExamples } from './shared-examples';
 // Test doubles: `stub(primitive)` replaces an action's, an llm()'s or a job's body, `swapAdapter`
 // an adapter port; both are put back after the test that made them (`test-scope.ts`).
 export { stub } from './stub';
-export {
-  TestAdapterPortUnswappableError,
-  TestExpectedInputInvalidError,
-  TestMailExpectedError,
-  TestRunJobsExpectedError,
-  TestScopeUninstalledError,
-  TestStubTargetUnsupportedError,
-  TestStubUnansweredError,
-} from './stub-errors';
 export type { Stub, StubCall } from './stub-script';
 export type { SubjectProofOptions, SubjectProofResult } from './subject-proof';
 export { subjectProof } from './subject-proof';
-export { SubjectEraseIncompleteError } from './subject-proof-error';
 export type { SwappableAdapters, SwappablePort } from './swap-adapter';
 export { swapAdapter, UNSWAPPED } from './swap-adapter';
 export type {
@@ -506,12 +410,9 @@ export type {
 export {
   acquireWorkerDatabase,
   cloneSql,
-  DEFAULT_TEMPLATE,
-  databaseNameFor,
   dropSql,
   lockSql,
   templateSql,
-  unlockSql,
   urlFor,
   workerId,
 } from './template-db';
@@ -519,7 +420,7 @@ export {
 // are what `x exercise` prints; `tenancy:cross` is `@ultimat3/entity`'s `CROSS_TENANT_SCOPE`.
 export type { TenantProofFinding } from './tenant-proof-report';
 export { tenantFindingLines, tenantProofFindings } from './tenant-proof-report';
-export { paced, TEST_PACE_ENV, TestPaceInvalidError, testPace } from './test-pace';
+export { paced, TEST_PACE_ENV } from './test-pace';
 // `x exercise` is a test process too: it hands itself the same key, judged by the same rule.
 export { testSealKeyEnv } from './test-seal-key';
 export type {
@@ -530,7 +431,6 @@ export type {
   EvalCase,
   EvalOptions,
   LocatorLike,
-  OpenApiLike,
   PageLike,
   TestOptions,
   TestType,

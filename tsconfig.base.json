@@ -7,6 +7,7 @@
     "types": ["bun"],
 
     "paths": {
+      "@ultimat3/admin/adapter": ["./packages/admin/src/adapter.ts"],
       "@ultimat3/admin/dev": ["./packages/admin/src/dev/index.ts"],
       "@ultimat3/admin/schema": ["./packages/admin/src/audit-schema.ts"],
       "@ultimat3/admin/error-groups": ["./packages/admin/src/error-groups.ts"],
@@ -23,6 +24,7 @@
       "@ultimat3/core/internal/error-status": ["./packages/core/src/error-status-declared.ts"],
       "@ultimat3/core/render-node": ["./packages/core/src/render-node.ts"],
       "@ultimat3/core/render-nodes": ["./packages/core/src/render-nodes.ts"],
+      "@ultimat3/db/adapter": ["./packages/db/src/adapter.ts"],
       "@ultimat3/db/diagnostics": ["./packages/db/src/diagnostics-entry.ts"],
       "@ultimat3/db/schema-dump": ["./packages/db/src/schema-dump-entry.ts"],
       "@ultimat3/entity/adapter": ["./packages/entity/src/adapter.ts"],
@@ -57,6 +59,7 @@
       "@ultimat3/realtime/sync-worker": ["./packages/realtime/src/sync-worker.ts"],
       "@ultimat3/render/adapter": ["./packages/render/src/adapter.ts"],
       "@ultimat3/render/navigation": ["./packages/render/src/navigation-entry.ts"],
+      "@ultimat3/schema/adapter": ["./packages/schema/src/adapter.ts"],
       "@ultimat3/schema/sample": ["./packages/schema/src/sample.ts"],
       "@ultimat3/scraping/adapter": ["./packages/scraping/src/adapter.ts"],
       "@ultimat3/seo/adapter": ["./packages/seo/src/adapter.ts"],

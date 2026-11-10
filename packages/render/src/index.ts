@@ -14,8 +14,8 @@
  */
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
 /** `asset('assets/x.avif')` → the content-hashed URL the site asset surface serves it at. */
-export type { AssetExtension, AssetPath, AssetResolver } from './asset';
-export { ASSET_DIR, ASSET_EXTENSIONS, asset, assetPathProblem, setAssetResolver } from './asset';
+export type { AssetExtension, AssetPath } from './asset';
+export { ASSET_DIR, asset, assetPathProblem, setAssetResolver } from './asset';
 /** The `<meta name="ultimate-path-style">` core's `actionPath` reads — a non-default style only. */
 export { clientPathStyleTags } from './client-path-style-tag';
 export { clientPinTags } from './client-pins-tag';
@@ -35,25 +35,12 @@ export { parseTtlMs } from './duration';
 export type { RenderErrorCode } from './errors';
 export {
   AssetMissingError,
-  BudgetExceededError,
   IslandInvalidError,
-  IslandNotHydratedError,
-  IslandPropsInvalidError,
   NavigationModalPathInvalidError,
-  PrerenderFailedError,
-  RENDER_ERROR_CODES,
-  RENDER_ERROR_TITLES,
   RouteDuplicateError,
-  RouteFileInvalidError,
-  RouteLoadFailedError,
-  RouteLoadInvalidError,
-  RouteMetaMissingError,
   RouteModeInvalidError,
   RouteNavigationInvalidError,
-  RouteOfflineMissingError,
   RoutePostInvalidError,
-  RouteStatusInvalidError,
-  SurfaceBoundaryError,
 } from './errors';
 export type {
   HeadRenderers,
@@ -67,7 +54,6 @@ export type {
 export {
   documentBaseline,
   headFromMeta,
-  mergeHead,
   renderHead,
   themeScript,
   themeScriptBody,
@@ -106,7 +92,6 @@ export {
   assertModeInvariants,
   assertModeShape,
   DEFAULT_ISLAND_JS_BYTES,
-  defaultHydrate,
   defaultIslandBudget,
   MODE_SPECS,
 } from './modes';
@@ -118,8 +103,8 @@ export {
 export type { NavigateToOptions } from './navigation-api';
 export { closeModal, navigate, openModal, refresh } from './navigation-api';
 /** Client-side navigation over server-rendered documents — `navigation: { client }` surfaces. */
-export type { CachedDocument, NavigationCache, NavigationCacheOptions } from './navigation-cache';
-export { cacheKey, NAVIGATION_CACHE_MAX_ENTRIES, navigationCache } from './navigation-cache';
+export type { NavigationCache, NavigationCacheOptions } from './navigation-cache';
+export { cacheKey, navigationCache } from './navigation-cache';
 export type { ModalRoutes, Presentation, PresentationFacts } from './navigation-modal-rules';
 export {
   addressOf,
@@ -155,15 +140,10 @@ export {
   NAVIGATE_EVENT,
   NAVIGATED_EVENT,
   NAVIGATING_ATTRIBUTE,
-  NAVIGATION_CACHE_TTL_MS,
   NAVIGATION_ERROR_EVENT,
-  NAVIGATION_MAX_HOPS,
   NAVIGATION_META,
   NAVIGATION_NO_PREFETCH_ATTRIBUTE,
-  NAVIGATION_NO_STORE_REUSE_MS,
   NAVIGATION_PERSIST_ATTRIBUTE,
-  NAVIGATION_PREFETCH_DELAY_MS,
-  NAVIGATION_PROGRESS_DELAY_MS,
   NAVIGATION_RELOAD_ATTRIBUTE,
   responseVerdict,
   reusable,
@@ -212,7 +192,7 @@ export type {
   RouteMetaFn,
   RouteParams,
 } from './route';
-export { DEFAULT_ISLAND_HYDRATE, defineRoute, isRouteConfig } from './route';
+export { defineRoute, isRouteConfig } from './route';
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
@@ -248,11 +228,10 @@ export type {
   SurfaceSpec,
 } from './surfaces';
 export {
-  assertSurfaceBoundary,
   checkSurfaceBoundary,
   importGraph,
   SURFACE_SPECS,
   surfaceAllows,
   surfaceOf,
 } from './surfaces';
-export { ZONE_SCRIPT_MAX_BYTES, zoneScript, zoneScriptBody } from './zone-script';
+export { zoneScript, zoneScriptBody } from './zone-script';

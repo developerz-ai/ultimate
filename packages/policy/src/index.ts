@@ -7,26 +7,15 @@ export { denialCode, denialReason } from './denial-parts';
 export type { PolicyErrorCode } from './errors';
 export {
   denialError,
-  emptyClauseList,
   POLICY_BORROWED_ERROR_CODES,
-  POLICY_ERROR_CODES,
-  POLICY_ERROR_TITLES,
   PolicyDenialError,
   PolicyError,
   permissionUnknown,
   policyForbidden,
   policyMissing,
-  roleRedefined,
 } from './errors';
 export type { EvaluateArgs, EvaluateOptions, PolicyEvaluation } from './evaluate';
-export {
-  codeOf,
-  evaluate,
-  explain,
-  reasonOf,
-  renderTrace,
-  resetPolicyTracing,
-} from './evaluate';
+export { codeOf, evaluate, explain, reasonOf } from './evaluate';
 export { actorHas, actorPermissions } from './grant-index';
 export type {
   ActorStageSubject,
@@ -38,12 +27,7 @@ export type {
   PrimitiveSurfaces,
 } from './guard-primitive';
 export { guardPrimitive, PRIMITIVE_POLICY_SURFACES } from './guard-primitive';
-export type {
-  KnownPermission,
-  Permission,
-  PermissionRegistry,
-  PermissionSet,
-} from './permissions';
+export type { KnownPermission, Permission, PermissionRegistry, PermissionSet } from './permissions';
 export {
   assertPermission,
   clearPermissions,
@@ -53,7 +37,6 @@ export {
   permissionDeclarationSites,
   resourceOf,
   restorePermissions,
-  verbOf,
 } from './permissions';
 export type {
   Policy,
@@ -88,7 +71,6 @@ export {
   restoreRoles,
   roleDeclarationSites,
   roleDefinitions,
-  roleMapGeneration,
   rolesGranting,
 } from './roles';
 export type {
@@ -100,13 +82,6 @@ export type {
   Surface,
   SurfaceDenial,
 } from './surfaces';
-export {
-  assertAllowed,
-  enforce,
-  enforceHttp,
-  enforceJob,
-  enforceLive,
-  enforceMcp,
-} from './surfaces';
+export { assertAllowed, enforce, enforceHttp } from './surfaces';
 export type { MatrixArgs, MatrixRow, NamedActor, PolicyMatrix } from './test-kit';
 export { policyMatrix, testActor } from './test-kit';

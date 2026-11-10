@@ -4,7 +4,8 @@
 
 import { expect, test } from 'bun:test';
 import { listErrorCodes } from '@ultimat3/core';
-import { COMMANDS, SPECS, VERIFY_STEP_NAMES } from './index';
+import { SPECS, VERIFY_STEP_NAMES } from './index';
+import { COMMANDS } from './registry';
 
 test('importing the barrel registers the CLI codes and hands out the registry', () => {
   const codes = new Set(listErrorCodes().map((entry) => entry.code));
@@ -18,4 +19,13 @@ test('importing the barrel registers the CLI codes and hands out the registry', 
 test('the barrel carries no `nearest` alias: the one spelling is `nearestName` from core', async () => {
   const barrel: Record<string, unknown> = await import('./index');
   expect(Object.hasOwn(barrel, 'nearest')).toBe(false);
+});
+
+// v31 (D10): the barrel is the app API. The command table and the CLI's own error classes are
+// `x`'s wiring — reachable by relative path inside the package, never through `@ultimat3/cli`.
+test('the barrel carries none of the internals v31 dropped from it', async () => {
+  const barrel: Record<string, unknown> = await import('./index');
+  for (const gone of ['COMMANDS', 'NotInAppError', 'staticFix', 'tidyTestState', 'ROBOTS_PATH']) {
+    expect([gone, Object.hasOwn(barrel, gone)]).toEqual([gone, false]);
+  }
 });

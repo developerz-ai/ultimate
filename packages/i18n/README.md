@@ -97,7 +97,7 @@ wins, which is how an app overrides `errors.notFound.title` without forking the 
 **It is registered under `en` and no other locale** — the golden rule applies to framework strings
 too. An app shipping `es` that has not translated `errors.notFound.title` renders
 `⟦errors.notFound.title⟧` there, not `Page not found`: filling every locale with the English
-catalog is a fallback chain, it reads as `isMiss === false`, and `assertCatalogsComplete` cannot
+catalog is a fallback chain, it reads as `isMiss === false`, and `auditCatalogs()` cannot
 see it because `CatalogSet.catalogs` carries app strings only. Translate the framework keys your
 app renders into your own catalog — that is the one path, and it is the same merge an override is.
 
@@ -124,7 +124,7 @@ installs no framework catalog (the barrel does), so an island chunk can import i
 
 The one reader the CLI (`loadApp`'s `locales`, the pwa manifest and service worker, the static export, `x shot`, `x g`, `x i18n`) and `@ultimat3/testing`'s e2e preload share. `@ultimat3/testing` asks `loadAppCatalogs` deliberately: an app that declared nothing pins no browser language rather than a guessed one.
 
-`DEFAULT_LOCALE`, `directionOf` and `isRtl` are `@ultimat3/core`'s since 25.0.0 — import them from there. The barrel still re-exports the three until `@ultimat3/mail` and `@ultimat3/ui` move (marked `PENDING` in `src/index.ts`); `Direction` stays a type re-export, because `LocaleResolution.direction` names it.
+`DEFAULT_LOCALE`, `directionOf` and `isRtl` are `@ultimat3/core`'s since 25.0.0 — import them from there. `Direction` stays a type re-export, because `currentDirection()` returns it.
 
 ## Enforcement
 
@@ -136,8 +136,8 @@ and `t()` share.
 `properties` (`{ name, whenFileContains? }`: a literal value is a usage, anything else `dynamic`)
 the caller declares; this package names no API but its own. `auditCatalogs()` reports keys used,
 keys missing per locale (`reference` makes each key that locale defines owed by the rest, by
-plural stem, in `required`), and keys defined but never used; `assertCatalogsComplete()` is
-the `x verify` gate.
+plural stem, in `required`), and keys defined but never used — `x i18n check` and the `x verify`
+gate read that report.
 
 ```
 X_CATALOG_MISSING_KEYS: catalog is incomplete
@@ -150,7 +150,7 @@ X_CATALOG_MISSING_KEYS: catalog is incomplete
 | Code | When |
 |---|---|
 | `X_LOCALE_UNSUPPORTED` | a tag outside the supported set was asserted, or a `defineCatalogs` default that is not one of its locales |
-| `X_LOCALE_INVALID` | `defineCatalogs` or `configureLocales` was given a tag that is not well-formed BCP 47 (`en_US`). **`@ultimat3/core`'s code**, raised by its `assertLocale` — not an `I18nError` and not in `I18N_ERROR_CODES` |
+| `X_LOCALE_INVALID` | `defineCatalogs` or `configureLocales` was given a tag that is not well-formed BCP 47 (`en_US`). **`@ultimat3/core`'s code**, raised by its `assertLocale` — not this package's `I18nError` |
 | `X_CATALOG_MISSING_KEYS` | a shipped locale lacks a key the source uses |
 | `X_CATALOG_INVALID` | non-string leaf, bad key segment, or a dotted/nested collision |
 

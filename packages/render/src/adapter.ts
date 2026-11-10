@@ -3,6 +3,7 @@
 // where it builds the ISR controller (`@ultimat3/cli`'s `serve-web.ts`); `memoryIsrStore` and
 // `storageIsrStore` stay on `./server`. Types only, so this subpath costs no bundle a byte.
 
+export type { AssetResolver } from './asset';
 export type {
   IsrAnswer,
   IsrEntry,

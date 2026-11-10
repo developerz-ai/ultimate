@@ -169,7 +169,6 @@ closed (`TierLabel`) so the panel can group by it. `'query-read'` is in that uni
 ```ts
 tag.post          // the collection — busts lists
 tag('post', id)   // one row — also busts the lists that contained it
-tagsFor(Post, row) // both, for a repo write
 ```
 
 Wire form is `post` / `post:<id>`, identical in Redis keys, CDN surrogate keys and
@@ -511,12 +510,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `CacheDriverUnavailableError` | `X_CACHE_DRIVER_UNAVAILABLE` | `src/errors.ts` |
-| `CacheJitterInvalidError` | `X_CACHE_JITTER_INVALID` | `src/errors.ts` |
-| `CacheLimitInvalidError` | `X_CACHE_LIMIT_INVALID` | `src/errors.ts` |
 | `CachePurgeFailedError` | `X_CACHE_PURGE_FAILED` | `src/errors.ts` |
-| `CacheTagUnknownError` | `X_CACHE_TAG_UNKNOWN` | `src/errors.ts` |
 | `CacheTooLargeError` | `X_CACHE_TOO_LARGE` | `src/errors.ts` |
-| `CacheTtlInvalidError` | `X_CACHE_TTL_INVALID` | `src/errors.ts` |
 | `CacheValueUnencodableError` | `X_CACHE_VALUE_UNENCODABLE` | `src/errors.ts` |
 
 ## Writing a tier or a purge driver: `@ultimat3/cache/adapter`
@@ -533,5 +528,4 @@ conformance suites are `@ultimat3/testing/conformance`'s `cacheTierConformance` 
 ## Boundary
 
 Tier 1. Imports `@ultimat3/core` and `@ultimat3/schema` only. Knows nothing about
-entities, HTTP or jobs — `tagsFor()` takes structural `{ name }` / `{ id }` arguments so
-`@ultimat3/entity` can depend on cache and never the reverse.
+entities, HTTP or jobs, so `@ultimat3/entity` can depend on cache and never the reverse.

@@ -41,6 +41,25 @@ test('the driver errors a custom driver throws come with the port', () => {
   }
 });
 
+test('the driver-level fire lives on ./adapter, never on `.` (v31 D10)', () => {
+  for (const name of ['fireThroughDriver', 'JobNotRequeueableError']) {
+    expect(Object.keys(subpath)).toContain(name);
+    expect(Object.keys(barrel)).not.toContain(name);
+  }
+});
+
+// An export sink is no port (no `runtime.ts` field hands one over), so the in-memory one an app's
+// test passes to `exportRows()` stays on `.` — and only there: one import path per name.
+test('memoryExportSink is on `.` alone', () => {
+  expect(Object.keys(barrel)).toContain('memoryExportSink');
+  expect(Object.keys(subpath)).not.toContain('memoryExportSink');
+});
+
+test('the `.` barrel carries no internal error class or tuning constant (v31 D10)', () => {
+  const internal = ['WebhookDeliveryFailedError', 'LockLostError', 'MAX_WORKER_IN_FLIGHT'];
+  for (const name of internal) expect(Object.keys(barrel)).not.toContain(name);
+});
+
 test('installJobDriver is what jobDriver() answers, until the reset', () => {
   const driver = memoryJobDriver();
   installJobDriver(driver);

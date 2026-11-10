@@ -1,34 +1,46 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  describeValue,
-  discriminatedUnionSchema,
-  expected,
-  nullableSchema,
-  optionalSchema,
-  refineSchema,
-  t,
-} from './index';
+import * as adapter from './adapter';
+import * as barrel from './index';
+import { describeValue, expected, t } from './index';
+import { nullableSchema } from './validators';
 
 describe('@ultimat3/schema public surface', () => {
-  test('the composers ship as free functions as well as namespace members', () => {
-    // Same rule as `nullableSchema`: a call site holding a schema should not have to reach for
-    // the namespace, and a namespace member with no free function is half an export.
-    expect(typeof refineSchema).toBe('function');
-    expect(typeof discriminatedUnionSchema).toBe('function');
+  test('the composers ship once, as `t` members, never as free functions on `.`', () => {
+    // v31 (D10): one way to compose — `t.refine`, `t.nullable`, … A free twin on the barrel was
+    // a second path an agent had to choose between.
+    const surface: Record<string, unknown> = barrel;
+    for (const name of [
+      'arraySchema',
+      'discriminatedUnionSchema',
+      'enumSchema',
+      'nullableSchema',
+      'optionalSchema',
+      'refineSchema',
+      'unionSchema',
+      'builtinT',
+    ]) {
+      expect(surface[name]).toBeUndefined();
+    }
     expect(typeof t.refine).toBe('function');
     expect(typeof t.discriminatedUnion).toBe('function');
+    expect(typeof t.nullable).toBe('function');
+    expect(typeof t.optional).toBe('function');
+  });
+
+  test('the provider accessors live on `./adapter`, not on `.`', () => {
+    const surface: Record<string, unknown> = barrel;
+    for (const name of ['builtinProvider', 'resetSchemaProvider', 'schemaProvider']) {
+      expect(surface[name]).toBeUndefined();
+    }
+    expect(typeof adapter.schemaProvider).toBe('function');
+    expect(typeof adapter.resetSchemaProvider).toBe('function');
+    expect(adapter.builtinProvider.vendor).toBe('ultimate');
+    expect(typeof barrel.configureSchemaProvider).toBe('function');
   });
 
   test('the value renderer is exported and shape-only at the package boundary too', () => {
     expect(describeValue('hunter2')).toBe('a string of 7 characters');
     expect(expected('a uuid', 'hunter2')).not.toContain('hunter2');
-  });
-
-  test('exports `nullableSchema` alongside `optionalSchema`', () => {
-    // `t.nullable` and `t.optional` are twins in the namespace; the free functions the
-    // generators reach for must stay twins in the export list too.
-    expect(typeof nullableSchema).toBe('function');
-    expect(typeof optionalSchema).toBe('function');
   });
 
   test('`nullableSchema` admits null and still validates the inner schema', () => {

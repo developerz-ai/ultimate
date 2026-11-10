@@ -144,7 +144,7 @@ never run `x manifest`. Enforced, not documented: both codes below can actually 
 
 ## Local docs: read, never emitted
 
-`scanPackageDocs()` / `scanInstalledDocs()` read an installed package tree and return `DocEntry`
+`scanInstalledDocs()` reads an installed package tree and returns `DocEntry`
 values; `searchDocs()` ranks them against a question. This is what `x docs "how does job() retry"`
 answers from — offline, from `node_modules`, with no filename known in advance.
 
@@ -194,11 +194,8 @@ never writes, and it never synthesises a sentence.
 ### Error classes
 
 Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
-a job boundary the class is gone and the `code` is what survives — match on that.
+a job boundary the class is gone and the `code` is what survives — match on that. Every other refusal (as of 31.0.0) has no exported class: match its `code`.
 
 | Class | Code | Declared in |
 |---|---|---|
-| `AgentsMdMissingError` | `X_AGENTS_MD_MISSING` | `src/errors.ts` |
-| `AgentsMdTooLargeError` | `X_AGENTS_MD_TOO_LARGE` | `src/errors.ts` |
-| `ManifestBreakingError` | `X_MANIFEST_BREAKING` | `src/errors.ts` |
-| `ManifestDriftError` | `X_MANIFEST_DRIFT` | `src/errors.ts` |
+| `ManifestFactInvalidError` | `X_MANIFEST_FACT_INVALID` | `src/errors.ts` |

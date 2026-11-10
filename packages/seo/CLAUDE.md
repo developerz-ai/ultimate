@@ -152,9 +152,10 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   `meta-social.test.ts`.
 - Only `site/` routes are SEO-checked — `app/` is behind auth and crawlers never authenticate.
 
-- **`./adapter` (`adapter.ts`) is the `images` port's TYPES** (`ImageTransformDriver`,
-  `TransformRequest`, `TransformedImage`); no installer — `@ultimat3/cli` reads `runtime.ts`'s
-  `images` where it mounts `/media/*`. Every name stays on `.` too.
+- **`./adapter` (`adapter.ts`) is the `images` port** (`ImageTransformDriver`, `TransformRequest`,
+  `TransformedImage`, `BuiltinImageDriverOptions`) plus `notImplementedDriver`, the stub a driver
+  throws, which is on `./adapter` ONLY (v31); no installer — `@ultimat3/cli` reads `runtime.ts`'s
+  `images` where it mounts `/media/*`. The types stay on `.` too.
 
 ## Files
 

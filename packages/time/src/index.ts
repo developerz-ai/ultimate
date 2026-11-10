@@ -10,7 +10,6 @@ export {
   type IsoWeekday,
   isBusinessDay,
   isHoliday,
-  isWeekend,
   nextBusinessDay,
   WEEKEND_FRI_SAT,
   WEEKEND_SAT_SUN,
@@ -33,7 +32,6 @@ export {
   type CronExpression,
   type CronPhrases,
   describeCron,
-  firedSince,
   isValidCron,
   matchesCron,
   nextCronOccurrence,
@@ -53,20 +51,11 @@ export {
   SECOND,
   toMs,
   toSeconds,
-  WEEK,
 } from './duration';
 export {
-  cronInvalid,
-  cronNotDescribable,
-  dstAmbiguous,
-  dstNonexistent,
-  durationInvalid,
-  instantInvalid,
   TIME_ERROR_CODES,
-  TIME_ERROR_TITLES,
   TimeError,
   type TimeErrorCode,
-  timezoneInvalid,
 } from './errors';
 export {
   type DateTimeStyle,
@@ -75,7 +64,6 @@ export {
   type FormatRelativeOptions,
   formatDate,
   formatDateTime,
-  formatIsoDate,
   formatRange,
   formatRelative,
   formatTime,
@@ -84,22 +72,15 @@ export {
 } from './format';
 export {
   addMs,
-  compareInstants,
   differenceMs,
   epoch,
   fromEpochMs,
-  fromEpochSeconds,
   fromIso,
   type Instant,
   instant,
-  isAfter,
-  isBefore,
-  isInstant,
   now,
-  subtractMs,
   toEpochMs,
   toIso,
-  toIsoDateUtc,
 } from './instant';
 export { addMonthsInZone, addPlainMonths } from './months';
 export {
@@ -125,9 +106,6 @@ export {
 export {
   type LocalSlot,
   nextLocalSlot,
-  nextLocalSlots,
-  nextWeeklySlot,
-  type WeeklySlot,
 } from './schedule';
 /**
  * `canonicalTimeZone` is public because a zone arriving from a request header has to become one
@@ -158,7 +136,6 @@ export {
   isValidTimeZone,
   observesDst,
   offsetAt,
-  offsetLabel,
   type TimeZone,
   UTC,
   type ZoneParts,

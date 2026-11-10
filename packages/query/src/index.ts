@@ -35,7 +35,6 @@ export { t } from '@ultimat3/schema';
  * The two refusals `query({ audit: true })` adds. The record and the sink are `@ultimat3/core`'s
  * (`runtime.ts`'s `auditSink`) — one sink for every audited primitive, so this package re-exports neither.
  */
-export { QueryAuditSinkFailedError, QueryAuditSinkMissingError } from './audit-errors';
 export type { QueryCacheScope } from './cache';
 /** `readAuthority` is the ONLY producer of `cacheKeyFor`'s authority — never spell one by hand. */
 export {
@@ -50,16 +49,14 @@ export type {
   DownloadUrl,
   FetchLike,
   QueryCallOptions,
-  QueryClient,
   QueryClientMethod,
   QueryClientMethodOf,
-  QueryClientOptions,
   QueryLike,
   QueryMap,
   QuerySingleClientMethod,
 } from './client';
 /** `queryClient` is the map-wide read client; `queryClientMethodFor` is what `.client()` binds. */
-export { downloadClientFor, queryClient, queryClientMethodFor } from './client';
+export { queryClient, queryClientMethodFor } from './client';
 /**
  * `isNull` is the one definition of SQL NULL a custom `SqlSource` has to agree with, and
  * `totalOrder` is the one definition of the order it must serve a page in. `compareRows`,
@@ -84,34 +81,11 @@ export type {
   QueryDownload,
 } from './download';
 export {
-  DEFAULT_DOWNLOAD_TTL_MS,
-  MAX_DOWNLOAD_TTL_MS,
-  MIN_DOWNLOAD_TTL_MS,
-} from './download';
-export type { DownloadTokenProblem } from './download-errors';
-export {
-  QueryDownloadInvalidError,
-  QueryDownloadOnlyError,
-  QueryDownloadTokenExpiredError,
-  QueryDownloadTokenInvalidError,
-} from './download-errors';
-export {
-  CursorValueUnsupportedError,
-  MatcherUnsupportedError,
   QueryColumnUnselectedError,
   QueryDeniedError,
-  QueryDeprecationInvalidError,
-  QueryDuplicateError,
-  QueryForeignError,
   QueryInputInvalidError,
-  QueryInputUnencodableError,
-  QueryNotPageableError,
-  QueryPolicyMissingError,
   QueryRowNotFoundError,
   QuerySingleInvalidError,
-  QuerySubscribesDriftError,
-  QuerySubscribesInvalidError,
-  QueryUnregisteredError,
 } from './errors';
 export type {
   QueryExerciseActorOptions,
@@ -146,7 +120,7 @@ export { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
  * `MAX_WIRE_PAGE_SIZE`, or the read's declared `maxPage`.
  */
 export type { PageControls } from './page-controls';
-export { MAX_WIRE_PAGE_SIZE, QueryMaxPageInvalidError } from './page-controls';
+export { MAX_WIRE_PAGE_SIZE } from './page-controls';
 /**
  * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
  * deliberately unexported: a page is the read's own answer, and a second, importable way to ask
@@ -168,7 +142,6 @@ export type {
   QueryCache,
   QueryDef,
   QueryDescriptor,
-  QueryFacade,
   QueryOptions,
   QueryRateLimit,
   SourceOptions,

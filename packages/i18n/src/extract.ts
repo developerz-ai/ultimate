@@ -6,7 +6,6 @@
 
 import { stripComments } from '@ultimat3/core';
 import { type Catalog, catalogKeys } from './catalog';
-import { catalogMissingKeys, familyIncomplete } from './errors';
 import { PLURAL_CATEGORIES } from './interpolate';
 import type { Locale } from './locales';
 
@@ -183,14 +182,6 @@ export function auditCatalogs(input: AuditInput): ExtractReport {
     locales,
     ok: locales.every((audit) => audit.missing.length === 0 && audit.incomplete.length === 0),
   };
-}
-
-/** The `x verify` gate. Throws on the first locale with a gap, naming file and keys. */
-export function assertCatalogsComplete(report: ExtractReport): void {
-  for (const audit of report.locales) {
-    if (audit.missing.length > 0) throw catalogMissingKeys(audit.locale, audit.missing);
-    if (audit.incomplete.length > 0) throw familyIncomplete(audit.locale, audit.incomplete);
-  }
 }
 
 /** Merge per-file extractions before auditing. */

@@ -14,7 +14,6 @@ export type {
   ScrapeAuth,
 } from './auth';
 export { burnSession, ensureAuthenticated, restorableSession, scrapePrompt } from './auth';
-export { browserRecord } from './browser-record';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
 export type {
@@ -26,84 +25,46 @@ export type {
   CdpLauncherLike,
   CdpPageLike,
   CdpPdfOptions,
-  CdpRequestLike,
   CdpScreenshotOptions,
   CdpSessionLike,
 } from './cdp-port';
 export type { CdpResolution, CdpResolver, CdpResolverRequest } from './cdp-resolver';
 export { snapshotExpression } from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';
-export { CDP_DRIVER, cdpTarget } from './cdp-target';
+export { cdpTarget } from './cdp-target';
 export type { Deadline } from './clock';
 export { deadline } from './clock';
 export type { ColorScheme } from './color-scheme';
-export { COLOR_SCHEMES, isColorScheme } from './color-scheme';
 export { cookieHeaderFor } from './cookie-scope';
 export type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
 export { scrapeDriver } from './driver';
 export type { BrowserOptions, LocalBrowserOptions, RemoteBrowserOptions } from './driver-cdp';
 export { localBrowser, remoteBrowser } from './driver-cdp';
 export type { FakeBrowserOptions, FakePageOptions, FakePages } from './driver-fake';
-export { FAKE_DRIVER, FAKE_PAGE_URL, fakeBrowser, fakePage, recordingsOf } from './driver-fake';
+export { fakeBrowser, fakePage } from './driver-fake';
 export type { FixtureBrowserOptions } from './driver-recorded';
-export { FIXTURE_DRIVER, fixtureBrowser } from './driver-recorded';
+export { fixtureBrowser } from './driver-recorded';
 export {
-  authFailed,
   blocked,
-  bodyTooLarge,
   browserUnreachable,
-  cdpAttachFailed,
-  cdpResolveFailed,
-  downloadTimeout,
   driverUnknown,
-  fixtureMissing,
-  fixtureStale,
-  hostBlocked,
   httpFailed,
-  keyInvalid,
-  notActionable,
-  outputInvalid,
-  pageCrashed,
-  profileLocked,
   promptUnanswered,
-  recoverRefused,
-  redirectLoop,
   remoteRequired,
-  robotsDisallowed,
   scrapeSessionExpired,
-  scrapeTimeout,
-  secretExposed,
-  selectorMissing,
   wedged,
-  yieldCollapsed,
 } from './error-throws';
+export type { ScrapeErrorCode, ScrapeErrorInit } from './errors';
 export {
-  egressInPayload,
-  egressUnsupported,
-  promptAnswerInvalid,
-  promptTimedOut,
-} from './error-throws-session';
-export type { ScrapeErrorCode, ScrapeErrorInit, ScrapeOwnedErrorCode } from './errors';
-export {
-  isRetryableScrapeError,
   isScrapeError,
-  SCRAPE_BORROWED_ERROR_CODES,
   SCRAPE_ERROR_CODES,
   SCRAPE_ERROR_RETRY,
-  SCRAPE_ERROR_TITLES,
   SCRAPE_OWNED_ERROR_CODES,
   ScrapeError,
 } from './errors';
 export type { AnswerPromptInput, EventPromptOptions } from './event-prompt';
-export {
-  answerPrompt,
-  DEFAULT_PROMPT_ANSWER_TTL_MS,
-  DEFAULT_PROMPT_POLL_MS,
-  eventPrompt,
-  promptEventName,
-} from './event-prompt';
-export type { ScrapeEventFields, StepEvent } from './events';
-export type { YieldCheck, YieldExpectation, YieldGuardInput, YieldHistory } from './expect';
+export { answerPrompt, eventPrompt, promptEventName } from './event-prompt';
+export type { YieldExpectation, YieldGuardInput, YieldHistory } from './expect';
 export {
   guardYield,
   MIN_BASELINE_RUNS,
@@ -112,21 +73,14 @@ export {
 } from './expect';
 export { BURNS_SESSION, errorCode, NEVER_RETRIED } from './failures';
 export { queryHtml } from './html-query';
-export type { MarkupRequest } from './html-requests';
-export type { HtmlTargetInit, RecordingLookup } from './html-target';
-export { htmlTarget } from './html-target';
 export type { HttpRequestInit, HttpTransportInit, ScrapeHttp, ScrapeResponse } from './http';
 export { DEFAULT_HTTP_MAX_BYTES, httpOverFetch, responseOver } from './http';
 export type { HttpRecordingLookup, RecordedHttpInit } from './http-recorded';
-export { httpRecordingsOf, recordedHttp } from './http-recorded';
-export type { RedirectHop } from './http-redirect';
 export { MAX_REDIRECT_HOPS } from './http-redirect';
 export type { InterceptRules, InterceptVerdict } from './intercept';
 export { interceptVerdict } from './intercept';
 export type { KeyChord, KeyModifier } from './key-chord';
 export { KEY_MODIFIERS, parseKeyChord } from './key-chord';
-export type { OfflineSessionInit } from './offline-session';
-export { openOfflineSession } from './offline-session';
 export type {
   AccessibilityOptions,
   CaptureRequest,
@@ -139,27 +93,20 @@ export type {
 export type { PageContext } from './page-over-target';
 export { pageOverTarget } from './page-over-target';
 export type { PdfActionArgs, PdfActionOptions, PdfActionOutput } from './pdf-action';
-export { PDF_CONTENT_TYPE, pdf } from './pdf-action';
+export { pdf } from './pdf-action';
 export type {
   ChromePdfRendererOptions,
   PdfBrowser,
   PdfRenderer,
   PdfRenderRequest,
 } from './pdf-render';
-export { chromePdfRenderer, DEFAULT_PDF_TIMEOUT_MS } from './pdf-render';
+export { chromePdfRenderer } from './pdf-render';
 export type { PdfFormat, PdfLayout, PdfMarginMm, PdfRequest } from './pdf-request';
 export { PDF_FORMATS } from './pdf-request';
 export type { Pacer } from './rate';
 export { scrapePacer } from './rate';
 export type { HttpRecording, PageRecording } from './recording';
-export {
-  httpRecordingSchema,
-  pageRecordingSchema,
-  parseHttpRecording,
-  parseRecording,
-} from './recording';
 export type { RecoveryAttempt, RecoveryHook } from './recover';
-export { runRecovery } from './recover';
 export type {
   ConsoleLine,
   ConsoleRing,
@@ -182,10 +129,9 @@ export type {
   RobotsGate,
   RobotsGateInit,
   RobotsPolicy,
-  RobotsRules,
   RobotsUnreachable,
 } from './robots';
-export { parseRobots, robotsAllows, robotsGate } from './robots';
+export { robotsGate } from './robots';
 export type { RobotsFetchInit } from './robots-fetch';
 export {
   DEFAULT_ROBOTS_MAX_BYTES,
@@ -221,7 +167,6 @@ export {
   memorySessionStore,
   parseSessionState,
   recordVersion,
-  SESSION_SEAL_PURPOSE,
   sessionDigest,
   sessionKeyFor,
   storageSessionStore,
@@ -239,8 +184,8 @@ export type {
   ScrapeDownloadFile,
   ScrapeTarget,
 } from './target';
-export { endpointLabel, urlSecretValues } from './url-secrets';
+export { urlSecretValues } from './url-secrets';
 export type { RunUsageMeter, ScrapeUsage, UsageMeter } from './usage';
 export { usageMeter } from './usage';
-export type { WedgeGuard, WedgeGuardInit } from './watchdog';
+export type { WedgeGuard } from './watchdog';
 export { DEFAULT_GRACE_MS } from './watchdog';

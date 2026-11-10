@@ -161,7 +161,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `MoneyError` | any `MoneyErrorCode` — `MONEY_ERROR_CODES` | `src/errors.ts` |
+| `MoneyError` | any `MoneyErrorCode` — the codes in the table above | `src/errors.ts` |
 
 ## Why it exists
 

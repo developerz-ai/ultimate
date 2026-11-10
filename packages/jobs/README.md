@@ -1804,59 +1804,27 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 ### Error classes
 
 Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
-a job boundary the class is gone and the `code` is what survives — match on that.
+a job boundary the class is gone and the `code` is what survives — match on that. Every other refusal (as of 31.0.0) has no exported class: match its `code`. (`./adapter`) marks the ones a driver author throws, exported from `@ultimat3/jobs/adapter` only.
 
 | Class | Code | Declared in |
 |---|---|---|
-| `ActionJobUnbridgedError` | `X_ACTION_JOB_UNBRIDGED` | `src/errors.ts` |
-| `BackfillAppliedError` | `X_BACKFILL_APPLIED` | `src/backfill-errors.ts` |
-| `BackfillEnvironmentError` | `X_BACKFILL_ENVIRONMENT` | `src/backfill-errors.ts` |
-| `BackfillMigrationPendingError` | `X_BACKFILL_MIGRATION_PENDING` | `src/backfill-errors.ts` |
 | `BackfillPendingError` | `X_BACKFILL_PENDING` | `src/backfill-errors.ts` |
 | `BackfillRunningError` | `X_BACKFILL_RUNNING` | `src/backfill-errors.ts` |
-| `BackfillStalledError` | `X_BACKFILL_STALLED` | `src/backfill-errors.ts` |
 | `BackfillUnknownError` | `X_BACKFILL_UNKNOWN` | `src/backfill-errors.ts` |
-| `CancelUnsupportedError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
-| `ClaimQueuesEmptyError` | `X_JOB_CLAIM_QUEUES_EMPTY` | `src/errors.ts` |
+| `ClaimQueuesEmptyError` (`./adapter`) | `X_JOB_CLAIM_QUEUES_EMPTY` | `src/errors.ts` |
 | `ConcurrencyUnenforceableError` | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `src/errors-concurrency.ts` |
 | `DriverUnavailableError` | `X_DRIVER_UNAVAILABLE` | `src/errors.ts` |
-| `ExportPartTooLargeError` | `X_EXPORT_PART_TOO_LARGE` | `src/export-errors.ts` |
-| `ExportRowInvalidError` | `X_EXPORT_ROW_INVALID` | `src/export-errors.ts` |
-| `IdempotencyRequiredError` | `X_IDEMPOTENCY_REQUIRED` | `src/errors.ts` |
 | `JobAbortedError` | `X_ABORTED` | `src/errors.ts` |
-| `JobConcurrencyInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-concurrency.ts` |
-| `JobConcurrencyKeyInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-concurrency.ts` |
-| `JobDeclarationInvalidError` | `X_JOB_DECLARATION_INVALID` | `src/errors-declaration.ts` |
 | `JobDrainedError` | `X_DRAINING` | `src/errors.ts` |
 | `JobDuplicateError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
 | `JobKeyBusyError` | `X_JOB_KEY_BUSY` | `src/errors-concurrency.ts` |
-| `JobMaxAttemptsError` | `X_JOB_MAX_ATTEMPTS` | `src/errors.ts` |
-| `JobNameTakenError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
 | `JobNotCancellableError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
 | `JobNotFoundError` | `X_JOB_NOT_FOUND` | `src/errors-requeue.ts` |
-| `JobNotPromotableError` | `X_JOB_NOT_PROMOTABLE` | `src/errors-operator.ts` |
-| `JobNotRemovableError` | `X_JOB_NOT_REMOVABLE` | `src/errors-operator.ts` |
-| `JobNotRequeueableError` | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |
-| `JobOnSettledFailedError` | `X_JOB_ON_SETTLED_FAILED` | `src/errors-operator.ts` |
-| `JobPageInvalidError` | `X_JOB_PAGE_INVALID` | `src/errors-operator.ts` |
-| `JobRowStatusUnknownError` | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
-| `JobSlotLostError` | `X_JOB_SLOT_LOST` | `src/errors.ts` |
-| `JobTenantRequiredError` | `X_JOB_TENANT_REQUIRED` | `src/errors.ts` |
-| `JobEventInvalidError` | `X_JOB_EVENT_INVALID` | `src/errors-steps.ts` |
+| `JobNotRequeueableError` (`./adapter`) | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |
+| `JobRowStatusUnknownError` (`./adapter`) | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
 | `JobTenantMismatchError` | `X_JOB_TENANT_MISMATCH` | `src/errors-tenant.ts` |
 | `JobTimeoutError` | `X_JOB_TIMEOUT` | `src/errors.ts` |
 | `LeaseLostError` | `X_JOB_LEASE_LOST` | `src/errors.ts` |
-| `OutboxNoTxError` | `X_OUTBOX_NO_TX` | `src/errors.ts` |
-| `StepDuplicateError` | `X_STEP_DUPLICATE` | `src/errors.ts` |
-| `StepOutputUnserializableError` | `X_STEP_OUTPUT_UNSERIALIZABLE` | `src/errors-steps.ts` |
-| `WebhookDeliveryFailedError` | `X_WEBHOOK_DELIVERY_FAILED` | `src/webhook-errors.ts` |
-| `WebhookDeliveryRejectedError` | `X_WEBHOOK_DELIVERY_REJECTED` | `src/webhook-errors.ts` |
-| `WebhookDeliveryThrottledError` | `X_WEBHOOK_DELIVERY_THROTTLED` | `src/webhook-errors.ts` |
-| `WebhookEndpointDisabledError` | `X_WEBHOOK_ENDPOINT_DISABLED` | `src/webhook-errors.ts` |
-| `WebhookEndpointInvalidError` | `X_WEBHOOK_ENDPOINT_INVALID` | `src/webhook-errors.ts` |
-| `WebhookEndpointUnknownError` | `X_WEBHOOK_ENDPOINT_UNKNOWN` | `src/webhook-errors.ts` |
-| `WebhookEventInvalidError` | `X_WEBHOOK_EVENT_INVALID` | `src/webhook-errors.ts` |
-| `WebhookEventUnknownError` | `X_WEBHOOK_EVENT_UNKNOWN` | `src/webhook-errors.ts` |
 
 ## Boundary
 

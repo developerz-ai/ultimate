@@ -44,7 +44,6 @@ export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export { kindOf } from './cursor';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
-export type { DescribeInput } from './describe';
 export type { TenantColumnDescription } from './describe-tenancy';
 export { describeTenancy } from './describe-tenancy';
 export type { Entity, EntityCore, EntityInit } from './entity';
@@ -55,41 +54,24 @@ export { entity, SOFT_DELETE_COLUMN } from './entity';
 export type {
   EntityErrorCode,
   PreloadCandidate,
-  QueryLoopBatch,
-  WriteLoopBatch,
 } from './errors';
 // Every error factory this package owns, its three tenancy siblings included: `Driver` is public,
 // so a third-party driver has to be able to raise the same refusals the two shipped ones do.
 export {
-  crossTenantDenied,
   ENTITY_ERROR_CODES,
   ENTITY_ERROR_TITLES,
   EntityError,
   entityDuplicate,
   invariantViolated,
   notFound,
-  nPlusOneQuery,
-  nPlusOneWrite,
   patchEmpty,
   preloadUnknownRelation,
-  repoClientPinned,
-  tenancyActorMismatch,
   tenancyActorOrgRequired,
   tenancyRowMismatch,
-  tenancyUnscoped,
-  writeUnfiltered,
 } from './errors';
 export type { ColumnExpr, Expr, InvariantColumns, Resolve } from './expr';
 export { iff } from './expr';
 /** The two DECLARED capabilities' refusals — a third-party driver raises the same ones. */
-export type { IllegalTransition } from './feature-errors';
-export {
-  searchInMemory,
-  searchUndeclared,
-  stateConflict,
-  stateTransitionIllegal,
-  stateUndeclared,
-} from './feature-errors';
 export type { HistoryColumns, HistoryEntity, HistoryInit } from './history';
 export type { IndexInit } from './index-init';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
@@ -109,14 +91,12 @@ export type {
   PartitionDescription,
   PartitionInit,
 } from './partition';
-export { DEFAULT_PARTITIONS_AHEAD, partitionInvalid, partitionOf } from './partition';
+export { partitionOf } from './partition';
 export { persistedRecordTypes } from './persisted-types';
 // GDPR: the personal-data column marker and its readers (`personal-data.ts`).
 export type { PersonalDataColumn, PersonalDataEntity, PersonalDataKind } from './personal-data';
 export {
-  PERSONAL_DATA_KINDS,
   personalDataEntities,
-  personalDataKindOf,
   personalDataOf,
 } from './personal-data';
 // For a change feed holding a table name and raw columns: `entityForTable` + `decodeRow` is the row
@@ -192,11 +172,6 @@ export { sealedRepo } from './sealed-repo';
 // `SEARCH_PROPERTY` is what a `matches` predicate names, which a hand-built `QueryPlan` needs.
 export type { SearchInit, SearchLanguage, SearchSource, SearchVector } from './search';
 export {
-  DEFAULT_SEARCH_COLUMN,
-  DEFAULT_SEARCH_LANGUAGE,
-  DEFAULT_SEARCH_WEIGHT,
-  isSearchLanguage,
-  isSearchWeight,
   SEARCH_LANGUAGES,
   SEARCH_WEIGHTS,
 } from './search';
@@ -212,7 +187,7 @@ export type {
   SearchQuery,
   SearchScope,
 } from './search-index';
-export { DEFAULT_SEARCH_LIMIT, searchDocumentOf } from './search-index';
+export { searchDocumentOf } from './search-index';
 export { searchIndex } from './search-index-installed';
 export { memorySearchIndex } from './search-index-memory';
 export type { PostgresSearchIndexOptions } from './search-index-postgres';
@@ -237,7 +212,6 @@ export {
   canMove,
   isState,
   isTerminal,
-  movesFrom,
   stateMachineOf,
 } from './state-machine';
 export type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';

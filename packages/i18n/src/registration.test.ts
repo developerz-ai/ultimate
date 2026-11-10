@@ -7,8 +7,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { flattenCatalog } from './catalog';
 import { registerCatalog, resetCatalogs, resetLocaleConfig } from './context';
 import { defineCatalogs } from './define-catalogs';
-import { I18nError } from './errors';
-import { assertCatalogsRegistered, catalogRegistrationGaps } from './registration';
+import { catalogUnregistered, I18nError } from './errors';
+import { catalogRegistrationGaps } from './registration';
 
 const shipped = {
   en: flattenCatalog({ app: { play: { title: 'Play' } }, site: { home: { title: 'Home' } } }),
@@ -59,17 +59,14 @@ describe('catalogRegistrationGaps', () => {
   });
 });
 
-describe('assertCatalogsRegistered', () => {
-  test('throws X_CATALOG_UNREGISTERED naming the locale, the count and the first keys', () => {
-    let thrown: unknown;
-    try {
-      assertCatalogsRegistered(shipped);
-    } catch (error) {
-      thrown = error;
-    }
+// The gate (cli `i18n-registration.ts`) raises `catalogUnregistered` from the first gap.
+describe('catalogUnregistered over a gap', () => {
+  test('is X_CATALOG_UNREGISTERED naming the locale, the count and the first keys', () => {
+    const gap = catalogRegistrationGaps(shipped)[0];
+    if (gap === undefined) expect.unreachable('nothing is registered, so en is a gap');
+    const error = catalogUnregistered(gap);
 
-    expect(thrown).toBeInstanceOf(I18nError);
-    const error = thrown as I18nError;
+    expect(error).toBeInstanceOf(I18nError);
     expect(error.code).toBe('X_CATALOG_UNREGISTERED');
     expect(error.cause).toContain('en');
     expect(error.cause).toContain('app.play.title');
@@ -80,6 +77,6 @@ describe('assertCatalogsRegistered', () => {
     registerCatalog('en', shipped.en);
     registerCatalog('es', shipped.es);
 
-    expect(() => assertCatalogsRegistered(shipped)).not.toThrow();
+    expect(catalogRegistrationGaps(shipped)).toEqual([]);
   });
 });

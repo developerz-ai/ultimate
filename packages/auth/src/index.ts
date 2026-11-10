@@ -36,7 +36,6 @@ export type {
   VerifiedApiKey,
 } from './api-keys';
 export {
-  API_KEY_NAMESPACE,
   API_KEY_TOUCH_MS,
   apiKeyActor,
   describeApiKey,
@@ -56,19 +55,14 @@ export type {
   RegisterInput,
 } from './auth';
 export {
-  AccountSchema,
   authenticate,
-  DEFAULT_MFA_ISSUER,
   defineAuth,
   login,
   logout,
   register,
-  SessionSchema,
-  UserSchema,
-  VerificationSchema,
 } from './auth';
 export type { AuthorizationServer, ReadRequestOptions } from './authorization-server';
-export { AUTH_CODE_TTL_MS, authorizationServer } from './authorization-server';
+export { authorizationServer } from './authorization-server';
 export type {
   RegisterClientInput,
   RegisteredClient,
@@ -81,13 +75,8 @@ export type {
 export type { PostgresAuthServerStoreOptions } from './authorization-server-postgres';
 export { postgresAuthServerStore } from './authorization-server-postgres';
 export type { ReadRequestResult } from './authorization-server-request';
-export { AUTH_SERVER_METADATA_WELL_KNOWN } from './authorization-server-routes';
 export { AUTH_SERVER_TABLES, SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';
-export type {
-  AuthServerStore,
-  DeviceDecision,
-  RefreshRotation,
-} from './authorization-server-store';
+export type { AuthServerStore } from './authorization-server-store';
 export { memoryAuthServerStore } from './authorization-server-store';
 export type {
   AuthCodeRecord,
@@ -95,11 +84,9 @@ export type {
   AuthorizationRequest,
   AuthServerClient,
   AuthServerGrant,
-  AuthTokenKind,
   AuthTokenRecord,
   ClientAuthMethod,
   DeviceCodeRecord,
-  DeviceStatus,
   ResolvedGrant,
 } from './authorization-server-types';
 export { DEVICE_GRANT } from './authorization-server-types';
@@ -120,21 +107,14 @@ export { normaliseEmail } from './email';
 export type { AuthErrorCode, AuthThrowCode } from './errors';
 export {
   AUTH_BORROWED_ERROR_CODES,
-  AUTH_ERROR_CODES,
-  AUTH_ERROR_TITLES,
   AuthError,
   accountLocked,
   apiKeyInvalid,
   authForbidden,
-  authLimiterNotShared,
-  authLimiterPolicyMismatch,
   authUnauthenticated,
   authUniqueViolation,
   authWriteFailed,
   kdfOverloaded,
-  mfaRequiredUnenforceable,
-  mfaSecretInvalid,
-  mfaSecretUnsealed,
   passwordWeak,
   sessionExpired,
   sessionUnknown,
@@ -144,9 +124,7 @@ export type { DeviceReading } from './grant-device';
 export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
 export {
-  decodeIdToken,
   ID_TOKEN_CLOCK_SKEW_MS,
-  idTokenEmailVerified,
   verifyIdToken,
 } from './id-token';
 export type {
@@ -164,7 +142,6 @@ export { oidcIdentityProvider } from './identity-provider-oidc';
 export type {
   IdentityProviderRoutes,
   IdentityProviderRoutesOptions,
-  IdentityRouteDescriptor,
 } from './identity-provider-routes';
 export { identityProviderRoutes } from './identity-provider-routes';
 export { OAUTH_ROUTE_STATUS } from './identity-provider-status';
@@ -183,7 +160,6 @@ export {
 } from './jwks';
 export type {
   JwtBearerCaller,
-  JwtBearerCheck,
   JwtBearerResolverOptions,
 } from './jwt-bearer-resolver';
 export { jwtBearerResolver } from './jwt-bearer-resolver';
@@ -287,8 +263,6 @@ export {
   oauthDenied,
   oauthExchangeFailed,
   oauthProviderUnknown,
-  oauthStateInvalid,
-  oauthTokenInvalid,
   restartAt,
 } from './oauth-errors';
 export type {
@@ -308,8 +282,6 @@ export type {
 export {
   completeOAuthLogin,
   emailVerifiedNotStored,
-  oauthAccountNotLinked,
-  oauthLinkingDisabled,
   signInWithOAuth,
 } from './oauth-login';
 export {
@@ -323,7 +295,6 @@ export type { OAuthProfile, OAuthProfileOptions } from './oauth-profile';
 export { oauthProfile } from './oauth-profile';
 export {
   hasOAuthProvider,
-  oauthProviderDuplicate,
   oauthProviderIds,
   providerFor,
   registerOAuthProvider,
@@ -336,17 +307,14 @@ export type {
   PasskeyPolicyInput,
   PasskeyRelyingParty,
 } from './passkey-config';
-export { DEFAULT_PASSKEY_CHALLENGE_TTL_MS } from './passkey-config';
 export { verifyPasskeyEvidence } from './passkey-evidence';
 export type { PasskeyLogin } from './passkey-login';
 export { passkeyLogin } from './passkey-login';
 export type { PasskeyStepUp, PasskeyStepUpOptions } from './passkey-step-up';
 export { passkeyStepUp } from './passkey-step-up';
 export type {
-  PasskeyAssertionResponse,
   PasskeyCreationOptions,
   PasskeyCredentialDescriptor,
-  PasskeyRegistrationResponse,
   PasskeyRequestOptions,
 } from './passkey-wire';
 export type {
@@ -358,7 +326,6 @@ export type {
 } from './password';
 export {
   checkPasswordStrength,
-  DEFAULT_PASSWORD_PARAMS,
   DEFAULT_PASSWORD_POLICY,
   hashPassword,
   needsRehash,
@@ -411,23 +378,16 @@ export {
   revokeSessionsCreatedBefore,
   revokeUserSessions,
 } from './revocation';
-export type { SamlCheck } from './saml-errors';
 export type { SamlIdpMetadata } from './saml-metadata';
 export { parseSamlMetadata } from './saml-metadata';
 export type { SamlIdentityProviderConfig } from './saml-provider';
-export {
-  DEFAULT_SAML_EMAIL_ATTRIBUTES,
-  DEFAULT_SAML_NAME_ATTRIBUTES,
-  DEFAULT_SAML_SKEW_MS,
-  samlIdentityProvider,
-} from './saml-provider';
+export { samlIdentityProvider } from './saml-provider';
 export type {
   CookieJar,
   CreateSessionInput,
   IssuedSession,
   RequestLike,
   SessionCookieOptions,
-  SessionDevice,
   SessionExpiry,
   SessionPolicy,
   SessionRuntime,
@@ -437,7 +397,6 @@ export {
   createSession,
   DEFAULT_SESSION_POLICY,
   idleSlideMs,
-  listDevices,
   readSessionCookie,
   remainingMaxAgeSeconds,
   revokeOtherSessions,
@@ -455,7 +414,7 @@ export type {
   AuthSubjectTarget,
   AuthSubjectTargetOptions,
 } from './subject-target';
-export { AUTH_SUBJECT_COLUMNS, authSubjectTarget } from './subject-target';
+export { authSubjectTarget } from './subject-target';
 
 export {
   AUTH_TABLE_NAMES,
@@ -465,8 +424,6 @@ export {
   randomToken,
   sha256Hex,
 } from './tokens';
-export type { VerificationPurposeDef } from './verification-purposes';
-export { verificationPurposeNames } from './verification-purposes';
 export type {
   ConsumeVerificationInput,
   DefineVerificationPurposeInput,

@@ -34,7 +34,6 @@ export type {
   ChannelRemove,
   ChannelSince,
   ChannelSubscribeTarget,
-  ChannelWireFrame,
   ReplayGapFrame,
 } from './channel-wire';
 // ---- the hooks: every read and write a component makes -----------------------------------------
@@ -42,7 +41,6 @@ export type { ChannelHandlers, ChannelRef, ChannelState } from './client-channel
 // ---- the shapes a hook hands back ----------------------------------------------------------------
 export type {
   LiveHandle,
-  LiveQueryRef,
   SignalFactory,
   Unsubscribe,
 } from './client-contract';
@@ -50,9 +48,7 @@ export type {
 export {
   advance,
   CURSOR_ID_LIMIT,
-  defaultReconnectBudget,
   type LiveCursor,
-  makeCursor,
   type ReconnectBudget,
   type ResumeDecision,
   type ResumeDeps,
@@ -64,35 +60,16 @@ export {
 } from './cursor';
 // ---- errors: one vocabulary for both halves, because every code reaches the wire ---------------
 export {
-  CursorStaleError,
-  FrameRateLimitError,
-  LiveQueryUnknownError,
-  LiveRowUnidentifiedError,
   OfflineQueueAbandonedError,
   OfflineQueueFullError,
-  ProtocolVersionError,
-  REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
   REALTIME_PAGE_ERROR_TITLES,
   RealtimeError,
   type RealtimeErrorCode,
-  RealtimeUninstalledError,
-  RebaseConflictError,
-  RecordRejectedError,
-  ReplicaIdentityError,
-  ReplicationFailedError,
-  ReplicationProtocolError,
-  ReplicationSlotInvalidatedError,
-  ReplicationSlotRecreatedError,
-  ReplicationTlsError,
   ReplicatorSlotHeldError,
-  ServerRenderLiveError,
   SubscriptionLimitError,
-  SyncUnconfiguredError,
   TopicForbiddenError,
-  TransportProtocolError,
   TransportUnavailableError,
-  WindowReadTimeoutError,
 } from './errors';
 // ---- the page: one record store, one socket, installed by the island bootstrap ------------------
 export {
@@ -110,7 +87,7 @@ export {
   type RowOp,
   type RowPatch,
 } from './json';
-export { type LiveState, type Registration, RowWindows, unnamedType } from './live-rows';
+export { type LiveState, type Registration, unnamedType } from './live-rows';
 // ---- offline: the durable store, the persisted records, the one outbox (plan 101 slice 12) ------
 export {
   type LocalStore,
@@ -144,7 +121,6 @@ export { resetPageRealtime } from './page-reset';
 export { hasPageSocket, type SyncTarget } from './page-store';
 export { pollEvery, type QueryPoll } from './query-poll';
 export { installRealtime, type RealtimeInstall } from './reactivity';
-export { persistedTypes, type RecordPersister, recordPersister } from './record-persister';
 export {
   DEFAULT_MAX_ROWS_PER_TYPE,
   type RecordKey,
@@ -181,10 +157,8 @@ export {
   browserBackoff,
   defaultBackoff,
   type JitterMode,
-  type ReconnectReason,
   type Rng,
   type Scheduler,
-  timeoutScheduler,
 } from './thundering-herd';
 export {
   type ChannelAccessor,

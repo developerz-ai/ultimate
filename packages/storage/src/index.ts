@@ -22,10 +22,8 @@ export {
   isPendingKey,
   PENDING_SEGMENT,
   pendingKey,
-  pendingPrefix,
   promoteAttachment,
   sweepOrphans,
-  uploadExtension,
   uploadName,
 } from './attachment';
 export type { PumpLimit } from './byte-pump';
@@ -50,7 +48,6 @@ export {
   // refuse a `limit` the same way both shipped ones do, or it is a third answer to one question.
   assertPutOptions,
   DEFAULT_CONTENT_TYPE,
-  DEFAULT_LIST_LIMIT,
   etagOf,
   resolveListLimit,
   sha256Base64,
@@ -74,37 +71,21 @@ export type { S3FetchLike } from './driver-s3-signed';
 export type { StorageErrorCode, StorageErrorInit } from './errors';
 export {
   checksumMismatch,
-  contentTypeMismatch,
-  contentTypeNotAllowed,
-  contentTypeUnrecognised,
   deleteFailed,
-  diskUnknown,
   getTooLarge,
   isStorageError,
   keyConflict,
   keyUnshared,
-  listFailed,
   objectNotFound,
   orgMismatch,
-  pathUnsafe,
   putFailed,
-  putTooLarge,
   readFailed,
-  STORAGE_ERROR_CODES,
-  STORAGE_ERROR_TITLES,
   StorageError,
-  signedUrlExpired,
-  signedUrlRejected,
-  signedUrlUnverifiable,
-  signingSecretMissing,
   tooLarge,
-  uploadFailed,
   xmlBodyUnreadable,
 } from './errors';
-export { multipartUnsupported, partsInvalid, uploadUnknown } from './errors-multipart';
 export { alreadyPromoted } from './errors-promote';
-export { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
-export { scanUnavailable, uploadHeld, uploadInfected } from './errors-scan';
+export { rangeTooLarge } from './errors-range';
 export type {
   AbortResult,
   AbortStaleUploadsInput,
@@ -171,7 +152,7 @@ export type {
   SignPartOptions,
   UploadedPart,
 } from './multipart';
-export { MAX_PART_BYTES, MAX_PARTS, MIN_PART_BYTES, matchParts, partBytesFor } from './multipart';
+export { MAX_PARTS, MIN_PART_BYTES, partBytesFor } from './multipart';
 export type {
   LockedAction,
   ObjectLock,
@@ -179,19 +160,17 @@ export type {
   ObjectRetention,
   RetentionMode,
 } from './object-lock';
-export { isLocked, ObjectLockedError, RETENTION_MODES } from './object-lock';
+export { isLocked, ObjectLockedError } from './object-lock';
 export {
   assertSafeKey,
   isSafeKey,
   isTenantScoped,
   isWithinOrg,
   joinKey,
-  keyDirname,
   keyExtname,
   MAX_KEY_LENGTH,
   META_DIR,
   ORG_PREFIX,
-  orgPrefix,
   scopedKey,
 } from './path';
 export type { PutStreamOptions } from './put-stream';
@@ -201,7 +180,7 @@ export { assertPutStream, streamLimit } from './put-stream';
  * fourth answer to what a range means.
  */
 export type { ByteRange, GetOptions } from './range';
-export { assertGetOptions, assertStreamRange, servedRange, streamedRange } from './range';
+export { assertStreamRange, streamedRange } from './range';
 export type { RequestCeiling } from './request-ceiling';
 export type {
   SignedPart,
@@ -215,10 +194,7 @@ export {
   buildSignedUrl,
   canonicalRequest,
   DEFAULT_SIGNED_URL_BASE,
-  DEFAULT_SIGNED_URL_TTL_MS,
   SIGNED_URL_FAILURES,
-  SIGNED_URL_PARAMS,
-  SIGNED_URL_VERSION,
   signConstraints,
   signedUrlBaseFor,
   signedUrlBasePath,
@@ -236,7 +212,7 @@ export type {
   StorageSubjectTarget,
   StorageSubjectTargetOptions,
 } from './subject-target';
-export { STORAGE_SUBJECT_COLUMNS, storageSubjectTarget } from './subject-target';
+export { storageSubjectTarget } from './subject-target';
 export type {
   ScanUnavailablePolicy,
   StoredHeadCandidate,
@@ -247,14 +223,12 @@ export type {
   ValidatedUpload,
 } from './upload';
 export {
-  contentTypeMatches,
   DEFAULT_MAX_UPLOAD_BYTES,
   DOCUMENT_CONTENT_TYPES,
   IMAGE_CONTENT_TYPES,
   MAX_LEADING_WHITESPACE,
   normalizeContentType,
   SNIFF_WINDOW_BYTES,
-  sniffContentType,
   uploadPolicy,
   validateStoredHead,
   validateUpload,
@@ -268,20 +242,17 @@ export type {
   UploadSource,
 } from './upload-client';
 export {
-  defaultSignedPut,
   fetchSignedPut,
   uploadFile,
   xhrSignedPut,
 } from './upload-client';
 export type {
   MultipartUploadClient,
-  MultipartUploadInput,
   UploadSessionRef,
 } from './upload-client-multipart';
 export {
   DEFAULT_PART_THRESHOLD_BYTES,
   PART_CONCURRENCY,
-  uploadInParts,
 } from './upload-client-multipart';
 // The `uploadScanner` port's reference: the interface and its installer are on `./adapter`.
 export { EICAR_TEST_STRING, memoryUploadScanner } from './upload-scanner-memory';

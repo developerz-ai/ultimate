@@ -2,20 +2,7 @@
 
 export type { RenderMode } from '@ultimat3/core';
 export type { SeoErrorCode, SeoErrorInit } from './errors';
-export {
-  canonicalMismatch,
-  duplicateMeta,
-  imageQueryInvalid,
-  ldInvalid,
-  linkInvalid,
-  metaMissing,
-  metaTooLong,
-  notImplementedDriver,
-  SEO_ERROR_CODES,
-  SeoError,
-  sitemapEntryInvalid,
-  sitemapTooLarge,
-} from './errors';
+export { ldInvalid, metaMissing, SEO_ERROR_CODES, SeoError, sitemapEntryInvalid } from './errors';
 export type {
   BuiltinImageDriverOptions,
   ImageTransformDriver,
@@ -35,10 +22,8 @@ export {
   DEFAULT_FORMATS,
   DEFAULT_WIDTHS,
   FORMAT_ORDER,
-  IMAGE_QUERY_KEYS,
   inlineBlur,
   MAX_IMAGE_WIDTH,
-  MIME_TYPES,
   parseImageQuery,
   renderPicture,
   responsiveImage,
@@ -116,7 +101,6 @@ export type {
 export {
   buildSitemap,
   chunk,
-  SITEMAP_INDEX_MAX_FILES,
   SITEMAP_MAX_BYTES,
   SITEMAP_MAX_URLS,
   SITEMAP_PARTS_DIR,

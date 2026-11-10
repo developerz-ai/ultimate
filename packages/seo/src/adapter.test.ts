@@ -1,9 +1,11 @@
-// `@ultimat3/seo/adapter` resolves through the package's export map, and every value it carries is
-// the `.` one by identity — an adapter author's import, never a copy of the package's own.
+// `@ultimat3/seo/adapter` resolves through the package's export map and carries exactly the driver
+// author's values — each the declaring module's by identity, and none of them also on `.`.
 
 import { describe, expect, test } from 'bun:test';
+import * as errors from './errors';
 
-const VALUES: readonly string[] = [];
+const VALUES: readonly string[] = ['notImplementedDriver'];
+const DECLARED: Record<string, unknown> = { ...errors };
 
 describe('unit · @ultimat3/seo/adapter', () => {
   test('is the subpath the export map names', () => {
@@ -13,10 +15,22 @@ describe('unit · @ultimat3/seo/adapter', () => {
     );
   });
 
-  test('carries exactly its values, each the barrel export by identity', async () => {
+  test('carries exactly its values, each the declaring export by identity', async () => {
     const adapter: Record<string, unknown> = await import('@ultimat3/seo/adapter');
-    const barrel: Record<string, unknown> = await import('@ultimat3/seo');
     expect(Object.keys(adapter).sort()).toEqual([...VALUES].sort());
-    for (const name of VALUES) expect([name, adapter[name] === barrel[name]]).toEqual([name, true]);
+    for (const name of VALUES)
+      expect([name, adapter[name] === DECLARED[name]]).toEqual([name, true]);
+  });
+
+  test('`.` carries none of them, nor the internals v31 dropped from it', async () => {
+    const barrel: Record<string, unknown> = await import('@ultimat3/seo');
+    const gone = [
+      ...VALUES,
+      'canonicalMismatch',
+      'IMAGE_QUERY_KEYS',
+      'MIME_TYPES',
+      'sitemapTooLarge',
+    ];
+    for (const name of gone) expect([name, Object.hasOwn(barrel, name)]).toEqual([name, false]);
   });
 });

@@ -46,7 +46,7 @@ export {
   LlmTruncatedError,
 } from './answer-errors';
 export type { Billed } from './billed';
-export { BILLED_META, billedOf } from './billed';
+export { billedOf } from './billed';
 export type {
   BudgetKeys,
   BudgetLedger,
@@ -65,21 +65,6 @@ export {
   memoryBudgetStore,
   withBudget,
 } from './budget';
-export type {
-  AiDocumentBlock,
-  AiDocumentSource,
-  AiImageBlock,
-  AiImageSource,
-  AiMediaBlock,
-  ImageMediaType,
-} from './content-blocks';
-export {
-  IMAGE_MEDIA_TYPES,
-  IMAGE_TOKEN_ESTIMATE,
-  isMediaBlock,
-  MAX_DOCUMENT_BASE64_CHARS,
-  MAX_IMAGE_BASE64_CHARS,
-} from './content-blocks';
 export type { ContentRefusal } from './content-errors';
 export { AiContentUnsupportedError } from './content-errors';
 export { AiContextOverflowError } from './context-overflow';
@@ -101,12 +86,6 @@ export {
   AgentMaxTurnsError,
   AgentToolUnexposedError,
   AiBudgetExceededError,
-  AiGatewayMissingError,
-  AiKeyMissingError,
-  AiModelUnknownError,
-  AiPromptRenderError,
-  AiPromptSecretError,
-  AiPromptVersionError,
   AiProviderUnavailableError,
   AiRequestInvalidError,
   AiTransportError,
@@ -119,17 +98,8 @@ export {
 } from './errors';
 export { AI_ERROR_RETRY } from './errors-retry';
 export type { EvalBaseline, Regression } from './eval-baseline';
+export { baselinePath, RECORD_ENV, readBaseline, recordingBaselines } from './eval-baseline';
 export {
-  baselinePath,
-  describeRegression,
-  RECORD_ENV,
-  readBaseline,
-  recordingBaselines,
-  regressionsAgainst,
-  writeBaseline,
-} from './eval-baseline';
-export {
-  EvalBaselineInvalidError,
   EvalBaselineMissingError,
   EvalMissingError,
   EvalRecordingError,
@@ -148,13 +118,7 @@ export type {
   EvaluatedAgent,
   PromptEvalInput,
 } from './evals';
-export {
-  baselineFrom,
-  defineEval,
-  describeEvals,
-  promptsWithoutEvals,
-  resetEvals,
-} from './evals';
+export { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
 export type { AiFetch } from './fetch-seam';
 export type {
   Gateway,
@@ -164,7 +128,6 @@ export type {
 } from './gateway';
 export {
   backoffMs,
-  DEFAULT_GATEWAY_BREAKER,
   DEFAULT_GATEWAY_RETRY,
   isRetryable,
   promptCacheKey,
@@ -172,7 +135,6 @@ export {
 } from './gateway';
 export type { HiveDef, HiveSplitArgs } from './hive';
 export { hive } from './hive';
-export { HiveEmptyError } from './hive-errors';
 export type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
 export type { InProcessToolDef } from './in-process-tool';
 export { inProcessTool } from './in-process-tool';
@@ -181,7 +143,6 @@ export { LlmTextChunk, llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
 export type { ModelSource } from './model-resolve';
-export { AiModelUnresolvedError } from './model-resolve';
 export type {
   ContentKind,
   DeclaredReasoning,
@@ -192,10 +153,7 @@ export type {
   ThinkingMode,
 } from './models';
 export {
-  assertModel,
-  EFFORTS,
   isModelRegistered,
-  modelIds,
   modelSpec,
   moreCapableThan,
   registeredModels,
@@ -206,12 +164,7 @@ export type { OpenAiProviderInput } from './openai-provider';
 export { openAiProvider } from './openai-provider';
 export type { PostgresVectorStore, PostgresVectorStoreInput } from './pg-vector';
 export { postgresVectorStore } from './pg-vector';
-export type {
-  PgHybridArgs,
-  PgSearchArgs,
-  PgVectorRowInput,
-  PgVectorTable,
-} from './pg-vector-sql';
+export type { PgSearchArgs, PgVectorTable } from './pg-vector-sql';
 export {
   conditionsSql,
   ddlSql,
@@ -219,14 +172,7 @@ export {
   searchSql,
 } from './pg-vector-sql';
 export type { DefinePromptInput, Prompt, PromptVars } from './prompt';
-export {
-  definePrompt,
-  describePrompts,
-  getPrompt,
-  promptHash,
-  promptVersions,
-  resetPrompts,
-} from './prompt';
+export { definePrompt, describePrompts, promptHash, resetPrompts } from './prompt';
 export type {
   CacheWire,
   PromptCacheHint,
@@ -263,14 +209,11 @@ export {
   costOf,
   estimateCost,
   estimateInputTokens,
-  estimateTextTokens,
   estimateTokens,
   isTruncated,
   messageText,
   parseMessage,
-  requiresStreaming,
   STREAM_ONLY_MAX_TOKENS,
-  totalTokens,
 } from './provider';
 export type {
   AssembledContext,
@@ -279,13 +222,7 @@ export type {
   Reranker,
   RetrieveInput,
 } from './rag';
-export {
-  assembleContext,
-  chunkDocument,
-  indexDocument,
-  passthroughReranker,
-  retrieve,
-} from './rag';
+export { assembleContext, chunkDocument, indexDocument, retrieve } from './rag';
 export { assertNoSecrets } from './redaction';
 export type { RemoteEmbedder, RemoteEmbedderInput } from './remote-embedder';
 export { remoteEmbedder } from './remote-embedder';
@@ -338,4 +275,3 @@ export type {
 export { fuse, memoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
 export { NO_VECTOR_TENANT, tenantOf, UNSCOPED, VectorUnscopedError } from './vector-scope';
-export type { StreamState } from './wire';

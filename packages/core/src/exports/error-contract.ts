@@ -5,18 +5,9 @@
 
 export type { CoreErrorCode } from '../core-error-codes';
 export { CORE_ERROR_CODES } from '../core-error-codes';
-export type {
-  DefinedError,
-  DefinedErrorExtra,
-  DefineErrorSpec,
-  ErrorText,
-} from '../define-error';
+export type { DefinedError, DefinedErrorExtra, DefineErrorSpec } from '../define-error';
 export { defineError } from '../define-error';
-export type {
-  ErrorCodeDeclaration,
-  ErrorCodeDescriptor,
-  ErrorCodeEntry,
-} from '../error-codes';
+export type { ErrorCodeDeclaration, ErrorCodeDescriptor, ErrorCodeEntry } from '../error-codes';
 export {
   describeErrorCode,
   ERROR_DOCS_URL,
@@ -32,7 +23,6 @@ export {
   isFixShellSafe,
   isThrownError,
   MAX_CAUSE_LENGTH,
-  MAX_RENDERED_LENGTH,
   renderCauseValue,
   renderFixLiteral,
   renderFixShellArg,
@@ -46,7 +36,6 @@ export {
   DEFAULT_ERROR_RETRY,
   declaredErrorRetry,
   ERROR_RETRY_KINDS,
-  isErrorRetry,
   registerErrorRetry,
   registeredErrorRetry,
   resetErrorRetry,
@@ -67,7 +56,6 @@ export {
   EnvMissingError,
   errorRetry,
   fixFor,
-  formatError,
   InternalError,
   isUltimateError,
   NotImplementedError,

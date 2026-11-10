@@ -30,6 +30,7 @@ export type { DriverStoreKind } from './driver-registry';
 export { clearDriverStores, driverStores, noteDriverStore } from './driver-registry';
 export { afterSeek, projectRow, selectRows } from './driver-rows';
 export { compareByKind, matchesPredicate, sameValueOfKind } from './memory-match';
+export type { PostgresDriverOptions } from './pg-driver';
 export {
   DEFAULT_PAGE_SIZE,
   deletePlan,

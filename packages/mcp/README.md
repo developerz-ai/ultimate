@@ -840,7 +840,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpBodyTooLargeError` | `X_MCP_BODY_TOO_LARGE` | `src/errors.ts` |
 | `McpIdempotencyKeyShadowedError` | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | `src/errors.ts` |
 | `McpConfirmationArgumentsMismatchError` | `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | `src/confirmation-errors.ts` |
-| `McpConfirmationContestedError` | `X_MCP_CONFIRMATION_CONTESTED` | `src/confirmation-errors.ts` |
+| `McpConfirmationContestedError` | `X_MCP_CONFIRMATION_CONTESTED` | `src/confirmation-errors.ts` — on `@ultimat3/mcp/adapter` only, a store author throws it |
 | `McpConfirmationDecidedError` | `X_MCP_CONFIRMATION_DECIDED` | `src/confirmation-errors.ts` |
 | `McpConfirmationEvidenceInvalidError` | `X_MCP_CONFIRMATION_EVIDENCE_INVALID` | `src/confirmation-quorum-errors.ts` |
 | `McpConfirmationExpiredError` | `X_MCP_CONFIRMATION_EXPIRED` | `src/confirmation-errors.ts` |
@@ -862,6 +862,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpSurfaceInvalidError` | `X_MCP_SURFACE_INVALID` | `src/meta-errors.ts` |
 | `McpQueryRejectedError` | `X_MCP_QUERY_REJECTED` | `src/errors.ts` |
 | `McpRateLimitedError` | `X_MCP_RATE_LIMITED` | `src/errors.ts` |
+| `McpRemoteAuthRequiredError` | `X_MCP_REMOTE_AUTH_REQUIRED` | `src/remote-errors.ts` — catch it to start `mcpOAuthClient().begin(url)` |
 | `McpResourceDuplicateError` | `X_MCP_RESOURCE_DUPLICATE` | `src/errors.ts` |
 | `McpScopeConflictError` | `X_MCP_SCOPE_CONFLICT` | `src/errors.ts` |
 | `McpScopeDeniedError` | `X_MCP_SCOPE_DENIED` | `src/errors.ts` |

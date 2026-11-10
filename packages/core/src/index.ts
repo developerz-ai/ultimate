@@ -29,11 +29,9 @@ export type {
   ActorOrigin,
 } from './actor';
 export {
-  ACTOR_KINDS,
   actorFact,
   actorLabel,
   actorOf,
-  actorOrigin,
   agentActor,
   anonymousActor,
   grantCovers,
@@ -54,7 +52,7 @@ export {
 } from './address-class';
 /** Test support: the one name a live suite gives the database it creates (`probe-databases`). */
 export { APP_CONFIG_FILE, APP_STATE_DIR, appDirOf, appStatePath } from './app-dir';
-export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
+export { appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { type AssertCodedOptions, assert, assertCoded, assertNever } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
 /** The four shapes an async region can be in — produced by `realtime`, rendered by `ui`. */
@@ -96,7 +94,7 @@ export type {
 export { breaker, settleWith } from './breaker';
 export { isCompiledBundle } from './bunfs';
 export type { CacheEvictionOptions } from './cache-eviction';
-export { CACHE_TEMP_GRACE_MS, evictCacheFiles } from './cache-eviction';
+export { evictCacheFiles } from './cache-eviction';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export type { FetchLike, TransportRequest } from './client-dispatch';
@@ -176,35 +174,21 @@ export type {
   ThemeConfig,
   ThemeMode,
 } from './config';
-export { defineConfig, INBOX_RETENTION_KEYS } from './config';
+export { defineConfig } from './config';
 export type { AiConfig, AiConfigInput, McpConfig } from './config-ai';
-export type {
-  AssetsConfig,
-  AssetsRetainConfig,
-  AssetsSection,
-  AssetsSectionInput,
-} from './config-assets';
+export type { AssetsConfig, AssetsRetainConfig, AssetsSectionInput } from './config-assets';
 export type {
   ClientErrorsConfig,
-  ClientErrorsSection,
   ClientErrorsSectionInput,
   ClientVitalsConfig,
   ClientVitalsSurface,
 } from './config-client-errors';
-export {
-  CLIENT_ERRORS_DEFAULTS,
-  CLIENT_VITALS_DEFAULTS,
-  CLIENT_VITALS_SURFACES,
-} from './config-client-errors';
-export type {
-  FailureCaptureConfig,
-  FailureCaptureSection,
-  FailureCaptureSectionInput,
-} from './config-failure-capture';
+export { CLIENT_ERRORS_DEFAULTS, CLIENT_VITALS_DEFAULTS } from './config-client-errors';
+export type { FailureCaptureConfig, FailureCaptureSectionInput } from './config-failure-capture';
 export { FAILURE_CAPTURE_DEFAULTS } from './config-failure-capture';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
-export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';
+export type { IslandsConfig, IslandsSectionInput } from './config-islands';
 export {
   JOBS_CONCURRENCY_DEFAULT,
   JOBS_DEAD_RETENTION_MS_DEFAULT,
@@ -212,25 +196,15 @@ export {
   JOBS_OUTBOX_RETENTION_MS_DEFAULT,
   type JobsConcurrency,
 } from './config-jobs';
-export type {
-  MailConfig,
-  MailRetainMimeConfig,
-  MailSection,
-  MailSectionInput,
-} from './config-mail';
+export type { MailConfig, MailRetainMimeConfig, MailSectionInput } from './config-mail';
 export type {
   NavigationConfig,
-  NavigationSection,
   NavigationSectionInput,
   NavigationSurface,
   SpeculationConfig,
   SpeculationEagerness,
 } from './config-navigation';
-export {
-  DEFAULT_SPECULATION,
-  NAVIGATION_SURFACES,
-  SPECULATION_EAGERNESS,
-} from './config-navigation';
+export { DEFAULT_SPECULATION, NAVIGATION_SURFACES } from './config-navigation';
 export type {
   PwaColors,
   PwaConfig,
@@ -242,13 +216,7 @@ export type {
   PwaText,
   PwaVapidConfig,
 } from './config-pwa';
-export {
-  isSameOriginPath,
-  PWA_COLOR_KEYS,
-  PWA_PUSH_FIX,
-  PWA_SCHEMES,
-  pushWired,
-} from './config-pwa';
+export { isSameOriginPath, PWA_PUSH_FIX, pushWired } from './config-pwa';
 export type {
   SeoConfig,
   SeoConfigInput,
@@ -258,7 +226,6 @@ export type {
   SiteConfig,
   SiteFavicon,
   SitemapLastmod,
-  SiteSections,
   SiteSectionsInput,
 } from './config-site';
 export { SITEMAP_LASTMOD_SOURCES } from './config-site';
@@ -269,7 +236,7 @@ export {
   sectionPatterns,
   sitemapSectionIssues,
 } from './config-sitemap';
-export type { AppTimeConfig, TimeSection, TimeSectionInput } from './config-time';
+export type { AppTimeConfig, TimeSectionInput } from './config-time';
 export { TIME_DEFAULTS } from './config-time';
 export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
 export { resolveConflict } from './conflict-policy';
@@ -326,7 +293,7 @@ export {
   withDeclaredErrors,
 } from './declared-errors';
 export type { DeclaredResponsesWire } from './declared-errors-openapi';
-export { DECLARED_ERRORS_EXTENSION, withDeclaredResponses } from './declared-errors-openapi';
+export { withDeclaredResponses } from './declared-errors-openapi';
 export type { SourceReader } from './declared-errors-scan';
 export { definedErrorClassCodes, scanHandlerSource } from './declared-errors-scan';
 export { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
@@ -346,7 +313,6 @@ export {
 } from './dev-secrets';
 export {
   DRAIN_DEADLINE_DEFAULT_MS,
-  DRAIN_DEADLINE_MAX_MS,
   WORKER_DRAIN_DEADLINE_MAX_MS,
   WORKER_RETIRE_DEFAULT_MS,
 } from './drain-deadline';
@@ -361,10 +327,8 @@ export type {
   EnvSchema,
   EnvStringVar,
   EnvVarDecl,
-  EnvVarSummary,
-  EnvVarType,
 } from './env';
-export { checkEnv, defineEnv, describeEnv, maskedEnvValues } from './env';
+export { checkEnv, defineEnv, maskedEnvValues } from './env';
 export type { EnvExampleOptions, EnvExampleReport } from './env-example';
 export {
   checkEnvExample,
@@ -385,9 +349,8 @@ export {
   resolveEnvironment,
   tryResolveEnvironment,
 } from './environment';
-export { ExerciseEnvironmentError, ExerciseUnscopedError } from './exercise-errors';
-// The `input:` every exercise fix pastes, owed fields named: one renderer for action, query and testing.
 export type { DrawnBinding } from './exercise-hint';
+// The `input:` every exercise fix pastes, owed fields named: one renderer for action, query and testing.
 export { renderDrawnInput, renderExerciseKey, sampleGapBinding } from './exercise-hint';
 // A contract exercise's one loop: `@ultimat3/action`'s and `@ultimat3/query`'s, one tier apart from neither.
 export type {
@@ -418,7 +381,6 @@ export type {
   ErrorCodeDescriptor,
   ErrorCodeEntry,
   ErrorRetry,
-  ErrorText,
   FormatErrorOptions,
   UltimateErrorInit,
   UltimateErrorJSON,
@@ -441,16 +403,13 @@ export {
   errorRetry,
   failureStack,
   fixFor,
-  formatError,
   hasErrorCode,
   InternalError,
-  isErrorRetry,
   isFixShellSafe,
   isThrownError,
   isUltimateError,
   listErrorCodes,
   MAX_CAUSE_LENGTH,
-  MAX_RENDERED_LENGTH,
   NotImplementedError,
   notImplemented,
   registerErrorCodes,
@@ -490,19 +449,13 @@ export type {
   ErrorScope,
   ErrorSeverity,
   ErrorSource,
-  ExportedLogRecord,
-  FailureActor,
   FailureBundle,
-  FailureCaptureLimits,
   FailureFact,
   FailurePrimitive,
   FailureRead,
   FailureStore,
-  FrameworkEventMap,
-  FrameworkEventName,
   Gauge,
   GaugeOptions,
-  HeldFailure,
   Histogram,
   HistogramOptions,
   HistogramPoint,
@@ -521,7 +474,6 @@ export type {
   Logger,
   LoggerOptions,
   LogLevel,
-  LogRecordEvent,
   MailDeliverEvent,
   MatchedName,
   MemoryErrorReporter,
@@ -535,8 +487,6 @@ export type {
   MetricKind,
   MetricPoint,
   MetricsOptions,
-  OtlpAnyValue,
-  OtlpKeyValue,
   OtlpLogExporter,
   OtlpLogExporterOptions,
   OtlpMetricExporter,
@@ -544,13 +494,11 @@ export type {
   OtlpSignal,
   OtlpSpanExporter,
   OtlpSpanExporterOptions,
-  OutboundRequestEvent,
   PolicyDecisionEvent,
   QueryReadEvent,
   ReadableMetric,
   ReadableSpan,
   RenderHoleEvent,
-  RenderIsrRegenerateEvent,
   RenderPageEvent,
   ReportErrorOptions,
   RequestSample,
@@ -592,9 +540,6 @@ export {
   currentSpan,
   currentSpanContext,
   DEFAULT_HISTOGRAM_BOUNDS,
-  DEFAULT_MAX_SERIES,
-  DEFAULT_SAMPLE_RATIO,
-  defaultSampler,
   ERROR_SOURCES,
   ErrorReporterDsnInvalidError,
   errorFingerprint,
@@ -602,7 +547,6 @@ export {
   errorReportersOf,
   exportMetrics,
   failureCaptureActive,
-  failureCaptureLimits,
   gauge,
   histogram,
   INSTRUMENT_EVENTS,
@@ -632,11 +576,9 @@ export {
   OtlpEndpointInvalidError,
   OtlpHeadersInvalidError,
   OtlpProtocolUnsupportedError,
-  otlpEndpoint,
   otlpEndpointLabel,
   otlpHeaders,
   otlpLogExporter,
-  otlpLogsRequest,
   otlpMetricExporter,
   otlpMetricsRequest,
   otlpSpanExporter,
@@ -646,7 +588,6 @@ export {
   parseTraceparent,
   queueDepth,
   REDACTED,
-  ratioSampler,
   recordConnection,
   recordFailureFact,
   recordFailureInput,
@@ -659,7 +600,6 @@ export {
   requestDuration,
   requests,
   resetErrorReporting,
-  resetFailureCaptureWindows,
   resetInstrumentation,
   resetMetrics,
   resetStatementStacks,
@@ -668,18 +608,15 @@ export {
   SEMCONV,
   SEMCONV_METRICS,
   SEMCONV_VALUES,
-  samplerFromEnv,
   sentryEnvelope,
   sentryErrorReporter,
   sentryEvent,
   sentryTransport,
-  serviceResource,
   setLoggerContextFields,
   setLogStream,
   settleFailureCaptures,
   startMetricExport,
   startSpan,
-  statementStacksCaptured,
   structuredLogger,
   subscribe,
   subscribed,
@@ -690,13 +627,11 @@ export {
   tryOtlpEndpoint,
   withFailureCapture,
   withSpan,
-  withSpanContext,
 } from './exports/observability';
 export type {
   MasterKeyRef,
   Secret,
   SecretSummary,
-  SecretsEnvelope,
   SecretsErrorCode,
   SecretsInstallOptions,
   SecretsInstallReport,
@@ -720,11 +655,9 @@ export {
   requireMasterKey,
   revealOptionalSecret,
   revealSecret,
-  SECRETS_ERROR_CODES,
   SECRETS_FILE,
   SECRETS_KEY_ENV,
   SECRETS_KEY_FILE,
-  SECRETS_KEY_MODE,
   SecretsFileInvalidError,
   SecretsFileMissingError,
   SecretsKeyAclError,
@@ -736,7 +669,6 @@ export {
   sealSecrets,
   secret,
   secretsFileExists,
-  secretsPath,
   serializeSecretValues,
   stagedMasterKeyPath,
   stageMasterKeyFile,
@@ -770,16 +702,14 @@ export type { GenerationFence } from './generation-fence';
 export { generationFence, isSuperseded } from './generation-fence';
 export type { PublicHealthBody } from './health-disclosure';
 export { DEFAULT_HEALTH_DETAIL_PEERS, healthBody, healthPeerListed } from './health-disclosure';
-// The ONE keyed hash: every HMAC in the framework (`bun run keyed-hasher`).
 export type { HmacAlgorithm, HmacEncoding, HmacInput } from './hmac';
+// The ONE keyed hash: every HMAC in the framework (`bun run keyed-hasher`).
 export { hmac } from './hmac';
 export type { HostDecision, HostRule } from './host-rules';
 export { ANY_HOST, hostDecision, hostMatches } from './host-rules';
 export { escapeHtml } from './html-escape';
 export type { Brand, Id } from './ids';
 export {
-  isSpanId,
-  isTraceId,
   isUuid,
   nanoid,
   parseId,
@@ -792,28 +722,20 @@ export {
   uuidV7,
 } from './ids';
 export type { ImageFit, ResizeSpec } from './image/canvas';
-export { parseColor } from './image/color';
 export {
   ImageDecodeFailedError,
   ImageTooLargeError,
   ImageUnsupportedError,
   imageDecodeFailed,
-  imageFromBunError,
-  imageTooLarge,
   imageUnsupported,
 } from './image/errors';
-export type {
-  DecodableFormat,
-  EncodableFormat,
-  ImageTransformSpec,
-} from './image/pipeline';
+export type { DecodableFormat, EncodableFormat, ImageTransformSpec } from './image/pipeline';
 export {
   assertFiniteImageQuality,
   blurDataUrl,
   canDecode,
   canEncode,
   DECODABLE_FORMATS,
-  DEFAULT_IMAGE_QUALITY,
   dataUrl,
   ENCODABLE_FORMATS,
   transformImageBytes,
@@ -827,7 +749,7 @@ export {
   hasAlpha,
   MAX_IMAGE_PIXELS,
 } from './image/raster';
-export { impersonate, impersonationReason, isImpersonating } from './impersonate';
+export { impersonate, isImpersonating } from './impersonate';
 export { withInProcessFetch } from './in-process-fetch';
 export {
   assertLocale,
@@ -880,14 +802,9 @@ export {
   readyzPayload,
   registerReadinessCheck,
   resetLifecycle,
-  SHUTDOWN_PHASES,
   shutdownHookCount,
 } from './lifecycle';
-export {
-  defaultReadinessGraceMs,
-  READINESS_GRACE_DEFAULT_MS,
-  READINESS_GRACE_MAX_MS,
-} from './lifecycle-grace';
+export { defaultReadinessGraceMs, READINESS_GRACE_DEFAULT_MS } from './lifecycle-grace';
 export type {
   ReadinessCheck,
   ReadinessCheckOptions,
@@ -895,7 +812,7 @@ export type {
 } from './lifecycle-readiness';
 export type { SignalHandlerOptions } from './lifecycle-signals';
 export { drainSignals, installSignalHandlers } from './lifecycle-signals';
-export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
+export { isSelfOrigin, markListening, resetListeners } from './listeners';
 export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';
 export type { LocalePathSplit } from './locale-path';
@@ -925,7 +842,7 @@ export { nearestName } from './nearest-name';
 export type { OutageLog, OutageLogOptions } from './outage-log';
 export { isOutageMilestone, outageLog } from './outage-log';
 /** The message pwa's `sw.js` posts and realtime's outbox listens for. */
-export { OUTBOX_DRAIN_MESSAGE, type OutboxDrainMessage } from './outbox-drain';
+export { OUTBOX_DRAIN_MESSAGE } from './outbox-drain';
 /** The `<meta name>`s render writes and the page client, realtime and pwa read. */
 export {
   APP_UPDATE_MESSAGE,
@@ -946,18 +863,14 @@ export {
 /** The structural Postgres seam http, auth, action and jobs share without a `@ultimat3/db` edge. */
 export type { PgExecutor } from './pg-executor';
 export type { ProbeDatabaseEntropy } from './probe-database';
-export { PROBE_DATABASE_NAME_MAX, probeDatabaseName } from './probe-database';
+export { probeDatabaseName } from './probe-database';
 export type { ProbeDatabaseSweepOptions } from './probe-database-sweep';
-export {
-  PROBE_DATABASE_MIN_AGE_MS,
-  probeDatabaseAlive,
-  sweepProbeDatabases,
-  sweepStaleProbeDatabases,
-} from './probe-database-sweep';
+export { sweepProbeDatabases, sweepStaleProbeDatabases } from './probe-database-sweep';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
-export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';
+export { startProcessMetrics } from './process-metrics';
 export { hasPublicCause, registerPublicCause, resetPublicCauses } from './public-cause';
-export { type CappedBody, readWithinLimit } from './read-capped';
+export type { CappedBody } from './read-capped';
+export { readWithinLimit } from './read-capped';
 export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, encodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
 export { RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from './record-envelope-openapi';
@@ -981,18 +894,14 @@ export {
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
 } from './registrar';
-export {
-  budgetHeaders,
-  REQUEST_TIMEOUT_HEADER,
-  remainingBudgetMs,
-} from './request-budget';
+export { REQUEST_TIMEOUT_HEADER, remainingBudgetMs } from './request-budget';
 export type { RetryDeps } from './retry';
 export { retry } from './retry';
 export type { RetryDecision, RetryPolicy, RetryStopReason } from './retry-loop';
 export { retryDecision } from './retry-loop';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
-export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export { isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
 export { HttpPathInputConflictError, mergePathParams } from './route-path-merge';
 export type { FilledTemplate, TemplateKeyNode } from './route-path-template';
 export {
@@ -1006,14 +915,10 @@ export { routeRank } from './route-rank';
 export type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from './route-vocabulary';
 export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES, SURFACES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
-export {
-  type OriginEvidence,
-  type OriginVerdict,
-  proveSameOrigin,
-} from './same-origin';
+export type { OriginEvidence } from './same-origin';
+export { type OriginVerdict, proveSameOrigin } from './same-origin';
 export type { SealOptions, SealPurposeOptions } from './seal';
-export { isSealed, open, openText, SEAL_VERSION, seal, sealAll, sealedKeyId } from './seal';
-export type { SealInvalidReason } from './seal-errors';
+export { isSealed, open, openText, seal, sealAll, sealedKeyId } from './seal';
 export { SealInvalidError, SealKeyMissingError, SealKeyUnknownError } from './seal-errors';
 export type { SealKeyRing, SealKeySource } from './seal-keys';
 export {
@@ -1038,11 +943,11 @@ export { singleFlight } from './single-flight';
 export { ambientClock, noWaitClock } from './sleep-clock';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
 export type { StoreMode } from './store-mode';
-export { STORE_MODES, storeMode } from './store-mode';
+export { storeMode } from './store-mode';
 export { THEME_STORAGE_KEY } from './theme-storage';
 export { timingSafeEqual } from './timing-safe-equal';
-// A projected tool's description: `@ultimat3/mcp`'s and `@ultimat3/ai`'s, one tier apart from neither.
 export type { ToolDescriptionSource } from './tool-description';
+// A projected tool's description: `@ultimat3/mcp`'s and `@ultimat3/ai`'s, one tier apart from neither.
 export { toolDescription } from './tool-description';
 export {
   frameworkVersion,

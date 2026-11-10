@@ -20,36 +20,28 @@ export type {
   BackfillInput,
   BackfillPage,
   BackfillPages,
-  BackfillReport,
   ScopedBackfillDefinition,
   ScopedBackfillInput,
 } from './backfill';
 export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
 export {
-  BackfillAppliedError,
-  BackfillEnvironmentError,
-  BackfillMigrationPendingError,
   BackfillPendingError,
   BackfillRunningError,
-  BackfillSourceInvalidError,
-  BackfillStalledError,
   BackfillUnknownError,
 } from './backfill-errors';
 export type { BackfillGate, BackfillGateInput } from './backfill-gate';
-export { checkBackfillEnvironment, gateBackfill } from './backfill-gate';
+export { gateBackfill } from './backfill-gate';
 export type { BackfillProgress } from './backfill-inspect';
-export { backfillForRun, inspectBackfills, toBackfillProgress } from './backfill-inspect';
+export { inspectBackfills, toBackfillProgress } from './backfill-inspect';
 export type {
   BackfillFilter,
   BackfillLedger,
   BackfillRun,
   BackfillStatus,
-  BackfillVerdict,
 } from './backfill-ledger';
 export {
   BACKFILL_STATUSES,
   backfillChecksum,
-  decideBackfill,
   isBackfillStatus,
   memoryBackfillLedger,
 } from './backfill-ledger';
@@ -78,48 +70,32 @@ export {
 } from './backfill-registry';
 export type { AnnounceExhaustedOptions, ExhaustedCounts } from './claim-exhausted';
 export { announceExhausted } from './claim-exhausted';
-export type { JobConcurrency, KeyedConcurrency, WhenBusy } from './concurrency';
-export { MAX_CONCURRENCY_KEY_LENGTH, WHEN_BUSY } from './concurrency';
+export type { JobConcurrency, KeyedConcurrency } from './concurrency';
 export { consumer } from './consumer';
-export { ConsumerInvalidError, ConsumerSelfEnqueueError } from './consumer-errors';
-export {
-  CONSUMER_LINGER_MS,
-  CONSUMER_PROGRESS_NOTE,
-  DEFAULT_CONSUMER_BATCH,
-} from './consumer-loop';
+export { CONSUMER_LINGER_MS } from './consumer-loop';
 // `stampConsumer` is deliberately absent, for the reason `stampBackfill` is.
 export type { ConsumerDeclaration, ConsumerRow } from './consumer-registry';
-export {
-  consumerDeclarationOf,
-  consumerRow,
-  isConsumer,
-  registeredConsumers,
-} from './consumer-registry';
+export { consumerRow, registeredConsumers } from './consumer-registry';
 export type {
-  ConsumerBatch,
   ConsumerCursor,
   ConsumerDefinition,
   ConsumerHandle,
   ConsumerInput,
-  ConsumerReport,
 } from './consumer-types';
 export type { JobConcurrencyDescriptor, JobDescriptor } from './describe';
 export type {
-  AckOptions,
   ClaimedJob,
   ClaimIdentity,
   ClaimOptions,
   ConflictPolicy,
   EnqueueRequest,
   EnqueueResult,
-  HeartbeatOptions,
   JobDriver,
   JobRecord,
   JobState,
   NackOptions,
   QueueDemand,
   QueueStats,
-  SettleBy,
 } from './driver';
 export {
   assertClaimBounds,
@@ -146,50 +122,17 @@ export { signalEnqueued, signalStaged } from './enqueue-signal';
 export type { JobErrorCode } from './error-codes';
 export { JOB_ERROR_CODES, JOB_ERROR_TITLES } from './error-codes';
 export {
-  ActionJobUnbridgedError,
-  CancelUnsupportedError,
-  ClaimQueuesEmptyError,
   DriverUnavailableError,
-  IdempotencyRequiredError,
   JobAbortedError,
   JobDrainedError,
   JobDuplicateError,
-  JobEnqueueBatchTooLargeError,
-  JobMaxAttemptsError,
-  JobNameTakenError,
   JobNotCancellableError,
-  JobRowStatusUnknownError,
-  JobSlotLostError,
-  JobTenantRequiredError,
   JobTimeoutError,
   LeaseLostError,
-  OutboxNoTxError,
-  StepDuplicateError,
 } from './errors';
-export {
-  ConcurrencyUnenforceableError,
-  JobConcurrencyInvalidError,
-  JobConcurrencyKeyInvalidError,
-  JobKeyBusyError,
-} from './errors-concurrency';
-export { JobDeclarationInvalidError } from './errors-declaration';
-export {
-  JobNotPromotableError,
-  JobNotRemovableError,
-  JobOnSettledFailedError,
-  JobPageInvalidError,
-} from './errors-operator';
-export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
-export {
-  COMPENSATE_PREFIX,
-  JobCompensationFailedError,
-  StepCompensateUndeclaredError,
-  StepNameReservedError,
-  StepNotResolvableError,
-  StepOutcomeUnknownError,
-  UNWINDING_STEP,
-} from './errors-saga';
-export { JobEventInvalidError, StepOutputUnserializableError } from './errors-steps';
+export { ConcurrencyUnenforceableError, JobKeyBusyError } from './errors-concurrency';
+export { JobNotFoundError } from './errors-requeue';
+export { COMPENSATE_PREFIX, StepNameReservedError, UNWINDING_STEP } from './errors-saga';
 export { JobTenantMismatchError } from './errors-tenant';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export {
@@ -204,41 +147,22 @@ export { postgresEventBus } from './events-pg';
 export type { ExecuteJobOptions } from './execute';
 export { executeJob } from './execute';
 export type { JobExecution, JobOutcome } from './execute-result';
-export type { ExportDefinition, ExportReport } from './export';
-export { DEFAULT_EXPORT_BATCH, DEFAULT_EXPORT_MAX_PART_BYTES, exportRows } from './export';
-export { ExportPartTooLargeError, ExportRowInvalidError } from './export-errors';
-export type { EncodePageInput, ExportFormat, ExportRecord, ExportValue } from './export-format';
-export { csvHeader, EXPORT_EXTENSION, EXPORT_FORMATS, encodeExportPage } from './export-format';
-export type { ExportManifest, ExportSink, MemoryExportSink } from './export-sink';
-export {
-  EXPORT_PART_DIGITS,
-  exportManifestKey,
-  exportPartKey,
-  memoryExportSink,
-} from './export-sink';
+export type { ExportDefinition } from './export';
+export { exportRows } from './export';
+export type { EncodePageInput, ExportValue } from './export-format';
+export { EXPORT_FORMATS, encodeExportPage } from './export-format';
+export type { ExportSink, MemoryExportSink } from './export-sink';
+export { memoryExportSink } from './export-sink';
 export type { CallerFailure } from './failure-row';
 export { callerFailure } from './failure-row';
 export { personalDataProblems, unerasedPersonalData, unreachedPersonalData } from './gdpr-coverage';
 export { PersonalDataUnerasedError, PersonalDataUnreachedError } from './gdpr-errors';
 export { IDLE_POLL_CEILING_MS } from './idle-backoff';
-export type { ImportDefinition, ImportReport } from './import';
-export {
-  DEFAULT_IMPORT_BATCH,
-  DEFAULT_IMPORT_MAX_RECORD_BYTES,
-  DEFAULT_IMPORT_MAX_ROW_ERRORS,
-  DEFAULT_IMPORT_PAGE_BYTES,
-  importRows,
-} from './import';
-export {
-  ImportHeaderMismatchError,
-  ImportRecordTooLargeError,
-  ImportTooManyErrorsError,
-} from './import-errors';
-export type { ImportRejection } from './import-format';
+export type { ImportDefinition } from './import';
+export { importRows } from './import';
 export { IMPORT_REJECTIONS } from './import-format';
-export type { ImportRowError } from './import-pass';
 export { importErrorKey } from './import-pass';
-export type { ImportObject, ImportSource, MemoryImportSource } from './import-source';
+export type { ImportSource, MemoryImportSource } from './import-source';
 export { memoryImportSource } from './import-source';
 export type {
   DeadLetterEntry,
@@ -267,7 +191,6 @@ export type {
   BulkFilter,
   BulkResult,
   CounterBucketMs,
-  CounterOutcome,
   CounterTotals,
   JobCounter,
   JobFilter,
@@ -280,26 +203,15 @@ export type {
   WorkerRecord,
 } from './introspection';
 export {
-  COUNTER_BUCKET_MS,
   COUNTER_TIERS,
   DEFAULT_JOB_PAGE,
   jobCursor,
   MAX_BULK_ROWS,
-  MAX_ERROR_STACK_LENGTH,
   MAX_JOB_PAGE,
-  MAX_PROGRESS_NOTE_LENGTH,
   MAX_TASK_FIRES,
-  MAX_WORKER_IN_FLIGHT,
-  PROGRESS_INTERVAL_MS,
   PROMOTABLE_STATES,
 } from './introspection';
-export type {
-  AnyJobHandle,
-  JobActor,
-  JobDefinition,
-  JobHandle,
-  JobRunArgs,
-} from './job';
+export type { AnyJobHandle, JobDefinition, JobHandle, JobRunArgs } from './job';
 export {
   describeJobs,
   getJob,
@@ -315,41 +227,15 @@ export type { JobsRetentionOptions } from './jobs-retention';
 export { jobsPurgeTarget } from './jobs-retention';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
 export { jobLeaseKey, memoryLeaseStore } from './leases';
-export type { LedgerDefinition, LedgerEntry, LedgerPosting, LedgerReport } from './ledger';
-export { assertBalancedPosting, ledger, ledgerLines, MIN_LEDGER_ENTRIES } from './ledger';
-export type {
-  EntityLedgerBookOptions,
-  LedgerBook,
-  LedgerLine,
-  MemoryLedgerBook,
-} from './ledger-book';
-export { assertSamePosting, entityLedgerBook, memoryLedgerBook } from './ledger-book';
-export {
-  LedgerEntryInvalidError,
-  LedgerPostingConflictError,
-  LedgerUnbalancedError,
-} from './ledger-errors';
-export type {
-  Lease,
-  LimitConfig,
-  Limiter,
-  LimitKey,
-  LimitReason,
-  LimitSnapshot,
-  RateLimit,
-} from './limits';
-export { concurrencyLimiter, NO_TENANT, tenantKeyFrom } from './limits';
+export type { LedgerDefinition, LedgerEntry, LedgerPosting } from './ledger';
+export { assertBalancedPosting, ledger, ledgerLines } from './ledger';
+export type { EntityLedgerBookOptions, LedgerBook, LedgerLine } from './ledger-book';
+export { entityLedgerBook } from './ledger-book';
+export type { Lease, LimitConfig, Limiter, LimitSnapshot, RateLimit } from './limits';
+export { concurrencyLimiter, NO_TENANT } from './limits';
 export type { HeldLock, WithLockOptions } from './lock';
-export { DEFAULT_LOCK_POLL_MS, lockLeaseKey, withLock } from './lock';
-export { LockLostError, LockNotAcquiredError, LockStoreMissingError } from './lock-errors';
-export {
-  queueDeadJobs,
-  queueDemand,
-  queueOldestReady,
-  recordQueueDeadJobs,
-  recordQueueDemand,
-  recordQueueOldestReady,
-} from './metrics';
+export { withLock } from './lock';
+export { queueDemand, recordQueueDemand } from './metrics';
 export type {
   EnqueueOptions,
   JobsFacade,
@@ -375,18 +261,8 @@ export type { OutboxRelay, RelayOptions } from './outbox-relay';
 export { outboxRelay } from './outbox-relay';
 export type { OutboxRetentionOptions } from './outbox-retention';
 export { outboxPurgeTarget } from './outbox-retention';
-export type {
-  PartitionsDefinition,
-  PartitionsJob,
-  PartitionsReport,
-  PartitionsTableReport,
-} from './partitions';
-export {
-  DEFAULT_PARTITIONS_CRON,
-  DEFAULT_PARTITIONS_NAME,
-  partitionedEntities,
-  partitions,
-} from './partitions';
+export type { PartitionsDefinition, PartitionsJob } from './partitions';
+export { partitionedEntities, partitions } from './partitions';
 export type { ProgressFn } from './progress';
 export type {
   PurgeDefinition,
@@ -398,15 +274,10 @@ export type {
 export { DEFAULT_PURGE_CRON, purge } from './purge';
 export type { PurgeBatching } from './purge-batches';
 export type { PurgeEntities } from './purge-entities';
-export {
-  resetPurgeCoverage,
-  retainedEntities,
-  retainTarget,
-  unsweptEntities,
-} from './purge-entities';
+export { resetPurgeCoverage, retainTarget, unsweptEntities } from './purge-entities';
 export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
 export { startQueueWake } from './queue-wake';
-export type { RefreshViewDefinition, RefreshViewReport } from './refresh-view';
+export type { RefreshViewDefinition } from './refresh-view';
 export { refreshView } from './refresh-view';
 export type { ReindexDefinition } from './reindex';
 export { reindex } from './reindex';
@@ -423,53 +294,28 @@ export {
   UNWIND_MARGIN,
 } from './retry';
 export type { JobRetryDecision, JobStopReason } from './retry-classification';
-export { failureForRow, nextRetryForError } from './retry-classification';
-export type {
-  RollupBucket,
-  RollupDefinition,
-  RollupInput,
-  RollupReport,
-  RollupTarget,
-} from './rollup';
+export { nextRetryForError } from './retry-classification';
+export type { RollupBucket, RollupDefinition, RollupInput, RollupTarget } from './rollup';
 export { rollup } from './rollup';
-export { RefreshViewInvalidError, RollupInvalidError } from './rollup-errors';
-export type {
-  CronResolver,
-  DispatchedOccurrence,
-  Scheduler,
-  SchedulerOptions,
-} from './scheduler';
-export {
-  COUNTER_ROLLUP_INTERVAL_MS,
-  jobScheduler,
-  PAUSE_RECHECK_MS,
-} from './scheduler';
+export type { CronResolver, Scheduler, SchedulerOptions } from './scheduler';
+export { COUNTER_ROLLUP_INTERVAL_MS, jobScheduler } from './scheduler';
 export type { LeaderElection } from './scheduler-leader';
 export { soleLeader } from './scheduler-leader';
 export { nextTaskRun } from './scheduler-occurrences';
 export type { PostgresLeaseLeaderOptions } from './scheduler-pg';
-export {
-  currentLeader,
-  DEFAULT_LEADER_TTL_MS,
-  LEASE_RENEWALS_PER_TTL,
-  postgresLeaseLeader,
-  postgresSchedulerState,
-} from './scheduler-pg';
+export { DEFAULT_LEADER_TTL_MS, postgresLeaseLeader, postgresSchedulerState } from './scheduler-pg';
 export type { ScheduledFire, SchedulerState } from './scheduler-state';
-export { fireThroughDriver, memorySchedulerState } from './scheduler-state';
+export { memorySchedulerState } from './scheduler-state';
 export type { JobCompleted, JobFailed, JobSettled } from './settled';
 export { ON_SETTLED_ATTEMPTS, ON_SETTLED_TIMEOUT_MS } from './settled';
 export { currentStep } from './step-scope';
 export type {
-  CompensateContext,
   EventLookup,
-  EventSince,
   StepApi,
   StepFence,
   StepRecord,
   StepRunner,
   StepRunnerOptions,
-  StepRunOptions,
   StepStatus,
   StepStore,
   WaitForEventOptions,
@@ -490,27 +336,14 @@ export type {
   RetainedTarget,
   Subject,
   SubjectInit,
-  SubjectRef,
   SubjectTarget,
   SubjectTargetEntry,
-  SubjectTargetPage,
   SubjectTreatment,
 } from './subject';
-export { DEFAULT_SUBJECT_BATCH, defineSubject, registeredSubjects, resetSubjects } from './subject';
+export { defineSubject, registeredSubjects, resetSubjects } from './subject';
 export type { SubjectEraseReport, SubjectTally } from './subject-erase-pass';
-export {
-  SubjectCycleError,
-  SubjectTableUndeclaredError,
-  SubjectTreatmentInvalidError,
-} from './subject-errors';
-export type { SubjectExportReport, SubjectIndexEntry } from './subject-export-pass';
 export type { SubjectExportDefinition, SubjectJobDefinition } from './subject-jobs';
-export {
-  plannedSubject,
-  subjectErase,
-  subjectEraseTables,
-  subjectExport,
-} from './subject-jobs';
+export { subjectErase, subjectEraseTables, subjectExport } from './subject-jobs';
 export type {
   SubjectPlan,
   SubjectPlanInput,
@@ -525,7 +358,6 @@ export type {
   TaskDescriptor,
   TaskEnqueueEntry,
   TaskHandle,
-  TaskJobResult,
 } from './task';
 export { getTask, isTaskHandle, registeredTasks, resetTasks, restoreTasks, task } from './task';
 /**
@@ -540,39 +372,16 @@ export type {
   WebhookDefinition,
   WebhookDeliveryInput,
   WebhookEndpoint,
-  WebhookEvent,
-  WebhookReport,
   WebhookTenant,
 } from './webhook';
 export { DEFAULT_WEBHOOK_DISABLE_AFTER, webhook } from './webhook';
 export type { WebhookFetch } from './webhook-attempt';
-export { WEBHOOK_CONTENT_TYPE } from './webhook-attempt';
-export {
-  WebhookDeliveryFailedError,
-  WebhookDeliveryRejectedError,
-  WebhookDeliveryThrottledError,
-  WebhookEndpointDisabledError,
-  WebhookEndpointInvalidError,
-  WebhookEndpointUnknownError,
-  WebhookEventInvalidError,
-  WebhookEventUnknownError,
-} from './webhook-errors';
 export type { MemoryWebhookLedger, WebhookAttempt, WebhookLedger } from './webhook-ledger';
-export { DEFAULT_MAX_WEBHOOK_ATTEMPTS, memoryWebhookLedger } from './webhook-ledger';
+export { memoryWebhookLedger } from './webhook-ledger';
 export { webhookReceiver, webhookReceiverRoutes } from './webhook-receiver';
-export {
-  WEBHOOK_EVENT_ID_PATTERN,
-  WEBHOOK_RECEIVER_RETRY_AFTER_SECONDS,
-  WebhookEventIdInvalidError,
-  WebhookReceiverInvalidError,
-  WebhookReceiverUnavailableError,
-} from './webhook-receiver-errors';
+export { WEBHOOK_EVENT_ID_PATTERN } from './webhook-receiver-errors';
 export type {
-  ReceivedEvent,
   ReceivedEventFacts,
-  WebhookAnswer,
-  WebhookHandleArgs,
-  WebhookInbound,
   WebhookReceiver,
   WebhookReceiverDefinition,
   WebhookReceiverInput,

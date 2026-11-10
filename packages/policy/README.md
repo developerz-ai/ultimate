@@ -119,7 +119,9 @@ arguments, so no predicate is ever consulted and the tree alone decides. `true` 
 ## Four surfaces, four adapters, one rule
 
 `surfaces.ts` is the proof. Each adapter evaluates and maps a denial to that surface's
-error shape; allowed returns `undefined`.
+error shape; allowed returns `undefined`. The barrel exports `enforceHttp` and
+`enforce(surface, policy, args)`; the live, job and MCP adapters are reached through `enforce` only
+(off `.` since 31.0.0).
 
 | Adapter | Denial shape |
 |---|---|
@@ -257,7 +259,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `PolicyError` | any `PolicyErrorCode` — `POLICY_ERROR_CODES` | `src/errors.ts` |
+| `PolicyError` | any `PolicyErrorCode` | `src/errors.ts` |
 
 ## Boundaries
 

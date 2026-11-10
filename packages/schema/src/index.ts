@@ -1,7 +1,6 @@
 // Single responsibility: the public API of @ultimat3/schema. Explicit named exports only.
 
 export type { ArrayBounds } from './array-schema';
-export { arraySchema } from './array-schema';
 export type {
   AnySchema,
   Check,
@@ -26,7 +25,6 @@ export { charCount } from './char-count';
 export type { QuerySource } from './coerce';
 export { coerceInput, coerceNode, coerceQuery, numeric } from './coerce';
 export { describeValue, expected } from './describe-value';
-export { discriminatedUnionSchema } from './discriminated-union';
 export { ULTIMATE_ERROR_BRAND } from './error-brand';
 export type { SchemaErrorCodeDeclaration } from './error-codes';
 export { SCHEMA_ERROR_CODES } from './error-codes';
@@ -61,7 +59,7 @@ export type {
 } from './json-schema';
 export { nodeToJsonSchema, toJsonSchema } from './json-schema';
 export type { JsonValue } from './json-value';
-export { JSON_MAX_DEPTH, jsonSchema } from './json-value';
+export { jsonSchema } from './json-value';
 export type { MoneyValue } from './money-value';
 export {
   CURRENCY_CODE_PATTERN,
@@ -72,16 +70,9 @@ export {
 export type { SchemaFormat, SchemaKind, SchemaNode, SchemaRefinement } from './node';
 export { isSchemaNode, nodeOf, requiredKeys } from './node';
 export type { SchemaProvider } from './provider';
-export {
-  builtinProvider,
-  configureSchemaProvider,
-  introspect,
-  resetSchemaProvider,
-  schemaProvider,
-  tryIntrospect,
-} from './provider';
+export { configureSchemaProvider, introspect, tryIntrospect } from './provider';
 export { recordSchema } from './record-schema';
-export type { IssueRuleFacts, SchemaIssueParams, SchemaRule } from './schema-rules';
+export type { IssueRuleFacts, SchemaIssueParams } from './schema-rules';
 export { issueRuleFacts, SCHEMA_RULES } from './schema-rules';
 export { assertNoSensitiveOutput, maskSensitive } from './sensitive';
 export type {
@@ -110,21 +101,7 @@ export {
 export type { Infer } from './t';
 export { t } from './t';
 export { isIanaZoneName } from './time-zone-name';
-export type {
-  NumberSchema,
-  ObjectSchema,
-  StringSchema,
-  TNamespace,
-} from './validators';
-export {
-  builtinT,
-  enumSchema,
-  literalSchema,
-  nullableSchema,
-  objectSchema,
-  optionalSchema,
-  refineSchema,
-  unionSchema,
-} from './validators';
+export type { NumberSchema, ObjectSchema, StringSchema, TNamespace } from './validators';
+export { literalSchema, objectSchema } from './validators';
 export type { WireJsonSchema } from './wire-schema';
 export { toWireOutputSchema, toWireSchema } from './wire-schema';

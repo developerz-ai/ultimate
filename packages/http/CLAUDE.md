@@ -225,7 +225,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `error-log-level.ts` | the `error-map` line's level: `error` 5xx, `warn` 401/403/429, `info` the rest and a `routineRefusal` (`unauthenticated()`) |
 | `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver |
-| `adapter.ts` | `@ultimat3/http/adapter`: the store port's interface, driver error, and the boot's installer |
+| `adapter.ts` | `@ultimat3/http/adapter`: the store port's interface, the shipped stores' types (also on `.`, beside their factories), the driver error (adapter only), and the boot's installer |
 | `rate-limit-config.ts` | the bucket table, its resolver and `toBucket` |
 | `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
 | `rate-limit-redis.ts` | the other shared store: one Lua token bucket per take |

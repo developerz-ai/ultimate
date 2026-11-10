@@ -11,7 +11,7 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | **Issue messages** | the shape of the rejected value, **never its content** — see `describe-value.ts` |
 | **Issue paths** | framework-chosen segments only. A `t.object` segment is a DECLARED field name; a `t.record` KEY is the caller's, so `recordSchema` names a failing entry by POSITION (`meta[3]`) |
 | Coercion | HTTP boundary only — never call it from actions, jobs or MCP |
-| Exports | explicit in `src/index.ts`; no `export *`; a namespace member and its free function ship together (`t.nullable`/`nullableSchema`) |
+| Exports | explicit in `src/index.ts`; no `export *`; a composer ships once, as its `t` member — its free twin (`arraySchema`, `discriminatedUnionSchema`, `enumSchema`, `nullableSchema`, `optionalSchema`, `refineSchema`, `unionSchema`) stays internal; `jsonSchema`, `recordSchema`, `literalSchema`, `objectSchema` stay exported; provider accessors on `./adapter` (`src/adapter.ts`) |
 | Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
 
 Module order (no cycles):

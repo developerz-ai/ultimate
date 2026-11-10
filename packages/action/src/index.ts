@@ -60,7 +60,7 @@ export { apiDeclaration } from './api-declaration';
  * TYPES only because this barrel's sinks name them; the slot (`installAuditSink`) is core's alone.
  */
 export type { AuditRecord, AuditSink } from './audit';
-export { AUDIT_INPUT_MAX_DEPTH, auditableInput, UNREPRESENTABLE } from './audit-input';
+export { auditableInput } from './audit-input';
 export type { MemoryAuditSink, MemoryAuditSinkOptions } from './audit-memory';
 export { DEFAULT_MAX_AUDIT_RECORDS, memoryAuditSink } from './audit-memory';
 /**
@@ -76,7 +76,7 @@ export type {
   AuditSubjectTarget,
   AuditSubjectTargetOptions,
 } from './audit-subject-target';
-export { AUDIT_SUBJECT_COLUMNS, auditSubjectTarget } from './audit-subject-target';
+export { auditSubjectTarget } from './audit-subject-target';
 export type {
   ActionLike,
   ActionMap,
@@ -89,29 +89,20 @@ export type {
 } from './client';
 export { rpc } from './client';
 export type { ContractTest, ContractTestOptions } from './contract-test';
-export { anonymousCtx, contractTestsFor, policyTestStubFor } from './contract-test';
+export { anonymousCtx, contractTestsFor } from './contract-test';
 export type { Api, ApiDef, ApiModule, ApiModules } from './define-api';
 export { defineApi } from './define-api';
 export type { IdempotencyConflictReason, IdempotencyKeyProblem, RemoteFailure } from './errors';
 export {
   ActionDeniedError,
-  ActionDeprecationInvalidError,
-  ActionDuplicateError,
-  ActionForeignError,
-  ActionPathDuplicateError,
-  ActionPolicyMissingError,
-  ActionUnregisteredError,
   AuditSinkFailedError,
-  AuditSinkMissingError,
   ContractDriftError,
   IdempotencyConflictError,
   IdempotencyKeyInvalidError,
-  IdempotencyNotSharedError,
   IdempotencyOutputUnserializableError,
   IdempotencyReplayedFailureError,
   IdempotencyReservationLostError,
   IdempotencyRunCeilingError,
-  IdempotencyStatusUnknownError,
   IdempotentReplayRedactedError,
   InputInvalidError,
   MutatorNotIdempotentError,
@@ -119,14 +110,9 @@ export {
   RemoteActionError,
   RpcFailedError,
 } from './errors';
-export {
-  ActionDeprecationSuccessorInvalidError,
-  ActionHttpPathInvalidError,
-  ActionPathStyleInvalidError,
-  OpenApiConfigInvalidError,
-} from './errors-http';
-export type { MeterExceededInput, MeterField } from './errors-meter';
-export { MeterExceededError, MeterInvalidError } from './errors-meter';
+export { ActionDeprecationSuccessorInvalidError } from './errors-http';
+export type { MeterExceededInput } from './errors-meter';
+export { MeterExceededError } from './errors-meter';
 export { ActionStreamInvalidError } from './errors-stream';
 export type {
   ExerciseActorOptions,
@@ -137,12 +123,7 @@ export type {
 export { exerciseAction } from './exercise';
 export type { ContractExercise, ExerciseDeclarations } from './exercise-declarations';
 export type { OpenApiOperation } from './http';
-export {
-  operationTagOf,
-  toOpenApiOperation,
-  toPostBinding,
-  toRoute,
-} from './http';
+export { toOpenApiOperation, toPostBinding, toRoute } from './http';
 /** `http: { path }` on an action pins its URL; the app's `pathStyle` derives every other one. */
 export type { ActionHttp, ActionHttpMethod } from './http-path';
 export {
@@ -171,11 +152,8 @@ export type {
 export {
   assertIdempotencyScope,
   configureIdempotency,
-  DEFAULT_IDEMPOTENCY_CONFIG,
   getIdempotencyStore,
-  IDEMPOTENCY_STATUSES,
   idempotencyCeilingMs,
-  idempotencyConfig,
   isIdempotencyStatus,
   withIdempotency,
 } from './idempotency';
@@ -184,11 +162,7 @@ export type {
   MemoryIdempotencyStore,
   MemoryIdempotencyStoreOptions,
 } from './idempotency-memory';
-export {
-  DEFAULT_IDEMPOTENCY_WINDOW_MS,
-  DEFAULT_MAX_IDEMPOTENCY_KEYS,
-  memoryIdempotencyStore,
-} from './idempotency-memory';
+export { DEFAULT_MAX_IDEMPOTENCY_KEYS, memoryIdempotencyStore } from './idempotency-memory';
 export type {
   PostgresIdempotencyStore,
   PostgresIdempotencyStoreOptions,
@@ -198,7 +172,6 @@ export { postgresIdempotencyStore, SQL_IDEMPOTENCY_TABLE } from './idempotency-p
 /** The one execution path. `defOf` stays unexported — that is the enforcement. */
 export { actionName, invoke } from './invoke';
 export type { ActionJobHandle } from './job-handle';
-export { toJobHandle } from './job-handle';
 export type { JsonSchemaObject } from './json-schema';
 export { jsonSchemaOf } from './json-schema';
 /**
@@ -215,9 +188,9 @@ export type {
   MeterWarnTarget,
   ResolvedLimit,
 } from './meter';
-export { METER_PERIODS, MeterWarning } from './meter';
+export { MeterWarning } from './meter';
 export type { MemoryMeterStoreOptions } from './meter-memory';
-export { DEFAULT_MAX_METER_KEYS, memoryMeterStore } from './meter-memory';
+export { memoryMeterStore } from './meter-memory';
 export type { PostgresMeterStoreOptions } from './meter-postgres';
 export { postgresMeterStore, SQL_METER_TABLE } from './meter-postgres';
 export type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
@@ -233,15 +206,10 @@ export type {
 } from './mutator';
 export { custom, isMutator, mutator } from './mutator';
 export type { ActionPath } from './naming';
-export { derivePath, inputSchemaName, outputSchemaName } from './naming';
+export { derivePath, inputSchemaName } from './naming';
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
-export {
-  BEARER_SCHEME,
-  COOKIE_SCHEME,
-  completeOpenApi,
-  mountOpenApi,
-} from './openapi-complete';
+export { completeOpenApi, mountOpenApi } from './openapi-complete';
 /**
  * `@ultimat3/http`'s `hooks.explainMiss` for the action surface: a POST to an action's path under
  * a `pathStyle` this app does not serve answers `X_CONTRACT_DRIFT` naming the style it does.
@@ -287,12 +255,7 @@ export {
  * handle and its manifest row. The machine itself is `@ultimat3/entity`'s — this package owns the
  * projection, not the legality rule.
  */
-export type {
-  TransitionDef,
-  TransitionInput,
-  TransitionTarget,
-  TransitionValues,
-} from './transition';
+export type { TransitionDef, TransitionInput, TransitionTarget } from './transition';
 export { transition } from './transition';
 /**
  * `invoke`'s input parse and its `X_INPUT_INVALID` refusal, alone. Exported so a caller that must

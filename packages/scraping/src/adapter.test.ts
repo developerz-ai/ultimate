@@ -19,6 +19,20 @@ describe('@ultimat3/scraping/adapter', () => {
     expect(typeof adapter.ScrapeError).toBe('function');
   });
 
+  test('the `.` barrel leaves the driver-author surface to this entry', () => {
+    const names = Object.keys(barrel);
+    for (const gone of ['cdpAttachFailed', 'parseRobots', 'runRecovery']) {
+      expect(names).not.toContain(gone);
+    }
+  });
+
+  // A session store is no port (no `runtime.ts` field takes one): the in-memory one an app passes
+  // to a scrape stays on `.`, and only there.
+  test('memorySessionStore is on `.` alone', () => {
+    expect(Object.keys(barrel)).toContain('memorySessionStore');
+    expect(Object.keys(adapter)).not.toContain('memorySessionStore');
+  });
+
   test('the `.` barrel carries no installer and no clock of its own (core owns the clock)', () => {
     const names = Object.keys(barrel);
     for (const gone of [

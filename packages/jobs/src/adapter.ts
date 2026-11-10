@@ -33,4 +33,5 @@ export type { EventBus, JobEvent, PublishOptions } from './events';
 export { freshDefaultEventBus, installEventBus, resetEventBus } from './events';
 export type { LeaseStore } from './leases';
 export type { OutboxRecord, OutboxStore } from './outbox';
+export { fireThroughDriver } from './scheduler-state';
 export type { StepStore } from './steps-store';

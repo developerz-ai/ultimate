@@ -28,4 +28,18 @@ describe('@ultimat3/http/adapter', () => {
     }
     expect(typeof adapter.resetRateLimitStore).toBe('function');
   });
+
+  test('`.` carries neither the driver errors nor the internals v31 dropped from it', () => {
+    for (const gone of [
+      'rateLimitStoreUnavailable',
+      'corsHeaders',
+      'errorPageResponse',
+      'HTTP_METHODS',
+      'noContent',
+      'REDIS_RATE_LIMIT_TAKE',
+      'webhookSignatureInvalid',
+    ]) {
+      expect([gone, Object.hasOwn(barrel, gone)]).toEqual([gone, false]);
+    }
+  });
 });
