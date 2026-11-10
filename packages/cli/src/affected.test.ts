@@ -236,7 +236,7 @@ describe('unit · affected reads its diff from a ref, not from the working tree'
         selection: { base: 'origin/nope', dirty: false },
       }),
     ).rejects.toMatchObject({
-      fix: 'git fetch --no-tags origin origin/nope:origin/nope, then re-run: x verify --changed --base origin/nope --json',
+      fix: 'git fetch --no-tags origin nope, then re-run: x verify --changed --base origin/nope --json',
     });
   });
 
@@ -250,7 +250,7 @@ describe('unit · affected reads its diff from a ref, not from the working tree'
       }),
     ).rejects.toMatchObject({
       code: 'X_CLI_BAD_FLAG',
-      fix: 'git fetch --no-tags origin origin/nope:origin/nope, then re-run: x affected --base origin/nope --json',
+      fix: 'git fetch --no-tags origin nope, then re-run: x affected --base origin/nope --json',
     });
     expect(calls).toHaveLength(1);
   });
@@ -299,12 +299,14 @@ const selection = (argv: readonly string[]) =>
   readAffectedSelection(parseArgs(argv, [SPEC]), 'affected');
 
 describe('unit · the --base/--dirty reader is one reader for both commands', () => {
-  test('the default is the merge-base with the default branch, and the tree is not read', () => {
-    expect(selection(['affected'])).toEqual({ base: DEFAULT_BASE, dirty: false });
+  // No --base is no base yet: the default is resolved from git (`affected-base.ts`), never
+  // assumed to be local `main` here, where nothing can tell whether that branch is stale.
+  test('no --base leaves the base to git, and the tree is not read', () => {
+    expect(selection(['affected'])).toEqual({ base: undefined, dirty: false });
   });
 
   test('--dirty is opt-in, because this checkout holds several agents at once', () => {
-    expect(selection(['affected', '--dirty'])).toEqual({ base: DEFAULT_BASE, dirty: true });
+    expect(selection(['affected', '--dirty'])).toEqual({ base: undefined, dirty: true });
   });
 
   test('--base takes the ref verbatim', () => {

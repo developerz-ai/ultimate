@@ -13,13 +13,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_BASE } from './affected';
 import { REQUIRED_BUN } from './app-root';
-import { AFFECTED_MESSAGE_KEYS, affectedCommand } from './cmd-affected';
+import { AFFECTED_MESSAGE_KEYS, affectedCommand, createAffectedCommand } from './cmd-affected';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import { messageKeys } from './messages';
 import { parseArgs } from './parse';
 
 const TOPLEVEL = 'git rev-parse --show-toplevel';
+const SYMREF = 'git symbolic-ref --quiet --short refs/remotes/origin/HEAD';
+const ORIGIN_MAIN = 'git rev-parse --verify --quiet refs/remotes/origin/main^{commit}';
 const VERIFY = `git rev-parse --verify --quiet ${DEFAULT_BASE}^{commit}`;
 const BASE_DIFF = `git diff --name-only -z ${DEFAULT_BASE}...HEAD`;
 const TREE_DIFF = 'git diff --name-only -z HEAD';
@@ -177,7 +179,8 @@ describe('unit · x affected diffs a ref, and only reads the tree when told to',
       });
       await affectedCommand.run(context(['affected'], root, runner));
       const spawned = calls.map((call) => call.join(' '));
-      expect(spawned).toEqual([TOPLEVEL, VERIFY, BASE_DIFF]);
+      // No remote in this fake: both default-base probes miss, and local `main` is the fallback.
+      expect(spawned).toEqual([TOPLEVEL, SYMREF, ORIGIN_MAIN, VERIFY, BASE_DIFF]);
       expect(spawned).not.toContain(TREE_DIFF);
       expect(spawned).not.toContain(UNTRACKED);
     });
@@ -195,6 +198,8 @@ describe('unit · x affected diffs a ref, and only reads the tree when told to',
       const result = await affectedCommand.run(context(['affected', '--dirty'], root, runner));
       expect(calls.map((call) => call.join(' '))).toEqual([
         TOPLEVEL,
+        SYMREF,
+        ORIGIN_MAIN,
         VERIFY,
         BASE_DIFF,
         TREE_DIFF,
@@ -224,26 +229,99 @@ describe('unit · x affected diffs a ref, and only reads the tree when told to',
   });
 });
 
+describe('unit · x affected measures against the remote-tracking default branch', () => {
+  // A checkout nobody pulls (or a worktree) has a stale local `main`: diffed against it, the
+  // answer counts files origin already merged as this branch's work.
+  test('origin/HEAD decides the base, and --json says which base was used', async () => {
+    await withRepo(async (root) => {
+      const { calls, runner } = recorder({
+        [TOPLEVEL]: `${root}\n`,
+        [SYMREF]: 'origin/main\n',
+        'git rev-parse --verify --quiet origin/main^{commit}': 'abc\n',
+        'git diff --name-only -z origin/main...HEAD': 'packages/c/src/x.ts\0',
+      });
+      const result = await affectedCommand.run(context(['affected'], root, runner));
+      expect(dataOf(result).base).toBe('origin/main');
+      expect(calls.map((call) => call.join(' '))).not.toContain(BASE_DIFF);
+      expect(dataOf(result).paths).toHaveLength(3);
+    });
+  });
+
+  test('--base still overrides, and asks git nothing about the default', async () => {
+    await withRepo(async (root) => {
+      const { calls, runner } = recorder({
+        [TOPLEVEL]: `${root}\n`,
+        'git rev-parse --verify --quiet next^{commit}': 'abc\n',
+        'git diff --name-only -z next...HEAD': '',
+      });
+      const result = await affectedCommand.run(
+        context(['affected', '--base', 'next'], root, runner),
+      );
+      expect(dataOf(result).base).toBe('next');
+      expect(calls.map((call) => call.join(' '))).not.toContain(SYMREF);
+    });
+  });
+});
+
 describe('unit · x affected --paths', () => {
-  test('--paths prints bare directories while --json keeps both projections', async () => {
+  // `bun test $(x affected --paths)` is the use the help promises: every byte on stdout is an
+  // argument to the next command, so a note or the `✓` summary there is a bogus path.
+  test('--paths writes only the directories to stdout; notes and the summary go to stderr', async () => {
+    await withRepo(async (root) => {
+      const replies = {
+        [TOPLEVEL]: `${root}\n`,
+        [VERIFY]: 'abc\n',
+        // A root file: the run that also carries a note line, which must not reach stdout.
+        [BASE_DIFF]: 'tsconfig.json\0',
+      };
+      const stdout: string[] = [];
+      const command = createAffectedCommand((line) => stdout.push(line));
+      const result = await command.run(
+        context(['affected', '--paths'], root, recorder(replies).runner),
+      );
+      expect(stdout).toEqual(['packages/a', 'packages/b', 'packages/c']);
+      // Every stdout line parses as a path, and names a directory that exists.
+      for (const line of stdout) {
+        expect(line).toMatch(/^[\w@./-]+$/);
+        expect(await Bun.file(join(root, line, 'package.json')).exists()).toBe(true);
+      }
+      // The rest of the render — the root-wide note and the summary — is fd 2's.
+      expect(result.stream).toBe('stderr');
+      expect(result.lines).toHaveLength(1);
+      expect(result.lines).not.toContain('packages/a');
+      const table = await command.run(context(['affected'], root, recorder(replies).runner));
+      // Same data either way: a flag that changed `--json` would be a second answer to one question.
+      expect(dataOf(result)).toEqual(dataOf(table));
+      expect(table.stream).toBeUndefined();
+    });
+  });
+
+  test('--paths with nothing affected writes nothing to stdout', async () => {
+    await withRepo(async (root) => {
+      const replies = { [TOPLEVEL]: `${root}\n`, [VERIFY]: 'abc\n', [BASE_DIFF]: 'a.md\0' };
+      const stdout: string[] = [];
+      const result = await createAffectedCommand((line) => stdout.push(line)).run(
+        context(['affected', '--paths'], root, recorder(replies).runner),
+      );
+      expect(stdout).toEqual([]);
+      expect(result.stream).toBe('stderr');
+    });
+  });
+
+  test('--paths under --json leaves stdout to the one document', async () => {
     await withRepo(async (root) => {
       const replies = {
         [TOPLEVEL]: `${root}\n`,
         [VERIFY]: 'abc\n',
         [BASE_DIFF]: 'packages/a/src/x.ts\0',
       };
-      const table = await affectedCommand.run(
-        context(['affected'], root, recorder(replies).runner),
+      const stdout: string[] = [];
+      const result = await createAffectedCommand((line) => stdout.push(line)).run(
+        context(['affected', '--paths', '--json'], root, recorder(replies).runner),
       );
-      const paths = await affectedCommand.run(
-        context(['affected', '--paths'], root, recorder(replies).runner),
-      );
-      expect(paths.lines).toEqual(['packages/a']);
-      // The table form names the workspace as well, so the two renderings are not the same list.
-      expect((table.lines ?? []).join('\n')).toContain('@x/a');
-      expect(table.lines).not.toEqual(paths.lines);
-      // Same data either way: a flag that changed `--json` would be a second answer to one question.
-      expect(dataOf(paths)).toEqual(dataOf(table));
+      expect(stdout).toEqual([]);
+      expect(result.stream).toBeUndefined();
+      expect(dataOf(result).paths).toEqual(['packages/a']);
     });
   });
 

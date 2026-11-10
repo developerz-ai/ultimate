@@ -14,6 +14,7 @@ import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool } from './parse';
 import { renderTable } from './table';
+import { writeLine } from './write-line';
 
 const HEADER = ['workspace', 'dir'] as const;
 
@@ -36,81 +37,94 @@ export const AFFECTED_MESSAGE_KEYS = [
   'cli.affected.testsAll',
 ] as const;
 
-export const affectedCommand: CliCommand = {
-  spec: affectedSpec,
-  async run(ctx: CommandContext): Promise<CommandResult> {
-    // The one resolver `x test --affected` narrows with, so this command reports exactly what that
-    // one runs. It reads `--base` before git is spawned (a malformed ref must not cost a
-    // subprocess) and takes the diff at the CHECKOUT root, which is what git prints paths against.
-    const { selection, root, plan } = await affectedScope({
-      runner: ctx.runner,
-      cwd: ctx.cwd,
-      args: ctx.args,
-      command: 'affected',
-    });
-    const params = { base: selection.base, changed: plan.changed.length };
-    const tests = await appTestScope(ctx.cwd, root, plan.changed);
-    const table = renderTable(
-      HEADER,
-      plan.workspaces.map((workspace) => [workspace.name, workspace.dir]),
-    ).map((line) => `  ${line}`);
-    const data: JsonValue = {
-      base: selection.base,
-      dirty: selection.dirty,
-      root,
-      changed: [...plan.changed],
-      ignored: [...plan.ignored],
-      rootWide: [...plan.rootWide],
-      workspaces: plan.workspaces.map((workspace) => ({
-        name: workspace.name,
-        dir: workspace.dir,
-      })),
-      paths: plan.workspaces.map((workspace) => workspace.dir),
+/**
+ * `--paths` is for `bun test $(x affected --paths)`, so its stdout is the directories and nothing
+ * else: each one written here, on fd 1, and the rest of the render — the notes and the `✓` summary,
+ * which a shell would split into bogus arguments — sent to fd 2 by `stream: 'stderr'`. The one
+ * write a command makes itself: `CommandResult` has no "bare stdout" channel, and the one sink
+ * `dispatch` picks per result cannot split a result across both fds. `writeOut` is injectable so a
+ * test reads fd 1 exactly as a shell would.
+ */
+export function createAffectedCommand(writeOut: (line: string) => void = writeLine): CliCommand {
+  return { spec: affectedSpec, run: (ctx) => runAffected(ctx, writeOut) };
+}
+
+async function runAffected(
+  ctx: CommandContext,
+  writeOut: (line: string) => void,
+): Promise<CommandResult> {
+  // The one resolver `x test --affected` narrows with, so this command reports exactly what that
+  // one runs. It reads `--base` before git is spawned (a malformed ref must not cost a
+  // subprocess) and takes the diff at the CHECKOUT root, which is what git prints paths against.
+  const { selection, root, plan } = await affectedScope({
+    runner: ctx.runner,
+    cwd: ctx.cwd,
+    args: ctx.args,
+    command: 'affected',
+  });
+  const params = { base: selection.base, changed: plan.changed.length };
+  const tests = await appTestScope(ctx.cwd, root, plan.changed);
+  const table = renderTable(
+    HEADER,
+    plan.workspaces.map((workspace) => [workspace.name, workspace.dir]),
+  ).map((line) => `  ${line}`);
+  const data: JsonValue = {
+    base: selection.base,
+    dirty: selection.dirty,
+    root,
+    changed: [...plan.changed],
+    ignored: [...plan.ignored],
+    rootWide: [...plan.rootWide],
+    workspaces: plan.workspaces.map((workspace) => ({
+      name: workspace.name,
+      dir: workspace.dir,
+    })),
+    paths: plan.workspaces.map((workspace) => workspace.dir),
+    ...(tests === undefined
+      ? {}
+      : {
+          tests: {
+            app: tests.app,
+            all: tests.all,
+            forcing: [...tests.forcing],
+            files: [...tests.tests],
+          },
+        }),
+  };
+  const bare = flagBool(ctx.args, 'paths') && !ctx.args.json;
+  if (bare) for (const workspace of plan.workspaces) writeOut(workspace.dir);
+  return {
+    ...(bare ? { stream: 'stderr' as const } : {}),
+    // An empty answer is a fact, not a failure: a `.md`-only diff genuinely re-checks nothing,
+    // and reporting it red would fail a build for editing a doc. The count is in the summary and
+    // `data.changed`/`data.ignored` say what was looked at, so "green because nothing is
+    // affected" is never mistaken for "green because everything passed".
+    ok: true,
+    command: 'affected',
+    summary:
+      plan.workspaces.length === 0
+        ? msg('cli.affected.none', params)
+        : msg('cli.affected.count', { ...params, count: plan.workspaces.length }),
+    lines: [
+      ...(selection.dirty ? [msg('cli.affected.dirty')] : []),
       ...(tests === undefined
-        ? {}
-        : {
-            tests: {
-              app: tests.app,
-              all: tests.all,
-              forcing: [...tests.forcing],
-              files: [...tests.tests],
-            },
-          }),
-    };
-    return {
-      // An empty answer is a fact, not a failure: a `.md`-only diff genuinely re-checks nothing,
-      // and reporting it red would fail a build for editing a doc. The count is in the summary and
-      // `data.changed`/`data.ignored` say what was looked at, so "green because nothing is
-      // affected" is never mistaken for "green because everything passed".
-      ok: true,
-      command: 'affected',
-      summary:
-        plan.workspaces.length === 0
-          ? msg('cli.affected.none', params)
-          : msg('cli.affected.count', { ...params, count: plan.workspaces.length }),
-      lines: [
-        ...(selection.dirty ? [msg('cli.affected.dirty')] : []),
-        ...(tests === undefined
-          ? []
-          : [
-              tests.all
-                ? msg('cli.affected.testsAll', {
-                    files: `${tests.forcing.slice(0, 3).join(', ')}${tests.forcing.length > 3 ? ` (+${tests.forcing.length - 3})` : ''}`,
-                  })
-                : msg('cli.affected.tests', { count: tests.tests.length }),
-            ]),
-        ...(plan.rootWide.length === 0
-          ? []
-          : [msg('cli.affected.rootWide', { files: plan.rootWide.join(', ') })]),
-        ...(plan.workspaces.length === 0
-          ? []
-          : // `--paths` changes only what the human sees; `--json` carries both projections on
-            // every run, so the two renderers can never state different sets.
-            flagBool(ctx.args, 'paths')
-            ? plan.workspaces.map((workspace) => workspace.dir)
-            : table),
-      ],
-      data,
-    };
-  },
-};
+        ? []
+        : [
+            tests.all
+              ? msg('cli.affected.testsAll', {
+                  files: `${tests.forcing.slice(0, 3).join(', ')}${tests.forcing.length > 3 ? ` (+${tests.forcing.length - 3})` : ''}`,
+                })
+              : msg('cli.affected.tests', { count: tests.tests.length }),
+          ]),
+      ...(plan.rootWide.length === 0
+        ? []
+        : [msg('cli.affected.rootWide', { files: plan.rootWide.join(', ') })]),
+      // `--paths` changes only what the human sees; `--json` carries both projections on every
+      // run, so the two renderers can never state different sets.
+      ...(plan.workspaces.length === 0 || bare ? [] : table),
+    ],
+    data,
+  };
+}
+
+export const affectedCommand: CliCommand = createAffectedCommand();

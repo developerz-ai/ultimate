@@ -5,6 +5,8 @@
 import { registerErrorCodes } from '@ultimat3/core';
 import type { CliBoundaryErrorCode } from './error-codes-boundary';
 import { CLI_BOUNDARY_ERROR_CODES, CLI_BOUNDARY_ERROR_TITLES } from './error-codes-boundary';
+import type { CliPackageErrorCode } from './error-codes-package';
+import { CLI_PACKAGE_ERROR_CODES, CLI_PACKAGE_ERROR_TITLES } from './error-codes-package';
 import type { CliShotErrorCode } from './error-codes-shot';
 import { CLI_SHOT_ERROR_CODES, CLI_SHOT_ERROR_TITLES } from './error-codes-shot';
 import type { CliToolingErrorCode } from './error-codes-tooling';
@@ -51,13 +53,6 @@ export const CLI_OWNED_ERROR_CODES = [
   // repo already ran it, in which case the suite was deleted and the gate would otherwise print
   // one more green line for it.
   'X_VERIFY_SUITE_VANISHED',
-  'X_FILE_TOO_LONG',
-  'X_PACKAGE_SHAPE',
-  // The build graph's own membership rule. `tsc -b` compiles referenced projects and nothing
-  // else, so a workspace no root reference names is one the `typecheck` step passes over without
-  // reading — the hole that let `scripts/` hold seven type errors under a green gate.
-  'X_PACKAGE_UNREFERENCED',
-  'X_RELEASE_VERSION_SKEW',
   // The framework's own tables, refused by name rather than by the driver's rejection: a raw
   // `permission denied for schema public` says which statement failed and neither which framework
   // table it was creating nor which package wants it.
@@ -153,12 +148,6 @@ export const CLI_OWNED_ERROR_CODES = [
   // CLI's problem alone, and core would have no `fix:` to offer for one.
   'X_SECRETS_EDITOR_MISSING',
   'X_SECRETS_EDIT_FAILED',
-  'X_WORKSPACE_DEP_UNDECLARED',
-  // Two module instances of a registry-holding package inside ONE app's `node_modules`. Its own
-  // code and not the registry's (`X_CATALOG_UNREGISTERED`, `X_PERMISSION_UNKNOWN`): those carry a
-  // source-level fix, and an agent following it here edits a file that is already right — the
-  // repair is an install, and only `duplicate-packages.ts` can see that.
-  'X_PACKAGE_DUPLICATED',
   'X_GH_UNAVAILABLE',
   'X_GH_NOT_AUTHENTICATED',
   'X_GH_COMMAND_FAILED',
@@ -198,7 +187,6 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_PERMISSION_BORROWED',
   'X_ERROR_CODE_UNTHROWN_STALE',
   'X_DEV_STATE_UNWRITABLE',
-  'X_PACKAGE_TEST_ONLY_SHIPPED',
   'X_ISLAND_MODULE_DUPLICATED',
   'X_BACKFILL_SLICE_ENTITY',
   'X_LAYOUT_SIBLING_MODULE',
@@ -284,6 +272,7 @@ export const CLI_BORROWED_ERROR_CODES = [
 export const CLI_ERROR_CODES = [
   ...CLI_OWNED_ERROR_CODES,
   ...CLI_BOUNDARY_ERROR_CODES,
+  ...CLI_PACKAGE_ERROR_CODES,
   ...CLI_SHOT_ERROR_CODES,
   ...CLI_TOOLING_ERROR_CODES,
   ...CLI_BORROWED_ERROR_CODES,
@@ -294,6 +283,7 @@ type CliListedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
 export type CliOwnedErrorCode =
   | CliListedErrorCode
   | CliBoundaryErrorCode
+  | CliPackageErrorCode
   | CliShotErrorCode
   | CliToolingErrorCode;
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
@@ -333,10 +323,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_LINT_FAILED: 'Biome failed',
   X_TEST_FAILED: 'a test type failed',
   X_VERIFY_SUITE_VANISHED: 'a step the committed floor requires had nothing left to check',
-  X_FILE_TOO_LONG: 'a source file is over 500 lines',
-  X_PACKAGE_SHAPE: 'a workspace package is missing a contract file',
-  X_PACKAGE_UNREFERENCED: 'a published workspace is not in the root tsconfig build graph',
-  X_RELEASE_VERSION_SKEW: 'a workspace is not at the lockstep version',
   X_MANIFEST_STALE: 'openapi.json is stale',
   X_MANIFEST_MISSING: 'the app ships no x.manifest.json',
   X_BUDGET_UNMEASURED: 'a route declares a budget the build never measured',
@@ -370,8 +356,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_CLI_FLAG_UNREAD: 'a command declares a flag no code reads',
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
-  X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
-  X_PACKAGE_DUPLICATED: 'two copies of one registry-holding framework package are installed',
   X_GH_UNAVAILABLE: 'the GitHub CLI is not runnable from here',
   X_GH_NOT_AUTHENTICATED: 'gh holds no credentials for this host',
   X_GH_COMMAND_FAILED: 'a gh invocation exited non-zero',
@@ -420,7 +404,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_ERROR_CODE_UNTHROWN_STALE:
     'a code UNTHROWN_CODES lists as thrown by nothing is thrown again — delete it from UNTHROWN_CODES in packages/cli/src/unthrown-codes.ts',
   X_DEV_STATE_UNWRITABLE: 'x dev cannot claim its state directory',
-  X_PACKAGE_TEST_ONLY_SHIPPED: 'a test-only module ships in the tarball',
   X_ISLAND_MODULE_DUPLICATED: 'An island chunk bundles one module more than once',
   X_BACKFILL_SLICE_ENTITY: 'the slice holds no entity a generated backfill can sweep',
   X_LAYOUT_SIBLING_MODULE: 'a primitive module beside its directory',
@@ -484,6 +467,7 @@ registerErrorCodes(
     Object.entries({
       ...CLI_ERROR_TITLES,
       ...CLI_BOUNDARY_ERROR_TITLES,
+      ...CLI_PACKAGE_ERROR_TITLES,
       ...CLI_SHOT_ERROR_TITLES,
       ...CLI_TOOLING_ERROR_TITLES,
     }).map(([code, title]) => [code, { title }]),

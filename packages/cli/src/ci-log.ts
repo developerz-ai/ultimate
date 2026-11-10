@@ -46,15 +46,38 @@ export function parseLogLines(log: string): readonly CiLogLine[] {
     const columns = line.split('\t');
     const tabbed = columns.length >= 3;
     const rest = tabbed ? columns.slice(2).join('\t') : line;
-    const text = rest.replace(STAMP, '').replace(/^##\[group\]/, '');
+    const text = rest.replace(STAMP, '').replace(MARKER, '');
     if (text.startsWith('##[endgroup]')) continue;
-    out.push({
-      job: tabbed ? (columns[0] ?? '') : '',
-      step: tabbed ? (columns[1] ?? '') : '',
-      text,
-    });
+    const job = tabbed ? (columns[0] ?? '') : '';
+    const step = tabbed ? (columns[1] ?? '') : '';
+    for (const part of unannotated(text)) out.push({ job, step, text: part });
   }
   return out;
+}
+
+/**
+ * The runner's own line markers: `##[group]` opens a fold, and an annotation is printed with its
+ * level as a prefix (`##[error]X_LINT_FAILED`). Neither is the text the step wrote.
+ */
+const MARKER = /^##\[(?:group|error|warning|notice|debug)\]/;
+/** A workflow command a step echoed whole: `::error file=a.ts,title=t::message`. */
+const ANNOTATION = /^::(?:error|warning|notice|debug)(?:\s[^:]*)?::(.*)$/;
+
+/**
+ * An annotation's message, decoded: GitHub's encoding writes a newline as `%0A` (and `%` as
+ * `%25`), so a three-line finding inside one `::error` is one line of the log until this splits it
+ * back into the lines `renderFinding` wrote.
+ */
+function unannotated(text: string): readonly string[] {
+  const message = ANNOTATION.exec(text)?.[1];
+  if (message === undefined) return [text];
+  return message
+    .replaceAll('%0D', '')
+    .replaceAll('%3A', ':')
+    .replaceAll('%2C', ',')
+    .split('%0A')
+    .map((part) => part.replaceAll('%25', '%'))
+    .filter((part) => part.trim() !== '');
 }
 
 /** Every job the log carries a line for, in the order they first appear. */
@@ -75,15 +98,53 @@ const CODE = /^(X_[A-Z][A-Z0-9_]*)/;
 // `CODE (path) [step=unit]` — an end-anchor matches only what follows the brackets, the match
 // fails, and the path is dropped. With no step the optional group is absent and the
 // parenthesised group is still the last thing on the line.
-const LOCATOR = /\(([^()]+)\)(?=\s*(?:\[step=[^[\]]+\]\s*)?$)/;
+// A `[from=ci-log …]` marker (`output.ts`'s `fromLabel`) may close the head after both: an `x ci`
+// render read back by another `x ci` must still yield its locators.
+const LOCATOR = /\(([^()]+)\)(?=\s*(?:\[step=[^[\]]+\]\s*)?(?:\[from=[^[\]]*\]\s*)?$)/;
 // The second, non-path locator the renderer prints on the head — `meta.step` in the same
 // brackets-keyed form (`[step=lint]`) `renderFinding` writes — so a merge gap's gate step name
 // or any future non-path identifier survives the round-trip too. Its own brackets are what
 // `LOCATOR`'s lookahead stands aside for, so the two cannot collide in one head.
-const STEP_LOCATOR = /\[step=([^[\]]+)\]\s*$/;
+const STEP_LOCATOR = /\[step=([^[\]]+)\]\s*(?:\[from=[^[\]]*\]\s*)?$/;
 
 const after = (text: string, label: string): string | undefined =>
   text.trim().startsWith(label) ? text.trim().slice(label.length).trim() : undefined;
+
+// `commentBlock`'s fence (`foreign-text.ts`), as it reaches a log: `x ci` run INSIDE a job prints a
+// fenced value through `singleLine`, so its newlines arrive as the two characters `\n`. The
+// fence is transport around the value, never the value — the reader is owed the command.
+const FENCE_OPEN = /^<comment id="[^"]*">$/;
+const FENCE_ONE_LINE = /^<comment id="[^"]*">(?:\\n)?([\s\S]*?)(?:\\n)?<\/comment>$/;
+const FENCE_CLOSE = '</comment>';
+
+/** One labelled field of a finding block, and the index of the line after it. */
+interface Field {
+  readonly value: string;
+  readonly next: number;
+}
+
+/**
+ * The value of `label:` on line `index`, with a fence around it taken off — whether the fence was
+ * flattened onto one line or spread over the lines that follow until `</comment>`.
+ */
+function fieldAt(texts: readonly string[], index: number, label: string): Field | undefined {
+  const value = after(texts[index] ?? '', label);
+  if (value === undefined) return undefined;
+  const flat = FENCE_ONE_LINE.exec(value);
+  if (flat !== null) {
+    return { value: (flat[1] ?? '').split(String.raw`\n`).join(' ').trim(), next: index + 1 };
+  }
+  if (!FENCE_OPEN.test(value)) return { value, next: index + 1 };
+  const close = texts.indexOf(FENCE_CLOSE, index + 1);
+  if (close === -1) return { value, next: index + 1 };
+  return {
+    value: texts
+      .slice(index + 1, close)
+      .join(' ')
+      .trim(),
+    next: close + 1,
+  };
+}
 
 // The `meta.step` locator the renderer prints in the head (`output.ts:185-189`): a gate step name
 // the finding carries on `meta`, never on `at`. Total on every shape `Finding.meta` may take —
@@ -129,13 +190,15 @@ export function findingsFrom(lines: readonly CiLogLine[]): readonly Finding[] {
   for (let index = 0; index < texts.length; index += 1) {
     const head = CODE.exec(texts[index] ?? '');
     if (head === null) continue;
-    const cause = after(texts[index + 1] ?? '', 'cause:');
-    const fix = after(texts[index + 2] ?? '', 'fix:');
-    if (cause === undefined || fix === undefined) continue;
+    const causeField = fieldAt(texts, index + 1, 'cause:');
+    const fixField = causeField === undefined ? undefined : fieldAt(texts, causeField.next, 'fix:');
+    if (causeField === undefined || fixField === undefined) continue;
+    const cause = causeField.value;
+    const fix = fixField.value;
     const code = head[1] ?? '';
     const at = LOCATOR.exec(texts[index] ?? '')?.[1];
     const step = STEP_LOCATOR.exec(texts[index] ?? '')?.[1];
-    const docs = after(texts[index + 3] ?? '', 'docs:');
+    const docs = after(texts[fixField.next] ?? '', 'docs:');
     // Step name and any other reconstructed structured fact ride on `meta`, so the
     // reconstructed finding has a place to put a non-path locator `at` cannot carry.
     const meta = step === undefined ? undefined : { step };
@@ -155,7 +218,7 @@ export function findingsFrom(lines: readonly CiLogLine[]): readonly Finding[] {
       seen.add(findingKey(finding));
       out.push(finding);
     }
-    index += 2;
+    index = fixField.next - 1;
   }
   return out;
 }

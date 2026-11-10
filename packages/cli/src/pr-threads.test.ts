@@ -92,6 +92,9 @@ const payload = (options: PayloadOptions = {}): string =>
                     },
                   ],
                 },
+                // The rest of the conversation (`pr-activity.ts`): none here; `pr-activity.test.ts` has it.
+                reviews: { totalCount: 0, nodes: [] },
+                comments: { totalCount: 0, nodes: [] },
                 reviewThreads: {
                   pageInfo: { hasNextPage: options.hasNextPage ?? false },
                   nodes: options.threads ?? [thread()],

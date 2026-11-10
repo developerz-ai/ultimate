@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "26f8b82af5c796b267445f913f23f8f0f9f4cd0abed47653a9c3684fc2ec6a75",
+  "buildId": "7a77ba2f9900ca00a856a556278f999a12a139e713a60ade7e7cb4062d11dd8b",
   "tiers": {
     "0": [
       "core",
@@ -2182,7 +2182,7 @@
     {
       "code": "X_FILE_TOO_LONG",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_FINITE_BOUND_PIN_STALE",
@@ -3802,7 +3802,7 @@
     {
       "code": "X_PACKAGE_DUPLICATED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_PACKAGE_KEYWORDS_MISSING",
@@ -3817,17 +3817,17 @@
     {
       "code": "X_PACKAGE_SHAPE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_PACKAGE_TEST_ONLY_SHIPPED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_PACKAGE_UNREFERENCED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_PARTITIONS_UNMAINTAINED",
@@ -4452,7 +4452,7 @@
     {
       "code": "X_RELEASE_VERSION_SKEW",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_RELEASE_VERSION_UNSTATED",
@@ -6397,7 +6397,12 @@
     {
       "code": "X_WORKSPACE_DEP_UNDECLARED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-package.ts"
+    },
+    {
+      "code": "X_WORKSPACE_EXTERNAL_DEP_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-package.ts"
     },
     {
       "code": "X_WORKSPACE_MANIFEST_UNREADABLE",

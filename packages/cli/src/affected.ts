@@ -13,6 +13,7 @@
 // directory is checkout-relative while a caller's scan yields paths relative to its own root.
 import { join, relative } from 'node:path';
 import { singleLine, UltimateError } from '@ultimat3/core';
+import { DEFAULT_BASE, defaultBase, fetchFixFor } from './affected-base';
 import { readUnownedDirs } from './affected-unowned';
 import { BadFlagError } from './errors';
 import type { ExecResult, Runner } from './exec';
@@ -23,8 +24,7 @@ import { flagBool, flagString } from './parse';
 import type { WorkspaceNode } from './workspace-graph';
 import { readWorkspaceGraph } from './workspace-graph';
 
-/** The branch a change is measured against when `--base` says nothing. */
-export const DEFAULT_BASE = 'main';
+export { DEFAULT_BASE } from './affected-base';
 
 /**
  * A file with no compilation unit behind it. A doc or a plan re-checks nothing, so it maps to no
@@ -162,18 +162,26 @@ const invocationOf = (command: string): string =>
       : `x ${command} --affected`;
 
 export interface AffectedSelection {
+  /** The ref the diff was measured against — `--base`, or the default it resolved to. */
   readonly base: string;
   readonly dirty: boolean;
 }
 
+/** What argv asked for: `base` is absent when `--base` was not given. */
+export interface AffectedRequest {
+  readonly base: string | undefined;
+  readonly dirty: boolean;
+}
+
 /**
- * One reader for `--base` and `--dirty`, shared by `x affected` and `x test --affected`: two
- * readers would be two answers to "what is this diff measured against", and the second command's
- * scoping is only trustworthy if it is the first command's.
+ * One reader for `--base` and `--dirty`, shared by `x affected`, `x test --affected` and `x verify
+ * --changed`: two readers would be two answers to "what is this diff measured against", and the
+ * second command's scoping is only trustworthy if it is the first command's. Pure — a malformed
+ * `--base` is refused before git is spawned; `resolveSelection` fills the default in.
  */
-export function readAffectedSelection(args: ParsedArgs, command: string): AffectedSelection {
-  const base = flagString(args, 'base') ?? DEFAULT_BASE;
-  if (base.trim().length === 0) {
+export function readAffectedSelection(args: ParsedArgs, command: string): AffectedRequest {
+  const base = flagString(args, 'base');
+  if (base !== undefined && base.trim().length === 0) {
     throw new BadFlagError({
       flag: 'base',
       command,
@@ -183,6 +191,16 @@ export function readAffectedSelection(args: ParsedArgs, command: string): Affect
   }
   return { base, dirty: flagBool(args, 'dirty') };
 }
+
+/** `--base` verbatim when given, else the remote-tracking default branch (`affected-base.ts`). */
+export const resolveSelection = async (
+  runner: Runner,
+  cwd: string,
+  request: AffectedRequest,
+): Promise<AffectedSelection> => ({
+  base: request.base ?? (await defaultBase(runner, cwd)),
+  dirty: request.dirty,
+});
 
 const git = (runner: Runner, cwd: string, args: readonly string[]): Promise<ExecResult> =>
   runner(['git', ...args], { cwd });
@@ -238,7 +256,7 @@ export async function changedFiles(
       flag: 'base',
       command: options.command,
       reason: `git resolves no commit named "${base}" in this checkout`,
-      fix: `git fetch --no-tags origin ${base}:${base}, then re-run: ${invocationOf(options.command)} --base ${base} --json`,
+      fix: `${fetchFixFor(base)}, then re-run: ${invocationOf(options.command)} --base ${base} --json`,
     });
   }
   const runs = [
@@ -309,8 +327,9 @@ export interface AffectedScopeOptions {
  * checkmark on a broken repo, and two implementations is how one of them gets it wrong.
  */
 export async function affectedScope(options: AffectedScopeOptions): Promise<AffectedScope> {
-  const selection = readAffectedSelection(options.args, options.command);
+  const request = readAffectedSelection(options.args, options.command);
   const root = await gitRoot(options.runner, options.cwd, options.command);
+  const selection = await resolveSelection(options.runner, root, request);
   const graph = await readWorkspaceGraph(root);
   const plan = planAffected(
     graph,

@@ -49,6 +49,9 @@ const graphqlPayload = (threads: readonly Threaded[]): string =>
               },
             ],
           },
+          // The rest of the conversation (`pr-activity.ts`): none here; `pr-activity.test.ts` has it.
+          reviews: { totalCount: 0, nodes: [] },
+          comments: { totalCount: 0, nodes: [] },
           reviewThreads: {
             pageInfo: { hasNextPage: false },
             nodes: threads.map((entry, index) => ({

@@ -42,6 +42,24 @@ const state: SealState = {
   network: 'online',
 };
 
+const dialListeners = new Set<(call: LoggedRequest) => void>();
+
+/**
+ * Each dial as it is logged, synchronously and in the dialler's own async context — so a listener
+ * can tell whose call it was (`exercise-report.ts`'s room). Internal: never on the barrel.
+ */
+export function onDial(listener: (call: LoggedRequest) => void): () => void {
+  dialListeners.add(listener);
+  return () => {
+    dialListeners.delete(listener);
+  };
+}
+
+const logDial = (call: LoggedRequest): void => {
+  state.log.push(call);
+  for (const listener of dialListeners) listener(call);
+};
+
 /**
  * What a mocked host resolves to: one `public` address (`classifyAddress`), so an SSRF screen
  * passes it, and never a host network — a screen refuses those. Never dialled: a dial pinned to it
@@ -76,7 +94,7 @@ const isThisMachine = (hostname: string): boolean => {
 /** The socket dials' gate: the same allow-list, offline state and record as `fetch`. No mocks — a
  *  socket test injects its transport (`connect`, `client`), it does not intercept the dial. */
 const socketRefusal = (url: string, method: string): Error | undefined => {
-  state.log.push({ method, url, headers: {}, body: null });
+  logDial({ method, url, headers: {}, body: null });
   let target: URL;
   try {
     target = new URL(url);
@@ -135,7 +153,7 @@ export function sealNetwork(): void {
     // In the log before the first await, so concurrent calls keep their order; every verdict below
     // is reached before the body is awaited too, so a call is judged by the state it was made in.
     const call = { method, url, headers: headersOf(probe), body: null as string | null };
-    state.log.push(call);
+    logDial(call);
     const openEnded = isOpenEnded(input, init);
     /** A finite body is in the entry when `fetch` settles; an open-ended one, once it ends. */
     const logBody = async (source: Request | undefined): Promise<void> => {

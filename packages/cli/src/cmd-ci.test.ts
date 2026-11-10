@@ -14,6 +14,7 @@ import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import { messageKeys } from './messages';
 import type { Finding } from './output';
+import { renderHuman } from './output';
 import { parseArgs } from './parse';
 
 const line = (job: string, stamp: string, text: string, bom = false): string =>
@@ -177,16 +178,16 @@ describe('unit · x ci is triage in one command', () => {
       'X_COVERAGE_UNMEASURED',
       'X_COVERAGE_BELOW',
     ]);
-    // The fix line is the one the gate wrote, carried through verbatim — but FENCED and tagged
-    // (row q): a CI log is text anyone who can push a branch writes, and a reconstructed `fix:`
-    // arriving as an ordinary finding is prompt injection with a shell attached.
+    // The fix line is the one the gate wrote, carried through verbatim and CLEAN: a fence inside
+    // `fix` reached the human render as `<comment id=…>\n…\n</comment>` on one line (31.0 field
+    // report). The text is still foreign, and that is said by `source` and `meta.job` — never by
+    // markup inside the value an agent copies.
     const first = result.findings?.[0];
     expect(first?.source).toBe('ci-log');
-    expect(first?.fix.split('\n')).toEqual([
-      '<comment id="ci-log package (cli)">',
-      'run bun test packages/cli and fix the failure',
-      '</comment>',
-    ]);
+    expect(first?.fix).toBe('run bun test packages/cli and fix the failure');
+    expect(first?.meta?.['job']).toBe('package (cli)');
+    expect(renderHuman(result)).not.toContain('<comment id="ci-log package (cli)">\\n');
+    expect(renderHuman(result)).toContain('fix:   run bun test packages/cli and fix the failure');
     expect(result.lines?.filter((line) => line.includes('<comment id="ci-log')).length).toBe(2);
     // The whole argv, because the value of this command is that a reader never assembles one:
     // `--log-failed` and not `--log` (the whole run is mostly setup), and `--json` with the exact

@@ -2,7 +2,7 @@
 // read it without loading `cmd-test.ts`, which `registry.ts` imports only when the command runs.
 
 import { TEST_TYPES } from '@ultimat3/testing/test-types';
-import { DEFAULT_BASE } from './affected';
+import { DEFAULT_BASE_HELP } from './affected-base';
 import type { CommandSpec } from './parse';
 import {
   BUDGET_RULE,
@@ -60,7 +60,7 @@ export const testSpec: CommandSpec = {
     {
       name: 'base',
       type: 'string',
-      summary: `--affected: git ref to diff against, merge-base style (default: ${DEFAULT_BASE})`,
+      summary: `--affected: git ref to diff against, merge-base style (default: ${DEFAULT_BASE_HELP})`,
     },
     {
       name: 'seed',

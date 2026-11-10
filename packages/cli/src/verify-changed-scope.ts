@@ -6,7 +6,7 @@
 import { join, relative, resolve } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
 import type { AffectedSelection } from './affected';
-import { changedFiles, gitRoot, readAffectedSelection } from './affected';
+import { changedFiles, gitRoot, readAffectedSelection, resolveSelection } from './affected';
 import type { AppTestScope } from './affected-tests';
 import { appTestScope, narrowToApp } from './affected-tests';
 import { BadFlagError } from './errors';
@@ -63,8 +63,9 @@ export async function changedScope(options: {
   /** Injected by tests; the real one is the suites' own discovery, every type. */
   readonly discover?: (root: string) => Promise<readonly string[]>;
 }): Promise<ChangedScope> {
-  const selection = readAffectedSelection(options.args, 'verify');
+  const request = readAffectedSelection(options.args, 'verify');
   const checkout = await gitRoot(options.runner, options.root, 'verify');
+  const selection = await resolveSelection(options.runner, checkout, request);
   const files = await changedFiles(options.runner, {
     cwd: checkout,
     command: 'verify',

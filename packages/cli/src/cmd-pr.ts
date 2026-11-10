@@ -19,6 +19,7 @@ import { PrNotFoundError, resolvePrNumber, resolveRepo } from './gh-target';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
+import { botsSummary } from './pr-bots';
 import type { PrReviewReport, PrThread } from './pr-threads';
 import { fetchReviewReport, replyToThread, resolveThread, THREAD_PAGE } from './pr-threads';
 
@@ -38,6 +39,9 @@ export const PR_MESSAGE_KEYS = [
   'cli.pr.review.current',
   'cli.pr.review.undecided',
   'cli.pr.review.truncated',
+  'cli.pr.review.activity',
+  'cli.pr.bot.blocked',
+  'cli.pr.bot.notice',
   'cli.pr.thread.open',
   'cli.pr.thread.closed',
   'cli.pr.thread.outdated',
@@ -111,7 +115,11 @@ async function runReview(ctx: CommandContext): Promise<CommandResult> {
             repo: report.repo,
             pr: report.number,
           }),
-    lines: [...decisionLines(report), ...shown.flatMap((thread) => threadLines(thread, bodyLines))],
+    lines: [
+      ...decisionLines(report),
+      ...activityLines(report),
+      ...shown.flatMap((thread) => threadLines(thread, bodyLines)),
+    ],
     data: reviewJson(report, shown, bodyLines, unresolved),
   };
 }
@@ -142,6 +150,43 @@ function decisionLines(report: PrReviewReport): readonly string[] {
       : msg('cli.pr.review.current', { head: short(report.headSha) }),
     ...truncationLines(report),
   ];
+}
+
+/**
+ * The rest of the conversation, in as few lines as it takes: one count, then one line per review
+ * bot that posted a "did not review" notice. Bodies stay in `--json` — the terminal is for the
+ * fact that a review is MISSING, which no thread would ever show.
+ */
+function activityLines(report: PrReviewReport): readonly string[] {
+  const bots = botsSummary(report.reviews, report.comments);
+  const out = [
+    msg('cli.pr.review.activity', {
+      reviews: report.reviews.length,
+      comments: report.comments.length,
+      bots: bots.length,
+    }),
+  ];
+  for (const bot of bots) {
+    const notice = bot.notice;
+    if (notice === null) continue;
+    out.push(
+      bot.blocked
+        ? msg('cli.pr.bot.blocked', {
+            login: bot.login,
+            kind: notice.kind,
+            excerpt: notice.excerpt,
+            at: notice.at,
+            url: notice.url,
+          })
+        : msg('cli.pr.bot.notice', {
+            login: bot.login,
+            kind: notice.kind,
+            at: notice.at,
+            reviewed: bot.lastReviewAt ?? '',
+          }),
+    );
+  }
+  return out;
 }
 
 const truncationLines = (report: PrReviewReport): readonly string[] =>
@@ -189,6 +234,12 @@ export function clampBody(
   return { lines: lines.slice(0, limit), hidden: lines.length - limit };
 }
 
+/** `clampBody` as the two fields every `--json` body row carries. */
+const clampedBody = (body: string, limit: number) => {
+  const clamped = clampBody(body, limit);
+  return { body: clamped.lines.join('\n'), bodyLinesHidden: clamped.hidden };
+};
+
 function reviewJson(
   report: PrReviewReport,
   shown: readonly PrThread[],
@@ -221,6 +272,26 @@ function reviewJson(
       shown: shown.length,
     },
     truncated: report.truncated,
+    // Additive beside `threads`: every review with its verdict and body, every issue comment, and
+    // which review bots said they did NOT review — a rate-limited bot leaves no thread, so its
+    // silence would otherwise read as a clean review.
+    reviews: report.reviews.map(({ body, ...review }) => ({
+      ...review,
+      ...clampedBody(body, bodyLines),
+    })),
+    comments: report.comments.map(({ body, ...comment }) => ({
+      ...comment,
+      ...clampedBody(body, bodyLines),
+    })),
+    reviewsTruncated: report.reviewsTruncated,
+    commentsTruncated: report.commentsTruncated,
+    bots: botsSummary(report.reviews, report.comments).map(({ notice, ...bot }) => ({
+      ...bot,
+      notice:
+        notice === null
+          ? null
+          : { kind: notice.kind, excerpt: notice.excerpt, at: notice.at, url: notice.url },
+    })),
     threads: shown.map((thread) => {
       const comments = thread.comments.map((comment) => {
         const clamped = clampBody(comment.body, bodyLines);

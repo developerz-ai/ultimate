@@ -10,7 +10,24 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `x affected`, `x verify --changed` and `x test --affected` measure a change against `origin/main` by default, not a local `main` nobody pulled, and `bun test $(x affected --paths)` receives only paths.
+- `x ci` and `x pr review` hand back what CI and reviewers actually wrote: clean fix lines, every review and comment, and a review bot that skipped the PR.
+- `x exercise` charges a statement, row, mail or request only to the call that made it, so a neighbour's work no longer fails a scale proof.
+- `package-shape` refuses an import a workspace never declared, before a clean install breaks CI.
+
+### Fixed
+
+- `@ultimat3/cli`: `x affected`, `x verify --changed` and `x test --affected` default `--base` to the remote-tracking default branch — `origin/HEAD`'s target, else `origin/main`, else local `main` when there is no `origin` — never fetched for you. Local `main` lags origin in a checkout nobody pulls (or a worktree), and the diff counted files origin had already merged. `data.base` (`data.changed.base` for `x verify --changed`) names the ref used; `--base` still overrides.
+- `@ultimat3/cli`: `x affected --paths` writes the directories alone to stdout, one per line; its notes and the `✓` summary go to stderr, so `bun test $(x affected --paths)` gets only paths. `--json` is unchanged.
+- `@ultimat3/cli`: `x ci` hands back each finding's `cause` and `fix` as the text the gate wrote. A `fix` came back as `<comment id="ci-log verify">\nbunx biome check --write .\n</comment>`, the fence and a literal `\n` included; now it is `bunx biome check --write .`. The log reader also unwraps `##[error]`/`##[warning]` prefixes, an echoed `::error …::` annotation (`%0A` decoded) and a fence a nested `x ci` printed. Provenance stays on `source: 'ci-log'`, and the job is on `meta.job`.
+- `@ultimat3/cli`: `x pr review --json` returns the whole conversation, additively: `reviews` (every verdict — `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED` — with its body), `comments` (the PR's issue comments) and `bots`, which flags a review bot whose newest notice says it did not review (CodeRabbit rate or review limit, review skipped for too many files) with `blocked: true` when no review of its came after. `threads` and every existing field are unchanged.
+- `@ultimat3/testing`: `x exercise` attributes a statement, a committed row, a mail and an outbound call to the primitive whose call made it — by the call's async context, not by the window it ran in. A ctx-less timer or another request's statement sent while the call awaited was counted as the call's: an intermittent false `X_QUERY_SCALES_WITH_ROWS` (a shape the query never sends growing 0 → 1), a statement planned under the wrong primitive (`X_QUERY_UNINDEXED`), a stray row or mail in its effects, a stray refused host turning it `unreached`. The room runs each call under a marker of its own (`ExerciseRoom.observe`); work the call starts and does not await still counts. `x dev`'s N+1 ledger is unchanged.
+- Upgrading (30.x → 31.0.0): a new "Not breaking, but you will see it" table names `X_MCP_APP_UNMOUNTED` — the `manifest` step is red when `ai.mcp.expose` is `true`, the default, and no `apps/web/mcp.ts` exports `mcp`, which an app scaffolded before `x new` wrote that file hits on its first 31.0.0 gate. Mount it as `x new` does (`export const mcp = appMcp({ resolveToken: resolveAgentToken })`), or with `defineAppMcp({ include: 'exposed', resolveToken })` from `@ultimat3/mcp`, or set `ai: { mcp: { expose: false } }`.
+- `@ultimat3/cli`: a finding `x ci` read out of a CI log is marked ` [from=ci-log <job>]` on its head line in the human render, so the clean `fix` still reads as foreign text; `x pr review` prints a reviews/comments/bots count line and, per review bot with a notice, `<bot> did not review: …` (or the notice it reviewed past).
+- `@ultimat3/cli`: `x verify`'s `package-shape` step refuses a workspace whose shipped source imports a registry package (type-only imports and `@ultimat3/*` included) that neither its own `package.json` nor the root's declares — `X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`, one finding per workspace and package, fix `bun add <pkg> --cwd <workspace>` (pinned to the range a sibling already declares when that range is shell-safe; `--dev` for a `*-fixture.ts`). Bun's hoisting resolved such an import from a sibling's declaration, so `typecheck`, `boundaries` and the tests stayed green until a clean install broke CI. Builtins, workspaces and tsconfig `paths` aliases are exempt; tests are out of scope, as for `X_WORKSPACE_DEP_UNDECLARED`.
+- `@ultimat3/cli`: `x shot`'s `verdict.json` (and `--json`'s `data.verdict`) carries `gpu: { api, available, adapter, fallback }` — whether the page exposes `navigator.gpu`, whether `requestAdapter()` answered, the adapter's vendor/architecture/device, and whether it is a software fallback. Additive and never gating; `null` when the page answered no probe.
 
 ## 31.0.0 - 2026-11-10
 

@@ -62,6 +62,7 @@ import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
 import { typecheckArgs } from './verify-typecheck';
 import { checkPackageShape, fileSizeReport, hasWorkspacePackages } from './workspace-checks';
+import { checkExternalDependencies } from './workspace-external-deps';
 import { checkWorkspaceDependencies } from './workspace-graph';
 
 /** The one file that makes the `roadmap` step answerable, and therefore what `applies` reads. */
@@ -158,6 +159,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       fromFindings([
         ...(await checkPackageShape(ctx.root)),
         ...(await checkWorkspaceDependencies(ctx.root)),
+        ...(await checkExternalDependencies(ctx.root)),
       ]),
   },
   {

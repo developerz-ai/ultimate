@@ -171,23 +171,21 @@ async function control(
         (await subject.input['~standard'].validate(input)).issues === undefined,
       attempt: async (input): Promise<ExerciseAttempt> => {
         const before = await queuedIds();
-        room.begin(key);
-        try {
-          const answer = await subject.call(input, actor, tenant, jobs);
-          if ('failure' in answer) {
-            lastError = answer.failure;
-            return { ok: false, reached: true, error: answer.failure };
-          }
-          answered = true;
-          output = answer.output;
-          return { ok: true, reached: true };
-        } catch (error) {
-          lastError = error;
-          return { ok: false, reached: false, error };
-        } finally {
-          segments.push(room.end());
-          for (const id of await queuedIds()) if (!before.has(id)) mine.add(id);
+        const seen = await room.observe(key, () => subject.call(input, actor, tenant, jobs));
+        segments.push(seen.observed);
+        for (const id of await queuedIds()) if (!before.has(id)) mine.add(id);
+        if ('error' in seen) {
+          lastError = seen.error;
+          return { ok: false, reached: false, error: seen.error };
         }
+        const answer = seen.value;
+        if ('failure' in answer) {
+          lastError = answer.failure;
+          return { ok: false, reached: true, error: answer.failure };
+        }
+        answered = true;
+        output = answer.output;
+        return { ok: true, reached: true };
       },
       statusOf: (await import('@ultimat3/http')).statusFor,
     });
@@ -237,7 +235,6 @@ async function attack(
   room: ExerciseRoom,
 ): Promise<LegAnswer> {
   await using jobs = await testJobs();
-  room.begin(key);
   let output: unknown;
   // A job's org is re-seated in B's: B cannot enqueue a payload naming A (refused at the enqueue,
   // which proves nothing), so the attack that matters is a job of B's carrying A's ids.
@@ -245,19 +242,20 @@ async function attack(
   // Every `crossTenant()` B's call opened: a job's declared sweep is told from a leak by it alone.
   // On the bus, so the barrel stays entity-free (`seed-writer.ts`'s rule) with no import at all.
   const crossings: string[] = [];
+  // B's own: a scope another context opened in the window excuses nothing of B's.
   const offCrossings = subscribe('entity.cross_tenant', (event) => {
-    crossings.push(event.payload.reason);
+    if (room.owns()) crossings.push(event.payload.reason);
   });
+  let observed: Observed;
   try {
-    const answer = await subject.call(sent, actor, tenant, jobs);
-    output = answer.output;
-  } catch {
-    // B's refusal is the answer a scoped primitive gives: only what B got back, and what B's call
-    // did to A's rows, is judged — never whether B was refused.
+    // A throw is B's refusal, the answer a scoped primitive gives: only what B got back, and what
+    // B's call did to A's rows, is judged — never whether B was refused.
+    const seen = await room.observe(key, () => subject.call(sent, actor, tenant, jobs));
+    observed = seen.observed;
+    if ('value' in seen) output = seen.value.output;
   } finally {
     offCrossings();
   }
-  const observed = room.end();
   const payloads = [...observed.payloads, ...(await queuedPayloads(subject))];
   return { output, payloads, crossings };
 }

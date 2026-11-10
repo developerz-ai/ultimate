@@ -50,9 +50,16 @@ const uniqueWriter = (): SeedWriter & { readonly codes: Set<unknown> } => {
   };
 };
 
+const quiet = { statements: 0, effects: [], refusedHosts: [], payloads: [], shapes: [] };
 const quietRoom = (): ExerciseRoom => ({
-  begin: () => {},
-  end: () => ({ statements: 0, effects: [], refusedHosts: [], payloads: [], shapes: [] }),
+  observe: async (_subject, fn) => {
+    try {
+      return { observed: quiet, value: await fn() };
+    } catch (error) {
+      return { observed: quiet, error };
+    }
+  },
+  owns: () => false,
   sent: () => new Map(),
   [Symbol.asyncDispose]: async () => {},
 });

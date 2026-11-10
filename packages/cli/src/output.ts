@@ -33,8 +33,10 @@ export interface Finding {
   readonly at?: string;
   /**
    * Where the finding's TEXT came from, when not from this process. `'ci-log'` is `x ci` reading
-   * a finding back out of a CI log that anyone who can push a branch writes: its `fix` is fenced
-   * and must never be run as this CLI's own instruction.
+   * a finding back out of a CI log that anyone who can push a branch writes: its `fix` is the
+   * log's instruction, never this CLI's, and is never rewritten into a runnable one. The value
+   * stays the clean text — the provenance is this field, `meta.job`, and the `[from=ci-log …]`
+   * marker `renderFinding` prints on the head; never markup inside `fix`.
    */
   readonly source?: 'ci-log';
   /**
@@ -203,7 +205,7 @@ export function renderFinding(finding: Finding, indent = ''): string {
       : undefined;
   const stepLabel = typeof stepValue === 'string' ? ` [step=${singleLine(stepValue)}]` : '';
   const pathLabel = finding.at === undefined ? '' : ` (${singleLine(finding.at)})`;
-  const head = `${code}${pathLabel}${stepLabel}`;
+  const head = `${code}${pathLabel}${stepLabel}${fromLabel(finding)}`;
   const lines = [
     `${indent}${head}`,
     `${indent}  cause: ${singleLine(finding.cause)}`,
@@ -211,6 +213,22 @@ export function renderFinding(finding: Finding, indent = ''): string {
   ];
   if (finding.docs !== undefined) lines.push(`${indent}  docs:  ${singleLine(finding.docs)}`);
   return lines.join('\n');
+}
+
+/**
+ * The provenance marker for a finding read out of a CI log, printed LAST on the head so the
+ * human render still says which findings came from outside (`x ci`) while `fix` stays the clean
+ * command. Brackets in a job name become parentheses: the marker must stay one bracketed token,
+ * and `ci-log`'s `LOCATOR` stands aside for exactly that token.
+ */
+function fromLabel(finding: Finding): string {
+  if (finding.source !== 'ci-log') return '';
+  const job = finding.meta?.['job'];
+  const named =
+    typeof job === 'string' && job !== ''
+      ? ` ${singleLine(job).replaceAll('[', '(').replaceAll(']', ')')}`
+      : '';
+  return ` [from=ci-log${named}]`;
 }
 
 /** Same format, but titled with the error's own summary line when it has one. */

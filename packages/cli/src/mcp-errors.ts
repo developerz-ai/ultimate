@@ -408,6 +408,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only manifest --json   # after exporting partitions() from @ultimat3/jobs in a module listed under jobs in apps/web/api/index.ts, and its .schedule under tasks',
   X_BOUNDARY_LOADER_IMPORT:
     'export const api = defineApi({ actions: [yourActions], queries: [yourQueries] });   # in apps/web/api/index.ts — list the module there, then delete the loader import',
+  X_WORKSPACE_EXTERNAL_DEP_UNDECLARED:
+    'x verify --only package-shape --json   # each finding carries its own `bun add <package> --cwd <workspace>` line',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
