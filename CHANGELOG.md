@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 31.2.0 - 2026-11-10
+
 ### Highlights
 
 - `x build` and `x exercise` honour `runtime.ts`: an audit sink declared there makes audited pages measurable and audited primitives reachable.
@@ -38,6 +42,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - Upgrading (30.x → 31.0.0, 21.x → 22.0.0): the guide names what three adopters' upgrades hit and the entries did not say. Move TypeScript to `^7.0.2` first — under TypeScript 6 with `exactOptionalPropertyTypes`, `@ultimat3/cli`'s shipped `cdp-shot-keys.ts` is TS2769 on every release since 22.0.0, and `x upgrade` does not move `typescript`. Register `/auth/sso/<provider>/callback` at each IdP before the new image rolls and keep the old URI until it completes (#52). Four new "Not breaking, but you will see it" rows: `verifyApiKey` refusing every key whose stored `prefix` is not `ult_<env>_<id>`, with the `x_api_keys` query that finds them; a memory-driver unique collision with no `23505`, matched by `e.code === 'X_DB_UNIQUE_VIOLATION'` on both drivers; `X_AUDIT_SINK_MISSING` in `x exercise` and audited pages unmeasured by `x build` since `auditSink` moved to `runtime.ts` (#43), with a memory sink as the stopgap; and `defineFactory` widening an enum literal in `defaults` (TS2322, #40), with `as const` as the stopgap.
 - `@ultimat3/entity`: a duplicate key in the memory driver, and in any `defineDriver` store, raises the error the Postgres driver raises — `X_DB_UNIQUE_VIOLATION` carrying SQLSTATE `23505` (`sqlState(e)`, `meta.sqlState`) and `meta.constraint` — so a race handler matching `sqlState()` works under memory too. Its `cause` reads `[SQLSTATE 23505] duplicate key value violates unique constraint "<name>" — statement: write into <table>`.
 - `@ultimat3/storage`: a method patched on a `defineStorage().disk()` disk takes effect after the disk was first used, and is still reported as `storage.<verb>` — patched by assignment on the disk or by `spyOn(driver, …)` on the declared driver. Writing the original back reports once per call. `spyOn(disk, …)` still does nothing (Bun's `spyOn` does not write through a Proxy): spy on the driver.
+
+### Commits
+
+- fix(31.2): adopter round 2 — runtime.ts in build/exercise, storage boot, sign-in cookie + callbackPath, TS floor, fetch-as-value, memory 23505, factory literals (#1049)
+- chore: release 31.1.0 (#1048)
 
 ## 31.1.0 - 2026-11-10
 
