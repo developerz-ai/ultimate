@@ -3,7 +3,7 @@
 // a developer needs are in the log. Split from `oauth-route.test.ts` at the 500-line ceiling.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { memoryAuthAdapter } from './memory-adapter';
 import { handshakeSecret } from './oauth-cookie';
@@ -15,7 +15,7 @@ const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
 
 let auth: Auth;
 let lines: string[];
-let previous: ReturnType<typeof setLogSink>;
+let releaseLogSink: () => void;
 
 beforeEach(() => {
   auth = defineAuth({
@@ -24,13 +24,13 @@ beforeEach(() => {
     providers: ['github'],
   });
   lines = [];
-  previous = setLogSink((line) => {
+  releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
 });
 
 afterEach(() => {
-  setLogSink(previous);
+  releaseLogSink();
 });
 
 const bodyOf = async (response: Response): Promise<Record<string, unknown>> => {

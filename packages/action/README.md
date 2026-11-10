@@ -105,7 +105,8 @@ names deriving one route collide with `X_ACTION_PATH_DUPLICATE` — `pluralize` 
 
 `registerActions` is what `defineApi` composes for the three action-shaped keys; the other three
 go through core's `primitiveRegistrar(kind)`, because this package may not import `@ultimat3/query`
-or `@ultimat3/jobs` sideways. An app calling either directly is a second path.
+or `@ultimat3/jobs` sideways. It is not on the `.` barrel: `defineApi` is the one path an app has,
+and `x`'s module loader imports `registerAction`/`registerActions` from `@ultimat3/action/loader`.
 
 ## Call it — `rpc`
 
@@ -602,7 +603,7 @@ must say so and bring a store that can keep it, or the retry that lands on anoth
 no record and runs the handler again:
 
 ```ts
-// apps/<app>/runtime.ts — the boot installs the store before registerActions()
+// apps/<app>/runtime.ts — the boot installs the store before defineApi() registers
 import { configureIdempotency, postgresIdempotencyStore, requestDeadlineMs } from '@ultimat3/action';
 import { db } from '@ultimat3/db';
 
@@ -954,6 +955,12 @@ Pass `input:` when the schema carries a constraint the IR cannot invert (a bare 
 when `row:` needs an id that resolves. Anything thrown *before* the policy decides is drift,
 never a pass — the assertion says which code got in the way and names `input:` as the fix.
 
+## `@ultimat3/action/loader` — where an export is named
+
+`registerAction(name, action)` / `registerActions(module)`: what `defineApi` and `x`'s module scan
+call to stamp an export's name onto it, and what a framework fixture calls to name one action.
+Never on the `.` barrel — an app hands its modules to `defineApi` (`loader.test.ts` pins both).
+
 ## `@ultimat3/action/adapter` — the stores' installers and the handler override
 
 The boot's installers live here, never on the `.` barrel: `installIdempotencyStore(store)` and
@@ -990,7 +997,7 @@ around it; `undefined` restores the declared handler. `@ultimat3/testing`'s `stu
 | `X_CONTRACT_EXERCISE_UNREACHED` | no generated run reached the handler | `.contract({ exercise: { actor } })` with a permitted actor, or bind a row with `exercise.input` |
 | `X_CONTRACT_EXERCISE_UNDECLARED` | `.contract()` on a guarded action with no `exercise`, or a blank `off` | `.contract({ exercise: { actor } })` or `{ exercise: { off: '<reason>' } }` |
 | `X_RPC_FAILED` | registered, thrown by nothing since 21.0.0 — a non-`problem+json` failure is core's `X_CLIENT_TRANSPORT_FAILED` now, as for a query | match `X_CLIENT_TRANSPORT_FAILED` instead |
-| `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
+| `X_ACTION_UNREGISTERED` | projected before `defineApi()` named it | hand its module to `defineApi` at boot |
 | `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `auditSink: postgresAuditSink({ executor })` in `apps/web/runtime.ts` |
 | `X_AUDIT_SINK_FAILED` | the sink refused the record for an attempt that **succeeded** | fix the sink — then retry the same `Idempotency-Key` if this call carried one, else reconcile by hand |
 

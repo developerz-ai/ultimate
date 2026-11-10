@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { LogSink } from '@ultimat3/core';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { routeQuery } from './isr-query-guard';
@@ -34,11 +34,11 @@ function warned(run: () => void): readonly string[] {
   const collect: LogSink = (line) => {
     lines.push(line);
   };
-  const previous = setLogSink(collect);
+  const releaseLogSink = installLogSink(collect);
   try {
     run();
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   return lines.filter((line) => line.includes('isr.query.unkeyed-read'));
 }

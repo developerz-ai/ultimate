@@ -7,7 +7,7 @@ import { systemClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { makeCursor } from './cursor';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition, LiveSubscription } from './live-contract';
 import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
 import type { BridgeResult } from './matcher-bridge';
@@ -17,7 +17,7 @@ import { SubscriberGate } from './subscriber-gate';
 import { decode, type Frame } from './sync-protocol';
 
 const input: JsonValue = { orgId: 'o1' };
-const seated: readonly Row[] = [
+const seated: readonly LiveRow[] = [
   { id: 'p1', orgId: 'o1', likes: 0 },
   { id: 'p2', orgId: 'o1', likes: 0 },
 ];
@@ -55,7 +55,7 @@ function connect(): { socket: SyncSocket; ws: FakeWs } {
  */
 function rig(
   match: () => BridgeResult,
-  refilled: readonly Row[] = seated,
+  refilled: readonly LiveRow[] = seated,
 ): { entry: QueryEntry; deps: FanoutDeps; reads: () => number } {
   let reads = 0;
   const definition: LiveQueryDefinition = {
@@ -291,7 +291,7 @@ describe('snapshotFrame is the one place the identity scope is decided', () => {
 
 describe('a live row travels under its RECORD key', () => {
   /** A composite-key entity's projection, as `liveRecords` hands it over: `orgId:id`. */
-  const composite = (row: Row): string => `${String(row['orgId'])}:${row.id}`;
+  const composite = (row: LiveRow): string => `${String(row['orgId'])}:${row.id}`;
 
   function keyed(): QueryEntry {
     const definition: LiveQueryDefinition = {
@@ -318,7 +318,7 @@ describe('a live row travels under its RECORD key', () => {
 
   test('an entity keyed by id sends the frame it always sent — no `keys`', () => {
     const { entry } = rig(() => patched);
-    const byId = { ...entry, rowKey: (row: Row) => row.id };
+    const byId = { ...entry, rowKey: (row: LiveRow) => row.id };
     expect(
       snapshotFrame(byId, 's1', seated, makeCursor(entry.qid, '', seated, 0)),
     ).not.toHaveProperty('keys');
@@ -382,7 +382,7 @@ describe('a truncate empties the window it reads from', () => {
 // names the columns it could not carry (`ChangeEvent.omitted`). A row ENTERING a window from such
 // a change would be adopted without them — by the window, by every later snapshot, by the ring.
 describe('an add patch lacking a column the change omitted', () => {
-  const windowRows: readonly Row[] = [{ id: 'p1', orgId: 'o1', likes: 0, body: 'long text' }];
+  const windowRows: readonly LiveRow[] = [{ id: 'p1', orgId: 'o1', likes: 0, body: 'long text' }];
   const entering: BridgeResult = {
     patches: [
       { op: 'insert', id: 'p9', row: { id: 'p9', orgId: 'o1', likes: 3 }, lsn: '1', index: 0 },
@@ -429,7 +429,7 @@ describe('an add patch lacking a column the change omitted', () => {
 
   test('the next change re-reads the window and serves the whole row', async () => {
     let answer: BridgeResult = entering;
-    const whole: readonly Row[] = [
+    const whole: readonly LiveRow[] = [
       { id: 'p9', orgId: 'o1', likes: 3, body: 'kept' },
       ...windowRows,
     ];

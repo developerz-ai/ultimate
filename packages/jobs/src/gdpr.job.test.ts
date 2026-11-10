@@ -202,7 +202,7 @@ describe('subjectErase() audits the erase', () => {
     expect(execution?.outcome).toBe('completed');
     const runId = String((records[0]?.input as { run?: unknown } | undefined)?.run);
     expect(records.map((r) => [r.name, r.primitive, r.surface, r.outcome, r.input])).toEqual([
-      ['gd.erase', 'action', 'job', 'allowed', { subject: 'gd_people', run: runId }],
+      ['gd.erase', 'job', 'job', 'allowed', { subject: 'gd_people', run: runId }],
     ]);
     // The run id dedupes a replayed write: the step that writes it is at least once.
     expect(records[0]?.idempotencyKey).toBe(`gd.erase:${runId}`);

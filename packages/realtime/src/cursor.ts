@@ -4,7 +4,7 @@
 // accidental one. See README "Reconnect is the hard part".
 
 import { type Clock, systemClock } from '@ultimat3/core/page';
-import type { Row, RowPatch } from './json';
+import type { LiveRow, RowPatch } from './json';
 import { CursorStaleError } from './page-errors';
 
 /** Ids are bounded so a cursor stays small enough to ship on every `subscribe` frame. */
@@ -89,11 +89,11 @@ export interface ResumeSource {
   ): void;
 }
 
-export type ResumeResult<R extends Row = Row> =
+export type ResumeResult<R extends LiveRow = LiveRow> =
   | { readonly kind: 'delta'; readonly patches: readonly RowPatch[]; readonly cursor: LiveCursor }
   | { readonly kind: 'snapshot'; readonly rows: readonly R[]; readonly cursor: LiveCursor };
 
-export interface ResumeDeps<R extends Row = Row> {
+export interface ResumeDeps<R extends LiveRow = LiveRow> {
   readonly source: ResumeSource;
   /** Bounded re-read of the query at a current lsn. Omit only if a stale cursor should throw. */
   readonly snapshot?: (qid: string) => Promise<{ rows: readonly R[]; lsn: string }>;
@@ -104,7 +104,7 @@ export interface ResumeDeps<R extends Row = Row> {
 export function makeCursor(
   qid: string,
   lsn: string,
-  rows: readonly Row[],
+  rows: readonly LiveRow[],
   now: number,
 ): LiveCursor {
   return {
@@ -139,7 +139,7 @@ export function shouldResnapshot(
  * snapshot. There is deliberately no third path: WAL history traversal is what turns a rolling
  * restart into a self-inflicted outage.
  */
-export async function resumeFrom<R extends Row = Row>(
+export async function resumeFrom<R extends LiveRow = LiveRow>(
   cursor: LiveCursor,
   deps: ResumeDeps<R>,
 ): Promise<ResumeResult<R>> {

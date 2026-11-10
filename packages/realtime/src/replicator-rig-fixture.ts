@@ -153,7 +153,7 @@ export const rig = (transport: Transport = new InProcessTransport()) => {
     lock,
     transport,
     schedule: timers.schedule,
-    backoff: { baseMs: 100, maxMs: 10_000, factor: 2, jitter: 'none' },
+    backoff: { base: 100, max: 10_000, factor: 2, jitter: 'none' },
   });
   return { lock, feed, timers, replicator };
 };

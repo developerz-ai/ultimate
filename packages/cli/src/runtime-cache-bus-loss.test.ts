@@ -67,7 +67,7 @@ async function replica(broker: FakeNatsBroker, retryMs: (attempt: number) => num
   const selection = selectTransport(ENV, {
     use: 'publish',
     connect: fakeNatsConnect(broker),
-    backoff: { baseMs: 2, maxMs: 2, factor: 1, jitter: 'none' },
+    backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
     onError: () => undefined,
   });
   transport = selection.transport;

@@ -3,7 +3,8 @@
 // One client at a time (PGlite in the unit file, Postgres in the live one), installed by `useSql`.
 
 import { expect } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { UltimateError } from '@ultimat3/core';
 import { type DbClient, generateMigration, migrate, sql } from '@ultimat3/db';
 import { entity, postgresRepo, text, uuid } from '@ultimat3/entity';

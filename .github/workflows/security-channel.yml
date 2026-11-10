@@ -1,0 +1,54 @@
+# Is the private channel `SECURITY.md` sends a reporter to still open? Private vulnerability
+# reporting is a repository setting, off by default, and it was off while `SECURITY.md` linked its
+# form (found 2026-11-10): a reporter who is not an administrator met a 404 and had no other
+# private channel. Nothing in the tree can see a setting, so this asks GitHub daily and opens one
+# `security-channel` issue when it is off.
+#
+# NOT a step of `x verify`, for `registry-audit.yml`'s reason: green may not depend on the network.
+# The endpoint is public for a public repository, so the job's own read token suffices.
+
+name: security-channel
+
+on:
+  schedule:
+    # Daily, away from the registry audit at 06:17 and the bench at 04:41.
+    - cron: '43 7 * * *'
+  workflow_dispatch:
+
+# Reads one setting and may open an issue. No checkout, no install: nothing to run but `gh`.
+permissions:
+  issues: write
+
+concurrency:
+  group: security-channel
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: ask whether private vulnerability reporting is on
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Anything but a literal `true` — `false`, an error, an empty answer — is the alarm: a check
+        # that passed on a failed read would report the channel open while nobody can tell.
+        run: |
+          enabled="$(gh api "repos/${GITHUB_REPOSITORY}/private-vulnerability-reporting" --jq '.enabled' 2>&1 || true)"
+          if [ "$enabled" = "true" ]; then
+            echo "private vulnerability reporting is on"
+            exit 0
+          fi
+          # Provision the label create-first, as registry-audit.yml does: `gh issue create --label`
+          # refuses a label the repository does not have.
+          if ! err="$(gh label create security-channel --color d73a4a --description 'the private vulnerability channel is closed' 2>&1)"; then
+            gh api "repos/${GITHUB_REPOSITORY}/labels/security-channel" >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
+          fi
+          body="Private vulnerability reporting answered \`${enabled}\`, so the form SECURITY.md links refuses every reporter who is not an administrator. Fix (admin token): \`gh api -X PUT repos/${GITHUB_REPOSITORY}/private-vulnerability-reporting\`."
+          existing="$(gh issue list --label security-channel --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --label security-channel --title "security: the private vulnerability channel is closed" --body "$body"
+          fi
+          exit 1

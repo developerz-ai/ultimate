@@ -3,7 +3,7 @@
 // when attempt 5 lands without running the queue. There is no `x jobs schedule`: the subcommands
 // are `ls`, `show`, `retry`, `cancel`, `drain`.
 
-import type { BackoffCurve, Random } from '@ultimat3/core';
+import type { BackoffCurve, JitterMode, Random } from '@ultimat3/core';
 import { backoffDelay } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
@@ -24,10 +24,11 @@ export interface RetryPolicy {
   /** Ceiling for any single delay. Default 1h. */
   readonly maxDelay?: DurationInput;
   /**
-   * Equal jitter (half fixed, half random) by default. Without it, a burst of failures
-   * retries in lockstep and re-creates the thundering herd that killed the dependency.
+   * Core's `JitterMode`. `'equal'` (half fixed, half random) by default: a job that has already
+   * failed twice keeps a floor. `'none'` retries a burst in lockstep — the thundering herd that
+   * killed the dependency — and is for tests and printable schedules.
    */
-  readonly jitter?: boolean;
+  readonly jitter?: JitterMode;
   /** Default true: an exhausted job is parked, never dropped. */
   readonly deadLetter?: boolean;
 }
@@ -37,7 +38,7 @@ export const DEFAULT_RETRY = {
   backoff: 'exponential',
   delay: 1_000,
   maxDelay: 3_600_000,
-  jitter: true,
+  jitter: 'equal',
   deadLetter: true,
 } satisfies RetryPolicy;
 
@@ -48,14 +49,12 @@ export type { Random };
  *
  * The arithmetic is core's — one curve-and-jitter function for the framework, because four
  * packages shipped four of them. What stays here is the part that is this package's and not the
- * framework's: `DurationInput` (`'30s'` as well as a number), the `DEFAULT_RETRY` fallbacks, and
- * the `jitter: boolean` this package's public `RetryPolicy` has always spelled as a flag.
+ * framework's: `DurationInput` (`'30s'` as well as a number) and the `DEFAULT_RETRY` fallbacks.
+ * `jitter` is core's `JitterMode` itself since 31.0.0, never a flag mapped onto two of its modes.
  *
- * `?? DEFAULT_RETRY.jitter`, like every other option. It read `!== true` before, so an omitted
- * `jitter` meant OFF while the field's own doc says "Equal jitter … by default" — a burst of
- * failures then retried in lockstep, which is the thundering herd the default exists to break.
- * Masked for jobs declared through `job()` (it merges the defaults) and live for every direct
- * caller of this exported function, `retrySchedule` included.
+ * `?? DEFAULT_RETRY.jitter`, like every other option: an omitted `jitter` is the documented
+ * `'equal'`, never off — masked for jobs declared through `job()` (it merges the defaults) and live
+ * for every direct caller of this exported function, `retrySchedule` included.
  */
 export function backoffDelayMs(policy: RetryPolicy, attempt: number, random?: Random): number {
   return backoffDelay({
@@ -63,9 +62,7 @@ export function backoffDelayMs(policy: RetryPolicy, attempt: number, random?: Ra
     base: finiteDurationMs(policy.delay ?? DEFAULT_RETRY.delay, 'retry', 'delay'),
     max: finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay'),
     curve: policy.backoff ?? DEFAULT_RETRY.backoff,
-    // EQUAL, not full: a job that has already failed twice must not be handed a near-zero wait,
-    // and this package's `jitter: true` has meant "half fixed, half random" since it shipped.
-    jitter: (policy.jitter ?? DEFAULT_RETRY.jitter) === true ? 'equal' : 'none',
+    jitter: policy.jitter ?? DEFAULT_RETRY.jitter,
     random,
   });
 }
@@ -132,7 +129,7 @@ export function nextRetry(policy: RetryPolicy, attempt: number, random?: Random)
 
 /** Every delay in the policy, jitter off, for docs and `--json` output. */
 export function retrySchedule(policy: RetryPolicy): readonly number[] {
-  const deterministic: RetryPolicy = { ...policy, jitter: false };
+  const deterministic: RetryPolicy = { ...policy, jitter: 'none' };
   const out: number[] = [];
   for (let attempt = 1; attempt < policy.attempts; attempt += 1) {
     out.push(backoffDelayMs(deterministic, attempt));

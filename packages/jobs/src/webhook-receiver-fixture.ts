@@ -63,7 +63,7 @@ export function receiverHarness(
       seen.handled.push({ eventId, payload, attempt });
       return Promise.resolve({ eventId });
     },
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     ...over,
   });
   const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });

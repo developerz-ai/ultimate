@@ -10,7 +10,6 @@ import { pageOf } from '@ultimat3/core';
 import { refuseAbandoned } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
 import { keyOf } from './batch-read';
-import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
 import { narrowRow } from './columns';
 import { cursorFor, kindOf, valueAt } from './cursor';
@@ -30,11 +29,14 @@ import { type MemoryTables, sameTenantJudge } from './memory-same-tenant';
 import { afterCursor } from './memory-seek';
 import { StoredRows, uniqueIndex, uniqueViolation } from './memory-unique';
 import { judgeUpdate, mergedRow } from './memory-update';
+import { memoryUpsertAll } from './memory-upsert';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions } from './repo';
 import { rowKey } from './row-key';
 import { sealedFields } from './sealed';
 import { sealedRepo } from './sealed-repo';
+import { deletionStamp } from './search-index-version';
+import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowWrite } from './types';
@@ -99,6 +101,9 @@ export const memoryRepo = <Row>(
   const changed = memoryLifecycle(entity as EntityCore, tables);
   const judgeReferences = sameTenantJudge(entity, tables);
   const locks = memoryLocks();
+  /** The stamp a soft delete writes: `deletedAt`, and a searchable entity's version advanced. */
+  const softDeletion = () =>
+    deletionStamp(entity as EntityCore<unknown>, SOFT_DELETE_COLUMN, entityNow());
   /** One guard for every write, as `postgresRepo`'s `writing()`: async, so a refusal rejects. */
   const writing =
     <A extends unknown[], R>(body: (...args: A) => Promise<R>) =>
@@ -287,69 +292,9 @@ export const memoryRepo = <Row>(
       return batch.map((row) => write(row, options, 'insertAll', undefined, true));
     }),
 
-    upsertAll: writing(async (given, args) => {
-      // The INCOMING rows, judged before any of them is matched: under `onMatch: 'nothing'` a
-      // colliding row is skipped and never reaches `write()`, so checking only what lands would
-      // let a row naming another tenant through whenever it happened to collide. Narrowed first
-      // for the reason `insertAll` above is, and before `conflictKeyOf` reads a target too.
-      const batch = narrowed(given);
-      // Plan first, then rows: the order `postgresRepo` refuses in, so one bad call has one code.
-      const { onConflict, onMatch = 'update', overwrites } = args;
-      const plan = upsertPlan(entity, batch, onConflict, onMatch, overwrites);
-      const keys = conflictKeys(entity, plan, batch);
-      for (const row of batch) {
-        assertRowTenant(entity.$name, entity.$tenantColumn, 'upsertAll', row);
-        entity.$assert(row);
-      }
-      // The stored rows under the same key, so "does this collide" is the question the unique
-      // index answers in Postgres and not a scan per row. A soft-deleted row still occupies its
-      // key here, because the index it would collide with there is not partial either — and a row
-      // whose target holds a null occupies none, because the index is `NULLS DISTINCT`.
-      const stored = new Map<string, Row>();
-      for (const row of rows.values()) {
-        const key = conflictKeyOf(entity, plan.on, row);
-        if (key !== undefined) stored.set(key, row);
-      }
-      // A row that lands is judged before any of them does: the statement refuses as one. One left
-      // alone by `do nothing` wrote nothing, so its reference is checked by nobody on either driver.
-      for (const [position, row] of batch.entries()) {
-        const key = keys[position];
-        const collides = key !== undefined && stored.has(key);
-        if (!collides || plan.set.length > 0) judgeReferences(row, batch);
-      }
-      const written: Row[] = [];
-      // A row colliding on ANOTHER unique takes the rows before it with it, as the statement does.
-      undoingBatch(args.tx, (tx) => {
-        for (const [position, row] of batch.entries()) {
-          const key = keys[position];
-          const existing = key === undefined ? undefined : stored.get(key);
-          // `do nothing` writes no row, and `returning *` therefore names none: a skipped row is
-          // absent from the result rather than present and unchanged.
-          if (existing !== undefined && plan.set.length === 0) continue;
-          const merged =
-            existing === undefined
-              ? row
-              : Object.assign(
-                  {},
-                  existing,
-                  Object.fromEntries(plan.set.map((property) => [property, field(row, property)])),
-                );
-          // `UpsertArgs extends RepoOptions`, so the args ARE the options — one bag, and a `tx`
-          // passed to an upsert registers its undo exactly as it does for every other write here.
-          const result = write(
-            merged,
-            { tx },
-            'upsertAll',
-            existing === undefined ? undefined : storeKey(existing),
-          );
-          // Filed as it lands, so a later row of the same batch collides with an earlier one exactly
-          // as it would with a row the request stored a moment before it.
-          if (key !== undefined) stored.set(key, result);
-          written.push(result);
-        }
-      });
-      return written;
-    }),
+    upsertAll: writing(async (given, args) =>
+      memoryUpsertAll({ entity, rows, write, storeKey, judgeReferences }, narrowed(given), args),
+    ),
 
     update: writing(async (id, given, options) => {
       // Here and in `pg-driver.ts`, the one door: a value `insert` refuses, a fragment included.
@@ -366,13 +311,10 @@ export const memoryRepo = <Row>(
       return locks.turn(`row:${idStoreKey(id, 'delete')}`, options?.tx, () => {
         const current = addressed(id, options, 'delete');
         // Soft delete hides the row without losing it; the column's presence is the switch.
+        // The deleted row, for the search mirror when it asked (`search-written-rows.ts`).
+        writtenRowsSink()?.([current]);
         if (entity.$softDelete) {
-          write(
-            Object.assign({}, current, { [SOFT_DELETE_COLUMN]: entityNow() }),
-            options,
-            'delete',
-            storeKey(current),
-          );
+          write(mergedRow(entity, current, softDeletion()), options, 'delete', storeKey(current));
           return;
         }
         const key = storeKey(current);
@@ -396,12 +338,7 @@ export const memoryRepo = <Row>(
       undoingBatch(options?.tx, (tx) => {
         for (const row of doomed) {
           if (entity.$softDelete) {
-            write(
-              Object.assign({}, row, { [SOFT_DELETE_COLUMN]: entityNow() }),
-              { tx },
-              'deleteWhere',
-              storeKey(row),
-            );
+            write(mergedRow(entity, row, softDeletion()), { tx }, 'deleteWhere', storeKey(row));
             continue;
           }
           const key = storeKey(row);
@@ -410,6 +347,8 @@ export const memoryRepo = <Row>(
           changed(row, undefined, tx);
         }
       });
+      // Past the judged bound the rows are not handed over, as Postgres's `counted` decides.
+      if (doomed.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(doomed);
       return doomed.length;
     }),
 
@@ -439,9 +378,10 @@ export const memoryRepo = <Row>(
       // statement back; here nothing was written yet, so nothing has to be undone.
       const merged = judgeUpdate(entity, found, patch, untouched(found), storeKey);
       for (const row of merged) judgeReferences(row);
-      for (const [position, row] of merged.entries()) {
-        write(row, options, 'updateWhere', storeKey(found[position]));
-      }
+      const written = merged.map((row, at) =>
+        write(row, options, 'updateWhere', storeKey(found[at])),
+      );
+      if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
       return found.length;
     }),
 

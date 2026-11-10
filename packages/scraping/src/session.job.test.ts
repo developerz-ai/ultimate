@@ -212,7 +212,7 @@ describeJob('job · a scrape session on the pg driver and the stored event bus',
       robots: { ignore: 'a recorded site: there is no origin to ask' },
       clock: realClock,
       driver: counting,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       concurrency: { key: ({ connectionId }) => connectionId, limit: 1, whenBusy: 'fail' },
       auth: {
         store: storageSessionStore(() => storage, { keySource: KEYS }),

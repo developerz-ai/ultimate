@@ -45,7 +45,7 @@ export function workerExhaustedScenarios(label: string, harness: OperatorHarness
         ran += 1;
         return Promise.resolve();
       },
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
       onSettled: (ending) => {
         settled.push(ending);
         return Promise.resolve();
@@ -80,7 +80,7 @@ export function workerExhaustedScenarios(label: string, harness: OperatorHarness
     const settled: JobSettled<unknown>[] = [];
     const handle = itemJob({
       run: () => Promise.resolve(),
-      retry: { attempts: 2, jitter: false, deadLetter: false },
+      retry: { attempts: 2, jitter: 'none', deadLetter: false },
       onSettled: (ending) => {
         settled.push(ending);
         return Promise.resolve();

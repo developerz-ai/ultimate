@@ -4,7 +4,12 @@
 
 import { afterEach, expect, test } from 'bun:test';
 import type { MailDeliverEvent } from '@ultimat3/core';
-import { resetInstrumentation, setLogSink, subscribe, subscriberFailures } from '@ultimat3/core';
+import {
+  installLogSink,
+  resetInstrumentation,
+  subscribe,
+  subscriberFailures,
+} from '@ultimat3/core';
 import { installMailDriver, resetMailDriver } from './adapter';
 import { deliverMail } from './deliver';
 import { memoryMailDriver } from './driver';
@@ -23,7 +28,7 @@ test('a subscriber that throws on success: sent once, one ok event, no throw', a
   subscribe('mail.deliver', () => {
     throw bug;
   });
-  const previous = setLogSink(() => undefined);
+  const releaseLogSink = installLogSink(() => undefined);
   try {
     await deliverMail({
       mailId: 'test-double-send',
@@ -35,7 +40,7 @@ test('a subscriber that throws on success: sent once, one ok event, no throw', a
       tz: 'UTC',
     });
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   expect(driver.sent).toHaveLength(1);
   expect(events).toHaveLength(1);

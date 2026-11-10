@@ -3,7 +3,7 @@
 // pooler is not a dead path, and a deadline blind to that retires every pod's pool at once.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Scheduler, setLogSink } from '@ultimat3/core';
+import { installLogSink, type Scheduler } from '@ultimat3/core';
 import { postgresClient } from './client';
 import { type DbError, dbUnavailable } from './errors';
 import { SWEEP_INTERVAL_MS, UNANSWERED_GRACE_MS } from './pool-sweep';
@@ -115,17 +115,17 @@ const client = (
 const settled = (): Promise<void> => Bun.sleep(0);
 
 const logged: string[] = [];
-let previousSink: ReturnType<typeof setLogSink>;
+let releaseLogSink: () => void;
 const linesNaming = (event: string): number =>
   logged.filter((line) => line.includes(`"${event}"`)).length;
 
 beforeEach(() => {
   logged.length = 0;
-  previousSink = setLogSink((line) => logged.push(line));
+  releaseLogSink = installLogSink((line) => logged.push(line));
 });
 
 afterEach(() => {
-  setLogSink(previousSink);
+  releaseLogSink();
   host.Bun.SQL = realBunSql;
 });
 

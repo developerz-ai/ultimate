@@ -165,7 +165,7 @@ describe('agentJob({ actor }) — the run acts for the member its input names', 
     const handle = agentJob(reviewer(), {
       name: 'review-wrong-org',
       tenant: (input) => input.orgId,
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
       actor: ({ input }) => member(input.memberId, 'org-2'),
     });
     const execution = await run(handle, INPUT);

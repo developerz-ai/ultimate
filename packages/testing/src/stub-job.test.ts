@@ -14,7 +14,7 @@ const welcome = job<{ readonly userId: string }>({
   input: t.object({ userId: t.string }),
   tenant: 'none',
   idempotencyKey: (input) => input.userId,
-  retry: { attempts: 1, jitter: false },
+  retry: { attempts: 1, jitter: 'none' },
   run: async ({ input }) => {
     ran.push(input.userId);
     return { sent: input.userId };
@@ -92,7 +92,7 @@ const layered = job<{ readonly userId: string }>({
   input: t.object({ userId: t.string }),
   tenant: 'none',
   idempotencyKey: (input) => input.userId,
-  retry: { attempts: 1, jitter: false },
+  retry: { attempts: 1, jitter: 'none' },
   run: async () => 'declared',
 });
 

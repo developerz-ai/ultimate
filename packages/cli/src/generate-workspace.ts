@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { basename, join } from 'node:path';
 import { isJsonObject, renderFixShellArg, UltimateError } from '@ultimat3/core';
+import { generateSpec } from './cmd-generate-spec';
 import type { CommandContext } from './command';
 import { invocationOf } from './command';
 import { BadFlagError } from './errors';
@@ -17,6 +18,7 @@ import { readName } from './generate-kinds';
 import { planWrites, writeFiles } from './generate-write';
 import { msg } from './messages';
 import type { CommandResult } from './output';
+import type { ParsedArgs } from './parse';
 import { flagBool } from './parse';
 import { quoteArg } from './shell-quote';
 import { kebab } from './templates';
@@ -69,6 +71,28 @@ async function repoScope(root: string): Promise<string> {
   return kebab(scope === '' ? basename(root) : scope);
 }
 
+/** The `x g` flags a workspace generator reads; every other one is a slice's, so is refused. */
+const WORKSPACE_READS: ReadonlySet<string> = new Set(['force', 'dry-run']);
+
+/**
+ * Any slice flag — `--feature`, `--surface`, `--live`, `--admin`, `--locales`, `--at`, `--app`,
+ * `--permission`, … — set to something but its default: a workspace is no slice, so each would be
+ * accepted and change nothing. Projected from the spec, so a flag added there is refused here too.
+ */
+function refuseSliceFlags(args: ParsedArgs, kind: WorkspaceKind, name: string): void {
+  for (const flag of generateSpec.flags ?? []) {
+    if (WORKSPACE_READS.has(flag.name)) continue;
+    const value = args.flags.get(flag.name);
+    if (value === undefined || value === flag.default) continue;
+    throw new BadFlagError({
+      flag: flag.name,
+      command: `g ${kind}`,
+      reason: `a ${kind} is a workspace, not a slice, so --${flag.name} would change nothing; it reads --force and --dry-run only`,
+      fix: `${kind === 'app' ? 'x g app' : 'x g package'} ${renderFixShellArg(name, '<name>')}`,
+    });
+  }
+}
+
 /** `x g app|package <name>`: planned, refused or written, with the two commands that follow. */
 export async function runWorkspace(
   ctx: CommandContext,
@@ -76,6 +100,7 @@ export async function runWorkspace(
   kind: WorkspaceKind,
 ): Promise<CommandResult> {
   const name = kebab(readName(ctx.args.positionals[1], kind));
+  refuseSliceFlags(ctx.args, kind, name);
   const other: WorkspaceKind = kind === 'app' ? 'package' : 'app';
   const held = `${WORKSPACE_DIR[other]}/${name}`;
   if (existsSync(join(root, held))) throw new WorkspaceNameTakenError({ kind, name, held });

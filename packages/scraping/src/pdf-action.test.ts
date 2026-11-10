@@ -3,7 +3,8 @@
 // bytes to the disk under the key the app chose.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { registerAction, resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { userActor } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';

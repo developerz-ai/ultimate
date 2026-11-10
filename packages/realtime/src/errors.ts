@@ -2,18 +2,48 @@
 // the same string renders in the terminal, the browser overlay, and `--json`.
 
 import { isFixShellSafe, renderFixShellArg } from '@ultimat3/core';
-// The owned code list and its titles are `error-titles.ts` — the one module `sideEffects` lists,
-// imported bare here and from the barrel — so this module is side-effect-free and a chunk keeps
-// only the classes it constructs. Re-exported, so every name is still importable from `./errors`.
+// The owned codes and their titles are two LISTED modules (`sideEffects`), imported bare here and
+// from the barrels: `error-titles.ts` (every code a page can raise or receive, in every island
+// chunk) and `error-titles-server.ts` (the replicator's, the feed's, the boot's). So this module is
+// side-effect-free and a chunk keeps only the classes it constructs; the union is re-exported.
 import './error-titles';
-import { REALTIME_OWNED_ERROR_CODES } from './error-titles';
+import './error-titles-server';
+import {
+  REALTIME_PAGE_ERROR_TITLES,
+  REALTIME_PAGE_OWNED_ERROR_CODES,
+  type RealtimePageErrorCode,
+} from './error-titles';
+import {
+  REALTIME_SERVER_ERROR_TITLES,
+  REALTIME_SERVER_OWNED_ERROR_CODES,
+  type RealtimeServerErrorCode,
+} from './error-titles-server';
 import { RealtimeError } from './realtime-error';
 
 export {
-  REALTIME_ERROR_TITLES,
-  REALTIME_OWNED_ERROR_CODES,
-  type RealtimeOwnedErrorCode,
+  REALTIME_PAGE_ERROR_TITLES,
+  REALTIME_PAGE_OWNED_ERROR_CODES,
+  type RealtimePageErrorCode,
 } from './error-titles';
+export {
+  REALTIME_SERVER_ERROR_TITLES,
+  REALTIME_SERVER_OWNED_ERROR_CODES,
+  type RealtimeServerErrorCode,
+} from './error-titles-server';
+
+/** Every code this package declares and owns: the page's and the server's. */
+export const REALTIME_OWNED_ERROR_CODES = [
+  ...REALTIME_PAGE_OWNED_ERROR_CODES,
+  ...REALTIME_SERVER_OWNED_ERROR_CODES,
+] as const;
+
+export type RealtimeOwnedErrorCode = RealtimePageErrorCode | RealtimeServerErrorCode;
+
+/** Every owned code's title. Composed, never declared here: a new code goes in one of the two. */
+export const REALTIME_ERROR_TITLES = Object.freeze<Record<RealtimeOwnedErrorCode, string>>({
+  ...REALTIME_PAGE_ERROR_TITLES,
+  ...REALTIME_SERVER_ERROR_TITLES,
+});
 
 /**
  * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s, and `X_FORBIDDEN` — thrown by the surface denials this

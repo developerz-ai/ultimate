@@ -3,10 +3,12 @@
 // prebuilt registry's boot (`app-load-prebuilt.ts`) both register through here, so a module
 // registers the same way whichever of them imported it.
 
-import { isAction, isMutator, registerActions } from '@ultimat3/action';
+import { isAction, isMutator } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { getEntity } from '@ultimat3/entity';
 import { isJobHandle, isTaskHandle } from '@ultimat3/jobs';
-import { isQuery, registerQueries } from '@ultimat3/query';
+import { isQuery } from '@ultimat3/query';
+import { registerQueries } from '@ultimat3/query/loader';
 import type { RouteConfig } from '@ultimat3/render';
 import { isRouteConfig, pageComponentOf, registerRoute } from '@ultimat3/render';
 import { pinModule, resetReloadGraph } from './app-reload-graph';

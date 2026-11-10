@@ -8,8 +8,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { RENDER_MODES } from '@ultimat3/core';
-import { SURFACE_SPECS, SURFACES, surfaceAllows } from '@ultimat3/render';
+import { RENDER_MODES, SURFACES } from '@ultimat3/core';
+import { SURFACE_SPECS, surfaceAllows } from '@ultimat3/render';
 import { processRoot } from './process-root-fixture';
 import type { StaticReport } from './static-report';
 import {

@@ -41,7 +41,7 @@ export async function pageSync(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
   buildId: string,
-  realtime: Pick<RealtimeConfig, 'enabled'>,
+  realtime: Pick<RealtimeConfig, 'enabled' | 'maxQueued'>,
 ): Promise<PageSync> {
   // Off: no `ultimate-sync`, no worker, no boot script — the boot is the outbox and the disk
   // restore, which exist to feed the socket. Checked before either build, which would be wasted.
@@ -59,6 +59,8 @@ export async function pageSync(
       buildId,
       ...(worker === undefined ? {} : { workerUrl: worker.url }),
       ...(boot === undefined ? {} : { bootUrl: boot.url }),
+      // The page outbox's ceiling: the boot builds the outbox, and reads it off the document.
+      ...(realtime.maxQueued === undefined ? {} : { outboxMaxQueued: realtime.maxQueued }),
     },
     persisted: persistedRecordTypes,
   };

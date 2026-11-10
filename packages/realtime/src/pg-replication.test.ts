@@ -261,8 +261,8 @@ describe('decoded changes', () => {
     server.push(xlog(commit(0xb000n, 0xb100n, 0n)));
     await settled(2);
 
-    // A safe int8 decodes as a number and a large one as text; `Row.id` is text either way, or the
-    // same table would identify small rows by number and large rows by string.
+    // A safe int8 decodes as a number and a large one as text; `LiveRow.id` is text either way, or
+    // the same table would identify small rows by number and large rows by string.
     expect(events.map((event) => event.after?.['id'])).toEqual(['42', '9223372036854775807']);
     await feed.stop();
   });

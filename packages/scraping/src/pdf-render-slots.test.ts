@@ -1,5 +1,7 @@
 // The renderer's bound on live browsers: at most `maxConcurrent` launched at once, a queued render
 // refused with a code past its deadline, and an aborted request releasing its slot and its browser.
+// Every wait is bounded by `within`: a lost bound or kill leaves a render pending, and that must
+// fail in a second naming the wait, not idle out the runner's test timeout.
 
 import { describe, expect, test } from 'bun:test';
 import { noWaitClock } from '@ultimat3/core';
@@ -29,6 +31,22 @@ function gatedLaunches() {
   };
 }
 
+/** Far above a fake print's microtask hops; far below bun's per-test timeout. */
+const WAIT_MS = 1_000;
+
+/** `work`, or a verdict naming what never settled once `WAIT_MS` passed. */
+async function within<T>(work: Promise<T>, what: string): Promise<T> {
+  const late = Symbol('late');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof late>((resolve) => {
+    // real-clock: a watchdog on a hang, never a wait — a passing render settles first and clears it.
+    timer = setTimeout(() => resolve(late), WAIT_MS);
+  });
+  const settled = await Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+  if (settled === late) expect.unreachable(`${what} did not settle within ${WAIT_MS} ms`);
+  return settled as T;
+}
+
 const settle = async (): Promise<void> => {
   for (let hop = 0; hop < 20; hop += 1) await Promise.resolve();
 };
@@ -46,12 +64,15 @@ describe('unit · chromePdfRenderer concurrency', () => {
     await settle();
     expect(gated.launched).toHaveLength(2);
     gated.open(0);
-    await renders[0];
+    await within(
+      renders[0] ?? expect.unreachable('three renders were started'),
+      'the first render, its gate open',
+    );
     await settle();
     expect(gated.launched).toHaveLength(3);
     gated.open(1);
     gated.open(2);
-    await Promise.all(renders);
+    await within(Promise.all(renders), 'every render, every gate open');
     expect(gated.launched.every((fake) => fake.closed())).toBe(true);
   });
 
@@ -64,12 +85,13 @@ describe('unit · chromePdfRenderer concurrency', () => {
     });
     const first = renderer.render({ url: URL_, layout: {} });
     await settle();
-    await expect(renderer.render({ url: URL_, layout: {} })).rejects.toMatchObject({
+    const busy = renderer.render({ url: URL_, layout: {} });
+    await expect(within(busy, 'the render queued past its deadline')).rejects.toMatchObject({
       code: 'X_SCRAPE_PDF_BUSY',
     });
     expect(gated.launched).toHaveLength(1);
     gated.open(0);
-    await first;
+    await within(first, 'the first render, its gate open');
   });
 
   test('a request aborted while queued leaves the queue, launching nothing', async () => {
@@ -80,9 +102,11 @@ describe('unit · chromePdfRenderer concurrency', () => {
     const queued = renderer.render({ url: URL_, layout: {}, signal: cancel.signal });
     await settle();
     cancel.abort(new Error('client went away'));
-    await expect(queued).rejects.toThrow('client went away');
+    await expect(within(queued, 'the render aborted in the queue')).rejects.toThrow(
+      'client went away',
+    );
     gated.open(0);
-    await first;
+    await within(first, 'the first render, its gate open');
     expect(gated.launched).toHaveLength(1);
   });
 
@@ -93,12 +117,14 @@ describe('unit · chromePdfRenderer concurrency', () => {
     const printing = renderer.render({ url: URL_, layout: {}, signal: cancel.signal });
     await settle();
     cancel.abort(new Error('client went away'));
-    await expect(printing).rejects.toThrow('client went away');
+    await expect(within(printing, 'the render aborted mid-print')).rejects.toThrow(
+      'client went away',
+    );
     expect(gated.launched[0]?.closed()).toBe(true);
     const next = renderer.render({ url: URL_, layout: {} });
     await settle();
     expect(gated.launched).toHaveLength(2);
     gated.open(1);
-    await next;
+    await within(next, 'the render that took the freed slot');
   });
 });

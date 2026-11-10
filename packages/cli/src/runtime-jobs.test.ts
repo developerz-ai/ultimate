@@ -12,7 +12,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-joining API, so the temp root and the config file are joined with this.
 import { join } from 'node:path';
-import { isUltimateError, setLogSink } from '@ultimat3/core';
+import { installLogSink, isUltimateError } from '@ultimat3/core';
 import { job, resetJobs, t } from '@ultimat3/jobs';
 import { loadAppConfig } from './app-config-load';
 import type { RunningRoles } from './role-start';
@@ -191,13 +191,13 @@ const exactConfig = (queues: readonly string[], configured: readonly string[]) =
 /** Every structured line logged while `run` runs, parsed. */
 function logged(run: () => void): readonly Record<string, unknown>[] {
   const lines: string[] = [];
-  const previous = setLogSink((line) => {
+  const releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
   try {
     run();
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   return lines.map((line) => JSON.parse(line) as Record<string, unknown>);
 }

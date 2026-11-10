@@ -172,7 +172,7 @@ describe('the claim loop', () => {
     const driver = memoryJobDriver({ clock: moving });
     const attempts: number[] = [];
     const handle = itemJob({
-      retry: { attempts: 2, backoff: 'fixed', delay: 450, jitter: false },
+      retry: { attempts: 2, backoff: 'fixed', delay: 450, jitter: 'none' },
       run() {
         attempts.push(performance.now());
         if (attempts.length === 1) return Promise.reject(new Error('first attempt fails'));

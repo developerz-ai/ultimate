@@ -83,13 +83,13 @@ describe('the floor is finiteness only — negative, zero and fractional still p
       backoff: 'exponential',
       delay: 1_000,
       maxDelay: -5,
-      jitter: false,
+      jitter: 'none',
     } as const;
     expect(backoffDelayMs(policy, 1)).toBe(0);
   });
 
   test('a zero delay is still a retry with no wait, not a refusal', () => {
-    expect(backoffDelayMs({ attempts: 3, backoff: 'fixed', delay: 0, jitter: false }, 1)).toBe(0);
+    expect(backoffDelayMs({ attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' }, 1)).toBe(0);
   });
 });
 
@@ -126,7 +126,7 @@ describe('the scheduling decisions built on it', () => {
   test('retry.delay names delay, and retry.maxDelay names maxDelay', () => {
     const delayFix = rendered(
       thrownBy(() =>
-        backoffDelayMs({ attempts: 3, backoff: 'fixed', delay: Number.NaN, jitter: false }, 1),
+        backoffDelayMs({ attempts: 3, backoff: 'fixed', delay: Number.NaN, jitter: 'none' }, 1),
       ),
     );
     expect(delayFix).toContain('X_INVARIANT');
@@ -145,7 +145,7 @@ describe('the scheduling decisions built on it', () => {
             backoff: 'exponential',
             delay: 1_000,
             maxDelay: Number.NaN,
-            jitter: false,
+            jitter: 'none',
           },
           1,
         ),

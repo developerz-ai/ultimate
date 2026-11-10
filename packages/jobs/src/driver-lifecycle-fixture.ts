@@ -89,7 +89,7 @@ export function driverLifecycleScenarios(label: string, harness: OperatorHarness
     const settled: JobSettled<unknown>[] = [];
     const handle = itemJob({
       run: () => Promise.resolve(),
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
       onSettled: (ending) => {
         settled.push(ending);
         return Promise.resolve();

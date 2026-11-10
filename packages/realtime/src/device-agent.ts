@@ -6,9 +6,9 @@ import { reportError } from '@ultimat3/core';
 import { bytesOverLimit, type DeviceInbound, decodeNodeFrame } from './device-wire';
 import type { JsonValue } from './json';
 import {
-  type BackoffPolicy,
   defaultBackoff,
   policyDelay,
+  type ReconnectBackoff,
   type Rng,
   type Scheduler,
   timeoutScheduler,
@@ -48,7 +48,7 @@ export interface DeviceAgentOptions {
   readonly onRequest: (frame: JsonValue) => Promise<JsonValue> | JsonValue;
   /** What `onFrame` on the node answered, and anything else it pushes. */
   readonly onFrame?: ((frame: JsonValue) => void) | undefined;
-  readonly backoff?: BackoffPolicy | undefined;
+  readonly backoff?: ReconnectBackoff | undefined;
   readonly rng?: Rng | undefined;
   readonly schedule?: Scheduler | undefined;
   readonly dial?: AgentDial | undefined;

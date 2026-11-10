@@ -93,7 +93,7 @@ function consumerJob(
     input: passthrough<AccountInput>(),
     idempotencyKey: ({ account }) => `consumer:${account}`,
     concurrency: { key: ({ account }) => account, limit: 1, whenBusy: 'wait' },
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run,
   });
 }
@@ -179,7 +179,7 @@ describe('re-arming a consumer', () => {
       tenant: 'none',
       input: passthrough<AccountInput & { readonly note: string }>(),
       idempotencyKey: ({ account }) => `tagged:${account}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       async run() {},
     });
     const first = await tagged.enqueue({ account: 'acct-1', note: 'first' });
@@ -207,7 +207,7 @@ describe('a remote cursor walk as step.run pages', () => {
       input: passthrough<AccountInput>(),
       idempotencyKey: ({ account }) => `walk:${account}`,
       // Two: the kill costs the attempt a lapsed lease always costs.
-      retry: { attempts: 2, jitter: false },
+      retry: { attempts: 2, jitter: 'none' },
       async run({ step }) {
         const rows: number[] = [];
         let cursor: number | null = 0;

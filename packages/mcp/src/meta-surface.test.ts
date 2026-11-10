@@ -6,7 +6,8 @@
 // policy refusal and an awaiting-confirmation write alike. Failure cases first.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
@@ -15,7 +16,8 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import { renderCatalog } from './meta-catalog-render';

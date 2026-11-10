@@ -92,7 +92,7 @@ describe('unit · @ultimat3/notify errors', () => {
  * than the table, because the table is not what a dead-lettered job is decided by.
  */
 describe('unit · @ultimat3/notify retry classification', () => {
-  const policy = { attempts: 5, backoff: 'fixed', delay: 1_000, jitter: false } as const;
+  const policy = { attempts: 5, backoff: 'fixed', delay: 1_000, jitter: 'none' } as const;
 
   test('a fan-out past the ceiling stops on the attempt it happened', () => {
     // 900 recipients against a 500 ceiling answers 900 against 500 on every attempt. Retrying it

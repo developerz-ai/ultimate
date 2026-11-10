@@ -1,16 +1,17 @@
-// The DER walk that gets SNS's public key out of its certificate. The well-formed half is proven
-// against openssl when the fixture was built (`openssl x509 -pubkey` gave the same SPKI); here,
-// that it finds the key in v1 and v3 certificates and answers `undefined` for anything malformed.
+// SNS's public key out of its PEM certificate. The well-formed half is proven against openssl when
+// the fixture was built (`openssl x509 -pubkey` gave the same SPKI); here, that core's DER walk
+// finds the key in real v1 and v3 certificates. Hand-built DER vectors: core's `der.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { x509Spki } from '@ultimat3/core';
 import { snsSigner } from './delivery-event-fixture';
-import { certificateSpki, pemCertificateDer } from './x509-spki';
+import { pemCertificateDer, pemCertificateSpki } from './x509-spki';
 
-describe('certificateSpki', () => {
+describe('pemCertificateSpki', () => {
   test('finds the same key in an X.509 v3 and a v1 certificate, and Web Crypto imports it', async () => {
     const signer = await snsSigner();
-    const v3 = certificateSpki(pemCertificateDer(signer.certificatePem) ?? new Uint8Array());
-    const v1 = certificateSpki(pemCertificateDer(signer.v1CertificatePem) ?? new Uint8Array());
+    const v3 = pemCertificateSpki(signer.certificatePem);
+    const v1 = pemCertificateSpki(signer.v1CertificatePem);
     if (v3 === undefined || v1 === undefined) return expect.unreachable('no key found');
     expect(v1).toEqual(v3);
     const key = await crypto.subtle.importKey(
@@ -26,17 +27,14 @@ describe('certificateSpki', () => {
   test('every truncation of a real certificate is undefined, never a throw', async () => {
     const der = pemCertificateDer((await snsSigner()).certificatePem) ?? new Uint8Array();
     for (let length = 0; length < der.byteLength; length += 1) {
-      expect(certificateSpki(der.slice(0, length))).toBeUndefined();
+      expect(x509Spki(der.slice(0, length))).toBeUndefined();
     }
   });
 
-  test.each([
-    ['empty', Uint8Array.of()],
-    ['not a sequence', Uint8Array.of(0x02, 0x01, 0x00)],
-    ['indefinite length', Uint8Array.of(0x30, 0x80, 0x00, 0x00)],
-    ['length past the end', Uint8Array.of(0x30, 0x84, 0xff, 0xff, 0xff, 0xff)],
-  ])('%s is undefined', (_name, bytes) => {
-    expect(certificateSpki(bytes)).toBeUndefined();
+  test('a PEM with no certificate block has no key', () => {
+    expect(
+      pemCertificateSpki('-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----'),
+    ).toBeUndefined();
   });
 });
 

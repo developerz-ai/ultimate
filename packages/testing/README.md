@@ -87,7 +87,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty, and restores the ones that can be restored at the same boundary |
 | `registry-snapshot.ts` | `captureProcessRegistries()` / `restoreProcessRegistries()` — the locale config, the catalogs, the permission set, the role map, the tasks and the declared measurement actor, put back as a file inherited them. A module-scope declaration evaluates once per process (`bun test` without `--isolate`, `As of 2026-08`), so a neighbour's `clearPermissions()` is otherwise permanent |
 | `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after. Its own entry point (`@ultimat3/testing/registry-isolation`), never the barrel: it value-imports `@ultimat3/entity`, and the barrel is what a tier-0 test imports for `expect` |
-| `quiet-logs.ts` | a green run prints the reporter and nothing else: the framework's log lines go to a sink that drops them. `LOG_LEVEL=info bun test <file>` shows them — naming `LOG_LEVEL` is the one escape hatch, and a level above `info` filters what the TERMINAL shows, never what the logger emits (below). A test asserting on log output hands `structuredLogger({ level, writer })` its own writer, or installs its own `setLogSink` and restores the previous one |
+| `quiet-logs.ts` | a green run prints the reporter and nothing else: the framework's log lines go to a sink that drops them. `LOG_LEVEL=info bun test <file>` shows them — naming `LOG_LEVEL` is the one escape hatch, and a level above `info` filters what the TERMINAL shows, never what the logger emits (below). A test asserting on log output hands `structuredLogger({ level, writer })` its own writer, or installs its own with `installLogSink` and calls the release it returns |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -1226,7 +1226,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 ## Log lines under test
 
-| `LOG_LEVEL` | The terminal shows | A `setLogSink` a test installs receives |
+| `LOG_LEVEL` | The terminal shows | A sink a test installs with `installLogSink` receives |
 |---|---|---|
 | unset | nothing — the reporter only | `info` and above |
 | `info` | `info` and above | `info` and above |

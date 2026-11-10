@@ -60,8 +60,8 @@ const input = { id, orgId${isMutator ? ", title: 'a title'" : ''} };
     : ''
 }
 // Named here because every projection needs a stable name and this file does not boot the app.
-// At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
-// object, so each projection of it works there with nothing to remember.
+// At boot \`defineApi\` stamps the same name onto the same object, so each projection of it
+// works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
 ${
   outsider
@@ -205,8 +205,8 @@ const id = '${ID}';
 ${shape.org ? `const orgId = '${ORG}';\n` : ''}const input = { id${shape.org ? ', orgId' : ''}${shape.isMutator ? ", title: 'a title'" : ''} };
 ${shape.isMutator ? `\n// The client store's table: the entity's own, so the twin and the server row share one key.\nconst TABLE = '${feature.table}';\n` : ''}
 // Named here because every projection needs a stable name and this file does not boot the app.
-// At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
-// object, so each projection of it works there with nothing to remember.
+// At boot \`defineApi\` stamps the same name onto the same object, so each projection of it
+// works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
 ${
   known

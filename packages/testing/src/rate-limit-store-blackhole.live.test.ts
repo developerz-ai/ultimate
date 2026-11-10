@@ -4,7 +4,7 @@
 // waited a second bound, and the two outran the 30 s HTTP deadline. Skips unless `TEST_DATABASE_URL`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { dbExecutor, postgresClient } from '@ultimat3/db';
 import { postgresRateLimitStore, SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { type FaultProxy, faultProxy, faultTarget, throughFaultProxy } from './fault-proxy';
@@ -37,11 +37,11 @@ async function setup() {
     await client.query({ text: statement, values: [] });
   }
   const lines: string[] = [];
-  const previous = setLogSink((line) => {
+  const releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
   cleanups.push(() => {
-    setLogSink(previous);
+    releaseLogSink();
   });
   const store = postgresRateLimitStore({ executor: dbExecutor(() => client) });
   return { proxy, store, lines, key: `blackhole:${crypto.randomUUID()}` };

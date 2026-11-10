@@ -45,7 +45,7 @@ const waitFor = async (done: () => boolean, polls = 500): Promise<void> => {
 
 const fake = (broker: FakeNatsBroker): SelectTransportOptions => ({
   connect: fakeNatsConnect(broker),
-  backoff: { baseMs: 2, maxMs: 2, factor: 1, jitter: 'none' },
+  backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
   onError: () => undefined,
 });
 

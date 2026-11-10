@@ -17,7 +17,7 @@ import type {
 import type { CtxPatch } from './context';
 import type { Page } from './cursor-page';
 import type { ErrorReporter, ErrorReportingOptions } from './error-reporter';
-import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
+import type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -212,6 +212,9 @@ type _OfflineStrategyIsItsArray = Assert<
 type _HydrateStrategyIsItsArray = Assert<
   Exact<HydrateStrategy, 'idle' | 'visible' | 'interaction' | 'never'>
 >;
+
+/** Render's boundary table, seo's route records and cli's filters all read this one (D7). */
+type _SurfaceIsItsArray = Assert<Exact<Surface, 'site' | 'app' | 'api' | 'shared'>>;
 
 /**
  * The cache ladder's rungs, same rule as the three above and for a defect that shipped: 8.0.0's

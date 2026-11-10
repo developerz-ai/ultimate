@@ -123,6 +123,22 @@ describe('a second implementation of a helper with one home is refused', () => {
     ).toEqual(['grantCovers']);
   });
 
+  test('x509Spki, as a DER long-form length decode in any spelling', () => {
+    // `saml-certificate.ts` and `x509-spki.ts` each carried this walk until 31.0.0.
+    const copy =
+      'if (first & 0x80) {\n  const count = first & 0x7f;\n  for (let i = 0; i < count; i += 1) length = length * 256 + (bytes[at + i] ?? 0);\n}';
+    expect(helpersIn(copy)).toEqual(['x509Spki']);
+    const shifted = 'if (b & 128) { const n = b & 127; for (;;) len = (len << 8) | bytes[i++]; }';
+    expect(helpersIn(shifted)).toEqual(['x509Spki']);
+  });
+
+  test('a 7-bit varint, a lone mask or a TOTP truncation is not a DER walk', () => {
+    expect(helpersIn('value |= (byte & 0x7f) << shift; shift += 7;')).toEqual([]);
+    expect(helpersIn('const ascii = code & 0x7f;')).toEqual([]);
+    // RFC 4226 dynamic truncation: masks 0x7f beside `<< 8`, never tests the long-form bit.
+    expect(helpersIn('((mac[o] & 0x7f) << 24) | ((mac[o + 2] & 0xff) << 8)')).toEqual([]);
+  });
+
   test('naming a wildcard, or collecting one, is not a copy of the matcher', () => {
     expect(helpersIn("const isWild = (s: string) => s === '*' || s.endsWith(':*');")).toEqual([]);
     expect(helpersIn("else if (grant.endsWith(':*')) wildcards.push(grant);")).toEqual([]);
@@ -200,6 +216,32 @@ describe('a RE-EXPORT of a core helper from another package is a second home', (
   });
 });
 
+describe('JsonValue, declared once in @ultimat3/schema (plan 101 D6)', () => {
+  test('a restated union is refused, and the fix names the schema import', () => {
+    const copy =
+      'import x from "y";\nexport type JsonValue =\n  | string\n  | readonly JsonValue[];\n';
+    const [finding] = checkHelperHomes({ at, text: copy });
+    expect(finding?.cause).toContain(`${at}:2 is a second JsonValue`);
+    expect(finding?.fix).toContain("from '@ultimat3/schema'");
+  });
+
+  test('an interface of that name is a declaration too', () => {
+    expect(helpersIn('export interface JsonValue { readonly v: string }')).toEqual(['JsonValue']);
+  });
+
+  test('a re-export, an import and a use are not declarations', () => {
+    const uses =
+      "import type { JsonValue } from '@ultimat3/schema';\nexport type { JsonValue };\nconst v: JsonValue = 1;";
+    expect(helpersIn(uses)).toEqual([]);
+  });
+
+  test("realtime's mutable wire domain is the one held exemption", () => {
+    const own = 'export type JsonValue = string | JsonValue[];';
+    expect(helpersIn(own, 'packages/realtime/src/json.ts')).toEqual([]);
+    expect(helpersIn(own, 'packages/realtime/src/other.ts')).toEqual(['JsonValue']);
+  });
+});
+
 describe('what is never a copy', () => {
   test('each helper in its own home', () => {
     const samples: Readonly<Record<string, string>> = {
@@ -213,6 +255,8 @@ describe('what is never a copy', () => {
       renderDeprecation: 'const link = \'</v2>; rel="successor-version"\';',
       BUILD_ID_HEADER: "export const CLIENT_BUILD_META = 'x-ultimate-build';",
       grantCovers: "return grant.endsWith(':*') && wanted.startsWith(grant.slice(0, -1));",
+      x509Spki: 'if (first & 0x80) { const count = first & 0x7f; length = length * 256 + b; }',
+      JsonValue: 'export type JsonValue = string | readonly JsonValue[];',
     };
     for (const rule of HELPER_HOMES) {
       expect(helpersIn(samples[rule.helper] ?? '', rule.home)).toEqual([]);

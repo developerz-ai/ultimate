@@ -88,7 +88,7 @@ async function rig(after: (ctx: Ctx) => void | Promise<void>): Promise<Rig> {
     name: 'signalledJob',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `signalled:${n}`,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: async ({ ctx }) => {
       started();
       await aborted(ctx.signal);
@@ -216,7 +216,7 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
       name: 'heldJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `held:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ ctx }) => {
         started();
         await held;
@@ -261,7 +261,7 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
       name: 'secondJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `second:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: ({ ctx }) => {
         signalAtStart = ctx.signal.aborted;
         started();

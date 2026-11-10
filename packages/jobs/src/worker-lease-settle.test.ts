@@ -73,7 +73,7 @@ async function settleRace(outcome: 'completed' | 'failed'): Promise<{
     name: 'settlingJob',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'settling:1',
-    retry: { attempts: outcome === 'failed' ? 1 : 3, jitter: false },
+    retry: { attempts: outcome === 'failed' ? 1 : 3, jitter: 'none' },
     run: async () => {
       if (outcome === 'failed') {
         throw new UltimateError({

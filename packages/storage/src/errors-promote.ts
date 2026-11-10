@@ -1,22 +1,10 @@
-// The refusals of the pending → attached move (`promoteAttachment`, `releaseQuarantine`): a key
-// still in quarantine, a key that is not a pending upload, and one an earlier call already moved.
+// The refusals of the pending → attached move (`promoteAttachment`): a key that is not a pending
+// upload, one an earlier call already moved, and one that changed while it was moved. A scanner's
+// refusals are `errors-scan.ts`'s.
 // Their codes are registered with the rest of the package's in `errors.ts`.
 
 import { renderFixLiteral } from '@ultimat3/core';
 import { StorageError } from './errors';
-
-/**
- * A key still under the quarantine prefix. The framework never scans bytes — that is the app's
- * job — so the only thing it can enforce is that nothing leaves quarantine without the app
- * saying so, which is what `promoteAttachment` refusing this key means.
- */
-export const quarantined = (key: string, orgId: string): StorageError =>
-  new StorageError({
-    code: 'X_STORAGE_QUARANTINED',
-    cause: `"${key}" is still under the quarantine prefix, so nothing has cleared it for use`,
-    fix: `scan the bytes, then releaseQuarantine({ disk, key: '${key}', orgId: '${orgId}' }) — promote the key it returns`,
-    meta: { key, orgId },
-  });
 
 /**
  * A key inside the org and outside its `pending/` prefix — most often another row's attached key

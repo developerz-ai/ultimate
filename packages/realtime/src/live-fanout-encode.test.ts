@@ -7,7 +7,7 @@ import { systemClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { makeCursor } from './cursor';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { type FanoutDeps, fanoutChange, patchFrame } from './live-fanout';
 import { encodePatchFrame } from './live-patch-encode';
@@ -31,7 +31,7 @@ class RawWs implements WsLike {
   }
 }
 
-const seated: readonly Row[] = [
+const seated: readonly LiveRow[] = [
   { id: 'p1', orgId: 'o1', likes: 0 },
   { id: 'p2', orgId: 'o1', likes: 0 },
 ];

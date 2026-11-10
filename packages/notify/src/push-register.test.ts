@@ -4,7 +4,8 @@
 // that can only ever reach the caller's own device.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { registerAction, resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { agentActor, anonymousActor, userActor } from '@ultimat3/core';
 import {
   definePermissions,

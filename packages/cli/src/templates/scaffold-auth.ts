@@ -209,7 +209,7 @@ const devActorTest =
   (): string => `// The development viewer is safe because of what it refuses: a role nobody declared is never the
 // default viewer, and the actor it mints holds what its role holds and nothing else. WHEN it is
 // asked is \`authenticator.ts\`'s, and \`authenticator.test.ts\` holds that half.
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { actorHas } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { roles } from '../../shared/roles';
@@ -267,12 +267,14 @@ unitTest('it answers a request from its cookie header, and no other', () => {
 
 unitTest('an undeclared role is answered as ANONYMOUS, and the log names what it read', () => {
   const lines: Record<string, unknown>[] = [];
-  const previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
+  const releaseLogSink = installLogSink((line) =>
+    lines.push(JSON.parse(line) as Record<string, unknown>),
+  );
   try {
     const cookie = \`\${DEV_ROLE_COOKIE}=auditor\`;
     expect(devAuthenticate({ header: () => cookie })).toBeNull();
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   expect(lines).toHaveLength(1);
   expect(lines[0]?.level).toBe('warn');

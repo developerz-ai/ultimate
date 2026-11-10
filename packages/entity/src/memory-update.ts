@@ -10,6 +10,7 @@
 import { narrowRow } from './columns';
 import type { EntityCore } from './entity';
 import { uniqueIndex, uniqueViolation } from './memory-unique';
+import { advanceVersion } from './search-index-version';
 import { assertRowTenant } from './tenancy';
 
 /**
@@ -29,8 +30,12 @@ const defined = (patch: object): object =>
  * same reason (`memory-repo.ts`), and narrowing twice is harmless: the second pass finds nothing
  * left to change.
  */
-export const mergedRow = <Row>(entity: EntityCore<Row>, row: Row, patch: object): Row =>
-  narrowRow<Row>(entity.$columns, Object.assign({}, row, defined(patch)));
+export const mergedRow = <Row>(entity: EntityCore<Row>, row: Row, patch: object): Row => {
+  const given = defined(patch);
+  const merged = narrowRow<Row>(entity.$columns, Object.assign({}, row, given));
+  // A searchable entity's version moves past the stored one even inside one millisecond.
+  return advanceVersion(entity, row, merged, (property) => Object.hasOwn(given, property));
+};
 
 /**
  * The rows a filtered update would write, judged as ONE batch: the patch merged into every

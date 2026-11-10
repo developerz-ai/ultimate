@@ -161,7 +161,6 @@ export type {
   GatewayBreakerOption,
   GatewayCache,
   ProviderGatewayInput,
-  RetryPolicy,
 } from './gateway';
 export {
   backoffMs,

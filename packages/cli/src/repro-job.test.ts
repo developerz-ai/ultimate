@@ -17,7 +17,7 @@ const threeSteps = (last: string) => {
     input: t.object({ id: t.string, apiKey: t.string }),
     tenant: 'none',
     idempotencyKey: (input) => input.id,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: async ({ step }) => {
       const a = await step.run('fetch', async () => 20);
       await step.run('double', async () => a * 2);

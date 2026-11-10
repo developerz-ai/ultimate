@@ -4,7 +4,12 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rescope } from '@ultimat3/core';
-import { CLIENT_PERSIST_META, CLIENT_SCOPE_META, pageClient } from '@ultimat3/core/page';
+import {
+  CLIENT_OUTBOX_MAX_META,
+  CLIENT_PERSIST_META,
+  CLIENT_SCOPE_META,
+  pageClient,
+} from '@ultimat3/core/page';
 import { bootPage } from './boot';
 import { resetPage } from './hooks-fixture';
 import { type LocalStore, MemoryLocalStore, memoryLocalStore } from './local-store-idb';
@@ -220,5 +225,46 @@ describe('a principal change while the boot is opening the disk', () => {
     await bootPage({ principal: 'u1' });
     expect((await disk.queue('p:u1'))?.mutations.map((m) => m.key)).toEqual(['u1-like']);
     expect(await disk.queue('p:u2')).toBeUndefined();
+  });
+});
+
+// `realtime.maxQueued` in `app.config.ts` reaches the outbox one way: the document's
+// `ultimate-outbox-max`, read by the boot that builds the outbox. Read as the boot starts, like
+// the persisted types — the document is gone again before the outbox opens.
+describe("the outbox's ceiling is the document's", () => {
+  const withCeiling = (content: string): void => {
+    host.document = {
+      readyState: 'complete',
+      querySelector: (selector: string) =>
+        selector.includes(CLIENT_OUTBOX_MAX_META) ? { content } : null,
+    };
+  };
+  const enqueueOne = async (): Promise<string> => {
+    const outbox = peekOutbox();
+    await outbox?.ready;
+    return (outbox?.enqueue({ key: 'u1-next', name: 'likePost', input: {} }) ?? Promise.resolve())
+      .then(() => 'queued')
+      .catch((error: unknown) => (error as { code?: string }).code ?? 'uncoded');
+  };
+
+  test('a page whose queue is at the ceiling refuses the next write, coded', async () => {
+    const disk = memoryLocalStore();
+    await disk.writeQueue('p:u1', queued('u1-like'));
+    seatDisk(disk);
+    rescope('u1');
+    withCeiling('1');
+    const booted = bootPage();
+    delete host.document;
+    await booted;
+    expect(await enqueueOne()).toBe('X_OFFLINE_QUEUE_FULL');
+  });
+
+  test('no meta, no ceiling: the same queue takes the write', async () => {
+    const disk = memoryLocalStore();
+    await disk.writeQueue('p:u1', queued('u1-like'));
+    seatDisk(disk);
+    rescope('u1');
+    await bootPage();
+    expect(await enqueueOne()).toBe('queued');
   });
 });

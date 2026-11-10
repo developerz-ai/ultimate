@@ -4,7 +4,8 @@
 // from — every reconnect on a fresh dev node was a second snapshot.
 import { afterAll, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
-import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { formatLsn, SyncSocket } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './role-start';
 import { registerLiveQueries } from './role-sync';

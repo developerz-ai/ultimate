@@ -874,7 +874,7 @@ vocabulary cannot express, said precisely rather than approximated:
 
 ## Full-text search — the `searchIndex` port
 
-Rule: `.search(term)` on a chain asks the INSTALLED `SearchIndex` — one search path. `As of 2026-11-09`. Canonical wording: `packages/entity/README.md`, "Search index".
+Rule: `.search(term)` on a chain asks the INSTALLED `SearchIndex` — one search path. `As of 2026-11-10`. The port is `index` / `remove` / `query` / `list`: `list({ entity, tenant?, after, limit })` pages the live documents an index holds (never a tombstone); `tenant` left out is every tenant's — the sweep's maintenance read, under the tenancy rule `query` follows (`crossTenant` for the built-in index). `searchIndexConformance` checks it: each id once across pages, removed ids absent, another tenant's absent. Canonical wording: `packages/entity/README.md`, "Search index".
 
 | Index | How `.search(term)` answers |
 |---|---|
@@ -883,11 +883,11 @@ Rule: `.search(term)` on a chain asks the INSTALLED `SearchIndex` — one search
 
 | Fact | Detail |
 |---|---|
-| the version | every `SearchDocument` carries `version`, the row's `onUpdateNow()` instant in epoch ms. A searchable entity declares `updatedAt: timestamp().defaultNow().onUpdateNow()`; without one `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
-| keep only newer | an adapter applies a document only when its version is newer than the document or tombstone it holds for that id; `remove(scope, ids, version)` leaves a tombstone at the delete's instant; an equal version is a replay and changes nothing. `searchIndexConformance` (`@ultimat3/testing/conformance`) checks a stale write after a newer one, a stale write after a remove, and a re-create after a remove |
-| the write path | with an external index installed, a committed insert, upsert, update or transition of a searchable entity indexes the row, and a delete (soft or hard) removes it — fed by the post-commit `entity.row` event, so a rolled-back write indexes nothing |
-| a failed index write | never fails the business write: one `entity.search-index.write-failed` log line; repair with `reindex()` ([Jobs](Jobs-And-Workflows#rebuilding-a-search-index--reindex)) |
-| not mirrored | `updateWhere` / `deleteWhere` (an `entity.bulk`, no rows), and a delete on an entity whose primary key is not `id` (the row is not read). Each is logged the same way. `reindex()` re-indexes what an `updateWhere` changed; it removes nothing, so ids a `deleteWhere` or a non-`id` delete left behind stay in the index until the app removes them |
+| the version | every `SearchDocument` carries `version`, the row's `onUpdateNow()` instant in epoch ms — STRICTLY increasing per row: a write (a soft delete included) stores it no earlier than the stored one + 1 ms (Postgres `greatest($now, updated_at + interval '1 millisecond')`; the memory driver and a `defineDriver` store through `advanceVersion` / `DriverRepo.update`'s `advance`), so two writes inside one millisecond are two versions and the column may run a millisecond ahead of the clock per same-ms write. A searchable entity declares `updatedAt: timestamp().defaultNow().onUpdateNow()`; without one `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
+| keep only newer | an adapter applies a document only when its version is newer than the document or tombstone it holds for that id; `remove(scope, ids, version)` leaves a tombstone (a delete's: past the row's last version and no earlier than its instant); an equal version is a replay. EXCEPT a `committed` document — the write path's, `index(docs, { committed: true })` — which replaces a tombstone whatever its version, so a key deleted and written again is live at once; `reindex()`'s reads are not `committed`, so a stale read never brings a deleted row back. `searchIndexConformance` (`@ultimat3/testing/conformance`) checks each case |
+| the write path | with an external index installed, every committed write of a searchable entity reaches it: insert, upsert, update, transition and `updateWhere` index the rows written; `delete` and `deleteWhere` (soft or hard) remove them — whatever the primary key (`id`, another column, composite; an instant in a key is spelled ISO 8601 UTC). Taken when the write runs, merged per key per transaction, sent at commit on one chain per index (`search-mirror-batch.ts`), so a rolled-back write indexes nothing. The driver hands a delete's or filtered write's rows over (`returning *` on Postgres) only for a searchable entity under an external index; under the built-in index every write is the statement it always was |
+| a failed index write | never fails the business write: one `entity.search-index.write-failed` log line; repair with `reindex()` ([Jobs](Jobs-And-Workflows#rebuilding-a-search-index--reindex)), whose sweep also removes what the table lost |
+| not mirrored | a delete or filtered write past `MAX_ASSERTED_ROWS` rows: Postgres counts first and sends no `returning *` past it (memory and `defineDriver` stores the same) — logged the same way; `reindex()` repairs it |
 
 ## Embeddings
 
@@ -1029,6 +1029,14 @@ An undeclared capability (`upsert`, `matches`, `aggregate:<kind>`, `transactions
 `X_DRIVER_UNSUPPORTED` with `meta.capability`; a declared one with no method behind it is
 `X_DRIVER_CAPABILITY_MISSING` when the table opens. `lock` and `series` undeclared answer the
 shipped `X_LOCK_UNSUPPORTED` / `X_ENTITY_SERIES_UNSUPPORTED`.
+
+A searchable entity's version is strictly increasing per row, and a custom store advances it in
+its OWN write, atomically: `update(filter, patch, advance?)` writes `advance.property` per matched
+row as the later of the patch's instant and that row's stored one + `advance.stepMs` (an in-code
+merge: `advanceVersion(entity, row, { ...row, ...patch }, (p) => p === advance.property)`), and a
+store declaring `'upsert'` passes its merged row through `advanceVersion(entity, stored, merged, (p)
+=> plan.set.includes(p))`. Both from `@ultimat3/entity/adapter`; `entityDriverConformance` refuses a
+store that skips either. `As of 2026-11-10`.
 
 **Migrations, drift and `x db` describe Postgres only.** A custom store owns its schema: `x verify`'s
 `drift` step skips an app whose only store is a `defineDriver` one and which has no migration, and

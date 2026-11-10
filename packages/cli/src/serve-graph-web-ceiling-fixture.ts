@@ -189,5 +189,13 @@
  * modulepreload per rendered eager island's imports, with the shared island chunk).
  * raised 1570 → 1576, measured 1576 (2026-11-10, wave F review fixes): `SERVING_ROLE_CEILING`'s 6.
  * Nothing web-only.
+ * raised 1576 → 1577, measured 1577 (2026-11-10, plan 101 v31 wave G): `SERVING_ROLE_CEILING`'s
+ * net 1 (eight added, seven mail templates removed). Nothing web-only.
+ * raised 1577 → 1578, measured 1578 (2026-11-10, wave G): `SERVING_ROLE_CEILING`'s 1,
+ * `entity/src/memory-upsert.ts`. Nothing web-only.
+ * raised 1578 → 1579, measured 1579 (2026-11-10, wave G, D5): `SERVING_ROLE_CEILING`'s 1,
+ * `jobs/src/retry-jitter.ts`. Nothing web-only.
+ * raised 1579 → 1580, measured 1580 (2026-11-10, wave G, g-search): `SERVING_ROLE_CEILING`'s 1,
+ * `entity/src/search-mirror-batch.ts`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1576;
+export const WEB_ROLE_CEILING = 1580;

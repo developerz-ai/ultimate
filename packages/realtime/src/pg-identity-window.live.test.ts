@@ -10,10 +10,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, entityForTable, text } from '@ultimat3/entity';
-import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, type QueryPolicy, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, type PostgresChangeFeed, postgresChangeFeed } from './changefeed';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
 import { PgConnection } from './pg-connection';
@@ -28,7 +29,7 @@ const TABLE = 'x_idw_posts';
 const SLOT = 'x_idw_slot';
 const PUBLICATION = 'x_idw_pub';
 
-interface PostRow extends Row {
+interface PostRow extends LiveRow {
   readonly orgId: string;
   readonly status: string;
   readonly title: string;

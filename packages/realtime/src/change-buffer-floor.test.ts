@@ -7,7 +7,7 @@ import { expect, test } from 'bun:test';
 import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -43,7 +43,7 @@ const socketFor = (id: string, who: Actor): SyncSocket =>
   });
 
 /** The table both nodes read: one row, and the position it was last written at. */
-const table = { rows: [{ id: 'p1', orgId: 'o1', title: 'v1' }] as Row[], lsn: 120 };
+const table = { rows: [{ id: 'p1', orgId: 'o1', title: 'v1' }] as LiveRow[], lsn: 120 };
 
 const liveFeed: LiveQueryDefinition = {
   name: 'liveFeed',
@@ -66,7 +66,7 @@ const liveFeed: LiveQueryDefinition = {
 const node = (): LiveQueryRegistry =>
   new LiveQueryRegistry({ source: new RingChangeBuffer(), clock }).register(liveFeed);
 
-const insert = (row: Row, lsn: number): ChangeEvent => ({
+const insert = (row: LiveRow, lsn: number): ChangeEvent => ({
   table: 'posts',
   op: 'insert',
   before: null,

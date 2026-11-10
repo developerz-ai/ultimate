@@ -15,7 +15,7 @@ const child = job<{ id: string }>({
   name: 'simWorldChild',
   input: t.object({ id: t.string }),
   tenant: 'none',
-  retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+  retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
   idempotencyKey: (input) => `child:${input.id}`,
   run: async () => undefined,
 });
@@ -24,7 +24,7 @@ const parent = job<{ id: string }>({
   name: 'simWorldParent',
   input: t.object({ id: t.string }),
   tenant: 'none',
-  retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+  retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
   idempotencyKey: (input) => `parent:${input.id}`,
   run: async ({ jobId, input }) => {
     await child.enqueue({ id: input.id });

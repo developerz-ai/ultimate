@@ -4,7 +4,7 @@
 // untouched, bust for bust.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type LogLevel, setLogSink } from '@ultimat3/core';
+import { installLogSink, type LogLevel } from '@ultimat3/core';
 import {
   invalidateTags,
   isolateTiers,
@@ -31,11 +31,11 @@ beforeEach(() => {
   resetTiers();
   resetDeclaredTags();
   lines = [];
-  const previous = setLogSink((line, level) => {
+  const releaseLogSink = installLogSink((line, level) => {
     const { msg, ...fields } = JSON.parse(line) as { msg: string } & Record<string, unknown>;
     if (msg.startsWith(INVALIDATE_PARTIAL)) lines.push({ level, msg, fields });
   });
-  restoreSink = () => setLogSink(previous);
+  restoreSink = () => releaseLogSink();
 });
 
 afterEach(() => {

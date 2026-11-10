@@ -10,13 +10,13 @@ import {
   subscriberCount,
   subscriberFailures,
 } from './instrument';
-import { setLogSink } from './logger';
+import { installLogSink } from './logger';
 
 /** Every line the process logger writes, until `restore()`. */
 function collectLines() {
   const lines: string[] = [];
-  const previous = setLogSink((line) => lines.push(line));
-  return { read: () => lines, restore: () => setLogSink(previous) };
+  const releaseLogSink = installLogSink((line) => lines.push(line));
+  return { read: () => lines, restore: () => releaseLogSink() };
 }
 
 import { INSTRUMENT_EVENTS } from './instrument-events';

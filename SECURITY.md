@@ -16,7 +16,11 @@ The window applies from v30 ([Stability](https://github.com/developerz-ai/ultima
 
 Report privately via [GitHub Security Advisories](https://github.com/developerz-ai/ultimate/security/advisories/new). Do not open a public issue for a vulnerability.
 
-Include: the affected package and version, a reproduction, the impact, and any suggested fix. GitHub delivers a private advisory to this repository's administrators, the `developerz-ai` organisation ([`GOVERNANCE.md`](GOVERNANCE.md)). The aim is to acknowledge within 3 business days; the fix then ships as a patch on the rule above.
+Private vulnerability reporting is on, `As of 2026-11-10`: `gh api repos/developerz-ai/ultimate/private-vulnerability-reporting` answers `{"enabled":true}`, so anyone signed in to GitHub can file there.
+
+Include: the affected package and version, a reproduction, the impact, and any suggested fix. GitHub delivers a private advisory to this repository's administrators, the `developerz-ai` organisation ([`GOVERNANCE.md`](GOVERNANCE.md)); deciding a security report is the owner's call, never the maintainer bot's. The owner acknowledges in that advisory's private thread, aiming for 3 business days — a target, not a contract; the fix then ships as a patch on the rule above.
+
+No outside security audit has been done. The posture below is the maintainers' own account of what to audit.
 
 ## Security posture of the framework
 

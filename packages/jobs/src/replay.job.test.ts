@@ -49,7 +49,7 @@ describe('a completed step survives a real retry', () => {
       idempotencyKey: ({ n }) => `charge:${n}`,
       // Fixed, zero-delay retry: the second attempt is claimable on the very next real poll,
       // with nothing here depending on real elapsed time.
-      retry: { attempts: 2, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 2, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: async ({ step, attempt }) => {
         await step.run('charge', () => {
           chargeCalls.push(attempt);
@@ -119,7 +119,7 @@ describe('a suspended step resumes without re-running what already ran', () => {
       name: 'sleepAndResume',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `sleep:${n}`,
-      retry: { attempts: 2, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 2, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: async ({ step, attempt }) => {
         await step.run('step1', () => {
           stepOneCalls.push(attempt);

@@ -55,13 +55,29 @@ export interface DriverWrite {
  * Rows arrive narrowed, tenant-checked and invariant-judged; a duplicate key is the store's to
  * refuse, with `entityUniqueViolation(entity, constraint)`. Writes are all or nothing per call.
  */
+/** A column `update` moves forward per row rather than sets: see `DriverRepo.update`. */
+export interface DriverAdvance {
+  readonly property: string;
+  readonly stepMs: number;
+}
+
 export interface DriverRepo<Row> {
   select(read: DriverRead): Promise<readonly Row[]>;
   count(filter: DriverFilter): Promise<number>;
   /** The rows as stored, defaults included, in the order given. */
   insert(rows: readonly Row[], write: DriverWrite): Promise<readonly Row[]>;
-  /** Sets `patch` (property names, already parsed) on every matched row; answers how many. */
-  update(filter: DriverFilter, patch: Readonly<Record<string, unknown>>): Promise<number>;
+  /**
+   * Sets `patch` (property names, already parsed) on every matched row; answers how many. With
+   * `advance`, the store writes `advance.property` per row as the LATER of the patch's instant and
+   * that row's stored instant + `advance.stepMs`, in the same atomic write — a searchable entity's
+   * version, strictly increasing per row even when two processes write it in one millisecond.
+   * `entityDriverConformance` checks it; `advanceVersion` is the rule for a store merging in code.
+   */
+  update(
+    filter: DriverFilter,
+    patch: Readonly<Record<string, unknown>>,
+    advance?: DriverAdvance,
+  ): Promise<number>;
   delete(filter: DriverFilter): Promise<number>;
   /** `'upsert'`. The plan is `bulk-write.ts`'s — target, overwritten columns — already judged. */
   upsert?(rows: readonly Row[], plan: UpsertPlan, write: DriverWrite): Promise<readonly Row[]>;

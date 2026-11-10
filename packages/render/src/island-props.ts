@@ -4,16 +4,12 @@
  * reaches the browser is this bag, and every rule here is about what must not travel.
  */
 
+import type { JsonValue } from '@ultimat3/schema';
 import { IslandPropsInvalidError } from './errors';
 import type { JsxProps } from './jsx';
 
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+// `@ultimat3/schema`'s one declaration, re-exported for this package's callers — never restated.
+export type { JsonValue };
 
 export type IslandProps = Readonly<Record<string, JsonValue>>;
 

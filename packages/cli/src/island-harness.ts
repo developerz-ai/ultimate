@@ -5,13 +5,13 @@
 
 // why: no Bun native takes a path apart; the surface is a segment of an app-root-relative path.
 import { basename } from 'node:path';
+import { SURFACES } from '@ultimat3/core';
 import type { IslandDirective, Surface } from '@ultimat3/render';
 import {
   emitIslandAttributes,
   emitIslandProps,
   hydrateRuntime,
   islandModuleId,
-  SURFACES,
 } from '@ultimat3/render';
 import type { IslandShotTarget, IslandState } from '@ultimat3/testing';
 import { harnessScript } from './island-harness-script';

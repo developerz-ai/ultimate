@@ -133,7 +133,7 @@ describe('a job the worker shed is still backlog', () => {
       name,
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => `${name}:1`,
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
       run: () => Promise.resolve(),
     });
   };
@@ -222,7 +222,7 @@ describe('the worker counts what it finished', () => {
       name: 'countedJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `counted:${n}`,
-      retry: { attempts: options.attempts, jitter: false },
+      retry: { attempts: options.attempts, jitter: 'none' },
       run: () => {
         if (options.fail) throw new TypeError('the dependency is down');
         return Promise.resolve();

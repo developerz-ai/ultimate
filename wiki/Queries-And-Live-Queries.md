@@ -54,7 +54,7 @@ Every projection this package owns is a method on the query — `liveFeed.live(i
 
 `sql` is unreachable by design. The declaration lives in a private store inside `read.ts` and `@ultimat3/query` exports no reader for it, so `sourceFor` is the only thing that can build a source — one read path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'query'` is `X_QUERY_FOREIGN`, never a registered read.
 
-`isLive` is the declared boolean; `live()` is the subscription itself. Every projection needs the name `registerQueries()` stamps on — before that, `X_QUERY_UNREGISTERED`.
+`isLive` is the declared boolean; `live()` is the subscription itself. Every projection needs the name `defineApi({ queries })` stamps on at boot — before that, `X_QUERY_UNREGISTERED`.
 
 ## Five projections
 

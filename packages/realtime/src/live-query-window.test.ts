@@ -9,7 +9,7 @@ import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import { makeCursor, type ResumeSource } from './cursor';
-import type { JsonValue, Row, RowPatch } from './json';
+import type { JsonValue, LiveRow, RowPatch } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { windowId } from './live-tenant';
@@ -55,11 +55,11 @@ class FlakyBuffer implements ResumeSource {
 
 const actor = (id: string): Actor => userActor({ id, orgId: 'o1' });
 const input: JsonValue = { orgId: 'o1' };
-const rows: readonly Row[] = [
+const rows: readonly LiveRow[] = [
   { id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'alice draft', likes: 0 },
   { id: 'p2', orgId: 'o1', ownerId: 'bob', title: 'bob draft', likes: 0 },
 ];
-const bobsRow = rows[1] as Row;
+const bobsRow = rows[1] as LiveRow;
 
 /** Yields the microtask queue `count` times — a gate that is slow without touching the clock. */
 async function turns(count: number): Promise<void> {
@@ -101,7 +101,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
   return { socket, ws };
 }
 
-const change = (position: number, after: Row, before: Row | null): ChangeEvent => ({
+const change = (position: number, after: LiveRow, before: LiveRow | null): ChangeEvent => ({
   table: 'posts',
   op: 'update',
   before,
@@ -272,7 +272,7 @@ describe('the shared window is read once per entry', () => {
     const alice = socketFor('s-alice', actor('alice'));
     await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input });
 
-    head = { rows: [rows[0] as Row, { ...bobsRow, likes: 7 }], lsn: formatLsn(9) };
+    head = { rows: [rows[0] as LiveRow, { ...bobsRow, likes: 7 }], lsn: formatLsn(9) };
     const bob = socketFor('s-bob', actor('bob'));
     const { frame } = await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input });
 
@@ -313,7 +313,7 @@ describe('one query id failing costs one query id', () => {
 
 describe('a delta resume decides about whole rows', () => {
   test('an entry nothing has read yet is filled before a patch reaches the rule', async () => {
-    const seen: Row[] = [];
+    const seen: LiveRow[] = [];
     const source = new RingChangeBuffer();
     const registry = new LiveQueryRegistry({ source, clock: frozenClock(1_000) }).register(
       feed({

@@ -160,7 +160,6 @@ export {
   MetricNameInvalidError,
   MetricValueInvalidError,
   memoryMetricExporter,
-  noopMetricExporter,
   OVERFLOW_ATTRIBUTE,
   resetMetrics,
   startMetricExport,

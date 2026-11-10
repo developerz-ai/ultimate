@@ -3,10 +3,13 @@
 // kept by the server on every `store`, every query the repository's own `matches` read.
 
 import { afterAll, beforeAll, describe } from 'bun:test';
+import { ctxOf, runWithContext, serviceActor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { generateMigration, postgresClient, raw, sql, statementsOf } from '@ultimat3/db';
 import {
+  CROSS_TENANT_SCOPE,
   clearRegistry,
+  crossTenant,
   entity,
   postgresSearchIndex,
   text,
@@ -74,6 +77,12 @@ describe.skipIf(adminUrl === '')(testName('live', 'the built-in postgres search 
             on conflict (id) do update set title = excluded.title, body = excluded.body`);
         }
       },
+      // `list` naming no tenant is every tenant's rows: the capability `reindex`'s sweep holds.
+      everyTenant: (read) =>
+        runWithContext(
+          ctxOf({ actor: serviceActor({ id: 'reindex', scopes: [CROSS_TENANT_SCOPE] }) }),
+          () => crossTenant('the search conformance suite lists every tenant', read),
+        ),
       drop: async (scope, ids) => {
         for (const id of ids) {
           await pool.execute(

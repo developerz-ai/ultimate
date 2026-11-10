@@ -1,10 +1,10 @@
 // The write path: with an external index installed, committed entity writes keep it current — an
 // insert, update or upsert indexes the row, a delete (soft or hard) removes it — and a rollback
-// indexes nothing. The built-in Postgres index subscribes to nothing.
+// indexes nothing. What the built-in Postgres index costs a write: `search-mirror-statements.test.ts`.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
-import { ctxOf, runWithContext, subscribed, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -12,7 +12,6 @@ import { clearRegistry } from './registry';
 import type { SearchDocument, SearchIndex } from './search-index';
 import { installSearchIndex } from './search-index-installed';
 import { memorySearchIndex } from './search-index-memory';
-import { postgresSearchIndex } from './search-index-postgres';
 
 afterAll(() => {
   clearRegistry();
@@ -99,6 +98,7 @@ describe('the search index write path', () => {
       index: () => Promise.reject(new TypeError('index is down')),
       remove: async () => undefined,
       query: async () => [],
+      list: async () => ({ entries: [], next: null }),
     };
     release = installSearchIndex(refusing);
     const db = database({ notes }, { driver: memoryDriver() });
@@ -116,22 +116,11 @@ describe('the search index write path', () => {
       },
       remove: async () => undefined,
       query: async () => [],
+      list: async () => ({ entries: [], next: null }),
     });
     const db = database({ plain }, { driver: memoryDriver() });
     await db.plain.insert({ id: ID, note: 'zebra' });
     await settle();
     expect(documents).toEqual([]);
-  });
-
-  test('the built-in Postgres index subscribes to nothing: zero cost per write', () => {
-    expect(subscribed('entity.row')).toBe(false);
-    release = installSearchIndex(postgresSearchIndex());
-    expect(subscribed('entity.row')).toBe(false);
-    release();
-    release = installSearchIndex(memorySearchIndex());
-    expect(subscribed('entity.row')).toBe(true);
-    release();
-    release = undefined;
-    expect(subscribed('entity.row')).toBe(false);
   });
 });

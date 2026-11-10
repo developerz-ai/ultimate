@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import type { LogSink } from '@ultimat3/core';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { clearRoutes, describePages } from './registry';
 import { isrController } from './render-isr';
 import { isrKeyIn, isrRouteWith } from './render-isr-fixture';
@@ -32,11 +32,11 @@ async function logged(run: () => Promise<void>): Promise<string> {
   const collect: LogSink = (line) => {
     lines.push(line);
   };
-  const previous = setLogSink(collect);
+  const releaseLogSink = installLogSink(collect);
   try {
     await run();
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   return lines.join('\n');
 }

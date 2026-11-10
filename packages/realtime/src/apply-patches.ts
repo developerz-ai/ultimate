@@ -5,7 +5,7 @@
 // Order and values are folded separately: a live window keeps its ORDER here and its VALUES in the
 // record store, so `applyPatches` is the array form of the same fold rather than a second one.
 
-import type { JsonObject, Row, RowPatch } from './json';
+import type { JsonObject, LiveRow, RowPatch } from './json';
 
 /**
  * Membership and order after a patch list, ids only. `index` places a row the set does not hold
@@ -36,13 +36,16 @@ export function orderAfterPatches(
 }
 
 /** Minimal in-place patch application: the shape a Solid store update maps onto directly. */
-export function applyPatches(rows: readonly Row[], patches: readonly RowPatch[]): readonly Row[] {
-  const values = new Map<string, Row>(rows.map((row) => [row.id, row]));
+export function applyPatches(
+  rows: readonly LiveRow[],
+  patches: readonly RowPatch[],
+): readonly LiveRow[] {
+  const values = new Map<string, LiveRow>(rows.map((row) => [row.id, row]));
   for (const patch of patches) {
     if (patch.op === 'delete' || patch.row === null) continue;
     values.set(patch.id, mergeRow(values.get(patch.id), patch.id, patch.row));
   }
-  const out: Row[] = [];
+  const out: LiveRow[] = [];
   for (const id of orderAfterPatches(
     rows.map((row) => row.id),
     patches,
@@ -54,7 +57,7 @@ export function applyPatches(rows: readonly Row[], patches: readonly RowPatch[])
 }
 
 /** The one merge rule: changed columns over the current value, and `id` is never overwritten. */
-function mergeRow(current: Row | undefined, id: string, columns: JsonObject): Row {
+function mergeRow(current: LiveRow | undefined, id: string, columns: JsonObject): LiveRow {
   const next: JsonObject = { ...(current ?? {}), ...columns };
   return { ...next, id };
 }

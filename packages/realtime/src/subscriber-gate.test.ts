@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
-import type { JsonValue, Row, RowPatch } from './json';
+import type { JsonValue, LiveRow, RowPatch } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import {
   type GateFailed,
@@ -16,7 +16,7 @@ import {
 
 const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
 const who: Subscriber = { sid: 's1', actor: alice };
-const rows: readonly Row[] = [
+const rows: readonly LiveRow[] = [
   { id: 'p1', ownerId: 'alice', title: 'mine' },
   { id: 'p2', ownerId: 'bob', title: 'theirs' },
 ];
@@ -42,7 +42,7 @@ function targetFor(visible: LiveQueryDefinition['visible'], window = rows): Gate
   return { qid: 'liveFeed:1', input: {} as JsonValue, definition, rows: window };
 }
 
-const patchOf = (id: string, row: Row | null = { id, title: 'edited' }): RowPatch => ({
+const patchOf = (id: string, row: LiveRow | null = { id, title: 'edited' }): RowPatch => ({
   op: row === null ? 'delete' : 'update',
   id,
   row,
@@ -150,7 +150,7 @@ describe('SubscriberGate — patches', () => {
   });
 
   test('the rule sees the whole window row, never the partial patch', async () => {
-    const seen: Row[] = [];
+    const seen: LiveRow[] = [];
     const gate = new SubscriberGate({});
     const target = targetFor(({ row }) => {
       seen.push(row);
@@ -179,7 +179,10 @@ describe('SubscriberGate — patches', () => {
     const gate = new SubscriberGate({ onRowDenied: (event) => denials.push(event) });
     // The gate reads the window AFTER `applyToWindow` landed the change, so a deleted row is gone
     // from it — there is no row left to put in front of the rule, and `holds` is the whole answer.
-    const target = targetFor(({ row, actor }) => row['ownerId'] === actor?.id, [rows[0] as Row]);
+    const target = targetFor(
+      ({ row, actor }) => row['ownerId'] === actor?.id,
+      [rows[0] as LiveRow],
+    );
 
     await expect(gate.patch(target, who, patchOf('p2', null), false)).resolves.toBeNull();
 
@@ -194,16 +197,16 @@ describe('SubscriberGate — patches', () => {
    */
   test('a row never delivered is never withdrawn, insert and delete alike', async () => {
     const gate = new SubscriberGate({});
-    const mine = ({ row, actor }: { row: Row; actor: Actor | null }): boolean =>
+    const mine = ({ row, actor }: { row: LiveRow; actor: Actor | null }): boolean =>
       row['ownerId'] === actor?.id;
-    const insert: RowPatch = { op: 'insert', id: 'p2', row: rows[1] as Row, lsn: '2' };
+    const insert: RowPatch = { op: 'insert', id: 'p2', row: rows[1] as LiveRow, lsn: '2' };
 
     const first = await gate.filterPatches(targetFor(mine), who, [insert], new Set(['p1']));
     expect(first).toEqual([]);
 
     // bob deletes it: the shared window drops the row, and alice holds nothing to withdraw.
     const second = await gate.filterPatches(
-      targetFor(mine, [rows[0] as Row]),
+      targetFor(mine, [rows[0] as LiveRow]),
       who,
       [patchOf('p2', null)],
       new Set(['p1']),
@@ -229,7 +232,7 @@ describe('SubscriberGate — a patch whose row the window does not hold', () => 
   const partial: RowPatch = { op: 'update', id: 'p9', row: { title: 'edited' }, lsn: '2' };
 
   test('never reaches the rule, so nothing decides on the columns nobody sent', async () => {
-    const seen: Row[] = [];
+    const seen: LiveRow[] = [];
     const gate = new SubscriberGate({});
     // The shape that leaks rather than fail-closed: `undefined !== true` reads as "public", so the
     // merged partial row would have been authorized on a column the patch never carried.
@@ -287,7 +290,7 @@ describe('SubscriberGate — a patch whose row the window does not hold', () => 
     };
 
     // The window is read at gate time, so a row `applyToWindow` has already landed is a whole one.
-    const target3 = { ...target, rows: [...rows, insert.row as Row] };
+    const target3 = { ...target, rows: [...rows, insert.row as LiveRow] };
     await expect(gate.patch(target3, who, insert, false)).resolves.toBe(insert);
   });
 });
@@ -296,7 +299,7 @@ describe('SubscriberGate — a patch whose row the window does not hold', () => 
 // subscriber who sees only some of those rows, it lands the row out of order — and its size says
 // how many rows the subscriber may not see sit ahead of it.
 describe('SubscriberGate — an insert index is re-based on what this subscriber holds', () => {
-  const window: readonly Row[] = [
+  const window: readonly LiveRow[] = [
     { id: 'b1', ownerId: 'bob' },
     { id: 'a1', ownerId: 'alice' },
     { id: 'b2', ownerId: 'bob' },
@@ -331,7 +334,7 @@ describe('SubscriberGate — an insert index is re-based on what this subscriber
 
   test('two inserts in one list: the second counts the first', async () => {
     const gate = new SubscriberGate({});
-    const both: readonly Row[] = [
+    const both: readonly LiveRow[] = [
       { id: 'x', ownerId: 'alice' },
       { id: 'y', ownerId: 'alice' },
     ];
@@ -353,7 +356,7 @@ describe('SubscriberGate — an insert index is re-based on what this subscriber
 // its snapshot, then admitted by this very change — folded those columns onto nothing, and the
 // server never recorded the id as held, so the row's later delete was withheld from them.
 describe('SubscriberGate — an update that makes a row visible to a subscriber who lacks it', () => {
-  const window: readonly Row[] = [
+  const window: readonly LiveRow[] = [
     { id: 'p1', ownerId: 'alice', title: 'mine', published: true },
     { id: 'p2', ownerId: 'bob', title: 'theirs', published: true },
   ];
@@ -364,7 +367,7 @@ describe('SubscriberGate — an update that makes a row visible to a subscriber 
     lsn: '2',
     index: 1,
   };
-  const visible = ({ row }: { row: Row }): boolean => row['published'] === true;
+  const visible = ({ row }: { row: LiveRow }): boolean => row['published'] === true;
 
   test('arrives as an insert carrying the whole window row', async () => {
     const gate = new SubscriberGate({});

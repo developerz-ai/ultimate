@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { action, registerActions, resetActions, t } from '@ultimat3/action';
+import { action, resetActions, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import {
   and,
   can,
@@ -8,7 +9,8 @@ import {
   knownPermissions,
   type Permission,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { type AdminActor, staticAuthz } from '../authz';
 import { defaultDevSources, staticDevSources } from './data';
 import type { CacheEdgeFact, MailFact, StatementLoopFact } from './facts';

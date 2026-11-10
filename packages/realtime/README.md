@@ -121,7 +121,7 @@ The server half, in its own file, names the entity and the policy on the same re
 `ref.topic(params)` is the one spelling of the topic both halves use (`org-posts.<orgId>`), and
 `bun run channel-literals` refuses a hand-built topic anywhere else. A bad name or a repeated param
 is `X_CHANNEL_DECLARATION_INVALID` at declaration. `catchUp` is read on every access, so a query
-whose name `registerQueries()` stamps at boot is picked up. A `catchUp` given as the query itself
+whose name `defineApi({ queries })` stamps at boot is picked up. A `catchUp` given as the query itself
 must carry the channel's own `policy` object — it is served with the channel params as input — or
 `channel()` refuses it (`X_CHANNEL_CATCHUP_POLICY_MISMATCH`); a name-only ref is not checked. The reference app's
 [`app/posts/channel-ref.ts`](../../examples/dummy/apps/web/app/posts/channel-ref.ts) is the idiom.
@@ -185,12 +185,12 @@ Without one, `recordPublisher` (`./server`) is how an app puts its own **committ
 bus; every node turns them into `records` frames exactly as it does a replicated change (#682).
 
 ```ts
-import type { ChannelEntity, Row } from '@ultimat3/realtime';
+import type { ChannelEntity, LiveRow } from '@ultimat3/realtime';
 import { recordPublisher, type Transport } from '@ultimat3/realtime/server';
 
 declare const transport: Transport; // the process's bus — the one `selectTransport` chose
 declare const runs: ChannelEntity; // an `entity()` a `channel(…, { records: [runs] })` lists
-declare const finished: readonly Row[];
+declare const finished: readonly LiveRow[];
 
 // Once per process, at boot, naming every entity it will publish.
 const publisher = recordPublisher({ transport, entities: [runs] });
@@ -518,7 +518,7 @@ verdict only. A proxy that adds none of them is indistinguishable from a direct 
 header-less proxy must not route the health paths.
 
 The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
-frame assigned one, otherwise `@ultimat3/core`'s `backoffDelay()` on the client's `BackoffPolicy` — and that timer calls `connect()`, which re-subscribes
+frame assigned one, otherwise `@ultimat3/core`'s `backoffDelay()` on the client's `backoff` (core's `RetryPolicy` fields `base`/`max`/`factor`/`curve`/`jitter`) — and that timer calls `connect()`, which re-subscribes
 every registration **and re-announces every topic**. Topic membership is state on the node's socket
 and `hello` carries none of it, so without that half a channel goes silent from the first reconnect
 onwards while its handler is still installed — and its presence membership is swept, because
@@ -587,7 +587,7 @@ principal.
 `maxQueued` — the outbox's ceiling, on `pageOutbox({ maxQueued })` (the page's outbox: the first
 call in a tab builds it) or `localOutbox({ maxQueued })`, and carried to every queue the outbox
 opens, the memory fallback included. A whole number ≥ 1 (`X_INVARIANT` where the outbox is built);
-absent, no ceiling. It counts writes still to send (a refused one kept for the UI is not); past it
+absent, no ceiling. An app sets it as `realtime: { maxQueued }` in `app.config.ts`; the page boot reads it off the document (`<meta name="ultimate-outbox-max">`, core's `CLIENT_OUTBOX_MAX_META`). It counts writes still to send (a refused one kept for the UI is not); past it
 a NEW write is refused, `X_OFFLINE_QUEUE_FULL`, to the mutation that
 made it — a key already queued collapses as always, and nothing queued is ever dropped to make room.
 `OfflineQueue.open(store, { maxQueued })` is the same rule one level down.
@@ -825,7 +825,7 @@ made it — a key already queued collapses as always, and nothing queued is ever
   synchronous): the sockets are closed outright with no goodbye written, the feed first so it is
   silent before the lock is given up. `stop()` asks politely and gives each goodbye
   `STOP_DEADLINE_MS` (5 s) before abandoning it. The restart delay resets only once a change has
-  been published, so a change the bus refuses every time backs off to `maxMs` instead of
+  been published, so a change the bus refuses every time backs off to `max` instead of
   redialling at the base; `stats().failure` names its entity and lsn, and `running` stays `false`
   until it goes out.
 - **`postgresAdvisoryLock()` is the production `AdvisoryLock`** — `SELECT

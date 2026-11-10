@@ -8,7 +8,8 @@
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { registerAction, resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { ctxOf, registerErrorRetry, userActor } from '@ultimat3/core';
 import type { AnyJobHandle, ClaimedJob, JobDriver, JobExecution } from '@ultimat3/jobs';
 import {
@@ -167,7 +168,7 @@ describe('an agent is durable work — issue #125', () => {
     const handle = agentJob(summarise, {
       name: 'summarise-backlog',
       tenant: (input) => input.orgId,
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
     });
     expect(isJobHandle(handle)).toBe(true);
     expect(handle.kind).toBe('job');
@@ -260,7 +261,7 @@ describe('the agent runs on the job path, under the job’s identity', () => {
     const handle = agentJob(summarise, {
       name: 'summarise-actor',
       tenant: (input) => input.orgId,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
     });
 
     const execution = await runThrough(handle, driver, { topic: 'a', orgId: 'org-1' });
@@ -282,7 +283,7 @@ describe('the agent runs on the job path, under the job’s identity', () => {
     const handle = agentJob(summariser('happyAgent'), {
       name: 'summarise-happy',
       tenant: (input) => input.orgId,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
     });
 
     const execution = await runThrough(handle, driver, { topic: 'a', orgId: 'org-1' });
@@ -303,7 +304,7 @@ describe('the ceilings shipped for the request path hold on the job path too', (
       {
         name: 'summarise-capped',
         tenant: (input) => input.orgId,
-        retry: { attempts: 1, jitter: false },
+        retry: { attempts: 1, jitter: 'none' },
       },
     );
 
@@ -322,7 +323,7 @@ describe('the ceilings shipped for the request path hold on the job path too', (
     const handle = agentJob(summariser('loopingJobAgent', [actorProbe([])], undefined, 3), {
       name: 'summarise-looping',
       tenant: (input) => input.orgId,
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
     });
 
     const execution = await runThrough(handle, driver, { topic: 'a', orgId: 'org-1' });
@@ -352,7 +353,7 @@ describe('the ceilings shipped for the request path hold on the job path too', (
     const handle = agentJob(summariser('abandonedAgent'), {
       name: 'summarise-abandoned',
       tenant: 'none',
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
     });
     const execution = await runThrough(
       handle,
@@ -378,7 +379,7 @@ describe('the ceilings shipped for the request path hold on the job path too', (
     const handle = agentJob(summariser('cancellableAgent', [actorProbe([])]), {
       name: 'summarise-cancellable',
       tenant: 'none',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
     });
 
     const aborted = new AbortController();

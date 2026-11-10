@@ -26,4 +26,12 @@ describe('clientSyncTags', () => {
       'ultimate-sync-worker',
     );
   });
+
+  test('the outbox ceiling the app configured is its own meta; unset writes none', () => {
+    const head = { syncUrl: '/_x/sync', buildId: 'b1' };
+    expect(renderHead(clientSyncTags({ ...head, outboxMaxQueued: 200 }))).toContain(
+      '<meta name="ultimate-outbox-max" content="200">',
+    );
+    expect(renderHead(clientSyncTags(head))).not.toContain('ultimate-outbox-max');
+  });
 });

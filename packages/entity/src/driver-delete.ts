@@ -7,6 +7,7 @@ import type { DriverScope } from './driver-scope';
 import { describeCommand, EntityError } from './errors';
 import { MAX_ASSERTED_ROWS } from './invariants';
 import type { RepoOptions } from './repo';
+import { writtenRowsSink } from './search-written-rows';
 import type { Predicate, QueryPlan } from './tenancy';
 
 const tooMany = (entityName: string, operation: string, matched: number): EntityError =>
@@ -17,7 +18,7 @@ const tooMany = (entityName: string, operation: string, matched: number): Entity
   });
 
 /** The key predicates that name exactly these rows, beside the plan's own. */
-const byKeys = <Row>(scope: DriverScope<Row>, plan: QueryPlan, rows: readonly Row[]) => {
+export const byKeys = <Row>(scope: DriverScope<Row>, plan: QueryPlan, rows: readonly Row[]) => {
   const keys = scope.entity.$primaryKey;
   const [only] = keys;
   if (keys.length === 1 && only !== undefined) {
@@ -55,5 +56,7 @@ export const checkedDelete = async <Row>(
   for (const keyed of byKeys(scope, plan, found)) {
     removed += await scope.raw.delete({ plan: keyed, tx });
   }
+  // The checked rows, for the search mirror when it asked (`search-written-rows.ts`).
+  writtenRowsSink()?.(found);
   return removed;
 };

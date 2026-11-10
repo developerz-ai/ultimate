@@ -10,7 +10,7 @@ import { expect, test } from 'bun:test';
 import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -34,7 +34,7 @@ class FakeWs implements WsLike {
 }
 
 /** Alice's row and Bob's row, on one query id, separated only by `visible`. */
-const rows: Row[] = [
+const rows: LiveRow[] = [
   { id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'alice draft' },
   { id: 'p2', orgId: 'o1', ownerId: 'bob', title: 'bob draft' },
 ];
@@ -74,7 +74,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
   return { socket, ws };
 }
 
-const change = (op: 'insert' | 'delete', row: Row, lsn: number): ChangeEvent => ({
+const change = (op: 'insert' | 'delete', row: LiveRow, lsn: number): ChangeEvent => ({
   table: 'posts',
   op,
   before: op === 'delete' ? row : null,
@@ -86,7 +86,7 @@ const change = (op: 'insert' | 'delete', row: Row, lsn: number): ChangeEvent => 
   write: null,
 });
 
-const BOB_ROW: Row = { id: 'p3', orgId: 'o1', ownerId: 'bob', title: 'bob secret' };
+const BOB_ROW: LiveRow = { id: 'p3', orgId: 'o1', ownerId: 'bob', title: 'bob secret' };
 const input: JsonValue = { orgId: 'o1' };
 
 /**

@@ -6,7 +6,7 @@
 import { type Clock, isWriteDigest } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import { advance, type LiveCursor, makeCursor, type ResumeSource } from './cursor';
-import type { Row, RowPatch } from './json';
+import type { LiveRow, RowPatch } from './json';
 import type { LiveSubscription } from './live-contract';
 import { encodePatchFrame, samePatches } from './live-patch-encode';
 import { applyToWindow, bridgeChange, type Projection, projectionOf } from './matcher-bridge';
@@ -260,7 +260,7 @@ async function resnapshot(
   named: readonly NamedWrite[],
 ): Promise<boolean> {
   const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
-  let rows: readonly Row[];
+  let rows: readonly LiveRow[];
   try {
     rows = await deps.gate.filterRows(entry, who, entry.rows);
   } catch {
@@ -331,7 +331,7 @@ export interface NamedWrite {
 export function snapshotFrame(
   entry: QueryEntry,
   sid: string,
-  rows: readonly Row[],
+  rows: readonly LiveRow[],
   cursor: LiveCursor,
   named: readonly NamedWrite[] = [],
 ): Frame {

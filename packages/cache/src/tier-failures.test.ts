@@ -3,7 +3,7 @@
 // failure, and that every refusal is one `cache.tier_failure` event on the bus.
 
 import { describe, expect, test } from 'bun:test';
-import { setLogSink, subscribe, UltimateError } from '@ultimat3/core';
+import { installLogSink, subscribe, UltimateError } from '@ultimat3/core';
 import { recordCacheEvents } from './cache-events-fixture';
 import { bestEffort } from './tier-failures';
 
@@ -107,7 +107,7 @@ describe('cache.tier_failure', () => {
   // subscriber that throws and logs it once.
   test('a throwing subscriber never escapes into the business read, and is logged once', async () => {
     const lines: string[] = [];
-    const previous = setLogSink((line) => void lines.push(line));
+    const releaseLogSink = installLogSink((line) => void lines.push(line));
     const broken = new RangeError('subscriber is broken');
     const off = subscribe('cache.tier_failure', () => {
       throw broken;
@@ -121,7 +121,7 @@ describe('cache.tier_failure', () => {
       }
     } finally {
       off();
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(lines.filter((line) => line.includes('instrument.subscriber_failed'))).toHaveLength(1);
   });

@@ -13,7 +13,7 @@ import {
   memoryAuthAdapter,
   readSessionCookie,
 } from '@ultimat3/auth';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { AFTER_SIGN_IN, postlyAuth, postlyLogin } from './login';
 
 const NOW = new Date('2026-08-15T12:00:00.000Z');
@@ -58,20 +58,20 @@ let login: ReturnType<typeof postlyLogin>;
 
 /** What the server logged: a refusal's authored cause and fix go here, never to the caller. */
 let logged: string[];
-let previousSink: ReturnType<typeof setLogSink>;
+let releaseLogSink: () => void;
 
 beforeEach(() => {
   adapter = memoryAuthAdapter();
   auth = postlyAuth({ adapter, clock: frozenClock(NOW) });
   login = postlyLogin(auth, SEAMS);
   logged = [];
-  previousSink = setLogSink((line) => {
+  releaseLogSink = installLogSink((line) => {
     logged.push(line);
   });
 });
 
 afterEach(() => {
-  setLogSink(previousSink);
+  releaseLogSink();
 });
 
 /** `/auth/sso/:provider` → the URL a browser is actually sent to. The mount, filled in. */

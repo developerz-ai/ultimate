@@ -186,16 +186,22 @@ the genuinely absent case is idempotent (`NoSuchKey` / `NotFound` / `ENOENT` / 4
 else raises `X_STORAGE_DELETE_FAILED`. The sweep records a refusal and **keeps going**, so a caller
 can tell "one key is stuck" from "this disk denies deletes" ([`attachment.ts`](../../packages/storage/src/attachment.ts)).
 
-### Quarantine is a key convention, not a scanner
+### One scan path: the `uploadScanner` port
 
-An upload granted with `quarantine: true` is minted under `org/<orgId>/pending/quarantine/<name>` —
-inside the pending prefix on purpose, so an upload nobody ever scans is still an orphan and the
-sweep collects it with no second prefix to walk. `promoteAttachment` **refuses** a key still there
-with `X_STORAGE_QUARANTINED`, and the app's own scan job calls `releaseQuarantine` on a clean
-verdict to get an ordinary pending key back.
+`As of 31.0.0`. `promoteAttachment` asks the scanner installed from `apps/<app>/runtime.ts`
+(`packages/storage/src/upload-scan.ts`) about a per-attempt copy under `pending/scan/`. A decision
+that is not ready inside the confirm — a review queue, an async vendor scan — is the verdict
+`{ verdict: 'hold', reason }`, keyed by `ScanInput.pendingKey`: `X_STORAGE_QUARANTINED` (409), the
+upload stays pending, so an upload nobody ever clears is still an orphan the sweep collects. A scanner that answers `hold` declares `holds: true`, and such a scanner that cannot answer is
+always `X_STORAGE_SCAN_UNAVAILABLE`, `onScanUnavailable: 'accept'` notwithstanding. While a scanner
+is installed a grant with a `target` is refused (`X_STORAGE_TARGET_UNSCANNED`): it would attach
+bytes the scanner never saw. The v30
+key convention (`quarantine: true` minting under `pending/quarantine/`, `releaseQuarantine`) was a
+second path to the same decision and is deleted.
 
-The framework ships the convention and the refusal. **No scanner ships** — which engine, what it
-costs and what a verdict means are the app's, per [axiom 8](../idea/19-mechanism-not-convention.md).
+The framework ships the port, the refusal and a memory (EICAR) reference. **No scanner ships** —
+which engine, what it costs and what a verdict means are the app's, per
+[axiom 8](../idea/19-mechanism-not-convention.md).
 
 ## The UI half
 

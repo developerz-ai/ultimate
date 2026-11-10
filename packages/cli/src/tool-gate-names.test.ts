@@ -3,13 +3,8 @@
 // the gate, so this is the build error for every other layout.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import {
-  action,
-  noteToolNames,
-  registerAction,
-  registerToolGate,
-  resetActions,
-} from '@ultimat3/action';
+import { action, noteToolNames, registerToolGate, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { unknownToolGateFindings } from './tool-gate-names';

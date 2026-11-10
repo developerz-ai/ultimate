@@ -3,7 +3,8 @@
 // from storage and fails again at the same step.
 
 import { afterAll, afterEach, expect, test } from 'bun:test';
-import { action, registerActions, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import type { FailureBundle } from '@ultimat3/core';
 import { REDACTED, UltimateError, userActor } from '@ultimat3/core';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
@@ -100,7 +101,7 @@ test('a dead job replays its completed steps from storage and fails at the same 
     input: jt.object({ id: jt.string }),
     tenant: 'none',
     idempotencyKey: (input) => input.id,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: async ({ step }) => {
       const a = await step.run('fetch', async () => {
         ran.push('fetch');

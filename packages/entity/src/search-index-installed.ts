@@ -5,7 +5,6 @@
 import { adapterSlot } from '@ultimat3/core/adapter';
 import type { SearchIndex } from './search-index';
 import { postgresSearchIndex } from './search-index-postgres';
-import { syncSearchIndex } from './search-index-sync';
 
 let builtIn: SearchIndex | undefined;
 
@@ -15,17 +14,11 @@ const slot = /* @__PURE__ */ adapterSlot<SearchIndex>(() => {
 });
 
 /**
- * On `./adapter` only. Answers the release: it drops this install and no other. An external index
- * is subscribed to the write path (`search-index-sync.ts`) for as long as it is installed.
+ * On `./adapter` only. Answers the release: it drops this install and no other. While an external
+ * index is the current one, every committed write of a searchable entity is mirrored to it
+ * (`search-index-sync.ts`, asked per write by `row-observer.ts`) — no subscription to hold.
  */
-export const installSearchIndex = (index: SearchIndex): (() => void) => {
-  const release = slot.install(index);
-  const stop = syncSearchIndex(index, () => slot.current());
-  return () => {
-    stop();
-    release();
-  };
-};
+export const installSearchIndex = (index: SearchIndex): (() => void) => slot.install(index);
 
 /** The index every search through the port asks — what `reindex` writes and a read queries. */
 export const searchIndex = (): SearchIndex => slot.current();

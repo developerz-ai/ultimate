@@ -51,7 +51,7 @@ export interface DevRouteTableInput {
   /** A getter: the watcher tick rebuilds the islands, and a captured bundle would serve the first. */
   readonly islands: () => IslandBundle;
   /** `app.config.ts`'s `realtime`, as the boot obeyed it: off, no document names a sync node. */
-  readonly realtime: Pick<RealtimeConfig, 'enabled'>;
+  readonly realtime: Pick<RealtimeConfig, 'enabled' | 'maxQueued'>;
   /** The web role's limiter store — what a bearer mount counts per-token allowances on. */
   readonly rateLimitStore?: RateLimitStore | undefined;
   /** `apps/<app>/runtime.ts`'s plain `routes`, mounted as the container mounts them. */

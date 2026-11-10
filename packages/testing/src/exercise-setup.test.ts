@@ -4,7 +4,8 @@
 // Several hooks run in order and are disposed in reverse; a throw disposes those that already ran.
 
 import { describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { isUltimateError } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { defineExercise, type ExerciseAppOptions } from './define-exercise';

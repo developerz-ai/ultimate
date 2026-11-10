@@ -49,12 +49,6 @@ export type {
   ReadableMetric,
 } from './metrics-types';
 
-export const noopMetricExporter: MetricExporter = Object.freeze({
-  export(): void {
-    // Intentionally empty: a subscriber that drops every collection.
-  },
-});
-
 export interface MemoryMetricExporter extends MetricExporter {
   readonly collections: readonly MetricCollection[];
   reset(): void;

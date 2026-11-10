@@ -26,7 +26,7 @@
 import type { EntityBulkEvent, EntityRowEvent } from '@ultimat3/core';
 import { subscribe } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp } from './changefeed';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import type { LiveQueryRegistry } from './live-query';
 import { isPublishedTable } from './record-publisher';
 
@@ -58,13 +58,13 @@ export interface LiveReplicator {
 }
 
 /**
- * A `ChangeEvent` row is `Row` — a JSON object carrying an `id`. Every row a repository stores has
- * one; the cast is what says so to a compiler that only sees `Record<string, unknown>`, and a row
+ * A `ChangeEvent` row is `LiveRow` — a JSON object carrying an `id`. Every row a repository
+ * stores has one; the cast is what says so to a compiler that only sees `Record<string, unknown>`, and a row
  * that genuinely has none fails downstream in `idOf`, with the entity named, exactly as a row off
  * the wire would.
  */
-const asRow = (value: Readonly<Record<string, unknown>> | null): Row | null =>
-  value === null ? null : (value as unknown as Row);
+const asRow = (value: Readonly<Record<string, unknown>> | null): LiveRow | null =>
+  value === null ? null : (value as unknown as LiveRow);
 
 /**
  * Lexicographically comparable, which is the whole contract of an lsn — `formatLsn` in

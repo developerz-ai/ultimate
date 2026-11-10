@@ -87,7 +87,7 @@ export function startRecording(input: RecordInput): Recording {
       if (globalThis.fetch === tap) globalThis.fetch = sealed;
       // A body that failed to read rejects here, so a half run is never a recording.
       const entries = (await Promise.all(slots)).map((entry) => redacted(entry, input.redact));
-      const text = serializeCassette({ version: CASSETTE_VERSION, entries });
+      const text = await serializeCassette({ version: CASSETTE_VERSION, entries });
       // LAST, over the exact bytes about to be written — what `redact` returned included.
       const sources = secretSources(input.env, input.secrets);
       // A base64 body hides a value at any of three alignments, so its bytes are scanned too.

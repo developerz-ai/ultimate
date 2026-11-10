@@ -3,7 +3,7 @@
 // `/sitemap.xml` a 500, and a read that never answered held every request on its pending promise.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { seoRoutes } from './seo-routes';
@@ -130,7 +130,7 @@ describe('unit · a sitemap refresh runs behind the answer it would replace', ()
     await get();
     slugs = 'down';
     const lines: string[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       lines.push(line);
     });
     try {
@@ -140,7 +140,7 @@ describe('unit · a sitemap refresh runs behind the answer it would replace', ()
         await settle();
       }
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     const kept = lines
       .filter((line) => line.includes('seo.enumeration.kept'))

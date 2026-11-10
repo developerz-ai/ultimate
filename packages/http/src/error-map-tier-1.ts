@@ -42,9 +42,9 @@ export const TIER_1_ERROR_STATUS = {
   // not an attacker — reporting it as 403 sends the on-call hunting somebody who is not there.
   X_STORAGE_URL_UNVERIFIABLE: 500,
   // 409, not the 500 it fell through to: the object exists and the request is well formed — the
-  // STATE is wrong. A validated upload lands under the quarantine segment and `promoteAttachment`
-  // refuses it until the app's own scanner calls `releaseQuarantine`, which is a thing the caller
-  // can do. A 500 would have read as "the server broke" for a workflow working exactly as built.
+  // STATE is wrong. The app's `uploadScanner` answered `hold` (a review, an async vendor scan), so
+  // `promoteAttachment` keeps the upload pending until it answers clean, and a retry then succeeds.
+  // A 500 would have read as "the server broke" for a workflow working exactly as built.
   X_STORAGE_QUARANTINED: 409,
   // 409 for the same reason: `promoteAttachment` on a key that is not a pending upload — promoted
   // twice, or never uploaded — is a state the caller can see and fix, not a server fault.
@@ -112,4 +112,6 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_UPLOAD_INFECTED: 422,
   // @ultimat3/storage — the upload scanner could not give a verdict
   X_STORAGE_SCAN_UNAVAILABLE: 503,
+  // @ultimat3/storage — a targeted upload grant would bypass the upload scanner
+  X_STORAGE_TARGET_UNSCANNED: 500,
 } satisfies Readonly<Record<string, number>>;

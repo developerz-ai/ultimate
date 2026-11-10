@@ -154,7 +154,7 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | The cache key is every tool **whole**, through core's `fingerprint` | every `llm()` tool is named `respond`, so a key over names served an answer shaped for an old `output` schema; a cache `set` that throws is logged, never turned into a failure of a call already paid for |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
 | A cache hit reads zero `usage`, `cost` and `costExact`, in the same currency | it is not debited, so a meter summing the stored figures read more than the budget beside it |
-| Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `providerGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
+| `retry` is **core's `RetryPolicy`**; the default is full jitter (`DEFAULT_GATEWAY_RETRY`: `{ attempts: 3, base: 500, max: 8_000, jitter: 'full' }`) | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` over the policy, `timeBudgetMs` bounds the whole call across providers, and the roll is `providerGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
 | **One breaker per provider**, on by default: `{ failures: 5, cooldownMs: 30_000 }` (`DEFAULT_GATEWAY_BREAKER`) | a provider that ran out its retries five passes in a row is skipped, no call and no sleep, until one probe after the cooldown answers; without it every call re-spent every attempt on a dead provider. `providerGateway({ breaker })` takes `GatewayBreakerOption`, `((provider) => Breaker) \| 'off'`: your own core `breaker({ … })` per provider, or `'off'` for the old behaviour. A stream goes to the first provider whose breaker admits it |
 | A 4xx is never retried **except 408, 409 and 425** | the same body gets the same rejection and burns the budget — but a request the server stopped reading (408), a round a concurrent writer won (409) and a handshake that had not finished (425) are transient by construction, and core's `isRetryableStatus` is the one table that says so |
 
@@ -780,7 +780,7 @@ the sweep and `hive()` for the fan-out inside one page.
 |---|---|
 | `name` is required, and is the queue key | a job name is what queued, retrying and dead-lettered rows already carry, so renaming an export must not move where they are delivered |
 | `tenant` and `retry` are required, no default | `jobs` states it: every candidate default for `tenant` is a cross-tenant read waiting for the first job that takes an org id in its input. `tenant: 'none'` is the explicit statement that it touches no scoped table |
-| the action projection is read **lazily** | `agentJob()` runs at module scope beside the `agent()` it wraps, and names are stamped by `registerAction` at boot — reading `.job()` eagerly makes that ordinary file `X_ACTION_UNREGISTERED` |
+| the action projection is read **lazily** | `agentJob()` runs at module scope beside the `agent()` it wraps, and names are stamped by `defineApi` at boot — reading `.job()` eagerly makes that ordinary file `X_ACTION_UNREGISTERED` |
 | one execution path, and it is the action's | `run` is `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and the `ctx` is the worker's, so an attempt timing out aborts the agent's turn loop |
 | the actor is the worker context's, never the model's | the org comes from the job's declared `tenant`; nothing a model emits can reach the identity. In a served app the worker's actor is the **anonymous** one, so a member policy refuses it `X_UNAUTHENTICATED` — declare `actor` |
 | `actor({ input, ctx })` resolves who the run acts FOR, on every attempt | the jobs rule — a job acting for a user takes the user's id in its input and re-authorises it in the body — for a body that is the agent's. Load the member under the job's tenant; the swap is core's `impersonate`, so the worker stays on the record as `onBehalfOf`. An actor in another org than `tenant` is `X_JOB_TENANT_MISMATCH` before the agent starts — terminal, so it dead-letters on attempt 1 |
@@ -831,7 +831,7 @@ the rows are real; wait for `x manifest` to carry them and you will wait. Same f
 
 An agent projects to an `ActionDescriptor` like any other action, and that descriptor knows nothing
 about turns or tools — so "how far can this loop, and what may it call" had no answer outside the
-source. Names are read when you ask, not when the agent was declared: `registerAction` stamps them
+source. Names are read when you ask, not when the agent was declared: `defineApi` stamps them
 at boot, long after `agent()` ran at module scope. An agent nothing registered has no row, because
 an action with no name reaches no route, no tool catalogue and no queue.
 

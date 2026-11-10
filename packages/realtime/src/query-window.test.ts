@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { isUltimateError, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -23,7 +23,7 @@ import { decode, type Frame } from './sync-protocol';
 import type { Scheduler } from './thundering-herd';
 
 const input: JsonValue = { orgId: 'o1' };
-const rows: readonly Row[] = [{ id: 'p1', orgId: 'o1', likes: 0 }];
+const rows: readonly LiveRow[] = [{ id: 'p1', orgId: 'o1', likes: 0 }];
 
 class PoolTimeout extends Error {
   readonly code = 'X_DB_TIMEOUT';
@@ -149,10 +149,10 @@ class FakeWs implements WsLike {
   }
 }
 
-const change = (position: number, after: Row): ChangeEvent => ({
+const change = (position: number, after: LiveRow): ChangeEvent => ({
   table: 'posts',
   op: 'update',
-  before: rows[0] as Row,
+  before: rows[0] as LiveRow,
   after,
   lsn: formatLsn(position),
   txid: String(position),
@@ -219,7 +219,10 @@ describe('the gap repair, end to end', () => {
  */
 describe('an older read never lands on a window a newer one already replaced', () => {
   /** One entry whose snapshot is resolved by the test, in whatever order it likes. */
-  function deferred(): { entry: QueryEntry; answer: (at: number, rows: readonly Row[]) => void } {
+  function deferred(): {
+    entry: QueryEntry;
+    answer: (at: number, rows: readonly LiveRow[]) => void;
+  } {
     const gate: ((result: SnapshotResult) => void)[] = [];
     const entry = entryWith(
       async () =>
@@ -237,8 +240,8 @@ describe('an older read never lands on a window a newer one already replaced', (
     };
   }
 
-  const preGap: readonly Row[] = [{ id: 'pre-gap' }];
-  const fresh: readonly Row[] = [{ id: 'fresh' }];
+  const preGap: readonly LiveRow[] = [{ id: 'pre-gap' }];
+  const fresh: readonly LiveRow[] = [{ id: 'fresh' }];
 
   test('the pre-gap read that resolves last is discarded, not applied over the repair', async () => {
     const { entry, answer } = deferred();

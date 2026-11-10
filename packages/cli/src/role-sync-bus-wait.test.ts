@@ -38,7 +38,7 @@ async function boot(broker: FakeNatsBroker, dev: boolean) {
     dev,
     select: {
       connect: fakeNatsConnect(broker),
-      backoff: { baseMs: 2, maxMs: 2, factor: 1, jitter: 'none' },
+      backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
       onError: () => undefined,
       connectWithinMs: 30,
     },

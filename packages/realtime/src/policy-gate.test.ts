@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ctxOf } from '@ultimat3/core';
-import { isRow, type Row } from './json';
+import { isRow, type LiveRow } from './json';
 import { authorizeWithPolicy, visibleWithPolicy } from './policy-gate';
 
 /** What the gate hands the policy. Asserting on it is the whole point of this file. */
@@ -36,7 +36,7 @@ function spyPolicy(seen: SeenArgs[], decide: (args: SeenArgs) => boolean) {
 }
 
 const options = () => ({ query: 'posts.feed', ctx: ctxOf() });
-const row: Row = { id: 'row-42', authorId: 'owner' };
+const row: LiveRow = { id: 'row-42', authorId: 'owner' };
 const input = { orgId: 'org-1' };
 
 describe('visibleWithPolicy', () => {

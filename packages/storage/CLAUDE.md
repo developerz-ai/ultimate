@@ -1,6 +1,7 @@
 # @ultimat3/storage — agent notes
 
 Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
+A rule marked `†` has its full text in [`docs/history/storage-rules.md`](../../docs/history/storage-rules.md).
 
 - May import: `@ultimat3/core`, `@ultimat3/schema`. Nothing else. No npm dependencies.
 - Must NOT know about HTTP, entities, actions, render — a route calls `acceptSignedUpload()`,
@@ -74,7 +75,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `storage-instrument.ts` | each resolved disk: `storage.<verb>` bus event + client span |
 | `grant.ts` | `grantUpload` — the ONE way a presigned PUT is minted; the client never names a key |
 | `accept.ts` | `acceptSignedUpload` / `readSignedObject` — the two decisions a `/_storage` route is made of |
-| `attachment.ts` | `pending/` → row promotion, the `quarantine/` segment, `sweepOrphans` and `deleteVariants` |
+| `attachment.ts` | `pending/` → row promotion, `sweepOrphans` and `deleteVariants` |
 | `errors-sniff.ts` | the two `X_STORAGE_TYPE_REJECTED` refusals only a bounded sniff reaches: too much leading whitespace, XML past the window |
 | `upload-client.ts` | the browser half: grant → PUT with progress → key. No `Bun.*`, no `node:` |
 | `subject-target.ts` | `storageSubjectTarget(disk, keysOf)` — structural `SubjectTarget`: the app names the keys, export lists, erase deletes |
@@ -85,21 +86,10 @@ bun run typecheck
 ```
 
 Gotchas:
-- **The local disk refuses a key that is another key's path, and that is pinned, not fixed**
-  (`As of 2026-10`). `put('a')` then `put('a/b')` — or the reverse, or `a` beside `a.json/b` in the
-  sidecar tree — is `X_STORAGE_KEY_CONFLICT`, decided by `claim()` for BOTH paths before either is
-  touched. Suffixed on-disk names would lift it and orphan every existing root's objects without a
-  migration; do not change the layout without one. Memory emulates it; s3 holds both. A key that
-  is only a directory is ABSENT to `delete()` (test a refusal with `driver-local-fixture.ts`).
-- **The local commit order is marker → sidecar → bytes → clear marker. Do not reorder**
-  (`As of 2026-10`). Bytes-first serves new bytes under the old type; sidecar-first alone serves
-  old bytes under the new one. The marker holds the new etag, so `headObject` knows the one state
-  in which the sidecar may not describe the bytes: `get`/`stat`/`copy` re-check against the bytes,
-  `list` reports no type and `etag: ''`. A fresh key is absent until its bytes land.
-  `driver-local-crash.test.ts` dies at every step through `WriteSteps`. Writers and `get()` of one
-  key also queue in-process (`keyedQueue`) — unqueued, two puts interleaved 3/3. `copy()` holds BOTH
-  keys' turns (`inTurnOfBoth`, key order): measured in one and read in the other, an overwritten
-  source committed new bytes under the old etag.
+- **The local disk refuses a key that is another key's path** (`X_STORAGE_KEY_CONFLICT`, `claim()`);
+  pinned, not fixed — changing the layout needs a migration. †
+- **The local commit order is marker → sidecar → bytes → clear marker. Do not reorder**; one key's
+  writers and `get()` queue in-process (`keyedQueue`), `copy()` holds both keys' turns. †
 - **A refused write is `X_STORAGE_PUT_FAILED` and a refused read `X_STORAGE_READ_FAILED`**, on
   local and s3 (both were bare throws); a 404 mid-read stays `X_STORAGE_NOT_FOUND`; `assertPutOptions` holds `metadata`/`cacheControl`/`contentType` to their types on
   all three drivers before a byte moves.
@@ -113,24 +103,14 @@ Gotchas:
   sees a path — and `signedUrlBasePath` is how an absolute `baseUrl` is compared.
 - **`isWithinOrg` never throws**: an org id that cannot be one contains nothing.
 - **A variant key keeps the whole source key** (`hero.png@w640.webp`): two cache identities.
-- **A driver's semantics are `storageDriverConformance`'s** (`@ultimat3/testing/conformance`, run
-  over memory, local and s3); what only two disks share is pinned beside each other —
-  `driver-parity.test.ts` drives `localDriver` over a temp dir and `s3Driver` over `FakeS3Client`
-  in a single `test()` per claim, so neither disk can move alone. Where the two genuinely cannot
-  agree it pins the DIVERGENCE, with the reason — that is the honest form, and it still fails the
-  day either half changes.
-- **The local `list()` globs with `dot: true`, and the `META_DIR` skip is the real filter.**
-  Without `dot`, dot-prefixed keys were missing from the listing while `put`/`get` handled them —
-  and `sweepOrphans` pages through `list()`. Pinned on every disk by `@ultimat3/testing/conformance`'s
-  `storageDriverConformance`.
+- **A driver's semantics are `storageDriverConformance`'s** (`@ultimat3/testing/conformance`);
+  what only two disks share is pinned in `driver-parity.test.ts`, divergences with their reason. †
+- **The local `list()` globs with `dot: true`, and the `META_DIR` skip is the real filter.** †
 - **A `list({ limit })` is a positive integer or a refusal** — `resolveListLimit` at the
   `ListOptions` seam, so every disk answers one way. Core's `assert` (`X_INVARIANT`);
   `storageDriverConformance` holds each driver to it.
-- **`list()` answers core's `Page<StorageListEntry>`, and no storage-local page type exists**
-  (`As of 25.0.0`; `ListPage` is deleted). Every driver builds it with core's `pageOf`, so
-  `hasMore` is derived from the cursor and cannot disagree with it. The cursor is minted only when
-  a row past the page exists — never from `rows.length === limit`, the full-last-page defect a
-  query's cursor had — and the full-last-page case is pinned on memory, local and live s3.
+- **`list()` answers core's `Page<StorageListEntry>`** (`pageOf`); a cursor only when a row past the
+  page exists. †
 - **`META_DIR` is reserved case-INSENSITIVELY** (`As of 2026-08`), exactly as `isTenantScoped`
   folds: on APFS/NTFS `.META/` IS `.meta/`. The whole SEGMENT is compared, never a prefix
   (`.metadata/a.json` is an ordinary key); `path.test.ts` pins both halves.
@@ -148,7 +128,8 @@ Gotchas:
   S3 accepts both (delete marker, new version; the locked version stays). Pinned divergence: one
   version per key. A pair in doubt never unlocks. `NoSuchObjectLockConfiguration` is a 404.
 - **A live suite signs on a wall clock** (`performance`): `Date` is frozen → `RequestTimeTooSkewed`.
-- **A grant binds its size on every disk** (`As of 2026-11-02`). `grantUpload` requires `request.size` and passes `contentLength`; `s3Driver` signs `content-length` through core's `presignAwsUrl`, because Bun's presign signs `host` alone, so any other length is a 403 (`driver-s3.live.test.ts`). Local and memory hold it as the `x-max` ceiling, so a shorter body passes there: `driver-parity.test.ts` pins it. `maxBytes` with no `contentLength` on s3 is `X_STORAGE_UPLOAD_SIZE_UNDECLARED`. The content type stays unsigned.
+- **A grant binds its size on every disk**: s3 signs `content-length` (`presignAwsUrl`), local/memory
+  hold `x-max`; `maxBytes` with no `contentLength` on s3 is `X_STORAGE_UPLOAD_SIZE_UNDECLARED`. †
 - **`putStream` on s3 is signed multipart, never `S3File.writer()`** (Bun 1.4.4: `end(error)` COMPLETES). 8 MiB parts, ≤ `STREAM_PART_BUFFERS` held; parts settle before the abort; a Complete can fail with 200 + `<Error>`.
 - **s3 `copy()` is a signed CopyObject**, past 5 GiB `UploadPartCopy`: Bun's `write(S3File)` dropped `cacheControl`/metadata.
 - **`stream(key, { etag })` never serves another revision**: local re-checks the etag at the first pull, never the inode (ext4 reuses it; `highWaterMark: 0`: an unread body holds no fd); s3 sends `If-Match`.
@@ -159,61 +140,39 @@ Gotchas:
 - **`delete()` is idempotent for an ABSENT key and for nothing else** — a swallowed refusal made
   `sweepOrphans` certify an erasure that never happened. s3 classifies structurally (`NoSuchKey`/
   `NotFound`/`ENOENT` or a 404), local on `ENOENT`; else `X_STORAGE_DELETE_FAILED`, fix per driver.
-- **`toBytes` takes a `ByteLimit`, and there is no unbounded variant.** `put()` buffers, so the
-  ceiling is what keeps a route piping a 4GB body into `disk.put()` from being an OOM kill rather
-  than a refusal. `Uint8Array`/`Blob` are refused on their declared length; a `ReadableStream` is
-  read chunk-by-chunk and **cancelled** past the line, so at most one chunk over is ever held.
-  Default `maxPutBytes` is `DEFAULT_MAX_UPLOAD_BYTES` — one constant, imported by both drivers
-  from `upload.ts`, because the server-side ceiling and the upload ceiling are the same fact.
+- **`toBytes` takes a `ByteLimit`, and there is no unbounded variant**; one default,
+  `DEFAULT_MAX_UPLOAD_BYTES` (`upload.ts`). †
 - **`serverSideEncryption` is declared and refused by BOTH drivers.** Full rule: `docs/history/storage.md`.
-- **Quarantine is `pending/quarantine/`, INSIDE the pending prefix.** So `sweepOrphans` collects a
-  never-scanned upload with no second prefix to walk, and `isPendingKey` stays true for it.
-  `promoteAttachment` refuses a quarantined key (`X_STORAGE_QUARANTINED`); `releaseQuarantine` is
-  the app's scan verdict, and returns the ordinary pending key promotion accepts. Ultimate ships
-  no scanner vendor (axiom 8); the inline seam is the `uploadScanner` port. **No verdict fails
-  closed in every environment** (`onScanUnavailable` absent = `'refuse'`, `As of 2026-11-09`).
+- **The `uploadScanner` port is the ONE scan path** (`As of 31.0.0`; the `quarantine: true` segment
+  and `releaseQuarantine` are retired). An out-of-band decision — a review, an async vendor scan —
+  is the verdict `hold`, keyed by `ScanInput.pendingKey`: `X_STORAGE_QUARANTINED` (409), upload
+  kept pending, attempt deleted, no policy overrides it. A scanner that holds declares `holds: true`
+  (else its `hold` is `X_INVARIANT`), and its outage then refuses even under `'accept'`. A targeted
+  grant is refused while a scanner is installed (`X_STORAGE_TARGET_UNSCANNED`): it skips promotion.
+  Ultimate ships no scanner vendor (axiom 8).
+  **No verdict fails closed in every environment** (`onScanUnavailable` absent = `'refuse'`).
 - **`StorageListEntry` vs `StorageObject`.** A listing's `contentType` is optional; a `get()`'s is
   not. `ListObjectsV2` returns no Content-Type, and no driver invents one.
-- **`META_DIR` lives in `path.ts`, not in `driver-local.ts`.** The sidecar namespace overlapped the
-  object namespace: `put('a/b', png)` writes `<root>/.meta/a/b.json`, and `.meta/a/b.json` was
-  itself a legal key, so an uploader could rewrite another object's recorded `contentType` to
-  `text/html` and have a route serve attacker HTML from the app's origin. Reserved in
-  `assertSafeKey`, so it holds for S3 too — a key valid on one driver and refused on another is two
-  key rules, and the reservation folds case — see above. The `list()` skip is not a second line of
-  defence but the only one: the glob yields the sidecar tree.
+- **`META_DIR` lives in `path.ts`, reserved in `assertSafeKey` on every driver** — the sidecar
+  namespace must never be a writable key. †
 - **`localDriver` refuses to construct outside development without a usable signing secret** (`X_ENV_MISSING`, borrowed from core). Full rule: `docs/history/storage.md`.
 - **`localDriver({ env })` and `usesDevStorageSecret({ env })` are ONE question about ONE table**:
   the secret, `isLocal()` and the refusal's environment all read `options.env ?? process.env`, so
   the boot's guard and the constructor it guards cannot answer from two tables.
   `driver-local-boot.test.ts` pins it by mutation.
-- **The mounted read half is `@ultimat3/cli`'s `runtime-storage.ts`, not this package.** `GET
-  /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
-  2 and unreachable from here — so a "serve this object" helper in this package could only ever be
-  a second authz path. This package's contribution to that route is `assertSafeKey`,
-  `isTenantScoped`/`isWithinOrg` and the driver's own `contentType`/`etag`; the `Response` is
-  `@ultimat3/http`'s `objectResponse`, structural over those fields, as `accept.ts`'s header says.
-- `acceptSignedUpload` still has no mounted route: the signing secret is closed over inside
-  `localDriver` and no `StorageDriver` method exposes it, so a host cannot verify a signed PUT
-  through the `Storage` seam it is handed. Serving reads needed none of it (policy decides, not a
-  signature); mounting the write half needs that seam question answered first.
+- **The mounted read half is `@ultimat3/cli`'s `runtime-storage.ts`**, gated by policy; no
+  "serve this object" helper here (a second authz path). †
+- `acceptSignedUpload` still has no mounted route: no `StorageDriver` method exposes the signing
+  secret. †
 - `X_NOT_IMPLEMENTED` is core's — it belongs in `STORAGE_BORROWED_ERROR_CODES` (codes, no title)
   and never in the registration call. A `hasErrorCode()` guard there would suppress the
   `X_ERROR_CODE_DUPLICATE` two owners of one code are supposed to get. Tests need `resetStorage()`
   in `beforeEach`.
-- `image.ts` owns no pixels: core's `transformImageBytes`/`blurDataUrl` are the only scaler.
-  Its image failures (`X_IMAGE_UNSUPPORTED`, `X_IMAGE_DECODE_FAILED`) surface unwrapped —
-  wrapping them in a `StorageError` would give one failure two codes. `variantKey` now RAISES
-  core's `imageUnsupported()` as well as passing them through, for that same reason.
-- **`VARIANT_FORMATS` is this package's format vocabulary, and `IMAGE_FORMATS` is core's** (what
-  core can PROBE). `as const satisfies readonly ImageFormat[]` makes it a strict subset by the
-  compiler; `isVariantFormat` takes `string` so `probeImage(bytes).format` narrows with no cast.
-  `scripts/render-modes.ts` holds the `IMAGE_FORMATS` row and `image.test.ts` fails if either core
-  name reappears in `src/index.ts`.
-- `transformImage()` must encode at exactly `fitDimensions()`'s size, and passes `format`
-  explicitly (`?? 'webp'`, which then rejects): bytes that disagree with the `variantKey`
-  extension, or with the `width`/`height` `@ultimat3/seo` inlined, are the layout shift the
-  whole path exists to prevent. That is why it derives the box itself and asks core for
-  `fit: 'cover'` — core's `contain` letterboxes to the requested box, this API fits inside it.
+- `image.ts` owns no pixels: core's `transformImageBytes` is the only scaler; image failures surface
+  unwrapped. †
+- **`VARIANT_FORMATS` is this package's format vocabulary, and `IMAGE_FORMATS` is core's.** †
+- `transformImage()` encodes at exactly `fitDimensions()`'s size, `format` explicit — anything else
+  is a layout shift. †
 - Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse.
 - **No `region` signs for `auto`** (R2's; AWS refuses it) — `regionMismatch()` makes it `X_CONFIG_INVALID` naming `S3_REGION`. Full rule: `docs/history/storage.md`.
 - The signature check runs BEFORE the expiry check. Do not reorder.
@@ -226,31 +185,19 @@ Gotchas:
   always sets one, so such a URL is hand-rolled, and trusting the uploader's header instead is the
   only other option.
 - **The signed base is the disk's REGISTERED name, and it is stated once — on the driver.** Full rule: `docs/history/storage.md`.
-- **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `runtime-storage.ts` does.**
-  `isWithinOrg` alone refused every un-scoped key, so an app's own `brand/logo.png` was unreachable
-  through a URL it had just signed. `isTenantScoped` is case-INSENSITIVE and `isWithinOrg` is not:
-  `Org/o2/x` and `org/o2/x` are one file on APFS/NTFS, so the fold has to count as tenant-scoped
-  and then fail the exact-case membership test. Do not "simplify" either half.
-- **`AcceptSignedUploadInput.checksum` is what makes `uploadPolicy({ requireChecksum: true })`
-  reachable.** Without it that option could only ever fail, because nothing on the accept path
-  could declare a hash. It travels like `declaredContentType`: the route reads a header and hands
-  it over, and `validateUpload` hashes the bytes itself. The browser half does NOT send one — a
-  custom header on an S3 presigned PUT is a signature question this package cannot answer.
+- **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, as `runtime-storage.ts` does.** Do not
+  "simplify" either half. †
+- **`AcceptSignedUploadInput.checksum` is what makes `requireChecksum: true` reachable**; the browser
+  half sends none. †
 - `orgId` is required on both halves of `accept.ts` and is the ACTOR's, never a request field. A
   signed URL is a capability; a leaked capability must still not cross a tenant.
 - `X_STORAGE_ORG_MISMATCH` maps to **404**, not 403 (`@ultimat3/http`'s `error-map.ts`). 403 would
   confirm a key exists to the one caller who must not learn it.
 - **Local `lastModified` is the `Clock`'s, kept in the sidecar** — one instant from `put`/`copy`
   to every read; mtime only with no trusted sidecar.
-- `upload-client.ts` defaults to `XMLHttpRequest`, not `fetch`: `fetch` reports no upload
-  progress in any shipping browser, and a bar that jumps 0 → 100 is a bar that is lying. It is
-  **the declared XHR seam** of plan 101 (decision 13): the one `XMLHttpRequest` the framework
-  ships, and the one file slice 15's `browser-transport` guard exempts for it — the header says so.
-- **`fetchSignedPut` goes through `@ultimat3/core`'s `clientTransport`** (`As of 2026-09-22`,
-  plan 101 slice 05): `rawBody` sends the `Blob` verbatim under the grant's content type with no
-  default header, and `decodeError` keeps a refusal `X_STORAGE_UPLOAD_FAILED` with the disk's
-  status. A request with no response at all is the transport's `X_CLIENT_TRANSPORT_FAILED` — it was a
-  bare `TypeError` before. This file calls no `fetch`; the XHR above is the one exemption.
+- `upload-client.ts` uses `XMLHttpRequest` for upload progress — the framework's one declared XHR
+  seam. †
+- **`fetchSignedPut` goes through `@ultimat3/core`'s `clientTransport`**; it calls no `fetch`. †
 - **Bundle** (`uploadFile` only, browser, minified, `As of 2026-09-22`): **17,767 B**.
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
 

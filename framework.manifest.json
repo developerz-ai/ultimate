@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2ddd151207d184bf092e7e28b4df66fbf7ceb012a458a926f63ec0f1b5f43a90",
+  "buildId": "f9828bf539a8a93538985119b6c7a5ce89387dafd50ace186511676d1670cf7b",
   "tiers": {
     "0": [
       "core",
@@ -400,6 +400,11 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_ADOPTION_CLAIM_UNGENERATED",
+      "owner": "scripts",
+      "at": "scripts/adoption-claims.ts"
+    },
+    {
       "code": "X_AGENT_CONTEXT_EXHAUSTED",
       "owner": "ai",
       "at": "packages/ai/src/error-codes.ts"
@@ -736,6 +741,11 @@
     },
     {
       "code": "X_BOUNDARY_APP_TO_API",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-boundary.ts"
+    },
+    {
+      "code": "X_BOUNDARY_LOADER_IMPORT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-boundary.ts"
     },
@@ -1663,6 +1673,16 @@
       "code": "X_DOC_FILE_COUNT_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/generator-counts.ts"
+    },
+    {
+      "code": "X_DOC_FIX_DISAGREES",
+      "owner": "scripts",
+      "at": "scripts/doc-fix-agreement.ts"
+    },
+    {
+      "code": "X_DOC_FIX_DISAGREES_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/doc-fix-agreement.ts"
     },
     {
       "code": "X_DOC_FIX_UNRUNNABLE",
@@ -2867,7 +2887,7 @@
     {
       "code": "X_LIVE_REPLICA_IDENTITY",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_LIVE_ROUTE_NO_ISLAND",
@@ -3965,6 +3985,11 @@
       "at": "packages/http/src/error-titles.ts"
     },
     {
+      "code": "X_PRODUCTION_APPS_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/production-apps.ts"
+    },
+    {
       "code": "X_PROTO_CHAIN_INDEX",
       "owner": "scripts",
       "at": "scripts/proto-index.ts"
@@ -4285,6 +4310,11 @@
       "at": "scripts/readme-fences.ts"
     },
     {
+      "code": "X_README_FACTS_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/readme-facts.ts"
+    },
+    {
       "code": "X_README_SAMPLE_DRIFT",
       "owner": "scripts",
       "at": "scripts/readme-sample.ts"
@@ -4292,12 +4322,12 @@
     {
       "code": "X_REALTIME_PRODUCER_CONFLICT",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REALTIME_TOPOLOGY",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REALTIME_UNINSTALLED",
@@ -4437,32 +4467,32 @@
     {
       "code": "X_REPLICATION_FAILED",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REPLICATION_PROTOCOL",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REPLICATION_SLOT_INVALIDATED",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REPLICATION_SLOT_RECREATED",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REPLICATION_TLS",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REPLICATOR_SLOT_HELD",
       "owner": "realtime",
-      "at": "packages/realtime/src/error-titles.ts"
+      "at": "packages/realtime/src/error-titles-server.ts"
     },
     {
       "code": "X_REPO_CLIENT_PINNED",
@@ -5453,6 +5483,11 @@
       "code": "X_STORAGE_SECRET_DEV",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_STORAGE_TARGET_UNSCANNED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
     },
     {
       "code": "X_STORAGE_TOO_LARGE",

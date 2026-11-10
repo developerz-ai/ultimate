@@ -123,6 +123,10 @@ const VARIANTS: readonly (readonly [string, Partial<AuditRecord>])[] = [
   ['a replayed idempotent call', { idempotencyKey: 'publishPost:k1', replayed: true }],
   ['an audited READ, from the query primitive', { primitive: 'query', mutator: false }],
   [
+    "a job's own write, from the job primitive",
+    { primitive: 'job', mutator: false, surface: 'job' },
+  ],
+  [
     'an input that never parsed',
     { input: undefined, outcome: 'failed', failure: { code: 'X_INPUT_INVALID', error: null } },
   ],
@@ -171,7 +175,7 @@ export const AUDIT_SINK_CHECKS: readonly AuditSinkCheck[] = [
   {
     name: 'a persisting sink never stores a credential-named input key, from a read or a write',
     async run(subject) {
-      for (const primitive of ['action', 'query'] as const) {
+      for (const primitive of ['action', 'query', 'job'] as const) {
         const record = recordFor(nameOf(), {
           primitive,
           mutator: false,

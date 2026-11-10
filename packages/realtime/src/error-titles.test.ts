@@ -9,7 +9,8 @@ import { rm } from 'node:fs/promises';
 // why: Bun ships no path API; the entry is written INSIDE the package so `@ultimat3/realtime`
 // resolves through the workspace exactly as an island's import does.
 import { join } from 'node:path';
-import { REALTIME_ERROR_TITLES } from './error-titles';
+import { REALTIME_PAGE_ERROR_TITLES } from './error-titles';
+import { REALTIME_SERVER_ERROR_TITLES } from './error-titles-server';
 
 /** Gitignored repo-wide; one directory per process so concurrent runs never delete each other. */
 const FIXTURE_DIR = join(import.meta.dir, '..', '.tmp', `error-titles-${process.pid}`);
@@ -51,14 +52,21 @@ async function island(
 describe('a browser chunk that reaches the realtime barrel', () => {
   test("titles a sync node's refusal with nothing constructed — the titles module alone", async () => {
     // `applyPatches` constructs no error, so the title can only have come through the barrel.
-    const { modules, title } = await island('remote', [
+    const { modules, title, code } = await island('remote', [
       "import { applyPatches } from '@ultimat3/realtime';",
       "import { UltimateError } from '@ultimat3/core';",
       'export const held = applyPatches;',
       "export const title = new UltimateError({ code: 'X_CURSOR_STALE', cause: 'c', fix: 'f' }).title;",
     ]);
-    expect(title).toBe(REALTIME_ERROR_TITLES.X_CURSOR_STALE);
+    expect(title).toBe(REALTIME_PAGE_ERROR_TITLES.X_CURSOR_STALE);
     expect(modules).toContain('src/error-titles.ts');
+    // Every page title rides; no server-only one does — the replicator's and the boot's codes
+    // are raised where no browser is, and cost an island nothing (`error-titles-server.ts`).
+    for (const page of Object.values(REALTIME_PAGE_ERROR_TITLES)) expect(code).toContain(page);
+    for (const server of Object.values(REALTIME_SERVER_ERROR_TITLES)) {
+      expect(code).not.toContain(server);
+    }
+    expect(modules).not.toContain('src/error-titles-server.ts');
     // Listed in `sideEffects`, the sync node's refusal classes rode into every island.
     expect(modules).not.toContain('src/errors.ts');
   }, 60_000);
@@ -89,7 +97,7 @@ describe('a browser chunk that reaches the realtime barrel', () => {
     ]);
     // The class is named through the barrel's re-export from `errors.ts`, so this chunk is not the
     // place to judge that module's absence — a hook's chunk is, in `page-errors-bundle.test.ts`.
-    expect(title).toBe(REALTIME_ERROR_TITLES.X_REALTIME_UNINSTALLED);
+    expect(title).toBe(REALTIME_PAGE_ERROR_TITLES.X_REALTIME_UNINSTALLED);
     expect(modules).toContain('src/page-errors.ts');
   }, 60_000);
 });

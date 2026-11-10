@@ -97,7 +97,7 @@ describe('a remote source as pages', () => {
       tenant: 'none',
       rate: 1_000,
       // Two: the kill costs the attempt a lapsed lease always costs.
-      retry: { attempts: 2, jitter: false },
+      retry: { attempts: 2, jitter: 'none' },
       async pages({ cursor }) {
         fetched.push(cursor);
         if (cursor === '4' && fetched.filter((at) => at === '4').length === 1) {

@@ -2,14 +2,16 @@
 // way past the repository guard an agent writes without noticing, and every one MUST read crossed.
 // The scoped, public and throwing primitives beside them must not. Registered at module scope.
 
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { serviceActor, UltimateError, withChildContext } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import { blocks, defineMail, send } from '@ultimat3/mail';
 import { allow, can, definePermissions } from '@ultimat3/policy';
-import { from, query, registerQueries } from '@ultimat3/query';
+import { from, query } from '@ultimat3/query';
+import { registerQueries } from '@ultimat3/query/loader';
 import { tpDriver, tpFiles, tpLabelCache, tpLinks, tpVaults } from './tenant-proof-fixture';
 
 // Declared here, never left to another file: the permission set is one per process, and once
@@ -38,7 +40,7 @@ registerCatalog('en', loadCatalog({ tp: { notice: { heading: 'A file changed' } 
 // A subject is a carried key, so it is one the framework ships (`scripts/catalog-keys.ts`).
 const tpNotice = defineMail<{ ok: boolean }>({
   id: 'tp-notice',
-  subject: 'mail.security-alert.subject',
+  subject: 'mail.footer.legal',
   input: t.object({ ok: t.boolean }),
   template: () => [blocks.heading('tp.notice.heading')],
 });

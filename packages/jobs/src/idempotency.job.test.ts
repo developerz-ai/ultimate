@@ -43,7 +43,7 @@ describe('two enqueues racing on one idempotency key', () => {
       name: 'provisionOrg',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `provision:${orgId}`,
-      retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: ({ input }) => {
         runs.push(runs.length + 1);
         return Promise.resolve(input.orgId);
@@ -88,7 +88,7 @@ describe('two enqueues racing on one idempotency key', () => {
       name: 'provisionOrgContended',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `provision:${orgId}`,
-      retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: async ({ input, jobId }) => {
         // A slow-ish body widens the window in which a second worker COULD claim the same row
         // if dedupe or the driver's own claim exclusivity ever slipped.
@@ -133,7 +133,7 @@ describe('the dedupe window is "currently live", not "ever existed"', () => {
       name: 'sendReceipt',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `receipt:${orgId}`,
-      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: ({ jobId }) => {
         runs.push(jobId);
         return Promise.resolve();

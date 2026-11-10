@@ -41,8 +41,9 @@ const NAMED = /^([A-Z]\w*)$/;
 
 /**
  * `<package>::<Name>` -> its body. FIRST declaration wins, and the key carries the package for the
- * reason above: `RetryConfig` is declared in `@ultimat3/jobs` and in `@ultimat3/ai`, and a global
- * table resolved `JobDefinition.retry` to the gateway's fields — two leaves reported as dead that
+ * reason above: one interface name can live in two packages (`RetryPolicy` is `@ultimat3/core`'s
+ * and `@ultimat3/jobs`' own, with different fields), and a global table once resolved
+ * `JobDefinition.retry` to another package's fields — two leaves reported as dead that
  * `@ultimat3/jobs` has never declared.
  */
 export function interfaceTable(

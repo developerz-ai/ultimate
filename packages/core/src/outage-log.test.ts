@@ -2,7 +2,7 @@
 // more when it ends — never once per retry.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type LogLevel, setLogSink } from './logger';
+import { installLogSink, type LogLevel } from './logger';
 import { isOutageMilestone, outageLog } from './outage-log';
 
 interface Line {
@@ -19,11 +19,11 @@ afterEach(() => {
 
 function capture(): Line[] {
   const lines: Line[] = [];
-  const previous = setLogSink((line, level) => {
+  const releaseLogSink = installLogSink((line, level) => {
     const { msg, ...fields } = JSON.parse(line) as { msg: string } & Record<string, unknown>;
     lines.push({ level, msg, fields });
   });
-  restore = () => setLogSink(previous);
+  restore = () => releaseLogSink();
   return lines;
 }
 

@@ -4,8 +4,9 @@
 // idempotent action was idempotent on every surface but this one.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, memoryIdempotencyStore, registerAction, resetActions } from '@ultimat3/action';
+import { action, memoryIdempotencyStore, resetActions } from '@ultimat3/action';
 import { installIdempotencyStore, resetIdempotency } from '@ultimat3/action/adapter';
+import { registerAction } from '@ultimat3/action/loader';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,

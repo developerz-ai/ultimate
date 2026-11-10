@@ -35,7 +35,7 @@ afterAll(() => {
 });
 
 async function runOnce(name: string, write: ReturnType<typeof declare>) {
-  const handle = agentJob(write, { name, tenant: 'none', retry: { attempts: 3, jitter: false } });
+  const handle = agentJob(write, { name, tenant: 'none', retry: { attempts: 3, jitter: 'none' } });
   await handle.enqueue({ topic: 'tides' });
   const claimed = (
     await driver.claim({

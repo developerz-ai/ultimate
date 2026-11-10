@@ -20,8 +20,12 @@ export type JsonValue =
 
 export type JsonObject = { [key: string]: JsonValue };
 
-/** Every row that crosses the wire or lands in the local store is identified by `id`. */
-export type Row = JsonObject & { id: string };
+/**
+ * Every row that crosses the wire or lands in the local store is identified by `id`. `LiveRow`, not
+ * `Row`: core's `Row` (`conflict-policy.ts`) is any keyed record and entity's `Row` an expression
+ * row; three types under one name was an import that type-checked against the wrong one.
+ */
+export type LiveRow = JsonObject & { id: string };
 
 export type RowOp = 'insert' | 'update' | 'delete';
 
@@ -58,7 +62,7 @@ export function isParsedJsonObject(value: unknown): value is JsonObject {
   return isJsonObject(value);
 }
 
-export function isRow(value: unknown): value is Row {
+export function isRow(value: unknown): value is LiveRow {
   return isParsedJsonObject(value) && typeof value['id'] === 'string';
 }
 

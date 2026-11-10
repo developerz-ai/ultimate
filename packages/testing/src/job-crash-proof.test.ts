@@ -37,7 +37,7 @@ const declare = (
     input: t.object({ id: t.string }),
     tenant: 'none',
     idempotencyKey: (input) => `order:${input.id}`,
-    retry: { attempts: extra.attempts ?? 3, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: extra.attempts ?? 3, backoff: 'fixed', delay: 0, jitter: 'none' },
     ...(extra.compensates === true ? { compensates: true } : {}),
     run,
   });
@@ -187,7 +187,7 @@ describe('crashProof: what the process reports is not the job’s effect', () =>
       input: t.object({ fingerprint: t.string }),
       tenant: 'none',
       idempotencyKey: ({ fingerprint }) => `issue:${fingerprint}`,
-      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: async () => undefined,
     });
     const seen = new Set<string>();

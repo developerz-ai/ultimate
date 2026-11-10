@@ -22,9 +22,9 @@ function foreignEnoent(): Error {
 }
 
 /**
- * `@ultimat3/schema`'s `ULTIMATE_ERROR_BRAND`, by its registry key: render does not depend on
- * schema and core does not republish it, and the `Symbol.for` key is the cross-instance contract
- * the brand exists for — a second copy of a package recognises exactly this.
+ * `@ultimat3/schema`'s `ULTIMATE_ERROR_BRAND`, by its registry key rather than imported: the
+ * `Symbol.for` key is the cross-instance contract the brand exists for — a second copy of a
+ * package recognises exactly this, so this is the form the test must prove render reads.
  */
 const BRAND = Symbol.for('ultimate.error');
 

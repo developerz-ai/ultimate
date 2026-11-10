@@ -10,7 +10,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Actor, ctxOf, resetInstrumentation, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';

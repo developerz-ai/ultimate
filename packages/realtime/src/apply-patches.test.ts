@@ -4,14 +4,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { applyPatches, orderAfterPatches } from './apply-patches';
-import type { Row, RowPatch } from './json';
+import type { LiveRow, RowPatch } from './json';
 
-const rows: readonly Row[] = [
+const rows: readonly LiveRow[] = [
   { id: 'p1', likes: 1 },
   { id: 'p2', likes: 2 },
 ];
 
-function ids(of: readonly Row[]): readonly string[] {
+function ids(of: readonly LiveRow[]): readonly string[] {
   return of.map((row) => row.id);
 }
 

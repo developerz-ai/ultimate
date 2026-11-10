@@ -3,7 +3,8 @@
 // beside a top-level approval is a refusal, and nothing runs.
 
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,

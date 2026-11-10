@@ -3,7 +3,7 @@
 // waits for PID 1 to go away sees the retire finish. Driven through a fake signal source.
 
 import { describe, expect, test } from 'bun:test';
-import { InternalError, isRetiring, resetLifecycle, setLogSink } from '@ultimat3/core';
+import { InternalError, installLogSink, isRetiring, resetLifecycle } from '@ultimat3/core';
 import type { WorkerStats } from '@ultimat3/jobs';
 import { armWorkerRetire, RETIRE_SIGNAL, type RetireSignals } from './serve-retire';
 
@@ -72,10 +72,10 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5
 
 function logged(): { readonly lines: Record<string, unknown>[]; restore(): void } {
   const lines: Record<string, unknown>[] = [];
-  const previous = setLogSink((line) => {
+  const releaseLogSink = installLogSink((line) => {
     lines.push(JSON.parse(line) as Record<string, unknown>);
   });
-  return { lines, restore: () => setLogSink(previous) };
+  return { lines, restore: () => releaseLogSink() };
 }
 
 describe('unit · armWorkerRetire', () => {

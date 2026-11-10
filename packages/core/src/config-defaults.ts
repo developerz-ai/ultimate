@@ -62,6 +62,8 @@ export function configDefaults(): Omit<AppConfig, Sectioned> {
       maxSubscriptionsPerActor: undefined,
       // Unset: the sync node's `DEFAULT_MAX_SOCKETS_PER_ACTOR` (16).
       maxSocketsPerActor: undefined,
+      // Unset: the page outbox queues without a ceiling (`pageOutbox`'s own default).
+      maxQueued: undefined,
     },
     notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
     ai: { mcp: { expose: true } },

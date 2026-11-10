@@ -428,7 +428,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
       transport,
       lock: selection.lock,
       // The restart waits this long; the default base is for a fleet, not for a test.
-      backoff: { baseMs: 50, maxMs: 200, factor: 2, jitter: 'none' },
+      backoff: { base: 50, max: 200, factor: 2, jitter: 'none' },
     });
     expect(await replicator.start()).toBe(true);
     try {

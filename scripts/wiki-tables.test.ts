@@ -4,14 +4,22 @@
 // because the first thing an author does is "fix" the good row.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no temporary-directory or recursive-delete primitive of its own.
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   checkTables,
   isDelimiterRow,
   type MarkdownFile,
+  readClaudeDocs,
   readWiki,
   splitRow,
   tableGapFindingFor,
+  wikiTableFindings,
   wikiTableReport,
 } from './wiki-tables';
 
@@ -156,4 +164,45 @@ describe('unit · a run over no table is unscanned, never green', () => {
   test('one well-formed table is a verdict: no finding', () => {
     expect(wikiTableReport(page(table()))).toEqual([]);
   });
+});
+
+describe('unit · CLAUDE.md tables are held to the same rule', () => {
+  test('root and package CLAUDE.md are read; nothing else outside wiki/', async () => {
+    const paths = (await readClaudeDocs(repoRoot())).map((file) => file.path);
+    expect(paths).toContain('CLAUDE.md');
+    expect(paths).toContain('packages/core/CLAUDE.md');
+    expect(
+      paths.every((path) => path === 'CLAUDE.md' || /^packages\/[^/]+\/CLAUDE\.md$/.test(path)),
+    ).toBe(true);
+  });
+
+  test(
+    'a planted collapsed or extra cell in a package CLAUDE.md is refused at its line',
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'claude-tables-'));
+      try {
+        await mkdir(join(root, 'wiki'), { recursive: true });
+        await mkdir(join(root, 'packages', 'fixture'), { recursive: true });
+        await Bun.write(join(root, 'wiki', 'Home.md'), table());
+        await Bun.write(join(root, 'CLAUDE.md'), table('| collapsed |'));
+        await Bun.write(join(root, 'packages', 'fixture', 'CLAUDE.md'), table('| x | y | extra |'));
+        const at = (await wikiTableFindings(root)).map((one) => `${one.code} ${one.at}`);
+        expect(at).toEqual([
+          'X_WIKI_TABLE_MALFORMED CLAUDE.md:4',
+          'X_WIKI_TABLE_MALFORMED packages/fixture/CLAUDE.md:4',
+        ]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
+
+  test(
+    'this repository: every CLAUDE.md table renders',
+    async () => {
+      expect(checkTables(await readClaudeDocs(repoRoot()))).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });

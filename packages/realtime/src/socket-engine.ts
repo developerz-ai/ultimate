@@ -12,9 +12,9 @@ import type { AttachedPort, PortLike, PortMessage } from './socket-port';
 import { PortRouter } from './socket-routes';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 import {
-  type BackoffPolicy,
   browserBackoff,
   policyDelay,
+  type ReconnectBackoff,
   type Rng,
   type Scheduler,
   timeoutScheduler,
@@ -28,7 +28,7 @@ export interface SocketEngineOptions {
   readonly dial: (target: SyncTarget) => ClientSocket;
   readonly scheduler?: Scheduler;
   readonly clock?: Clock;
-  readonly backoff?: BackoffPolicy;
+  readonly backoff?: ReconnectBackoff;
   readonly rng?: Rng;
   /** The engine's own beat on the real socket, and the unit a silent port is reaped in. */
   readonly heartbeatMs?: number;

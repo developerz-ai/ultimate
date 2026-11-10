@@ -75,6 +75,7 @@ const queryTest = (name: NameSet, feature: NameSet, shape: ReadShape): string =>
   const subscribes = live && shape.storesRow;
   const imports = subscribes
     ? [
+        "import { defineApi } from '@ultimat3/action';",
         "import { ctxOf, frozenClock, runWithContext } from '@ultimat3/core';",
         `import { afterEach, expect, ${wrapper} } from '@ultimat3/testing';`,
         `import { driver } from '${shape.dbModule}';`,
@@ -90,15 +91,12 @@ const queryTest = (name: NameSet, feature: NameSet, shape: ReadShape): string =>
 ${sortedImports([
   ...imports,
   "import { testActor } from '@ultimat3/policy';",
-  subscribes
-    ? "import { registerQuery, sourceFor } from '@ultimat3/query';"
-    : "import { sourceFor } from '@ultimat3/query';",
+  "import { sourceFor } from '@ultimat3/query';",
 ])}${repo}
 import { ${name.camel} } from './${name.kebab}';
 ${live && !shape.storesRow ? '' : ORG_LINE}
 // Named here because every projection needs a stable name and this file does not boot the app.
-// At boot \`registerQueries(await import('./${live ? 'live' : 'queries'}'))\` stamps the same name
-// onto the same object.
+// At boot \`defineApi\` stamps the same name onto the same object.
 const target = ${name.camel}.named('${name.camel}');
 
 // Holds the grant and no org — so a denial here is the predicate deciding, not the grant.
@@ -174,9 +172,10 @@ ${subscribes ? subscribeTest(name, feature) : ''}`;
  * Two orgs, a snapshot and a write: the window a subscriber is served from is its own org's.
  */
 const subscribeTest = (name: NameSet, feature: NameSet): string => `
-// The module's own export under its own name — what \`defineApi\` does at boot — so a subscribe
-// frame naming it reaches this declaration.
-const live = registerQuery('${name.camel}', ${name.camel});
+// The module's own export under its own name, through \`defineApi\` as the boot hands it over, so
+// a subscribe frame naming it reaches this declaration.
+const api = defineApi({ queries: { ${name.camel} } });
+const live = api.queries.${name.camel};
 
 type Row = ${feature.pascal};
 

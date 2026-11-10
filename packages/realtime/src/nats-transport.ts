@@ -26,7 +26,7 @@ import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-open';
 import { NatsReports } from './nats-reports';
 import { NatsSubscriptions } from './nats-subscriptions';
-import { type BackoffPolicy, defaultBackoff, policyDelay, type Rng } from './thundering-herd';
+import { defaultBackoff, policyDelay, type ReconnectBackoff, type Rng } from './thundering-herd';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -36,7 +36,7 @@ export interface NatsTransportOptions {
   /** KV bucket backing `shared`. Created on first connect when the cluster has none. */
   readonly bucket: string;
   readonly maxReconnectAttempts?: number;
-  readonly backoff?: BackoffPolicy;
+  readonly backoff?: ReconnectBackoff;
   readonly clock?: Clock;
   /** Presence TTL, only as the floor for the bucket's whole-stream age limit. */
   readonly presenceTtlMs?: number;
@@ -70,7 +70,7 @@ export class NatsTransport implements Transport {
   readonly shared: TransportSet;
   readonly #options: NatsTransportOptions;
   readonly #connect: NatsConnect;
-  readonly #backoff: BackoffPolicy;
+  readonly #backoff: ReconnectBackoff;
   readonly #attempts: number;
   readonly #rng: Rng;
   #client: NatsClient | undefined;
@@ -355,7 +355,7 @@ export class NatsTransport implements Transport {
   /**
    * Dial until a client is up or the transport is closed — the first dial of a process that does
    * not wait for the bus, and the replacement of a client the library gave up on. One loop however
-   * many callers ask. Bounded by our backoff between attempts (capped at the policy's `maxMs`), so
+   * many callers ask. Bounded by our backoff between attempts (capped at the policy's `max`), so
    * a long outage costs one dial per interval rather than a spin. A dial that lands re-binds every
    * kept subscription and is announced: changes published in the gap are gone.
    */
@@ -398,7 +398,7 @@ export class NatsTransport implements Transport {
     }
   }
 
-  /** A wait `close()` can cut short, so a closed transport never holds a timer for `maxMs`. */
+  /** A wait `close()` can cut short, so a closed transport never holds a timer for `max`. */
   #pause(ms: number): Promise<void> {
     return new Promise((resolve) => {
       const done = (): void => {

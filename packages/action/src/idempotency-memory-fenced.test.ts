@@ -4,22 +4,22 @@
 // operator sees is whichever store the deployment happens to install.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { memoryIdempotencyStore } from './idempotency-memory';
 
 const KEY = '["chargeCard","user","u1",null,"k1"]';
 const WINDOW_MS = 1_000;
 
 let lines: string[] = [];
-let previous: ReturnType<typeof setLogSink>;
+let releaseLogSink: () => void;
 
 afterEach(() => {
-  setLogSink(previous);
+  releaseLogSink();
   lines = [];
 });
 
 function capture(): void {
-  previous = setLogSink((line) => {
+  releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
 }

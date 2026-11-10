@@ -3,7 +3,7 @@
 // another channel for a provider — asked per callback, with the provider's id.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { testSigner, unsignedJwt } from './id-token-fixture';
 import type { IdTokenKeys } from './jwks';
@@ -75,7 +75,7 @@ describe('unit · oauthLogin verifies the id token signature', () => {
   });
 
   test('a bad signature is refused 400 X_OAUTH_TOKEN_INVALID, and no session cookie is set', async () => {
-    const previous = setLogSink(() => undefined);
+    const releaseLogSink = installLogSink(() => undefined);
     try {
       const done = await callback((nonce) => unsignedJwt(claims(nonce)));
       expect(done.status).toBe(400);
@@ -87,7 +87,7 @@ describe('unit · oauthLogin verifies the id token signature', () => {
       expect(cookies.length).toBeGreaterThan(0);
       expect(cookies.every((cookie) => cookie.includes('Max-Age=0'))).toBe(true);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
   });
 
@@ -107,7 +107,7 @@ describe('unit · oauthLogin verifies the id token signature', () => {
   test('undefined leaves that provider on its published key set — the safe default branch', async () => {
     // The README's shape: opt one provider out, `undefined` for the rest. Calling
     // `providerJwks(providerFor(provider))` there instead throws for GitHub (no jwks_uri).
-    const previous = setLogSink(() => undefined);
+    const releaseLogSink = installLogSink(() => undefined);
     try {
       const optOut = (provider: OAuthProviderId) =>
         provider === 'bigco-sso' ? 'token-endpoint-tls' : undefined;
@@ -116,7 +116,7 @@ describe('unit · oauthLogin verifies the id token signature', () => {
       const signed = await callback((nonce) => SIGNER.sign(claims(nonce)), optOut);
       expect(signed.status).toBe(303);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
   });
 });

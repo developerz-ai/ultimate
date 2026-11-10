@@ -44,3 +44,13 @@ test('realtime off: no sync target, no worker, no boot script, nothing to precac
   expect(sync.routes).toEqual([]);
   expect(sync.scripts).toEqual([]);
 });
+
+// `realtime.maxQueued` reaches the page boot only through the document: the boot builds the
+// outbox, and the boot is a classic script with no config of its own.
+test("realtime.maxQueued rides the head as the outbox's ceiling; unset rides nothing", async () => {
+  const root = Bun.env['TMPDIR'] ?? '/tmp';
+  const capped = await pageSync(root, {}, 'build-under-test', { enabled: true, maxQueued: 50 });
+  expect(capped.head?.outboxMaxQueued).toBe(50);
+  const open = await pageSync(root, {}, 'build-under-test', ON);
+  expect(open.head !== undefined && 'outboxMaxQueued' in open.head).toBe(false);
+});

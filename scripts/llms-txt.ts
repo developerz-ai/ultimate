@@ -8,6 +8,7 @@
 //   bun run llms-txt [--write] [--json]
 
 import { flagBool, parseScriptArgs } from './lib/args';
+import { fillGenerated, GENERATED_CLOSE, generatedOpen } from './lib/generated-block';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -21,8 +22,8 @@ const FIX = 'bun run llms-txt --write';
 export const BLOCKS = ['packages', 'wiki', 'sideways'] as const;
 export type BlockName = (typeof BLOCKS)[number];
 
-const open = (name: BlockName): string => `<!-- generated: ${name} — ${FIX} -->`;
-const CLOSE = '<!-- end generated -->';
+const open = (name: BlockName): string => generatedOpen(name, FIX);
+const CLOSE = GENERATED_CLOSE;
 // Home is not in the sidebar's list and summarises every other page; it cannot summarise itself.
 const HOME_SUMMARY = 'the full wiki index, with a reading path per audience';
 
@@ -87,14 +88,12 @@ export function fillBlocks(
   let out = text;
   const missing: BlockName[] = [];
   for (const name of BLOCKS) {
-    const start = out.indexOf(open(name));
-    const end = start === -1 ? -1 : out.indexOf(CLOSE, start);
-    if (end === -1) {
+    const filled = fillGenerated(out, name, FIX, blocks[name]);
+    if (filled === undefined) {
       missing.push(name);
       continue;
     }
-    const body = [open(name), ...blocks[name], CLOSE].join('\n');
-    out = out.slice(0, start) + body + out.slice(end + CLOSE.length);
+    out = filled;
   }
   return { text: out, missing };
 }

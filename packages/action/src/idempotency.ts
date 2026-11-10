@@ -410,12 +410,12 @@ function runWithinCeiling<T>(key: string, ceilingMs: number, run: () => Promise<
 }
 
 /**
- * A stored fingerprint that is not this request's exact string. A legacy unkeyed one (a row
- * written before keying) is still checked exactly. One keyed under a secret this process does not
- * hold — the signing secret rotated inside the window — cannot be checked either way, and is
- * answered by its STATUS alone: replay, never re-run. Refusing it would 409 every honest retry
- * across a rotation; running it would be the double charge. What is lost for that window only is
- * the "same key, different body" diagnosis, and a warning says so.
+ * A stored fingerprint that is not this request's exact string. One keyed under a secret this
+ * process does not hold — the signing secret rotated inside the window — or in no form this build
+ * reads (a bare pre-v24 hash) cannot be checked either way, and is answered by its STATUS alone:
+ * replay, never re-run. Refusing it would 409 every honest retry across a rotation; running it
+ * would be the double charge. What is lost for that window only is the "same key, different body"
+ * diagnosis, and a warning says so.
  */
 function assertSamePayload(key: string, stored: string, input: unknown): void {
   const verdict = compareFingerprint(stored, input, IDEMPOTENCY_FINGERPRINT_PURPOSE);

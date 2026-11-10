@@ -7,7 +7,7 @@
 import { frozenClock } from '@ultimat3/core';
 import { type ClientSocket, LiveClient } from './client';
 import { decode, type Frame } from './sync-protocol';
-import type { BackoffPolicy, Scheduler } from './thundering-herd';
+import type { ReconnectBackoff, Scheduler } from './thundering-herd';
 
 /** A harness driven wrongly by a test, never a framework fault — so it carries no `X_*` code. */
 export class HarnessMisuse extends Error {
@@ -15,7 +15,7 @@ export class HarnessMisuse extends Error {
 }
 
 /** No jitter, so a delay is a number the test can name rather than a range it has to bracket. */
-export const backoff: BackoffPolicy = { baseMs: 500, maxMs: 30_000, factor: 2, jitter: 'none' };
+export const backoff: ReconnectBackoff = { base: 500, max: 30_000, factor: 2, jitter: 'none' };
 
 export class FakeSocket implements ClientSocket {
   readonly sent: string[] = [];
@@ -139,7 +139,7 @@ export interface HarnessOptions {
    */
   readonly heartbeatMs?: number;
   /** `'client-default'` leaves the client's own curve in place, rolled by `rng`. */
-  readonly backoff?: BackoffPolicy | 'client-default';
+  readonly backoff?: ReconnectBackoff | 'client-default';
   readonly rng?: () => number;
 }
 

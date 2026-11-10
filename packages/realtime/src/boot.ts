@@ -4,7 +4,7 @@
 // and opens the outbox, so a reload replays what the last load queued even if islands only read.
 
 import type { ClientScope } from '@ultimat3/core/page';
-import { pageClient } from '@ultimat3/core/page';
+import { CLIENT_OUTBOX_MAX_META, pageClient } from '@ultimat3/core/page';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import { pageOutbox } from './page-outbox';
 import { installPageRuntime } from './page-runtime';
@@ -18,6 +18,7 @@ import type { RecordStore } from './record-store';
  */
 async function restoreFromDisk(store: RecordStore, principal: () => Principal): Promise<void> {
   const types = persistedTypes();
+  const maxQueued = outboxCeiling();
   let persister: RecordPersister | undefined;
   try {
     // A sign-out by full navigation (a form post and a redirect) never calls `rescope()`, so the
@@ -45,7 +46,19 @@ async function restoreFromDisk(store: RecordStore, principal: () => Principal): 
   // After the restore, so a replay settles overlays over the records it restored.
   // A queued write flushes the persisted rows first, so both are on disk before a reload can come.
   const kept = persister;
-  pageOutbox({ beforeEnqueue: kept === undefined ? undefined : () => kept.flush() });
+  pageOutbox({ beforeEnqueue: kept === undefined ? undefined : () => kept.flush(), maxQueued });
+}
+
+/**
+ * `realtime.maxQueued` as the server rendered it (`<meta name="ultimate-outbox-max">`), already
+ * screened by `defineConfig`; `localOutbox` screens it again where it builds, so a malformed meta
+ * is `X_INVARIANT`, never a ceiling no count reaches. Absent: no ceiling.
+ */
+function outboxCeiling(): number | undefined {
+  const doc: { querySelector?: (selector: string) => { content?: unknown } | null } | undefined =
+    Reflect.get(globalThis, 'document');
+  const content = doc?.querySelector?.(`meta[name="${CLIENT_OUTBOX_MAX_META}"]`)?.content;
+  return typeof content === 'string' ? Number(content) : undefined;
 }
 
 type Principal = ClientScope['principal'];

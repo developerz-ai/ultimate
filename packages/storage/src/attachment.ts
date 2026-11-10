@@ -8,7 +8,7 @@ import type { Clock } from '@ultimat3/core';
 import { assert, finiteCount, nanoid, renderThrowable, systemClock } from '@ultimat3/core';
 import type { StorageDriver, StorageListEntry, StorageObject } from './driver';
 import { objectNotFound, orgMismatch, tooLarge } from './errors';
-import { alreadyPromoted, notPending, objectChanged, quarantined } from './errors-promote';
+import { alreadyPromoted, notPending, objectChanged } from './errors-promote';
 import { assertSafeKey, isWithinOrg, orgPrefix, scopedKey } from './path';
 import type { UploadPolicy } from './upload';
 import { SNIFF_WINDOW_BYTES, validateStoredHead } from './upload';
@@ -16,20 +16,6 @@ import { SCAN_SEGMENT, scanAttempt, scanning } from './upload-scan';
 
 /** The one segment an unattached upload lives under. `sweepOrphans` reads only this prefix. */
 export const PENDING_SEGMENT = 'pending';
-
-/**
- * One more segment inside `pending/`: the app's OWN scan workflow, for a scanner that runs as a job.
- *
- * Magic-byte sniffing closes stored XSS; it is not malware scanning, and `application/zip` is
- * deliberately accepted as the OOXML container, so a macro-laden `.docx` passes `validateUpload`
- * exactly as a clean one does. The scanner is the APP's — a vendor, a licence and a latency budget
- * (axiom 8) — so two seams ship. Inline: an `uploadScanner` in `runtime.ts`, which
- * `promoteAttachment` asks about a per-attempt copy (`upload-scan.ts`). Deferred: an upload granted with `quarantine: true` lands under this prefix, `promoteAttachment` REFUSES a
- * key that is still there (`X_STORAGE_QUARANTINED`), and the app's scan job calls
- * `releaseQuarantine` on a verdict of clean. Inside `pending/` on purpose: an upload nobody ever
- * scanned is still an orphan, so `sweepOrphans` collects it with no second prefix to walk.
- */
-export const QUARANTINE_SEGMENT = 'quarantine';
 
 export interface AttachmentTarget {
   /** Entity name as the app declares it — `post`, `user`. Exactly one key segment. */
@@ -79,47 +65,8 @@ export function attachmentKey(orgId: string, target: AttachmentTarget, name: str
   return scopedKey(orgId, target.entity, target.id, target.field, name);
 }
 
-/** `org/<orgId>/pending/quarantine/<name>` — uploaded, validated, and not yet cleared to use. */
-export function quarantineKey(orgId: string, name: string): string {
-  return scopedKey(orgId, PENDING_SEGMENT, QUARANTINE_SEGMENT, name);
-}
-
-export function quarantinePrefix(orgId: string): string {
-  return `${pendingPrefix(orgId)}${QUARANTINE_SEGMENT}/`;
-}
-
 export const isPendingKey = (key: string, orgId: string): boolean =>
   key.startsWith(pendingPrefix(orgId));
-
-/** True while nothing has cleared the key. `promoteAttachment` refuses exactly this. */
-export const isQuarantinedKey = (key: string, orgId: string): boolean =>
-  key.startsWith(quarantinePrefix(orgId));
-
-export interface ReleaseQuarantineInput {
-  readonly disk: StorageDriver;
-  /** A key under `quarantinePrefix(orgId)`. */
-  readonly key: string;
-  readonly orgId: string;
-}
-
-/**
- * The app's scan said clean: move the object out of quarantine and onto the ordinary `pending/`
- * key, which `promoteAttachment` will accept. Copy then delete, for the reason promotion does —
- * a delete that ran first loses the bytes on a failed write.
- *
- * Releasing a key that is not quarantined returns it untouched rather than copying it onto
- * itself: a scan job that retries after a crash must not be a second round trip, and a `pending/`
- * key is already the released state.
- */
-export async function releaseQuarantine(input: ReleaseQuarantineInput): Promise<string> {
-  if (!isWithinOrg(input.key, input.orgId)) throw orgMismatch(input.key, input.orgId);
-  if (!isQuarantinedKey(input.key, input.orgId)) return input.key;
-  const name = input.key.slice(input.key.lastIndexOf('/') + 1);
-  const released = pendingKey(input.orgId, name);
-  await input.disk.copy(input.key, released);
-  await input.disk.delete(input.key);
-  return released;
-}
 
 export interface PromoteAttachmentInput {
   readonly disk: StorageDriver;
@@ -202,7 +149,9 @@ async function assertCopyIsWhatWasJudged(
  * no presigned URL can rewrite (`scannedAttempt`), which is then what is attached. Infected is
  * `X_STORAGE_UPLOAD_INFECTED` with attempt and upload deleted; no verdict is
  * `X_STORAGE_SCAN_UNAVAILABLE` with the attempt deleted and the upload still pending, unless
- * `policy.onScanUnavailable` accepts. Neither ever touches the row's key.
+ * `policy.onScanUnavailable` accepts; a `hold` verdict (a review, an async vendor scan) is
+ * `X_STORAGE_QUARANTINED`, the upload pending, and no policy overrides it. None ever touches the
+ * row's key. This is the ONE scan path: the v30 `quarantine: true` segment is retired.
  *
  * A source that is gone with the destination already there is `X_STORAGE_ALREADY_PROMOTED`
  * (409, `meta.attachedKey`), never the destination answered as if this call had moved it. 27.1.0
@@ -220,7 +169,6 @@ export async function promoteAttachment(input: PromoteAttachmentInput): Promise<
   // Pending, not merely in-org: an attached key a client sent back belongs to another row, and the
   // copy-then-delete below would move that row's file here and delete theirs.
   if (!isPendingKey(input.key, input.orgId)) throw notPending(input.key, input.orgId);
-  if (isQuarantinedKey(input.key, input.orgId)) throw quarantined(input.key, input.orgId);
   // The type says required; an untyped caller upgrading from the four-field call does not read
   // types, and `input.policy.maxBytes` on `undefined` is a bare `TypeError` two lines down.
   assert(
@@ -311,8 +259,8 @@ export interface SweepResult {
 
 /**
  * Delete every unattached upload past the window, and answer with what went and what did not.
- * Scoped to one org and to the `pending/` prefix — quarantine included, since it lives inside
- * that prefix: a sweep that could reach an attached key is a job that deletes production data
+ * Scoped to one org and to the `pending/` prefix — a `hold` included, since a held upload is still
+ * pending: a sweep that could reach an attached key is a job that deletes production data
  * the first time an app forgets to promote something.
  *
  * A refusal is recorded and the sweep continues. Stopping at the first one would leave the caller

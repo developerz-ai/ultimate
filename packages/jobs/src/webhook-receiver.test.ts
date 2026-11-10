@@ -154,7 +154,7 @@ describe('webhookReceiver: the job', () => {
     let failOnce = true;
     const handled: unknown[] = [];
     const h = receiverHarness({
-      retry: { attempts: 2, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 2, backoff: 'fixed', delay: 0, jitter: 'none' },
       handle: ({ payload, attempt }) => {
         handled.push([attempt, payload]);
         if (failOnce) {

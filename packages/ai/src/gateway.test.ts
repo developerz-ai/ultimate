@@ -31,7 +31,7 @@ describe('routing and retries', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [flaky, echo],
-      retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 2, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
     const result = await gateway.generate({
@@ -58,7 +58,7 @@ describe('routing and retries', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [broken],
-      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 3, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
     await expect(
@@ -95,7 +95,7 @@ describe('routing and retries', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [flaky, healthy],
-      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 3, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
 
@@ -145,7 +145,7 @@ describe('routing and retries', () => {
       const gateway = providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [rude],
-        retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+        retry: { attempts: 2, base: 0, max: 0, jitter: 'none' },
         sleep: async () => undefined,
       });
       // `toThrow(Class)` passes in Bun 1.3.14 when a call merely RETURNS an error, so the code is
@@ -232,7 +232,7 @@ describe('a local refusal reaches the caller with its own code', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [localRefusal()],
-      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 3, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
 
@@ -284,7 +284,7 @@ describe('a local refusal reaches the caller with its own code', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [counting],
-      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 3, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
 
@@ -326,7 +326,7 @@ describe('a local refusal reaches the caller with its own code', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [down, healthy],
-      retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 2, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
 
@@ -371,7 +371,7 @@ describe('the gateway screens its own bounds', () => {
         providerGateway({
           defaultModel: FIXTURE_MODEL,
           providers: [echo],
-          retry: { attempts, baseDelayMs: 0, maxDelayMs: 0 },
+          retry: { attempts, base: 0, max: 0, jitter: 'none' },
         }),
       );
       expect(error.code).toBe('X_INVARIANT');
@@ -406,7 +406,7 @@ describe('the gateway screens its own bounds', () => {
     const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [provider],
-      retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 1, base: 0, max: 0, jitter: 'none' },
     });
     const result = await gateway.generate({
       messages: [{ role: 'user', content: 'ping' }],

@@ -2,7 +2,7 @@
 // `''`, so `('a', 'bc')` and `('ab', 'c')` were one id; memory joined with an invisible U+0001,
 // which text holds as well — `('a\u0001', 'b')` and `('a', '\u0001b')` were one stored row.
 import { afterAll, describe, expect, test } from 'bun:test';
-import { integer, text, uuid } from './columns';
+import { integer, text, timestamp, uuid } from './columns';
 import { memoryDriver } from './database';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
@@ -17,8 +17,21 @@ const pairs = entity('row_key_pairs', {
   columns: { left: text(), right: text(), seats: integer() },
 });
 const single = entity('row_key_single', { columns: { id: uuid().primaryKey() } });
+/** A partitioned table's shape: the partition instant is in the key. */
+const events = entity('row_key_events', {
+  primaryKey: ['id', 'at'],
+  columns: { id: uuid(), at: timestamp() },
+});
 
 describe('rowKey', () => {
+  test('an instant in the key is spelled in ISO, never in the process time zone', () => {
+    const at = new Date('2026-11-10T10:00:00.123Z');
+    const id = '0190a0b0-0000-7000-8000-00000000000a';
+    expect(rowKey(events, { id, at })).toBe(JSON.stringify([id, '2026-11-10T10:00:00.123Z']));
+    // The same instant handed in as its ISO text is the same row.
+    expect(rowKey(events, { id, at: at.toISOString() })).toBe(rowKey(events, { id, at }));
+  });
+
   test('a composite key cannot collide by concatenation', () => {
     expect(rowKey(pairs, { left: 'a', right: 'bc' })).not.toBe(
       rowKey(pairs, { left: 'ab', right: 'c' }),

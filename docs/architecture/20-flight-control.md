@@ -58,10 +58,10 @@ Every row is behaviour-preserving unless the next section names it.
 
 | Package | Site | Delegates | Keeps |
 |---|---|---|---|
-| `jobs` | `backoffDelayMs` (`retry.ts`) | the curve | `DurationInput` (`'30s'`), `DEFAULT_RETRY`, and the public `jitter: boolean` — `true` maps to `equal`, never `full` |
-| `realtime` | `policyDelay` (`thundering-herd.ts`, internal) | the curve | maps a realtime `BackoffPolicy` onto core's 1-based `backoffDelay`; realtime exports no `backoffDelay` of its own since 2026-09-23; `JitterMode` is re-exported, never re-declared |
+| `jobs` | `backoffDelayMs` (`retry.ts`) | the curve | `DurationInput` (`'30s'`) and `DEFAULT_RETRY`. `jitter` is core's `JitterMode` since 31.0.0 (it was a boolean that mapped `true` to `equal`); omitted is `equal` |
+| `realtime` | `policyDelay` (`thundering-herd.ts`, internal) | the curve | nothing of its own: a redial's `backoff` is `Pick<RetryPolicy, 'base' \| 'max' \| 'factor' \| 'curve' \| 'jitter'>` since 31.0.0 (`BackoffPolicy`, with `baseMs`/`maxMs`, is deleted); `JitterMode` is re-exported, never re-declared |
 | `db` | `serializationRetryDelayMs` (`transaction-backoff.ts`) | the curve | the two constants and the case for them — `base: 10`, `max: 500`, `full` |
-| `ai` | `backoffMs` (`gateway.ts`) | the curve **and** the status table | `RetryPolicy`'s own field names (`baseDelayMs`/`maxDelayMs`), because they are what an app writes in `providerGateway({ retry })` |
+| `ai` | `backoffMs` (`gateway-providers.ts`) | the curve **and** the status table | nothing of its own: `providerGateway({ retry })` takes core's `RetryPolicy` since 31.0.0 (the gateway's `baseDelayMs`/`maxDelayMs` copy is deleted) |
 | `cache` | `purge-http.ts`, `purge-fastly.ts`, `purge-cloudflare.ts` | the status table | the shared HTTP half — one POST with a deadline, and the per-provider key batching. `purge-http.ts` re-exports `isRetryableStatus` rather than importing it twice, so both drivers still read "what a failure means" off one door |
 | `mail` | `driver-resend.ts` | the status table | its own transport |
 | `cache` | `single-flight.ts` | the whole function | nothing — the module is two `export` lines, kept as the door this package has always published through, so no call site moves |

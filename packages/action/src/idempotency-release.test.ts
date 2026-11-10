@@ -4,7 +4,7 @@
 // handler that had already committed (the double charge); in flight, it let a duplicate run beside it.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
 import { pgliteClient } from '@ultimat3/db';
 import { type IdempotencyStore, withIdempotency } from './idempotency';
@@ -119,7 +119,7 @@ describe('withIdempotency releases THIS reservation, never the key', () => {
     };
     const refused = new RangeError('bucket empty');
     const lines: string[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       lines.push(line);
     });
     let failure: unknown;
@@ -128,7 +128,7 @@ describe('withIdempotency releases THIS reservation, never the key', () => {
         beforeRun: () => Promise.reject(refused),
       }).catch((error: unknown) => error);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
 
     expect(failure).toBe(refused);

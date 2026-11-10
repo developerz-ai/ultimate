@@ -7,6 +7,7 @@ import type { EntityCore } from '@ultimat3/entity';
 import { columnName } from '@ultimat3/entity';
 import type { DriverDefinition, DriverFilter, DriverRepo } from '@ultimat3/entity/adapter';
 import {
+  advanceVersion,
   compareByKind,
   entityUniqueViolation,
   kindOf,
@@ -85,9 +86,16 @@ export const toyStore = (): DriverDefinition => {
           commit([...rows(), ...batch]);
           return batch;
         },
-        update: async (filter, patch) => {
+        update: async (filter, patch, advance) => {
           const hit = matched(filter);
-          commit(rows().map((row) => (hit.has(row) ? { ...row, ...patch } : row)));
+          // `advance`: the version moves past each row's own stored one (`DriverRepo.update`).
+          const next = (row: Row): Row => {
+            const merged = { ...row, ...patch } as Row;
+            return advance === undefined
+              ? merged
+              : advanceVersion(table, row, merged, (key) => key === advance.property);
+          };
+          commit(rows().map((row) => (hit.has(row) ? next(row) : row)));
           return hit.size;
         },
         delete: async (filter) => {

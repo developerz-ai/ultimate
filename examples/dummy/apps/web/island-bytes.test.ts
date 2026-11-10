@@ -35,7 +35,7 @@ import { dirname, join } from 'node:path';
 import type { IslandChunk } from '@ultimat3/cli';
 import { buildIslands } from '@ultimat3/cli';
 import { SCHEMA_ERROR_CODE_TITLES } from '@ultimat3/core';
-import { REALTIME_ERROR_TITLES } from '@ultimat3/realtime';
+import { REALTIME_PAGE_ERROR_TITLES } from '@ultimat3/realtime';
 import { beforeAll, expect, test } from '@ultimat3/testing';
 
 const APP_ROOT = join(import.meta.dir, '..', '..');
@@ -141,7 +141,7 @@ const LEAN_ACTION_CLIENT = '@ultimat3/action';
 
 /** Whether realtime's anchored titles module reached this chunk: every title, as for core's. */
 const carriesRealtimeTitles = (chunk: IslandChunk): boolean =>
-  Object.values(REALTIME_ERROR_TITLES).every((title) => chunk.code.includes(title));
+  Object.values(REALTIME_PAGE_ERROR_TITLES).every((title) => chunk.code.includes(title));
 
 const byFile = async (): Promise<ReadonlyMap<string, IslandChunk>> =>
   new Map((await buildIslands(APP_ROOT)).chunks.map((chunk) => [chunk.file, chunk]));

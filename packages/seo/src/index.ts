@@ -102,7 +102,7 @@ export {
 } from './meta';
 export type { RobotsConfig, RobotsGroup } from './robots';
 export { buildRobots, disallowMatcher, isIndexable } from './robots';
-export type { ChangeFreq, RouteRecord, SitemapPage, Surface } from './routes';
+export type { ChangeFreq, RouteRecord, SitemapPage } from './routes';
 export { expandRoute, expandRoutePages, indexableRoutes, isDynamic } from './routes';
 export type { BuildFeedOptions, Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';
 export { buildFeed } from './rss';

@@ -41,7 +41,7 @@ const declare = (
     input: t.object({ id: t.string, orgId: t.string }),
     tenant,
     idempotencyKey: (input) => `k:${input.id}`,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: async ({ input }) => run(input),
   });
 };
@@ -220,7 +220,7 @@ describe(testName('unit', 'runJobs: each fixture has its own event bus'), () => 
       input: t.object({ id: t.string, orgId: t.string }),
       tenant: 'none',
       idempotencyKey: (input) => `k:${input.id}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ step, input }) =>
         step.waitForEvent('answer', 'prompt.answered', {
           schema: t.object({ answer: t.string }),
@@ -253,7 +253,7 @@ describe(testName('unit', 'runJobs: a pass is a real worker’s, caps included')
       tenant: 'none',
       idempotencyKey: (input) => `sync:${input.id}`,
       concurrency: { key: (input) => input.accountId, limit: 1, whenBusy: 'fail' },
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ input, step }) => {
         await step.run('sync', () => {
           ran.push(input.id);
@@ -350,7 +350,7 @@ describe(
         input: t.object({ id: t.string, orgId: t.string }),
         tenant: 'none',
         idempotencyKey: (input) => `k:${input.id}`,
-        retry: { attempts: 1, jitter: false },
+        retry: { attempts: 1, jitter: 'none' },
         compensates: true,
         run: async ({ step }) => {
           await step.run('charge', () => 'ch-1');

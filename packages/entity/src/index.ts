@@ -40,6 +40,8 @@ export { countersOf, describeCounter } from './counter';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
 export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
+// Leaves, so a reader of a row's key (`@ultimat3/jobs`' reindex sweep) skips `./adapter`'s driver kit.
+export { kindOf } from './cursor';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { DescribeInput } from './describe';
@@ -176,6 +178,7 @@ export type {
   UpsertArgs,
 } from './repo';
 export type { Retain, RetainInit } from './retain';
+export { rowKey } from './row-key';
 export { observedRepo } from './row-observer';
 export { rowSecuritySettings } from './row-security-settings';
 export type { RecordsByKey, RecordsByType } from './rows-of';
@@ -202,6 +205,10 @@ export type {
   SearchDocument,
   SearchHit,
   SearchIndex,
+  SearchIndexOptions,
+  SearchListEntry,
+  SearchListPage,
+  SearchListQuery,
   SearchQuery,
   SearchScope,
 } from './search-index';

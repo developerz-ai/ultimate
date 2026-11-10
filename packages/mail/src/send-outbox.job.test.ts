@@ -5,6 +5,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, probeDatabaseName, structuredLogger, sweepProbeDatabases } from '@ultimat3/core';
+import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import type { JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
   jobWorker,
@@ -19,13 +20,26 @@ import {
   setJobsFacade,
 } from '@ultimat3/jobs';
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
+import { t } from '@ultimat3/schema';
 import { installMailDriver, resetMailDriver } from './adapter';
+import { blocks } from './blocks';
 import { type MemoryMailDriver, memoryMailDriver } from './driver';
-import { type SendOptions, send } from './mail';
-import { welcomeMail } from './templates';
+import { defineMail, type SendOptions, send } from './mail';
 
 /** The facade's transaction token, named without importing `@ultimat3/entity` into this package. */
 type Tx = NonNullable<ReturnType<Parameters<typeof outboxJobsFacade>[1]>>;
+
+registerCatalog('en', loadCatalog({ 'outbox-test': { subject: 'Welcome to {appName}' } }));
+
+// The test's own mail: the package ships none (v31 deleted the framework mails).
+const welcomeMail = defineMail<{ name: string; appName: string; url: string }>({
+  id: 'outbox-test.welcome',
+  subject: 'outbox-test.subject',
+  input: t.object({ name: t.string, appName: t.string, url: t.url }),
+  template: ({ data }) => [
+    blocks.button('outbox-test.subject', data.url, { appName: data.appName }),
+  ],
+});
 
 const PAYLOAD = { name: 'Ada', appName: 'Acme', url: 'https://acme.test/app' };
 const TO: SendOptions = { to: 'ada@example.test', locale: 'en', tz: 'UTC' };

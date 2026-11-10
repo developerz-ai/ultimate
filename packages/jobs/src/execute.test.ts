@@ -75,7 +75,7 @@ async function claimOne(
     name: 'cancellable',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `cancellable:${n}`,
-    retry: { attempts: 3, jitter: false },
+    retry: { attempts: 3, jitter: 'none' },
     ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
     run: options.run,
   });

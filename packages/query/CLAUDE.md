@@ -115,6 +115,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   re-export; `index.test.ts` pins the absence.
 - `registry.ts` announces `registerQueries` in core's registrar table at import; `defineApi` in
   `@ultimat3/action` depends on it (`X_REGISTRAR_MISSING` otherwise).
+- `registerQuery`/`registerQueries` are on `@ultimat3/query/loader` (`loader.ts`), never the barrel:
+  `defineApi` is an app's one path; `x`'s loader and framework fixtures import the subpath
+  (`loader.test.ts` pins both).
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })`; a live denial keeps its 4403
   close code on `QueryDeniedError.denial`. Policy runs per subscriber for live queries — never cache a
   decision across actors.

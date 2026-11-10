@@ -8,7 +8,8 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { clientTransport, useContext } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
-import { from, query, registerQueries, resetQueries, t } from '@ultimat3/query';
+import { from, query, resetQueries, t } from '@ultimat3/query';
+import { registerQueries } from '@ultimat3/query/loader';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { prerenderSite } from './prerender';
 import { processRoot } from './process-root-fixture';

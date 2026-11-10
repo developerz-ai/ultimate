@@ -5,7 +5,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { isPolicyDenial } from './errors';
-import type { JsonValue, Row, RowPatch } from './json';
+import type { JsonValue, LiveRow, RowPatch } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { narrowRow, projectionOf } from './matcher-bridge';
 
@@ -52,7 +52,7 @@ export interface GateTarget {
   readonly qid: string;
   readonly input: JsonValue;
   readonly definition: LiveQueryDefinition;
-  readonly rows: readonly Row[];
+  readonly rows: readonly LiveRow[];
 }
 
 /**
@@ -62,12 +62,12 @@ export interface GateTarget {
  * when a caller passes none.
  */
 export interface WindowIndex {
-  readonly byId: ReadonlyMap<string, Row>;
+  readonly byId: ReadonlyMap<string, LiveRow>;
   readonly position: ReadonlyMap<string, number>;
 }
 
-export function windowIndex(rows: readonly Row[]): WindowIndex {
-  const byId = new Map<string, Row>();
+export function windowIndex(rows: readonly LiveRow[]): WindowIndex {
+  const byId = new Map<string, LiveRow>();
   const position = new Map<string, number>();
   rows.forEach((row, at) => {
     byId.set(row.id, row);
@@ -144,8 +144,12 @@ export class SubscriberGate {
    * managed to admit: a short result set is indistinguishable from a correct one, and handing it
    * over is the read silently losing rows.
    */
-  async filterRows(target: GateTarget, who: Subscriber, rows: readonly Row[]): Promise<Row[]> {
-    const out: Row[] = [];
+  async filterRows(
+    target: GateTarget,
+    who: Subscriber,
+    rows: readonly LiveRow[],
+  ): Promise<LiveRow[]> {
+    const out: LiveRow[] = [];
     for (const row of rows) {
       if (await this.#visible(target, who, row, 'snapshot')) out.push(row);
       else this.#denied(target.qid, who, row.id);
@@ -219,7 +223,7 @@ export class SubscriberGate {
     // failed either: the shared window *is* the result set, so a row it does not hold is a row this
     // subscriber is not entitled to keep, and one that holds it is told so.
     if (full === undefined) return holds ? withdrawn(patch) : null;
-    const row: Row = { ...full, ...patch.row, id: patch.id };
+    const row: LiveRow = { ...full, ...patch.row, id: patch.id };
     if (await this.#visible(target, who, row, 'patch')) {
       // An update carries the changed columns only. A subscriber who was never sent this row —
       // denied at its snapshot, admitted by this change — would fold them onto nothing, and its
@@ -247,7 +251,7 @@ export class SubscriberGate {
   async #visible(
     target: GateTarget,
     who: Subscriber,
-    row: Row,
+    row: LiveRow,
     stage: GateStage,
   ): Promise<boolean> {
     try {
@@ -302,7 +306,7 @@ const actorIdOf = (who: Subscriber): string | null => (who.actor === null ? null
 function rebase(
   patch: RowPatch,
   holding: Holding,
-  rows: readonly Row[],
+  rows: readonly LiveRow[],
   index: WindowIndex,
 ): RowPatch {
   if (patch.index === undefined) return patch;

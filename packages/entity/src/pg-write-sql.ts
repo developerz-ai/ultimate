@@ -13,6 +13,7 @@ import { identifier, join, raw, type SqlFragment, sql } from '@ultimat3/db';
 import { columnName } from './column';
 import type { EntityCore } from './entity';
 import { conditions, type ReadShape } from './pg-sql';
+import { advancingVersionColumn } from './search-index-version';
 import type { QueryPlan } from './tenancy';
 
 /** `on conflict (…) do update set …`, or `do nothing` when there is nothing to overwrite. */
@@ -39,12 +40,41 @@ export interface InsertShape {
  */
 const DEFAULT_CELL = raw('default');
 
-const conflictSql = (conflict: ConflictTarget): SqlFragment => {
+/**
+ * A searchable entity's version column, physical — the one a write must ADVANCE past the stored
+ * value (`search-index-version.ts`), so two writes inside one millisecond are two versions.
+ */
+const advancingColumn = <Row>(entity: EntityCore<Row>): string | undefined => {
+  const property = advancingVersionColumn(entity as EntityCore<unknown>);
+  const meta = property === undefined ? undefined : entity.$columns[property]?.$meta;
+  return property === undefined || meta === undefined ? undefined : columnName(property, meta);
+};
+
+/**
+ * `VERSION_STEP_MS` as an interval — a closed literal like `default` above, and the same one
+ * millisecond (`search-version-monotonic.test.ts` pins the two together).
+ */
+export const VERSION_STEP_SQL = raw("interval '1 millisecond'");
+
+/** `greatest(next, stored + 1 ms)`: the version moves forward even when the clock has not. */
+const advanced = (column: string, next: SqlFragment, stored: SqlFragment): SqlFragment =>
+  sql`${identifier(column)} = greatest(${next}, ${stored} + ${VERSION_STEP_SQL})`;
+
+const conflictSql = <Row>(entity: EntityCore<Row>, conflict: ConflictTarget): SqlFragment => {
   const target = join(conflict.columns.map(identifier));
+  const version = advancingColumn(entity);
   return conflict.set.length === 0
     ? sql` on conflict (${target}) do nothing`
     : sql` on conflict (${target}) do update set ${join(
-        conflict.set.map((column) => sql`${identifier(column)} = excluded.${identifier(column)}`),
+        conflict.set.map((column) =>
+          column === version
+            ? advanced(
+                column,
+                sql`excluded.${identifier(column)}`,
+                sql`${identifier(entity.$table)}.${identifier(column)}`,
+              )
+            : sql`${identifier(column)} = excluded.${identifier(column)}`,
+        ),
       )}`;
 };
 
@@ -96,7 +126,7 @@ export const insertStatement = <Row>(
         ),
       )})`,
   );
-  const conflict = shape.conflict === undefined ? sql`` : conflictSql(shape.conflict);
+  const conflict = shape.conflict === undefined ? sql`` : conflictSql(entity, shape.conflict);
   return sql`insert into ${identifier(entity.$table)} (${join(
     shape.columns.map(identifier),
   )}) values ${join(tuples)}${conflict} returning *`;
@@ -117,8 +147,13 @@ export const updateStatement = <Row>(
   returning: boolean,
 ): SqlFragment => {
   const json = jsonColumns(entity);
+  const version = advancingColumn(entity);
   return sql`update ${identifier(entity.$table)} set ${join(
-    [...values].map(([column, value]) => sql`${identifier(column)} = ${cell(json, column, value)}`),
+    [...values].map(([column, value]) =>
+      column === version
+        ? advanced(column, cell(json, column, value), identifier(column))
+        : sql`${identifier(column)} = ${cell(json, column, value)}`,
+    ),
   )} where ${conditions(entity, plan, shape)}${returning ? sql` returning *` : sql``}`;
 };
 

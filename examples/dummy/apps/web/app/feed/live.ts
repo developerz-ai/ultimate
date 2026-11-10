@@ -15,7 +15,7 @@
  * imported as a TYPE, so no module edge exists.
  */
 
-import type { Row } from '@ultimat3/realtime';
+import type { LiveRow } from '@ultimat3/realtime';
 import type { Api } from '../../api';
 
 /** What `useQuery` subscribes under. `defineApi` names a query after its export, so this is it. */
@@ -26,7 +26,7 @@ export const LIVE_FEED: keyof Api['queries'] = 'liveFeed';
  * is a `Date` on the server and a string on the wire, so a type read off the query's return would
  * describe a value no browser ever holds. Only the fields this island renders are named.
  */
-export interface FeedRow extends Row {
+export interface FeedRow extends LiveRow {
   readonly id: string;
   readonly title: string;
   readonly excerpt: string;

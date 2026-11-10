@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 // streams core's default log writer reaches, so the writers it targets are what this test has to
 // intercept.
 import process from 'node:process';
-import { logger, setLogSink, setLogStream } from '@ultimat3/core';
+import { installLogSink, logger, setLogStream } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { PLANNED_COMMANDS } from './cmd-planned';
 import { dispatch, sinkFor } from './dispatch';
@@ -223,11 +223,11 @@ describe('unit · the dispatcher owns fd 1', () => {
         return true;
       };
       // The streams themselves are the subject here, so the test preload's sink is lifted.
-      const sink = setLogSink(undefined);
+      const releaseLogSink = installLogSink(undefined);
       try {
         logger.info('ultimate migrate applied');
       } finally {
-        setLogSink(sink);
+        releaseLogSink();
         process.stdout.write = stdout;
         process.stderr.write = stderr;
       }

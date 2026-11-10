@@ -4,7 +4,7 @@
 // boot of every pod, and a line that is always there is a line nobody reads.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { job, resetJobs } from './job';
 import { reportUnregisteredQueues } from './worker-registry';
@@ -13,13 +13,13 @@ afterEach(() => resetJobs());
 
 const reported = (queues: readonly string[]): readonly unknown[] => {
   const lines: { msg?: string; queues?: unknown }[] = [];
-  const previous = setLogSink((line) => {
+  const releaseLogSink = installLogSink((line) => {
     lines.push(JSON.parse(line) as { msg?: string; queues?: unknown });
   });
   try {
     reportUnregisteredQueues('w-1', queues);
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   return lines.filter((line) => line.msg === 'jobs.worker.queue-unregistered').map((l) => l.queues);
 };

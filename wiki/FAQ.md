@@ -6,11 +6,17 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**Yes, for a single-region app on one Postgres, `As of 2026-11`, on the evidence below.** What you can check: [the live demo](https://social-media.ultimate.demo.developerz.ai), built from `dummy/social-media-clone/` and deployed on every push to `main` (`deploy-social-demo.yml`). Two apps in the repository build on it and gate on every push, the demo and the reference app `examples/dummy/` (`scripts/lib/gated-apps.ts`); no production use and no outside adopter is claimed. The API is under semver, and the window and the next major's date are on [Stability](Stability).
+**Yes, for a single-region app on one Postgres, `As of 2026-11`, on the evidence below.** What you can check: [the live demo](https://social-media.ultimate.demo.developerz.ai), built from `dummy/social-media-clone/` and deployed on every push to `main` (`deploy-social-demo.yml`); two apps in the repository build on it and gate on every push, the demo and the reference app `examples/dummy/` (`scripts/lib/gated-apps.ts`). The API is under semver, and the window and the next major's date are on [Stability](Stability). No outside security audit has been done ([`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md)).
+
+Outside the repository, the one claim no command here can check:
+
+<!-- generated: production-apps — bun run scripts/production-apps.ts --write -->
+9 apps outside this repository build on Ultimate, small to medium in size; at least 1 of them serves production traffic. Owner-reported, `As of 2026-11`: adopters are never named (`scripts/private-names.ts` refuses a name in the tree), so no command here re-derives this line.
+<!-- end generated -->
 
 | Proven | By |
 |---|---|
-| a rolling restart on Kubernetes drops no request | `ci.yml`'s `deploy-proof` job, `docker/deploy-proof/run.sh`: 0 of 9,028 requests failed, `As of 2026-09-24` |
+| a rolling restart on Kubernetes drops no request | `ci.yml`'s `deploy-proof` job, `docker/deploy-proof/run.sh`: 0 of 9,201 requests failed, `As of 2026-11-10` |
 | a fresh scaffold is green on its first gate run | `ci.yml`'s `scaffold-smoke` job, every push |
 | every package is on npm at one version, published by the workflow over OIDC, attested | `bun run scripts/registry-audit.ts --json`, and `registry-audit.yml` daily |
 | one `sync` node reconnects all 50,000 clients after a forced restart | [`scripts/bench/results/`](https://github.com/developerz-ai/ultimate/tree/main/scripts/bench/results) |

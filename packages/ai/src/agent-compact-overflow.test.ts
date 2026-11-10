@@ -135,7 +135,7 @@ describe('agentJob()', () => {
     const handle = agentJob(denseAgent(RULE, [], 30), {
       name: 'overflow-job',
       tenant: 'none',
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
     });
     await handle.enqueue(INPUT);
     const claimed = (

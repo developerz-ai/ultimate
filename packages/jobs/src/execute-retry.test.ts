@@ -53,7 +53,7 @@ async function claimOne(options: {
     name: 'classified',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `classified:${n}`,
-    retry: { attempts: options.attempts, backoff: 'fixed', delay: 1_000, jitter: false },
+    retry: { attempts: options.attempts, backoff: 'fixed', delay: 1_000, jitter: 'none' },
     run: () => Promise.reject(options.throws()),
   });
   const base = memoryJobDriver();
@@ -143,7 +143,7 @@ describe('a terminal error stops on the attempt it happened', () => {
       name: 'dropped',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `dropped:${n}`,
-      retry: { attempts: 5, deadLetter: false, jitter: false },
+      retry: { attempts: 5, deadLetter: false, jitter: 'none' },
       run: () => Promise.reject(coded(TERMINAL_CODE)),
     });
     const driver = memoryJobDriver();
@@ -246,7 +246,7 @@ describe('retry-after retries at the time the responder named', () => {
       name: 'clamped',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `clamped:${n}`,
-      retry: { attempts: 3, delay: 1_000, maxDelay: 60_000, jitter: false },
+      retry: { attempts: 3, delay: 1_000, maxDelay: 60_000, jitter: 'none' },
       run: () => Promise.reject(coded(RETRY_AFTER_CODE, { seconds: 86_400 })),
     });
     const driver = memoryJobDriver();
@@ -314,7 +314,7 @@ describe('this package classifies its own codes, and the executor acts on them',
       name: 'duplicate-step',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `duplicate-step:${n}`,
-      retry: { attempts: 5, jitter: false },
+      retry: { attempts: 5, jitter: 'none' },
       run: async ({ step }) => {
         await step.run('charge', () => 'ok');
         await step.run('charge', () => 'again');

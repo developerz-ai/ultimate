@@ -4,12 +4,12 @@
 // scheduler pod that restarted while NATS was down never got past boot.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink, isUltimateError } from '@ultimat3/core';
 import type { NatsClient, NatsConnect } from './nats-client';
 import { DIAL_TIMEOUT_MS } from './nats-dial-wait';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
-import type { BackoffPolicy } from './thundering-herd';
+import type { ReconnectBackoff } from './thundering-herd';
 import { BUS_CONNECT_WAIT_MS } from './transport-env';
 
 const codeOf = (value: unknown): string =>
@@ -28,7 +28,7 @@ const waitFor = async (done: () => boolean, polls = 500): Promise<void> => {
   for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
 };
 
-const QUICK: BackoffPolicy = { baseMs: 5, maxMs: 5, factor: 1, jitter: 'none' };
+const QUICK: ReconnectBackoff = { base: 5, max: 5, factor: 1, jitter: 'none' };
 
 function harness() {
   const clock = frozenClock(1_700_000_000_000);
@@ -77,7 +77,7 @@ describe('NatsTransport.connectInBackground', () => {
     const bus = harness();
     bus.broker.offline = true;
     const transport = bus.transport({
-      backoff: { baseMs: 20, maxMs: 20, factor: 1, jitter: 'none' },
+      backoff: { base: 20, max: 20, factor: 1, jitter: 'none' },
     });
 
     transport.connectInBackground();
@@ -225,7 +225,7 @@ describe('NatsTransport, the dial loop at its edges', () => {
     const bus = harness();
     bus.broker.offline = true;
     const transport = bus.transport({
-      backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+      backoff: { base: 0, max: 0, factor: 1, jitter: 'none' },
     });
 
     transport.connectInBackground();
@@ -250,7 +250,7 @@ describe('NatsTransport, the dial loop at its edges', () => {
   ] as const) {
     test(`an outage is logged at ${outageLevel}, thinned, and ended by one "recovered after N" line`, async () => {
       const lines: { level: string; msg: string; fields: Record<string, unknown> }[] = [];
-      const previous = setLogSink((line, level) => {
+      const releaseLogSink = installLogSink((line, level) => {
         const { msg, ...fields } = JSON.parse(line) as { msg: string } & Record<string, unknown>;
         if (msg.startsWith('nats transport')) lines.push({ level, msg, fields });
       });
@@ -263,7 +263,7 @@ describe('NatsTransport, the dial loop at its edges', () => {
       const transport = new NatsTransport({
         url: 'nats://bus.test:4222',
         bucket: 'x-test',
-        backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+        backoff: { base: 0, max: 0, factor: 1, jitter: 'none' },
         connect: async (options) => {
           attempts += 1;
           return open(options);
@@ -295,7 +295,7 @@ describe('NatsTransport, the dial loop at its edges', () => {
           },
         ]);
       } finally {
-        setLogSink(previous);
+        releaseLogSink();
         await transport.close();
       }
     });

@@ -28,10 +28,7 @@ export const INSTRUMENT_BUS = 'packages/core/src/instrument.ts';
  * `file#name` → why the slot is not an observer. Never a convenience row: a durable PORT (an
  * adapter that must persist, slice 21 wires it) or a test seam that decides where output goes.
  */
-export const INSTRUMENT_SLOT_ALLOWED = Object.freeze<Record<string, string>>({
-  'packages/core/src/logger.ts#setLogSink':
-    'the test seam that decides WHERE a line goes instead of stdout; the tee is log.record on the bus',
-});
+export const INSTRUMENT_SLOT_ALLOWED = Object.freeze<Record<string, string>>({});
 
 /** A slot's shape: `set` + a capitalised subject + the role, or a `recent…` ring-buffer reader. */
 export const SLOT_NAME = /^(?:set[A-Z]\w*(?:Observer|Sink|Exporter)|recent[A-Z]\w*)$/;
@@ -88,18 +85,19 @@ interface Scanned {
   readonly masked: string;
 }
 
-export function instrumentSlotResult(files: readonly Scanned[]): ScriptResult {
+export function instrumentSlotResult(
+  files: readonly Scanned[],
+  allowedRows: Readonly<Record<string, string>> = INSTRUMENT_SLOT_ALLOWED,
+): ScriptResult {
   const slots = files.flatMap((file) => instrumentSlots(file.path, file.masked));
-  // A re-export of an allowed slot (a barrel's `export { setLogSink }`) is the same slot.
-  const allowedNames = new Set(
-    Object.keys(INSTRUMENT_SLOT_ALLOWED).map((row) => row.split('#')[1]),
-  );
+  // A re-export of an allowed slot (a barrel's `export { setFooSink }`) is the same slot.
+  const allowedNames = new Set(Object.keys(allowedRows).map((row) => row.split('#')[1]));
   const allowed = (slot: InstrumentSlot): boolean =>
-    Object.hasOwn(INSTRUMENT_SLOT_ALLOWED, `${slot.file}#${slot.name}`) ||
+    Object.hasOwn(allowedRows, `${slot.file}#${slot.name}`) ||
     (slot.via === 'listed' && allowedNames.has(slot.name));
   const findings: Finding[] = slots.filter((slot) => !allowed(slot)).map(instrumentSlotFinding);
   const seen = new Set(slots.map((slot) => `${slot.file}#${slot.name}`));
-  for (const row of Object.keys(INSTRUMENT_SLOT_ALLOWED)) {
+  for (const row of Object.keys(allowedRows)) {
     if (seen.has(row)) continue;
     findings.push({
       code: 'X_INSTRUMENT_SLOT_ALLOWANCE_STALE',

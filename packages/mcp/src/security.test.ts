@@ -7,7 +7,7 @@
 // answering like another one — which is precisely how an enumeration oracle is born.
 
 import { describe, expect, test } from 'bun:test';
-import { agentActor, setLogSink, UltimateError } from '@ultimat3/core';
+import { agentActor, installLogSink, UltimateError } from '@ultimat3/core';
 import { McpScopeDeniedError } from './errors';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
@@ -339,11 +339,13 @@ describe('every outcome is audited', () => {
   /** What the PROCESS logger wrote, through its own sink seam — never a patched `process.stdout`. */
   async function captureLines(run: () => Promise<unknown>): Promise<Record<string, unknown>[]> {
     const lines: Record<string, unknown>[] = [];
-    const previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
+    const releaseLogSink = installLogSink((line) =>
+      lines.push(JSON.parse(line) as Record<string, unknown>),
+    );
     try {
       await run();
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     return lines;
   }

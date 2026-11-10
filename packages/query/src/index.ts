@@ -176,12 +176,12 @@ export type {
 export { describeQuery, isQuery, query, queryHash } from './query';
 /** The one read path. `defOf` stays unexported — that is the enforcement. */
 export { queryName, runQuery, sourceFor } from './read';
+// `registerQuery`/`registerQueries` are deliberately absent: `defineApi({ queries })` is an app's
+// one registration path, and `x`'s loader reaches them through `@ultimat3/query/loader`.
 export {
   describeQueries,
   getQuery,
   listQueries,
-  registerQueries,
-  registerQuery,
   resetQueries,
 } from './registry';
 /** The query FACTORY over an entity's searchable columns — a `query`, never a ninth primitive. */

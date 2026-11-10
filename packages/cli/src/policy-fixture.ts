@@ -2,9 +2,11 @@
 // copied, for the reason `thrown-by-fixture.ts` gives: every count in both files' assertions is
 // read off THIS set, so a second copy drifts and each file keeps passing while they stop agreeing.
 
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { and, can, definePermissions, defineRoles } from '@ultimat3/policy';
-import { from, query, registerQuery } from '@ultimat3/query';
+import { from, query } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 
 /**
  * The row the fixture's two reads return, over an empty source: `x policy` describes a query and

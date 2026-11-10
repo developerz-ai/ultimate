@@ -6,7 +6,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
 import { clearRegistry, entity, text } from '@ultimat3/entity';
 import { allow } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
 import { primitiveFromQuery } from './projectable';
 

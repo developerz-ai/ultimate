@@ -1,6 +1,6 @@
 // The mail catalog is nobody's to register. `registerMailCatalog()` had **zero** production
 // callers — only these tests — so every `mail.*` string in every running Ultimate app rendered
-// `⟦mail.welcome.subject⟧`: the same defect as issue #249, one package over, and invisible for the
+// `⟦mail.footer.unsubscribe⟧`: the same defect as issue #249, one package over, and invisible for the
 // same reason. Importing this package is now what installs the strings.
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -15,8 +15,8 @@ afterEach(() => {
 
 describe('the mail catalog', () => {
   test('resolves in a process that called nothing at all', () => {
-    expect(translatorFor(DEFAULT_LOCALE)('mail.welcome.subject', { appName: 'Acme' })).toBe(
-      'Welcome to Acme',
+    expect(translatorFor(DEFAULT_LOCALE)('mail.footer.help')).toBe(
+      'Questions? Reply to this email and a human will answer.',
     );
     expect(translatorFor(DEFAULT_LOCALE)('mail.footer.unsubscribe')).toBe('Unsubscribe');
   });
@@ -36,8 +36,8 @@ describe('the mail catalog', () => {
     // The base layer merges UNDER what is registered, so the one key this app cared enough to
     // translate cannot be reverted by anything that installs later.
     expect(translatorFor(DEFAULT_LOCALE)('mail.footer.unsubscribe')).toBe('Désabonnement');
-    expect(translatorFor(DEFAULT_LOCALE)('mail.welcome.subject', { appName: 'Acme' })).toBe(
-      'Welcome to Acme',
+    expect(translatorFor(DEFAULT_LOCALE)('mail.footer.help')).toBe(
+      'Questions? Reply to this email and a human will answer.',
     );
   });
 });

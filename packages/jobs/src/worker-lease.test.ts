@@ -60,7 +60,7 @@ async function parkOne(heartbeat: () => Promise<void>): Promise<Parked> {
     name: 'leasedJob',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'leased:1',
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: async () => {
       started();
       await parked;

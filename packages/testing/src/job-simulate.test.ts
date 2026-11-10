@@ -22,7 +22,7 @@ const declare = (run: JobHandle<Order>['run']): JobHandle<Order> => {
     input: t.object({ id: t.string }),
     tenant: 'none',
     idempotencyKey: (input) => `order:${input.id}`,
-    retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: 'none' },
     run,
   });
 };

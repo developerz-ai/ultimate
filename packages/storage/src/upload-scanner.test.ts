@@ -26,7 +26,8 @@ function chunked(bytes: Uint8Array, size: number): ReadableStream<Uint8Array> {
 
 const scan = (scanner: UploadScanner, bytes: Uint8Array, size = bytes.byteLength) =>
   scanner.scan({
-    key: 'org/o/pending/u.txt',
+    key: 'org/o/pending/scan/u.txt',
+    pendingKey: 'org/o/pending/u.txt',
     size: bytes.byteLength,
     contentType: 'text/plain',
     body: chunked(bytes, Math.max(1, size)),

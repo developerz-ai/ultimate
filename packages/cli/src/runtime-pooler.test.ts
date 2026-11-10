@@ -3,7 +3,7 @@
 // that applies migrations is refused for whatever ROLE the shell happens to have.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import type { DbClient, PostgresClient } from '@ultimat3/db';
 import { dbUnavailable, POOL_PROFILES, setDbClient } from '@ultimat3/db';
 import type { DevServices } from './runtime-bindings';
@@ -90,10 +90,10 @@ describe('reportStatementBound', () => {
   const logged: Record<string, unknown>[] = [];
   const capture = (): void => {
     logged.length = 0;
-    const previous = setLogSink((line, level) => {
+    const releaseLogSink = installLogSink((line, level) => {
       logged.push({ ...(JSON.parse(line) as Record<string, unknown>), level });
     });
-    restoreSink = () => setLogSink(previous);
+    restoreSink = () => releaseLogSink();
   };
   let restoreSink = (): unknown => undefined;
   afterEach(() => {

@@ -15,14 +15,15 @@
 // that decision.
 
 import { currentWriteOrigin, type EntityRowOp, instrument, subscribed } from '@ultimat3/core';
-import { currentTx, expectedQueryLoop } from '@ultimat3/db';
+import { expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
-import { memoryJournal } from './memory-journal';
 import { MAX_PAGE_SIZE } from './plan';
 import { readRecorder } from './read-capture';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { sealedFields } from './sealed';
+import { searchMirroredRepo } from './search-mirrored-repo';
 import type { IdOf, RowPatch } from './types';
+import { afterCommit } from './write-commit';
 
 /**
  * A committed row change is `entity.row` on the bus (`EntityRowEvent`, core's shape): `before` and
@@ -139,8 +140,11 @@ const beforeAllOf = async <Row>(
  * rows under test are the rows the app reads, which is the whole reason `defaultDriver()` is
  * exported at all.
  */
-export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Repo<Row> {
+export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): Repo<Row> {
   const name = entity.$name;
+  // Beneath the observer, so a searchable entity's writes reach an external index whether or not
+  // anything hears `entity.row` (`search-mirrored-repo.ts`).
+  const repo = searchMirroredRepo(entity, driven);
   const sealed = sealedFields(entity).map((field) => field.property);
 
   /**
@@ -157,19 +161,10 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
   };
 
   /**
-   * Reported at COMMIT. The write may sit in a transaction — the caller's `options.tx`, the
-   * ambient `withTransaction` a Postgres repository joins, or the ambient memory one — and a change reported before COMMIT
-   * put a row in a live query that a rollback then erased (plan 101, 06 m). Outside a transaction
-   * the write is already durable, so it is reported at once. The write origin is read NOW: it is
-   * the request's, and the commit callback may run outside that request's scope.
+   * Reported at COMMIT (`write-commit.ts`): a change reported before COMMIT put a row in a live
+   * query that a rollback then erased (plan 101, 06 m). The write origin is read NOW: it is the
+   * request's, and the commit callback may run outside that request's scope.
    */
-  const afterCommit = (options: RepoOptions | undefined, report: () => void): void => {
-    const tx: { onCommit?(effect: () => void): void } | undefined =
-      options?.tx ?? currentTx() ?? memoryJournal();
-    if (tx?.onCommit === undefined) report();
-    else tx.onCommit(report);
-  };
-
   const emit = (
     op: EntityRowOp,
     before: unknown,

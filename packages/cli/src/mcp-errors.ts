@@ -406,6 +406,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_WORKSPACE_NAME_TAKEN: 'x g app admin-app --dry-run --json',
   X_PARTITIONS_UNMAINTAINED:
     'x verify --only manifest --json   # after exporting partitions() from @ultimat3/jobs in a module listed under jobs in apps/web/api/index.ts, and its .schedule under tasks',
+  X_BOUNDARY_LOADER_IMPORT:
+    'export const api = defineApi({ actions: [yourActions], queries: [yourQueries] });   # in apps/web/api/index.ts — list the module there, then delete the loader import',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

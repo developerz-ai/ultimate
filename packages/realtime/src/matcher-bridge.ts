@@ -10,7 +10,7 @@ import {
   changedColumns,
   isParsedJsonObject,
   type JsonObject,
-  type Row,
+  type LiveRow,
   type RowPatch,
 } from './json';
 
@@ -38,7 +38,7 @@ export const NO_CHANGE: BridgeResult = { patches: [], refill: false };
 export interface IncrementalMatcher {
   readonly entities: readonly string[];
   /** `rows` is the query's current *pre-policy* window, shared by every subscriber of the qid. */
-  match(change: ChangeEvent, rows: readonly Row[]): BridgeResult;
+  match(change: ChangeEvent, rows: readonly LiveRow[]): BridgeResult;
 }
 
 /** The cheap pre-filter. Pure, and the only thing that runs for a change nobody subscribed to. */
@@ -58,7 +58,7 @@ export function bridgeChange(
   shape: SubscriptionShape,
   incremental: IncrementalMatcher,
   change: ChangeEvent,
-  rows: readonly Row[],
+  rows: readonly LiveRow[],
 ): BridgeResult | null {
   if (!canAffect(shape, change)) return null;
   const result = incremental.match(change, rows);
@@ -94,7 +94,7 @@ export function matcherFor(live: LiveQuery, projection?: () => Projection): Incr
       if (change.op === 'truncate') return { patches: [], refill: true };
       const row = change.after ?? change.before;
       if (!row) return NO_CHANGE;
-      const patches = match<Row>(live.name, live.shape, rows, {
+      const patches = match<LiveRow>(live.name, live.shape, rows, {
         entity: change.table,
         op: change.op,
         row,
@@ -116,7 +116,7 @@ export function matcherFor(live: LiveQuery, projection?: () => Projection): Incr
 export type Projection = ReadonlySet<string> | undefined;
 
 /** The projection a window's own rows describe. Empty window, no answer. */
-export const projectionOf = (rows: readonly Row[]): Projection =>
+export const projectionOf = (rows: readonly LiveRow[]): Projection =>
   rows[0] === undefined ? undefined : new Set(Object.keys(rows[0]));
 
 /**
@@ -141,9 +141,9 @@ export function narrowRow(row: JsonObject, projection: Projection): JsonObject {
   return out;
 }
 
-/** `Patch<Row>` (add/update/remove/refill, positional) -> the wire's `RowPatch`. */
+/** `Patch<LiveRow>` (add/update/remove/refill, positional) -> the wire's `RowPatch`. */
 export function toBridgeResult(
-  patches: readonly Patch<Row>[],
+  patches: readonly Patch<LiveRow>[],
   change: ChangeEvent,
   projection?: Projection,
 ): BridgeResult {
@@ -184,7 +184,7 @@ export function toBridgeResult(
 }
 
 /** Applies patches to the shared pre-policy window so the matcher sees the current result set. */
-export function applyToWindow(rows: readonly Row[], patches: readonly RowPatch[]): Row[] {
+export function applyToWindow(rows: readonly LiveRow[], patches: readonly RowPatch[]): LiveRow[] {
   const next = [...rows];
   for (const patch of patches) {
     const index = next.findIndex((row) => row.id === patch.id);
@@ -194,7 +194,7 @@ export function applyToWindow(rows: readonly Row[], patches: readonly RowPatch[]
     }
     if (patch.row === null) continue;
     const current = index >= 0 ? next[index] : undefined;
-    const merged: Row = { ...(current ?? {}), ...patch.row, id: patch.id };
+    const merged: LiveRow = { ...(current ?? {}), ...patch.row, id: patch.id };
     if (index >= 0) next[index] = merged;
     else if (patch.index !== undefined) next.splice(patch.index, 0, merged);
     else next.push(merged);

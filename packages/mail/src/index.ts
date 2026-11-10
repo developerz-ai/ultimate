@@ -115,27 +115,5 @@ export { renderMail, textOf } from './render';
 export type { RetainedMime, RetainedMimeEntry, RetainMimeOptions } from './retain-mime';
 export { DEFAULT_RETAIN_MIME_MAX_BYTES, RETAIN_MIME_CEILING_BYTES } from './retain-mime';
 export type { SmtpConnector, SmtpStream } from './smtp-client';
-export {
-  FRAMEWORK_MAILS,
-  type InviteInput,
-  inviteInput,
-  inviteMail,
-  MFA_METHODS,
-  type MfaEnrolledInput,
-  mfaEnrolledInput,
-  mfaEnrolledMail,
-  type ResetPasswordInput,
-  resetPasswordInput,
-  resetPasswordMail,
-  type SecurityAlertInput,
-  securityAlertInput,
-  securityAlertMail,
-  type VerifyEmailInput,
-  verifyEmailInput,
-  verifyEmailMail,
-  type WelcomeInput,
-  welcomeInput,
-  welcomeMail,
-} from './templates';
 export type { MailRendered, MailTransform, MailTransformMeta } from './transform';
 export { mailTransform, setMailTransform } from './transform';

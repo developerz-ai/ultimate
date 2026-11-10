@@ -4,8 +4,8 @@
 // The rows are `route-table.ts`'s — the one builder the MCP dev tool `routes.list` reads too — so
 // the CLI keeps no second table.
 
+import { SURFACES } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
-import { SURFACES } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { routesSpec } from './cmd-routes-spec';
@@ -20,7 +20,7 @@ import { plainAppRoutes, renderRouteRows, routeRows } from './route-table';
  * A closed set, because the filter was a bare `===`: `x routes --surface App` and `--surface pages`
  * matched no row and reported `0 routes` with exit 0, which is the same output an app with no
  * routes gives — so a typo and an empty route table are indistinguishable, and only one of them is
- * a bug the caller can see. `SURFACES` is `@ultimat3/render`'s own declaration of what a surface
+ * a bug the caller can see. `SURFACES` is `@ultimat3/core`'s one declaration of what a surface
  * is; a list restated here would be a second answer to it (`x g --surface` is `generate-kinds.ts`'s
  * narrower question — which surface to SCAFFOLD onto — and takes site|app alone).
  */

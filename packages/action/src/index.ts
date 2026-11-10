@@ -255,17 +255,18 @@ export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';
  * `@ultimat3/core`'s — imported from there, so `query` reads the same walk through one import path.
  */
 export { guardAction, guardActionBeforeInput } from './policy-gate';
+// `registerAction`/`registerActions` are deliberately absent: `defineApi` is an app's one
+// registration path, and `x`'s loader reaches them through `@ultimat3/action/loader`.
 export {
   actionHttpPath,
   configureActionPathStyle,
   describeActions,
   getAction,
   listActions,
-  registerAction,
-  registerActions,
   resetActions,
 } from './registry';
 export { requestDeadlineMs } from './request-deadline';
+export { stableStringify } from './stable';
 /**
  * What a named tool passes on its way to `invoke`, on either tool surface. `@ultimat3/mcp`'s
  * `mcpConfirmations` registers one and `@ultimat3/ai`'s adapter reads it: one tier down from both.

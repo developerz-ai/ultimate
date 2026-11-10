@@ -71,7 +71,7 @@ describe('unit · x jobs show, for an operator', () => {
         "  tenant: 'none',",
         '  input: t.object({ account: t.string }),',
         "  idempotencyKey: ({ account }) => 'sync:' + account,",
-        "  retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: false },",
+        "  retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: 'none' },",
         "  concurrency: { key: ({ account }) => account, limit: 1, whenBusy: 'fail' },",
         '  run: () => Promise.resolve(),',
         '});',

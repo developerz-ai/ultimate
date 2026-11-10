@@ -8,7 +8,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { rmSync } from 'node:fs';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import { can, clearPermissions } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { generateAppMigration } from './db-generate';
 import { replicaIdentityTables } from './db-subscribes';
 

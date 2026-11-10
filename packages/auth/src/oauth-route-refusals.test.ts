@@ -2,7 +2,7 @@
 // provider's OAuth error fields quoted. Split out of `oauth-route.test.ts` at the file ceiling.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
@@ -20,19 +20,19 @@ let auth: Auth;
 
 let logged: string[];
 
-let previousSink: ReturnType<typeof setLogSink>;
+let releaseLogSink: () => void;
 
 beforeEach(() => {
   adapter = memoryAuthAdapter();
   auth = defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github', 'google'] });
   logged = [];
-  previousSink = setLogSink((line) => {
+  releaseLogSink = installLogSink((line) => {
     logged.push(line);
   });
 });
 
 afterEach(() => {
-  setLogSink(previousSink);
+  releaseLogSink();
 });
 
 /** The developer's half of the last refusal: its cause and fix, where only an operator reads. */

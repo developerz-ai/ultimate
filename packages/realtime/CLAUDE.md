@@ -1,6 +1,7 @@
 # @ultimat3/realtime — agent notes
 
 Tier 3 package. Channels, live queries, local-first sync. One protocol for all three.
+A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../../docs/history/realtime-rules.md).
 
 ## Boundary
 
@@ -21,12 +22,16 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   link). `packages/cli/src/realtime-browser-barrel.test.ts` bundles a `useLive`-only entry;
   `barrel-split.test.ts` refuses a name exported from both. `./boot` and `./sync-worker` are the page
   boot and the SharedWorker entry; `./adapter` the bus driver's port plus the boot's installer.
-- **`error-titles.ts` holds the codes, titles and `registerErrorCodes()`**; `errors.ts` the server
-  refusals, `page-errors.ts` the browser ones, `realtime-error.ts` the base class (TDZ),
-  `replication-errors.ts` Postgres. All re-exported from `./errors`. A hook's chunk never loads
-  `errors.ts` (`page-errors-bundle.test.ts`).
-- **`sideEffects` is `["./src/error-titles.ts"]`**, imported bare by the barrel (`refusalError` and
-  `page-errors.ts` title by code); never `false` or absent.
+- **`error-titles.ts` holds the PAGE codes and titles** (every code a browser raises or receives on
+  the wire), **`error-titles-server.ts` the server-only ones** (replication, topology, producer
+  conflict — never on the wire); `errors.ts` composes `REALTIME_OWNED_ERROR_CODES` /
+  `REALTIME_ERROR_TITLES` from both. `page-errors.ts` the browser refusals, `realtime-error.ts` the
+  base class (TDZ), `replication-errors.ts` Postgres; all re-exported from `./errors`. A hook's chunk
+  never loads `errors.ts` (`page-errors-bundle.test.ts`). A new code: `bun run new-error-code …
+  --browser | --server-only`, exactly one (`scripts/lib/error-code-realm.ts`).
+- **`sideEffects` is `["./src/error-titles.ts", "./src/error-titles-server.ts"]`**; the server one is
+  imported bare by `errors.ts` and `server.ts`, never a page module (`error-titles.test.ts`: no
+  server title in an island chunk); never `false` or absent.
 - **Every `@ultimat3/realtime/<subpath>` written in shipped source must be a key of `exports`**,
   comments included — `fix-specifier.test.ts`.
 - A browser file imports core from `@ultimat3/core/page` (`packages/core/src/page-bundle.test.ts`).
@@ -75,17 +80,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The row policy sees the WHOLE row from the shared window.** A patch whose row the window does not
   hold is WITHHELD (not denied, not a failure). A delta resume onto an unread entry fills it first
   (`entry.lsn === ''`).
-- **A denial is a decision; everything else is a failure.** `visibleWithPolicy` matches
-  `QueryDeniedError` and rethrows the rest; `subscriber-gate.ts` and `reauthorize` ask
-  `isPolicyDenial(error)`. A failed snapshot raises out of `subscribe`; a failed delivery desyncs that
-  one subscriber; a failed `reauthorize` keeps the subscription, a DENIED one is refused under its sid
-  (`refuseSubscription`) — as is one whose org moved, and a failed re-seat. Failures count as
-  `gateFailures` via `onGateFailed`, never `onRowDenied`.
-- **One serial lane per query id (`WindowLock`) is the only thing that orders a fanout.** `deliver`
-  enters every lane before awaiting any; no fanout takes a second lane; a lane that fails desyncs its
-  own subscribers; lanes chain on a settled shadow of each task. **A change enters only
-  `LiveEntries.targets(table)`** (its table's readers + stale/unread windows; `live-deliver.test.ts`);
-  a lane at `maxLaneDepth` (1,024) SHEDS it: window staled, `changesShed` counted.
+- **A denial is a decision; everything else is a failure** (`isPolicyDenial`): a denied re-check
+  refuses the subscription, a failed one keeps it and counts `gateFailures`. †
+- **One serial lane per query id (`WindowLock`) is the only thing that orders a fanout**; a lane at
+  `maxLaneDepth` (1,024) sheds: window staled, `changesShed` counted. †
 - **Two reads of one entry are ordered by a READ GENERATION**, never an lsn (`QueryEntry.lsn` may be
   `''`): `entry.generation` / `entry.applied`. The lsn guard answers the other question — a read
   that resolved behind a change the fanout already folded.
@@ -109,10 +107,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `live-fanout` tests).
 - **`startLiveReplicator` SUBSCRIBES to `entity.row`/`entity.bulk`**, never a slot: `stop()`
   releases its own; two both hear a write (`live-replicator.test.ts`). Its handlers never throw.
-- **A WINDOW is per TENANT**: `windowId(queryHash(name, input), tenant)` (`live-tenant.ts`; tenant =
-  the subscriber's `actor.orgId`). The read runs `readFor` (`live-definition.ts`): the node's ctx, a
-  service actor carrying ONLY that org — never the subscriber. A cursor naming another window is a cold start; `reauthorize` re-seats a
-  subscription whose actor changed org (`live-tenancy.test.ts`; `docs/history/realtime.md`).
+- **A WINDOW is per TENANT** (`windowId(queryHash, tenant)`, `live-tenant.ts`); the read runs as a
+  service actor carrying ONLY that org, never the subscriber. †
 - **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`** (`subscription-book.ts`);
   reusing one the same socket holds is `X_SUBSCRIPTION_ID_TAKEN`.
 - **`rateLimit:` is spent once per NEW subscription** (`live-spend.ts`).
@@ -231,10 +227,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The page runtime (`page-runtime.ts`) is installed once per page, never in an island**;
   hooks call `installedPage(hook).services`. One socket per page (`page-socket.ts`);
   `browser-socket.ts` holds the only `new WebSocket`. `rescope` clears the store, redials.
-- **One socket per ORIGIN and principal, in a SharedWorker**: `socket-engine.ts` holds it and talks
-  to tabs over `MessagePort`s (`socket-host.ts`'s virtual socket); wants are ref-counted and frames
-  routed; a port silent for `REAP_AFTER_BEATS` is reaped; each tab resubscribes from its OWN cursors.
-  No `SharedWorker` → the in-page host runs the same engine over a `MessageChannel`.
+- **One socket per ORIGIN and principal, in a SharedWorker** (`socket-engine.ts`); no `SharedWorker`
+  → the same engine in-page. †
 - **The socket is READ-ONLY (protocol 3)**. A write is `useMutation`: the twin into the overlay, then
   the stamped pin (`renderedActionPin`) or `POST actionPath(name)`, via `clientTransport`, keyed;
   the answer's records are adopted inside the transport call, before `settle`. An `ack` is only a refusal.
@@ -273,8 +267,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `client-heartbeat.test.ts`; `0` disables): a `hello` plus one subscribe per topic. Two silent
   windows after an UNANSWERED beat close with `4000`. **The node names the beat: `hello.heartbeatMs`** — `Heartbeat.follow`
   per socket; the engine reaps ports on the longer of its own and the node's.
-- **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1** — `policyDelay()` maps a
-  `BackoffPolicy` onto it; `bun run flight-copies` refuses a second curve.
+- **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1** — `policyDelay()` passes a
+  `ReconnectBackoff` (core's `RetryPolicy` minus `attempts`/`timeBudgetMs`) to it; `bun run flight-copies` refuses a second curve.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`monotonic()` for durations).
 
 ## The page boot
@@ -285,6 +279,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `Symbol.for('ultimate.page-boot')`. No boot: islands load its chunk.
 - **An island never carries the outbox**: `boot.ts` builds it; `useMutation`, `useOutbox`, the page socket
   read it through `outbox-slot.ts` after `page.booted`. No boot ⇒ a refused write is rejected, not queued.
+- **The outbox's ceiling is `realtime.maxQueued`**, read by `boot.ts` off `<meta name="ultimate-outbox-max">`.
 
 ## Map
 

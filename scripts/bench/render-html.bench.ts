@@ -40,23 +40,15 @@ function RowView(props: { readonly row: Row }): unknown {
   );
 }
 
-/** The page under test. Exported so the regression test renders exactly what the bench times. */
-export function tablePage(rows: number): unknown {
-  const data = Array.from({ length: rows }, (_, i) => rowOf(i));
-  return h(
-    'main',
-    null,
-    h('h1', null, 'Customers'),
-    h(
-      'table',
-      null,
-      h(
-        'tbody',
-        null,
-        data.map((row) => h(RowView, { row })),
-      ),
-    ),
-  );
+/**
+ * The page under test. Exported so the regression test renders exactly what the bench times.
+ * `probe` runs as the tbody's last child — after every row, before the walk returns — and renders
+ * nothing, so the markup is the same with or without it.
+ */
+export function tablePage(rows: number, probe?: () => null): unknown {
+  const data: unknown[] = Array.from({ length: rows }, (_, i) => h(RowView, { row: rowOf(i) }));
+  if (probe !== undefined) data.push(probe);
+  return h('main', null, h('h1', null, 'Customers'), h('table', null, h('tbody', null, data)));
 }
 
 /**
@@ -118,10 +110,9 @@ export async function benchRender(rows: number, runs = 5): Promise<RenderBenchRe
 }
 
 /**
- * How far one render grows the heap, in MiB: the page's own JSX tree (~29 MiB at 50k rows), the
- * output, and every frame, closure and promise the walk held at its peak. Only true as the FIRST
- * render in a process — `heapSize()` is the committed heap, which a collection never hands back —
- * so `heapInFreshProcess` is the way to ask.
+ * How far one render grows the heap, in MiB: live memory plus whatever garbage the collector had not
+ * reached yet, so it swings with GC timing (≈50 MiB here, ≈100 under a smaller `forceRAMSize`).
+ * The bench reports it; the regression test holds `liveAtEnd`, which does not swing.
  */
 export async function heapGrowth(rows: number): Promise<number> {
   const page = tablePage(rows);
@@ -131,27 +122,51 @@ export async function heapGrowth(rows: number): Promise<number> {
   return round((heapSize() - before) / 1024 / 1024, 1);
 }
 
-const HEAP_FLAG = 'heap-only';
+/**
+ * What the walk holds LIVE once every row is visited, in MiB: a full collection runs inside the
+ * walk, at its last node, so the reading is the output so far plus anything the walker keeps per
+ * node — a frame or promise per pending subtree — and no garbage, whatever the GC's timing.
+ */
+export async function liveAtEnd(rows: number): Promise<number> {
+  let peak = 0;
+  const page = tablePage(rows, () => {
+    Bun.gc(true);
+    peak = heapSize();
+    return null;
+  });
+  Bun.gc(true);
+  const before = heapSize();
+  await renderToHtml(page);
+  return round((peak - before) / 1024 / 1024, 1);
+}
 
-export function heapInFreshProcess(rows: number): number {
-  const run = Bun.spawnSync([
-    process.execPath,
-    import.meta.path,
-    `--${HEAP_FLAG}`,
-    `--rows=${rows}`,
-  ]);
+const HEAP_FLAG = 'heap-only';
+const LIVE_FLAG = 'live-only';
+
+function inFreshProcess(flag: string, rows: number): number {
+  const run = Bun.spawnSync([process.execPath, import.meta.path, `--${flag}`, `--rows=${rows}`]);
   return Number(run.stdout.toString().trim());
 }
+
+/** `heapGrowth` is only true as the first render in a process: earlier garbage would count. */
+export const heapInFreshProcess = (rows: number): number => inFreshProcess(HEAP_FLAG, rows);
+
+export const liveInFreshProcess = (rows: number): number => inFreshProcess(LIVE_FLAG, rows);
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const asked = args.flags.get('rows');
   const counts = typeof asked === 'string' ? [Number(asked)] : [10_000, 50_000];
   if (args.flags.get(HEAP_FLAG) === true) console.log(await heapGrowth(counts[0] ?? 0));
+  else if (args.flags.get(LIVE_FLAG) === true) console.log(await liveAtEnd(counts[0] ?? 0));
   else {
     const results = [];
     for (const rows of counts) {
-      results.push({ ...(await benchRender(rows)), heapMiB: heapInFreshProcess(rows) });
+      results.push({
+        ...(await benchRender(rows)),
+        heapMiB: heapInFreshProcess(rows),
+        liveMiB: liveInFreshProcess(rows),
+      });
     }
     const data = { box: boxFacts(Bun.env), results };
     const out = args.flags.get('out');

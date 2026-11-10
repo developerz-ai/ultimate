@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"
 owner: sebi
-percent: 55
-current_focus: "sweep 8: slice 21 part A (adapter ports, setter deletions, runtime.ts), testing DX (stubs, factories), DX enforcement"
+percent: 66
+current_focus: "wave G: slice 29 deletions (D1, D5–D9, D11, N1, setLogSink, noopMetricExporter, storage quarantine) + slice 27 trust docs, with the wave F carry-overs (worker/scheduler prebuilt registry, deleteWhere search mirroring, AuditPrimitive 'job', shared DER walk)"
 slices:
   - file: 28-open-prs.md
     tier: 5
@@ -115,38 +115,42 @@ slices:
   - file: 20-observability.md
     tier: 0
     sweep: "7"
-    status: complete
-    percent: 100
+    status: in_progress
+    percent: 95
+    notes: "bus, semconv and every other slot replaced (#1038); setLogSink (packages/core/src/logger.ts) still exported as of #1043, deleted in wave G (g-logsink)"
   - file: 21-adapter-wiring.md
     tier: 0
     sweep: "8"
-    status: in_progress
-    percent: 20
-    notes: "part A in wave D (adapter ports, setter deletions, runtime.ts); part B in sweep 10"
+    status: complete
+    percent: 100
+    notes: "part A #1040 (26 ports, setters deleted, runtime.ts, adapterSlot); part B #1042 (X_ADAPTER_PORT_INCOMPLETE guard, ./adapter subpaths, wiki/Adapters.md generated); #1043 added embedder, semanticCache, searchIndex, uploadScanner, smsTransport ports (31 rows). Deferred: setLogSink → slice 20; toHaveBeenCalledWith checked at runtime, not compile time"
   - file: 19-conformance-suites.md
     tier: 5
     sweep: "9"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
+    notes: "9a + 9b in #1042: 26 of 26 ports then (31 after #1043, each with its suite), memory in unit + real backends in live, each with a broken adapter that must fail; suites live at @ultimat3/testing/conformance, not the . barrel the slice named. Deferred: ErrorGroups/McpConfirmation suites run on reference stores only (testing cannot import admin/mcp)"
   - file: 22-scale.md
     tier: 2
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
+    notes: "#1043: batched app scan (5k modules 2.19 s → 1.39 s), prebuilt registry for web/sync/replicator, x verify --changed (drift skipped unless reached), modulepreload, x g skips the app load, M1–M4 (x g app|package, X_APP_ROOT_NESTED, one image per repo), Redis invalidation bus, partitionBy, 4 committed benches. Deferred: worker/scheduler prebuilt registry (wave G, g-boot); B4 per-route island grouping is design only, not built"
   - file: 23-feature-gaps.md
     tier: 1
     sweep: "12"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 85
+    notes: "#1043 shipped 9 of 10 rows: GDPR (as subjectExport/subjectErase + .personalData(), not accountExport/accountErase), withLock, UploadScanner, SearchIndex + reindex(), SMS, pdf(), variant(), SAML (built, no dependency), ledger(). Not built and not reported in #1043: versioned() record history (no versioned* file in packages/entity/src). examples/dummy uses ledger, pdf, reindex, subjectExport/Erase only; withLock, uploadScanner, variant(), smsChannel, SAML, partitionBy have no reference usage yet"
   - file: 29-v31-deletions.md
     tier: 0
     sweep: "14"
-    status: not_started
+    status: in_progress
     percent: 0
   - file: 27-trust-docs.md
     tier: 5
     sweep: "16"
-    status: not_started
+    status: in_progress
     percent: 0
   - file: 39-v31-release.md
     tier: 5
@@ -209,6 +213,6 @@ slices:
     sweep: "18"
     status: not_started
     percent: 0
-evidence: ["#1035", "#1037", "#1038"]
+evidence: ["#1035", "#1037", "#1038", "#1040", "#1042", "#1043"]
 notes: "Sweeps 10 (19 part 9b + 21 part B), 13 (23 part 12b) and 15 (29 D10) carry second halves of slices listed above under their first sweep. Adopter letter mapping is off-tree with the owner."
-last_updated: 2026-11-09
+last_updated: 2026-11-10

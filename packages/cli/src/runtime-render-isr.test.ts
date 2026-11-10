@@ -5,7 +5,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { invalidateTags, isolateGraph, tag } from '@ultimat3/cache';
 import type { LogSink } from '@ultimat3/core';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, h, registerRoute } from '@ultimat3/render';
 import { isrController } from '@ultimat3/render/server';
@@ -185,7 +185,7 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
     const collect: LogSink = (line) => {
       lines.push(line);
     };
-    const previous = setLogSink(collect);
+    const releaseLogSink = installLogSink(collect);
     try {
       // The stale copy answers this one; the regeneration behind it finds the redirect.
       expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
@@ -196,7 +196,7 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
       }
       expect(status).toBe(302);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     // A redirect is an outcome, not a failed regeneration: nothing is thrown into the controller.
     expect(lines.filter((line) => line.includes('isr.regenerate.failed'))).toEqual([]);

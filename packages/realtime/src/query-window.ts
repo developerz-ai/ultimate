@@ -4,7 +4,7 @@
 
 import type { LiveReadPhase } from '@ultimat3/query';
 import { WindowReadTimeoutError } from './errors';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import type { IncrementalMatcher, SubscriptionShape } from './matcher-bridge';
 import type { Scheduler } from './thundering-herd';
@@ -39,7 +39,7 @@ export interface QueryEntry {
   /** Told to the client on every snapshot: the identity scope its rows belong under. */
   readonly rowEntity: string | null;
   /** The record key a row travels under; `null` = its `id` (a plain table). */
-  readonly rowKey: ((row: Row) => string) | null;
+  readonly rowKey: ((row: LiveRow) => string) | null;
   readonly shape: SubscriptionShape;
   readonly matcher: IncrementalMatcher;
   readonly subscribers: Map<string, LiveSubscription>;
@@ -47,7 +47,7 @@ export interface QueryEntry {
    * The shared, *pre-policy* result window. One per query id, bounded by the query's `limit`, and
    * the reason the matcher can run once for N subscribers: the read is shared, the authz is not.
    */
-  rows: readonly Row[];
+  rows: readonly LiveRow[];
   lsn: string;
   /**
    * This window is known to have missed at least one change, so patching it would compound the
@@ -197,7 +197,7 @@ export async function fillWindow(entry: QueryEntry): Promise<FilledWindow> {
  * filled — its patch history is still true, and flooring it would evict every other subscriber's.
  */
 export interface FilledWindow {
-  readonly rows: readonly Row[];
+  readonly rows: readonly LiveRow[];
   readonly lsn: string;
   readonly landed: 'first' | 'forced' | null;
 }

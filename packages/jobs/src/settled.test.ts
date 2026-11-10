@@ -39,7 +39,7 @@ const syncJob = <R>(
     tenant: ({ orgId }) => orgId,
     input: passthrough<SyncInput>(),
     idempotencyKey: ({ account }) => `sync:${account}`,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     ...definition,
   });
 };
@@ -119,7 +119,7 @@ describe('onSettled', () => {
     const driver = memoryJobDriver({ clock });
     const seen: JobSettled<SyncInput, unknown>[] = [];
     const handle = syncJob({
-      retry: { attempts: 2, jitter: false, delay: 1, backoff: 'fixed' },
+      retry: { attempts: 2, jitter: 'none', delay: 1, backoff: 'fixed' },
       run: async ({ step, attempt }) => {
         if (attempt === 1) throw new TypeError('the site is down');
         await step.sleep('nap', 1_000);
@@ -153,7 +153,7 @@ describe('onSettled', () => {
     const driver = memoryJobDriver({ clock });
     const seen: JobSettled<SyncInput, unknown>[] = [];
     const handle = syncJob({
-      retry: { attempts: 1, jitter: false, deadLetter: false },
+      retry: { attempts: 1, jitter: 'none', deadLetter: false },
       // A parse refusal is the framework's own coded error — and it leaves no input behind.
       input: {
         '~standard': {

@@ -30,7 +30,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./adapter": "./src/adapter.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./loader": "./src/loader.ts"
   },
   "files": [
     "src",

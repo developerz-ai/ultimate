@@ -66,7 +66,7 @@ export function itemJob(
     tenant: 'none',
     input: passthrough<ItemInput>(),
     idempotencyKey: ({ item }) => `item:${item}`,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     ...definition,
   });
 }

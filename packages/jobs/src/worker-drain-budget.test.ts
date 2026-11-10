@@ -67,7 +67,7 @@ async function rig(options: { jobMs: number }): Promise<Rig> {
     name: 'slowJob',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `slow:${n}`,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: async ({ ctx }) => {
       ctx.signal.addEventListener(
         'abort',

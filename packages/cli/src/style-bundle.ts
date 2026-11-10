@@ -12,8 +12,8 @@
 // Bun ships no path API; `join` is the filesystem side of writing a chunk into a static export.
 // why: Bun exposes no path API — nothing native joins a directory to a URL-shaped path.
 import { join } from 'node:path';
+import { SURFACES } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
-import { SURFACES } from '@ultimat3/render';
 import { contentHash, stylesFor, stylesheetsRevision } from '@ultimat3/render/server';
 
 /**

@@ -8,7 +8,6 @@
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';
 import { loadAppConfig } from './app-config-load';
-import { loadPrebuiltApp } from './app-load-prebuilt';
 import { armFailureCapture } from './failure-capture-boot';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
@@ -148,14 +147,11 @@ async function bootRoles(boot: {
   adoptPrebuiltStyles(options.root);
   const bootBuilds = watchBootBuilds();
   // Importing the app's modules IS the registration: every route, action and job below is
-  // whatever this call put in the registries — for THIS role (`role-load.ts`). A role that imports
-  // everything imports the image's prebuilt registry when it has one that is the app on disk
-  // (`x build --target prebuilt`), and scans only when it has not: the scan is what grew a pod's
-  // start with the app's file count. A background role's load is the document graph's decision,
-  // made per module, so it keeps its scan.
-  const loaded =
-    (roleLoadFor(role) === 'everything' ? await loadPrebuiltApp(options.root) : undefined) ??
-    (await loadAppForRole(options.root, role));
+  // whatever this call put in the registries — for THIS role (`role-load.ts`). Every role imports
+  // the image's prebuilt registry when it has one that is the app on disk (`x build --target
+  // prebuilt`) — a worker its background subset — and scans only when it has not: the scan is
+  // what grew a pod's start with the app's file count.
+  const loaded = await loadAppForRole(options.root, role);
   // A module that would not import registered nothing — its routes, actions, policies and jobs
   // are simply absent — so each is logged with its own cause, and then the role refuses to serve.
   for (const finding of loaded.findings) {

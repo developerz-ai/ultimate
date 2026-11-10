@@ -4,7 +4,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { ctxOf, probeDatabaseName, setLogSink, sweepProbeDatabases } from '@ultimat3/core';
+import { ctxOf, installLogSink, probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
@@ -88,13 +88,13 @@ describe.skipIf(!hasPooler)('live · the worker through a transaction pooler', (
 
   test('the wake stays off, says so once, and an idle worker still starts the job on the poll', async () => {
     const unverified: string[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       const parsed = JSON.parse(line) as { readonly msg?: string; readonly event?: string };
       const event = parsed.msg ?? parsed.event;
       if (event === 'jobs.wake.unverified') unverified.push(event);
     });
     cleanups.push(async () => {
-      setLogSink(previous);
+      releaseLogSink();
     });
     const { promise: reported, resolve: heard } = Promise.withResolvers<void>();
     let settled = false;

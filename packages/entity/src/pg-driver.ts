@@ -13,6 +13,7 @@ import {
   db,
   refuseAbandoned,
   type SqlFragment,
+  sql,
   withStatementAttribution,
 } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
@@ -40,6 +41,8 @@ import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, UpsertArgs } from './repo';
 import { rowKey } from './row-key';
 import { sealedRepo } from './sealed-repo';
+import { deletionStamp } from './search-index-version';
+import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowWrite } from './types';
@@ -114,6 +117,17 @@ export const postgresRepo = <Row>(
   const narrowed = (batch: readonly RowWrite<Row>[]): readonly Row[] =>
     batch.map((row) => narrowRow<Row>(entity.$columns, row));
 
+  /**
+   * A soft delete's SET list: the stamp, plus a searchable entity's version — advanced past the
+   * stored one in the statement (`pg-write-sql.ts`), so a deletion is a newer version too.
+   */
+  const softDeletion = (): ReadonlyMap<string, unknown> =>
+    new Map(
+      Object.entries(
+        deletionStamp(entity as EntityCore<unknown>, SOFT_DELETE_COLUMN, entityNow()),
+      ).map(([property, value]) => [physicalName(entity, property), value]),
+    );
+
   const one = async (plan: QueryPlan, args: FindManyArgs): Promise<Row | null> => {
     const [found] = await client().query<PhysicalRow>(
       selectStatement(entity, plan, shapeOf(args), 1),
@@ -126,20 +140,54 @@ export const postgresRepo = <Row>(
    * delete hides the row without losing it; the column's presence is the switch, and `shapeOf({})`
    * keeps the `deleted_at is null` clause so a second call cannot move an existing stamp forward.
    *
-   * No `returning`: both callers send this through `execute()` and read a count, so the rows would
-   * be a whole tenant's table crossing the wire for nobody — the same cost `updateWhere` used to
-   * pay unconditionally, on the sibling path that looked like the one doing it right.
+   * `returning` only when the search mirror asked for the rows, and only up to the judged bound
+   * (`counted`): otherwise both callers read a count, and the rows would be a whole tenant's table
+   * crossing the wire for nobody.
    */
-  const removal = (plan: QueryPlan): SqlFragment =>
+  /** What a removal matches: the live rows of a soft delete, every row of a hard one. */
+  const removalShape = (): ReadShape => shapeOf({ includeDeleted: !entity.$softDelete });
+
+  const removal = (plan: QueryPlan, returning: boolean): SqlFragment =>
     entity.$softDelete
-      ? updateStatement(
-          entity,
-          plan,
-          new Map([[physicalName(entity, SOFT_DELETE_COLUMN), entityNow()]]),
-          shapeOf({}),
-          false,
-        )
-      : deleteStatement(entity, plan);
+      ? updateStatement(entity, plan, softDeletion(), shapeOf({}), returning)
+      : returning
+        ? sql`${deleteStatement(entity, plan)} returning *`
+        : deleteStatement(entity, plan);
+
+  /**
+   * A count, or — when the search mirror asked (`search-written-rows.ts`) — the same statement with
+   * `returning *`, its rows handed over and counted. The rows ride only for a searchable entity
+   * under an external index, and only when a count says they fit the judged bound: past
+   * `MAX_ASSERTED_ROWS` the write stays a count and the mirror logs the rows it could not name. A
+   * concurrent writer can drift the count, which moves the bound, never the write.
+   */
+  const counted = async (
+    op: string,
+    plan: QueryPlan,
+    shape: ReadShape,
+    statement: (returning: boolean) => SqlFragment,
+  ): Promise<number> => {
+    const sink = writtenRowsSink();
+    const fits =
+      sink !== undefined &&
+      Number(
+        (
+          await attributed(op, () =>
+            client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
+          )
+        )?.count ?? 0,
+      ) <= MAX_ASSERTED_ROWS;
+    if (sink === undefined || !fits) {
+      return attributed(op, () => writing(() => client().execute(statement(false))));
+    }
+    return attributed(op, () =>
+      writing(async () => {
+        const rows = await client().query<PhysicalRow>(statement(true));
+        sink(rows.map((row) => decodeRow(entity, row)));
+        return rows.length;
+      }),
+    );
+  };
 
   /**
    * Every write goes out through here: the ONE place the request's preloaded rows are dropped (a
@@ -174,7 +222,9 @@ export const postgresRepo = <Row>(
     const statement = updateStatement(entity, plan, values, shape, true);
     return judged(async (send) => {
       const written = await attributed(op, () => writing(() => send.query<PhysicalRow>(statement)));
-      for (const row of written) entity.$assert(decodeRow(entity, row));
+      const decoded = written.map((row) => decodeRow(entity, row));
+      for (const row of decoded) entity.$assert(row);
+      writtenRowsSink()?.(decoded);
       return written.length;
     });
   };
@@ -185,13 +235,8 @@ export const postgresRepo = <Row>(
    */
   const removed = (op: string, plan: QueryPlan): Promise<number> =>
     entity.$softDelete && hasJsOnlyInvariant(entity.$invariants)
-      ? judgedRows(
-          op,
-          plan,
-          new Map([[physicalName(entity, SOFT_DELETE_COLUMN), entityNow()]]),
-          shapeOf({}),
-        )
-      : attributed(op, () => writing(() => client().execute(removal(plan))));
+      ? judgedRows(op, plan, softDeletion(), shapeOf({}))
+      : counted(op, plan, removalShape(), (returning) => removal(plan, returning));
 
   /**
    * The one insert path, for one row or ten thousand: the batch's own column list, split into as
@@ -374,8 +419,9 @@ export const postgresRepo = <Row>(
       // decoded each one, asserted nothing about any of them, and answered with a number.
       // `deleteWhere` was the tell: same predicate, same table, `execute()` and a count.
       if (!hasJsOnlyInvariant(entity.$invariants)) {
-        const statement = updateStatement(entity, plan, values, shape, false);
-        return attributed(op, () => writing(() => client().execute(statement)));
+        return counted(op, plan, shape, (returning) =>
+          updateStatement(entity, plan, values, shape, returning),
+        );
       }
       return judgedRows(op, plan, values, shape);
     },

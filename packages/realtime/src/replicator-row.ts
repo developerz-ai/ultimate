@@ -3,7 +3,7 @@
 // form JSON can carry and the sync node reads it back through the ENTITY's own columns.
 
 import { entityForTable } from '@ultimat3/entity';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 
 const CHUNK = 0x8000;
 
@@ -28,7 +28,7 @@ function fromBase64(text: string): Uint8Array {
  * serialises to `{"0":1,"1":2}`, which nothing reads back, so it crosses as base64. Only a
  * top-level value can be one: `arrayOf()` refuses `bytes()` at declaration.
  */
-export function busRow(row: Row | null): Row | null {
+export function busRow(row: LiveRow | null): LiveRow | null {
   if (row === null) return null;
   let out: Record<string, unknown> | undefined;
   for (const [property, value] of Object.entries(row as Record<string, unknown>)) {
@@ -36,7 +36,7 @@ export function busRow(row: Row | null): Row | null {
     out ??= { ...row };
     out[property] = toBase64(value);
   }
-  return out === undefined ? row : (out as unknown as Row);
+  return out === undefined ? row : (out as unknown as LiveRow);
 }
 
 /**
@@ -52,7 +52,7 @@ export function busRow(row: Row | null): Row | null {
  * its column refuses are all handed back as they arrived — a change that crosses unrevived is the
  * old behaviour; a change dropped is a window that silently diverges.
  */
-export function reviveBusRow(table: string, row: Row | null): Row | null {
+export function reviveBusRow(table: string, row: LiveRow | null): LiveRow | null {
   if (row === null) return null;
   const entity = entityForTable(table);
   if (entity === undefined) return row;
@@ -71,5 +71,5 @@ export function reviveBusRow(table: string, row: Row | null): Row | null {
       // Kept as it arrived — see the function comment.
     }
   }
-  return out as unknown as Row;
+  return out as unknown as LiveRow;
 }

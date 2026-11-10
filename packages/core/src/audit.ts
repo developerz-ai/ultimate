@@ -16,8 +16,12 @@ import type { Ctx } from './context';
  */
 export type AuditOutcome = 'allowed' | 'denied' | 'failed';
 
-/** Which primitive acted — the value of the `ultimate.primitive` span attribute, too. */
-export type AuditPrimitive = 'action' | 'query';
+/**
+ * Which primitive acted — the value of the `ultimate.primitive` span attribute, too. `'job'` is a
+ * job's OWN write (`@ultimat3/jobs`' `subjectErase`); an action a job enqueued is still `'action'`
+ * on surface `'job'`, because the action is what ran.
+ */
+export type AuditPrimitive = 'action' | 'query' | 'job';
 
 /**
  * Which projection ran the attempt: a price change over `http` and one over `mcp` are not the same
@@ -57,9 +61,12 @@ export interface AuditRecord {
    * `x_audit.action` column — a column rename is a data migration, and the value is the same.
    */
   readonly name: string;
-  /** `'action'` (a mutator included — see `mutator`) or `'query'`. A read and a write are not one event. */
+  /**
+   * `'action'` (a mutator included — see `mutator`), `'query'`, or `'job'` for a job's own write.
+   * A read and a write are not one event.
+   */
   readonly primitive: AuditPrimitive;
-  /** True when `mutator()` built it. Always false for a query. */
+  /** True when `mutator()` built it. Always false for a query or a job. */
   readonly mutator: boolean;
   readonly surface: AuditSurface;
   /**

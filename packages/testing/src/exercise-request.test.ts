@@ -3,7 +3,8 @@
 // `request` puts the cookies a cookie-held step needs on it (`@ultimat3/http`'s `withRequestAs`).
 
 import { describe, expect, test } from 'bun:test';
-import { action, invoke, registerActions, t } from '@ultimat3/action';
+import { action, invoke, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import type { Actor } from '@ultimat3/core';
 import { isUltimateError, UltimateError, useContext } from '@ultimat3/core';
 import { useRequestContext, useRequestCookie } from '@ultimat3/http';

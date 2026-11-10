@@ -72,7 +72,7 @@ describe('SocketEngine — the reconnect schedule', () => {
       r.redials.at(-1)?.fn();
       tab.say({ t: 'open', target: b1 });
     }
-    const base = browserBackoff.baseMs;
+    const base = browserBackoff.base;
     expect(r.redials.map((redial) => redial.ms)).toEqual([base, base * 2, base * 4]);
   });
 

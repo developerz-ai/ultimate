@@ -2,7 +2,11 @@
 // live-query registry it fans out through. Split from `index.ts` because `nats` require()s
 // `stream/web` and the WAL decoder is a Postgres client — one barrel carrying both made the browser
 // island realtime promises unbuildable. Every name here has exactly one home; the shared
-// vocabulary (the wire, the errors, `Row`, the backoff) stays on `@ultimat3/realtime`.
+// vocabulary (the wire, the errors, `LiveRow`, the backoff) stays on `@ultimat3/realtime`.
+
+// The server-only codes' titles (`sideEffects`): a process that loads this barrel titles them,
+// whichever class it constructs first.
+import './error-titles-server';
 
 export { type AdvisoryLock, type MemoryAdvisoryLock, memoryAdvisoryLock } from './advisory-lock';
 // ---- the retained change window one node fans out from ------------------------------------------

@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor, Scheduler } from '@ultimat3/core';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import type { Bucket } from './rate-limit';
 import { postgresRateLimitStore } from './rate-limit-postgres';
 import { RATE_LIMIT_STORE_DEADLINE_MS } from './rate-limit-store-deadline';
@@ -27,17 +27,17 @@ function manualSchedule() {
 
 const silent: PgExecutor = { query: () => new Promise(() => undefined) };
 
-let previousSink: ReturnType<typeof setLogSink> | undefined;
+let releaseLogSink: (() => void) | undefined;
 const collect = (): string[] => {
   const lines: string[] = [];
-  previousSink = setLogSink((line) => {
+  releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
   return lines;
 };
 afterEach(() => {
-  setLogSink(previousSink);
-  previousSink = undefined;
+  releaseLogSink?.();
+  releaseLogSink = undefined;
 });
 
 /** Settled or still pending, after every queued microtask has run. */

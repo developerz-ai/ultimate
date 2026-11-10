@@ -18,13 +18,13 @@ export interface EraseAuditInput {
 }
 
 /**
- * `AuditRecord.primitive` is `'action' | 'query'` in core; an erase is a write, so `'action'`,
- * and `surface: 'job'` says which projection ran it — the pair an `agentJob` write records too.
+ * A job ran the erase — no action did — so `primitive: 'job'` on `surface: 'job'`. An `agentJob`
+ * write differs on purpose: there an action ran, so it records `'action'` on surface `'job'`.
  */
 const recordOf = (input: EraseAuditInput, error: unknown, failed: boolean): AuditRecord => ({
   at: input.ctx.now(),
   name: input.job,
-  primitive: 'action',
+  primitive: 'job',
   mutator: false,
   surface: 'job',
   ctx: input.ctx,

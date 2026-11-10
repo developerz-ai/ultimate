@@ -72,9 +72,10 @@ export function nextRetryForError(
   // on top is core's `jitterStatedDelay` — the one rule for a named delay — because an HTTP-date
   // hands every delivery to one receiver the SAME instant, and waking them together is the herd.
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
-  // `jitter: false` is the policy's own decision and is honoured: the bare floor.
+  // `jitter: 'none'` is the policy's own decision and is honoured: the bare floor. `'equal'` and
+  // `'full'` both take the one spread — a stated delay is already a floor, so none is dropped.
   const floor = Math.min(stated, cap);
-  const jittered = (policy.jitter ?? DEFAULT_RETRY.jitter) === true;
+  const jittered = (policy.jitter ?? DEFAULT_RETRY.jitter) !== 'none';
   const delayMs = jittered ? jitterStatedDelay(floor, cap, random) : floor;
   return { ...decision, delayMs, stoppedBy: undefined, classification };
 }

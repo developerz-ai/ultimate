@@ -4,8 +4,9 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf, tryUseContext } from '@ultimat3/core';
-import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
-import type { JsonValue, Row } from './json';
+import { from, type QueryPolicy, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
+import type { JsonValue, LiveRow } from './json';
 import { liveQueryDefinition } from './live-definition';
 
 const allowAll: QueryPolicy = {
@@ -33,7 +34,7 @@ describe('a live snapshot read', () => {
         policy: allowAll,
         live: true,
         sql: ({ orgId }) =>
-          from<Row & { readonly orgId: string }>('posts', async () => {
+          from<LiveRow & { readonly orgId: string }>('posts', async () => {
             seen.push(tryUseContext());
             return [{ id: 'p1', orgId }];
           })

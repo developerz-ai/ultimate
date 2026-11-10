@@ -29,7 +29,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./adapter": "./src/adapter.ts"
+    "./adapter": "./src/adapter.ts",
+    "./loader": "./src/loader.ts"
   },
   "files": [
     "src",

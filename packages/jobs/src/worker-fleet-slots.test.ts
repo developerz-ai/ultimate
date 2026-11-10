@@ -52,7 +52,7 @@ describe('a fleet-slot acquire that rejects', () => {
       name: 'cappedJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'capped',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       concurrency: 3,
       run: () => Promise.resolve(),
     });
@@ -107,7 +107,7 @@ describe('a fleet-slot renewal that answers false', () => {
       name: 'sharedJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'shared',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       concurrency: 1,
       run: ({ ctx }) => {
         started.open();
@@ -174,7 +174,7 @@ describe('a fleet-slot renewal that answers false AFTER the run settled', () => 
       name: 'settledJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'settled',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       concurrency: 1,
       run: () => Promise.resolve(),
     });

@@ -2,7 +2,7 @@
 
 > A full-stack, Bun-only, opinionated web framework: Rails' philosophy on a Bun + Postgres + SolidJS stack, where the primary developer is an AI agent. Everything is one of eight primitives — `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — and one `action` declaration projects into an HTTP route, an OpenAPI operation, a typed client, a job handle, an MCP tool and a test, all on one `policy`. There is never a second authorization system. The CLI binary is `x`; every command and every error takes `--json`, and every framework error carries a stable `X_*` code, a concrete cause and the exact command that fixes it. `x verify` is the single gate: 21 steps, green means shippable. Install with `bunx create-ultimate myapp`.
 
-This file is a link map, not a status page. **It states no version, count or verdict without the command that resolves it** — a number written here goes stale on the next commit and the command does not. `As of 2026-08-20`.
+This file is a link map, not a status page. **It states no version, count or verdict without the command that resolves it** — a number written here goes stale on the next commit and the command does not. `As of 2026-11-10`.
 
 ## Building an app
 
@@ -17,6 +17,14 @@ In an app — its root holds `app.config.ts` and `x.manifest.json` — there is 
 ## Working on this repository
 
 Everything from here down is this checkout's: the framework's packages, its scripts and its own gate.
+
+### Evaluating Ultimate?
+
+- `npm view @ultimat3/core dist.attestations --json` and `bun run scripts/registry-audit.ts --json`: every package on npm at one version, each with an SLSA provenance attestation from the release workflow.
+- `bun run scripts/readme-facts.ts --json`: packages, gate steps, coverage bar and pins, test files and `X_*` codes, read off the tree; the gate refuses a README that disagrees.
+- The `scaffold-smoke` and `deploy-proof` jobs in [ci.yml](https://raw.githubusercontent.com/developerz-ai/ultimate/main/.github/workflows/ci.yml): a fresh scaffold green on its first gate run, and a rolling restart on Kubernetes that drops no request, on every push to `main`.
+- What it is not for, and every stack it gets compared to: [README.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/README.md) "When not to use it", [wiki/Compared.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Compared.md); what is open: [wiki/Known-Gaps.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Known-Gaps.md); who decides: [GOVERNANCE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/GOVERNANCE.md); no outside security audit: [SECURITY.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/SECURITY.md).
+- Swapping a backend without a fork: [wiki/Adapters.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Adapters.md) — every port, its conformance suite and the `runtime.ts` key that installs your adapter.
 
 ### Resolve before you quote
 
@@ -251,7 +259,7 @@ The single documentation source. Source of truth is `wiki/` in this repo, mirror
 - [Auth](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Auth.md): sessions, OAuth, MFA, API keys and service tokens — the output is an `Actor`.
 - [Mail](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Mail.md): one template renders HTML and text, every string a key, sending is a job.
 - [Notify](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Notify.md): `notifier()` as a job factory: fan-out, preference gate, digest window, ledger, inbox.
-- [Storage and uploads](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Storage-And-Uploads.md): named disks, safe keys, the three-call signed upload, quarantine, orphans.
+- [Storage and uploads](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Storage-And-Uploads.md): named disks, safe keys, the three-call signed upload, upload scanning, orphans.
 - [Feature flags](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Feature-Flags.md): permanent switches and temporary ones that cannot be forgotten.
 - [SEO](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/SEO.md): enforced meta, typed JSON-LD, sitemaps, fail-closed robots, feeds, responsive images.
 - [Static assets](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Static-Assets.md).

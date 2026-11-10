@@ -39,7 +39,7 @@ const codeOf = async (work: Promise<unknown>): Promise<string> => {
 };
 
 // Named here because every projection needs a stable name and this file does not boot the app.
-// At boot `registerActions` stamps the same name onto the same object.
+// At boot `defineApi` stamps the same name onto the same object.
 const target = sendMessage.named('sendMessage');
 
 const call = (actor: Actor | null, input: { conversationId: string; body: string }) =>

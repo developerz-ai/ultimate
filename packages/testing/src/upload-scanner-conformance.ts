@@ -9,13 +9,16 @@ import { sharedExamples } from './shared-examples';
 /** `@ultimat3/storage`'s `ScanVerdict`, restated structurally. */
 export type ScanVerdictLike =
   | { readonly verdict: 'clean' }
-  | { readonly verdict: 'infected'; readonly signature: string };
+  | { readonly verdict: 'infected'; readonly signature: string }
+  | { readonly verdict: 'hold'; readonly reason: string };
 
 /** `@ultimat3/storage`'s `UploadScanner`: a ClamAV adapter, a vendor API, the memory reference. */
 export interface UploadScannerLike {
   readonly name: string;
+  readonly holds?: boolean | undefined;
   scan(input: {
     readonly key: string;
+    readonly pendingKey: string;
     readonly size: number;
     readonly contentType: string;
     readonly body: ReadableStream<Uint8Array>;
@@ -46,7 +49,8 @@ function streamOf(bytes: Uint8Array, size: number): ReadableStream<Uint8Array> {
 
 const scan = (scanner: UploadScannerLike, bytes: Uint8Array, chunk = 64 * 1024) =>
   scanner.scan({
-    key: 'org/conformance/post/p-1/file/u-1.txt',
+    key: 'org/conformance/pending/scan/a1-u-1.txt',
+    pendingKey: 'org/conformance/pending/u-1.txt',
     size: bytes.byteLength,
     contentType: 'text/plain',
     body: streamOf(bytes, chunk),

@@ -85,6 +85,9 @@ describe('what reaching the barrel costs an island that only follows a channel',
     // measured: 9,001 B (2026-11-09, Bun 1.4.4), 8,816 without this change. why: +185 B, three
     // titles in `error-titles.ts` (every chunk): `X_REPLICATION_SLOT_INVALIDATED`,
     // `X_REPLICATION_SLOT_RECREATED` (plan 101 R3) and `X_OFFLINE_QUEUE_FULL` (R7).
-    expect(bytes).toBeLessThan(9_088);
+    // measured: 8,397 B (2026-11-10, Bun 1.4.4), 9,027 without this change. why: −630 B, the nine
+    // server-only titles (replication, topology, producer conflict) moved to
+    // `error-titles-server.ts`, which no island chunk reaches. The ceiling moves down by the saving.
+    expect(bytes).toBeLessThan(8_458);
   }, 60_000);
 });

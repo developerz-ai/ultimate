@@ -8,7 +8,7 @@ import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { ReconnectBudget } from './cursor';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -61,7 +61,7 @@ function socketFor(id: string, who: Actor, ws = new FakeWs()): SyncSocket {
 const alice = userActor({ id: 'alice', orgId: 'o1' });
 const bob = userActor({ id: 'bob', orgId: 'o1' });
 
-const insert = (row: Row, lsn: number, write: string | null): ChangeEvent => ({
+const insert = (row: LiveRow, lsn: number, write: string | null): ChangeEvent => ({
   table: 'posts',
   op: 'insert',
   before: null,

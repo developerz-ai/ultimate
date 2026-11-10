@@ -69,7 +69,7 @@ describe.skipIf(!hasPostgres)('live · postgres · enqueueMany and the batch rel
       tenant: 'none',
       input: passthrough<Item>(),
       idempotencyKey: ({ id }) => id,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: () => Promise.resolve(),
     });
   });

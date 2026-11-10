@@ -3,14 +3,16 @@
 // wins, an unknown override name refuses, and `off` needs a reason.
 
 import { describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { isUltimateError, UltimateError, useContext } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
 import { can, definePermissions, testActor } from '@ultimat3/policy';
-import { from, query, registerQueries } from '@ultimat3/query';
+import { from, query } from '@ultimat3/query';
+import { registerQueries } from '@ultimat3/query/loader';
 import { defineExercise } from './define-exercise';
 import { runExercisePass } from './exercise';
 import type { ExerciseRecord } from './exercise-report';

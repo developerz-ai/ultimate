@@ -2,7 +2,7 @@
 // Split out of `head.test.ts` at the file ceiling.
 
 import { describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { documentBaseline, type HeadTag, renderHead } from './head';
 
 /**
@@ -142,13 +142,13 @@ describe('a head tag attribute answers to attributePair', () => {
   describe('a drop warns in dev, naming the tag and the attribute, never the value', () => {
     const logged = (run: () => void): string => {
       const lines: string[] = [];
-      const previous = setLogSink((line) => {
+      const releaseLogSink = installLogSink((line) => {
         lines.push(line);
       });
       try {
         run();
       } finally {
-        setLogSink(previous);
+        releaseLogSink();
       }
       return lines.join('\n');
     };

@@ -6,19 +6,21 @@ import { refuseAbandoned } from '@ultimat3/db';
 import { conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
 import { narrowRow } from './columns';
-import { checkedDelete } from './driver-delete';
+import { byKeys, checkedDelete } from './driver-delete';
 import type { DriverScope } from './driver-scope';
 import {
   assertWrittenInScope,
   sameTenantProperties,
   sameTenantReferences,
 } from './driver-write-scope';
-import { SOFT_DELETE_COLUMN } from './entity';
+import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
 import { assertedRowsTooMany, MAX_ASSERTED_ROWS } from './invariants';
 import { mergedRow } from './memory-update';
 import { deletePlan, idPlan, namedColumns, singleKeyOf, updatePlan } from './plan';
-import type { Repo, RepoOptions } from './repo';
+import type { Repo, RepoOptions, Tx } from './repo';
+import { advancingVersionColumn, deletionStamp, VERSION_STEP_MS } from './search-index-version';
+import { writtenRowsSink } from './search-written-rows';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 
@@ -45,8 +47,30 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
   };
 
   /**
+   * The rows a write left, read back by their keys alone — a patch may move a row out of the
+   * filter that matched it — for the search mirror, which asked (`writtenRowsSink`).
+   */
+  const writtenBack = async (
+    op: string,
+    plan: QueryPlan,
+    rows: readonly Row[],
+    tx: Tx | undefined,
+  ) => {
+    const keyed = byKeys(scope, { ...plan, where: [] }, rows);
+    const read: Row[] = [];
+    for (const each of keyed) {
+      const found = await raw.select({ plan: each, after: undefined, limit: rows.length, tx });
+      read.push(...scope.checked(op, each, found));
+    }
+    return read;
+  };
+
+  /**
    * A patch applied to the rows a plan matches. With an invariant declared, every merged row is
-   * judged first, bounded as a judged write is on Postgres; then one store call. Answers how many rows the store wrote.
+   * judged first, bounded as a judged write is on Postgres; then one store call. Answers how many
+   * rows the store wrote. A searchable entity's version is the STORE's to advance, per row and
+   * atomically (`DriverRepo.update`'s `advance`): a value the kit computed from a read would let a
+   * second process's newer version be written over.
    */
   const patched = async (
     op: string,
@@ -60,12 +84,32 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     const movesReference = namedColumns(patch).some(([key]) =>
       sameTenantProperties(entity).has(key),
     );
+    const sink = writtenRowsSink();
+    const version = advancingVersionColumn(entity as EntityCore<unknown>);
+    const advance =
+      version !== undefined && namedColumns(patch).some(([key]) => key === version)
+        ? { property: version, stepMs: VERSION_STEP_MS }
+        : undefined;
+    const narrowed = narrowRow<Record<string, unknown>>(
+      entity.$columns,
+      Object.fromEntries(namedColumns(patch)),
+    );
     if (entity.$invariants.length === 0 && !movesReference) {
-      const narrowed = narrowRow<Record<string, unknown>>(
-        entity.$columns,
-        Object.fromEntries(namedColumns(patch)),
-      );
-      return raw.update({ plan, tx }, narrowed);
+      // The search mirror asked for the rows: read them first, as the judged path does. Past the
+      // judged bound they are not handed over — the mirror logs the write it could not name.
+      const before =
+        sink === undefined
+          ? []
+          : scope.checked(
+              op,
+              plan,
+              await raw.select({ plan, after: undefined, limit: MAX_ASSERTED_ROWS + 1, tx }),
+            );
+      const written = await raw.update({ plan, tx }, narrowed, advance);
+      if (sink !== undefined && before.length <= MAX_ASSERTED_ROWS) {
+        sink(await writtenBack(op, plan, before, tx));
+      }
+      return written;
     }
     // Every invariant, a SQL-expressible one too: a custom store enforces no CHECK.
     const found = scope.checked(
@@ -83,16 +127,25 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     }
     await references(results);
     // The narrowed values the merge produced — the same for every row — so the store holds what
-    // was judged rather than a money `bigint` the row type never carries.
+    // was judged rather than a money `bigint` the row type never carries. The version is the
+    // patch's instant: the store advances it per row.
     const merged = mergedRow(entity, first, patch) as Record<string, unknown>;
     const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, merged[key]]));
-    return raw.update({ plan, tx }, values);
+    if (advance !== undefined) values[advance.property] = narrowed[advance.property];
+    const written = await raw.update({ plan, tx }, values, advance);
+    if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
+    return written;
   };
 
   /** Hard or soft, decided once so `delete(id)` and `deleteWhere` cannot drift apart. */
   const removed = (op: string, plan: QueryPlan, options: RepoOptions | undefined) =>
     entity.$softDelete
-      ? patched(op, plan, { [SOFT_DELETE_COLUMN]: entityNow() }, options)
+      ? patched(
+          op,
+          plan,
+          deletionStamp(entity as EntityCore<unknown>, SOFT_DELETE_COLUMN, entityNow()),
+          options,
+        )
       : checkedDelete(scope, op, plan, options);
 
   return {

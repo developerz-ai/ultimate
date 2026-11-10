@@ -12,7 +12,7 @@
 // `info` for the one moment core loads, and what the author named decides what is PRINTED.
 //
 // A test that asserts on log output hands `structuredLogger({ level, writer })` its own writer, or
-// installs its own `setLogSink` and restores the previous one. Never `process.stdout`.
+// installs its own with `installLogSink` and calls the release it returns. Never `process.stdout`.
 
 import type { LogLevel } from '@ultimat3/core';
 
@@ -42,15 +42,15 @@ const routing = logRouting(named);
 // import and the author's value goes back after it: a child this process spawns inherits what
 // was named, never the pin. A dynamic import, because a static one is hoisted above this line.
 if (routing.lines === 'filtered') Bun.env['LOG_LEVEL'] = 'info';
-const { setLogSink } = await import('@ultimat3/core');
+const { installLogSink } = await import('@ultimat3/core');
 
 if (routing.lines === 'dropped') {
-  setLogSink(() => undefined);
+  installLogSink(() => undefined);
 } else if (routing.lines === 'filtered') {
   Bun.env['LOG_LEVEL'] = routing.from;
   const shown = new Set<LogLevel>(ABOVE_INFO.slice(ABOVE_INFO.indexOf(routing.from)));
   // Core's own split: `error` and above to stderr, the rest to stdout.
-  setLogSink((line, level) => {
+  installLogSink((line, level) => {
     if (shown.has(level)) (level === 'warn' ? process.stdout : process.stderr).write(`${line}\n`);
   });
 }

@@ -12,11 +12,11 @@
 import type { Actor } from '@ultimat3/core';
 import type { LiveReadPhase } from '@ultimat3/query';
 import type { LiveCursor } from './cursor';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { IncrementalMatcher } from './matcher-bridge';
 import type { SyncSocket } from './socket';
 
-export interface SnapshotResult<R extends Row = Row> {
+export interface SnapshotResult<R extends LiveRow = LiveRow> {
   readonly rows: readonly R[];
   readonly lsn: string;
 }
@@ -34,7 +34,7 @@ export interface SnapshotArgs {
   readonly phase?: LiveReadPhase | undefined;
 }
 
-export interface LiveQueryDefinition<R extends Row = Row> {
+export interface LiveQueryDefinition<R extends LiveRow = LiveRow> {
   readonly name: string;
   /** Dependency set for the pre-filter. `x verify` rejects a `live: true` query without one. */
   readonly entities: readonly string[];
@@ -70,7 +70,7 @@ export interface LiveQueryDefinition<R extends Row = Row> {
    * The record key each row travels under, resolved with `rowEntity`: the entity's own projection.
    * `null` (or absent) is a plain table, whose rows are keyed by `id`.
    */
-  rowKey?(input: JsonValue): ((row: Row) => string) | null;
+  rowKey?(input: JsonValue): ((row: LiveRow) => string) | null;
   /**
    * Resolve whatever this input needs before an entry is built. `matcher` is synchronous by
    * design — a change event must not await anything — so a definition that has to compile a

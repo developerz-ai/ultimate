@@ -73,6 +73,7 @@ export {
   ProtocolVersionError,
   REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
+  REALTIME_PAGE_ERROR_TITLES,
   RealtimeError,
   type RealtimeErrorCode,
   RealtimeUninstalledError,
@@ -105,7 +106,7 @@ export {
   isRow,
   type JsonObject,
   type JsonValue,
-  type Row,
+  type LiveRow,
   type RowOp,
   type RowPatch,
 } from './json';
@@ -176,7 +177,6 @@ export {
 } from './sync-protocol';
 // ---- the client's own reconnect: the backoff it computes and the timer it arms -----------------
 export {
-  type BackoffPolicy,
   BROWSER_RECONNECT_MAX_MS,
   browserBackoff,
   defaultBackoff,

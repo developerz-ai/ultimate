@@ -4,22 +4,15 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type Actor, ctxOf, frozenClock, userActor } from '@ultimat3/core';
-import {
-  from,
-  type QueryPolicy,
-  query,
-  queryHash,
-  registerQuery,
-  resetQueries,
-  t,
-} from '@ultimat3/query';
+import { from, type QueryPolicy, query, queryHash, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
 import { SyncSocket, type WsLike } from './socket';
 
-const ROWS: Row[] = [{ id: 'p1', orgId: 'o1' }];
+const ROWS: LiveRow[] = [{ id: 'p1', orgId: 'o1' }];
 const INPUT: JsonValue = { orgId: 'o1' };
 const LIMIT = 2;
 const WINDOW_MS = 60_000;
@@ -72,7 +65,7 @@ const limited = (clock = frozenClock('2026-10-04T00:00:00.000Z'), limit = LIMIT)
       live: true,
       rateLimit: { limit, windowMs: WINDOW_MS },
       sql: ({ orgId }) =>
-        from<Row>('posts', async () => {
+        from<LiveRow>('posts', async () => {
           reads += 1;
           return ROWS;
         })

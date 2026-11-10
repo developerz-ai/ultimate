@@ -44,7 +44,7 @@ export class ActionUnregisteredError extends UltimateError {
     super({
       code: 'X_ACTION_UNREGISTERED',
       cause: 'an action was projected before it was registered, so it has no name',
-      fix: "call registerActions(await import('./actions')) at boot, before mounting routes",
+      fix: "list the action's module in defineApi({ actions }) in apps/<app>/api/index.ts — the boot names it before mounting routes",
     });
   }
 }
@@ -347,7 +347,7 @@ export class RpcFailedError extends UltimateError {
     super({
       code: 'X_RPC_FAILED',
       cause: `${name} returned HTTP ${status} without a problem+json body`,
-      fix: `check the gateway in front of the app, then: x actions show ${renderFixShellArg(name, '<action-name>')} --json`,
+      fix: "match X_CLIENT_TRANSPORT_FAILED instead: isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED', with isUltimateError from @ultimat3/core",
       retry: retryForStatus('X_RPC_FAILED', status),
     });
   }

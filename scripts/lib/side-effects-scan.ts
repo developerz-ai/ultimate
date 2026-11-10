@@ -108,6 +108,8 @@ export const SIDE_EFFECTS_ANCHORS: Readonly<Record<string, string>> = Object.fre
     "registers @ultimat3/action's error titles. What reads them in a browser is core's problemError, rebuilding a server's refusal by code, and it never imports this module — so without the anchor an island that called rpc() renders X_INPUT_INVALID untitled.",
   'packages/realtime/src/error-titles.ts':
     "registers @ultimat3/realtime's error titles. refusalError rebuilds a sync node's refusal by code and page-errors.ts constructs realtime codes, and neither imports this module — so without the anchor a page renders every realtime refusal untitled.",
+  'packages/realtime/src/error-titles-server.ts':
+    "registers @ultimat3/realtime's SERVER-ONLY error titles (replication, topology, producer conflict). UltimateError reads them through the registry and never imports this module, and errors.ts and server.ts import it bare — so without the anchor a bundled server renders X_REPLICATION_SLOT_INVALIDATED and its siblings untitled in x errors, the logs and the monitor.",
   'packages/http/src/error-titles.ts':
     "registers @ultimat3/http's error titles and the retry-after class of X_RATE_LIMITED and X_OVERLOADED. UltimateError reads both and never imports this module, so a server realm — x errors list, the problem document, a job retrying an http call — renders the code untitled and classifies a 429 terminal without the anchor. A browser does not need it: core's decoders read the body title and the Retry-After header.",
   'packages/query/src/registry.ts':

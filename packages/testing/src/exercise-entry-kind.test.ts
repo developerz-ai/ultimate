@@ -3,7 +3,8 @@
 // and the paste line a shared name prints is the qualified key.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { action, registerActions } from '@ultimat3/action';
+import { action } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
 import { clearRegistry, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job, t } from '@ultimat3/jobs';

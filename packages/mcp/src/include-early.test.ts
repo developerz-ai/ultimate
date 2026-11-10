@@ -2,7 +2,8 @@
 // registered since?" — is answered against the live registries: an endpoint built too early is a
 // coded refusal naming the tools it lacks, never a smaller catalog.
 import { afterEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';

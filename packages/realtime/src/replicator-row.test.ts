@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { bytes, entity, entityForTable, text, timestamp } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { parseEnvelope } from './replicator-envelope';
 import { busRow, reviveBusRow } from './replicator-row';
 
@@ -20,7 +20,7 @@ function ensureBlobs(): void {
   });
 }
 
-const asRow = (value: Record<string, unknown>): Row => value as unknown as Row;
+const asRow = (value: Record<string, unknown>): LiveRow => value as unknown as LiveRow;
 
 /** The whole hop: what the replicator stringifies, then what the node parses. */
 const across = (change: ChangeEvent): ChangeEvent | undefined =>

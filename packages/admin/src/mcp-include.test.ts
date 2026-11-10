@@ -4,12 +4,14 @@
 // at its own `path`, and the token resolver hears how the request arrived. Driven over the route.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import type { JsonRpcResponse, McpRequestFacts } from '@ultimat3/mcp';
 import { assertIncludeCurrent } from '@ultimat3/mcp';
 import { allow } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';

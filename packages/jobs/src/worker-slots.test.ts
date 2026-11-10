@@ -55,7 +55,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       name: 'slowJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'slow:1',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async () => {
         started.open();
         await parked.passed;
@@ -67,7 +67,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       name: 'quickJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'quick:1',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: () => Promise.resolve(),
     });
 
@@ -101,7 +101,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       name: 'importJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'import:1',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async () => {
         started.open();
         await parked.passed;
@@ -112,7 +112,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       name: 'emailJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'email:1',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: () => Promise.resolve(),
     });
 
@@ -162,7 +162,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
         name,
         input: passthrough<Record<string, never>>(),
         idempotencyKey: () => `${name}:1`,
-        retry: { attempts: 1, jitter: false },
+        retry: { attempts: 1, jitter: 'none' },
         run: async () => {
           running.push(name);
           started.open();
@@ -199,7 +199,7 @@ describe('the fleet slot is handed back before the driver goes', () => {
       concurrency: 1,
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'capped:1',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async () => {
         started.open();
         await parked.passed;
@@ -289,7 +289,7 @@ describe('a claim round that fails part-way hands the rest of the batch back', (
       concurrency: 5,
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'slotted',
-      retry: { attempts: 3, jitter: false },
+      retry: { attempts: 3, jitter: 'none' },
       run: () => Promise.resolve(),
     });
     const base = memoryJobDriver();

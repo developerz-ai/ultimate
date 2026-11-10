@@ -6,7 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -46,7 +46,7 @@ function reading(name: string, table: string): LiveQueryDefinition {
 }
 
 function changeOn(table: string, lsn: number): ChangeEvent {
-  const after: Row = { id: 'r1', title: `at ${String(lsn)}` };
+  const after: LiveRow = { id: 'r1', title: `at ${String(lsn)}` };
   return {
     table,
     op: 'update',

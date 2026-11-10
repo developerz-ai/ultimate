@@ -125,7 +125,7 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
       bucket: BUCKET,
       // Zero, and it has to be: the library redials a server once `lastConnect + wait <= Date.now()`,
       // and the test preload freezes `Date.now()` — any positive wait is never reached.
-      backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+      backoff: { base: 0, max: 0, factor: 1, jitter: 'none' },
       onError: () => undefined,
     });
     started.push(bus);
@@ -167,7 +167,7 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
       bucket: BUCKET,
       // One attempt, so the budget is spent in milliseconds; zero wait for the frozen `Date.now()`.
       maxReconnectAttempts: 1,
-      backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+      backoff: { base: 0, max: 0, factor: 1, jitter: 'none' },
       onError: (error) => reported.push(String(error)),
     });
     started.push(bus);

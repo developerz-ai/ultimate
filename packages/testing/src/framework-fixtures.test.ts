@@ -119,7 +119,7 @@ describe(testName('unit', 'the runJobs fixture'), () => {
       // A fixture asserting retry and step replay — it reads no tenant-scoped table.
       tenant: 'none',
       idempotencyKey: (input) => `${name}:${input.id}`,
-      retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: false },
+      retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: 'none' },
       run: async ({ step }) => {
         await step.run('provision', () => 'provisioned');
         await step.run('nudge', () => {

@@ -23,9 +23,9 @@ import { connectionLost, RedialCurve } from './replicator-reconnect';
 import { ResyncDebt } from './replicator-resync';
 import { changeSubject, normalize } from './replicator-subject';
 import {
-  type BackoffPolicy,
   defaultBackoff,
   policyDelay,
+  type ReconnectBackoff,
   type Rng,
   type Scheduler,
 } from './thundering-herd';
@@ -45,7 +45,7 @@ export interface ReplicatorOptions {
   /** Resume position, normally the last lsn this replicator persisted. */
   readonly from?: string;
   readonly subjectOf?: (change: ChangeEvent) => string;
-  readonly backoff?: BackoffPolicy;
+  readonly backoff?: ReconnectBackoff;
   readonly rng?: Rng;
   /** The timer a restart waits on. Injected so a test proves the takeover loop without sleeping. */
   readonly schedule?: Scheduler;

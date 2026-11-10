@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { setSassCacheDir } from '@ultimat3/render/server';
 import {
   adoptPrebuiltStyles,
@@ -198,13 +198,13 @@ describe('unit · a container boots from the image build’s store', () => {
     [{ ULTIMATE_ENV: 'prod' }, 'error'],
   ] as const)('the level follows the environment: %o logs at %s', (env, level) => {
     const lines: { level?: string; code?: string }[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       lines.push(JSON.parse(line) as { level?: string; code?: string });
     });
     try {
       reportBootBuilds('web', { stylesheets: 1, elapsedMs: 3 }, env);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(lines.map((line) => [line.code, line.level])).toEqual([['X_IMAGE_NOT_PREBUILT', level]]);
   });

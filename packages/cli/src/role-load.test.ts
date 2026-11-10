@@ -3,8 +3,9 @@
 // Each load runs in a child process: a scan registers into registries every other test file reads.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// why: Bun has no API for a temporary directory, a recursive delete or a symlink.
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+// why: Bun has no API for a temporary directory, a directory listing, a recursive delete or a
+// symlink.
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -56,7 +57,14 @@ const manifest = (jobs: readonly string[]): string =>
 /** A fixture app that resolves `@ultimat3/*` through the CLI's own workspace links. */
 async function fixtureApp(manifestText: string | undefined): Promise<string> {
   root = mkdtempSync(join(tmpdir(), 'x-role-load-'));
-  symlinkSync(join(import.meta.dir, '..', 'node_modules'), join(root, 'node_modules'));
+  // A real `node_modules` linking each of the CLI's entries, never a link to the CLI's own: every
+  // role reads the prebuilt registry under `node_modules/.cache` first, and the CLI's own `.cache`
+  // is not this app's.
+  const linked = join(import.meta.dir, '..', 'node_modules');
+  mkdirSync(join(root, 'node_modules'));
+  for (const entry of readdirSync(linked).filter((one) => !one.startsWith('.'))) {
+    symlinkSync(join(linked, entry), join(root, 'node_modules', entry));
+  }
   const files: Readonly<Record<string, string>> = {
     'apps/web/api/index.ts': INDEX,
     'apps/web/app/ping/jobs.ts': JOBS,
