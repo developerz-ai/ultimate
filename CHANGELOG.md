@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 31.1.0 - 2026-11-10
+
 ### Highlights
 
 - `x affected`, `x verify --changed` and `x test --affected` measure a change against `origin/main` by default, not a local `main` nobody pulled, and `bun test $(x affected --paths)` receives only paths.
@@ -28,6 +32,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/cli`: a finding `x ci` read out of a CI log is marked ` [from=ci-log <job>]` on its head line in the human render, so the clean `fix` still reads as foreign text; `x pr review` prints a reviews/comments/bots count line and, per review bot with a notice, `<bot> did not review: …` (or the notice it reviewed past).
 - `@ultimat3/cli`: `x verify`'s `package-shape` step refuses a workspace whose shipped source imports a registry package (type-only imports and `@ultimat3/*` included) that neither its own `package.json` nor the root's declares — `X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`, one finding per workspace and package, fix `bun add <pkg> --cwd <workspace>` (pinned to the range a sibling already declares when that range is shell-safe; `--dev` for a `*-fixture.ts`). Bun's hoisting resolved such an import from a sibling's declaration, so `typecheck`, `boundaries` and the tests stayed green until a clean install broke CI. Builtins, workspaces and tsconfig `paths` aliases are exempt; tests are out of scope, as for `X_WORKSPACE_DEP_UNDECLARED`.
 - `@ultimat3/cli`: `x shot`'s `verdict.json` (and `--json`'s `data.verdict`) carries `gpu: { api, available, adapter, fallback }` — whether the page exposes `navigator.gpu`, whether `requestAdapter()` answered, the adapter's vendor/architecture/device, and whether it is a software fallback. Additive and never gating; `null` when the page answered no probe.
+
+### Commits
+
+- fix(31.1): adopter field reports — exercise attribution, x affected base, x ci/pr review, undeclared imports, x shot gpu (#1047)
 
 ## 31.0.0 - 2026-11-10
 

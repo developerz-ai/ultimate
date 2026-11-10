@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/scraping",
-  "version": "31.0.0",
+  "version": "31.1.0",
   "description": "Browser automation as a job: scrape() returns a JobHandle",
   "keywords": [
     "ultimate",
@@ -43,10 +43,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "31.0.0",
-    "@ultimat3/core": "31.0.0",
-    "@ultimat3/jobs": "31.0.0",
-    "@ultimat3/schema": "31.0.0",
-    "@ultimat3/storage": "31.0.0"
+    "@ultimat3/action": "31.1.0",
+    "@ultimat3/core": "31.1.0",
+    "@ultimat3/jobs": "31.1.0",
+    "@ultimat3/schema": "31.1.0",
+    "@ultimat3/storage": "31.1.0"
   }
 }
