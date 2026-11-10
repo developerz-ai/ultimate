@@ -237,7 +237,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `MailError` | any `MailErrorCode` — `MAIL_ERROR_CODES` | `src/errors.ts` (the `X_MAIL_EVENT_*` factories export from `@ultimat3/mail/events`) |
+| `MailError` | any `MailErrorCode` | `src/errors.ts` (the `X_MAIL_EVENT_*` factories export from `@ultimat3/mail/events`) |
 
 ## Commands
 

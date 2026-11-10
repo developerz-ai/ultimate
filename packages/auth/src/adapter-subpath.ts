@@ -17,8 +17,10 @@ export type {
   AuthCodeRecord,
   AuthGrantRecord,
   AuthServerClient,
+  AuthTokenKind,
   AuthTokenRecord,
   DeviceCodeRecord,
+  DeviceStatus,
 } from './authorization-server-types';
 export { installKdfGate, resetKdfGate } from './kdf-gate';
 export type { AuthLimiterFactory, TotpReplayFactory } from './limiter-install';

@@ -4,7 +4,6 @@ export {
   allocate,
   allocateByPercentages,
   allocateByRatios,
-  assertAllocationSums,
   MAX_ALLOCATION_PARTS,
 } from './allocate';
 export {
@@ -47,29 +46,17 @@ export {
   scaleOf,
 } from './currency';
 export {
-  allocationInvalid,
-  currencyDeclarationInvalid,
-  currencyMismatch,
-  currencyRedefined,
-  currencyRequired,
   currencyUnknown,
   decimalNotNumeric,
   decimalTooPrecise,
-  MONEY_ERROR_CODES,
-  MONEY_ERROR_TITLES,
   MoneyError,
   type MoneyErrorCode,
   moneyNotInteger,
-  rateMissing,
   rateUnusable,
-  rescaleNotExact,
-  scaleInvalid,
-  scaleNotWidening,
 } from './errors';
 /** `ExchangeRate.ratio` is one of these; a provider with an exact rate writes the pair itself. */
 export type { Fraction } from './factor';
 export {
-  currencySymbol,
   type FormatMoneyOptions,
   formatMoney,
   formatMoneyDecimal,
@@ -98,4 +85,4 @@ export {
   roundToDigits,
   roundToInteger,
 } from './rounding';
-export { assertScale, commonScale, minorAt, moneyScale } from './scale';
+export { commonScale, minorAt, moneyScale } from './scale';

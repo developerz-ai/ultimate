@@ -13,9 +13,10 @@ type, a JSON Schema, an OpenAPI body, an MCP tool `inputSchema` and HTTP query c
 | the introspectable IR every generator walks | `node.ts` |
 | `Schema` factory, `Infer` machinery, `.refine()` | `builder.ts` |
 | how a rejected value is described — its shape, never its content | `describe-value.ts` |
-| `JsonValue`, `t.json()` / `jsonSchema()`, `JSON_MAX_DEPTH` | `json-value.ts` |
+| `JsonValue`, `t.json()` / `jsonSchema()`, the 256-level nesting cap | `json-value.ts` |
 | a union routed by one literal key | `discriminated-union.ts` |
 | `configureSchemaProvider()` — the swap point | `provider.ts` |
+| `@ultimat3/schema/adapter`, off the barrel: `builtinProvider`, `schemaProvider()` (the active one), `resetSchemaProvider()` — for a provider author and test teardown | `adapter.ts` |
 | schema → JSON Schema (OpenAPI + MCP) | `json-schema.ts` |
 | HTTP-boundary coercion, kept out of validation | `coerce.ts` |
 | `X_VALIDATION_FAILED` with path-annotated issues | `errors.ts` |
@@ -47,8 +48,9 @@ type PublishPost = Infer<typeof publishPost>;
 | `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `discriminatedUnion` `record` `optional` `nullable` `refine` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` `.sensitive()` `.refine(r)` |
 | `money` `timezone` `locale` `slug` `cursor` `json()` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
 
-`nullable` is a value the row holds; `optional` is the caller omitting the key. Both ship as a
-namespace member (`t.nullable`) and a free function (`nullableSchema`) — symmetrically.
+`nullable` is a value the row holds; `optional` is the caller omitting the key. Every factory
+ships once, as a `t` member (`t.nullable`, `t.refine`, …); the free functions behind them are
+internal since v31 — one way to compose.
 
 Unknown object keys are **dropped**, never forwarded — an action cannot be mass-assigned.
 
@@ -237,8 +239,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `BoundsInvalidError` (extends `SchemaError`) | `X_SCHEMA_BOUNDS_INVALID` | `src/errors.ts` |
 | `DefaultInvalidError` (extends `SchemaError`) | `X_SCHEMA_DEFAULT_INVALID` | `src/errors.ts` |
 | `DiscriminantInvalidError` (extends `SchemaError`) | `X_SCHEMA_DISCRIMINANT_INVALID` | `src/errors.ts` |
-| `SchemaError` | any schema code; the base of the four that extend it. Extends `Error`, not core's `UltimateError` — schema imports nothing — and carries the same `Symbol.for('ultimate.error')` brand so `isUltimateError` answers `true` | `src/errors.ts` |
+| `IssueCapInvalidError` (extends `SchemaError`) | `X_SCHEMA_ISSUE_CAP_INVALID` | `src/errors.ts` |
+| `SchemaError` | any schema code; the base of every class that extends it. Extends `Error`, not core's `UltimateError` — schema imports nothing — and carries the same `Symbol.for('ultimate.error')` brand so `isUltimateError` answers `true` | `src/errors.ts` |
 | `SchemaUnsupportedError` (extends `SchemaError`) | `X_SCHEMA_UNSUPPORTED` | `src/errors.ts` |
+| `SensitiveOutputError` (extends `SchemaError`) | `X_SCHEMA_SENSITIVE_OUTPUT` | `src/errors.ts` |
 | `ValidationFailedError` (extends `SchemaError`) | `X_VALIDATION_FAILED` | `src/errors.ts` |
 
 ## Swapping the library

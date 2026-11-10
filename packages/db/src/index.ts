@@ -14,15 +14,8 @@ export {
   listBranches,
   reapBranches,
 } from './branch';
-export { branchExists, branchNameInvalid } from './branch-errors';
-export {
-  checkClauses,
-  checkPlan,
-  columnCheckName,
-  columnChecks,
-  columnNamesConstraint,
-  declaredChecks,
-} from './check-ddl';
+export { branchNameInvalid } from './branch-errors';
+export { checkPlan, columnChecks, declaredChecks } from './check-ddl';
 export type {
   DbClient,
   DbConnection,
@@ -50,15 +43,9 @@ export {
 export { dbExecutor } from './db-executor';
 export type { DbHealthReport } from './db-health';
 export { checkDb } from './db-health';
-export {
-  generatedExpressionUnsafe,
-  indexOrderInvalid,
-  indexPredicateUnsafe,
-} from './ddl-errors';
-export { defaultClient, REPLICA_URL_ENV } from './default-client';
+export { REPLICA_URL_ENV } from './default-client';
 export type { DestructiveKind, DestructiveStatement } from './destructive';
 export {
-  DESTRUCTIVE_CAUSE,
   DESTRUCTIVE_MARKER,
   destructiveStatements,
   hasDestructiveMarker,
@@ -73,7 +60,6 @@ export {
   diffSchema,
   driftError,
   expectedSchema,
-  FRAMEWORK_TABLE_PREFIX,
 } from './drift';
 export { dbDrift } from './drift-errors';
 export type { RowSecurityDifference } from './drift-row-security';
@@ -102,8 +88,6 @@ export {
   multipleStatements,
   poolAcquireTimeout,
   poolMaxInvalid,
-  serializationExhausted,
-  sqlUnsafe,
 } from './errors';
 export {
   expectedQueryLoop,
@@ -115,45 +99,22 @@ export type { FailureSummary, PostgresFailureStore } from './failure-store-pg';
 export {
   FAILURES_TABLE,
   failurePurgeTarget,
-  MAX_FAILURE_LIST,
   postgresFailureStore,
   SQL_FAILURES_TABLE,
 } from './failure-store-pg';
 export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
 export { recordingClient } from './fake';
 export type { GeneratedMigration, GenerateOptions } from './generate';
-export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
-export {
-  counterTrigger,
-  counterTriggerName,
-  recountDriftSql,
-  recountSql,
-} from './generate-counter';
-export {
-  ACTOR_SETTING,
-  HISTORY_GUARD_TRIGGER,
-  HISTORY_TRIGGER,
-  PURGE_SETTING,
-  REQUEST_SETTING,
-} from './generate-history';
+export { generateMigration, slugify, snapshotOf } from './generate';
+export { recountDriftSql, recountSql } from './generate-counter';
+export { ACTOR_SETTING, PURGE_SETTING, REQUEST_SETTING } from './generate-history';
 export type { PartitionMaintenanceOptions } from './generate-partition';
-export {
-  PARTITION_FUNCTION,
-  partitionDropped,
-  partitionMaintenance,
-} from './generate-partition';
+export { partitionMaintenance } from './generate-partition';
 export type { PartitionRun, PartitionRunOptions } from './generate-partition-run';
 export { maintainPartitions, PARTITION_LOCK_TIMEOUT_MS } from './generate-partition-run';
 export type { RowSecurityOption, TenantColumnLike } from './generate-row-security';
-export { declaredTriggers } from './generate-triggers';
 export type { IndexMethod } from './index-method';
-export {
-  declaredMethod,
-  INDEX_METHODS,
-  indexMethodOf,
-  indexMethodSql,
-  isIndexMethod,
-} from './index-method';
+export { declaredMethod, INDEX_METHODS, indexMethodOf, indexMethodSql } from './index-method';
 export type {
   CheckDescription,
   ColumnDescription,
@@ -165,21 +126,21 @@ export type {
   TriggerRecord,
   ViewDescription,
 } from './introspect';
-export { buildSchema, findTable, introspectSchema } from './introspect';
+export { introspectSchema } from './introspect';
 export {
   constraintNameFor,
   declaredIndexes,
   invariantChecks,
   uniqueColumns,
 } from './invariant-ddl';
-export { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
+export { constraintNameUnsafe } from './invariant-errors';
 export type { Keyset, KeysetKey, KeysetKind, KeysetOptions, KeysetRow } from './keyset';
 export { keyset } from './keyset';
 export { retainInvalid } from './lifecycle-errors';
 export type { DbSubscription, ListeningClient } from './listen';
 export { canListen } from './listen';
 export type { LocalSettings } from './local-settings';
-export { readLocal, setLocal } from './local-settings';
+export { setLocal } from './local-settings';
 export type {
   AppliedMigration,
   LedgerRow,
@@ -205,14 +166,10 @@ export {
   runningAppVersion,
 } from './migrate';
 export {
-  migrateConcurrent,
-  migrationConcurrentInTransaction,
   migrationConcurrentPartitioned,
-  migrationConflict,
   migrationDestructive,
   migrationIrreversible,
   migrationSnapshotMissing,
-  migrationViewDepends,
   rollbackStepsInvalid,
 } from './migration-errors';
 export type {
@@ -224,7 +181,6 @@ export type {
   PgliteResult,
 } from './pglite';
 export {
-  loadPgliteDriver,
   PGLITE_FIX,
   PGLITE_MEMORY,
   PGLITE_MISSING,
@@ -256,26 +212,19 @@ export {
 export type { ReadTransactionOptions } from './read-transaction';
 export { withReadTransaction } from './read-transaction';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';
-export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
+export { readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';
-export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
+export { ensureReadOnlyRole, READONLY_ROLE } from './readonly-role';
 export type {
   ReplicaStats,
   ReplicatedClient,
   ReplicatedClientOptions,
 } from './replica-client';
 export { BREAKER_COOLDOWN_MS, BREAKER_FAILURES, replicatedClient } from './replica-client';
-export type { ReplayReader } from './replica-position';
-export {
-  formatPosition,
-  POSITION_CACHE_MS,
-  parsePosition,
-  primaryPosition,
-  replayReader,
-} from './replica-position';
-export { type DbNode, isPlainRead } from './replica-route';
+export { formatPosition, parsePosition, primaryPosition } from './replica-position';
+export { isPlainRead } from './replica-route';
 export type { ReplicaReadsOptions, ReplicaScope } from './replica-scope';
-export { markScopeWrote, replicaScope, withReplicaReads } from './replica-scope';
+export { markScopeWrote, withReplicaReads } from './replica-scope';
 export { recordRetired } from './retired';
 export type { RollingUnsafeKind, RollingUnsafeStatement } from './rolling';
 export {
@@ -287,48 +236,21 @@ export {
 } from './rolling';
 export { migrationRollingUnsafe } from './rolling-errors';
 export { rowSecureClient } from './row-secure-client';
-export {
-  CROSS_TENANT_SETTING,
-  dropRowSecuritySql,
-  enableRowSecuritySql,
-  ROW_SECURITY_POLICY,
-  TENANT_SETTING,
-} from './row-security';
-export { holdMigratorRole, migratorOwnershipSql } from './row-security-migrator';
-export type { RowSecurityPlanInput, TenantTable } from './row-security-plan';
-export { rowSecurityAfter, rowSecurityPlan } from './row-security-plan';
+export { CROSS_TENANT_SETTING, enableRowSecuritySql } from './row-security';
+export { holdMigratorRole } from './row-security-migrator';
 export type { RowSecurityRole } from './row-security-role';
-export {
-  assertRowSecurityBinds,
-  rowSecurityExemption,
-  rowSecurityRole,
-} from './row-security-role';
-export {
-  APP_ROLE,
-  assumeRole,
-  ensureRowSecurityRoles,
-  MIGRATOR_ROLE,
-  rowSecurityRolesSql,
-  serveAsAppRole,
-} from './row-security-roles';
+export { assertRowSecurityBinds } from './row-security-role';
+export { APP_ROLE, MIGRATOR_ROLE, rowSecurityRolesSql, serveAsAppRole } from './row-security-roles';
 export { sameTenantKeyName } from './same-tenant';
 export { SIBLING_SCOPE_WAIT_MS } from './sibling-turn';
 export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
-export {
-  identifier,
-  isSqlFragment,
-  join,
-  literal,
-  raw,
-  shellInertIdentifier,
-  sql,
-} from './sql';
+export { identifier, join, literal, raw, shellInertIdentifier, sql } from './sql';
 export { stripSqlNoise } from './sql-noise';
 export { dollarTagAt, endOfBlockComment } from './sql-scan';
 export type { DbSqlStateCode } from './sqlstate';
-export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode } from './sqlstate';
+export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState } from './sqlstate';
 export type { StatementBoundOptions } from './statement-bound';
 export { withStatementTimeout } from './statement-bound';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';

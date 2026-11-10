@@ -75,15 +75,15 @@ class — stay on `.`.
 | Concern | Entry | Export |
 |---|---|---|
 | tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry`; `publishChannelEvent` — a channel event from a job or an action, on the bus the boot installed |
-| a bus driver | `./adapter` | `Transport` and its parts (`TransportHandler`, `TransportSet`, `TransportSetEntry`, `TransportSubscription`), the errors a driver throws (`TransportUnavailableError`, `TransportProtocolError`), and `installChannelTransport` — the boot's installer and `@ultimat3/testing`'s seam, on no other entry. An app hands its bus to `transport` in `apps/<app>/runtime.ts`, never to the installer |
+| a bus driver | `./adapter` | `Transport` and its parts (`TransportHandler`, `TransportSet`, `TransportSetEntry`, `TransportSubscription`), the errors a driver throws (`TransportUnavailableError`, `TransportProtocolError` — only on this entry), `installChannelTransport` — the boot's installer and `@ultimat3/testing`'s seam, on no other entry — and the offline ports: `LocalStore` / `openLocalStore` / `pageLocalStore` / `memoryLocalStore()`, `QueueStore` / `memoryQueueStore()`, `RecordStoreOptions`, `SignalFactory`. An app hands its bus to `transport` in `apps/<app>/runtime.ts`, never to the installer |
 | tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes (core's `entity.row` / `entity.bulk` bus events, subscribed) as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). `ChangeEvent.table` is the entity's TABLE on it as on the WAL decoder and `recordPublisher`, so an `entity(name, { table })` reaches channels and live windows (25.0.0). Moved from `@ultimat3/testing`, which no longer re-exports it |
 | fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus, behind `NatsTransport` | `./server` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
-| reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `Scheduler`, `timeoutScheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
-| the page's record store | `.` | `RecordStore` — one record per `type:key`, synced truth plus the optimistic overlay — `recordKey`, `LocalTx`, `RowWindows`, `applyPatches`/`orderAfterPatches` |
-| the outbox | `.` | `OfflineQueue`, `memoryQueueStore()` — replayed over HTTP from plan 101 slice 12. The conflict vocabulary is `ConflictPolicy` from `@ultimat3/core`; realtime declares none |
+| reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `Scheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
+| the page's record store | `.` | `RecordStore` — one record per `type:key`, synced truth plus the optimistic overlay — `recordKey`, `LocalTx`, `applyPatches`/`orderAfterPatches` |
+| the outbox | `.` | `OfflineQueue` (its store is `./adapter`'s `QueueStore`) — replayed over HTTP from plan 101 slice 12. The conflict vocabulary is `ConflictPolicy` from `@ultimat3/core`; realtime declares none |
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
@@ -91,7 +91,7 @@ class — stay on `.`.
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden, nor is one taking `useQuery` / `useRecord` in an app that declares no `persist: true` entity |
-| offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `memoryLocalStore()` |
+| offline | `.` | `pageOutbox`, `localOutbox`, `listenForDrain`; the durable store is `./adapter`'s |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |
 
 ## `channelRef` — a channel an island can hold
@@ -974,24 +974,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `CursorStaleError` (extends `RealtimeError`) | `X_CURSOR_STALE` | `src/page-errors.ts` |
-| `FrameRateLimitError` (extends `RealtimeError`) | `X_FRAME_RATE_LIMIT` | `src/errors.ts` |
-| `LiveQueryUnknownError` (extends `RealtimeError`) | `X_LIVE_QUERY_UNKNOWN` | `src/errors.ts` |
-| `LiveRowUnidentifiedError` (extends `RealtimeError`) | `X_LIVE_ROW_UNIDENTIFIED` | `src/errors.ts` |
 | `OfflineQueueAbandonedError` (extends `RealtimeError`) | `X_OFFLINE_QUEUE_ABANDONED` | `src/page-errors.ts` |
-| `ProtocolVersionError` (extends `RealtimeError`) | `X_PROTOCOL_VERSION` | `src/page-errors.ts` |
-| `RealtimeError` | any `RealtimeErrorCode` — `REALTIME_ERROR_CODES`; the base of every other class here, thrown directly for a code none of them covers | `src/realtime-error.ts` |
-| `RealtimeUninstalledError` (extends `RealtimeError`) | `X_REALTIME_UNINSTALLED` | `src/page-errors.ts` |
-| `RebaseConflictError` (extends `RealtimeError`) | `X_REBASE_CONFLICT` | `src/page-errors.ts` |
-| `RecordRejectedError` (extends `RealtimeError`) | `X_RECORD_REJECTED` | `src/page-errors.ts` |
-| `ReplicaIdentityError` (extends `RealtimeError`) | `X_LIVE_REPLICA_IDENTITY` | `src/replication-errors.ts` |
-| `ReplicationFailedError` (extends `RealtimeError`) | `X_REPLICATION_FAILED` | `src/replication-errors.ts` |
-| `ReplicationProtocolError` (extends `RealtimeError`) | `X_REPLICATION_PROTOCOL` | `src/replication-errors.ts` |
+| `RealtimeError` | any `RealtimeErrorCode`; the base of every other class here, thrown directly for a code none of them covers | `src/realtime-error.ts` |
 | `ReplicatorSlotHeldError` (extends `RealtimeError`) | `X_REPLICATOR_SLOT_HELD` | `src/replication-errors.ts` |
-| `ServerRenderLiveError` (extends `RealtimeError`) | `X_LIVE_SERVER_RENDER` | `src/page-errors.ts` |
 | `SubscriptionLimitError` (extends `RealtimeError`) | `X_SUBSCRIPTION_LIMIT` | `src/errors.ts` |
-| `SyncUnconfiguredError` (extends `RealtimeError`) | `X_SYNC_UNCONFIGURED` | `src/page-errors.ts` |
 | `TopicForbiddenError` (extends `RealtimeError`) | `X_TOPIC_FORBIDDEN` | `src/errors.ts` |
-| `TransportProtocolError` (extends `RealtimeError`) | `X_TRANSPORT_PROTOCOL` | `src/errors.ts` |
 | `TransportUnavailableError` (extends `RealtimeError`) | `X_TRANSPORT_UNAVAILABLE` | `src/errors.ts` |
-| `WindowReadTimeoutError` (extends `RealtimeError`) | `X_TIMEOUT` | `src/errors.ts` |

@@ -92,12 +92,12 @@ describe('a browser chunk that reaches the realtime barrel', () => {
 
   test('titles a page refusal, which page-errors.ts constructs without importing the table', async () => {
     const { modules, title } = await island('page', [
-      "import { RealtimeUninstalledError } from '@ultimat3/realtime';",
-      "export const title = new RealtimeUninstalledError({ hook: 'useRecord' }).title;",
+      "import { OfflineQueueFullError } from '@ultimat3/realtime';",
+      "export const title = new OfflineQueueFullError({ name: 'post.create', maxQueued: 1 }).title;",
     ]);
     // The class is named through the barrel's re-export from `errors.ts`, so this chunk is not the
     // place to judge that module's absence — a hook's chunk is, in `page-errors-bundle.test.ts`.
-    expect(title).toBe(REALTIME_PAGE_ERROR_TITLES.X_REALTIME_UNINSTALLED);
+    expect(title).toBe(REALTIME_PAGE_ERROR_TITLES.X_OFFLINE_QUEUE_FULL);
     expect(modules).toContain('src/page-errors.ts');
   }, 60_000);
 });

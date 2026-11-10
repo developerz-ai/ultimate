@@ -562,7 +562,7 @@ place a scan runs. Grant with no `target`, then promote.
 
 `storageSubjectTarget(() => disk(), keysOf, { name? })` is a `defineSubject({ targets })` entry
 (`@ultimat3/jobs`): `keysOf(subject)` answers the person's keys (a list, or `disk().list({ prefix })`
-over a prefix the app owns). The export lists each object that exists (`STORAGE_SUBJECT_COLUMNS`);
+over a prefix the app owns). The export lists each object that exists (columns: `STORAGE_SUBJECT_COLUMNS` in `src/subject-target.ts`);
 the erase deletes them in bounded batches. There is no listing by owner: a key the app does not
 name is not found.
 

@@ -330,9 +330,9 @@ import { AdminList, listHref, Widget } from '@ultimat3/admin';
 <Widget field={field} value={row.total} ctx={ctx} mode="read" />;
 ```
 
-`Widget` takes the field and the raw row value, not pre-derived props: `widgetProps()` is the
-guard (money is minor units, a timestamp has an IANA zone) and the component calls it, so there is
-no way to render a cell that skipped it.
+`Widget` takes the field and the raw row value, not pre-derived props: the internal
+`widgetProps()` is the guard (money is minor units, a timestamp has an IANA zone) and the component
+calls it, so there is no way to render a cell that skipped it.
 
 ### Mounting it yourself
 
@@ -522,6 +522,8 @@ Opt-in AI panes, each declaring the scope it needs (`aiPanes({ enable: ['anomaly
 | `backlog-forecast` | `jobs:read`, `metrics:read` |
 
 Panes are off until enabled, and `runAiPane` refuses (never no-ops) without a runner.
+`GatewayAdapter` — the type a host narrows `@ultimat3/ai`'s `Gateway` to an `AiRunner` with — is
+`@ultimat3/admin/adapter`'s, off the barrel.
 
 ## Errors
 

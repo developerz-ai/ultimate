@@ -3,6 +3,9 @@
 // call, an `as never`) used to get out of `zone.toLowerCase()` several frames down.
 
 import { describe, expect, test } from 'bun:test';
+import { isWeekend } from './business';
+import { firedSince } from './cron-occurrence';
+import { formatIsoDate } from './format';
 import {
   addBusinessDays,
   addDaysInZone,
@@ -12,10 +15,8 @@ import {
   configureTime,
   daysBetween,
   endOfDay,
-  firedSince,
   formatDate,
   formatDateTime,
-  formatIsoDate,
   formatRange,
   formatRelative,
   formatTime,
@@ -29,15 +30,12 @@ import {
   isoInZone,
   isSameLocalDay,
   isValidTimeZone,
-  isWeekend,
   matchesCron,
   nextBusinessDay,
   nextCronOccurrence,
   nextCronOccurrenceMs,
   nextCronOccurrences,
   nextLocalSlot,
-  nextLocalSlots,
-  nextWeeklySlot,
   observesDst,
   offsetAt,
   plainDateIn,
@@ -47,6 +45,7 @@ import {
   zoneAbbrev,
   zonePartsAt,
 } from './index';
+import { nextLocalSlots, nextWeeklySlot } from './schedule';
 
 const at = fromIso('2026-03-14T08:00:00Z');
 const wall = { year: 2026, month: 3, day: 14, hour: 9, minute: 0 };

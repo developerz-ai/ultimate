@@ -242,7 +242,7 @@ table — and every series has a dash and a marker as well as a colour (`chart-1
 | `HeatStrip` | rows of status cells, each one element named by its whole reading, shaped by its tone, a link when it has a page | uptime, checks per bucket |
 | `LiveIndicator` | a static dot whose shape is the state, the word beside it: live, reconnecting, paused, offline; a change is announced once | a live view's connection |
 | `ChartFrame` | the figure, caption, legend and data table every chart stands in | a custom chart |
-| `niceTicks` · `chartTable` · `seriesStyle` | axis ticks, the fallback table, a series' dash and marker | building a custom chart |
+| `niceTicks` · `chartTable` | axis ticks, the fallback table | building a custom chart |
 | `DataTable` | sort, cursor paging (link mode with `listUrl` needs no island), states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn` | any list of records |
 | `Table` | a captioned table with a sticky header; `stickyFirstColumn` | static tabular data |
 | `InlineBar` | a caller-formatted figure with a decorative proportional bar | a number in a table cell |
@@ -1004,7 +1004,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `UiError` | any `UiErrorCode` — `UI_ERROR_CODES` | `src/errors.ts` |
+| `UiError` | any code in `UI_ERROR_CODES` | `src/errors.ts` |
 
 ## Commands
 

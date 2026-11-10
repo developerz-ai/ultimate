@@ -2,6 +2,7 @@
 // runs is exported; the statements only this package executes are read from their own modules.
 import { describe, expect, test } from 'bun:test';
 import * as barrel from './index';
+import { DEFAULT_MAX_RECIPIENTS } from './notifier';
 
 describe('@ultimat3/notify public surface', () => {
   const names = Object.keys(barrel);
@@ -43,6 +44,48 @@ describe('@ultimat3/notify public surface', () => {
   });
 
   test('the fan-out chunk equals the default audience cap: a default notifier is one chunk', () => {
-    expect(barrel.NOTIFY_CHUNK_SIZE).toBe(barrel.DEFAULT_MAX_RECIPIENTS);
+    expect(barrel.NOTIFY_CHUNK_SIZE).toBe(DEFAULT_MAX_RECIPIENTS);
+  });
+
+  test('v31: the app API only — no channel-name constant, env name, bound or internal guard', () => {
+    const internal = [
+      'APNS_KEY_ENV',
+      'DATA_PUSH_MAX_KEYS',
+      'DATA_PUSH_MAX_VALUE',
+      'DEFAULT_INBOX_PAGE',
+      'DEFAULT_MAX_RECIPIENTS',
+      'DEFAULT_NATIVE_PUSH_DEADLINE_MS',
+      'DELIVERY_STATUSES',
+      'FCM_KEY_ENV',
+      'IN_APP_CHANNEL',
+      'MAIL_CHANNEL',
+      'NOTIFY_ERROR_CODES',
+      'PUSH_CHANNEL',
+      'PUSH_PLATFORMS',
+      'SMS_CHANNEL',
+      'isBulkChannel',
+      'isDeliveryStatus',
+      'isSmsNumber',
+      'recipientSchema',
+    ];
+    expect(internal.filter((name) => names.includes(name))).toEqual([]);
+  });
+
+  test('every error class an app matches with instanceof stays', () => {
+    for (const name of [
+      'NotifyChannelDuplicateError',
+      'NotifyChannelsEmptyError',
+      'NotifyDeliveryFailedError',
+      'NotifyDigestUnsupportedError',
+      'NotifyFanoutTooWideError',
+      'NotifyPushDeviceGoneError',
+      'NotifyPushMessageInvalidError',
+      'NotifyPushProviderRefusedError',
+      'NotifySmsNumberInvalidError',
+      'NotifySmsTransportMissingError',
+      'NotifyStoreMissingError',
+    ]) {
+      expect(names).toContain(name);
+    }
   });
 });

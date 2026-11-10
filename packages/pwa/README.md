@@ -181,19 +181,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `BuildIdMissingError` | `X_BUILD_ID_MISSING` | `src/errors.ts` |
 | `PwaIconMissingError` | `X_PWA_ICON_MISSING` | `src/errors.ts` |
-| `PwaManifestInvalidError` | `X_PWA_MANIFEST_INVALID` | `src/errors.ts` |
-| `PwaNoOfflineFallbackError` | `X_PWA_NO_OFFLINE_FALLBACK` | `src/errors.ts` |
-| `PwaPushFailedError` | `X_PWA_PUSH_FAILED` | `src/errors.ts` |
-| `PwaPushPayloadTooLargeError` | `X_PWA_PUSH_PAYLOAD_TOO_LARGE` | `src/errors.ts` |
-| `PwaPushRejectedError` | `X_PWA_PUSH_REJECTED` | `src/errors.ts` |
-| `PwaPushSubscriptionInvalidError` | `X_PWA_PUSH_SUBSCRIPTION_INVALID` | `src/errors.ts` |
-| `PwaPushUnconfiguredError` | `X_PWA_PUSH_UNCONFIGURED` | `src/errors.ts` |
 | `PwaStrategyExhaustedError` | `X_PWA_STRATEGY_EXHAUSTED` | `src/errors.ts` |
-| `PwaVapidKeyInvalidError` | `X_PWA_VAPID_KEY_INVALID` | `src/errors.ts` |
-| `PwaVapidKeyMissingError` | `X_PWA_VAPID_KEY_MISSING` | `src/errors.ts` |
-| `SwScopeInvalidError` | `X_SW_SCOPE_INVALID` | `src/errors.ts` |
 
 ## Public API
 
@@ -202,24 +191,24 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `generateServiceWorker` | `sw.js` from the route table; deterministic for identical input |
 | `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table; a `personal` route is `network-only`. Each answers what its emitted `sw.js` twin answers: the cache copy goes to `env.wait` and is never awaited (a failed copy costs the copy, not the response), and an exhausted strategy with no fallback rejects — `staleWhileRevalidate` with `X_PWA_STRATEGY_EXHAUSTED` |
 | `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them. `routeRules(routes, personalPages)` — `'last-member'` gives a personal page a `pages` rule; a pattern matches the browser's percent-encoded pathname, and a catch-all its bare prefix |
-| `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
+| `CLEAR_PAGES_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
 | `buildId`, `detectSkew` | version skew (`detectSkew` also on `./client`) |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes, from a `WebManifestInput`. Called by `@ultimat3/cli` (`pwa-artifacts.ts`) `As of 2026-08-27`, so `x dev`, the container and the static export all emit `manifest.webmanifest` |
-| `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
+| `planIcons`, `requireSourceIcon` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |
 | `requireOfflineFallback` | the mandatory offline route |
 | `backgroundSyncSource`, `registerBackgroundSyncSource` | the Background Sync trigger. No retry policy: the handler rejects and the PLATFORM reschedules it |
 | `renderPushPayload`, `pushSource`, `subscribeSource` | Web Push, per-locale bodies |
 | `pushSubscribe`, `pushUnsubscribe` | factories over `action`: store / forget this browser's subscription for `ctx.actor` |
 | `webPush`, `pushToActor` | one notification to every device of one person — `webPush()` is notify's `Pusher` |
-| `sendPushMessage`, `encryptPushMessage`, `vapidAuthorization` | one message to one subscription; RFC 8291; RFC 8292 |
 | `installWebPush`, `installedVapid`, `webPushRuntime`, `resetWebPush` | the runtime the boot installs (store, signer, transport, translator) |
 | `memoryPushSubscriptionStore`, `postgresPushSubscriptionStore` | where subscriptions live; `x_push_subscriptions` DDL is `@ultimat3/pwa/schema` |
 | `resolveVapidKeys`, `generateVapidKeys`, `assertVapidPair`, `DEV_VAPID_KEYS` | the key pair: from env, minted, checked, and the published development one |
 | `@ultimat3/pwa/client` | THE browser entry — [Browser entry](#browser-entry-ultimat3pwaclient) |
 | `installController`, `iosInstallGuidance`, `MIN_ENGAGEMENT_MS` | install prompt, never on first paint (also on `./client`) |
-| `PwaStrategyExhaustedError` and the other `errors.ts` classes | the codes this package throws, catchable by an app |
+| `PwaStrategyExhaustedError`, `PwaIconMissingError` | the two classes an app's own code can catch; every other code is matched by `code` |
+| `@ultimat3/pwa/adapter` | the `pushSubscriptionStore` port: `PushSubscriptionStore`, `PushSubscriptionRecord`, `PushSubscriptionKeys`, `PostgresPushSubscriptionStoreOptions`, `VapidSigner` |
 
 ## Notes
 

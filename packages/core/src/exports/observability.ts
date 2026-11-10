@@ -43,24 +43,20 @@ export {
 } from '../error-reporter-sentry';
 export type { SentryEvent, SentryReporterHooks } from '../error-reporter-sentry-hooks';
 export type {
-  FailureActor,
   FailureBundle,
-  FailureCaptureLimits,
   FailureFact,
   FailurePrimitive,
   FailureRead,
   FailureStore,
-  HeldFailure,
 } from '../failure-capture';
 export {
   failureCaptureActive,
-  failureCaptureLimits,
   installedFailureStore,
   recordFailureFact,
   recordFailureInput,
   withFailureCapture,
 } from '../failure-capture';
-export { resetFailureCaptureWindows, settleFailureCaptures } from '../failure-capture-flush';
+export { settleFailureCaptures } from '../failure-capture-flush';
 export type { CapturedValue } from '../failure-capture-mask';
 export { captureValue } from '../failure-capture-mask';
 export type {
@@ -89,21 +85,16 @@ export type {
   EntityCrossTenantEvent,
   EntityRowEvent,
   EntityRowOp,
-  FrameworkEventMap,
-  FrameworkEventName,
   HttpRequestEvent,
   InstrumentEventMap,
   InstrumentEventSpec,
   InstrumentSpan,
   JobEnqueueEvent,
   JobPerformEvent,
-  LogRecordEvent,
   MailDeliverEvent,
-  OutboundRequestEvent,
   PolicyDecisionEvent,
   QueryReadEvent,
   RenderHoleEvent,
-  RenderIsrRegenerateEvent,
   RenderPageEvent,
   StatementAttribution,
   StorageEvent,
@@ -111,12 +102,7 @@ export type {
 } from '../instrument-events';
 export { INSTRUMENT_EVENTS } from '../instrument-events';
 export { SEMCONV, SEMCONV_METRICS, SEMCONV_VALUES } from '../instrument-semconv';
-export {
-  callerStack,
-  captureStatementStacks,
-  resetStatementStacks,
-  statementStacksCaptured,
-} from '../instrument-stacks';
+export { callerStack, captureStatementStacks, resetStatementStacks } from '../instrument-stacks';
 export type { LogFields, Logger, LoggerOptions, LogLevel } from '../logger';
 export {
   isRedactedKey,
@@ -152,7 +138,6 @@ export {
   configureMetrics,
   counter,
   DEFAULT_HISTOGRAM_BOUNDS,
-  DEFAULT_MAX_SERIES,
   exportMetrics,
   gauge,
   histogram,
@@ -166,7 +151,7 @@ export {
 } from '../metrics';
 export { subscribeSemconvMetrics } from '../metrics-semconv';
 export { METRICS_CONTENT_TYPE, METRICS_PATH, metricsText } from '../metrics-text';
-export type { OtlpAnyValue, OtlpKeyValue, OtlpSignal } from '../otlp';
+export type { OtlpSignal } from '../otlp';
 export {
   OTLP_ENDPOINT_KEY,
   OTLP_HEADERS_KEY,
@@ -177,19 +162,14 @@ export {
   OtlpHeadersInvalidError,
   OtlpProtocolUnsupportedError,
   otlpAttributes,
-  otlpEndpoint,
   otlpEndpointLabel,
   otlpHeaders,
   otlpResource,
   tryOtlpEndpoint,
   unixNano,
 } from '../otlp';
-export type {
-  ExportedLogRecord,
-  OtlpLogExporter,
-  OtlpLogExporterOptions,
-} from '../otlp-log-exporter';
-export { otlpLogExporter, otlpLogsRequest } from '../otlp-log-exporter';
+export type { OtlpLogExporter, OtlpLogExporterOptions } from '../otlp-log-exporter';
+export { otlpLogExporter } from '../otlp-log-exporter';
 export type { OtlpMetricExporter, OtlpMetricExporterOptions } from '../otlp-metric-exporter';
 export { otlpMetricExporter, otlpMetricsRequest } from '../otlp-metric-exporter';
 export type { OtlpSpanExporter, OtlpSpanExporterOptions } from '../otlp-span-exporter';
@@ -213,14 +193,10 @@ export type { Sampler } from '../sampler';
 export {
   alwaysOffSampler,
   alwaysOnSampler,
-  DEFAULT_SAMPLE_RATIO,
-  defaultSampler,
   OTEL_SAMPLER_ARG_KEY,
   OTEL_SAMPLER_KEY,
   parentBasedRatioSampler,
-  ratioSampler,
   resetDefaultSampler,
-  samplerFromEnv,
 } from '../sampler';
 export type {
   AttributeValue,
@@ -247,9 +223,7 @@ export {
   memoryExporter,
   parseTraceparent,
   resetTelemetry,
-  serviceResource,
   startSpan,
   traceparent,
   withSpan,
-  withSpanContext,
 } from '../telemetry';

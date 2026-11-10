@@ -31,7 +31,6 @@ export {
   type LocaleSourceName,
   type LocaleSources,
   localeConfig,
-  localeCookieOf,
   registerBaseCatalog,
   registerCatalog,
   registeredLocales,
@@ -56,15 +55,11 @@ export {
   catalogsNeverRegistered,
   catalogUnregistered,
   familyIncomplete,
-  I18N_ERROR_CODES,
-  I18N_ERROR_TITLES,
   I18nError,
   type I18nErrorCode,
-  localeUnsupported,
 } from './errors';
 export {
   type AuditInput,
-  assertCatalogsComplete,
   auditCatalogs,
   type DynamicUsage,
   type Extraction,
@@ -78,11 +73,9 @@ export {
 } from './extract';
 export { FRAMEWORK_CATALOG } from './framework';
 export {
-  familyStems,
   type InterpolationValue,
   type InterpolationVars,
   interpolate,
-  PLURAL_CATEGORIES,
   placeholdersOf,
   pluralCategory,
   pluralKeyCandidates,
@@ -112,17 +105,8 @@ export {
   recordingTranslator,
   type TranslationMiss,
 } from './recording-translator';
-export {
-  assertCatalogsRegistered,
-  type CatalogRegistrationGap,
-  catalogRegistrationGaps,
-} from './registration';
-export {
-  type CatalogSubset,
-  catalogSubset,
-  type RawTranslator,
-  subsetTranslator,
-} from './subset';
+export { type CatalogRegistrationGap, catalogRegistrationGaps } from './registration';
+export { type CatalogSubset, catalogSubset, type RawTranslator, subsetTranslator } from './subset';
 export {
   catalogTranslator,
   isMiss,

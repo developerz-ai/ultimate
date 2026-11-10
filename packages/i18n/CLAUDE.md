@@ -50,8 +50,8 @@ Imported by every package that renders a string.
   achieve by calling it is strings its own `defineCatalogs()` overrides. That the rule is
   documented and not a build error is the one hole in this file; closing it is a `boundaries` rule
   refusing the specifier outside `packages/*/src`.
-- **A catalog on disk is not a registered catalog.** `catalogRegistrationGaps` /
-  `assertCatalogsRegistered` answer the runtime question per locale — `X_CATALOG_UNREGISTERED` —
+- **A catalog on disk is not a registered catalog.** `catalogRegistrationGaps`
+  answers the runtime question per locale — `X_CATALOG_UNREGISTERED` —
   and `x verify`'s `i18n` step is what asks it of an app. An app reads strings through its OWN
   module (`useT()` from `packages/i18n/src/index.ts`), never `t` from `@ultimat3/i18n`, so that
   registration is a consequence of rendering rather than something a boot has to remember.
@@ -62,7 +62,7 @@ Imported by every package that renders a string.
 - **`defineCatalogs` runs `assertLocale` over every tag BEFORE the register loop.**
   `configureLocales` validated them after it, so `X_LOCALE_INVALID` arrived with the bad tag
   already in `registeredLocales()`. That code is `@ultimat3/core`'s, raised by its `assertLocale` —
-  never add it to `I18N_ERROR_CODES` (a second claim is `X_ERROR_CODE_DUPLICATE`).
+  never add it to this package's `I18N_ERROR_CODES` (`src/errors.ts`) (a second claim is `X_ERROR_CODE_DUPLICATE`).
 - **A `q` that is not a plain decimal is 0**, so the range is dropped. A digits-only capture meant
   `en;q=abc` never matched and kept the default quality of 1.
 - Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.

@@ -12,14 +12,9 @@ export {
 export type { ManifestSources } from './build';
 export { buildManifest } from './build';
 export type { ChangeKind, ManifestChange, ManifestDiff } from './diff';
-export { diffManifest, formatDiff } from './diff';
+export { diffManifest } from './diff';
 export type { DocEntry, DocEntryKind } from './docs-scan';
-export {
-  headerComment,
-  scanInstalledDocs,
-  scanPackageDocs,
-  shortName,
-} from './docs-scan';
+export { headerComment, scanInstalledDocs, shortName } from './docs-scan';
 export type { DocHit } from './docs-search';
 export { nearestTopics, searchDocs } from './docs-search';
 export { tokenize } from './docs-tokens';
@@ -30,20 +25,11 @@ export {
   assertNoDrift,
   emitManifest,
   MANIFEST_FILENAME,
-  manifestJson,
   readManifest,
   verifyBuildId,
 } from './emit';
 export type { ManifestErrorCode } from './errors';
-export {
-  AgentsMdMissingError,
-  AgentsMdTooLargeError,
-  MANIFEST_ERROR_CODES,
-  MANIFEST_ERROR_TITLES,
-  ManifestBreakingError,
-  ManifestDriftError,
-  ManifestFactInvalidError,
-} from './errors';
+export { ManifestFactInvalidError } from './errors';
 export type { ModuleFacts, ObservedEdge } from './graph';
 export { buildGraph, findNode, impactOf, nodeId, pathBetween } from './graph';
 export type {
@@ -79,7 +65,7 @@ export type {
   RouteFact,
   TaskFact,
 } from './schema';
-export { isCompatible, isManifest, MANIFEST_VERSION } from './schema';
+export { isManifest, MANIFEST_VERSION } from './schema';
 export type {
   SubjectFact,
   SubjectTableFact,

@@ -75,13 +75,14 @@ describe('no vendor id is reachable unless the app registered it', () => {
   test('importing the package registers no model and exports no vendor list or default', async () => {
     const probe = `
       const ai = await import(${JSON.stringify(Bun.resolveSync('./index.ts', import.meta.dir))});
+      const { modelIds } = await import(${JSON.stringify(Bun.resolveSync('./models.ts', import.meta.dir))});
       const vendorIds = ['claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-5', 'claude-haiku-4-5',
         'claude-fable-5-1', 'claude-sonnet-5-5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'];
       const usage = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
       const priced = vendorIds.filter((id) => { try { ai.costOf(id, usage); return true; } catch { return false; } });
       const exported = ['DEFAULT_MODEL', 'ANTHROPIC_MODEL_IDS', 'OPENAI_MODEL_IDS', 'registerOpenAiModels']
         .filter((name) => Object.hasOwn(ai, name));
-      console.log(JSON.stringify({ ids: ai.modelIds(), priced, exported }));
+      console.log(JSON.stringify({ ids: modelIds(), priced, exported }));
     `;
     const run = Bun.spawnSync([process.execPath, '--eval', probe], {
       stderr: 'pipe',

@@ -13,12 +13,7 @@ export {
 } from '../secret';
 export type { MasterKeyRef } from '../secret-source';
 export { masterKeyPath, SECRETS_KEY_ENV, SECRETS_KEY_FILE } from '../secret-source';
-export type {
-  SecretSummary,
-  SecretsEnvelope,
-  SecretsLocation,
-  SecretValues,
-} from '../secrets';
+export type { SecretSummary, SecretsLocation, SecretValues } from '../secrets';
 export {
   assertSecretValues,
   describeSecrets,
@@ -40,7 +35,6 @@ export {
 } from '../secrets';
 export type { SecretsErrorCode } from '../secrets-errors';
 export {
-  SECRETS_ERROR_CODES,
   SecretsFileInvalidError,
   SecretsFileMissingError,
   SecretsKeyInvalidError,
@@ -50,10 +44,7 @@ export {
   SecretsTamperedError,
 } from '../secrets-errors';
 export { SecretsKeyAclError } from '../secrets-key-file';
-export type {
-  SecretsInstallOptions,
-  SecretsInstallReport,
-} from '../secrets-store';
+export type { SecretsInstallOptions, SecretsInstallReport } from '../secrets-store';
 export {
   findMasterKey,
   installSecrets,
@@ -62,9 +53,7 @@ export {
   readSecretsFile,
   requireMasterKey,
   SECRETS_FILE,
-  SECRETS_KEY_MODE,
   secretsFileExists,
-  secretsPath,
   stagedMasterKeyPath,
   stageMasterKeyFile,
   writeMasterKeyFile,

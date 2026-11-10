@@ -1026,21 +1026,12 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `ActionDeniedError` | the policy denial's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`, …), kept on `.denial` | `src/errors.ts` |
-| `ActionDeprecationInvalidError` | `X_ACTION_DEPRECATION_INVALID` | `src/errors.ts` |
-| `ActionDuplicateError` | `X_ACTION_DUPLICATE` | `src/errors.ts` |
-| `ActionForeignError` | `X_ACTION_FOREIGN` | `src/errors.ts` |
-| `ActionPathDuplicateError` | `X_ACTION_PATH_DUPLICATE` | `src/errors.ts` |
-| `ActionPolicyMissingError` | `X_ACTION_POLICY_MISSING` | `src/errors.ts` |
-| `ActionUnregisteredError` | `X_ACTION_UNREGISTERED` | `src/errors.ts` |
 | `AuditSinkFailedError` | `X_AUDIT_SINK_FAILED` | `src/errors.ts` |
-| `AuditSinkMissingError` | `X_AUDIT_SINK_MISSING` | `src/errors.ts` |
 | `ContractDriftError` | `X_CONTRACT_DRIFT` | `src/errors.ts` |
 | `IdempotencyConflictError` | `X_IDEMPOTENCY_CONFLICT` | `src/errors-idempotency.ts` |
 | `IdempotencyKeyInvalidError` | `X_IDEMPOTENCY_KEY_INVALID` | `src/errors-idempotency.ts` |
-| `IdempotencyNotSharedError` | `X_IDEMPOTENCY_NOT_SHARED` | `src/errors-idempotency.ts` |
 | `IdempotencyReplayedFailureError` | `X_IDEMPOTENCY_REPLAYED_FAILURE` | `src/errors-idempotency.ts` |
 | `IdempotencyReservationLostError` | `X_IDEMPOTENCY_RESERVATION_LOST` | `src/errors-idempotency.ts` |
-| `IdempotencyStatusUnknownError` | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `src/errors-idempotency.ts` |
 | `InputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |
 | `MutatorNotIdempotentError` | `X_MUTATOR_NOT_IDEMPOTENT` | `src/errors-idempotency.ts` |
 | `OutputInvalidError` | `X_OUTPUT_INVALID` | `src/errors.ts` |

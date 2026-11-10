@@ -17,5 +17,6 @@ export {
 } from './error-throws';
 export { egressUnsupported } from './error-throws-session';
 export { isScrapeError, ScrapeError } from './errors';
-export type { ScrapeHttp } from './http';
+export type { HttpTransportInit, ScrapeHttp } from './http';
 export type { ScrapePage } from './page';
+export type { SecretResolver } from './secrets';

@@ -4,4 +4,6 @@
 // `pushSubscriptionStore` while `pwa.vapid` is set (`@ultimat3/cli`'s `runtime-push.ts`). Types only.
 
 export type { PushSubscriptionKeys, PushSubscriptionRecord } from './push';
+export type { VapidSigner } from './push-send';
 export type { PushSubscriptionStore } from './push-store';
+export type { PostgresPushSubscriptionStoreOptions } from './push-store-pg';

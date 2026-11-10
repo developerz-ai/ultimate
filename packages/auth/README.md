@@ -1102,7 +1102,7 @@ be built before boot installs the client, and joins an open `withTransaction`. I
 `authSubjectTarget({ executor, user })` is the identity tables as a `defineSubject({ targets })`
 entry (`@ultimat3/jobs`). `user(subject)` names the `x_users.id` the subject is
 (`({ row }) => String(row.userId)`), or `undefined` for none. The export carries the `x_users` row
-(`AUTH_SUBJECT_COLUMNS`) — never `password_hash`, `mfa_secret` or a recovery digest; the erase
+(its named columns) — never `password_hash`, `mfa_secret` or a recovery digest; the erase
 deletes the user (sessions and accounts cascade), their API keys and pending verifications. A
 user in several orgs is erased from all of them: list it `{ target, retain }` when that is wrong.
 
@@ -1142,7 +1142,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `AuthError` | any `AuthErrorCode` — `AUTH_ERROR_CODES` | `src/errors.ts` |
+| `AuthError` | any `AuthErrorCode` | `src/errors.ts` |
 
 ## Supporting exports
 
@@ -1152,12 +1152,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
 |---|---|
 | `JwtBearerCaller` | what `jwtBearerResolver` answers: `{ actor, scopes }`, structurally `ApiKeyCaller` |
 | `JwtBearerResolverOptions` | what `jwtBearerResolver` takes |
-| `JwtBearerCheck` | the check a refusal's log line names: a `WorkloadCheck`, or `key-set`, `scope`, `accept` |
 | `WorkloadCheck` · `WorkloadTokenCheck` | `checkWorkloadToken`'s verdict: the token, or the check that refused it |
 | `PostgresTotpReplayGuard` | the `TotpReplayGuard` `postgresTotpReplayGuard` returns |
 | `PostgresTotpReplayGuardOptions` | what `postgresTotpReplayGuard` takes |
 | `TotpReplayFactory` | `() => TotpReplayGuard`: what `installTotpReplay` takes (`@ultimat3/auth/adapter`) |
-| `PasskeyPolicy` · `PasskeyPolicyInput` · `PasskeyRelyingParty` · `DEFAULT_PASSKEY_CHALLENGE_TTL_MS` | the `passkeys` block, resolved and as written; the `{ rpId, origins }` a verifier needs |
+| `PasskeyPolicy` · `PasskeyPolicyInput` · `PasskeyRelyingParty` | the `passkeys` block, resolved and as written; the `{ rpId, origins }` a verifier needs |
 | `PasskeyCredential` · `PasskeyChallengeRecord` · `PasskeyEvidence` · `PasskeyCeremony` · `PasskeyStore` | the passkey rows and the adapter slice that stores them |
-| `PasskeyCreationOptions` · `PasskeyRequestOptions` · `PasskeyRegistrationResponse` · `PasskeyAssertionResponse` · `PasskeyCredentialDescriptor` | the JSON wire of a ceremony (WebAuthn L3's `*JSON` dictionaries) |
+| `PasskeyCreationOptions` · `PasskeyRequestOptions` · `PasskeyCredentialDescriptor` (the two responses: `@ultimat3/auth/client`) | the JSON wire of a ceremony (WebAuthn L3's `*JSON` dictionaries) |
 | `PasskeyLogin` · `PasskeyStepUp` · `PasskeyStepUpOptions` | what the two factories answer and take |

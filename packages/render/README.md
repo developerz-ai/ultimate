@@ -606,21 +606,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `AssetMissingError` | `X_ASSET_MISSING` | `src/errors.ts` |
-| `BudgetExceededError` | `X_BUDGET_EXCEEDED` | `src/errors.ts` |
 | `IslandInvalidError` | `X_ISLAND_INVALID` | `src/errors.ts` |
-| `IslandNotHydratedError` | `X_ISLAND_NOT_HYDRATED` | `src/errors.ts` |
-| `IslandPropsInvalidError` | `X_ISLAND_PROPS_INVALID` | `src/errors.ts` |
 | `NavigationModalPathInvalidError` | `X_NAVIGATION_MODAL_PATH_INVALID` | `src/navigation-errors.ts` (re-exported by `src/errors.ts`; also on `/client`) |
-| `PrerenderFailedError` | `X_PRERENDER_FAILED` | `src/errors.ts` |
 | `RouteDuplicateError` | `X_ROUTE_DUPLICATE` | `src/errors.ts` |
-| `RouteFileInvalidError` | `X_ROUTE_FILE_INVALID` | `src/errors.ts` |
-| `RouteLoadFailedError` | `X_ROUTE_LOAD_FAILED` | `src/errors.ts` |
-| `RouteLoadInvalidError` | `X_ROUTE_LOAD_INVALID` | `src/errors.ts` |
-| `RouteMetaMissingError` | `X_ROUTE_META_MISSING` | `src/errors.ts` |
 | `RouteModeInvalidError` | `X_ROUTE_MODE_INVALID` | `src/errors.ts` |
-| `RouteOfflineMissingError` | `X_ROUTE_OFFLINE_MISSING` | `src/errors.ts` |
-| `RouteStatusInvalidError` | `X_ROUTE_STATUS_INVALID` | `src/errors.ts` |
-| `SurfaceBoundaryError` | `X_SURFACE_BOUNDARY` | `src/errors.ts` |
 
 ## Public API
 
@@ -635,7 +624,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
 | `registerRoute`, `describePages`, `routeFor`, `routePathFromFile` | the route table |
 | `registerMountedRoutes`, `RouteMount`, `RouteMountInput`, `MountedRouteInput` | routes a package mounts with no surface file: listed by `describePages()` with `mount: { by, permissions }`, absent from `routeEntries()` |
-| `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
+| `checkSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |
 | `isrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
 | `isrKey`†, `isrRequestUrl`†, `undeclaredQuery`†, `isrRouteFor`† | the one derivation of an `isr` store key — the path in `@ultimat3/http`'s `canonicalPath` spelling, so every spelling the router answers with a page is that page's one entry — the request URL narrowed to `revalidate.query`, and the route a key reads back as (a key no route owns is never stored) |
@@ -649,8 +638,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
 | `ISLAND_HOLD_ATTRIBUTE`, `ISLAND_HOLD_MS`, `ISLAND_HOLD_REVEAL` | a held island's marker, and the cap after which it shows its server markup regardless |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
-| `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
-| `zoneScript`, `zoneScriptBody`, `ZONE_SCRIPT_MAX_BYTES` | `time.detect`'s inline script, `app/` documents only: writes `x_timezone_detected` from `Intl`'s zone, which `@ultimat3/http` ranks below every chosen zone. Under 200 B; tag and CSP hash from one body |
+| `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
+| `zoneScript`, `zoneScriptBody` | `time.detect`'s inline script, `app/` documents only: writes `x_timezone_detected` from `Intl`'s zone, which `@ultimat3/http` ranks below every chosen zone. Under 200 B; tag and CSP hash from one body |
 | `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*` (`NAVIGATION_ERROR_EVENT`‡), `NAVIGATE_EVENT`‡, `NAVIGATED_EVENT`‡ | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
 | `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
 | `scheduleRefresh`‡ | a `refresh()` once the visitor is idle, coalesced; never a reload |
@@ -658,6 +647,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
 | `declaresModal`, `parseModalRoutes`, `modalRouteList`, `ModalRoutes`, `NAVIGATION_MODALS_META`, `NAVIGATION_MODAL_BODY_ATTRIBUTE`, `NAVIGATION_MODAL_CLOSE_ATTRIBUTE`, `NAVIGATION_MODAL_SKELETON_ATTRIBUTE` | the modal that opens on the click: the meta naming a surface's modal routes (composed by the server, read by the router) and the frame's attributes, styled by `@ultimat3/ui` |
 | `isRouteNavigation`, `navigationModeOf`, `navigationPrefetches`, `RouteNavigationDeclaration`, `RouteModalPrefetch` | `navigation:` read back: the four spellings, which mode, prefetched or not |
+| `@ultimat3/render/adapter` | the `isrStore` port (`IsrStore` and its entry shapes) and `AssetResolver`, the table `setAssetResolver` installs |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 
 ## Notes

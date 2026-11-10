@@ -40,6 +40,7 @@ the wide shape and answer with the row type.
 | `rounding.ts` | explicit modes, no implicit default, over a float (`roundToInteger`) or a ratio (`roundRatio`, and `roundToDigits` through it) |
 | `format.ts` | `Intl.NumberFormat` only, digits from the exponent |
 | `convert.ts` | explicit rate + `RateProvider`, records provenance |
+| `index.ts` | the app API only (v31): no error factory, no code list, no internal assert. Match an error on `MoneyError` + its `code` |
 
 ## Rules
 

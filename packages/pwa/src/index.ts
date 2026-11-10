@@ -9,37 +9,18 @@ export type { OfflineStrategy, RenderMode } from '@ultimat3/core';
 export {
   backgroundSyncSource,
   registerBackgroundSyncSource,
-  SYNC_TAG,
 } from './background-sync';
 export type { Capability, CapabilityFlags, ResolvedCapabilities } from './capabilities';
 export {
   CAPABILITIES,
   CAPABILITY_SW_MARKERS,
-  enabledCapabilities,
   hasCapability,
   resolveCapabilities,
 } from './capabilities';
 export type { PwaErrorCode } from './errors';
 export {
-  BuildIdMissingError,
-  PWA_ERROR_CODES,
-  PWA_ERROR_TITLES,
   PwaIconMissingError,
-  PwaManifestInvalidError,
-  PwaNoOfflineFallbackError,
-  // `staleWhileRevalidate` is public and throws this, so an app that catches it can name it. The
-  // two X_PWA_SYNC_* classes are not here on purpose: the emitted `sw.js` builds its own local
-  // class in a realm with no bundler, so no instance of theirs can ever reach an app.
-  PwaPushFailedError,
-  PwaPushHostUnlistedError,
-  PwaPushPayloadTooLargeError,
-  PwaPushRejectedError,
-  PwaPushSubscriptionInvalidError,
-  PwaPushUnconfiguredError,
   PwaStrategyExhaustedError,
-  PwaVapidKeyInvalidError,
-  PwaVapidKeyMissingError,
-  SwScopeInvalidError,
 } from './errors';
 export type {
   IconPlan,
@@ -49,7 +30,6 @@ export type {
   IconSpec,
   ImagePipeline,
   ImageTransform,
-  SafeZone,
   SplashSpec,
 } from './icons';
 export {
@@ -57,7 +37,6 @@ export {
   BuiltinImagePipeline,
   ICON_MATRIX,
   MASKABLE_PADDING,
-  maskableSafeZone,
   planIcons,
   requireSourceIcon,
 } from './icons';
@@ -89,7 +68,7 @@ export { generateWebManifest, renderThemeColorMeta, serializeWebManifest } from 
 export type { OfflineConfig, OfflineFallback } from './offline-fallback';
 export { offlineFallbackSource, requireOfflineFallback } from './offline-fallback';
 export type { PersonalPages } from './pages-cache-source';
-export { CLEAR_PAGES_MESSAGE, PAGES_CLEARED_MESSAGE } from './pages-cache-source';
+export { CLEAR_PAGES_MESSAGE } from './pages-cache-source';
 export type { PrecacheAsset, PrecacheEntry, PrecacheInput, PrecacheManifest } from './precache';
 export {
   buildPrecacheManifest,
@@ -98,7 +77,6 @@ export {
 export type {
   PushPayload,
   PushSourceOptions,
-  PushSubscriptionKeys,
   PushSubscriptionRecord,
   RenderedNotification,
   SubscriptionState,
@@ -119,30 +97,16 @@ export { pushSubscribe, pushUnsubscribe } from './push-actions';
 export { PUSH_KEY_META } from './push-client';
 export type { PushReceiverKeys } from './push-decrypt';
 export { decryptPushMessage } from './push-decrypt';
-export type { PushEncryptionKeys, PushEncryptOptions } from './push-encrypt';
-export { encryptPushMessage, PUSH_RECORD_SIZE, pushMessageCapacity } from './push-encrypt';
-export { PUSH_SERVICE_HOSTS, pushHostAllowed } from './push-hosts';
+export { PUSH_SERVICE_HOSTS } from './push-hosts';
 export type { WebPushOptions, WebPushRuntime } from './push-runtime';
 export { installedVapid, installWebPush, resetWebPush, webPushRuntime } from './push-runtime';
 export type {
   PushDelivery,
-  PushSendInput,
-  PushSendOutcome,
-  PushTarget,
   PushUrgency,
-  VapidSigner,
 } from './push-send';
-export {
-  assertPushEndpoint,
-  DEFAULT_PUSH_TTL_SECONDS,
-  PUSH_SEND_TIMEOUT_MS,
-  PUSH_URGENCIES,
-  pushEndpointProblem,
-  sendPushMessage,
-} from './push-send';
+export { DEFAULT_PUSH_TTL_SECONDS } from './push-send';
 export type { PushSubscriptionStore } from './push-store';
 export { memoryPushSubscriptionStore } from './push-store';
-export type { PostgresPushSubscriptionStoreOptions } from './push-store-pg';
 export { postgresPushSubscriptionStore } from './push-store-pg';
 export type { RouteRule } from './route-rules';
 export { assetRules, routeRules } from './route-rules';
@@ -168,19 +132,16 @@ export {
   MODE_STRATEGY,
   networkFirst,
   networkOnly,
-  STRATEGY_NAMES,
   staleWhileRevalidate,
   strategyFor,
 } from './strategies';
-export type { VapidKeyPair, VapidTokenInput } from './vapid';
+export type { VapidKeyPair } from './vapid';
 export {
   assertVapidPair,
   generateVapidKeys,
   importVapidKeys,
   VAPID_PRIVATE_KEY_ENV,
   VAPID_PUBLIC_KEY_ENV,
-  VAPID_TOKEN_TTL_SECONDS,
-  vapidAuthorization,
 } from './vapid';
 export type { ResolvedVapidKeys } from './vapid-keys';
 export { DEV_VAPID_KEYS, resolveVapidKeys, usesDevVapidKeys } from './vapid-keys';

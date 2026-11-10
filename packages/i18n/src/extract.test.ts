@@ -5,13 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { flattenCatalog } from './catalog';
-import {
-  assertCatalogsComplete,
-  auditCatalogs,
-  extractFromFiles,
-  extractKeys,
-  mergeExtractions,
-} from './extract';
+import { catalogMissingKeys, familyIncomplete } from './errors';
+import { auditCatalogs, extractFromFiles, extractKeys, mergeExtractions } from './extract';
 
 const source = `import { t } from '@ultimat3/i18n';
 
@@ -100,16 +95,12 @@ describe('auditCatalogs', () => {
     expect(report.locales[0]?.unused).toEqual([]);
   });
 
-  test('x verify gate throws X_CATALOG_MISSING_KEYS naming the locale', () => {
+  // The gate reads this report (cli `i18n-registration.ts`) and raises `catalogMissingKeys` from it.
+  test('a missing-keys finding is X_CATALOG_MISSING_KEYS naming the locale file and keys', () => {
     const report = auditCatalogs({ extraction, catalogs: { en, es } });
-    let code = 'no-throw';
-    let cause = '';
-    try {
-      assertCatalogsComplete(report);
-    } catch (error) {
-      code = String((error as { code?: unknown }).code);
-      cause = String((error as { cause?: unknown }).cause);
-    }
+    const gap = report.locales.find((audit) => audit.missing.length > 0);
+    if (gap === undefined) expect.unreachable('the es catalog lacks keys source uses');
+    const { code, cause } = catalogMissingKeys(gap.locale, gap.missing);
     expect(code).toBe('X_CATALOG_MISSING_KEYS');
     expect(cause).toContain('es.json');
     expect(cause).toContain('admin.nav.jobs');
@@ -265,7 +256,9 @@ describe('auditCatalogs \u00B7 reference', () => {
     expect(audit('tr')).toMatchObject({ missing: [], unused: [], incomplete: [] });
     expect(audit('de')?.incomplete).toEqual(['invite_select_other']);
     expect(report.ok).toBe(false);
-    expect(() => assertCatalogsComplete(report)).toThrow('X_I18N_FAMILY_INCOMPLETE');
+    expect(familyIncomplete('de', audit('de')?.incomplete ?? []).code).toBe(
+      'X_I18N_FAMILY_INCOMPLETE',
+    );
   });
 
   test('a key source names itself is no family member, so it owes no _other', () => {

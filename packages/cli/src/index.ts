@@ -21,14 +21,13 @@ export { appManifest, writeAppManifest } from './app-manifest';
 export { requireAppRoot } from './app-root';
 export type { RouteStats } from './budgets';
 export { checkBudgets, FRAMEWORK_INLINE_SCRIPTS, FRAMEWORK_SCRIPTS } from './budgets';
-export { BUILD_ENTRY, BUILD_TARGETS, BuildEntryMissingError, readTarget } from './cmd-build';
+export { BUILD_ENTRY, BUILD_TARGETS, readTarget } from './cmd-build';
 export { dbCommand } from './cmd-db';
 export { planDeploy } from './cmd-deploy';
 export { startDev } from './cmd-dev';
 export type { DoctorProbe } from './cmd-doctor';
 export type { GenerateOptions, Generator } from './cmd-generate';
 export { GENERATORS, generate, writeFiles } from './cmd-generate';
-export { JOBS_SUBCOMMANDS } from './cmd-jobs';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
 export { PLANNED_COMMANDS, PLANNED_SUBCOMMANDS, plannedSubcommand } from './cmd-planned';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
@@ -44,7 +43,7 @@ export { generateAppMigration } from './db-generate';
 export { SCHEMA_DUMP_DIR } from './db-schema-dump';
 export type { SchemaDumpRefresh } from './db-schema-refresh';
 export { refreshSchemaDump } from './db-schema-refresh';
-export { QuerySubscribesUnknownError, replicaIdentityTables } from './db-subscribes';
+export { replicaIdentityTables } from './db-subscribes';
 export { dispatch } from './dispatch';
 export { checkSourceDrift, reconcileSchemaHash, writeSchemaHash } from './drift';
 export { registeredErrorCodes } from './error-catalog';
@@ -58,25 +57,14 @@ export {
   collectDeclaredCodes,
   documentedCodes,
   fixProblem,
-  staticFix,
 } from './error-contract';
 export { checkErrorCodesThrown } from './error-unthrown';
 export {
   BadFlagError,
-  BunVersionError,
-  CatalogExistsError,
-  DeclarationUnknownError,
-  ErrorCodeUnknownError,
-  FixTargetUnknownError,
-  JobUnknownError,
   MissingPositionalError,
   MissingSubcommandError,
-  NoTestFilesError,
-  NotInAppError,
   PortInvalidError,
-  RoleUnknownError,
   UnknownCommandError,
-  VerifyFailedError,
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
@@ -123,7 +111,7 @@ export type { PrerenderedPage, PrerenderReport } from './prerender';
 export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export type { PwaArtifacts } from './pwa-artifacts';
 export { loadPwaArtifacts } from './pwa-artifacts';
-export { COMMANDS, cliVersion, SPECS } from './registry';
+export { cliVersion, SPECS } from './registry';
 export type { RunningRoles, WebBinding } from './role-start';
 export { DEV_BINDING, DEV_ROLES, startRoles } from './role-start';
 // `shotCommand`, `prCommand` and `ciCommand` are deliberately NOT re-exported here. They reach
@@ -160,15 +148,13 @@ export { quoteArg } from './shell-quote';
 export type { SiteSettings } from './site-config';
 export { loadSiteSettings, publicOrigin } from './site-config';
 export type { SiteSeo, SiteSeoOptions, SiteSeoSitemap } from './site-seo';
-export { ROBOTS_PATH, SITEMAP_PATH, siteSeo } from './site-seo';
+export { siteSeo } from './site-seo';
 export { writeSiteSeo } from './site-seo-write';
 export { eachSourceFile, isGenerated, isTest, SOURCE_GLOBS } from './source-files';
 export type { SkippedRoute, StaticReport } from './static-report';
 export { parseStaticReport } from './static-report';
 export type { MigratedDatabaseOptions } from './test-database';
-export { migratedDatabase, migratedTemplate } from './test-database';
-export type { HousekeepingOptions, HousekeepingReport } from './test-housekeeping';
-export { tidyTestState } from './test-housekeeping';
+export { migratedDatabase } from './test-database';
 export { filesIn, testArgs } from './test-shards';
 export { defaultWorkers } from './test-workers';
 export { scanCodeDeclarations, scanCodeFixSites, scanCodes } from './ts-scan';
@@ -181,7 +167,6 @@ export { VERIFY_STEP_NAMES } from './verify-step';
 export type { TestType } from './verify-tests';
 export {
   checkFileSizes,
-  checkLockstep,
   checkPackageShape,
   LINE_CEILING,
   PACKAGE_FILES,

@@ -3,7 +3,8 @@
 import { expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import { CdpTimeoutError } from '@ultimat3/scraping/cdp';
-import { E2E_ERROR_CODES, E2E_ERROR_TITLES } from './index';
+import { E2E_ERROR_TITLES } from './e2e-error-codes';
+import { E2E_ERROR_CODES } from './index';
 
 test('every e2e and CDP code is registered with its own title', () => {
   for (const code of E2E_ERROR_CODES) {

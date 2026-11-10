@@ -19,6 +19,9 @@ export type {
   StreamOptions,
 } from './driver';
 export { assertPutOptions, etagOf, resolveListLimit, toBytes } from './driver';
+export type { LocalDriverOptions } from './driver-local';
+export type { MemoryStorageDriverOptions } from './driver-memory';
+export type { S3DriverOptions } from './driver-s3';
 export type { StorageErrorCode, StorageErrorInit } from './errors';
 export {
   checksumMismatch,
