@@ -1,12 +1,14 @@
 // The GraphQL a review lives behind, and the rows it becomes. `gh pr view --comments` shows ISSUE
 // comments; the findings a reviewer anchored to a line are `reviewThreads`, and the thread id that
 // resolves one exists in no REST response and in no web URL — this file is where that query stops
-// being folklore.
+// being folklore. Reviews and issue comments ride the same document (`pr-activity.ts`).
 
 import { t } from '@ultimat3/schema';
 import type { GhHost } from './gh';
 import { GhResponseInvalidError, ghGraphql } from './gh';
 import type { GhRepo } from './gh-target';
+import type { PrActivity } from './pr-activity';
+import { ACTIVITY_FIELDS, ACTIVITY_SCHEMA, activityOf } from './pr-activity';
 
 /**
  * How many threads one page holds. The query is built from it, so the report and the request can
@@ -28,6 +30,7 @@ export const REVIEW_QUERY =
   'pullRequest(number:$n){number url headRefOid reviewDecision ' +
   'commits(last:1){nodes{commit{oid committedDate}}} ' +
   'latestOpinionatedReviews(first:20){nodes{state submittedAt author{login} commit{oid}}} ' +
+  `${ACTIVITY_FIELDS} ` +
   `reviewThreads(first:${THREAD_PAGE}){pageInfo{hasNextPage} nodes{id isResolved isOutdated ` +
   `path line originalLine comments(first:${COMMENT_PAGE}){totalCount ` +
   'nodes{author{login} createdAt body}}}}}}}';
@@ -59,6 +62,7 @@ const REVIEW_RESPONSE = t.object({
                 }),
               ),
             }),
+            ...ACTIVITY_SCHEMA,
             reviewThreads: t.object({
               pageInfo: t.object({ hasNextPage: t.boolean }),
               nodes: t.array(
@@ -118,7 +122,7 @@ export interface PrReview {
   readonly stale: boolean;
 }
 
-export interface PrReviewReport {
+export interface PrReviewReport extends PrActivity {
   readonly repo: string;
   readonly number: number;
   readonly url: string;
@@ -201,6 +205,7 @@ export async function fetchReviewReport(
     headCommittedAt: head?.committedDate ?? null,
     reviewDecision: pull.reviewDecision,
     decidingReview: decidingReview(reviews, pull.reviewDecision),
+    ...activityOf(pull, pull.headRefOid),
     truncated: pull.reviewThreads.pageInfo.hasNextPage,
     threads: orderThreads(
       pull.reviewThreads.nodes.map((thread) => ({

@@ -7,7 +7,7 @@ export const PR_SUBCOMMANDS = ['review', 'resolve', 'reply'] as const;
 
 export const prSpec: CommandSpec = {
   name: 'pr',
-  summary: 'inline review threads: list them with their ids, resolve one, reply in one',
+  summary: 'reviews, comments, bots that did not review, and inline threads; resolve or reply',
   usage:
     'x pr review [--pr <n>] [--repo owner/name] [--all] [--full] | x pr resolve <thread-id> | x pr reply <thread-id> --body "…"',
   subcommands: PR_SUBCOMMANDS,

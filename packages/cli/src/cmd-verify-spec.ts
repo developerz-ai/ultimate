@@ -1,7 +1,7 @@
 // `x verify`'s declaration, apart from its body: the parser, `x help` and the `errors` step
 // read it without loading `cmd-verify.ts`, which `registry.ts` imports only when the command runs.
 
-import { DEFAULT_BASE } from './affected';
+import { DEFAULT_BASE_HELP } from './affected-base';
 import type { CommandSpec } from './parse';
 import { BUDGET_RULE, WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 
@@ -45,7 +45,7 @@ export const verifySpec: CommandSpec = {
       name: 'base',
       type: 'string',
       subcommands: ['run'],
-      summary: `with --changed: git ref to diff against, merge-base style, as x affected reads it (default: ${DEFAULT_BASE})`,
+      summary: `with --changed: git ref to diff against, merge-base style, as x affected reads it (default: ${DEFAULT_BASE_HELP})`,
     },
     {
       name: 'dirty',

@@ -1,20 +1,22 @@
 // What one primitive did in the exercise pass, and the room it did it in: the network sealed with
 // every allow and mock cleared, the mail fixture, the clock frozen, statements and committed rows
-// observed. Every seam is process-global, so the room hands back exactly what it found.
+// observed. Every seam is process-global, so the room keeps only what the observed call's own
+// async context did — a timer's or another request's work in the same window is not the call's.
 
 import type { DbStatementEvent } from '@ultimat3/core';
-import { isSelfOrigin, peerAddressClass, subscribe } from '@ultimat3/core';
+import { asyncContext, isSelfOrigin, peerAddressClass, subscribe } from '@ultimat3/core';
 import { expectedSeqScanReason, statementFingerprint } from '@ultimat3/db';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import type { ExerciseDefect } from './exercise-defect';
-import { testMail } from './fixture-mail';
+import { roomMail } from './exercise-room-mail';
 import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
+import type { LoggedRequest } from './request-log';
 import type { ScaleProof, StatementTally } from './scale-sweep';
 import {
   captureNetwork,
   isNetworkSealed,
-  requestLog,
+  onDial,
   resetNetwork,
   restoreCapturedNetwork,
   sealNetwork,
@@ -180,7 +182,7 @@ const tally = (keys: readonly string[]): ReadonlyMap<string, number> => {
   return counts;
 };
 
-/** What happened between `begin()` and `end()`. */
+/** What the observed call did — it and the work it started, never a neighbour in its window. */
 export interface Observed {
   readonly statements: number;
   readonly effects: readonly ExerciseEffect[];
@@ -192,13 +194,31 @@ export interface Observed {
   readonly shapes: readonly StatementTally[];
 }
 
+/** What `observe` hands back: what the call did, and its value or what it threw. */
+export type Observation<T> =
+  | { readonly observed: Observed; readonly value: T }
+  | { readonly observed: Observed; readonly error: unknown };
+
 export interface ExerciseRoom extends AsyncDisposable {
-  /** `subject`: the primitive the statements until `end()` are sent for — what the plan sweep reads. */
-  begin(subject?: string): void;
-  end(): Observed;
-  /** Every distinct statement text sent between a `begin(subject)` and its `end()`, so far. */
+  /**
+   * Run `fn` — one primitive's call — and hand back what it did. Attributed by async context, never
+   * by time: `fn` runs under a marker of this call's own, and a statement, row, mail or dial counts
+   * only when it is made under it. Work `fn` starts and does not await carries the marker too, until
+   * `observe` returns. `subject`: the primitive the statements are sent for — what the plan sweep
+   * reads; none, and they are tallied but not planned.
+   */
+  observe<T>(subject: string | undefined, fn: () => Promise<T>): Promise<Observation<T>>;
+  /** Whether the caller is inside the call being observed — for a seam the room does not own. */
+  owns(): boolean;
+  /** Every distinct statement text an `observe(subject, …)` call sent, so far. */
   sent(): ReadonlyMap<string, SentStatement>;
 }
+
+/**
+ * The room's marker in flight — an identity object, never a credential. Never `ctx.requestId`: a job subject runs under the worker's own
+ * context, and a request the call did not make has one too.
+ */
+const scope = asyncContext<object>('the exercise room');
 
 export async function openExerciseRoom(): Promise<ExerciseRoom> {
   const clock = captureDeterminism();
@@ -209,14 +229,20 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   // a refusal by definition.
   resetNetwork();
   sealNetwork();
-  const mail = await testMail();
+  // The call in flight: a fresh object per `observe`, so a straggler of the call before is not it.
+  let marker: object | undefined;
+  const owns = (): boolean => marker !== undefined && scope.get() === marker;
+  const mail = await roomMail(owns);
   let statements = 0;
-  let logFrom = 0;
+  const calls: LoggedRequest[] = [];
   let subject: string | undefined;
   const rows: string[] = [];
   const shapes = new Map<string, { count: number; unexpected: number; expected?: string }>();
   const sent = new Map<string, { primitives: Set<string>; scan?: string }>();
+  // Every observer below returns at once unless the sender is the observed call: the bus delivers
+  // synchronously in the sender's context (`instrument`), so `owns()` reads the sender's marker.
   const counting = (event: DbStatementEvent): void => {
+    if (!owns()) return;
     statements += 1;
     const fingerprint = statementFingerprint(event);
     const shape = shapes.get(fingerprint) ?? { count: 0, unexpected: 0 };
@@ -237,75 +263,93 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   // Subscribers on the bus, beside any outer one — released at dispose, never displacing it.
   const offStatements = subscribe('db.statement', (event) => counting(event.payload));
   const offRows = subscribe('entity', (event) => {
+    if (!owns()) return;
     if (event.name === 'entity.row') rows.push(`${event.payload.entity}\u0000${event.payload.op}`);
     if (event.name !== 'entity.bulk') return;
     const { entity, op } = event.payload;
     for (let i = 0; i < event.payload.rows; i += 1) rows.push(`${entity}\u0000${op}`);
   });
+  const offDials = onDial((call) => {
+    if (owns()) calls.push(call);
+  });
+
+  const begin = (name: string | undefined): object => {
+    subject = name;
+    statements = 0;
+    shapes.clear();
+    rows.length = 0;
+    calls.length = 0;
+    mail.clear();
+    marker = {};
+    return marker;
+  };
+  const end = (): Observed => {
+    marker = undefined;
+    // A call a route answered never left the process: the app's `setup` installed it.
+    const { mocks } = captureNetwork();
+    const refused = (call: (typeof calls)[number]): boolean =>
+      !local(call.url) && !mocks.some((route) => routeMatches(route, call));
+    const effects: ExerciseEffect[] = [
+      ...[...tally(rows)].map(([key, count]): ExerciseEffect => {
+        const [entity = '', op = ''] = key.split('\u0000');
+        return { kind: 'row', entity, op, rows: count };
+      }),
+      ...[...tally(mail.sent().map((message) => message.mailId))].map(
+        ([id, count]): ExerciseEffect => ({ kind: 'mail', mail: id, count }),
+      ),
+      ...calls.map(
+        (call): ExerciseEffect => ({
+          kind: 'network',
+          method: call.method,
+          host: hostOf(call.url),
+          refused: refused(call),
+        }),
+      ),
+    ];
+    const refusedHosts = calls.filter(refused).map((c) => hostOf(c.url));
+    const payloads: EffectPayload[] = [
+      ...mail.sent().map((message, i) => ({
+        path: `effect.mail[${i}]`,
+        value: {
+          to: message.to,
+          cc: message.cc,
+          bcc: message.bcc,
+          replyTo: message.replyTo,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+          unsubscribeUrl: message.unsubscribeUrl,
+        },
+      })),
+      // Headers left out: a bearer token is not A's row, and a header is no row's text.
+      ...calls.map((call, i) => ({
+        path: `effect.network[${i}]`,
+        value: { url: call.url, body: call.body },
+      })),
+    ];
+    subject = undefined;
+    const tallies = [...shapes].map(([fingerprint, shape]) => ({ fingerprint, ...shape }));
+    return { statements, effects, refusedHosts, payloads, shapes: tallies };
+  };
 
   return {
-    begin: (name) => {
-      subject = name;
-      statements = 0;
-      shapes.clear();
-      rows.length = 0;
-      mail.clear();
-      logFrom = requestLog().length;
+    observe: async <T>(name: string | undefined, fn: () => Promise<T>): Promise<Observation<T>> => {
+      const mine = begin(name);
+      try {
+        const value = await scope.run(mine, fn);
+        return { observed: end(), value };
+      } catch (error) {
+        return { observed: end(), error };
+      }
     },
-    end: (): Observed => {
-      const calls = requestLog().slice(logFrom);
-      // A call a route answered never left the process: the app's `setup` installed it.
-      const { mocks } = captureNetwork();
-      const refused = (call: (typeof calls)[number]): boolean =>
-        !local(call.url) && !mocks.some((route) => routeMatches(route, call));
-      const effects: ExerciseEffect[] = [
-        ...[...tally(rows)].map(([key, count]): ExerciseEffect => {
-          const [entity = '', op = ''] = key.split('\u0000');
-          return { kind: 'row', entity, op, rows: count };
-        }),
-        ...[...tally(mail.outbox().map((sent) => sent.message.mailId))].map(
-          ([id, count]): ExerciseEffect => ({ kind: 'mail', mail: id, count }),
-        ),
-        ...calls.map(
-          (call): ExerciseEffect => ({
-            kind: 'network',
-            method: call.method,
-            host: hostOf(call.url),
-            refused: refused(call),
-          }),
-        ),
-      ];
-      const refusedHosts = calls.filter(refused).map((c) => hostOf(c.url));
-      const payloads: EffectPayload[] = [
-        ...mail.outbox().map(({ message }, i) => ({
-          path: `effect.mail[${i}]`,
-          value: {
-            to: message.to,
-            cc: message.cc,
-            bcc: message.bcc,
-            replyTo: message.replyTo,
-            subject: message.subject,
-            text: message.text,
-            html: message.html,
-            unsubscribeUrl: message.unsubscribeUrl,
-          },
-        })),
-        // Headers left out: a bearer token is not A's row, and a header is no row's text.
-        ...calls.map((call, i) => ({
-          path: `effect.network[${i}]`,
-          value: { url: call.url, body: call.body },
-        })),
-      ];
-      subject = undefined;
-      const tallies = [...shapes].map(([fingerprint, shape]) => ({ fingerprint, ...shape }));
-      return { statements, effects, refusedHosts, payloads, shapes: tallies };
-    },
+    owns,
     sent: () => sent,
     [Symbol.asyncDispose]: async (): Promise<void> => {
       // Each restore runs whatever the one before it did: a throw must not strand a seam.
       try {
         mail[Symbol.dispose]();
       } finally {
+        offDials();
         offRows();
         offStatements();
         restoreCapturedNetwork(network);

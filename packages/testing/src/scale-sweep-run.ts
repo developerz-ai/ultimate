@@ -71,15 +71,12 @@ async function callAt(
     return { failed: `its exercise.ts input threw: ${renderThrowable(error)}` };
   }
   if (prepared === undefined) return { failed: 'no actor its policy permits' };
-  options.room.begin();
-  try {
-    const answer = await subject.call(prepared.input, prepared.actor, tenant, jobs);
-    const observed = options.room.end();
-    return 'failure' in answer ? { failed: renderThrowable(answer.failure) } : observed;
-  } catch (error) {
-    options.room.end();
-    return { failed: renderThrowable(error) };
-  }
+  // Observed by the call's own async context: a timer's statement in its window is not its shape.
+  const seen = await options.room.observe(undefined, () =>
+    subject.call(prepared.input, prepared.actor, tenant, jobs),
+  );
+  if ('error' in seen) return { failed: renderThrowable(seen.error) };
+  return 'failure' in seen.value ? { failed: renderThrowable(seen.value.failure) } : seen.observed;
 }
 
 /** Seed both sizes, call each subject at each, judge. Unseedable: every subject `unproven`. */

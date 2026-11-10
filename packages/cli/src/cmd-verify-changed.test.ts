@@ -21,11 +21,14 @@ const git = (root: string, diff: readonly string[]): { runner: Runner; calls: st
   const calls: string[] = [];
   const runner: Runner = async (argv) => {
     calls.push(argv.join(' '));
+    // A clone: `origin/HEAD` points at `origin/main`, which is what an unflagged run diffs against.
     const stdout = argv.includes('--show-toplevel')
       ? `${root}\n`
-      : argv[1] === 'diff'
-        ? diff.map((path) => `${path}\0`).join('')
-        : 'abc\n';
+      : argv[1] === 'symbolic-ref'
+        ? 'origin/main\n'
+        : argv[1] === 'diff'
+          ? diff.map((path) => `${path}\0`).join('')
+          : 'abc\n';
     return { ok: true, code: 0, stdout, stderr: '', command: [...argv], durationMs: 1 };
   };
   return { runner, calls };
@@ -103,7 +106,10 @@ describe('unit · the diff picks the steps', () => {
       'manifest',
       'roadmap',
     ]);
-    expect(calls).toContain('git diff --name-only -z main...HEAD');
+    // The remote-tracking default branch, never local `main`: a checkout nobody pulls has a stale
+    // one, and the diff would count what origin already merged as this branch's work.
+    expect(calls).toContain('git diff --name-only -z origin/main...HEAD');
+    expect(scope.selection.base).toBe('origin/main');
   });
 
   test('--base and --dirty reach git exactly as x affected sends them', async () => {
@@ -116,6 +122,8 @@ describe('unit · the diff picks the steps', () => {
     });
     expect(calls).toContain('git diff --name-only -z next...HEAD');
     expect(calls).toContain('git diff --name-only -z HEAD');
+    // An explicit --base asks git nothing about the default.
+    expect(calls.some((call) => call.includes('symbolic-ref'))).toBe(false);
   });
 
   test('an app below the checkout root sees a file outside it as outside, and runs everything', async () => {

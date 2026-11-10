@@ -40,6 +40,22 @@ describe('the phrases', () => {
     expect(lines('wiki/CLI-Reference.md', text)).toEqual([]);
   });
 
+  // The guard's own documentation quotes the phrases it hunts (its `guards.md` row, its
+  // `wiki/Error-Codes.md` row): a line naming the guard describes the rule, it claims nothing.
+  test('a line naming this guard describes the rule, and is not a claim', () => {
+    const rule = [
+      '| `bun run scripts/doc-unreleased.ts` | … `As of Unreleased`, "not yet tagged", … |',
+      '| `X_DOC_UNRELEASED_STALE` | … says `As of Unreleased`, "not yet tagged", … |',
+    ].join('\n');
+    expect(lines('wiki/Error-Codes.md', rule)).toEqual([]);
+    // Only the guard's name exempts: a claim beside another code or script still counts.
+    const claims = [
+      '`X_DOC_DRIFT`: `As of Unreleased`',
+      '`bun run scripts/doc-paths.ts`, in the tree, not yet tagged',
+    ].join('\n');
+    expect(lines('wiki/A.md', claims)).toEqual(['1 As of Unreleased', '2 not yet tagged']);
+  });
+
   test('a `main` cell counts on Known-Gaps alone, and a fenced line never', () => {
     const row = '| A gap | `main` | the workaround |';
     expect(lines('wiki/Known-Gaps.md', row)).toEqual(['1 `main` cell']);

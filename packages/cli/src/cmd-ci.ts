@@ -275,9 +275,12 @@ async function inspect(
       // this repair closes — so when the log had nothing, the finding reads nothing.
       findings.push({
         ...finding,
-        // Fenced and tagged: the log is foreign text, and a `fix:` reconstructed from it is the
-        // log author's instruction, not this CLI's. `commentBlock` is `x pr review`'s fence.
-        fix: commentBlock(`ci-log ${name}`, [finding.fix]).join('\n'),
+        // Tagged, never fenced inside the value: the log is foreign text, and a `fix:` read from it
+        // is the log author's instruction, not this CLI's — `source` says so to a machine, and
+        // `output-findings.ts` never rewrites it into a runnable `bunx x`. A `<comment>` fence
+        // INSIDE `fix` reached the human render as one line of markup and literal `\n` (31.0
+        // field report), so the value stays the clean text and the job rides on `meta.job`.
+        meta: { ...finding.meta, job: name },
         source: 'ci-log',
       });
     }

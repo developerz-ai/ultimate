@@ -91,6 +91,47 @@ describe('unit · output', () => {
     expect(found?.meta?.['step']).toBe('unit');
   });
 
+  // A finding `x ci` read out of a CI log is foreign text. Its `fix` stays the clean command, so
+  // the HEAD is where a reader learns it was not this CLI's: `[from=ci-log <job>]`, last.
+  test('a ci-log finding is marked on its head, and its fix line stays clean', () => {
+    const text = renderFinding({
+      code: 'X_LINT_FAILED',
+      cause: 'biome found 3 errors',
+      fix: 'bunx biome check --write .',
+      at: 'src/a.ts',
+      source: 'ci-log',
+      meta: { step: 'lint', job: 'gate [lint]' },
+    });
+    expect(text.split('\n')).toEqual([
+      'X_LINT_FAILED (src/a.ts) [step=lint] [from=ci-log gate (lint)]',
+      '  cause: biome found 3 errors',
+      '  fix:   bunx biome check --write .',
+    ]);
+    expect(renderFinding({ code: 'X_A', cause: 'c', fix: 'f', source: 'ci-log' })).toStartWith(
+      'X_A [from=ci-log]\n',
+    );
+    // `meta.job` alone marks nothing: only `source` says the text is foreign.
+    expect(renderFinding({ code: 'X_A', cause: 'c', fix: 'f', meta: { job: 'j' } })).toStartWith(
+      'X_A\n',
+    );
+  });
+
+  test('a marked head still round-trips both locators across ci-log', () => {
+    const rendered = renderFinding({
+      code: 'X_VERIFY_STEP_TIMEOUT',
+      cause: 'step "unit" passed its deadline',
+      fix: 'bun test ./packages/cli/',
+      at: 'packages/cli/src/output.test.ts',
+      source: 'ci-log',
+      meta: { step: 'unit', job: 'package (cli)' },
+    });
+    const lines = rendered.split('\n').map((t) => ({ text: t, job: 'verify', step: 'unit' }));
+    const [found] = findingsFrom(lines);
+    expect(found?.at).toBe('packages/cli/src/output.test.ts');
+    expect(found?.meta?.['step']).toBe('unit');
+    expect(found?.fix).toBe('bun test ./packages/cli/');
+  });
+
   // Round-trip across `findingsFrom`: the gate step name a merge gap produces must
   // reach `x ci` exactly as the gate wrote it.
   test('a finding with only the step locator round-trips across ci-log', () => {

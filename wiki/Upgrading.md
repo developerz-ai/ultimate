@@ -185,6 +185,12 @@ One lookup for entries 32–38, 41, 43 and 50. A backend is swapped in ONE place
 
 A setter still on a package's `.` barrel is `X_ADAPTER_PORT_INCOMPLETE` on the `boundaries` step unless `scripts/lib/adapter-port-pins.ts` names why it selects no backend.
 
+### Not breaking, but you will see it
+
+| What moved | Do |
+|---|---|
+| `x verify`'s `manifest` step is red, `X_MCP_APP_UNMOUNTED`, when `ai.mcp.expose` is `true` — **the default**, so an `app.config.ts` that never names it counts — and no `apps/web/mcp.ts` exports `mcp` (`As of 30.4.0`; before, the boot only logged it while `POST /mcp` answered 404). An app scaffolded before `x new` wrote that file hits it on its first 31.0.0 gate | mount it as `x new` does: `apps/web/mcp.ts` exporting `export const mcp = appMcp({ resolveToken: resolveAgentToken })`, `appMcp` from your `@<app>/mcp` package and `resolveAgentToken` from `./app/auth/agent-token` — copy those files (and `packages/mcp/src/index.ts`, if you have no `@<app>/mcp`) from a fresh `bunx create-ultimate`. With no catalog package, the error's own fix is the whole file: `export const mcp = defineAppMcp({ include: 'exposed', resolveToken })` (`@ultimat3/mcp`), `resolveToken` answering an agent or `null`. No agent surface wanted: `ai: { mcp: { expose: false } }` in `app.config.ts` |
+
 ## 29.x → 30.0.0, entry by entry
 
 Released 2026-11-07: `CHANGELOG.md`'s `## 30.0.0` breaking entries in their order, grouped by package, lowest tier first. No legacy path, no codemod, no shim. Rows are never renumbered; each row's `CHANGELOG.md` line names it as `(#N)` after the dash.
@@ -3760,7 +3766,7 @@ Job code never changes across a driver: `steps` is a driver member, so step pers
 |---|---|---|
 | tier 1 → tier 2 | `live: true` on the query | needs a `replicator` role and `orderBy` + `limit` on the `sql` |
 | tier 2 → tier 3 | `persist: true` on the **entity** | shipped in 21.0.0, opt-in per entity. No new mutators, no new authz, no new server code ([Realtime](Realtime#tier-3-shipped-in-2100)) |
-| `memory` → `nats` transport | `realtime.transport: 'nats'`, and **`realtime.urlEnv`** — the env *key name*, not a URL (default `NATS_URL`). There is no `realtime.url` field | roll `sync` and `replicator`; clients reconnect with server-directed backoff. **`realtime.transport` decides the bus** (`selectTransport(env, { transport, urlEnv })`), `As of 2026-09-23` (in the tree, not yet tagged): `'nats'` with its variable unset refuses the boot, and so does `'memory'` with `NATS_URL` set (`X_CONFIG_INVALID`). On 21.x the presence of `NATS_URL` decided it and the config field was never read ([Configuration](Configuration)) |
+| `memory` → `nats` transport | set **`NATS_URL`** for every realtime role — the variable decides the bus. There is no `realtime.transport` or `realtime.urlEnv` key (removed in 31.0.0, entry 35); any other `Transport` is `transport` in `apps/<app>/runtime.ts` | roll `sync` and `replicator`; clients reconnect with server-directed backoff. From 22.0.0 to 30.x `realtime.transport` decided the bus and `'nats'` with its variable unset refused the boot (`X_CONFIG_INVALID`); on 21.x, as again from 31.0.0, the presence of `NATS_URL` decides it ([Realtime](Realtime), [Adapters](Adapters#transport)) |
 
 ## Where the facts live
 

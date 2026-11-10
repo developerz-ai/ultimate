@@ -5,15 +5,12 @@
 // Never a step of `x verify`: it needs a real browser, and a gate that goes red because a machine
 // has no Chrome is a gate that fails for reasons unrelated to the change.
 
-import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core/adapter';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
-import type { ShotColorScheme, ShotDriver, ShotPage, ShotSession } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
 import {
   islandShot,
@@ -34,129 +31,33 @@ import {
 } from './cmd-shot-matrix';
 import { shotSpec } from './cmd-shot-spec';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, MissingPositionalError } from './errors';
+import { BadFlagError } from './errors';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { shotBrowserChoice } from './shot-browser';
-import { readCookieFlag, type ShotCookiePair, shotCookies } from './shot-cookie';
-import { acceptLanguageHeaders, localizedShotPath, readLocaleFlag } from './shot-locale';
+import { readCookieFlag } from './shot-cookie';
+import { localizedShotPath, readLocaleFlag } from './shot-locale';
+import { readRoute, shotSlug } from './shot-route';
+import { runShot } from './shot-run';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
-import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
-import { readThemeFlag, themeChoiceExpression } from './shot-theme';
-import type { IslandCount, ShotArtifacts } from './shot-verdict';
-import {
-  buildVerdict,
-  documentStatus,
-  ISLAND_PROBE,
-  parseIslandProbe,
-  shotLines,
-  shotSummary,
-  verdictJson,
-} from './shot-verdict';
+import { readThemeFlag } from './shot-theme';
+import type { ShotArtifacts } from './shot-verdict';
+import { shotLines, shotSummary, verdictJson } from './shot-verdict';
 import { parseViewports, refuseViewportWithComponent, runShotViewports } from './shot-viewport';
 
 /** Kernel-picked by default: :3000 is usually another project's dev server, not a free port. */
 const DEFAULT_PORT = 0;
 
-// Re-exported, not re-declared: a second declaration of a path or a host rule is a second answer.
+// Re-exported, not re-declared: a second declaration of a path, a host rule, the route rule or the
+// capture is a second answer. The route rule is `shot-route.ts`'s, the capture `shot-run.ts`'s.
+export { readRoute, shotSlug } from './shot-route';
+export type { ShotRun } from './shot-run';
+export { runShot, SHOT_IMAGE, SHOT_VERDICT } from './shot-run';
 export type { BootDevServer, ShotServer };
 export { allowHostsFrom, devServerFor, SHOT_DIR };
-
-export const SHOT_IMAGE = 'shot.png';
-export const SHOT_VERDICT = 'verdict.json';
-
-/** A directory name a route can never escape: everything that is not a letter or digit is a dash. */
-export function shotSlug(route: string): string {
-  const slug = route.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return slug === '' ? 'root' : slug.toLowerCase();
-}
-
-const pathOf = (url: string): string => {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return '/';
-  }
-};
-
-/**
- * A reserved name (RFC 2606) that resolves nowhere, so the origin check below can never be
- * satisfied by an accident of what the app's own host happens to be.
- */
-const ROUTE_BASE = 'http://route.invalid';
-
-/**
- * Where a browser would actually go. The refusal above reads `scheme:` and nothing else, and this
- * is the question it was standing in for: a path is a path only if resolving it lands back on the
- * origin it was resolved against.
- */
-const resolvedOrigin = (path: string): string => {
-  try {
-    return new URL(path, ROUTE_BASE).origin;
-  } catch {
-    // A path `new URL` will not parse is one no browser will fetch either, and reporting it as the
-    // origin it is not is the honest answer here.
-    return '';
-  }
-};
-
-const refuseRoute = (reason: string): never => {
-  throw new BadFlagError({
-    flag: 'route',
-    command: 'shot',
-    reason,
-    // A placeholder, because there is nothing safe to substitute: unlike an absolute URL, an
-    // origin-escaping route carries no path the caller can be assumed to have meant.
-    fix: 'x shot /<path> --json',
-  });
-};
-
-/**
- * A path on the app, never a URL. `x shot https://example.com` would photograph somebody else's
- * site through a headless browser inside your network, which is the SSRF shape `allowHosts` exists
- * to refuse — so it is refused here, at the argument, where the reader can still see why.
- *
- * `scheme:` was the ONLY spelling refused until 2026-08-22, and it is one of four: `//evil/x` is a
- * protocol-relative URL, `\evil\x` is the same thing to every URL parser (a backslash IS a slash
- * for a special scheme), and a TAB inside the path is deleted by the parser before the host is
- * read, so `/⇥/evil/x` becomes `//evil/x`. Each one reached `new URL(route, server.url)` and came
- * back pointed at another host. `allowHostsFrom` one layer down could not catch any of them: it
- * allows a HOSTNAME, and the hostname it is given is the one the page has already left — which is
- * how `x shot //localhost:9200/_cat/indices` photographed whatever else was on the dev box.
- */
-export function readRoute(raw: string | undefined): string {
-  if (raw === undefined || raw.trim() === '') {
-    throw new MissingPositionalError({ command: 'shot', positional: 'route', example: 'x shot /' });
-  }
-  const route = raw.trim();
-  if (/^[a-z][a-z0-9+.-]*:/i.test(route)) {
-    throw new BadFlagError({
-      flag: 'route',
-      command: 'shot',
-      reason: `"${route}" is an absolute URL; x shot photographs a route of the app under test`,
-      // The path out of the URL when it parses — the refusal's own fix line has to be runnable,
-      // and `new URL('http://')` throws, so the fallback is the route every app has.
-      fix: `x shot ${pathOf(route)} --json`,
-    });
-  }
-  const path = route.startsWith('/') ? route : `/${route}`;
-  // Its own refusal rather than folded into the origin check: `/a\b` stays on this origin and is
-  // still not the route that was typed — the verdict would record `/a\b` beside a picture of
-  // `/a/b`, which is the artifact lying about its own subject.
-  if (path.includes('\\')) {
-    return refuseRoute(`"${route}" contains a backslash, which a URL parser reads as "/"`);
-  }
-  const origin = resolvedOrigin(path);
-  if (origin !== ROUTE_BASE) {
-    return refuseRoute(
-      `"${route}" is not a path on the app: a browser resolves it to ${origin === '' ? 'no URL at all' : origin}`,
-    );
-  }
-  return path;
-}
 
 /**
  * The three integer flags, each read with its NAME as an argument. `intFlagOr` takes the name in a
@@ -182,165 +83,6 @@ const intFlag = (
     },
     fallback,
   );
-
-export interface ShotRun {
-  readonly route: string;
-  readonly outDir: string;
-  readonly driver: ShotDriver;
-  readonly boot: () => Promise<ShotServer>;
-  readonly settleMs: number;
-  readonly timeoutMs: number;
-  readonly fullPage: boolean;
-  /**
-   * `--allow-hosts`, verbatim. The app's own host is added once the server is up and never here:
-   * with `--port 0` the port — and therefore the origin — does not exist until after the boot.
-   */
-  readonly extraHosts?: string | undefined;
-  /**
-   * The theme the picture is of. Two things happen BEFORE navigation, because the boot script runs
-   * inline and nothing after `goto` can reach it: `prefers-color-scheme` is emulated so the boot's
-   * "system" branch answers the same on every box, AND the scheme is stored as the visitor's
-   * choice under `THEME_STORAGE_KEY` (`shot-theme.ts`), because an app with `theme.defaultMode`
-   * set answers that before the OS and only a stored choice beats it (issue #489). Absent means
-   * neither: the box's own preference and the app's own default — what `x shot` has always done,
-   * and the point of `defaultMode` — and `ui.shot` names one explicitly for exactly that reason.
-   */
-  readonly colorScheme?: ShotColorScheme | undefined;
-  /** CSS pixels the page is laid out in; absent is the driver's default. */
-  readonly viewport?: { readonly width: number; readonly height: number } | undefined;
-  /**
-   * Sent as `Accept-Language` on every request. The command always sets it — `--locale`, or the
-   * app's default locale — so a picture never depends on the language of the machine's Chrome.
-   */
-  readonly acceptLanguage?: string | undefined;
-  /**
-   * `--cookie`: set before the first navigation, each for the server's own URL once it is up —
-   * so a consent banner (or any cookie-held choice) is decided in the picture.
-   */
-  readonly cookies?: readonly ShotCookiePair[] | undefined;
-  readonly now?: (() => Date) | undefined;
-  /**
-   * `--expect-status`: the document status this shot is ok with — `404` to photograph the not-found
-   * page on purpose. Absent means any 2xx, and anything else fails the verdict with the status.
-   */
-  readonly expectStatus?: number | undefined;
-  /**
-   * Something to do with the page AFTER the islands settled and BEFORE the picture — `ui.inspect`
-   * reads the DOM here, on the one navigation the picture already paid for. `settle` re-runs the
-   * island poll (an action that mounts something changes the count the verdict reports); the
-   * caller who never calls it gets the count from the first settle.
-   */
-  readonly act?:
-    | ((page: ShotPage, settle: () => Promise<IslandCount | null>) => Promise<void>)
-    | undefined;
-  /**
-   * The clock the settle window runs on — the same seam `SettleOptions.sleep` and
-   * `InteractDeps.sleep` take, and the reason they had none on this path: `settleMs` was a
-   * `Bun.sleep` here, so a caller that injected a sleep everywhere else still paid the real
-   * 2000 ms window in wall time once per `runShot`, and a test doing it twice raced its own
-   * per-test timeout on a slower box. Absent is `Bun.sleep`: production waits for real.
-   */
-  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
-}
-
-/** Nothing here may replace the failure that caused it, so a teardown throw is swallowed. */
-const quietly = async (stop: () => Promise<void>): Promise<void> => {
-  await stop().catch(() => undefined);
-};
-
-/**
- * Boot (or find) the server, photograph one route, write both artifacts. The driver and the boot
- * are ARGUMENTS: `bun test` drives this with `fakeBrowser()` and a stub server, so the whole
- * command is proved on a machine with no Chrome — which this command is explicitly excluded from
- * the gate for needing.
- */
-export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
-  const server = await options.boot();
-  const sleep = options.sleep ?? ((ms: number): Promise<void> => Bun.sleep(ms));
-  let session: ShotSession | undefined;
-  try {
-    const requestedUrl = new URL(options.route, server.url).toString();
-    session = await options.driver.open({
-      name: 'x shot',
-      // The host the picture is of, plus whatever the caller named. Never `*`: a headless browser
-      // inside your network is the widest SSRF surface an app can own, and a screenshot command is
-      // not the place to open it by default. Every refusal lands in the verdict's `refused` count.
-      rules: { allowHosts: allowHostsFrom(server.url, options.extraHosts) },
-      clock: systemClock,
-      timeoutMs: options.timeoutMs,
-      ...(options.viewport === undefined ? {} : { viewport: options.viewport }),
-      ...(options.acceptLanguage === undefined
-        ? {}
-        : { headers: acceptLanguageHeaders(options.acceptLanguage) }),
-      ...(options.cookies === undefined || options.cookies.length === 0
-        ? {}
-        : { cookies: shotCookies(options.cookies, new URL(server.url).toString()) }),
-    });
-    const page = session.page;
-    if (options.colorScheme !== undefined) {
-      await page.colorScheme(options.colorScheme);
-      const choice = themeChoiceExpression(options.colorScheme);
-      if (choice !== undefined) await page.prepare(choice);
-    }
-    await page.goto(requestedUrl, { timeout: options.timeoutMs });
-    // Read NOW as well as at capture: the network ring is bounded, and a page that fires a few
-    // hundred requests while it settles evicts the document entry the verdict needs.
-    const landedStatus = documentStatus(page.network(), page.url());
-    if (options.settleMs > 0) await sleep(options.settleMs);
-    // The probe may legitimately answer nothing — a page that refuses evaluation, a driver with no
-    // JS engine. `null` says so; a `0` would read as "the route renders no islands", which is a
-    // different and much more alarming claim.
-    const probe = (): Promise<IslandCount | null> =>
-      page
-        .evaluate(ISLAND_PROBE)
-        .then(parseIslandProbe)
-        .catch(() => null);
-    // The same budget again, and deliberately no new flag: `settleMs` is the deadline at which the
-    // runtime CALLS `import()`, so a mount gets exactly as long to settle as the runtime got to
-    // start it — and `--settle 0`, which asks for no wait, still gets none.
-    const settle = (): Promise<IslandCount | null> =>
-      settleIslands(probe, { windowMs: options.settleMs, pollMs: SETTLE_POLL_MS, sleep });
-    let islands = await settle();
-    if (options.act !== undefined) {
-      await options.act(page, async () => {
-        islands = await settle();
-        return islands;
-      });
-    }
-    const bytes = await page.screenshot({ fullPage: options.fullPage });
-    // Read AFTER the capture, so an error logged while the page settled is in the verdict that
-    // ships with the picture it explains.
-    const verdict = buildVerdict({
-      route: options.route,
-      requestedUrl,
-      finalUrl: page.url(),
-      server: server.origin,
-      capturedAt: (options.now ?? (() => new Date()))().toISOString(),
-      screenshot: SHOT_IMAGE,
-      bytes,
-      console: page.console(),
-      pageErrors: page.pageErrors(),
-      pageErrorsDropped: page.pageErrorsDropped(),
-      network: page.network(),
-      networkDropped: page.networkDropped(),
-      islands,
-      landedStatus,
-      ...(options.expectStatus === undefined ? {} : { expectStatus: options.expectStatus }),
-    });
-    mkdirSync(options.outDir, { recursive: true });
-    const image = join(options.outDir, SHOT_IMAGE);
-    const verdictFile = join(options.outDir, SHOT_VERDICT);
-    await Bun.write(image, bytes);
-    await Bun.write(verdictFile, `${JSON.stringify(verdictJson(verdict), null, 2)}\n`);
-    return { verdict, image, verdictFile };
-  } finally {
-    // Bound to a const: narrowing a `let` does not survive into the closure below, and the session
-    // has to be closed from inside one so a teardown throw cannot replace the real failure.
-    const open = session;
-    if (open !== undefined) await quietly(() => open.close());
-    await quietly(() => server.stop());
-  }
-}
 
 /**
  * Where the artifacts land. A relative `--out` is a path the caller typed from where they stand,

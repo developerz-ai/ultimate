@@ -28,6 +28,12 @@ const KNOWN_GAPS = 'wiki/Known-Gaps.md';
 const NOT_CURRENT = /^(?:docs\/plans\/|docs\/history\/|CHANGELOG\.md$)/;
 const FENCE = /^\s*(?:```|~~~)/;
 const MAIN_CELL = /\|\s*`main`\s*(?=\|)/g;
+/**
+ * A line naming this guard — its script or its code — is the rule's own documentation (its
+ * `guards.md` row, its `wiki/Error-Codes.md` row) quoting the phrases it hunts, not a claim. The
+ * name, never quotes or backticks: house style writes a real claim as `` `As of …` ``.
+ */
+const NAMES_THIS_GUARD = /\bdoc-unreleased\b|\bX_DOC_UNRELEASED_STALE\b/;
 
 /**
  * Each phrase, and what it is called in a finding. "Next major" only with the verb that makes it a
@@ -58,7 +64,7 @@ export function unreleasedPhrases(path: string, text: string): readonly Unreleas
       fenced = !fenced;
       return;
     }
-    if (fenced) return;
+    if (fenced || NAMES_THIS_GUARD.test(line)) return;
     for (const { name, re } of PHRASES) {
       for (const match of line.matchAll(re)) {
         found.push({ path, line: index + 1, phrase: name(match[0]) });

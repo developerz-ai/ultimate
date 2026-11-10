@@ -161,10 +161,12 @@ describe(testName('unit', 'runExercisePass · a job counts its own execution'), 
     await using jobs = await testJobs();
     // Left by an earlier primitive: a child of somebody else's, due now.
     await jobs.enqueue(ejsChild, { ejsOrgId: org, ejsNoteId: crypto.randomUUID() });
-    room.begin('ejsAlone');
-    const answer = await subject.call({ ejsOrgId: org }, null, org, jobs);
-    const observed = room.end();
-    expect(answer.failure).toBeUndefined();
+    const seen = await room.observe('ejsAlone', () =>
+      subject.call({ ejsOrgId: org }, null, org, jobs),
+    );
+    if (!('value' in seen)) return expect.unreachable('ejsAlone answered');
+    const { observed } = seen;
+    expect(seen.value.failure).toBeUndefined();
     expect(observed.shapes.map((shape) => shape.fingerprint)).toEqual(['ejs_orgs.findById']);
     expect(observed.statements).toBe(1);
     // Not drained by the subject: it is still the queue's.

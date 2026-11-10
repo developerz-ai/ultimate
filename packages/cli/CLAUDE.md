@@ -60,6 +60,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`x new`, `x g guard`, `doctor-guards.ts`) † |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize` ‡ |
+| `workspace-external-deps.ts` · `tsconfig-aliases.ts` · `error-codes-package.ts` | `package-shape`: a registry import neither the workspace nor the root declares (`X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`); fix `bun add <pkg> --cwd <workspace>`. The step family's codes and titles, split out of `error-codes.ts` |
 | `app-permissions*.ts` / `permission-grants.ts` | `policy`: `X_PERMISSION_UNGRANTED`, `X_PERMISSION_BORROWED` † |
 | `job-registration.ts` | `manifest`: no job or task under a positional `anonymous-*` name (`X_JOB_UNREGISTERED`) |
 | `unscanned-admin.ts` | `manifest`: a `defineAdmin()` outside the app scan (`apps/*/src/`) is `X_ADMIN_UNSCANNED` |
@@ -167,7 +168,11 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
 | `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 19 tools, two transports † |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
+| `shot-route.ts` / `shot-run.ts` / `shot-gpu.ts` | `x shot`'s route argument (`readRoute`, `shotSlug`); one capture (`runShot`); the page's `navigator.gpu` adapter (`verdict.gpu`, never gating). `cmd-shot.ts` re-exports the first two |
 | `cmd-pr.ts` / `cmd-ci.ts` / `ci-runs.ts` / `ci-tested.ts` | GitHub through `gh`, schema-parsed; not gate steps † |
+| `pr-threads.ts` / `pr-activity.ts` | `x pr review`'s ONE GraphQL document: threads, plus every review (verdict, body) and issue comment |
+| `pr-bots.ts` | which review bots posted a "did not review" notice (rate/review limit, skipped); `blocked` = no review of theirs after it |
+| `ci-log.ts` | `x ci`'s log reader: undoes `##[…]` markers, `::error` annotations and `<comment>` fences; `fix` stays clean, provenance is `source: 'ci-log'` + `meta.job` + `output.ts`'s `[from=ci-log …]` head marker |
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |
 | `cmd-docs.ts` / `docs-sources.ts` / `docs-section.ts` | `x docs`: the app's and the CLI's `@ultimat3` docs; `Page#anchor` prints a section † |
 | `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | the one writer of `.env.production`; compose pre-flight (`X_DEPLOY_ENV_MISSING`) † |

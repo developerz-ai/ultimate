@@ -9,6 +9,8 @@ import { t, validate } from '@ultimat3/schema';
 import type { ConsoleLine, NetworkEntry, PageError } from './browser-launcher-port';
 import { msg } from './messages';
 import type { JsonValue } from './output';
+import type { ShotGpu } from './shot-gpu';
+import { gpuJson } from './shot-gpu';
 
 /**
  * The one expression that counts islands, and it counts TWO different facts because they are two
@@ -156,6 +158,8 @@ export interface ShotInput {
   readonly landedStatus?: number | null | undefined;
   /** `--expect-status`: the one status this shot is ok with. Absent means any 2xx. */
   readonly expectStatus?: number | undefined;
+  /** The GPU backend the page could reach (`shot-gpu.ts`); absent or `null` when not read. */
+  readonly gpu?: ShotGpu | null | undefined;
 }
 
 export interface ShotVerdict extends ShotInput {
@@ -324,6 +328,7 @@ export function verdictJson(verdict: ShotVerdict): JsonValue {
       })),
     },
     islands: islandJson(verdict.islands),
+    gpu: gpuJson(verdict.gpu),
     network: {
       requests: verdict.network.length,
       refused: verdict.refused,

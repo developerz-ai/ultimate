@@ -37,6 +37,10 @@ export const GATE_MESSAGES = {
   'cli.ci.tested.api': 'not tested: GitHub did not answer ({detail}) — a full run',
   'cli.ci.tested.sha':
     'not tested: no GITHUB_SHA, and git rev-parse HEAD named no commit — a full run',
+  // A review bot that said it did NOT review leaves no thread, so its silence reads as a clean
+  // review unless a line says otherwise. `notice` is the same fact once the bot reviewed after it.
+  'cli.pr.bot.blocked': '  {login} did not review: {excerpt} ({kind}, {at}) — {url}',
+  'cli.pr.bot.notice': '  {login} posted a {kind} notice at {at}, then reviewed at {reviewed}',
   'cli.pr.body.truncated': '      … {hidden} more line(s) — re-run with --full',
   /** The line of a thread whose anchor GitHub answers null for — a value, not a column key. */
   'cli.pr.line.unknown': '-',
@@ -47,6 +51,8 @@ export const GATE_MESSAGES = {
     'thread {id} is marked resolved on GitHub — that records the conversation, not that the finding is fixed',
   'cli.pr.review.count':
     '{unresolved} unresolved and {resolved} resolved review thread(s) on {repo}#{pr}',
+  'cli.pr.review.activity':
+    '  {reviews} review(s), {comments} PR comment(s), {bots} review bot(s) — bodies in --json',
   'cli.pr.review.current': '  submitted against the current head {head}',
   'cli.pr.review.decision': '  review: {decision} by {author} at {submitted}',
   'cli.pr.review.none': 'no review thread is anchored to a line on {repo}#{pr}',
