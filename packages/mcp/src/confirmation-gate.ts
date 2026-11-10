@@ -7,7 +7,7 @@ import type { ToolGate } from '@ultimat3/action';
 import { toolGateFor } from '@ultimat3/action';
 import type { Actor, UltimateError } from '@ultimat3/core';
 import { keyedFingerprint, seal, uuidV7 } from '@ultimat3/core';
-import { resolveApprovers } from './confirmation-approvers';
+import { outstandingApprovers, resolveApprovers } from './confirmation-approvers';
 import {
   McpConfirmationContestedError,
   McpConfirmationExpiredError,
@@ -200,5 +200,10 @@ function waiting(row: McpConfirmation, decider: string): UltimateError {
     ...subject,
     approvals: row.approvals.length,
     quorum: row.quorum,
+    outstanding: outstandingApprovers(
+      row.approvers,
+      row.approvals.map((vote) => vote.approver),
+      row.actorId,
+    ),
   });
 }

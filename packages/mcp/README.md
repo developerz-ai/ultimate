@@ -676,7 +676,7 @@ export const confirmRefunds = mcpConfirmations({
 | `from` | `'role:<name>'` (an application role on the decider) or `'actor:<id>'`, a closed template type. Matched by the decision action's policy — the one authz path — for `approve` and `reject`; `view` stays `permission` + `check` |
 | the requester never counts | a decider whose id is the row's `actorId` is `X_FORBIDDEN` (`mcp-confirmation.requester`), and so is an impersonated one (`onBehalfOf`). Only when `approvers` is declared: without it, the original single decision by anyone the policy admits holds |
 | one approver, one vote | the store's conditional write refuses a second vote by the same id; the decision answers `X_MCP_CONFIRMATION_QUORUM_PENDING` naming it |
-| partial | the row stays `pending` until `quorum` distinct votes; the agent's repeat answers `X_MCP_CONFIRMATION_QUORUM_PENDING` (`n of m`), nothing runs. One rejection rejects. `ttlMs` expires a partial row like any other |
+| partial | the row stays `pending` until `quorum` distinct votes; the agent's repeat answers `X_MCP_CONFIRMATION_QUORUM_PENDING` (`n of m`; `meta.outstanding` names the stored selectors still able to vote), nothing runs. One rejection rejects. `ttlMs` expires a partial row like any other |
 | refused at the call | a quorum that is not a whole number ≥ 1, an empty or malformed `from`, or more named `actor:` approvers than exist without the requester: `X_MCP_CONFIRMATION_QUORUM_INVALID`, no row. `evidence` with no `verify`: the same code at declaration |
 | what is signed | `signingPayload` — `confirmationSigningPayload(row)`, canonical JSON of purpose, confirmation id, tool and the keyed argument digest — returned by `view`. The id makes a signature good for one row (a replay onto the next identical call binds another id); the digest for one set of arguments |
 | at the decision | `approve` carries `signature`; missing or not `true` from `verify` is `X_MCP_CONFIRMATION_EVIDENCE_INVALID` and stores no vote. A `verify` that throws propagates: an outage, never a verdict |
@@ -817,7 +817,7 @@ lists resources per caller — what `extraRecipes` is built on.
 | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `mcpConfirmations({ tools })` names a tool this server does not project, or none |
 | `X_MCP_CONFIRMATION_CONTESTED` | identical concurrent calls kept racing one confirmation; retry |
 | `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | an approval did not carry the arguments the agent sent (missing, different, or keyed before a rotation) |
-| `X_MCP_CONFIRMATION_QUORUM_PENDING` | some distinct approvers approved and the quorum needs more; also a repeat vote by one who already counted |
+| `X_MCP_CONFIRMATION_QUORUM_PENDING` | some distinct approvers approved and the quorum needs more; also a repeat vote by one who already counted. `meta.outstanding`: `string[]` of the stored `actor:<id>` / `role:<name>` selectors still able to vote — never the requester or an approver who already voted; `[]` when `from` is open |
 | `X_MCP_CONFIRMATION_EVIDENCE_INVALID` | under `evidence`, a vote's signature is missing or does not verify, or the stored row no longer proves its approval |
 | `X_MCP_CONFIRMATION_QUORUM_INVALID` | `approvers` answered a bar nobody can meet, or `evidence` declares no `verify` |
 | `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |
