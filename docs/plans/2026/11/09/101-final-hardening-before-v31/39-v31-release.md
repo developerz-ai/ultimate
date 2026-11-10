@@ -13,3 +13,19 @@
 
 ## Done when
 - Every fact row in `CLAUDE.md`'s "Read it yourself" table answers 31.0.0.
+
+## Outcome (2026-11-10)
+Done. Three releases in one day, each on npm with all 31 packages attested by SLSA provenance and an annotated tag (`git ls-remote --tags origin 'refs/tags/v31*'`, `gh release list`).
+
+| Release | PRs | Tag on |
+|---|---|---|
+| 31.0.0 | #1046 | main `f557b5e9d` |
+| 31.1.0 | #1047 + #1048 | the bump PR's head `f45100336`, not main's `db03c9b69`. The tree is identical (`82f6b088f`). The bump branch was named `release/31.1.0`, and `release-tag.yml:36` accepts `release/*` CI runs ([#1054](https://github.com/developerz-ai/ultimate/issues/1054)) |
+| 31.2.0 | #1049 + #1050 | main `97f6d102e` |
+
+Field reports fixed after 31.0.0, from the upgrades in [`40`](40-adopter-a.md)–[`48`](48-adopter-i.md):
+
+| Release | Fixed |
+|---|---|
+| 31.1.0 | exercise room attribution; the `x affected` base; `--paths` stdout; `x ci` fix lines; `x pr review` completeness; `X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`; `x shot` GPU |
+| 31.2.0 | `runtime.ts` ports in build and exercise; the storage boot; the sign-in cookie plus `oauthLogin({ callbackPath })`; `X_TYPESCRIPT_VERSION`; fetch-as-value; memory 23505; factory literals |
