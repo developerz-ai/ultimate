@@ -105,7 +105,7 @@ const rig = (transport: Transport = new InProcessTransport()) => {
     transport,
     lock,
     schedule: timers.schedule,
-    backoff: { baseMs: 100, maxMs: 1_000, factor: 2, jitter: 'none' },
+    backoff: { base: 100, max: 1_000, factor: 2, jitter: 'none' },
   });
   return { servers, feed, lock, timers, replicator };
 };
@@ -210,7 +210,7 @@ describe('a replication stream that ends', () => {
       lock,
       transport: new InProcessTransport(),
       schedule: timers.schedule,
-      backoff: { baseMs: 100, maxMs: 1_000, factor: 2, jitter: 'none' },
+      backoff: { base: 100, max: 1_000, factor: 2, jitter: 'none' },
       rng: () => 0.5,
     });
     await replicator.start();

@@ -91,7 +91,7 @@ export function accountJob(options: {
     tenant: 'none',
     input: passthrough<AccountInput>(),
     idempotencyKey: ({ account }) => `account:${account}`,
-    retry: options.retry ?? { attempts: 1, jitter: false },
+    retry: options.retry ?? { attempts: 1, jitter: 'none' },
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
     async run(args) {
       calls.push({ account: args.input.account, finalAttempt: args.finalAttempt });
@@ -228,7 +228,7 @@ export function keyedConcurrencyScenarios(label: string, harness: KeyedHarness):
     const probe = accountJob({
       concurrency: keyed('fail'),
       hold: true,
-      retry: { attempts: 3, jitter: false, delay: 1 },
+      retry: { attempts: 3, jitter: 'none', delay: 1 },
     });
     await enqueueRun(driver, probe, 'acct-1');
     const second = await enqueueRun(driver, probe, 'acct-1');
@@ -269,7 +269,7 @@ export function keyedConcurrencyScenarios(label: string, harness: KeyedHarness):
     const probe = accountJob({
       concurrency: keyed(),
       hold: true,
-      retry: { attempts: 2, jitter: false },
+      retry: { attempts: 2, jitter: 'none' },
     });
     await enqueueRun(driver, probe, 'acct-1');
     await enqueueRun(driver, probe, 'acct-1');

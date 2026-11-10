@@ -7,10 +7,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, seal, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, type QueryPolicy, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
 import { entityRow } from './pg-entity-row';
@@ -120,7 +121,10 @@ describe('unit · a sealed column reaches no socket and no bus', () => {
         policy: anyone,
         live: true,
         sql: () =>
-          from<Account & Row>('rs_accounts', () => table.all() as Promise<(Account & Row)[]>)
+          from<Account & LiveRow>(
+            'rs_accounts',
+            () => table.all() as Promise<(Account & LiveRow)[]>,
+          )
             .orderBy('name')
             .limit(50),
       }),
@@ -147,7 +151,7 @@ describe('unit · a sealed column reaches no socket and no bus', () => {
       table: 'rs_accounts',
       op: 'insert',
       before: null,
-      after: entityRow(relation, tuple, 'after') as Row,
+      after: entityRow(relation, tuple, 'after') as LiveRow,
       lsn: formatLsn(2),
       txid: '2',
       orgId: null,

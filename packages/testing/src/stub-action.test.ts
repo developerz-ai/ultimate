@@ -3,7 +3,8 @@
 // answer, and the next test runs the declared handler again.
 
 import { describe, expect } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { InternalError, userActor } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { stub } from './stub';

@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
 import { action, defineApi, resetActions } from '@ultimat3/action';
 import { can, clearPermissions } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
 import { openApiArtifacts, openApiJson, openApiStaleness } from './app-openapi';
 

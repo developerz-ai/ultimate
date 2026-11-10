@@ -8,7 +8,7 @@ import { type Actor, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { ResumeSource } from './cursor';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -40,7 +40,7 @@ class FakeWs implements WsLike {
 
 const actor = (id: string): Actor => userActor({ id, orgId: 'o1' });
 const input: JsonValue = { orgId: 'o1' };
-const rows: Row[] = [
+const rows: LiveRow[] = [
   { id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'alice draft', likes: 0 },
   { id: 'p2', orgId: 'o1', ownerId: 'bob', title: 'bob draft', likes: 0 },
 ];
@@ -82,7 +82,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
   return { socket, ws };
 }
 
-const change = (after: Row, before: Row | null): ChangeEvent => ({
+const change = (after: LiveRow, before: LiveRow | null): ChangeEvent => ({
   table: 'posts',
   op: 'update',
   before,
@@ -141,7 +141,7 @@ describe('a gate that cannot decide', () => {
     alice.ws.frames.length = 0;
     dead = true;
 
-    const target = rows[1] as Row;
+    const target = rows[1] as LiveRow;
     const sent = await registry.deliver(change({ ...target, likes: 1 }, target));
 
     expect(sent).toBe(1);

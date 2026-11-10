@@ -13,12 +13,18 @@ point the harness at yours.
 | any runtime but Bun | `non_goals` in `.dz/maintainer/maintainer.yml`; [FAQ](FAQ) |
 | any database but Postgres | the same list; [Home](Home) |
 | any renderer but SolidJS | the same list; [Routes and render modes](Routes-And-Render-Modes) |
-| a long track record: released in 2026, no outside production adopter claimed | [FAQ](FAQ) |
-| a slow major cadence: from v30, one major per 90 days | [Stability](Stability) |
+| a long track record: released in 2026; who builds on it is stated below | [FAQ](FAQ#is-it-production-ready) |
+| a slow major cadence: from v31, at most one major per 90 days | [Stability](Stability) |
 | a third-party security audit: there has been none | [`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md) |
 | a plugin API: an app wraps a primitive instead | [Home](Home) |
 | a serverless or edge target: containers only | [Deployment](Deployment) |
 | everything on the open list | [Known gaps](Known-Gaps) |
+
+Who uses it:
+
+<!-- generated: production-apps — bun run scripts/production-apps.ts --write -->
+9 apps outside this repository build on Ultimate, small to medium in size; at least 1 of them serves production traffic. Owner-reported, `As of 2026-11`: adopters are never named (`scripts/private-names.ts` refuses a name in the tree), so no command here re-derives this line.
+<!-- end generated -->
 
 ## Measured, and how to reproduce it
 

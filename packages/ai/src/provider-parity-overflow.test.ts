@@ -139,7 +139,7 @@ describe('nothing retries an overflow', () => {
     const second = { n: 0 };
     const gateway = providerGateway({
       providers: [overflowing('a', first), overflowing('b', second)],
-      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 3, base: 0, max: 0, jitter: 'none' },
       sleep: () => Promise.resolve(),
     });
     const error = await failureOf(() =>

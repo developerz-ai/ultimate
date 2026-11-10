@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode } from './error-codes';
 import { isUltimateError } from './errors';
-import { setLogSink } from './logger';
+import { installLogSink } from './logger';
 import {
   OTLP_ENDPOINT_KEY,
   OTLP_HEADERS_KEY,
@@ -304,7 +304,7 @@ describe('otlp · a credential in the endpoint is never logged', () => {
 
   test('a failed export logs the label, never the query', async () => {
     const lines: string[] = [];
-    const previous = setLogSink((line) => lines.push(line));
+    const releaseLogSink = installLogSink((line) => lines.push(line));
     try {
       await postOtlp({
         url: 'https://c.example:4318/v1/traces?api-key=s3cret',
@@ -316,7 +316,7 @@ describe('otlp · a credential in the endpoint is never logged', () => {
         }),
       });
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(lines.join('')).toContain('https://c.example:4318/v1/traces');
     expect(lines.join('')).not.toContain('s3cret');

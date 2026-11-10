@@ -4,7 +4,8 @@
 // type uuid: "owner"`); with a uuid and no row, `X_NOT_FOUND`. The pass seats the user it acts as.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { AUTH_TABLES, postgresAuthAdapter } from '@ultimat3/auth';
 import { UltimateError, useContext } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';

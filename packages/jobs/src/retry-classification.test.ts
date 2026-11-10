@@ -12,7 +12,7 @@ const policy: RetryPolicy = {
   backoff: 'fixed',
   delay: 1_000,
   maxDelay: 60_000,
-  jitter: false,
+  jitter: 'none',
 };
 
 const coded = (
@@ -141,13 +141,17 @@ describe('nextRetryForError', () => {
     // keeps them from all knocking at it — core's `jitterStatedDelay`, the rule a rate-limit
     // deferral uses too.
     const named = coded('X_TEST_CLASSIFY_AFTER', { meta: { retryAfterSeconds: 30 } });
-    const jittered: RetryPolicy = { ...policy, jitter: true };
+    const jittered: RetryPolicy = { ...policy, jitter: 'equal' };
     expect(nextRetryForError(jittered, 1, named, () => 0.5).delayMs).toBe(37_500);
     const wakes = [0.1, 0.3, 0.6, 0.9].map(
       (roll) => nextRetryForError(jittered, 1, named, () => roll).delayMs,
     );
     expect(new Set(wakes).size).toBe(4);
-    // `jitter: false` is the policy's own decision, honoured: the bare floor.
+    // `'full'` spreads a stated delay exactly as `'equal'` does: the floor is the responder's.
+    expect(nextRetryForError({ ...policy, jitter: 'full' }, 1, named, () => 0.5).delayMs).toBe(
+      37_500,
+    );
+    // `jitter: 'none'` is the policy's own decision, honoured: the bare floor.
     expect(nextRetryForError(policy, 1, named, () => 0.5).delayMs).toBe(30_000);
   });
 

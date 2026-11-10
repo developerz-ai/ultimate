@@ -5,7 +5,7 @@
 // meant thirty days, which is `absoluteTtlMs`.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { issueApiKey, verifyApiKey } from './api-keys';
 import { type Auth, defineAuth } from './auth';
 import { AuthError } from './errors';
@@ -132,13 +132,13 @@ describe('revocation', () => {
       order.push('write');
       return await update(id, patch);
     };
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       if (line.includes('auth.revocation') && line.includes('offboarded')) order.push('log');
     });
     try {
       await disableUser(auth, 'alice', 'offboarded');
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(order).toEqual(['log', 'write']);
   });

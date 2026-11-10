@@ -3,7 +3,8 @@
 // re-homed `orgId`, so a membership-fact policy can pass in every tenant the pass seeds.
 
 import { describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import type { Actor, ActorFactMap } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import { can, definePermissions } from '@ultimat3/policy';

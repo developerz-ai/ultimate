@@ -4,7 +4,8 @@
 // error may name a `docs://` guide, printed as a fourth line the moment the agent is stuck.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { agentActor, ctxOf, runWithContext, UltimateError } from '@ultimat3/core';
 import {
   can,

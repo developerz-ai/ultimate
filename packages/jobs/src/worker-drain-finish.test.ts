@@ -141,7 +141,7 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
       name: 'chargeCard',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `chargeCard:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ step, runId: id }) => {
         runId = id;
         await step.run('charge', async () => {
@@ -187,7 +187,7 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
       name: 'cooperative',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `cooperative:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ ctx }) => {
         started.arrive();
         await sleepUnless(80, ctx.signal).catch(() => undefined);
@@ -226,7 +226,7 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
       name: 'longRunning',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `longRunning:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ ctx }) => {
         started.arrive();
         try {
@@ -271,7 +271,7 @@ describe('a claim still held at the cut-off goes back to the queue before the dr
       name: 'deaf',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `deaf:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       // Ignores ctx.signal: nothing in JS can stop it, so only the hand-back frees its row.
       run: async () => {
         started.arrive();
@@ -312,7 +312,7 @@ describe('a claim still held at the cut-off goes back to the queue before the dr
       name: 'deaf',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `deaf:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ attempt }) => {
         expect(attempt).toBe(1);
         claimedAgain.arrive();
@@ -341,7 +341,7 @@ describe('a worker started inside a drain claims nothing', () => {
       name: 'lateBoot',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `lateBoot:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async () => {
         ran += 1;
       },

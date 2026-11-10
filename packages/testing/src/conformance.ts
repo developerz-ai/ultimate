@@ -177,6 +177,10 @@ export {
   SEARCH_INDEX_CHECKS,
   searchIndexConformance,
 } from './search-index-conformance';
+export {
+  listAll as listSearchDocuments,
+  SEARCH_INDEX_LIST_CHECKS,
+} from './search-index-conformance-list';
 export type {
   SearchDocOptions,
   SearchIndexCheck,

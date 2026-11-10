@@ -4,7 +4,12 @@
  * the socket. Principal-free, so a shareable document may carry them — unlike the scope tag.
  */
 
-import { CLIENT_BUILD_META, CLIENT_SYNC_META, CLIENT_SYNC_WORKER_META } from '@ultimat3/core';
+import {
+  CLIENT_BUILD_META,
+  CLIENT_OUTBOX_MAX_META,
+  CLIENT_SYNC_META,
+  CLIENT_SYNC_WORKER_META,
+} from '@ultimat3/core';
 import type { HeadTag } from './head';
 
 export interface ClientSyncHead {
@@ -13,6 +18,8 @@ export interface ClientSyncHead {
   readonly workerUrl?: string | undefined;
   /** `/_x/assets/page-boot/<hash>.js` — realtime's page boot, when the app has realtime. */
   readonly bootUrl?: string | undefined;
+  /** `realtime.maxQueued`: the page outbox's ceiling, which the boot builds it with. */
+  readonly outboxMaxQueued?: number | undefined;
 }
 
 export function clientSyncTags(head: ClientSyncHead): readonly HeadTag[] {
@@ -20,6 +27,9 @@ export function clientSyncTags(head: ClientSyncHead): readonly HeadTag[] {
     meta(CLIENT_SYNC_META, head.syncUrl),
     meta(CLIENT_BUILD_META, head.buildId),
     ...(head.workerUrl === undefined ? [] : [meta(CLIENT_SYNC_WORKER_META, head.workerUrl)]),
+    ...(head.outboxMaxQueued === undefined
+      ? []
+      : [meta(CLIENT_OUTBOX_MAX_META, String(head.outboxMaxQueued))]),
   ];
 }
 

@@ -116,20 +116,15 @@ export const decodeBody = (entry: CassetteEntry): Uint8Array<ArrayBuffer> =>
     ? Uint8Array.from(Buffer.from(entry.body, 'base64'))
     : new TextEncoder().encode(entry.body);
 
-/** Sorted keys at every depth and a trailing newline: a re-recording diffs by what changed. */
-export function serializeCassette(file: CassetteFile): string {
-  return `${JSON.stringify(sorted(file), null, 2)}\n`;
+/**
+ * Sorted keys at every depth and a trailing newline: a re-recording diffs by what changed.
+ * `@ultimat3/action`'s DOCUMENT form, never a local sorter: the file is committed and re-parsed.
+ * Loaded at the call: this module is on the barrel, and `action` is dynamic-only there.
+ */
+export async function serializeCassette(file: CassetteFile): Promise<string> {
+  const { stableStringify } = await import('@ultimat3/action');
+  return `${stableStringify(file, 2)}\n`;
 }
-
-const sorted = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(sorted);
-  if (typeof value !== 'object' || value === null) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, sorted((value as Record<string, unknown>)[key])]),
-  );
-};
 
 /** The file read back, its shape checked: a hand-edited cassette that broke is named, not replayed. */
 export function parseCassette(text: string, file: string): CassetteFile {

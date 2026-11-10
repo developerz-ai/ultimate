@@ -13,11 +13,12 @@ import {
   subscribe,
   userActor,
 } from '@ultimat3/core';
-import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
 import { LiveClient } from './client';
 import { FakeSocket } from './client-harness-fixture';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition, SnapshotArgs } from './live-contract';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
@@ -105,7 +106,7 @@ function registry(): LiveQueryRegistry {
       },
       live: true,
       sql: () =>
-        from<Row>('posts', async () => [{ id: 'p1' }])
+        from<LiveRow>('posts', async () => [{ id: 'p1' }])
           .orderBy('id')
           .limit(10),
     }),

@@ -1,7 +1,7 @@
-// What a container role imports of the app. `web`, `sync` and `replicator` answer for registries a
-// request, a subscription or the WAL names — routes, queries, entities — so they import every
-// module. `worker` and `scheduler` run jobs and tasks: they import the API index and every module
-// that brings no document (a component, a stylesheet) with it, and nothing else.
+// What a container role imports of the app: `web`, `sync` and `replicator` every module (routes,
+// queries, entities); `worker` and `scheduler` the API index and every module that brings no
+// document (a component, a stylesheet) with it. Every role reads the image's prebuilt registry
+// first (`app-load-prebuilt.ts`), which holds both lists, and scans only when there is none.
 
 // why: Bun ships no path API; the API index is named app-root-relative and imported absolute.
 import { join, resolve } from 'node:path';
@@ -10,6 +10,7 @@ import { isJsonObject, logger, UltimateError } from '@ultimat3/core';
 import { registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import type { AppScan } from './app-load';
 import { scanAppModules } from './app-load';
+import { loadPrebuiltApp } from './app-load-prebuilt';
 import { API_INDEX } from './app-root';
 import { createDocumentGraph } from './document-graph';
 
@@ -116,7 +117,7 @@ export async function scanBackground(root: string): Promise<AppScan> {
  * answered by importing everything, loudly.
  */
 async function loadBackground(root: string, role: Role): Promise<AppScan> {
-  const scan = await scanBackground(root);
+  const scan = (await loadPrebuiltApp(root, 'background')) ?? (await scanBackground(root));
   const missing = await unregisteredFromManifest(root);
   if (missing !== undefined && missing.length === 0) return scan;
   if (missing === undefined) {
@@ -129,15 +130,20 @@ async function loadBackground(root: string, role: Role): Promise<AppScan> {
     const error = new RoleLoadIncompleteError({ role, missing });
     logger.error(error.format(), { code: error.code, role, missing });
   }
-  return scanAppModules(root, { track: false });
+  return loadEverything(root);
+}
+
+/** Every module: from the prebuilt registry when it is the app on disk, else the scan. */
+async function loadEverything(root: string): Promise<AppScan> {
+  return (await loadPrebuiltApp(root)) ?? (await scanAppModules(root, { track: false }));
 }
 
 /**
- * What `serve-boot.ts` calls instead of `loadApp`: the scan a role needs and none of what a tool
- * reads from it afterwards — no reload graph, no error-code walk of the app's source.
+ * What `serve-boot.ts` calls instead of `loadApp`: the modules a role needs and none of what a
+ * tool reads from them afterwards — no reload graph, no error-code walk of the app's source. The
+ * prebuilt registry when it is the app (`x build --target prebuilt`): the scan, and a background
+ * role's walk of the import graph per module, is what grew a pod's start with the file count.
  */
 export async function loadAppForRole(root: string, role: Role): Promise<AppScan> {
-  return roleLoadFor(role) === 'background'
-    ? loadBackground(root, role)
-    : scanAppModules(root, { track: false });
+  return roleLoadFor(role) === 'background' ? loadBackground(root, role) : loadEverything(root);
 }

@@ -3,6 +3,7 @@
 Owns: the `route` primitive, the four render modes, the route table, the surface boundary,
 islands + budgets, hydration directives, `<head>` merge, **the server JSX runtime and the two Bun
 loaders that make an app's `.tsx` and `.scss` runnable**.
+A row marked `†` has its full text in [`docs/history/render-rules.md`](../../docs/history/render-rules.md).
 
 **Entry points**: `"."`, `"./server"`, `"./client"`, `"./navigation"`, and `"./adapter"` (`adapter.ts`, the
 `isrStore` port's TYPES — `IsrStore` and its entry shapes; no installer: `@ultimat3/cli` reads
@@ -36,7 +37,7 @@ axiom 6). Never `cli` (upward).
 | `load` | optional, and the ONE server-side data seam. Resolved once per render by `routeDataFor()` and handed to **both** `meta` and the page component. Absent `load`, the context IS the data (`{ params, url }`). |
 | `load` is required when the context cannot supply the data | `LoadRequirement<TData>` in `defineRoute`'s parameter. `RouteContext` is a type ALIAS on purpose — only an alias carries the implicit index signature that makes it a `RouteData`. |
 | A loader's own error | rethrown only when `isUltimateError` says so (core's brand), never a `code` property and never `instanceof UltimateError` — a tier-0 error is branded, not a subclass. Everything else is `X_ROUTE_LOAD_FAILED`. |
-| A loader's own STATUS | `withStatus(status, data)` (`route-status.ts`) — the ONE way a page answers 404/410/503 while rendering its own component in the app's shell. The status rides on the data by IDENTITY in a `WeakMap`; `routeStatusOf(data)` is the total reader (200 by default). A 3xx is `X_ROUTE_STATUS_INVALID`. A 4xx/5xx is `robots.index = false` by construction in `defineRoute`'s `meta` wrapper. The `Response` status is minted by `@ultimat3/cli`'s `runtime-render.ts`. |
+| A loader's own STATUS | `withStatus(status, data)` (`route-status.ts`) — the ONE way a page answers 404/410/503; `routeStatusOf(data)` reads it; a 3xx is `X_ROUTE_STATUS_INVALID` † |
 | Type claims | `type-pins.tsx`, never a `.test.ts` — `tsconfig.json` excludes tests. `.tsx` so the island-as-JSX claim is checked against the JSX an author writes. |
 | Descriptor `meta` / `load` | always `(x) => Promise<…>`. Authors may declare either sync; consumers never branch. |
 | Descriptor `budget` | always an object, `{}` when undeclared. `budget.js === undefined` is the site/ hydration failure. |
@@ -53,12 +54,12 @@ axiom 6). Never `cli` (upward).
 | Island props | declared, JSON-safe, under `ISLAND_PROPS_MAX_BYTES` (16 KiB; the doc comment carries the arithmetic) — `island-props.ts` is the one gate, a structural walk, never a `JSON.stringify` round trip. Over the cap the cause names the heaviest props and the fix names the endpoint pattern, never "raise the cap". `X_ISLAND_PROPS_INVALID` has a row in `@ultimat3/http`'s table (500). |
 | A prop lands via `Object.defineProperty` | never `out[key] = v` — `__proto__` (a real own key off `JSON.parse`) would run the prototype setter. |
 | An attribute alias is a `Map` | never a record (`toString` resolved to a function). `MODE_SPECS[config.render]` is guarded by `Object.hasOwn` for the same reason. |
-| An attribute NAME is validated too | `ATTRIBUTE_NAME` in `html.ts` (`/^[A-Za-z_:][-A-Za-z0-9_:.]*$/`), refused as `null`; the `on*` handler check folds case. `head-attributes.ts` prints a head tag through the same `attributePair`, one exception: a `link` href reads `safeUrl` as a `src` (raster `data:image/`) and `rel="alternate"` keeps `android-app:`/`ios-app:`. A drop logs `head.attribute_dropped` once per tag and attribute in dev. One rule, never two. |
+| An attribute NAME is validated too | `ATTRIBUTE_NAME` in `html.ts`, refused as `null`; `head-attributes.ts` prints through the same `attributePair`. One rule, never two † |
 | Which attributes take a URL | `URL_BEARING_ATTRIBUTES` in `html.ts` — core's four plus `data`, `poster`, `ping`, `xlink:href`. `srcdoc` is refused outright (entity-decoded, then parsed as HTML). |
 | Island collection | per render, `renderToHtml(tree, { islands })`. Never module-global and never on an ambient context. |
 | A byte count in a message | `formatBytes` from `@ultimat3/core`, never a local one. |
 | Island bytes | **not this package's**: `@ultimat3/cli`'s `packages/cli/src/budgets.ts` measures the EMITTED document and is the gate. What stays here is the budget grammar (`parseByteBudget`) and `defaultIslandBudget`. |
-| The hydration runtime's CSP | `HYDRATE_RUNTIME_BODIES` — every body `hydrateRuntime` can emit (seven subsets, each with and without the hold part — fourteen). It is inline in every document with an island and `@ultimat3/http`'s `script-src` is `'self' 'wasm-unsafe-eval'`, so `@ultimat3/cli`'s `script-csp.ts` hashes this list at boot. `runtimeBody` is the one place the served and hashed text are one string. A hole's reveal body is the constant `$X()`, hashed through `STREAM_REVEAL_BODIES`, and reachable. |
+| The hydration runtime's CSP | `HYDRATE_RUNTIME_BODIES` — every inline body `hydrateRuntime` can emit, hashed by `@ultimat3/cli`'s `script-csp.ts`; `runtimeBody` is the one string served and hashed † |
 | Island markup | the props `<script>` is emitted INSIDE the wrapper by `render-walk.ts`; an assembler only adds `hydrateRuntime(directives)`. |
 | Island boot | `el.__x` holds the boot PROMISE, never a boolean. |
 | Island mount markers | `data-x-mounted=""` when `mount()` resolved, `data-x-failed="<message>"` when it rejected — set by the runtime, never by `emitIslandAttributes`. The rejection handler RETHROWS. Prelude sizes `As of 2026-10-05`: `idle` 1,843, `visible` 886, `interaction` 1,728 B (what `DEFAULT_ISLAND_JS_BYTES` derives from). |
@@ -69,11 +70,12 @@ axiom 6). Never `cli` (upward).
 | `idle`'s deadline | `IDLE_HYDRATE_TIMEOUT_MS`, interpolated INTO the runtime string and exported for `x shot`'s settle. |
 | Route truth | `registry.ts`. Never a second route list and never a second matcher — `@ultimat3/http`'s trie (`stages.ts`) serves requests. `routeFor` is an exact-path `Map` lookup. |
 | Route filename | `page.tsx` under `site/`/`app/` — `ROUTE_FILENAME`, keyed by `RouteSurface`. Anything else is `X_ROUTE_FILE_INVALID`, any file under `api/` or `shared/` included. |
-| Mounted routes | `registerMountedRoutes(mount, routes)` (`mounted-routes.ts`) — routes a PACKAGE mounts with no surface file (the admin's screens). In `describePages()` with `mount: { by, permissions }`, never in `routeEntries()`: described, not rendered here. Re-declaring a `key` replaces its set; a path a file route also claims is `X_ROUTE_DUPLICATE` in both orders. `RouteDescriptor.mount` is absent on a file route. |
+| Mounted routes | `registerMountedRoutes(mount, routes)` (`mounted-routes.ts`): a package's routes with no surface file — described, never rendered here; a clash is `X_ROUTE_DUPLICATE` † |
 | Registry input | descriptors only. `registerRoute` refuses a raw declaration with `X_ROUTE_UNNORMALIZED`; it fills in only the island budget. |
 | Descriptors | `describePages()` stays JSON-safe, sorted by path, deterministic. |
 | Every string order | `byCodeUnit` (`code-unit-order.ts`), never `localeCompare` (ICU default locale and collation version vary by machine). |
 | Boundary | `surfaces.ts` throws; it never warns. Type-only edges are not violations. |
+| Surface vocabulary | `SURFACES`/`Surface` are core's (`route-vocabulary.ts`); the `Surface` type is re-exported, `SURFACES` never (`X_HELPER_COPY`). `JsonValue` is schema's |
 | Stream cancellation | the source has a `cancel()` and `write` is guarded on it; a disconnect aborts `StreamHole.resolve(signal)`. |
 | ISR detach | `attach()`'s returned function clears the revalidator too — only if the slot is still its own (`installedRevalidator`). |
 | "Is this a TTL?" has one reader | `parseTtlMs` in `duration.ts`, below `modes.ts` and `render-isr.ts`. |
@@ -101,7 +103,7 @@ axiom 6). Never `cli` (upward).
 | Who owns `cache-control` | a mode states intent; `@ultimat3/http`'s `cache-headers` stage decides and may overrule. This package cannot see the actor and never tries. |
 | Solid | no `solid-js` import anywhere in this package; `type-pins.tsx` satisfies `JSX.Element` structurally. `jsx.ts` builds inert nodes. Islands are compiled by `@ultimat3/cli`'s `solid-loader.ts` with `babel-preset-solid`. |
 | Root element | `ROOT_ELEMENT_ID` (`render-html.ts`). |
-| The tree walker | `render-walk.ts`: synchronous until a promise or hole (a slot); never an `async` frame per node (`scripts/bench/render-html.bench.test.ts`). |
+| The tree walker | `render-walk.ts`: synchronous until a promise or hole (a slot); never an `async` frame per node; its output rope is flattened every `FLATTEN_EVERY` (1,024) fragments — `scripts/bench/render-html.bench.test.ts` holds < 16 MiB live at 50k rows. |
 | The loaders | `module-loader.ts` installs them at **`server.ts`** module scope, once. `packages/cli/src/app-load.ts` imports `@ultimat3/render/server` for that side effect. |
 | Path style tag | `client-path-style-tag.ts` — `<meta name="ultimate-path-style">`, read by core's `actionPath`. Principal-free, on every document; written ONLY for a non-default style, so a `'resource'` app's bytes do not move. `@ultimat3/cli`'s `headFor` hands it `@ultimat3/action`'s `actionPathStyle()` per render — this package has no edge to `action`. |
 | Client sync tags | `client-sync-tags.ts` — `ultimate-sync`, `ultimate-build`, `ultimate-sync-worker`. Principal-free, on every document. |

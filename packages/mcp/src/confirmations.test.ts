@@ -4,7 +4,8 @@
 // and an audit record like every other write.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { registerAction, resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import type { Actor } from '@ultimat3/core';
 import {
   agentActor,

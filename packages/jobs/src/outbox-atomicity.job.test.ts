@@ -49,7 +49,7 @@ describe('a rolled-back stage never reaches a worker', () => {
       name: 'welcomeEmail',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `welcome:${orgId}`,
-      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: ({ input }) => {
         runs.push(input);
         return Promise.resolve();
@@ -86,7 +86,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
       name: 'welcomeEmailCommitted',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `welcome:${orgId}`,
-      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: ({ input }) => {
         runs.push(input);
         return Promise.resolve();
@@ -121,7 +121,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
       name: 'welcomeEmailCrashRelay',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `welcome:${orgId}`,
-      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: ({ input }) => {
         runs.push(input);
         return Promise.resolve();

@@ -30,8 +30,10 @@ export const BARREL_INSTALLERS = Object.freeze<Record<string, string>>({
     'why: the redactor only, configuration; the gateway, embedder and semantic cache are the aiGateway, embedder and semanticCache ports',
   '@ultimat3/core#configureErrorReporting':
     'why: clock, release, environment and enabled only (reporter?: never): the reporter is the errorReporter port',
-  '@ultimat3/core#setLogSink':
-    'why: pending — wave F: installLogSink sweep across ~47 test files + scaffold-auth template',
+  // why: replaces the `setLogSink` row (wave F's rename landed): installLogSink is a test seam on
+  // core's barrel that routes the process logger's lines, not a backend port — the row is new, not a raise.
+  '@ultimat3/core#installLogSink':
+    "why: the test seam deciding WHERE the process logger's lines go instead of the streams, released by its own call; never a backend — the tee is log.record on the bus",
   '@ultimat3/core#configureCursorSigning': 'why: installs a secret, not a backend',
   '@ultimat3/core#configureMetrics':
     "why: clock and enabled only, configuration; an exporter is a subscribe('metric.export', …) on the instrumentation bus, as spans and logs are",

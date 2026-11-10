@@ -475,10 +475,8 @@ An upload happens **before** the row it belongs to exists, so it lands at
 | Call | Key |
 |---|---|
 | `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
-| `quarantineKey(orgId, name)` | `org/o1/pending/quarantine/u-1.png` |
 | `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
 | `promoteAttachment({ disk, key, orgId, target, policy })` | `stat`, `copy`, then `delete` — never the reverse. **`policy` is required**: the object is measured here (`stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and it stays under `pending/` for the sweep), because an s3 presign bounds no size. Then one ranged read of the first 64 KiB through `validateStoredHead`, because it binds no type or bytes either: a contradiction is `X_STORAGE_TYPE_REJECTED`, and it stays pending too. The URL stays valid after that read, so `copy(from, to, { ifMatch })` names the revision judged (`X_STORAGE_OBJECT_CHANGED`, on s3 a signed CopyObject), and the copy is checked: another size is refused and deleted, and an etag that differs or is unknown (SSE-KMS mints one per copy) means the copy's own head is judged. A call after the source is gone, with the attached key present, is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`): an earlier call moved the bytes, so this one answers the row that holds them and never deletes that key. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
-| `releaseQuarantine({ disk, key, orgId })` | quarantine → pending; returns the released key |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys. `olderThanMs` is a whole number of 0 or more, refused otherwise (`X_INVARIANT`) — `NaN` read as "everything is old enough" and deleted an upload made a moment ago |
 | `deleteVariants({ disk, key })` | `{ deleted, failed }` for every stored variant of one source, every revision (`list({ prefix: `${key}@` })`). **An erasure of one object must call it**: `disk.delete` leaves the variants' bytes behind. The source is the caller's to delete; a variant keeps its prefix, so an org-wide erasure by prefix already collects them |
 
@@ -503,7 +501,8 @@ is copied onto the row's key:
 |---|---|
 | `{ verdict: 'clean' }` | promotes, as without a scanner |
 | `{ verdict: 'infected', signature }` | deletes the pending upload and the attempt, throws `X_STORAGE_UPLOAD_INFECTED` (422, `meta.signature`) |
-| rejects (daemon down, timeout), or the attempt cannot be read | deletes the attempt, keeps the upload pending, throws `X_STORAGE_SCAN_UNAVAILABLE` (503) — **fail closed by default, in every environment**; `uploadPolicy({ onScanUnavailable: 'accept' })` promotes unscanned instead. An infected verdict is refused under either |
+| `{ verdict: 'hold', reason }` | deletes the attempt, keeps the upload pending, throws `X_STORAGE_QUARANTINED` (409, `meta.reason`) — a decision made elsewhere has not cleared it yet. No policy overrides it; the same confirm promotes once the scanner answers clean |
+| rejects (daemon down, timeout), or the attempt cannot be read | deletes the attempt, keeps the upload pending, throws `X_STORAGE_SCAN_UNAVAILABLE` (503) — **fail closed by default, in every environment**; `uploadPolicy({ onScanUnavailable: 'accept' })` promotes unscanned instead, unless the scanner declares `holds: true`. An infected or held verdict is refused under either |
 
 ```ts
 // apps/web/runtime.ts
@@ -516,32 +515,48 @@ export const runtime = {
 } satisfies RuntimeOverrides;
 ```
 
-`UploadScanner` (`@ultimat3/storage/adapter`) is `{ name, scan({ key, size, contentType, body }) }`,
+`UploadScanner` (`@ultimat3/storage/adapter`) is `{ name, holds?, scan({ key, pendingKey, size, contentType, body }) }`,
 `body` a `ReadableStream`. `memoryUploadScanner()` is the reference: it flags the EICAR test string
 (`EICAR_TEST_STRING`) anywhere in the stream, across chunk boundaries. Hold your adapter to the
 contract with `behavesLike(uploadScannerConformance, () => yours)` from
 `@ultimat3/testing/conformance`. No scanner ships: ClamAV, a vendor API, its licence and its
 latency budget are the app's (axiom 8). No scanner installed, nothing is scanned.
 
-### Quarantine: the deferred scan, for a scanner that runs as a job
+### Hold: a decision made elsewhere — a review queue, an async vendor scan
 
-Magic-byte sniffing closes stored XSS. It is **not** malware scanning, and `application/zip` is
-accepted on purpose as the OOXML container, so a macro-laden `.docx` passes `validateUpload`
-exactly as a clean one does. A scanner is a business decision with a vendor, a licence and a
-latency budget (axiom 8), so what ships is the place to put one — one more segment in a
-convention that already existed:
+Magic-byte sniffing closes stored XSS. It is **not** malware scanning: `application/zip` is the
+OOXML container, so a macro-laden `.docx` passes `validateUpload` as a clean one does. A verdict
+that is not ready inside the confirm is the scanner's `hold`, keyed by `pendingKey` — the upload's
+own key, stable across retries (`key` is the per-attempt copy). One scan path; the v30
+`grantUpload({ quarantine: true })` + `releaseQuarantine` flow is retired.
 
 ```ts
-const grant = await grantUpload({ disk, orgId, request, quarantine: true });
-// → org/<orgId>/pending/quarantine/<uploadId><ext>
+import type { UploadScanner } from '@ultimat3/storage/adapter';
 
-// promoteAttachment on that key throws X_STORAGE_QUARANTINED. Your scan job decides:
-const released = await releaseQuarantine({ disk, key, orgId });   // clean
-await promoteAttachment({ disk, key: released, orgId, target, policy });
+// `approved` is your app's own store — a table a moderator's action writes.
+export const reviewScanner = (approved: (key: string) => Promise<boolean>): UploadScanner => ({
+  name: 'review',
+  holds: true,
+  async scan({ pendingKey, body }) {
+    await body.cancel();
+    return (await approved(pendingKey))
+      ? { verdict: 'clean' }
+      : { verdict: 'hold', reason: 'awaiting a moderator' };
+  },
+});
 ```
 
-Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan, so
-`sweepOrphans` collects it with no second prefix to walk.
+**`holds: true` is required of a scanner that answers `hold`**, and makes its outage always refuse:
+`approved` throwing (your database is down) is `X_STORAGE_SCAN_UNAVAILABLE` even under
+`onScanUnavailable: 'accept'`, because only that store knows what is held. A `hold` from a scanner
+that did not declare it is `X_INVARIANT`, and nothing is attached.
+
+A held upload is still under `pending/`, so `sweepOrphans` collects one nobody ever cleared: keep
+`olderThanMs` past your review window, or spare it with `keep`.
+
+**A grant with a `target` is refused while a scanner is installed** (`X_STORAGE_TARGET_UNSCANNED`,
+`grantUpload` and `grantMultipart` both): its key never passes through `promoteAttachment`, the one
+place a scan runs. Grant with no `target`, then promote.
 
 ## A person's objects, for a subject export or erase
 
@@ -568,7 +583,8 @@ name is not found.
 | `X_STORAGE_UPLOAD_FAILED` | client half: the presigned `PUT` answered non-2xx or never landed |
 | `X_STORAGE_DELETE_FAILED` | the disk REFUSED a delete — denied `s3:DeleteObject`, a throttle, an expired credential, a read-only mount. An **absent** key is still not an error |
 | `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |
-| `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
+| `X_STORAGE_TARGET_UNSCANNED` | `grantUpload`/`grantMultipart` with a `target` while an `uploadScanner` is installed — the key would skip the scan |
+| `X_STORAGE_QUARANTINED` | the installed `uploadScanner` answered `hold`: the upload stays pending until it answers clean; `meta.reason` is the scanner's |
 | `X_STORAGE_NOT_PENDING` | `promoteAttachment` on a key outside the org's `pending/` prefix — most often another row's attached key |
 | `X_STORAGE_UPLOAD_INFECTED` | the installed `uploadScanner` found malware in an upload `promoteAttachment` was attaching; both keys are deleted, `meta.signature` names the detection |
 | `X_STORAGE_SCAN_UNAVAILABLE` | the installed `uploadScanner` rejected instead of answering, under the default `onScanUnavailable: 'refuse'`; the upload stays pending for a retry |

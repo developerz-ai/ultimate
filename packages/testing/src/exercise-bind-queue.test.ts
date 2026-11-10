@@ -3,7 +3,8 @@
 // what the call queued still is.
 
 import { describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { UltimateError } from '@ultimat3/core';
 import { DEFAULT_RETRY, job, jobDriver } from '@ultimat3/jobs';
 import { allow } from '@ultimat3/policy';

@@ -8,9 +8,12 @@
 //
 //   bun run scripts/new-error-code.ts X_FOO_BAR --package realtime --title 'one line' \
 //     --cause 'what usually makes it happen' --fix 'x … or an edit naming a file' \
-//     [--status <n> | --off-socket] [--section '<## heading>'] [--dry-run] [--json]
+//     [--status <n> | --off-socket] [--browser | --server-only] [--section '<## heading>']
+//     [--dry-run] [--json]
 //
 // `--status`/`--off-socket`: exactly one for a tier <= 4 package, neither above it (below).
+// `--browser`/`--server-only`: exactly one where the package keeps `error-titles-server.ts`
+// (`@ultimat3/realtime`), neither elsewhere (`lib/error-code-realm.ts`).
 //
 // THE STATUS IS PART OF THE EDIT. A code owned by a tier <= 4 package needs a row in
 // `packages/http/src/error-map.ts` or a pin in `scripts/error-map-backlog.ts`, or the gate's
@@ -35,6 +38,8 @@ import {
   statusRowIn,
   validateNewCode,
 } from './lib/error-code-plan';
+import type { TitlesRealm } from './lib/error-code-realm';
+import { serverTitlesFile, titlesRealm } from './lib/error-code-realm';
 import { report } from './lib/log';
 import type { Snapshot } from './lib/planned-writes';
 import { snapshotReader, writePlanned } from './lib/planned-writes';
@@ -169,27 +174,46 @@ export async function planFiles(
   decision: StatusDecision = { kind: 'none' },
   /** Filled with the text of every file the plan read: what `writePlanned` checks against. */
   snapshot: Snapshot = new Map(),
+  /** For a package with a server titles module, which of the two (`titlesRealm`). */
+  realm: TitlesRealm = 'any',
 ): Promise<Planned> {
   validateNewCode(input);
-  const read = snapshotReader(root, snapshot);
   // In order: `error-codes.ts` where a package split its titles out of `errors.ts` (`@ultimat3/cli`
   // did at the 500-line ceiling), `<pkg>-error-codes.ts` where `error-codes.ts` is the REGISTRY
   // itself (`@ultimat3/core`), then `errors.ts`, then `<pkg>-error.ts` where the registry was split
   // out so a browser module can raise a code (`@ultimat3/entity`). The first file in a shape the planner can add to
   // wins; a file it cannot is passed over, and any other refusal — the code already named — stops
   // the search, so a code is never added to a later file because an earlier one already had it.
-  const candidates = [
-    `packages/${input.pkg}/src/error-codes.ts`,
-    `packages/${input.pkg}/src/${input.pkg}-error-codes.ts`,
-    `packages/${input.pkg}/src/errors.ts`,
-    `packages/${input.pkg}/src/${input.pkg}-error.ts`,
+  // `--server-only` names its one file; everything else searches the page-side shapes below.
+  const candidates =
+    realm === 'server-only' ? [serverTitlesFile(input.pkg)] : registrationFiles(input.pkg);
+  return planFrom(root, input, decision, snapshot, candidates);
+}
+
+/** Every file a page-side registration can live in, in the order the planner tries them. */
+function registrationFiles(pkg: string): string[] {
+  return [
+    `packages/${pkg}/src/error-codes.ts`,
+    `packages/${pkg}/src/${pkg}-error-codes.ts`,
+    `packages/${pkg}/src/errors.ts`,
+    `packages/${pkg}/src/${pkg}-error.ts`,
     // Where a package split its TITLES out of `errors.ts` so the constructors can be side-effect
     // free (`@ultimat3/action`, `http` and `realtime` — `error-titles.ts`; `ui` — `error-registry.ts`).
     // After `errors.ts` on purpose: a file the planner cannot add to is passed over, so these only
     // win where `errors.ts` is only the constructors.
-    `packages/${input.pkg}/src/error-titles.ts`,
-    `packages/${input.pkg}/src/error-registry.ts`,
+    `packages/${pkg}/src/error-titles.ts`,
+    `packages/${pkg}/src/error-registry.ts`,
   ];
+}
+
+async function planFrom(
+  root: string,
+  input: NewErrorCode,
+  decision: StatusDecision,
+  snapshot: Snapshot,
+  candidates: readonly string[],
+): Promise<Planned> {
+  const read = snapshotReader(root, snapshot);
   let registered: { readonly errorsPath: string; readonly errorsTs: string } | undefined;
   let unrecognised: ScriptError | undefined;
   for (const errorsPath of candidates) {
@@ -260,7 +284,18 @@ export async function planFiles(
 
 /** Every flag this script reads. Anything else is refused: a misspelt `--dry-run` used to write. */
 const KNOWN: KnownFlags = {
-  names: ['package', 'title', 'cause', 'fix', 'status', 'off-socket', 'section', 'dry-run'],
+  names: [
+    'package',
+    'title',
+    'cause',
+    'fix',
+    'status',
+    'off-socket',
+    'browser',
+    'server-only',
+    'section',
+    'dry-run',
+  ],
   refuse: (unknown) =>
     new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
@@ -328,7 +363,10 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
   const input = inputFrom(argv);
   const dryRun = flagBool(parseScriptArgs(argv), 'dry-run');
   const snapshot: Snapshot = new Map();
-  const planned = await planFiles(root, input, statusDecision(input.pkg, argv), snapshot);
+  const decision = statusDecision(input.pkg, argv);
+  const split = await Bun.file(`${root}/${serverTitlesFile(input.pkg)}`).exists();
+  const realm = titlesRealm(input.pkg, argv, split);
+  const planned = await planFiles(root, input, decision, snapshot, realm);
   const edits = [
     { path: planned.errorsPath, text: planned.errorsTs },
     { path: WIKI_PAGE, text: planned.wiki },

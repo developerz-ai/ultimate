@@ -3,18 +3,24 @@
 // cache, and because until the roll was injectable none of this could be asserted at all.
 
 import { describe, expect, test } from 'bun:test';
+import type { RetryPolicy } from '@ultimat3/core';
 import { AiTransportError } from './errors';
-import { backoffMs, isRetryable, providerGateway, type RetryPolicy } from './gateway';
+import { backoffMs, DEFAULT_GATEWAY_RETRY, isRetryable, providerGateway } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateResult, Provider, StreamChunk } from './provider';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
 
-const POLICY: RetryPolicy = { attempts: 5, baseDelayMs: 500, maxDelayMs: 8_000 };
+const POLICY: RetryPolicy = { attempts: 5, base: 500, max: 8_000, jitter: 'full' };
 
 /** A provider that always fails with `status`, counting attempts and recording every wait. */
-function failingGateway(status: number, waits: number[], random: () => number) {
+function failingGateway(
+  status: number,
+  waits: number[],
+  random: () => number,
+  retry: RetryPolicy = { attempts: 3, base: 500, max: 8_000, jitter: 'full' },
+) {
   let attempts = 0;
   const failing: Provider = {
     name: 'failing',
@@ -31,7 +37,7 @@ function failingGateway(status: number, waits: number[], random: () => number) {
   const gateway = providerGateway({
     defaultModel: FIXTURE_MODEL,
     providers: [failing],
-    retry: { attempts: 3, baseDelayMs: 500, maxDelayMs: 8_000 },
+    retry,
     random,
     sleep: async (ms) => {
       waits.push(ms);
@@ -70,12 +76,28 @@ describe('backoffMs', () => {
     // schedule of zeroes still spins, it just spins deliberately. Core's `backoffDelay` now refuses
     // a non-finite bound before clamping, and the gateway inherits the refusal along with the curve
     // — the whole point of having one engine.
-    const broken: RetryPolicy = { attempts: 3, baseDelayMs: Number.NaN, maxDelayMs: 8_000 };
+    const broken: RetryPolicy = { ...POLICY, base: Number.NaN };
     expect(() => backoffMs(broken, 1, () => 0.5)).toThrow('X_INVARIANT');
   });
 
+  // 31.0.0: the gateway's `retry` IS core's `RetryPolicy`, so every field core's loop reads is read
+  // here too — a field the gateway accepted and ignored would be a second meaning of one shape.
+  test("the jitter mode, curve and factor are the policy's, not a hard-coded full exponential", () => {
+    const none: RetryPolicy = { ...POLICY, jitter: 'none' };
+    expect([1, 2, 3].map((attempt) => backoffMs(none, attempt, () => 0))).toEqual([
+      500, 1_000, 2_000,
+    ]);
+    expect(backoffMs({ ...POLICY, jitter: 'equal' }, 2, () => 0)).toBe(500);
+    expect(backoffMs({ ...none, curve: 'linear' }, 3)).toBe(1_500);
+    expect(backoffMs({ ...none, factor: 3 }, 3)).toBe(4_500);
+  });
+
+  test('the default is core-shaped, full jitter', () => {
+    expect(DEFAULT_GATEWAY_RETRY).toEqual({ attempts: 3, base: 500, max: 8_000, jitter: 'full' });
+  });
+
   test('a negative base never produces a negative wait', () => {
-    const broken: RetryPolicy = { attempts: 3, baseDelayMs: -500, maxDelayMs: 8_000 };
+    const broken: RetryPolicy = { ...POLICY, base: -500 };
     expect(backoffMs(broken, 1, () => 0.5)).toBe(0);
   });
 });
@@ -139,6 +161,36 @@ describe('the gateway waits the schedule it computed', () => {
     ).rejects.toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
 
     expect(attempts()).toBe(3);
+  });
+
+  test('a timeBudgetMs the next wait would overrun ends the loop before the wait', async () => {
+    const waits: number[] = [];
+    const { gateway, attempts } = failingGateway(503, waits, () => 1, {
+      attempts: 3,
+      base: 500,
+      max: 8_000,
+      jitter: 'none',
+      timeBudgetMs: 400,
+    });
+
+    await expect(
+      gateway.generate({ messages: [{ role: 'user', content: 'x' }], maxTokens: 8 }),
+    ).rejects.toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
+
+    expect(attempts()).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
+  test('a non-finite timeBudgetMs is refused at construction', () => {
+    expect(() =>
+      failingGateway(503, [], () => 1, {
+        attempts: 3,
+        base: 500,
+        max: 8_000,
+        jitter: 'full',
+        timeBudgetMs: Number.NaN,
+      }),
+    ).toThrow('X_INVARIANT');
   });
 
   test('a 400 still stops on attempt one and waits not at all', async () => {

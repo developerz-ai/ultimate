@@ -91,7 +91,7 @@ describe('a nats client dialling a server that accepts and says nothing', () => 
       url: `nats://127.0.0.1:${silent.port}`,
       bucket: 'x-test',
       dialTimeoutMs: 150,
-      backoff: { baseMs: 10, maxMs: 10, factor: 1, jitter: 'none' },
+      backoff: { base: 10, max: 10, factor: 1, jitter: 'none' },
       onError: () => undefined,
     });
     try {

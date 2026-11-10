@@ -8,6 +8,12 @@ import { adapterSlot } from '@ultimat3/core/adapter';
 export interface ScanInput {
   /** Where the scanned bytes live: this confirm's own copy under `pending/scan/`, no URL rewrites. */
   readonly key: string;
+  /**
+   * The upload being promoted — the `pending/` key `grantUpload` minted, stable across retries. What
+   * an out-of-band decision (a review queue, a vendor's async job) is keyed by; `key` changes per
+   * attempt.
+   */
+  readonly pendingKey: string;
   readonly size: number;
   /** The type the object is stored under, already sniffed against its bytes. */
   readonly contentType: string;
@@ -18,16 +24,29 @@ export interface ScanInput {
 /**
  * A verdict about the bytes, never about the scanner. A scanner that cannot decide — its daemon is
  * down, it timed out, the file is past its own limit — REJECTS instead: `promoteAttachment` turns
- * that into `X_STORAGE_SCAN_UNAVAILABLE` (or a pass, under `onScanUnavailable: 'accept'`), and an
- * infected verdict is never something a policy can wave through.
+ * that into `X_STORAGE_SCAN_UNAVAILABLE` (or a pass, under `onScanUnavailable: 'accept'`).
+ *
+ * `hold` is a decision too: not yet cleared, by something outside this call — a human review, a
+ * vendor's asynchronous sandbox. The upload stays pending and promotion answers
+ * `X_STORAGE_QUARANTINED` until the scanner answers `clean` for that `pendingKey`. Neither `hold`
+ * nor `infected` is something a policy can wave through.
  */
 export type ScanVerdict =
   | { readonly verdict: 'clean' }
-  | { readonly verdict: 'infected'; readonly signature: string };
+  | { readonly verdict: 'infected'; readonly signature: string }
+  | { readonly verdict: 'hold'; readonly reason: string };
 
 export interface UploadScanner {
   /** Named in every refusal's `meta.scanner` — `clamd`, `memory`. */
   readonly name: string;
+  /**
+   * `true` for a scanner that answers `hold` (a review queue, an async vendor scan). Its
+   * no-verdict then ALWAYS refuses — `onScanUnavailable: 'accept'` never applies — because a
+   * scanner that cannot reach its own record of holds cannot say an upload was cleared. A `hold`
+   * from a scanner that did not declare this is refused as a bug (`X_INVARIANT`), so the
+   * declaration cannot be forgotten past the first held upload.
+   */
+  readonly holds?: boolean | undefined;
   scan(input: ScanInput): Promise<ScanVerdict>;
 }
 

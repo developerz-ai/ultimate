@@ -96,7 +96,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Auth](Auth) | sessions, OAuth, MFA, API keys and service tokens — the output is an `Actor` |
 | [Mail](Mail) | one template renders HTML and text, every string a key, sending is a job |
 | [Notify](Notify) | `notifier()` as a job factory: fan-out, preference gate, digest window, ledger, inbox |
-| [Storage and uploads](Storage-And-Uploads) | named disks, safe keys, the three-call signed upload, quarantine, orphans |
+| [Storage and uploads](Storage-And-Uploads) | named disks, safe keys, the three-call signed upload, upload scanning, orphans |
 | [Feature flags](Feature-Flags) | permanent switches and temporary ones that cannot be forgotten |
 | [SEO](SEO) | enforced meta, typed JSON-LD, sitemaps, fail-closed robots, feeds, responsive images |
 

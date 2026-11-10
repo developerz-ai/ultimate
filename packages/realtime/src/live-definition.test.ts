@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type Actor, ctxOf, userActor } from '@ultimat3/core';
-import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
+import { from, type QueryPolicy, query, resetQueries, t } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
 import { SyncSocket, type WsLike } from './socket';
 import type { RowDenied } from './subscriber-gate';
 import { decode, type Frame } from './sync-protocol';
 
-interface FeedRow extends Row {
+interface FeedRow extends LiveRow {
   readonly orgId: string;
   readonly ownerId: string;
   readonly likes: number;

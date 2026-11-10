@@ -20,7 +20,7 @@ import {
   isRow,
   type JsonObject,
   type JsonValue,
-  type Row,
+  type LiveRow,
   type RowPatch,
 } from './json';
 import { ProtocolVersionError } from './page-errors';
@@ -114,7 +114,7 @@ export interface SnapshotFrame {
   readonly type: 'snapshot';
   readonly v: number;
   readonly sid: string;
-  readonly rows: readonly Row[];
+  readonly rows: readonly LiveRow[];
   readonly cursor: LiveCursor;
   /**
    * The entity every row of this result set belongs to — the client's identity scope, so two
@@ -360,7 +360,7 @@ function writesOf(parsed: JsonObject, label: string): readonly string[] {
   });
 }
 
-function row(value: unknown): Row {
+function row(value: unknown): LiveRow {
   if (!isRow(value)) throw fail('row must be an object with a string "id"');
   return value;
 }

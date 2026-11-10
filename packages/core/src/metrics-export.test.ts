@@ -52,6 +52,18 @@ describe('export', () => {
     ).toBe(4);
   });
 
+  // 31.0.0: an exporter that drops every collection is "subscribe to nothing" — a second spelling
+  // of the default. The bus being free until a subscriber arrives is the one way to export nothing.
+  test('ships no no-op exporter: not subscribing is the way to export nothing', async () => {
+    const surfaces = [
+      await import('./metrics'),
+      await import('./exports/observability'),
+      await import('./index'),
+    ];
+    for (const surface of surfaces)
+      expect(Object.keys(surface)).not.toContain('noopMetricExporter');
+  });
+
   test('two exporters both hear one tick, and releasing one leaves the other', () => {
     const [a, b] = [memoryMetricExporter(), memoryMetricExporter()];
     const releaseA = subscribe('metric.export', (event) => a.export(event.payload));

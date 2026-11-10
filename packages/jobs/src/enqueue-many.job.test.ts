@@ -33,7 +33,7 @@ const declared = (): JobHandle<Item> =>
     tenant: 'none',
     input: passthrough<Item>(),
     idempotencyKey: ({ id }) => id,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run: () => Promise.resolve(),
   });
 

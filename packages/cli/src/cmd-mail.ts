@@ -28,7 +28,7 @@ export const mailCommand: CliCommand = {
       throw new MissingPositionalError({
         command: 'mail preview',
         positional: 'id',
-        example: 'x mail preview welcome --locale es',
+        example: 'x mail preview <id> --locale es --json   # the id given to defineMail({ id })',
       });
     }
     await loadApp(root);

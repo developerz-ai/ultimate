@@ -3,7 +3,7 @@
 // a test moves, and Ed25519 device keys for each approver. Test-only, by its `-fixture` name.
 
 import { expect } from 'bun:test';
-import { registerAction } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import type { Actor } from '@ultimat3/core';
 import {
   agentActor,

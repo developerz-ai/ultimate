@@ -252,7 +252,6 @@ export {
   checkSurfaceBoundary,
   importGraph,
   SURFACE_SPECS,
-  SURFACES,
   surfaceAllows,
   surfaceOf,
 } from './surfaces';

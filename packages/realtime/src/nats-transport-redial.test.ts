@@ -8,7 +8,7 @@ import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { NatsClient, NatsClientOptions, NatsConnect } from './nats-client';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
-import type { BackoffPolicy } from './thundering-herd';
+import type { ReconnectBackoff } from './thundering-herd';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -24,7 +24,7 @@ const waitFor = async (done: () => boolean, polls = 200): Promise<void> => {
   for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
 };
 
-const NO_WAIT: BackoffPolicy = { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' };
+const NO_WAIT: ReconnectBackoff = { base: 0, max: 0, factor: 1, jitter: 'none' };
 
 interface Dialled {
   readonly client: NatsClient;
@@ -128,7 +128,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     const bus = harness();
     // 20 ms between attempts: over 100 ms a loop that spun would dial hundreds of times.
     const transport = bus.transport({
-      backoff: { baseMs: 20, maxMs: 20, factor: 1, jitter: 'none' },
+      backoff: { base: 20, max: 20, factor: 1, jitter: 'none' },
     });
     await transport.connect();
     bus.broker.offline = true;
@@ -154,7 +154,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
   test('close() during a re-dial stops it: nothing is dialled after the transport is closed', async () => {
     const bus = harness();
     const transport = bus.transport({
-      backoff: { baseMs: 10, maxMs: 10, factor: 1, jitter: 'none' },
+      backoff: { base: 10, max: 10, factor: 1, jitter: 'none' },
     });
     await transport.connect();
     bus.broker.offline = true;
@@ -173,7 +173,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     const bus = harness();
     // An hour: only `close()` can end this wait inside the test.
     const transport = bus.transport({
-      backoff: { baseMs: 3_600_000, maxMs: 3_600_000, factor: 1, jitter: 'none' },
+      backoff: { base: 3_600_000, max: 3_600_000, factor: 1, jitter: 'none' },
     });
     await transport.connect();
     bus.broker.offline = true;

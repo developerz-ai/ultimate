@@ -3,7 +3,7 @@
 // core `breaker()` per provider: a provider down for an hour cost `attempts` calls plus backoff on
 // EVERY call; behind its breaker it costs `attempts × failures` per cooldown, then none.
 
-import type { Breaker, BreakerTicket, Random } from '@ultimat3/core';
+import type { Breaker, BreakerTicket, Random, RetryPolicy } from '@ultimat3/core';
 import {
   backoffDelay,
   breaker,
@@ -12,10 +12,10 @@ import {
   renderThrowable,
   settleWith,
   stringField,
+  systemClock,
   tryUseContext,
 } from '@ultimat3/core';
 import { AiProviderUnavailableError } from './errors';
-import type { RetryPolicy } from './gateway';
 import type { ModelId } from './models';
 import type { GenerateResult, Provider } from './provider';
 
@@ -33,17 +33,18 @@ export const DEFAULT_GATEWAY_BREAKER = Object.freeze({ failures: 5, cooldownMs: 
 const PROVIDER_UNAVAILABLE = 'X_AI_PROVIDER_UNAVAILABLE';
 
 /**
- * Full jitter: a uniform pick from [0, exponential], capped BEFORE the roll — core's
- * `backoffDelay` with the gateway's own field names mapped onto it, and nothing else.
- * `gateway-backoff.test.ts` pins the refusal of a non-finite bound and the clamped negative base.
+ * The wait before `attempt + 1`: core's `backoffDelay` over core's `RetryPolicy`, every curve field
+ * the policy's own (`DEFAULT_GATEWAY_RETRY` is full jitter). `gateway-backoff.test.ts` pins the
+ * refusal of a non-finite bound and the clamped negative base.
  */
 export function backoffMs(policy: RetryPolicy, attempt: number, random?: Random): number {
   return backoffDelay({
     attempt,
-    base: policy.baseDelayMs,
-    max: policy.maxDelayMs,
-    curve: 'exponential',
-    jitter: 'full',
+    base: policy.base,
+    max: policy.max,
+    factor: policy.factor,
+    curve: policy.curve,
+    jitter: policy.jitter,
     random,
   });
 }
@@ -122,6 +123,12 @@ export interface AttemptInput {
 export async function attemptProviders(input: AttemptInput): Promise<GenerateResult> {
   const { model, retry } = input;
   const failures: string[] = [];
+  // Read once, and only compared when a budget is set: core's `retryLoop` rule — a wait that would
+  // end past `timeBudgetMs` is never started, across every provider of this call.
+  const startedAt = systemClock.monotonic();
+  const overruns = (delayMs: number): boolean =>
+    retry.timeBudgetMs !== undefined &&
+    systemClock.monotonic() - startedAt + delayMs > retry.timeBudgetMs;
   if (input.candidates.length === 0) {
     throw new AiProviderUnavailableError({
       model,
@@ -164,7 +171,12 @@ export async function attemptProviders(input: AttemptInput): Promise<GenerateRes
           exhausted(gate, ticket);
           break;
         }
-        await input.sleep(backoffMs(retry, attempt, input.random));
+        const delayMs = backoffMs(retry, attempt, input.random);
+        if (overruns(delayMs)) {
+          exhausted(gate, ticket);
+          throw new AiProviderUnavailableError({ model, attempts: failures });
+        }
+        await input.sleep(delayMs);
       }
     }
   }

@@ -45,6 +45,7 @@ import { readTimings } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
 import { writeErrorLine } from '../packages/cli/src/write-line';
 import { adapterPortFindings } from './adapter-ports';
+import { adoptionClaimFindings } from './adoption-claims';
 import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
@@ -62,6 +63,7 @@ import { boundaryRuleDocFindings } from './boundary-rule-docs';
 import { chartVersionFindings } from './chart-version';
 import { cliOutboundFindings } from './cli-outbound';
 import { docCommandFindings } from './doc-commands';
+import { docFixAgreementFindings } from './doc-fix-agreement';
 import { docFixFindings } from './doc-fixes';
 import { docPathFindings } from './doc-paths';
 import { docTestPathFindings } from './doc-test-paths';
@@ -86,6 +88,8 @@ import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { opsUidFindings } from './ops-uid-docs';
 import { packageFrontFindings } from './package-front';
 import { privateNameFindings } from './private-names';
+import { productionAppsFindings } from './production-apps';
+import { readmeFactsFindings } from './readme-facts';
 import { readmeFenceFindings } from './readme-fences';
 import { readmeSampleFindings } from './readme-sample';
 import { releaseFactFindings } from './release-facts';
@@ -272,7 +276,8 @@ export const errorCodeDocs: HostCheck = async (root) => {
  * `checkErrorFixes` resolves cited commands for `fix:` literals in shipped SOURCE, and the page an
  * agent is sent to when it hits a code was held to coverage and registration only. So a `Fix` cell
  * could print `x db query "select id …"` — and `x db` has no `query`, which is a second failure
- * handed to a reader already holding one.
+ * handed to a reader already holding one. `docFixAgreementFindings` is its FOURTH: a runnable Fix
+ * cell can still name a remedy its throw sites no longer register, on a ratchet that only falls.
  *
  * `testFixFindings`, `bareErrorFindings` and `throwFindings` join it because all three are the same
  * contract one file set further on. `checkErrorFixes` holds every `fix:` in `src/` to being runnable and skips tests, so a
@@ -294,6 +299,7 @@ export const errorContract: HostCheck = async (root) => [
   ...(await errorRendering(root)),
   ...(await errorStatusCompleteness(root)),
   ...(await docFixFindings(root)),
+  ...(await docFixAgreementFindings(root)),
   ...(await testFixFindings(root)),
   ...(await bareErrorFindings(root)),
   ...(await realSleepFindings(root)),
@@ -302,9 +308,9 @@ export const errorContract: HostCheck = async (root) => [
 ];
 
 /**
- * The `manifest` step's host half: four rules, all asking that step's own question — does a
- * committed file still describe this tree? The generated manifest is the original. The other three
- * are hand-maintained files that claim something about the repo and were checked by nothing:
+ * The `manifest` step's host half: every rule below asks that step's own question — does a
+ * committed file still describe this tree? The generated manifest is the original; each other rule
+ * holds a hand-maintained file that claimed something about the repo and was checked by nothing:
  *
  * | Rule | The claim, and what it cost | Source of truth |
  * |---|---|---|
@@ -332,6 +338,9 @@ export const errorContract: HostCheck = async (root) => [
  * | `opsUidFindings` | a uid `docs/ops` states is the one its image runs | `RUNTIME_UID`, `docker/helm/values.yaml` |
  * | `boundaryRuleDocFindings` | `02-boundaries.md`'s rule count and code table match the boundary rules | `BOUNDARY_CODES` |
  * | `readmeSampleFindings` | the root README's code sample is the `examples/dummy` file it quotes | that file |
+ * | `readmeFactsFindings` | the root README's facts table (packages, gate steps, coverage, tests, codes) is the tree's | `listWorkspaces()`, `VERIFY_STEP_NAMES`, `COVERAGE_PINS`, the manifest |
+ * | `adoptionClaimFindings` | no published page says who uses Ultimate outside the generated production-apps block | `PRODUCTION_APPS`, through that block |
+ * | `productionAppsFindings` | README, FAQ and Compared say the same thing about who uses it — README said no production use while the FAQ said yes | `PRODUCTION_APPS` |
  * | `packageFrontFindings` | a publishable package's npm page opens on a sentence, install, example and wiki page, with `keywords` | each `package.json` |
  *
  * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
@@ -371,6 +380,9 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await opsUidFindings(root)),
   ...(await boundaryRuleDocFindings(root)),
   ...(await readmeSampleFindings(root)),
+  ...(await readmeFactsFindings(root)),
+  ...(await productionAppsFindings(root)),
+  ...(await adoptionClaimFindings(root)),
   ...(await packageFrontFindings(root)),
 ];
 

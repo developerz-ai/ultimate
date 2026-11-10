@@ -158,7 +158,7 @@ const erase = (targets: readonly SubjectTarget[] = []) =>
     input: INPUT,
     tenant: (input) => input.orgId,
     subject: defineSubject(people, { ...subject().init, targets }),
-    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
   });
 
 beforeEach(async () => {

@@ -4,7 +4,8 @@
 // renders no tag. Driven through `@ultimat3/http`'s real pipeline, like `runtime-render.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { resetQueries } from '@ultimat3/query';

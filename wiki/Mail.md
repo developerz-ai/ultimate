@@ -122,11 +122,20 @@ The `/_x` mail panel lists every registered mail beside the caught ones (`templa
 listed with `hasPreview: false`. `?template=<id>` selects one; `x dev`'s panel and its `--json`
 payload are the same facts.
 
-## Framework mails
+## No framework mails
 
-`welcome`, `verify-email`, `reset-password`, `invite`, `mfa-enrolled`, `security-alert` —
-registered by importing them (`FRAMEWORK_MAILS`). `registeredMails()` lists them with an app's
-own; `renderMessage()` renders one without sending.
+Rule: `@ultimat3/mail` registers no mail. `As of 31.0.0`. Every mail an app sends is its own
+`defineMail()`, with its `mail.<id>.*` keys in the app's catalog; the base catalog carries
+`mail.footer.*` only. `registeredMails()` lists what the app declared; `renderMessage()` renders one
+without sending.
+
+| Mail | Where it comes from |
+|---|---|
+| email verification, password reset | `@ultimat3/auth` sends `auth.email-verify` / `auth.password-reset` through the app's `MailSender`, keys in the app catalog |
+| welcome, invite, security alert, anything else | the app's own `defineMail()` — business convention, never shipped (axiom 8) |
+
+The six v30 mails (`welcome`, `verify-email`, `reset-password`, `invite`, `mfa-enrolled`,
+`security-alert`, `FRAMEWORK_MAILS`) are deleted: [Upgrading](Upgrading) entry 54.
 
 ## Errors
 

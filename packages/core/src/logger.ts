@@ -2,6 +2,7 @@
 // default because the primary reader is an agent tailing `x logs --json`. Every process-logger
 // line is also published as `log.record` on the instrumentation bus — the OTLP logs exporter's feed.
 
+import { adapterSlot } from './adapter-slot';
 import { assert } from './assert';
 import { type Clock, liveClock } from './clock';
 import { renderCauseValue } from './error-render';
@@ -186,16 +187,18 @@ export function setLogStream(stream: 'stdout' | 'stderr'): void {
   logStream = stream;
 }
 
-/** What `setLogSink` installs: one complete JSON line, and the level it was written at. */
+/** What `installLogSink` installs: one complete JSON line, and the level it was written at. */
 export type LogSink = (line: string, level: LogLevel) => void;
 
-let logSink: LogSink | undefined;
+// `undefined` is a frame too: "the process's streams", so a test whose subject IS the streams can
+// lift the preload's sink for its own span without knowing what the preload installed.
+const logSinks = adapterSlot<LogSink | undefined>(() => undefined);
 
 /**
- * TEST SEAM. Every line with no explicit `writer` goes to `sink` INSTEAD of the process's streams,
- * until it is cleared with `undefined`. Returns the sink that was installed, so a caller restores
- * rather than clears — one `bun test` process is shared, so a harness hands back what an outer
- * one installed.
+ * TEST SEAM. Every line with no explicit `writer` goes to `sink` INSTEAD of the process's streams
+ * (`undefined`: to the streams), until the returned release runs. A stack of frames, each removed
+ * only by its own release — one `bun test` process is shared, so a test's `finally` hands back
+ * whatever an outer harness installed without ever having read it, in any order.
  *
  * It exists for two callers. A test preload installs a sink that drops every line, so a green run
  * prints its reporter and nothing else; and a test that asserts on what the PROCESS logger wrote
@@ -203,10 +206,8 @@ let logSink: LogSink | undefined;
  * `writer` never reaches it, and the level is untouched: this decides where a line goes, never
  * whether it is written.
  */
-export function setLogSink(sink: LogSink | undefined): LogSink | undefined {
-  const previous = logSink;
-  logSink = sink;
-  return previous;
+export function installLogSink(sink: LogSink | undefined): () => void {
+  return logSinks.install(sink);
 }
 
 /**
@@ -226,8 +227,9 @@ function defaultWriter(line: string, level: LogLevel): void {
   streamWriter(line, level);
 }
 
-/** The process's streams, or the `setLogSink` seam standing in for them. */
+/** The process's streams, or the `installLogSink` seam standing in for them. */
 function streamWriter(line: string, level: LogLevel): void {
+  const logSink = logSinks.current();
   if (logSink !== undefined) {
     logSink(line, level);
     return;

@@ -12,7 +12,7 @@ import { ChannelHub } from './channel';
 import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -66,7 +66,7 @@ class FakeWs implements WsLike {
 /** Records who `visible` was asked about — the whole question this file answers. */
 const seenBy: (Actor | null)[] = [];
 
-const rows: Row[] = [{ id: 'p1', orgId: 'o1', ownerId: 'alice' }];
+const rows: LiveRow[] = [{ id: 'p1', orgId: 'o1', ownerId: 'alice' }];
 
 const ownFeed: LiveQueryDefinition = {
   name: 'ownFeed',

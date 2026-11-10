@@ -69,7 +69,7 @@ async function saga(
     tenant: 'none',
     input: t.object({ id: t.string }),
     idempotencyKey: ({ id }) => `checkout:${id}`,
-    retry: { attempts: options.attempts ?? 2, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: options.attempts ?? 2, backoff: 'fixed', delay: 0, jitter: 'none' },
     compensates: options.compensates ?? true,
     run: async (args) => options.run?.(args, calls),
   });

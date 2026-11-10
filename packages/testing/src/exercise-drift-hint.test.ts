@@ -2,7 +2,8 @@
 // was `input: (drawn) => ({ ...drawn })`, though the sampler already knew which field it was.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { clearRegistry, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { allow } from '@ultimat3/policy';
 import { runExercisePass } from './exercise';

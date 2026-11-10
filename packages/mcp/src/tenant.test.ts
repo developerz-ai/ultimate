@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { agentActor, ctxOf, runWithContext, setLogSink, userActor } from '@ultimat3/core';
+import { agentActor, ctxOf, installLogSink, runWithContext, userActor } from '@ultimat3/core';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
@@ -200,11 +200,13 @@ describe('one token across tenants', () => {
 
   test('the audit line carries the tenant the call acted in', async () => {
     const lines: Record<string, unknown>[] = [];
-    const previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
+    const releaseLogSink = installLogSink((line) =>
+      lines.push(JSON.parse(line) as Record<string, unknown>),
+    );
     try {
       await inRequest(() => server().handle(call('orgName', { project: 'beta' }), person));
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(lines.find((line) => line['msg'] === 'mcp.tool-call.ok')).toMatchObject({
       tenant: 'beta',

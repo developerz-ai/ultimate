@@ -11,7 +11,7 @@ import { type Actor, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -38,7 +38,7 @@ class FakeWs implements WsLike {
 }
 
 /** The rows the definition answers with. Mutated by a test to stand for a write it never saw. */
-let table: Row[] = [{ id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'first' }];
+let table: LiveRow[] = [{ id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'first' }];
 let reads = 0;
 
 const feed: LiveQueryDefinition = {
@@ -76,7 +76,7 @@ function socketFor(id: string): { socket: SyncSocket; ws: FakeWs } {
   };
 }
 
-function change(after: Row, position: number): ChangeEvent {
+function change(after: LiveRow, position: number): ChangeEvent {
   return {
     table: 'posts',
     op: 'update',

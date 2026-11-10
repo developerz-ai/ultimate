@@ -15,7 +15,7 @@ import {
   harness,
   ManualScheduler,
 } from './client-harness-fixture';
-import type { JsonObject, Row } from './json';
+import type { JsonObject, LiveRow } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
 import { BROWSER_RECONNECT_MAX_MS } from './thundering-herd';
 
@@ -98,7 +98,7 @@ describe('LiveClient reconnect', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
 
     sockets[0]?.disconnect();
     timers.fire();
@@ -116,7 +116,7 @@ describe('LiveClient reconnect', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     const seen: JsonObject[] = [];
     client.holdChannel(cursorsChannel, { orgId: 'o1' }, { onEvent: (event) => seen.push(event) });
 
@@ -274,7 +274,7 @@ describe('LiveClient channel catch-up retry', () => {
       epoch: 'e1',
     });
     for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
-    expect(timers.pending).toBe(backoff.baseMs);
+    expect(timers.pending).toBe(backoff.base);
     client.close();
   });
 });

@@ -98,7 +98,11 @@ describe('unit · x g query stores rows when the slice still takes the scaffold 
       '/live/invoice-feed.live.test.ts',
     );
     // Through the `subscribe` fixture — a sync node — over the module's own registered export.
-    expect(live).toContain("const live = registerQuery('invoiceFeed', invoiceFeed);");
+    expect(live).toContain('const api = defineApi({ queries: { invoiceFeed } });');
+    expect(live).toContain('const live = api.queries.invoiceFeed;');
+    // `defineApi` is an app's one registration path: generated code never reaches a loader.
+    expect(live).toContain("import { defineApi } from '@ultimat3/action';");
+    expect(live).not.toContain('registerQuer');
     // ONE input for both orgs: the window is the subscriber's tenant, never a parameter.
     expect(live).toContain('const ours = await subscribe<Row>(live, input, readerOf(orgId));');
     expect(live).toContain('subscribe<Row>(live, input, readerOf(otherOrg));');

@@ -39,7 +39,7 @@ async function runOnce(attempts: number, attempt: number, thrown: unknown) {
     name: 'summarize',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `summarize:${n}`,
-    retry: { attempts, backoff: 'fixed', delay: 1_000, jitter: false, maxDelay: 60_000 },
+    retry: { attempts, backoff: 'fixed', delay: 1_000, jitter: 'none', maxDelay: 60_000 },
     run: () => Promise.reject(thrown),
   });
   const base = memoryJobDriver();
@@ -122,7 +122,7 @@ describe('refused jobs do not wake together', () => {
     attempts: 3,
     backoff: 'fixed',
     delay: 1_000,
-    jitter: false,
+    jitter: 'none',
     maxDelay: 60_000,
   } as const;
 

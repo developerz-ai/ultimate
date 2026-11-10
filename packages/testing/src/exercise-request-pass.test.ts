@@ -2,7 +2,8 @@
 // entry, reached with one — a declared value, or a function minting the cookie for each actor.
 
 import { describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { UltimateError } from '@ultimat3/core';
 import { entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { useRequestCookie } from '@ultimat3/http';

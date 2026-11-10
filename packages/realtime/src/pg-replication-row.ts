@@ -3,14 +3,14 @@
 // `after` could not carry. Split out of `pg-replication.ts`, which decides ordering and nothing else.
 
 import { ReplicationProtocolError } from './errors';
-import { isRow, type Row } from './json';
+import { isRow, type LiveRow } from './json';
 import { entityRow, omittedProperties } from './pg-entity-row';
 import type { PhysicalRow } from './pg-values';
 import type { PgRelation } from './pgoutput';
 
 export interface ReplicatedImages {
-  readonly before: Row | null;
-  readonly after: Row | null;
+  readonly before: LiveRow | null;
+  readonly after: LiveRow | null;
   /** Properties missing from `after` because Postgres logged no value for them. Usually empty. */
   readonly omitted: readonly string[];
 }
@@ -59,12 +59,12 @@ function toRow(
   relation: PgRelation,
   physical: PhysicalRow | null,
   image: 'before' | 'after',
-): Row | null {
+): LiveRow | null {
   if (physical === null) return null;
   const row = entityRow(relation, physical, image);
   // A bigserial id decodes as a number inside `Number.isSafeInteger` range and as text outside it,
   // so the same table would otherwise identify small rows by number and large ones by string.
-  // `Row.id`, `RowPatch.id` and every cursor are text: the identity is normalised once, here.
+  // `LiveRow.id`, `RowPatch.id` and every cursor are text: the identity is normalised once, here.
   const id = row['id'];
   if (typeof id === 'number' && Number.isSafeInteger(id)) row['id'] = String(id);
   if (isRow(row)) return row;
@@ -76,7 +76,7 @@ function toRow(
 }
 
 /** The tenant, hoisted out of the row so fanout filters without parsing it. */
-export const tenantOf = (row: Row | null): string | null => {
+export const tenantOf = (row: LiveRow | null): string | null => {
   const orgId = row?.['orgId'];
   return typeof orgId === 'string' ? orgId : null;
 };

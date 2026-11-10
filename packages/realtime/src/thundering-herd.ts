@@ -6,6 +6,7 @@
 //   2. policyDelay()  — the client's own jittered retry, for failures nobody scheduled
 //   3. AcceptBudget   — the receiving node's token bucket, so recovery sheds instead of collapsing
 
+import type { RetryPolicy } from '@ultimat3/core';
 import {
   backoffDelay,
   type Clock,
@@ -22,20 +23,20 @@ export type Rng = Random;
 /** Core's, re-exported under this package's name — never a second copy of the same three modes. */
 export type { JitterMode };
 
-export interface BackoffPolicy {
-  readonly baseMs: number;
-  readonly maxMs: number;
-  readonly factor: number;
-  readonly jitter: JitterMode;
-}
+/**
+ * A redial's wait: core's `RetryPolicy` without its two bounds. A socket, a NATS link and the
+ * replicator redial until they are closed, so `attempts` and `timeBudgetMs` would be fields read by
+ * nothing — the shape is core's, projected, never restated (`BackoffPolicy` until 31.0.0).
+ */
+export type ReconnectBackoff = Pick<RetryPolicy, 'base' | 'max' | 'factor' | 'curve' | 'jitter'>;
 
 /**
  * `full` jitter by default: it is the only mode that actually decorrelates a herd. `equal` keeps a
  * floor for latency-sensitive clients; `none` exists for tests and is never a production choice.
  */
-export const defaultBackoff: BackoffPolicy = {
-  baseMs: 500,
-  maxMs: 30_000,
+export const defaultBackoff: ReconnectBackoff = {
+  base: 500,
+  max: 30_000,
   factor: 2,
   jitter: 'full',
 };
@@ -51,16 +52,16 @@ export const BROWSER_RECONNECT_MAX_MS = 4_000;
  * window rather than at once, and the `AcceptBudget` sheds the excess before any query runs. A
  * PLANNED restart never reaches this: the drain's `reconnect` frame assigns each socket its slot.
  */
-export const browserBackoff: BackoffPolicy = {
-  baseMs: 500,
-  maxMs: BROWSER_RECONNECT_MAX_MS,
+export const browserBackoff: ReconnectBackoff = {
+  base: 500,
+  max: BROWSER_RECONNECT_MAX_MS,
   factor: 2,
   jitter: 'equal',
 };
 
 /**
- * A {@link BackoffPolicy} mapped onto `@ultimat3/core`'s `backoffDelay` — the one curve. Attempt is
- * 1-BASED, core's count: the wait after the first failure is `attempt: 1` and is `baseMs`.
+ * A {@link ReconnectBackoff} through `@ultimat3/core`'s `backoffDelay` — the one curve. Attempt is
+ * 1-BASED, core's count: the wait after the first failure is `attempt: 1` and is `base`.
  *
  * Internal to this package and never re-exported from the barrel. Until 22.0.0 `.` exported a
  * 0-based `backoffDelay` of its own that shifted by one before delegating, which made two counting
@@ -68,19 +69,11 @@ export const browserBackoff: BackoffPolicy = {
  * catch-up retry did) waited twice as long as it meant to, with no error anywhere.
  */
 export function policyDelay(
-  policy: BackoffPolicy,
+  policy: ReconnectBackoff,
   attempt: number,
   rng: Rng = Math.random,
 ): number {
-  return backoffDelay({
-    attempt,
-    base: policy.baseMs,
-    max: policy.maxMs,
-    factor: policy.factor,
-    curve: 'exponential',
-    jitter: policy.jitter,
-    random: rng,
-  });
+  return backoffDelay({ ...policy, attempt, random: rng });
 }
 
 /**

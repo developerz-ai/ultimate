@@ -21,6 +21,9 @@
       "path": "../i18n"
     },
     {
+      "path": "../schema"
+    },
+    {
       "path": "../seo"
     }
   ]

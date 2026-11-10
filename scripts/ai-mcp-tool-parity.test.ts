@@ -6,8 +6,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AnyAction } from '@ultimat3/action';
-import { action, memoryIdempotencyStore, registerAction, resetActions } from '@ultimat3/action';
+import { action, memoryIdempotencyStore, resetActions } from '@ultimat3/action';
 import { installIdempotencyStore, resetIdempotency } from '@ultimat3/action/adapter';
+import { registerAction } from '@ultimat3/action/loader';
 import { asProjectableAction } from '@ultimat3/ai';
 import type { Actor } from '@ultimat3/core';
 import {

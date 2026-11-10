@@ -3,7 +3,8 @@
 // would prove nothing about whether `explainPolicy` reads the app's own policy objects.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerActions, resetActions, t } from '@ultimat3/action';
+import { action, resetActions, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import type { Policy } from '@ultimat3/policy';
 import {
   can,

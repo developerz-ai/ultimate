@@ -1,5 +1,6 @@
-// @ultimat3/realtime's owned codes and their TITLES, registered at import — the one module
-// `sideEffects` names, so `errors.ts` (the sync node's refusal classes) is unlisted and no hook's
+// @ultimat3/realtime's PAGE codes and their TITLES — every code a browser can raise or receive on
+// the wire — registered at import. Server-only codes are `error-titles-server.ts`. Listed in
+// `sideEffects`, so `errors.ts` (the sync node's refusal classes) is unlisted and no hook's
 // chunk carries it (`page-errors-bundle.test.ts`): measured on Bun 1.4.2, −1,081 B on `feed`, −1,051 B on `likes-badge`, −1,047 B on
 // `run-console`, every title still registered. Imported bare by `index.ts` (a page
 // rebuilds a node's refusal by code in `refusalError`, and `page-errors.ts` constructs codes from
@@ -10,8 +11,8 @@
 // no realtime island reads (`page-errors-bundle.test.ts`). The registry is one module either way.
 import { registerErrorCodes } from '@ultimat3/core/page';
 
-/** Codes this package declares and owns. */
-export const REALTIME_OWNED_ERROR_CODES = [
+/** Codes this package owns that a page can raise or receive; the rest are `error-titles-server.ts`'s. */
+export const REALTIME_PAGE_OWNED_ERROR_CODES = [
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
   'X_SUBSCRIPTION_ID_TAKEN',
@@ -21,9 +22,6 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REBASE_CONFLICT',
   'X_TRANSPORT_UNAVAILABLE',
   'X_TRANSPORT_PROTOCOL',
-  'X_REPLICATION_PROTOCOL',
-  'X_REPLICATION_FAILED',
-  'X_REPLICATOR_SLOT_HELD',
   // Retired in 21.0.0 and never thrown since — kept registered, because a shipped code is
   // forever: a log line from an older build still resolves through `x errors explain`.
   'X_LIVE_CLIENT_MISSING',
@@ -36,28 +34,22 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_LIVE_SERVER_RENDER',
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_LIVE_QUERY_UNKNOWN',
-  'X_LIVE_REPLICA_IDENTITY',
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
-  'X_REALTIME_TOPOLOGY',
-  'X_REPLICATION_TLS',
   'X_SOCKET_ORIGIN_REFUSED',
   'X_OFFLINE_QUEUE_ABANDONED',
   'X_SOCKET_LIMIT',
-  'X_REALTIME_PRODUCER_CONFLICT',
   'X_MUTATION_PATH_UNFILLED',
   'X_DEVICE_OFFLINE',
   'X_DEVICE_REQUEST_TIMEOUT',
   'X_DEVICE_FRAME_TOO_LARGE',
   'X_CHANNEL_CATCHUP_POLICY_MISMATCH',
-  'X_REPLICATION_SLOT_INVALIDATED',
-  'X_REPLICATION_SLOT_RECREATED',
   'X_OFFLINE_QUEUE_FULL',
 ] as const;
 
-export type RealtimeOwnedErrorCode = (typeof REALTIME_OWNED_ERROR_CODES)[number];
+export type RealtimePageErrorCode = (typeof REALTIME_PAGE_OWNED_ERROR_CODES)[number];
 
-export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, string>> = {
+export const REALTIME_PAGE_ERROR_TITLES: Readonly<Record<RealtimePageErrorCode, string>> = {
   X_TOPIC_FORBIDDEN: 'the actor may not subscribe to this topic',
   X_SUBSCRIPTION_LIMIT: 'socket, actor, tenant or node hit its subscription cap',
   X_SUBSCRIPTION_ID_TAKEN: 'a subscribe frame reused a sid this socket already holds',
@@ -67,9 +59,6 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REBASE_CONFLICT: 'a local mutation could not be rebased',
   X_TRANSPORT_UNAVAILABLE: 'the fanout bus is unreachable',
   X_TRANSPORT_PROTOCOL: 'the bus does not speak the protocol this build speaks',
-  X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
-  X_REPLICATION_FAILED: 'the replication connection was refused',
-  X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING:
     'retired in 21.0.0 (no LiveClient to register; see X_REALTIME_UNINSTALLED): a realtime hook ran in a browser with no LiveClient registered',
   X_QUERY_NOT_SUBSCRIBABLE:
@@ -82,22 +71,16 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_LIVE_SERVER_RENDER: 'a browser-only live operation ran during a server render',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
   X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
-  X_LIVE_REPLICA_IDENTITY: 'a replicated table has no replica identity',
   X_SOCKET_UNAUTHENTICATED: 'the sync upgrade carried no credential this app accepts',
   X_SOCKET_AUTH_UNAVAILABLE: 'the sync node could not decide who a connecting socket is',
-  X_REALTIME_TOPOLOGY: 'a sync node boots on a real database with no reachable change feed',
-  X_REPLICATION_TLS: 'the replication connection failed TLS',
   X_SOCKET_ORIGIN_REFUSED: 'the websocket upgrade came from another origin',
   X_OFFLINE_QUEUE_ABANDONED: 'a write was queued after its page changed principal',
   X_SOCKET_LIMIT: 'one principal holds too many sockets on this node',
-  X_REALTIME_PRODUCER_CONFLICT: 'two kinds of producer carry one table on the change bus',
   X_MUTATION_PATH_UNFILLED: "a pinned action's :param had no value in the write's input",
   X_DEVICE_OFFLINE: 'no socket is open for the device a request addressed',
   X_DEVICE_REQUEST_TIMEOUT: 'a device did not answer a request before its deadline',
   X_DEVICE_FRAME_TOO_LARGE: 'a device socket frame is over the framework frame limit',
   X_CHANNEL_CATCHUP_POLICY_MISMATCH: "a channel's catch-up read decides with another policy",
-  X_REPLICATION_SLOT_INVALIDATED: 'the replication slot was invalidated',
-  X_REPLICATION_SLOT_RECREATED: 'the replication slot was recreated',
   X_OFFLINE_QUEUE_FULL: 'the offline queue is full',
 };
 
@@ -105,6 +88,6 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
 // X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
 registerErrorCodes(
   Object.fromEntries(
-    Object.entries(REALTIME_ERROR_TITLES).map(([code, title]) => [code, { title }]),
+    Object.entries(REALTIME_PAGE_ERROR_TITLES).map(([code, title]) => [code, { title }]),
   ),
 );

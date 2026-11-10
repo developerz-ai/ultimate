@@ -55,7 +55,7 @@ are deleted (sync protocol 3): no host ever wired `onMutate`, so every socket wr
 
 ```ts
 // packages/realtime/src/changefeed.ts
-export interface ChangeEvent<R extends Row = Row> {
+export interface ChangeEvent<R extends LiveRow = LiveRow> {
   readonly table: string;          // the RELATION, on every producer (WAL, x dev bridge, recordPublisher)
   readonly op: 'insert' | 'update' | 'delete' | 'truncate';
   readonly before: R | null;       // key-only or null under DEFAULT — see below

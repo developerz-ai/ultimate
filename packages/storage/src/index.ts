@@ -11,7 +11,6 @@ export type {
   AttachmentTarget,
   DeleteVariantsInput,
   PromoteAttachmentInput,
-  ReleaseQuarantineInput,
   SweepFailure,
   SweepOrphansInput,
   SweepResult,
@@ -21,15 +20,10 @@ export {
   attachmentPrefix,
   deleteVariants,
   isPendingKey,
-  isQuarantinedKey,
   PENDING_SEGMENT,
   pendingKey,
   pendingPrefix,
   promoteAttachment,
-  QUARANTINE_SEGMENT,
-  quarantineKey,
-  quarantinePrefix,
-  releaseQuarantine,
   sweepOrphans,
   uploadExtension,
   uploadName,
@@ -108,9 +102,9 @@ export {
   xmlBodyUnreadable,
 } from './errors';
 export { multipartUnsupported, partsInvalid, uploadUnknown } from './errors-multipart';
-export { alreadyPromoted, quarantined } from './errors-promote';
+export { alreadyPromoted } from './errors-promote';
 export { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
-export { scanUnavailable, uploadInfected } from './errors-scan';
+export { scanUnavailable, uploadHeld, uploadInfected } from './errors-scan';
 export type {
   AbortResult,
   AbortStaleUploadsInput,

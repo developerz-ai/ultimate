@@ -1,5 +1,6 @@
-// Single responsibility: the three closed vocabularies a route is declared in — how it renders,
-// how it survives offline, when it hydrates. Tier 0 so every package that names one imports it.
+// Single responsibility: the closed vocabularies a route is declared in — where it lives, how it
+// renders, how it survives offline, when it hydrates. Tier 0 so every package that names one
+// imports it.
 // Deliberately not `config.ts`: `app.config.ts` CONSUMES `OfflineStrategy`, it does not own it.
 
 /**
@@ -21,3 +22,11 @@ export type OfflineStrategy = (typeof OFFLINE_STRATEGIES)[number];
 
 export const HYDRATE_STRATEGIES = ['idle', 'visible', 'interaction', 'never'] as const;
 export type HydrateStrategy = (typeof HYDRATE_STRATEGIES)[number];
+
+/**
+ * The directories an app's code lives in: `site/` and `app/` hold routes, `api/` the projections
+ * `defineApi()` collects, `shared/` what the others import. `@ultimat3/render` owns the boundary
+ * between them (`SURFACE_SPECS`); `@ultimat3/seo` reads a route's. One declaration, here.
+ */
+export const SURFACES = ['site', 'app', 'api', 'shared'] as const;
+export type Surface = (typeof SURFACES)[number];

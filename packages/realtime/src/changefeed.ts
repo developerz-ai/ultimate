@@ -5,7 +5,7 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteOption } from '@ultimat3/core';
 import { ReplicationFailedError } from './errors';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { PgReplicationStream, type ReplicationStreamStats } from './pg-replication';
 import type { PgTarget } from './pg-socket';
 import type { PgStream } from './pg-wire';
@@ -19,7 +19,7 @@ import type { Rng } from './thundering-herd';
  */
 export type ChangeOp = 'insert' | 'update' | 'delete' | 'truncate';
 
-export interface ChangeEvent<R extends Row = Row> {
+export interface ChangeEvent<R extends LiveRow = LiveRow> {
   /**
    * The RELATION (table) name, on every producer: the WAL decoder reads it off the Relation
    * message, the in-process bridge maps the row observer's entity name onto it, and a
@@ -158,8 +158,8 @@ export class MemoryChangeFeed implements ChangeFeed {
     table: string,
     op: ChangeOp,
     rows: {
-      before?: Row | null;
-      after?: Row | null;
+      before?: LiveRow | null;
+      after?: LiveRow | null;
       orgId?: string | null;
       at?: number;
       write?: string | null;

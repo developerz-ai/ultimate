@@ -34,7 +34,7 @@ core's error machinery would make tier 0 a cycle.
 
 ## Generated-app rules — `packages/cli/src/app-boundaries.ts`
 
-Eight, each with its own code (`BOUNDARY_CODES`, `As of 2026-11`). `x verify` reports them as findings and `x fix boundary` re-reports the
+Nine, each with its own code (`BOUNDARY_CODES`, `As of 2026-11`). `x verify` reports them as findings and `x fix boundary` re-reports the
 same violation as a cut, off one rule → code table.
 
 | Rule id | Code | Forbids | Prevents concretely |
@@ -46,6 +46,7 @@ same violation as a cut, off one rule → code table.
 | route → db | `X_BOUNDARY_ROUTE_TO_DB` | `page.tsx` / `layout.tsx` / `route.ts` importing `@ultimat3/db`, a `*/db` or `packages/db/` specifier, `drizzle-orm`, or a slice's `repo` module under any source extension (`./repo`, `../posts/repo`, `repo/index`, `./repo.ts`, and the emitted-JS spellings `./repo.js` / `.mjs` / `.cjs` — `isRepoSpecifier`; `report` and `repository` are names, not repos); the cause names the repo hop | N+1 queries in a `<head>` computation, SQL no policy guards, a route that cannot be unit-tested |
 | service → http | `X_BOUNDARY_SERVICE_TO_HTTP` | `service.ts` importing `@ultimat3/http` or a `*/http` specifier | a service that only works inside a request — so the identical logic gets re-implemented in a job |
 | app → adapter | `X_BOUNDARY_ADAPTER_IMPORT` | a `site/`, `app/`, `api/` or `shared/` module importing `@ultimat3/<pkg>/adapter` at runtime. `import type` is allowed; `apps/<app>/runtime.ts`, tests and `packages/db/factories.ts` are not scanned | an installer or override (`overrideHandler`, an `install*`) called at import time, silently replacing a production port — the port goes in `apps/<app>/runtime.ts` |
+| app → loader | `X_BOUNDARY_LOADER_IMPORT` | a `site/`, `app/`, `api/` or `shared/` module importing `@ultimat3/action/loader` or `@ultimat3/query/loader` — `registerAction(s)`/`registerQuery(ies)`, `x`'s module scan's. The one rule that reads the surfaces' `.test.` files too (`app-loader-imports.ts`) | a second registration path beside `defineApi`, and a name stamped outside `apps/<app>/api/index.ts` |
 | package → app | `X_BOUNDARY_PACKAGE_TO_APP` | a file under `packages/` importing `apps/` at runtime, relative or by workspace name (`package-boundaries.ts`). `import type` is allowed, and `packages/db/src/` may read an entity module: that is the typed handle `x g entity` writes | a shared package silently depending on one app. No per-package tiers: an app's `packages/` layout is its own |
 
 **Four rules this page claimed and no checker implements**, `As of 2026-10`: `component-holds-logic`,

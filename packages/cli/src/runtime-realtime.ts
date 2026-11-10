@@ -1,6 +1,7 @@
 // The `realtime` section for the boot, out of the config `startServices` loads once
 // (`app-config-load.ts`). `enabled` decides the realtime roles; the two per-actor caps are read by
-// the `sync` role. The bus is not here: `NATS_URL`, or `transport` in `apps/<app>/runtime.ts` (v31).
+// the `sync` role, `maxQueued` by `page-sync.ts` (the page outbox's ceiling, on every document).
+// The bus is not here: `NATS_URL`, or `transport` in `apps/<app>/runtime.ts` (v31).
 
 import type { AppConfig, RealtimeConfig } from '@ultimat3/core';
 
@@ -9,6 +10,7 @@ export const REALTIME_DEFAULTS: RealtimeConfig = Object.freeze({
   enabled: true,
   maxSubscriptionsPerActor: undefined,
   maxSocketsPerActor: undefined,
+  maxQueued: undefined,
 });
 
 /**

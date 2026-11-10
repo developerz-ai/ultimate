@@ -21,14 +21,14 @@ const CORE = join(import.meta.dir, '..', '..', 'core', 'src', 'index.ts');
  */
 const FIXTURE = `
 import { expect, test } from 'bun:test';
-import { logger, setLogSink } from ${JSON.stringify(CORE)};
+import { installLogSink, logger } from ${JSON.stringify(CORE)};
 test('a collecting sink sees info and above whatever LOG_LEVEL names', () => {
   const seen = [];
-  const previous = setLogSink((_line, level) => seen.push(level));
+  const releaseLogSink = installLogSink((_line, level) => seen.push(level));
   try {
     logger.debug('d'); logger.info('i'); logger.warn('w'); logger.error('e');
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   expect(seen.filter((level) => level !== 'debug')).toEqual(['info', 'warn', 'error']);
   // The variable a spawned child inherits is the one the author named, not the pin.

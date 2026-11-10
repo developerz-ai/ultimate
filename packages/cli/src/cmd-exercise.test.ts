@@ -8,7 +8,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { action, registerActions, resetActions, t } from '@ultimat3/action';
+import { action, resetActions, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { registeredJobs, resetJobs, restoreJobs } from '@ultimat3/jobs';
 import {
   can,

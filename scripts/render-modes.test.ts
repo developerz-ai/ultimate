@@ -10,6 +10,7 @@ import {
   IMAGE_FORMATS,
   OFFLINE_STRATEGIES,
   RENDER_MODES,
+  SURFACES,
 } from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
@@ -56,6 +57,7 @@ const sanctioned: SourceFile = {
     'export type RenderMode = (typeof RENDER_MODES)[number];',
     asConst('OFFLINE_STRATEGIES', OFFLINE_STRATEGIES),
     asConst('HYDRATE_STRATEGIES', HYDRATE_STRATEGIES),
+    asConst('SURFACES', SURFACES),
     '',
   ].join('\n'),
 };
@@ -142,6 +144,21 @@ describe('a second declaration of the vocabulary', () => {
 
   test('is not reported against the one module allowed to declare it', () => {
     expect(checkVocabulary([...OWNERS])).toEqual([]);
+  });
+
+  test('is reported for the surface union @ultimat3/seo shipped beside render (plan 101 D7)', () => {
+    const seo = "export type Surface = 'site' | 'app' | 'api';\n";
+    const findings = checkVocabulary([...OWNERS, file('packages/seo/src/routes.ts', seo)]);
+    expect(findings.map((one) => one.cause)).toEqual([
+      'Surface in packages/seo/src/routes.ts redeclares SURFACES, which packages/core/src/route-vocabulary.ts declares',
+    ]);
+  });
+
+  test('is NOT reported for a two-member route surface — a subset on purpose', () => {
+    const route = "export type Surface = 'site' | 'app';\n";
+    expect(
+      checkVocabulary([...OWNERS, file('packages/cli/src/templates/route.ts', route)]),
+    ).toEqual([]);
   });
 });
 
@@ -293,15 +310,15 @@ describe('this repository', () => {
     expect(files.filter((one) => one.at.includes('.test.'))).toEqual([]);
   });
 
-  test('and the scan found all three vocabularies in the module that owns them', async () => {
+  test('and the scan found all four vocabularies in the module that owns them', async () => {
     const text = await Bun.file(`${ROOT}/${VOCABULARY_MODULE}`).text();
     const names = scanLiteralSets(text).map((one) => one.name);
     for (const vocabulary of VOCABULARIES.filter((one) => one.at === VOCABULARY_MODULE)) {
       expect(names).toContain(vocabulary.name);
     }
-    // Seven: the three route sets, JOB_STATES, TEST_TYPES, IMAGE_FORMATS and CACHE_TIERS. The
+    // Eight: the four route sets, JOB_STATES, TEST_TYPES, IMAGE_FORMATS and CACHE_TIERS. The
     // count is pinned so a row is added deliberately, never as a side effect of an import.
-    expect(VOCABULARIES).toHaveLength(7);
+    expect(VOCABULARIES).toHaveLength(8);
   });
 
   test('and it reads a real union whose members carry a doc comment each', async () => {

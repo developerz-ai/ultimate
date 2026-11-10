@@ -10,7 +10,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
+import { SURFACES } from '@ultimat3/core';
 import {
   allow,
   can,
@@ -19,15 +21,10 @@ import {
   permissionDeclarationSites,
   restorePermissions,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import type { RouteDescriptor } from '@ultimat3/render';
-import {
-  clearRoutes,
-  defineRoute,
-  registerMountedRoutes,
-  registerRoute,
-  SURFACES,
-} from '@ultimat3/render';
+import { clearRoutes, defineRoute, registerMountedRoutes, registerRoute } from '@ultimat3/render';
 import { t } from '@ultimat3/schema';
 import { REQUIRED_BUN } from './app-root';
 import { readSurfaceFilter, routesCommand } from './cmd-routes';

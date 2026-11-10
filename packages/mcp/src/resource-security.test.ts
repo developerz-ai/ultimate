@@ -12,7 +12,7 @@
 // with the raw error, zero frames written, the request unanswered and the session dead.
 
 import { describe, expect, test } from 'bun:test';
-import { agentActor, setLogSink, UltimateError } from '@ultimat3/core';
+import { agentActor, installLogSink, UltimateError } from '@ultimat3/core';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
 import type { McpResource } from './resources';
@@ -217,11 +217,13 @@ describe('every resources/read outcome is audited, hidden included', () => {
    */
   async function captureLines(run: () => Promise<unknown>): Promise<Record<string, unknown>[]> {
     const lines: Record<string, unknown>[] = [];
-    const previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
+    const releaseLogSink = installLogSink((line) =>
+      lines.push(JSON.parse(line) as Record<string, unknown>),
+    );
     try {
       await run();
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     return lines;
   }

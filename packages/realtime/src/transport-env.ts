@@ -11,7 +11,7 @@ import { InProcessTransport } from './fanout';
 import type { NatsConnect } from './nats-client';
 import { assertBucket } from './nats-jetstream';
 import { NatsTransport } from './nats-transport';
-import type { BackoffPolicy } from './thundering-herd';
+import type { ReconnectBackoff } from './thundering-herd';
 
 /**
  * The keys read here, and nothing else. Named once so docs and tests cannot drift from the code.
@@ -93,7 +93,7 @@ export interface SelectTransportOptions {
   /** Default `BUS_CONNECT_WAIT_MS`. Read under `'sockets'` and `'feed'` only. */
   readonly connectWithinMs?: number | undefined;
   /** The dial's retry curve; the transport's own default when unset. */
-  readonly backoff?: BackoffPolicy | undefined;
+  readonly backoff?: ReconnectBackoff | undefined;
   /** Where the transport's background failures go; its own logger line when unset. */
   readonly onError?: ((error: unknown, subject: string) => void) | undefined;
 }

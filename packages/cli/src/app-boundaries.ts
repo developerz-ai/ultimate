@@ -18,9 +18,10 @@
 import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';
-import { ADAPTER_PORTS, ERROR_DOCS_URL } from '@ultimat3/core';
+import { ADAPTER_PORTS, ERROR_DOCS_URL, SURFACES } from '@ultimat3/core';
 import type { BoundaryRule, ImportGraph, ImportRef } from '@ultimat3/render';
-import { checkSurfaceBoundary, importGraph, SURFACES, surfaceOf } from '@ultimat3/render';
+import { checkSurfaceBoundary, importGraph, surfaceOf } from '@ultimat3/render';
+import { loaderImportFindings } from './app-loader-imports';
 import { commentSafe } from './comment-safe';
 import { scanRuntimeImports, stripShebang } from './import-scan';
 import type { Finding } from './output';
@@ -36,6 +37,7 @@ export const BOUNDARY_CODES = [
   'X_BOUNDARY_SERVICE_TO_HTTP',
   'X_BOUNDARY_SURFACE_IMPORT',
   'X_BOUNDARY_ADAPTER_IMPORT',
+  'X_BOUNDARY_LOADER_IMPORT',
   // `package-boundaries.ts`'s: it reads `packages/`, which this module's surface graph never holds.
   'X_BOUNDARY_PACKAGE_TO_APP',
 ] as const;
@@ -325,7 +327,11 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
  */
 export function checkImportRules(files: readonly SourceFile[]): readonly Finding[] {
   const scanned = scan(files);
-  return [...surfaceFindings(graphOf(scanned)), ...layerFindings(scanned)];
+  return [
+    ...surfaceFindings(graphOf(scanned)),
+    ...layerFindings(scanned),
+    ...loaderImportFindings(files),
+  ];
 }
 
 const APP_GLOBS = ['apps/*/{site,app,api,shared}/**/*.{ts,tsx}'];
@@ -335,12 +341,17 @@ const APP_GLOBS = ['apps/*/{site,app,api,shared}/**/*.{ts,tsx}'];
  * only I/O in this module, and the one definition of "which files are the app's sources" —
  * `appBoundaryFindings` reads through this, and so does `x fix boundary`, never a second glob.
  */
-export async function readAppSources(root: string): Promise<readonly SourceFile[]> {
+export async function readAppSources(
+  root: string,
+  /** `tests`: the same surfaces' `.test.` files instead — read by the loader rule alone. */
+  which: 'sources' | 'tests' = 'sources',
+): Promise<readonly SourceFile[]> {
   const files: SourceFile[] = [];
   for (const pattern of APP_GLOBS) {
     const glob = new Bun.Glob(pattern);
     for await (const path of glob.scan({ cwd: root, absolute: false })) {
-      if (hasPathSegment(path, 'node_modules') || path.includes('.test.')) continue;
+      if (hasPathSegment(path, 'node_modules')) continue;
+      if (path.includes('.test.') !== (which === 'tests')) continue;
       const posix = toPosix(path);
       files.push({ path: posix, source: await Bun.file(joinPath(root, posix)).text() });
     }

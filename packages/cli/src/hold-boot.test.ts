@@ -8,11 +8,11 @@ import {
   type Ctx,
   configureLifecycle,
   ctxOf,
+  installLogSink,
   lifecycleState,
   markReady,
   onShutdown,
   resetLifecycle,
-  setLogSink,
 } from '@ultimat3/core';
 import type { JobDriver, NackOptions, QueueStats } from '@ultimat3/jobs';
 import { job, jobWorker, memoryJobDriver, resetJobs, type Worker } from '@ultimat3/jobs';
@@ -73,7 +73,7 @@ describe('holdWhileBooting', () => {
       name: 'bootJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `boot:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async () => {
         started();
         await finished;
@@ -138,7 +138,7 @@ describe('holdWhileBooting', () => {
     const before = sigtermListeners();
     const codes: number[] = [];
     const lines: string[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       lines.push(line);
     });
     try {
@@ -153,7 +153,7 @@ describe('holdWhileBooting', () => {
         { exit: (code) => codes.push(code) },
       ).catch(() => undefined);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
 
     expect(codes).toEqual([0]);
@@ -201,7 +201,7 @@ describe('an interrupted boot exits what the drain says', () => {
     configureLifecycle({ deadlineMs: 20, readinessGraceMs: 0 });
     onShutdown('slow-flush', () => new Promise<void>(() => {}), { phase: 'close' });
     const codes: number[] = [];
-    const previous = setLogSink(() => {});
+    const releaseLogSink = installLogSink(() => {});
     try {
       await holdWhileBooting(
         'probe',
@@ -213,7 +213,7 @@ describe('an interrupted boot exits what the drain says', () => {
         { exit: (code) => codes.push(code) },
       ).catch(() => undefined);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(codes).toEqual([70]);
   }, 30_000);

@@ -50,7 +50,7 @@ async function observe(start: (begin: () => void) => Promise<void>): Promise<rea
     name: 'claimThenPost',
     input,
     idempotencyKey: ({ id }) => `claim:${id}`,
-    retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 1, backoff: 'fixed', delay: 0, jitter: 'none' },
     run: async ({ step }) => {
       seen.push(currentTx());
       await step.run('claim', async () => {

@@ -113,7 +113,7 @@ the one evaluation. The same shape works over `action()`, `job()` and `query()`.
 |---|---|
 | the entity registry | `entity()` calls `registerEntity` itself, so registration happens whenever your factory calls it |
 | `isAction()` | structural — a function, `kind === 'action'`, a stashed declaration. It asks whether `action()` built the value, never where |
-| `registerActions(module)` | names the export **in place**, so `getAction('issueInvoice') === issueInvoice` by identity, not a copy |
+| `defineApi({ actions })` | names each export **in place**, so `getAction('issueInvoice') === issueInvoice` by identity, not a copy |
 | `x verify` | no step matches source text for `action(` / `entity(` / `mutator(`. Every primitive fact reaches the gate by importing the module and reading the runtime registries. The only text scanning is for `X_*` codes |
 | manifest · admin CRUD · MCP · the five projections | all read those same registries |
 

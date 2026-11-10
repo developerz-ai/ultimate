@@ -9,9 +9,9 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RenderMode } from '@ultimat3/core';
-import { RENDER_MODES } from '@ultimat3/core';
+import { RENDER_MODES, SURFACES } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
-import { SURFACE_SPECS, SURFACES, surfaceAllows } from '@ultimat3/render';
+import { SURFACE_SPECS, surfaceAllows } from '@ultimat3/render';
 import type { JsonValue } from './output';
 import { SERVICE_WORKER_PATH } from './sw-artifacts';
 

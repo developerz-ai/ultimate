@@ -14,7 +14,7 @@ import { clearChannels } from './channel-registry';
 import type { ChannelRecordsFrame } from './channel-wire';
 import { InProcessTransport } from './fanout';
 // The wire's row — what a change event carries — so a test row is one the feed could deliver.
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { OPEN_POLICY } from './policy-fake-fixture';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
@@ -121,7 +121,7 @@ function connect(who: string): { socket: SyncSocket; ws: FakeWs } {
 }
 
 const ORG = 'o1';
-const post = (id: string, title: string, ownerId = 'alice'): Row => ({
+const post = (id: string, title: string, ownerId = 'alice'): LiveRow => ({
   id,
   orgId: ORG,
   ownerId,
@@ -132,7 +132,7 @@ const nextLsn = (): string => {
   lsn += 1;
   return String(lsn).padStart(16, '0');
 };
-const insert = (row: Row, op: ChangeEvent['op'] = 'insert'): ChangeEvent => ({
+const insert = (row: LiveRow, op: ChangeEvent['op'] = 'insert'): ChangeEvent => ({
   table: 'channel_seq_posts',
   op,
   before: op === 'insert' ? null : row,
@@ -259,7 +259,7 @@ describe('records on a declared channel', () => {
   });
 
   test('THE PROPERTY: a deliberately dropped frame ends with the store equal to the server rows', async () => {
-    const server = new Map<string, Row>();
+    const server = new Map<string, LiveRow>();
     // The client's copy holds whatever a frame adopted: core's row, not the wire's narrower one.
     const store = new Map<string, object>();
     const a = connect('alice');
@@ -268,7 +268,7 @@ describe('records on a declared channel', () => {
       channel: 'org-feed',
       params: { orgId: ORG },
     });
-    const write = (row: Row, op: ChangeEvent['op'] = 'insert'): void => {
+    const write = (row: LiveRow, op: ChangeEvent['op'] = 'insert'): void => {
       if (op === 'delete') server.delete(String(row['id']));
       else server.set(String(row['id']), row);
       hub.deliverChange(insert(row, op));

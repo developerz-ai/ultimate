@@ -152,13 +152,14 @@ Each worker then claims its list and nothing else. Every entry must be a queue t
 
 ## `realtime`
 
-`RealtimeConfig` is three fields and no more `As of 2026-11-09` (31.0.0 removed `transport` and `urlEnv`) ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
+`RealtimeConfig` is four fields and no more `As of 2026-11-10` (31.0.0 removed `transport` and `urlEnv`) ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
 
 | field | type | default | notes |
 |---|---|---|---|
 | `realtime.enabled` | `boolean` | `true` | **on by default since 22.0.0**, when the boot began obeying the key: an app with no `realtime` section keeps the `sync` node it always got. `enabled: false` is the opt-out — for an app that declares no `channel()` topic and no `live: true` query |
 | `realtime.maxSubscriptionsPerActor` | `number` | unset = `1000` | live-query subscriptions one actor may hold on one `sync` node, **across all its sockets**. An anonymous socket counts against the client NETWORK resolved at the upgrade — an IPv4 address exactly, an IPv6 address by its /64, an IPv4-mapped IPv6 as its IPv4 (`TRUSTED_PROXY_HOPS` honoured, as `ctx.ip` is). Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `actor`. A whole number ≥ 1, else `X_CONFIG_INVALID` |
 | `realtime.maxSocketsPerActor` | `number` | unset = `16` | sockets one signed-in actor may hold on one `sync` node. An anonymous NETWORK (keyed exactly as above) gets **8 ×** this — 128 at the default — because it is often many people: one office behind a corporate NAT viewing a public live page. The next upgrade is refused before a socket exists: `429 X_SOCKET_LIMIT`. Closing a socket frees its slot. 16 × the per-socket 128 subscriptions passes the 1,000 above, so normal tabs hit neither. A whole number ≥ 1, else `X_CONFIG_INVALID` |
+| `realtime.maxQueued` | `number` | unset = no ceiling | unsent writes the page's offline outbox holds before it refuses the next (`X_OFFLINE_QUEUE_FULL`; nothing queued is dropped). Rendered on every document as `<meta name="ultimate-outbox-max">`, read by realtime's page boot. A whole number ≥ 1, else `X_CONFIG_INVALID` |
 
 **Behind a proxy, set `TRUSTED_PROXY_HOPS`.** An anonymous socket is keyed by the client network the upgrade resolved (IPv6 grouped by /64, so one host cannot rotate through its block for fresh budgets). With nothing trusted, that address is the proxy's own, so every anonymous visitor shares ONE 1,000-subscription and 128-socket budget — the same failure as the anonymous rate-limit bucket. A socket that names no actor and no address at all shares one `address:unknown` budget. That fails closed: those sockets are still bounded, just together.
 
@@ -193,7 +194,7 @@ is refused at boot since 25.0.0** (`realtime.heartbeatMs was removed in 4.0.0`,
 `heartbeatMs` was silently kept at runtime and only `TS2353` caught it — never for an app that built
 its config into a variable first.
 
-**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, maxSubscriptionsPerActor, maxSocketsPerActor }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure (`TS2353`, excess property on `Input<RealtimeConfig>`) and, since 25.0.0, a boot refusal (`X_CONFIG_INVALID`, the closed shape above) for a config the compiler never saw. The caps and the ring are **constructor options**, passed where the node is built:
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, maxSubscriptionsPerActor, maxSocketsPerActor, maxQueued }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure (`TS2353`, excess property on `Input<RealtimeConfig>`) and, since 25.0.0, a boot refusal (`X_CONFIG_INVALID`, the closed shape above) for a config the compiler never saw. The caps and the ring are **constructor options**, passed where the node is built:
 
 | Option | Where | Default | Effect |
 |---|---|---|---|

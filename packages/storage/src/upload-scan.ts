@@ -1,11 +1,11 @@
 // Single responsibility: the scan step of `promoteAttachment` — the installed `UploadScanner` asked
-// about a per-ATTEMPT copy of the upload, and its three outcomes: clean (the attempt is what gets
-// attached), infected (attempt and upload deleted, refused) and no verdict (attempt deleted,
-// refused and retryable, unless the policy accepts unscanned).
+// about a per-ATTEMPT copy of the upload, and its four outcomes: clean (the attempt is what gets
+// attached), infected (attempt and upload deleted, refused), hold (attempt deleted, upload kept,
+// refused until cleared) and no verdict (as hold, unless the policy accepts unscanned).
 
-import { renderThrowable } from '@ultimat3/core';
+import { assert, renderThrowable } from '@ultimat3/core';
 import type { StorageDriver, StorageObject } from './driver';
-import { scanUnavailable, uploadInfected } from './errors-scan';
+import { scanUnavailable, uploadHeld, uploadInfected } from './errors-scan';
 import type { UploadPolicy } from './upload';
 import { uploadScanner } from './upload-scanner';
 
@@ -45,7 +45,7 @@ export const scanning = (): boolean => uploadScanner() !== undefined;
 /**
  * Stream the attempt — pinned to its etag where it has one — to the installed scanner. Returns on
  * clean (or no verdict under `onScanUnavailable: 'accept'`); every refusal deletes the attempt, and
- * infected deletes the upload too. The stream is cancelled however the scanner returns: one that
+ * infected deletes the upload too; hold keeps it pending. The stream is cancelled however the scanner returns: one that
  * answers off the first chunk would otherwise hold the disk's connection open.
  */
 export async function scanAttempt(input: ScanAttemptInput): Promise<void> {
@@ -60,12 +60,14 @@ export async function scanAttempt(input: ScanAttemptInput): Promise<void> {
     body = await disk.stream(attempt.key, attempt.etag === '' ? undefined : { etag: attempt.etag });
     verdict = await scanner.scan({
       key: attempt.key,
+      pendingKey: input.pendingKey,
       size: attempt.size,
       contentType: attempt.contentType,
       body,
     });
   } catch (error) {
-    if (input.policy.onScanUnavailable === 'accept') return;
+    // A holding scanner's outage is never a pass: it may be the store that knows what is held.
+    if (input.policy.onScanUnavailable === 'accept' && scanner.holds !== true) return;
     // The attempt goes, the upload stays: a retry once the scanner is back is a fresh confirm.
     await removeAll(disk, [attempt.key]);
     throw scanUnavailable(input.pendingKey, scanner.name, renderThrowable(error));
@@ -73,6 +75,17 @@ export async function scanAttempt(input: ScanAttemptInput): Promise<void> {
     await body?.cancel().catch(() => undefined);
   }
   if (verdict.verdict === 'clean') return;
+  if (verdict.verdict === 'hold') {
+    // A decision, not an outage: no `onScanUnavailable` reaches here. The upload is what a later
+    // confirm promotes; the attempt was this call's.
+    await removeAll(disk, [attempt.key]);
+    assert(
+      scanner.holds === true,
+      `the ${scanner.name} upload scanner answered hold without declaring holds: true, so its outages would have been promoted unscanned under onScanUnavailable: 'accept'`,
+      'uploadScanner: { ...yourScanner, holds: true }   # in apps/<app>/runtime.ts',
+    );
+    throw uploadHeld(input.pendingKey, scanner.name, verdict.reason);
+  }
   const removed = await removeAll(disk, [attempt.key, input.pendingKey]);
   throw uploadInfected(input.pendingKey, scanner.name, verdict.signature, removed);
 }

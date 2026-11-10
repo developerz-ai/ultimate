@@ -44,11 +44,11 @@ describe('compareFingerprint', () => {
     expect(compareFingerprint(stored, { ...INPUT, bank: 'x' }, PURPOSE)).toBe('mismatch');
   });
 
-  test('a legacy unkeyed value is still checked exactly', () => {
+  test('a bare unkeyed value (pre-v24) is unverifiable: never a match, never a mismatch', () => {
     configureCursorSigning('secret-a');
-    const legacy = fingerprint(INPUT);
-    expect(compareFingerprint(legacy, INPUT, PURPOSE)).toBe('match');
-    expect(compareFingerprint(legacy, { ...INPUT, bank: 'x' }, PURPOSE)).toBe('mismatch');
+    const unkeyed = fingerprint(INPUT);
+    expect(compareFingerprint(unkeyed, INPUT, PURPOSE)).toBe('unverifiable');
+    expect(compareFingerprint(unkeyed, { ...INPUT, bank: 'x' }, PURPOSE)).toBe('unverifiable');
   });
 
   test('a value keyed under another secret is unverifiable, not a mismatch', () => {

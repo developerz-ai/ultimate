@@ -13,7 +13,7 @@ import {
   harness,
   ManualScheduler,
 } from './client-harness-fixture';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 describe('LiveClient close events', () => {
@@ -21,7 +21,7 @@ describe('LiveClient close events', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
 
     sockets[0]?.disconnect();
     expect(client.connected).toBe(false);
@@ -33,7 +33,7 @@ describe('LiveClient close events', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
 
     const stale = sockets[0];
     client.connect(); // e.g. a forced redial after an auth refresh
@@ -74,7 +74,7 @@ describe('LiveClient close events', () => {
     const { client, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     const orphan = sockets[0];
 
     client.connect();
@@ -109,7 +109,7 @@ describe('LiveClient.connect failures', () => {
     const { client, sockets, failNextDials } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     expect(client.connected).toBe(true);
 
     failNextDials(1);
@@ -130,7 +130,7 @@ describe('LiveClient.connect failures', () => {
 
     client.connect();
     expect(client.connected).toBe(false);
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     expect(handle.state()).toBe('offline');
     expect(sockets[1]?.frames()).toEqual([]);
 
@@ -145,7 +145,7 @@ describe('LiveClient.connect failures', () => {
   // a spinner that never resolves is the state a component renders for the whole session.
   test('a subscription opened before the first dial reads offline, not loading', () => {
     const { client } = harness();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     expect(handle.state()).toBe('offline');
   });
 
@@ -153,7 +153,7 @@ describe('LiveClient.connect failures', () => {
     const { client, sockets } = harness();
     client.connect();
     const stale = sockets[0];
-    client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
 
     client.connect();
     sockets[1]?.open();
@@ -196,7 +196,7 @@ describe('LiveClient.close', () => {
     const { client, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
 
     client.close();
     // `useConnection().offline` going true while a live handle still reads 'live' is one dead
@@ -225,7 +225,7 @@ describe('LiveClient dead-socket writes', () => {
     const { client, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     const afterSubscribe = sockets[0]?.sent.length ?? 0;
 
     sockets[0]?.disconnect();
@@ -237,7 +237,7 @@ describe('LiveClient dead-socket writes', () => {
     const { client, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     const afterSubscribe = sockets[0]?.sent.length ?? 0;
 
     client.close();
@@ -254,7 +254,7 @@ describe('Disposable subscription handles', () => {
     const before = sockets[0]?.sent.length ?? 0;
 
     {
-      using handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+      using handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
       expect(handle.rows()).toEqual([]);
     }
 
@@ -269,7 +269,7 @@ describe('Disposable subscription handles', () => {
   test('[Symbol.dispose] is the same function as unsubscribe(), not a second teardown path', () => {
     const { client } = harness();
     client.connect();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     expect(handle[Symbol.dispose]).toBe(handle.unsubscribe);
   });
 
@@ -298,7 +298,7 @@ describe('LiveClient listeners and its default reporter', () => {
     const { client, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     let changes = 0;
     let statuses = 0;
     const offChange = handle.onChange(() => {

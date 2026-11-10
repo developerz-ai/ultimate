@@ -26,7 +26,8 @@ import {
   permissionDeclarationSites,
   restorePermissions,
 } from '@ultimat3/policy';
-import { from, query, registerQueries, resetQueries, runQuery, t } from '@ultimat3/query';
+import { from, query, resetQueries, runQuery, t } from '@ultimat3/query';
+import { registerQueries } from '@ultimat3/query/loader';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';

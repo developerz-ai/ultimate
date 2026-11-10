@@ -314,5 +314,7 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `deploy-docs-site.yml` | green `ci` on `main` → `dummy/docs-site`'s static build on GitHub Pages; **inert** — every job skipped — until the owner sets the `DOCS_SITE_ORIGIN` repository variable (`scripts/ci-workflow-shape-docs.test.ts`) |
 | `wiki.yml` | push to `main` → the wiki |
 | `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |
-| `bench.yml` | weekly + release → re-measured first-hour/http-hello JSON as a PR; never in `ci` |
+| `bench.yml` | weekly + release → re-measured first-hour/http-hello JSON as a PR; never in `ci`. Needs Actions allowed to open pull requests: its 2026-11-09 run measured, pushed `bench/42624860823` and was refused the PR |
 | `workflow-lint.yml` | push or PR touching `.github/**` → zizmor 1.32.0 at `medium` and above, online audits (impostor commits, advisories) included; a deliberate finding is suppressed in place with its reason. Its own workflow so a path filter can gate it; not a required check, so the filter never leaves one pending (added 2026-11-09) |
+| `scorecard.yml` | push to `main`, weekly, a change to `main`'s rules → the OpenSSF Scorecard run, published to the Scorecard API the README badge reads (`publish_results: true`); never gates a merge (added 2026-11-10) |
+| `security-channel.yml` | daily → asks whether private vulnerability reporting is on, and opens one `security-channel` issue when it is not (added 2026-11-10) |

@@ -1,13 +1,28 @@
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import type { JobRunArgs } from '@ultimat3/jobs';
+import { t } from '@ultimat3/schema';
 import { installMailDriver, resetMailDriver } from './adapter';
+import { blocks } from './blocks';
 import type { MailMessage } from './driver';
 import { driverUnavailable } from './errors';
 import { mailIdempotencyKey } from './idempotency';
 import { mailMessageSchema, sendMailJob } from './job';
-import { renderMessage, type SendOptions } from './mail';
-import { welcomeMail } from './templates';
+import { defineMail, renderMessage, type SendOptions } from './mail';
+
+registerCatalog(
+  'en',
+  loadCatalog({ 'job-test': { subject: 'Welcome to {appName}', body: 'Hi {name}' } }),
+);
+
+// The test's own mail: the package ships none (v31 deleted the framework mails).
+const welcomeMail = defineMail<{ name: string; appName: string; url: string }>({
+  id: 'job-test.welcome',
+  subject: 'job-test.subject',
+  input: t.object({ name: t.string, appName: t.string, url: t.url }),
+  template: ({ data }) => [blocks.paragraph('job-test.body', { name: data.name })],
+});
 
 const TO: SendOptions = { to: 'ada@example.test', locale: 'en', tz: 'UTC' };
 
@@ -19,7 +34,7 @@ test('the same mail, recipient and payload produce the same idempotency key', ()
 
   expect(first).toBe(second);
   // The recipients are inside the digest (plan 101, 08 j), never spelled out in the key.
-  expect(first).toMatch(/^mail:welcome:[0-9a-f]{32}$/);
+  expect(first).toMatch(/^mail:job-test.welcome:[0-9a-f]{32}$/);
 });
 
 test('a different payload produces a different idempotency key', () => {
@@ -53,7 +68,7 @@ test("the caller's idempotency key wins over the derived one", () => {
   const message = renderMessage(welcomeMail, PAYLOAD, { ...TO, idempotencyKey: 'signup:42' });
   // Scoped to the mail: a caller key is an id from the caller's domain, and two mails about one
   // signup sharing a key means the queue and the provider drop the second, silently.
-  expect(mailIdempotencyKey(message)).toBe('mail:welcome:signup:42');
+  expect(mailIdempotencyKey(message)).toBe('mail:job-test.welcome:signup:42');
 });
 
 /**

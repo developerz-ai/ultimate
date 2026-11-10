@@ -180,7 +180,7 @@ describe('database config carries only what something reads', () => {
 });
 
 describe('realtime section', () => {
-  const KEYS = ['enabled', 'maxSocketsPerActor', 'maxSubscriptionsPerActor'];
+  const KEYS = ['enabled', 'maxQueued', 'maxSocketsPerActor', 'maxSubscriptionsPerActor'];
   // Two fields have been deleted from this section for one reason. `heartbeatMs` was declared,
   // defaulted to 15_000 and read by NOTHING — the socket heartbeat is the client's own option and
   // the presence beat is derived from the TTL (`PresenceRegistry.heartbeatMs`). `tier` accepted

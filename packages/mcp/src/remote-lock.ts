@@ -3,7 +3,8 @@
 // person sets. `x mcp lock <name>` writes it; `mcpTools()` reads it; any difference from the live
 // server is `X_MCP_REMOTE_TOOL_CHANGED`. Deterministic bytes, so a diff is the review.
 
-import { isJsonObject } from '@ultimat3/core';
+import { stableStringify } from '@ultimat3/action';
+import { canonicalJson, isJsonObject } from '@ultimat3/core';
 import type { RemoteTool } from './remote-client';
 import { McpRemoteToolChangedError } from './remote-errors';
 
@@ -65,7 +66,8 @@ export function lockChanges(
     if (current === undefined) changes.push(`"${name}" is gone from the server`);
     else if (current.description !== entry.description)
       changes.push(`"${name}" changed its description`);
-    else if (canonical(current.inputSchema) !== canonical(entry.inputSchema)) {
+    // Core's HASH form: an equality question, never written down.
+    else if (canonicalJson(current.inputSchema) !== canonicalJson(entry.inputSchema)) {
       changes.push(`"${name}" changed its input schema`);
     }
   }
@@ -85,7 +87,8 @@ export function assertLocked(
 
 /**
  * The lock with `server` rewritten from `live`, keeping every other server and each tool's
- * reviewed `readOnly`. Serialised with sorted keys: the same tools are the same bytes.
+ * reviewed `readOnly`. `@ultimat3/action`'s DOCUMENT form (`stableStringify`): sorted keys at
+ * every depth and valid JSON, so the same tools are the same bytes and the file re-reads.
  */
 export function writeToolsLock(
   previous: unknown,
@@ -116,24 +119,9 @@ export function writeToolsLock(
     });
   }
   servers.set(server, serialisable({ url, tools }));
-  return `${canonical({ version: 1, servers: Object.fromEntries(servers) }, 2)}\n`;
+  return `${stableStringify({ version: 1, servers: Object.fromEntries(servers) }, 2)}\n`;
 }
 
 function serialisable(entry: LockedServer): unknown {
   return { url: entry.url, tools: Object.fromEntries(entry.tools) };
-}
-
-/** JSON with every object's keys sorted, at any depth. */
-export function canonical(value: unknown, indent?: number): string {
-  return JSON.stringify(sortKeys(value), null, indent);
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (!isJsonObject(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, sortKeys(value[key])]),
-  );
 }

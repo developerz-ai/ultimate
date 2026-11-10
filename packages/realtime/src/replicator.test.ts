@@ -366,11 +366,13 @@ describe('stats separate "nothing to send" from "already sent" from "sent"', () 
 });
 
 describe('retryDelayMs', () => {
+  const factor = defaultBackoff.factor ?? expect.unreachable('defaultBackoff declares its factor');
+
   test('grows with the attempt and is capped, so N standbys do not poll a held lock forever', () => {
     const { replicator } = rig(freshKey());
-    expect(replicator.retryDelayMs(0)).toBe(defaultBackoff.baseMs);
-    expect(replicator.retryDelayMs(1)).toBe(defaultBackoff.baseMs * defaultBackoff.factor);
-    expect(replicator.retryDelayMs(99)).toBe(defaultBackoff.maxMs);
+    expect(replicator.retryDelayMs(0)).toBe(defaultBackoff.base);
+    expect(replicator.retryDelayMs(1)).toBe(defaultBackoff.base * factor);
+    expect(replicator.retryDelayMs(99)).toBe(defaultBackoff.max);
   });
 
   test('the injected rng is what jitters it, so a takeover storm is spread', () => {
@@ -383,9 +385,7 @@ describe('retryDelayMs', () => {
       rng: () => 0.25,
     });
     // Full jitter over the same ceiling: a quarter of it, not the whole wait.
-    expect(spread.retryDelayMs(1)).toBe(
-      Math.round(defaultBackoff.baseMs * defaultBackoff.factor * 0.25),
-    );
+    expect(spread.retryDelayMs(1)).toBe(Math.round(defaultBackoff.base * factor * 0.25));
   });
 });
 

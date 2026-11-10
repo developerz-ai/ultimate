@@ -8,7 +8,7 @@ import { ChannelHub, type Topic } from './channel';
 import { channel } from './channel-decl';
 import { getChannel, registerChannel } from './channel-registry';
 import { InProcessTransport } from './fanout';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { OPEN_POLICY } from './policy-fake-fixture';
@@ -37,7 +37,7 @@ export const ROOM_TARGET = {
 
 export const INPUT = { orgId: 'o1' };
 export const QID = queryHash('liveFeed', INPUT);
-export const ROWS: readonly Row[] = [{ id: 'p1', orgId: 'o1' }];
+export const ROWS: readonly LiveRow[] = [{ id: 'p1', orgId: 'o1' }];
 
 export class RecordingWs implements SyncWs {
   readonly sent: Frame[] = [];
@@ -82,7 +82,7 @@ export function harness(
   options: {
     idleTimeoutMs?: number;
     visible?: () => boolean;
-    snapshot?: () => Promise<{ rows: readonly Row[]; lsn: string }>;
+    snapshot?: () => Promise<{ rows: readonly LiveRow[]; lsn: string }>;
   } = {},
 ): Harness {
   // A suite's `afterAll` clears the registry, and this module outlives it in one process.

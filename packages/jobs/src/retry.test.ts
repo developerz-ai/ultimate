@@ -7,7 +7,7 @@ const exponential: RetryPolicy = {
   backoff: 'exponential',
   delay: 1_000,
   maxDelay: 3_600_000,
-  jitter: false,
+  jitter: 'none',
 };
 
 describe('backoff schedules', () => {
@@ -31,13 +31,13 @@ describe('backoff schedules', () => {
   });
 
   test('duration strings are accepted for delay and maxDelay', () => {
-    expect(retrySchedule({ attempts: 3, backoff: 'fixed', delay: '30s', jitter: false })).toEqual([
+    expect(retrySchedule({ attempts: 3, backoff: 'fixed', delay: '30s', jitter: 'none' })).toEqual([
       30_000, 30_000,
     ]);
   });
 
   test('equal jitter stays within [half, full] of the deterministic delay', () => {
-    const jittered: RetryPolicy = { ...exponential, jitter: true };
+    const jittered: RetryPolicy = { ...exponential, jitter: 'equal' };
     expect(backoffDelayMs(jittered, 3, () => 0)).toBe(2_000);
     expect(backoffDelayMs(jittered, 3, () => 1)).toBe(4_000);
     expect(backoffDelayMs(jittered, 3, () => 0.5)).toBe(3_000);
@@ -52,8 +52,16 @@ describe('backoff schedules', () => {
 
     expect(backoffDelayMs(declared, 3, () => 0)).toBe(2_000);
     expect(backoffDelayMs(declared, 3, () => 1)).toBe(4_000);
-    // An explicit `false` still turns it off — the default is a default, not a policy.
-    expect(backoffDelayMs({ ...declared, jitter: false }, 3, () => 0)).toBe(4_000);
+    // An explicit `'none'` still turns it off — the default is a default, not a policy.
+    expect(backoffDelayMs({ ...declared, jitter: 'none' }, 3, () => 0)).toBe(4_000);
+  });
+
+  // 31.0.0: `jitter` is core's `JitterMode`, not a flag mapped onto two of its three modes, so a
+  // job that wants the herd fully decorrelated says `'full'` like every other retry in the framework.
+  test("jitter is core's JitterMode: 'full' reaches zero, 'equal' keeps a floor", () => {
+    expect(backoffDelayMs({ ...exponential, jitter: 'full' }, 3, () => 0)).toBe(0);
+    expect(backoffDelayMs({ ...exponential, jitter: 'full' }, 3, () => 0.5)).toBe(2_000);
+    expect(backoffDelayMs({ ...exponential, jitter: 'equal' }, 3, () => 0)).toBe(2_000);
   });
 });
 

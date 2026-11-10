@@ -4,8 +4,8 @@
 // `queue-wake.live.test.ts` (a server, and a killed session).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { LogSink, PgExecutor } from '@ultimat3/core';
-import { ctxOf, frozenClock, setLogSink } from '@ultimat3/core';
+import type { PgExecutor } from '@ultimat3/core';
+import { ctxOf, frozenClock, installLogSink } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
@@ -104,11 +104,11 @@ const settle = async (): Promise<void> => {
 };
 
 const lines: { event: string; level: string; fix?: string }[] = [];
-let previous: LogSink | undefined;
+let releaseLogSink: () => void = () => undefined;
 
 beforeEach(() => {
   lines.length = 0;
-  previous = setLogSink((line, level) => {
+  releaseLogSink = installLogSink((line, level) => {
     const parsed = JSON.parse(line) as { msg?: string; event?: string; fix?: string };
     lines.push({
       event: parsed.msg ?? parsed.event ?? line,
@@ -119,7 +119,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setLogSink(previous);
+  releaseLogSink();
   setWakeLive(false);
 });
 

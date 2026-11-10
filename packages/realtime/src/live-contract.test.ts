@@ -14,7 +14,7 @@ import { userActor } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { windowId } from './live-tenant';
@@ -32,7 +32,7 @@ class SilentWs implements WsLike {
   }
 }
 
-const rows: readonly Row[] = [{ id: 'p1', orgId: 'o1' }];
+const rows: readonly LiveRow[] = [{ id: 'p1', orgId: 'o1' }];
 
 const definition: LiveQueryDefinition = {
   name: 'liveFeed',

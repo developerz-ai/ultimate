@@ -5,7 +5,7 @@
 
 import { type Clock, isUltimateError, liveClock, renderThrowable } from '@ultimat3/core';
 import { deliveryProviderUnreachable } from './delivery-event-errors';
-import { certificateSpki, pemCertificateDer } from './x509-spki';
+import { pemCertificateSpki } from './x509-spki';
 
 /** PEM text for a certificate URL. Injected in tests; production GETs it over pinned https. */
 export type SnsCertificateFetch = (url: string) => Promise<string>;
@@ -56,8 +56,7 @@ export function createSnsCertificateCache(
       if (isUltimateError(error)) throw error;
       throw deliveryProviderUnreachable('certificate', renderThrowable(error));
     }
-    const der = pemCertificateDer(pem);
-    const spki = der === undefined ? undefined : certificateSpki(der);
+    const spki = pemCertificateSpki(pem);
     if (spki === undefined) {
       throw deliveryProviderUnreachable(
         'certificate',

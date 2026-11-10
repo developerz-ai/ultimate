@@ -4,8 +4,8 @@
 // budgeted, and cost-accounted in integer minor units. Everything an app does with a model
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
-import type { Breaker, Random } from '@ultimat3/core';
-import { fingerprint, finiteCount, logger, renderThrowable } from '@ultimat3/core';
+import type { Breaker, Random, RetryPolicy } from '@ultimat3/core';
+import { fingerprint, finiteCount, finiteOption, logger, renderThrowable } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { billedOf } from './billed';
 import type { BudgetKeys, BudgetLimits, BudgetReservation, BudgetStore } from './budget';
@@ -39,24 +39,15 @@ export interface GatewayCache {
 }
 
 /**
- * A gateway's retry budget. NOT core's `RetryPolicy`, and deliberately still its own declaration:
- * these three field names are what an app writes in `providerGateway({ retry })`, so renaming them
- * onto `base`/`max`/`jitter` would break every caller for no behaviour. What WAS a duplicate is the
- * arithmetic, and that is gone — `backoffMs` is core's `backoffDelay` with this shape mapped onto
- * it, so there is one curve in the framework and one place a jitter bug can live.
+ * The gateway's retry when `providerGateway({ retry })` names none. Core's `RetryPolicy`, the one
+ * retry shape in the framework since 31.0.0: full jitter, because N workers backing off a rate limit
+ * in step reproduce it.
  */
-export interface RetryPolicy {
-  /** Total attempts including the first. */
-  readonly attempts: number;
-  /** First backoff in ms; doubled per attempt with full jitter. */
-  readonly baseDelayMs: number;
-  readonly maxDelayMs: number;
-}
-
 export const DEFAULT_GATEWAY_RETRY: RetryPolicy = {
   attempts: 3,
-  baseDelayMs: 500,
-  maxDelayMs: 8_000,
+  base: 500,
+  max: 8_000,
+  jitter: 'full',
 };
 
 export type { GatewayBreakerOption } from './gateway-providers';
@@ -68,6 +59,10 @@ export interface ProviderGatewayInput {
   readonly budget?: BudgetLimits;
   readonly budgetStore?: BudgetStore;
   readonly cache?: GatewayCache;
+  /**
+   * Core's `RetryPolicy`, read per provider: `attempts` each, `base`/`max`/`curve`/`factor`/`jitter`
+   * for the wait, and `timeBudgetMs` across the whole call, every provider included.
+   */
   readonly retry?: RetryPolicy;
   readonly defaultModel?: ModelId;
   /** Overridable so a test can run backoff without waiting. */
@@ -142,10 +137,14 @@ class GatewayImpl implements Gateway {
     // `X_AI_PROVIDER_UNAVAILABLE` with an EMPTY attempt list — measured, "no provider could serve
     // model <id> ()" for a provider that was never asked. A floor of 1 because the field
     // is documented as total attempts INCLUDING the first, so zero of them is not a policy.
-    // `baseDelayMs` and `maxDelayMs` are deliberately not screened here: `backoffDelay` refuses a
-    // non-finite one already, and a NEGATIVE base is clamped to a zero wait on purpose
-    // (`gateway-backoff.test.ts` pins it), which a count check here would start refusing.
+    // `base` and `max` are deliberately not screened here: `backoffDelay` refuses a non-finite one
+    // already, and a NEGATIVE base is clamped to a zero wait on purpose (`gateway-backoff.test.ts`
+    // pins it), which a count check here would start refusing. The budget IS screened: a NaN one
+    // compares false against every elapsed time, so it would never stop anything.
     finiteCount('gateway', 'retry.attempts', this.retry.attempts, 1);
+    if (this.retry.timeBudgetMs !== undefined) {
+      finiteOption('gateway', 'retry.timeBudgetMs', this.retry.timeBudgetMs);
+    }
     // Screened here, under the config's own key, rather than by the ledger `callLedger` builds:
     // that refused on the first CALL and named `the AI budget`, not the `gateway` to edit.
     if (config.budget !== undefined) assertFiniteLimits(config.budget, 'gateway', 'budget.');

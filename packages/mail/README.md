@@ -196,10 +196,11 @@ export const resend = resendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET']
 | `sesEventReceiver` | SNS: the topic is in `topicArns`, the cert URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 (RSA-SHA1) or 2 (RSA-SHA256) over AWS's canonical string, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
 | `resendEventReceiver` | Svix: HMAC-SHA256 over `svix-id.svix-timestamp.body` under the `whsec_` secret, constant-time, any `v1,` entry, within `toleranceMs` (5 min) |
 
-## Framework mails
+## No framework mails
 
-Registered by importing them — the import IS the registration. `FRAMEWORK_MAILS` is the list, and
-`registeredMails()` / `registeredMailIds()` answer for an app's own mails as well.
+The package ships none (v31). Every mail is an app's own `defineMail`; `@ultimat3/auth` sends
+`auth.<purpose>` templates whose words live in the app catalog. `registeredMails()` /
+`registeredMailIds()` list what the app declared, and nothing else.
 
 ## Previews — `defineMail({ preview })`
 
@@ -209,17 +210,6 @@ and never production rows. A value is parsed by `input` at definition (`X_MAIL_P
 `{ subject, html, text, misses }` and sends nothing; `x mail preview <id> [--locale] [--out]` is
 it on the command line, and `x verify`'s `i18n` step renders every declared preview in every
 locale, so a miss a `send` would refuse is red at the gate. No preview: `X_MAIL_PREVIEW_MISSING`.
-
-| id | Input |
-|---|---|
-| `welcome` | `{ name, appName, url }` |
-| `verify-email` | `{ name, url, expiresMinutes }` |
-| `reset-password` | `{ name, url, expiresMinutes }` |
-| `invite` | `{ inviterName, orgName, url, expiresHours }` |
-| `mfa-enrolled` | `{ name, method, at }` |
-| `security-alert` | `{ name, event, ip, at }` |
-
-Translating them = shipping `mail.*` keys in an app catalog. Never edit a template.
 
 ## Errors
 

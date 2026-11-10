@@ -89,7 +89,7 @@ describe('unit · one delivery attempt', () => {
     const refusal = await attempt(app.input('second')).catch((error: unknown) => error);
 
     const decision = nextRetryForError(
-      { attempts: 3, delay: 1, backoff: 'fixed', jitter: false, maxDelay: 3_600_000 },
+      { attempts: 3, delay: 1, backoff: 'fixed', jitter: 'none', maxDelay: 3_600_000 },
       1,
       refusal,
     );
@@ -138,7 +138,7 @@ describe('unit · one delivery attempt', () => {
 
     if (!isUltimateError(failure)) return expect.unreachable('a throwing channel raises');
     expect(failure.code).toBe('X_NOTIFY_DELIVERY_FAILED');
-    const policy = { attempts: 5, delay: 1, backoff: 'fixed', jitter: false } as const;
+    const policy = { attempts: 5, delay: 1, backoff: 'fixed', jitter: 'none' } as const;
     expect(nextRetryForError(policy, 1, failure)).toMatchObject({
       retry: false,
       stoppedBy: 'terminal',
@@ -154,7 +154,7 @@ describe('unit · one delivery attempt', () => {
         throw blip;
       }),
     ).catch((error: unknown) => error);
-    const policy = { attempts: 5, delay: 1, backoff: 'fixed', jitter: false } as const;
+    const policy = { attempts: 5, delay: 1, backoff: 'fixed', jitter: 'none' } as const;
     expect(nextRetryForError(policy, 1, failure)).toMatchObject({ retry: true });
   });
 

@@ -4,7 +4,8 @@
 // it lets through, and its handler sees the arguments the person approved.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import {
   agentActor,
   ctxOf,

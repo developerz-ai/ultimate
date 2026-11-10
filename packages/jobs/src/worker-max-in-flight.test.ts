@@ -45,7 +45,7 @@ function parkedJobs(queues: readonly string[]): Parked {
       queue,
       input: passthrough<{ id: string }>(),
       idempotencyKey: (input) => input.id,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async ({ input }) => {
         running.push(input.id);
         started.push(input.id);

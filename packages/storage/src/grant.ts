@@ -7,13 +7,15 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteCount, systemClock } from '@ultimat3/core';
 import type { AttachmentTarget } from './attachment';
-import { attachmentKey, pendingKey, quarantineKey, uploadName } from './attachment';
+import { attachmentKey, pendingKey, uploadName } from './attachment';
 import type { StorageDriver } from './driver';
 import { contentTypeNotAllowed, tooLarge } from './errors';
+import { targetUnscanned } from './errors-scan';
 import { uploadSizeUndeclared } from './errors-stream';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import type { UploadPolicy } from './upload';
 import { normalizeContentType, uploadPolicy } from './upload';
+import { uploadScanner } from './upload-scanner';
 
 export interface UploadRequest {
   /** The client's own name for the file. Used for its extension and nothing else. */
@@ -46,14 +48,12 @@ export interface GrantUploadInput {
   readonly orgId: string;
   readonly request: UploadRequest;
   readonly policy?: UploadPolicy | undefined;
-  /** Absent means the row does not exist yet, so the key lands under `pending/`. */
-  readonly target?: AttachmentTarget | undefined;
   /**
-   * Land the bytes under `pending/quarantine/` instead, so nothing can promote them until the
-   * app's scan job calls `releaseQuarantine`. Only meaningful without a `target`: an upload
-   * aimed straight at a row has no promotion step left to gate.
+   * Absent means the row does not exist yet, so the key lands under `pending/`. Refused while an
+   * `uploadScanner` is installed (`X_STORAGE_TARGET_UNSCANNED`): a targeted key skips
+   * `promoteAttachment`, the one place a scan runs.
    */
-  readonly quarantine?: boolean | undefined;
+  readonly target?: AttachmentTarget | undefined;
   readonly expiresInMs?: number | undefined;
   readonly clock?: Clock | undefined;
   /** Determinism seam for tests. Defaults to `crypto.randomUUID()`. */
@@ -82,9 +82,14 @@ export function decideGrant(caller: string, input: GrantUploadInput): GrantedUpl
     (input.uploadId ?? (() => crypto.randomUUID()))(),
     input.request.filename,
   );
-  const pending =
-    input.quarantine === true ? quarantineKey(input.orgId, name) : pendingKey(input.orgId, name);
-  const key = input.target === undefined ? pending : attachmentKey(input.orgId, input.target, name);
+  const key =
+    input.target === undefined
+      ? pendingKey(input.orgId, name)
+      : attachmentKey(input.orgId, input.target, name);
+  const scanner = uploadScanner();
+  if (input.target !== undefined && scanner !== undefined) {
+    throw targetUnscanned(caller, key, scanner.name);
+  }
 
   if (!policy.allowedContentTypes.includes(declared)) {
     throw contentTypeNotAllowed(key, declared, policy.allowedContentTypes);

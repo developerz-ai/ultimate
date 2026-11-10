@@ -109,6 +109,30 @@ describe('unit · x g app / x g package', () => {
     expect(await Bun.file(join(dir, 'apps/domain/package.json')).exists()).toBe(false);
   });
 
+  // A workspace is not a slice: every slice flag would be accepted and change nothing.
+  test('a slice flag is refused, naming the run without it, and nothing is written', async () => {
+    const dir = await repo();
+    for (const [kind, flag, value] of [
+      ['app', 'feature', 'billing'],
+      ['package', 'surface', 'site'],
+      ['app', 'live', undefined],
+      ['package', 'admin', undefined],
+      ['app', 'locales', 'es'],
+      ['package', 'at', 'apps/web/app'],
+      ['app', 'app', 'admin'],
+      ['package', 'permission', 'post:read'],
+    ] as const) {
+      const argv = ['g', kind, 'domain', `--${flag}`, ...(value === undefined ? [] : [value])];
+      const failure = await thrown(argv, dir);
+      expect([failure.code, failure.fix]).toEqual(['X_CLI_BAD_FLAG', `x g ${kind} domain`]);
+      expect(failure.cause).toContain(`--${flag}`);
+    }
+    expect(await Bun.file(join(dir, 'apps/domain/package.json')).exists()).toBe(false);
+    expect(await Bun.file(join(dir, 'packages/domain/package.json')).exists()).toBe(false);
+    // Its own two flags, and a slice flag at its default, are still the plain run.
+    expect((await run(['g', 'app', 'domain', '--surface', 'app', '--dry-run'], dir)).ok).toBe(true);
+  });
+
   test('a dry run plans the files and writes nothing', async () => {
     const dir = await repo();
     const result = await run(['g', 'package', 'domain', '--dry-run'], dir);

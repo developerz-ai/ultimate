@@ -484,13 +484,17 @@ past a failure, so one wedged cleanup cannot block every later one forever.
 
 ### Rebuilding a search index: `reindex()`
 
-`reindex({ name, entity, source, tenant, index? })` is a `backfill()` whose batch writes each row's
-document to the `searchIndex` port — entity's one builder, `searchDocumentOf`, so only
-`.searchable()` columns leave and each document keeps its tenant. Run it after moving from the
-built-in Postgres index to Meilisearch or Typesense, or after an index lost data. An entity with no
-searchable column is refused at declaration. The index keeps only the NEWER version of each id,
-so neither a replayed batch nor a stale read can overwrite a newer write or bring a deleted row
-back.
+`reindex({ name, entity, source, tenant, index? })` is a `backfill()` in two phases, one durable
+step per page. **Rows**: each row's document goes to the `searchIndex` port — entity's one builder,
+`searchDocumentOf`, so only `.searchable()` columns leave and each document keeps its tenant.
+**Sweep**: every document the index `list`s whose row `source` no longer reads — deleted while the
+index was down, moved to another tenant — is removed, tombstoned one millisecond above the version
+listed, so an id written again meanwhile keeps its newer document. `source` is therefore the WHOLE
+table: a narrowed one empties the index of the rest. `tenant: 'none'` sweeps every tenant's
+documents; a declared tenant, its own. Run it after moving from the built-in Postgres index to
+Meilisearch or Typesense, or after an index lost data. An entity with no searchable column is
+refused at declaration. The index keeps only the NEWER version of each id, so neither a replayed
+batch nor a stale read can overwrite a newer write or bring a deleted row back.
 
 ```ts
 import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';
@@ -1402,7 +1406,8 @@ Lower `idlePollMaxMs` to trade idle load for the no-wake bound; there is no flag
 ## Retries
 
 `{ attempts, backoff: 'exponential' | 'linear' | 'fixed', delay, maxDelay, jitter }`.
-Equal jitter is on by default so a burst of failures does not retry in lockstep.
+`jitter` is core's `JitterMode` (`'full' | 'equal' | 'none'`); `'equal'` is the default so a burst of
+failures does not retry in lockstep.
 Exhausted jobs are dead-lettered, never dropped: `x jobs retry <id>`. Only a finished job — dead,
 cancelled, failed or done — can be requeued: a live one is `X_JOB_NOT_REQUEUEABLE` (requeueing a
 running job used to run it twice), and one whose idempotency key a live job now holds is
@@ -1421,7 +1426,7 @@ exactly as it had before.
 | Thrown | What the queue does |
 |---|---|
 | a `terminal` code (`X_SCRAPE_AUTH_FAILED`, a validation fault, a permission denial) | dead-lettered on the attempt it happened, `attempt` recorded, remaining attempts unspent — a rotated password retried five times is five more wrong passwords at a site that locks the account after three |
-| a `retry-after` code (`X_RATE_LIMITED`, `X_OVERLOADED`) | retried at the time the responder NAMED — `meta.retryAfterSeconds`, clamped by the policy's `maxDelay`, plus core's `jitterStatedDelay` spread unless `jitter: false` — instead of the backoff. Still an attempt, still under the ceiling |
+| a `retry-after` code (`X_RATE_LIMITED`, `X_OVERLOADED`) | retried at the time the responder NAMED — `meta.retryAfterSeconds`, clamped by the policy's `maxDelay`, plus core's `jitterStatedDelay` spread unless `jitter: 'none'` — instead of the backoff. Still an attempt, still under the ceiling |
 | a `retryable` code (`X_TIMEOUT`, `X_DRAINING`) | the backoff schedule above, unchanged |
 | an **unclassified** code, or anything that is not an `UltimateError` | the backoff schedule above, unchanged. Most codes are unclassified and `retryFor` answers `terminal` for all of them, so reading that would have stopped every transient retry in every app |
 

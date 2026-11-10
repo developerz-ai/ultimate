@@ -3,7 +3,7 @@
 // never thrown, so a stopping worker is not held up by its own row.
 
 import { describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import type { WorkerAnnouncement } from './introspection';
 import { startWorkerRegistry } from './worker-registry';
@@ -46,14 +46,14 @@ describe('startWorkerRegistry', () => {
       },
     } as unknown as JobDriver;
     const lines: { msg?: string; workerId?: string; error?: string }[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       lines.push(JSON.parse(line) as { msg?: string; workerId?: string; error?: string });
     });
     try {
       const registration = startWorkerRegistry(options(driver, []));
       await registration.stop();
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(announced.map((worker) => worker.id)).toEqual(['w-edge']);
     const failed = lines.filter((line) => line.msg === 'jobs.worker.forget-failed');

@@ -1,0 +1,42 @@
+name: scorecard
+
+# How does this repository score on the OpenSSF Scorecard checks — pinned actions, token
+# permissions, branch protection, signed releases, dangerous workflows? Published to the public
+# Scorecard API (`publish_results: true`), which is what the README badge reads; nothing here gates
+# a merge.
+#
+# Publishing binds the job to Scorecard's own rules: no `run:` step, no env or defaults at workflow
+# or job level, no container, only checkout and the action itself, and `id-token: write` (the OIDC
+# token the API verifies the run with) on this job alone. No SARIF upload: that needs
+# `security-events: write`, and the badge does not. Weekly, and on a change to `main`'s rules.
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '17 5 * * 2'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true

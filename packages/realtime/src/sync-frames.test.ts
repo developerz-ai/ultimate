@@ -10,7 +10,7 @@ import { formatLsn } from './changefeed';
 import { ChannelHub, type Topic } from './channel';
 import { channel } from './channel-decl';
 import { InProcessTransport } from './fanout';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { OPEN_POLICY } from './policy-fake-fixture';
@@ -53,7 +53,7 @@ function flush(): Promise<void> {
 }
 
 const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
-const rows: readonly Row[] = [{ id: 'p1', orgId: 'o1' }];
+const rows: readonly LiveRow[] = [{ id: 'p1', orgId: 'o1' }];
 
 interface Rig {
   readonly socket: SyncSocket;
@@ -64,7 +64,7 @@ interface Rig {
 
 function rig(
   options: {
-    snapshot?: () => Promise<{ rows: readonly Row[]; lsn: string }>;
+    snapshot?: () => Promise<{ rows: readonly LiveRow[]; lsn: string }>;
     /** Bytes already queued on the socket, so every `send` below is refused by backpressure. */
     buffered?: number;
   } = {},
@@ -108,7 +108,7 @@ const subscribeQuery = (sid: string, op: 'add' | 'drop'): Frame => ({
 
 describe('one sid is one lane, so a drop cannot overtake the add it ends', () => {
   test('add then drop leaves nothing subscribed, however slow the read is', async () => {
-    const read = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const read = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     const target = rig({ snapshot: () => read.promise });
 
     const adding = target.route(subscribeQuery('S', 'add'));
@@ -124,7 +124,7 @@ describe('one sid is one lane, so a drop cannot overtake the add it ends', () =>
   });
 
   test('two different sids are not in each other’s way', async () => {
-    const read = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const read = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     let reads = 0;
     const target = rig({
       snapshot: () => {

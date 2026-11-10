@@ -22,7 +22,7 @@ test('N workers, two killed mid-flight: every job finishes exactly once, none or
     name: 'simSoakJob',
     input: t.object({ n: t.number }),
     idempotencyKey: ({ n }) => `soak:${n}`,
-    retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: 'none' },
     run: async ({ jobId, step, input }) => {
       if (executing.has(jobId)) violations.push(`concurrent execution of ${jobId}`);
       executing.add(jobId);

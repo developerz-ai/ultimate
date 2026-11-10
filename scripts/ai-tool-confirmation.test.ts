@@ -6,7 +6,8 @@
 // through `asProjectableAction` + `runLlmToolCall` `{"ok":true}` and the refund ran.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, knownToolNames, registerAction, resetActions } from '@ultimat3/action';
+import { action, knownToolNames, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import {
   agent,
   asProjectableAction,

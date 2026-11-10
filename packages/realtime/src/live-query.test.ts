@@ -3,7 +3,7 @@ import { type Actor, ERROR_DOCS_URL, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
@@ -26,7 +26,7 @@ class FakeWs implements WsLike {
   }
 }
 
-const rows: Row[] = [
+const rows: LiveRow[] = [
   { id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'alice draft', likes: 0 },
   { id: 'p2', orgId: 'o1', ownerId: 'bob', title: 'bob draft', likes: 0 },
 ];
@@ -65,7 +65,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
   return { socket, ws };
 }
 
-function change(after: Row, before: Row | null): ChangeEvent {
+function change(after: LiveRow, before: LiveRow | null): ChangeEvent {
   return {
     table: 'posts',
     op: 'update',
@@ -111,7 +111,7 @@ describe('live queries', () => {
     alice.ws.frames.length = 0;
     bob.ws.frames.length = 0;
 
-    const target = rows[1] as Row;
+    const target = rows[1] as LiveRow;
     const sent = await registry.deliver(change({ ...target, likes: 1 }, target));
 
     expect(sent).toBe(1);
@@ -130,7 +130,7 @@ describe('live queries', () => {
     await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input });
     bob.ws.frames.length = 0;
 
-    const target = rows[1] as Row;
+    const target = rows[1] as LiveRow;
     await registry.deliver(change({ ...target, ownerId: 'carol' }, target));
 
     const frame = bob.ws.frames[0];

@@ -123,7 +123,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
       name: 'soakJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `soak:${n}`,
-      retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: false },
+      retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: 'none' },
       run: async ({ jobId, step, attempt }) => {
         if (executing.has(jobId)) violations.push(`concurrent execution of ${jobId}`);
         executing.add(jobId);

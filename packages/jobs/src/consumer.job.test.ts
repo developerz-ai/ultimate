@@ -109,7 +109,7 @@ function declare(hooks: Hooks = {}): ConsumerHandle {
     name: `consumer-${minted}`,
     tenant: 'none',
     batch: 2,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     keys: () => ['acct-1'],
     async *open({ cursor, signal }) {
       hooks.fetched?.push(cursor ?? 0);
@@ -229,7 +229,7 @@ describe('the self-enqueue trap', () => {
       tenant: 'none',
       input: passthrough<AccountInput>(),
       idempotencyKey: ({ account }) => `plain:${account}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       async run({ input }) {
         rearm = await plain.enqueue(input);
       },

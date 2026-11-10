@@ -3,9 +3,14 @@
 // was another command to run for the real one (plan 101 slice 11 j). The planner is the same one
 // `x fix boundary` prints from, so the gate and the command cannot disagree about the cut.
 
+// why: a synchronous directory probe; Bun.file answers files.
+import { existsSync } from 'node:fs';
+// why: Bun exposes no path-join primitive; the probe takes a joined path.
+import { join } from 'node:path';
 import type { SourceFile } from './app-boundaries';
 import { appImportGraph, checkImportRules, readAppSources } from './app-boundaries';
 import { siblingModuleFindings } from './app-layout';
+import { loaderImportFindings } from './app-loader-imports';
 import { appTransportFindings } from './app-transport';
 import { planBoundaryCuts } from './boundary-cuts';
 import { handRolledSocketFindings } from './hand-rolled-socket';
@@ -52,5 +57,12 @@ export async function appBoundaryFindings(
     ...islandDisposerFindings(files),
     ...handRolledSocketFindings(files),
     ...(await packageBoundaryFindings(root)),
+    // The one rule an app's tests answer to as well (`app-loader-imports.ts`).
+    ...loaderImportFindings(await appTests(root)),
   ];
+}
+
+/** The app's test files, for the loader rule — none where there is no `apps/` to glob. */
+async function appTests(root: string): Promise<readonly SourceFile[]> {
+  return existsSync(join(root, 'apps')) ? readAppSources(root, 'tests') : [];
 }

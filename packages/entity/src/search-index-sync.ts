@@ -1,96 +1,96 @@
-// The search index WRITE path: an installed external index hears every committed row change of a
-// searchable entity through core's `entity.row` event — which `row-observer.ts` emits AFTER COMMIT,
-// so a rollback indexes nothing. Insert/update/upsert/transition index the row; a delete removes it
-// at the delete's instant. A failure is a log line, never the user's write; `reindex` repairs it.
+// The search index WRITE path: what a committed write of a searchable entity sends to an installed
+// external index. A live row is indexed (`committed`: it replaces a tombstone); a deleted one — hard,
+// or soft-stamped — removed at a tombstone no older than its last version. Ops are taken when the
+// write runs and sent at COMMIT (`search-mirror-batch.ts`), so a rollback indexes nothing.
 
-import { isUltimateError, logger, renderThrowable, subscribe } from '@ultimat3/core';
 import { entityNow } from './clock';
 import type { EntityCore } from './entity';
-import { getEntity } from './registry';
+import { SOFT_DELETE_COLUMN } from './entity';
+import type { RepoOptions } from './repo';
 import { rowKey } from './row-key';
-import type { SearchIndex } from './search-index';
 import { searchDocumentOf } from './search-index';
+import { searchIndex } from './search-index-installed';
 import { answersInStatement } from './search-index-postgres';
+import { searchVersionOf, VERSION_STEP_MS } from './search-index-version';
+import { mirrorBatch, mirrorFailed } from './search-mirror-batch';
+import { commitScope } from './write-commit';
 
-/** The one log event a failed mirror writes — its fields name the entity, the op and the code. */
-export const SEARCH_INDEX_WRITE_FAILED = 'entity.search-index.write-failed';
+export { SEARCH_INDEX_WRITE_FAILED } from './search-mirror-batch';
 
-const unmirrored = (entity: string, op: string, cause: string, code?: string): void => {
-  logger.warn(SEARCH_INDEX_WRITE_FAILED, {
-    entity,
-    op,
-    ...(code === undefined ? {} : { code }),
-    cause,
-    fix: `reindex({ name: 'reindex-${entity}', entity, source, tenant: 'none' })   # rebuild the index, which missed this ${op}`,
-  });
+type Record_ = Readonly<Record<string, unknown>>;
+
+/** One write's mirror: bound to the index installed and the transaction open when the write ran. */
+export interface SearchMirror {
+  /** Rows the write left in place: indexed, or removed when a soft-delete stamp is on them. */
+  changed(op: string, rows: readonly unknown[]): void;
+  /** Rows the write deleted. */
+  deleted(op: string, rows: readonly unknown[]): void;
+  /** The write touched `count` rows its driver did not name: said out loud, never silent. */
+  unnamed(op: string, count: number): void;
+}
+
+const isRecord = (row: unknown): row is Record_ => typeof row === 'object' && row !== null;
+
+const tenantOf = (core: EntityCore<unknown>, row: Record_): string | null => {
+  const column = core.$tenantColumn;
+  const tenant = column === null ? null : row[column];
+  return typeof tenant === 'string' ? tenant : null;
 };
 
-const failed = (entity: string, op: string, error: unknown): void =>
-  unmirrored(entity, op, renderThrowable(error), isUltimateError(error) ? error.code : undefined);
+const keyOf = (entity: string, tenant: string | null, id: string): string =>
+  JSON.stringify([entity, tenant, id]);
 
-/** The searchable entity an event names, or `undefined` for one nothing in the index reads. */
-const searchableNamed = (name: string): EntityCore<unknown> | undefined => {
-  const core = getEntity(name)?.core;
-  return core === undefined || core.$search === null ? undefined : core;
-};
-
-/** One committed change, mirrored. Synchronous to the bus; the index call settles on its own. */
-const mirror = (
-  index: SearchIndex,
-  entity: string,
-  op: string,
-  before: Readonly<Record<string, unknown>> | null,
-  after: Readonly<Record<string, unknown>> | null,
-): void => {
-  const core = searchableNamed(entity);
-  if (core === undefined) return;
-  try {
-    if (after !== null) {
-      index.index([searchDocumentOf(core, after)]).catch((error) => failed(entity, op, error));
-      return;
+export const mirrorFor = (
+  core: EntityCore<unknown>,
+  options: RepoOptions | undefined,
+): SearchMirror | undefined => {
+  if (core.$search === null) return undefined;
+  const index = searchIndex();
+  if (answersInStatement(index)) return undefined;
+  const entity = core.$name;
+  const batch = mirrorBatch(index, commitScope(options));
+  // Read when the write runs, not at commit: a hard delete's tombstone is no older than its instant.
+  const deletedAt = entityNow().getTime();
+  /** The tombstone a row's removal leaves: past every version the row was indexed at. */
+  const removal = (op: string, row: Record_, at: number) => {
+    const tenant = tenantOf(core, row);
+    const id = rowKey(core, row);
+    const version = Math.max(at, searchVersionOf(core, row) + VERSION_STEP_MS);
+    batch.put(keyOf(entity, tenant, id), { op, entity, tenant, id, version });
+  };
+  const guarded = (op: string, work: () => void) => {
+    try {
+      work();
+    } catch (error) {
+      mirrorFailed(entity, op, error);
     }
-    // A delete whose row this process could not read (`before` is `null` when the key is not
-    // `id`) names no id to remove — the gap `reindex` cannot close either, so it is logged.
-    if (before === null) {
-      unmirrored(entity, op, 'the deleted row was not read: its primary key is not id');
-      return;
-    }
-    const tenantColumn = core.$tenantColumn;
-    const tenant = tenantColumn === null ? null : before[tenantColumn];
-    index
-      .remove(
-        { entity, tenant: typeof tenant === 'string' ? tenant : null },
-        [rowKey(core, before)],
-        entityNow().getTime(),
-      )
-      .catch((error) => failed(entity, op, error));
-  } catch (error) {
-    failed(entity, op, error);
-  }
+    batch.done();
+  };
+  return {
+    changed: (op, rows) =>
+      guarded(op, () => {
+        for (const row of rows.filter(isRecord)) {
+          const stamp = core.$softDelete ? row[SOFT_DELETE_COLUMN] : null;
+          if (stamp instanceof Date) {
+            removal(op, row, stamp.getTime());
+            continue;
+          }
+          const document = searchDocumentOf(core, row);
+          batch.put(keyOf(entity, document.tenant, document.id), { op, document });
+        }
+      }),
+    deleted: (op, rows) =>
+      guarded(op, () => {
+        for (const row of rows.filter(isRecord)) removal(op, row, deletedAt);
+      }),
+    unnamed: (op, count) => guarded(op, () => batch.unnamed(entity, op, count)),
+  };
 };
 
 /**
- * Subscribe `index` to the write path, or nothing for the built-in Postgres index — its vector is
- * the row, so it costs a write nothing, not even `row-observer.ts`'s `before` read. Only the index
- * `searchIndex()` answers mirrors: a test's install over the boot's does not write to both.
+ * Whether a write of `entity` owes the index anything: nothing for an entity with nothing
+ * searchable (one property read), nor under the built-in Postgres index, whose vector is the row.
+ * Asked per write, so a test's install over the boot's mirrors to the newest one only.
  */
-export const syncSearchIndex = (index: SearchIndex, current: () => SearchIndex): (() => void) => {
-  if (answersInStatement(index)) return () => {};
-  const rows = subscribe('entity.row', ({ payload }) => {
-    if (current() !== index) return;
-    mirror(index, payload.entity, payload.op, payload.before, payload.after);
-  });
-  // A filtered write names a count, not rows: nothing to mirror, so it is said out loud.
-  const bulk = subscribe('entity.bulk', ({ payload }) => {
-    if (current() !== index || searchableNamed(payload.entity) === undefined) return;
-    unmirrored(
-      payload.entity,
-      `${payload.op}Where`,
-      `${payload.rows} rows changed by a filtered write are not mirrored`,
-    );
-  });
-  return () => {
-    rows();
-    bulk();
-  };
-};
+export const mirrors = (entity: EntityCore<unknown>): boolean =>
+  entity.$search !== null && !answersInStatement(searchIndex());

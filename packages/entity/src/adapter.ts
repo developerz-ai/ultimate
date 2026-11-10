@@ -9,6 +9,7 @@ export { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 export { narrowRow } from './columns';
 export { cursorFor, kindOf, seekFrom, valueAt } from './cursor';
 export type {
+  DriverAdvance,
   DriverCapability,
   DriverDefinition,
   DriverFilter,
@@ -45,12 +46,18 @@ export type {
   SearchDocument,
   SearchHit,
   SearchIndex,
+  SearchIndexOptions,
+  SearchListEntry,
+  SearchListPage,
+  SearchListQuery,
   SearchQuery,
   SearchScope,
 } from './search-index';
-export { searchLimitOf } from './search-index';
+export { searchLimitOf, searchListLimitOf } from './search-index';
 export { installSearchIndex } from './search-index-installed';
 export { searchWords } from './search-index-memory';
+// A store's own upsert merges a collision itself: this is the version rule it applies there.
+export { advanceVersion } from './search-index-version';
 export type { Predicate, QueryPlan, SortKey } from './tenancy';
 export { assertRowTenant, scopedPlan } from './tenancy';
 export type { UniqueConstraint } from './unique-constraints';

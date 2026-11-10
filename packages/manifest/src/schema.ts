@@ -9,6 +9,7 @@
 // though every other field here is a plain literal: the manifest's `render` field means the same
 // thing as the route's, and two spellings of one closed set is what `'spa'` escaped through.
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
+import type { JsonValue } from '@ultimat3/schema';
 import type { SubjectFact } from './schema-subjects';
 
 /**
@@ -23,13 +24,8 @@ import type { SubjectFact } from './schema-subjects';
  */
 export const MANIFEST_VERSION = 1;
 
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+// `@ultimat3/schema`'s one declaration, re-exported for this package's callers — never restated.
+export type { JsonValue };
 
 export interface RouteFact {
   readonly url: string;

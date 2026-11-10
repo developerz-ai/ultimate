@@ -5,12 +5,12 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   drain,
   exportMetrics,
+  installLogSink,
   logger,
   onShutdown,
   resetLifecycle,
   resetMetrics,
   resetTelemetry,
-  setLogSink,
   shutdownHookCount,
   subscribed,
   subscriberCount,
@@ -84,13 +84,13 @@ describe('OTLP export is driven by the variable the chart already sets', () => {
 
   test('the boot logs the endpoint without its query string', () => {
     const lines: string[] = [];
-    const previous = setLogSink((line) => lines.push(line));
+    const releaseLogSink = installLogSink((line) => lines.push(line));
     try {
       release = startOtlpExport({
         OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318?api-key=s3cret',
       });
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     const boot = lines.filter((line) => line.includes('ultimate otlp'));
     expect(boot.length).toBeGreaterThan(0);
@@ -298,12 +298,12 @@ describe('the release ships what was queued before it', () => {
 describe('the drain flush is bounded by the drain deadline', () => {
   test('a black-holed collector costs the drain its share of the deadline, never more', async () => {
     const hang = (): Promise<void> => new Promise<void>(() => undefined);
-    const previous = setLogSink(() => undefined);
+    const releaseLogSink = installLogSink(() => undefined);
     const started = performance.now();
     try {
       await flushWithin([hang, hang, hang], { deadlineAt: systemClock.monotonic() + 100 });
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     const took = performance.now() - started;
     expect(took).toBeLessThan(100);

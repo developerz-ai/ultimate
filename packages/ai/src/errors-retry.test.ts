@@ -97,7 +97,7 @@ describe('the same code is terminal where the throw site knows better', () => {
     };
     const gateway = providerGateway({
       providers: [down],
-      retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { attempts: 1, base: 0, max: 0, jitter: 'none' },
       sleep: async () => undefined,
     });
     let thrown: unknown;

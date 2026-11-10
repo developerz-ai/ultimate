@@ -72,7 +72,7 @@ const declare = (name: string, tenant: 'none' | ((input: { orgId: string }) => s
     batch: 8,
     pageBytes: 512,
     maxRecordBytes: 256,
-    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
   });
   return {
     handle: handle as AnyJobHandle,

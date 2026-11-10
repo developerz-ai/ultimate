@@ -5,16 +5,16 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { resetInstrumentation, subscribe } from './instrument';
 import type { LogRecordEvent } from './instrument-events';
-import { logger, REDACTED, setLogSink, structuredLogger } from './logger';
+import { installLogSink, logger, REDACTED, structuredLogger } from './logger';
 
 afterEach(() => resetInstrumentation());
 
 function quiet<T>(fn: () => T): T {
-  const previous = setLogSink(() => undefined);
+  const releaseLogSink = installLogSink(() => undefined);
   try {
     return fn();
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
 }
 
@@ -57,11 +57,11 @@ describe('unit · log.record', () => {
     subscribe('log.record', () => {
       throw bug;
     });
-    const previous = setLogSink((line) => lines.push(line));
+    const releaseLogSink = installLogSink((line) => lines.push(line));
     try {
       expect(() => logger.error('still written')).not.toThrow();
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     expect(lines.some((line) => line.includes('still written'))).toBe(true);
   });

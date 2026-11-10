@@ -41,6 +41,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_PARTS_INVALID',
   'X_STORAGE_UPLOAD_INFECTED',
   'X_STORAGE_SCAN_UNAVAILABLE',
+  'X_STORAGE_TARGET_UNSCANNED',
 ] as const;
 
 /**
@@ -93,6 +94,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_PARTS_INVALID: 'the parts named do not match the parts stored',
   X_STORAGE_UPLOAD_INFECTED: 'the upload scanner found malware in the file',
   X_STORAGE_SCAN_UNAVAILABLE: 'the upload scanner could not give a verdict',
+  X_STORAGE_TARGET_UNSCANNED: 'a targeted upload grant would bypass the upload scanner',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws

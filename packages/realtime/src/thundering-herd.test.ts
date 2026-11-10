@@ -11,10 +11,9 @@ import {
 describe('thundering herd', () => {
   test('jittered backoff produces a spread of delays, not one value', () => {
     const samples = Array.from({ length: 200 }, () => policyDelay(defaultBackoff, 4));
-    const ceiling = Math.min(
-      defaultBackoff.maxMs,
-      defaultBackoff.baseMs * defaultBackoff.factor ** 3,
-    );
+    const factor =
+      defaultBackoff.factor ?? expect.unreachable('defaultBackoff declares its factor');
+    const ceiling = Math.min(defaultBackoff.max, defaultBackoff.base * factor ** 3);
 
     expect(new Set(samples).size).toBeGreaterThan(50);
     expect(Math.min(...samples)).toBeGreaterThanOrEqual(0);
@@ -28,7 +27,7 @@ describe('thundering herd', () => {
     const none = { ...defaultBackoff, jitter: 'none' as const };
     expect(policyDelay(none, 1)).toBe(500);
     expect(policyDelay(none, 2)).toBe(1_000);
-    expect(policyDelay(none, 99)).toBe(none.maxMs);
+    expect(policyDelay(none, 99)).toBe(none.max);
   });
 
   // Core's counting, not a second one: the wait after the FIRST failure is attempt 1 and is the
@@ -45,6 +44,17 @@ describe('thundering herd', () => {
   test('the package barrel no longer exports a second backoffDelay', async () => {
     const barrel: Record<string, unknown> = await import('./index');
     expect(Object.hasOwn(barrel, 'backoffDelay')).toBe(false);
+  });
+
+  // 31.0.0: the policy is core's `RetryPolicy` fields, so its `curve` is read too — `BackoffPolicy`
+  // had no curve and `policyDelay` pinned `exponential` whatever a caller meant.
+  test("the curve is the policy's own, core-named, not a pinned exponential", () => {
+    const none = { ...defaultBackoff, jitter: 'none' as const };
+    expect(defaultBackoff).toEqual({ base: 500, max: 30_000, factor: 2, jitter: 'full' });
+    expect([1, 2, 3].map((attempt) => policyDelay({ ...none, curve: 'linear' }, attempt))).toEqual([
+      500, 1_000, 1_500,
+    ]);
+    expect(policyDelay({ ...none, curve: 'fixed' }, 9)).toBe(500);
   });
 
   test('a drain assigns every socket its own slot instead of one shared delay', () => {

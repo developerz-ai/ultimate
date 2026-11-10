@@ -2,7 +2,7 @@
 // That the Lua is Lua — and is a token bucket — is `rate-limit-redis.live.test.ts`'s, against a
 // real server: a fake that cannot run a script has no opinion about one.
 import { afterEach, describe, expect, test } from 'bun:test';
-import { setLogSink, UltimateError } from '@ultimat3/core';
+import { installLogSink, UltimateError } from '@ultimat3/core';
 import type { Bucket } from './rate-limit';
 import { REDIS_RATE_LIMIT_TAKE, redisRateLimitStore } from './rate-limit-redis';
 
@@ -32,13 +32,13 @@ const redisFailure = (message: string, code?: string) => ({
 });
 const connectionClosed = () => redisFailure('Connection closed', 'ERR_REDIS_CONNECTION_CLOSED');
 
-let previousSink: ReturnType<typeof setLogSink> | undefined;
+let releaseLogSink: (() => void) | undefined;
 afterEach(() => {
-  setLogSink(previousSink);
-  previousSink = undefined;
+  releaseLogSink?.();
+  releaseLogSink = undefined;
 });
 const quiet = (): void => {
-  previousSink = setLogSink(() => undefined);
+  releaseLogSink = installLogSink(() => undefined);
 };
 
 describe('redisRateLimitStore', () => {
@@ -117,7 +117,7 @@ describe('redisRateLimitStore', () => {
   // operator to Postgres while Redis was the thing refusing.
   test('a degraded Redis store says Redis, with the command that checks it', async () => {
     const lines: string[] = [];
-    previousSink = setLogSink((line) => {
+    releaseLogSink = installLogSink((line) => {
       lines.push(line);
     });
     const { client } = recording(() => {

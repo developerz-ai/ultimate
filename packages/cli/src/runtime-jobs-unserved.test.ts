@@ -3,19 +3,19 @@
 // deployment, and warned at every boot it taught operators to ignore the one line that mattered.
 
 import { describe, expect, test } from 'bun:test';
-import { setLogSink } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import type { WorkerRecord } from '@ultimat3/jobs';
 import { reportUnservedQueues } from './runtime-jobs-unserved';
 
 async function logged(run: () => Promise<void>): Promise<readonly Record<string, unknown>[]> {
   const lines: string[] = [];
-  const previous = setLogSink((line) => {
+  const releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
   try {
     await run();
   } finally {
-    setLogSink(previous);
+    releaseLogSink();
   }
   return lines.map((line) => JSON.parse(line) as Record<string, unknown>);
 }

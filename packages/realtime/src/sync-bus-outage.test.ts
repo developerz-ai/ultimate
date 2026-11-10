@@ -23,7 +23,7 @@ import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import { busOutage, SYNC_BUS_UNAVAILABLE } from './sync-bus-outage';
 import { outageRig, waitFor } from './sync-outage-rig-fixture';
-import type { BackoffPolicy } from './thundering-herd';
+import type { ReconnectBackoff } from './thundering-herd';
 
 const room = channel('outage-room', {
   params: ['orgId'],
@@ -31,7 +31,7 @@ const room = channel('outage-room', {
   policy: OPEN_POLICY,
   events: true,
 });
-const NO_WAIT: BackoffPolicy = { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' };
+const NO_WAIT: ReconnectBackoff = { base: 0, max: 0, factor: 1, jitter: 'none' };
 
 afterAll(() => {
   clearChannels();

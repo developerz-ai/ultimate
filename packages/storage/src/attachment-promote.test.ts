@@ -10,7 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 // temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
-import { attachmentKey, pendingKey, promoteAttachment, releaseQuarantine } from './attachment';
+import { attachmentKey, pendingKey, promoteAttachment } from './attachment';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { memoryStorageDriver } from './driver-memory';
@@ -137,7 +137,7 @@ describe('a promotion that already happened is refused, and its bytes are never 
 describe('an actor with no org is inside no org', () => {
   // `isWithinOrg(key, '')` THREW X_STORAGE_PATH_UNSAFE, so a missing org claim was reported as a
   // malformed key — a 400 blaming the upload, where the answer is the 404 every other tenant gets.
-  test('promote and release both answer X_STORAGE_ORG_MISMATCH for an empty org', async () => {
+  test('promote answers X_STORAGE_ORG_MISMATCH for an empty org', async () => {
     const [disk] = disks;
     if (disk === undefined) return expect.unreachable('three disks were built');
     const key = pendingKey(ORG, 'u-1.png');
@@ -149,9 +149,6 @@ describe('an actor with no org is inside no org', () => {
         ),
       ),
     ).toBe('X_STORAGE_ORG_MISMATCH');
-    expect(codeOf(await catchError(() => releaseQuarantine({ disk, key, orgId: '' })))).toBe(
-      'X_STORAGE_ORG_MISMATCH',
-    );
     expect(await disk.exists(key)).toBe(true);
   });
 });

@@ -39,7 +39,7 @@ export function fixtureJob(run: () => Promise<unknown> = () => Promise.resolve()
     tenant: 'none',
     input: t.object({ item: t.string }),
     idempotencyKey: ({ item }) => item,
-    retry: { attempts: 1, jitter: false },
+    retry: { attempts: 1, jitter: 'none' },
     run,
   });
 }

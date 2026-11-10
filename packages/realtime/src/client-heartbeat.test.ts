@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { cursorsChannel, decodeSid, feed, harness } from './client-harness-fixture';
 import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
 import { DEFAULT_PRESENCE_TTL_MS } from './transport-env';
 
@@ -44,7 +44,7 @@ describe('the client heartbeat', () => {
     const { client, timers, sockets } = beating();
     client.connect();
     sockets[0]?.open();
-    client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
     sockets[0]?.deliver({
       type: 'snapshot',
       v: PROTOCOL_VERSION,
@@ -76,7 +76,7 @@ describe('the client heartbeat', () => {
     const { client, timers, sockets, clock } = beating();
     client.connect();
     sockets[0]?.open();
-    const handle = client.subscribeLive<Row>(feed, { orgId: 'o1' });
+    const handle = client.subscribeLive<LiveRow>(feed, { orgId: 'o1' });
 
     clock.advance(DEFAULT_HEARTBEAT_MS * 2 + 1);
     timers.fire();

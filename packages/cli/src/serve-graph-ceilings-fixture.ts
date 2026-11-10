@@ -205,8 +205,26 @@
  * the file ceiling). No existing module newly reached: `jobs/src/reindex.ts` reads
  * `searchVersionColumn` from the entity barrel, never `@ultimat3/entity/adapter`, whose
  * `entityDriver` kit (8 modules) stays the serving roles'.
+ * raised 964 → 976, measured 976 (2026-11-10, plan 101 v31 wave G, metafile diff against HEAD
+ * c00cb32b0): four NEW modules — `entity/src/search-mirrored-repo.ts` (a repo's writes mirrored
+ * into the search index), `search-written-rows.ts` (the rows a write touched, deletes included),
+ * `write-commit.ts` (the after-commit hook they ride), `jobs/src/reindex-sweep.ts` (the sweep that
+ * drops index ids no longer in the table). And 8 existing modules newly reached: the
+ * `entityDriver` kit (`entity/src/{adapter,define-driver,driver-delete,driver-kit-types,
+ * driver-repo-reads,driver-repo-writes,driver-scope,driver-write-scope}.ts`), because
+ * `reindex-sweep.ts` imports `kindOf` and `rowKey` from `@ultimat3/entity/adapter`. Both are leaves
+ * (`cursor.ts`, `row-key.ts`): reached another way, the 8 leave and this ceiling falls to 968.
+ * lowered 976 → 969, measured 969 (2026-11-10, wave G): `reindex-sweep.ts` reads both leaves from
+ * the entity barrel, so the 8 driver-kit modules left (−8), and `entity/src/memory-upsert.ts` (the
+ * memory driver's upsert, split out of `memory-repo.ts` at 489 lines) arrived (+1).
+ * raised 969 → 970, measured 970 (2026-11-10, wave G, D5): `jobs/src/retry-jitter.ts`, which
+ * `job()` calls to refuse a `retry.jitter` that is not core's `JitterMode` — reached through the
+ * jobs barrel. No existing module newly reached.
+ * raised 970 → 971, measured 971 (2026-11-10, wave G, g-search): `entity/src/search-mirror-batch.ts`
+ * — one transaction's search-index ops, merged per key and sent at commit. No existing module
+ * newly reached.
  */
-export const MIGRATE_CEILING = 964;
+export const MIGRATE_CEILING = 971;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -426,5 +444,19 @@ export const MIGRATE_CEILING = 964;
  * raised 1385 → 1391, measured 1391 (2026-11-10, wave F review fixes): `MIGRATE_CEILING`'s five
  * new modules, plus `cli/src/app-load-async.ts` — which app modules can suspend at their top
  * level, so the batched scan imports each alone. No existing module newly reached.
+ * raised 1391 → 1392, measured 1392 (2026-11-10, plan 101 v31 wave G, metafile diff against HEAD
+ * c00cb32b0): `MIGRATE_CEILING`'s four new modules (its driver kit was already here), plus four
+ * serving-only — `cli/src/build-registry-background.ts` (the worker/scheduler subset of the
+ * prebuilt registry, read at boot), `action/src/loader.ts` and `query/src/loader.ts` (the
+ * `register*` entries the scan imports, moved off the barrels), `realtime/src/error-titles-server.ts`
+ * (the server-only error titles split out of the browser bundle) — less seven removed:
+ * `mail/src/templates/{index,invite,mfa-enrolled,reset-password,security-alert,verify-email,
+ * welcome}.ts`, the framework mails deleted in v31. No existing module newly reached.
+ * raised 1392 → 1393, measured 1393 (2026-11-10, wave G): `entity/src/memory-upsert.ts`, named on
+ * `MIGRATE_CEILING` (the driver kit stays here: the serving roles reach it themselves).
+ * raised 1393 → 1394, measured 1394 (2026-11-10, wave G, D5): `jobs/src/retry-jitter.ts`, named
+ * on `MIGRATE_CEILING`.
+ * raised 1394 → 1395, measured 1395 (2026-11-10, wave G, g-search): `entity/src/search-mirror-batch.ts`,
+ * named on `MIGRATE_CEILING`.
  */
-export const SERVING_ROLE_CEILING = 1391;
+export const SERVING_ROLE_CEILING = 1395;

@@ -5,9 +5,9 @@
 import { describe, expect, test } from 'bun:test';
 import { formatLsn, memoryChangeFeed, parseLsn } from './changefeed';
 import { InProcessTransport } from './fanout';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 
-const row: Row = { id: 'p1', title: 'first' };
+const row: LiveRow = { id: 'p1', title: 'first' };
 
 /** A deferred, so two pushes can be in flight at once without a timer deciding the order. */
 const deferred = (): { promise: Promise<void>; resolve: () => void } => {

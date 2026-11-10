@@ -130,12 +130,11 @@ describe('the real tree', () => {
   test('reads the carried keys plan 101 found missing, and every one resolves', async () => {
     const keys = (await carriedKeySites(repoRoot())).map((site) => site.key);
     // Non-vacuity, by name: the two keys the admin shipped without (status.yml, PR 11b) and one
-    // from each other carrier shape — a constant, a mail subject, a `UI_KEYS` member.
+    // from each other carrier shape the framework still holds — a constant, a `UI_KEYS` member.
     for (const key of [
       'admin.error.row-changed',
       'admin.search.skipped.failed',
       'mail.footer.unsubscribe',
-      'mail.welcome.subject',
       'ui.close',
     ]) {
       expect(keys).toContain(key);

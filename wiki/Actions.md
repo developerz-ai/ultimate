@@ -133,7 +133,7 @@ Every projection this package owns is a method on the action — `publishPost.op
 
 `handle` and `row` — the declaration's two functions — are unreachable by design: neither lifted nor described. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `invoke` is the only thing that can run them — one execution path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'action'` is `X_ACTION_FOREIGN`, never a registered action.
 
-Every projection needs the name `registerActions()` stamps on. It names the export in place, so `import { publishPost }` is the action that projects once the app has booted — there is no second, differently-named twin to remember.
+Every projection needs the name `defineApi({ actions })` stamps on at boot. It names the export in place, so `import { publishPost }` is the action that projects once the app has booted — there is no second, differently-named twin to remember.
 
 ## Six generated artifacts
 

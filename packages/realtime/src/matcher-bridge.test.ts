@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn } from './changefeed';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import {
   applyToWindow,
   bridgeChange,
@@ -15,8 +15,8 @@ import {
   toBridgeResult,
 } from './matcher-bridge';
 
-const before: Row = { id: 'p1', orgId: 'o1', title: 'draft', likes: 1, internalNote: 'x' };
-const after: Row = { ...before, likes: 2 };
+const before: LiveRow = { id: 'p1', orgId: 'o1', title: 'draft', likes: 1, internalNote: 'x' };
+const after: LiveRow = { ...before, likes: 2 };
 
 const update: ChangeEvent = {
   table: 'posts',
@@ -45,7 +45,7 @@ const always: IncrementalMatcher = {
   },
 };
 
-const window: readonly Row[] = [before];
+const window: readonly LiveRow[] = [before];
 
 describe('matcher bridge', () => {
   test('a change produces a minimal patch — changed columns plus the id', () => {
@@ -140,7 +140,7 @@ describe('matcher bridge', () => {
 describe('a patch carries the result set\u2019s columns, never the table\u2019s', () => {
   const projection = new Set(['id', 'orgId', 'title', 'likes']);
 
-  const changeOf = (op: 'insert' | 'update', row: Row, previous?: Row): ChangeEvent => ({
+  const changeOf = (op: 'insert' | 'update', row: LiveRow, previous?: LiveRow): ChangeEvent => ({
     table: 'posts',
     op,
     before: previous ?? null,
@@ -174,7 +174,7 @@ describe('a patch carries the result set\u2019s columns, never the table\u2019s'
   });
 
   test('projectionOf reads the shape off the window, and answers nothing for an empty one', () => {
-    expect(projectionOf([{ id: 'p1', title: 'hi' } as Row])).toEqual(new Set(['id', 'title']));
+    expect(projectionOf([{ id: 'p1', title: 'hi' } as LiveRow])).toEqual(new Set(['id', 'title']));
     expect(projectionOf([])).toBeUndefined();
   });
 
@@ -185,7 +185,7 @@ describe('a patch carries the result set\u2019s columns, never the table\u2019s'
   });
 
   test('an update patch is narrowed after the changed columns are computed', () => {
-    const changed: Row = { ...before, likes: 2, internalNote: 'y' };
+    const changed: LiveRow = { ...before, likes: 2, internalNote: 'y' };
     const change = changeOf('update', changed, before);
     const result = toBridgeResult(
       [{ kind: 'update', position: 0, row: changed }],

@@ -4,23 +4,21 @@
 // known, is brute-forced from a database read. Keyed with HMAC-SHA-256, the stored value proves
 // nothing to anyone without the app's signing secret.
 
-import { canonicalJson, fingerprint } from './canonical-json';
+import { canonicalJson } from './canonical-json';
 import { currentSigningSecret } from './cursor';
 import { hmac } from './hmac';
 import { timingSafeEqual } from './timing-safe-equal';
 
-/** The format tag. A stored value without it predates keying (see `compareFingerprint`). */
+/** The format tag. A stored value without it is no format this build reads (`unverifiable`). */
 export const KEYED_FINGERPRINT_VERSION = 'h1';
 
 /**
  * What a stored fingerprint says about an input:
- * - `match` / `mismatch` — computed under the key in force now (or the legacy unkeyed form);
+ * - `match` / `mismatch` — computed under the key in force now;
  * - `unverifiable` — keyed under a secret this process does not hold (a rotation), or a format this
- *   build does not know. The input can be neither confirmed nor refused.
+ *   build does not know (a bare pre-v24 hash among them). Neither confirmed nor refused.
  */
 export type FingerprintMatch = 'match' | 'mismatch' | 'unverifiable';
-
-const LEGACY = /^[0-9a-f]{16}$/;
 
 /** One key per purpose, derived from the signing secret, so no two uses share a MAC key. */
 function derivedKey(purpose: string): string {
@@ -47,17 +45,15 @@ export function keyedFingerprint(value: unknown, purpose: string): string {
 }
 
 /**
- * Compare a STORED fingerprint with an input. A legacy unkeyed value (16 hex characters, written by
- * a build before keying) is checked against `fingerprint()` computed here and never stored, so rows
- * written across an upgrade keep their exact semantics until they age out.
+ * Compare a STORED fingerprint with an input. Only the keyed form is read: the unkeyed one (v23
+ * and before) aged out of every store long ago, and one still lying around is `unverifiable` —
+ * each caller already answers that safely (a rotation reads the same).
  */
 export function compareFingerprint(
   stored: string,
   value: unknown,
   purpose: string,
 ): FingerprintMatch {
-  if (LEGACY.test(stored))
-    return timingSafeEqual(stored, fingerprint(value)) ? 'match' : 'mismatch';
   const current = keyedFingerprint(value, purpose);
   const prefix = current.slice(0, current.lastIndexOf(':') + 1);
   if (!stored.startsWith(prefix)) return 'unverifiable';

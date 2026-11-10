@@ -181,7 +181,7 @@ describe('a key the worker cannot derive at claim', () => {
     const driver = memoryJobDriver({ clock });
     let broken = true;
     const probe = accountJob({
-      retry: { attempts: 2, jitter: false, delay: 1_000 },
+      retry: { attempts: 2, jitter: 'none', delay: 1_000 },
       concurrency: {
         key: ({ account }) => {
           if (broken && account === 'poison') throw new TypeError('no account on this row');
@@ -224,7 +224,7 @@ describe('finalAttempt', () => {
   test('is true exactly once — on the attempt the runner dead-letters', async () => {
     const driver = memoryJobDriver({ clock });
     const probe = accountJob({
-      retry: { attempts: 3, jitter: false, delay: 1_000, backoff: 'fixed' },
+      retry: { attempts: 3, jitter: 'none', delay: 1_000, backoff: 'fixed' },
       body: () => Promise.reject(new TypeError('always fails')),
     });
     await enqueueRun(driver, probe, 'acct-1');

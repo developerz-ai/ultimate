@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-// Enforce, as a gate step, that every markdown table in `wiki/` still renders as a table. The wiki
+// Enforce, as a gate step, that every markdown table in `wiki/` and in each `CLAUDE.md` (root and
+// per package: the pages an agent reads first) still renders as a table. The wiki
 // is the only public documentation surface, and nothing read it: a row with one cell too many drops
 // its last cell silently on GitHub, and a header with no `|---|` under it renders as a paragraph of
 // literal pipes. Runs on `x verify`'s `manifest` step — the step that asks whether the files an
@@ -22,6 +23,12 @@ import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
 export const WIKI_GLOB = 'wiki/**/*.md';
+
+/**
+ * The agent-facing contracts beside the wiki: a collapsed cell in a package's command table turned
+ * two commands into one with nothing red.
+ */
+export const CLAUDE_GLOBS: readonly string[] = ['CLAUDE.md', 'packages/*/CLAUDE.md'];
 
 export interface MarkdownFile {
   readonly path: string;
@@ -143,7 +150,7 @@ const where = (gap: TableGap): string => `${gap.path}:${gap.line}`;
 
 const rowFinding = (gap: TableGap): Finding => ({
   code: 'X_WIKI_TABLE_MALFORMED',
-  cause: `${where(gap)} has ${gap.cells} cells and its header has ${gap.expected}, so the wiki renders this row with content dropped or blanks appended`,
+  cause: `${where(gap)} has ${gap.cells} cells and its header has ${gap.expected}, so it renders with content dropped or blanks appended`,
   fix: `give the row at ${where(gap)} exactly ${gap.expected} cells, escaping any literal pipe as \\| — then bun run scripts/wiki-tables.ts --json`,
   at: where(gap),
 });
@@ -157,7 +164,7 @@ const delimiterFinding = (gap: TableGap): Finding => ({
 
 const orphanFinding = (gap: TableGap): Finding => ({
   code: 'X_WIKI_TABLE_MALFORMED',
-  cause: `${where(gap)} begins with | and no |---| delimiter row follows it, so the wiki renders it as a paragraph of literal pipes`,
+  cause: `${where(gap)} begins with | and no |---| delimiter row follows it, so it renders as a paragraph of literal pipes`,
   fix: `add a delimiter row under ${where(gap)} — ${'|---'.repeat(gap.expected)}| — or stop starting that line with |`,
   at: where(gap),
 });
@@ -170,14 +177,24 @@ const FINDINGS: Readonly<Record<TableGapKind, (gap: TableGap) => Finding>> = {
 
 export const tableGapFindingFor = (gap: TableGap): Finding => FINDINGS[gap.kind](gap);
 
-export async function readWiki(root: string): Promise<readonly MarkdownFile[]> {
-  const glob = new Bun.Glob(WIKI_GLOB);
+async function readGlobs(root: string, globs: readonly string[]): Promise<readonly MarkdownFile[]> {
   const files: MarkdownFile[] = [];
-  for await (const path of glob.scan({ cwd: root, absolute: false })) {
-    files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
+  for (const pattern of globs) {
+    for await (const found of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
+      // `/`-spelt on every host, so a finding names the path every other rule names.
+      const path = found.split('\\').join('/');
+      files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
+    }
   }
   return files.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
+
+export const readWiki = (root: string): Promise<readonly MarkdownFile[]> =>
+  readGlobs(root, [WIKI_GLOB]);
+
+/** Root and package `CLAUDE.md`; a root with none (a fixture) reads none. */
+export const readClaudeDocs = (root: string): Promise<readonly MarkdownFile[]> =>
+  readGlobs(root, CLAUDE_GLOBS);
 
 const unscanned = (pages: number): Finding => ({
   code: 'X_WIKI_TABLE_UNSCANNED',
@@ -199,21 +216,26 @@ export function wikiTableReport(files: readonly MarkdownFile[]): readonly Findin
     : gaps.map(tableGapFindingFor);
 }
 
-/** What this repo contributes to `x verify`'s `manifest` step. */
-export const wikiTableFindings = async (root: string): Promise<readonly Finding[]> =>
-  wikiTableReport(await readWiki(root));
+/**
+ * What this repo contributes to `x verify`'s `manifest` step. The unscanned floor is the wiki's
+ * alone: it carries hundreds of tables, while a CLAUDE.md with none is an ordinary page.
+ */
+export const wikiTableFindings = async (root: string): Promise<readonly Finding[]> => [
+  ...wikiTableReport(await readWiki(root)),
+  ...checkTables(await readClaudeDocs(root)).map(tableGapFindingFor),
+];
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const files = await readWiki(repoRoot());
-  const findings = wikiTableReport(files);
+  const findings = await wikiTableFindings(repoRoot());
   report(
     {
       ok: findings.length === 0,
       script: 'wiki-tables',
       summary:
         findings.length === 0
-          ? `${files.length} wiki pages, every table row the cell count its header declares`
+          ? `${files.length} wiki pages and every CLAUDE.md, every table row the cell count its header declares`
           : `${findings.length} table finding(s) across ${files.length} wiki pages`,
       findings,
     },

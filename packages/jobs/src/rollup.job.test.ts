@@ -70,7 +70,7 @@ const declare = (name: string, timeZone = 'UTC') =>
     lookback: '2d',
     bucket: { unit: 'day', timeZone },
     tenant: (input) => input.orgId ?? ORG,
-    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
     source: ({ since, bucket, input }) =>
       likesTable
         .where({ orgId: input.orgId ?? ORG })

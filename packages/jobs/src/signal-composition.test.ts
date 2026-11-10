@@ -141,7 +141,7 @@ describe('unit · executeJob never composes onto the caller ctx permanently', ()
       name: 'composed',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `composed:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: () => Promise.resolve(undefined),
     });
     const driver: JobDriver = memoryJobDriver();

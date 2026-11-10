@@ -15,7 +15,8 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": [
-    "./src/error-titles.ts"
+    "./src/error-titles.ts",
+    "./src/error-titles-server.ts"
   ],
   "repository": {
     "type": "git",

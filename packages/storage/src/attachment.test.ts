@@ -12,11 +12,8 @@ import {
   attachmentPrefix,
   deleteVariants,
   isPendingKey,
-  isQuarantinedKey,
   pendingKey,
   promoteAttachment,
-  quarantineKey,
-  releaseQuarantine,
   sweepOrphans,
   uploadExtension,
   uploadName,
@@ -235,8 +232,8 @@ describe('sweepOrphans', () => {
     expect(deleted).toEqual([dropped]);
   });
 
-  test('reaches quarantined uploads too — they live inside the same pending prefix', async () => {
-    const rotting = quarantineKey(ORG, 'never-scanned.png');
+  test('reaches a scan attempt a crash left behind — it lives inside the same pending prefix', async () => {
+    const rotting = `org/${ORG}/pending/scan/a1b2-never-attached.png`;
     const { driver, deleted } = agedDisk({ [rotting]: '2020-01-01T00:00:00.000Z' });
     const swept = await sweepOrphans({
       disk: driver,
@@ -244,7 +241,7 @@ describe('sweepOrphans', () => {
       olderThanMs: 1_800_000,
       clock,
     });
-    // An upload nobody ever scanned is still an orphan, and there is no second prefix to walk.
+    // `promoteAttachment`'s per-attempt copy is still an orphan, and there is no second prefix to walk.
     expect(swept.deleted).toEqual([rotting]);
     expect(deleted).toEqual([rotting]);
   });
@@ -285,66 +282,6 @@ describe('deleteVariants', () => {
     await expect(deleteVariants({ disk, key: '../x.png' })).rejects.toThrow(
       'X_STORAGE_PATH_UNSAFE',
     );
-  });
-});
-
-describe('quarantine', () => {
-  test('promoteAttachment REFUSES a key nothing has cleared', async () => {
-    const key = quarantineKey(ORG, 'u-1.png');
-    await disk.put(key, bytesOf('maybe-ransomware'), { contentType: 'image/png' });
-
-    let caught: unknown;
-    try {
-      await promoteAttachment({ disk, key, orgId: ORG, target: TARGET, policy: POLICY });
-    } catch (error) {
-      caught = error;
-    }
-    expect(isStorageError(caught) ? caught.code : '').toBe('X_STORAGE_QUARANTINED');
-    // Nothing reached the row's prefix, and the bytes are still where the scan can find them.
-    expect(await disk.exists(attachmentKey(ORG, TARGET, 'u-1.png'))).toBe(false);
-    expect(await disk.exists(key)).toBe(true);
-  });
-
-  test('releaseQuarantine moves the object onto the pending key promotion accepts', async () => {
-    const key = quarantineKey(ORG, 'u-1.png');
-    await disk.put(key, pngOf(11), { contentType: 'image/png' });
-    expect(isQuarantinedKey(key, ORG)).toBe(true);
-    expect(isPendingKey(key, ORG)).toBe(true);
-
-    const released = await releaseQuarantine({ disk, key, orgId: ORG });
-    expect(released).toBe(pendingKey(ORG, 'u-1.png'));
-    expect(isQuarantinedKey(released, ORG)).toBe(false);
-    expect(await disk.exists(key)).toBe(false);
-
-    const object = await promoteAttachment({
-      disk,
-      key: released,
-      orgId: ORG,
-      target: TARGET,
-      policy: POLICY,
-    });
-    expect(object.key).toBe(attachmentKey(ORG, TARGET, 'u-1.png'));
-    expect(object.contentType).toBe('image/png');
-  });
-
-  test('releasing an already-released key is a no-op, not a second round trip', async () => {
-    const key = pendingKey(ORG, 'u-1.png');
-    await disk.put(key, bytesOf('x'), { contentType: 'image/png' });
-    expect(await releaseQuarantine({ disk, key, orgId: ORG })).toBe(key);
-    expect(await disk.exists(key)).toBe(true);
-  });
-
-  test('releaseQuarantine refuses another org’s key', async () => {
-    const key = quarantineKey('org-2', 'u-1.png');
-    await disk.put(key, bytesOf('x'), { contentType: 'image/png' });
-    let caught: unknown;
-    try {
-      await releaseQuarantine({ disk, key, orgId: ORG });
-    } catch (error) {
-      caught = error;
-    }
-    expect(isStorageError(caught) ? caught.code : '').toBe('X_STORAGE_ORG_MISMATCH');
-    expect(await disk.exists(key)).toBe(true);
   });
 });
 

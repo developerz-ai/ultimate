@@ -4,7 +4,7 @@ import { RingChangeBuffer } from './change-buffer';
 import { formatLsn } from './changefeed';
 import { advance, defaultReconnectBudget, makeCursor, resumeFrom } from './cursor';
 import { CursorStaleError } from './errors';
-import type { Row, RowPatch } from './json';
+import type { LiveRow, RowPatch } from './json';
 
 const QID = 'liveFeed:abcd1234';
 
@@ -19,7 +19,7 @@ function fill(buffer: RingChangeBuffer, count: number, from = 1): void {
   for (let i = from; i < from + count; i += 1) buffer.append(QID, patchAt(i, `p${i}`));
 }
 
-const snapshotRows: readonly Row[] = [{ id: 'p1', likes: 99 }];
+const snapshotRows: readonly LiveRow[] = [{ id: 'p1', likes: 99 }];
 const snapshot = async () => ({ rows: snapshotRows, lsn: formatLsn(500) });
 
 describe('cursor resume', () => {
@@ -119,7 +119,7 @@ describe('a cursor carries what a resume reads, and nothing else', () => {
    * back is a snapshot that serialized nothing.
    */
   test('a snapshot serializes no row — a cycle no hash could walk still answers a cursor', () => {
-    const cyclic: Row = { id: 'p1' };
+    const cyclic: LiveRow = { id: 'p1' };
     (cyclic as Record<string, unknown>)['self'] = cyclic;
     expect(makeCursor(QID, formatLsn(1), [cyclic], 1_000).ids).toEqual(['p1']);
   });

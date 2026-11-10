@@ -15,7 +15,7 @@ import { type RecordProjection, recordProjection } from '@ultimat3/entity/record
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { ChannelEntity } from './channel-decl';
 import type { Transport } from './fanout';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { changeSubject } from './replicator';
 import { encodeEnvelope } from './replicator-envelope';
 
@@ -109,7 +109,7 @@ export function recordPublisher(options: RecordPublisherOptions): RecordPublishe
     const columns = projection.schema.properties ?? {};
     const image = Object.fromEntries(
       Object.entries(row).filter(([property]) => Object.hasOwn(columns, property)),
-    ) as Row;
+    ) as LiveRow;
     // Refused here, before any row of the call is sequenced: a keyless row matches no record.
     projection.key(image);
     const orgId = image[tenant];

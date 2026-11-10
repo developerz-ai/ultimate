@@ -1,6 +1,6 @@
 // The request fingerprint an idempotency record persists: keyed, so the table is no oracle for a
-// low-entropy input; and read across an upgrade or a secret rotation without a false 409 and
-// without ever running the handler twice.
+// low-entropy input; and read across a secret rotation (or a pre-keying row) without a false 409
+// and without ever running the handler twice.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
@@ -75,21 +75,17 @@ describe('the persisted request fingerprint', () => {
   });
 });
 
-describe('a record written before keying (legacy unkeyed fingerprint)', () => {
-  test('the same body still replays', async () => {
+describe('a record written before keying (a bare unkeyed fingerprint, pre-v24)', () => {
+  test('replays on its status, whatever the body: never a second run', async () => {
+    configureCursorSigning('app-secret');
     const store = await seeded(fingerprint(INPUT));
     const { run, runs } = counter();
-    expect(await withIdempotency(store, 'k', INPUT, run)).toEqual({
-      value: { n: 1 },
-      replayed: true,
-    });
-    expect(runs()).toBe(0);
-  });
-
-  test('a different body is still a conflict', async () => {
-    const store = await seeded(fingerprint(INPUT));
-    const { run, runs } = counter();
-    expect(await codeOf(withIdempotency(store, 'k', OTHER, run))).toBe('X_IDEMPOTENCY_CONFLICT');
+    for (const body of [INPUT, OTHER]) {
+      expect(await withIdempotency(store, 'k', body, run)).toEqual({
+        value: { n: 1 },
+        replayed: true,
+      });
+    }
     expect(runs()).toBe(0);
   });
 });

@@ -4,7 +4,8 @@
 // happen to hold the same names.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import type { Actor } from '@ultimat3/core';
 import { frameworkVersion } from '@ultimat3/core';
 import { entity, text, uuid } from '@ultimat3/entity';
@@ -18,7 +19,8 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
 import { devHost, devMcpServer, frameworkIntrospection } from './dev-host';
 import type { DevCapabilities } from './dev-server';

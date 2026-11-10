@@ -3,7 +3,7 @@
 // makes the author say so, not a silent widening five packages inherit.
 
 import { describe, expect, test } from 'bun:test';
-import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
+import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES, SURFACES } from './route-vocabulary';
 
 // The TYPE half — that each union is still `(typeof ARRAY)[number]` — is pinned in `type-pins.ts`,
 // never here: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads this file and a
@@ -22,8 +22,12 @@ describe('the route vocabulary', () => {
     expect([...HYDRATE_STRATEGIES]).toEqual(['idle', 'visible', 'interaction', 'never']);
   });
 
+  test('surfaces are exactly the four, in the order the boundary table reads them', () => {
+    expect([...SURFACES]).toEqual(['site', 'app', 'api', 'shared']);
+  });
+
   test('no member is repeated, so a Record over one has a row per member', () => {
-    for (const set of [RENDER_MODES, OFFLINE_STRATEGIES, HYDRATE_STRATEGIES]) {
+    for (const set of [RENDER_MODES, OFFLINE_STRATEGIES, HYDRATE_STRATEGIES, SURFACES]) {
       expect(new Set(set).size).toBe(set.length);
     }
   });

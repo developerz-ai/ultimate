@@ -56,6 +56,12 @@ export const CLIENT_SYNC_WORKER_META = 'ultimate-sync-worker';
 export const CLIENT_PERSIST_META = 'ultimate-persist';
 
 /**
+ * The page outbox's ceiling — `realtime.maxQueued` in `app.config.ts`, as a decimal count. Read by
+ * `@ultimat3/realtime`'s page boot, which builds the outbox. Absent = no ceiling.
+ */
+export const CLIENT_OUTBOX_MAX_META = 'ultimate-outbox-max';
+
+/**
  * The client router's request headers (`@ultimat3/render`'s `navigation.ts`), read by
  * `@ultimat3/http`'s navigation gate before any app code runs. `soft` is a visit the router will
  * swap in; `prefetch` is a guess nobody clicked yet — answered only by a route that opted in.

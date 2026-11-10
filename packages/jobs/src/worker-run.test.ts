@@ -79,7 +79,7 @@ describe('a run hands back everything it took', () => {
       name: 'wiredJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'wired:1',
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: () => Promise.resolve(),
     });
     const schedule = armedTicks();
@@ -113,7 +113,7 @@ async function claimedOnMemory() {
     name: 'wiredJob',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'wired:1',
-    retry: { attempts: 3, jitter: false },
+    retry: { attempts: 3, jitter: 'none' },
     run: () => Promise.resolve(),
   });
   const driver = memoryJobDriver();

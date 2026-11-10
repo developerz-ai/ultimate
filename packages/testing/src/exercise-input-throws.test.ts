@@ -3,7 +3,8 @@
 // entry — and the pass returns. A throw on a later call (the scale sweep's) is that sweep's.
 
 import { describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { UltimateError } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import type { ExerciseOverride } from './define-exercise';

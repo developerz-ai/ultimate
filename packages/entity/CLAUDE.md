@@ -1,6 +1,7 @@
 # @ultimat3/entity
 
 Columns + invariants; the row type is derived from the columns. Tier 2.
+A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../docs/history/entity-rules.md).
 
 ## Boundary
 
@@ -19,12 +20,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   and the `Repo` contract. Every bulk or read feature is proved by `entityDriverConformance`
   (`@ultimat3/testing/conformance`) and, where only a server shows it, a
   `pg-driver-<feature>.live.test.ts`.
-- **`entityDriverConformance` (`@ultimat3/testing/conformance`) runs every write against memory, PGlite, a server and a `defineDriver` store**: a patch property present with
-  `undefined` is ABSENT (only `null` clears); memory refuses a duplicate PK, a duplicate non-partial
-  unique — index OR `c.unique([…])` invariant, the one list in `unique-constraints.ts` — and a PK
-  patch onto another row with `X_DB_UNIQUE_VIOLATION` (partial uniques are not checked in memory);
-  each kind's stored spelling: `docs/history/entity.md`.
-  The suite asks the app and the driver; `invariant-check.test.ts` asks the raw CHECK the same question.
+- **`entityDriverConformance` runs every write on memory, PGlite, a server and a `defineDriver`
+  store**: `undefined` is ABSENT (only `null` clears); memory refuses duplicate non-partial uniques. †
 - **`min`/`max` over a `timestamptz` crosses as epoch ms** (the suite; under four session zones, `entity-driver-conformance-pglite.test.ts`). A whole
   row read under a non-UTC session still fails on PGlite — recorded, not fixed.
 - **Text order is the database's collation; memory's is code point, which is `C`** (`byCodePoint`) — a
@@ -35,15 +32,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   narrows at each write method's ENTRY, before `$assert`/`upsertPlan`. `pg-money-write.live.test.ts`,
   `pg-money-bind.test.ts`, the suite, `type-pins.ts`.
 - **A numeric key has one spelling** (`keyOf`): batches, conflict targets and memory's uniques. **A null test on a whole money property reads `<p>.minor`; any other predicate on it, or an unknown operator, is refused at plan time (`predicate-screen.ts`).** Why: `docs/history/entity.md` (31.0.0).
-- **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`); `compareByKind` /
-  `sameValueOfKind` are EXPORTED — `@ultimat3/query` calls them. **ONE numeric comparison,
-  `numericOrder`**: `DECIMAL_TEXT` columns by VALUE (`'2.50' = 2.5`), `number`/`bigint` numerically
-  (`compare-by-kind.test.ts`, the suite). A `uuid` is a value, compared lower-cased and
-  stored lower-case (`keyOf`, `parseUuid`, `narrowUuid`; text is never narrowed); `LIKE` (`like.ts`)
-  uses Postgres' default `\` escape, refuses a trailing escape, counts CHARACTERS and is a bounded
-  two-pointer walk — never a regex; `in` takes a
-  list or nothing, and a NULL in it emits `(col in (…) or col is null)`; a column the row never NAMED
-  is NULL for `eq`/`neq`/`in`.
+- **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`; `compareByKind` /
+  `sameValueOfKind` exported for query); ONE numeric comparison, `numericOrder`; `LIKE` never a regex. †
 - **The Postgres driver is proved against a real Postgres** (`pg-driver.live.test.ts`, skipped without
   `TEST_DATABASE_URL`). A new operator, kind or write path is not done until it round-trips.
 - **A repository call rejects, never throws synchronously** (`tableFor`'s writes are `async`).
@@ -58,16 +48,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Do not regress — reading
 
-- **A point lookup batches itself** (`coalesce.ts`): `findById` calls in one microtask of one request
-  are one `in` statement, keyed by ctx (`WeakMap`) and a scope key covering every input but the id;
-  it declines rather than guesses; past `MAX_IDS_PER_STATEMENT` it is several statements; no caller is
-  ever left unsettled (`coalesce.test.ts` races a deadline).
-- **A page batches the loop it causes** (`jit-preload.ts`): a preloaded row is served only under the
-  SAME `scopeKey` (a security boundary), same client, dropped by any write to ANY entity — triggers
-  and FK actions rewrite rows a statement never named (`forgetPreloaded` in `writing()`;
-  `jit-preload-db-writes.test.ts`), keyed by id, bounded (`MAX_SIBLING_KEYS`, oldest page first). One switch:
-  `postgresDriver({ jitPreload: false })` — never an `app.config.ts` key. Shared pieces live in
-  `batch-read.ts`.
+- **A point lookup batches itself** (`coalesce.ts`): one microtask's `findById`s are one `in`;
+  no caller left unsettled. †
+- **A page batches the loop it causes** (`jit-preload.ts`): served only under the SAME `scopeKey`,
+  dropped by any write; off only via `postgresDriver({ jitPreload: false })`. †
 - **`preload(name, { max })` shares `batch-read.ts`, keeps no request cache and is BOUNDED**
   (`preload-ceiling.ts`: default `MAX_PRELOADED_ROWS`, refused past it, never truncated). Tenancy is CARRIED only between
   entities scoped by a same-named column (`X_TENANCY_UNSCOPED`). Full rule: `docs/history/entity.md`.
@@ -90,38 +74,24 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `groupColumnOf` before the statement and `countsFrom` after the rows. The bound is a REFUSAL at
   `MAX_GROUPS + 1`, never a truncation; it names a groupable column of THIS entity, never
   `x entity explain`. Full rule: `docs/history/entity.md`.
-- **The codec is `@ultimat3/core`'s**, reached through `cursorFor(entity, plan, row, id)` and
-  `seekFrom(entity, plan)`; **`assertSeekable` runs in `planFor`**, before a statement exists, and refuses `jsonb`, `bytea`, `array` (`UNSEEKABLE`). A
-  `timestamptz` sort key is refused when its `<column>$US` alias would pass 63 bytes. A cursor is bound
-  to `planScope(plan)` (entity, filters, sort); a bad one is `X_CURSOR_INVALID`, never "from the top".
-- **A NULLABLE sort key orders** `asc nulls last` / `desc nulls first`; the cursor tags
-  `~` for NULL and `!` for present; the seek reaches NULLs; a nullable key has no row comparison. Only a
-  nullable PRIMARY-KEY column is refused. `pg-null-order.live.test.ts`.
+- **The cursor codec is core's**; `assertSeekable` runs in `planFor`; a bad cursor is
+  `X_CURSOR_INVALID`, never "from the top". †
+- **A NULLABLE sort key orders** `asc nulls last` / `desc nulls first`; the cursor tags NULL. †
 - **A `timestamp` cursor carries MICROSECONDS** (`seekPrecision`, `instant.ts`). Full rule: `docs/history/entity.md`.
 - **The four aggregates** (`sum`, `avg`, `min`, `max`) share `aggregate.ts`:
   never a float; `null` for an empty set; refusals `X_AGGREGATE_UNSUPPORTED`,
   `X_AGGREGATE_MIXED_CURRENCY`. Full rule: `docs/history/entity.md`. **`approximateCount()` is `reltuples`**; a filtered chain or tenant-scoped entity is
   `X_APPROXIMATE_COUNT_FILTERED`; `null` for an unanalysed table.
 - **`series`, views**: `time-bucket.ts` (zone rules, measured), `view-repo.ts` (read-only); `time-bucket.test.ts`, `view-entity.test.ts`.
-- **`json()` / `arrayOf()` are filterable** (`contains`, `contained-by`, `overlaps`, `has-key`) with
-  Postgres' measured meaning in `containment.ts`; `has-key` emits `operator(pg_catalog.?)` (indexable)
-  and takes a STRING key, else no rows; a NULL array element equals nothing. No jsonpath operator.
-- **A GIN index is declarable** (`using: 'gin'`; the set is `@ultimat3/db`'s `INDEX_METHODS`); absent
-  is `btree` byte for byte; the method joins the name discriminator only when declared; GIN cannot be
-  unique or ordered (refused here). `pg-containment.live.test.ts`.
+- **`json()` / `arrayOf()` are filterable** (`containment.ts`); no jsonpath operator. †
+- **A GIN index is declarable** (`using: 'gin'`); never unique or ordered. †
 
 ## Do not regress — schema and DDL
 
-- **A relation is a foreign key read a second way** (`relations.ts`): `belongsTo` from own
-  `references()`, `hasMany` from inbound; `referenceBinding()` resolves a thunk in one place; colliding
-  names all take their long form; ambiguity is `X_INVARIANT_VIOLATED`. `relationMap()` memoises on
-  `registryGeneration()`, in one pass. `relationNamed()` refuses with `X_PRELOAD_UNKNOWN_RELATION`
-  (fix: a real `relationNamed()` call, or `x entities list --json`). `onDelete` rides on both
-  descriptions; never parse the `"<table>.<column>"` string back.
-- **An index is described whole** (`IndexDescription`: columns, uniqueness, predicate, direction,
-  method); `on: []` refused. **The NAME carries predicate and direction** (8 hex of sha256) only when
-  one is present; the dedup is on the whole `IndexDef`; names are bounded at 63 BYTES
-  (`MAX_IDENTIFIER_BYTES`, `index-name.ts`).
+- **A relation is a foreign key read a second way** (`relations.ts`); never parse
+  `"<table>.<column>"` back. †
+- **An index is described whole** (`IndexDescription`); names bounded at 63 BYTES
+  (`index-name.ts`). †
 - **Every physical name is checked, including the DERIVED one** (`assertColumnName` at `bindColumn`,
   and on the entity-name table fallback).
 - **One resolver decides a physical name: `columnName(property, meta)`** (with
@@ -157,17 +127,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Do not regress — tenancy and writes
 
-- **A tenant column means every query runs under the ACTING ACTOR's tenant** (`scopedPlan`,
-  `tenancy.ts`, from `tryUseContext()?.actor.orgId`); inference applies when undeclared; **the column
-  may not be nullable** (`resolveTenantColumn`). A caller-supplied `orgId` is an assertion
-  (`X_TENANCY_ACTOR_MISMATCH` when different, `eq` only, refused never overridden); an actor with no
-  org is `X_TENANCY_ACTOR_ORG_REQUIRED`; outside a request the caller names the tenant and
-  `X_TENANCY_UNSCOPED` still refuses an unscoped plan.
-- **Tenancy applies to writes in two places**: the plan bounds WHICH rows; `assertRowTenant` judges the
-  VALUE at every write seam (both drivers), a filtered update judging the PATCH before any row; refuse,
-  never stamp; all or nothing; the incoming rows too; before the statement exists
-  (the suite, `pg-driver-tenancy.live.test.ts`). With the conflict-target rule, a
-  cross-tenant upsert is unrepresentable.
+- **A tenant column means every query runs under the ACTING ACTOR's tenant** (`scopedPlan`); a
+  caller's `orgId` is an assertion (`X_TENANCY_ACTOR_MISMATCH`), never an override. †
+- **Tenancy applies to writes in two places**: the plan bounds WHICH rows; `assertRowTenant`
+  judges the VALUE at every write seam — refuse, never stamp. †
 - **A reference stays inside its tenant** (`sameTenantOf`, `describe.ts`, at describe time): `sameTenant` is `null` on the record and ABSENT on the column otherwise (the hash). `entity()` never resolves a thunk at declaration. Memory (`memory-same-tenant.ts`) refuses only a target FOUND elsewhere. The suite, `same-tenant.live.test.ts`.
 - **`lock`/`lockKey`**: optional on `Repo`, required on `Table` (`table-locks.ts`, `X_LOCK_UNSUPPORTED`); `pg-lock.ts`, `memory-lock.ts` (`update`/`delete` queue too, the filtered writes do not), one tenant derivation (`lock-key.ts`, via `readPlan`). the suite, `pg-lock-attribution.test.ts`, `lock.live.test.ts`, `lock-seams.test.ts`. Why: `docs/history/entity.md` (2026-11-02).
 - **`crossTenant(reason, fn)` is the ONE way to read across tenants** — an `asyncContext` scope from
@@ -181,14 +144,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **Every instant the write path stamps comes from `entityNow()`** (`clock.ts`, `ctx.clock`).
   **`touch()` in `touch.ts` is the ONE place `onUpdateNow()` columns are stamped.**
   **Both repositories parse a patch at the door** (`$parsePatch`): `$parse`'s issues, no default, a fragment refused.
-- **A many-row write is one statement** (`insertStatement` builds every insert; `bulk-write.ts`
-  decides in property space): a collision overwrites everything but the conflict target, the PK and the
-  soft-delete stamp; the target must be a declared non-partial unique constraint (PK, `$indexes`, or a
-  `kind: 'unique'` invariant); under `'update'` the tenant column must be in the target
-  (`X_TENANCY_UNSCOPED`), a repeated target and an uneven batch are refused; NULL in the target
-  collides with nothing; memory judges the whole batch first; past `MAX_BIND_PARAMETERS` it is several
-  statements in ONE transaction (`bulk-write-send.ts`). **`db.*.upsertAll` and `seed.upsert`
-  overwrite what the caller NAMED** (`overwrittenBy`). Full rule: `docs/history/entity.md`.
+- **A many-row write is one statement** (`bulk-write.ts`); the conflict target is a declared
+  non-partial unique; `upsertAll` overwrites what the caller NAMED. †
 - **`memoryTransactor().run` is ambient** (`memory-journal.ts`): a write naming no `tx` joins it; a nested
   commit hands its undos and effects up; a write after the root ended is `X_DB_TRANSACTION_CLOSED`; a
   row lock taken with no tx is held to the root. `memory-journal.test.ts`, `memory-transactor.test.ts`.
@@ -202,16 +159,20 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   (`assertShared`, `describe.ts`); the reach check is the CLI's `exercise-static.ts`
   (`X_ENTITY_TENANT_UNDECLARED`), over `EntityDescription.shared`.
 - **`scan: '<why>'`**: a table read whole (`assertScan`).
-- **A seed is replayable**: `SeedContext.insert` is one `upsertAll(…, { onMatch: 'nothing' })` per
-  call; a generated PK the row does not name is refused; `upsert` reads with `includeDeleted` and
-  SKIPS a soft-deleted match. **A dry run is the real run rolled back**
-  (`Driver.transactor()`, REQUIRED). Full rule: `docs/history/entity.md`.
+- **A seed is replayable**; a dry run is the real run rolled back (`Driver.transactor()`). †
 - **`row-observer.ts` emits committed row changes above the driver** as `entity.row` on core's bus
   (`EntityRowEvent`), applied by `database()`; one map read per write with no subscriber, `before`
   only when the PK is `id`, a filtered write is `entity.bulk`. No slot (v31,
   `X_INSTRUMENT_SLOT_FORBIDDEN`). Not a second change-feed path. `crossTenant()` emits
   `entity.cross_tenant` once the capability is proven; `memory-observed.ts` emits `db.statement`
   for the memory driver.
+- **Search mirroring is `search-mirrored-repo.ts`, beneath the observer and at commit**
+  (`write-commit.ts`), never the bus; a driver answers a delete's or filtered write's rows only inside
+  `collectWrittenRows` (`search-written-rows.ts`). `search-mirror-batch.ts` merges a transaction's ops
+  per key; `committed` documents replace tombstones; `rowKey` spells an instant in ISO (`keyOf`). A
+  searchable entity's version is STRICTLY increasing per row: `advanceVersion` (memory, `defineDriver`,
+  `DriverRepo.update`'s `advance`) and `greatest(…, col + interval '1 millisecond')` (`pg-write-sql.ts`)
+  — `search-version-monotonic.test.ts`.
 - **`appendOnly: true`** (`append-only.ts`): `appendOnlyRepo` wraps OUTSIDE `sealedRepo` in both
   drivers; every rewrite rejects before any statement (`X_ENTITY_APPEND_ONLY`). No bypass, backfills
   included. Full rule: `docs/history/entity.md`.
@@ -244,31 +205,22 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `sealedRepo(entity, repo)`, which seals rows and patches going in, opens rows coming out and
   rewrites or refuses every predicate. A driver never seals for itself; an entity with no sealed
   column gets its repository back untouched. The cipher is core's (`scripts/seal-calls.ts`).
-- **A sealed column's `$parse` passes a sealed string and judges a plaintext**; `decodeRow` parses
-  none. `sealValue` runs the UNWRAPPED plaintext parser (`$meta.sealed.plaintext`) BEFORE sealing — nothing
-  after can, and the column's own `$parse` would pass a sealed-shaped lookalike.
+- **A sealed column's `$parse` passes a sealed string and judges a plaintext**; `sealValue` parses
+  the plaintext BEFORE sealing. †
 - **No reading of an unsealed value.** Not sealed is `X_SEAL_INVALID`; existing plaintext is
   expand → `backfill()` → contract (README). No `legacy` option.
-- **Purpose is `entity:<table>.<column>`, physical names** (`sealed.ts`). **Sealing is not on
-  `$describe()`**: it changes no DDL, so it must not move the drift hash — the manifest and
-  `x doctor` read `sealedFields(entity)`. Only `check`/`length` leave the description.
+- **Purpose is `entity:<table>.<column>`; sealing is not on `$describe()`** (no drift move). †
 - **A sealed property on a repository row is SERVER-ONLY**, not enumerable (`sealed.ts`): above the seam copy with `copyRow` / `pickRow`, never `{ ...row }`. Full rule: `docs/history/entity.md`.
 - **Nothing sealed leaves**: `$schema` (node and parsed value; typed `WireRow` on `Entity`,
   `unknown` on `EntityCore`), `$view` (`X_ENTITY_SEALED_IN_VIEW`), `rowsOf`, the row observer, and
   the repository row itself (above). `sealed-egress.test.ts` here and one per consuming package.
-- **Opaque: NULL tests only. `lookup`: also `eq` / `in`, `.unique()`, an unordered index.**
-  Refused at the type (`SealedKeysOf<C>` on `ReadBuilder`, `type-pins.ts`) AND at runtime
-  (`X_ENTITY_SEALED_PREDICATE`). A filtered write's FILTER refuses both kinds. Declaration rules
-  are `sealed-column.ts` (the chain) and `sealed-declaration.ts` (the entity).
+- **Opaque: NULL tests only. `lookup`: also `eq` / `in`** — refused at the type and at runtime
+  (`X_ENTITY_SEALED_PREDICATE`). †
 
 ## Do not regress — records and tests
 
-- **An entity row on the client is a RECORD, derived** (`row-schema.ts`, `ENTITY_BRAND` =
-  `Symbol.for('ultimate.entity')` on the NODE, re-branded by the five copying methods; a partial row is
-  never a record — `rows-of.test.ts`). `rowsOf` answers type → record key → row (null-prototype).
-  `persist` defaults `false`, read only off the projection. **The browser path is
-  `@ultimat3/entity/record`**, whose modules import `entity-error.ts`, never `errors.ts`
-  (`record-bundle.test.ts`).
+- **An entity row on the client is a RECORD, derived** (`row-schema.ts`); the browser path is
+  `@ultimat3/entity/record`, importing `entity-error.ts`, never `errors.ts`. †
 - Never throw a bare `Error` — use `errors.ts`. `X_DB_DRIFT` is `@ultimat3/db`'s, factory included.
 - **Tests restore the registry with a FILE-scope `afterAll(() => { clearRegistry(); })`** — matched on
   exact text by `live-registry-cleanup.test.ts`; never inside a skippable suite's teardown.

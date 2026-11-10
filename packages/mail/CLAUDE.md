@@ -7,7 +7,6 @@
 | File | Single responsibility |
 |---|---|
 | `mail.ts` | `defineMail`, the registry, `send` / `sendById` / `renderMessage` |
-| `templates/` | the six framework mails, as data |
 | `blocks.ts` | the template vocabulary: `MailBlock`, `blocks`, `MailTemplate`, `TemplateArgs` |
 | `render.ts` | blocks → HTML **and** text, plus the layout call and the footer slots |
 | `layout.ts` | `MAIL_TOKENS` (light + dark), the 600px table shell, layout registry |
@@ -24,7 +23,7 @@
 | `delivery-event-errors.ts` | the three receiver refusals (`X_MAIL_EVENT_*`) |
 | `sns-signature.ts` | SNS message verification: topic allow-list, pinned cert URL, canonical string, RSA v1/v2 |
 | `sns-certificate-cache.ts` | the downloaded SNS certificates, bounded against forgery floods |
-| `x509-spki.ts` | the public key out of a PEM certificate (Web Crypto imports no certificate) |
+| `x509-spki.ts` | PEM → SPKI over core's `x509Spki` (Web Crypto imports no certificate) |
 | `ses-event-receiver.ts` | `sesEventReceiver`: body → verify → normalise; SubscriptionConfirmation |
 | `delivery-event-ses.ts` | SES notification JSON (`notificationType` or `eventType`) → events |
 | `resend-signature.ts` | Svix verification: HMAC over `id.timestamp.body`, constant-time, then the window |
@@ -69,7 +68,8 @@
   every access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - `SendOptions.locale` is non-optional in the type. Never relax it, never default it.
 - Text part is derived from blocks and must be non-empty (`X_MAIL_TEXT_MISSING`).
-- No literal user-facing string in `templates/` or `layout.ts` — keys only.
+- No literal user-facing string in a template or `layout.ts` — keys only. The package ships no mails
+  (v31 deleted the six framework ones); `catalog.ts` holds the footer keys alone.
 - No hex outside `MAIL_TOKENS`. Base styling is inlined (clients strip `<style>`); dark mode is
   one `prefers-color-scheme` block keyed on short `data-x` role codes.
 - Never format a date without `options.tz`. The `Date:` header is UTC, stated as `+0000`.
@@ -151,7 +151,7 @@
   Exactly the three-answers split this rule was lifted out of `mime.ts` to close.
 - **`registerLayout` refuses a second claim on a name** (`X_MAIL_DUPLICATE`, `mailLayoutDuplicate`).
   `layouts.set` answered whichever registration ran LAST, `base` included, so a dependency that
-  registered `base` silently re-shelled every framework mail with no error anywhere and nothing to
+  registered `base` silently re-shelled every mail with no error anywhere and nothing to
   grep for. `defineMail` refuses a duplicate id one file over for the identical reason, and
   `@ultimat3/mcp`'s `ResourceRegistry.register` states the general rule. **Breaking for an app that
   registered one name twice** — the old behaviour was pinned by a test called "last writer wins",

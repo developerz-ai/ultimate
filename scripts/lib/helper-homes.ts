@@ -28,6 +28,8 @@ export interface HelperHome {
   readonly home: string;
   /** Offsets of every copy in a file — each rule decides which view it reads. */
   readonly find: (views: Views) => readonly number[];
+  /** Modules besides `home` that may declare it, each with its reason beside the row. */
+  readonly exempt?: readonly string[];
 }
 
 const offsets = (text: string, pattern: RegExp): number[] =>
@@ -64,6 +66,19 @@ const GRANT_READ = /\.startsWith\s*\(|\bresourceOf\s*\(|\.split\(\s*(['"`]):\1\s
 const around = (text: string, first: RegExp, second: RegExp, window: number): number[] =>
   offsets(text, first).filter((index) =>
     second.test(text.slice(Math.max(0, index - window), index + window)),
+  );
+
+/**
+ * DER's long-form length, as three signals together: the high bit tested (`& 0x80`), the octet
+ * count masked out (`& 0x7f`), and the length accumulated a whole byte per step. A varint shifts
+ * by 7; TOTP's truncation masks `0x7f` but never tests `0x80`.
+ */
+const LONG_FORM_TEST = /&\s*(?:0x80|128)\b/gi;
+const LENGTH_OCTETS = /&\s*(?:0x7f|127)\b/i;
+const BYTE_ACCUMULATE = /\*\s*(?:256|0x100)\b|<<\s*8\b/i;
+const derLengthWalks = (text: string): number[] =>
+  around(text, LONG_FORM_TEST, LENGTH_OCTETS, 200).filter((index) =>
+    BYTE_ACCUMULATE.test(text.slice(Math.max(0, index - 400), index + 400)),
   );
 
 export const HELPER_HOMES: readonly HelperHome[] = [
@@ -152,12 +167,32 @@ export const HELPER_HOMES: readonly HelperHome[] = [
     // (`isWildcardScope`, the index's `push`) has no prefix read beside it and is not a copy.
     find: ({ stripped }) => around(stripped, WILDCARD_TEST, GRANT_READ, 160),
   },
+  {
+    helper: 'x509Spki',
+    home: 'packages/core/src/der.ts',
+    // `masked`: the walk is code. `@ultimat3/auth`'s SAML key and `@ultimat3/mail`'s SNS key each
+    // carried a private DER reader until 31.0.0; a parser of network bytes with two copies is one
+    // whose bounds check drifts.
+    find: ({ masked }) => derLengthWalks(masked),
+  },
+  {
+    helper: 'JsonValue',
+    home: 'packages/schema/src/json-value.ts',
+    // `masked`: a declaration is code. cli, manifest and render each restated the readonly union
+    // until 31.0.0 (plan 101 D6); a re-export (`export type { JsonValue }`) is not a declaration.
+    find: ({ masked }) => offsets(masked, /\b(?:type\s+JsonValue\s*=|interface\s+JsonValue\b)/g),
+    // realtime's is the MUTABLE wire domain its local store writes into, and realtime does not
+    // depend on schema. A held divergence, named here so it is a decision and not an oversight.
+    exempt: ['packages/realtime/src/json.ts'],
+  },
 ];
 
 const finding = (file: HelperSource, rule: HelperHome, index: number): Finding => {
   const from = rule.home.startsWith('packages/core/')
     ? '@ultimat3/core'
-    : '@ultimat3/render/server';
+    : rule.home.startsWith('packages/schema/')
+      ? '@ultimat3/schema'
+      : '@ultimat3/render/server';
   return {
     code: 'X_HELPER_COPY',
     cause: `${file.at}:${lineOf(file.text, index)} is a second ${rule.helper} — ${rule.home} is its one implementation, and copies of it had already drifted apart`,
@@ -175,7 +210,7 @@ export function checkHelperHomes(file: HelperSource): readonly Finding[] {
   const views: Views = { masked: maskLiterals(file.text), stripped: stripComments(file.text) };
   const hits: { readonly rule: HelperHome; readonly index: number }[] = [];
   for (const rule of HELPER_HOMES) {
-    if (rule.home === file.at) continue;
+    if (rule.home === file.at || rule.exempt?.includes(file.at) === true) continue;
     const found = rule.find(views);
     if (found.length > 0) hits.push({ rule, index: Math.min(...found) });
   }

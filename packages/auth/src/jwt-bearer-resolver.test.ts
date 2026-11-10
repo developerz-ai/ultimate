@@ -3,7 +3,7 @@
 // first: each names the check that refused it in one log line, and no line carries the token.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { EnvMissingError, frozenClock, setLogSink } from '@ultimat3/core';
+import { EnvMissingError, frozenClock, installLogSink } from '@ultimat3/core';
 import { jwksClient } from './jwks';
 import { type JwtBearerResolverOptions, jwtBearerResolver } from './jwt-bearer-resolver';
 import { actorFromService } from './policy-bridge';
@@ -52,13 +52,15 @@ const CLAIMS = {
 };
 
 let lines: Record<string, unknown>[] = [];
-let previous: ReturnType<typeof setLogSink> | undefined;
+let releaseLogSink: (() => void) | undefined;
 beforeEach(() => {
   lines = [];
-  previous = setLogSink((line) => lines.push(JSON.parse(line) as Record<string, unknown>));
+  releaseLogSink = installLogSink((line) =>
+    lines.push(JSON.parse(line) as Record<string, unknown>),
+  );
 });
 afterEach(() => {
-  if (previous !== undefined) setLogSink(previous);
+  if (releaseLogSink !== undefined) releaseLogSink();
 });
 
 const options = async (

@@ -48,7 +48,7 @@ const declared = (
     tenant: 'none',
     input: passthrough<{ readonly id: string }>(),
     idempotencyKey: (input) => input.id,
-    retry: { attempts: 1, jitter: false, deadLetter: true },
+    retry: { attempts: 1, jitter: 'none', deadLetter: true },
     run,
     ...extra,
     async onSettled(settled) {
@@ -116,7 +116,7 @@ describe('onSettled has a ceiling of its own', () => {
       tenant: 'none',
       input: passthrough<{ readonly id: string }>(),
       idempotencyKey: (input) => input.id,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       onSettledTimeout,
       run: () => Promise.resolve('ok'),
       // The dead host: it waits on `ctx.signal`, and only that signal can end it.
@@ -161,7 +161,7 @@ describe('onSettled has a ceiling of its own', () => {
       tenant: 'none',
       input: passthrough<{ readonly id: string }>(),
       idempotencyKey: (input) => input.id,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       onSettledTimeout: 20,
       run: () => Promise.resolve('ok'),
       onSettled: ({ ctx }) => {
@@ -183,7 +183,7 @@ describe('onSettled has a ceiling of its own', () => {
       tenant: 'none',
       input: passthrough<{ readonly id: string }>(),
       idempotencyKey: (input) => input.id,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       onSettledTimeout: 20,
       run: () => Promise.resolve('ok'),
       onSettled: () => new Promise<void>(() => undefined),
@@ -202,7 +202,7 @@ describe('onSettled has a ceiling of its own', () => {
       tenant: 'none',
       input: passthrough<{ readonly id: string }>(),
       idempotencyKey: (input) => input.id,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       onSettledTimeout: 10,
       run: () => Promise.resolve('ok'),
       // Writes once the ceiling has passed, as a hook that ignored its signal until then does.
@@ -231,7 +231,7 @@ describe('onSettled has a ceiling of its own', () => {
           tenant: 'none',
           input: passthrough<{ readonly id: string }>(),
           idempotencyKey: (input) => input.id,
-          retry: { attempts: 1, jitter: false },
+          retry: { attempts: 1, jitter: 'none' },
           onSettledTimeout,
           run: () => Promise.resolve('ok'),
           onSettled: () => Promise.resolve(),
@@ -249,7 +249,7 @@ describe('onSettled has a ceiling of its own', () => {
         tenant: 'none',
         input: passthrough<{ readonly id: string }>(),
         idempotencyKey: (input) => input.id,
-        retry: { attempts: 1, jitter: false },
+        retry: { attempts: 1, jitter: 'none' },
         onSettledTimeout: 2 ** 31 + 5,
         run: () => Promise.resolve('ok'),
         onSettled: async ({ ctx }) => {

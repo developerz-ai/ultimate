@@ -4,7 +4,8 @@
 // a driver, as the call does, and is not the primitive's enqueue either.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { action, registerActions, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { registerActions } from '@ultimat3/action/loader';
 import { useContext } from '@ultimat3/core';
 import { clearRegistry, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';

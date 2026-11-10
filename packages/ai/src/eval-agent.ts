@@ -66,7 +66,7 @@ export function agentPrompt(agent: AnyAction, evalName: string): Prompt {
   assert(
     prompt !== undefined,
     `defineEval "${evalName}" names an agent whose prompt is not registered: an action agent() did not build, a named() twin, or a prompt reset since`,
-    `registerAction('<name>', agent({ … })) and pass that action to defineEval({ agent })`,
+    `export the agent({ … }) from a module defineApi({ actions }) registers, and pass that action to defineEval({ agent })`,
   );
   return prompt;
 }

@@ -4,7 +4,8 @@
 // token over MCP. This file drives both real surfaces with the same tokens and compares the sets.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, listActions, registerAction, resetActions, toRoute } from '@ultimat3/action';
+import { action, listActions, resetActions, toRoute } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   bearerMount,

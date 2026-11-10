@@ -84,6 +84,13 @@ describe(testName('unit', 'an audit sink that breaks the contract fails conforma
     await read.run(memorySubject());
   });
 
+  test("a sink that files a job's own write as an action", async () => {
+    const actionsOnly = memorySubject((record) => ({ ...record, primitive: 'action' }));
+    const job = check("keeps every fact of a job's own write");
+    await expect(job.run(actionsOnly)).rejects.toThrow();
+    await job.run(memorySubject());
+  });
+
   test('a persisting sink that stores the input verbatim', async () => {
     const leaky = check('a persisting sink never stores');
     await expect(leaky.run(memorySubject(undefined, true))).rejects.toThrow();

@@ -2,11 +2,8 @@
 // `x.manifest.json`; every checker here reports against `file`, so an agent can
 // open the exact source rather than guess which route a URL came from.
 
-import type { RenderMode } from '@ultimat3/core';
+import type { RenderMode, Surface } from '@ultimat3/core';
 import type { RouteMeta } from './meta';
-
-/** `site/` is the only surface SEO applies to; `app/` is behind auth. */
-export type Surface = 'site' | 'app' | 'api';
 
 export type ChangeFreq = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
@@ -34,7 +31,8 @@ export interface RouteRecord {
   path: string;
   /** Source file relative to the app root — named verbatim in every error. */
   file: string;
-  surface: Surface;
+  /** `site/` is the only surface SEO applies to; `app/` is behind auth. `shared/` holds no route. */
+  surface: Exclude<Surface, 'shared'>;
   render: RenderMode;
   meta?: RouteMeta;
   /** The route's concrete pages, from `defineRoute({ prerender })` — required for a dynamic one. */

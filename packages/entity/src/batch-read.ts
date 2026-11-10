@@ -46,7 +46,19 @@ export const keyOf = (kind: string, value: unknown): string => {
   if (kind === 'uuid') return String(value).toLowerCase();
   if (kind === 'integer' || kind === 'bigint') return canonicalInteger(value) ?? String(value);
   if (kind === 'numeric') return canonicalDecimal(value) ?? String(value);
+  if (kind === 'timestamptz') return canonicalInstant(value) ?? String(value);
   return String(value);
+};
+
+/**
+ * An instant as ISO 8601 in UTC — a `Date` and its ISO text are one key. `String(date)` was the
+ * process time zone's spelling: a partitioned table's key held a different id per server, and a
+ * search index's id could not be read back into the value it named.
+ */
+const canonicalInstant = (value: unknown): string | undefined => {
+  const ms =
+    value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 };
 
 /** A scope value has to be comparable as a string, or two scopes cannot be told apart. */

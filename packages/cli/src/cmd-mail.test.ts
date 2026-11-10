@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import { resetDeclaredTags } from '@ultimat3/cache';
+import { isUltimateError } from '@ultimat3/core';
 import { blocks, defineMail, t } from '@ultimat3/mail';
 import { clearRoutes } from '@ultimat3/render';
 import { clearStylesheets } from '@ultimat3/render/server';
@@ -93,6 +94,9 @@ describe('x mail preview', () => {
 
   test('no id is a missing positional; an unknown id is the mail registry’s own refusal', async () => {
     await expect(mailCommand.run(context(['preview']))).rejects.toBeUltimateError('X_CLI_BAD_FLAG');
+    // The fix names the app's own id: v31 deleted the framework mails it once pointed at.
+    const missing = await mailCommand.run(context(['preview'])).catch((error: unknown) => error);
+    expect(isUltimateError(missing) ? missing.fix : missing).toContain('defineMail({ id })');
     await expect(
       mailCommand.run(context(['preview', 'no.such-mail', '--locale', 'en'])),
     ).rejects.toBeUltimateError('X_MAIL_TEMPLATE_UNKNOWN');

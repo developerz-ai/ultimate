@@ -14,7 +14,7 @@ project if either of them stops.
 |---|---|
 | **the owner**: [developerz.ai](https://developerz.ai), the `developerz-ai` GitHub organisation and its owners | the design axioms (`CLAUDE.md`), the eight primitives, the tier table, what the project is for; repository and npm settings; this page |
 | **the maintainer bot**: the developerz.ai platform, under the policy committed in [`.dz/maintainer/maintainer.yml`](.dz/maintainer/maintainer.yml) | triage, review, fixes, merges, and whether a week's merges are worth a release |
-| **CI**: `x verify` on every pull request ([`ci.yml`](.github/workflows/ci.yml)) | whether a change is shippable. Merging only on green is the convention, not a lock: `main` has no required checks or branch protection today (`.dz/maintainer/maintainer.yml`), and requiring them is an owner setting |
+| **CI**: `x verify` on every pull request ([`ci.yml`](.github/workflows/ci.yml)) | whether a change is shippable. Merging only on green is the convention, not a lock: `main`'s `main-protection` ruleset refuses deletion and force-push and requires no status check, `As of 2026-11-10` (`gh api repos/developerz-ai/ultimate/rules/branches/main --jq '[.[].type]'`); requiring `verify` is an owner setting |
 
 The owner comes back with new ideas once or twice a year. In between, the bot is the maintainer
 a contributor meets.

@@ -4,7 +4,8 @@
 // must answer byte for byte what the flat `tools/call` answers.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import type { McpEffect } from '@ultimat3/core';
 import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
@@ -14,7 +15,8 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpAuditEvent } from './audit-hook';

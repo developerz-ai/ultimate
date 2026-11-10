@@ -877,7 +877,7 @@ describeAgents();
 
 An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*. `modelFrom` says which place answered `model` — `declaration`, `prompt` or `gateway`, or `run` (with `model: null`) when `model` is a function each run asks; both are `null` when none names one yet (a call in that state is refused). `gateway` and `null` are as of the gateway installed when the row is read. Reading a row never throws.
 
-Names are read when you ask, not when the agent was declared: `registerAction` stamps them at boot, long after `agent()` ran at module scope. An agent nothing registered has **no row**, and that is not a silent drop — an action with no name reaches no route, no tool catalogue and no queue, so there is no capability for a row to describe. Register it: `registerAction('supportAgent', support)`.
+Names are read when you ask, not when the agent was declared: `defineApi` stamps them at boot, long after `agent()` ran at module scope. An agent nothing registered has **no row**, and that is not a silent drop — an action with no name reaches no route, no tool catalogue and no queue, so there is no capability for a row to describe. Register it: list its module in `defineApi({ actions })` (`apps/<app>/api/index.ts`).
 
 ## No semantic cache
 

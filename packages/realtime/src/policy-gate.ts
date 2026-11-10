@@ -9,7 +9,7 @@
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import { guardQuery, QueryDeniedError, type QueryPolicy, type QuerySubject } from '@ultimat3/query';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 
 export interface GateOptions {
   /** Query name, for the denial reason and the policy trace. */
@@ -34,7 +34,7 @@ export function authorizeWithPolicy(
  * query. The row travels as `row`, the same field an HTTP or job row rule reads: a predicate is
  * written once as `({ actor, row }) => …` and works on every surface.
  */
-export function visibleWithPolicy<R extends Row = Row>(
+export function visibleWithPolicy<R extends LiveRow = LiveRow>(
   policy: QueryPolicy,
   options: GateOptions,
 ): (args: { actor: Actor | null; row: R; input: JsonValue }) => Promise<boolean> {

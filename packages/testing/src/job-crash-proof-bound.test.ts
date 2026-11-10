@@ -43,7 +43,7 @@ function sweep(
     input: t.object({ at: t.string }),
     tenant: 'none',
     idempotencyKey: (input) => `sweep:${input.at}`,
-    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: false },
+    retry: { attempts: 3, backoff: 'fixed', delay: 0, jitter: 'none' },
     run: async ({ step }) => {
       attempts += 1;
       await step.run('load', () => rows);

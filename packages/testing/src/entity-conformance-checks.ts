@@ -9,6 +9,7 @@ import { MATRIX_CHECKS } from './entity-conformance-matrix';
 import { READ_CHECKS } from './entity-conformance-reads';
 import { TENANCY_CHECKS } from './entity-conformance-tenancy';
 import { VALUE_CHECKS } from './entity-conformance-values';
+import { VERSION_CHECKS } from './entity-conformance-versions';
 import { WRITE_CHECKS } from './entity-conformance-writes';
 import type { EntityDriverCheck } from './entity-driver-conformance';
 
@@ -22,4 +23,5 @@ export const ENTITY_DRIVER_CHECKS: readonly EntityDriverCheck[] = [
   ...BATCH_CHECKS,
   ...LOCK_CHECKS,
   ...MATRIX_CHECKS,
+  ...VERSION_CHECKS,
 ];

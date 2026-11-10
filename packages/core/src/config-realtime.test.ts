@@ -49,3 +49,21 @@ describe('realtime.maxSocketsPerActor', () => {
     expect(said).toContain('realtime.maxSocketsPerActor');
   });
 });
+
+describe('realtime.maxQueued', () => {
+  test("an app may set the page outbox's ceiling; unset is no ceiling", () => {
+    expect(defineConfig({ name: 'app', realtime: { maxQueued: 200 } }).realtime.maxQueued).toBe(
+      200,
+    );
+    expect(defineConfig({ name: 'app' }).realtime.maxQueued).toBeUndefined();
+  });
+
+  test.each([0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY, '200'])(
+    '%p is refused, naming the key',
+    (value) => {
+      const said = refusal({ maxQueued: value });
+      expect(said).toStartWith('X_CONFIG_INVALID');
+      expect(said).toContain('realtime.maxQueued');
+    },
+  );
+});

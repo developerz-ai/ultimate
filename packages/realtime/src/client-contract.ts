@@ -7,7 +7,7 @@ import type { CatchUpRecords } from './channel-catch-up';
 import type { LiveCursor } from './cursor';
 import type { LiveState } from './live-rows';
 import type { RecordStore } from './record-store';
-import type { BackoffPolicy, Rng, Scheduler } from './thundering-herd';
+import type { ReconnectBackoff, Rng, Scheduler } from './thundering-herd';
 
 /**
  * A reactive primitive: `createSignal` narrowed to two functions. Installed PER ISLAND BUNDLE
@@ -65,7 +65,7 @@ export interface LiveClientOptions {
   /** The page's record store every window renders out of. A client builds its own when absent. */
   readonly store?: RecordStore;
   /** Default `browserBackoff`: capped at `BROWSER_RECONNECT_MAX_MS`, never the server's 30s. */
-  readonly backoff?: BackoffPolicy;
+  readonly backoff?: ReconnectBackoff;
   readonly rng?: Rng;
   readonly clock?: Clock;
   /** How a pending reconnect is armed. Defaults to `setTimeout`; tests fire theirs by hand. */

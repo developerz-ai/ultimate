@@ -28,7 +28,7 @@ import { outageRig, waitFor } from './sync-outage-rig-fixture';
 const url = Bun.env['TEST_NATS_URL'];
 const BUCKET = 'xblackhole';
 /** Zero wait: the library redials once `lastConnect + wait <= Date.now()`, and the preload freezes it. */
-const NO_WAIT = { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' } as const;
+const NO_WAIT = { base: 0, max: 0, factor: 1, jitter: 'none' } as const;
 
 /** The configured window: every ping interval up to and including the one that gives up. */
 const DETECTION_MS = PING_INTERVAL_MS * (MAX_PINGS_OUT + 1);

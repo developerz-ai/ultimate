@@ -58,7 +58,7 @@ const rig = (sessions: FakeStream[]) => {
     lock,
     transport: new InProcessTransport(),
     schedule,
-    backoff: { baseMs: 100, maxMs: 1_000, factor: 2, jitter: 'none' },
+    backoff: { base: 100, max: 1_000, factor: 2, jitter: 'none' },
   });
   return {
     walsenders,

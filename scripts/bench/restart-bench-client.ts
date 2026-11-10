@@ -13,14 +13,7 @@ import { browserBackoff, decode, encode, PROTOCOL_VERSION } from '@ultimat3/real
  * its own 0-based `backoffDelay` in 22.0.0 (two counting conventions under one name).
  */
 const browserDelay = (failures: number): number =>
-  backoffDelay({
-    attempt: failures + 1,
-    base: browserBackoff.baseMs,
-    max: browserBackoff.maxMs,
-    factor: browserBackoff.factor,
-    curve: 'exponential',
-    jitter: browserBackoff.jitter,
-  });
+  backoffDelay({ ...browserBackoff, attempt: failures + 1 });
 
 import { BENCH_CHANNEL, BENCH_ROOM } from './restart-bench-channel';
 import {

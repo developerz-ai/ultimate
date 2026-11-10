@@ -308,14 +308,13 @@ nothing here answers `immutable`: `/media` once did on a shared key, and a CDN t
 strangers for a year and never refreshed it. A public image is an `asset()`, or your own route over
 `objectResponse`.
 
-## Attachments, quarantine, orphans
+## Attachments and orphans
 
 An upload lands under `org/<org>/pending/…` before its row exists, and is promoted once it has one:
 
 | Call | Does |
 |---|---|
 | `promoteAttachment({ disk, key, orgId, target, policy })` | measure, copy, then delete, onto `org/<org>/<entity>/<id>/<field>/…`. **`policy` is required** — pass the one the upload was granted under: the object's size is read with `stat()` and one over `policy.maxBytes` is `X_STORAGE_TOO_LARGE` and stays pending. Only a **pending** key: another row's attached key is `X_STORAGE_NOT_PENDING`. A second call for a key an earlier call already moved is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`) and touches nothing: answer the row that holds that key, and never delete it in your own cleanup |
-| `grantUpload({ …, quarantine: true })` → `releaseQuarantine({ disk, key, orgId })` | the place for your scanner: a quarantined key cannot be promoted (`X_STORAGE_QUARANTINED`) until your scan job releases it. The scanner is your app's (axiom 8) |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | deletes stale `pending/` keys of one org and answers `{ deleted, failed }` — a refused delete is reported, never counted as done |
 | `deleteVariants({ disk, key })` | deletes every stored variant of one source, of every revision, and answers `{ deleted, failed }`. The source is yours to delete. A variant keeps its source's prefix, so an org-wide erasure by prefix already collects them |
 
@@ -341,7 +340,7 @@ does not pass. Bytes past the window are not sniffed on any path through promoti
 | over 4,096 bytes of leading whitespace (`MAX_LEADING_WHITESPACE`), on every path | no real file opens that way, and past the window nothing is seen |
 | a disk whose `maxGetBytes` is under the window | its own `X_STORAGE_TOO_LARGE`: the ceiling bounds the range |
 
-A grant with a `target` has no promotion step: [Known gaps](Known-Gaps).
+A grant with a `target` has no promotion step: [Known gaps](Known-Gaps). With an `uploadScanner` installed it is refused outright, by `grantUpload` and `grantMultipart` alike (`X_STORAGE_TARGET_UNSCANNED`, 500): grant with no `target` and promote.
 
 ## Scanning uploads — the `uploadScanner` port
 
@@ -351,15 +350,16 @@ Rule: an `uploadScanner` returned from `apps/<app>/runtime.ts` is asked about ev
 |---|---|
 | `{ verdict: 'clean' }` | promotes |
 | `{ verdict: 'infected', signature }` | deletes the pending upload and the scan copy; `X_STORAGE_UPLOAD_INFECTED` (422, `meta.signature`) |
-| the scanner rejects, or the copy cannot be read for it (daemon down, timeout, a reset read) | deletes the scan copy, the upload stays pending — a retry once the scanner is back is a fresh confirm; `X_STORAGE_SCAN_UNAVAILABLE` (503). Fail closed in every environment; `uploadPolicy({ onScanUnavailable: 'accept' })` promotes unscanned instead. Infected is refused under either |
+| `{ verdict: 'hold', reason }` | deletes the scan copy, the upload stays pending; `X_STORAGE_QUARANTINED` (409, `meta` `{ key, scanner, reason }`). A decision made elsewhere — a review queue, an async vendor scan — has not cleared it yet; the same confirm promotes once the scanner answers `clean`. No policy overrides it, and a `holds: true` scanner that cannot answer is `X_STORAGE_SCAN_UNAVAILABLE` even under `onScanUnavailable: 'accept'` |
+| the scanner rejects, or the copy cannot be read for it (daemon down, timeout, a reset read) | deletes the scan copy, the upload stays pending — a retry once the scanner is back is a fresh confirm; `X_STORAGE_SCAN_UNAVAILABLE` (503). Fail closed in every environment; `uploadPolicy({ onScanUnavailable: 'accept' })` promotes unscanned instead — **except for a scanner declaring `holds: true`**, whose outage always refuses: it may be the store that knows what is held. Infected and held are refused under either |
 
 | Fact | Detail |
 |---|---|
-| the port | `UploadScanner = { name, scan({ key, size, contentType, body }) → Promise<ScanVerdict> }` on `@ultimat3/storage/adapter`. "Cannot decide" is a rejection, never a verdict |
+| the port | `UploadScanner = { name, holds?, scan({ key, pendingKey, size, contentType, body }) → Promise<ScanVerdict> }` on `@ultimat3/storage/adapter`. `key` is the per-attempt scan copy, `pendingKey` the upload's own key, stable across retries — what a `hold` is decided by. "Cannot decide" is a rejection, never a verdict. A scanner that answers `hold` declares `holds: true`; a `hold` from one that did not is `X_INVARIANT`, nothing attached |
 | the reference | `memoryUploadScanner()` flags the EICAR test string (`EICAR_TEST_STRING`), across chunk boundaries |
 | prove yours | `behavesLike(uploadScannerConformance, () => yours)` from `@ultimat3/testing/conformance` |
 | ClamAV | the app's adapter (axiom 8): stream `body` to clamd's `INSTREAM` over `Bun.connect`; `stream: OK` → clean, `stream: <sig> FOUND` → infected, anything else → reject |
-| no scanner installed | nothing is scanned; the deferred `quarantine: true` + `releaseQuarantine` flow below is unchanged |
+| no scanner installed | nothing is scanned. The v30 `grantUpload({ quarantine: true })` + `releaseQuarantine` flow is deleted — a deferred decision is the `hold` verdict ([Upgrading](Upgrading) entry 57) |
 
 ```ts
 // apps/web/runtime.ts

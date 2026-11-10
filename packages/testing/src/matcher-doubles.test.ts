@@ -13,7 +13,7 @@ const nudge = job<{ readonly userId: string; readonly times: number }>({
   input: t.object({ userId: t.string, times: t.number }),
   tenant: 'none',
   idempotencyKey: (input) => `${input.userId}:${String(input.times)}`,
-  retry: { attempts: 1, jitter: false },
+  retry: { attempts: 1, jitter: 'none' },
   run: async () => 'ran',
 });
 

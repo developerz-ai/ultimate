@@ -24,7 +24,7 @@ import {
   traceLiveRead,
 } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
-import { isRow, type JsonValue, type Row } from './json';
+import { isRow, type JsonValue, type LiveRow } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { liveRecords } from './live-record-type';
 import { type IncrementalMatcher, matcherFor, type Projection } from './matcher-bridge';
@@ -64,8 +64,8 @@ interface SharedWindow {
   /** The compiled shape's root entity — the client's identity scope for every row of this read. */
   readonly rowEntity: string;
   /** Its projection's record key; `null` for a plain table keyed by `id`. */
-  readonly rowKey: ((row: Row) => string) | null;
-  read(): Promise<readonly Row[]>;
+  readonly rowKey: ((row: LiveRow) => string) | null;
+  read(): Promise<readonly LiveRow[]>;
 }
 
 /**
@@ -74,7 +74,10 @@ interface SharedWindow {
  * read it from. Learned once and kept, because the case the window's own rows cannot answer is an
  * EMPTY window: the first row to arrive would otherwise be sent as the whole table row.
  */
-const learnProjection = (): { read: () => Projection; teach: (rows: readonly Row[]) => void } => {
+const learnProjection = (): {
+  read: () => Projection;
+  teach: (rows: readonly LiveRow[]) => void;
+} => {
   let projection: Projection;
   return {
     read: () => projection,
@@ -227,8 +230,8 @@ function evictOldest(windows: Map<string, SharedWindow>, max: number): void {
  * same row (`pg-replication.ts`'s `toRow`), so a snapshot row and its later patch name one identity.
  * Anything else is refused here rather than delivered as a row nobody can patch.
  */
-function rowsOf(query: string, rows: readonly object[]): readonly Row[] {
-  const out: Row[] = [];
+function rowsOf(query: string, rows: readonly object[]): readonly LiveRow[] {
+  const out: LiveRow[] = [];
   for (const row of rows) {
     const id: unknown = (row as { id?: unknown }).id;
     const candidate =

@@ -88,13 +88,13 @@ export class QueryDeniedError extends UltimateError {
   }
 }
 
-/** Thrown when a read is used before `registerQueries()` gave it a name. */
+/** Thrown when a read is used before `defineApi()` gave it a name. */
 export class QueryUnregisteredError extends UltimateError {
   constructor() {
     super({
       code: 'X_QUERY_UNREGISTERED',
       cause: 'a query was used before it was registered, so it has no name',
-      fix: "call registerQueries(await import('./live')) at boot, before serving reads",
+      fix: "list the query's module in defineApi({ queries }) in apps/<app>/api/index.ts — the boot names it before serving reads",
     });
   }
 }

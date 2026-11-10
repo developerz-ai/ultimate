@@ -19,7 +19,7 @@ import {
 } from './declared-errors-scan';
 import { defineError } from './define-error';
 import { UltimateError } from './errors';
-import { setLogSink } from './logger';
+import { installLogSink } from './logger';
 import { collectMetrics, resetMetrics } from './metrics';
 
 const STATUS: Readonly<Record<string, number>> = {
@@ -110,7 +110,7 @@ describe('enforceDeclared', () => {
 
   test('production and an unnamed environment pass the original, warn and count', () => {
     const lines: string[] = [];
-    const previous = setLogSink((line) => lines.push(line));
+    const releaseLogSink = installLogSink((line) => lines.push(line));
     try {
       for (const environment of ['production', undefined]) {
         const thrown = coded('X_REFUND_TOO_SMALL');
@@ -120,7 +120,7 @@ describe('enforceDeclared', () => {
         expect(answered).toBe(thrown);
       }
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
     // Warned once per (name, code) per process, however many hits; the counter counts each.
     expect(lines.filter((line) => line.includes('declared-errors.undeclared'))).toHaveLength(1);

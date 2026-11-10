@@ -38,7 +38,7 @@ function gatewayOver(first: Provider, breaker?: 'off') {
   const gateway = providerGateway({
     defaultModel: FIXTURE_MODEL,
     providers: [first, echoProvider()],
-    retry: { attempts: 3, baseDelayMs: 1, maxDelayMs: 1 },
+    retry: { attempts: 3, base: 1, max: 1, jitter: 'none' },
     random: () => 0.5,
     sleep: async (ms) => {
       waits.push(ms);
@@ -110,7 +110,7 @@ describe('unit · gateway · breaker tickets', () => {
     await attemptProviders({
       model: FIXTURE_MODEL,
       candidates: [aborting],
-      retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 },
+      retry: { attempts: 1, base: 1, max: 1, jitter: 'none' },
       sleep: async () => undefined,
       random: undefined,
       gateOf: () => gate,

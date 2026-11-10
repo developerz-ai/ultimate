@@ -5,19 +5,19 @@
  * aspirational. Violations are build errors, resolved through the whole chain.
  */
 
-import type { RenderMode } from '@ultimat3/core';
+import type { RenderMode, Surface } from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import { SurfaceBoundaryError } from './errors';
 
-export type Surface = 'site' | 'app' | 'api' | 'shared';
+// Core's route vocabulary. The TYPE rides along for the boundary API's signatures; the `SURFACES`
+// value is imported from `@ultimat3/core` alone (`X_HELPER_COPY` refuses a second import path).
+export type { Surface };
 
 /**
  * The two surfaces a route file lives on. `api/` is a surface for the import boundary only: it holds
  * the action and query projections `defineApi()` collects, and no route file.
  */
 export type RouteSurface = Exclude<Surface, 'api' | 'shared'>;
-
-export const SURFACES = ['site', 'app', 'api', 'shared'] as const;
 
 export interface SurfaceSpec {
   readonly surface: Surface;

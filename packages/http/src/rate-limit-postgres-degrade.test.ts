@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { setLogSink, UltimateError } from '@ultimat3/core';
+import { installLogSink, UltimateError } from '@ultimat3/core';
 import type { Bucket } from './rate-limit';
 import { postgresRateLimitStore } from './rate-limit-postgres';
 
@@ -20,18 +20,18 @@ const failing = (error: unknown): PgExecutor => ({
 const coded = (code: string, meta?: Record<string, unknown>): UltimateError =>
   new UltimateError({ code, cause: 'the driver said no', fix: 'x doctor --json', meta });
 
-let previousSink: ReturnType<typeof setLogSink> | undefined;
+let releaseLogSink: (() => void) | undefined;
 const collect = (): string[] => {
   const lines: string[] = [];
-  previousSink = setLogSink((line) => {
+  releaseLogSink = installLogSink((line) => {
     lines.push(line);
   });
   return lines;
 };
 
 afterEach(() => {
-  setLogSink(previousSink);
-  previousSink = undefined;
+  releaseLogSink?.();
+  releaseLogSink = undefined;
 });
 
 describe('the postgres rate-limit store over an unreachable database', () => {

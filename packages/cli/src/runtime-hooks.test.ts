@@ -4,14 +4,8 @@
 // action, whose route says `enforcedBy: 'handler'` because `invoke` is its one evaluation.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import {
-  action,
-  configureActionPathStyle,
-  registerAction,
-  resetActions,
-  t,
-  toRoute,
-} from '@ultimat3/action';
+import { action, configureActionPathStyle, resetActions, t, toRoute } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { NotImplementedError, userActor } from '@ultimat3/core';
 import type { AuthzDecision, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import {

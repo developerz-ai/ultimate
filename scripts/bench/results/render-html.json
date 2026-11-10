@@ -11,18 +11,20 @@
     {
       "rows": 10000,
       "bytes": 1986254,
-      "ms": 50.92,
-      "baselineMs": 10.02,
-      "ratio": 5.1,
-      "heapMiB": 15.3
+      "ms": 62.66,
+      "baselineMs": 10.82,
+      "ratio": 5.8,
+      "heapMiB": 1.7,
+      "liveMiB": 2.2
     },
     {
       "rows": 50000,
       "bytes": 10195302,
-      "ms": 240.82,
-      "baselineMs": 51.61,
-      "ratio": 4.7,
-      "heapMiB": 49.9
+      "ms": 299.62,
+      "baselineMs": 50.51,
+      "ratio": 5.9,
+      "heapMiB": 10.3,
+      "liveMiB": 10.6
     }
   ]
 }

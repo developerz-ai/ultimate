@@ -7,7 +7,7 @@ import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { LiveCursor } from './cursor';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
@@ -39,7 +39,7 @@ const socket = (who = 'carol'): SyncSocket => {
 
 /** The table every node reads. A write lands here whether or not a node hears the change. */
 interface Table {
-  rows: Row[];
+  rows: LiveRow[];
 }
 
 interface Node {
@@ -98,7 +98,7 @@ function node(table: Table): Node {
   };
 }
 
-const write = (table: Table, row: Row, lsn: number): ChangeEvent => {
+const write = (table: Table, row: LiveRow, lsn: number): ChangeEvent => {
   const before = table.rows.find((held) => held.id === row.id) ?? null;
   table.rows = [...table.rows.filter((held) => held.id !== row.id), row];
   return {
@@ -114,7 +114,7 @@ const write = (table: Table, row: Row, lsn: number): ChangeEvent => {
   };
 };
 
-const post = (id: string, title: string): Row => ({ id, orgId: 'o1', title });
+const post = (id: string, title: string): LiveRow => ({ id, orgId: 'o1', title });
 const titles = (frame: Frame): unknown[] =>
   frame.type === 'snapshot' ? frame.rows.map((row) => row['title']).sort() : [];
 

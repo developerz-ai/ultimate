@@ -4,7 +4,7 @@
 // refused redial while the server was down grew the takeover backoff toward its 30 s cap.
 
 import { renderThrowable } from '@ultimat3/core';
-import { type BackoffPolicy, policyDelay } from './thundering-herd';
+import { policyDelay, type ReconnectBackoff } from './thundering-herd';
 
 /** The longest the replicator waits between two redials while the connection is what failed. */
 export const REPLICATOR_RECONNECT_MAX_MS = 2_000;
@@ -14,9 +14,9 @@ export const REPLICATOR_RECONNECT_MAX_MS = 2_000;
  * rest climb from 250 ms to two seconds. `equal` jitter keeps a floor, so a server still starting
  * is not asked again at once; there is one replicator per database, so there is no herd to spread.
  */
-export const reconnectBackoff: BackoffPolicy = {
-  baseMs: 250,
-  maxMs: REPLICATOR_RECONNECT_MAX_MS,
+export const reconnectBackoff: ReconnectBackoff = {
+  base: 250,
+  max: REPLICATOR_RECONNECT_MAX_MS,
   factor: 2,
   jitter: 'equal',
 };

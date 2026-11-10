@@ -70,7 +70,7 @@ describe('stop() waits out the round it races', () => {
       name: 'drainedJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `drained:${n}`,
-      retry: { attempts: 1, jitter: false },
+      retry: { attempts: 1, jitter: 'none' },
       run: async () => {
         trace.push('job:start');
         await running.passed;

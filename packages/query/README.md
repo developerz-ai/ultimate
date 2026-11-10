@@ -18,8 +18,9 @@ export const liveFeed = query({
 const rows = await liveFeed({ orgId });        // typed rows, policy enforced
 ```
 
-Register once at boot: `registerQueries(await import('./live'))`. Export names become
-query names, which the manifest, the live protocol and `/_x` all address.
+Register once at boot: `defineApi({ queries: [liveQueries] })` in `apps/web/api/index.ts`. Export
+names become query names, which the manifest, the live protocol and `/_x` all address.
+`registerQuery`/`registerQueries` are `x`'s loader's (`@ultimat3/query/loader`), never the barrel's.
 
 ## One declaration, five projections
 
@@ -220,6 +221,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `facade.ts` | binds each projection to the query; re-implements none of them |
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
+| `loader.ts` | `@ultimat3/query/loader` — `registerQuery`/`registerQueries`, for `x`'s loader and framework fixtures; never the barrel |
 | `adapter.ts` | `@ultimat3/query/adapter` — `overrideRows`, the test seam `@ultimat3/testing`'s `stub()` drives |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `MAX_WIRE_PAGE_SIZE` (500) or the read's `maxPage`; `assertMaxPage` |
@@ -780,7 +782,7 @@ or a stream with `size`, served without buffering.
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
 | `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
 | `X_INPUT_INVALID` | input failed the Standard Schema (`meta.issues` by path, at most `MAX_ISSUES`, `meta.issuesTruncated` when cut); a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries show <name> --json` |
-| `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
+| `X_QUERY_UNREGISTERED` | used before `defineApi()` named it | hand its module to `defineApi` at boot |
 | `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404, and the MCP tool's refusal (entity's code) | `x queries show <name> --json` prints the SQL |
 | `X_QUERY_SINGLE_INVALID` | `single:` declared as something other than a boolean | `single: true`, or drop the key |
 | `X_QUERY_MAX_PAGE_INVALID` | `maxPage:` not a whole number of rows from 1 to 10,000 | `query({ maxPage: 2000 })`, or drop the key for the 500-row wire cap |

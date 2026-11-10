@@ -5,6 +5,7 @@
 
 import { expect, test } from 'bun:test';
 import type { SearchScope } from '@ultimat3/entity/adapter';
+import { SEARCH_INDEX_LIST_CHECKS } from './search-index-conformance-list';
 import type { SearchIndexCheck, SearchIndexSubject } from './search-index-conformance-support';
 import {
   searchDoc as doc,
@@ -111,6 +112,7 @@ export const SEARCH_INDEX_CHECKS: readonly SearchIndexCheck[] = [
 export const SEARCH_INDEX_ALL_CHECKS: readonly SearchIndexCheck[] = [
   ...SEARCH_INDEX_CHECKS,
   ...SEARCH_INDEX_VERSION_CHECKS,
+  ...SEARCH_INDEX_LIST_CHECKS,
 ];
 
 export const searchIndexConformance: SharedExamples<

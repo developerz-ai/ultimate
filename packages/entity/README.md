@@ -587,12 +587,13 @@ await db.posts.where({ orgId }).search(term).orderBy('createdAt', 'desc').limit(
 
 ## Search index (the `searchIndex` port)
 
-`.searchable()` columns are searched through one port, `SearchIndex` (`index` / `remove` / `query`,
-every call tenant-scoped by `{ entity, tenant }`).
+`.searchable()` columns are searched through one port, `SearchIndex` (`index` / `remove` / `query`
+/ `list`, every call tenant-scoped by `{ entity, tenant }`; `list` leaving `tenant` out is every
+tenant's, the sweep's maintenance read).
 
 | Index | What it is |
 |---|---|
-| `postgresSearchIndex()` | the default: the generated `tsvector`; `index`/`remove` send nothing (the server keeps the vector), `query` is the repository's own `matches` read — tenancy, actor check and soft delete included. Hits in primary-key order (no rank) |
+| `postgresSearchIndex()` | the default: the generated `tsvector`; `index`/`remove` send nothing (the server keeps the vector), `query` is the repository's own `matches` read — tenancy, actor check and soft delete included. Hits in primary-key order (no rank). `list` pages the table itself |
 | `memorySearchIndex()` | the reference to copy and the unit-test index: words, case-folded, every word required; no stemming |
 | Meilisearch / Typesense | the app's: implement `SearchIndex`, prove it with `behavesLike(searchIndexConformance, …)` from `@ultimat3/testing/conformance`, return it as `searchIndex` from `runtime.ts` |
 
@@ -620,11 +621,13 @@ export const find = async (orgId: string, q: string) => {
 |---|---|
 | `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first (at most `MAX_PAGE_SIZE`), then the chain reads those rows with its own tenancy, soft delete, order and cursor |
 | a document has a **version** | the row's `onUpdateNow()` instant, epoch ms. A searchable entity indexed by anything declares one — `updatedAt: timestamp().defaultNow().onUpdateNow()` — or `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
-| keep only newer | an index applies a document only when its version is newer than what it holds for that id: a document, or the tombstone `remove(scope, ids, deletedAt)` leaves. Equal = replay, a no-op. Millisecond resolution: two writes in one ms are one version |
-| the write path | while an external index is installed (`runtime.ts`'s `searchIndex`, `installSearchIndex`), every COMMITTED `insert`/`insertAll`/`upsertAll`/`update`/transition of a searchable entity indexes the row, and a `delete` (soft or hard) removes it at the delete's instant. Fed by `entity.row`, emitted after commit: a rollback indexes nothing |
-| a failed mirror never fails the write | logged as `entity.search-index.write-failed` (`entity`, `op`, `code`, `cause`, `fix`); `reindex()` (`@ultimat3/jobs`) is the repair |
-| not mirrored, logged the same way | `updateWhere`/`deleteWhere` (a count, no rows), and a delete on an entity whose key is not `id` (no row read). `reindex()` re-indexes updated rows; it never removes a deleted one |
-| the built-in index costs nothing | `postgresSearchIndex()` subscribes to nothing — not even `entity.row`'s `before` read |
+| the version is STRICTLY increasing per row | a write of a searchable entity — a soft delete included — stores its version no earlier than the stored one + 1 ms: Postgres `greatest($now, updated_at + interval '1 millisecond')` in the `update` and the upsert's `on conflict` set; the memory driver in its merge (`advanceVersion`); a `defineDriver` store in ITS write, atomically per row — `DriverRepo.update`'s `advance` argument, and `advanceVersion(entity, stored, merged, (p) => plan.set.includes(p))` in its own `upsert` (`entityDriverConformance` refuses a store that skips either). So two writes inside one millisecond are two versions, and the index keeps the second. The column may run ahead of the clock by a millisecond per same-ms write. Other entities' `onUpdateNow()` columns are the clock's reading, unchanged |
+| keep only newer | an index applies a document only when its version is newer than what it holds for that id: a document, or the tombstone `remove(scope, ids, version)` leaves (a delete's: past the row's last version and no earlier than its instant). Equal = replay. EXCEPT a `committed` document — the write path's, `index(docs, { committed: true })` — which replaces a tombstone whatever its version: a key deleted and written again is live at once, inside one millisecond too. `reindex`'s reads are not `committed`, so a stale read never brings a deleted row back |
+| the write path | while an external index is installed (`runtime.ts`'s `searchIndex`, `installSearchIndex`), every COMMITTED write of a searchable entity reaches it: `insert`/`insertAll`/`upsertAll`/`update`/transition/`updateWhere` index the rows written, `delete`/`deleteWhere` (soft or hard) remove them — whatever the key: `id`, another column, composite. Taken when the write runs, merged per key per transaction (a removal then a document of one key sends both, in that order; a document then a removal, the removal), sent at COMMIT on one chain per index, so the index hears this process's writes in commit order (`search-mirror-batch.ts`). No bus subscription: a rollback indexes nothing |
+| the rows of a delete or filtered write | the driver hands them over (`returning *` on Postgres) ONLY for a searchable entity under an external index — every other write stays a count |
+| a failed mirror never fails the write | logged as `entity.search-index.write-failed` (`entity`, `op`, `code`, `cause`, `fix`); `reindex()` (`@ultimat3/jobs`) is the repair, its sweep removing what the table lost |
+| not mirrored, logged the same way | a delete or filtered write past `MAX_ASSERTED_ROWS` rows: Postgres counts first and sends no `returning *` past it (memory and `defineDriver` stores the same) |
+| the built-in index costs nothing | under `postgresSearchIndex()` a write sends the statement it always did: no `returning`, no read |
 
 `searchDocumentOf(entity, row)` is the one document builder (only `.searchable()` columns leave).
 `searchVersionColumn` and `searchVersionOf` are on the `.` barrel; `installSearchIndex` is on

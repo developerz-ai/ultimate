@@ -33,7 +33,7 @@ async function runOnce(
     name: 'settled-signal',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `settled-signal:${n}`,
-    retry: { attempts: 3, jitter: false },
+    retry: { attempts: 3, jitter: 'none' },
     run: (args) => {
       seen = args.ctx;
       return run(args);

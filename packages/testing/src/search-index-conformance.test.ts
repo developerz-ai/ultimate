@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { memorySearchIndex } from '@ultimat3/entity';
-import type { SearchIndex } from '@ultimat3/entity/adapter';
+import type { SearchIndex, SearchListEntry } from '@ultimat3/entity/adapter';
 import { SEARCH_INDEX_ALL_CHECKS, searchIndexConformance } from './search-index-conformance';
 import type { SearchIndexSubject } from './search-index-conformance-support';
 import { searchDoc } from './search-index-conformance-support';
@@ -29,6 +29,7 @@ const tenantBlind = (): SearchIndex => {
     index: (documents) => inner.index(documents.map((each) => ({ ...each, tenant: null }))),
     remove: (scope, ids, version) => inner.remove({ ...scope, tenant: null }, ids, version),
     query: (query) => inner.query({ ...query, tenant: null }),
+    list: (query) => inner.list({ ...query, tenant: null }),
   };
 };
 
@@ -52,6 +53,7 @@ const appending = (): SearchIndex => {
       ),
     remove: (scope, ids, version) => inner.remove(scope, ids, version),
     query: (query) => inner.query(query),
+    list: (query) => inner.list(query),
   };
 };
 
@@ -71,7 +73,36 @@ const versionBlind = (): SearchIndex => {
       return inner.remove(scope, ids, arrival);
     },
     query: (query) => inner.query(query),
+    list: (query) => inner.list(query),
   };
+};
+
+/** Lists every id it was ever handed, a removed one included, as one page. */
+const forgetful = (): SearchIndex => {
+  const inner = memorySearchIndex();
+  const seen = new Map<string, SearchListEntry>();
+  return {
+    ...inner,
+    name: 'forgetful',
+    index: (documents) => {
+      for (const each of documents) {
+        seen.set(each.id, { tenant: each.tenant, id: each.id, version: each.version });
+      }
+      return inner.index(documents);
+    },
+    list: async (query) => ({
+      entries: [...seen.values()].filter(
+        (entry) => query.tenant === undefined || entry.tenant === query.tenant,
+      ),
+      next: null,
+    }),
+  };
+};
+
+/** Ignores `committed`: a tombstone outranks every later write of its key. */
+const tombstoneSticky = (): SearchIndex => {
+  const inner = memorySearchIndex();
+  return { ...inner, name: 'tombstone-sticky', index: (documents) => inner.index(documents) };
 };
 
 const check = (prefix: string) => {
@@ -99,6 +130,16 @@ describe(testName('unit', 'an index that breaks the contract fails conformance')
     await expect(
       check('a version indexed after the id was removed').run(subjectOver(versionBlind())),
     ).rejects.toThrow();
+  });
+
+  test('an index whose tombstone outranks a committed write fails the re-create check', async () => {
+    await expect(
+      check('a committed document replaces a newer tombstone').run(subjectOver(tombstoneSticky())),
+    ).rejects.toThrow();
+  });
+
+  test('an index that lists removed ids, unpaged, fails the list check', async () => {
+    await expect(check('list pages one tenant').run(subjectOver(forgetful()))).rejects.toThrow();
   });
 
   test('a non-finite version is refused where the suite builds its document', () => {

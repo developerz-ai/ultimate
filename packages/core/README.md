@@ -71,7 +71,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
-| structured JSON logging + redaction; `setLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams (a test preload drops them; a test asserting on the process logger collects them). The tee is the bus: every such line, redacted, is the `log.record` event — `subscribe('log.record', handler)` | `logger.ts` |
+| structured JSON logging + redaction; `installLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams until the release it returns runs (a stack: releases in any order; `undefined` is the streams) (a test preload drops them; a test asserting on the process logger collects them). The tee is the bus: every such line, redacted, is the `log.record` event — `subscribe('log.record', handler)` | `logger.ts` |
 | the ONE instrumentation bus: `subscribe(pattern, handler)` → unsubscribe (exact name, dot-segment prefix, `'*'`), `subscribed(name)`, `instrument(name, payload)`; synchronous, registration order, fired before sampling, a throwing handler reaches the emitter. `subscriberCount()` / `resetInstrumentation()` for tests | `instrument.ts` |
 | the event vocabulary: `INSTRUMENT_EVENTS`, every payload type, `InstrumentEventMap` (augmentable — an app's own names ride the same bus) | `instrument-events.ts` |
 | semconv names: `SEMCONV` (span attribute keys), `SEMCONV_VALUES`, `SEMCONV_METRICS` | `instrument-semconv.ts` |

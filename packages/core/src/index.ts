@@ -337,6 +337,7 @@ export {
   successorLink,
   successorPathOf,
 } from './deprecation';
+export { x509Spki } from './der';
 export type { DevSecretsOptions } from './dev-secrets';
 export {
   assertNoDevSecretsOutsideLocal,
@@ -627,7 +628,6 @@ export {
   memoryMetricExporter,
   metricsText,
   noopErrorReporter,
-  noopMetricExporter,
   OTLP_RETRY_STATUSES,
   OtlpEndpointInvalidError,
   OtlpHeadersInvalidError,
@@ -902,7 +902,7 @@ export type { LocalePathSplit } from './locale-path';
 export { localeSegment, localizePath, splitLocalePath } from './locale-path';
 // The process logger's test seam, beside nothing it groups with: where a default-writer line goes.
 export type { LogSink } from './logger';
-export { setLogSink } from './logger';
+export { installLogSink } from './logger';
 export {
   isAgentOffered,
   isMcpExposed,
@@ -934,6 +934,7 @@ export {
   CLIENT_NAVIGATION_LOCATION_HEADER,
   CLIENT_NAVIGATION_SCOPE_HEADER,
   CLIENT_NAVIGATION_SURFACE_HEADER,
+  CLIENT_OUTBOX_MAX_META,
   CLIENT_PATH_STYLE_META,
   CLIENT_PERSIST_META,
   CLIENT_PINS_META,
@@ -1002,8 +1003,8 @@ export {
   toOpenApiPath,
 } from './route-path-template';
 export { routeRank } from './route-rank';
-export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
-export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
+export type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from './route-vocabulary';
+export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES, SURFACES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export {
   type OriginEvidence,

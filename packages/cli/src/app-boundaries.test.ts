@@ -5,7 +5,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { SURFACES } from '@ultimat3/render';
+import { SURFACES } from '@ultimat3/core';
 import type { SourceFile } from './app-boundaries';
 import {
   appImportGraph,

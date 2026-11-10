@@ -3,6 +3,7 @@
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
 import { ERROR_DOCS_URL, renderThrowable, singleLine, stringField } from '@ultimat3/core';
+import type { JsonValue } from '@ultimat3/schema';
 import { unresolvedImportFinding } from './app-load-unresolved';
 import { msg } from './messages';
 import { causeWithCount, findingsForReader, type ReaderOptions } from './output-findings';
@@ -92,13 +93,8 @@ export interface StepResult {
   readonly tests?: TestCounts;
 }
 
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+// `@ultimat3/schema`'s one declaration, re-exported for this package's callers — never restated.
+export type { JsonValue };
 
 export interface CommandResult {
   readonly ok: boolean;

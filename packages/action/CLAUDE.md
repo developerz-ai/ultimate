@@ -47,6 +47,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `declared-errors-contract.ts` | `.contract()`'s source scan |
 | `openapi-errors.ts` | core's builder bound to http's status and `problemTypeFor` |
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
+| `loader.ts` | `@ultimat3/action/loader`: `registerAction`/`registerActions` for `x`'s loader and framework fixtures. Never the barrel — `defineApi` is an app's one path (`loader.test.ts`) |
 | `adapter.ts` | `@ultimat3/action/adapter`: both stores' installers (each returns a release removing that install alone) + resets, port types, store errors, and `overrideHandler`. Never the barrel |
 | `handler-override.ts` | the slot `overrideHandler` writes: a test double where `handle` is, keyed by the stored declaration and read per call by `invoke` (`run`) and, for a stream, by the drain (`action-stream.ts`) — so policy, parse, meter, idempotency and output parse still run on every surface. `@ultimat3/testing`'s `stub()` is its one caller (`handler-override.test.ts`) |
 | `idempotency-key.ts` | the namespaced key — action + actor + the caller's key, as one JSON tuple — and the refusal of one that names no request |
@@ -159,8 +160,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **Both clients inject `traceparent`** before the caller's headers; an incomplete span sends nothing.
 - `serializeOpenApi` output is byte-stable: sorted keys, sorted registry, no clock. `client.ts` stays
   free of server imports.
-- **`stable.ts` holds the DOCUMENT form only** (`stableStringify` → `openapi.json`, re-read by
-  `json-schema.ts`). The HASH form is core's `canonicalJson`/`fingerprint` (injective: tags
+- **`stable.ts` holds the DOCUMENT form only** (`stableStringify`, exported: `openapi.json`,
+  `json-schema.ts`, mcp's `tools.lock.json`, testing's cassettes — no other serializer). The HASH form is core's `canonicalJson`/`fingerprint` (injective: tags
   `NaN`/`±Infinity`/`-0`, `Date`, `Map`, `Set`); `stable.test.ts` pins byte-equality for ordinary
   payloads.
 - **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (imported, never

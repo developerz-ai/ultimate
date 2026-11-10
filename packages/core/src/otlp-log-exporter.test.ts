@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { resetInstrumentation, subscribe } from './instrument';
 import type { LogRecordEvent } from './instrument-events';
-import { logger, setLogSink } from './logger';
+import { installLogSink, logger } from './logger';
 import { otlpEndpoint } from './otlp';
 import { otlpLogExporter, otlpLogsRequest } from './otlp-log-exporter';
 import { alwaysOnSampler } from './sampler';
@@ -106,7 +106,7 @@ describe('otlpLogExporter on the bus', () => {
     const logs = otlpLogExporter({ endpoint: 'http://c:4318/v1/logs', fetch: sink.fetch });
     const off = subscribe('log.record', (event) => logs.export(event.payload));
     configureTelemetry({ sampler: alwaysOnSampler });
-    const previous = setLogSink(() => undefined);
+    const releaseLogSink = installLogSink(() => undefined);
     let spanId = '';
     try {
       withSpan('job.perform', (span) => {
@@ -116,7 +116,7 @@ describe('otlpLogExporter on the bus', () => {
       // The exporter's own complaints never feed back into the exporter.
       logger.warn('otlp export failed', { url: 'http://c:4318/v1/logs' });
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
       off();
     }
     await logs.shutdown();

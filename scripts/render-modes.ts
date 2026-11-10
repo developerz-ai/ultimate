@@ -14,6 +14,7 @@ import {
   IMAGE_FORMATS,
   OFFLINE_STRATEGIES,
   RENDER_MODES,
+  SURFACES,
 } from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
@@ -28,7 +29,7 @@ import { scanStatusUnions } from './lib/status-unions';
 
 const SCRIPT = 'render-modes';
 
-/** The one file allowed to declare the three ROUTE vocabularies. Each other set names its own. */
+/** The one file allowed to declare the four ROUTE vocabularies. Each other set names its own. */
 export const VOCABULARY_MODULE = 'packages/core/src/route-vocabulary.ts';
 
 /** Which package a module belongs to, so a finding can name the import a reader would write. */
@@ -56,6 +57,11 @@ export interface Vocabulary {
    * exported under it too until 9.0.0 — that row is below, and it went in the day #299 landed.
    */
   readonly by: 'members' | 'name';
+  /**
+   * Shared members before a `members` set counts as a copy, where `COPY_THRESHOLD`'s two is a
+   * coincidence the tree legitimately has. Absent: `COPY_THRESHOLD`.
+   */
+  readonly threshold?: number;
 }
 
 /**
@@ -126,6 +132,12 @@ export const VOCABULARIES: readonly Vocabulary[] = [
     members: [...CACHE_TIERS],
     by: 'members',
   },
+  // The eighth, added 2026-11-10 (plan 101 D7). `@ultimat3/seo` declared `'site' | 'app' | 'api'`
+  // beside render's four-member `Surface`, and nothing tied them: `SURFACES` moved to core and both
+  // import it. `members`, because the copy was not named `SURFACES`, at THREE shared, because a
+  // `'site' | 'app'` pair is a route surface (`RouteSurface`, the config's navigation and vitals
+  // surfaces, the route template) — a subset on purpose, measured as the only two-member hits.
+  { name: 'SURFACES', at: VOCABULARY_MODULE, members: [...SURFACES], by: 'members', threshold: 3 },
 ];
 
 /**
@@ -216,7 +228,7 @@ const overlap = (set: LiteralSet, vocabulary: Vocabulary): readonly string[] =>
 const isCopy = (set: LiteralSet, vocabulary: Vocabulary): boolean =>
   vocabulary.by === 'name'
     ? set.name === vocabulary.name
-    : overlap(set, vocabulary).length >= COPY_THRESHOLD;
+    : overlap(set, vocabulary).length >= (vocabulary.threshold ?? COPY_THRESHOLD);
 
 const copyFinding = (file: SourceFile, set: LiteralSet, vocabulary: Vocabulary): Finding => ({
   code: 'X_VOCABULARY_REDECLARED',
@@ -262,7 +274,7 @@ export function checkVocabulary(files: readonly SourceFile[]): readonly Finding[
     for (const set of scanLiteralSets(file.text)) {
       for (const vocabulary of VOCABULARIES) {
         // A module is skipped only for the vocabularies IT owns: `route-vocabulary.ts` declares
-        // three, and a fourth set appearing there would still be a copy.
+        // four, and a fifth set appearing there would still be a copy.
         if (file.at === vocabulary.at && set.name === vocabulary.name) continue;
         if (isCopy(set, vocabulary)) findings.push(copyFinding(file, set, vocabulary));
       }

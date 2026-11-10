@@ -11,7 +11,7 @@ import { match, type QueryShape } from '@ultimat3/query';
 import { memoryAdvisoryLock } from './advisory-lock';
 import { memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
-import type { Row } from './json';
+import type { LiveRow } from './json';
 import { entityRow } from './pg-entity-row';
 import { insert, POSTS_OID, relation, update } from './pg-replication-fixture';
 import { PgOutputDecoder } from './pgoutput';
@@ -45,19 +45,19 @@ const FEED: QueryShape = {
  * `arrayOf(text())` as a JS array, because those are what `@ultimat3/entity`'s column parsers
  * produce. Nothing here is hand-shaped to suit the decoder — that is the whole point.
  */
-const WINDOW: readonly Row[] = [
+const WINDOW: readonly LiveRow[] = [
   windowRow('a', 'A', ['x'], '2026-08-09T12:00:00.000Z'),
   windowRow('b', 'B', ['y'], '2026-08-09T11:00:00.000Z'),
 ];
 
 /**
- * `Row` is `JsonObject & { id }` and a `Date` is not a `JsonValue` — which is exactly the tension
- * this file is about: the shared window HOLDS repository objects and `JSON.stringify` is what makes
+ * `LiveRow` is `JsonObject & { id }` and a `Date` is not a `JsonValue` — which is exactly the
+ * tension this file is about: the shared window HOLDS repository objects and `JSON.stringify` is what makes
  * them JSON on the wire. `rowsOf` in `live-definition.ts` crosses the same line through `isRow`.
  */
-function windowRow(id: string, title: string, tags: string[], at: string): Row {
+function windowRow(id: string, title: string, tags: string[], at: string): LiveRow {
   const row: Record<string, unknown> = { id, title, tags, createdAt: new Date(at) };
-  return row as unknown as Row;
+  return row as unknown as LiveRow;
 }
 
 /** The entity the replicated rows decode through, as a repository read's rows are. */
@@ -93,13 +93,13 @@ test('an edit to one column patches that row in place, never re-sorting the feed
   expect(message.kind).toBe('update');
   if (message.kind !== 'update') return;
 
-  const patches = match<Row>('feed', FEED, WINDOW, {
+  const patches = match<LiveRow>('feed', FEED, WINDOW, {
     entity: 'posts',
     op: 'update',
-    row: entityRow(message.relation, message.after, 'after') as Row,
+    row: entityRow(message.relation, message.after, 'after') as LiveRow,
     ...(message.before === null
       ? {}
-      : { before: entityRow(message.relation, message.before, 'before') as Row }),
+      : { before: entityRow(message.relation, message.before, 'before') as LiveRow }),
   });
 
   // The row did not move: only `title` changed and `createdAt` is untouched. A `remove` + `add`
@@ -114,10 +114,10 @@ test('a new row lands at the position its instant actually orders it to', () => 
   expect(message.kind).toBe('insert');
   if (message.kind !== 'insert') return;
 
-  const patches = match<Row>('feed', FEED, WINDOW, {
+  const patches = match<LiveRow>('feed', FEED, WINDOW, {
     entity: 'posts',
     op: 'insert',
-    row: entityRow(message.relation, message.after, 'after') as Row,
+    row: entityRow(message.relation, message.after, 'after') as LiveRow,
   });
 
   // 11:30 sits between 12:00 and 11:00 under `createdAt desc`. Compared as text against a `Date`'s
@@ -179,8 +179,8 @@ test('an edit keeps its place after the row crosses the replicator bus as text',
   });
   await replicator.start();
   await feed.push('feed_posts', 'update', {
-    before: entityRow(message.relation, message.before, 'before') as Row,
-    after: entityRow(message.relation, message.after, 'after') as Row,
+    before: entityRow(message.relation, message.before, 'before') as LiveRow,
+    after: entityRow(message.relation, message.after, 'after') as LiveRow,
   });
   await replicator.stop();
 
@@ -192,7 +192,7 @@ test('an edit keeps its place after the row crosses the replicator bus as text',
   expect((change.after as Record<string, unknown>)['createdAt']).toBeInstanceOf(Date);
   expect((change.before as Record<string, unknown>)['createdAt']).toBeInstanceOf(Date);
 
-  const patches = match<Row>('feed', FEED, WINDOW, {
+  const patches = match<LiveRow>('feed', FEED, WINDOW, {
     entity: 'posts',
     op: 'update',
     row: change.after,

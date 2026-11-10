@@ -8,14 +8,14 @@
  */
 
 import type { RunEventKind, RunUsage } from '@postly/db';
-import type { Row } from '@ultimat3/realtime';
+import type { LiveRow } from '@ultimat3/realtime';
 import type { Api } from '../../api';
 
 /** What `useQuery` subscribes under. `defineApi` names a query after its export, so this is it. */
 export const LIVE_RUN_EVENTS: keyof Api['queries'] = 'liveRunEvents';
 
 /** One event as the socket carries it — JSON, so `at` is an ISO instant, never a `Date`. */
-export interface RunEventRow extends Row {
+export interface RunEventRow extends LiveRow {
   readonly id: string;
   readonly runId: string;
   readonly seq: number;

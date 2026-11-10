@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { parse, t as schemaT } from '@ultimat3/schema';
-import { blocks, defineMail, t } from './index';
+import { blocks, defineMail, registeredMailIds, t } from './index';
 
 describe('@ultimat3/mail public surface', () => {
   test('re-exports the one `t`, not a copy of it', () => {
@@ -59,5 +59,26 @@ describe('the in-memory mail driver has one spelling', () => {
     expect(
       Object.keys(barrel).filter((name) => /^create(Memory|Pg|Postgres)[A-Z]/.test(name)),
     ).toEqual([]);
+  });
+});
+
+describe('importing the package registers no mail of its own', () => {
+  // v31 deleted the six framework mails: nothing sent them, auth renders its own `auth.<purpose>`
+  // templates from the app catalog, and a welcome or an invite is an app's business (axiom 8).
+  // An import that seated mails would put ids in every app's registry and `/_x` panel unasked.
+  test('the barrel seats nothing in the registry, and FRAMEWORK_MAILS is gone', async () => {
+    const barrel: Record<string, unknown> = await import('./index');
+    expect(barrel['FRAMEWORK_MAILS']).toBeUndefined();
+    // By name, not by count: one `bun test` process shares the registry with every other file.
+    const seated = registeredMailIds();
+    const deleted = [
+      'welcome',
+      'verify-email',
+      'reset-password',
+      'invite',
+      'mfa-enrolled',
+      'security-alert',
+    ];
+    expect(deleted.filter((id) => seated.includes(id))).toEqual([]);
   });
 });

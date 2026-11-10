@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { renderToHtml } from '../../packages/render/src/render-html';
-import { benchRender, heapInFreshProcess, tablePage, templateBaseline } from './render-html.bench';
+import { benchRender, liveInFreshProcess, tablePage, templateBaseline } from './render-html.bench';
 
 describe('render-html bench', () => {
   test('a 10k-row table costs under 12× writing the strings by hand', async () => {
@@ -18,11 +18,16 @@ describe('render-html bench', () => {
     expect(result.ratio).toBeLessThan(12);
   }, 30_000);
 
-  // ~29 MiB of it is the page's own JSX tree; the old walker grew the heap by ~150–200 MiB.
-  test('a 50k-row render grows the heap under 100 MiB', () => {
-    const grown = heapInFreshProcess(50_000);
-    expect(grown).toBeGreaterThan(0);
-    expect(grown).toBeLessThan(100);
+  // What the walk holds live once every row is visited, after a forced full collection.
+  // `heapSize()` mid-render is live PLUS garbage the collector had not reached — 50 MiB on one
+  // box, 100.1 on a CI runner, 6.5 on a third run of the same code — so the ceiling is held on the
+  // live set, identical (±0.1) across `BUN_JSC_forceRAMSize` 2–64 GB. 10.6 MiB, about the output
+  // itself: the walker flattens its rope every `FLATTEN_EVERY` fragments. Unflattened it held
+  // 100.5; a promise per element, as the old walker kept, reads 125.4 (both mutation-checked).
+  test('a 50k-row render holds under 16 MiB live at the end of its walk', () => {
+    const held = liveInFreshProcess(50_000);
+    expect(held).toBeGreaterThan(0);
+    expect(held).toBeLessThan(16);
   }, 30_000);
 
   test('the walker and the baseline write the same page', async () => {

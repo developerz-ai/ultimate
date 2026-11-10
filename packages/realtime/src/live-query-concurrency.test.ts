@@ -9,7 +9,7 @@ import { type Actor, userActor } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { JsonValue, Row } from './json';
+import type { JsonValue, LiveRow } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { windowId } from './live-tenant';
@@ -42,7 +42,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 const actor = (id: string, orgId: string): Actor => userActor({ id, orgId });
 const input: JsonValue = { orgId: 'o1' };
-const rows: readonly Row[] = [{ id: 'p1', orgId: 'o1', likes: 0 }];
+const rows: readonly LiveRow[] = [{ id: 'p1', orgId: 'o1', likes: 0 }];
 
 function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
   const ws = new FakeWs();
@@ -62,7 +62,7 @@ interface Feed {
   matched(): number;
 }
 
-function feed(snapshot: () => Promise<{ rows: readonly Row[]; lsn: string }>): Feed {
+function feed(snapshot: () => Promise<{ rows: readonly LiveRow[]; lsn: string }>): Feed {
   let matched = 0;
   return {
     matched: () => matched,
@@ -86,7 +86,7 @@ function feed(snapshot: () => Promise<{ rows: readonly Row[]; lsn: string }>): F
 const change: ChangeEvent = {
   table: 'posts',
   op: 'update',
-  before: rows[0] as Row,
+  before: rows[0] as LiveRow,
   after: { id: 'p1', orgId: 'o1', likes: 1 },
   lsn: formatLsn(2),
   txid: '2',
@@ -97,7 +97,7 @@ const change: ChangeEvent = {
 
 describe('a socket that goes away mid-subscribe', () => {
   test('strands neither the subscription nor the query entry behind it', async () => {
-    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const gate = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     const target = feed(() => gate.promise);
     const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
       target.definition,
@@ -129,7 +129,7 @@ describe('a socket that goes away mid-subscribe', () => {
 
 describe('a batch of subscribe frames cannot outrun a cap', () => {
   test('the per-socket cap counts the subscribes still in flight', async () => {
-    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const gate = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     const target = feed(() => gate.promise);
     const registry = new LiveQueryRegistry({
       source: new RingChangeBuffer(),
@@ -161,7 +161,7 @@ describe('a batch of subscribe frames cannot outrun a cap', () => {
   });
 
   test('the per-tenant cap holds across two sockets subscribing at once', async () => {
-    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const gate = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     const target = feed(() => gate.promise);
     const registry = new LiveQueryRegistry({
       source: new RingChangeBuffer(),
@@ -189,7 +189,7 @@ describe('a batch of subscribe frames cannot outrun a cap', () => {
   });
 
   test('the node-wide entry ceiling is not raised by concurrency either', async () => {
-    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const gate = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     const target = feed(() => gate.promise);
     const registry = new LiveQueryRegistry({
       source: new RingChangeBuffer(),
@@ -216,7 +216,7 @@ describe('a batch of subscribe frames cannot outrun a cap', () => {
 
 describe('a sid is claimed where it is chosen, not two awaits later', () => {
   test('two concurrent subscribes reusing one sid: the second is refused, the first survives', async () => {
-    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const gate = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
     const target = feed(() => gate.promise);
     const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
       target.definition,
@@ -254,8 +254,8 @@ describe('a sid is claimed where it is chosen, not two awaits later', () => {
 // window kept only the one patched row, permanently: every later unforced read was discarded too.
 describe('a cold subscribe whose read races a write', () => {
   test('both subscribers see every row, the one written mid-read included', async () => {
-    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
-    const table: Row[] = [
+    const gate = deferred<{ rows: readonly LiveRow[]; lsn: string }>();
+    const table: LiveRow[] = [
       { id: 'p1', orgId: 'o1', likes: 0 },
       { id: 'p2', orgId: 'o1', likes: 0 },
     ];
@@ -276,7 +276,7 @@ describe('a cold subscribe whose read races a write', () => {
     for (let turn = 0; reads === 0 && turn < 100; turn += 1) await Promise.resolve();
     expect(reads).toBe(1);
     const before = [...table];
-    const inserted: Row = { id: 'p3', orgId: 'o1', likes: 0 };
+    const inserted: LiveRow = { id: 'p3', orgId: 'o1', likes: 0 };
     table.push(inserted);
     await registry.deliver({
       table: 'posts',

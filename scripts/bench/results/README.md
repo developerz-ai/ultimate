@@ -79,17 +79,20 @@ the registry indexed windows by table, 34.6 ms per change (29/s); after, 0.13 ms
 machine, no committed JSON, so unchecked by `bench-claims.ts`. `realtime-fanout.bench.test.ts` holds
 the shape instead: 20× the windows stays under 8× the cost.
 
-## Server rendering a big page — `As of 2026-11-09`
+## Server rendering a big page — `As of 2026-11-10`
 
 One local run (12-core Haswell VM, Bun 1.4.4, `box.runner: local`, other agents' work on the same
-box, load average above 10), [`render-html.bench.ts`](../render-html.bench.ts) → [`render-html.json`](render-html.json):
-a `<table>` of 50,000 rows, one component and five cells each, through `renderToHtml`. **4.7× a
-template string** writing the same markup in the same loop (240.82 ms against 51.61 ms), and the
-heap grew by **49.9 MiB** in a fresh process — about 29 MiB of it the page's own JSX tree. Core's `escapeHtml` and `safeUrl`
+box, load average above 7), [`render-html.bench.ts`](../render-html.bench.ts) → [`render-html.json`](render-html.json):
+a `<table>` of 50,000 rows, one component and five cells each, through `renderToHtml`. **5.9× a
+template string** writing the same markup in the same loop (299.62 ms against 50.51 ms), and the
+heap grew by **10.3 MiB** in a fresh process; **10.6 MiB live** at the walk's last row, after a
+forced collection (`liveMiB`) — about the 10 MB of output. Core's `escapeHtml` and `safeUrl`
 skip their copy when there is nothing to escape or strip; the baseline shares that, so the ratio
-does not show it. The walker it replaced (one `async` frame and one `Promise.all` per node) measured ~26× and ~198 MiB
-on the same page. The regression test holds the ratio (< 12×) and the heap (< 100 MiB), never a
-wall-clock figure: [`render-html.bench.test.ts`](../render-html.bench.test.ts).
+does not show it. The walker flattens its output rope every 1,024 fragments: unflattened it held
+100.5 MiB live (~3.2M string cells) and its heap figure swung 6.5–100 MiB with GC timing, for
+~4.7×. The walker before that (one `async` frame and one `Promise.all` per node) measured ~26× and
+~198 MiB on the same page. The regression test holds the ratio (< 12×) and the live set
+(< 16 MiB), never a wall-clock figure: [`render-html.bench.test.ts`](../render-html.bench.test.ts).
 
 ## One span, the cost every statement pays — `As of 2026-11-09`
 

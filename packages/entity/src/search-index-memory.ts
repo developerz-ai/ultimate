@@ -7,10 +7,11 @@ import type {
   SearchDocument,
   SearchHit,
   SearchIndex,
+  SearchListEntry,
   SearchQuery,
   SearchScope,
 } from './search-index';
-import { searchLimitOf } from './search-index';
+import { searchLimitOf, searchListLimitOf } from './search-index';
 
 /** Letters and digits in any script; everything else separates words. */
 const WORD = /[\p{L}\p{N}]+/gu;
@@ -42,23 +43,29 @@ const scopeKey = (scope: SearchScope): string => JSON.stringify([scope.entity, s
 
 export const memorySearchIndex = (): SearchIndex => {
   const scopes = new Map<string, Map<string, Held>>();
+  /** Which tenant each scope key is, so `list` can walk one entity's scopes. */
+  const scopeOwners = new Map<string, SearchScope>();
   const scopeOf = (scope: SearchScope): Map<string, Held> => {
     const key = scopeKey(scope);
     const found = scopes.get(key);
     if (found !== undefined) return found;
     const created = new Map<string, Held>();
     scopes.set(key, created);
+    scopeOwners.set(key, { entity: scope.entity, tenant: scope.tenant });
     return created;
   };
 
   return {
     name: 'memory',
-    index: async (documents) => {
+    index: async (documents, options) => {
       for (const document of documents) {
         const scope = scopeOf(document);
+        const held = scope.get(document.id);
+        // A committed write's row exists: it replaces the tombstone of an earlier delete.
+        const replaces = options?.committed === true && held?.words === null;
         // Keep only newer: a reindex batch that read the row before a write — or before its
         // delete — arrives here after it, and must not put the old text back.
-        if ((scope.get(document.id)?.version ?? Number.NEGATIVE_INFINITY) >= document.version) {
+        if (!replaces && (held?.version ?? Number.NEGATIVE_INFINITY) >= document.version) {
           continue;
         }
         scope.set(document.id, {
@@ -75,6 +82,28 @@ export const memorySearchIndex = (): SearchIndex => {
         if ((held.get(id)?.version ?? Number.NEGATIVE_INFINITY) > version) continue;
         held.set(id, { id, version, words: null });
       }
+    },
+    // Ordered by `[tenant, id]` as JSON, which is also the cursor: a total order, stable across calls.
+    list: async (query) => {
+      const limit = searchListLimitOf(query);
+      const entries: (SearchListEntry & { readonly at: string })[] = [];
+      for (const [key, owner] of scopeOwners) {
+        if (owner.entity !== query.entity) continue;
+        if (query.tenant !== undefined && owner.tenant !== query.tenant) continue;
+        for (const each of scopes.get(key)?.values() ?? []) {
+          if (each.words === null) continue;
+          const at = JSON.stringify([owner.tenant, each.id]);
+          if (query.after !== null && at <= query.after) continue;
+          entries.push({ tenant: owner.tenant, id: each.id, version: each.version, at });
+        }
+      }
+      entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+      const page = entries.slice(0, limit);
+      const last = page.at(-1);
+      return {
+        entries: page.map(({ tenant, id, version }) => ({ tenant, id, version })),
+        next: entries.length > limit && last !== undefined ? last.at : null,
+      };
     },
     query: async (query: SearchQuery): Promise<readonly SearchHit[]> => {
       const limit = searchLimitOf(query);

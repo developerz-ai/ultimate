@@ -149,7 +149,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'seo: export const config = defineRoute({': 1,
   "seo: ld.Article({ headline: 'Ship it', author: { name: 'Ada' } });": 1,
   "storage: // 1. server, inside an action's handle: mint the grant": 1,
-  'storage: const grant = await grantUpload({ disk, orgId, request, quarantine: true });': 1,
   "storage: import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';": 1,
   "testing: const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {": 1,
   // why: re-keyed, not raised — the 31.0.0 factories rewrite (Upgrading #40) reopened this fence

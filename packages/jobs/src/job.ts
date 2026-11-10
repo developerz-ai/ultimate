@@ -23,6 +23,7 @@ import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
 import { DEFAULT_RETRY } from './retry';
+import { assertRetryJitter } from './retry-jitter';
 import type { JobSettled } from './settled';
 import { ON_SETTLED_TIMEOUT_MS } from './settled';
 import { assertJobTenant, jobTenantFor } from './tenant';
@@ -97,6 +98,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
   // `1.5`, which the memory driver ran and Postgres refused at the first enqueue (`$7::int`).
   // Zero is not "never retries" — that is `attempts: 1` — it is a job that never executes at all.
   finiteCount(`job "${name}"`, 'retry.attempts', definition.retry.attempts, 1);
+  assertRetryJitter(name, definition.retry.jitter);
   // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing, and the job
   // is permanently unrunnable with no log line. Refused where it is written, plain or keyed.
   const concurrency = resolveConcurrency(name, definition.concurrency);

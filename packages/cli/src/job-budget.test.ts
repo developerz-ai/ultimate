@@ -127,7 +127,7 @@ describe('the manifest step reads the app', () => {
         "  tenant: 'none',",
         '  input: t.object({}),',
         "  idempotencyKey: () => 'nightly',",
-        "  retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: false },",
+        "  retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: 'none' },",
         "  timeout: '2h',",
         '  run: () => Promise.resolve(),',
         '});',

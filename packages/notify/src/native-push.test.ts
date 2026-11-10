@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { FrozenClock } from '@ultimat3/core';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import type { NativePusher } from './native-push';
 import { nativePush } from './native-push';
 import type { FakeProviders, ProviderKeys } from './native-push-fixture';
@@ -36,7 +36,7 @@ let fake: FakeProviders;
 let clock: FrozenClock;
 let devices: PushDeviceStore;
 let logs: string[];
-let restoreSink: ReturnType<typeof setLogSink>;
+let releaseLogSink: () => void;
 
 const signal = new AbortController().signal;
 
@@ -85,11 +85,11 @@ beforeEach(async () => {
   clock = frozenClock('2026-11-06T09:00:00Z');
   devices = memoryPushDeviceStore();
   logs = [];
-  restoreSink = setLogSink((line) => logs.push(line));
+  releaseLogSink = installLogSink((line) => logs.push(line));
 });
 
 afterEach(() => {
-  setLogSink(restoreSink);
+  releaseLogSink();
 });
 
 describe('unit · nativePush — what leaves', () => {

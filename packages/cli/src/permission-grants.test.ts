@@ -3,7 +3,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AnyAction } from '@ultimat3/action';
-import { action, listActions, registerAction, resetActions, t } from '@ultimat3/action';
+import { action, listActions, resetActions, t } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import {
   allow,
   and,

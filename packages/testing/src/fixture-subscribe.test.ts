@@ -10,7 +10,8 @@ import { afterEach, beforeEach, test as bunTest, describe, expect } from 'bun:te
 import { type Actor, ctxOf, resetInstrumentation, runWithContext, userActor } from '@ultimat3/core';
 import { database, defaultDriver, entity, text, uuid } from '@ultimat3/entity';
 import { can, definePermissions, defineRoles } from '@ultimat3/policy';
-import { from, query, registerQueries, resetQueries, t } from '@ultimat3/query';
+import { from, query, resetQueries, t } from '@ultimat3/query';
+import { registerQueries } from '@ultimat3/query/loader';
 import { type SubscribeDriver, subscribeDriver } from './fixture-subscribe';
 import { testName } from './test-types';
 

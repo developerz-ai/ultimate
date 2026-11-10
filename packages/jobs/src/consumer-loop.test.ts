@@ -3,7 +3,7 @@
 // close rejects is logged and does not fail a run that committed.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { frozenClock, setLogSink } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { type PgliteClient, pgliteClient, setDbClient } from '@ultimat3/db';
 import { installJobDriver, resetJobDriver } from './adapter';
 import { consumer } from './consumer';
@@ -119,7 +119,7 @@ describe('consumerRun', () => {
 
   test('a stream whose close rejects is logged, and the run that committed still completes', async () => {
     const lines: string[] = [];
-    const previous = setLogSink((line) => {
+    const releaseLogSink = installLogSink((line) => {
       lines.push(line);
     });
     try {
@@ -146,7 +146,7 @@ describe('consumerRun', () => {
         .filter((line) => line.msg === 'jobs.consumer.close-failed');
       expect(warned.map((line) => line.consumer)).toEqual([declared.name]);
     } finally {
-      setLogSink(previous);
+      releaseLogSink();
     }
   });
 });

@@ -2,10 +2,12 @@
 // pin or a withdrawn declared code is a breaking change `contract-diff` reports.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions, t } from '@ultimat3/action';
+import { action, resetActions, t } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import { defineError } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
-import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { fixtureAction, fixtureQuery } from './diff-fixture';
 import { diffActions, diffQueries } from './diff-operations';
 import { frameworkSources } from './sources';

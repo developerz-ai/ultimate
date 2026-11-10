@@ -4,7 +4,8 @@
 // (audience `'developer'`) keeps it, as HTTP's `dev: true` does.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetActions } from '@ultimat3/action';
+import { action, resetActions } from '@ultimat3/action';
+import { registerAction } from '@ultimat3/action/loader';
 import {
   agentActor,
   ctxOf,

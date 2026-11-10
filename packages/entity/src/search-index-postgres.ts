@@ -11,8 +11,9 @@ import { postgresRepo } from './pg-driver';
 import { getEntity } from './registry';
 import { rowKey } from './row-key';
 import { SEARCH_PROPERTY } from './search';
-import type { SearchHit, SearchIndex, SearchScope } from './search-index';
-import { searchLimitOf } from './search-index';
+import type { SearchHit, SearchIndex, SearchListPage, SearchScope } from './search-index';
+import { searchLimitOf, searchListLimitOf } from './search-index';
+import { searchVersionOf } from './search-index-version';
 import type { Predicate } from './tenancy';
 
 export interface PostgresSearchIndexOptions {
@@ -66,6 +67,27 @@ export const postgresSearchIndex = (options: PostgresSearchIndexOptions = {}): S
     },
     remove: async (scope) => {
       tenantPredicate(searchableEntity(scope.entity), scope);
+    },
+    // What it holds IS the table: the rows a `reindex` source reads, so its sweep removes nothing.
+    // Primary-key order, the repository's own cursor; a tenant left out is the ambient rule.
+    list: async (query): Promise<SearchListPage> => {
+      const limit = searchListLimitOf(query);
+      const core = searchableEntity(query.entity);
+      const where = tenantPredicate(core, { entity: query.entity, tenant: query.tenant ?? null });
+      const page = await repoOf(core).findMany({ where, limit, cursor: query.after });
+      const tenantColumn = core.$tenantColumn;
+      return {
+        entries: page.rows.map((row) => {
+          const tenant =
+            tenantColumn === null ? null : (row as Record<string, unknown>)[tenantColumn];
+          return {
+            tenant: typeof tenant === 'string' ? tenant : null,
+            id: rowKey(core, row),
+            version: searchVersionOf(core, row),
+          };
+        }),
+        next: page.nextCursor,
+      };
     },
     query: async (query): Promise<readonly SearchHit[]> => {
       const limit = searchLimitOf(query);

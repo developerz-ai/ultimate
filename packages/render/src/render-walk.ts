@@ -43,10 +43,49 @@ export type Rendered = string | Promise<string>;
  * this replaced ran them.
  */
 interface Buffer {
-  /** Everything since the last slot. `+=` builds a rope; it is flattened once, when read. */
+  /** Everything since the last slot, as FLAT segments: a rope of a few thousand flat leaves. */
   html: string;
+  /** The segment being written: a rope of up to `FLATTEN_EVERY` fragments. */
+  tail: string;
+  /** Fragments in `tail`. */
+  appends: number;
   /** Text before each pending slot, then the slot; absent while the render is synchronous. */
   parts: Rendered[] | undefined;
+}
+
+/**
+ * Fragments per flattened segment. `+=` builds a rope that keeps every fragment alive until it is
+ * read: a 50k-row table held ~3.2M string cells, ~100 MiB, until the final join. Flattening every
+ * segment frees them as the walk goes, and each byte is copied once more, not once per segment.
+ * Measured 2026-11-10 (Bun 1.4.4, `scripts/bench/render-html.bench.ts --live-only`): 100.5 → 10.6
+ * MiB live at the walk's end; 256 and 1,024 time alike, 64 and 4,096 slower.
+ */
+const FLATTEN_EVERY = 1024;
+
+/**
+ * Resolves a rope into one flat string. JSC flattens a rope a regular expression reads; neither
+ * `charCodeAt` nor `.length` does on a rope this size. The pattern (two noncharacters) costs one
+ * scan, and its answer is unused.
+ */
+const ROPE_READ = /\uFFFF\uFFFE/;
+
+function write(out: Buffer, text: string): void {
+  out.tail += text;
+  out.appends += 1;
+  if (out.appends < FLATTEN_EVERY) return;
+  ROPE_READ.test(out.tail);
+  out.html += out.tail;
+  out.tail = '';
+  out.appends = 0;
+}
+
+/** Everything written since the last slot, and the buffer emptied for what follows. */
+function take(out: Buffer): string {
+  const text = out.html + out.tail;
+  out.html = '';
+  out.tail = '';
+  out.appends = 0;
+  return text;
 }
 
 const noop = (): void => undefined;
@@ -57,22 +96,21 @@ const noop = (): void => undefined;
  * `Promise.all` observed every sibling, and an unhandled rejection kills a Bun process.
  */
 export function renderAlone(value: unknown, depth: number, walk: RenderHtmlOptions): Rendered {
-  const out: Buffer = { html: '', parts: undefined };
+  const out: Buffer = { html: '', tail: '', appends: 0, parts: undefined };
   try {
     emit(value, depth, walk, out);
   } catch (error) {
     for (const part of out.parts ?? []) if (typeof part !== 'string') part.catch(noop);
     throw error;
   }
-  if (out.parts === undefined) return out.html;
-  out.parts.push(out.html);
+  if (out.parts === undefined) return take(out);
+  out.parts.push(take(out));
   return Promise.all(out.parts).then((done) => done.join(''));
 }
 
 function slot(out: Buffer, pending: Promise<string>): void {
   out.parts ??= [];
-  out.parts.push(out.html, pending);
-  out.html = '';
+  out.parts.push(take(out), pending);
 }
 
 /**
@@ -83,12 +121,12 @@ function emit(value: unknown, depth: number, walk: RenderHtmlOptions, out: Buffe
   assertDepth(depth);
   if (value === null || value === undefined || value === false || value === true) return;
   if (typeof value === 'string') {
-    out.html += escapeHtml(value);
+    write(out, escapeHtml(value));
     return;
   }
   // A number's spelling is digits, `-`, `.`, `e`, `+`, `Infinity` or `NaN`: nothing to escape.
   if (typeof value === 'number' || typeof value === 'bigint') {
-    out.html += String(value);
+    write(out, String(value));
     return;
   }
   if (typeof value === 'function') {
@@ -96,7 +134,7 @@ function emit(value: unknown, depth: number, walk: RenderHtmlOptions, out: Buffe
     return;
   }
   if (typeof value !== 'object') {
-    out.html += escapeHtml(String(value));
+    write(out, escapeHtml(String(value)));
     return;
   }
   // The common case first. An island or hole node never carries `JSX_NODE`, so testing it before
@@ -127,7 +165,7 @@ function emit(value: unknown, depth: number, walk: RenderHtmlOptions, out: Buffe
     for (const item of value) emit(item, depth + 1, walk, out);
     return;
   }
-  out.html += escapeHtml(String(value));
+  write(out, escapeHtml(String(value)));
 }
 
 /**
@@ -141,13 +179,13 @@ function emitNode(node: JsxNode, depth: number, walk: RenderHtmlOptions, out: Bu
     emit(type(props), depth + 1, walk, out);
     return;
   }
-  out.html += `<${type}${renderAttributes(props)}>`;
+  write(out, `<${type}${renderAttributes(props)}>`);
   if (VOID_ELEMENTS.has(type)) return;
   const raw = (props as { innerHTML?: unknown }).innerHTML;
   if (raw === undefined || raw === null) {
     emit((props as { children?: unknown }).children, depth + 1, walk, out);
-  } else out.html += String(raw);
-  out.html += `</${type}>`;
+  } else write(out, String(raw));
+  write(out, `</${type}>`);
 }
 
 /**
@@ -160,9 +198,9 @@ function emitIsland(node: IslandNode, depth: number, walk: RenderHtmlOptions, ou
   if (collector === undefined) throw islandWithoutCollector(node.spec);
   const directive = collector.record(node.spec, node.props);
   const tag = node.spec.tag;
-  out.html += `<${tag} ${emitIslandAttributes(directive)}>`;
+  write(out, `<${tag} ${emitIslandAttributes(directive)}>`);
   emit((node.props as { children?: unknown }).children, depth + 1, walk, out);
-  out.html += `${emitIslandProps(directive)}</${tag}>`;
+  write(out, `${emitIslandProps(directive)}</${tag}>`);
 }
 
 /**
@@ -225,7 +263,7 @@ function emitHole(node: HoleNode, depth: number, walk: RenderHtmlOptions, out: B
     return holeMarker(id, fallbackHtml);
   };
   if (typeof shown === 'string' && typeof failed !== 'object') {
-    out.html += settle(shown, failed);
+    write(out, settle(shown, failed));
     return;
   }
   slot(

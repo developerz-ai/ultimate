@@ -44,7 +44,7 @@ async function claimOne(
     name: 'stepped',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `stepped:${n}`,
-    retry: { attempts: 3, jitter: false },
+    retry: { attempts: 3, jitter: 'none' },
     ...definition,
   });
   const base = memoryJobDriver();

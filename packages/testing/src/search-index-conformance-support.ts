@@ -12,6 +12,11 @@ export interface SearchIndexSubject {
   store(documents: readonly SearchDocument[]): Promise<void>;
   /** Deletes the source rows of `ids` under `scope`; a no-op for an index holding its own copy. */
   drop(scope: SearchScope, ids: readonly string[]): Promise<void>;
+  /**
+   * Runs a read that names no tenant — `list` across every tenant, as `reindex` sweeps. Absent, it
+   * runs as is; the built-in Postgres index needs the `crossTenant` capability around it.
+   */
+  everyTenant?<T>(read: () => Promise<T>): Promise<T>;
 }
 
 export interface SearchIndexCheck {

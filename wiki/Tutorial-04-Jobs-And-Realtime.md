@@ -86,7 +86,7 @@ export const dailyDigest = task({
 
 ### Registration names it
 
-Export names become primitive names, and only `defineApi` (or `registerTasks`) stamps them. A task no `defineApi` lists keeps a positional name (`anonymous-task-1`, enqueuing `anonymous-job-2`); `x verify`'s `manifest` step refuses that job as `X_JOB_UNREGISTERED`. With the generator's edit to `apps/web/api/index.ts` in place:
+Export names become primitive names, and only `defineApi` stamps them. A task no `defineApi` lists keeps a positional name (`anonymous-task-1`, enqueuing `anonymous-job-2`); `x verify`'s `manifest` step refuses that job as `X_JOB_UNREGISTERED`. With the generator's edit to `apps/web/api/index.ts` in place:
 
 ```bash
 bunx x tasks list

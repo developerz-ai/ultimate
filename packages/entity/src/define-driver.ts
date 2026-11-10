@@ -22,6 +22,7 @@ import { sealedRepo } from './sealed-repo';
 import type { IdOf } from './types';
 
 export type {
+  DriverAdvance,
   DriverCapability,
   DriverDefinition,
   DriverFilter,

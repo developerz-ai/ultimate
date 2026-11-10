@@ -192,6 +192,12 @@ export interface RealtimeConfig {
   readonly maxSubscriptionsPerActor?: number | undefined;
   /** Sockets one actor (or anonymous network) may hold per sync node. Unset: 16. */
   readonly maxSocketsPerActor?: number | undefined;
+  /**
+   * Unsent writes the page's offline outbox holds before it refuses the next
+   * (`X_OFFLINE_QUEUE_FULL`). Rendered on every document as `ultimate-outbox-max` and read by
+   * realtime's page boot. Unset: no ceiling.
+   */
+  readonly maxQueued?: number | undefined;
 }
 
 /**
@@ -307,7 +313,7 @@ function validate(config: AppConfig): void {
       : routePathIssue('auth.signInPath', config.auth.signInPath),
     booleanIssue('ai.mcp.expose', config.ai.mcp.expose),
     booleanIssue('realtime.enabled', config.realtime.enabled),
-    ...(['maxSubscriptionsPerActor', 'maxSocketsPerActor'] as const).map((key) =>
+    ...(['maxSubscriptionsPerActor', 'maxSocketsPerActor', 'maxQueued'] as const).map((key) =>
       config.realtime[key] === undefined
         ? undefined
         : countIssue(`realtime.${key}`, config.realtime[key], 1),

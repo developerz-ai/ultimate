@@ -748,7 +748,7 @@ empty `users` are `X_INVARIANT`.
 
 ## Log lines under test
 
-| `LOG_LEVEL` | The terminal shows | A `setLogSink` a test installs receives |
+| `LOG_LEVEL` | The terminal shows | A sink a test installs with `installLogSink` receives |
 |---|---|---|
 | unset | nothing | `info` and above |
 | `info` · `debug` · `trace` | that level and above | that level and above |
