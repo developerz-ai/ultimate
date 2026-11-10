@@ -188,7 +188,7 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   /**
    * Every gate decision as data — each `tools/call` and `resources/read` outcome and every refused
    * token — after its `mcp.*` log line is written. What an action or query DID still goes to
-   * core's `setAuditSink`; this is what the gate decided, mostly before anything ran. A hook that
+   * core's `auditSink` port; this is what the gate decided, mostly before anything ran. A hook that
    * throws changes no answer (`audit-hook.ts`).
    */
   readonly onAudit?: McpAuditHook | undefined;

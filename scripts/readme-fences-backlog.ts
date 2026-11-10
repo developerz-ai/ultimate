@@ -30,11 +30,12 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "action: import { action, t } from '@ultimat3/action';": 1,
   "action: import { defineApi } from '@ultimat3/action';": 1,
   "action: import { rpc } from '@ultimat3/action';": 1,
-  "action: import { setAuditSink } from '@ultimat3/core';": 1,
   'action: likePost.local(tx, { postId })            // the optimistic write, replayed on rebase': 1,
   'action: publishPost.contract({': 1,
   'action: publishPost.input                              // the declared input schema': 1,
-  'action: setAuditSink({': 1,
+  // why: re-keyed, not raised — 31.0.0 moved the audit sink to runtime.ts (Upgrading #43); the
+  // hash-chain fragment is the same site, and the other `setAuditSink` fence now compiles (2 → 1)
+  "action: // apps/web/runtime.ts — every name below but `runtime` is the app's own": 1,
   'admin: // admin/ops/page.tsx — a component, nothing framework-shaped about it': 1,
   'admin: defineAdmin({': 1,
   "admin: import { AdminList, listHref, Widget } from '@ultimat3/admin';": 1,
@@ -106,7 +107,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'entity: relationMap().posts;': 1,
   'flags: // whole tenants, named — the 90% case, which is why it has a shorthand': 1,
   "flags: applyFlagSnapshot({ 'billing.dunning-emails': { default: false } });": 1,
-  'flags: configureErrorReporting({ reporter: sentryErrorReporter({ dsn }) });': 1,
   "flags: import { isEnabled } from '@ultimat3/flags';": 1,
   "i18n: // the app's own packages/i18n/src/index.ts — its whole i18n module": 1,
   "i18n: import { negotiateLocale, t } from '@ultimat3/i18n';": 1,

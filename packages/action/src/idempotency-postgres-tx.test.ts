@@ -1,5 +1,5 @@
 // The Postgres store's statements and options. The transactional CASES are
-// `idempotency-parity.test.ts` (memory and the embedded server) and the live suite.
+// `idempotencyStoreConformance` (`@ultimat3/testing/conformance`, memory and live Postgres).
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';

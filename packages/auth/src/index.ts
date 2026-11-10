@@ -169,11 +169,8 @@ export type {
 } from './jwt-bearer-resolver';
 export { jwtBearerResolver } from './jwt-bearer-resolver';
 export type { KdfGate, KdfLimits } from './kdf-gate';
-export {
-  boundedKdfGate,
-  configureKdfGate,
-  kdfGate,
-} from './kdf-gate';
+// `installKdfGate` / `resetKdfGate` are `@ultimat3/auth/adapter`'s: a boot widens the gate.
+export { boundedKdfGate, kdfGate } from './kdf-gate';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
 // The installers and their factory types are `@ultimat3/auth/adapter`'s, and only its: the boot

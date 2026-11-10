@@ -1,7 +1,7 @@
 // The grouped count against a recording client: the one statement `countBy` compiles to, and what
 // an int8, a group key and a NULL decode into on the way back. Statement text is exactly what a
 // live server cannot be asked, which is why it is asserted here; the answer the two drivers must
-// agree on, their shared refusals and the group bound are `count-by-parity.test.ts`'s subject.
+// agree on, their shared refusals and the group bound are `@ultimat3/testing`'s `entityDriverConformance`'s subject.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';

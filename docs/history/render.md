@@ -200,3 +200,7 @@ Verbatim from [`packages/render/CLAUDE.md`](../../packages/render/CLAUDE.md), wh
 - **The sass cache.** `sass-cache.ts`: `.x/cache/sass/` under cwd, a hit only while every file the
   compile read hashes the same; `setSassCacheDir(null)` turns it off, `setSassCacheDir(dir)` moves
   it (the image's prebuilt store), `sassCompilations()` counts the misses a boot reports.
+
+## Moved out 2026-11-09 (plan 101 v31, the CLAUDE.md ceiling)
+
+| A held island | `hold` on the collector (the host decides — the CLI holds store-reading realtime islands on a page-boot document); `island-hold.ts` owns the attribute, the inline `visibility:hidden`, the cap `ISLAND_HOLD_MS` and the runtime part. Emitted right after the prelude; booted at once, revealed TOGETHER on both mount arms, at the cap, or by CSS (`ISLAND_HOLD_REVEAL`, keyframes in `@ultimat3/ui`'s `global.scss`) — never hidden for good. `catchUp`'s `on` lets go after a mount it did not flush. `island-hold.test.ts`, `island-hold-replay.test.ts`. |

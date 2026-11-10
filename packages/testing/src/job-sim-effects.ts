@@ -4,13 +4,8 @@
 // handed back; the rows are a bus subscription (`entity.row`/`entity.bulk`), released at dispose.
 
 import type { AsyncContext } from '@ultimat3/core';
-import {
-  asyncContext,
-  configureErrorReporting,
-  installedErrorReporter,
-  noopErrorReporter,
-  subscribe,
-} from '@ultimat3/core';
+import { asyncContext, noopErrorReporter, subscribe } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import type { MailDriver } from '@ultimat3/mail';
 
 export interface SimEffect {
@@ -97,8 +92,8 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
   // An app's sink keeps state across runs (`errorGroupsSink` enqueues on a group's FIRST sighting),
   // so chained, whichever simulated run reported first would carry its enqueue and every other
   // run's count would differ — and a death planted here would land in the app's own error store.
-  const previousReporter = installedErrorReporter();
-  configureErrorReporting({ reporter: noopErrorReporter });
+  // A frame above whatever is installed: its release restores exactly that, in any stop order.
+  const releaseReporter = installErrorReporter(noopErrorReporter);
 
   // Recorded on the way out, then handed to whatever `fetch` is installed — the seal decides.
   const previousFetch = globalThis.fetch;
@@ -124,7 +119,7 @@ export async function openEffectLog(options: EffectLogOptions): Promise<EffectLo
       try {
         globalThis.fetch = previousFetch;
       } finally {
-        configureErrorReporting({ reporter: previousReporter });
+        releaseReporter();
         releaseMail();
         offRows();
       }

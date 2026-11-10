@@ -1,7 +1,7 @@
-// `@ultimat3/jobs/adapter` — what a queue or an event bus is built and installed from: the two port
-// interfaces, the errors a driver throws, and the boot's installers with their resets. Never the
-// `.` barrel: an app swaps a backend in `apps/<app>/runtime.ts` (`jobs:`, `eventBus:`), so the only
-// callers here are the cli boot, `@ultimat3/testing`, and a driver's own author.
+// `@ultimat3/jobs/adapter` — what a queue, an event bus or a durable store is built and installed
+// from: the port interfaces (outbox, step and lease stores too), a driver's errors, the installers
+// and their resets. Never the `.` barrel: an app swaps a backend in `apps/<app>/runtime.ts`, so
+// the callers here are the cli boot, `@ultimat3/testing` and a driver's own author.
 
 export type {
   AckOptions,
@@ -31,3 +31,6 @@ export {
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
 export type { EventBus, JobEvent, PublishOptions } from './events';
 export { freshDefaultEventBus, installEventBus, resetEventBus } from './events';
+export type { LeaseStore } from './leases';
+export type { OutboxRecord, OutboxStore } from './outbox';
+export type { StepStore } from './steps-store';

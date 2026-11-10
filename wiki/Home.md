@@ -122,6 +122,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [CLI reference](CLI-Reference) | every `x` command and flag, with `--json` examples |
 | [Error codes](Error-Codes) | every `X_*` code: meaning, cause, exact fix |
 | [Configuration](Configuration) | every `app.config.ts` field and every env var |
+| [Adapters](Adapters) | every swappable backend — one `runtime.ts` field each: the interface, the reference to copy, the conformance suite, the default |
 | [Deployment](Deployment) | one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, the prebuilt island store, `docs/ops/` |
 | [Deploy recipes](Deploy-Recipes) | per host — Compose, the chart, Fly.io, Render, Railway, Heroku, bare VM — the build source, port, health path, release command and services, each marked executed or not |
 | [Observability](Observability) | counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |

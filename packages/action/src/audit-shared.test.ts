@@ -8,13 +8,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as core from '@ultimat3/core';
-import {
-  AUDIT_RECORD_FIELDS,
-  ctxOf,
-  resetAuditSink,
-  setAuditSink,
-  userActor,
-} from '@ultimat3/core';
+import { AUDIT_RECORD_FIELDS, ctxOf, userActor } from '@ultimat3/core';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -48,17 +43,20 @@ afterEach(() => {
 describe('unit · the audit seam is core’s, and only core exports its slot', () => {
   // 25.0.0: one value, one import path. The barrel re-exported core's three slot functions "so no
   // import moves", which made `@ultimat3/action` a second answer to where the sink is installed.
-  test('setAuditSink / getAuditSink / resetAuditSink are not re-exported by this package', () => {
+  test('the slot functions are not re-exported by this package', () => {
     const exported: Record<string, unknown> = barrel;
-    for (const name of ['setAuditSink', 'getAuditSink', 'resetAuditSink']) {
+    for (const name of ['installAuditSink', 'getAuditSink', 'resetAuditSink']) {
       expect(exported[name]).toBeUndefined();
-      expect(typeof (core as Record<string, unknown>)[name]).toBe('function');
     }
+    // Core's reader on its barrel, the installer and reset on `./adapter` (31.0.0).
+    expect(typeof (core as Record<string, unknown>)['getAuditSink']).toBe('function');
+    expect(typeof installAuditSink).toBe('function');
+    expect(typeof resetAuditSink).toBe('function');
   });
 
   test('a sink installed through core is the one an action writes to', async () => {
     const sink = memoryAuditSink();
-    core.setAuditSink(sink);
+    installAuditSink(sink);
 
     await invoke(archivePost, { postId: POST_ID }, { ctx: editor });
 
@@ -75,7 +73,7 @@ describe('unit · an action’s record carries every field core declares', () =>
 
   test('allowed: the record names the action once, and primitive is action', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await invoke(archivePost, { postId: POST_ID }, { ctx: editor });
 
@@ -88,7 +86,7 @@ describe('unit · an action’s record carries every field core declares', () =>
 
   test('denied: the same shape, no alias', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await invoke(archivePost, { postId: POST_ID }, { ctx: reader }).catch(() => undefined);
 
@@ -101,7 +99,7 @@ describe('unit · an action’s record carries every field core declares', () =>
 
   test('a mutator is primitive action, mutator true — the refinement, not a second primitive', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const publishPost = mutator({
       input: Input,
       output: Output,

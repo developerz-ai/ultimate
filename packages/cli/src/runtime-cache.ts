@@ -63,6 +63,12 @@ export interface CacheTiersOptions {
    * a convention to remember. `cacheTiersOf` is what a boot holding the loaded config calls for it.
    */
   readonly tiers: readonly CacheTierName[];
+  /**
+   * `runtime.ts`'s `cacheTiers`: each replaces the rung of its own `name` — built from nothing
+   * here, so a supplied `redis` tier needs no `REDIS_URL`. A supplied tier `tiers` does not name is
+   * logged (`cache.tier.unnamed`) and never registered: the declaration decides the ladder.
+   */
+  readonly supplied?: readonly CacheTier[] | undefined;
   /** The wait before re-subscribing after `attempt` failures (1-based). Injected by a test. */
   readonly subscribeRetryMs?: ((attempt: number) => number) | undefined;
   /**
@@ -167,6 +173,10 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
  */
 function warnUnnamed(options: CacheTiersOptions): void {
   const named = new Set(options.tiers);
+  for (const tier of options.supplied ?? []) {
+    if (!named.has(tier.name))
+      logger.warn('cache.tier.unnamed', { tier: tier.name, source: 'runtime.ts' });
+  }
   const redis = redisUrlSource(options.env);
   if (!named.has('redis') && redis !== undefined) {
     logger.warn('cache.tier.unnamed', { tier: 'redis', source: redis.key });
@@ -201,7 +211,9 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   // Nothing installs a read tier beyond these, and that is the point: `invalidateTags` fans out to
   // registered tiers and to nothing else, so a read cache holding entries of its own was a
   // `cache:` query an action's `invalidates` could never bust.
-  const built = options.tiers.map((name) => buildTier(name, options));
+  // A supplied rung is used as handed over; the last of one name wins, as `registerTier` would.
+  const supplied = new Map((options.supplied ?? []).map((tier) => [tier.name, tier] as const));
+  const built = options.tiers.map((name) => supplied.get(name) ?? buildTier(name, options));
   for (const tier of built) registerTier(tier);
   warnUnnamed(options);
 

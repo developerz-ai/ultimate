@@ -162,7 +162,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   could then never reach; a later `register()` at the lowercase spelling made a third. Every door
   now normalises before the adapter sees the address — `register`, `login`, `profileEmail` in
   `oauth-login.ts`, and `accountKey`, which must key the same way or one address buys a fresh
-  lockout budget per spelling. `adapter-parity.test.ts` pins both adapters in one test, the shape
+  lockout budget per spelling. `adapter-parity.test.ts` (31.0.0: `authAdapterConformance`, `@ultimat3/testing/conformance`) pins both adapters in one test, the shape
   `jobs/driver-parity.test.ts` established; `MemoryAdapter` normalising again is a failing test.
   Trim and lowercase only: stripping a `+tag` or a gmail dot MERGES two addresses a person kept
   apart, which is takeover between colleagues at one domain.
@@ -401,7 +401,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `x_users.email` and `x_users.external_id`, `authUniqueViolation` (`X_AUTH_WRITE_FAILED`). It is
   what `x new` scaffolds and what every test runs against, so the duplicate path was only ever
   exercised against the permissive half of the seam: two `register()` calls at one address made two
-  rows, and the second was unreachable forever. `adapter-parity.test.ts` pins both halves.
+  rows, and the second was unreachable forever. `adapter-parity.test.ts` (31.0.0: `authAdapterConformance`, `@ultimat3/testing/conformance`) pins both halves.
   **A NULL is not a value to either index, `As of 2026-08-23`**: a Postgres unique index is NULLS
   DISTINCT, so `external_id` constrains only the rows that carry one — the check was
   `!== undefined`, and `oauth-login.ts` binds `grants.externalId ?? null` for every first-time
@@ -722,3 +722,14 @@ against, which the criterion forbids. What it hardens beyond this — attestatio
 | the digest option is `digest`, not the issue's `challenge` | `challenge` invited an app to hand WebAuthn its own challenge, which drops the nonce and single use |
 | the software authenticator is `@ultimat3/auth/soft-authenticator`, not re-exported by `@ultimat3/testing` | auth's own tests cannot import tier 5, so the one implementation sits at tier 2; a re-export from testing was a second import path for one value, refused by `flight-copies` (`X_HELPER_COPY`) |
 | the browser half is `newPasskey` / `getPasskey` | `createPasskey` was refused by the factory-names rule (`X_FACTORY_NAME_SPELLING`) before it shipped |
+
+## Moved out 2026-11-09 (plan 101 v31, the CLAUDE.md ceiling)
+
+- **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
+  whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
+  evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
+  first (`boundedSubjects`): anything not a positive finite integer takes the default.
+- **`TotpReplayGuard` is one atomic `claim(subject, step, at): Promise<boolean>`**; a rejection is
+  no verdict (`attempt.release()`, rethrown). Precedence: `config.totpReplay` →
+  `installTotpReplay`'s factory → memory. `postgresTotpReplayGuard`: `x_totp_steps`, one
+  `on conflict do nothing`; `purgeExpired(nowMs)` keeps slack past the drift.

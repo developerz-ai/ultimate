@@ -16,29 +16,29 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **`repo.ts` is the contract** (`Repo`, `FindManyArgs`, `Transactor`); `memory-repo.ts` is
   `memoryRepo()`.
 - **Two drivers, one meaning.** `memoryDriver()` and `postgresDriver()` share `plan.ts`, `cursor.ts`
-  and the `Repo` contract. Every bulk or read feature carries BOTH a `*-parity.test.ts` (identical rows
-  into both drivers, identical output) and a `pg-driver-<feature>.live.test.ts` against a real server.
-  Both are the bar.
-- **`write-parity.test.ts` runs every write against memory AND PGlite**: a patch property present with
+  and the `Repo` contract. Every bulk or read feature is proved by `entityDriverConformance`
+  (`@ultimat3/testing/conformance`) and, where only a server shows it, a
+  `pg-driver-<feature>.live.test.ts`.
+- **`entityDriverConformance` (`@ultimat3/testing/conformance`) runs every write against memory, PGlite, a server and a `defineDriver` store**: a patch property present with
   `undefined` is ABSENT (only `null` clears); memory refuses a duplicate PK, a duplicate non-partial
   unique — index OR `c.unique([…])` invariant, the one list in `unique-constraints.ts` — and a PK
   patch onto another row with `X_DB_UNIQUE_VIOLATION` (partial uniques are not checked in memory);
   each kind's stored spelling: `docs/history/entity.md`.
-  `invariant-parity.test.ts` asks the app, the driver and the raw CHECK the same question.
-- **`min`/`max` over a `timestamptz` crosses as epoch ms** (`aggregate-time-parity.test.ts`). A whole
+  The suite asks the app and the driver; `invariant-check.test.ts` asks the raw CHECK the same question.
+- **`min`/`max` over a `timestamptz` crosses as epoch ms** (the suite; under four session zones, `entity-driver-conformance-pglite.test.ts`). A whole
   row read under a non-UTC session still fails on PGlite — recorded, not fixed.
-- **Text ordering: byte (`C`) order is the parity target** (memory: `byCodePoint`) — a linguistic
-  production collation is a known divergence; never `collate "C"` in generated SQL (defeats the
+- **Text order is the database's collation; memory's is code point, which is `C`** (`byCodePoint`) — a
+  linguistic production collation orders differently, by decision (the suite checks it on PGlite only); never `collate "C"` in generated SQL (defeats the
   index). Create the database with `LC_COLLATE=C` when byte order must hold.
 - **Money's write shape is wider than its row shape** (`MoneyInput` takes a `bigint`; `MoneyValue`
   holds a `number`); `RowWrite<Row>` types `insert`/`insertAll`/`upsertAll`; `narrowRow` (`columns.ts`)
   narrows at each write method's ENTRY, before `$assert`/`upsertPlan`. `pg-money-write.live.test.ts`,
-  `money-write-parity.test.ts`, `type-pins.ts`.
-- **A numeric key has one spelling** (`keyOf`): batches, conflict targets and memory's uniques. **A null test on a whole money property reads `<p>.minor`.**
+  `pg-money-bind.test.ts`, the suite, `type-pins.ts`.
+- **A numeric key has one spelling** (`keyOf`): batches, conflict targets and memory's uniques. **A null test on a whole money property reads `<p>.minor`; any other predicate on it, or an unknown operator, is refused at plan time (`predicate-screen.ts`).** Why: `docs/history/entity.md` (31.0.0).
 - **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`); `compareByKind` /
   `sameValueOfKind` are EXPORTED — `@ultimat3/query` calls them. **ONE numeric comparison,
   `numericOrder`**: `DECIMAL_TEXT` columns by VALUE (`'2.50' = 2.5`), `number`/`bigint` numerically
-  (`compare-parity.test.ts`). A `uuid` is a value, compared lower-cased and
+  (`compare-by-kind.test.ts`, the suite). A `uuid` is a value, compared lower-cased and
   stored lower-case (`keyOf`, `parseUuid`, `narrowUuid`; text is never narrowed); `LIKE` (`like.ts`)
   uses Postgres' default `\` escape, refuses a trailing escape, counts CHARACTERS and is a bounded
   two-pointer walk — never a regex; `in` takes a
@@ -166,10 +166,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **Tenancy applies to writes in two places**: the plan bounds WHICH rows; `assertRowTenant` judges the
   VALUE at every write seam (both drivers), a filtered update judging the PATCH before any row; refuse,
   never stamp; all or nothing; the incoming rows too; before the statement exists
-  (`write-tenancy-parity.test.ts`, `pg-driver-tenancy.live.test.ts`). With the conflict-target rule, a
+  (the suite, `pg-driver-tenancy.live.test.ts`). With the conflict-target rule, a
   cross-tenant upsert is unrepresentable.
-- **A reference stays inside its tenant** (`sameTenantOf`, `describe.ts`, at describe time): `sameTenant` is `null` on the record and ABSENT on the column otherwise (the hash). `entity()` never resolves a thunk at declaration. Memory (`memory-same-tenant.ts`) refuses only a target FOUND elsewhere. `same-tenant-parity.test.ts`, `same-tenant.live.test.ts`.
-- **`lock`/`lockKey`**: optional on `Repo`, required on `Table` (`table-locks.ts`, `X_LOCK_UNSUPPORTED`); `pg-lock.ts`, `memory-lock.ts` (`update`/`delete` queue too, the filtered writes do not), one tenant derivation (`lock-key.ts`, via `readPlan`). `lock-parity.test.ts`, `lock.live.test.ts`, `lock-seams.test.ts`. Why: `docs/history/entity.md` (2026-11-02).
+- **A reference stays inside its tenant** (`sameTenantOf`, `describe.ts`, at describe time): `sameTenant` is `null` on the record and ABSENT on the column otherwise (the hash). `entity()` never resolves a thunk at declaration. Memory (`memory-same-tenant.ts`) refuses only a target FOUND elsewhere. The suite, `same-tenant.live.test.ts`.
+- **`lock`/`lockKey`**: optional on `Repo`, required on `Table` (`table-locks.ts`, `X_LOCK_UNSUPPORTED`); `pg-lock.ts`, `memory-lock.ts` (`update`/`delete` queue too, the filtered writes do not), one tenant derivation (`lock-key.ts`, via `readPlan`). the suite, `pg-lock-attribution.test.ts`, `lock.live.test.ts`, `lock-seams.test.ts`. Why: `docs/history/entity.md` (2026-11-02).
 - **`crossTenant(reason, fn)` is the ONE way to read across tenants** — an `asyncContext` scope from
   core (`scripts/async-context-guard.ts`), `CROSS_TENANT_SCOPE` (`tenancy:cross`) proven at the call
   and at every plan (`X_TENANCY_CROSS_DENIED`), refused outside a request, blank reason `X_INVARIANT`.

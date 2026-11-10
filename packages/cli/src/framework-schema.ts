@@ -82,7 +82,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     tables: Object.freeze(['x_idempotency']),
     ddl: Object.freeze([SQL_IDEMPOTENCY_TABLE]),
   }),
-  // The DDL only, and deliberately NO `setAuditSink`: there is no default audit sink on purpose,
+  // The DDL only, and deliberately NO `installAuditSink`: there is no default audit sink on purpose,
   // so `X_AUDIT_SINK_MISSING` keeps firing at boot for an app that declares `audit: true` and
   // installs none.
   Object.freeze({

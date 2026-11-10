@@ -11,6 +11,7 @@ import {
   configureErrorReporting,
   type ErrorReport,
   errorReport,
+  installErrorReporter,
   memoryErrorReporter,
   noopErrorReporter,
   reportError,
@@ -24,7 +25,8 @@ afterEach(() => {
 
 const install = () => {
   const reporter = memoryErrorReporter();
-  configureErrorReporting({ reporter, clock: frozenClock(new Date('2026-08-11T00:00:00Z')) });
+  installErrorReporter(reporter);
+  configureErrorReporting({ clock: frozenClock(new Date('2026-08-11T00:00:00Z')) });
   return reporter;
 };
 
@@ -128,11 +130,9 @@ describe('reportError', () => {
   });
 
   test('a reporter that throws never reaches the caller', () => {
-    configureErrorReporting({
-      reporter: {
-        report(): void {
-          throw new Error('monitor is down');
-        },
+    installErrorReporter({
+      report(): void {
+        throw new Error('monitor is down');
       },
     });
 
@@ -146,15 +146,13 @@ describe('reportError', () => {
     // `failure instanceof Error ? failure.message : String(failure)` — two property operations on
     // a value from outside the framework, so the swallowed failure escaped through its own log
     // line and became the second failure this function exists to prevent.
-    configureErrorReporting({
-      reporter: {
-        report(): never {
-          throw new Proxy(new Error('monitor is down'), {
-            getPrototypeOf(): never {
-              throw new TypeError('proxy trap');
-            },
-          });
-        },
+    installErrorReporter({
+      report(): never {
+        throw new Proxy(new Error('monitor is down'), {
+          getPrototypeOf(): never {
+            throw new TypeError('proxy trap');
+          },
+        });
       },
     });
 

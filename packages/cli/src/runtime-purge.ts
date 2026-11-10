@@ -124,7 +124,7 @@ function notifyTargets(retention: InboxRetention): readonly PurgeTarget[] {
 /**
  * Read per attempt by the job, and emptied by the disposer `installRetentionSweep` returns: a
  * sweep left declared after its boot has stopped must not reach through a closed pool. Module
- * scope for the reason the installed job driver and `configureKdfGate` are — a process has one boot at a
+ * scope for the reason the installed job driver and `installKdfGate` are — a process has one boot at a
  * time, and the registry the job lives in is process-wide too.
  */
 let installed: readonly PurgeTarget[] = [];

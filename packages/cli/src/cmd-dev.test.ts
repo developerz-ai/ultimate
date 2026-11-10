@@ -425,14 +425,15 @@ describe('unit · x dev boots the app', () => {
   });
 
   // `x dev` passed no app middleware until 2026-09-05 and no app DISK until 22.4 (it built its own):
-  // the fixture's `apps/web/runtime.ts` stamps every response and declares the one disk, `appdisk`.
+  // the fixture's `apps/web/runtime.ts` stamps every response and hands over its disk's driver,
+  // which the boot registers as the default disk under the driver's name (31.0).
   test("the app's apps/web/runtime.ts middleware and storage run in development", async () => {
     const page = await fetchDev('/pricing');
     expect(page.status).toBe(200);
     expect(page.headers.get('x-dev-runtime')).toBe('app');
     const served = page.headers.get('x-ultimate-build'); // BUILD_ID: reported must be served
     expect(`${server.buildId} ${String(served)}`).toBe('stamped-7 stamped-7');
-    expect(server.runtime.storage.diskNames).toEqual(['appdisk']);
+    expect(server.runtime.storage.diskNames).toEqual(['local']);
   });
 
   // Under the embedded database a subscription took its snapshot and then heard nothing — PGlite

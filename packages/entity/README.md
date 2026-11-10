@@ -911,8 +911,13 @@ memory twin of `@ultimat3/db`'s `currentTx()`, which `@ultimat3/action`'s commit
 `compareByKind(kind, left, right)` and `sameValueOfKind(kind, left, right)` are that rule, exported
 (`As of 2026-10`): `-1 | 0 | 1` and a boolean for two values of one column of a declared
 `ColumnKind`, NULL sorting largest. `@ultimat3/query`'s live matcher and in-memory source call them
-rather than keep a comparator of their own; `compare-parity.test.ts` runs the rule against both
-drivers.
+rather than keep a comparator of their own; `compare-by-kind.test.ts` pins the rule, and
+`@ultimat3/testing`'s `entityDriverConformance` holds every driver to it.
+
+Text orders by the DATABASE's collation. Memory orders by code point, which is `C` (PGlite's
+default): a server created with a linguistic collation (`en_US.utf8`) orders text differently, by
+decision — `collate "C"` in generated SQL would stop a default-collation index serving the sort.
+Create the database with `LC_COLLATE=C` where byte order must hold.
 
 `testDriver()` is the third, and only a test takes it (`As of 30.0`): memory until
 `@ultimat3/db`'s `setDbClient` installs a client, `postgresDriver()` through that client while one

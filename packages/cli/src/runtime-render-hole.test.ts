@@ -4,13 +4,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import {
-  configureErrorReporting,
-  memoryErrorReporter,
-  resetErrorReporting,
-  useContext,
-  userActor,
-} from '@ultimat3/core';
+import { memoryErrorReporter, resetErrorReporting, useContext, userActor } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import {
   cspHashSource,
   defineHttpConfig,
@@ -284,7 +279,7 @@ describe('unit · what runs inside a hole', () => {
   ])(
     '%s after the flush is refused, not dropped: the hole fails and a monitor hears',
     async (_name, write) => {
-      configureErrorReporting({ reporter: reports });
+      installErrorReporter(reports);
       const Writes = async (): Promise<string> => {
         await Promise.resolve();
         write();

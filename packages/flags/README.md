@@ -165,10 +165,16 @@ work on the day it is needed.
 
 There is no reporter seam in this package. An overdue flag goes through `@ultimat3/core`'s
 `ErrorReporter` — the framework's one error-monitoring seam — as a `warning` from `source:
-'process'`, so an app wires its monitor in exactly one place:
+'process'`, so an app wires its monitor in exactly one place, `apps/web/runtime.ts` (or sets
+`SENTRY_DSN` and lets the boot add the transport):
 
 ```ts
-configureErrorReporting({ reporter: sentryErrorReporter({ dsn }) });
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
+import { sentryErrorReporter } from '@ultimat3/core';
+
+declare const dsn: string;
+
+export const runtime = { errorReporter: sentryErrorReporter({ dsn }) } satisfies RuntimeOverrides;
 ```
 
 What this package adds is the rate limit core has no opinion about: one report per flag per

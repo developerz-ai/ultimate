@@ -6,7 +6,8 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { ctxOf, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -55,7 +56,7 @@ afterEach(() => {
 describe('the audit seam', () => {
   test('a mutator running outside /admin is recorded', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await publishPost().server(editor, { postId: POST_ID });
 
@@ -67,7 +68,7 @@ describe('the audit seam', () => {
 
   test('a declaration without `audit` records nothing — opt-in, never a global switch', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await publishPost(false).server(editor, { postId: POST_ID });
 
@@ -76,7 +77,7 @@ describe('the audit seam', () => {
 
   test('a denied attempt is recorded, and the denial still reaches the caller', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const target = publishPost();
 
     const failure = await target.server(reader, { postId: POST_ID }).catch((e: unknown) => e);
@@ -92,7 +93,7 @@ describe('the audit seam', () => {
 
   test('a handler that throws is recorded as `failed`, carrying its own code', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const drifted = action({
       input: Input,
       output: Output,
@@ -119,7 +120,7 @@ describe('the audit seam', () => {
 
   test('an input that never parsed is recorded WITHOUT the raw payload', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const target = publishPost();
 
     await target.server(editor, { postId: "'; drop table posts --" }).catch(() => undefined);
@@ -135,7 +136,7 @@ describe('the audit seam', () => {
 
   test('the record carries the context, not a guess at which of its facts matter', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const target = publishPost();
 
     await invoke(target, { postId: POST_ID }, { ctx: editor, surface: 'mcp' });
@@ -150,7 +151,7 @@ describe('the audit seam', () => {
 
   test('an impersonated call records the actor it ran AS, not the ambient one', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const target = publishPost();
 
     await target.as(editorActor, { postId: POST_ID }, { ctx: reader });
@@ -160,7 +161,7 @@ describe('the audit seam', () => {
 
   test('a replayed idempotent call is recorded as a call, not a second write', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const target = action({
       input: Input,
       output: Output,
@@ -206,7 +207,7 @@ describe('the audit seam', () => {
   });
 
   test('a sink that refuses a SUCCESSFUL record fails the invocation', async () => {
-    setAuditSink(refusingSink());
+    installAuditSink(refusingSink());
     const target = publishPost();
 
     const failure = await target.server(editor, { postId: POST_ID }).catch((e: unknown) => e);
@@ -219,7 +220,7 @@ describe('the audit seam', () => {
   });
 
   test('a NON-idempotent audited action is never told to retry a committed handler', async () => {
-    setAuditSink(refusingSink());
+    installAuditSink(refusingSink());
 
     const failure = await publishPost()
       .server(editor, { postId: POST_ID })
@@ -234,7 +235,7 @@ describe('the audit seam', () => {
   });
 
   test('an idempotent action invoked WITHOUT a key gets the same refusal to retry', async () => {
-    setAuditSink(refusingSink());
+    installAuditSink(refusingSink());
     const target = action({
       input: Input,
       output: Output,
@@ -258,7 +259,7 @@ describe('the audit seam', () => {
   });
 
   test('an idempotent action invoked WITH a key is told to retry, because the replay is real', async () => {
-    setAuditSink(refusingSink());
+    installAuditSink(refusingSink());
     const target = action({
       input: Input,
       output: Output,
@@ -285,7 +286,7 @@ describe('the audit seam', () => {
 
   test('a refused `allowed` record is not re-recorded as the action having failed', async () => {
     const written: AuditRecord[] = [];
-    setAuditSink({
+    installAuditSink({
       write: (record: AuditRecord): void => {
         written.push(record);
         throw new TypeError('audit table is gone');
@@ -303,7 +304,7 @@ describe('the audit seam', () => {
   });
 
   test('a sink that refuses a DENIED record never replaces the denial', async () => {
-    setAuditSink(refusingSink());
+    installAuditSink(refusingSink());
     const target = publishPost();
 
     const failure = await target.server(reader, { postId: POST_ID }).catch((e: unknown) => e);
@@ -320,8 +321,9 @@ describe('the audit seam', () => {
     for (const name of ['auditSettled', 'auditThrew', 'auditSinkFor']) {
       expect(exported).not.toContain(name);
     }
-    // The slot is core's alone since 25.0.0 — the barrel exports the sinks, never the install.
-    expect(exported).not.toContain('setAuditSink');
+    // The slot is core's alone since 25.0.0 — the barrel exports the sinks, never the install
+    // (`installAuditSink`, `@ultimat3/core/adapter`, since 31.0.0).
+    expect(exported).not.toContain('installAuditSink');
     expect(exported).toContain('memoryAuditSink');
   });
 
@@ -366,7 +368,7 @@ describe('a handler that throws a value which fights being read', () => {
 
   test('the caller keeps its own throwable, and the attempt is still recorded as failed', async () => {
     const sink = memoryAuditSink();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     // `try`/`catch`, never `.then(_, (error) => error)`: returning the value from a rejection
     // handler resolves the outer promise WITH it, and the promise resolution procedure reads

@@ -127,7 +127,7 @@ describe('the shed refusal, whoever performs the queueing', () => {
   test('retryAfterSeconds rides in meta, because this package cannot reach a header', async () => {
     const { refusal, release } = await shedOf({ maxConcurrent: 1, maxQueued: 1 });
     expect(refusal.meta?.['retryAfterSeconds']).toBe(1);
-    expect(refusal.fix).toContain('configureKdfGate(');
+    expect(refusal.fix).toContain('installKdfGate(');
     await release();
   });
 
@@ -176,7 +176,7 @@ describe('the shed refusal, whoever performs the queueing', () => {
  * already had. `flightGate` asks `active < maxConcurrent` and then
  * `waiters.length >= maxQueued`, and both are false for `NaN`: every `hashPassword` and
  * `verifyPassword` on the box parks in a queue with no bound and nothing to release it, so login
- * stops answering at all instead of shedding. Screened at the constructor, so `configureKdfGate`
+ * stops answering at all instead of shedding. Screened at the constructor, so `installKdfGate`
  * and a direct `boundedKdfGate(limits)` are the same door.
  */
 describe('the kdf limits are screened numbers', () => {

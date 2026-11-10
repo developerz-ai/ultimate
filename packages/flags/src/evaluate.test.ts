@@ -6,13 +6,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { MemoryErrorReporter, SleepClock, UltimateError } from '@ultimat3/core';
 import {
   anonymousActor,
-  configureErrorReporting,
   frozenClock,
   memoryErrorReporter,
   resetErrorReporting,
   userActor,
 } from '@ultimat3/core';
-import { installClock } from '@ultimat3/core/adapter';
+import { installClock, installErrorReporter } from '@ultimat3/core/adapter';
 import { isEnabled } from './evaluate';
 import { defineFlag, resetFlags } from './registry';
 import { configureFlags, resetFlagReporting } from './runtime';
@@ -51,7 +50,7 @@ beforeEach(() => {
   resetFlags();
   resetFlagReporting();
   resetErrorReporting();
-  configureErrorReporting({ reporter: sink });
+  installErrorReporter(sink);
 });
 
 afterEach(() => {
@@ -130,11 +129,9 @@ describe('unit · an overdue temporary flag', () => {
 
   test('a monitor that throws does not take the evaluation down with it', () => {
     useClock(frozenClock(LONG_AFTER));
-    configureErrorReporting({
-      reporter: {
-        report(): void {
-          throw new Error('monitor is down');
-        },
+    installErrorReporter({
+      report(): void {
+        throw new Error('monitor is down');
       },
     });
     declareOverdue();

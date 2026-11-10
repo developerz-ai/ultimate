@@ -168,7 +168,8 @@ async function bootRoles(boot: {
   const buildId = await buildIdFor(options, role);
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
-  configureReporting(options.env, buildId);
+  // Released with the boot, so a second boot in this process starts from the app's reporter alone.
+  acquired.push(configureReporting(options.env, buildId));
   // Only the web role serves pages, so only it builds islands and assembles a route table: a
   // worker, scheduler, sync or replicator pod compiled every island of the app on every boot for
   // nothing it would ever serve (plan 101, slice 12 e). The MODULE is the web role's as well —

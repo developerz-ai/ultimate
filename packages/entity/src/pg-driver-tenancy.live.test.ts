@@ -1,5 +1,5 @@
 // What a tenant column means against a real Postgres. `tenancy.test.ts` and
-// `write-tenancy-parity.test.ts` prove the guard and the two drivers' agreement against a
+// `entityDriverConformance` (`@ultimat3/testing`) prove the guard and the two drivers' agreement against a
 // recording client; nothing there proves the ORG PREDICATE REACHES THE SERVER — that Postgres,
 // not the process, is what refuses another tenant's row, and that a refused write never became a
 // statement. Both halves of the guard are here: the plan a read builds, and the value a write

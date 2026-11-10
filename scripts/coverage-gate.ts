@@ -22,6 +22,7 @@ import { finiteOption } from '@ultimat3/core';
 import { parseLcov, percent } from '../packages/cli/src/coverage-lcov';
 import { hasExecutableCode, TEST_FILE, unloadedWeight } from '../packages/cli/src/coverage-source';
 import { BadFlagError } from '../packages/cli/src/errors';
+import { E2E_PATH_GLOBS } from '../packages/cli/src/verify-tests';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { CoveragePin } from './lib/coverage-pins';
 import {
@@ -315,6 +316,13 @@ export function withUnloadedCounted(
  * `--isolate` alone was refused on 2026-09-05 because Bun's lcov then kept the last file's record,
  * not the union (`packages/admin` 92.04% against 99.73%); Bun 1.4.4 unions them, and the premise
  * test above fails if a Bun stops.
+ *
+ * Every e2e path is left out (`E2E_PATH_GLOBS`, the one definition the e2e step selects by). An
+ * e2e suite drives a built app through a browser and child processes, which no in-process lcov
+ * sees, and it already runs in its own gate step: here it was `cli`'s long pole twice over.
+ * Measured 2026-11-09, one tree, four workers: `cli` 285 s → 195 s, 96.15/95.46 → 96.14/95.42;
+ * the five other units carrying e2e suites unmoved against their bars. Contract, live and job
+ * suites stay in: `jobs` is measured by its job suites, and without them read 92.13/91.22.
  */
 export function testCommand(unit: CoverageUnit, dir: string, workers: number): readonly string[] {
   const wide = workers > 1 ? [`--parallel=${String(workers)}`] : [];
@@ -325,6 +333,7 @@ export function testCommand(unit: CoverageUnit, dir: string, workers: number): r
     '--coverage-reporter=lcov',
     `--coverage-dir=${dir}`,
     ...wide,
+    ...E2E_PATH_GLOBS.map((glob) => `--path-ignore-patterns=${glob}`),
     unit.test,
   ];
 }

@@ -12,6 +12,7 @@ import {
   patchEmpty,
   writeUnfiltered,
 } from './errors';
+import { screenPredicates } from './predicate-screen';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { scopedPlan } from './tenancy';
@@ -116,6 +117,7 @@ export const assertFinitePageSize = (entityName: string, rows: number): number =
 export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): QueryPlan => {
   const orderBy = totalOrder(entity, args.orderBy ?? []);
   assertSeekable(entity, orderBy);
+  screenPredicates(entity, args.where ?? []);
   const scoped =
     args.orgId === undefined || entity.$tenantColumn === null
       ? []

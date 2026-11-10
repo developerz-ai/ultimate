@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PurgeDriver } from './cdn';
-import { cacheHeaders, cdnTier, noopPurgeDriver, surrogateKeys } from './cdn';
+import { cacheHeaders, cdnTier, surrogateKeys } from './cdn';
 import { CachePurgeFailedError } from './errors';
 import { tag } from './tags';
 
@@ -88,23 +88,7 @@ describe('cacheHeaders', () => {
   });
 });
 
-describe('noopPurgeDriver', () => {
-  test('is named "noop"', () => {
-    expect(noopPurgeDriver().name).toBe('noop');
-  });
-
-  test('purge echoes back the same keys it was given', async () => {
-    const driver = noopPurgeDriver();
-    const keys = ['post', 'post:1'];
-    // `PurgeDriver.purge` promises the accepted keys, not the caller's array object: a driver
-    // that maps or copies before resolving is conforming, so identity is not the contract.
-    await expect(driver.purge(keys)).resolves.toEqual(keys);
-  });
-
-  test('purgeAll resolves without throwing', async () => {
-    await expect(noopPurgeDriver().purgeAll()).resolves.toBeUndefined();
-  });
-});
+// `noopPurgeDriver`'s contract is `@ultimat3/testing`'s `purgeDriverConformance`, run over it.
 
 const purgeSpy = (accept?: (keys: readonly string[]) => readonly string[]) => {
   const calls: (readonly string[])[] = [];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { configureKdfGate, resetKdfGate } from './kdf-gate';
+import { installKdfGate, resetKdfGate } from './kdf-gate';
 import {
   checkPasswordStrength,
   DEFAULT_PASSWORD_PARAMS,
@@ -118,7 +118,7 @@ describe('a stored hash Bun cannot read', () => {
    * only way to see it without a stopwatch.
    */
   test('burns the KDF the other two failures burn', async () => {
-    configureKdfGate({ maxConcurrent: 0, maxQueued: 0 });
+    installKdfGate({ maxConcurrent: 0, maxQueued: 0 });
     try {
       const shed = async (hash: string | null): Promise<string> =>
         await verifyPassword({ hash, password: PASSWORD }).then(

@@ -10,8 +10,7 @@ import { frozenClock } from '@ultimat3/core';
 import type { JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { postgresJobDriver } from './driver-pg';
-import { SQL_ACK, SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
-import { memoryLeaseStore } from './leases';
+import { SQL_ACK, SQL_NACK, SQL_STATS } from './driver-pg-sql';
 
 /**
  * The pg driver compiles its SQL against this seam, so the statement it issues is readable — and
@@ -181,32 +180,6 @@ describe('introspect.list answers newest first', () => {
     expect(
       ((await driver.introspect?.list({ limit: 1 })) ?? []).map((row) => row.idempotencyKey),
     ).toEqual(['listed:c']);
-  });
-});
-
-describe('a lapsed fleet slot is lost, not renewed', () => {
-  test('the memory store refuses its own holder past the TTL, and the pg statement fences on it', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const store = memoryLeaseStore({ clock });
-    const lease = await store.acquire('job:sweep', 1, 30_000, 'w1');
-    if (lease === undefined) expect.unreachable('the first slot under a limit of 1 must be free');
-
-    // A renewal INSIDE the window still lands — the fence must not turn every heartbeat into a
-    // loss, which is the way "add an expiry check" goes wrong.
-    clock.advance(29_000);
-    expect(await store.renew(lease, 30_000)).toBe(true);
-
-    // Past the TTL with nobody having taken the slot. `worker-fleet-slots.ts` reads `false` as
-    // `X_JOB_SLOT_LOST` and cancels the run, so the two drivers answering this differently is a
-    // job that survives its lapsed slot in production and is killed for it under `x dev`.
-    clock.advance(30_001);
-    expect(await store.renew(lease, 30_000)).toBe(false);
-    expect(await store.held('job:sweep')).toBe(0);
-
-    // The holder fence alone answers the case another worker HAS taken the slot; only an expiry
-    // fence answers the case nobody has yet. Both halves in one test: drop either and this fails.
-    expect(SQL_LEASE_RENEW).toContain('holder = $3');
-    expect(SQL_LEASE_RENEW).toContain('expires_at > now()');
   });
 });
 

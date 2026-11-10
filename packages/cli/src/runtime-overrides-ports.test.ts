@@ -15,9 +15,17 @@ import {
   memoryIdempotencyStore,
   memoryMeterStore,
 } from '@ultimat3/action';
-import { noopPurgeDriver } from '@ultimat3/cache';
+import { memoryAuthServerStore } from '@ultimat3/auth';
+import { installedAuthServerStore } from '@ultimat3/auth/adapter';
+import { memoTier, noopPurgeDriver, registeredTiers } from '@ultimat3/cache';
 import type { AuditSink, FailureStore } from '@ultimat3/core';
-import { ambientClock, frozenClock, getAuditSink } from '@ultimat3/core';
+import {
+  ambientClock,
+  frozenClock,
+  getAuditSink,
+  installedErrorReporter,
+  memoryErrorReporter,
+} from '@ultimat3/core';
 import { installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
 import {
   eventBus,
@@ -27,9 +35,11 @@ import {
   memoryOutboxStore,
 } from '@ultimat3/jobs';
 import { mailDriver, memoryMailDriver } from '@ultimat3/mail';
+import { memoryConfirmationStore } from '@ultimat3/mcp';
+import { installedConfirmationStore } from '@ultimat3/mcp/adapter';
 import { memoryInboxStore, notifyStores } from '@ultimat3/notify';
 import { InProcessTransport } from '@ultimat3/realtime/server';
-import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
+import { memoryStorageDriver } from '@ultimat3/storage';
 import { resolveServices } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { startServices } from './runtime-services';
@@ -59,7 +69,11 @@ describe('each port swapped through runtime.ts reaches its consumer', () => {
         failureStore: failure,
         transport: new InProcessTransport(),
         purge: noopPurgeDriver(),
-        storage: defineStorage({ disks: { mem: memoryStorageDriver() } }),
+        storage: memoryStorageDriver(),
+        authServerStore: memoryAuthServerStore(),
+        mcpConfirmationStore: memoryConfirmationStore(),
+        errorReporter: memoryErrorReporter(),
+        cacheTiers: [memoTier()],
       } satisfies RuntimeOverrides;
 
       const runtime = await startServices(resolveServices(root, {}), DEV_ENV, fakes);
@@ -76,11 +90,25 @@ describe('each port swapped through runtime.ts reaches its consumer', () => {
         expect(mailDriver()).toBe(fakes.mail);
         expect(installedRateLimitStore()).toBe(fakes.rateLimitStore);
         expect(notifyStores().inbox).toBe(inbox);
+        // No ledger supplied: the boot's Postgres one, never notify's memory/refusing default.
+        expect('purgeExpired' in notifyStores().ledger).toBe(true);
         expect(getAuditSink()).toBe(audit);
+        expect(installedAuthServerStore()).toBe(fakes.authServerStore);
+        expect(installedConfirmationStore()).toBe(fakes.mcpConfirmationStore);
+        expect(installedErrorReporter()).toBe(fakes.errorReporter);
+        // `cache.tiers` names the rungs (default `request-memo` + `lru`); a supplied tier replaces
+        // the rung of its own name and the boot builds the rest.
+        expect(registeredTiers().find((tier) => tier.name === 'request-memo')).toBe(
+          fakes.cacheTiers[0],
+        );
         // Read where they are used: the runtime carries the app's object, never a default.
         expect(runtime.transport).toBe(fakes.transport);
         expect(runtime.purge).toBe(fakes.purge);
-        expect(runtime.storage).toBe(fakes.storage);
+        // The driver is the boot's default disk, registered under its own name.
+        expect([runtime.storage.defaultDisk, runtime.storage.diskNames]).toEqual([
+          'memory',
+          ['memory'],
+        ]);
         expect(runtime.failureStore).toBe(failure);
         expect(runtime.rateLimitStore).toBe(fakes.rateLimitStore);
       } finally {
@@ -92,6 +120,10 @@ describe('each port swapped through runtime.ts reaches its consumer', () => {
       expect(() => mailDriver()).toThrow(/X_MAIL_DRIVER_UNAVAILABLE/);
       expect(ambientClock()).not.toBe(fakes.clock);
       expect(getAuditSink()).not.toBe(audit);
+      expect(installedAuthServerStore()).not.toBe(fakes.authServerStore);
+      expect(installedConfirmationStore()).not.toBe(fakes.mcpConfirmationStore);
+      expect(installedErrorReporter()).not.toBe(fakes.errorReporter);
+      expect(registeredTiers()).toEqual([]);
     },
     { timeout: 60_000 },
   );

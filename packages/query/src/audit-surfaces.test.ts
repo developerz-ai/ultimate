@@ -8,7 +8,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { isolateTiers, lruTier, registerTier } from '@ultimat3/cache';
 import type { AuditRecord, AuditSink } from '@ultimat3/core';
-import { ctxOf, isUltimateError, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, userActor } from '@ultimat3/core';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
@@ -63,7 +64,7 @@ afterEach(() => {
 describe('unit · every surface records once, under its own name', () => {
   test('over HTTP, through the real pipeline: surface http', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const server = httpServer({
       routes: [toQueryRoute(postList())],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
@@ -82,7 +83,7 @@ describe('unit · every surface records once, under its own name', () => {
 
   test('a denied HTTP read is recorded too — the 403 still reaches the caller', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const server = httpServer({
       routes: [toQueryRoute(postList())],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
@@ -101,7 +102,7 @@ describe('unit · every surface records once, under its own name', () => {
 
   test("@ultimat3/mcp's served tool — sourceFor, then execute() — is one mcp record", async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     const source = await sourceFor(
       postList(),
@@ -123,7 +124,7 @@ describe('unit · every surface records once, under its own name', () => {
   // a seek that handed back the raw source read an MCP page with no record at all.
   test('a seek and a total off a sourceFor build are recorded too, one record per execute()', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     const source = await sourceFor(
       postList(),
@@ -145,7 +146,7 @@ describe('unit · every surface records once, under its own name', () => {
 
   test('a sourceFor build that is refused is recorded at once — no execute() will follow', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await expect(
       sourceFor(
@@ -165,7 +166,7 @@ describe('unit · every surface records once, under its own name', () => {
 
   test('.page() is one call and one record, its seek push-down included', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const ctx = ctxOf({ actor: reader });
 
     const page = await postList().page({ limit: 2 }, { first: 2, ctx });
@@ -185,7 +186,7 @@ describe('unit · every surface records once, under its own name', () => {
 
   test('.as() is the server surface under the impersonated actor', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await postList().as(reader, { limit: 1 });
 
@@ -202,7 +203,7 @@ describe('unit · every surface records once, under its own name', () => {
 describe('unit · a memo or cache hit is still a sighting', () => {
   test('the request memo: two records, one execution, the second replayed', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const ctx = ctxOf({ actor: reader });
 
     await runQuery(postList(), { limit: 2 }, { ctx });
@@ -214,7 +215,7 @@ describe('unit · a memo or cache hit is still a sighting', () => {
 
   test('two concurrent identical reads join one execution and are two records', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const ctx = ctxOf({ actor: reader });
 
     await Promise.all([
@@ -230,7 +231,7 @@ describe('unit · a memo or cache hit is still a sighting', () => {
     restoreTiers = isolateTiers();
     registerTier(lruTier());
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
 
     await runQuery(postList(true), { limit: 2 }, { ctx: ctxOf({ actor: reader }) });
     await runQuery(postList(true), { limit: 2 }, { ctx: ctxOf({ actor: reader }) });
@@ -242,7 +243,7 @@ describe('unit · a memo or cache hit is still a sighting', () => {
 
   test('fresh: true executes, so it is not replayed', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const ctx = ctxOf({ actor: reader });
 
     await runQuery(postList(), { limit: 2 }, { ctx });
@@ -262,7 +263,7 @@ describe('unit · a sink that refuses is never swallowed', () => {
   };
 
   test('an allowed read whose record is refused withholds the rows: X_QUERY_AUDIT_SINK_FAILED', async () => {
-    setAuditSink(refusing);
+    installAuditSink(refusing);
 
     const error = await runQuery(
       postList(),
@@ -279,7 +280,7 @@ describe('unit · a sink that refuses is never swallowed', () => {
   });
 
   test('a denied read whose record is refused still answers with the DENIAL', async () => {
-    setAuditSink(refusing);
+    installAuditSink(refusing);
 
     const error = await runQuery(
       postList(),

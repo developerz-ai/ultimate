@@ -307,8 +307,9 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 `errorGroupsSink` (`@ultimat3/admin/error-groups`, `As of 2026-11`) is an `ErrorReporter` that folds every report into its `errorFingerprint` group in `x_error_groups` — first seen, last seen, count, a redacted sample — and `/admin/errors` lists them (`errorGroupsPages`, permission `errors:read`).
 
 ```ts
+// apps/web/runtime.ts
 import { errorGroupsSink, postgresErrorGroupsStore } from '@ultimat3/admin/error-groups';
-import { chainErrorReporters, configureErrorReporting, installedErrorReporter } from '@ultimat3/core';
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
 import { job, t } from '@ultimat3/jobs';
 
 // The app's own: which tracker, which title. Enqueued once per NEW group, fleet-wide.
@@ -330,13 +331,14 @@ export const openErrorIssue = job({
 });
 
 export const errorGroups = postgresErrorGroupsStore();
-const sink = errorGroupsSink({ store: errorGroups, onNewGroup: openErrorIssue });
-configureErrorReporting({ reporter: chainErrorReporters(installedErrorReporter(), sink) });
+export const runtime = {
+  errorReporter: errorGroupsSink({ store: errorGroups, onNewGroup: openErrorIssue }),
+} satisfies RuntimeOverrides;
 ```
 
 | Concern | Rule |
 |---|---|
-| Composing | `chainErrorReporters(...)` from `@ultimat3/core`: every member gets every report, one that throws costs only itself, chains flatten. The container chains its `SENTRY_DSN` transport AFTER whatever the app installed — never over it |
+| Composing | the reporter is the `errorReporter` adapter port — one field of `apps/web/runtime.ts` ([Adapters](Adapters#errorreporter)); `configureErrorReporting` takes no `reporter` (31.0.0). Several are `chainErrorReporters(...)` from `@ultimat3/core`: every member gets every report, one that throws costs only itself, chains flatten. The container chains its `SENTRY_DSN` transport AFTER whatever the app installed — never over it |
 | "New", once | the upsert's `xmax = 0` decides, so N replicas reporting one new fault enqueue `onNewGroup` once. Which tracker, title and assignee are the app's job |
 | Transactions | written outside the request's transaction: a rollback never erases its own error |
 | Load | `perMinute` store writes per process (default 120); past it, reports are counted and written as one later. A failed write is logged and never re-enters the reporter |

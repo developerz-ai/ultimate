@@ -1,8 +1,33 @@
-// The live tests' process-tree walk: one bounded `ps` listing, walked in memory, so a cleanup in a
-// `finally` waits at most one timeout however deep the tree it reaps.
+// The live tests' process discipline, held without a live service: the tree walk (one bounded `ps`
+// listing, walked in memory), the stream pump, and the reaper that finds an orphan by its cwd and
+// proves it gone — against real child processes, so the `x dev` live suites' cleanup is itself tested.
 
-import { describe, expect, test } from 'bun:test';
-import { descendantsIn, descendantsOf, parsePidPairs, pidListingCommand } from './dev-live-fixture';
+import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory primitive, no realpath and no recursive delete.
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun ships no path-join primitive.
+import { join } from 'node:path';
+import {
+  alive,
+  descendantsIn,
+  descendantsOf,
+  leftovers,
+  listening,
+  parsePidPairs,
+  pidListingCommand,
+  processesIn,
+  pump,
+  reap,
+  reapIn,
+  waitFor,
+} from './dev-live-fixture';
+
+// realpath: `/proc/<pid>/cwd` reads the resolved path, and a macOS tmpdir is a symlink.
+const sandbox = realpathSync(mkdtempSync(join(tmpdir(), 'x-dev-live-fixture-')));
+afterAll(() => rmSync(sandbox, { recursive: true, force: true }));
+const hasProc = process.platform === 'linux';
 
 describe('descendantsIn', () => {
   test('every descendant, depth first, from one pid → ppid listing', () => {
@@ -66,5 +91,65 @@ describe('the listing on Windows', () => {
       [4243, 4242],
     ]);
     expect(parsePidPairs('  10     1\nPID PPID\n')).toEqual([[10, 1]]);
+  });
+});
+
+describe('pump and waitFor', () => {
+  test('a stream is read once, and waitFor answers everything seen when the marker lands', async () => {
+    const child = Bun.spawn(
+      ['sh', '-c', 'printf "booting\\n"; sleep 0.05; printf "ready on 4100\\n"'],
+      {
+        stdout: 'pipe',
+      },
+    );
+    const out = pump(child.stdout);
+    const seen = await waitFor(out, 'ready on');
+    expect(seen).toContain('booting\n');
+    expect(seen).toContain('ready on 4100');
+    await child.exited;
+  });
+});
+
+describe('alive, processesIn and the reaper', () => {
+  test('a process found by its cwd is reaped, and leftovers then reads clean', async () => {
+    const dir = mkdtempSync(join(sandbox, 'orphan-'));
+    const child = Bun.spawn(['sleep', '30'], { cwd: dir, stdout: 'ignore' });
+    try {
+      expect(alive(child.pid)).toBe(true);
+      if (hasProc) expect(processesIn(dir)).toEqual([child.pid]);
+      await (hasProc ? reapIn(dir) : reap([child.pid]));
+      await child.exited;
+      expect(alive(child.pid)).toBe(false);
+      expect(await leftovers(dir, undefined)).toEqual({ pids: [], port: false });
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
+
+  test('reap of a pid already gone returns at once, never waiting out its bound', async () => {
+    const child = Bun.spawn(['true']);
+    await child.exited;
+    const started = performance.now();
+    await reap([child.pid], 5_000);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
+  test('processesIn a directory nothing runs in is empty', () => {
+    expect(processesIn(join(sandbox, 'nobody-here'))).toEqual([]);
+  });
+});
+
+describe('listening', () => {
+  test('a bound port answers; the same port, released, does not', async () => {
+    const server = Bun.listen({
+      hostname: '127.0.0.1',
+      port: 0,
+      socket: { data: () => undefined },
+    });
+    const { port } = server;
+    expect(await listening(port)).toBe(true);
+    expect((await leftovers(sandbox, port)).port).toBe(true);
+    server.stop(true);
+    expect(await listening(port)).toBe(false);
   });
 });

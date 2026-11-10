@@ -182,7 +182,7 @@ export const kdfOverloaded = (active: number, queued: number): AuthError =>
   new AuthError({
     code: 'X_OVERLOADED',
     cause: `${active} password hashes are already running and ${queued} more are queued`,
-    fix: 'retry after the Retry-After header; widen the ceiling with configureKdfGate({ maxConcurrent, maxQueued }) only if the box has the memory — every argon2id hash holds ~19 MiB while it runs',
+    fix: 'retry after the Retry-After header; widen the ceiling with installKdfGate({ maxConcurrent, maxQueued }) from @ultimat3/auth/adapter, in apps/web/runtime.ts, only if the box has the memory — every argon2id hash holds ~19 MiB while it runs',
     meta: { active, queued, retryAfterSeconds: 1 },
   });
 

@@ -396,7 +396,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_EXERCISE_FILE_UNEDITABLE:
     'edit apps/web/exercise.ts — paste the entry the finding names into export const exercise = defineExercise({ … })',
   X_ERROR_REPORTER_DSN_UNCLAIMED:
-    'edit the file that calls configureErrorReporting: wrap your Sentry wrapper in sentryTransport(wrapper), or a reporter that keeps reports on the box in localErrorSink(sink)',
+    'edit apps/web/runtime.ts — errorReporter: sentryTransport(yourWrapper) around the wrapper that sends to Sentry, or localErrorSink(yourSink) for a reporter that keeps reports on the box',
   X_BOUNDARY_ADAPTER_IMPORT:
     'export const runtime = { jobs: yourDriver } satisfies RuntimeOverrides;   # in apps/web/runtime.ts — name the port your import installed',
 };

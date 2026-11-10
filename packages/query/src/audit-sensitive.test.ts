@@ -4,7 +4,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { AuditRecord, AuditSink } from '@ultimat3/core';
-import { ctxOf, REDACTED, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
+import { ctxOf, REDACTED, userActor } from '@ultimat3/core';
+import { installAuditSink, resetAuditSink } from '@ultimat3/core/adapter';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -38,7 +39,7 @@ afterEach(() => {
 describe('a .sensitive() input field in a read’s audit record', () => {
   test('is [redacted] on an allowed read; another read’s same-named field is not', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     const ctx = ctxOf({ actor: reader });
     await runQuery(lookup(true, 'payerBySsn'), { ssn: SSN, note: 'n' }, { ctx });
     await runQuery(lookup(false, 'payerEcho'), { ssn: SSN, note: 'n' }, { ctx });
@@ -50,7 +51,7 @@ describe('a .sensitive() input field in a read’s audit record', () => {
 
   test('is [redacted] on a denied read too', async () => {
     const sink = collecting();
-    setAuditSink(sink);
+    installAuditSink(sink);
     await expect(
       runQuery(
         lookup(true, 'payerBySsn'),

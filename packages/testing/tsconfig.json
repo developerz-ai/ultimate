@@ -66,6 +66,9 @@
       "path": "../scraping"
     },
     {
+      "path": "../seo"
+    },
+    {
       "path": "../time"
     }
   ]

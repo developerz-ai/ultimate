@@ -7,6 +7,9 @@
 // Where the two genuinely CANNOT agree — a POSIX file has no user metadata header, a provider
 // presign has no size field — the test pins the divergence itself, in one place, with the reason.
 // That is the honest form of parity: the pair still moves together the day either half changes.
+// A claim every disk answers through the port alone lives in `storageDriverConformance`
+// (`@ultimat3/testing`), run over memory, local and a real s3 server; what stays here needs a
+// fault injected, a constructor option, or pins a divergence.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
@@ -108,23 +111,6 @@ describe('a listing returns every key the key rules allow, dot-prefixed ones inc
 
     fake.listResult = { contents: [{ key: 'org/o1/.hidden.txt', size: 1, eTag: 'e' }] };
     expect((await s3.list()).rows.map((object) => object.key)).toEqual(['org/o1/.hidden.txt']);
-  });
-});
-
-describe('a list limit is a page size or a refusal, never a silently empty page', () => {
-  test('both disks refuse limit: 0 rather than reporting a complete, empty listing', async () => {
-    // The local disk sliced `[0, 0)` and then dropped its own `truncated` — `truncated && last !==
-    // undefined` is false when the page is empty — so `list({ limit: 0 })` over a full disk read as
-    // "complete, and there is nothing here". The s3 disk handed `maxKeys: 0` to the provider, so
-    // the two disagreed about the same call. `sweepOrphans` pages through `list()`, so a page that
-    // is empty AND claims to be complete is the false erasure report one call to the left.
-    await local.put(KEY, bytesOf('x'));
-    for (const limit of [0, -1, 1.5, Number.NaN]) {
-      expect(anyCodeOf(await catchError(() => local.list({ limit })))).toBe('X_INVARIANT');
-      expect(anyCodeOf(await catchError(() => s3.list({ limit })))).toBe('X_INVARIANT');
-    }
-    expect(await local.list({ limit: 1 })).toMatchObject({ nextCursor: null, hasMore: false });
-    expect(fake.listCalls.every((call) => (call.maxKeys ?? 1) > 0)).toBe(true);
   });
 });
 

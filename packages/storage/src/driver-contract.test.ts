@@ -1,7 +1,7 @@
-// One claim, three disks. `driver-parity.test.ts` pins local against s3; these are the claims the
-// memory disk has to hold too, because a test's disk that disagrees with production's is a suite
-// that passes over a bug: keys that are prefixes of one another (refused by local and memory,
-// held by s3), `stat()`, and the read ceiling.
+// What the three disks answer that the port alone cannot ask: keys that are prefixes of one another
+// (refused by local and memory, held by s3), the read ceiling each is BUILT with, a provider that
+// sends no lastModified, and a URL bound to the disk that minted it. Every claim a disk answers
+// through the port alone is `storageDriverConformance` (`@ultimat3/testing`), run over all three.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
@@ -25,17 +25,12 @@ const anyCodeOf = (caught: unknown): string =>
 let root = '';
 let fake: FakeS3Client;
 let local: StorageDriver;
-let memory: StorageDriver;
 let s3: StorageDriver;
-const disks = (): readonly StorageDriver[] => [local, memory, s3];
-const drain = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Array> =>
-  new Uint8Array(await new Response(stream).arrayBuffer());
 
 beforeEach(async () => {
   root = await mkdtemp(`${tmpdir()}/ultimate-contract-`);
   fake = new FakeS3Client();
   local = localDriver({ root, signingSecret: 'test-secret', clock });
-  memory = memoryStorageDriver({ signingSecret: 'test-secret', clock });
   s3 = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
 });
 
@@ -123,87 +118,6 @@ describe('a key that is a prefix of another key', () => {
     );
     expect(await local.exists('a.json/b')).toBe(false);
     expect((await local.list()).rows.map((object) => object.key)).toEqual(['a']);
-  });
-
-  test('reading the half that is not there is "absent" on every disk', async () => {
-    for (const disk of disks()) {
-      await disk.put('p', bytesOf('file'));
-      await disk.put('q/r', bytesOf('nested'));
-      // `p/x` sits under a FILE on the local disk and `q` is a DIRECTORY there.
-      for (const absent of ['p/x', 'q']) {
-        expect(await disk.exists(absent)).toBe(false);
-        expect(await disk.stat(absent)).toBeUndefined();
-        expect(codeOf(await catchError(() => disk.get(absent)))).toBe('X_STORAGE_NOT_FOUND');
-      }
-      expect(textOf((await disk.get('p')).bytes)).toBe('file');
-      expect(textOf((await disk.get('q/r')).bytes)).toBe('nested');
-    }
-  });
-});
-
-describe('stat answers what a read would, without the bytes', () => {
-  test('every disk reports the size and type put() was told, and undefined for nothing', async () => {
-    for (const disk of disks()) {
-      await disk.put('org/o1/a.png', bytesOf('12345'), { contentType: 'image/png' });
-      const stat = await disk.stat('org/o1/a.png');
-      expect(stat?.key).toBe('org/o1/a.png');
-      expect(stat?.size).toBe(5);
-      expect(stat?.contentType).toBe('image/png');
-      expect(await disk.stat('org/o1/missing.png')).toBeUndefined();
-      expect(codeOf(await catchError(async () => disk.stat('../escape')))).toBe(
-        'X_STORAGE_PATH_UNSAFE',
-      );
-    }
-  });
-});
-
-describe('a read pinned to the revision its headers came from', () => {
-  // `/_storage` stats, answers with that ETag and length, then streams: an overwrite in between
-  // served the new bytes under the old validator, and a Range checked against the old size.
-  test('stream and streamRange with the stat’s etag refuse another revision', async () => {
-    for (const disk of disks()) {
-      await disk.put('org/o1/v.txt', bytesOf('first version'), { contentType: 'text/plain' });
-      const before = await disk.stat('org/o1/v.txt');
-      await disk.put('org/o1/v.txt', bytesOf('second, longer version'), {
-        contentType: 'text/plain',
-      });
-      const now = await disk.stat('org/o1/v.txt');
-      expect(now?.etag).not.toBe(before?.etag);
-      const pinned = { etag: before?.etag ?? '' };
-      const whole = await catchError(() => disk.stream('org/o1/v.txt', pinned));
-      expect(`${disk.name}:${anyCodeOf(whole)}`).toBe(`${disk.name}:X_STORAGE_OBJECT_CHANGED`);
-      const window = await catchError(() => disk.streamRange('org/o1/v.txt', [0, 4], pinned));
-      expect(`${disk.name}:${anyCodeOf(window)}`).toBe(`${disk.name}:X_STORAGE_OBJECT_CHANGED`);
-      const current = { etag: now?.etag ?? '' };
-      expect(textOf(await drain(await disk.stream('org/o1/v.txt', current)))).toBe(
-        'second, longer version',
-      );
-      expect(textOf(await drain(await disk.streamRange('org/o1/v.txt', [0, 5], current)))).toBe(
-        'second',
-      );
-    }
-  });
-});
-
-describe('a stored header is one header', () => {
-  // A content type is served back as `Content-Type`, and s3 sends it as one: a line break in it is
-  // a second header on the way out, and on the signed wire `fetch` refused it with a TypeError the
-  // disk read as a lost answer — `X_STORAGE_WRITE_OUTCOME_UNKNOWN` for a write that never left.
-  test('a contentType or cacheControl with a line break is refused before a byte moves', async () => {
-    const injected = 'text/html\r\nx-evil: 1';
-    for (const disk of disks()) {
-      for (const options of [{ contentType: injected }, { cacheControl: injected }]) {
-        expect(anyCodeOf(await catchError(() => disk.put('org/o1/a', bytesOf('x'), options)))).toBe(
-          'X_INVARIANT',
-        );
-        const body = new Blob(['x']).stream();
-        const streamed = await catchError(() =>
-          disk.putStream('org/o1/a', body, { maxBytes: 8, ...options }),
-        );
-        expect(anyCodeOf(streamed)).toBe('X_INVARIANT');
-      }
-      expect(await disk.exists('org/o1/a')).toBe(false);
-    }
   });
 });
 

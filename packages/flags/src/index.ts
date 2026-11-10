@@ -29,7 +29,7 @@ export type { SnapshotResult } from './registry';
 export { allFlags, applyFlagSnapshot, defineFlag, hasFlag, resetFlags } from './registry';
 export type { FlagsRuntimeOptions } from './runtime';
 // The reporter seam is `@ultimat3/core`'s `ErrorReporter`, wired once with
-// `configureErrorReporting()`. This package deliberately re-exports none of it.
+// `runtime.ts`'s `errorReporter`. This package deliberately re-exports none of it.
 export { configureFlags, DEFAULT_REPORT_INTERVAL_MS, resetFlagReporting } from './runtime';
 export type { BuiltInSubjectKind, FlagSubjects } from './subject';
 export { BUILT_IN_SUBJECT_KINDS } from './subject';

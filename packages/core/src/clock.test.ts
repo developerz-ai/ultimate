@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { installClock } from './adapter';
 import { frozenClock, liveClock, type SleepClock, systemClock as wallClock } from './clock';
 import { ctxOf } from './context';
+import { isUltimateError } from './errors';
 import { ambientClock, noWaitClock, systemClock } from './sleep-clock';
 
 describe('systemClock.sleep', () => {
@@ -28,6 +29,31 @@ describe('systemClock.sleep', () => {
   test('an already-aborted signal never waits', async () => {
     const reason = { code: 'X_PROBE' };
     await expect(systemClock.sleep(60_000, AbortSignal.abort(reason))).rejects.toBe(reason);
+  });
+
+  // One rule for every `SleepClock`: `frozenClock` refuses a wait that is no number of
+  // milliseconds, so the system clock must too — `setTimeout(fn, NaN)` fires at once, and a retry
+  // loop handed a broken delay would spin instead of failing.
+  test('a non-finite wait is refused as frozenClock refuses it, never a zero-length timer', async () => {
+    for (const ms of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const system = await systemClock.sleep(ms).then(
+        () => 'resolved',
+        (error: unknown) => (isUltimateError(error) ? error.code : 'other'),
+      );
+      const frozen = await frozenClock(0)
+        .sleep(ms)
+        .then(
+          () => 'resolved',
+          (error: unknown) => (isUltimateError(error) ? error.code : 'other'),
+        );
+      expect([ms, system]).toEqual([ms, frozen]);
+      expect([ms, system]).toEqual([ms, 'X_INVARIANT']);
+    }
+  });
+
+  test('a negative wait is a zero-length wait, on both clocks', async () => {
+    await expect(systemClock.sleep(-5)).resolves.toBeUndefined();
+    await expect(frozenClock(0).sleep(-5)).resolves.toBeUndefined();
   });
 });
 
@@ -58,6 +84,14 @@ describe('noWaitClock', () => {
     await noWaitClock.sleep(60_000);
     expect(performance.now() - started).toBeLessThan(1_000);
     expect(Math.abs(noWaitClock.now().getTime() - Date.now())).toBeLessThan(1_000);
+  });
+
+  test('a non-finite wait is refused, as every SleepClock refuses it', async () => {
+    const answer = await noWaitClock.sleep(Number.NaN).then(
+      () => 'resolved',
+      (error: unknown) => (isUltimateError(error) ? error.code : 'other'),
+    );
+    expect(answer).toBe('X_INVARIANT');
   });
 });
 

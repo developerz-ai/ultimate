@@ -26,8 +26,8 @@ export interface MemoryAuditSinkOptions {
  * merely because it is not durable: it DISCARDS.** Past `maxRecords` the oldest record is dropped
  * on every write, so an audited action can run, succeed, be recorded, and leave nothing behind —
  * which is exactly what an audit trail must never do. The trap this shape exists to make visible
- * is that the shortest edit clearing `X_AUDIT_SINK_MISSING` is `setAuditSink(memoryAuditSink())`,
- * and nothing about the call site says the result is amnesiac. A deployment that must keep its
+ * is that the shortest edit clearing `X_AUDIT_SINK_MISSING` is `auditSink: memoryAuditSink()`,
+ * and nothing about that line says the result is amnesiac. A deployment that must keep its
  * trail installs `postgresAuditSink({ executor })`, which drops nothing.
  *
  * `dropped` is what makes that statement checkable in a running process rather than a sentence

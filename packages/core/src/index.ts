@@ -68,12 +68,8 @@ export type {
   AuditSink,
   AuditSurface,
 } from './audit';
-export {
-  AUDIT_RECORD_FIELDS,
-  getAuditSink,
-  resetAuditSink,
-  setAuditSink,
-} from './audit';
+// The installer and its reset are `@ultimat3/core/adapter`'s: the boot is the one caller.
+export { AUDIT_RECORD_FIELDS, getAuditSink } from './audit';
 export type {
   AwsCredentials,
   AwsPayload,

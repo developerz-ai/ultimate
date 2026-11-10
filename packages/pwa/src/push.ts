@@ -26,7 +26,12 @@ export interface PushSubscriptionRecord {
   /** BCP-47, captured at subscribe time. */
   readonly locale: string;
   readonly timeZone: string;
-  readonly actorId: string | null;
+  /**
+   * Whose device this is — never `null`: a push is for a person, `pushSubscribe` stores
+   * `ctx.actor.id`, and `x_push_subscriptions.actor_id` is `not null`. Both stores refuse a missing
+   * one with `X_PWA_PUSH_SUBSCRIPTION_INVALID` (`assertSubscriber`).
+   */
+  readonly actorId: string;
   readonly createdAt: number;
   readonly expirationTime: number | null;
 }

@@ -1,6 +1,6 @@
 // Single responsibility: every parser that judges a whole row reads a NOT NULL `jsonb` column's
 // `null` as the JSON value its schema judges — `$parse`, the wire `$schema`, and `$view`. The two
-// drivers' half of the rule is `json-null-parity.test.ts`.
+// drivers' half of the rule is `@ultimat3/testing`'s `entityDriverConformance`.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { t, validate } from '@ultimat3/schema';

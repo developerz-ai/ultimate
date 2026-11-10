@@ -17,6 +17,7 @@ import { filesIn } from './test-shards';
 import { SERIAL_TYPES } from './test-workers';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import {
+  E2E_PATH_GLOBS,
   E2E_TEST_TIMEOUT_MS,
   ownerOf,
   resetTestDiscovery,
@@ -233,5 +234,35 @@ describe('unit · the test-type vocabulary has one owner', () => {
     // dependency of this package, so the import is the cheap half of the fix — and the only path:
     // `@ultimat3/cli` publishes no second `TEST_TYPES` (`bun run flight-copies`).
     expect(TEST_STEPS.map((step) => step.name)).toEqual([...TEST_TYPES]);
+  });
+});
+
+describe('unit · E2E_PATH_GLOBS is the e2e step, spelt as globs', () => {
+  // The coverage gate and the unit step ignore by these globs, the e2e step selects by substrings:
+  // a path the two readings disagree on is either run twice or measured by nobody.
+  const PATHS = [
+    'packages/cli/e2e/upgrade.e2e.test.ts',
+    'packages/cli/e2e/helpers.test.ts',
+    'packages/cli/src/cdp-shot-popup.e2e.test.ts',
+    'apps/web/app-e2e/checkout.test.ts',
+    'packages/cli/src/e2e-helpers.test.ts',
+    'packages/cli/src/serve.live.test.ts',
+    'packages/cli/src/hold.test.ts',
+  ];
+
+  test('a glob matches exactly the files the e2e step selects', () => {
+    const globs = E2E_PATH_GLOBS.map((glob) => new Bun.Glob(glob));
+    for (const path of PATHS) {
+      const selected = typeFiltersOf('e2e').some((filter) => path.includes(filter));
+      expect({ path, ignored: globs.some((glob) => glob.match(path)) }).toEqual({
+        path,
+        ignored: selected,
+      });
+    }
+  });
+
+  test('the unit step ignores every one of them, so no e2e file runs twice', () => {
+    const unit = testStepCommand('unit');
+    for (const glob of E2E_PATH_GLOBS) expect(unit).toContain(`--path-ignore-patterns=${glob}`);
   });
 });

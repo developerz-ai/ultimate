@@ -4,12 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorReport } from '@ultimat3/core';
-import {
-  configureErrorReporting,
-  memoryErrorReporter,
-  resetErrorReporting,
-  UltimateError,
-} from '@ultimat3/core';
+import { memoryErrorReporter, resetErrorReporting, UltimateError } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { defineHttpConfig } from './config';
 import { useRequestCookie, useRequestHeader } from './context';
 import { registerErrorStatus, resetErrorStatus } from './error-status';
@@ -125,7 +121,7 @@ describe('an app-declared status decides whether the on-call hears about it', ()
     resetErrorReporting();
     resetErrorStatus();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(() => {

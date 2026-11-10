@@ -1,13 +1,10 @@
-// Every tier answers the SAME value shape for the same write, and no tier hands two readers one
-// mutable object. Before one codec, the LRU returned the caller's live reference while Redis
-// JSON round-tripped: a `Date` was a `Date` on the pod that wrote it and an ISO string on the pod
-// that read it from Redis, a mutated hit leaked into every later reader, and a `bigint` made the
-// Redis write throw — swallowed by `bestEffort`, so it never reached the shared tier at all.
+// The Redis tier answers the value shape every tier owes, over the fake client, and still reads a
+// payload written before the codec. Before one codec a `Date` was an ISO string on the pod that read
+// it from Redis and a `bigint` made the write throw. The in-process tiers' half (LRU, memo: shape,
+// shared references, cycles) is `@ultimat3/testing`'s `cacheTierConformance`, run over both.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, isUltimateError, runWithContext } from '@ultimat3/core';
-import { lruTier } from './lru';
-import { memoTier } from './memo';
+import { isUltimateError } from '@ultimat3/core';
 import { redisTier } from './redis';
 import { fakeRedis } from './redis-fake-fixture';
 import type { CacheTier } from './tiers';
@@ -20,13 +17,10 @@ const SAMPLE = {
   nothing: null,
 };
 
-const tiers = (): readonly CacheTier[] => [
-  lruTier({ rng: () => 0 }),
-  redisTier({ client: fakeRedis(), rng: () => 0 }),
-];
+const tiers = (): readonly CacheTier[] => [redisTier({ client: fakeRedis(), rng: () => 0 })];
 
 describe('one value shape, whichever tier answered', () => {
-  test('a Date, a bigint and plain JSON come back identical from the LRU and from Redis', async () => {
+  test('a Date, a bigint and plain JSON come back identical from Redis', async () => {
     for (const tier of tiers()) {
       await tier.set('k', SAMPLE);
       const hit = await tier.get<typeof SAMPLE>('k');
@@ -37,7 +31,7 @@ describe('one value shape, whichever tier answered', () => {
     }
   });
 
-  test('a Map and a Set survive both tiers rather than collapsing to {}', async () => {
+  test('a Map and a Set survive Redis rather than collapsing to {}', async () => {
     const value = { byId: new Map([['a', 1]]), seen: new Set(['x', 'y']) };
     for (const tier of tiers()) {
       await tier.set('k', value);
@@ -48,30 +42,6 @@ describe('one value shape, whichever tier answered', () => {
       expect([...(hit?.value.seen ?? [])]).toEqual(['x', 'y']);
     }
   });
-});
-
-describe('no tier hands out a shared mutable reference', () => {
-  const tiersInRequest: readonly (readonly [string, () => CacheTier])[] = [
-    ['lru', () => lruTier({ rng: () => 0 })],
-    ['request-memo', () => memoTier()],
-  ];
-  for (const [name, make] of tiersInRequest) {
-    test(`${name}: mutating a hit, or the written object, never reaches the next reader`, async () => {
-      // Inside a request, because the memo tier is a no-op outside one.
-      await runWithContext(ctxOf(), async () => {
-        const tier = make();
-        const written = { count: 1, tags: ['a'], at: new Date(0) };
-        await tier.set('k', written);
-        written.count = 99;
-        const first = await tier.get<typeof written>('k');
-        expect(first?.value.count).toBe(1);
-        first?.value.tags.push('leaked');
-        const second = await tier.get<typeof written>('k');
-        expect(second?.value.tags).toEqual(['a']);
-        expect(second?.value.at).toBeInstanceOf(Date);
-      });
-    });
-  }
 });
 
 describe('an entry written before the codec is still read', () => {

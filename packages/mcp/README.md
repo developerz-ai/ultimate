@@ -541,7 +541,7 @@ export const mcp = defineAppMcp({
 
 `mcpServer({ onAudit })` · `defineAppMcp({ onAudit })` — the route reads its server's. One
 audit PATH with a second destination: the `mcp.*` log line is written, then the same decision is
-handed on. What an action or query DID still reaches core's `setAuditSink` (`surface: 'mcp'`);
+handed on. What an action or query DID still reaches core's `auditSink` port (`surface: 'mcp'`);
 `onAudit` carries what no `AuditRecord` can — the refusals before anything ran.
 
 | `event.kind` | When | Carries |
@@ -588,15 +588,11 @@ A factory over `action`, never a ninth primitive: what it returns IS the decisio
 `audit: true` if asked — and `defineAppMcp({ confirmations })` gates the named tools with it.
 
 ```ts
-import type { PgExecutor } from '@ultimat3/core';
-import { defineAppMcp, mcpConfirmations, postgresConfirmationStore } from '@ultimat3/mcp';
-
-declare const executor: PgExecutor;
+import { defineAppMcp, mcpConfirmations } from '@ultimat3/mcp';
 
 // apps/web/app/orders/actions/confirm-refunds.ts — register it like any action
 export const confirmRefunds = mcpConfirmations({
   tools: ['refundOrder'],
-  store: postgresConfirmationStore({ executor }), // memoryConfirmationStore() in a test
   permission: 'order:refund',
   ttlMs: 600_000, // DEFAULT_MCP_CONFIRMATION_TTL_MS
 });
@@ -688,6 +684,16 @@ distinct approver, in order); `decidedBy`/`decidedAt` are the vote that met the 
 answers `quorum`, `approvedBy` and `signingPayload` too. `McpConfirmationStore.decide` takes the
 signature as a fifth argument. Three columns are added by the boot (`alter table … add column if
 not exists`): a row opened before them reads as one approval, no selectors.
+
+### Where the rows live: the `mcpConfirmationStore` port
+
+A declaration naming no `store` keeps its rows in the `mcpConfirmationStore` port, read at each
+use (never when it is built — `runtime.ts` may import it before the boot installs the port): `runtime.ts`'s `mcpConfirmationStore` (installed by the boot before the app's modules
+import), else `postgresConfirmationStore` over the app's pool (31.0 — `store` was required before).
+`store: memoryConfirmationStore()` still wins, for a test. The interface, `McpConfirmationContestedError`
+and the installer (`installConfirmationStore`, boot and `@ultimat3/testing` only) are
+`@ultimat3/mcp/adapter`'s; the suite is `@ultimat3/testing/conformance`'s
+`mcpConfirmationStoreConformance`.
 
 ## Resources
 

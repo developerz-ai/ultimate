@@ -44,6 +44,7 @@ import { withVerifyProgress } from '../packages/cli/src/verify-progress';
 import { readTimings } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
 import { writeErrorLine } from '../packages/cli/src/write-line';
+import { adapterPortFindings } from './adapter-ports';
 import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
@@ -165,6 +166,10 @@ export const tierBoundaries: HostCheck = async (root) => {
     // One instrumentation bus: no package exports a `set*Observer`/`set*Sink`/`set*Exporter` slot
     // or a `recent*()` ring buffer beside core's `subscribe()` (`X_INSTRUMENT_SLOT_FORBIDDEN`).
     ...(await instrumentSlotFindings(root)),
+    // One way to swap a backend: every ADAPTER_PORTS row ships its runtime.ts field, binding,
+    // ./adapter export, conformance suite and wiki section, and no barrel exports an installer
+    // (`X_ADAPTER_PORT_INCOMPLETE`, scripts/adapter-ports.ts).
+    ...(await adapterPortFindings(root)),
   ];
 };
 

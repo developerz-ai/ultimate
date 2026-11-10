@@ -323,6 +323,35 @@ describe('unit · acting on an element', () => {
       ['keyUp', undefined],
     ]);
   });
+
+  test('focus waits for the element, then focuses it and sends no key', async () => {
+    const { page, wire } = await opened(
+      evaluating((e) => (e.includes('focus()') ? undefined : element())),
+    );
+    await page.focus('#go');
+    const expressions = wire.calls
+      .filter((call) => call.method === 'Runtime.evaluate')
+      .map((call) => String(call.params['expression']));
+    expect(expressions.at(-1)).toBe('document.querySelector("#go")?.focus()');
+    expect(wire.methods()).not.toContain('Input.dispatchKeyEvent');
+  });
+
+  test('what the page threw is the refusal, by its first line', async () => {
+    const { page } = await opened((call) =>
+      call.method === 'Runtime.evaluate'
+        ? {
+            exceptionDetails: {
+              text: 'Uncaught',
+              exception: { description: 'TypeError: boom\n    at <anonymous>:1:1' },
+            },
+          }
+        : attach(call),
+    );
+    const error = await page.evaluate('boom()').catch((e: unknown) => e);
+    expect(error).toBeUltimateError('X_CDP_CALL_FAILED');
+    expect((error as { cause?: unknown }).cause).toContain('TypeError: boom');
+    expect((error as { cause?: unknown }).cause).not.toContain('<anonymous>');
+  });
 });
 
 describe('unit · capture and emulation', () => {
@@ -369,6 +398,22 @@ describe('unit · capture and emulation', () => {
       .screenshot({ fullPage: true, clip: { x: 0, y: 0, width: 10, height: 10 } })
       .catch((e: unknown) => e);
     expect(error).toBeUltimateError('X_INVARIANT');
+  });
+
+  test('prepare registers the script for every new document, before anything loads', async () => {
+    const { page, wire } = await opened();
+    await page.prepare('window.__seen = true;');
+    const added = wire.calls.find(
+      (call) => call.method === 'Page.addScriptToEvaluateOnNewDocument',
+    );
+    expect(added?.params).toEqual({ source: 'window.__seen = true;' });
+    expect(added?.sessionId).toBe('S1');
+  });
+
+  test('a capture the browser answered without image data is refused, never empty bytes', async () => {
+    const { page } = await opened();
+    const error = await page.screenshot().catch((e: unknown) => e);
+    expect(error).toBeUltimateError('X_CDP_CALL_FAILED');
   });
 
   test("'no-preference' clears the emulated scheme instead of setting one", async () => {

@@ -339,7 +339,7 @@ export const syncAccounts = scrape({
 `eventPrompt({ timeout, pollMs? })` polls the job event bus **in process**. It is not
 `step.waitForEvent`: that suspends the run and closes the browser the site is waiting in.
 
-The bus must be the **stored** one (`EventBus.stored`): the answer is published by a web process and read by the worker. Outside development and test, an in-memory bus is refused when the prompt is asked — `X_DRIVER_UNAVAILABLE`, fix `setEventBus(postgresEventBus({ executor }))` — rather than timing out minutes later as `X_SCRAPE_PROMPT_UNANSWERED`.
+The bus must be the **stored** one (`EventBus.stored`): the answer is published by a web process and read by the worker. Outside development and test, an in-memory bus is refused when the prompt is asked — `X_DRIVER_UNAVAILABLE`, fix `eventBus: postgresEventBus({ executor })` in `apps/<app>/runtime.ts` — rather than timing out minutes later as `X_SCRAPE_PROMPT_UNANSWERED`.
 
 | Fact | Detail |
 |---|---|
@@ -349,7 +349,7 @@ The bus must be the **stored** one (`EventBus.stored`): the answer is published 
 | stale answers | only an answer published **after** the prompt was asked is consumed — the run id is the same on every attempt |
 | while it waits | the worker's heartbeat keeps the claim; one browser round trip per poll keeps the wedge watchdog and a rented browser alive |
 | it ends on | the answer · `timeout` → `X_SCRAPE_PROMPT_UNANSWERED` (terminal) · the run's `signal` · a browser that died |
-| the bus | must be the **stored** one (`postgresEventBus`) wherever the worker and the answering process differ. Every `x` boot installs it; a hand-written boot calls `setEventBus(postgresEventBus({ executor }))` |
+| the bus | must be the **stored** one (`postgresEventBus`) wherever the worker and the answering process differ. Every `x` boot installs it; to swap it, `eventBus:` in `apps/<app>/runtime.ts` ([Adapters](Adapters#eventbus)) |
 
 Saying a prompt is pending is the app's — wrap the handler, it is a function:
 

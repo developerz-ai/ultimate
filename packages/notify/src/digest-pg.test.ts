@@ -1,5 +1,5 @@
 // The Postgres digest store over a recording executor: the window rules are Postgres's (see
-// `digest-parity.live.test.ts`), but how the store READS each answer — and when it seals and asks
+// `digestStoreConformance`, `@ultimat3/testing/conformance`), but how the store READS each answer — and when it seals and asks
 // again — is this package's, and runs without a server.
 
 import { describe, expect, test } from 'bun:test';

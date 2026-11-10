@@ -141,8 +141,10 @@ export class MemoryVectorStore implements VectorStore {
 
   async upsert(records: readonly VectorRecord[]): Promise<void> {
     const tenant = this.scope.tenant ?? NO_VECTOR_TENANT;
+    // Every width checked before any row is written, as `PostgresVectorStore.upsert` does: checked
+    // per record, a refused batch had already written the rows ahead of the bad one.
+    for (const record of records) this.assertDimension(record.vector.length);
     for (const record of records) {
-      this.assertDimension(record.vector.length);
       this.records.set(storageKey(tenant, record.id), { ...record, tenant });
     }
   }

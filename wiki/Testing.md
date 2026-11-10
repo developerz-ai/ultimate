@@ -943,7 +943,7 @@ describe(testName('unit', 'publishPost'), () => {
 
 `behavesLike` wraps the body in `describe('behaves like <name>')`, so a failure reads `publishPost > behaves like an authenticated action > denies an anonymous actor` — the subject and the contract both named. Because it calls `describe`, it belongs at declaration scope and never inside a test body. The body runs once per `behavesLike` call.
 
-Two contracts ship as shared examples, for the ports an app may implement itself: `behavesLike(jobDriverConformance, () => myDriver)` holds a custom `JobDriver` to claim / ack / nack, the claim fence, lease expiry and the burial of a row whose lease lapsed on its final attempt (`onExhausted`, `dropExhausted`); `behavesLike(budgetStoreConformance, () => myStore)` races 24 concurrent `take`s on one key against an `@ultimat3/ai` `BudgetStore`. The memory and Postgres job drivers and `memoryBudgetStore()` run the same suites in `@ultimat3/testing`'s own tests.
+Every adapter port's contract ships as shared examples on `@ultimat3/testing/conformance` — never `.` (31.0.0, Upgrading #46), one suite per `ADAPTER_PORTS` row, named as its `conformance` field: `behavesLike(jobDriverConformance, () => myDriver)` holds a custom `JobDriver` to claim / ack / nack, the claim fence, lease expiry and the burial of a row whose lease lapsed on its final attempt (`onExhausted`, `dropExhausted`); `behavesLike(budgetStoreConformance, () => myStore)` races 24 concurrent `take`s on one key against an `@ultimat3/ai` `BudgetStore`. Every suite and its subject: [the README's table](https://github.com/developerz-ai/ultimate/blob/main/packages/testing/README.md#conformance-a-ports-contract); per port, with the reference to copy: [Adapters](Adapters).
 
 ## Generated scaffolds
 

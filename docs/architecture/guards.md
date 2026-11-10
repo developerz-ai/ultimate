@@ -12,6 +12,7 @@ The codes are in
 
 | Command | What its header says it refuses | Codes |
 |---|---|---|
+| `bun run scripts/adapter-ports.ts` | Enforce, as a build error, that every `ADAPTER_PORTS` row (packages/core/src/registrar.ts) ships whole: a `RuntimeOverrides` field, a boot binding, its interface (and installer) on the package's `./adapter`, a `<x>Conformance` on `@ultimat3/testing/conformance` and a `wiki/Adapters.md` section — and that no backend is swapped any other way: no `set*`/`configure*`/`install*` on a `.` barrel, no port-shaped type on a `./adapter` that no row lists (`X_ADAPTER_PORT_INCOMPLETE`). | `X_ADAPTER_PORT_INCOMPLETE` |
 | `bun run async-context-guard` | Enforce, as a build error, that `packages/core/src/async-context.ts` holds the framework's ONE `AsyncLocalStorage`. | `X_ASYNC_CONTEXT_UNAVAILABLE` |
 | `bun run scripts/bench-claims.ts` | Enforce, on `x verify`'s `manifest` step, that the realtime capacity figures `scripts/bench/results/README.md` states are the figures the committed bench results carry. | `X_BENCH_CLAIM_STALE` |
 | `bun run boundaries` | Enforce the repo's import rules as BUILD ERRORS, not lint warnings (axiom 3). | `X_ADMIN_FLATTENER_VIOLATION` `X_BOUNDARY_SHARED_LEAF` `X_BOUNDARY_VIOLATION` `X_CONFIG_IMPORT_OUTSIDE_LOADER` |

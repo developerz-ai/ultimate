@@ -17,7 +17,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   rule added to one and not the other is the bug this split exists to prevent — `pg-driver.test.ts`
   pins the parity, and every bulk method added since carries the same two files: a
   `*-parity.test.ts` seeding identical rows into both drivers and asserting identical output
-  (`batch-parity.test.ts`, `preload-parity.test.ts`, `count-by-parity.test.ts`, and the
+  (`batch-parity.test.ts` (31.0.0: the suite, and `batch-key-spelling.test.ts`), `preload-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`), `count-by-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`), and the
   `insertAll`/`upsertAll` cross-driver assertions inside `pg-driver-bulk.test.ts`), and a
   `pg-driver-<feature>.live.test.ts` proving the same call against a real server
   (`pg-driver-batch.live.test.ts`, `pg-driver-preload.live.test.ts`, `pg-driver-count.live.test.ts`,
@@ -25,7 +25,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   unproven against Postgres itself; a method with only the second is unproven against memory. Both
   are the bar, not either one.
 
-- **`write-parity.test.ts` runs every write against memory AND a real embedded Postgres (PGlite),
+- **`write-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`) runs every write against memory AND a real embedded Postgres (PGlite),
   `As of 2026-09-23`** — not a recording client. Each case is one body run through both drivers
   and the two outcomes compared. What it pins, each found failing first:
   - a patch property present with `undefined` is ABSENT (`bindValues` and memory's `defined()`);
@@ -46,7 +46,7 @@ a current fact: the rules that still hold are in that file, and where the two di
 
 - **`min`/`max` over a `timestamptz` crosses as epoch milliseconds** (`pg-sql.ts`,
   `aggregate-decode.ts`), never the session's `::text`, which `new Date` read as NaN for an offset
-  with seconds and as 1999 for year 0099. `aggregate-time-parity.test.ts` runs it under four
+  with seconds and as 1999 for year 0099. `aggregate-time-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`) runs it under four
   session zones. Reading a WHOLE ROW under a non-UTC session is a separate path and still fails
   (`X_INVARIANT_VIOLATED`, "an invalid Date") on PGlite — recorded, not fixed here.
 
@@ -75,7 +75,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `bigint` verbatim (measured), so a minor unit past ±2^53 narrowed any later is INSERTed,
   committed, and only then refused by the decode of its own `returning *` — a row the app wrote and
   can never read. `pg-money-write.live.test.ts` is the proof, because only a real table can see
-  that; `money-write-parity.test.ts` pins both drivers together, and `type-pins.ts` fails the build
+  that; `money-write-parity.test.ts` (31.0.0: the suite, and `pg-money-bind.test.ts`) pins both drivers together, and `type-pins.ts` fails the build
   if those three writes stop taking `RowWrite` or start answering with it.
 
 - **What a PREDICATE means is decided by the column's declared KIND, and `memory-match.ts` is
@@ -673,7 +673,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   as one statement. **The incoming rows, not only what lands**: under `onMatch: 'nothing'` a
   colliding row never reaches `write()`, so a check only on stored rows would pass exactly the rows
   that collide. **Refused before the statement exists** — `pg-driver` sends nothing and `memoryRepo`
-  stores nothing, which `write-tenancy-parity.test.ts` pins for both drivers together, and
+  stores nothing, which `write-tenancy-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`) pins for both drivers together, and
   `pg-driver-tenancy.live.test.ts` proves against a real server — that file is where tenancy's live
   proof lives, reads and writes both, and where a new one goes. **Together with the conflict-target rule
   a cross-tenant upsert is unrepresentable**: the target must contain the tenant column under
@@ -1366,7 +1366,7 @@ call core's `compareDecimalText` directly while invariants went through `numeric
 that differed on an operand written `1e21`. Order, equality and an invariant's `gte`/`eq` now ask
 the same function, which reads either side as plain digits. So `where({ total: 10 })` on a
 `bigint()` column matches the row holding `'10'` in the memory driver, as it always did in
-Postgres. `compare-parity.test.ts` runs the rows against both drivers; emitted DDL did not move
+Postgres. `compare-parity.test.ts` (31.0.0: the suite, and `compare-by-kind.test.ts`) runs the rows against both drivers; emitted DDL did not move
 (`ddl-pin.test.ts`).
 
 ## 2026-10-10 — an array cell is read by its declaration, not by the driver's type table
@@ -1417,7 +1417,7 @@ bound operand match on every element type.
 `column-matrix-fixture.ts` is the guard: one entity declaring every `COLUMN_KINDS` member and an
 array of every element kind `arrayOf()` accepts (a kind added to the list without a column there is
 red), seven adversarial rows, each through insert `returning`, a keyed read, an unfiltered read and
-update `returning`, compared with `memoryDriver()`. `column-matrix-parity.test.ts` runs it on
+update `returning`, compared with `memoryDriver()`. `column-matrix-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`) runs it on
 PGlite in the `unit` step and `column-matrix.live.test.ts` on `Bun.SQL` in the `live` step.
 
 Not fixed, because the framework never opens such a pool: on a PREPARING `Bun.SQL` connection an
@@ -1509,7 +1509,7 @@ statements in ONE transaction, a savepoint in an open one, on the pin (`bulk-wri
   chunk is autocommit. **`db.*.upsertAll` and `seed.upsert` overwrite what the caller NAMED**
   (`overwrittenBy` before `$parse`, `UpsertArgs.overwrites`); a present `undefined` is absent. Memory's
   upsert and `deleteWhere` undo on refusal (`memory-batch.ts`); a soft delete under a JS-only rule is
-  judged (`judgedRows`). `bulk-write-parity.test.ts`.
+  judged (`judgedRows`). `bulk-write-parity.test.ts` (31.0.0: `entityDriverConformance`, `@ultimat3/testing/conformance`).
 
 ### A grouped count
 
@@ -1526,7 +1526,7 @@ Groupable kinds are a closed
   `onUpdateNow()` or machine column is refused at declaration; `$describe().appendOnly` is `true` or
   absent. No bypass, backfills included. `append-only{,-parity}.test.ts`.
 
-### `write-parity.test.ts` (the per-kind list)
+### `write-parity.test.ts` (the per-kind list; 31.0.0: `entityDriverConformance`)
 
 `.transition()` filters on `singleKeyOf(entity)` and refuses an absent id (`X_NOT_FOUND`, no row
   moved);
@@ -1584,3 +1584,23 @@ a terminal state is one with no outgoing moves; the move is ONE statement with
   'UTC')::text as "<col>$US"`; `sortPrecision` reads it; the seek binds a six-digit ISO instant
   (`col < $1::timestamptz`). `instant.ts` is where the two representations meet.
   `pg-cursor-precision.live.test.ts`.
+
+## 31.0.0 — what `entityDriverConformance` found (2026-11-09)
+
+The shared suite (`@ultimat3/testing/conformance`) ran the same checks over memory, PGlite, a server
+and a `defineDriver` store, and four memory answers and one kit answer were not Postgres's:
+
+- An unknown operator on an EMPTY table answered `[]` in memory (judged per row) — Postgres refuses.
+  A predicate on a whole money property other than a NULL test answered `[]` — Postgres has no
+  column to compare. Both are screened in `planFor` (`predicate-screen.ts`), so the refusal never
+  depends on the rows.
+- `findById('007')` on an `integer()` key was `null` in memory; Postgres parses the operand as the
+  column's type. `memory-match.ts`'s `asInteger` reads an integer literal as its number.
+- A malformed uuid reached the memory store through a repository write (no `$parse` on that path);
+  Postgres answered 22P02. `narrowUuid` now refuses it at the write entry, so both drivers answer
+  `X_INVARIANT_VIOLATED` before a statement exists.
+- `defineDriver`'s `update(id)` re-read by the OLD id plan, so a patch moving the key or stamping
+  `deletedAt` answered `X_NOT_FOUND`; it re-reads by the key the patch left, soft-deleted included.
+- Text order on a server with a linguistic collation is NOT code point, and stays so by decision:
+  `collate "C"` would stop a default-collation index serving the sort.
+

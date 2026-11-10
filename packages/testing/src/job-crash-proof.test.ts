@@ -5,12 +5,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorReporter } from '@ultimat3/core';
-import {
-  configureErrorReporting,
-  errorFingerprint,
-  installedErrorReporter,
-  resetErrorReporting,
-} from '@ultimat3/core';
+import { errorFingerprint, installedErrorReporter, resetErrorReporting } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import type { JobHandle } from '@ultimat3/jobs';
 import { job, t } from '@ultimat3/jobs';
 import { crashProof } from './job-crash-proof';
@@ -203,7 +199,7 @@ describe('crashProof: what the process reports is not the job’s effect', () =>
         void issue.enqueue({ fingerprint });
       },
     };
-    configureErrorReporting({ reporter: sink });
+    installErrorReporter(sink);
     const once = declare('reported', async ({ step }) => {
       await step.run('charge', async () => (await call('charge')).status, { once: true });
     });

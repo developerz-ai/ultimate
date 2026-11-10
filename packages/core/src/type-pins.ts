@@ -16,6 +16,7 @@ import type {
 } from './config';
 import type { CtxPatch } from './context';
 import type { Page } from './cursor-page';
+import type { ErrorReporter, ErrorReportingOptions } from './error-reporter';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -259,4 +260,12 @@ export type _HasMoreNarrowsCursor = Assert<
 /** On the last page it is exactly `null` — `while (page.nextCursor !== null)` is the same loop. */
 export type _LastPageHasNoCursor = Assert<
   Extract<Page<number>, { readonly hasMore: false }>['nextCursor'] extends null ? true : false
+>;
+
+/**
+ * `configureErrorReporting` takes no reporter (31.0.0): the reporter is the `errorReporter` port's,
+ * installed by the boot through `installErrorReporter`. A second door would be a second answer.
+ */
+type _NoReporterOption = Assert<
+  { readonly reporter: ErrorReporter } extends ErrorReportingOptions ? false : true
 >;

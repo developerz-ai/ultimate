@@ -6,23 +6,18 @@
  * TRANSPORTS, inside one `test()`, and neither side can move alone.
  *
  * The per-format suites already cover each half on its own; what could not be seen from inside
- * either is that they disagreed.
+ * either is that they disagreed. What a `Provider` must do at its SOCKET — forward the caller's
+ * signal, scrub a key echoed into an error, bound an error body — is no longer here: it is
+ * `providerTransportConformance` in `@ultimat3/testing`, run over both wires there.
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { secret } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
-import {
-  FIXTURE_ANTHROPIC_IDS,
-  FIXTURE_OPENAI_IDS,
-  registerFixtureModels,
-  useFixtureModels,
-} from './model-fixture';
-import { openAiProvider } from './openai-provider';
+import { registerFixtureModels, useFixtureModels } from './model-fixture';
 import { parseChatCompletion } from './openai-wire';
 import { ChatCompletionStream } from './openai-wire-stream';
-import { anthropicProvider, parseMessage } from './provider';
+import { parseMessage } from './provider';
 import { remoteEmbedder } from './remote-embedder';
 import type { SseFrame } from './sse';
 import { MessageStream } from './wire';
@@ -31,7 +26,6 @@ import { MessageStream } from './wire';
 useFixtureModels();
 
 const KEY = 'sk-live-do-not-log-me';
-const OPENAI_MODEL = 'gpt-5.6-sol';
 const ANTHROPIC_MODEL = 'claude-opus-5';
 
 const frame = (payload: unknown, event = 'message'): SseFrame => ({
@@ -248,202 +242,30 @@ describe('a tool call carries an object or nothing', () => {
 });
 
 describe('the credential never reaches an error', () => {
-  test('a 4xx body echoing the key is scrubbed on every transport, the embedder included', async () => {
-    // A proxy that echoes the request headers into its own 400 body is the one path by which a
-    // key reaches an error — and an error reaches a log index, a span and a problem document.
-    const echoed = (header: string): Response =>
-      new Response(JSON.stringify({ error: { message: `rejected header ${header}` } }), {
-        status: 400,
-        headers: { 'content-type': 'application/json' },
-      });
-
-    const anthropic = anthropicProvider({
-      models: FIXTURE_ANTHROPIC_IDS,
-      apiKey: KEY,
-      fetch: fakeFetch(() => echoed(`x-api-key: ${KEY}`)),
-    });
-    const openai = openAiProvider({
-      apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...FIXTURE_OPENAI_IDS],
-      fetch: fakeFetch(() => echoed(`authorization: Bearer ${KEY}`)),
-    });
+  // The provider legs of this rule are `providerTransportConformance`'s (`@ultimat3/testing`); the
+  // embedder is no `Provider`, so its leg stays here.
+  test('a 4xx body echoing the key is scrubbed by the embedder', async () => {
     const embedder = remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: KEY,
-      fetch: fakeFetch(() => echoed(`authorization: Bearer ${KEY}`)),
+      fetch: fakeFetch(
+        () =>
+          new Response(
+            JSON.stringify({ error: { message: `rejected header authorization: Bearer ${KEY}` } }),
+            { status: 400, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
     });
-
-    const failures = await Promise.all(
-      [
-        embedder.embed(['hi']),
-        anthropic.generate({
-          model: ANTHROPIC_MODEL,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 16,
-        }),
-        openai.generate({
-          model: OPENAI_MODEL,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 16,
-        }),
-      ].map((promise) =>
-        promise.then(
-          () => undefined,
-          (error: unknown) => error,
-        ),
+    const error = transportError(
+      await embedder.embed(['hi']).then(
+        () => undefined,
+        (failure: unknown) => failure,
       ),
     );
-
-    for (const failure of failures) {
-      const error = transportError(failure);
-      expect(error.status).toBe(400);
-      expect(error.cause).not.toContain(KEY);
-      expect(error.message).not.toContain(KEY);
-      expect(error.cause).toContain('[redacted]');
-    }
-  });
-});
-
-describe("the caller's abort signal reaches the socket", () => {
-  test('both formats forward `signal` into fetch, on the streaming and non-streaming paths', async () => {
-    // Cancellation that stops at the top of the next turn still pays for the call already in
-    // flight — which on a long completion is the expensive one. `agent()` puts `ctx.signal` on
-    // every request; a provider that drops it makes that guarantee a comment.
-    const seen: (AbortSignal | undefined)[] = [];
-    const recording = (): AiFetch => async (_url, init) => {
-      seen.push(init.signal ?? undefined);
-      return new Response(JSON.stringify({ error: { message: 'stop here' } }), {
-        status: 503,
-        headers: { 'content-type': 'application/json' },
-      });
-    };
-
-    const signal = new AbortController().signal;
-    const anthropic = anthropicProvider({
-      models: FIXTURE_ANTHROPIC_IDS,
-      apiKey: KEY,
-      fetch: recording(),
-    });
-    const openai = openAiProvider({
-      apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...FIXTURE_OPENAI_IDS],
-      fetch: recording(),
-    });
-    const drain = async (chunks: AsyncIterable<unknown>): Promise<void> => {
-      for await (const _chunk of chunks) {
-        // The 503 lands on the first pull; nothing is expected to arrive.
-      }
-    };
-
-    const calls: readonly (() => Promise<unknown>)[] = [
-      () =>
-        anthropic.generate({
-          model: ANTHROPIC_MODEL,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 16,
-          signal,
-        }),
-      () =>
-        drain(
-          anthropic.stream({
-            model: ANTHROPIC_MODEL,
-            messages: [{ role: 'user', content: 'hi' }],
-            maxTokens: 16,
-            signal,
-          }),
-        ),
-      () =>
-        openai.generate({
-          model: OPENAI_MODEL,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 16,
-          signal,
-        }),
-      () =>
-        drain(
-          openai.stream({
-            model: OPENAI_MODEL,
-            messages: [{ role: 'user', content: 'hi' }],
-            maxTokens: 16,
-            signal,
-          }),
-        ),
-    ];
-    for (const call of calls) await call().catch(() => undefined);
-
-    expect(seen).toHaveLength(4);
-    expect(seen.every((each) => each === signal)).toBe(true);
-  });
-
-  test('a request with no signal attaches none, rather than an explicit undefined', async () => {
-    let init: RequestInit | undefined;
-    const impl: AiFetch = async (_url, given) => {
-      init = given;
-      return new Response('{}', { status: 503 });
-    };
-    const anthropic = anthropicProvider({
-      models: FIXTURE_ANTHROPIC_IDS,
-      apiKey: KEY,
-      fetch: impl,
-    });
-    await anthropic
-      .generate({
-        model: ANTHROPIC_MODEL,
-        messages: [{ role: 'user', content: 'hi' }],
-        maxTokens: 16,
-      })
-      .catch(() => undefined);
-    expect(init !== undefined && 'signal' in init).toBe(false);
-  });
-});
-
-describe('a failure body is read only as far as the detail needs', () => {
-  // `response.text()` read an error body WHOLE on the generation transports, the hole the
-  // embedder's own bounded reader had already closed: an endless 5xx body held the call forever.
-  test('an endless 503 body ends in a coded failure on both providers', async () => {
-    let pulled = 0;
-    const endless = (): Response =>
-      new Response(
-        new ReadableStream<Uint8Array>({
-          pull(controller) {
-            pulled += 1;
-            controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
-          },
-        }),
-        { status: 503 },
-      );
-    const anthropic = anthropicProvider({
-      models: FIXTURE_ANTHROPIC_IDS,
-      apiKey: KEY,
-      fetch: fakeFetch(endless),
-    });
-    const openai = openAiProvider({
-      apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...FIXTURE_OPENAI_IDS],
-      fetch: fakeFetch(endless),
-    });
-    for (const call of [
-      () =>
-        anthropic.generate({
-          model: ANTHROPIC_MODEL,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 16,
-        }),
-      () =>
-        openai.generate({
-          model: OPENAI_MODEL,
-          messages: [{ role: 'user', content: 'hi' }],
-          maxTokens: 16,
-        }),
-    ]) {
-      pulled = 0;
-      const failure = await call().then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(transportError(failure).status).toBe(503);
-      expect(pulled).toBeLessThan(10);
-    }
+    expect(error.status).toBe(400);
+    expect(error.cause).not.toContain(KEY);
+    expect(error.message).not.toContain(KEY);
+    expect(error.cause).toContain('[redacted]');
   });
 });

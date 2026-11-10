@@ -134,7 +134,7 @@ describe('unit · decimal()', () => {
     expect(rate.$parse('1.23456789')).toBe('1.23456789');
     expect(rate.$parse('-0.00000001')).toBe('-0.00000001');
     // Padded to the column's scale — the spelling Postgres answers `numeric(18, 8)` with, so the
-    // memory driver and the Postgres driver hold one value (`write-parity.test.ts`, row d).
+    // memory driver and the Postgres driver hold one value (`entityDriverConformance`, `@ultimat3/testing`).
     expect(rate.$parse(1.5)).toBe('1.50000000');
   });
 

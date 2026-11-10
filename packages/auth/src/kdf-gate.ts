@@ -7,6 +7,7 @@
 // `http.maxInflight` (1000), i.e. roughly 19 GB of arenas queued on one box.
 
 import { flightGate } from '@ultimat3/core';
+import { adapterSlot } from '@ultimat3/core/adapter';
 import { kdfOverloaded } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
 
@@ -71,22 +72,31 @@ export function boundedKdfGate(limits: KdfLimits = DEFAULT_KDF_LIMITS): KdfGate 
   });
 }
 
-let gate = boundedKdfGate();
+/** Core's one slot shape (`adapter-slot.ts`): installs stack, each release removes its own frame. */
+const gates = /* @__PURE__ */ adapterSlot<KdfGate | undefined>(() => undefined);
+/** The shipped width, built once on first use: a module import must not build a gate it may not use. */
+let shipped: KdfGate | undefined;
 
 /** The process-wide gate every `hashPassword`/`verifyPassword` passes through. */
-export const kdfGate = (): KdfGate => gate;
+export const kdfGate = (): KdfGate => {
+  const installed = gates.current();
+  if (installed !== undefined) return installed;
+  shipped ??= boundedKdfGate();
+  return shipped;
+};
 
 /**
- * The ONE install point, the same shape as `configureCursorSigning` in `@ultimat3/core`: a box
- * with more memory may widen the ceiling, and a test needs a narrow one. Not a `defineAuth` key,
- * because this is a property of the MACHINE, not of the app's auth policy — the same app config
- * runs on a 512 MiB PaaS dyno and a 64 GiB node.
+ * The ONE install point — on `@ultimat3/auth/adapter`, never the barrel (31.0.0): a box with more
+ * memory may widen the ceiling, and a test needs a narrow one. Not a `defineAuth` key, because
+ * this is a property of the MACHINE, not of the app's auth policy — the same app config runs on a
+ * 512 MiB PaaS dyno and a 64 GiB node. Screened before the frame is pushed; answers the release
+ * that removes THIS install and no other, in any order.
  */
-export function configureKdfGate(limits: KdfLimits): void {
-  gate = boundedKdfGate(limits);
+export function installKdfGate(limits: KdfLimits): () => void {
+  return gates.install(boundedKdfGate(limits));
 }
 
-/** Back to the shipped defaults. Tests that call `configureKdfGate` must call this in cleanup. */
+/** Back to the shipped defaults, whatever is stacked. A test seam, on `./adapter` beside the installer. */
 export function resetKdfGate(): void {
-  gate = boundedKdfGate();
+  gates.reset();
 }

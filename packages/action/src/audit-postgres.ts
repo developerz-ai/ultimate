@@ -1,7 +1,7 @@
 /**
  * The durable audit sink: one append-only Postgres table, one insert per record. Without it the
- * shortest edit that clears `X_AUDIT_SINK_MISSING` is `setAuditSink(memoryAuditSink())`, which
- * reads durable at the call site and is a ring that DROPS — compliant in dev, amnesiac in
+ * shortest edit that clears `X_AUDIT_SINK_MISSING` is `auditSink: memoryAuditSink()`, which
+ * reads durable at the line and is a ring that DROPS — compliant in dev, amnesiac in
  * production. Statements are spelled out so an agent can run the exact one it saw in a log.
  */
 
@@ -102,16 +102,13 @@ export interface PostgresAuditSink extends AuditSink {
 }
 
 /**
- * **Install it at boot, beside the store that declares the rest of this app's durability.** The
- * app owes one line in `apps/web/server.ts`, over the client this process already opened:
+ * **Name it in `apps/web/runtime.ts`, beside the rest of this app's durability**, over the pool the
+ * boot opened — the boot installs it (`installAuditSink`) before the app's modules import:
  *
  * ```ts
- * const client = db();
- * setAuditSink(
- *   postgresAuditSink({
- *     executor: { query: (text, values) => client.query({ text, values }) },
- *   }),
- * );
+ * export const runtime = {
+ *   auditSink: postgresAuditSink({ executor: dbExecutor() }),
+ * } satisfies RuntimeOverrides;
  * ```
  *
  * `Bun.sql` does not satisfy `PgExecutor` — `Bun.sql.query` is `undefined`; see that interface.

@@ -259,11 +259,13 @@ export class PwaPushPayloadTooLargeError extends UltimateError {
 /** A subscription no browser produced: a non-https endpoint, or keys of the wrong size. */
 export class PwaPushSubscriptionInvalidError extends UltimateError {
   static readonly code = 'X_PWA_PUSH_SUBSCRIPTION_INVALID' as const;
-  constructor(input: { field: string; reason: string }) {
+  constructor(input: { field: string; reason: string; fix?: string | undefined }) {
     super({
       code: PwaPushSubscriptionInvalidError.code,
       cause: `${input.field} ${input.reason}`,
-      fix: "import { subscribeToPush } from '@ultimat3/pwa/client';   // it sends PushSubscription.toJSON() unchanged",
+      fix:
+        input.fix ??
+        "import { subscribeToPush } from '@ultimat3/pwa/client';   // it sends PushSubscription.toJSON() unchanged",
       meta: { field: input.field },
     });
   }

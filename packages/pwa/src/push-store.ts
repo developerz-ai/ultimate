@@ -6,6 +6,7 @@
 // subscription is theirs now. Keyed by the pair, the first person would go on receiving the second
 // person's notifications on a device they no longer use.
 
+import { PwaPushSubscriptionInvalidError } from './errors';
 import type { PushSubscriptionRecord } from './push';
 
 export interface PushSubscriptionStore {
@@ -21,6 +22,21 @@ export interface PushSubscriptionStore {
   remove(endpoint: string, actorId?: string): Promise<boolean>;
 }
 
+/**
+ * A subscription belongs to a person. Screened in BOTH stores before anything is written, so a
+ * record built outside `pushSubscribe` (untyped JS, a cast) is refused with one code in dev and in
+ * production — not accepted by the memory store and a not-null violation from Postgres.
+ */
+export function assertSubscriber(record: PushSubscriptionRecord): void {
+  const actorId: unknown = record.actorId;
+  if (typeof actorId === 'string' && actorId !== '') return;
+  throw new PwaPushSubscriptionInvalidError({
+    field: 'actorId',
+    reason: 'is not an actor id: a push subscription is stored for the person who subscribed',
+    fix: 'await store.save({ ...record, actorId: ctx.actor.id })   // what pushSubscribe() stores; an anonymous visitor has no push subscription',
+  });
+}
+
 const byEndpoint = (a: PushSubscriptionRecord, b: PushSubscriptionRecord): number =>
   a.endpoint < b.endpoint ? -1 : a.endpoint > b.endpoint ? 1 : 0;
 
@@ -29,6 +45,12 @@ export function memoryPushSubscriptionStore(): PushSubscriptionStore {
   const rows = new Map<string, PushSubscriptionRecord>();
   return {
     save(record) {
+      // Rejected rather than thrown, as the Postgres store's `async save` rejects.
+      try {
+        assertSubscriber(record);
+      } catch (error) {
+        return Promise.reject(error);
+      }
       const existing = rows.get(record.endpoint);
       // The first `createdAt` survives a re-subscribe, as `on conflict do update` leaves it.
       rows.set(

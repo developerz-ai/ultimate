@@ -7,7 +7,6 @@ import { anonymousCtx } from '@ultimat3/action';
 import { declaredErrorRetry, registerErrorRetry, secret, stringField } from '@ultimat3/core';
 import { billedOf } from './billed';
 import { AiContextOverflowError, CONTEXT_OVERFLOW_PHRASES } from './context-overflow';
-import { AiTransportError } from './errors';
 import { AI_ERROR_RETRY } from './errors-retry';
 import type { AiFetch } from './fetch-seam';
 import { providerGateway } from './gateway';
@@ -113,19 +112,8 @@ describe('a request over the window is its own code on every wire', () => {
     }
   });
 
-  test('a 400 about something else stays the transport code', async () => {
-    for (const run of everyPath(400, 'tools.0.input_schema: type must be object')) {
-      const error = await failureOf(run);
-      expect(error).toBeInstanceOf(AiTransportError);
-      expect(stringField(error, 'code')).toBe('X_AI_PROVIDER_UNAVAILABLE');
-    }
-  });
-
-  test('the phrase on a 5xx is an outage, not an overflow', async () => {
-    for (const run of everyPath(503, ANTHROPIC)) {
-      expect(await failureOf(run)).toBeInstanceOf(AiTransportError);
-    }
-  });
+  // A 400 about anything else, and the phrase on a 5xx, stay the transport code:
+  // `providerTransportConformance` (`@ultimat3/testing`).
 });
 
 describe('nothing retries an overflow', () => {

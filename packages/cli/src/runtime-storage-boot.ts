@@ -8,6 +8,7 @@ import { isLocal, renderThrowable, resolveEnvironment } from '@ultimat3/core';
 import { configuredHttp, defineHttpConfig } from '@ultimat3/http';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
+import type { StorageDriver } from '@ultimat3/storage/adapter';
 import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import type { DevServices, Env } from './runtime-bindings';
 import { s3PathStyleOf } from './runtime-s3-path-style';
@@ -37,10 +38,13 @@ export const servedRequestCeiling = (): number =>
  * mention of storage — the demo CrashLooped 22 times on it. A read-only filesystem is a normal way
  * to run a container, so this reports what to do instead of what went wrong.
  */
-export function startStorage(services: DevServices, env: Env, override?: Storage): Storage {
-  // First arm, not a branch beside the two below: a host that handed the boot a `Storage` has
+export function startStorage(services: DevServices, env: Env, override?: StorageDriver): Storage {
+  // First arm, not a branch beside the two below: `runtime.ts` handing the boot a driver has
   // already answered "which disk", and re-deriving one from `S3_ENDPOINT` would be a second answer.
-  if (override !== undefined) return override;
+  // Registered under the driver's own name — its signed URLs hang off that key (`defineStorage`).
+  if (override !== undefined) {
+    return defineStorage({ disks: { [override.name]: override }, default: override.name });
+  }
   const binding = services.storage;
 
   if (binding.mode === 'external') {

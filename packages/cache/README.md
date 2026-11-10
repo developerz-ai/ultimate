@@ -497,6 +497,17 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `CacheTtlInvalidError` | `X_CACHE_TTL_INVALID` | `src/errors.ts` |
 | `CacheValueUnencodableError` | `X_CACHE_VALUE_UNENCODABLE` | `src/errors.ts` |
 
+## Writing a tier or a purge driver: `@ultimat3/cache/adapter`
+
+`CacheTier`, `PurgeDriver`, the shapes they read and answer (`CacheEntry`, `CacheSetOptions`,
+`TierInvalidation`, `TierFence`, `FenceScope`, `CacheTag`) and the errors they raise
+(`CacheDriverUnavailableError`, `CachePurgeFailedError`). An app hands its own to the boot in
+`apps/web/runtime.ts` — `cacheTiers: [myRedisTier]` replaces the rung of that name (`cache.tiers`
+still decides which rungs exist; a supplied rung it does not name is logged `cache.tier.unnamed`
+and unused), `purge: myPurgeDriver` replaces the `CLOUDFLARE_*`/`FASTLY_*` selection. The
+conformance suites are `@ultimat3/testing/conformance`'s `cacheTierConformance` and
+`purgeDriverConformance`.
+
 ## Boundary
 
 Tier 1. Imports `@ultimat3/core` and `@ultimat3/schema` only. Knows nothing about

@@ -1194,6 +1194,11 @@ jobs:
   # numbers), so the job ends when `cli` does. Same units, same bars — only who runs them moved.
   # `cli` itself is the floor: its coverage is one suite's, so it cannot be split across runners.
   #
+  # So `cli` was made cheaper instead, 2026-11-09: no unit's coverage runs its e2e suites
+  # (`E2E_PATH_GLOBS`, the e2e step's own definition). They run in `gate (e2e)` already, and drive
+  # a built app through a browser and child processes no in-process lcov sees. Measured on one
+  # tree, four workers: `cli` 285 s → 195 s at 96.15/95.46 → 96.14/95.42, every bar kept.
+  #
   # No services, deliberately: `scripts/lib/coverage-pins.ts` explains that the pins are measured
   # with no Postgres, no Redis and no NATS so the number is identical on a laptop and on a runner.
   # The live paths are the gate's `live` step, which does have them.

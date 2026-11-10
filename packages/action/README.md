@@ -668,7 +668,7 @@ status is `in-flight`** — one that ignores the second argument reopens the dou
 type-checking cannot catch it: a one-parameter function still satisfies the signature.
 
 **Inside a transaction the settlement commits with the write** (`As of 2026-10-02`, BOTH stores —
-`idempotency-parity.test.ts` runs one set of cases over memory and Postgres). An action invoked
+`idempotencyStoreConformance` on `@ultimat3/testing/conformance` runs one set of cases over memory and Postgres). An action invoked
 inside `withTransaction` settles with that transaction: on its own connection (Postgres), or at
 its `onCommit` (memory).
 
@@ -772,11 +772,15 @@ price change are not the same event, and the framework is not the thing that kno
 them your business has to keep.
 
 ```ts
-import { setAuditSink } from '@ultimat3/core';
+// apps/web/runtime.ts — the boot installs it before the app's modules import
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
+import type { AuditRecord } from '@ultimat3/core';
 
-setAuditSink({
-  async write(record) { await record.ctx.db.auditRows.insert(myRow(record)); },
-});
+declare function keep(record: AuditRecord): Promise<void>; // your table, log or queue
+
+export const runtime = {
+  auditSink: { write: (record) => keep(record) },
+} satisfies RuntimeOverrides;
 ```
 
 What the framework supplies is what it genuinely knows:
@@ -793,8 +797,9 @@ What the framework supplies is what it genuinely knows:
 | `failure` | the `X_*` code and the thrown value, on every outcome but `allowed` |
 
 **One contract, one sink, shared with reads.** `AuditRecord`, `AuditSink` and the installed slot
-are `@ultimat3/core`'s, and so is the one way to install it: `setAuditSink` from `@ultimat3/core`
-(this package re-exports the two types, never the slot — `As of 25.0.0`) installs the sink `query({ audit: true })` writes to as well (`@ultimat3/query`'s README). A sink
+are `@ultimat3/core`'s, and so is the one way to install it: the `auditSink` field of
+`apps/web/runtime.ts`, which the boot installs through core's `installAuditSink`
+(`@ultimat3/core/adapter`, 31.0; this package re-exports the two types, never the slot) — the sink `query({ audit: true })` writes to as well (`@ultimat3/query`'s README). A sink
 tells the two apart by `record.primitive`.
 
 What it does **not** supply: an audit entity, a retention policy, a hash chain, a subject index,
@@ -811,18 +816,17 @@ one would make three of them wrong.
 The memory sink is bounded because a record pins a whole `Ctx`: at 50 audited writes a second an
 unbounded array is 4.3M immortal records a day and the pod dies holding the trail it was
 retaining. The trap it names out loud is that the shortest edit clearing `X_AUDIT_SINK_MISSING`
-is `setAuditSink(memoryAuditSink())`, and nothing at that call site says the result is amnesiac.
+is `auditSink: memoryAuditSink()`, and nothing at that line says the result is amnesiac.
 
 ```ts
-// apps/web/server.ts — the app owns the connection, so the app installs the sink
+// apps/web/runtime.ts — the boot installs the sink, over the pool it opened
 import { postgresAuditSink } from '@ultimat3/action';
-import { setAuditSink } from '@ultimat3/core';
-import { db } from '@ultimat3/db';
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
+import { dbExecutor } from '@ultimat3/db';
 
-const client = db();
-setAuditSink(
-  postgresAuditSink({ executor: { query: (text, values) => client.query({ text, values }) } }),
-);
+export const runtime = {
+  auditSink: postgresAuditSink({ executor: dbExecutor() }),
+} satisfies RuntimeOverrides;
 ```
 
 **The table is applied by the boot; the sink is not.** `startQueue` runs `SQL_AUDIT_TABLE` on
@@ -891,7 +895,8 @@ The row it produces is the app's, and so is every question the framework refused
 which fields, whose tenant, chained or not, kept how long:
 
 ```ts
-setAuditSink({
+// apps/web/runtime.ts — every name below but `runtime` is the app's own
+export const runtime = { auditSink: {
   async write(record) {
     const { ctx } = record;                             // the services a sink needs to write a row
     const prev = await chainHead(ctx);                  // hash-chained: the app's choice
@@ -903,7 +908,7 @@ setAuditSink({
       prevHash: prev, hash: await sha256(prev, record),
     });
   },
-});
+} } satisfies RuntimeOverrides; // apps/web/runtime.ts
 ```
 
 ## The audit trail, for a subject export or erase
@@ -986,7 +991,7 @@ around it; `undefined` restores the declared handler. `@ultimat3/testing`'s `stu
 | `X_CONTRACT_EXERCISE_UNDECLARED` | `.contract()` on a guarded action with no `exercise`, or a blank `off` | `.contract({ exercise: { actor } })` or `{ exercise: { off: '<reason>' } }` |
 | `X_RPC_FAILED` | registered, thrown by nothing since 21.0.0 — a non-`problem+json` failure is core's `X_CLIENT_TRANSPORT_FAILED` now, as for a query | match `X_CLIENT_TRANSPORT_FAILED` instead |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
-| `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `setAuditSink(yourSink)` at boot |
+| `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `auditSink: postgresAuditSink({ executor })` in `apps/web/runtime.ts` |
 | `X_AUDIT_SINK_FAILED` | the sink refused the record for an attempt that **succeeded** | fix the sink — then retry the same `Idempotency-Key` if this call carried one, else reconcile by hand |
 
 Denials re-throw the policy layer's own codes (`X_FORBIDDEN`, `X_UNAUTHENTICATED`) —

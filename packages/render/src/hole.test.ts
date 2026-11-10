@@ -4,7 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { MemoryErrorReporter } from '@ultimat3/core';
-import { configureErrorReporting, memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
+import { memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { HOLE_NODE } from '@ultimat3/core/render-node';
 import { Hole, isHoleNode } from './hole';
 import { drainDeclaredIslands, island } from './island';
@@ -187,7 +188,7 @@ describe('when a hole fails', () => {
   let reports: MemoryErrorReporter;
   beforeEach(() => {
     reports = memoryErrorReporter();
-    configureErrorReporting({ reporter: reports });
+    installErrorReporter(reports);
   });
   afterEach(() => {
     resetErrorReporting();

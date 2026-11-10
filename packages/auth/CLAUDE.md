@@ -71,7 +71,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   may fold case.** Every door now normalises before the adapter sees the address — `register`,
   `login`, `profileEmail` in `oauth-login.ts`, `accountKey`, and `issueVerification`/
   `consumeVerification`. Trim and lowercase only; never strip a `+tag` or a gmail dot.
-  `adapter-parity.test.ts` pins both adapters in one test.
+  `@ultimat3/testing/conformance`'s `authAdapterConformance` pins both adapters.
 - **`json.ts` owns `isRecord` and `decodeJwtSegment`; no second copy.** An array is not a record.
   `decodeJwtSegment` answers `null` for all three failures; each caller raises its own refusal.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
@@ -148,7 +148,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   uniqueness** (`authUniqueViolation`, `X_AUTH_WRITE_FAILED`), NULLS DISTINCT like Postgres;
   `PostgresAuthAdapter` answers the same code through `builtin-adapter-violation.ts`.
   **`MemoryAuthAdapter` takes a `Clock`** (default `systemClock`) and stamps every instant from it.
-  `adapter-parity.test.ts` pins both.
+  `authAdapterConformance` (`@ultimat3/testing/conformance`) pins both.
 - **`listUsersByOrg` orders by byte**: `collate "C"` in Postgres, a code-point compare in memory —
   never `localeCompare`, never UTF-16 `<` (`list-users-order.live.test.ts`, on an `en_US` db).
 - Every `AuthAdapter` member is REQUIRED — a missing one is a compile error at `defineAuth`, and
@@ -183,8 +183,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `remainingMaxAgeSeconds` — `session-rotation.test.ts` pins both adapters.
 - **Every argon2 call goes through `kdfGate()`** — width 8, queue 64, `X_OVERLOADED` past it
   (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `flightGate`, the
-  refusal auth's own through core's `overflow:` seam. `configureKdfGate()` is the ONE install point
-  and deliberately not a `defineAuth` key.
+  refusal auth's own through core's `overflow:` seam. `installKdfGate()` (`@ultimat3/auth/adapter`,
+  answers its release, v31) is the ONE install point and deliberately not a `defineAuth` key.
 - **MFA's second leg is `completeMfa(auth, challenge, code)`** (`mfa-challenge.ts`). `X_MFA_REQUIRED`'s
   `meta.challenge` is a `seal()` value, never a bare user id; the code is reserved against the three
   buckets before it is compared; a recovery code is consumed by one conditional UPDATE. Full rule: `docs/history/auth.md`.
@@ -193,14 +193,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **A TOTP secret that decodes to zero bytes is NO key**: `verifyTotp` returns the generic failure
   (`{ ok: false, step: null }`), `totpCode` and `enrolTotp` throw `X_MFA_SECRET_INVALID`. The secret
   never reaches `cause:`/`fix:`. No length floor beyond one byte.
-- **`TotpReplayGuard` is one atomic `claim(subject, step, at): Promise<boolean>`**; a rejection is
-  no verdict (`attempt.release()`, rethrown). Precedence: `config.totpReplay` →
-  `installTotpReplay`'s factory → memory. `postgresTotpReplayGuard`: `x_totp_steps`, one
-  `on conflict do nothing`; `purgeExpired(nowMs)` keeps slack past the drift.
-- **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
-  whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
-  evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
-  first (`boundedSubjects`): anything not a positive finite integer takes the default.
+- **`TotpReplayGuard` is one atomic `claim(subject, step, at): Promise<boolean>`**; a rejection is no verdict. Full rule: `docs/history/auth.md`.
+- **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee.** Full rule: `docs/history/auth.md`.
 - **Passkeys are verified by hand** (`passkey-*.ts`, `cbor.ts`, `cose-key.ts`, `webauthn-data.ts`):
   UV required, origin exact, the key's alg (never the assertion's), counter non-regression by
   compare-and-set, challenges single-use in `x_passkey_challenges` (never a process map). A step-up
@@ -217,7 +211,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
-| `adapter-subpath.ts` | `@ultimat3/auth/adapter`: the `authLimiter`/`totpReplay`/`authServerStore` port types and the two installers |
+| `adapter-subpath.ts` | `@ultimat3/auth/adapter`: the `authLimiter`/`totpReplay`/`authServerStore` port types, their installers and resets, and `installKdfGate` |
+| `authorization-server-installed.ts` | the `authServerStore` slot: `authorizationServer()` with no `store` reads it per CALL (never captured: `runtime.ts` may build the server first); empty, Postgres over the ambient pool |
 | `builtin-adapter-violation.ts` | a Postgres unique violation on an auth table → `authUniqueViolation` |
 | `rate-limit.ts` | per-ip, per-account and per-org buckets as reservations, lockout, scope check, `loginFailed()` |
 | `login-attempt.ts` | one attempt's reservations across the three buckets, taken before the check and settled after it |
@@ -266,7 +261,8 @@ Gotchas:
 - `errors.ts` registers only the codes this package **owns**, unconditionally; borrowed ones
   (`X_FORBIDDEN`, `X_NOT_IMPLEMENTED`, …) sit untitled in `AUTH_BORROWED_ERROR_CODES`. Never a
   `hasErrorCode()` guard.
-- Tests run against `MemoryAuthAdapter`; `adapter-parity-identity.test.ts` boots PGlite. The two
+- Tests run against `MemoryAuthAdapter`; `authAdapterConformance` and `authServerStoreConformance`
+  (`@ultimat3/testing/conformance`) run memory and Postgres through one suite each. The two
   Postgres guards pair a scripted twin with a `*.live.test.ts` (skips without `TEST_DATABASE_URL`).
 
 Why each rule above is shaped the way it is: [`docs/history/auth.md`](../../docs/history/auth.md).

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d604c86396e1d886e59404d45c1c05276bc9dddc8ee275f864e1126371483fe9",
+  "buildId": "9ef63267ec866704a68588df5ed80ced17d4d07dc292419fe6a82092879ca211",
   "tiers": {
     "0": [
       "core",
@@ -303,6 +303,11 @@
       "code": "X_ACTION_UNREGISTERED",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_ADAPTER_PORT_INCOMPLETE",
+      "owner": "scripts",
+      "at": "scripts/adapter-ports.ts"
     },
     {
       "code": "X_ADMIN_ACTION_DUPLICATE",

@@ -231,7 +231,7 @@ const ADAPTER_PORT_ROWS = [
     pkg: '@ultimat3/mail',
     interface: 'MailDriver',
     envDefault:
-      'SMTP_URL set: smtp; RESEND_API_KEY set: resend; neither: refused at the first send',
+      'SMTP_URL: smtp; RESEND_API_KEY: resend; SES_REGION: ses; none: memory in development/test, refused at the first send elsewhere',
     conformance: 'mailDriverConformance',
   },
   {
@@ -252,7 +252,8 @@ const ADAPTER_PORT_ROWS = [
     port: 'notifyStores',
     pkg: '@ultimat3/notify',
     interface: 'NotifyStores',
-    envDefault: 'a memory delivery ledger, allow-all preferences, no inbox, no digest',
+    envDefault:
+      'Postgres delivery ledger when the app has a database; memory in development/test; refused elsewhere (X_NOTIFY_STORE_MISSING); allow-all preferences, no inbox, no digest',
     conformance: 'notifyStoresConformance',
   },
   {

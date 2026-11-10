@@ -2,14 +2,14 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps (20): `core` `schema`; `cache` `db` `i18n` `time`; `auth` `entity` `http` `policy`; `action`
+Deps (21): `core` `schema`; `cache` `db` `i18n` `seo` `time`; `auth` `entity` `http` `policy`; `action`
 `jobs` `query` `realtime`; `ai` `mail` `notify` `pwa` `render` `scraping` (`ai`, `auth`, `notify`, `scraping` for `swapAdapter`, dynamic-only). Static in `.`: `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
 package; a `packages/core` import never loads `@ultimat3/entity`. `entity` is reached by `await import` only
-(seed writer, tenant witness, `nPlusOne()`, repro, subject proof, the row observer); its one static
-import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `docs/history/testing.md`.
+(seed writer, tenant witness, `nPlusOne()`, repro, subject proof, the row observer); static only in
+the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule: `docs/history/testing.md`.
 
 | Rule | Detail |
 |---|---|
@@ -95,7 +95,7 @@ import is `registry-isolation.ts`, own entry point, off the barrel. Full rule: `
 | Factory seeds | derived from the table name unless given. `reset()` cascades into parents and children, cycle-guarded. `factorySeed` restarts EVERY sequence (`resetFactorySequences`) so a replay draws the same ids |
 | Factory lint | `lintFactories(set)` / `assertFactoriesValid(set)` (`X_TEST_FACTORY_INVALID`): each factory and each trait alone, built (`$parse` + `$assert`, unknown keys) and created into its OWN fresh memory driver |
 | Shared examples | `behavesLike` calls `describe`, so it goes at declaration scope; bun rejects a `describe` inside a test body |
-| A port's contract is shared examples | `jobDriverConformance`, `budgetStoreConformance` — `behavesLike(…, () => yours)` |
+| A port's contract is shared examples | one suite per interface on `@ultimat3/testing/conformance` (`src/conformance.ts`, off `.`), named as `ADAPTER_PORTS[].conformance`: `behavesLike(<port>Conformance, () => yours)`. The list is the README's suite table; each suite's test runs one deliberately broken adapter that must fail |
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s; `testing → cli` fails `bun run boundaries` |
 | `mountIsland` AWAITS `mount` | `IslandEntry['mount']` returns `unknown`, not `void`, and the call is awaited |
 | Dispose STOPS the island, then restores the globals | when `mount` resolved to a function, `[Symbol.dispose]` calls it BEFORE `restore()` |
@@ -124,8 +124,9 @@ Through one `instantMs` and core's `finiteOption`/`finiteCount` (`determinism-bo
 
 Commands: `bun test ./packages/testing/` (from the repo root — the `./` keeps `examples/dummy` out), `bunx tsc --noEmit -p tsconfig.json`.
 
-Entry points: `.` (the API), `./preload` (side effects for bunfig) and `./registry-isolation`
-(`isolateEntityRegistry()`, kept off `.` because it loads `@ultimat3/entity`).
+Entry points: `.` (the API), `./preload` (side effects for bunfig), `./registry-isolation`
+(`isolateEntityRegistry()`, kept off `.` because it loads `@ultimat3/entity`) and `./conformance`
+(every port suite; static imports of the packages they hold to, so never re-exported from `.`).
 
 The island fixture's cost and its whole-chain proof: `docs/history/testing.md`.
 

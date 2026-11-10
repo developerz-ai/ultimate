@@ -71,6 +71,7 @@
 - [CLI reference](CLI-Reference)
 - [Error codes](Error-Codes)
 - [Configuration](Configuration)
+- [Adapters](Adapters)
 - [Deployment](Deployment)
 - [Deploy recipes](Deploy-Recipes)
 - [Observability](Observability)

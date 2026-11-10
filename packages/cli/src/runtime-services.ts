@@ -32,7 +32,7 @@ import { jobsRetentionTargets } from './runtime-jobs-retention';
 import { selectAppMailDriver } from './runtime-mail';
 import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
-import { PORT_BINDINGS } from './runtime-port-bindings';
+import { notifyStoresWithLedger, PORT_BINDINGS } from './runtime-port-bindings';
 import { installPorts, suppliedOr } from './runtime-ports';
 import { installRetentionSweep } from './runtime-purge';
 import { installAppWebPush, selectWebPush } from './runtime-push';
@@ -344,8 +344,13 @@ export async function startServices(
         auditSink: overrides?.auditSink,
         authLimiter:
           overrides?.authLimiter ?? ((policy) => postgresAuthLimiter({ executor, clock, policy })),
+        // Supplied only: unset, each package's slot answers Postgres over the ambient pool.
+        authServerStore: overrides?.authServerStore,
+        errorReporter: overrides?.errorReporter,
         mail,
-        notifyStores: overrides?.notifyStores,
+        mcpConfirmationStore: overrides?.mcpConfirmationStore,
+        // Zero config still has a shared ledger: Postgres over this pool unless `runtime.ts` named one.
+        notifyStores: notifyStoresWithLedger(overrides?.notifyStores, executor),
         rateLimitStore,
         scrapeDriver: overrides?.scrapeDriver,
         totpReplay: totpReplay.value,
@@ -400,7 +405,9 @@ export async function startServices(
     // validated and documented while NOTHING read it — so an app asking for one rung got four,
     // and one asking for a shared tier got whatever `REDIS_URL` happened to say.
     const tiers = cacheTiersOf(config);
-    started.push(startCacheTiers({ env, purge, transport, tiers }));
+    started.push(
+      startCacheTiers({ env, purge, transport, tiers, supplied: overrides?.cacheTiers }),
+    );
 
     return {
       services,

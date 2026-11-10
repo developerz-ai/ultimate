@@ -27,7 +27,7 @@ import. The CLI wires it.
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself; it keeps the order |
 | `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |
 | `audit-hook.ts` | `onAudit`; `resolveToken`'s 2nd arg is http's `RequestFacts` (`seen.address` only, never `x-forwarded-for`), re-exported as `McpRequestFacts` |
-| `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes |
+| `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes. `confirmation-installed.ts` is the `mcpConfirmationStore` slot a declaration with no `store` reads; `adapter.ts` (`./adapter`) its interface, error and installer |
 | `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`) |
 | `oauth-server.ts` | `mcpAuthorizationServer`: `@ultimat3/auth`'s `authorizationServer` bound to one endpoint's `resource` (default and required by `resolveToken`), its `oauth` block, `mcp.auth.<event>` lines. No protocol rule lives here |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |

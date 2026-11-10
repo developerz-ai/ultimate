@@ -19,6 +19,7 @@ import { decideConfirmation } from './confirmation-decide';
 import { McpConfirmationToolUnknownError } from './confirmation-errors';
 import type { McpConfirmationEvidence } from './confirmation-evidence';
 import { confirmationToolGate } from './confirmation-gate';
+import { installedConfirmationStore } from './confirmation-installed';
 import { McpConfirmationQuorumInvalidError } from './confirmation-quorum-errors';
 import type { McpConfirmation, McpConfirmationStore } from './confirmation-store';
 
@@ -72,8 +73,11 @@ export interface McpConfirmationsInput<TTools extends string = string> {
    * `agent({ tools })`. Each must be one the server projects.
    */
   readonly tools: readonly TTools[];
-  /** `memoryConfirmationStore()` for a test or `x dev`; `postgresConfirmationStore()` for a fleet. */
-  readonly store: McpConfirmationStore;
+  /**
+   * Where pending rows live. Omitted: the `mcpConfirmationStore` port — what `runtime.ts`
+   * installed, else Postgres over the app's pool. `memoryConfirmationStore()` for a test.
+   */
+  readonly store?: McpConfirmationStore | undefined;
   /** What the deciding actor must hold — the action's permission, read by `can()`. */
   readonly permission: KnownPermission;
   /**
@@ -124,7 +128,6 @@ export interface McpConfirmations<TTools extends string = string>
  * // apps/web/app/orders/actions/confirm-refunds.ts
  * export const confirmRefunds = mcpConfirmations({
  *   tools: ['refundOrder'],
- *   store: postgresConfirmationStore({ executor }),
  *   permission: 'order:refund',
  * });
  * // apps/web/app/mcp.ts
@@ -143,7 +146,10 @@ export function mcpConfirmations<const TTools extends string>(
     1,
   );
   const clock = input.clock ?? systemClock;
-  const { store, check, approvers, evidence } = input;
+  const { check, approvers, evidence } = input;
+  // Read per USE, never captured: `runtime.ts` may import this declaration before the boot installs
+  // `runtime.mcpConfirmationStore`, and a captured default would keep rows in the wrong store.
+  const storeOf = (): McpConfirmationStore => input.store ?? installedConfirmationStore();
   const sealKeys: SealKeySource = input.sealKeys ?? {};
   if (approvers !== undefined && typeof approvers !== 'function') {
     throw new McpConfirmationQuorumInvalidError({
@@ -170,20 +176,24 @@ export function mcpConfirmations<const TTools extends string>(
       return standing ?? (check ?? sameTenant)(args);
     }),
     ...(input.audit === true ? { audit: true } : {}),
-    row: async ({ input: asked }) => (await store.get(asked.id)) ?? null,
+    row: async ({ input: asked }) => (await storeOf().get(asked.id)) ?? null,
     // The view and the decision: state only — the policy above has already decided who.
     handle: ({ input: asked, ctx }) =>
-      decideConfirmation({ store, clock, sealKeys, evidence }, asked, ctx.actor.id),
+      decideConfirmation({ store: storeOf(), clock, sealKeys, evidence }, asked, ctx.actor.id),
   });
-  const confirmations = Object.assign(decide, {
+  const declared = Object.assign(decide, {
     tools: Object.freeze([...input.tools]),
-    store,
     ttlMs,
     clock,
     sealKeys,
     approvers,
     evidence,
   });
+  // A getter, so the gate (`confirmation-gate.ts`) asks the port at each call too.
+  const confirmations: McpConfirmations<TTools> = Object.defineProperty(declared, 'store', {
+    enumerable: true,
+    get: storeOf,
+  }) as typeof declared & { readonly store: McpConfirmationStore };
   // On the declaration, so there is no `agent({ confirmations })` for an author to forget. A worker
   // holds it only if it imports this module, which is `X_ROLE_LOAD_INCOMPLETE` when it would not.
   registerToolGate(confirmations.tools, confirmationToolGate(confirmations));

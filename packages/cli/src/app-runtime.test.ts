@@ -64,13 +64,8 @@ describe('loadAppRuntime', () => {
     const typo = await refusal('typo-key', 'export const runtime = { jobDriver: {} };\n');
     expect(typo.code).toBe('X_CONFIG_INVALID');
     expect(typo.cause).toContain('jobDriver');
-    // A pending port is no field yet: said so, not misnamed as a typo.
-    const pending = await refusal(
-      'pending-key',
-      'export const runtime = { authServerStore: {} };\n',
-    );
-    expect(pending.cause).toContain('authServerStore');
-    expect(pending.cause).toContain('not a runtime.ts field yet');
+    // No ADAPTER_PORTS row is pending since wave E (every port is a field), so `runtime-keys.ts`'s
+    // pending branch has no subject today; a row added pending is that branch's case again.
   });
 
   // The production boot: `runRole` reads `runtime.ts` FIRST, before anything on `@ultimat3/cli/serve`'s

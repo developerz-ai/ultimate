@@ -25,6 +25,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./conformance": "./src/conformance.ts",
     "./preload": "./src/preload.ts",
     "./e2e-preload": "./src/e2e-preload.ts",
     "./registry-isolation": "./src/registry-isolation.ts",
@@ -65,6 +66,7 @@
     "@ultimat3/render": "30.9.0",
     "@ultimat3/schema": "30.9.0",
     "@ultimat3/scraping": "30.9.0",
+    "@ultimat3/seo": "30.9.0",
     "@ultimat3/time": "30.9.0"
   }
 }

@@ -28,6 +28,8 @@ Swapping `local` for `s3` changes no call site, and `x dev` needs no S3 server.
 | `s3Driver` | `Bun.s3` | any S3-compatible endpoint — AWS, R2, a self-hosted gateway. The difference is `endpoint`, `region` and `forcePathStyle`. Credentials are env var **names**, never literals |
 | `memoryStorageDriver` | a `Map` in this process | a test's disk: `defineStorage({ disks: { uploads: memoryStorageDriver() } })`. Every method `localDriver` answers, the same refusals, the same signing rule; `objects()` is a copy of the stored bytes by key. Never a deployment's disk — a restart is every object gone |
 
+A driver of your own is the `storage` adapter port: `StorageDriver` from `@ultimat3/storage/adapter`, `memoryStorageDriver` to copy, `behavesLike(storageDriverConformance, () => yourDriver())` to prove it — [Adapters](Adapters#storage). It is used in `defineStorage({ disks })`, or as `storage:` in `apps/<app>/runtime.ts` for the boot's one default disk.
+
 **A declaration holds a disk by THUNK, never by value.** `disk('sessions')` resolves through
 `defineStorage()`, which boot runs after an app's modules were evaluated — so a `scrape()` or any
 other declaration built at import time takes `() => disk('sessions')` and reads it when it is
@@ -207,7 +209,7 @@ export const storage = defineStorage({
 | | |
 |---|---|
 | `storage:read` | the `GET` requires it. An app that serves nothing through these routes leaves it out of its permission set: every read is then `401` for nobody and `403 X_FORBIDDEN` for everyone else (27.0.0). Until then an undeclared `storage:read` was a runtime `500 X_PERMISSION_UNKNOWN`, which `x verify`'s `policy` step reported |
-| the boot's own disk | still built. In production with no `S3_ENDPOINT`, that is a local disk and still needs `STORAGE_SIGNING_SECRET`. To skip it, export `runtime = { storage }` from `apps/<app>/runtime.ts`. `runRole` reads that file, and it replaces the env-selected disk entirely |
+| the boot's own disk | still built. In production with no `S3_ENDPOINT`, that is a local disk and still needs `STORAGE_SIGNING_SECRET`. To skip it, set `storage:` in `export const runtime = { … }` (`apps/<app>/runtime.ts`) to a `StorageDriver`: the boot registers it as its one disk, under the driver's own `name`, in place of the `S3_ENDPOINT`/embedded decision. Several disks are still `defineStorage()`, which wins ([Adapters](Adapters#storage)) |
 | `definedStorage()` | the registry or `undefined`, without a throw. It is the question the routes ask |
 
 ## Who may read a stored object

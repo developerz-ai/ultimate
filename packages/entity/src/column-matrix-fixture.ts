@@ -1,6 +1,6 @@
 // Every column kind an entity can declare, and every element kind `arrayOf()` accepts, in ONE
 // entity with a corpus of adversarial rows — the matrix the two driver suites walk. Shared so the
-// PGlite run (`column-matrix-parity.test.ts`, the `unit` step) and the `Bun.SQL` run
+// PGlite run (`@ultimat3/testing`'s `entityDriverConformance`, the `unit` step) and the `Bun.SQL` run
 // (`column-matrix.live.test.ts`, the `live` step) answer the same question about the same rows.
 
 import { expect, test } from 'bun:test';

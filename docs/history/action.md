@@ -468,7 +468,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   and thirty days for the next. Shipping a `delete` would be shipping one of those answers.
 
 - **`SQL_AUDIT_INSERT` is positional, so its parameter order is pinned by a test and not by a
-  type.** `audit-parity.test.ts` names every column once and compares both sinks' answer for every
+  type.** `audit-parity.test.ts` (31.0.0: `auditSinkConformance`, `@ultimat3/testing/conformance`) names every column once and compares both sinks' answer for every
   string field with a DIFFERENT value per field — two columns holding the same word cannot catch a
   slip, and a `locale` in the `tz` slot type-checks perfectly. Proven by mutation: the first draft
   of that test did NOT catch a swapped `locale`/`tz` and was widened until it did.
@@ -772,7 +772,7 @@ Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), wh
   immediate. A tx-bound settle that matches no record THROWS `X_IDEMPOTENCY_RESERVATION_LOST` (the
   rollback of an attempt a retry replaced); the autocommit one only logs. Only a tx-bound
   `in-flight` record is reclaimed past the deadline — never an autocommit one.
-  `idempotency-parity.test.ts` (memory + PGlite), `idempotency-postgres.live.test.ts`.
+  `idempotency-parity.test.ts` (31.0.0: `idempotencyStoreConformance`, `@ultimat3/testing/conformance`) (memory + PGlite), `idempotency-postgres.live.test.ts`.
 
 ## Moved out for plan 101's wave 9 (`As of 2026-11-06`)
 
@@ -876,3 +876,23 @@ A straggler past its scope gets
 
 (`IRREGULAR` in `naming.ts`; `BY_FORMAT` is
   `@ultimat3/schema`'s `sample-draw.ts`) — caller- or provider-supplied keys.
+
+### Idempotency invariants (moved from CLAUDE.md)
+
+Moved 2026-11-09 to hold `packages/action/CLAUDE.md` under its size ceiling; each is still a rule.
+
+- **A record belongs to ONE CALLER**: the key is
+  `JSON.stringify([action, actor.kind, actor.id, actor.orgId ?? null, key])` — a JSON tuple, never a
+  joined string. A blank header is `X_IDEMPOTENCY_KEY_INVALID` (4xx, before the handler), never "no
+  key". Anonymous callers still share one key space.
+- **The `idempotency-key` header also NAMES the write, on every action**: `http.ts` runs `invoke`
+  inside `withWriteOrigin(writeDigest(key))` so the page recognises its own `records` echo. A label,
+  never a gate.
+- **A stored status is NARROWED** (`isIdempotencyStatus`; unknown is
+  `X_IDEMPOTENCY_STATUS_UNKNOWN`), never cast.
+- **Where records live is DECLARED and refused at registration**: `IdempotencyStore.scope` vs
+  `configureIdempotency({ scope })`, compared by `assertIdempotencyScope` in `registerAction`
+  (`X_IDEMPOTENCY_NOT_SHARED`). Default `'process'`.
+- **The memory store is bounded; `in-flight` records are the last evicted.** Never an LRU.
+- **`postgresIdempotencyStore` is the shared store** over `@ultimat3/core`'s structural `PgExecutor`; the
+  reservation is ONE `insert … on conflict` statement. The CLI boot installs it.

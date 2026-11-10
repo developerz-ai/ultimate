@@ -12,6 +12,7 @@ import {
   resetErrorReporting,
   userActor,
 } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { defineHttpConfig, httpPipeline, httpRouter } from '@ultimat3/http';
 import { compilePattern } from '@ultimat3/render';
 import type { ClientErrorPage } from './client-errors-routes';
@@ -44,7 +45,8 @@ const PAGES: readonly ClientErrorPage[] = [
 const reporter = memoryErrorReporter();
 beforeEach(() => {
   reporter.reset();
-  configureErrorReporting({ reporter, release: 'build-9' });
+  installErrorReporter(reporter);
+  configureErrorReporting({ release: 'build-9' });
 });
 afterEach(() => resetErrorReporting());
 

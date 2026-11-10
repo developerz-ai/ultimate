@@ -17,7 +17,7 @@ import { SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
 import { assertedRowsTooMany, MAX_ASSERTED_ROWS } from './invariants';
 import { mergedRow } from './memory-update';
-import { deletePlan, idPlan, namedColumns, updatePlan } from './plan';
+import { deletePlan, idPlan, namedColumns, singleKeyOf, updatePlan } from './plan';
 import type { Repo, RepoOptions } from './repo';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
@@ -140,12 +140,20 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       if (namedColumns(patch).length > 0 && (await patched(op, plan, patch, options)) === 0) {
         throw notFound(entity.$name, id);
       }
-      // The row as the store now holds it — what `returning *` answers on Postgres.
+      // The row as the store now holds it — what `returning *` answers on Postgres: read by the
+      // key the patch left it under, soft-deleted or not, since the patch may have moved either.
       const tx = scope.txOf(op, options);
+      // Only a patch that NAMES the stamp may read a soft-deleted row back: an empty patch wrote
+      // nothing, so `update(deletedId, {})` stays the `X_NOT_FOUND` both shipped drivers answer.
+      const named = namedColumns(patch);
+      const movedTo = named.find(([column]) => column === singleKeyOf(entity, op));
+      const key = movedTo === undefined ? id : String(movedTo[1]);
+      const stamps = entity.$softDelete && named.some(([column]) => column === SOFT_DELETE_COLUMN);
+      const reread = scope.storePlan(op, idPlan(entity, key, options, op), stamps);
       const [after] = scope.checked(
         op,
-        plan,
-        await raw.select({ plan, after: undefined, limit: 1, tx }),
+        reread,
+        await raw.select({ plan: reread, after: undefined, limit: 1, tx }),
       );
       if (after === undefined) throw notFound(entity.$name, id);
       return after;

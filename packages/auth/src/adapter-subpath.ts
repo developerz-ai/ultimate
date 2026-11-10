@@ -1,7 +1,13 @@
 // `@ultimat3/auth/adapter` — auth's three `ADAPTER_PORTS` rows (`authLimiter`, `totpReplay`,
-// `authServerStore`): interfaces, installers and resets, never on the `.` barrel, so an app swaps
-// each one way — `apps/<app>/runtime.ts`. Not `src/adapter.ts`: that is the `AuthAdapter` seam's.
+// `authServerStore`) and the KDF gate's width: interfaces, installers and resets, never on the `.`
+// barrel, so an app swaps each one way — `apps/<app>/runtime.ts`. Not `src/adapter.ts`: that is
+// the `AuthAdapter` seam's.
 
+export {
+  installAuthServerStore,
+  installedAuthServerStore,
+  resetAuthServerStore,
+} from './authorization-server-installed';
 export type {
   AuthServerStore,
   DeviceDecision,
@@ -14,6 +20,7 @@ export type {
   AuthTokenRecord,
   DeviceCodeRecord,
 } from './authorization-server-types';
+export { installKdfGate, resetKdfGate } from './kdf-gate';
 export type { AuthLimiterFactory, TotpReplayFactory } from './limiter-install';
 export {
   installAuthLimiters,

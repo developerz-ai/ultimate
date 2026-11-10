@@ -5,6 +5,7 @@
 // One installer, never four. Handing them over in one call is what makes "the ledger is Postgres
 // but the inbox is still the memory one" a visible line of code rather than a forgotten fifth call.
 
+import { isLocal } from '@ultimat3/core';
 import { adapterSlot } from '@ultimat3/core/adapter';
 import type { DigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
@@ -16,10 +17,10 @@ import { allowAllPreferences } from './preferences';
 
 export interface NotifyStores {
   /**
-   * Defaults to `memoryDeliveryLedger()`. A default is correct here and nowhere else in this
-   * interface: one process with one replica is genuinely deduped by a heap map, and the failure
-   * mode of having none at all — a replayed attempt sending twice — is worse than the failure mode
-   * of a dev default, which is a second send only after a restart.
+   * Defaults to `memoryDeliveryLedger()` in development and test ONLY (`localDeliveryLedger`). In
+   * staging and production the default refuses its first claim with `X_NOTIFY_STORE_MISSING`: a
+   * heap map behind two replicas, or across a restart, lets a replayed attempt claim cleanly and
+   * send twice — the failure this ledger exists to prevent, and silent.
    */
   readonly ledger?: DeliveryLedger | undefined;
   /** No default: a channel that writes the inbox refuses rather than dropping the row. */
@@ -39,8 +40,29 @@ export interface InstalledNotifyStores {
   readonly digest: DigestStore | undefined;
 }
 
+/**
+ * The default ledger: a memory one in development and test, a refusal anywhere else. Decided at
+ * the first call, never at import — the environment is read when a notification is actually sent,
+ * and one memory ledger serves the process so a local replay is still deduped.
+ */
+function localDeliveryLedger(): DeliveryLedger {
+  let memory: DeliveryLedger | undefined;
+  const local = (notifier: string): Promise<DeliveryLedger> => {
+    if (!isLocal())
+      return Promise.reject(new NotifyStoreMissingError({ notifier, store: 'ledger' }));
+    memory ??= memoryDeliveryLedger();
+    return Promise.resolve(memory);
+  };
+  return {
+    claim: async (claim, at) => (await local(claim.notifier)).claim(claim, at),
+    settle: async (claim, status, at, claimId) =>
+      (await local(claim.notifier)).settle(claim, status, at, claimId),
+    find: async (claim) => (await local(claim.notifier)).find(claim),
+  };
+}
+
 const defaults = (): InstalledNotifyStores => ({
-  ledger: memoryDeliveryLedger(),
+  ledger: localDeliveryLedger(),
   inbox: undefined,
   preferences: allowAllPreferences(),
   digest: undefined,
@@ -58,7 +80,7 @@ const slot = adapterSlot<InstalledNotifyStores>(() => base);
  */
 export function installNotifyStores(stores: NotifyStores): () => void {
   return slot.install({
-    ledger: stores.ledger ?? memoryDeliveryLedger(),
+    ledger: stores.ledger ?? localDeliveryLedger(),
     inbox: stores.inbox,
     preferences: stores.preferences ?? allowAllPreferences(),
     digest: stores.digest,

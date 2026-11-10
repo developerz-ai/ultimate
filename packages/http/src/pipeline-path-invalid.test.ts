@@ -3,7 +3,8 @@
 // own lifecycle and is at its ceiling — one file, one job.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { configureErrorReporting, memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
+import { memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { defineHttpConfig } from './config';
 import { httpPipeline } from './pipeline';
 import { jsonResponse, textResponse } from './response';
@@ -34,7 +35,7 @@ describe('a path the client mis-encoded', () => {
   beforeEach(() => {
     resetErrorReporting();
     reporter.reset();
-    configureErrorReporting({ reporter });
+    installErrorReporter(reporter);
   });
 
   afterEach(() => {

@@ -396,6 +396,8 @@ toggles, a flash on change and a "live" dot are the app's.
 
 ## What each role needs from the bus
 
+The bus is the `transport` adapter port: `NATS_URL` set builds the NATS transport, unset the in-process one, and `transport:` in `apps/<app>/runtime.ts` replaces that decision with any `Transport` from `@ultimat3/realtime/adapter` — already connected, and not closed by the boot ([Adapters](Adapters#transport)). There is no `setChannelTransport` and no `realtime.transport` config key (31.0.0).
+
 With `NATS_URL` set every role holds a connection, and only two cannot work without one (`As of 2026-10`). The role decides, not the transport: a role that only **publishes** sends channel events and cache invalidations, and both mean "re-read".
 
 | Role | Uses the bus to | At boot | NATS down while running | JetStream / the presence bucket | `transport` check |

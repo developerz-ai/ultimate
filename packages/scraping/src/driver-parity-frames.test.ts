@@ -1,22 +1,13 @@
-// The FRAME half of driver parity: one question, one answer, whichever driver is asked — for
-// every verb reached through a `ScrapeFrame` handle.
-//
-// Its own file because `driver-parity.test.ts` is at the 500-line ceiling, and because the fixture
-// is different in kind: a parent document and an iframe carrying the SAME ids, which is the only
-// shape in which a frame verb aimed at the parent document is visible at all.
+// The REAL driver's half of frame parity: every verb reached through a `ScrapeFrame` handle, on
+// `localBrowser` over an injected CDP browser. `scrapeDriverConformance` (`@ultimat3/testing`) holds
+// `fakeBrowser` and `fixtureBrowser` to the same cases and cannot reach this subject — the CDP fake
+// is this package's own. The fixture: a parent and an iframe carrying the SAME ids.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { describe, expect, test } from 'bun:test';
 import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
-import { fakeBrowser } from './driver-fake';
-import { fixtureBrowser, recordingFilename } from './driver-recorded';
-import type { PageRecording } from './recording';
-
-const URL_ORDERS = 'https://shop.test/orders/2';
 
 /**
  * A parent document and an iframe that carry the SAME ids — which is the shape an iframe'd SSO
@@ -36,28 +27,8 @@ const HTML_LOGIN = `<html><body>
 const HTML_IDP =
   '<input id="q" name="q" value="frame-value"><select id="s"><option value="f1">F1</option></select><button id="go">Stay</button>';
 
-const PAGES: readonly PageRecording[] = [
-  { url: URL_LOGIN, html: HTML_LOGIN, frames: { idp: HTML_IDP } },
-  { url: URL_ORDERS, html: '<html><body><h1 id="title">Page two</h1></body></html>' },
-];
-
-let dir = '';
-
-beforeAll(async () => {
-  dir = await mkdtemp(`${tmpdir()}/ultimate-scrape-frames-`);
-  for (const page of PAGES) {
-    await writeFile(`${dir}/${recordingFilename(page.url)}`, JSON.stringify(page));
-  }
-});
-
-afterAll(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
-
-/** The two offline drivers plus the real driver's code path over an injected CDP browser. */
+/** The real driver's code path over an injected CDP browser. */
 const drivers = (): readonly (readonly [string, ScrapeDriver])[] => [
-  ['fake', fakeBrowser(PAGES)],
-  ['fixture', fixtureBrowser(dir)],
   [
     'puppeteer',
     localBrowser({
@@ -141,7 +112,7 @@ describe('unit · a frame verb reaches the FRAME and never the parent document',
    * one static document, so there is no second frame document to land on. Pinned here beside the
    * box/hit-target divergence rather than left silent.
    */
-  test('a click inside a frame leaves the PARENT where it was, on all three', async () => {
+  test('a click inside a frame leaves the PARENT where it was', async () => {
     await forEachFrameDriver(async (session, name) => {
       await session.page.goto(URL_LOGIN);
       await session.page.frame('idp').click('#go');

@@ -6,8 +6,14 @@
 import type { IdempotencyStore, MeterStore } from '@ultimat3/action/adapter';
 import type { Gateway } from '@ultimat3/ai/adapter';
 import type { AuthLimiterFactory, TotpReplayGuard } from '@ultimat3/auth/adapter';
-import type { AdapterPortName, ErrorReporter } from '@ultimat3/core';
-import type { AuditSink, FailureStore, SecretSource, SleepClock } from '@ultimat3/core/adapter';
+import type { AdapterPortName } from '@ultimat3/core';
+import type {
+  AuditSink,
+  ErrorReporter,
+  FailureStore,
+  SecretSource,
+  SleepClock,
+} from '@ultimat3/core/adapter';
 import type { RateLimitStore } from '@ultimat3/http/adapter';
 import type { EventBus, JobDriver } from '@ultimat3/jobs/adapter';
 import type { MailDriver } from '@ultimat3/mail/adapter';
@@ -44,24 +50,14 @@ export type SwappablePort = keyof SwappableAdapters & AdapterPortName;
 
 type Bindings = { readonly [P in SwappablePort]: (impl: SwappableAdapters[P]) => Promise<Undo> };
 
-// Every installer answers its own release, restoring the value it replaced. `auditSink` and
-// `errorReporter` are core's two that do not yet (reported), so they put back what they found here.
+// Every installer answers its own release, restoring the value it replaced.
 const BINDINGS: Bindings = {
   aiGateway: async (impl) => (await import('@ultimat3/ai/adapter')).installAiGateway(impl),
-  auditSink: async (impl) => {
-    const core = await import('@ultimat3/core');
-    const found = core.getAuditSink();
-    core.setAuditSink(impl);
-    return () => (found === null ? core.resetAuditSink() : core.setAuditSink(found));
-  },
+  auditSink: async (impl) => (await import('@ultimat3/core/adapter')).installAuditSink(impl),
   authLimiter: async (impl) => (await import('@ultimat3/auth/adapter')).installAuthLimiters(impl),
   clock: async (impl) => (await import('@ultimat3/core/adapter')).installClock(impl),
-  errorReporter: async (impl) => {
-    const core = await import('@ultimat3/core');
-    const found = core.installedErrorReporter();
-    core.configureErrorReporting({ reporter: impl });
-    return () => core.configureErrorReporting({ reporter: found });
-  },
+  errorReporter: async (impl) =>
+    (await import('@ultimat3/core/adapter')).installErrorReporter(impl),
   eventBus: async (impl) => (await import('@ultimat3/jobs/adapter')).installEventBus(impl),
   failureStore: async (impl) => (await import('@ultimat3/core/adapter')).installFailureStore(impl),
   idempotencyStore: async (impl) =>
