@@ -93,7 +93,9 @@ the types below stay on it too wherever a `.` signature names them.
 | `loadPgliteDriver()` | the optional `@electric-sql/pglite` peer, imported by variable specifier |
 | `PostgresClientOptions` / `ReplicatedClientOptions` | the pool options `postgresClient()` / `replicatedClient()` take |
 | `ReservableClient` / `ListeningClient` | a client that pins one session; one that holds a `LISTEN` |
-| `PostgresFailureStore` | the `x_failures` store's shape |
+
+`PostgresFailureStore`, the `x_failures` store's shape, is on `.` only: no `runtime.ts` field takes
+one, so it is no port.
 
 ## `sql` is parameters-only
 

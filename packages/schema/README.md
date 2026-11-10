@@ -48,9 +48,11 @@ type PublishPost = Infer<typeof publishPost>;
 | `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `discriminatedUnion` `record` `optional` `nullable` `refine` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` `.sensitive()` `.refine(r)` |
 | `money` `timezone` `locale` `slug` `cursor` `json()` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
 
-`nullable` is a value the row holds; `optional` is the caller omitting the key. Every factory
-ships once, as a `t` member (`t.nullable`, `t.refine`, …); the free functions behind them are
-internal since v31 — one way to compose.
+`nullable` is a value the row holds; `optional` is the caller omitting the key. Every composer
+ships once, as a `t` member (`t.nullable`, `t.refine`, …); since v31 its free twin is internal —
+`arraySchema`, `discriminatedUnionSchema`, `enumSchema`, `nullableSchema`, `optionalSchema`,
+`refineSchema`, `unionSchema`. `jsonSchema`, `recordSchema`, `literalSchema` and `objectSchema` stay
+exported beside `t`.
 
 Unknown object keys are **dropped**, never forwarded — an action cannot be mass-assigned.
 
