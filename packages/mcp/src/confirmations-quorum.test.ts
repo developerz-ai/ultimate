@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { resetActions } from '@ultimat3/action';
-import { userActor } from '@ultimat3/core';
+import { isUltimateError, userActor } from '@ultimat3/core';
 import type { McpConfirmationApprovers } from './confirmation-approvers';
 import {
   agent,
@@ -22,6 +22,19 @@ import {
 
 afterEach(() => resetActions());
 
+/** The `meta.outstanding` of the QUORUM_PENDING a promise rejects with; fails on anything else. */
+async function outstandingOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (thrown) {
+    if (isUltimateError(thrown) && thrown.code === 'X_MCP_CONFIRMATION_QUORUM_PENDING') {
+      return thrown.meta?.['outstanding'];
+    }
+    expect.unreachable(`not a QUORUM_PENDING: ${String(thrown)}`);
+  }
+  return expect.unreachable('the promise resolved');
+}
+
 describe('quorum: N of M distinct approvers, resolved per call from its arguments', () => {
   test('two of finance: one approval waits, the second runs the call exactly once', async () => {
     const h = await harness();
@@ -34,6 +47,9 @@ describe('quorum: N of M distinct approvers, resolved per call from its argument
     const waiting = await h.call(BIG);
     expect(waiting).toContain('X_MCP_CONFIRMATION_QUORUM_PENDING');
     expect(waiting).toContain('1 of the 2');
+    // The role is named as stored; the voter and the requester are never listed.
+    expect(waiting).toContain('still able to approve: role:finance');
+    expect(await outstandingOf(h.approve(id, ana))).toEqual(['role:finance']);
     expect(h.runs.count).toBe(0);
     expect(await h.approve(id, ben)).toMatchObject({
       status: 'approved',
@@ -148,6 +164,9 @@ describe('quorum: N of M distinct approvers, resolved per call from its argument
     const id = idIn(await h.call(BIG));
     expect(await codeOf(h.approve(id, finance('u-eve')))).toBe('X_FORBIDDEN');
     await h.approve(id, ana);
+    // Still owed: u-ben only — not the voter u-ana, not the requester agent-1.
+    expect(await h.call(BIG)).toContain('still able to approve: actor:u-ben');
+    expect(await outstandingOf(h.approve(id, ana))).toEqual(['actor:u-ben']);
     await h.approve(id, ben);
     expect(await h.call(BIG)).toBe('refunded o-1');
   });

@@ -4,7 +4,9 @@
 # than drained; a job after it must be claimed by v2, which writes the column v2's migration added.
 # Needs from the caller: refuse, step, WORK, HOLD_SECONDS, V2_MIGRATION (held-job.sh).
 
-QUEUE=proofapp-default
+# `jobs.queues` defaults to ['default'] (CHANGELOG [Unreleased] BREAKING #25), the queue a job()
+# naming none lands on, so a worker's x_job_workers.queues is ["default"], never "<app>-default".
+QUEUE=default
 FIX="KEEP_CLUSTER=1 bash docker/deploy-proof/run.sh, then read"
 
 # One value from the proof's database, unaligned, no header.
