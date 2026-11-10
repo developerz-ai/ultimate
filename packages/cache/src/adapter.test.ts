@@ -7,7 +7,8 @@ const VALUES: readonly string[] = ['CacheDriverUnavailableError', 'CachePurgeFai
 
 describe('unit · @ultimat3/cache/adapter', () => {
   test('is the subpath the export map names', () => {
-    expect(Bun.fileURLToPath(import.meta.resolve('@ultimat3/cache/adapter'))).toEndWith(
+    expect(import.meta.resolve('@ultimat3/cache/adapter')).toEndWith(
+      // a file: URL — '/' on every OS
       '/packages/cache/src/adapter.ts',
     );
   });

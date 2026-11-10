@@ -7,7 +7,8 @@ const VALUES: readonly string[] = [];
 
 describe('unit · @ultimat3/seo/adapter', () => {
   test('is the subpath the export map names', () => {
-    expect(Bun.fileURLToPath(import.meta.resolve('@ultimat3/seo/adapter'))).toEndWith(
+    expect(import.meta.resolve('@ultimat3/seo/adapter')).toEndWith(
+      // a file: URL — '/' on every OS
       '/packages/seo/src/adapter.ts',
     );
   });

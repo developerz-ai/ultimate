@@ -7,7 +7,8 @@ const VALUES: readonly string[] = [];
 
 describe('unit · @ultimat3/pwa/adapter', () => {
   test('is the subpath the export map names', () => {
-    expect(Bun.fileURLToPath(import.meta.resolve('@ultimat3/pwa/adapter'))).toEndWith(
+    expect(import.meta.resolve('@ultimat3/pwa/adapter')).toEndWith(
+      // a file: URL — '/' on every OS
       '/packages/pwa/src/adapter.ts',
     );
   });
