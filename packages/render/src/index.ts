@@ -234,4 +234,4 @@ export {
   surfaceAllows,
   surfaceOf,
 } from './surfaces';
-export { zoneScript, zoneScriptBody } from './zone-script';
+export { DETECTED_ZONE_COOKIE, zoneScript, zoneScriptBody } from './zone-script';

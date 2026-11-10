@@ -4,7 +4,7 @@
 import { expect, test } from 'bun:test';
 import { e2eBrowser } from '@ultimat3/testing';
 import type { ExecResult } from './exec';
-import { e2ePreload, withE2eApp } from './verify-e2e';
+import { appE2eRun, E2E_TIME_ZONE, e2ePreload, withE2eApp } from './verify-e2e';
 
 const ok: ExecResult = { command: [], code: 0, ok: true, stdout: '', stderr: '', durationMs: 0 };
 
@@ -21,6 +21,22 @@ test('not an app: the suite runs as given, with no preload and no spawned app', 
 
   expect(seen).toEqual([{ command: ['bun', 'test', 'e2e/'], env: {} }]);
   expect(seen[0]?.command).not.toContain(e2ePreload());
+});
+
+test('an app e2e invocation has one explicit non-UTC zone before its preload opens a browser', () => {
+  const run = appE2eRun({
+    root: '/app',
+    command: ['bun', 'test', 'e2e/'],
+    env: { KEPT: 'yes', TZ: 'UTC' },
+  });
+
+  expect(run.command).toEqual(['bun', 'test', '--preload', e2ePreload(), 'e2e/']);
+  expect(run.env).toEqual({
+    KEPT: 'yes',
+    TZ: E2E_TIME_ZONE,
+    ULTIMATE_E2E_ROOT: '/app',
+  });
+  expect(E2E_TIME_ZONE).not.toBe('UTC');
 });
 
 test('e2eBrowser() outside an e2e run refuses by name rather than answering undefined', () => {
