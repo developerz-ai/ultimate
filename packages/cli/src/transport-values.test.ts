@@ -56,6 +56,20 @@ describe('what is not the global passed on', () => {
     expect(spelled(source)).toEqual([]);
   });
 
+  test('a renamed destructuring binds the new name: the global handed on is still reported', () => {
+    const source = 'function f({ fetch: browserFetch }: D) { return makeClient({ fetch }); }';
+    expect(spelled(source)).toEqual(['1:fetch']);
+    expect(spelled('function f({ fetch = d }: D) { return make({ fetch }); }')).toEqual([]);
+    expect(spelled('const f = ({ a: { fetch } }: D) => make({ fetch });')).toEqual([]);
+  });
+
+  test('a key is a key however far its colon sits', () => {
+    expect(spelled('rpc({ fetch    : browserFetch });')).toEqual([]);
+    expect(spelled('rpc({ fetch /* the seam */ : browserFetch });')).toEqual([]);
+    expect(spelled('rpc({\n  fetch\n    : browserFetch,\n});')).toEqual([]);
+    expect(spelled('window.fetch     = wrapped;')).toEqual([]);
+  });
+
   test('a shadowing file still reports the qualified global', () => {
     expect(spelled('const fetch = wrap();\nuse(globalThis.fetch);')).toEqual([
       '2:globalThis.fetch',

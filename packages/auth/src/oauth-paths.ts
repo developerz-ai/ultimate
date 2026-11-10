@@ -5,7 +5,9 @@
 // line that names a route nothing serves impossible rather than merely discouraged.
 
 /**
- * Not configurable, on purpose: a movable base path is a `fix:` line that can go stale again.
+ * The base and the start path are not configurable, on purpose: a movable start path is a `fix:`
+ * line that can go stale again. The callback pattern is the one exception — `oauthLogin({
+ * callbackPath })`, for a `redirect_uri` an IdP already has registered — and no `fix:` quotes it.
  * `/auth/sso` since 31.0.0: every `IdentityProvider` — OIDC and SAML — signs in through it.
  */
 export const OAUTH_BASE_PATH = '/auth/sso';

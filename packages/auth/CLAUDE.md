@@ -73,7 +73,8 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
   seals `encodeOidcState`, so a built-in leg and a hand-built one read each other
   (`oauth-handshake-cookie.test.ts`). The read-only `__Host-x_oauth_<p>` fallback goes in 32.0.0.
 - **`oauthLogin({ callbackPath })` is the one movable path** (`sign-in-callback-path.ts`): mount,
-  `redirect_uri` and the checked URL from one pattern; the start path never moves.
+  `redirect_uri` and the checked URL from one pattern, refused if URL normalisation would rewrite
+  it; the start path never moves.
 - `takeVerification(purpose, identifier, tokenHash)` consumes **only on a hash match**, in one
   conditional statement (`consumed_at is null` on the UPDATE and its subselect,
   `order by created_at desc limit 1`); `consumeVerification` still compares in constant time.
@@ -89,7 +90,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 - Link by address only when the provider **and** the local account both verified it
   (`link: 'verified-email'`, default; `'never'` is the only other value).
 - **One sign-in route implementation** (`identity-provider-route-core.ts`) at
-  `/auth/sso/:provider[/callback]`; failure is coded JSON, success a 303 to `successPath`. †
+  `/auth/sso/:provider[/callback]` (the callback movable only by `callbackPath`); failure is coded JSON, success a 303 to `successPath`. †
 - Refresh is **not implemented**, so the framework **stores no provider token**: `accountFor`
   (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`. The columns and `AuthAccount`
   fields stay; an app that stores tokens implements `linkAccount` itself.

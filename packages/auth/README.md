@@ -866,11 +866,35 @@ router that can match a `:param` — and `runtime.routes` is the one an app has.
 framework's own routes and before the pages; every field it shares the file with is in
 [`wiki/Configuration.md`](../../wiki/Configuration.md#runtime-overrides--appsappruntimets).
 
-**The paths are not configurable.** `X_OAUTH_STATE_INVALID` quotes `oauthStartPath()`, the same
-declaration the mount reads. A movable base path is that sentence going stale again. Since 31.0.0
-the base is `/auth/sso`: `oauthLogin` is a front door over `identityProviderRoutes`' legs, so OAuth
-and SAML share the paths, the sealed state cookie and the refusal body (re-register the callback
-URL at each IdP — `wiki/Upgrading.md`).
+**The start path is fixed; the callback path is not.** `X_OAUTH_STATE_INVALID` quotes
+`oauthStartPath()`, the same declaration the start mount reads — a movable start path is that
+sentence going stale again. Since 31.0.0 the base is `/auth/sso`: `oauthLogin` is a front door over
+`identityProviderRoutes`' legs, so OAuth and SAML share the paths, the sealed state cookie and the
+refusal body. The callback defaults to `/auth/sso/<provider>/callback`, which each IdP must have
+registered (`wiki/Upgrading.md`) — or keep the URI it already has with
+[`oauthLogin({ callbackPath })`](#keeping-a-registered-callback-url).
+
+### Keeping a registered callback URL
+
+`oauthLogin(auth, { callbackPath })` moves the callback
+leg — its mount (`callback.path`), the `redirect_uri` every provider is sent, and the URL the
+callback checks it against — for an app whose IdP registration cannot change:
+
+```ts
+import { type Auth, oauthLogin } from '@ultimat3/auth';
+
+declare const auth: Auth; // your defineAuth(...)
+declare const router: { get(path: string, handle: (request: Request) => Promise<Response>): void };
+
+const { start, callback } = oauthLogin(auth, { callbackPath: '/auth/oauth/:provider/callback' });
+router.get(start.path, start.handle); // '/auth/sso/:provider' — the start leg never moves
+router.get(callback.path, callback.handle); // mount callback.path, never OAUTH_CALLBACK_ROUTE_PATH
+```
+
+One whole `:provider` segment, absolute, no query, fragment, wildcard or other parameter, no
+segment URL normalisation would rewrite (`.`, `..`, empty, `%`-encoded, `\`), and not the start
+path — anything else is `X_CONFIG_INVALID` at the call. The start leg stays
+`/auth/sso/:provider`: it is a link in your own page, and the `fix:` lines name it.
 
 `oauthLogin` needs an origin to build the provider's `redirect_uri` from: `baseUrl`, or `APP_URL`.
 With neither, the start leg refuses with `X_ENV_MISSING` rather than trust a request header.
@@ -923,25 +947,6 @@ google's and fails `X_OAUTH_STATE_INVALID` for a reason no restart clears. `hand
 the name off `handshake.provider`, `clearHandshakeCookie(provider)` clears only that provider's,
 and `readHandshakeCookie(request, provider)` reads only that provider's. Pass `{ name }` to
 override all three at once.
-
-**Keeping a registered callback URL:** `oauthLogin(auth, { callbackPath })` moves the callback
-leg — its mount (`callback.path`), the `redirect_uri` every provider is sent, and the URL the
-callback checks it against — for an app whose IdP registration cannot change:
-
-```ts
-import { type Auth, oauthLogin } from '@ultimat3/auth';
-
-declare const auth: Auth; // your defineAuth(...)
-declare const router: { get(path: string, handle: (request: Request) => Promise<Response>): void };
-
-const { start, callback } = oauthLogin(auth, { callbackPath: '/auth/oauth/:provider/callback' });
-router.get(start.path, start.handle); // '/auth/sso/:provider' — the start leg never moves
-router.get(callback.path, callback.handle); // mount callback.path, never OAUTH_CALLBACK_ROUTE_PATH
-```
-
-One whole `:provider` segment, absolute, no query, fragment, wildcard or other parameter, and not
-the start path — anything else is `X_CONFIG_INVALID` at the call. The start leg stays
-`/auth/sso/:provider`: it is a link in your own page, and the `fix:` lines name it.
 
 | Refused | Because |
 |---|---|

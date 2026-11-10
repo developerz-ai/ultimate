@@ -99,6 +99,15 @@ describe('oauthLogin callbackPath', () => {
       '/auth/:provider/cb#frag',
       '/auth/sso/:provider',
       '/auth/:provider-x/callback',
+      // Each of these normalises to another path, so the provider segment is lost or moved.
+      '/auth/:provider/../callback',
+      '/auth/:provider/./callback',
+      '/auth//:provider/callback',
+      '/auth/:provider/callback/',
+      '/auth/%2e%2e/:provider/callback',
+      '/auth/:provider/%2Fcallback',
+      '/auth\\:provider/callback',
+      '/auth/:provider/cb x',
     ]) {
       expect([callbackPath, codeOf(() => login({ callbackPath }))]).toEqual([
         callbackPath,

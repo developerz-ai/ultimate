@@ -55,7 +55,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `verify-factories.ts` | `unit` lints `<app>/packages/db/factories.ts` (`X_TEST_FACTORY_INVALID`) |
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` / `package-boundaries.ts` | surface + layer rules, `X_BOUNDARY_PACKAGE_TO_APP`; a `fix:` is the concrete cut † |
 | `app-boundaries.ts` (workspaces) | `@<scope>/<app>/<rest>` resolves onto `apps/<app>/<rest>` when that is an app source, so the surface rules hold across app workspaces |
-| `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport; never a `guards/` file † |
+| `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `transport-values.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport; never a `guards/` file † |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, run on `boundaries`; ONE shared walk (`GuardSources`) † |
 | `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`x new`, `x g guard`, `doctor-guards.ts`) † |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |

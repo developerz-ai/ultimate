@@ -16,12 +16,8 @@ import { lineIndex } from './ts-scan';
 const VALUE =
   /(?<![\w$.])((?:(?:globalThis|window|self)\s*\.\s*)?)fetch(?![\w$])(?!\s*(?:\?\.\s*)?\()/g;
 
-/**
- * A destructured parameter binding `fetch` — `({ fetch }) =>`, `function f({ fetch }: Deps) {` —
- * which `bindsFetch` does not read, and which is otherwise the very shorthand `rpc({ fetch })`.
- */
-const DESTRUCTURED_PARAM =
-  /\(\s*\{[^{}]*\bfetch\b[^{}]*\}\s*(?::[^()]*)?\)\s*(?::[^={;]+)?(?:=>|\{)/;
+/** Every blank from `lastIndex` on, sticky: the scan stops at the next token, never the file end. */
+const BLANK = /\s*/y;
 
 /** The last non-blank character before `index`, or `''`. */
 function before(masked: string, index: number): string {
@@ -36,11 +32,14 @@ function before(masked: string, index: number): string {
 function isNotAValue(masked: string, start: number, end: number): boolean {
   // `typeof fetch`, `typeof globalThis.fetch` — a type position (or a feature probe, no request).
   if (/\btypeof\s*$/.test(masked.slice(Math.max(0, start - 12), start))) return true;
-  const after = masked.slice(end, end + 3);
+  // Through every blank: masking turned comments into spaces, so `fetch /* c */ :` is a key too.
+  BLANK.lastIndex = end;
+  BLANK.test(masked);
+  const after = masked.slice(BLANK.lastIndex, BLANK.lastIndex + 3);
   // `{ fetch: impl }`, `fetch?: Fn` — a key; `a ? fetch : b` is the ternary's value.
-  if (/^\s*\??\s*:(?!:)/.test(after) && before(masked, start) !== '?') return true;
+  if (/^\??\s*:(?!:)/.test(after) && before(masked, start) !== '?') return true;
   // `window.fetch = wrapped`, `<C fetch={…}>` — the name is written to, not read.
-  return /^\s*=(?![=>])/.test(after);
+  return /^=(?![=>])/.test(after);
 }
 
 export function fetchValues(source: string): readonly TransportCall[] {
@@ -48,7 +47,7 @@ export function fetchValues(source: string): readonly TransportCall[] {
   // Comments and strings blanked, offsets kept: `'fetch'` in a message is not the global.
   const masked = maskLiterals(source);
   const lineAt = lineIndex(masked);
-  const shadowed = bindsFetch(masked) || DESTRUCTURED_PARAM.test(masked);
+  const shadowed = bindsFetch(masked);
   const values: TransportCall[] = [];
   for (const found of masked.matchAll(VALUE)) {
     const global = (found[1] ?? '').replace(/\s/g, '');

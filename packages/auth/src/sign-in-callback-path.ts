@@ -22,7 +22,7 @@ const split = (path: string): string[] => path.split('/').filter((part) => part 
 function refuse(pattern: string, why: string): ConfigInvalidError {
   return new ConfigInvalidError({
     cause: `oauthLogin({ callbackPath: ${renderCauseValue(pattern)} }) ${why}`,
-    fix: "oauthLogin(auth, { callbackPath: '/auth/oauth/:provider/callback' })  // absolute, one whole ':provider' segment, no other parameter, not the start path",
+    fix: "oauthLogin(auth, { callbackPath: '/auth/oauth/:provider/callback' })  // absolute, one whole ':provider' segment, no other parameter, no ./../empty/encoded segment, not the start path",
   });
 }
 
@@ -38,6 +38,16 @@ export function callbackPath(pattern: string = OAUTH_CALLBACK_ROUTE_PATH): Callb
   const params = parts.filter((part) => part.includes(':'));
   if (params.length !== 1 || params[0] !== PARAM) {
     throw refuse(pattern, 'must carry exactly one parameter, the whole segment :provider');
+  }
+  // A browser and a router both see the NORMALISED path: `..`, `.`, `\` and `%2e` move segments,
+  // an empty one shifts the count, and `%2f` is a slash to some routers and not to others.
+  const sample = pattern.replace(PARAM, 'provider');
+  if (
+    pattern.includes('%') ||
+    pattern.slice(1).split('/').includes('') ||
+    new URL(sample, 'https://x.invalid').pathname !== sample
+  ) {
+    throw refuse(pattern, 'changes under URL normalisation, which would move or drop :provider');
   }
   const fromEnd = parts.length - 1 - parts.indexOf(PARAM);
   return Object.freeze({

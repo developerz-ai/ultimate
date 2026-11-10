@@ -42,6 +42,18 @@ describe(testName('unit', 'defaults keep their literals'), () => {
     });
     const ticketFactory = defineFactory(tickets, {
       defaults: (_, ids) => ({ id: ids.uuid(), title: 't', status: 'open' }),
+      afterBuild(row) {
+        row.status = 'closed';
+        // @ts-expect-error — `afterBuild` sees the column's union, not the widened default.
+        row.status = 'nope';
+      },
+    });
+    ticketFactory.extend({
+      afterBuild(row) {
+        row.status = 'open';
+        // @ts-expect-error — and so does an `extend()` callback.
+        row.status = 'nope';
+      },
     });
     // @ts-expect-error — and so is a call's override.
     expect(() => ticketFactory.build({ status: 'nope' })).toBeDefined();

@@ -44,8 +44,14 @@ export interface FactoryOptions<
   readonly transient?: TTransient;
   readonly belongsTo?: TBelongs;
   readonly hasMany?: TMany;
-  /** After the row is assembled, before any write — both strategies. */
-  afterBuild?(row: NoInfer<SettledAttrs<TAttrs>>, context: FactoryContext<TTransient>): void;
+  /**
+   * After the row is assembled, before any write — both strategies. The row is `build()`'s own
+   * type: a column holds its declared union, never the widened `SettledAttrs` one.
+   */
+  afterBuild?(
+    row: NoInfer<SettledAttrs<TAttrs> & Partial<TRow>>,
+    context: FactoryContext<TTransient>,
+  ): void;
   /** After the row and its `hasMany` children are stored — `create()` only. */
   afterCreate?(
     row: NoInfer<Created<TRow, TMany>>,
@@ -70,7 +76,7 @@ export interface FactoryExtension<
   readonly traits?: TTraits;
   readonly transient?: Partial<TTransient>;
   readonly hasMany?: TMoreMany;
-  afterBuild?(row: TAttrs, context: FactoryContext<TTransient>): void;
+  afterBuild?(row: TAttrs & Partial<TRow>, context: FactoryContext<TTransient>): void;
   afterCreate?(
     row: Created<TRow, TMany & TMoreMany>,
     context: FactoryContext<TTransient>,
