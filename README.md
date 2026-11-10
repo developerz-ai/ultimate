@@ -27,7 +27,7 @@
 [When not to use it](#when-not-to-use-it) ·
 [Write your own adapter](wiki/Adapters.md)
 
-**Status.** Released, every package on one version. v31, the next major, is the stable line: from it, at most one major every 90 days, and the previous major gets security fixes for six months ([Stability](wiki/Stability.md)). No outside security audit yet ([SECURITY.md](SECURITY.md)). One maintainer organisation, maintained day to day by an AI ([GOVERNANCE.md](GOVERNANCE.md)).
+**Status.** Released, every package on one version. v31 is the stable line: from it, at most one major every 90 days, and the previous major gets security fixes for six months ([Stability](wiki/Stability.md)). No outside security audit yet ([SECURITY.md](SECURITY.md)). One maintainer organisation, maintained day to day by an AI ([GOVERNANCE.md](GOVERNANCE.md)).
 
 **Who uses it.**
 <!-- generated: production-apps — bun run scripts/production-apps.ts --write -->

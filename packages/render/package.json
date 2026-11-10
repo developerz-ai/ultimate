@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/render",
-  "version": "30.9.0",
+  "version": "31.0.0",
   "description": "The route primitive and the five render modes: static, isr, ssr, stream, spa.",
   "keywords": [
     "ultimate",
@@ -52,12 +52,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/cache": "30.9.0",
-    "@ultimat3/core": "30.9.0",
-    "@ultimat3/http": "30.9.0",
-    "@ultimat3/i18n": "30.9.0",
-    "@ultimat3/schema": "30.9.0",
-    "@ultimat3/seo": "30.9.0",
+    "@ultimat3/cache": "31.0.0",
+    "@ultimat3/core": "31.0.0",
+    "@ultimat3/http": "31.0.0",
+    "@ultimat3/i18n": "31.0.0",
+    "@ultimat3/schema": "31.0.0",
+    "@ultimat3/seo": "31.0.0",
     "sass": "1.106.1"
   }
 }

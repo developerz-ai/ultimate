@@ -10,9 +10,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 31.0.0 - 2026-11-10
+
 ### Highlights
 
-- The 90-day major window counts from v31: breaking changes land on `main` now and ship together as v31.
+- **v31 is the stable line.** 74 breaking changes — most delete a second way to do one thing, the rest are security fixes and limits — each with its edit in [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading#30x--3100-entry-by-entry). The next major comes no earlier than 2027-02-08, 90 days from today ([Stability](https://github.com/developerz-ai/ultimate/wiki/Stability)).
+- Every backend is a port: 31 adapter ports, each set in `runtime.ts`, each exported from a package's `./adapter` and each with a conformance suite in `@ultimat3/testing/conformance` to check your own implementation against.
+- One instrumentation bus carries every span, metric and log, and the spans use OpenTelemetry's stable http, db, messaging and gen_ai attribute names. Exporters subscribe to the bus.
+- Scale and big data: partitioned tables, a double-entry ledger, fleet-wide locks (`withLock`), a search index, upload scanning, `pdf()`, a job worker about 25× faster on a backlog (31 → 799 claims/s for one worker), a faster boot and `x verify --changed`.
+- Security and trust: SAML single sign-on built in, fixes from the security review (cache entries keyed by the caller's grants as well as their id), an OpenSSF Scorecard and private vulnerability reporting.
 
 ### Changed
 
@@ -154,6 +162,28 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/cli`: `x new` writes `.github/dependabot.yml` — every `@ultimat3/*` package and `create-ultimate` in one group, every update type, so Dependabot never bumps one framework package out of lockstep; plus the Dockerfile and compose pins under `docker/`.
 - `@ultimat3/cli`: `X_IMAGE_NOT_PREBUILT` logs at `warn` in `development` and `test`, `error` elsewhere — a test boot no longer emits an error line for an image that does not exist.
 - `@ultimat3/cli`: `x upgrade` runs the hop's `x exercise --json` before `x verify` and reports its findings as `data.exercise` (`{ reported, ok, findings[] }`), each fix printed before the gate's — the whole list at once instead of one red gate per finding.
+
+### Commits
+
+- feat(v31)!: D10 — each package's `.` barrel is its app API (#1045)
+- feat(v31): plan 101 wave G — deletions (slice 29), trust (slice 27), wave-F follow-ups (#1044)
+- feat(v31): plan 101 wave F — SAML SSO, partitions, ledger, locks, search index, upload scan, pdf(), fast boot, verify --changed (#1043)
+- feat(v31): plan 101 sweeps 9–10 — conformance suites for all 26 ports, adapter-ports guard, CI speed (#1042)
+- feat(mcp): QUORUM_PENDING names the outstanding approvers in meta (#1041)
+- fix(deploy-proof): look for the v2 worker on queue 'default' (#1039)
+- feat(v31): plan 101 sweep 8 — adapter ports, test doubles, FactoryBot factories, DX guards (#1040)
+- feat(v31): plan 101 sweeps 6–7 — instrumentation bus, OTel semconv, cli, admin/testing (#1038)
+- fix(bench): restore the work directory the bench job loads, and name the step that failed (#1036)
+- feat(v31): plan 101 sweeps 3–5 — entity, action/query, jobs, realtime, render, ai/mcp, notify/scraping, helm (#1037)
+- feat(v31): plan 101 sweeps 0–2 — release window, CI, tiers 0–2 hardening, #1033 (#1035)
+- chore(docker): Bump the s3-gateway group across 2 directories with 1 update (#1029)
+- chore(docker): Bump distroless/cc-debian13 in /docker (#1028)
+- docs(plans): final hardening before v31 (#1034)
+- chore(deps): Bump @biomejs/biome from 2.5.15 to 2.6.3 in the dev-tooling group across 1 directory (#1031)
+- chore(deps): Bump the runtime group with 3 updates (#1032)
+- chore(ci): Bump docker/login-action (#1030)
+- docs(mcp): cite the served MCP authorization revisions, not 2025-06-18 alone (#1003)
+- chore: release 30.9.0 (#1027)
 
 ## 30.9.0 - 2026-11-09
 

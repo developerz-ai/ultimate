@@ -127,7 +127,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Deploy recipes](Deploy-Recipes) | per host — Compose, the chart, Fly.io, Render, Railway, Heroku, bare VM — the build source, port, health path, release command and services, each marked executed or not |
 | [Observability](Observability) | counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |
 | [Known gaps](Known-Gaps) | every defect and unfinished seam in the published release, named |
-| [Upgrading](Upgrading) | one section per major with every manual edit, the in-flight major as a checklist under `[Unreleased]`, version skew — and how `x upgrade` walks them, one major per run |
+| [Upgrading](Upgrading) | one section per major with every manual edit, the newest first, each as a checklist, version skew — and how `x upgrade` walks them, one major per run |
 | [Stability](Stability) | what semver covers and what it does not, one major per 90 days from v30, the support window, deprecation, the security exception |
 | [Troubleshooting](Troubleshooting) | symptom → cause → fix |
 | [FAQ](FAQ) | why Bun only, why no GraphQL, is it production ready |
