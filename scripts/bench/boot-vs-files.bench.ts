@@ -32,7 +32,8 @@ export interface BootRun {
 
 const fixtureRoot = (): string => `${repoRoot()}/packages/cli/node_modules/.cache/bench-boot`;
 
-async function writeFixture(files: number): Promise<string> {
+/** N synthetic modules under the CLI's install, written fresh; answers the directory. */
+export async function writeFixture(files: number): Promise<string> {
   const dir = `${fixtureRoot()}/${String(files)}`;
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
@@ -97,8 +98,9 @@ export async function benchBoot(counts: readonly number[], runs: number): Promis
   return out;
 }
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
+/** `--files` and `--runs`, or the refusal naming both. */
+export function bootArgs(argv: readonly string[]) {
+  const args = parseScriptArgs(argv);
   const rawFiles = args.flags.get('files');
   const counts =
     typeof rawFiles === 'string'
@@ -116,14 +118,25 @@ if (import.meta.main) {
       fix: 'bun run scripts/bench/boot-vs-files.bench.ts --files 500,2000,5000 --runs 3',
     });
   }
+  const out = args.flags.get('out');
+  return { counts, runs, out: typeof out === 'string' ? out : undefined, json: args.json };
+}
+
+/** The whole command: measure, write `--out`, print. `log` is the test's seam onto stdout. */
+export async function runBootBench(
+  argv: readonly string[],
+  log: (line: string) => void = console.log,
+): Promise<readonly BootRun[]> {
+  const { counts, runs, out, json } = bootArgs(argv);
   const results = await benchBoot(counts, runs);
   const data = { box: boxFacts(Bun.env), runs, results };
-  const out = args.flags.get('out');
-  if (typeof out === 'string') await Bun.write(out, `${JSON.stringify(data, null, 2)}\n`);
-  if (args.json) console.log(JSON.stringify(data, null, 2));
+  if (out !== undefined) await Bun.write(out, `${JSON.stringify(data, null, 2)}\n`);
+  if (json) log(JSON.stringify(data, null, 2));
   else {
-    for (const r of results) {
-      console.log(`${r.files} files: serial ${r.serialMs} ms, batched ${r.batchedMs} ms`);
-    }
+    for (const r of results)
+      log(`${r.files} files: serial ${r.serialMs} ms, batched ${r.batchedMs} ms`);
   }
+  return results;
 }
+
+if (import.meta.main) await runBootBench(Bun.argv.slice(2));

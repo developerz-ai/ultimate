@@ -84,13 +84,14 @@ export async function receiving<T>(
   }
 }
 
-let batches = 0;
-
-/** A directory no earlier batch of this process used: a module is cached by its path. */
-const batchDir = (): string => {
-  batches += 1;
-  return join(tmpdir(), `x-scan-${String(process.pid)}-${String(batches)}`);
-};
+/**
+ * A directory no other batch has used — in this process or any copy of this module in it. Bun's
+ * module cache is keyed by path and outlives a module instance: `bun test --parallel` evaluates
+ * this file afresh per test file in one worker, and a per-instance counter named the same
+ * directory twice, so the second load imported the first one's cached hooks and was handed the
+ * first app's modules (2026-11-10, `app-load-batch.test.ts`).
+ */
+export const uniqueBatchName = (): string => `x-scan-${crypto.randomUUID()}`;
 
 /** The serial import, for one module: what the batch falls back to. */
 async function importOne(absolute: string): Promise<Imported> {
@@ -133,7 +134,7 @@ async function importBatch(
 ): Promise<readonly Imported[]> {
   const slots: Slots = batch.map(() => undefined);
   if (batch.length > 1) {
-    const dir = batchDir();
+    const dir = join(tmpdir(), uniqueBatchName());
     const { entry, hooks } = batchSources(
       batch.map((absolute) => Bun.pathToFileURL(absolute).href),
       first,

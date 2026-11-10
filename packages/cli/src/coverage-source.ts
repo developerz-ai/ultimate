@@ -36,7 +36,10 @@ function endOfTypeAlias(text: string, from: number): number {
   for (let i = from; i < text.length; i += 1) {
     const ch = text[i];
     if (ch === '{' || ch === '[' || ch === '(' || ch === '<') depth += 1;
-    else if (ch === '}' || ch === ']' || ch === ')' || ch === '>') depth -= 1;
+    // The `>` of `=>` closes nothing: counted, an arrow type drove depth below zero and the alias
+    // "ended" at a `;` inside its own braces, leaving the rest to read as code.
+    else if (ch === '}' || ch === ']' || ch === ')' || (ch === '>' && text[i - 1] !== '='))
+      depth -= 1;
     else if (ch === ';' && depth <= 0) return i + 1;
   }
   return text.length;

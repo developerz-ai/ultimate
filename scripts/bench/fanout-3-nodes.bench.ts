@@ -16,9 +16,11 @@ import {
   installChannelTransport,
   publishChannelEvent,
 } from '../../packages/realtime/src/channel-publish';
+import type { Transport } from '../../packages/realtime/src/fanout';
 import { NatsTransport } from '../../packages/realtime/src/nats-transport';
 import { parseScriptArgs } from '../lib/args';
 import { ScriptError } from '../lib/script-error';
+import type { FanoutFinal } from './fanout-node-child';
 import {
   FANOUT_BUCKET,
   fanoutChannel,
@@ -44,7 +46,7 @@ const failed = (cause: string): ScriptError =>
   });
 
 /** Lines of a child's stdout, until one starts with `prefix`; returns the rest of that line. */
-async function lineStarting(
+export async function lineStarting(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   carry: { buffer: string },
   prefix: string,
@@ -74,14 +76,22 @@ export interface FanoutRun {
   readonly perNode: readonly LatencySummary[];
 }
 
-export async function benchFanout3(
+/** What a run stands on: the nodes, already subscribed, and a connected publisher. */
+export interface FanoutRig {
+  /** Each node's final, once its window closes. */
+  readonly finals: () => Promise<readonly FanoutFinal[]>;
+  readonly publisher: Transport;
+  close(): Promise<void>;
+}
+
+/** The production rig: one child process per node over NATS, and a fourth connection publishing. */
+export async function natsRig(
   nats: string,
-  subscribers: number,
+  org: string,
+  counts: readonly number[],
   events: number,
-  intervalMs: number,
-): Promise<FanoutRun> {
-  const org = crypto.randomUUID();
-  const children = splitAcross(subscribers, NODES).map((count) =>
+): Promise<FanoutRig> {
+  const children = counts.map((count) =>
     Bun.spawn(
       [
         'bun',
@@ -103,42 +113,84 @@ export async function benchFanout3(
     carry: { buffer: '' },
   }));
   const publisher = new NatsTransport({ url: nats, bucket: FANOUT_BUCKET });
-  try {
-    await Promise.all(readers.map(({ reader, carry }) => lineStarting(reader, carry, 'READY')));
-    await publisher.connect();
-    installChannelTransport(publisher);
-    const channel = fanoutChannel();
-    await Bun.sleep(SETTLE_MS);
-    for (let index = 0; index < events; index += 1) {
-      await publishChannelEvent(channel, { org }, { probeIndex: index, probeSentAt: nowMs() });
-      await Bun.sleep(intervalMs);
-    }
-    const finals = await Promise.all(
-      readers.map(async ({ reader, carry }) => {
-        const body: unknown = JSON.parse(await lineStarting(reader, carry, 'FINAL '));
-        return body as { received: number; expected: number; latencies: number[][] };
-      }),
-    );
-    const perNode = finals.map((final) => summarise(final.latencies.flat()));
-    return {
-      nodes: NODES,
-      subscribers,
-      events,
-      delivered: finals.reduce((sum, final) => sum + final.received, 0),
-      expected: subscribers * events,
-      overall: summarise(finals.flatMap((final) => final.latencies.flat())),
-      perNode,
-    };
-  } finally {
+  const close = async (): Promise<void> => {
     for (const child of children) child.kill();
     await Promise.all(children.map((child) => child.exited));
     await publisher.close();
+  };
+  try {
+    await Promise.all(readers.map(({ reader, carry }) => lineStarting(reader, carry, 'READY')));
+    await publisher.connect();
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return {
+    publisher,
+    close,
+    finals: () =>
+      Promise.all(
+        readers.map(async ({ reader, carry }) => {
+          const body: unknown = JSON.parse(await lineStarting(reader, carry, 'FINAL '));
+          return body as FanoutFinal;
+        }),
+      ),
+  };
+}
+
+/** The figure a run reports, from every node's final. */
+export function fanoutRunOf(
+  finals: readonly FanoutFinal[],
+  subscribers: number,
+  events: number,
+): FanoutRun {
+  return {
+    nodes: finals.length,
+    subscribers,
+    events,
+    delivered: finals.reduce((sum, final) => sum + final.received, 0),
+    expected: subscribers * events,
+    overall: summarise(finals.flatMap((final) => final.latencies.flat())),
+    perNode: finals.map((final) => summarise(final.latencies.flat())),
+  };
+}
+
+export interface FanoutInput {
+  readonly subscribers: number;
+  readonly events: number;
+  readonly intervalMs: number;
+  /** How long the nodes' subscriptions get to reach the bus before the first probe. */
+  readonly settleMs?: number;
+}
+
+/** `events` probes through `rig.publisher`, `intervalMs` apart, then every node's latencies. */
+export async function benchFanout3(
+  input: FanoutInput,
+  rig: (org: string, counts: readonly number[]) => Promise<FanoutRig>,
+): Promise<FanoutRun> {
+  const org = crypto.randomUUID();
+  const built = await rig(org, splitAcross(input.subscribers, NODES));
+  try {
+    installChannelTransport(built.publisher);
+    const channel = fanoutChannel();
+    await Bun.sleep(input.settleMs ?? SETTLE_MS);
+    for (let index = 0; index < input.events; index += 1) {
+      await publishChannelEvent(channel, { org }, { probeIndex: index, probeSentAt: nowMs() });
+      await Bun.sleep(input.intervalMs);
+    }
+    return fanoutRunOf(await built.finals(), input.subscribers, input.events);
+  } finally {
+    await built.close();
   }
 }
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const nats = args.flags.get('nats') ?? Bun.env['TEST_NATS_URL'];
+/** The flags, or the refusal naming them. `--nats` falls back to `TEST_NATS_URL`. */
+export function fanoutArgs(
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+) {
+  const args = parseScriptArgs(argv);
+  const nats = args.flags.get('nats') ?? env['TEST_NATS_URL'];
   const subscribers = readCount(args.flags.get('subscribers'), 10_000, {
     flag: 'subscribers',
     min: NODES,
@@ -163,14 +215,29 @@ if (import.meta.main) {
       fix: 'bun run scripts/bench/fanout-3-nodes.bench.ts --nats nats://127.0.0.1:4222 --subscribers 10000',
     });
   }
-  const run = await benchFanout3(nats, subscribers, events, intervalMs);
-  const data = { box: boxFacts(Bun.env), intervalMs, run };
   const out = args.flags.get('out');
-  if (typeof out === 'string') await Bun.write(out, `${JSON.stringify(data, null, 2)}\n`);
-  if (args.json) console.log(JSON.stringify(data, null, 2));
-  else {
-    console.log(
-      `${run.subscribers} subscribers on ${run.nodes} nodes, ${run.events} probes: ${run.delivered}/${run.expected} delivered, p50 ${run.overall.p50Ms} ms, p99 ${run.overall.p99Ms} ms, max ${run.overall.maxMs} ms`,
-    );
-  }
+  return {
+    nats,
+    subscribers,
+    events,
+    intervalMs,
+    out: typeof out === 'string' ? out : undefined,
+    json: args.json,
+  };
+}
+
+/** The report a run prints: the whole JSON, or one line. */
+export function fanoutReport(run: FanoutRun, intervalMs: number, json: boolean): string {
+  if (json) return JSON.stringify({ box: boxFacts(Bun.env), intervalMs, run }, null, 2);
+  return `${run.subscribers} subscribers on ${run.nodes} nodes, ${run.events} probes: ${run.delivered}/${run.expected} delivered, p50 ${run.overall.p50Ms} ms, p99 ${run.overall.p99Ms} ms, max ${run.overall.maxMs} ms`;
+}
+
+if (import.meta.main) {
+  const args = fanoutArgs(Bun.argv.slice(2), Bun.env);
+  const run = await benchFanout3(args, (org, counts) =>
+    natsRig(args.nats, org, counts, args.events),
+  );
+  const data = { box: boxFacts(Bun.env), intervalMs: args.intervalMs, run };
+  if (args.out !== undefined) await Bun.write(args.out, `${JSON.stringify(data, null, 2)}\n`);
+  console.log(fanoutReport(run, args.intervalMs, args.json));
 }

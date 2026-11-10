@@ -43,6 +43,23 @@ const dbUrl = (base: string, name: string): string => {
   return parsed.toString();
 };
 
+/**
+ * Resolve once `stdout` printed `ready`, then keep draining it: a worker logs a line per job, and a
+ * full pipe would stall it mid-run — the bench would then be timing its own back-pressure.
+ */
+export async function awaitReady(stdout: ReadableStream<Uint8Array>): Promise<void> {
+  const reader = stdout.getReader();
+  let seen = '';
+  while (!seen.includes('ready')) {
+    const { value, done } = await reader.read();
+    if (done) throw failed('a worker process exited before it printed ready');
+    seen += new TextDecoder().decode(value);
+  }
+  void (async () => {
+    while (!(await reader.read()).done) {}
+  })();
+}
+
 /** Spawn `count` worker processes and resolve once every one has printed `ready`. */
 async function spawnWorkers(
   count: number,
@@ -66,20 +83,7 @@ async function spawnWorkers(
     }),
   );
   await Promise.all(
-    children.map(async (child) => {
-      const reader = (child.stdout as ReadableStream<Uint8Array>).getReader();
-      let seen = '';
-      while (!seen.includes('ready')) {
-        const { value, done } = await reader.read();
-        if (done) throw failed('a worker process exited before it printed ready');
-        seen += new TextDecoder().decode(value);
-      }
-      // Keep draining: a worker logs a line per job, and a full pipe would stall it mid-run — the
-      // bench would then be timing its own back-pressure.
-      void (async () => {
-        while (!(await reader.read()).done) {}
-      })();
-    }),
+    children.map((child) => awaitReady(child.stdout as ReadableStream<Uint8Array>)),
   );
   return children;
 }
@@ -167,9 +171,13 @@ export async function benchWorkers(
   }
 }
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const base = args.flags.get('url') ?? Bun.env['TEST_DATABASE_URL'];
+/** The Postgres url and worker counts, or the refusal naming them. */
+export function workerArgs(
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+) {
+  const args = parseScriptArgs(argv);
+  const base = args.flags.get('url') ?? env['TEST_DATABASE_URL'];
   const counts = parseWorkerCounts(args.flags.get('workers'));
   if (typeof base !== 'string' || counts === undefined) {
     throw new ScriptError({
@@ -179,18 +187,25 @@ if (import.meta.main) {
       fix: 'bun run scripts/bench/worker-throughput.bench.ts --url postgres://ultimate:ultimate@127.0.0.1:5432/postgres --workers 1,4,16',
     });
   }
-  const profiles = await benchWorkers(base, counts);
-  const data = { box: boxFacts(Bun.env), profiles };
   const out = args.flags.get('out');
-  if (typeof out === 'string') await Bun.write(out, `${JSON.stringify(data, null, 2)}\n`);
-  if (args.json) console.log(JSON.stringify(data, null, 2));
-  else {
-    for (const profile of profiles) {
-      for (const run of profile.runs) {
-        console.log(
-          `${profile.name}, ${run.workers} workers: ${run.claimsPerSecond} claims/s (${run.perWorker}/worker, ${run.jobs} jobs in ${run.elapsedMs} ms)`,
-        );
-      }
-    }
-  }
+  return { base, counts, out: typeof out === 'string' ? out : undefined, json: args.json };
+}
+
+/** What a run prints: the whole JSON, or one line per profile and worker count. */
+export function workerReport(profiles: readonly ProfileRuns[], json: boolean): readonly string[] {
+  if (json) return [JSON.stringify({ box: boxFacts(Bun.env), profiles }, null, 2)];
+  return profiles.flatMap((profile) =>
+    profile.runs.map(
+      (run) =>
+        `${profile.name}, ${run.workers} workers: ${run.claimsPerSecond} claims/s (${run.perWorker}/worker, ${run.jobs} jobs in ${run.elapsedMs} ms)`,
+    ),
+  );
+}
+
+if (import.meta.main) {
+  const args = workerArgs(Bun.argv.slice(2), Bun.env);
+  const profiles = await benchWorkers(args.base, args.counts);
+  const data = { box: boxFacts(Bun.env), profiles };
+  if (args.out !== undefined) await Bun.write(args.out, `${JSON.stringify(data, null, 2)}\n`);
+  for (const line of workerReport(profiles, args.json)) console.log(line);
 }

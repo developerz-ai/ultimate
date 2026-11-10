@@ -11,7 +11,7 @@ import { isJsonObject } from '@ultimat3/core';
 import type { AppScan } from './app-load';
 import { scannedModulePaths } from './app-load';
 import { asyncModules } from './app-load-async';
-import { batchSources, planBatches } from './app-load-batch';
+import { batchSources, planBatches, uniqueBatchName } from './app-load-batch';
 import { toPosix } from './posix-path';
 import { PREBUILT_REGISTRY_DIR } from './serve-prebuilt-paths';
 
@@ -58,8 +58,11 @@ export async function writePrebuiltRegistry(
   root: string,
   modules: readonly string[],
 ): Promise<PrebuiltRegistry> {
-  const dir = registryDir(root);
-  await rm(dir, { recursive: true, force: true });
+  await rm(registryDir(root), { recursive: true, force: true });
+  // Under a directory of this write's own: a process that writes a registry twice and boots from
+  // it (a test, `x build` beside `x serve`) would otherwise import the first write's cached hooks.
+  const own = uniqueBatchName();
+  const dir = join(registryDir(root), own);
   const chunks: string[] = [];
   // Cut as the scan cuts: a module that awaits at its top level, or reaches one, is alone.
   let first = 0;
@@ -71,7 +74,7 @@ export async function writePrebuiltRegistry(
     );
     await Promise.all(hooks.map(([hook, source]) => Bun.write(join(dir, hook), source)));
     await Bun.write(join(dir, name), entry);
-    chunks.push(name);
+    chunks.push(`${own}/${name}`);
     first += batch.length;
   }
   const registry: PrebuiltRegistry = {
@@ -80,7 +83,7 @@ export async function writePrebuiltRegistry(
     files: modules.map((path) => toPosix(relative(root, path))),
     chunks,
   };
-  await Bun.write(join(dir, INDEX_FILE), `${JSON.stringify(registry, null, 2)}\n`);
+  await Bun.write(join(registryDir(root), INDEX_FILE), `${JSON.stringify(registry, null, 2)}\n`);
   return registry;
 }
 

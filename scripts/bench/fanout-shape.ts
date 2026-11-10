@@ -4,12 +4,17 @@
 
 import { allow } from '../../packages/policy/src/index';
 import { channel } from '../../packages/realtime/src/channel-decl';
+import { getChannel } from '../../packages/realtime/src/channel-registry';
 
 /** The presence bucket this bench's transports use — never the `x_presence` an app uses. */
 export const FANOUT_BUCKET = 'xbenchfanout';
 
-/** The declaration every process makes: a channel is code, loaded by every role. */
+/**
+ * The declaration every process makes: a channel is code, loaded by every role. Declared once per
+ * process — the publisher and a node share one when a test runs both in it.
+ */
 export const fanoutChannel = () =>
+  getChannel('benchfanout') ??
   channel('benchfanout', {
     params: ['org'],
     catchUp: { name: 'benchFanoutRead' },

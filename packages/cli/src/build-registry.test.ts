@@ -129,6 +129,9 @@ console.log(JSON.stringify({ boot: {
   return { ...answered, logged };
 }
 
+/** A chunk's file name, without the directory of the write that made it. */
+const chunkName = (chunk: string): string => chunk.split('/').at(-1) ?? '';
+
 const write = async (dir: string) => writePrebuiltRegistry(dir, await scannedModulePaths(dir));
 
 describe('unit · the prebuilt module registry', () => {
@@ -141,13 +144,14 @@ describe('unit · the prebuilt module registry', () => {
       'apps/web/shared/rows.ts',
       'packages/domain/src/other.ts',
     ]);
-    expect(registry.chunks).toEqual(['chunk-0.ts']);
+    expect(registry.chunks.map(chunkName)).toEqual(['chunk-0.ts']);
     expect(await readPrebuiltRegistry(dir)).toEqual(registry);
     // Relative: the image is the same tree at whatever path it is mounted.
-    const chunk = await Bun.file(join(registryDir(dir), 'chunk-0.ts')).text();
+    const [own] = (registry.chunks[0] ?? '').split('/');
+    const chunk = await Bun.file(join(registryDir(dir), registry.chunks[0] ?? '')).text();
     expect(chunk.split('\n')[0]).toBe('import "./m0.ts";');
-    const hook = await Bun.file(join(registryDir(dir), 'm0.ts')).text();
-    expect(hook).toContain('from "../../../../apps/web/app/a/page.tsx"');
+    const hook = await Bun.file(join(registryDir(dir), own ?? '', 'm0.ts')).text();
+    expect(hook).toContain('from "../../../../../apps/web/app/a/page.tsx"');
     expect(`${chunk}${hook}`).not.toContain(dir);
   });
 
@@ -175,7 +179,7 @@ ${log('apps/web/app/b/actions.ts:end')}export {};
 `,
     });
     const registry = await write(dir);
-    expect(registry.chunks).toEqual(['chunk-0.ts', 'chunk-1.ts', 'chunk-2.ts']);
+    expect(registry.chunks.map(chunkName)).toEqual(['chunk-0.ts', 'chunk-1.ts', 'chunk-2.ts']);
     const [prebuilt, scanned] = await Promise.all([boot(dir, true), boot(dir, false)]);
     expect(prebuilt.source).toBe('registry');
     const end = scanned.order.indexOf('apps/web/app/b/actions.ts:end');
@@ -212,14 +216,19 @@ export function Page() { return <main>C</main>; }
     expect(await readPrebuiltRegistry(dir)).toBeUndefined();
   });
 
-  test('a rewrite removes every chunk of the registry before it', async () => {
+  // …and never writes where it did: Bun caches a module by its path for the life of the process,
+  // so a second write at the first one's paths would boot the first write's hooks.
+  test('a rewrite removes every chunk of the registry before it, and writes under new paths', async () => {
     const dir = await fixtureApp();
     const many = Array.from({ length: BATCH_SIZE + 1 }, (_unused, index) =>
       join(dir, `packages/domain/src/m${String(index)}.ts`),
     );
-    expect((await writePrebuiltRegistry(dir, many)).chunks).toEqual(['chunk-0.ts', 'chunk-1.ts']);
-    await write(dir);
-    expect(await Bun.file(join(registryDir(dir), 'chunk-1.ts')).exists()).toBe(false);
+    const before = (await writePrebuiltRegistry(dir, many)).chunks;
+    expect(before.map(chunkName)).toEqual(['chunk-0.ts', 'chunk-1.ts']);
+    const after = (await write(dir)).chunks;
+    expect(await Bun.file(join(registryDir(dir), before[1] ?? '')).exists()).toBe(false);
+    expect(after.map(chunkName)).toEqual(['chunk-0.ts']);
+    expect(before).not.toContain(after[0]);
   });
 
   test('the image build writes none over a load with a finding, and removes the last one', async () => {

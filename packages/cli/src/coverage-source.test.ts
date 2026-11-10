@@ -74,6 +74,18 @@ export const y = 2;
     ).toBe(false);
   });
 
+  test("an arrow's `=>` inside an alias is not a closing bracket", () => {
+    // The `>` of `=>` once counted as a close: depth went below zero, the scan stopped at the `;`
+    // inside the braces, and the `}` left behind read as code — `document-options.ts` was reported
+    // as an unimported module (`X_COVERAGE_UNMEASURED`) for an alias and nothing else.
+    expect(
+      hasExecutableCode(
+        'export type F = ((a: string) => string) & { readonly g?: () => void; };\n',
+      ),
+    ).toBe(false);
+    expect(hasExecutableCode('type G = { run: () => void; };\nexport const h = 1;\n')).toBe(true);
+  });
+
   test('a types-only module and a barrel are both invisible for the RIGHT reason', () => {
     expect(hasExecutableCode('export interface Counter {\n  add(n: number): void;\n}\n')).toBe(
       false,

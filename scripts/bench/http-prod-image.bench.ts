@@ -41,9 +41,9 @@ const answerFetch = async (url: string) => {
   return { status: response.status, bytes: (await response.arrayBuffer()).byteLength };
 };
 
-async function ready(port: number): Promise<void> {
+async function ready(port: number, timeoutMs: number): Promise<void> {
   const started = performance.now();
-  while (performance.now() - started < READY_TIMEOUT_MS) {
+  while (performance.now() - started < timeoutMs) {
     const status = await answerFetch(`http://127.0.0.1:${String(port)}/readyz`).then(
       (answer) => answer.status,
       () => 0,
@@ -55,9 +55,9 @@ async function ready(port: number): Promise<void> {
 }
 
 /** Pods 2..n: the Compose `web` service run again, detached, on the next host ports. */
-function extraPods(app: string, pods: number): readonly string[] {
+function extraPods(app: string, pods: number, basePort: number): readonly string[] {
   return Array.from({ length: pods - 1 }, (_, index) => {
-    const port = BASE_PORT + index + 1;
+    const port = basePort + index + 1;
     const run = Bun.spawnSync(
       [...COMPOSE, 'run', '-d', '--no-deps', '-p', `127.0.0.1:${String(port)}:3000`, 'web'],
       { cwd: app, timeout: 120_000 },
@@ -80,17 +80,24 @@ export interface PodsRun {
   readonly perPod: readonly LoadResult[];
 }
 
-export async function benchPods(
-  app: string,
-  pods: number,
-  path: string,
-  seconds: number,
-  concurrency: number,
-): Promise<PodsRun> {
-  const extra = extraPods(app, pods);
+export interface PodsInput {
+  readonly app: string;
+  readonly pods: number;
+  readonly path: string;
+  readonly seconds: number;
+  readonly concurrency: number;
+  /** Pod 1's host port; pods 2..n take the ports after it. Default 3000, the Compose `web`'s. */
+  readonly basePort?: number;
+  readonly readyTimeoutMs?: number;
+}
+
+export async function benchPods(input: PodsInput): Promise<PodsRun> {
+  const { pods, path, seconds, concurrency } = input;
+  const basePort = input.basePort ?? BASE_PORT;
+  const extra = extraPods(input.app, pods, basePort);
   try {
-    const ports = Array.from({ length: pods }, (_, index) => BASE_PORT + index);
-    await Promise.all(ports.map(ready));
+    const ports = Array.from({ length: pods }, (_, index) => basePort + index);
+    await Promise.all(ports.map((port) => ready(port, input.readyTimeoutMs ?? READY_TIMEOUT_MS)));
     const perPod = await Promise.all(
       ports.map((port) =>
         runLoad({
@@ -116,8 +123,9 @@ export async function benchPods(
   }
 }
 
-if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
+/** The flags, or the refusal naming them. */
+export function podsArgs(argv: readonly string[]) {
+  const args = parseScriptArgs(argv);
   const app = args.flags.get('app');
   const rawPods = args.flags.get('pods');
   const podCounts = typeof rawPods === 'string' ? rawPods.split(',').map(Number) : [1, 3];
@@ -145,24 +153,37 @@ if (import.meta.main) {
       fix: 'bun run scripts/bench/http-prod-image.bench.ts --app <work>/proofapp --pods 1,3',
     });
   }
-  const target = typeof path === 'string' ? path : '/';
+  const out = args.flags.get('out');
+  return {
+    app,
+    podCounts,
+    path: typeof path === 'string' ? path : '/',
+    seconds,
+    concurrency,
+    out: typeof out === 'string' ? out : undefined,
+    json: args.json,
+  };
+}
+
+/** One line per pod count. */
+export const podsReport = (runs: readonly PodsRun[]): readonly string[] =>
+  runs.map(
+    (run) =>
+      `${run.pods} pod(s): ${run.rps} req/s, worst p50 ${run.worstP50Ms} ms, worst p99 ${run.worstP99Ms} ms`,
+  );
+
+if (import.meta.main) {
+  const args = podsArgs(Bun.argv.slice(2));
   const runs: PodsRun[] = [];
-  for (const pods of podCounts) runs.push(await benchPods(app, pods, target, seconds, concurrency));
+  for (const pods of args.podCounts) runs.push(await benchPods({ ...args, pods }));
   const data = {
     box: boxFacts(Bun.env),
-    path: target,
-    seconds,
-    concurrencyPerPod: concurrency,
+    path: args.path,
+    seconds: args.seconds,
+    concurrencyPerPod: args.concurrency,
     runs,
   };
-  const out = args.flags.get('out');
-  if (typeof out === 'string') await Bun.write(out, `${JSON.stringify(data, null, 2)}\n`);
+  if (args.out !== undefined) await Bun.write(args.out, `${JSON.stringify(data, null, 2)}\n`);
   if (args.json) console.log(JSON.stringify(data, null, 2));
-  else {
-    for (const run of runs) {
-      console.log(
-        `${run.pods} pod(s): ${run.rps} req/s, worst p50 ${run.worstP50Ms} ms, worst p99 ${run.worstP99Ms} ms`,
-      );
-    }
-  }
+  else for (const line of podsReport(runs)) console.log(line);
 }

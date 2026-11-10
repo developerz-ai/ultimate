@@ -20,9 +20,10 @@ export type IslandResolver = (routeFile: string) => IslandResolve;
  * rendered (`route-islands-preload.ts`). Optional so a resolver that is only a URL map (a test
  * double) still type-checks; it then earns no preload, never a wrong one.
  */
-export type IslandResolve = ((src: string) => string) & {
+export interface IslandResolve {
+  (src: string): string;
   readonly importsOf?: (entryUrl: string) => readonly string[];
-};
+}
 
 export interface DocumentOptions {
   readonly resolveIsland?: IslandResolver;

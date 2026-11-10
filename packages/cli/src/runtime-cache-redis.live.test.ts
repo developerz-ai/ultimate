@@ -24,7 +24,29 @@ import { CACHE_INVALIDATE_SUBJECT, startCacheTiers } from './runtime-cache';
 
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
-const PEER = `${import.meta.dir}/runtime-cache-redis-peer-fixture.ts`;
+/**
+ * Replica A, run as its own process (`bun -e`, inline as `registry-lazy.test.ts` does: a fixture
+ * FILE only this live suite reaches is `X_COVERAGE_UNMEASURED` on a coverage run with no Redis).
+ * It boots the hop on Redis with no NATS, busts one tag, and prints the report's errors.
+ */
+const PEER = `
+const { declareTags, invalidateTags, noopPurgeDriver, parseTag } = await import('@ultimat3/cache');
+const { InProcessTransport } = await import('@ultimat3/realtime/server');
+const { startCacheTiers } = await import(${JSON.stringify(`${import.meta.dir}/runtime-cache.ts`)});
+const [url, wire] = Bun.argv.slice(-2);
+const bust = parseTag(wire);
+declareTags([bust.entity]);
+const release = startCacheTiers({
+  env: { REDIS_URL: url },
+  purge: noopPurgeDriver(),
+  transport: new InProcessTransport(),
+  tiers: ['lru'],
+});
+const report = await invalidateTags([bust]);
+await release();
+console.log(JSON.stringify(report.errors));
+process.exit(0);
+`;
 const KEY = 'live:post:1';
 const PAGE = '/posts/1';
 
@@ -83,7 +105,12 @@ async function replicaB(): Promise<{ lru: CacheTier; revalidated: string[] }> {
 
 /** Replica A: a separate process busting `post:1`, as an action's `invalidates` would. */
 async function writeOnA(): Promise<void> {
-  const child = Bun.spawn(['bun', PEER, url ?? '', 'post:1'], { stdout: 'pipe', stderr: 'pipe' });
+  const child = Bun.spawn(['bun', '-e', PEER, url ?? '', 'post:1'], {
+    // The cli workspace, where `@ultimat3/cache` and `@ultimat3/realtime` resolve; the root has neither.
+    cwd: `${import.meta.dir}/..`,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
   const out = await new Response(child.stdout).text();
   expect(await child.exited).toBe(0);
   // No `broadcast` error: A's publish was accepted by Redis.
