@@ -3,6 +3,8 @@
 // and a column stores only what Postgres stores. Lifted from `entity/src/write-parity.test.ts`.
 
 import { expect } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
+import { SQLSTATE, sqlState } from '@ultimat3/db';
 import {
   arrayOf,
   bigint,
@@ -106,7 +108,19 @@ const docs = remember(
 );
 
 const ID = idAt(1);
-const UNIQUE = 'X_DB_UNIQUE_VIOLATION';
+/** A duplicate key: the framework's code AND Postgres' SQLSTATE, on every driver — a caller that
+ * branches on `sqlState(error)` (an upsert retry, a "taken" message) must not see Postgres only. */
+const DUPLICATE = { code: 'X_DB_UNIQUE_VIOLATION', sqlState: SQLSTATE.uniqueViolation };
+
+/** The refusal's code and SQLSTATE, or the value when nothing was refused. */
+const duplicate = async (work: () => Promise<unknown>): Promise<unknown> => {
+  try {
+    return { ok: await work() };
+  } catch (error) {
+    return { code: isUltimateError(error) ? error.code : 'uncoded', sqlState: sqlState(error) };
+  }
+};
+
 const REFUSED = { code: 'X_INVARIANT_VIOLATED' };
 
 const undefinedIsAbsent: readonly EntityDriverCheck[] = [
@@ -142,23 +156,19 @@ const undefinedIsAbsent: readonly EntityDriverCheck[] = [
 const keysAreKept: readonly EntityDriverCheck[] = [
   checkOver({ tags }, 'a duplicate primary key is refused, not a silent replace', async (db) => {
     await db.tags.insert({ code: 'a', slug: 'one' });
-    expect(await outcome(() => db.tags.insert({ code: 'a', slug: 'two' }))).toEqual({
-      code: UNIQUE,
-    });
+    expect(await duplicate(() => db.tags.insert({ code: 'a', slug: 'two' }))).toEqual(DUPLICATE);
     expect((await db.tags.all()).map((row) => row.slug)).toEqual(['one']);
   }),
   checkOver({ tags }, 'a duplicate unique column is refused', async (db) => {
     await db.tags.insert({ code: 'a', slug: 'one' });
-    expect(await outcome(() => db.tags.insert({ code: 'b', slug: 'one' }))).toEqual({
-      code: UNIQUE,
-    });
+    expect(await duplicate(() => db.tags.insert({ code: 'b', slug: 'one' }))).toEqual(DUPLICATE);
   }),
   checkOver({ tags }, 'insertAll with a duplicate inside the batch stores nothing', async (db) => {
     const batch = [
       { code: 'a', slug: 'one' },
       { code: 'a', slug: 'two' },
     ];
-    expect(await outcome(() => db.tags.insertAll(batch))).toEqual({ code: UNIQUE });
+    expect(await duplicate(() => db.tags.insertAll(batch))).toEqual(DUPLICATE);
     expect(await db.tags.all()).toHaveLength(0);
   }),
   checkOver({ tags }, 'a patch moving the primary key leaves one row, not two', async (db) => {
@@ -194,9 +204,9 @@ const keysAreKept: readonly EntityDriverCheck[] = [
     async (db) => {
       await db.notes.insert({ id: idAt(1), title: 'one', body: 'same' });
       await db.notes.insert({ id: idAt(2), title: 'two', body: 'same' });
-      expect(await outcome(() => db.notes.updateWhere({ body: 'same' }, { id: idAt(3) }))).toEqual({
-        code: UNIQUE,
-      });
+      expect(
+        await duplicate(() => db.notes.updateWhere({ body: 'same' }, { id: idAt(3) })),
+      ).toEqual(DUPLICATE);
       const kept = (await db.notes.all()).map((row) => [row.id, row.title, row.body]).sort();
       expect(kept).toEqual([
         [idAt(1), 'one', 'same'],
@@ -211,10 +221,8 @@ const keysAreKept: readonly EntityDriverCheck[] = [
       await db.countries.insert({ id: idAt(1), iso: 'AA', name: 'Same' });
       await db.countries.insert({ id: idAt(2), iso: 'BB', name: 'Same' });
       expect(
-        await outcome(() => db.countries.updateWhere({ name: 'Same' }, { iso: 'ZZ' })),
-      ).toEqual({
-        code: UNIQUE,
-      });
+        await duplicate(() => db.countries.updateWhere({ name: 'Same' }, { iso: 'ZZ' })),
+      ).toEqual(DUPLICATE);
       const kept = (await db.countries.all()).map((row) => [row.id, row.iso]).sort();
       expect(kept).toEqual([
         [idAt(1), 'AA'],
@@ -224,9 +232,7 @@ const keysAreKept: readonly EntityDriverCheck[] = [
   ),
   checkOver({ docs }, 'a unique declared as an invariant refuses a second row', async (db) => {
     await db.docs.insert({ id: idAt(1), slug: 'one' });
-    expect(await outcome(() => db.docs.insert({ id: idAt(2), slug: 'one' }))).toEqual({
-      code: UNIQUE,
-    });
+    expect(await duplicate(() => db.docs.insert({ id: idAt(2), slug: 'one' }))).toEqual(DUPLICATE);
   }),
   checkOver(
     { docs },
@@ -234,14 +240,12 @@ const keysAreKept: readonly EntityDriverCheck[] = [
     async (db) => {
       await db.docs.insert({ id: idAt(1), slug: 'one' });
       await db.docs.insert({ id: idAt(2), slug: 'two' });
-      expect(await outcome(() => db.docs.update(idAt(2), { slug: 'one' }))).toEqual({
-        code: UNIQUE,
-      });
+      expect(await duplicate(() => db.docs.update(idAt(2), { slug: 'one' }))).toEqual(DUPLICATE);
       const pair = [
         { id: idAt(3), slug: 'three' },
         { id: idAt(4), slug: 'three' },
       ];
-      expect(await outcome(() => db.docs.insertAll(pair))).toEqual({ code: UNIQUE });
+      expect(await duplicate(() => db.docs.insertAll(pair))).toEqual(DUPLICATE);
       expect((await db.docs.all()).map((row) => row.slug).sort()).toEqual(['one', 'two']);
     },
   ),

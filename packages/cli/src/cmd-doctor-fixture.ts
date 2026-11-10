@@ -34,6 +34,8 @@ export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   authStorage: async () => ({ unsealedMfaSecrets: 0, retiredTables: [] }),
   // Embedded, or a session whose bound is the role's: nothing to say.
   pooler: async () => NO_POOLER_FACT,
+  // The scaffold's own TypeScript: nothing lags.
+  typescript: async () => [],
   ...over,
 });
 

@@ -13,6 +13,9 @@
 // imported by either; a request made inside an installed package (the walk ends at the package
 // boundary); a fetch reached through a computed member (`globalThis['fetch']`); and a bare
 // `fetch(` in a file that also binds a local `fetch` (`bindsFetch`). A floor, not a proof.
+//
+// The global `fetch` PASSED ON — `rpc({ fetch })`, `const f = window.fetch` — is the same bypass
+// one module later (`transport-values.ts`), reported with a fix that removes the hand-off.
 
 import { ERROR_DOCS_URL, maskLiterals } from '@ultimat3/core';
 import { commentSafe } from './comment-safe';
@@ -24,9 +27,12 @@ import { barrelImports } from './server-barrels';
 import { isTest } from './source-files';
 import type { TransportCall, TransportShape } from './transport-calls';
 import { transportCalls } from './transport-calls';
+import { fetchValues } from './transport-values';
 
 export interface Bypass extends TransportCall {
   readonly file: string;
+  /** The global handed on as a value rather than called here (`transport-values.ts`). */
+  readonly passed?: boolean;
 }
 
 export interface ServerBarrel extends BarrelImport {
@@ -90,6 +96,10 @@ export function checkBrowserTransport(input: TransportInput): {
       if (input.seams.get(call.shape) === file) continue;
       bypasses.push({ ...call, file });
     }
+    for (const value of fetchValues(source)) {
+      if (input.seams.get(value.shape) === file) continue;
+      bypasses.push({ ...value, file, passed: true });
+    }
     for (const found of barrelImports(source, input.barrels)) {
       if (input.ownsBarrel?.(file, found.barrel) === true) continue;
       barrels.push({ ...found, file });
@@ -137,6 +147,7 @@ const siteOf = (site: { readonly file: string; readonly line: number }): string 
  * command re-reads the tree; the comment is the edit, because only the finding knows the line.
  */
 export function bypassFinding(bypass: Bypass, context: FindingContext): Finding {
+  if (bypass.passed === true) return passedFinding(bypass, context);
   const holder = context.holder(bypass.shape);
   const site = siteOf(bypass);
   return {
@@ -144,6 +155,23 @@ export function bypassFinding(bypass: Bypass, context: FindingContext): Finding 
     at: `${bypass.file}:${bypass.line}`,
     cause: `${site} calls ${bypass.spelled} in browser-reachable code; ${holder === undefined ? 'no module may' : `only ${holder} may`}, so this request skips the page's record store, idempotency header and principal fence`,
     fix: `${context.rerun}   # after replacing ${bypass.spelled} at ${site} with ${REPLACEMENT.get(bypass.shape) ?? ''}`,
+    docs: ERROR_DOCS_URL,
+  };
+}
+
+/**
+ * The global handed to another module: the request happens THERE, through a property no rule reads,
+ * so the edit is here — stop handing it on (a typed client already sends through the seam) — and
+ * the module that took it is the one to move onto the replacement.
+ */
+function passedFinding(bypass: Bypass, context: FindingContext): Finding {
+  const holder = context.holder(bypass.shape);
+  const site = siteOf(bypass);
+  return {
+    code: 'X_BROWSER_TRANSPORT_BYPASS',
+    at: `${bypass.file}:${bypass.line}`,
+    cause: `${site} passes the global ${bypass.spelled} as a value in browser-reachable code; whatever receives it calls it directly, and ${holder === undefined ? 'no module may' : `only ${holder} may`}, so those requests skip the page's record store, idempotency header and principal fence`,
+    fix: `${context.rerun}   # after deleting ${bypass.spelled} at ${site} (rpc() and queryClient() send through clientTransport when given none) and making the module that took it use ${REPLACEMENT.get(bypass.shape) ?? ''}`,
     docs: ERROR_DOCS_URL,
   };
 }

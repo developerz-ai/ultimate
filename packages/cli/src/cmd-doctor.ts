@@ -25,6 +25,7 @@ import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import { rowSecurityProbe } from './doctor-row-security';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
+import { typescriptFindings, typescriptProbe } from './doctor-typescript';
 import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
 import { machineSecretFindings } from './framework-env';
 import { ICON_SOURCE } from './icon-assets';
@@ -37,6 +38,7 @@ import { syncPortFor } from './role-sync';
 import { checkMigrationDrift } from './schema-drift';
 import { portFromEnv } from './serve-env';
 import { quoteArg } from './shell-quote';
+import type { TypescriptLag } from './typescript-floor';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -106,6 +108,8 @@ export interface DoctorProbe {
   authStorage(): Promise<AuthStorageFact>;
   /** The statement bound the session really reads, and what a pooler refused (`doctor-pooler.ts`). */
   pooler(): Promise<PoolerFact>;
+  /** Each manifest whose `typescript` range lags the scaffold's (`doctor-typescript.ts`). */
+  typescript(): Promise<readonly TypescriptLag[]>;
   /** With `database.rowSecurity` on, whether the serving role is exempt (`doctor-row-security.ts`). */
   rowSecurity?(): Promise<readonly Finding[]>;
 }
@@ -221,6 +225,9 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
     );
     return findings;
   }
+  // Right after the runtime and for its reason: a compiler a major behind reds typecheck and build
+  // on the framework's own files, and every finding below is read through a gate that cannot pass.
+  findings.push(...typescriptFindings(await probe.typescript()));
   if (!probe.exists(ENV_DEVELOPMENT)) {
     findings.push(
       finding(
@@ -421,6 +428,7 @@ export function probeFor(
       root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
     authStorage: () => authStorageProbe(process.env['DATABASE_URL'], env),
     pooler: () => poolerProbe(process.env['DATABASE_URL'], env),
+    typescript: async () => (root === undefined ? [] : typescriptProbe(root)),
     rowSecurity: async () =>
       root === undefined ? [] : rowSecurityProbe(root, process.env['DATABASE_URL'], env),
   };

@@ -4,7 +4,7 @@
 // `EntityError` has no slot for, so they are `UltimateError`s of their own.
 
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
-import { DbError } from '@ultimat3/db';
+import { type DbError, driverError, SQLSTATE } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import type { EntityErrorCode } from './entity-error';
 
@@ -67,14 +67,15 @@ export const driverRowOutOfScope = (
   });
 
 /**
- * The refusal a store raises for a duplicate key: `X_DB_UNIQUE_VIOLATION`, the code Postgres'
- * `23505` becomes, so a caller catching it reads one code whatever stores the row. No SQLSTATE
- * is invented: `sqlState()` answers `undefined`, because no server said anything.
+ * The refusal a store raises for a duplicate key: the error Postgres' `23505` becomes, built by the
+ * same `driverError` from the same fields a server sends — so `code`, `sqlState()`,
+ * `meta.sqlState` and `meta.constraint` read alike whatever stores the row. It used to carry no
+ * SQLSTATE ("no server said it"), and every app race handler matching `sqlState(e) === '23505'`
+ * passed in production and failed under the memory driver: two answers to one question.
  */
 export const entityUniqueViolation = (entity: EntityCore, constraint: string): DbError =>
-  new DbError({
-    code: 'X_DB_UNIQUE_VIOLATION',
-    cause: `a row written into ${entity.$table} repeats the key of constraint ${renderCauseValue(constraint)}`,
-    fix: `upsertAll(rows, { onConflict: [...] }) over the columns ${constraint} covers — or catch X_DB_UNIQUE_VIOLATION and answer 409, which is what a raced signup is`,
-    meta: { constraint },
+  driverError(`write into ${entity.$table}`, {
+    code: SQLSTATE.uniqueViolation,
+    constraint,
+    message: `duplicate key value violates unique constraint "${constraint}"`,
   });

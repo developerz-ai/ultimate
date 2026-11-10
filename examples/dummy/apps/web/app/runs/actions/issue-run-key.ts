@@ -18,6 +18,10 @@ export const issueRunKey = action({
   output: RunKeyIssued,
   policy: canRunKey,
   // No `mcp`: the answer is a credential, shown once, and a tool result is kept in a transcript.
+  // Minting a credential is the attempt a security review asks after: every one, refused or not,
+  // reaches the sink `apps/web/runtime.ts` names (the input, never the key). Postly's audited
+  // primitive, and one `x exercise` reaches, so the pass honouring that sink is proved every gate.
+  audit: true,
   async handle({ input, ctx }) {
     return ctx.runs.issueKey(input.orgId);
   },

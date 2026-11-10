@@ -12,6 +12,7 @@ import type {
   ForeignKeysOf,
   HasManyMap,
   None,
+  SettledAttrs,
   TraitMap,
   WriteBound,
 } from './factory-types';
@@ -31,19 +32,20 @@ export interface FactoryOptions<
    * Every column the factory owns; called once per row. `index` is the sequence. It must name each
    * `belongsTo` key, so a key that is not a column is a compile error HERE: a check written as a
    * constraint on `belongsTo` fixed the row type before this was read, and every row became `object`.
+   * `Readonly<TAttrs>` is the slot that keeps an enum literal literal (`DefaultsBound`).
    */
   defaults(
     index: number,
     ids: FactoryIds,
     transient: TTransient,
-  ): TAttrs & WriteBound<E> & Readonly<Record<ForeignKeysOf<TBelongs>, unknown>>;
+  ): TAttrs & Readonly<TAttrs> & WriteBound<E> & Readonly<Record<ForeignKeysOf<TBelongs>, unknown>>;
   readonly traits?: TTraits;
   /** Attributes a call may pass that are never written: read by `defaults`, traits and callbacks. */
   readonly transient?: TTransient;
   readonly belongsTo?: TBelongs;
   readonly hasMany?: TMany;
   /** After the row is assembled, before any write — both strategies. */
-  afterBuild?(row: NoInfer<TAttrs>, context: FactoryContext<TTransient>): void;
+  afterBuild?(row: NoInfer<SettledAttrs<TAttrs>>, context: FactoryContext<TTransient>): void;
   /** After the row and its `hasMany` children are stored — `create()` only. */
   afterCreate?(
     row: NoInfer<Created<TRow, TMany>>,

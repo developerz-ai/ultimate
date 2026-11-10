@@ -2,7 +2,7 @@
 // client span — success and failure alike — and a driver's call to its OWN methods is not counted
 // twice. A driver held directly (never registered) is the caller's, and reports nothing.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { ReadableSpan, StorageEvent } from '@ultimat3/core';
 import {
   alwaysOnSampler,
@@ -12,6 +12,7 @@ import {
   resetTelemetry,
   subscribe,
 } from '@ultimat3/core';
+import type { StorageDriver } from './driver';
 import { memoryStorageDriver } from './driver-memory';
 import { defineStorage, resetStorage } from './storage';
 
@@ -90,5 +91,87 @@ describe('unit · storage · instrumentation', () => {
     const seen = listen();
     expect(typeof disk.toString()).toBe('string');
     expect(seen.events).toEqual([]);
+  });
+  test('a method assigned on the disk after first use runs, and is still reported', async () => {
+    // The wrapper cached each method on first read and had no `set` trap: a test patching `put` to
+    // simulate an outage changed the driver, and the cached original kept answering.
+    const disk = defineStorage({ disks: { uploads: memoryStorageDriver() } }).disk();
+    await disk.put('warm.txt', bytes('x'));
+    const seen = listen();
+    const outage = new TypeError('disk full');
+    disk.put = () => Promise.reject(outage);
+    expect(await disk.put('k.txt', bytes('x')).catch((error: unknown) => error)).toBe(outage);
+    expect(seen.events.map((event) => [event.name, event.payload.error])).toEqual([
+      ['storage.put', outage],
+    ]);
+  });
+
+  test.each([
+    ['assigned', (disk: StorageDriver, put: StorageDriver['put']) => (disk.put = put)],
+    [
+      'defined',
+      (disk: StorageDriver, put: StorageDriver['put']) =>
+        Object.defineProperty(disk, 'put', { value: put, writable: true, configurable: true }),
+    ],
+  ])('a patch %s back restores the driver method, reported once', async (_, restore) => {
+    const disk = defineStorage({ disks: { uploads: memoryStorageDriver() } }).disk();
+    const original = disk.put;
+    disk.put = () => Promise.reject(new TypeError('disk full'));
+    await disk.put('k.txt', bytes('x')).catch(() => undefined);
+    restore(disk, original);
+    const seen = listen();
+    await disk.put('k.txt', bytes('xy'));
+    expect(await disk.stat('k.txt')).toMatchObject({ size: 2 });
+    expect(seen.events.map((event) => event.name)).toEqual(['storage.put', 'storage.stat']);
+  });
+
+  test('spyOn the declared driver takes effect on a warm disk, reported, and restores', async () => {
+    // Bun's spyOn never writes through a Proxy (as of bun 1.4.4 it fires no trap): spy on the
+    // driver you declared. The disk notices because its wrapper is keyed on the method it wraps.
+    const driver = memoryStorageDriver();
+    const disk = defineStorage({ disks: { uploads: driver } }).disk();
+    await disk.put('warm.txt', bytes('x'));
+    const outage = new TypeError('disk full');
+    const spy = spyOn(driver, 'put').mockImplementation(() => Promise.reject(outage));
+    const seen = listen();
+    expect(await disk.put('k.txt', bytes('x')).catch((error: unknown) => error)).toBe(outage);
+    expect(seen.events.map((event) => event.payload.error)).toEqual([outage]);
+    spy.mockRestore();
+    await disk.put('k.txt', bytes('xy'));
+    expect(await disk.stat('k.txt')).toMatchObject({ size: 2 });
+    expect(seen.events.map((event) => event.name)).toEqual([
+      'storage.put',
+      'storage.put',
+      'storage.stat',
+    ]);
+  });
+  test('a method set on an object inheriting from the disk shadows it there, never on the disk', async () => {
+    // `Object.assign(Object.create(disk), { stat })` reaches the disk's `set` trap with the CHILD
+    // as receiver. Written onto the driver, the child's `stat` calling `disk.stat` called itself.
+    const disk = defineStorage({ disks: { uploads: memoryStorageDriver() } }).disk();
+    await disk.put('k.txt', bytes('xy'));
+    const stat: StorageDriver['stat'] = async (key) => {
+      const object = await disk.stat(key);
+      return object === undefined ? undefined : { ...object, etag: 'shadowed' };
+    };
+    const child: StorageDriver = Object.assign(Object.create(disk), { stat });
+    expect(await child.stat('k.txt')).toMatchObject({ size: 2, etag: 'shadowed' });
+    expect(disk.stat).not.toBe(stat);
+    expect((await disk.stat('k.txt'))?.etag).not.toBe('shadowed');
+  });
+
+  test('a saved original wrapped by a patch keeps calling the original', async () => {
+    const disk = defineStorage({ disks: { uploads: memoryStorageDriver() } }).disk();
+    await disk.put('k.txt', bytes('xy'));
+    const stat = disk.stat;
+    let patched = 0;
+    disk.stat = (key) => {
+      patched += 1;
+      return stat(key);
+    };
+    const seen = listen();
+    expect(await disk.stat('k.txt')).toMatchObject({ size: 2 });
+    expect(patched).toBe(1);
+    expect(seen.events.map((event) => event.name)).toEqual(['storage.stat', 'storage.stat']);
   });
 });

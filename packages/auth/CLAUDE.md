@@ -67,8 +67,13 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
   `deleteSessionsForOrg` joins through `x_users`; `x_sessions` does **not** gain an `org_id`.
 - The code flow carries `nonce` inside the id token. `assertOAuthCallback` checks an echoed one when
   present and never requires it; `verifyIdToken` is the real gate.
-- `sealHandshake`/`openHandshake` (a hand-built flow's cookie, not `oauthLogin`'s): the provider is
-  an argument, expiry the server's clock, one cookie per provider (`handshakeCookieName`).
+- `sealHandshake`/`openHandshake` (a hand-built flow's server-side store): the provider is an
+  argument, expiry the server's clock. **The handshake COOKIE is `oauthLogin`'s own**:
+  `handshakeCookieName` IS `identityStateCookieName` (`__Host-x_sso_<p>`) and `handshakeCookie`
+  seals `encodeOidcState`, so a built-in leg and a hand-built one read each other
+  (`oauth-handshake-cookie.test.ts`). The read-only `__Host-x_oauth_<p>` fallback goes in 32.0.0.
+- **`oauthLogin({ callbackPath })` is the one movable path** (`sign-in-callback-path.ts`): mount,
+  `redirect_uri` and the checked URL from one pattern; the start path never moves.
 - `takeVerification(purpose, identifier, tokenHash)` consumes **only on a hash match**, in one
   conditional statement (`consumed_at is null` on the UPDATE and its subselect,
   `order by created_at desc limit 1`); `consumeVerification` still compares in constant time.
@@ -173,7 +178,9 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `mfa-secret.ts` | the TOTP secret at rest: seal on write, open on read, the one-shot that seals older rows |
 | `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |
 | `privileges.ts` | `updatePrivileges` — the grant, the rotation it requires, and the sessions a changed password ends |
-| `oauth-cookie.ts` | the handshake's home between the two legs: seal, open, the cookie |
+| `oauth-cookie.ts` | the handshake's server-side codec: seal, open, secret, TTL |
+| `oauth-handshake-cookie.ts` | the handshake as a cookie — the sign-in routes' own name and seal, plus the one-release legacy read |
+| `sign-in-callback-path.ts` | the callback pattern: default or `callbackPath`, validated; mount, `redirect_uri`, provider segment |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
 | `*-fixture.ts` | test-only, off `index.ts`: `id-token-` (the string-input JWT builder), `auth-` (KDF params, password, `AuthError` catcher for `auth*.test.ts`), `oauth-login-` (adapter, clock, profile) |

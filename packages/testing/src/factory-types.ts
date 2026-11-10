@@ -129,3 +129,34 @@ export type StoredOf<E, TAttrs> = E extends { readonly $row: infer R extends obj
 export type WriteBound<E> = E extends { readonly $columns: infer C extends ColumnMap }
   ? Partial<Insertable<C>>
   : object;
+
+/**
+ * Any value at all (`{} | null | undefined` is `unknown`, so `Record<string, unknown>` fits), but
+ * spelled as a union so the checker sees it include `string` — `unknown` alone would not keep a literal.
+ */
+// biome-ignore lint/complexity/noBannedTypes: `{}` is what makes the union admit `unknown`.
+export type AttrValue = string | number | boolean | bigint | symbol | {} | null | undefined;
+
+/**
+ * The bound on what `defaults` returns. Its per-key `AttrValue` is what keeps `status: 'open'` a
+ * literal: TypeScript widens a literal unless the slot it lands in is a type variable whose
+ * constraint holds `string`, and `WriteBound<E>` is a conditional over an unfixed `E` that never
+ * is. Self-referential (`keyof A`) rather than a `Record`, so an `interface` still satisfies it.
+ */
+export type DefaultsBound<A, E> = { readonly [K in keyof A]: AttrValue } & WriteBound<E>;
+
+type Widened<V> = V extends string
+  ? string
+  : V extends number
+    ? number
+    : V extends boolean
+      ? boolean
+      : V extends bigint
+        ? bigint
+        : V;
+
+/**
+ * The literals `DefaultsBound` kept, widened back once checked: `title: \`t${n}\`` must not make
+ * `build({ title: 'x' })` a type error. A column's own union returns through `Partial<TRow>`.
+ */
+export type SettledAttrs<A> = { [K in keyof A]: Widened<A[K]> };

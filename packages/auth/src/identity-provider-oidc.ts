@@ -43,12 +43,23 @@ export interface OidcIdentityProviderConfig {
 const FIELDS = ['state', 'nonce', 'verifier', 'redirectUri', 'authorizeUrl'] as const;
 
 /** The handshake, and when it was issued — the instant its single-use claim is keyed on. */
-interface StoredHandshake {
+export interface StoredHandshake {
   readonly handshake: OAuthHandshake;
   readonly issuedAt: number;
 }
 
-function readHandshake(provider: OAuthProviderId, state: string): StoredHandshake {
+/**
+ * The handshake as the sign-in state string. The ONE encoding: `begin` writes it, and so does
+ * `handshakeCookie`, so a hand-built leg and a built-in one read each other's cookie.
+ */
+export const encodeOidcState = (handshake: OAuthHandshake, issuedAt: number): string =>
+  JSON.stringify({
+    ...Object.fromEntries(FIELDS.map((field) => [field, handshake[field]])),
+    issuedAt,
+  });
+
+/** `encodeOidcState`'s inverse, bound to `provider`; `X_OAUTH_STATE_INVALID` for anything else. */
+export function decodeOidcState(provider: OAuthProviderId, state: string): StoredHandshake {
   let parsed: unknown;
   try {
     parsed = JSON.parse(state);
@@ -91,21 +102,18 @@ export function oidcIdentityProvider(config: OidcIdentityProviderConfig): Identi
         redirectUri: callbackUrl,
         scopes: config.scopes,
       });
-      const state = {
-        ...Object.fromEntries(FIELDS.map((field) => [field, handshake[field]])),
-        issuedAt: clock.now().getTime(),
-      };
-      return { location: handshake.authorizeUrl, state: JSON.stringify(state) };
+      const state = encodeOidcState(handshake, clock.now().getTime());
+      return { location: handshake.authorizeUrl, state };
     },
     answers(state, params) {
       try {
-        return timingSafeEqual(readHandshake(id, state).handshake.state, params['state'] ?? '');
+        return timingSafeEqual(decodeOidcState(id, state).handshake.state, params['state'] ?? '');
       } catch {
         return false;
       }
     },
     async complete({ state, params, callbackUrl, clock, replay }): Promise<VerifiedIdentity> {
-      const { handshake, issuedAt } = readHandshake(id, state);
+      const { handshake, issuedAt } = decodeOidcState(id, state);
       if (handshake.redirectUri !== callbackUrl) {
         throw oauthStateInvalid(id, 'the handshake was started for another callback URL');
       }

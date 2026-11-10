@@ -1,19 +1,49 @@
 // Single responsibility: the storage disk a boot installs — s3 when `S3_ENDPOINT` names one, the
-// embedded local disk otherwise — and the two refusals that must come before the first upload
-// rather than after it. Split from `runtime-services.ts` at its 500-line ceiling.
+// embedded local disk otherwise, NONE when the app already declared its own — and the two refusals
+// that must come before the first upload rather than after it. Split from `runtime-services.ts`.
 
 // why: Bun has no `mkdir`; the embedded root must exist before the disk is handed out.
 import { mkdirSync } from 'node:fs';
 import { isLocal, renderThrowable, resolveEnvironment } from '@ultimat3/core';
 import { configuredHttp, defineHttpConfig } from '@ultimat3/http';
-import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
+import type { Storage, StorageConfig } from '@ultimat3/storage';
+import {
+  definedStorage,
+  defineStorage,
+  localDriver,
+  s3Driver,
+  usesDevStorageSecret,
+} from '@ultimat3/storage';
 import type { StorageDriver } from '@ultimat3/storage/adapter';
 import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import type { DevServices, Env } from './runtime-bindings';
 import { s3PathStyleOf } from './runtime-s3-path-style';
 
 const FILE_SCHEME = 'file://';
+
+/**
+ * Every registry a boot in this process installed. `definedStorage()` holding one of these is a
+ * previous boot's default (a second `startServices` in one process), replaced; holding anything
+ * else is the app's own `defineStorage()`, kept.
+ */
+const bootInstalled = new WeakSet<Storage>();
+
+function bootDefine(config: StorageConfig): Storage {
+  const installed = defineStorage(config);
+  bootInstalled.add(installed);
+  return installed;
+}
+
+/**
+ * The registry an app module declared before this boot ran, or `undefined`. `runtime.ts` is
+ * imported before `startServices`, and an app module it reaches that calls
+ * `defineStorage({ disks: { uploads, evidence } })` has already run: the boot's one-disk
+ * `defineStorage` replaced it, and every disk but the boot's was `X_STORAGE_DISK_UNKNOWN`.
+ */
+function appDeclared(): Storage | undefined {
+  const current = definedStorage();
+  return current === undefined || bootInstalled.has(current) ? undefined : current;
+}
 
 /**
  * The most one request to this server carries — `http.maxRequestBodyBytes` as the server resolves
@@ -39,11 +69,15 @@ export const servedRequestCeiling = (): number =>
  * to run a container, so this reports what to do instead of what went wrong.
  */
 export function startStorage(services: DevServices, env: Env, override?: StorageDriver): Storage {
+  // Before every arm, the override included: "several disks are the app's `defineStorage()`, which
+  // wins" (`PortValues.storage`). The app's disks carry their own refusals (`localDriver`'s).
+  const declared = appDeclared();
+  if (declared !== undefined) return declared;
   // First arm, not a branch beside the two below: `runtime.ts` handing the boot a driver has
   // already answered "which disk", and re-deriving one from `S3_ENDPOINT` would be a second answer.
   // Registered under the driver's own name — its signed URLs hang off that key (`defineStorage`).
   if (override !== undefined) {
-    return defineStorage({ disks: { [override.name]: override }, default: override.name });
+    return bootDefine({ disks: { [override.name]: override }, default: override.name });
   }
   const binding = services.storage;
 
@@ -55,7 +89,7 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
         'set S3_BUCKET to the bucket name, or unset S3_ENDPOINT to use the embedded disk',
       );
     }
-    return defineStorage({
+    return bootDefine({
       disks: {
         object: s3Driver({
           bucket,
@@ -107,5 +141,5 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
   // `maxRequestBytes`: a signed PUT lands on THIS server, so a grant it could never accept in one
   // request is refused at signing, naming the multipart grant.
   const disk = localDriver({ root, env, maxRequestBytes: servedRequestCeiling });
-  return defineStorage({ disks: { local: disk }, default: 'local' });
+  return bootDefine({ disks: { local: disk }, default: 'local' });
 }

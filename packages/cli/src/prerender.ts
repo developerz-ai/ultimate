@@ -265,7 +265,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // and no server is listening during a build. `renderStatic` keeps `ctx`: its output is a
   // published file, and a `site/` load a policy refuses must fail the build, never render another
   // actor's rows into it. `published` authenticates nobody: sitemap and llms.txt reads run in it.
-  const measure = await measureScope({ origin, buildId });
+  const measure = await measureScope({ origin, buildId, root: options.root });
   const published = publicScope({ origin, buildId });
   // Started on the first route that needs weighing, and released however the loop ends.
   const database = measureDatabase(options.root);
@@ -436,7 +436,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     }));
   } finally {
     capture.close();
-    await database.close();
+    await Promise.all([database.close(), measure.close()]);
   }
   // The variants and cards the exported documents name, before the worker precaches them.
   await capture.write(pages);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "acbcddbf35e8b991c56b486affb08c3899ea8c0c9d0a23a9d84ec1a4023694bd",
+  "buildId": "4492581d7772a467fdf91c610d4410f512ad921d4a1d22e847c5178c7600baae",
   "tiers": {
     "0": [
       "core",
@@ -6056,6 +6056,11 @@
     },
     {
       "code": "X_TYPECHECK_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TYPESCRIPT_VERSION",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

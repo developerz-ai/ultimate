@@ -243,15 +243,11 @@ export {
   GITHUB_PROVIDER,
   GOOGLE_PROVIDER,
 } from './oauth-builtins';
-export type { HandshakeCookieOptions, HandshakeSealOptions } from './oauth-cookie';
+export type { HandshakeSealOptions } from './oauth-cookie';
 export {
-  clearHandshakeCookie,
   DEFAULT_HANDSHAKE_TTL_MS,
-  handshakeCookie,
-  handshakeCookieName,
   handshakeSecret,
   openHandshake,
-  readHandshakeCookie,
   sealHandshake,
 } from './oauth-cookie';
 export type { DiscoverOAuthProviderInput } from './oauth-discovery';
@@ -273,6 +269,13 @@ export type {
 } from './oauth-exchange';
 export { exchangeOAuthCode, oauthCredentials } from './oauth-exchange';
 export type { OAuthGrantContext } from './oauth-grant-context';
+export type { HandshakeCookieOptions } from './oauth-handshake-cookie';
+export {
+  clearHandshakeCookie,
+  handshakeCookie,
+  handshakeCookieName,
+  readHandshakeCookie,
+} from './oauth-handshake-cookie';
 export type {
   CompleteOAuthLoginInput,
   OAuthGrants,

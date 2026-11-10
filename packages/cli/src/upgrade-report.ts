@@ -3,6 +3,7 @@
 
 import { msg } from './messages';
 import type { JsonValue } from './output';
+import type { TypescriptLag } from './typescript-floor';
 import type { AgentsLinkState } from './upgrade-agents-link';
 import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import type { GateFinding, HopGate, RepoScript } from './upgrade-gate';
@@ -69,8 +70,10 @@ export const humanLines = (input: {
   readonly scripts: readonly RepoScript[];
   readonly then: string;
   readonly agentsMd?: AgentsLinkState;
+  /** Manifests whose TypeScript lags the scaffold's: by hand, the hop never moves a compiler. */
+  readonly typescript: readonly TypescriptLag[];
 }): readonly string[] => {
-  const { hop, writes, gate, scripts, then, agentsMd } = input;
+  const { hop, writes, gate, scripts, then, agentsMd, typescript } = input;
   return [
     ...(hop.section === null
       ? []
@@ -81,6 +84,7 @@ export const humanLines = (input: {
     ...writes.manual.map((site) =>
       msg('cli.upgrade.bunManual', { path: site.path, line: site.line, why: site.why }),
     ),
+    ...typescript.map((lag) => msg('cli.upgrade.typescript', { ...lag })),
     ...(agentsMd === 'link' || agentsMd === 'differs'
       ? [msg(agentsMd === 'link' ? 'cli.upgrade.agentsMd.link' : 'cli.upgrade.agentsMd.differs')]
       : []),
@@ -118,6 +122,8 @@ export const report = (input: {
   readonly then: string;
   /** What the hop does to `AGENTS.md` (`upgrade-agents-link.ts`); absent when no hop is planned. */
   readonly agentsMd?: AgentsLinkState;
+  /** `typescript-floor.ts`'s lags — reported on every outcome, an at-target app's included. */
+  readonly typescript: readonly TypescriptLag[];
 }): JsonValue => {
   const { hop, done, dryRun, pins, bunFrom, bunTo, writes, app, gate, scripts, then } = input;
   return asJson({
@@ -135,6 +141,7 @@ export const report = (input: {
           .filter((pin) => pinMoves(pin.spec, hop.to))
           .map((pin) => ({ file: pin.file, name: pin.name, from: pin.spec, to: hop.to })),
     bun: { from: bunFrom, to: bunTo, edited: writes.edited, manual: writes.manual },
+    typescript: input.typescript,
     agentsMd: input.agentsMd ?? null,
     guards: gate?.guards ?? null,
     manifest: gate?.manifest ?? null,

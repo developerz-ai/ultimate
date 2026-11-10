@@ -12,9 +12,9 @@ import type { RowPatch } from './types';
 import { uniqueConstraints } from './unique-constraints';
 
 /**
- * The refusal Postgres answers `23505` with: `X_DB_UNIQUE_VIOLATION`, the same code, through
- * `driver-errors.ts` — the one builder every non-Postgres store raises it with. No SQLSTATE is
- * faked: no server said `23505`, so `sqlState()` answers `undefined` here.
+ * The refusal Postgres answers `23505` with: `X_DB_UNIQUE_VIOLATION` carrying `23505`, through
+ * `driver-errors.ts` — the one builder every non-Postgres store raises it with
+ * (`unique-violation-parity.test.ts` holds it equal to the Postgres driver's).
  */
 export const uniqueViolation = (entity: EntityCore, constraint: string): Error =>
   entityUniqueViolation(entity, constraint);

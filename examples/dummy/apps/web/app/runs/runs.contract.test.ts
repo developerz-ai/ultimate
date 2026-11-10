@@ -8,13 +8,13 @@
  */
 
 import { driver } from '@postly/db';
-import { derivePath } from '@ultimat3/action';
+import { derivePath, memoryAuditSink } from '@ultimat3/action';
 import { apiMountRoutes } from '@ultimat3/cli';
 import { defineHttpConfig, httpServer, mountedPath } from '@ultimat3/http';
 import { jobDriver, memoryJobDriver } from '@ultimat3/jobs';
 import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { testActor } from '@ultimat3/policy';
-import { afterEach, beforeEach, expect, test } from '@ultimat3/testing';
+import { afterEach, beforeEach, expect, swapAdapter, test } from '@ultimat3/testing';
 import { connectSite } from './actions/connect-site';
 import { issueRunKey } from './actions/issue-run-key';
 import { revokeRunKey } from './actions/revoke-run-key';
@@ -24,6 +24,10 @@ const OTHER_ORG = '00000000-0000-4000-8000-0000000000a9';
 const grants = ['run:read', 'run:write', 'run:key'];
 const admin = testActor('admin', { orgId: ORG, permissions: grants }).actor;
 const otherAdmin = testActor('other-admin', { orgId: OTHER_ORG, permissions: grants }).actor;
+
+// `issueRunKey` is `audit: true`: this file's sink, since a test boots nothing to install
+// `runtime.ts`'s.
+await swapAdapter('auditSink', memoryAuditSink());
 
 // The install answers its own undo, which puts back whatever was installed before it.
 let release = (): void => {};

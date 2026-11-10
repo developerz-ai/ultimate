@@ -36,6 +36,7 @@ import { entityTenantFindings } from './exercise-static';
 import { subjectFindings, subjectProofFindings } from './exercise-subject';
 import { readIntFlag } from './flag-number';
 import { msg } from './messages';
+import { withOfflinePorts } from './offline-ports';
 import type { CommandResult, JsonValue } from './output';
 
 /**
@@ -70,8 +71,19 @@ async function exercise(
   root: string,
   seed: number | undefined,
 ): Promise<CommandResult> {
-  const only = ctx.args.positionals[0];
   const loaded = await loadApp(root);
+  // `runtime.ts`'s ports, as a boot reads them — an `auditSink` declared there is what lets an
+  // `audit: true` primitive run — through `offline-ports.ts`, so the pass reaches no real backend.
+  return withOfflinePorts(root, () => exercisePass(ctx, root, seed, loaded));
+}
+
+async function exercisePass(
+  ctx: CommandContext,
+  root: string,
+  seed: number | undefined,
+  loaded: Awaited<ReturnType<typeof loadApp>>,
+): Promise<CommandResult> {
+  const only = ctx.args.positionals[0];
   const overrides = await readExerciseOverrides(root);
   const cores = registeredEntityCores();
   const entities: readonly SeedEntity[] = Object.values(cores);

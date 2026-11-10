@@ -4,17 +4,21 @@
 // context (`useRequestHeader('cookie')` throws X_NO_REQUEST outside one), an actor the app chose
 // (`defineMeasurementActor()` in `app.config.ts`, core's `measurementActor()` otherwise), and a
 // server to answer — the app's own API pipeline, dispatched IN PROCESS through core's
-// `withInProcessFetch`, because no server is listening during a build (plan 101 slice 11 m).
+// `withInProcessFetch`, because no server is listening during a build (plan 101 slice 11 m) — and
+// `runtime.ts`'s ports as `offline-ports.ts` decides them, for every render the build runs.
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import { actorLabel, measurementActor, runWithContext, withInProcessFetch } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter, requestContext } from '@ultimat3/http';
 import { apiRoutes } from './api-routes';
+import { installOfflinePorts } from './offline-ports';
 
-/** One build's measurement scope: its actor, and a runner that renders inside it. */
+/** One build's measurement scope: its actor, a runner that renders inside it, and its release. */
 export interface MeasureScope {
   readonly actor: Actor;
   run<T>(fn: () => T): T;
+  /** Releases the ports `measureScope` installed. Once, when the build's renders are done. */
+  close(): Promise<void>;
 }
 
 /** A scope's in-process API: the app's own table, as `actor` — or, `null`, as nobody. */
@@ -45,15 +49,24 @@ function inProcessRunner(input: ScopeInput, actor: Actor | null): <T>(fn: () => 
   return <T>(fn: () => T): T => withInProcessFetch(dispatch, () => runWithContext(request, fn));
 }
 
+/** A measurement scope's input: the app at `root`, whose `runtime.ts` the build honours. */
+interface MeasureInput extends ScopeInput {
+  readonly root: string;
+}
+
 /**
  * The scope for `origin`. The pipeline is the app's API table and nothing else: a page's data
  * comes from its actions and queries, and a route the render reaches that is not one of them
  * answers 404 — which the render reports, and the route is filed unmeasured with that reason.
  * For a render that is WEIGHED and discarded only: its output is never published.
  */
-export async function measureScope(input: ScopeInput): Promise<MeasureScope> {
+export async function measureScope(input: MeasureInput): Promise<MeasureScope> {
   const actor = await measurementActor();
-  return { actor, run: inProcessRunner(input, actor) };
+  // Installed here rather than per render: the published (`site/`) renders read the same ports, and
+  // a page whose `load` calls an `audit: true` query was unmeasured with `X_AUDIT_SINK_MISSING`
+  // for an app that declared its sink in `runtime.ts`, as upgrade entry 43 says to.
+  const close = await installOfflinePorts(input.root);
+  return { actor, run: inProcessRunner(input, actor), close };
 }
 
 /**
