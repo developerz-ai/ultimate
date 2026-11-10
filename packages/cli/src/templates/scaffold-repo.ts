@@ -38,8 +38,9 @@ const BIOME_VERSION = '2.6.3';
  * constant and TypeScript's was a literal buried in a dependency block, so the framework moved to
  * 7.x and every `x new` kept scaffolding `^6.0.3`. `scaffold-repo.test.ts` now pins this against
  * the repo's own root `package.json`, so the next bump cannot leave the scaffold behind in silence.
+ * Exported for `typescript-floor.ts`: `x upgrade` and `x doctor` hold an EXISTING app to it.
  */
-const TYPESCRIPT_VERSION = '^7.0.2';
+export const TYPESCRIPT_VERSION = '^7.0.2';
 
 /**
  * The Solid runtime every island and `@ultimat3/ui` component renders with, exact for the reason

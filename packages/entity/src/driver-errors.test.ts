@@ -1,5 +1,5 @@
 // The kit's refusals carry what a caller branches on — the capability in `meta` — and a store's
-// duplicate key is the code Postgres' `23505` becomes, without pretending a server said `23505`.
+// duplicate key is the error Postgres' `23505` becomes, SQLSTATE included, so one handler fits both.
 
 import { afterAll, afterEach, expect, test } from 'bun:test';
 import { sqlState } from '@ultimat3/db';
@@ -20,11 +20,12 @@ const tags = entity('driver_errors_tags', {
   columns: { id: uuid().primaryKey(), label: text({ max: 20 }) },
 });
 
-test('a duplicate key is X_DB_UNIQUE_VIOLATION naming the constraint, with no SQLSTATE', () => {
+test('a duplicate key is X_DB_UNIQUE_VIOLATION naming the constraint, with SQLSTATE 23505', () => {
   const error = entityUniqueViolation(tags, 'driver_errors_tags_pkey');
   expect(error.code).toBe('X_DB_UNIQUE_VIOLATION');
   expect(error.meta?.['constraint']).toBe('driver_errors_tags_pkey');
-  expect(sqlState(error)).toBeUndefined();
+  expect(sqlState(error)).toBe('23505');
+  expect(error.meta?.['sqlState']).toBe('23505');
 });
 
 test('X_DRIVER_UNSUPPORTED names the capability, the driver and the call', () => {

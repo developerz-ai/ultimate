@@ -218,7 +218,7 @@ describe('writes: tenancy, invariants and soft delete are the kit’s', () => {
     expect(await codeOf(() => asOrg(ORG, () => repo.deleteWhere({})))).toBe('X_WRITE_UNFILTERED');
   });
 
-  test('a duplicate key is X_DB_UNIQUE_VIOLATION with no SQLSTATE faked', async () => {
+  test('a duplicate key is X_DB_UNIQUE_VIOLATION, the error Postgres raises', async () => {
     const repo = await seeded();
     expect(await codeOf(() => asOrg(ORG, () => repo.insert(note(1))))).toBe(
       'X_DB_UNIQUE_VIOLATION',

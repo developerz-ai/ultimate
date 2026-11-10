@@ -60,6 +60,25 @@ describe('a raw request in an island', () => {
   });
 });
 
+describe('the global fetch handed to a client module', () => {
+  test('is a finding in the island that hands it on, beside any call', () => {
+    const input = app({
+      'apps/web/app/a/a.island.tsx':
+        "import { makeClient } from '../../shared/api';\nconst api = makeClient({ fetch });\n",
+      'apps/web/shared/api.ts': 'export const makeClient = (o: O) => o;\n',
+    });
+    expect(sites(input)).toEqual(['apps/web/app/a/a.island.tsx:2 fetch']);
+    expect(checkBrowserTransport(input).bypasses[0]?.passed).toBe(true);
+  });
+
+  test('the seam file may hold the global as a value too', () => {
+    const files = { 'packages/core/src/d.island.tsx': 'const f = globalThis.fetch;\n' };
+    expect(sites(app(files))).toEqual(['packages/core/src/d.island.tsx:1 fetch']);
+    const seams = new Map([['fetch', 'packages/core/src/d.island.tsx'] as const]);
+    expect(sites(app(files, { seams }))).toEqual([]);
+  });
+});
+
 describe('what the rule leaves alone', () => {
   test('the same fetch in a route.ts — server code no island reaches', () => {
     const input = app({
@@ -191,6 +210,18 @@ describe('the finding is an instruction', () => {
     expect(xhr.fix).toContain('`await uploadFile({ file, grant, onProgress })`');
     const sse = bypassFinding(bypassOf('new EventSource(u);\n'), APP);
     expect(sse.fix).toContain("from '@ultimat3/realtime'");
+  });
+
+  test('a fetch passed on says so, and the fix removes the hand-off', () => {
+    const finding = bypassFinding(bypassOf('const api = makeClient({ fetch });\n'), APP);
+    expect(finding.code).toBe('X_BROWSER_TRANSPORT_BYPASS');
+    expect(finding.cause).toStartWith(
+      'apps/web/app/a/a.island.tsx:1 passes the global fetch as a value in browser-reachable code',
+    );
+    expect(finding.fix).toStartWith(
+      'x verify --only boundaries --json   # after deleting fetch at apps/web/app/a/a.island.tsx:1 ',
+    );
+    expect(finding.fix).toContain('`await browserClient.<action>(input)`');
   });
 
   test('a path holding a newline cannot end the comment it rides in', () => {

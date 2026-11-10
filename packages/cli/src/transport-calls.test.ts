@@ -63,6 +63,24 @@ describe('what counts as opening a connection', () => {
     expect(shapes('const fetch = f;\nglobalThis.fetch(u);')).toEqual(['fetch:globalThis.fetch']);
   });
 
+  test('a destructured binding shadows by the NAME it binds, never the property it reads', () => {
+    expect(shapes('const g = ({ fetch }) => fetch(u);')).toEqual([]);
+    expect(shapes('function g({ fetch = d }: D) { return fetch(u); }')).toEqual([]);
+    expect(shapes('const g = ({ a: { fetch } }: D) => fetch(u);')).toEqual([]);
+    expect(shapes('const { a, b: [{ fetch }] } = deps;\nfetch(u);')).toEqual([]);
+    expect(shapes('const { ...fetch } = deps;\nfetch(u);')).toEqual([]);
+    // `{ fetch: f }` reads the property and binds `f`: the bare call is still the global.
+    expect(shapes('function g({ fetch: f }: D) { return fetch(u); }')).toEqual(['fetch:fetch']);
+    expect(shapes('const { fetch: f } = deps;\nfetch(u);')).toEqual(['fetch:fetch']);
+    // A default is a value, never a binding: only `f` is bound here.
+    expect(shapes('const { a: { f } = { g, fetch } } = deps;\nfetch(u);')).toEqual(['fetch:fetch']);
+    expect(shapes("import { fetch as f } from './db';\nfetch(u);")).toEqual(['fetch:fetch']);
+    expect(bindsFetch("import { f as fetch } from './db';")).toBe(true);
+    // A call's object argument is no pattern, however it is followed.
+    expect(bindsFetch('make({ fetch }).then(go);')).toBe(false);
+    expect(bindsFetch('make({ fetch });')).toBe(false);
+  });
+
   test('a name that merely starts with fetch, a string and a comment are not calls', () => {
     expect(shapes('await fetchSignedPut(input);')).toEqual([]);
     expect(shapes("const msg = 'never call fetch( here';")).toEqual([]);

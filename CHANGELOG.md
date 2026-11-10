@@ -10,7 +10,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `x build` and `x exercise` honour `runtime.ts`: an audit sink declared there makes audited pages measurable and audited primitives reachable.
+- An app's own storage disks survive the boot.
+- Sign-in can keep the redirect URI your identity provider already holds, and hand-built OAuth callbacks finish flows the built-in routes start again.
+- `x doctor` flags a TypeScript older than the one the framework is checked with.
+- The memory driver raises the same duplicate-key error as Postgres, and factories keep literal defaults.
+
+### Added
+
+- `@ultimat3/auth`: `oauthLogin(auth, { callbackPath: '/auth/oauth/:provider/callback' })` keeps a callback URL an IdP already holds — one pattern moves the callback mount, the `redirect_uri` and the URL the callback checks together. Mount `callback.path`, never `OAUTH_CALLBACK_ROUTE_PATH`; the start link stays `/auth/sso/<provider>`. A pattern no router can mount (not absolute, a query or wildcard, anything but one whole `:provider` segment, the start path) is `X_CONFIG_INVALID`.
+
+- `@ultimat3/cli`: `x doctor` reports `X_TYPESCRIPT_VERSION` for each manifest whose `typescript` range is below the one `x new` scaffolds (`TYPESCRIPT_VERSION`, `^7.0.2`), its fix the exact `bun add typescript@<range>` that moves that manifest (`-d` where it was a devDependency, `--cwd <workspace>` off the root). `x upgrade` carries the same lags in `data.typescript` and a "typescript, by hand" line on every outcome — reported, never written. A TypeScript 6 checker reds `typecheck` and the build on framework source (TS2769 in `cdp-shot-keys.ts`) on every hop from 22 to 31.
+
+- `@ultimat3/testing`: `AttrValue`, `DefaultsBound` and `SettledAttrs` exported — the types `defineFactory` holds `defaults` to.
+
+### Fixed
+
+- `@ultimat3/testing`: `defineFactory` keeps a literal in `defaults` literal again: `status: 'open'` for an `enumerated(['open', 'closed'])` column compiles with no `as const`, and a value outside the union is still a type error.
+- `@ultimat3/cli`: `x build`'s measurement render and `x exercise` read `apps/<app>/runtime.ts` through the boot's own loader, so an `auditSink` declared there makes an `audit: true` page measurable and an audited primitive reachable in the pass, where both were `X_AUDIT_SINK_MISSING`. Neither writes to the app's own sink: a memory sink stands in for it. Delete a memory sink installed in `apps/web/prerender.ts` or `apps/web/exercise.ts` as the workaround.
+- `@ultimat3/cli`: the boot no longer replaces a storage registry the app declared before it ran. An app module reached from `runtime.ts` that calls `defineStorage({ disks: { … } })` keeps every disk, where each was `X_STORAGE_DISK_UNKNOWN`; the app's `defineStorage()` wins over `runtime.storage`, as documented.
+- `@ultimat3/cli`: `x g sign-in --oidc` declares `OIDC_CALLBACK_PATH` once and hands it to both `oauthLogin({ callbackPath })` and the callback mount, so editing it moves the mount and the `redirect_uri` together. The default path is unchanged.
+- `@ultimat3/cli`: `X_BROWSER_TRANSPORT_BYPASS` also flags the global `fetch` handed off as a value in browser-reachable code — `createClient({ fetch })`, `fetch: fetch`, `const f = window.fetch`, `someFn(globalThis.fetch)`. A property named `fetch`, a local binding and a type position stay clean. The fix: delete the hand-off; `rpc()`/`queryClient()` already go through `clientTransport`.
+- `@ultimat3/auth`: the exported handshake cookie is the one the sign-in routes use. `handshakeCookie`, `readHandshakeCookie`, `clearHandshakeCookie` and `handshakeCookieName` write `__Host-x_sso_<provider>` under `oauthLogin`'s seal, so a callback built on `readHandshakeCookie` finishes a flow `oauthLogin().start` began, and the reverse. `readHandshakeCookie` still reads 31.1's `__Host-x_oauth_<provider>` cookie — read, never written — until 32.0.0, so a handshake in flight survives the deploy.
+
+- Upgrading (30.x → 31.0.0, 21.x → 22.0.0): the guide names what three adopters' upgrades hit and the entries did not say. Move TypeScript to `^7.0.2` first — under TypeScript 6 with `exactOptionalPropertyTypes`, `@ultimat3/cli`'s shipped `cdp-shot-keys.ts` is TS2769 on every release since 22.0.0, and `x upgrade` does not move `typescript`. Register `/auth/sso/<provider>/callback` at each IdP before the new image rolls and keep the old URI until it completes (#52). Four new "Not breaking, but you will see it" rows: `verifyApiKey` refusing every key whose stored `prefix` is not `ult_<env>_<id>`, with the `x_api_keys` query that finds them; a memory-driver unique collision with no `23505`, matched by `e.code === 'X_DB_UNIQUE_VIOLATION'` on both drivers; `X_AUDIT_SINK_MISSING` in `x exercise` and audited pages unmeasured by `x build` since `auditSink` moved to `runtime.ts` (#43), with a memory sink as the stopgap; and `defineFactory` widening an enum literal in `defaults` (TS2322, #40), with `as const` as the stopgap.
+- `@ultimat3/entity`: a duplicate key in the memory driver, and in any `defineDriver` store, raises the error the Postgres driver raises — `X_DB_UNIQUE_VIOLATION` carrying SQLSTATE `23505` (`sqlState(e)`, `meta.sqlState`) and `meta.constraint` — so a race handler matching `sqlState()` works under memory too. Its `cause` reads `[SQLSTATE 23505] duplicate key value violates unique constraint "<name>" — statement: write into <table>`.
+- `@ultimat3/storage`: a method patched on a `defineStorage().disk()` disk takes effect after the disk was first used, and is still reported as `storage.<verb>` — patched by assignment on the disk or by `spyOn(driver, …)` on the declared driver. Writing the original back reports once per call. `spyOn(disk, …)` still does nothing (Bun's `spyOn` does not write through a Proxy): spy on the driver.
 
 ## 31.1.0 - 2026-11-10
 

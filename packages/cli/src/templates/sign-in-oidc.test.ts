@@ -3,7 +3,7 @@
 // is red (`/auth/oauth/<id>` after the routes moved to `/auth/sso/<id>`, breaking change #52).
 
 import { describe, expect, test } from 'bun:test';
-import { OAUTH_BASE_PATH, oauthStartPath } from '@ultimat3/auth';
+import { OAUTH_BASE_PATH, OAUTH_CALLBACK_ROUTE_PATH, oauthStartPath } from '@ultimat3/auth';
 import { oidcSignInFiles } from './sign-in-oidc';
 
 const files = new Map(
@@ -30,5 +30,30 @@ describe('unit · x g sign-in --oidc spells the start leg as @ultimat3/auth does
         expect(`${path}: ${found}`).toBe(`${path}: ${OAUTH_BASE_PATH}/corp-sso`);
       }
     }
+  });
+});
+
+describe('unit · x g sign-in --oidc mounts the callback oauthLogin serves', () => {
+  test('one value: handed to oauthLogin as callbackPath, mounted by the routes', () => {
+    const oidc = ofName('/oidc.ts');
+    expect(oidc).toContain('export const OIDC_CALLBACK_PATH: string = OAUTH_CALLBACK_ROUTE_PATH;');
+    expect(oidc).toContain('callbackPath: OIDC_CALLBACK_PATH,');
+    const routes = ofName('/sign-in-routes.ts');
+    expect(routes).toContain("leg('callback', OIDC_CALLBACK_PATH),");
+    expect(routes).toContain("import { OIDC_CALLBACK_PATH, oidcLegs } from './oidc';");
+    expect(ofName('/sign-in-routes.test.ts')).toContain("['GET', OIDC_CALLBACK_PATH, 'public'],");
+  });
+
+  test('by default the generated app mounts exactly the framework`s callback path', () => {
+    // The constant the default names is auth's, so the default mount is unchanged.
+    expect(OAUTH_CALLBACK_ROUTE_PATH).toBe(`${OAUTH_BASE_PATH}/:provider/callback`);
+    expect(ofName('/oidc.ts')).toContain('OAUTH_CALLBACK_ROUTE_PATH,\n');
+  });
+
+  test('no generated file but oidc.ts names the callback constant: a second mount cannot drift', () => {
+    const naming = [...files.entries()]
+      .filter(([, contents]) => contents.includes('OAUTH_CALLBACK_ROUTE_PATH'))
+      .map(([path]) => path.split('/').at(-1));
+    expect(naming).toEqual(['oidc.ts']);
   });
 });

@@ -213,6 +213,13 @@ interface Output {
       readonly edited: readonly { path: string; site: string; from: string; to: string }[];
       readonly manual: readonly { path: string; line: number; why: string }[];
     };
+    readonly typescript: readonly {
+      file: string;
+      field: string;
+      from: string;
+      to: string;
+      fix: string;
+    }[];
     readonly guards: {
       readonly reported: boolean;
       readonly missing: readonly { name: string; add: string }[];

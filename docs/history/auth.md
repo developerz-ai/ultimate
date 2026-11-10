@@ -306,7 +306,8 @@ a current fact: the rules that still hold are in that file, and where the two di
   provider, so it is unrepresentable rather than discouraged. An app that wants it wraps
   `signInWithOAuth`.
 
-- **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is
+- **The OAuth start path is not configurable (fix lines quote it); the callback pattern moves only
+  via `oauthLogin({ callbackPath })`, which no `fix:` quotes.** `oauth-paths.ts` imports nothing and is
   read by both `oauth-errors.ts` and `oauth-route.ts`, so a `fix:` line naming
   `GET /auth/oauth/<provider>` cannot outlive the route again — which is exactly what it did
   through 1.2.0, when the library functions shipped with no route to mount them in. Every

@@ -197,5 +197,7 @@
  * `jobs/src/retry-jitter.ts`. Nothing web-only.
  * raised 1579 → 1580, measured 1580 (2026-11-10, wave G, g-search): `SERVING_ROLE_CEILING`'s 1,
  * `entity/src/search-mirror-batch.ts`. Nothing web-only.
+ * raised 1580 → 1582, measured 1582 (2026-11-10, fix/adopter-round-2): `MIGRATE_CEILING`'s 2,
+ * `auth/src/sign-in-callback-path.ts` and `auth/src/oauth-handshake-cookie.ts`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1580;
+export const WEB_ROLE_CEILING = 1582;

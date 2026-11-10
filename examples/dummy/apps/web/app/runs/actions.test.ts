@@ -2,11 +2,12 @@
 // tests in `runs.test.ts` do not reach: connecting, the key an admin issues and revokes, and what
 // each says when there is no queue to ask.
 import { driver } from '@postly/db';
+import { memoryAuditSink } from '@ultimat3/action';
 import { ctxOf, runWithContext } from '@ultimat3/core';
 import { jobDriver, memoryJobDriver } from '@ultimat3/jobs';
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { testActor } from '@ultimat3/policy';
-import { afterEach, expect, unitTest } from '@ultimat3/testing';
+import { afterEach, expect, swapAdapter, unitTest } from '@ultimat3/testing';
 import { answerPrompt } from './actions/answer-prompt';
 import { cancelRun } from './actions/cancel-run';
 import { connectSite } from './actions/connect-site';
@@ -24,6 +25,11 @@ const grants = ['run:read', 'run:write', 'run:key'];
 const admin = testActor('admin', { orgId: ORG, permissions: grants }).actor;
 const writer = testActor('writer', { orgId: ORG, permissions: ['run:read', 'run:write'] }).actor;
 const elsewhere = testActor('elsewhere', { orgId: OTHER_ORG, permissions: grants }).actor;
+
+// `issueRunKey` is `audit: true`, and a unit test boots nothing to install `runtime.ts`'s sink:
+// this file's own, until the file ends.
+const audit = memoryAuditSink();
+await swapAdapter('auditSink', audit);
 
 // Each install answers its own undo; undone newest first, the file ends on what it started with.
 const releases: (() => void)[] = [];
@@ -98,9 +104,14 @@ unitTest(
   },
 );
 
-unitTest('a member without the grant cannot issue a key', async () => {
-  await expect(issueRunKey.as(writer, { orgId: ORG })).rejects.toBeUltimateError('X_FORBIDDEN');
-});
+unitTest(
+  'a member without the grant cannot issue a key, and the refusal is on the trail',
+  async () => {
+    await expect(issueRunKey.as(writer, { orgId: ORG })).rejects.toBeUltimateError('X_FORBIDDEN');
+    const last = audit.records().at(-1);
+    expect([last?.name, last?.outcome]).toEqual(['issueRunKey', 'denied']);
+  },
+);
 
 unitTest('a revoked key resolves to nobody, and revoking it twice changes nothing', async () => {
   const issued = await issueRunKey.as(admin, { orgId: ORG });

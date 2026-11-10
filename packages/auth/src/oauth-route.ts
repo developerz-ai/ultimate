@@ -30,6 +30,7 @@ import type { OAuthClientCredentials, OAuthFetch } from './oauth-exchange';
 import { oauthCredentials } from './oauth-exchange';
 import type { ResolveOAuthGrants } from './oauth-login';
 import { hasOAuthProvider } from './oauth-registry';
+import { callbackPath } from './sign-in-callback-path';
 
 /**
  * What a router needs to mount one of these. Structural, like `RequestLike` in `session.ts`:
@@ -97,6 +98,15 @@ export interface OAuthLoginOptions {
    * branch: `providerJwks(providerFor('github'))` throws, because GitHub publishes no `jwks_uri`.
    */
   readonly idTokenKeys?: ((provider: OAuthProviderId) => IdTokenKeys | undefined) | undefined;
+  /**
+   * The callback leg's mount pattern, one whole `:provider` segment — and so the `redirect_uri`
+   * every provider is sent and must have registered. Defaults to `OAUTH_CALLBACK_ROUTE_PATH`
+   * (`/auth/sso/:provider/callback`). Set it to keep a URI already registered at an IdP you cannot
+   * edit, e.g. 30.x's `'/auth/oauth/:provider/callback'`, and mount `callback.path`, never the
+   * constant. The start leg does not move: it is a link in your own page, and `fix:` lines name it.
+   * A pattern a router cannot mount is `X_CONFIG_INVALID` here, at the call.
+   */
+  readonly callbackPath?: string | undefined;
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
@@ -171,6 +181,7 @@ const asGet = (descriptor: SignInRouteDescriptor): AuthRouteDescriptor =>
  */
 export function oauthLogin(auth: Auth, options: OAuthLoginOptions = {}): OAuthLoginRoutes {
   const routes = signInRoutes(auth, options, {
+    callbackPath: callbackPath(options.callbackPath),
     resolve(segment, leg) {
       if (!hasOAuthProvider(segment) || !auth.providers.includes(segment)) throw unknown(segment);
       // Asked on the callback only: the start leg verifies nothing.

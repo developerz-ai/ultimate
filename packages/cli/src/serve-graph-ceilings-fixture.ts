@@ -223,8 +223,14 @@
  * raised 970 → 971, measured 971 (2026-11-10, wave G, g-search): `entity/src/search-mirror-batch.ts`
  * — one transaction's search-index ops, merged per key and sent at commit. No existing module
  * newly reached.
+ * raised 971 → 973, measured 973 (2026-11-10, fix/adopter-round-2): two auth modules every role
+ * reaches through the auth barrel (`framework-schema.ts` reads `AUTH_TABLE_NAMES` and the auth
+ * DDL off it) — `auth/src/sign-in-callback-path.ts` (an app's own `oauthLogin({ callbackPath })`,
+ * refused at construction when unmountable) and `auth/src/oauth-handshake-cookie.ts` (the
+ * handshake cookie for a hand-built leg, split out of `oauth-cookie.ts`). No existing module newly
+ * reached. An `@ultimat3/auth/schema` leaf would take the whole auth barrel off this path.
  */
-export const MIGRATE_CEILING = 971;
+export const MIGRATE_CEILING = 973;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -458,5 +464,7 @@ export const MIGRATE_CEILING = 971;
  * on `MIGRATE_CEILING`.
  * raised 1394 → 1395, measured 1395 (2026-11-10, wave G, g-search): `entity/src/search-mirror-batch.ts`,
  * named on `MIGRATE_CEILING`.
+ * raised 1395 → 1397, measured 1397 (2026-11-10, fix/adopter-round-2): the two auth modules named on
+ * `MIGRATE_CEILING`. Nothing serving-only.
  */
-export const SERVING_ROLE_CEILING = 1395;
+export const SERVING_ROLE_CEILING = 1397;

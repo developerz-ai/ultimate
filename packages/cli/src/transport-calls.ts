@@ -3,6 +3,7 @@
 // rule has to leave alone is a fixture string. Which file may hold which shape is the caller's.
 
 import { maskLiterals } from '@ultimat3/core';
+import { destructuredNames } from './binding-names';
 import { lineIndex } from './ts-scan';
 
 export type TransportShape = 'fetch' | 'websocket' | 'xhr' | 'eventsource';
@@ -30,7 +31,7 @@ const FETCH = new RegExp(String.raw`(?<![\w$.])(${GLOBAL}?)fetch\s*\(`, 'g');
 
 /**
  * Whether the file binds `fetch` itself — a `const`/`let`/`var`/`function`, an import, a
- * destructured declaration or a parameter — which makes a BARE `fetch(` its own function, not the
+ * destructuring that binds that NAME (`binding-names.ts`) or a parameter — which makes a BARE `fetch(` its own function, not the
  * page's. `packages/action/src/idempotency-postgres.ts` calls a local `fetch(key)`. Per file, not
  * per scope: a floor, and the one direction it errs is silence on a file that shadows the global
  * AND calls it bare. `globalThis.fetch(` is reported regardless.
@@ -38,8 +39,11 @@ const FETCH = new RegExp(String.raw`(?<![\w$.])(${GLOBAL}?)fetch\s*\(`, 'g');
 export function bindsFetch(code: string): boolean {
   return (
     /\b(?:const|let|var|function)\s+fetch\b/.test(code) ||
-    /\bimport\s+[^;]*\bfetch\b[^;]*\bfrom\b/.test(code) ||
-    /\b(?:const|let|var)\s*\{[^}]*\bfetch\b[^}]*\}\s*=/.test(code) ||
+    // `import { fetch }` and `import { f as fetch }` bind it; `import { fetch as f }` binds `f`.
+    /\bimport\s+[^;]*(?<!\bas\s+)\bfetch\b(?!\s+as\b)[^;]*\bfrom\b/.test(code) ||
+    /\bimport\s+[^;]*\bas\s+fetch\b[^;]*\bfrom\b/.test(code) ||
+    // By the NAME a pattern binds: `{ fetch: f }` reads the property and binds `f`.
+    destructuredNames(code).has('fetch') ||
     /\(\s*(?:[\w$]+\s*(?::[^,()]+)?,\s*)*fetch\s*[?:,)=][^()]*\)\s*(?::[^={;]+)?(?:=>|\{)/.test(
       code,
     )

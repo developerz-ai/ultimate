@@ -62,7 +62,7 @@ describe('unit · the hop reports it', () => {
     atTarget: false,
     section: null,
   };
-  const input = { hop, writes: NO_WRITES, gate: undefined };
+  const input = { hop, writes: NO_WRITES, gate: undefined, typescript: [] };
   // Shorthand: biome refuses a literal `then:` key, which reads as a thenable.
   const then = 'next';
 

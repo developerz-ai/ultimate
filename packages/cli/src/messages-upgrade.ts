@@ -26,6 +26,8 @@ export const UPGRADE_MESSAGES = {
     'AGENTS.md: differs from CLAUDE.md, left alone. Merge what only AGENTS.md says into CLAUDE.md, then: ln -sf CLAUDE.md AGENTS.md',
   'cli.upgrade.bunEdited': 'bun floor: {path} {from} -> {to}',
   'cli.upgrade.bunManual': 'bun floor, by hand: {path}:{line} — {why}',
+  'cli.upgrade.typescript':
+    'typescript, by hand: {file} declares {from}, below the {to} the framework is checked with — run: {fix}',
   'cli.upgrade.done': '{from} -> {to}: the gate is green',
   'cli.upgrade.dryRun': '{from} -> {to}: nothing written, no gate run',
   'cli.upgrade.guard': 'guard, yours to take or leave: {fix}',

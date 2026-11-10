@@ -5,13 +5,14 @@
 // change to the serializer's output shows up here, named, rather than in a sign-in e2e.
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { sealIdentityState } from './identity-provider-cookie';
+import { encodeOidcState } from './identity-provider-oidc';
 import type { OAuthHandshake } from './oauth';
 import {
   clearHandshakeCookie,
   handshakeCookie,
   handshakeCookieName,
-  sealHandshake,
-} from './oauth-cookie';
+} from './oauth-handshake-cookie';
 import { clearSessionCookie, DEFAULT_SESSION_POLICY, sessionCookie } from './session';
 
 const POLICY = { ...DEFAULT_SESSION_POLICY, absoluteTtlMs: 3_600_000 };
@@ -24,7 +25,13 @@ const HANDSHAKE: OAuthHandshake = {
   redirectUri: 'https://app.test/auth/callback',
   authorizeUrl: 'https://github.com/login/oauth/authorize?client_id=c',
 };
-const SEALED = sealHandshake(HANDSHAKE, SEAL);
+// Since the handshake cookie became the sign-in routes' own (`__Host-x_sso_<p>`), its value is
+// their seal; the attribute set this golden pins did not move.
+const SEALED = sealIdentityState(
+  'github',
+  encodeOidcState(HANDSHAKE, SEAL.clock.now().getTime()),
+  SEAL,
+);
 const OAUTH = handshakeCookieName('github');
 
 /** What auth spelled by hand before the migration — the BEFORE side, byte for byte. */

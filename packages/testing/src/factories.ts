@@ -10,10 +10,12 @@ import { persistRow } from './factory-persist';
 import { attributesOf, type FactorySpec, rowSteps, type Step } from './factory-pipeline';
 import type {
   BelongsToMap,
+  DefaultsBound,
   EntityLike,
   FactoryIds,
   HasManyMap,
   None,
+  SettledAttrs,
   StoredOf,
   TraitMap,
 } from './factory-types';
@@ -162,22 +164,30 @@ function extended(
 }
 
 export function defineFactory<
-  TAttrs extends object,
+  TAttrs extends DefaultsBound<TAttrs, E>,
   E extends EntityLike = EntityLike,
   TTransient extends object = None,
-  TTraits extends TraitMap<TAttrs & StoredOf<E, TAttrs>, TTransient> = TraitMap<
-    TAttrs & StoredOf<E, TAttrs>,
+  TTraits extends TraitMap<
+    SettledAttrs<TAttrs> & StoredOf<E, SettledAttrs<TAttrs>>,
     TTransient
-  >,
+  > = TraitMap<SettledAttrs<TAttrs> & StoredOf<E, SettledAttrs<TAttrs>>, TTransient>,
   TBelongs extends BelongsToMap = None,
   TMany extends HasManyMap = None,
 >(
   entity: E,
-  options: FactoryOptions<TAttrs, TTraits, TTransient, TBelongs, TMany, StoredOf<E, TAttrs>, E>,
+  options: FactoryOptions<
+    TAttrs,
+    TTraits,
+    TTransient,
+    TBelongs,
+    TMany,
+    StoredOf<E, SettledAttrs<TAttrs>>,
+    E
+  >,
 ): Factory<
-  TAttrs,
+  SettledAttrs<TAttrs>,
   Extract<keyof TTraits, string>,
-  StoredOf<E, TAttrs>,
+  StoredOf<E, SettledAttrs<TAttrs>>,
   TTransient,
   TBelongs,
   TMany
@@ -211,9 +221,9 @@ export function defineFactory<
     afterCreate: erased.afterCreate === undefined ? [] : [erased.afterCreate.bind(options)],
   };
   return view(spec, sequence, seed, []) as unknown as Factory<
-    TAttrs,
+    SettledAttrs<TAttrs>,
     Extract<keyof TTraits, string>,
-    StoredOf<E, TAttrs>,
+    StoredOf<E, SettledAttrs<TAttrs>>,
     TTransient,
     TBelongs,
     TMany

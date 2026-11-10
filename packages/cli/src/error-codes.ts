@@ -236,6 +236,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_APP_ROOT_NESTED',
   'X_WORKSPACE_NAME_TAKEN',
   'X_PARTITIONS_UNMAINTAINED',
+  'X_TYPESCRIPT_VERSION',
 ] as const;
 
 /**
@@ -458,6 +459,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_WORKSPACE_NAME_TAKEN:
     'x g app or x g package was given a name the other workspace kind already holds',
   X_PARTITIONS_UNMAINTAINED: 'a partitioned entity with no partitions() job',
+  X_TYPESCRIPT_VERSION: 'The app declares a TypeScript older than the one x new scaffolds',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

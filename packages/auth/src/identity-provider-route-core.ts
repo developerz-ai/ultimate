@@ -24,12 +24,9 @@ import {
 import { oauthRouteStatus } from './identity-provider-status';
 import { oauthStateInvalid } from './oauth-errors';
 import type { OAuthGrants } from './oauth-login';
-import {
-  OAUTH_CALLBACK_ROUTE_PATH,
-  OAUTH_START_ROUTE_PATH,
-  oauthCallbackPath,
-} from './oauth-paths';
+import { OAUTH_START_ROUTE_PATH } from './oauth-paths';
 import { samlResponseInvalid } from './saml-errors';
+import { type CallbackPath, callbackPath } from './sign-in-callback-path';
 
 export interface SignInRouteDescriptor {
   readonly method: 'GET' | 'POST';
@@ -85,6 +82,8 @@ export interface SignInRoutePolicy {
   /** A throw with no code, logged and turned into the refusal served. Its text never is. */
   uncoded(error: unknown): UltimateError;
   grants(identity: VerifiedIdentity): Promise<OAuthGrants | undefined> | OAuthGrants | undefined;
+  /** The callback leg's pattern; `oauthLogin({ callbackPath })` only. Default: the framework's. */
+  readonly callbackPath?: CallbackPath | undefined;
 }
 
 export interface SignInRoutes {
@@ -120,9 +119,9 @@ function problem(policy: SignInRoutePolicy, error: unknown, cookies: readonly st
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-function segmentOf(request: Request, leg: 'start' | 'callback'): string {
+function startSegment(request: Request): string {
   const parts = new URL(request.url).pathname.split('/').filter((part) => part !== '');
-  return parts[leg === 'start' ? parts.length - 1 : parts.length - 2] ?? '';
+  return parts[parts.length - 1] ?? '';
 }
 
 function origin(options: SignInRouteOptions): string {
@@ -169,6 +168,7 @@ export function signInRoutes(
   options: SignInRouteOptions,
   policy: SignInRoutePolicy,
 ): SignInRoutes {
+  const back = policy.callbackPath ?? callbackPath();
   const seal = {
     clock: auth.clock,
     ...(options.secret === undefined ? {} : { secret: options.secret }),
@@ -179,8 +179,8 @@ export function signInRoutes(
       // Before the provider: asked after, a missing origin answered 500 for an enabled provider
       // and 404 for one that is not — an oracle for the app's configuration.
       const base = origin(options);
-      const provider = policy.resolve(segmentOf(request, 'start'), 'start');
-      const callbackUrl = `${base}${oauthCallbackPath(provider.id)}`;
+      const provider = policy.resolve(startSegment(request), 'start');
+      const callbackUrl = `${base}${back.pathFor(provider.id)}`;
       const redirect = await provider.begin({ callbackUrl, clock: auth.clock });
       const headers = new Headers({ location: redirect.location });
       headers.append('set-cookie', identityStateCookie(provider, redirect.state, seal));
@@ -191,7 +191,7 @@ export function signInRoutes(
   };
 
   const callback = async (request: Request): Promise<Response> => {
-    const segment = segmentOf(request, 'callback');
+    const segment = back.providerOf(new URL(request.url).pathname);
     // Set only once the answer is bound to this browser's state; then cleared on every outcome,
     // since that answer is spent either way. An unbound answer — a junk cross-site POST riding the
     // SameSite=None cookie — clears nothing, so it cannot end a sign-in in flight.
@@ -213,7 +213,7 @@ export function signInRoutes(
       const identity = await provider.complete({
         state,
         params,
-        callbackUrl: `${base}${oauthCallbackPath(provider.id)}`,
+        callbackUrl: `${base}${back.pathFor(provider.id)}`,
         clock: auth.clock,
         replay: auth.totpReplay,
       });
@@ -247,7 +247,7 @@ export function signInRoutes(
   };
   return Object.freeze({
     start: route('GET', OAUTH_START_ROUTE_PATH, policy.names.start, start),
-    callback: route('GET', OAUTH_CALLBACK_ROUTE_PATH, policy.names.callback, callback),
-    acs: route('POST', OAUTH_CALLBACK_ROUTE_PATH, policy.names.acs, callback),
+    callback: route('GET', back.pattern, policy.names.callback, callback),
+    acs: route('POST', back.pattern, policy.names.acs, callback),
   });
 }

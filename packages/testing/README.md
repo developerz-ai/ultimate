@@ -383,6 +383,7 @@ postFactory.attributesFor();                            // an action input: no i
 | | |
 |---|---|
 | **strategies** | `build` (memory, never a database), `create` (writes, answers the row AS STORED: declared defaults, generated columns, timestamps), `attributesFor` (an input: no primary key, no `belongsTo` key, no transient), `buildList` / `createList` |
+| **literals** | `defaults` is checked against the entity's columns as written: `status: 'open'` for an `enumerated(['open', 'closed'])` column compiles with no `as const`, `status: 'nope'` does not. Once checked, a default's literal widens (``title: `t${n}` `` → `string`), so `build({ title: 'x' })` compiles (`factories-literals.test.ts`) |
 | **sequence** | `index` (`n` above), per factory, shared by every `with()` view and `extend()` child — ids never repeat |
 | **trait** | a named partial (or `(n, ids, transient) => partial`). `with('a', 'b')` composes left to right; a call's override wins. An undeclared one fails at `with()` (`X_TEST_FACTORY_TRAIT_UNKNOWN`) |
 | **transient** | declared defaults a call may override; read by `defaults`, traits and callbacks; never written |

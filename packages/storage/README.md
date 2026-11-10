@@ -58,7 +58,7 @@ const stored = [...sessions.objects().values()].map((bytes) => new TextDecoder()
 
 Server-side only, like both other drivers: nothing an island imports reaches it.
 
-Every call on a disk `defineStorage` resolves is a `storage.<verb>` event on `@ultimat3/core`'s instrumentation bus (`put`, `get`, `stat`, `copy`, `delete`, `list`; `{ disk, key, bytes?, durationMs, error? }`) inside a `storage.<verb>` client span. `disk()` hands out that instrumented view, so it is not `===` the driver you declared — compare `.name`. A driver you hold directly reports nothing.
+Every call on a disk `defineStorage` resolves is a `storage.<verb>` event on `@ultimat3/core`'s instrumentation bus (`put`, `get`, `stat`, `copy`, `delete`, `list`; `{ disk, key, bytes?, durationMs, error? }`) inside a `storage.<verb>` client span. `disk()` hands out that instrumented view, so it is not `===` the driver you declared — compare `.name`. A driver you hold directly reports nothing. A method patched in a test — assigned on the disk, or `spyOn(driver, 'put')` on the driver you declared — runs on the next call and is still reported. `spyOn(disk, …)` does nothing: Bun's `spyOn` never writes through a Proxy (as of bun 1.4.4), so spy on the driver.
 
 `region` is what requests are signed for; unset, that is `auto`. An endpoint that expects another
 region refuses the first write, list or delete with `X_CONFIG_INVALID`, and the fix names the

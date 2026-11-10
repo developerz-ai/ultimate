@@ -1,39 +1,16 @@
-// Single responsibility: where the handshake lives between the redirect and the callback. The
-// two legs of an authorization-code login are separate HTTP requests, so `beginOAuth`'s state,
-// nonce and PKCE verifier have to survive the round trip — and a framework that leaves that to
-// the app gets one hand-rolled store per app, which is exactly where PKCE quietly stops proving
-// anything. Sealed here and opened here, so the cookie below and a server-side store share one
-// format at one trust level.
+// Single responsibility: the handshake's server-side codec (`sealHandshake` / `openHandshake`), its
+// secret and its deadline. The two legs of an authorization-code login are separate HTTP requests,
+// so `beginOAuth`'s state, nonce and PKCE verifier have to survive the round trip — and a framework
+// that leaves that to the app gets one hand-rolled store per app, which is exactly where PKCE
+// quietly stops proving anything. The cookie is `oauth-handshake-cookie.ts`.
 
 import type { Clock } from '@ultimat3/core';
-import {
-  EnvMissingError,
-  hmac,
-  readCookie,
-  serializeSetCookie,
-  systemClock,
-  timingSafeEqual,
-} from '@ultimat3/core';
+import { EnvMissingError, hmac, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { OAuthHandshake, OAuthProviderId } from './oauth';
 import { oauthStateInvalid } from './oauth-errors';
 import { hasOAuthProvider } from './oauth-registry';
 import { assertFiniteAuthCount } from './policy-numbers';
-import type { RequestLike } from './session';
 import { base64Url } from './tokens';
-
-/** `__Host-` for the same reason the session cookie carries it: no subdomain can plant one. */
-export const OAUTH_HANDSHAKE_COOKIE_PREFIX = '__Host-x_oauth';
-
-/**
- * One cookie per provider, because a browser is one cookie jar and a user is allowed two tabs.
- * Under a single shared name, starting a `google` login while a `github` one is mid-flight
- * overwrites the github handshake — and the github callback then opens google's, fails
- * `X_OAUTH_STATE_INVALID` and tells the user to restart the flow that just collided again.
- * Scoping the name makes the two handshakes independent instead of the last writer's.
- */
-export function handshakeCookieName(provider: OAuthProviderId): string {
-  return `${OAUTH_HANDSHAKE_COOKIE_PREFIX}_${provider}`;
-}
 
 /** Long enough to read a consent screen, short enough that a lifted cookie is already stale. */
 export const DEFAULT_HANDSHAKE_TTL_MS = 10 * 60 * 1000;
@@ -49,7 +26,7 @@ export const DEFAULT_HANDSHAKE_TTL_MS = 10 * 60 * 1000;
  * Screened at every reader rather than once at seal time: the two legs are two HTTP requests and
  * two calls, so a check on the way out is one the way back never runs.
  */
-function handshakeTtlMs(options: HandshakeSealOptions | undefined): number {
+export function handshakeTtlMs(options: HandshakeSealOptions | undefined): number {
   return assertFiniteAuthCount(
     'oauth.handshake.ttlMs',
     options?.ttlMs ?? DEFAULT_HANDSHAKE_TTL_MS,
@@ -89,15 +66,6 @@ export interface HandshakeSealOptions {
   /** No `Date.now()` in this package: the handshake's age is measured against this. */
   readonly clock?: Clock | undefined;
   readonly ttlMs?: number | undefined;
-}
-
-export interface HandshakeCookieOptions extends HandshakeSealOptions {
-  /**
-   * Defaults to `handshakeCookieName(provider)`. Overriding it opts out of the per-provider
-   * scoping, so both legs have to pass the same one — a name set on the redirect and defaulted on
-   * the callback reads a cookie that is not there.
-   */
-  readonly name?: string | undefined;
 }
 
 /**
@@ -180,50 +148,6 @@ export function openHandshake(
   }
 
   return { provider, state, nonce, verifier, redirectUri, authorizeUrl };
-}
-
-/**
- * Set on the redirect. `SameSite=Lax` is the one attribute that differs in reasoning from the
- * session cookie's: the callback is a top-level cross-site GET from the provider, which `Lax`
- * still attaches the cookie to and `Strict` would strip — leaving every login to fail its state
- * check. A provider answering with `response_mode=form_post` POSTs instead, and this cookie
- * would not reach it; neither built-in provider is configured that way.
- */
-export function handshakeCookie(
-  handshake: OAuthHandshake,
-  options?: HandshakeCookieOptions,
-): string {
-  const maxAge = Math.floor(handshakeTtlMs(options) / 1000);
-  // The handshake already names its provider, so the two legs cannot disagree about the name.
-  const name = options?.name ?? handshakeCookieName(handshake.provider);
-  return serializeSetCookie(name, sealHandshake(handshake, options), { maxAge });
-}
-
-/**
- * Send this with the callback's response, always — an authorization code is single-use, so the
- * handshake that authorised it must not outlive it. A mismatched attribute set leaves a live twin.
- *
- * `provider` is required for the reason `openHandshake`'s is: clearing the unscoped name would
- * clear nothing, and clearing every provider's would cancel a login running in another tab.
- */
-export function clearHandshakeCookie(provider: OAuthProviderId, name?: string): string {
-  return serializeSetCookie(name ?? handshakeCookieName(provider), '', { maxAge: 0 });
-}
-
-/** Reads the cookie set on the redirect and returns the handshake `completeOAuthLogin` takes. */
-export function readHandshakeCookie(
-  request: RequestLike,
-  provider: OAuthProviderId,
-  options?: HandshakeCookieOptions,
-): OAuthHandshake {
-  const sealed = readCookie(
-    request.headers.get('cookie'),
-    options?.name ?? handshakeCookieName(provider),
-  );
-  if (sealed === null) {
-    throw oauthStateInvalid(provider, 'no handshake cookie arrived with the callback');
-  }
-  return openHandshake(sealed, provider, options);
 }
 
 /** Keyed SHA-256. Untruncated, unlike a cursor's: a cookie has room and this authorises a login. */

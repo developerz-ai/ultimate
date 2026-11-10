@@ -4,16 +4,18 @@ import { type Auth, defineAuth } from './auth';
 import { memoryAuthAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import {
-  clearHandshakeCookie,
   DEFAULT_HANDSHAKE_TTL_MS,
-  handshakeCookie,
-  handshakeCookieName,
   handshakeSecret,
   openHandshake,
-  readHandshakeCookie,
   sealHandshake,
 } from './oauth-cookie';
 import type { OAuthFetch } from './oauth-exchange';
+import {
+  clearHandshakeCookie,
+  handshakeCookie,
+  handshakeCookieName,
+  readHandshakeCookie,
+} from './oauth-handshake-cookie';
 import { completeOAuthLogin } from './oauth-login';
 
 const NOW = new Date('2026-08-09T12:00:00.000Z');

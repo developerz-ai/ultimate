@@ -171,10 +171,12 @@ export type { EntityRegistry, FactoryRegistry } from './factory-registry';
 export { factoriesFor } from './factory-registry';
 export type {
   AttributesFor,
+  AttrValue,
   BelongsTo,
   BelongsToMap,
   Built,
   Created,
+  DefaultsBound,
   EntityLike,
   FactoryContext,
   FactoryIds,
@@ -184,6 +186,7 @@ export type {
   HasMany,
   HasManyMap,
   None,
+  SettledAttrs,
   StoredOf,
   Trait,
   TraitMap,

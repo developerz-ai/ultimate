@@ -46,6 +46,7 @@ import {
   defineAuth,
   discoverOAuthProvider,
   hasOAuthProvider,
+  OAUTH_CALLBACK_ROUTE_PATH,
   type OAuthLoginRoutes,
   oauthLogin,
   oauthStartPath,
@@ -58,6 +59,13 @@ export const OIDC_PROVIDER = '${provider}';
 export const OIDC_ISSUER_ENV = '${oidcEnvPrefix(provider)}_ISSUER';
 /** Where the sign-in page sends a browser: the start leg, \`${oauthStartPath(provider)}\`. */
 export const OIDC_START_PATH = oauthStartPath(OIDC_PROVIDER);
+/**
+ * The callback leg's mount AND the \`redirect_uri\` the issuer must have registered: one value,
+ * handed to \`oauthLogin({ callbackPath })\` below and mounted by \`sign-in-routes.ts\`. The
+ * framework's default; set it (e.g. \`'/auth/oauth/:provider/callback'\`) to keep a URI an IdP
+ * already holds, and both move together.
+ */
+export const OIDC_CALLBACK_PATH: string = OAUTH_CALLBACK_ROUTE_PATH;
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -77,7 +85,10 @@ export const oidcLegs = (env: Env = process.env): Promise<OAuthLoginRoutes> => {
     if (!hasOAuthProvider(OIDC_PROVIDER)) {
       registerOAuthProvider(await discoverOAuthProvider({ id: OIDC_PROVIDER, issuer }));
     }
-    return oauthLogin(signInAuth(), { successPath: AFTER_SIGN_IN });
+    return oauthLogin(signInAuth(), {
+      successPath: AFTER_SIGN_IN,
+      callbackPath: OIDC_CALLBACK_PATH,
+    });
   })().catch((error: unknown) => {
     legs = undefined;
     throw error;
@@ -111,10 +122,12 @@ unitTest('a discovery that fails is refused, and the next sign-in tries again', 
 
 const routesSource =
   (): string => `// The two OIDC legs as plain HTTP routes — \`runtime.ts\` hands them to both boots. Plain routes,
-// not actions: the callback is a redirect protocol whose shape the provider fixes.
-import { OAUTH_CALLBACK_ROUTE_PATH, OAUTH_START_ROUTE_PATH } from '@ultimat3/auth';
+// not actions: the callback is a redirect protocol whose shape the provider fixes. The callback is
+// mounted at \`OIDC_CALLBACK_PATH\` — the \`callbackPath\` \`oauthLogin\` was handed, so its
+// \`callback.path\` — never at a constant of its own: the mount and the \`redirect_uri\` move together.
+import { OAUTH_START_ROUTE_PATH } from '@ultimat3/auth';
 import type { Route } from '@ultimat3/http';
-import { oidcLegs } from './oidc';
+import { OIDC_CALLBACK_PATH, oidcLegs } from './oidc';
 
 const leg = (name: 'start' | 'callback', path: string): Route => ({
   method: 'GET',
@@ -126,20 +139,22 @@ const leg = (name: 'start' | 'callback', path: string): Route => ({
 
 export const signInRoutes: readonly Route[] = [
   leg('start', OAUTH_START_ROUTE_PATH),
-  leg('callback', OAUTH_CALLBACK_ROUTE_PATH),
+  leg('callback', OIDC_CALLBACK_PATH),
 ];
 `;
 
 const routesTest =
-  (): string => `// Both legs are mounted, public, at the framework's one declaration of where they live.
-import { OAUTH_CALLBACK_ROUTE_PATH, OAUTH_START_ROUTE_PATH } from '@ultimat3/auth';
+  (): string => `// Both legs are mounted, public: the start leg at the framework's path, the callback at the one
+// \`oauthLogin\` is handed as \`callbackPath\` — so the mount is the \`redirect_uri\` the IdP holds.
+import { OAUTH_START_ROUTE_PATH } from '@ultimat3/auth';
 import { expect, unitTest } from '@ultimat3/testing';
+import { OIDC_CALLBACK_PATH } from './oidc';
 import { signInRoutes } from './sign-in-routes';
 
-unitTest('the start and callback legs are public GET routes at the framework paths', () => {
+unitTest('the start and callback legs are public GET routes at the paths oauthLogin serves', () => {
   expect(signInRoutes.map((route) => [route.method, route.path, route.meta.auth])).toEqual([
     ['GET', OAUTH_START_ROUTE_PATH, 'public'],
-    ['GET', OAUTH_CALLBACK_ROUTE_PATH, 'public'],
+    ['GET', OIDC_CALLBACK_PATH, 'public'],
   ]);
 });
 `;
