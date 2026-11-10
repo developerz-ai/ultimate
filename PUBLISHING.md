@@ -412,8 +412,9 @@ every `maint-*` tag.
 2. Commit on a branch, open the `chore: release X.Y.Z` PR and merge it. **That is the whole
    release**, `As of 2026-10`, for a maintainer and `developerz-ai[bot]` alike — no hand tag, no
    `gh release create`. When ci.yml concludes `success` on the push of the **release commit** to
-   `main` — its subject matches `scripts/lib/release-subject.ts`, so no later commit (a Dependabot
-   merge whose CI finished first) is ever tagged with notes that do not describe it —
+   `main` or a maintenance branch named `release/<major>.x` — its subject matches
+   `scripts/lib/release-subject.ts`, so no later commit (a Dependabot merge whose CI finished first)
+   is ever tagged with notes that do not describe it —
    `.github/workflows/release-tag.yml` reads the stamped version and, if `vX.Y.Z` does not exist
    yet: refuses unless `bun run scripts/release.ts --check X.Y.Z` passes, creates the **annotated**
    tag on the commit ci.yml judged (a tag object, then its ref), creates the GitHub Release with that
@@ -561,7 +562,7 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
-| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/*` branch | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
+| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/<major>.x` maintenance branch | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
 | `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version, and a major is inside its window — see below |
 | `npm publish --tag "$DIST_TAG"`, the tag from `scripts/dist-tag.ts` in the `check` job | a maintenance release of an older major never moves `latest`; held by `scripts/release-workflow-shape.test.ts` |
 | ci.yml's whole run `success` on the tagged commit | nothing reaches the registry unverified: the framework gate (`verify`, the merge of every `gate` part) AND every tracked app, scaffold, per-package coverage bar and container build of the same run. It read the `verify` job alone until 2026-10, so a tag with a red app gate published. The workflow used to re-run `verify` itself with no services: the 21.0.0 run executed 10 of 342 live tests |

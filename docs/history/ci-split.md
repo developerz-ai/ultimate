@@ -307,7 +307,7 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 
 | Workflow | Trigger → what it does |
 |---|---|
-| `release-tag.yml` | green `ci` push of a release commit to `main` or `release/*` at an untagged version → annotated tag, Release, `release.yml` dispatched |
+| `release-tag.yml` | green `ci` push of a release commit to `main` or a `release/<major>.x` maintenance branch at an untagged version → annotated tag, Release, `release.yml` dispatched |
 | `release.yml` | that dispatch or a **published** Release → npm via OIDC, after `check` |
 | `registry-audit.yml` | daily → a `registry-drift` issue on disagreement |
 | `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
