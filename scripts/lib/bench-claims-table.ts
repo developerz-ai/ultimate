@@ -2,6 +2,8 @@
 // carries it, the dot path into that result, and the pattern that reads it off the prose. Data only,
 // split from the checker at its file ceiling; the checker re-exports these names.
 
+import { SCALE_CLAIMS } from '../bench/scale-claims';
+
 export const CLAIMS_FILE = 'scripts/bench/results/README.md';
 export const RESULTS_50K = 'scripts/bench/results/50k-restart.json';
 export const RESULTS_10K = 'scripts/bench/results/10k-restart-seq.json';
@@ -345,4 +347,5 @@ export const CLAIMS: readonly BenchClaim[] = [
   ...HTTP_CLAIMS,
   ...RENDER_CLAIMS,
   ...SPAN_CLAIMS,
+  ...SCALE_CLAIMS,
 ];

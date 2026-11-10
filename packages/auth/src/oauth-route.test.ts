@@ -5,11 +5,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, setLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
+import { oauthRouteStatus } from './identity-provider-status';
 import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
 import { oauthCallbackPath, oauthStartPath } from './oauth-paths';
 import { registerOAuthProvider } from './oauth-registry';
-import { oauthLogin, oauthRouteStatus } from './oauth-route';
+import { oauthLogin } from './oauth-route';
 
 const NOW = new Date('2026-08-15T12:00:00.000Z');
 
@@ -79,11 +80,11 @@ const bodyOf = async (response: Response): Promise<Record<string, unknown>> => {
 describe('oauthLogin', () => {
   test('a forged state is refused with the code and the fix that restarts the flow', async () => {
     const login = routes();
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
     const sealed = cookiePair(start.headers.getSetCookie()[0] ?? '');
 
     const done = await login.callback.handle(
-      new Request('https://app.test/auth/oauth/github/callback?code=the-code&state=forged', {
+      new Request('https://app.test/auth/sso/github/callback?code=the-code&state=forged', {
         headers: { cookie: sealed },
       }),
     );
@@ -93,17 +94,18 @@ describe('oauthLogin', () => {
     expect(body['code']).toBe('X_OAUTH_STATE_INVALID');
     // Axiom 4: the fix names a route this package actually mounts, not one it wishes existed.
     expect(refused()).toContain(`GET ${oauthStartPath('github')}`);
-    expect(login.start.path).toBe('/auth/oauth/:provider');
-    // A spent handshake must not survive its own failure — the code it authorised is gone.
-    expect(done.headers.getSetCookie().some((c) => c.startsWith('__Host-x_oauth_github=;'))).toBe(
-      true,
+    expect(login.start.path).toBe('/auth/sso/:provider');
+    // A forged state is not this browser's answer: the cookie survives, so a cross-site request
+    // carrying it cannot end the real sign-in in flight. A bound answer clears it on any outcome.
+    expect(done.headers.getSetCookie().some((c) => c.startsWith('__Host-x_sso_github=;'))).toBe(
+      false,
     );
   });
 
   test('redirect to session: a github login round-trips through the two mounted routes', async () => {
     const login = routes();
 
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
     expect(start.status).toBe(302);
     const authorize = new URL(start.headers.get('location') ?? '');
     expect(`${authorize.origin}${authorize.pathname}`).toBe(
@@ -118,11 +120,11 @@ describe('oauthLogin', () => {
 
     const setStart = start.headers.getSetCookie();
     expect(setStart).toHaveLength(1);
-    expect(setStart[0]).toStartWith('__Host-x_oauth_github=');
+    expect(setStart[0]).toStartWith('__Host-x_sso_github=');
     expect(setStart[0]).toContain('HttpOnly');
 
     const done = await login.callback.handle(
-      new Request(`https://app.test/auth/oauth/github/callback?code=the-code&state=${state}`, {
+      new Request(`https://app.test/auth/sso/github/callback?code=the-code&state=${state}`, {
         headers: { cookie: cookiePair(setStart[0] ?? ''), 'user-agent': 'Firefox/1' },
       }),
     );
@@ -131,7 +133,7 @@ describe('oauthLogin', () => {
     expect(done.headers.get('location')).toBe('/');
     const setDone = done.headers.getSetCookie();
     expect(setDone.some((c) => c.startsWith('__Host-x_session='))).toBe(true);
-    expect(setDone.some((c) => c.startsWith('__Host-x_oauth_github=;'))).toBe(true);
+    expect(setDone.some((c) => c.startsWith('__Host-x_sso_github=;'))).toBe(true);
 
     const user = await adapter.findUserByEmail('ada@example.com');
     expect(user?.emailVerifiedAt).toEqual(NOW);
@@ -144,7 +146,7 @@ describe('oauthLogin', () => {
 
   test('a provider the app did not enable never reaches the provider', async () => {
     const login = routes();
-    const response = await login.start.handle(new Request('https://app.test/auth/oauth/apple'));
+    const response = await login.start.handle(new Request('https://app.test/auth/sso/apple'));
 
     expect(response.status).toBe(404);
     expect((await bodyOf(response))['code']).toBe('X_OAUTH_PROVIDER_UNKNOWN');
@@ -153,7 +155,7 @@ describe('oauthLogin', () => {
 
   test('a provider Ultimate has never heard of is the same refusal', async () => {
     const login = routes();
-    const response = await login.start.handle(new Request('https://app.test/auth/oauth/facebook'));
+    const response = await login.start.handle(new Request('https://app.test/auth/sso/facebook'));
 
     expect(response.status).toBe(404);
     expect((await bodyOf(response))['code']).toBe('X_OAUTH_PROVIDER_UNKNOWN');
@@ -161,10 +163,12 @@ describe('oauthLogin', () => {
 
   test('a user pressing Cancel is its own code, never a broken-app one', async () => {
     const login = routes();
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
 
+    // RFC 6749 4.1.2.1: the error redirect echoes `state`, which binds it to this browser.
+    const state = new URL(start.headers.get('location') ?? '').searchParams.get('state') ?? '';
     const done = await login.callback.handle(
-      new Request('https://app.test/auth/oauth/github/callback?error=access_denied', {
+      new Request(`https://app.test/auth/sso/github/callback?error=access_denied&state=${state}`, {
         headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') },
       }),
     );
@@ -180,7 +184,7 @@ describe('oauthLogin', () => {
   test('a callback with no handshake cookie has nothing to check state against', async () => {
     const login = routes();
     const done = await login.callback.handle(
-      new Request('https://app.test/auth/oauth/github/callback?code=c&state=s'),
+      new Request('https://app.test/auth/sso/github/callback?code=c&state=s'),
     );
 
     expect(done.status).toBe(400);
@@ -189,14 +193,14 @@ describe('oauthLogin', () => {
 
   test('a github handshake may not finish a google callback', async () => {
     const login = routes();
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
     const sealed = cookiePair(start.headers.getSetCookie()[0] ?? '').replace(
-      '__Host-x_oauth_github=',
-      '__Host-x_oauth_google=',
+      '__Host-x_sso_github=',
+      '__Host-x_sso_google=',
     );
 
     const done = await login.callback.handle(
-      new Request('https://app.test/auth/oauth/google/callback?code=c&state=s', {
+      new Request('https://app.test/auth/sso/google/callback?code=c&state=s', {
         headers: { cookie: sealed },
       }),
     );
@@ -212,12 +216,12 @@ describe('oauthLogin', () => {
       baseUrl: 'https://app.test',
       fetch: () => Promise.reject(new Error('boom')),
     });
-    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const start = await login.start.handle(new Request('https://app.test/auth/sso/github'));
     const authorize = new URL(start.headers.get('location') ?? '');
 
     const done = await login.callback.handle(
       new Request(
-        `https://app.test/auth/oauth/github/callback?code=c&state=${authorize.searchParams.get('state')}`,
+        `https://app.test/auth/sso/github/callback?code=c&state=${authorize.searchParams.get('state')}`,
         { headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') } },
       ),
     );
@@ -256,7 +260,7 @@ describe('oauthLogin', () => {
     );
 
     const body = await bodyOf(
-      await login.start.handle(new Request('https://app.test/auth/oauth/apple')),
+      await login.start.handle(new Request('https://app.test/auth/sso/apple')),
     );
 
     // Both legs are public by definition, so `toJSON()` — which carries `meta` and `stack` for a
@@ -308,7 +312,7 @@ describe('credentials read from options.env', () => {
       },
     );
 
-    const started = await route.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const started = await route.start.handle(new Request('https://app.test/auth/sso/github'));
     expect(started.status).toBe(302);
     const location = new URL(started.headers.get('location') ?? '');
     expect(location.searchParams.get('client_id')).toBe('from-options-env');
@@ -316,7 +320,7 @@ describe('credentials read from options.env', () => {
     const state = location.searchParams.get('state') ?? '';
 
     const back = await route.callback.handle(
-      new Request(`https://app.test/auth/oauth/github/callback?code=abc&state=${state}`, {
+      new Request(`https://app.test/auth/sso/github/callback?code=abc&state=${state}`, {
         headers: { cookie },
       }),
     );
@@ -336,7 +340,7 @@ describe('a provider with no credentials is 404, not a 500 naming its env vars',
 
   test('the start leg answers the same 404 an unknown provider gets', async () => {
     const response = await noCredentials().start.handle(
-      new Request('https://app.test/auth/oauth/github'),
+      new Request('https://app.test/auth/sso/github'),
     );
     const body = await bodyOf(response);
 
@@ -349,7 +353,7 @@ describe('a provider with no credentials is 404, not a 500 naming its env vars',
 
   test('the callback leg answers it too — one oracle closed on both halves', async () => {
     const response = await noCredentials().callback.handle(
-      new Request('https://app.test/auth/oauth/github/callback?code=x&state=y'),
+      new Request('https://app.test/auth/sso/github/callback?code=x&state=y'),
     );
     expect(response.status).toBe(404);
     expect((await bodyOf(response))['code']).toBe('X_OAUTH_PROVIDER_UNKNOWN');

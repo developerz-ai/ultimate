@@ -17,17 +17,19 @@ import { appDisk, plannedDisk } from './generate-disk';
 import { writtenExercises } from './generate-exercise';
 import { assertFeatureExists } from './generate-feature';
 import { assertSliceToRead } from './generate-feature-required';
-import { generate, sliceDir } from './generate-files';
+import { DEFAULT_APP, generate, sliceDir } from './generate-files';
 import { followUpEdits } from './generate-follow-ups';
 import { formatWritten } from './generate-format-written';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { refusePluralTable } from './generate-plural';
 import { followReexports } from './generate-reexports';
+import { manifestCanChange } from './generate-refresh';
 import { refuseShadowedTypes, refuseShadowedValues } from './generate-shadow';
 import { declaresOnlyOtherEntities } from './generate-sibling';
 import { runSignIn } from './generate-sign-in';
 import { refuseSignInFlags } from './generate-sign-in-mode';
+import { isWorkspaceKind, readApp, runWorkspace } from './generate-workspace';
 import { containedPath, planWrites, writeFiles } from './generate-write';
 import { resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
@@ -79,6 +81,8 @@ export const generateCommand: CliCommand = {
     if (kind === 'sign-in') return await runSignIn(ctx, root);
     // One chart per app, named by its `Chart.yaml`: the same shape, for the same reason.
     if (kind === 'chart-alerts') return await runChartAlerts(ctx, root);
+    // A workspace, not a slice: no feature, no surface, no follow-up edit (`generate-workspace.ts`).
+    if (isWorkspaceKind(kind)) return await runWorkspace(ctx, root, kind);
     const name = readName(ctx.args.positionals[1], kind);
     const featureFlag = readFeature(flagString(ctx.args, 'feature'), kind);
     // Both flags are resolved before a single file is planned: a bad surface or a locale that is
@@ -86,6 +90,8 @@ export const generateCommand: CliCommand = {
     const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
     const locales = resolveLocales(await namedOrAppLocales(root, flagList(ctx.args, 'locales')));
     const at = flagString(ctx.args, 'at');
+    // The app workspace the slice lands in; `web` unless an app-local generator names another.
+    const app = readApp(flagString(ctx.args, 'app'), root, kind, name);
     // Read with the two above, and refused here for their reason: the value is spliced into the
     // emitted source three times, and a value that is not a `<resource>:<verb>` is a page the app
     // cannot compile — found after the files are on disk, which is the worst place to find it.
@@ -98,7 +104,7 @@ export const generateCommand: CliCommand = {
     // And whether the app has the frame a resource's page sits in.
     const shell = existsSync(containedPath(root, SHELL_MODULE));
     // Read for the same reason: which errors the slice declares is written on THIS app's disk.
-    const slice = sliceDir(surface, kebab(featureFlag ?? name));
+    const slice = sliceDir(surface, kebab(featureFlag ?? name), app);
     // A named slice that is not there is refused, never invented (X_FEATURE_UNKNOWN).
     assertFeatureExists(root, kind, featureFlag, slice, name);
     // And a read with no table to read, never handed one (X_FEATURE_REQUIRED).
@@ -135,6 +141,7 @@ export const generateCommand: CliCommand = {
         ...(sliceEntity === undefined ? {} : { sliceEntity }),
         ...(sliceRepo === undefined ? {} : { sliceRepo }),
         ...(at === undefined ? {} : { at }),
+        ...(app === DEFAULT_APP ? {} : { app }),
         ...(permission === undefined ? {} : { permission }),
         surface,
         live: flagBool(ctx.args, 'live'),
@@ -207,8 +214,12 @@ export const generateCommand: CliCommand = {
       const touched = refused.length === 0 ? [...plan.written, ...follow.edited] : [];
       // Re-projected after a real write, from the loaded app: named, since their bytes are not
       // knowable without the files on disk.
+      // By the rule the run follows (`generate-refresh.ts`): files that cannot move a manifest
+      // fact name no refresh, because the run will not load the app to make one.
       const refreshes =
-        plan.written.length === 0 || refused.length > 0
+        plan.written.length === 0 ||
+        refused.length > 0 ||
+        !(await manifestCanChange(root, [...plan.written, ...follow.edited], planned))
           ? []
           : [MANIFEST_FILENAME, 'openapi.json'].filter((file) =>
               existsSync(containedPath(root, file)),
@@ -261,7 +272,14 @@ export const generateCommand: CliCommand = {
     // `openapi.json` rides with it (`writeAppArtifacts`): refreshing one contract and not the other
     // made this command's own output fail the `contract-diff` step.
     const artifacts: string[] = [];
-    if (report.written.length > 0 && existsSync(containedPath(root, MANIFEST_FILENAME))) {
+    // And only when the run's files can move one of its facts: the load is the whole app, the one
+    // step of a scaffold that grows with it, and an island, a test or a stylesheet moves nothing
+    // it projects (`generate-refresh.ts`).
+    if (
+      report.written.length > 0 &&
+      existsSync(containedPath(root, MANIFEST_FILENAME)) &&
+      (await manifestCanChange(root, [...report.written, ...edited]))
+    ) {
       const { manifest, findings } = await appManifest(root);
       if (findings.length === 0) {
         artifacts.push(

@@ -10,6 +10,8 @@ import type { DurationInput } from './clock';
 import { nowMs } from './clock';
 import type { ExportFormat } from './export-format';
 import type { ExportSink } from './export-sink';
+import { auditedErase } from './gdpr-audit';
+import { unerasedPersonalData } from './gdpr-coverage';
 import type { JobHandle } from './job';
 import { job } from './job';
 import type { RetryPolicy } from './retry';
@@ -57,6 +59,10 @@ export function plannedSubject<I>(subject: Subject<I>): SubjectPlan {
   });
   const [first] = problems;
   if (first !== undefined) throw first;
+  // A reached table whose treatment would leave a `.personalData()` column standing: refused before
+  // a row is touched, as an untreated table is (`gdpr-coverage.ts`).
+  const [leak] = unerasedPersonalData(plan);
+  if (leak !== undefined) throw leak;
   return plan;
 }
 
@@ -78,8 +84,10 @@ export function subjectErase<I>(definition: SubjectJobDefinition<I>): JobHandle<
     ...common(definition),
     // One live erase per person: a second request while one runs is the same run.
     idempotencyKey: (input) => `${definition.name}:${subject.init.key(input)}`,
-    run: ({ step, input }): Promise<SubjectEraseReport> =>
-      subjectErasePass(step, readerFor(subject, input), subject.init.targets ?? []),
+    run: ({ step, input, ctx, runId }): Promise<SubjectEraseReport> =>
+      auditedErase({ job: definition.name, subject: subject.entity, runId, ctx }, step, () =>
+        subjectErasePass(step, readerFor(subject, input), subject.init.targets ?? []),
+      ),
   });
 }
 

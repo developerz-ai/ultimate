@@ -1,0 +1,70 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local"
+  },
+  "profiles": [
+    {
+      "name": "shipped",
+      "concurrency": 8,
+      "pollIntervalMs": 250,
+      "jobsPerWorker": 400,
+      "runs": [
+        {
+          "workers": 1,
+          "jobs": 1000,
+          "elapsedMs": 1252,
+          "claimsPerSecond": 799,
+          "perWorker": 799
+        },
+        {
+          "workers": 4,
+          "jobs": 1600,
+          "elapsedMs": 989,
+          "claimsPerSecond": 1618,
+          "perWorker": 405
+        },
+        {
+          "workers": 16,
+          "jobs": 6400,
+          "elapsedMs": 2811,
+          "claimsPerSecond": 2277,
+          "perWorker": 142
+        }
+      ]
+    },
+    {
+      "name": "tuned",
+      "concurrency": 32,
+      "pollIntervalMs": 10,
+      "jobsPerWorker": 2000,
+      "runs": [
+        {
+          "workers": 1,
+          "jobs": 2000,
+          "elapsedMs": 1170,
+          "claimsPerSecond": 1709,
+          "perWorker": 1709
+        },
+        {
+          "workers": 4,
+          "jobs": 8000,
+          "elapsedMs": 2148,
+          "claimsPerSecond": 3724,
+          "perWorker": 931
+        },
+        {
+          "workers": 16,
+          "jobs": 32000,
+          "elapsedMs": 10521,
+          "claimsPerSecond": 3042,
+          "perWorker": 190
+        }
+      ]
+    }
+  ]
+}

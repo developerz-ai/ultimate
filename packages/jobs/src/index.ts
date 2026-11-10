@@ -218,6 +218,8 @@ export {
 } from './export-sink';
 export type { CallerFailure } from './failure-row';
 export { callerFailure } from './failure-row';
+export { personalDataProblems, unerasedPersonalData, unreachedPersonalData } from './gdpr-coverage';
+export { PersonalDataUnerasedError, PersonalDataUnreachedError } from './gdpr-errors';
 export { IDLE_POLL_CEILING_MS } from './idle-backoff';
 export type { ImportDefinition, ImportReport } from './import';
 export {
@@ -313,6 +315,20 @@ export type { JobsRetentionOptions } from './jobs-retention';
 export { jobsPurgeTarget } from './jobs-retention';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
 export { jobLeaseKey, memoryLeaseStore } from './leases';
+export type { LedgerDefinition, LedgerEntry, LedgerPosting, LedgerReport } from './ledger';
+export { assertBalancedPosting, ledger, ledgerLines, MIN_LEDGER_ENTRIES } from './ledger';
+export type {
+  EntityLedgerBookOptions,
+  LedgerBook,
+  LedgerLine,
+  MemoryLedgerBook,
+} from './ledger-book';
+export { assertSamePosting, entityLedgerBook, memoryLedgerBook } from './ledger-book';
+export {
+  LedgerEntryInvalidError,
+  LedgerPostingConflictError,
+  LedgerUnbalancedError,
+} from './ledger-errors';
 export type {
   Lease,
   LimitConfig,
@@ -323,6 +339,9 @@ export type {
   RateLimit,
 } from './limits';
 export { concurrencyLimiter, NO_TENANT, tenantKeyFrom } from './limits';
+export type { HeldLock, WithLockOptions } from './lock';
+export { DEFAULT_LOCK_POLL_MS, lockLeaseKey, withLock } from './lock';
+export { LockLostError, LockNotAcquiredError, LockStoreMissingError } from './lock-errors';
 export {
   queueDeadJobs,
   queueDemand,
@@ -356,6 +375,18 @@ export type { OutboxRelay, RelayOptions } from './outbox-relay';
 export { outboxRelay } from './outbox-relay';
 export type { OutboxRetentionOptions } from './outbox-retention';
 export { outboxPurgeTarget } from './outbox-retention';
+export type {
+  PartitionsDefinition,
+  PartitionsJob,
+  PartitionsReport,
+  PartitionsTableReport,
+} from './partitions';
+export {
+  DEFAULT_PARTITIONS_CRON,
+  DEFAULT_PARTITIONS_NAME,
+  partitionedEntities,
+  partitions,
+} from './partitions';
 export type { ProgressFn } from './progress';
 export type {
   PurgeDefinition,
@@ -377,6 +408,8 @@ export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
 export { startQueueWake } from './queue-wake';
 export type { RefreshViewDefinition, RefreshViewReport } from './refresh-view';
 export { refreshView } from './refresh-view';
+export type { ReindexDefinition } from './reindex';
+export { reindex } from './reindex';
 export type { IntervalScheduler } from './renewal-timer';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export {

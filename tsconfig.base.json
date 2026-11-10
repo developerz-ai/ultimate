@@ -64,6 +64,7 @@
       "@ultimat3/testing/e2e-preload": ["./packages/testing/src/e2e-preload.ts"],
       "@ultimat3/testing/registry-isolation": ["./packages/testing/src/registry-isolation.ts"],
       "@ultimat3/ui/icons/*": ["./packages/ui/src/icons/glyphs/*"],
+      "@ultimat3/scraping/cdp": ["./packages/scraping/src/cdp.ts"],
       "@ultimat3/*": ["./packages/*/src"]
     },
 

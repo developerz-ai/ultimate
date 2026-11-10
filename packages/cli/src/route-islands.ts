@@ -14,6 +14,7 @@ import {
   renderHead,
 } from '@ultimat3/render';
 import type { DocumentOptions } from './document-options';
+import { preloadTags } from './route-islands-preload';
 
 /**
  * One collector per RENDER, never module-global: two requests render different params, and a
@@ -102,14 +103,17 @@ export function streamScripts(
   const boot = bootScript(entry, islands, options, scope);
   const flushed = islands.directives.length;
   let booted = boot !== '';
+  // One set per document: a hole's chunk links only what no earlier flush already preloaded.
+  const linked = new Set<string>();
+  const preloads = (): string => preloadTags(entry, islands, options, booted, linked);
   return {
-    first: `${boot}${hydrateRuntime(islands.directives, { async: holes && !booted })}`,
+    first: `${boot}${preloads()}${hydrateRuntime(islands.directives, { async: holes && !booted })}`,
     after: (outcome) => {
       const recorded = islands.directives.length;
       if (recorded === (outcome === 'failed' ? 0 : flushed)) return '';
       const late = booted ? '' : bootScript(entry, islands, options, scope);
       booted = booted || late !== '';
-      return `${late}${hydrateRuntime(islands.directives, { async: !booted })}`;
+      return `${late}${preloads()}${hydrateRuntime(islands.directives, { async: !booted })}`;
     },
   };
 }

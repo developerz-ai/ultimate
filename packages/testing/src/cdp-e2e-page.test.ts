@@ -4,10 +4,10 @@
 // (`cdp-e2e-session.test.ts`).
 
 import { describe, expect, test } from 'bun:test';
-import type { CdpConnection, CdpResult } from './cdp-connection';
+import type { CdpConnection, CdpResult } from '@ultimat3/scraping/cdp';
+import { CdpCallFailedError } from '@ultimat3/scraping/cdp';
 import type { E2eTab } from './cdp-e2e-page';
 import { cdpE2eTab, FULL_AX_TREE } from './cdp-e2e-page';
-import { CdpCallFailedError } from './cdp-errors';
 
 interface Call {
   readonly method: string;

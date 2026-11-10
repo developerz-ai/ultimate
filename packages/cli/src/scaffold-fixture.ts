@@ -193,6 +193,11 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   // equality with `GENERATORS`: a later TS output from this generator is compiled without anyone
   // remembering to add it. `x new` writes the same two templates first, so `dedupe` keeps those.
   { kind: 'chart-alerts', name: FIXTURE_APP },
+  // A workspace beside `apps/web`: `x g app` writes its manifest and tsconfig, `x g package` a
+  // `src/index.ts` and its test — compiled here so a template drifting off the workspace's alias
+  // or its strictness fails this gate, not the author's first `bun install`.
+  { kind: 'app', name: 'billing', scope: FIXTURE_APP },
+  { kind: 'package', name: 'pricing', scope: FIXTURE_APP },
 ];
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */

@@ -40,6 +40,17 @@ export {
   updatePlan,
 } from './plan';
 export { rowKey } from './row-key';
+// The searchIndex port: what an app's Meilisearch/Typesense index implements, and its installer.
+export type {
+  SearchDocument,
+  SearchHit,
+  SearchIndex,
+  SearchQuery,
+  SearchScope,
+} from './search-index';
+export { searchLimitOf } from './search-index';
+export { installSearchIndex } from './search-index-installed';
+export { searchWords } from './search-index-memory';
 export type { Predicate, QueryPlan, SortKey } from './tenancy';
 export { assertRowTenant, scopedPlan } from './tenancy';
 export type { UniqueConstraint } from './unique-constraints';

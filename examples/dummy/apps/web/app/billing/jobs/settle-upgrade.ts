@@ -13,6 +13,7 @@ import {
   releaseSeats,
   reserveSeats,
 } from '../vendor-payments';
+import { chargePosting, postCharge } from './post-charge';
 
 export const settleUpgrade = job({
   input: t.object({ orgId: t.uuid, plan: t.enumerated(...PLAN_CODES) }),
@@ -36,5 +37,9 @@ export const settleUpgrade = job({
       compensate: (reservationId) => releaseSeats(reservationId),
     });
     await step.run('invoice', () => issueInvoice(org.id, charge));
+    // The books, once the money is final: a posting keyed by the charge, so a replay is one posting.
+    await step.run('post-ledger', () =>
+      postCharge.enqueue(chargePosting(org.id, charge, input.plan, org.billingCurrency)),
+    );
   },
 });

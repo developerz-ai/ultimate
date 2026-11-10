@@ -155,7 +155,11 @@ export function planAffected(
  * narrows nothing — so a fix line that dropped it would reproduce its own failure, verbatim.
  */
 const invocationOf = (command: string): string =>
-  command === 'affected' ? 'x affected' : `x ${command} --affected`;
+  command === 'affected'
+    ? 'x affected'
+    : command === 'verify'
+      ? 'x verify --changed'
+      : `x ${command} --affected`;
 
 export interface AffectedSelection {
   readonly base: string;

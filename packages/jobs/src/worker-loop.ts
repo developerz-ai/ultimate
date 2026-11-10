@@ -42,17 +42,32 @@ export interface ClaimLoop {
   stop(): void;
   /** True once a pass has come back empty. */
   idle(): boolean;
-  /** A pass ended: `found` decides the next wait. */
-  passed(found: boolean): void;
+  /**
+   * A pass ended: `found` decides the next wait. `full` — some ask came back with every row it
+   * asked for — means a backlog is likely, so a slot freeing before the next pass claims at once.
+   */
+  passed(found: boolean, full?: boolean): void;
   /** The wait the loop will arm, or has armed. */
   delayMs(): number;
   /**
    * A slot came free, or a handed-back row is due: one pass NOW if the wait in hand is longer
-   * than the floor — and no reset, so a pass that finds nothing costs one statement, not a ramp.
+   * than the floor, or the last pass came back full — and no reset, so a pass that finds nothing
+   * costs one statement, not a ramp.
    */
   kick(): void;
   /** A row this worker settled back onto the queue is claimable again in `ms`. */
   dueIn(ms: number): void;
+}
+
+/**
+ * Whether one ask came back FULL — every row it asked for STARTED. Counted on what a pass admitted,
+ * never on what it claimed: rows a concurrency or rate cap sent back are not a backlog this worker
+ * can run, and kicking on them is a claim plus N nacks per completion.
+ */
+export function fillsAsk(admitted: ReadonlyMap<string, number>, limit: number): boolean {
+  let ran = 0;
+  for (const count of admitted.values()) ran += count;
+  return ran > 0 && ran >= limit;
 }
 
 /** A due time further out than this is the poll's to find: no timer is held for a 3-day sleep. */
@@ -74,6 +89,12 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
   /** The timer's own pass is in flight. A wake landing now asks for ONE more, never a second chain. */
   let passing = false;
   let again = false;
+  /**
+   * The last pass came back full. A pass that found work waits the FLOOR, and a kick shorter than
+   * that did nothing — so a backlog drained at one batch per floor: 8 slots / 250 ms = 32 claims/s,
+   * which `scripts/bench/worker-throughput.bench.ts` measured exactly. Cleared by the next pass.
+   */
+  let backlog = false;
   let unsubscribe: (() => void) | undefined;
   /** One timer per floor-wide bucket of due times, so a burst of retries holds a bounded few. */
   const due = new Map<number, unknown>();
@@ -126,7 +147,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
   };
 
   const kick = (): void => {
-    if (delayMs > floor) now();
+    if (delayMs > floor || backlog) now();
   };
 
   return {
@@ -140,6 +161,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     stop() {
       active = false;
       again = false;
+      backlog = false;
       if (timer !== undefined) timers.clear(timer);
       timer = undefined;
       for (const hint of due.values()) timers.clear(hint);
@@ -148,7 +170,8 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       unsubscribe = undefined;
     },
     idle: () => backoff.idle(),
-    passed(found) {
+    passed(found, full = false) {
+      backlog = full;
       delayMs = backoff.next(found);
     },
     delayMs: () => delayMs,

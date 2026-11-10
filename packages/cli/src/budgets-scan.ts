@@ -35,6 +35,14 @@ export const carriesJson = (attrs: string): boolean => {
 export const ENTRY_ATTR = /\sdata-x-entry="(?<url>[^"]*)"/g;
 
 /**
+ * `<link rel="modulepreload" href>` — what `route-islands-preload.ts` emits. A preload is a fetch
+ * the browser makes whether or not an island imports the file, so it is weighed like a `src`.
+ * Only `modulepreload`: a stylesheet or a plain `preload` link names no module to execute.
+ */
+export const MODULEPRELOAD_TAG = /<link\s[^>]*\brel="modulepreload"[^>]*>/g;
+export const HREF_ATTR = /\shref="(?<href>[^"]*)"/;
+
+/**
  * Static imports and `import()` both. A chunk reached by `import()` was INLINED into its island
  * before islands were split, so charging it keeps a route's number what it was; and it is fetched
  * the moment the island needs it, which is before the page does what it was loaded for.

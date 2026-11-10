@@ -31,6 +31,22 @@ ROLE=replicator myapp
 
 `PORT` selects the bind port, default `3000`. Empty or whitespace falls back to the default; anything else must be an integer in 0–65535 or the process refuses with `X_PORT_INVALID` rather than quietly binding 3000 and failing the platform's health probe with nothing in the log that names the cause. The production entry is the scaffolded `apps/web/server.ts` → [CLI reference](CLI-Reference).
 
+## One repository, one image
+
+Rule: one repository is one app and one image. `As of 2026-11-09`. Every `apps/*` workspace (`web`, `admin`, `api`, …) boots into the one registry the root `app.config.ts` configures, and one image serves them all; `ROLE` chooses the process, never the app.
+
+| Question | Answer |
+|---|---|
+| URLs across apps | merged into one route table; a clash is `X_ROUTE_DUPLICATE` |
+| migrations | once, in `packages/db/migrations`, applied by `ROLE=migrate` |
+| an image per app | not a shape: an `app.config.ts` inside a workspace is `X_APP_ROOT_NESTED` (the `drift` step) |
+| shared code | `packages/<name>` (`x g package <name>`), which never imports an app (`X_BOUNDARY_PACKAGE_TO_APP`) |
+| a new app | `x g app <name>`, reached as `@<app>/<name>/…` through the root tsconfig's one alias (`@<app>/*` → `packages/*/src`, then `apps/*`) |
+| one app importing a sibling | allowed when its `package.json` declares it (`X_WORKSPACE_DEP_UNDECLARED`) — `apps/admin` projects `apps/web`'s API this way |
+| the surface rules | hold across apps: a `site/` page importing another app's `app/` is `X_BOUNDARY_SITE_TO_APP`. The surface is the directory directly under `apps/<name>/`, so an app workspace may itself be named `api`, `site`, `app` or `shared` |
+
+`x verify --changed` gates only what a diff reaches: a docs-only or test-only diff runs a handful of steps; `drift` runs only when an entity's import closure, `packages/db/**`, a generated client or `openapi.json` moved; each suite runs only the tests the diff's import closure reaches ([CLI reference](CLI-Reference)).
+
 ## Health endpoints
 
 **Every serving role answers both.** `web` and `sync` on their HTTP server; `worker`, `scheduler` and `replicator` construct none and answer them on the metrics listener (`METRICS_PORT`, default 9090, `packages/cli/src/metrics-endpoint.ts`) with the verdict only — `{ state, ready, role }`, never the check names. There `/readyz` is 503 until the role has started and from the first instant of a drain, which is what the chart's readiness probe on those roles reads. Both endpoints return a body, never a bare `200 OK`.
@@ -196,6 +212,17 @@ the milliseconds and the line above. Measured on the demo app's image, `ROLE=web
 
 **An app scaffolded before 23.0.0 does not have the line** — its `docker/Dockerfile` is the app's
 own file. Add it; the boot log names it until you do ([Upgrading](Upgrading)).
+
+**The prebuilt module registry.** `As of 2026-11-09`. The same `RUN` also writes `node_modules/.cache/ultimate/registry/`: every module the app scan imports, in scan order, as chunk modules of 256 static imports each, plus `registry.json` (format, Bun version, file list). The `web`, `sync` and `replicator` roles boot from it instead of scanning; `worker` and `scheduler` keep their document-graph scan.
+
+| Case | What the boot does |
+|---|---|
+| the registry's file list matches the app's files on disk (a directory listing, no import) | imports the registry |
+| it does not | logs `X_PREBUILT_REGISTRY_STALE` (warn) and scans — move the prebuilt `RUN` after the last `COPY` and rebuild |
+| the registry came from another Bun | ignores it and scans |
+| a module would not import at build time | no registry was written; the boot scans and refuses with that module's cause (`X_APP_MODULE_LOAD_FAILED`) |
+
+Every scan without a registry — tools, `x dev`'s first load, `x build` — imports in batches of 256 through one generated entry module per batch, in the serial scan's evaluation order (`packages/cli/src/app-load-order.test.ts`). Measured cold module load, 5,000 synthetic modules: serial 3,258 ms, batched 1,259 ms ([`boot-vs-files.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/boot-vs-files.json)).
 
 All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `x.manifest.json` — **and `sw.js`**, `As of 2026-08`: the worker's cache names carry the build id, so a deploy retires the previous build's caches instead of serving them ([#390](https://github.com/developerz-ai/ultimate/issues/390)). Every target that serves or writes a document emits `manifest.webmanifest`, `sw.js` and `x-sw-register.js` alike ([PWA and offline](PWA-And-Offline)).
 

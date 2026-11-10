@@ -34,7 +34,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | Keys | every driver method starts with `assertSafeKey()`. No exceptions, no sanitising. `META_DIR` (`.meta`) is a reserved first segment on every driver — see below |
 | Time | take a `Clock`; never `Date.now()` |
 | Bytes | `Uint8Array \| ReadableStream \| Blob`. Never a base64 string, never unbounded — `toBytes(body, limit)` |
-| Exports | explicit in `src/index.ts`; no `export *`. `./adapter` (`adapter.ts`): `StorageDriver`, its shapes, the errors and helpers a driver raises with — the `storage` port; no installer (the boot reads `runtime.ts`'s `storage` driver as its default disk) |
+| Exports | explicit in `src/index.ts`; no `export *`. `./adapter` (`adapter.ts`): `StorageDriver`, its shapes, the errors and helpers a driver raises with — the `storage` port; no installer (the boot reads `runtime.ts`'s `storage` driver as its default disk); the `uploadScanner` port + installer |
 
 | File | Owns |
 |---|---|
@@ -67,6 +67,8 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
 | | `VARIANT_FORMATS` — what a variant KEY can carry — and NOT `IMAGE_FORMATS`, which is core's and means what core can PROBE. See below |
 | | `variantKey` is the cache identity `@ultimat3/cli`'s `/media/*` route looks a variant up by — derived, never stored, so a request that misses transforms once and every later one is a disk read |
+| `image-variant.ts` | `variant()`: one kept variant, made by an `images` driver PASSED IN (seo's, structurally) |
+| `upload-scanner*.ts` / `upload-scan.ts` | the `uploadScanner` port + memory (EICAR) reference; `promoteAttachment` scans a per-attempt copy |
 | `image-warm.ts` | `warmVariants`: a stored image's variants written ahead of `/media`, under its keys, the revision off the bytes read; core's spec, so a warmed variant is the one a miss would store |
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 | `storage-instrument.ts` | each resolved disk: `storage.<verb>` bus event + client span |
@@ -168,7 +170,8 @@ Gotchas:
   never-scanned upload with no second prefix to walk, and `isPendingKey` stays true for it.
   `promoteAttachment` refuses a quarantined key (`X_STORAGE_QUARANTINED`); `releaseQuarantine` is
   the app's scan verdict, and returns the ordinary pending key promotion accepts. Ultimate ships
-  no scanner — axiom 8, and `application/zip` is an accepted OOXML container by design.
+  no scanner vendor (axiom 8); the inline seam is the `uploadScanner` port. **No verdict fails
+  closed in every environment** (`onScanUnavailable` absent = `'refuse'`, `As of 2026-11-09`).
 - **`StorageListEntry` vs `StorageObject`.** A listing's `contentType` is optional; a `get()`'s is
   not. `ListObjectsV2` returns no Content-Type, and no driver invents one.
 - **`META_DIR` lives in `path.ts`, not in `driver-local.ts`.** The sidecar namespace overlapped the

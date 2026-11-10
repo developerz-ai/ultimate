@@ -3,6 +3,8 @@
 // the page that links to the first one. PKCE, the sealed handshake, the state check and the account
 // link are the framework's; which IdP group means which role stays the app's (`resolveGrants`).
 
+// The literal the generated tests pin comes from auth itself, so the scaffold cannot drift from it.
+import { oauthStartPath } from '@ultimat3/auth';
 import { catalogJson } from './catalog-json';
 import { catalogPath } from './locales';
 import type { GeneratedFile } from './naming';
@@ -54,7 +56,7 @@ import { AFTER_SIGN_IN } from './sign-in-flow';
 
 export const OIDC_PROVIDER = '${provider}';
 export const OIDC_ISSUER_ENV = '${oidcEnvPrefix(provider)}_ISSUER';
-/** Where the sign-in page sends a browser: the start leg, \`/auth/oauth/${provider}\`. */
+/** Where the sign-in page sends a browser: the start leg, \`${oauthStartPath(provider)}\`. */
 export const OIDC_START_PATH = oauthStartPath(OIDC_PROVIDER);
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -94,7 +96,7 @@ import { OIDC_ISSUER_ENV, OIDC_PROVIDER, OIDC_START_PATH, oidcLegs } from './oid
 unitTest('the provider, its issuer key and its start path are spelled once', () => {
   expect(OIDC_PROVIDER).toBe('${provider}');
   expect(OIDC_ISSUER_ENV).toBe('${oidcEnvPrefix(provider)}_ISSUER');
-  expect(OIDC_START_PATH).toBe('/auth/oauth/${provider}');
+  expect(OIDC_START_PATH).toBe('${oauthStartPath(provider)}');
   // Importing this module registered nothing: the first sign-in does.
   expect(hasOAuthProvider(OIDC_PROVIDER)).toBe(false);
 });
@@ -175,7 +177,7 @@ export function oidcSignInFiles(
     { path: `${AUTH_DIR}/sign-in/page.tsx`, contents: signInPageSource(module, OIDC_FORM) },
     {
       path: `${AUTH_DIR}/sign-in/page.test.ts`,
-      contents: signInPageTest(module, 'app.auth.signIn', `'href="/auth/oauth/${provider}"'`),
+      contents: signInPageTest(module, 'app.auth.signIn', `'href="${oauthStartPath(provider)}"'`),
     },
     ...options.locales.map((locale) => ({
       path: catalogPath(locale),

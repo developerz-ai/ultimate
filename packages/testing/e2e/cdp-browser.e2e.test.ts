@@ -17,10 +17,10 @@
 // refuses to skip when the extension is missing, for the same reason.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import type { PageLike } from '@ultimat3/testing';
 import type { E2eBrowser } from '../src/cdp-browser';
 import { E2E_BROWSER_OPEN_MS, openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
-import { findChrome } from '../src/cdp-launch';
 import { e2ePage } from '../src/e2e-page';
 
 // The page under test. Deliberately hand-written HTML rather than a rendered app: what is being

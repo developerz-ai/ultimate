@@ -7,6 +7,7 @@
 // from the column set instead of being written a second time as a hand-maintained schema.
 
 import type { IndexMethod } from '@ultimat3/db';
+import type { PersonalDataKind } from './personal-data-kind';
 
 /**
  * Postgres types the builders emit. `money` expands to `bigint` + `char(3)` (+ a nullable
@@ -164,6 +165,12 @@ export interface ColumnMeta {
    */
   readonly searchable?: SearchWeight;
   /**
+   * Presence marks this column as personal data, and the value is what kind. Read by a subject
+   * export or erase (`personal-data.ts`); never on `$describe()` — it changes no DDL, so it must
+   * not move the drift hash.
+   */
+  readonly personalData?: PersonalDataKind;
+  /**
    * The state machine this column's values move through, when one was declared. Built once at
    * declaration (`stateMachineOf`) so an illegal table is a refusal where it was written, and held
    * as the built machine rather than the literal table because the literal is an object a caller
@@ -239,6 +246,11 @@ export interface Column<T, Optional extends boolean = false> {
    * only — every other kind is refused here, where the chain was written.
    */
   searchable(weight?: SearchWeight): Column<T, Optional>;
+  /**
+   * Marks the column as personal data of `kind` — what `accountExport`/`accountErase` walk. No DDL
+   * moves, so marking an existing column is not a migration.
+   */
+  personalData(kind: PersonalDataKind): Column<T, Optional>;
 }
 
 /**

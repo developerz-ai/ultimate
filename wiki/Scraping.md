@@ -491,6 +491,47 @@ export const printInvoice = scrape({
 });
 ```
 
+### A route printed to PDF — `pdf()`
+
+`pdf()` is a factory over **action** (`@ultimat3/scraping`, a `PRIMITIVE_FACTORIES` row). It renders one of the app's OWN routes through Chrome over raw CDP (`Page.printToPDF`), writes the bytes to a disk and answers `{ key, bytes, contentType: 'application/pdf' }`. Schema, policy, rate limit, meter and audit are the action's; HTTP, OpenAPI, MCP, `.job()` and `.as()` come with it. `As of 2026-11-09`.
+
+```ts
+import { can } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
+import { pdf } from '@ultimat3/scraping';
+import { disk } from '@ultimat3/storage';
+
+declare function printToken(orgId: string | undefined): string; // the app's short-lived token
+
+export const invoicePdf = pdf({
+  input: t.object({ id: t.uuid }),
+  policy: can('invoices:read'),
+  route: ({ input }) => `/invoices/${input.id}/print`, // a PATH on the app's origin, never a URL
+  key: ({ input, ctx }) => `invoices/${ctx.actor?.orgId ?? 'none'}/${input.id}.pdf`,
+  storage: () => disk('documents'),
+  layout: { format: 'a4', marginMm: { top: 12, bottom: 12 }, printBackground: true },
+  headers: ({ ctx }) => ({ authorization: `Bearer ${printToken(ctx.actor?.orgId)}` }),
+});
+```
+
+| Rule | Refusal |
+|---|---|
+| the origin is `APP_URL`, read per call, or `origin: () => …` | none → `X_SCRAPE_PDF_ORIGIN_MISSING` (500) |
+| the route is a path on that origin | else `X_SCRAPE_PDF_ROUTE_INVALID` (500) |
+| the page's own status, read after `load` and `document.fonts.ready` | 4xx/5xx → `X_SCRAPE_PDF_ROUTE_FAILED` (502; 4xx terminal, 5xx and 429 retryable) |
+| the layout, checked at declaration | `X_SCRAPE_PDF_OPTIONS_INVALID` |
+
+| Bound | Detail |
+|---|---|
+| browsers at once | one Chrome per render, closed in a `finally`, at most `DEFAULT_PDF_MAX_CONCURRENT` (2) alive per process — `chromePdfRenderer({ maxConcurrent })` |
+| a render with no slot | waits up to `queueTimeoutMs` (default: the render's own timeout), then `X_SCRAPE_PDF_BUSY` (503, retryable) |
+| what the page may load | every request is paused on the page's session; one to the route's ORIGIN (scheme, host, port, compared whole) continues with `headers` added, every other is failed before it leaves — so the print token never reaches an `<img src>` a post carried, and a page cannot dial an internal host. A redirect off-origin is failed the same way |
+| Chrome's sandbox | ON: a print renders pages that carry user content. A container that cannot grant it fails the launch with `X_CDP_LAUNCH_FAILED` quoting Chrome's "No usable sandbox"; opt out in one visible line, `chromePdfRenderer({ sandbox: false })` |
+
+A test passes `renderer:` (any `PdfRenderer`); `chromePdfRenderer({ launch })` takes any `{ connection, close }`. The printing browser has no session of its own: a private route needs the app's short-lived token through `headers` ([Known gaps](Known-Gaps)).
+
+**The CDP launcher moved.** `findChrome`, `launchChrome`, `launchFoundChrome`, `cdpConnect`, `cdpConnectOver`, the `Cdp*Error` classes and the `CHROME_*` / `LAUNCH_*` constants live in `@ultimat3/scraping/cdp` since 31.0.0 (its own entry, importing core only), and `X_CDP_*` are registered by scraping. It is their one import path: `@ultimat3/testing` no longer re-exports them, and `E2E_BROWSER_CLOSE_MS` is `LAUNCHED_CLOSE_MS` here ([Upgrading](Upgrading) #53).
+
 A social card for a row published at runtime is the same shape: `page.screenshot()` of the row's
 1200 x 630 card page, `disk().put()`, then `og: { image }` — [SEO](SEO#a-card-the-build-photographs-ogcapture)
 covers the cards a static build takes itself. `examples/dummy`'s `runs/jobs/print-statement.ts` is

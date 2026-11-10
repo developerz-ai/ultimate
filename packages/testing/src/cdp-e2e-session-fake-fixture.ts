@@ -2,8 +2,8 @@
 // call, holds a paused target's answers, and models when a page APPLIES a network condition — its
 // `navigator.onLine` and, separately, what a request from it meets.
 
-import type { CdpConnection, CdpEventListener, CdpResult } from './cdp-connection';
-import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
+import type { CdpConnection, CdpEventListener, CdpResult } from '@ultimat3/scraping/cdp';
+import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import { NETWORK_PROBE, NETWORK_PROBE_PATH } from './cdp-network-probe';
 
 export interface Call {

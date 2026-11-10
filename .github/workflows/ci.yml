@@ -581,6 +581,10 @@ jobs:
             flags: --shape blog
           - app: dashboardapp
             flags: --shape dashboard
+          # The monorepo shape (plan 101 slice 22, M1): web + admin + a third app, domain + ui + a
+          # third package — each one command, gated by the same two passes below.
+          - app: multiapp
+            flags: ''
     env:
       APP: ${{ matrix.app }}
     steps:
@@ -630,6 +634,15 @@ jobs:
       # to every exit code in this job. The defect that bought it broke 4 generators of the 13,
       # found by a human scaffolding an app — so the list is projected from the CLI's own
       # `GENERATORS` and a fourteenth generator is covered the day it lands.
+      # A workspace is added before the sweep, so every generator after it writes into a repo that
+      # already holds three apps and three packages, and both gates run over all of them.
+      - name: x g app reports && x g package billing
+        if: matrix.app == 'multiapp'
+        working-directory: ${{ runner.temp }}/${{ matrix.app }}
+        run: |
+          bunx x g app reports --json
+          bunx x g package billing --json
+          bun install
       - name: every generator
         run: bun run scripts/scaffold-first-run.ts "$RUNNER_TEMP/$APP"
       # The same two scripts again, and the second run is not a repeat: `bun run setup` applies the
@@ -1286,7 +1299,7 @@ jobs:
       #   W3: a CRLF migration must hash to the checksum its LF twin wrote (`./packages/db/...`).
       - name: unit · the path-heavy subset, every core
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts ./packages/testing/src/cdp-launch-probe.test.ts
+        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/scraping/src/cdp-launch.test.ts ./packages/scraping/src/cdp-launch-wire.test.ts ./packages/scraping/src/cdp-launch-reap.test.ts ./packages/scraping/src/cdp-launch-probe.test.ts
       - name: x new winapp
         id: new
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

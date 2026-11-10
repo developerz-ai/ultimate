@@ -10,4 +10,6 @@ CREATE INDEX posts_org_id_published_at_647c63aa_idx ON public.posts USING btree 
 
 CREATE UNIQUE INDEX posts_post_slug_unique_key ON public.posts USING btree (slug);
 
+CREATE INDEX posts_search_tsv_879c084e_idx ON public.posts USING gin (search_tsv);
+
 CREATE INDEX posts_status_published_at_id_idx ON public.posts USING btree (status, published_at, id);

@@ -75,6 +75,7 @@ export const OFF_SOCKET: Pins = {
     'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
     'X_ENTITY_RETAIN_INVALID',
     'X_LIFECYCLE_TRIGGER_MISSING',
+    'X_MIGRATION_PARTITION_CHANGE',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],
@@ -111,6 +112,7 @@ export const OFF_SOCKET: Pins = {
     'X_ENTITY_RETAIN_UNINDEXED',
     'X_ENTITY_COUNTS_INVALID',
     'X_DRIVER_CAPABILITY_MISSING',
+    'X_ENTITY_PARTITION_INVALID',
   ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],
@@ -154,6 +156,8 @@ export const OFF_SOCKET: Pins = {
     'X_SUBJECT_TABLE_UNDECLARED',
     'X_SUBJECT_TREATMENT_INVALID',
     'X_SUBJECT_CYCLE',
+    'X_PERSONAL_DATA_UNERASED',
+    'X_PERSONAL_DATA_UNREACHED',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).
@@ -319,6 +323,8 @@ export const OFF_SOCKET: Pins = {
     'X_NOTIFY_PUSH_DEVICE_GONE',
     'X_NOTIFY_PUSH_PROVIDER_REFUSED',
     'X_NOTIFY_PUSH_MESSAGE_INVALID',
+    'X_NOTIFY_SMS_TRANSPORT_MISSING',
+    'X_NOTIFY_SMS_NUMBER_INVALID',
   ],
 };
 

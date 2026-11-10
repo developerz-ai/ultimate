@@ -101,3 +101,45 @@ reads no clock and mints its span id only if something reads it; a root's trace 
 pool filled by one `crypto.getRandomValues` call, each byte handed out once. Before: 1,976 ns, 3,336 ns
 and 3,712 ns. The regression test holds the COUNTS (clock reads, random draws, dispatches), never a
 wall-clock figure: [`span-overhead.bench.test.ts`](../span-overhead.bench.test.ts).
+
+## The scale ladder, measured — `As of 2026-11-09`
+
+Four benches for [`docs/idea/17-scale-ladder.md`](../../../docs/idea/17-scale-ladder.md) (plan 101
+slice 22). One local run each on a 12-core box (Intel Haswell, 46 GB, Bun 1.4.4, `box.runner:
+local`) that eleven other agents were loading at the same time — load average ~11.6 on 12 cores —
+so read every figure as one busy machine's order of magnitude, never as a ceiling. Not yet in
+`bench.yml`: each needs a service (Postgres, NATS, a Docker daemon) the weekly job does not start.
+
+**Worker throughput** ([`worker-throughput.bench.ts`](../worker-throughput.bench.ts),
+[`worker-throughput.json`](worker-throughput.json)): no-op jobs on the test Postgres, each worker
+its own `bun` process running the stock `jobWorker`, elapsed on the server's clock from the first
+enqueue to the last ack. With the shipped defaults (8 slots, a pass every 250 ms): 799 claims/s at
+1 worker, 1,618 at 4, 2,277 at 16 (As of 2026-11-09). Until that day the defaults read 31 / 124 /
+492 — exactly 8 jobs a pass, 4 passes a second: a pass that found work waited the whole floor and a
+freed slot could not cut it short. A pass whose every claimed row STARTED now marks a backlog, and the next
+freed slot claims at once (`worker-loop.ts`); the floor is the idle poll only. With the tuned
+profile (32 slots, a pass every 10 ms): 1,709 claims/s at 1 worker, 3,724 at 4, 3,042 at 16 — the
+queue, one Postgres on a shared box, stops scaling between 4 and 16
+workers. That plateau is the figure to compare against a Redis or NATS queue, not the defaults.
+
+**Cross-node fan-out** ([`fanout-3-nodes.bench.ts`](../fanout-3-nodes.bench.ts),
+[`fanout-3-nodes.json`](fanout-3-nodes.json)): **10,000 subscribers across 3 `sync` nodes**, each
+node its own process on its own connection to a nats-server 2.15, one events-channel topic, a
+fourth process publishing 20 probes 250 ms apart: **200,000 of 200,000 deliveries**, p50 4.32 ms, p99 23.26 ms, max 31.45 ms, publish to the socket's `send`. The sockets are in-process
+`WsLike`s, not WebSockets: this times the bus and the node's fan-out, and the restart bench above
+is the real-socket figure. 10,000 is the plan's count, not this box's ceiling.
+
+**Module load against file count** ([`boot-vs-files.bench.ts`](../boot-vs-files.bench.ts),
+[`boot-vs-files.json`](boot-vs-files.json)): a synthetic app of `entity()` modules, every tenth
+importing the one before, imported cold in a fresh process, median of 3. 500 modules: serial 804
+ms, batched 393 ms. 5,000 modules: serial 3,258 ms, batched 1,259 ms — `importInOrder`'s 256-module
+batches against one `await import()` per file. Entity files only: the plan's 5,073-file app also
+carried routes, islands and actions, and measured ~5 ms a file serially.
+
+**The production image** ([`http-prod-image.bench.ts`](../http-prod-image.bench.ts),
+[`http-prod-image.json`](http-prod-image.json)): a fresh scaffold built by `x build --target
+docker` and deployed by `x deploy` on its own `docker-compose.prod.yml`
+(`docker/deploy-proof/compose.sh` with `KEEP_STACK=1`), the read bucket raised as `bench.yml` does,
+`/` for 30 s at concurrency 16 per pod, every answer 2xx. One `web` pod: **1,439 req/s**, p50 9.4 ms, p99 38.09 ms — 5.4× the 267 req/s `x dev` served above. Three pods on the same host: 1,196 req/s in sum, p99 203.89 ms: on one saturated box three pods and the load generator
+share the same cores, so this is **not** a horizontal-scaling figure, and none is claimed. A clean
+1-vs-3 comparison needs pods on separate hosts.

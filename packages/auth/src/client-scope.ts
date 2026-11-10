@@ -47,7 +47,7 @@ function scopeKey(options: ClientScopeOptions): string {
       throw new AuthError({
         code: 'X_CONFIG_INVALID',
         cause: `clientScopeOf({ secret }) was passed a key shorter than the ${String(MIN_SECRET_LENGTH)} characters required, so the scope id would be keyed by a guessable secret`,
-        fix: 'omit secret so clientScopeOf reads SESSION_SECRET, or pass one generated with: openssl rand -hex 32',
+        fix: 'openssl rand -hex 32   # pass the output as clientScopeOf({ secret }), or omit secret to read SESSION_SECRET',
         meta: { option: 'secret', minLength: MIN_SECRET_LENGTH },
       });
     }

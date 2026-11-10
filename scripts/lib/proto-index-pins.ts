@@ -37,7 +37,7 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       '`verify.ts` indexes by a `VerificationPurpose` and `tokens.ts` by a base64url character its own regex produced. Three of the thirteen were here.',
   },
   cli: {
-    count: 7,
+    count: 6,
     reason:
       '`cmd-build.ts`, `generate-files.ts`, `verify-tests.ts`, `static-report.ts`, `app-boundaries.ts` and `mcp-errors.ts` index by a target, a surface, a test type, a boundary rule and an `X_*` code — each a union the CLI parsed and narrowed before the read.',
   },

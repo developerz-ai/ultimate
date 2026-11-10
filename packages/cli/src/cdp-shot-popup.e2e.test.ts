@@ -4,7 +4,8 @@
 // off-list host. Skips with no Chrome, and refuses to skip under `E2E_BROWSER_REQUIRED=1`.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { systemClock } from '@ultimat3/core/adapter';
-import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
+import { findChrome } from '@ultimat3/scraping/cdp';
+import { E2E_BROWSER_OPEN_MS } from '@ultimat3/testing';
 import type { ShotSession } from './browser-launcher-port';
 import { cdpShotDriver } from './cdp-shot-driver';
 

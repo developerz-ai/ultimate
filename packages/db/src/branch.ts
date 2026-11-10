@@ -4,8 +4,9 @@
 // Branches are cheap and forgettable, so `reapBranches()` is part of the design, not an add-on.
 
 import { finiteCount, systemClock } from '@ultimat3/core';
+import { branchExists, branchNameInvalid } from './branch-errors';
 import { baseClient, type DbClient } from './client';
-import { branchExists, branchNameInvalid, DbError } from './errors';
+import { DbError } from './errors';
 import { identifier, literal, sql } from './sql';
 
 const BRANCH_NAME = /^[a-z0-9_-]+$/;

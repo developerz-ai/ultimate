@@ -12,6 +12,7 @@ import type {
 import type { EntityCore } from './entity';
 import { entityDuplicate } from './entity-error';
 import type { InvariantKind } from './invariants';
+import type { PartitionDescription } from './partition';
 import type { RecordProjection } from './record-projection';
 import type { ColumnDefault, OnDelete } from './types';
 
@@ -177,6 +178,8 @@ export interface EntityDescription {
   readonly retain?: RetainDescriptionLike;
   /** On a history entity: its parent's name. */
   readonly historyOf?: string;
+  /** `entity({ partitionBy })`, checked (`partition.ts`). Absent otherwise. `x db gen` reads it. */
+  readonly partition?: PartitionDescription;
 }
 
 export interface RegistryEntry {

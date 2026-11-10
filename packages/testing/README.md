@@ -524,10 +524,11 @@ is meant to FAIL it. The subject is called once per test.
 | `FailureStore` (core) | `behavesLike(failureStoreConformance, () => ({ store, find, client }))` |
 | `Gateway` (ai) | `behavesLike(gatewayConformance, () => ({ gateway, model }))` |
 | `IdempotencyStore` (action) | `behavesLike(idempotencyStoreConformance, () => ({ store, client, reclaimAfterMs, … }))` |
+| `IdentityProvider` (auth) | `behavesLike(identityProviderConformance, () => ({ provider, callbackUrl, clock, answer, tamper }))` — the harness plays the IdP: `answer(redirect)` is a consenting user's callback params, `tamper(params)` alters their proof. Not an `ADAPTER_PORTS` row: an app holds several providers at once |
 | `ImageTransformDriver` (seo) | `behavesLike(imageTransformDriverConformance, () => ({ driver, src }))` — `src` reads as `IMAGE_CONFORMANCE_SOURCE` (64×32 PNG) |
 | `IsrStore` (render) | `behavesLike(isrStoreConformance, () => store)` — the tag-fence check runs only when `store.tagFence` exists |
 | `JobDriver` (jobs) | `behavesLike(jobDriverConformance, () => driver)` |
-| `LeaseStore` (jobs) | `behavesLike(leaseStoreConformance, () => ({ store, elapse }))` |
+| `LeaseStore` (jobs) | `behavesLike(leaseStoreConformance, () => ({ store, elapse }))` — every grant needs a `fence` greater than every earlier one, takeovers included (`withLock`'s token) |
 | `MailDriver` (mail) | `behavesLike(mailDriverConformance, () => driver)` |
 | `McpConfirmationStore` (mcp) | `behavesLike(mcpConfirmationStoreConformance, () => store)` |
 | `MeterStore` (action) | `behavesLike(meterStoreConformance, () => store)` |
@@ -540,6 +541,7 @@ is meant to FAIL it. The subject is called once per test.
 | `RateLimitStore` (http) | `behavesLike(rateLimitStoreConformance, () => store)` |
 | `ScrapeDriver` (scraping) | `behavesLike(scrapeDriverConformance, () => driver)` — serving `SCRAPE_CONFORMANCE_PAGES` on `shop.test` |
 | `SecretSource` (core) | `behavesLike(secretSourceConformance, () => ({ source, holding, empty }))` |
+| `SmsTransport` (notify) | `behavesLike(smsTransportConformance, () => transport)` — `memorySmsTransport()` passes; a provider adapter (Twilio, Vonage, SNS) proves itself here |
 | `SleepClock` (core) | `behavesLike(sleepClockConformance, () => clock)` |
 | `StepStore` (jobs) | `behavesLike(stepStoreConformance, () => driver)` — any `JobDriver`; a lone store: `memoryJobDriver({ steps })` |
 | `StorageDriver` (storage) | `behavesLike(storageDriverConformance, () => disk)` — checks write under `conformance/<uuid>/` |
@@ -1119,6 +1121,10 @@ declared edge and the reverse is a `bun run boundaries` failure.
 
 ## Launching Chrome
 
+**Imported from `@ultimat3/scraping/cdp` since 31.0.0** — its one home, which `pdf()` prints
+through: `findChrome`, `launchChrome`, `CHROME_*`, `LAUNCH_*`, `LAUNCHED_CLOSE_MS`, `cdpConnect*` and
+the `Cdp*Error`s. Never re-exported here (`flight-copies`, `X_HELPER_COPY`).
+
 `launchChrome({ executable, timeoutMs, launchTimeoutMs?, wire? })` — what the `e2e` step and `x shot`
 both start a browser with. Driven over `--remote-debugging-pipe`, and on Windows — where the parent
 cannot hold Chrome's fds 3 and 4 — over `--remote-debugging-port=0` and the profile's
@@ -1134,7 +1140,7 @@ on Linux, the app bundles on macOS, Chrome under `%ProgramFiles%` / `%ProgramFil
 | `LAUNCH_ATTEMPTS` | `2` — an unanswered start is reaped and started once more on a fresh profile. Never more |
 | `LAUNCH_BUDGET_MS` | derived: `LAUNCH_ATTEMPTS × (LAUNCH_TIMEOUT_MS + LAUNCH_REAP_MS)` — the longest a launch is designed to take, both starts and their bounded reaps |
 | `E2E_BROWSER_OPEN_MS` | derived: `LAUNCH_BUDGET_MS` + the session's two setup calls + the first tab, at `DEFAULT_CDP_TIMEOUT_MS` each. THE deadline of every `beforeAll` that opens a browser — one below it is killed by Bun before the relaunch, and `X_CDP_LAUNCH_FAILED` never names the slow step |
-| `E2E_BROWSER_CLOSE_MS` | derived: `4 × CLOSE_GRACE_MS` — SIGTERM's grace, SIGKILL's, the group reap, the profile's removal. THE deadline of an `afterAll` that closes a browser it holds (one that releases a lease takes `E2E_BROWSER_OPEN_MS`: it may await the open). At Bun's 5 s default a close cut short by the run's end left the profile half-removed in the temp root |
+| `LAUNCHED_CLOSE_MS` (`@ultimat3/scraping/cdp`; was `E2E_BROWSER_CLOSE_MS`) | derived: `4 × CLOSE_GRACE_MS` — SIGTERM's grace, SIGKILL's, the group reap, the profile's removal. THE deadline of an `afterAll` that closes a browser it holds (one that releases a lease takes `E2E_BROWSER_OPEN_MS`: it may await the open). At Bun's 5 s default a close cut short by the run's end left the profile half-removed in the temp root |
 | `E2E_TAB_OPEN_MS` | derived: one more `session.newTab()` — `Target.createTarget`, then its attach |
 | `E2E_GOTO_MS` | derived: one `tab.goto()` — the navigate raced by the load event, then two reads of the document |
 | `E2E_APP_START_MS` | derived: `startE2eApp()` at its default deadline — `x db reset`, `x db seed` and `/readyz` (wall-clock), each its whole 90 s, then a refused boot's stop |

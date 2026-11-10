@@ -3,10 +3,11 @@
 // agent reads off the docstring and ships against.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { ctxOf } from '@ultimat3/core';
+import { ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
+import type { HeldLease } from './leases';
 import { jobLeaseKey, LEASE_SWEEP_INTERVAL_MS, memoryLeaseStore } from './leases';
 import { jobWorker } from './worker';
 
@@ -217,5 +218,21 @@ describe('the lease store itself', () => {
     await store.acquire('job:fresh', 1, 120_000, 'live');
     // Every expired key went; only the slot just granted is left.
     expect(store.retained()).toBe(1);
+  });
+});
+
+describe('memoryLeaseStore · fences', () => {
+  test('every grant carries a fence greater than every earlier one, release or expiry between', async () => {
+    const clock = frozenClock('2026-11-09T00:00:00Z');
+    const store = memoryLeaseStore({ clock });
+    const a = await store.acquire('fence', 1, 1_000, 'a');
+    await store.release(a as HeldLease);
+    const b = await store.acquire('fence', 1, 1_000, 'b');
+    clock.advance(2_000);
+    const c = await store.acquire('fence', 1, 1_000, 'c');
+    const fences = [a?.fence, b?.fence, c?.fence];
+    expect(fences.every((fence) => typeof fence === 'number')).toBe(true);
+    expect([...fences].sort((x, y) => Number(x) - Number(y))).toEqual(fences);
+    expect(new Set(fences).size).toBe(3);
   });
 });

@@ -4,7 +4,8 @@
 // app: the suite runs as before and its browser-backed cases skip — or refuse under
 // `E2E_BROWSER_REQUIRED=1`.
 
-import { E2E_ROOT_ENV, findChrome } from '@ultimat3/testing';
+import { findChrome } from '@ultimat3/scraping/cdp';
+import { E2E_ROOT_ENV } from '@ultimat3/testing';
 import type { ExecResult } from './exec';
 
 /**

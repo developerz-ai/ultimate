@@ -3,7 +3,7 @@
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
 Deps (21): `core` `schema`; `cache` `db` `i18n` `seo` `time`; `auth` `entity` `http` `policy`; `action`
-`jobs` `query` `realtime`; `ai` `mail` `notify` `pwa` `render` `scraping` (`ai`, `auth`, `notify`, `scraping` for `swapAdapter`, dynamic-only). Static in `.`: `cache`
+`jobs` `query` `realtime`; `ai` `mail` `notify` `pwa` `render` `scraping` (`ai`, `auth`, `notify`, `scraping` for `swapAdapter`, dynamic-only). Static in `.`: `scraping/cdp`, `cache`
 (`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
 (`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
 `action`, `http`, `mail`, `pwa`, `query`, `render`, `schema` (`exercise-input.ts:16`), `time` — no `mail` destructure, no mail
@@ -132,7 +132,8 @@ The island fixture's cost and its whole-chain proof: `docs/history/testing.md`.
 
 ## The browser-backed e2e driver (moved here from `@ultimat3/cli` in 22.0.0)
 
-Raw CDP: `@ultimat3/core` and Bun, nothing else; `cli` imports it over `cli -> testing`. One job per
+Raw CDP; `cli` imports it over `cli -> testing`. Launcher + connection: `@ultimat3/scraping/cdp`
+(31.0.0), never re-exported. One job per
 file (`e2e-*.ts`, `cdp-*.ts`); the table of which file does what is
 [`docs/history/testing-e2e-driver.md`](../../docs/history/testing-e2e-driver.md). The ONE call an
 app's test preload makes is `installE2eDriver({ page, baseUrl })` (`e2e-driver.ts`).

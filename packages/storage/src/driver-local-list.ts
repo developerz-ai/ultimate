@@ -57,7 +57,7 @@ export async function listLocalPage(input: LocalListInput): Promise<Page<Storage
       'local',
       prefix,
       error,
-      `make the disk root readable by this process, then retry: ls -ld ${renderFixShellArg(root, "'<the disk root>'")}`,
+      `ls -ld ${renderFixShellArg(root, "'<the disk root>'")}   # make the disk root readable by this process, then retry`,
     );
   }
   keys.sort();

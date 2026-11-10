@@ -6,7 +6,8 @@
 // E2E_BROWSER_REQUIRED=1.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { SleepClock } from '@ultimat3/core';
-import { DEFAULT_CDP_TIMEOUT_MS, E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
+import { findChrome } from '@ultimat3/scraping/cdp';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_BROWSER_OPEN_MS } from '@ultimat3/testing';
 import type { ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 import { buildIslands } from '../src/island-bundle';

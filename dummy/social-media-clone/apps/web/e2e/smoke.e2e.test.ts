@@ -9,17 +9,16 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome, LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
 import {
   allowHost,
   DEFAULT_CDP_TIMEOUT_MS,
   E2E_APP_START_MS,
   E2E_APP_STOP_MS,
-  E2E_BROWSER_CLOSE_MS,
   E2E_BROWSER_OPEN_MS,
   E2E_GOTO_MS,
   E2E_TAB_OPEN_MS,
-  findChrome,
   openE2eBrowser,
   startE2eApp,
 } from '@ultimat3/testing';
@@ -54,7 +53,7 @@ describe.skipIf(noBrowser)('smoke: sign in and land where you were going', () =>
       await browser?.close();
       await app?.stop();
     },
-    E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS + DEFAULT_CDP_TIMEOUT_MS,
+    LAUNCHED_CLOSE_MS + E2E_APP_STOP_MS + DEFAULT_CDP_TIMEOUT_MS,
   );
 
   test('a signed-out visit to /dashboard signs in and comes back to /dashboard', async () => {

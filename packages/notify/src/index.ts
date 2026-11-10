@@ -130,6 +130,13 @@ export { DATA_PUSH_MAX_KEYS, DATA_PUSH_MAX_VALUE } from './push-message';
 export type { PushRegisterOptions } from './push-register';
 export { PUSH_DEVICES_PER_ACTOR, pushRegister, pushUnregister } from './push-register';
 export { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
+// SMS: the reference channel over the `smsTransport` port. The port's interface and installer are
+// on `./adapter`; a provider (Twilio, Vonage, SNS) is the app's adapter.
+export type { NotifySmsMessage, SmsChannelOptions } from './sms-channel';
+export { SMS_CHANNEL, smsChannel, smsIdempotencyKey } from './sms-channel';
+export { NotifySmsNumberInvalidError, NotifySmsTransportMissingError } from './sms-errors';
+export type { MemorySmsTransport } from './sms-transport';
+export { assertSmsNumber, isSmsNumber, memorySmsTransport } from './sms-transport';
 export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {
   notifyStores,

@@ -58,6 +58,7 @@ export const DB_OWNED_ERROR_CODES = [
   'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
   'X_ENTITY_RETAIN_INVALID',
   'X_LIFECYCLE_TRIGGER_MISSING',
+  'X_MIGRATION_PARTITION_CHANGE',
 ] as const;
 
 /**
@@ -131,6 +132,7 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
     'entity({ retain }) has no window, sits beside appendOnly, or is on a partitioned table',
   X_LIFECYCLE_TRIGGER_MISSING:
     'a history or counter trigger the migrations created is missing from the database',
+  X_MIGRATION_PARTITION_CHANGE: 'an existing table gained or lost entity({ partitionBy })',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails
@@ -460,26 +462,6 @@ export const indexMethodInvalid = (received: unknown): DbError =>
     code: 'X_SQL_UNSAFE',
     cause: `an index method must be 'btree' or 'gin'; got ${describeValue(received)}`,
     fix: "indexes: [{ on: ['tags'], using: 'gin' }]   # or leave it out for the btree default",
-  });
-
-export const branchExists = (branch: string): DbError =>
-  new DbError({
-    code: 'X_BRANCH_EXISTS',
-    cause: `database "${branch}" already exists`,
-    fix: `x db branch delete ${branch}   # then re-create, or pick another name`,
-    meta: { branch },
-  });
-
-/**
- * An unvalidated branch name is spliced into `CREATE DATABASE "<name>"`, so a bad name is an
- * injection vector, not a typo — hence `X_SQL_UNSAFE` rather than a validation code.
- */
-export const branchNameInvalid = (branch: string): DbError =>
-  new DbError({
-    code: 'X_SQL_UNSAFE',
-    cause: `branch name "${branch}" is not [a-z0-9_-]+`,
-    fix: 'x db branch create <name>   # lowercase letters, digits, underscore and dash only',
-    meta: { branch },
   });
 
 /**

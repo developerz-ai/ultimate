@@ -12,7 +12,18 @@ import type { NavigationDocumentHead } from './page-navigation';
  * no island was built, and a page that renders one then fails by name rather than emitting a
  * `data-x-entry` nothing can import.
  */
-export type IslandResolver = (routeFile: string) => (src: string) => string;
+export type IslandResolver = (routeFile: string) => IslandResolve;
+
+/**
+ * One route file's resolver: `src` → entry URL, plus — from a real bundle — the shared chunks an
+ * entry URL imports (`IslandChunk.imports`), which the document preloads for the islands it
+ * rendered (`route-islands-preload.ts`). Optional so a resolver that is only a URL map (a test
+ * double) still type-checks; it then earns no preload, never a wrong one.
+ */
+export interface IslandResolve {
+  (src: string): string;
+  readonly importsOf?: (entryUrl: string) => readonly string[];
+}
 
 export interface DocumentOptions {
   readonly resolveIsland?: IslandResolver;

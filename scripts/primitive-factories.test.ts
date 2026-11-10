@@ -214,8 +214,11 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/jobs.consumer:job',
       '@ultimat3/jobs.exportRows:job',
       '@ultimat3/jobs.importRows:job',
+      '@ultimat3/jobs.ledger:job',
+      '@ultimat3/jobs.partitions:job',
       '@ultimat3/jobs.purge:job',
       '@ultimat3/jobs.refreshView:job',
+      '@ultimat3/jobs.reindex:job',
       '@ultimat3/jobs.rollup:job',
       '@ultimat3/jobs.subjectErase:job',
       '@ultimat3/jobs.subjectExport:job',
@@ -228,6 +231,7 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/pwa.pushSubscribe:action',
       '@ultimat3/pwa.pushUnsubscribe:action',
       '@ultimat3/realtime.deviceSocket:route',
+      '@ultimat3/scraping.pdf:action',
       '@ultimat3/scraping.scrape:job',
     ]);
     expect(declared).toHaveLength(PRIMITIVE_FACTORIES.length);

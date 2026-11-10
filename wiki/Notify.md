@@ -71,6 +71,27 @@ Codes: `X_NOTIFY_CHANNELS_EMPTY`, `X_NOTIFY_CHANNEL_DUPLICATE`, `X_NOTIFY_DIGEST
 `X_NOTIFY_DELIVERY_FAILED`, and native push's `X_NOTIFY_PUSH_DEVICE_GONE`,
 `X_NOTIFY_PUSH_PROVIDER_REFUSED`, `X_NOTIFY_PUSH_MESSAGE_INVALID` — [Error codes](Error-Codes).
 
+## SMS
+
+Rule: an SMS is a channel over the `smsTransport` port; no provider ships (axiom 8). `As of 2026-11-09`.
+
+```ts
+import { smsChannel } from '@ultimat3/notify';
+
+export const loginCodeSms = smsChannel<{ code: string }>({
+  message: ({ event }) => ({ key: 'sms.login_code', params: { code: event.params.code } }),
+});
+```
+
+| Fact | Detail |
+|---|---|
+| the port | `smsTransport` in `apps/<app>/runtime.ts` — `SmsTransport` on `@ultimat3/notify/adapter`: `send({ to, body, idempotencyKey, signal })` → `{ transport, id, to, idempotencyKey }` |
+| default | memory in development and test; elsewhere `X_NOTIFY_SMS_TRANSPORT_MISSING` (terminal) |
+| prove yours | `behavesLike(smsTransportConformance, () => yours)`; a transport calls `assertSmsNumber(to)` first, and the suite checks it does |
+| the body | the catalog key, rendered in `recipient.locale`, else the app's fallback |
+| the number | `numberOf(recipient)`, default `recipient.to`, E.164. Not E.164 → `X_NOTIFY_SMS_NUMBER_INVALID` (terminal; the number is never in the cause). None → skipped, logged `notify.address_missing` |
+| retries | `smsIdempotencyKey(notifier, key, channel, recipient)` is the same on every attempt |
+
 ## Push
 
 `pushChannel` delivers one notification to **every device the recipient subscribed**, each in the

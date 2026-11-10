@@ -180,6 +180,11 @@ create table if not exists x_job_leases (
 
 create index if not exists x_job_leases_expiry_idx on x_job_leases (expires_at);
 
+-- The fencing number every grant takes, from ONE sequence: increasing across holders and keys,
+-- and a count the database keeps, never a client clock. A table created before it gains the column.
+create sequence if not exists x_job_lease_fence;
+alter table x_job_leases add column if not exists fence bigint;
+
 -- Events step.waitForEvent consumes. Stored and not broadcast: the publisher is a web pod and
 -- the resumer is a worker pod, so an in-heap bus strands every waiting run in a real deployment.
 create table if not exists x_job_events (

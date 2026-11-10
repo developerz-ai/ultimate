@@ -84,8 +84,11 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'consumer', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'exportRows', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'importRows', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'ledger', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'partitions', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'purge', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'refreshView', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'reindex', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'rollup', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'subjectErase', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'subjectExport', pkg: '@ultimat3/jobs', kind: 'job' },
@@ -99,6 +102,7 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'pushUnsubscribe', pkg: '@ultimat3/pwa', kind: 'action' },
       // A route: the value IS a websocket mount the web role serves (`path`, `fetch`, `websocket`).
       { factory: 'deviceSocket', pkg: '@ultimat3/realtime', kind: 'route' },
+      { factory: 'pdf', pkg: '@ultimat3/scraping', kind: 'action' },
       { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
     ] satisfies readonly PrimitiveFactory[]
   ).map((entry) => Object.freeze(entry)),
@@ -176,6 +180,13 @@ const ADAPTER_PORT_ROWS = [
     interface: 'SleepClock',
     envDefault: 'systemClock',
     conformance: 'sleepClockConformance',
+  },
+  {
+    port: 'embedder',
+    pkg: '@ultimat3/ai',
+    interface: 'Embedder',
+    envDefault: 'hashEmbedder: deterministic, offline and lexical, never a network call',
+    conformance: 'embedderConformance',
   },
   {
     port: 'errorReporter',
@@ -293,11 +304,33 @@ const ADAPTER_PORT_ROWS = [
     conformance: 'scrapeDriverConformance',
   },
   {
+    port: 'searchIndex',
+    pkg: '@ultimat3/entity',
+    interface: 'SearchIndex',
+    envDefault: "postgresSearchIndex: .searchable()'s generated tsvector, over the app's pool",
+    conformance: 'searchIndexConformance',
+  },
+  {
     port: 'secretSource',
     pkg: '@ultimat3/core',
     interface: 'SecretSource',
     envDefault: 'ULTIMATE_SECRETS_KEY, then the .secrets.key file',
     conformance: 'secretSourceConformance',
+  },
+  {
+    port: 'semanticCache',
+    pkg: '@ultimat3/ai',
+    interface: 'SemanticCacheFactory',
+    envDefault: 'a memorySemanticCache per scope, per process',
+    conformance: 'semanticCacheFactoryConformance',
+  },
+  {
+    port: 'smsTransport',
+    pkg: '@ultimat3/notify',
+    interface: 'SmsTransport',
+    envDefault:
+      'memory in development/test; refused at the first send elsewhere (X_NOTIFY_SMS_TRANSPORT_MISSING)',
+    conformance: 'smsTransportConformance',
   },
   {
     port: 'storage',
@@ -319,6 +352,13 @@ const ADAPTER_PORT_ROWS = [
     interface: 'Transport',
     envDefault: 'NATS_URL set: nats; unset: memory (one node)',
     conformance: 'transportConformance',
+  },
+  {
+    port: 'uploadScanner',
+    pkg: '@ultimat3/storage',
+    interface: 'UploadScanner',
+    envDefault: 'none: promoteAttachment scans nothing',
+    conformance: 'uploadScannerConformance',
   },
 ] as const satisfies readonly AdapterPort[];
 

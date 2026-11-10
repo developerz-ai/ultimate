@@ -8,9 +8,9 @@
 // Skips with no browser on the machine, and refuses to where `E2E_BROWSER_REQUIRED=1` promised one.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome, LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from './cdp-browser';
-import { E2E_BROWSER_CLOSE_MS, E2E_BROWSER_OPEN_MS, openE2eBrowser } from './cdp-browser';
-import { findChrome } from './cdp-launch';
+import { E2E_BROWSER_OPEN_MS, openE2eBrowser } from './cdp-browser';
 import { endTabA11y } from './e2e-a11y-tabs';
 import { e2eRunner } from './e2e-driver';
 import type { E2eBody } from './test-types';
@@ -66,7 +66,7 @@ describe.skipIf(noBrowser)('every e2eTest audits the browser’s accessibility t
   afterAll(async () => {
     await browser?.close();
     server.stop(true);
-  }, E2E_BROWSER_CLOSE_MS);
+  }, LAUNCHED_CLOSE_MS);
 
   const visit =
     (path: string): E2eBody =>

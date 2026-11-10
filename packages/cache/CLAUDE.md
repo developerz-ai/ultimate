@@ -147,9 +147,13 @@ Tier 1. Tagged caching + THE invalidation graph.
   so is a STOPPED store (Bun's `ERR_REDIS_CONNECTION_CLOSED`, typed in `withinDeadline`, a bust's
   included). A server's own error reply passes through (`redis-outage.test.ts`).
   The client is core's `redisClient()` (no offline queue, endless reconnect); never `Bun.redis`.
-- **Cross-instance invalidation is a SEAM, never a transport.** `registerInvalidationBroadcast` /
-  `receiveInvalidationBroadcast`; `cli` owns the bus. The inbound half cannot re-emit (only it passes
-  `emit: false`). An undeclared inbound tag goes to `report.errors`, never a throw.
+- **Cross-instance invalidation is a SEAM; the one wire this package speaks is Redis pub/sub**
+  (`redis-pubsub.ts`, rung 1: Redis, no NATS). `registerInvalidationBroadcast` /
+  `receiveInvalidationBroadcast`; `cli` CHOOSES the bus (`runtime-cache-bus.ts`). The subscriber is
+  its own connection, and every connect unsubscribes before it subscribes (Bun keeps the old
+  listener: a bare re-subscribe delivers twice) — `redis-pubsub.test.ts`. The inbound half cannot
+  re-emit (only it passes `emit: false`). An undeclared inbound tag goes to `report.errors`, never a
+  throw.
 - **A `cdn` tier holding `noopPurgeDriver()` reports `skipped`, never keys** (`isNoopPurgeDriver`,
   in `cdn.ts`). **`report.cdn` is what depends; `report.tiers` is what cleared** — `busted` is built
   from `tiers` + `isr` + `liveQueries`, never `cdn`.
@@ -201,6 +205,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `value-codec.ts` | the one value encoding every tier stores and decodes |
 | `redis.ts` | the shared tier over core's `redisClient()` (`@ultimat3/core/redis`, never `Bun.redis`), build-namespaced keys, the value budget, the write/bust order |
+| `redis-pubsub.ts` | `redisPubSub`/`redisPubSubAt`: invalidations between replicas over Redis pub/sub, resubscribe on every connect |
 | `redis-deadline.ts` | `withinDeadline`: a per-command deadline (150 ms, `commandTimeoutMs`), a 5 s park of the value path after one is missed, and the bust view that skips the park on its own 1,000 ms |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |

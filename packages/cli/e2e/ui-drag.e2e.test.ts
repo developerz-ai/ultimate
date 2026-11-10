@@ -4,11 +4,11 @@
 // each card is a form that posts. Skips with no Chrome, unless E2E_BROWSER_REQUIRED=1.
 // Command: bun test packages/cli/e2e/ui-drag.e2e.test.ts
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from '@ultimat3/testing';
 import {
   DEFAULT_CDP_TIMEOUT_MS,
   E2E_BROWSER_OPEN_MS,
-  findChrome,
   openE2eBrowser,
   openE2eBrowserIfAvailable,
 } from '@ultimat3/testing';

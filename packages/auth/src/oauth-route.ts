@@ -1,7 +1,7 @@
-// Single responsibility: the two HTTP routes the OAuth library functions have always been
-// missing — the redirect out and the callback back — mounted at one fixed pair of paths so the
-// `fix:` lines that name them cannot go stale. Everything below composes `beginOAuth`,
-// `handshakeCookie` and `completeOAuthLogin`; no new protocol lives here.
+// Single responsibility: `oauthLogin(auth)` — "log in with GitHub" in one call, as a front door
+// over the ONE sign-in route implementation (`identity-provider-route-core.ts`): every registered
+// OAuth provider this app enabled becomes an `oidcIdentityProvider` per request, so OAuth and SAML
+// share the paths (`/auth/sso/:provider`), the sealed state cookie and the refusal body.
 //
 // A route DESCRIPTOR, never a mounted handler, for the reason `mcpHttpRoute()` is one:
 // `@ultimat3/http` is tier 2 like this package, so auth may not import it — and `defineRoute`
@@ -9,55 +9,27 @@
 // a test and mountable by any router that can match a `:param`.
 
 import {
-  type Clock,
-  EnvMissingError,
+  ConfigInvalidError,
   isUltimateError,
   logger,
-  renderCauseValue,
-  renderFixShellArg,
   renderThrowable,
   type UltimateError,
 } from '@ultimat3/core';
-import type { Auth, LoginResult } from './auth';
-import { AuthError } from './errors';
+import type { Auth } from './auth';
+import { oidcIdentityProvider } from './identity-provider-oidc';
+import {
+  type SignInRouteDescriptor,
+  type SignInRouteMeta,
+  signInRoutes,
+} from './identity-provider-route-core';
 import type { IdTokenKeys } from './jwks';
-import { beginOAuth, type OAuthProviderId } from './oauth';
+import type { OAuthProviderId } from './oauth';
 import { BUILTIN_OAUTH_PROVIDER_IDS } from './oauth-builtins';
-import { clearHandshakeCookie, handshakeCookie, readHandshakeCookie } from './oauth-cookie';
-import { oauthExchangeFailed, oauthProviderUnknown, restartAt } from './oauth-errors';
+import { oauthExchangeFailed, oauthProviderUnknown } from './oauth-errors';
 import type { OAuthClientCredentials, OAuthFetch } from './oauth-exchange';
 import { oauthCredentials } from './oauth-exchange';
-import { completeOAuthLogin, type ResolveOAuthGrants } from './oauth-login';
-import {
-  OAUTH_CALLBACK_ROUTE_PATH,
-  OAUTH_START_ROUTE_PATH,
-  oauthCallbackPath,
-} from './oauth-paths';
+import type { ResolveOAuthGrants } from './oauth-login';
 import { hasOAuthProvider } from './oauth-registry';
-
-/**
- * The provider came back with `error=` and no code — almost always the user pressing Cancel.
- * A separate code from `X_OAUTH_EXCHANGE_FAILED` on purpose: nothing was exchanged, nothing is
- * misconfigured, and folding the single commonest non-success outcome of a login into the code
- * that means "the client secret is wrong" makes both unreadable in a log and pages the wrong person.
- */
-export const oauthDenied = (
-  provider: string,
-  reason: string,
-  description: string | null,
-): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_DENIED',
-    // `reason` and `description` are query parameters off the callback URL — whatever the browser
-    // was redirected with, newlines and quotes included. `renderCauseValue` renders them as JSON
-    // string literals, so a forged `error_description` cannot forge a second log line or break the
-    // sentence around it. Both are already `string` by type: this is escaping, not throw-safety.
-    cause: `${provider} declined the authorization: ${renderCauseValue(reason)}${
-      description === null ? '' : ` (${renderCauseValue(description)})`
-    }`,
-    fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
-    meta: { provider, reason },
-  });
 
 /**
  * What a router needs to mount one of these. Structural, like `RequestLike` in `session.ts`:
@@ -71,6 +43,8 @@ export interface AuthRouteDescriptor {
   readonly name: string;
   /** Both legs are public by definition — they are how an anonymous visitor stops being one. */
   readonly auth: 'public';
+  /** What a router mounts as the route's `meta`, verbatim: `meta: leg.meta`. */
+  readonly meta: SignInRouteMeta;
   handle(request: Request): Promise<Response>;
 }
 
@@ -127,96 +101,9 @@ export interface OAuthLoginOptions {
 }
 
 /**
- * HTTP status per code, for a descriptor driven OUTSIDE a pipeline — a bare `Request` in, a
- * `Response` out, which is the whole point of a descriptor. `@ultimat3/http`'s `error-map.ts` OWNS
- * these numbers and is where a new one is declared; this package is the same tier and can never
- * import it, so the table is a copy the pin `scripts/oauth-route-status.test.ts` holds identical to
- * `statusFor()`. Everything absent is the provider's fault until proven otherwise: 502.
- */
-export const OAUTH_ROUTE_STATUS: Readonly<Record<string, number>> = {
-  X_OAUTH_PROVIDER_UNKNOWN: 404,
-  X_OAUTH_DENIED: 403,
-  X_OAUTH_STATE_INVALID: 400,
-  X_OAUTH_TOKEN_INVALID: 400,
-  X_UNAUTHENTICATED: 401,
-  X_MFA_REQUIRED: 401,
-  X_ACCOUNT_LOCKED: 429,
-  X_ENV_MISSING: 500,
-  X_CONFIG_INVALID: 500,
-};
-
-/**
- * The status for a code, read as an OWN key of the table above.
- *
- * `OAUTH_ROUTE_STATUS[code] ?? 502` is an index read on a plain object, so `Object.prototype`
- * answered for `toString`, `constructor`, `hasOwnProperty` and `__proto__` — and `toString`
- * yields a FUNCTION, which was handed straight to `ResponseInit.status`. `code` is a plain
- * `string` on every `UltimateError`, so no cast makes that unreachable. Fourth instance of the
- * class in the framework, after i18n's catalog lookup, schema's `coerce` and mcp's `validate-args`.
- *
- * Exported so a test can drive it without building a `Response`; `OAUTH_ROUTE_STATUS` stays
- * exported unchanged, because `scripts/oauth-route-status.test.ts` pins it against
- * `@ultimat3/http`'s `statusFor`.
- */
-export function oauthRouteStatus(code: string): number {
-  // 502 is the default: an uncoded throw on this path came out of the provider conversation.
-  return Object.hasOwn(OAUTH_ROUTE_STATUS, code) ? (OAUTH_ROUTE_STATUS[code] ?? 502) : 502;
-}
-
-/** The one sentence every refusal carries outward. The event name is where the rest went. */
-const PUBLIC_CAUSE =
-  'the sign-in was refused; its cause and its fix are in this server\u2019s log under auth.oauth.refused';
-
-/** A code this framework would have minted — the only kind spliced into a command. */
-const FRAMEWORK_CODE = /^X_[A-Z0-9_]+$/;
-
-/**
- * What an anonymous caller is allowed to read: the code, its registered title and docs link, and
- * one fixed sentence. Both legs are public by definition, and an authored `cause`/`fix` is written
- * for the developer — it names env vars, endpoints and what a provider answered — so neither is
- * served, on any code: no per-code judgement about which sentence is safe today.
- */
-const publicBody = (coded: UltimateError): Record<string, string> => ({
-  code: coded.code,
-  title: coded.title,
-  cause: PUBLIC_CAUSE,
-  fix: FRAMEWORK_CODE.test(coded.code)
-    ? `x errors explain ${renderFixShellArg(coded.code, '<CODE>')} --json`
-    : 'x errors list --json',
-  docs: coded.docs,
-});
-
-/**
- * Failure is JSON, never a redirect to a login page carrying `?error=`: the status and the code
- * are the answer a client branches on. The developer's half — the cause and the fix line — is
- * logged as `auth.oauth.refused`, where only an operator reads it. An app that wants a rendered
- * page wraps these two descriptors.
- */
-function problem(error: unknown, extraCookies: readonly string[]): Response {
-  const coded = isUltimateError(error) ? error : uncoded(error);
-  const status = oauthRouteStatus(coded.code);
-  const fields = { code: coded.code, status, cause: coded.cause, fix: coded.fix };
-  if (status >= 500) logger.error('auth.oauth.refused', fields);
-  else logger.info('auth.oauth.refused', fields);
-  const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
-  for (const cookie of extraCookies) headers.append('set-cookie', cookie);
-  return new Response(JSON.stringify(publicBody(coded)), { status, headers });
-}
-
-/**
  * A throw with no code: a bug in an `AuthAdapter` or an `OAuthFetch` this package does not own.
- *
- * Its text goes to the LOG and never into the response. `publicBody` publishes `cause`, and the
- * rendered value went straight into it — so a bare
- * `Error('connect ECONNREFUSED 10.4.2.17:5432 (postgres://app:hunter2@db.internal/prod)')` from a
- * pool inside a callback was served to whoever typed the URL, as a 502 with the connection string
- * in the body. The comment above `publicBody` says a stack and `meta` must never reach that
- * reader; the field carrying the message was the one exception nobody meant to make.
- *
- * `renderThrowable`, never `error.message`: the value came from code this package does not own,
- * and a getter on `message` — or a `Proxy` trapping `getPrototypeOf` — would make the callback's
- * last answer throw instead of send. Same shape `rate-limit.ts`'s `loginFailed()` uses: one fixed
- * sentence outward, the discriminating detail kept where only an operator can read it.
+ * Its text goes to the LOG and never into the response — a pool error carrying a connection
+ * string was once served to whoever typed the URL. `renderThrowable`, never `error.message`.
  */
 function uncoded(error: unknown): UltimateError {
   logger.error('auth.oauth.uncoded_failure', { detail: renderThrowable(error) });
@@ -230,45 +117,12 @@ function uncoded(error: unknown): UltimateError {
   });
 }
 
-/** `/auth/oauth/github` → `github`; `/auth/oauth/github/callback` → `github`. */
-function providerSegment(request: Request, leg: 'start' | 'callback'): string {
-  const segments = new URL(request.url).pathname.split('/').filter((s) => s.length > 0);
-  const index = leg === 'start' ? segments.length - 1 : segments.length - 2;
-  return segments[index] ?? '';
-}
-
-/** The app's answer for this provider, or nothing — so `undefined` falls through to the default. */
-function idTokenKeysFor(
-  options: OAuthLoginOptions,
-  provider: OAuthProviderId,
-): { readonly idTokenKeys?: IdTokenKeys } {
-  const keys = options.idTokenKeys?.(provider);
-  return keys === undefined ? {} : { idTokenKeys: keys };
-}
-
 /**
- * Both halves of "is this a provider", in one refusal. An unknown segment and a known provider
- * the app left out of `defineAuth({ providers })` are the same 404 on purpose — telling an
- * anonymous caller which of the two it hit describes the app's configuration for free.
- *
- * The list in the refusal is the BUILT-INS (`BUILTIN_OAUTH_PROVIDER_IDS`), never the live
- * registry and never `defineAuth({ providers })`. Both of the latter are this deployment's own configuration, and
- * this caller is an anonymous stranger who typed a URL: an app that registered an internal OP has
- * put its own vocabulary into the registry, and echoing it back names a system the stranger had no
- * way to know exists. The built-in list is a framework constant already in the public docs, so it
- * discloses nothing while still making the fix executable — and `registerOAuthProvider` in the
- * same sentence covers the other branch without enumerating anything.
- *
- * `providerFor()` keeps the full registered list for the same reason in reverse: its reader is a
- * developer holding a stack trace, and there the list is exactly what makes the fix runnable.
+ * Unknown and not-enabled are one 404, listing the BUILT-INS only: the caller is an anonymous
+ * stranger, and the live registry is this deployment's own vocabulary.
  */
-function assertEnabled(auth: Auth, segment: string): OAuthProviderId {
-  const supported = BUILTIN_OAUTH_PROVIDER_IDS;
-  if (!hasOAuthProvider(segment)) throw oauthProviderUnknown(segment, supported);
-  const provider: OAuthProviderId = segment;
-  if (!auth.providers.includes(provider)) throw oauthProviderUnknown(segment, supported);
-  return provider;
-}
+const unknown = (segment: string): UltimateError =>
+  oauthProviderUnknown(segment, BUILTIN_OAUTH_PROVIDER_IDS);
 
 /**
  * The credentials for a provider, or the SAME 404 an unknown provider gets.
@@ -297,145 +151,54 @@ function credentialsFor(
       cause: error.cause,
       fix: error.fix,
     });
-    throw oauthProviderUnknown(provider, BUILTIN_OAUTH_PROVIDER_IDS);
+    throw unknown(provider);
   }
 }
 
-/**
- * The declared origin, or a refusal. The request's own origin is the `Host` header, so a
- * `redirect_uri` built from it is one the caller chose.
- */
-function declaredOrigin(options: OAuthLoginOptions): string {
-  const env = options.env ?? Bun.env;
-  const declared = (options.baseUrl ?? env['APP_URL'] ?? '').trim();
-  if (declared === '') {
-    throw new EnvMissingError({
-      cause:
-        'APP_URL is not set and oauthLogin() was given no baseUrl, so there is no declared origin to build the provider redirect_uri from',
-      fix: 'export APP_URL=http://localhost:3000   # the origin this app is served from',
-      meta: { key: 'APP_URL' },
-    });
-  }
-  return declared.replace(/\/+$/, '');
-}
-
-/** The handshake's own options, assembled once so both legs seal and open it identically. */
-const sealOptions = (
-  clock: Clock,
-  options: OAuthLoginOptions,
-): { clock: Clock; secret?: string | undefined } => ({
-  clock,
-  ...(options.secret === undefined ? {} : { secret: options.secret }),
-});
-
-async function startHandler(
-  auth: Auth,
-  options: OAuthLoginOptions,
-  request: Request,
-): Promise<Response> {
-  try {
-    // Before the provider is looked at: asked after, a missing origin answered 500 for a provider
-    // this app enabled and 404 for one it did not.
-    const origin = declaredOrigin(options);
-    const provider = assertEnabled(auth, providerSegment(request, 'start'));
-    const credentials = credentialsFor(provider, options);
-    const handshake = beginOAuth({
-      provider,
-      clientId: credentials.clientId,
-      redirectUri: `${origin}${oauthCallbackPath(provider)}`,
-      scopes: options.scopes,
-    });
-    return new Response(null, {
-      // 302, the status every OAuth client already expects on this hop.
-      status: 302,
-      headers: {
-        location: handshake.authorizeUrl,
-        'set-cookie': handshakeCookie(handshake, sealOptions(auth.clock, options)),
-      },
-    });
-  } catch (error) {
-    return problem(error, []);
-  }
-}
-
-/** The provider declining is `error=` on the redirect, and there is no code to exchange. */
-function assertNoProviderError(url: URL, provider: string): void {
-  const declined = url.searchParams.get('error');
-  if (declined === null || declined === '') return;
-  throw oauthDenied(provider, declined, url.searchParams.get('error_description'));
-}
-
-async function callbackHandler(
-  auth: Auth,
-  options: OAuthLoginOptions,
-  request: Request,
-): Promise<Response> {
-  const segment = providerSegment(request, 'callback');
-  // Cleared on every outcome, success and failure alike: the code it authorised is spent either
-  // way, so a handshake that outlives its own callback is a replay window and nothing else.
-  const clear = hasOAuthProvider(segment) ? [clearHandshakeCookie(segment)] : [];
-  try {
-    const provider = assertEnabled(auth, segment);
-    // A provider with no credentials answers 404 on THIS leg too: one oracle, closed on both halves
-    // — a 404 on start and a 500 on callback is the same enumeration one request later. And the
-    // answer is what the exchange uses, or `options.env` would answer the start leg alone.
-    const credentials = credentialsFor(provider, options);
-    const url = new URL(request.url);
-    assertNoProviderError(url, provider);
-    const result: LoginResult = await completeOAuthLogin(auth, {
-      handshake: readHandshakeCookie(request, provider, sealOptions(auth.clock, options)),
-      callback: {
-        state: url.searchParams.get('state') ?? '',
-        code: url.searchParams.get('code') ?? '',
-      },
-      credentials,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-      ...(options.resolveGrants === undefined ? {} : { resolveGrants: options.resolveGrants }),
-      ...idTokenKeysFor(options, provider),
-      ip: options.clientIp?.(request) ?? null,
-      userAgent: request.headers.get('user-agent'),
-    });
-    const headers = new Headers({
-      // A fixed path, never `?next=`: an attacker-supplied return target on the one endpoint whose
-      // job is to hand out a session is the classic open redirect, and `@ultimat3/http`'s
-      // `nextAfterSignIn` is the one implementation of that check. Two copies is one that drifts.
-      location: options.successPath ?? '/',
-    });
-    // 303: the callback may arrive as a `form_post`, and the destination is a GET either way.
-    headers.append('set-cookie', result.cookie);
-    for (const cookie of clear) headers.append('set-cookie', cookie);
-    return new Response(null, { status: 303, headers });
-  } catch (error) {
-    return problem(error, clear);
-  }
-}
+/** A descriptor of a GET leg, narrowed to the `AuthRouteDescriptor` the type has always promised. */
+const asGet = (descriptor: SignInRouteDescriptor): AuthRouteDescriptor =>
+  Object.freeze({ ...descriptor, method: 'GET' as const });
 
 /**
  * The two routes. Mount them and "log in with GitHub" is a button pointing at
- * `/auth/oauth/github` — no handshake store, no PKCE bookkeeping, no state check to forget.
+ * `/auth/sso/github` — no handshake store, no PKCE bookkeeping, no state check to forget.
  *
  * ```ts
  * const { start, callback } = oauthLogin(auth);
- * // start.path    → '/auth/oauth/:provider'
- * // callback.path → '/auth/oauth/:provider/callback'
+ * // start.path    → '/auth/sso/:provider'
+ * // callback.path → '/auth/sso/:provider/callback'
  * ```
  */
 export function oauthLogin(auth: Auth, options: OAuthLoginOptions = {}): OAuthLoginRoutes {
-  return Object.freeze({
-    start: Object.freeze({
-      method: 'GET',
-      path: OAUTH_START_ROUTE_PATH,
-      name: 'auth.oauth.start',
-      auth: 'public',
-      handle: (request: Request) => startHandler(auth, options, request),
-    } as const),
-    callback: Object.freeze({
-      method: 'GET',
-      path: OAUTH_CALLBACK_ROUTE_PATH,
-      name: 'auth.oauth.callback',
-      auth: 'public',
-      handle: (request: Request) => callbackHandler(auth, options, request),
-    } as const),
+  const routes = signInRoutes(auth, options, {
+    resolve(segment, leg) {
+      if (!hasOAuthProvider(segment) || !auth.providers.includes(segment)) throw unknown(segment);
+      // Asked on the callback only: the start leg verifies nothing.
+      const keys = leg === 'callback' ? options.idTokenKeys?.(segment) : undefined;
+      return oidcIdentityProvider({
+        provider: segment,
+        credentials: credentialsFor(segment, options),
+        scopes: options.scopes,
+        fetch: options.fetch,
+        timeoutMs: options.timeoutMs,
+        ...(keys === undefined ? {} : { idTokenKeys: keys }),
+      });
+    },
+    unknown,
+    event: 'auth.oauth',
+    names: { start: 'auth.oauth.start', callback: 'auth.oauth.callback', acs: 'auth.oauth.acs' },
+    uncoded,
+    grants(identity) {
+      const resolve = options.resolveGrants;
+      if (resolve === undefined) return undefined;
+      if (identity.oauth === undefined) {
+        throw new ConfigInvalidError({
+          cause: `${identity.profile.provider} returned no OAuth grant context, so resolveGrants(profile, context) cannot be called`,
+          fix: 'identityProviderRoutes(auth, { providers, resolveGrants: (identity) => ({ roles }) })  // for a provider that is not OAuth',
+        });
+      }
+      return resolve(identity.profile, identity.oauth);
+    },
   });
+  return Object.freeze({ start: asGet(routes.start), callback: asGet(routes.callback) });
 }

@@ -491,7 +491,39 @@ refused delete goes in `failed` with the disk's own words and the sweep keeps go
 array of "deleted" keys put every refusal in it, so an erasure sweep over a bucket whose policy
 had lost `s3:DeleteObject` reported 200 objects gone that were all still there.
 
-### Quarantine is the mechanism; the scanner is your app's
+### Scanning on confirm: the `uploadScanner` port
+
+`As of 2026-11-09`. An `uploadScanner` in `apps/<app>/runtime.ts` is asked by `promoteAttachment`
+about every upload it attaches. It scans a per-attempt copy (`pending/scan/<random>-<name>`): server
+named, so no presigned URL rewrites it after the scan, and never the row's key, so a refused second
+confirm of a double-click cannot delete the file the first one attached. The clean attempt is what
+is copied onto the row's key:
+
+| Verdict | `promoteAttachment` |
+|---|---|
+| `{ verdict: 'clean' }` | promotes, as without a scanner |
+| `{ verdict: 'infected', signature }` | deletes the pending upload and the attempt, throws `X_STORAGE_UPLOAD_INFECTED` (422, `meta.signature`) |
+| rejects (daemon down, timeout), or the attempt cannot be read | deletes the attempt, keeps the upload pending, throws `X_STORAGE_SCAN_UNAVAILABLE` (503) — **fail closed by default, in every environment**; `uploadPolicy({ onScanUnavailable: 'accept' })` promotes unscanned instead. An infected verdict is refused under either |
+
+```ts
+// apps/web/runtime.ts
+import type { RuntimeOverrides } from '@ultimat3/cli/serve';
+import { memoryUploadScanner } from '@ultimat3/storage';
+// In production, your own UploadScanner here: e.g. one streaming `body` to clamd's INSTREAM
+// over Bun.connect, mapping `OK` → clean, `<sig> FOUND` → infected, anything else → reject.
+export const runtime = {
+  uploadScanner: memoryUploadScanner(),
+} satisfies RuntimeOverrides;
+```
+
+`UploadScanner` (`@ultimat3/storage/adapter`) is `{ name, scan({ key, size, contentType, body }) }`,
+`body` a `ReadableStream`. `memoryUploadScanner()` is the reference: it flags the EICAR test string
+(`EICAR_TEST_STRING`) anywhere in the stream, across chunk boundaries. Hold your adapter to the
+contract with `behavesLike(uploadScannerConformance, () => yours)` from
+`@ultimat3/testing/conformance`. No scanner ships: ClamAV, a vendor API, its licence and its
+latency budget are the app's (axiom 8). No scanner installed, nothing is scanned.
+
+### Quarantine: the deferred scan, for a scanner that runs as a job
 
 Magic-byte sniffing closes stored XSS. It is **not** malware scanning, and `application/zip` is
 accepted on purpose as the OOXML container, so a macro-laden `.docx` passes `validateUpload`
@@ -538,6 +570,8 @@ name is not found.
 | `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_STORAGE_NOT_PENDING` | `promoteAttachment` on a key outside the org's `pending/` prefix — most often another row's attached key |
+| `X_STORAGE_UPLOAD_INFECTED` | the installed `uploadScanner` found malware in an upload `promoteAttachment` was attaching; both keys are deleted, `meta.signature` names the detection |
+| `X_STORAGE_SCAN_UNAVAILABLE` | the installed `uploadScanner` rejected instead of answering, under the default `onScanUnavailable: 'refuse'`; the upload stays pending for a retry |
 | `X_STORAGE_ALREADY_PROMOTED` | `promoteAttachment` on a pending key an earlier call already moved (a retried or doubled confirm); `meta.attachedKey` names where the bytes are |
 | `X_STORAGE_PUT_FAILED` | the disk REFUSED a `put()`/`copy()` — `EACCES`, `ENOSPC`, `EROFS`, a provider's refused PUT |
 | `X_STORAGE_OBJECT_LOCKED` | local, memory: a delete, overwrite or copy onto a key under retention or a legal hold; the cause names the key, the mode and `retainUntil` or the hold, and the bytes are unchanged. Never raised by s3, where the provider keeps the locked version |
@@ -562,6 +596,24 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
+
+`variant(key, { disk, images, width, format? })` (`image-variant.ts`) is ONE variant, kept: made by
+the `images` driver you pass — `runtime.ts`'s `images` port value, `@ultimat3/seo`'s
+`builtinImageDriver({ read })` or a CDN's, any `ImageTransformDriver` (storage takes it structurally;
+it is tier 1 beside seo and imports none of it) — and written under
+`variantKey(key, { width, format, revision })`. A second call is a `stat`, never a decode
+(`{ key, object, created }`); an overwritten source is a new revision, so a new key. `format`
+omitted keeps a png/jpeg/webp source's encoding. Refused with core's `X_IMAGE_UNSUPPORTED`: a source
+that is not a raster image (a PDF, an SVG), a gif/avif source with no `format`, and a driver that
+answers another encoding than the key names. A source overwritten while the driver read it is
+`X_STORAGE_OBJECT_CHANGED`, and nothing is stored. `As of 2026-11-09`.
+
+```ts
+import { builtinImageDriver } from '@ultimat3/seo';
+import { disk, variant } from '@ultimat3/storage';
+const images = builtinImageDriver({ read: async (src) => (await disk().get(src)).bytes });
+const { key } = await variant('org/o1/post/p1/cover/u1.png', { disk: disk(), images, width: 640, format: 'webp' });
+```
 
 `warmVariants({ disk, key, widths, formats })` (`image-warm.ts`) writes every width x format of a
 stored image under the key `/media` reads — `variantKey(key, { width, format, revision })`, the

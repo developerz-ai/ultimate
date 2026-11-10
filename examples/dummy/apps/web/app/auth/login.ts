@@ -63,8 +63,8 @@ export function postlyAuth(seams: PostlyAuthSeams = {}): Auth {
 export type PostlyLoginOptions = Omit<OAuthLoginOptions, 'successPath'>;
 
 /**
- * The two legs of the login as route descriptors — `start.path` is `/auth/oauth/:provider` and
- * `callback.path` is `/auth/oauth/:provider/callback`, the one declaration every `X_OAUTH_*` fix
+ * The two legs of the login as route descriptors — `start.path` is `/auth/sso/:provider` and
+ * `callback.path` is `/auth/sso/:provider/callback`, the one declaration every `X_OAUTH_*` fix
  * line quotes. `options` carries the seams the framework already injects (credentials, the token
  * endpoint's `fetch`, the handshake secret), so a test drives THIS login and not a copy of it.
  *

@@ -19,6 +19,7 @@ import type { Transport } from './fanout';
 import { encodeResync, RESYNC_SUBJECT } from './replication-resync';
 import { withinStopDeadline } from './replicator-deadline';
 import { encodeEnvelope } from './replicator-envelope';
+import { connectionLost, RedialCurve } from './replicator-reconnect';
 import { ResyncDebt } from './replicator-resync';
 import { changeSubject, normalize } from './replicator-subject';
 import {
@@ -151,12 +152,12 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     unwatchLock = undefined;
   };
   /**
-   * Deaths since a change was last PUBLISHED. "The stream started" is not progress: a change the
-   * bus refuses every time kills each new stream on its first delivery, and counting from the
-   * start made that a redial — two dials, a preflight, a `START_REPLICATION` — at the base delay
-   * forever, with the WAL retained behind it.
+   * Deaths since a change was last PUBLISHED, per curve. "The stream started" is not progress: a
+   * change the bus refuses every time kills each new stream on its first delivery, and counting
+   * from the start made that a redial at the base delay forever, with the WAL retained behind it.
+   * A lost CONNECTION (a database restart) redials at once, then on a seconds cap.
    */
-  let attempt = 0;
+  const curve = new RedialCurve((count) => retryDelayMs(count), options.rng ?? Math.random);
   /** Counts the starts a `stop()` stopped waiting for — read by the `begin` it gave up on. */
   let givenUp = 0;
   let refusal: Refusal | null = null;
@@ -254,7 +255,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
         lastLsn = change.lsn;
         published += 1;
         // Progress: the next death waits the base delay again, and nothing is owed any more.
-        attempt = 0;
+        curve.progress();
         if (refusal !== null) {
           refusal = null;
           if (pumping) failure = null;
@@ -367,15 +368,14 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     policyDelay(backoff, count + 1, options.rng ?? Math.random);
 
   /**
-   * The takeover loop. One timer at a time, each on a longer delay than the last until a change
-   * is PUBLISHED — which is what resets the count (`changeHandler`), not a stream coming up.
-   * `false` from `launch` is another process holding the lock, which is this loop working: that
-   * process replicates, and this one keeps asking in case it dies too.
+   * The takeover loop. One timer at a time, each longer than the last until a change is PUBLISHED
+   * (`RedialCurve`). `lost` — the connection went (`connectionLost`) — redials at once, then within
+   * seconds, unless a change is owed: that death is the bus's. `false` from `launch` is another
+   * process holding the lock: it replicates, and this one keeps asking in case it dies too.
    */
-  const retry = (): void => {
+  const retry = (lost: boolean): void => {
     if (stopped) return;
-    const wait = retryDelayMs(attempt);
-    attempt += 1;
+    const wait = curve.next(lost && refusal === null);
     cancelRetry = schedule(() => {
       cancelRetry = undefined;
       // `pumping` already: the owner called `start()` itself while this timer was armed.
@@ -384,12 +384,12 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       void launch().then(
         (started) => {
           if (started) restarts += 1;
-          else retry();
+          else retry(false);
         },
         (thrown: unknown) => {
           failure = describeFailure(renderThrowable(thrown));
           logger.warn('replicator.restart_failed', { key: options.lock.key, error: failure });
-          retry();
+          retry(connectionLost(thrown));
         },
       );
     }, wait);
@@ -415,7 +415,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     // socket still held is refused by the run's own fence.
     options.feed.abandon();
     options.lock.abandon();
-    retry();
+    retry(connectionLost(reason));
   };
 
   return {

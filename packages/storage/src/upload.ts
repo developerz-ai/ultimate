@@ -7,7 +7,7 @@
 // confirmed. A type no rule can ever confirm (`text/csv`, `application/json`) is still accepted
 // on the client's word: there is nothing to compare it against.
 
-import { finiteCount } from '@ultimat3/core';
+import { assert, finiteCount } from '@ultimat3/core';
 import { sha256Base64 } from './driver';
 import {
   checksumMismatch,
@@ -55,12 +55,33 @@ export interface UploadPolicy {
   readonly allowedContentTypes: readonly string[];
   /** When true a candidate without a `checksum` is rejected, not silently trusted. */
   readonly requireChecksum: boolean;
+  /**
+   * What `promoteAttachment` does when the installed `uploadScanner` gives no verdict (its daemon is
+   * down, it timed out). `'refuse'` — fail closed, `X_STORAGE_SCAN_UNAVAILABLE`, the upload stays
+   * pending for a retry — is the default and what an absent field means. `'accept'` promotes the
+   * file unscanned. An INFECTED verdict is refused under either: this decides availability only.
+   */
+  readonly onScanUnavailable?: ScanUnavailablePolicy | undefined;
 }
+
+export type ScanUnavailablePolicy = 'refuse' | 'accept';
 
 export interface UploadPolicyInit {
   readonly maxBytes?: number | undefined;
   readonly allowedContentTypes?: readonly string[] | undefined;
   readonly requireChecksum?: boolean | undefined;
+  readonly onScanUnavailable?: ScanUnavailablePolicy | undefined;
+}
+
+/** Screened where it is declared: a typo (`'allow'`) must not read as the fail-open answer. */
+function scanUnavailablePolicy(value: ScanUnavailablePolicy | undefined): ScanUnavailablePolicy {
+  const policy = value === undefined ? 'refuse' : value;
+  assert(
+    policy === 'refuse' || policy === 'accept',
+    `uploadPolicy was given onScanUnavailable ${JSON.stringify(policy)}, which is neither 'refuse' nor 'accept'`,
+    "uploadPolicy({ onScanUnavailable: 'refuse' }) — or 'accept' to promote unscanned files while the scanner is down",
+  );
+  return policy;
 }
 
 export function uploadPolicy(init: UploadPolicyInit = {}): UploadPolicy {
@@ -84,6 +105,7 @@ export function uploadPolicy(init: UploadPolicyInit = {}): UploadPolicy {
       normalizeContentType,
     ),
     requireChecksum: init.requireChecksum ?? false,
+    onScanUnavailable: scanUnavailablePolicy(init.onScanUnavailable),
   };
 }
 

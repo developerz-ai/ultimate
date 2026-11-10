@@ -157,6 +157,26 @@ export interface EntityDescriptionLike {
   readonly counts?: readonly CounterDescriptionLike[] | undefined;
   /** `entity({ retain })`: rows older than the window are swept by `purge()`. Absent is kept. */
   readonly retain?: RetainDescriptionLike | undefined;
+  /**
+   * `entity({ partitionBy })`: a range-partitioned table (`generate-partition.ts`). Absent is a
+   * plain table, for the reason `invariants` is optional.
+   */
+  readonly partition?: PartitionDescriptionLike | undefined;
+}
+
+/** The bucket widths. `week` is ISO: it starts on a Monday, as `date_trunc('week', …)` does. */
+export const PARTITION_INTERVALS = ['day', 'week', 'month', 'year'] as const;
+export type PartitionInterval = (typeof PARTITION_INTERVALS)[number];
+
+/** Structurally assignment-compatible with `@ultimat3/entity`'s `PartitionDescription`. */
+export interface PartitionDescriptionLike {
+  /** The physical partition column, part of the primary key. */
+  readonly column: string;
+  readonly interval: PartitionInterval;
+  /** Partitions kept ready past the current one. */
+  readonly ahead: number;
+  /** Whole partitions whose upper bound is older than `afterMs` are detached, then dropped. */
+  readonly retain?: { readonly after: string; readonly afterMs: number } | undefined;
 }
 
 /** Where a table's row images go, and what its trigger needs to write one. Physical names. */

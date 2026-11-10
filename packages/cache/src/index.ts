@@ -79,6 +79,15 @@ export { DEFAULT_PURGE_TIMEOUT_MS } from './purge-http';
 export type { RedisLike, RedisTierOptions } from './redis';
 export { DEFAULT_REDIS_MAX_VALUE_BYTES, namespaceFor, redisTier } from './redis';
 export type {
+  InvalidationBus,
+  InvalidationSubscription,
+  PubSubListener,
+  RedisPublisherLike,
+  RedisPubSubOptions,
+  RedisSubscriberLike,
+} from './redis-pubsub';
+export { PUBLISHER_CONNECT_WAIT_MS, redisPubSub, redisPubSubAt } from './redis-pubsub';
+export type {
   Embedding,
   SemanticCache,
   SemanticCacheOptions,

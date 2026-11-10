@@ -4,6 +4,8 @@
  * nothing. Read off the vendor's own call log, the only witness a refund has.
  */
 
+import { db } from '@postly/db';
+import { priceOf } from '@postly/domain';
 import { expect, jobTest } from '@ultimat3/testing';
 import { settleUpgrade } from './jobs/settle-upgrade';
 import { closeVendorAccount, vendorCallsFor } from './vendor-payments';
@@ -33,17 +35,30 @@ jobTest(
 );
 
 jobTest(
-  'a settled upgrade is charged, reserved and invoiced, and undoes nothing',
+  'a settled upgrade is charged, reserved, invoiced and booked, and undoes nothing',
   async ({ seed, runJobs }) => {
     const { org } = await seed('dev').pick({ org: 'org:tinta' });
 
     const trace = await runJobs(settleUpgrade, { orgId: org.id, plan: 'team' });
 
-    expect(outcomes(trace)).toEqual([['completed', null]]);
+    // The upgrade, then the posting it enqueued (`postCharge`).
+    expect(outcomes(trace)).toEqual([
+      ['completed', null],
+      ['completed', null],
+    ]);
+    const [charge] = vendorCallsFor(org.id);
     expect(vendorCallsFor(org.id).map((call) => call.split(':')[0])).toEqual([
       'charge',
       'reserve',
       'invoice',
+    ]);
+    // One posting per charge: cash in, revenue out, the plan's price in the org's currency.
+    const price = priceOf('team', org.billingCurrency);
+    const chargeId = idOf(charge) ?? expect.unreachable('the charge call left no id');
+    const booked = await db.ledgerLines.where({ orgId: org.id }).all();
+    expect(booked.map((line) => [line.postingKey, line.account, line.amount])).toEqual([
+      [chargeId, 'cash', price],
+      [chargeId, 'revenue', { ...price, minor: -price.minor }],
     ]);
   },
 );

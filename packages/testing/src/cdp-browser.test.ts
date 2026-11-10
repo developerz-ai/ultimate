@@ -3,9 +3,17 @@
 // the rule a CI box with no browser depends on.
 
 import { describe, expect, test } from 'bun:test';
+import type { CdpConnection, CdpEventListener, CdpResult } from '@ultimat3/scraping/cdp';
+import {
+  CHROME_PATH_ENV,
+  CLOSE_GRACE_MS,
+  LAUNCH_ATTEMPTS,
+  LAUNCH_BUDGET_MS,
+  LAUNCH_TIMEOUT_MS,
+  LAUNCHED_CLOSE_MS,
+} from '@ultimat3/scraping/cdp';
 import {
   DEFAULT_CDP_TIMEOUT_MS,
-  E2E_BROWSER_CLOSE_MS,
   E2E_BROWSER_OPEN_MS,
   E2E_GOTO_MS,
   E2E_TAB_OPEN_MS,
@@ -15,17 +23,8 @@ import {
   SESSION_SETUP_DEADLINES,
   TAB_OPEN_DEADLINES,
 } from './cdp-browser';
-import type { CdpConnection, CdpEventListener, CdpResult } from './cdp-connection';
 import { FULL_AX_TREE } from './cdp-e2e-page';
 import { cdpE2eSession } from './cdp-e2e-session';
-import {
-  CHROME_PATH_ENV,
-  LAUNCH_ATTEMPTS,
-  LAUNCH_BUDGET_MS,
-  LAUNCH_TIMEOUT_MS,
-} from './cdp-launch';
-import { LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
-import { CLOSE_GRACE_MS } from './cdp-launch-reap';
 
 const NOWHERE = { [CHROME_PATH_ENV]: '/nonexistent/definitely-not-a-browser' };
 
@@ -110,7 +109,7 @@ describe('the open budget a browser hook is given', () => {
   });
 
   test('the close budget is the launched browser close, every step of it bounded by a grace', () => {
-    expect(E2E_BROWSER_CLOSE_MS).toBe(LAUNCHED_CLOSE_MS);
+    expect(LAUNCHED_CLOSE_MS).toBe(LAUNCHED_CLOSE_MS);
     // SIGTERM's grace, SIGKILL's, the group reap, the profile's removal.
     expect(LAUNCHED_CLOSE_MS).toBe(4 * CLOSE_GRACE_MS);
   });

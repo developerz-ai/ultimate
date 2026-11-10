@@ -9,10 +9,10 @@
 // states why.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import type { PageLike } from '@ultimat3/testing';
 import type { E2eBrowser } from '../src/cdp-browser';
 import { E2E_BROWSER_OPEN_MS, openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
-import { findChrome } from '../src/cdp-launch';
 import { e2ePage } from '../src/e2e-page';
 
 // Registered on `load`, as the framework's own `x-sw-register.js` does — so the document is

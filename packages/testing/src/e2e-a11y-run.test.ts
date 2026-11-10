@@ -3,8 +3,8 @@
 // `allow` with no reason. The real browser half is `e2e-a11y.e2e.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { CdpCallFailedError } from '@ultimat3/scraping/cdp';
 import type { AxTreeNode } from './ax-node';
-import { CdpCallFailedError } from './cdp-errors';
 import type { A11yAllow } from './e2e-a11y-run';
 import { checkAllow, E2eA11yViolationError, startA11yRun } from './e2e-a11y-run';
 import type { AxTreeRequest, E2eBrowserPage } from './e2e-page';

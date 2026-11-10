@@ -148,6 +148,8 @@ describe('unit · @ultimat3/notify retry classification', () => {
       'X_NOTIFY_DELIVERY_HELD',
       'X_NOTIFY_PUSH_PROVIDER_REFUSED',
       'X_NOTIFY_PUSH_MESSAGE_INVALID',
+      'X_NOTIFY_SMS_TRANSPORT_MISSING',
+      'X_NOTIFY_SMS_NUMBER_INVALID',
     ];
     // Thrown by one device's send and caught by `nativePush()` before a send returns.
     const contained = ['X_NOTIFY_PUSH_DEVICE_GONE'];

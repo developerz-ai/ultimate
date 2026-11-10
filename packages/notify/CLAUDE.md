@@ -128,6 +128,7 @@ so an `open` checkpointed with duplicates by an earlier version is repaired on r
 | `push-device.ts` · `push-device-pg.ts` | the device seam, memory and Postgres (`x_push_devices`) |
 | `push-register.ts` | `pushRegister` / `pushUnregister`, factories over `action` |
 | `push-errors.ts` | `X_NOTIFY_PUSH_*`, registered in `errors.ts` |
+| `sms-transport.ts` · `sms-channel.ts` · `sms-errors.ts` | the `smsTransport` port (an `ADAPTER_PORTS` row: interface + installer on `./adapter`, memory reference, E.164 check), the reference `smsChannel()`, and `X_NOTIFY_SMS_*`. A provider is the app's adapter, never shipped (axiom 8) |
 
 One entry point, deliberately: every module runs on the server, so there is no browser half to split
 off.

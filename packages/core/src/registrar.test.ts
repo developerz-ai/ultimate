@@ -124,8 +124,11 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/jobs#consumer',
       '@ultimat3/jobs#exportRows',
       '@ultimat3/jobs#importRows',
+      '@ultimat3/jobs#ledger',
+      '@ultimat3/jobs#partitions',
       '@ultimat3/jobs#purge',
       '@ultimat3/jobs#refreshView',
+      '@ultimat3/jobs#reindex',
       '@ultimat3/jobs#rollup',
       '@ultimat3/jobs#subjectErase',
       '@ultimat3/jobs#subjectExport',
@@ -138,6 +141,7 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/pwa#pushSubscribe',
       '@ultimat3/pwa#pushUnsubscribe',
       '@ultimat3/realtime#deviceSocket',
+      '@ultimat3/scraping#pdf',
       '@ultimat3/scraping#scrape',
     ]);
   });
@@ -233,6 +237,7 @@ describe('ADAPTER_PORTS', () => {
       'authServerStore=@ultimat3/auth#AuthServerStore',
       'cacheTiers=@ultimat3/cache#CacheTier',
       'clock=@ultimat3/core#SleepClock',
+      'embedder=@ultimat3/ai#Embedder',
       'errorReporter=@ultimat3/core#ErrorReporter',
       'eventBus=@ultimat3/jobs#EventBus',
       'failureStore=@ultimat3/core#FailureStore',
@@ -249,10 +254,14 @@ describe('ADAPTER_PORTS', () => {
       'pushSubscriptionStore=@ultimat3/pwa#PushSubscriptionStore',
       'rateLimitStore=@ultimat3/http#RateLimitStore',
       'scrapeDriver=@ultimat3/scraping#ScrapeDriver',
+      'searchIndex=@ultimat3/entity#SearchIndex',
       'secretSource=@ultimat3/core#SecretSource',
+      'semanticCache=@ultimat3/ai#SemanticCacheFactory',
+      'smsTransport=@ultimat3/notify#SmsTransport',
       'storage=@ultimat3/storage#StorageDriver',
       'totpReplay=@ultimat3/auth#TotpReplayGuard',
       'transport=@ultimat3/realtime#Transport',
+      'uploadScanner=@ultimat3/storage#UploadScanner',
     ]);
   });
 

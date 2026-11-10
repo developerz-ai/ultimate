@@ -187,8 +187,26 @@
  * raised 916 → 919, measured 919 (2026-11-09, same wave): `cli/src/runtime-keys.ts` (an unknown
  * `runtime.ts` key refused at load), core's `adapter-slot.ts` (the shared release-restoring slot)
  * and auth's `port-clock.ts` (auth reads the ambient clock port).
+ * raised 919 → 959, measured 959 (2026-11-09, plan 101 v31 wave F, metafile diff against HEAD
+ * de915544e): 40 modules, every one a barrel export of a package migrate already loads, none from
+ * the cli. auth 17 — SAML SSO and the `IdentityProvider` port (`identity-provider{,-cookie,-oidc,
+ * -route-core,-routes,-status}.ts`, `saml-{assertion,c14n,certificate,dom,dsig,errors,metadata,
+ * provider,request,response,xml}.ts`); jobs 10 — `accountExport`/`accountErase`, `withLock`,
+ * `reindex`, `ledger()`, partition retention (`gdpr-{audit,coverage,errors}.ts`, `ledger{,-book,
+ * -errors}.ts`, `lock{,-errors}.ts`, `reindex.ts`, `partitions.ts`); entity 8 — `partitionBy`,
+ * `personalData()`, the `SearchIndex` port (`partition.ts`, `personal-data{,-kind}.ts`,
+ * `search-index{,-installed,-memory,-postgres}.ts`, `search-repo.ts`); db 2 — partition DDL
+ * (`entity-shape.ts`, `generate-partition.ts`); notify 2 — the `SmsTransport` port
+ * (`sms-{errors,transport}.ts`); cache 1 — `redis-pubsub.ts`, cross-replica invalidation.
+ * raised 959 → 964, measured 964 (2026-11-10, wave F review fixes, metafile diff against HEAD
+ * de915544e): five NEW modules — `auth/src/saml-email-trust.ts` (which IdP an asserted email is
+ * trusted from), `entity/src/search-index-{sync,version}.ts` (the index kept in step with its
+ * rows, by version), `db/src/branch-errors.ts` and `db/src/generate-partition-run.ts` (split at
+ * the file ceiling). No existing module newly reached: `jobs/src/reindex.ts` reads
+ * `searchVersionColumn` from the entity barrel, never `@ultimat3/entity/adapter`, whose
+ * `entityDriver` kit (8 modules) stays the serving roles'.
  */
-export const MIGRATE_CEILING = 919;
+export const MIGRATE_CEILING = 964;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -396,5 +414,17 @@ export const MIGRATE_CEILING = 919;
  * `core/src/sleep-clock.ts`.
  * raised 1320 → 1324, measured 1324 (2026-11-09, same wave): `MIGRATE_CEILING`'s 3 (`runtime-keys.ts`,
  * `adapter-slot.ts`, `port-clock.ts`) plus one serving-only module the wave's peers added.
+ * raised 1324 → 1385, measured 1385 (2026-11-09, plan 101 v31 wave F, metafile diff against HEAD
+ * de915544e): `MIGRATE_CEILING`'s 40, plus 21 serving-only. cli 5 — the boot imports the app from
+ * the image's prebuilt registry, in batches (`app-load-{prebuilt,batch,register}.ts`,
+ * `build-registry.ts`; B1), and picks the cache-invalidation bus (`runtime-cache-bus.ts`); entity 8
+ * — the `entityDriver` port's kit (`adapter.ts`, `define-driver.ts`, `driver-{delete,kit-types,
+ * repo-reads,repo-writes,scope,write-scope}.ts`); storage 7 — the `UploadScanner` port and image
+ * variants (`adapter.ts`, `errors-{scan,variant}.ts`, `image-variant.ts`, `upload-scan.ts`,
+ * `upload-scanner{,-memory}.ts`); realtime 1 — `replicator-reconnect.ts`, the prompt reconnect
+ * after a database restart. No existing module newly reached.
+ * raised 1385 → 1391, measured 1391 (2026-11-10, wave F review fixes): `MIGRATE_CEILING`'s five
+ * new modules, plus `cli/src/app-load-async.ts` — which app modules can suspend at their top
+ * level, so the batched scan imports each alone. No existing module newly reached.
  */
-export const SERVING_ROLE_CEILING = 1324;
+export const SERVING_ROLE_CEILING = 1391;

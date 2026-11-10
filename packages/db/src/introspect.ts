@@ -5,6 +5,7 @@
 
 import { nonAppRelations } from './app-relation';
 import { type DbClient, db } from './client';
+import type { PartitionInterval } from './entity-shape';
 import {
   type CheckRow,
   type ColumnRow,
@@ -168,6 +169,12 @@ export interface TableDescription {
    * descriptions are unchanged. Its partitions are Postgres' and appear in no description.
    */
   readonly partitioned?: true | undefined;
+  /**
+   * `entity({ partitionBy })`'s interval, as the migration that created the table recorded it. The
+   * SNAPSHOT's half only, never the catalog's: `x db gen` refuses a change to it, because partitions
+   * of another width would overlap the ones that exist (`generate-partition.ts`).
+   */
+  readonly partitionInterval?: PartitionInterval | undefined;
   /**
    * That a migration gave this table the tenant policy, enabled and forced (`row-security-plan.ts`).
    * The SNAPSHOT's half, `true` or absent for `appendOnly`'s reason; the catalog's is `policyNames`.

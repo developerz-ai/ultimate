@@ -3,10 +3,10 @@
 // from their first byte; the offline switch, the init scripts, and the log of every WebSocket and
 // request the browser made. A tab is `cdp-e2e-page.ts`'s; this file decides what every tab shares.
 
-import type { CdpConnection } from './cdp-connection';
+import type { CdpConnection } from '@ultimat3/scraping/cdp';
+import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import type { E2eTab } from './cdp-e2e-page';
 import { cdpE2eTab } from './cdp-e2e-page';
-import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import { isNetworkProbe, networkAgrees } from './cdp-network-probe';
 import { offlineScripts } from './cdp-offline-script';
 import type { AuditedTab } from './e2e-a11y-tabs';

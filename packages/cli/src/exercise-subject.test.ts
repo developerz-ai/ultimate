@@ -58,3 +58,39 @@ describe('unit · subjectFindings', () => {
     expect(subjectFindings([], all)).toEqual([]);
   });
 });
+
+const members = entity('xsubp_members', {
+  columns: {
+    id: uuid().primaryKey(),
+    email: text({ max: 80 }).personalData('contact'),
+    handle: text({ max: 40 }).personalData('identifier'),
+  },
+});
+entity('xsubp_leads', {
+  columns: { id: uuid().primaryKey(), phone: text({ max: 20 }).personalData('contact') },
+});
+
+describe('unit · subjectFindings · personalData() coverage', () => {
+  test('an anonymize missing a marked column, and a marked table no subject reaches', () => {
+    const subject = defineSubject(members, {
+      driver: memoryDriver(),
+      key: (input: { id: string }) => input.id,
+      tables: { xsubp_members: { anonymize: { email: 'erased@invalid' } } },
+    });
+    const findings = subjectFindings([subject as never], entries('xsubp_members', 'xsubp_leads'));
+    expect(findings.map((f) => [f.code, f.at])).toEqual([
+      ['X_PERSONAL_DATA_UNERASED', 'xsubp_members'],
+      ['X_PERSONAL_DATA_UNREACHED', 'xsubp_leads'],
+    ]);
+    expect(findings[0]?.fix).toContain('handle: null');
+  });
+
+  test('a covering declaration is clean when every marked table is reached', () => {
+    const subject = defineSubject(members, {
+      driver: memoryDriver(),
+      key: (input: { id: string }) => input.id,
+      tables: { xsubp_members: 'delete' },
+    });
+    expect(subjectFindings([subject as never], entries('xsubp_members'))).toEqual([]);
+  });
+});

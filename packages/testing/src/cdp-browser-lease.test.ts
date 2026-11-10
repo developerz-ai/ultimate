@@ -2,11 +2,11 @@
 // closes is the assertion. The real Chrome under it is `packages/cli/e2e/client-navigation-*`.
 
 import { describe, expect, test } from 'bun:test';
+import { CdpLaunchFailedError } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from './cdp-browser';
 import { E2E_BROWSER_OPEN_MS } from './cdp-browser';
 import type { RunEndHook } from './cdp-browser-lease';
 import { createE2eBrowserLeases } from './cdp-browser-lease';
-import { CdpLaunchFailedError } from './cdp-errors';
 
 /** A browser that counts its closes; nothing else of it is touched here. */
 const counted = () => {

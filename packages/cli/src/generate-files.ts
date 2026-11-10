@@ -31,6 +31,7 @@ import { adminCatalogFiles } from './templates/admin-catalog';
 import { helmMonitoringFiles } from './templates/scaffold-helm-alerts';
 import { oidcSignInFiles } from './templates/sign-in-oidc';
 import { passwordSignInFiles } from './templates/sign-in-password';
+import { workspaceAppFiles, workspacePackageFiles } from './templates/workspace';
 
 export interface GenerateOptions {
   readonly kind: Generator;
@@ -95,16 +96,25 @@ export interface GenerateOptions {
   readonly sibling?: boolean;
   /** `sign-in` only: which shape — `--password` or `--oidc <provider>`. Required for that kind. */
   readonly signIn?: SignInMode;
+  /**
+   * `app` and `package`: the repo's scope, `<scope>` of `@<scope>/<name>` — read off the root
+   * manifest by `run` (`generate-workspace.ts`). `app` when absent.
+   */
+  readonly scope?: string;
+  /** The app workspace a slice lands in, `apps/<app>/` (`--app`). Default `web`. */
+  readonly app?: string;
 }
 
-const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
-  site: 'apps/web/site',
-  app: 'apps/web/app',
-};
+/** The app every generator wrote into before `--app`, and still the default. */
+export const DEFAULT_APP = 'web';
+
+/** A surface's directory in one app workspace: `apps/<app>/<surface>`. */
+const surfaceDirOf = (surface: Surface, app: string = DEFAULT_APP): string =>
+  `apps/${app}/${surface}`;
 
 /** Where a feature slice lives, relative to the app root — the one derivation `run` reads from. */
-export const sliceDir = (surface: Surface, feature: string): string =>
-  `${DEFAULT_SURFACE_DIR[surface]}/${feature}`;
+export const sliceDir = (surface: Surface, feature: string, app: string = DEFAULT_APP): string =>
+  `${surfaceDirOf(surface, app)}/${feature}`;
 
 /**
  * `x g resource <name> --feature <other>`. A resource IS its feature: every file it composes — the
@@ -134,7 +144,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
   const surface: Surface = options.surface ?? 'app';
   assertSurfaceSupported(options.kind, surface, options.name);
   assertLiveSupported(options.kind, options.live === true, options.name);
-  const surfaceDir = DEFAULT_SURFACE_DIR[surface];
+  const surfaceDir = surfaceDirOf(surface, options.app);
   refuseResourceFeature(options, surfaceDir);
   // Kebab, always: `x g entity BlogPost` wrote `app/BlogPost/` while `resource` wrote
   // `app/blog-post/`, so one feature grew two slice directories depending on the generator.
@@ -254,6 +264,15 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           : oidcSignInFiles(signIn.provider, shape),
       );
     }
+    case 'app':
+    case 'package': {
+      // `run` reads the scope off the root manifest (`generate-workspace.ts`); a direct caller
+      // that names none — a test sweeping every generator — gets the template scope `app`.
+      const scope = names(options.scope ?? 'app');
+      return options.kind === 'app'
+        ? workspaceAppFiles(scope, kebab(options.name))
+        : workspacePackageFiles(scope, kebab(options.name));
+    }
     case 'chart-alerts':
       // `name` is the chart's own (`Chart.yaml`), which its helpers are named after. The values
       // blocks are an edit to a file the app owns, so `generate-chart-alerts.ts` makes it.
@@ -264,6 +283,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       return dedupe(
         routeFiles(options.name, {
           surface,
+          ...(options.app === undefined ? {} : { app: options.app }),
           ...(options.locales === undefined ? {} : { locales: options.locales }),
           ...(options.catalogModule === undefined ? {} : { catalogModule: options.catalogModule }),
         }),

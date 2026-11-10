@@ -22,6 +22,9 @@ const author = userActor({ id: 'author', roles: ['author'] });
 /** The one service a server's boot installs that `x exercise` cannot: a real model behind `llm()`. */
 const NO_GATEWAY = 'calls a real LLM: x exercise installs no AI gateway';
 
+/** `pdf()` prints through Chrome over CDP, which the pass neither launches nor fakes. */
+const NO_BROWSER = 'prints through Chrome: x exercise launches no browser';
+
 /**
  * The passkey ceremonies sign what the SERVER issued to one actor, which no draw can forge: each
  * input is computed from the pass's own state, inside the request the call runs in — so the actor
@@ -164,6 +167,20 @@ export const exercise = defineExercise(
       }),
     },
 
+    // A posting nets to zero per currency, which no schema can say and a draw never does: one
+    // charge, cash in and revenue out, keyed per org so each tenant's pass posts its own.
+    'billing.post-charge': {
+      actor: null,
+      input: (drawn) => ({
+        ...drawn,
+        key: `ch_exercise_${String(drawn['orgId'])}`,
+        entries: [
+          { account: 'cash', amount: { minor: 1900, currency: 'USD' } },
+          { account: 'revenue', amount: { minor: -1900, currency: 'USD' } },
+        ],
+      }),
+    },
+
     answerPrompt: { off: 'answers a prompt a live run is waiting on; only runs.sync writes one' },
     cancelRun: { off: 'cancels the queued job behind a run; the seed writes the run row alone' },
     confirmAgentPublish: {
@@ -280,6 +297,7 @@ export const exercise = defineExercise(
     reviewDraft: { off: NO_GATEWAY },
     summarize: { off: NO_GATEWAY },
     'posts.review': { off: NO_GATEWAY },
+    printPost: { off: NO_BROWSER },
   },
   { actor: members },
 );

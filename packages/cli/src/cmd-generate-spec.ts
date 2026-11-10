@@ -25,6 +25,12 @@ export const generateSpec: CommandSpec = {
     { name: 'admin', type: 'boolean', summary: 'resource: also emit the admin override' },
     { name: 'locales', type: 'string', summary: 'comma-separated locales, default en' },
     { name: 'at', type: 'string', summary: 'island, admin:page: directory to write into' },
+    {
+      name: 'app',
+      type: 'string',
+      summary: 'route, island, query: app under apps/',
+      default: 'web',
+    },
     { name: 'permission', type: 'string', summary: 'admin:page: the permission it needs' },
     { name: 'oidc', type: 'string', summary: 'sign-in: an OpenID Connect provider id' },
     { name: 'password', type: 'boolean', summary: 'sign-in: an address and a password' },

@@ -9,8 +9,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
 import { probeImage } from '@ultimat3/core';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import { renderMeta } from '@ultimat3/seo';
-import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
+import { E2E_BROWSER_OPEN_MS } from '@ultimat3/testing';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 import { staticCapture } from '../src/static-capture';
 import { CARD_SIZE } from '../src/static-cards';

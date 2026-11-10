@@ -2,8 +2,9 @@
 // is asserted is the run's own contract — the page it installs follows the CURRENT browser, a
 // deploy or a hung browser is relaunched before the next test, and everything is released after.
 import { afterEach, describe, expect, test } from 'bun:test';
+import { LAUNCHED_CLOSE_MS } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from './cdp-browser';
-import { E2E_BROWSER_CLOSE_MS, E2E_BROWSER_OPEN_MS } from './cdp-browser';
+import { E2E_BROWSER_OPEN_MS } from './cdp-browser';
 import type { E2eApp } from './e2e-app';
 import { e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
 import type { E2eDriverOptions } from './e2e-driver';
@@ -113,10 +114,8 @@ describe('unit · one e2e run', () => {
     const run = harness([fakeBrowser('first')]);
     await startE2eRun(run.deps);
 
-    expect(run.hooks.beforeMs).toBeGreaterThanOrEqual(
-      20 + E2E_BROWSER_CLOSE_MS + E2E_BROWSER_OPEN_MS,
-    );
-    expect(run.hooks.afterMs).toBeGreaterThanOrEqual(E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS);
+    expect(run.hooks.beforeMs).toBeGreaterThanOrEqual(20 + LAUNCHED_CLOSE_MS + E2E_BROWSER_OPEN_MS);
+    expect(run.hooks.afterMs).toBeGreaterThanOrEqual(LAUNCHED_CLOSE_MS + E2E_APP_STOP_MS);
   });
 
   test('publishes the app and the browser, and installs a page over the app’s origin', async () => {

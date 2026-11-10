@@ -2,7 +2,8 @@
 // same list in the terminal and in --json, and a non-zero exit if any step fails. Green means
 // shippable (axiom 5): one step list, no second checklist, no CI-only step.
 //
-// `--only <step>[,<step>…]` is the ONE narrowing, decided as D6, and it does not weaken that: the
+// `--only <step>[,<step>…]` is the ONE narrowing, decided as D6 — `--changed` is the same narrowing
+// with the list derived from the diff (`verify-changed.ts`) — and it does not weaken that: the
 // GATE is the no-flag run, and a narrowed run says `NOT A GATE RUN` in the summary and in `--json` so no
 // reader of either can take it for one. `--skip` stays refused — it would let a caller drop the
 // step that was going to fail and still read the output as a whole-tree verdict.
@@ -19,6 +20,7 @@ import type { CommandResult, JsonValue } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import { changedScope, readChangedRun, withChangedData } from './verify-changed-scope';
 import { VERIFY_STEPS } from './verify-checks';
 import { readVerifyFloor } from './verify-floor';
 import type { VerifyPart } from './verify-merge';
@@ -46,8 +48,14 @@ export const verifyCommand: CliCommand = {
     // Every reader before the run: an unrunnable flag must be refused in milliseconds, not after
     // `tsc -b` has spent fourteen seconds on a run the caller cannot use.
     const workers = readWorkers(ctx.args);
-    const only = readOnlySteps(ctx.args);
-    const shard = await readShard(ctx.args, only);
+    const onlyFlag = readOnlySteps(ctx.args);
+    // `--changed` is `--only` with the list derived from the diff — the same banner, the same
+    // `notAGateRun`, and the plan in `data.changed` so a reader sees why each step was chosen.
+    const changed = readChangedRun(ctx.args, onlyFlag)
+      ? await changedScope({ runner: ctx.runner, root, args: ctx.args })
+      : undefined;
+    const only = changed === undefined ? onlyFlag : changed.plan.steps.map((step) => step.name);
+    const shard = await readShard(ctx.args, onlyFlag);
     const isolate = flagBool(ctx.args, 'isolate') ? true : undefined;
     // Either render prints its verdict only when the run ends; the progress on stderr — a line per
     // finished step, a heartbeat while one runs — is what a cancelled job's log ends on (#589) and
@@ -62,10 +70,14 @@ export const verifyCommand: CliCommand = {
         ...(only === undefined ? {} : { only }),
         ...(shard === undefined ? {} : { shard }),
         ...(isolate === undefined ? {} : { isolate }),
+        ...(changed?.tests === undefined
+          ? {}
+          : { tests: { scope: changed.tests.scope, whole: changed.tests.whole } }),
         ...progress,
       }),
     );
-    return shard === undefined ? result : withShardData(result, shard);
+    const sharded = shard === undefined ? result : withShardData(result, shard);
+    return changed === undefined ? sharded : withChangedData(sharded, changed);
   },
 };
 

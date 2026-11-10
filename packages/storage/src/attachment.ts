@@ -5,25 +5,26 @@
 // so the tenant prefix is a construction, not a check somebody remembered to write.
 
 import type { Clock } from '@ultimat3/core';
-import { assert, finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
+import { assert, finiteCount, nanoid, renderThrowable, systemClock } from '@ultimat3/core';
 import type { StorageDriver, StorageListEntry, StorageObject } from './driver';
 import { objectNotFound, orgMismatch, tooLarge } from './errors';
 import { alreadyPromoted, notPending, objectChanged, quarantined } from './errors-promote';
 import { assertSafeKey, isWithinOrg, orgPrefix, scopedKey } from './path';
 import type { UploadPolicy } from './upload';
 import { SNIFF_WINDOW_BYTES, validateStoredHead } from './upload';
+import { SCAN_SEGMENT, scanAttempt, scanning } from './upload-scan';
 
 /** The one segment an unattached upload lives under. `sweepOrphans` reads only this prefix. */
 export const PENDING_SEGMENT = 'pending';
 
 /**
- * One more segment inside `pending/`, and the whole of Ultimate's content-scanning mechanism.
+ * One more segment inside `pending/`: the app's OWN scan workflow, for a scanner that runs as a job.
  *
  * Magic-byte sniffing closes stored XSS; it is not malware scanning, and `application/zip` is
  * deliberately accepted as the OOXML container, so a macro-laden `.docx` passes `validateUpload`
- * exactly as a clean one does. Scanning is the APP's — a scanner is a business decision with a
- * vendor, a licence and a latency budget (axiom 8) — so what ships is the place to put one: an
- * upload granted with `quarantine: true` lands under this prefix, `promoteAttachment` REFUSES a
+ * exactly as a clean one does. The scanner is the APP's — a vendor, a licence and a latency budget
+ * (axiom 8) — so two seams ship. Inline: an `uploadScanner` in `runtime.ts`, which
+ * `promoteAttachment` asks about a per-attempt copy (`upload-scan.ts`). Deferred: an upload granted with `quarantine: true` lands under this prefix, `promoteAttachment` REFUSES a
  * key that is still there (`X_STORAGE_QUARANTINED`), and the app's scan job calls
  * `releaseQuarantine` on a verdict of clean. Inside `pending/` on purpose: an upload nobody ever
  * scanned is still an orphan, so `sweepOrphans` collects it with no second prefix to walk.
@@ -197,6 +198,12 @@ async function assertCopyIsWhatWasJudged(
  * pending too. A ranged read because `maxGetBytes` bounds the range, never the object. An overwrite
  * after that read is `X_STORAGE_OBJECT_CHANGED`, or the copy itself is judged, and never lands.
  *
+ * SCANNED before it attaches, when `runtime.ts` installs an `uploadScanner`: on a per-attempt copy
+ * no presigned URL can rewrite (`scannedAttempt`), which is then what is attached. Infected is
+ * `X_STORAGE_UPLOAD_INFECTED` with attempt and upload deleted; no verdict is
+ * `X_STORAGE_SCAN_UNAVAILABLE` with the attempt deleted and the upload still pending, unless
+ * `policy.onScanUnavailable` accepts. Neither ever touches the row's key.
+ *
  * A source that is gone with the destination already there is `X_STORAGE_ALREADY_PROMOTED`
  * (409, `meta.attachedKey`), never the destination answered as if this call had moved it. 27.1.0
  * answered it: a confirm sent twice then inserted a second row for one key, that insert failed,
@@ -235,14 +242,41 @@ export async function promoteAttachment(input: PromoteAttachmentInput): Promise<
     throw tooLarge(input.key, pending.size, input.policy.maxBytes);
   }
   await judge(disk, pending, input.key, input.policy);
+  const scanned = scanning() ? await scannedAttempt(disk, pending, input, name) : undefined;
+  const source = scanned ?? pending;
   const object = await disk.copy(
-    input.key,
+    scanned?.key ?? input.key,
     attached,
-    pending.etag === '' ? undefined : { ifMatch: pending.etag },
+    source.etag === '' ? undefined : { ifMatch: source.etag },
   );
-  await assertCopyIsWhatWasJudged(disk, pending, object, input.policy);
+  await assertCopyIsWhatWasJudged(disk, source, object, input.policy);
+  // The attempt is this call's scratch: a delete that fails leaves an orphan the sweep collects,
+  // never a refusal of a promotion that already happened.
+  if (scanned !== undefined) await disk.delete(scanned.key).catch(() => undefined);
   await disk.delete(input.key);
   return object;
+}
+
+/**
+ * With an `uploadScanner` installed, what is attached is a copy THIS call made and scanned: under
+ * `pending/scan/`, server-named (no presigned URL rewrites it after the scan) and its own (a
+ * refusal deletes it and nothing a doubled confirm attached). Judged like any copy first.
+ */
+async function scannedAttempt(
+  disk: StorageDriver,
+  pending: StorageObject,
+  input: PromoteAttachmentInput,
+  name: string,
+): Promise<StorageObject> {
+  const key = scopedKey(input.orgId, PENDING_SEGMENT, SCAN_SEGMENT, `${nanoid()}-${name}`);
+  const attempt = await disk.copy(
+    input.key,
+    key,
+    pending.etag === '' ? undefined : { ifMatch: pending.etag },
+  );
+  await assertCopyIsWhatWasJudged(disk, pending, attempt, input.policy);
+  await scanAttempt({ disk, pendingKey: input.key, attempt, policy: input.policy });
+  return attempt;
 }
 
 export interface SweepOrphansInput {

@@ -211,6 +211,30 @@ export const syncCrm = job({
 
 A job over a tenant, queue or global cap, or over a `'wait'` concurrency cap, is **deferred, never dropped** — it stays queued with a later `runAt`. `whenBusy: 'fail'` is the one declared exception. `'wait'` holds the cap and states no order: a later enqueue can start first.
 
+### A lock — `withLock()`
+
+`withLock(key, fn, { ttl, wait?, poll?, store?, signal? })`: one holder fleet-wide, held as one slot `lock:<key>` in the job driver's `LeaseStore` (`x_job_leases` on Postgres) — no table of its own, no Redis. `fn` receives `{ key, token, signal }`. `As of 2026-11-09`.
+
+| Fact | Meaning |
+|---|---|
+| `ttl` (required) | how long a dead holder keeps the key; renewed at ttl/3 while `fn` runs |
+| `wait` (default one ttl; `0` = one try) | then `X_LOCK_NOT_ACQUIRED` (409, retryable), naming the holder |
+| `token` | the FENCING token: a number the store hands this grant (the database's counter, never a clock), greater than every token any earlier holder of any key got. Write it beside whatever `fn` changes and refuse a write carrying a smaller one — that stops a holder that paused past its `ttl` (GC, a frozen VM) from writing after the next one took over |
+| no renewal landing within the ttl, or one refused | `signal` aborts with `X_LOCK_LOST`; the call rejects with it even if `fn` resolved |
+| no store | `X_LOCK_STORE_MISSING` — `jobs: postgresJobDriver()` in `runtime.ts`, or `{ store }` |
+
+```ts
+import { withLock } from '@ultimat3/jobs';
+
+declare function sendDigest(orgId: string, options: { signal: AbortSignal }): Promise<void>;
+declare const orgId: string;
+
+await withLock(`digest:${orgId}`, ({ signal }) => sendDigest(orgId, { signal }), {
+  ttl: '2m',
+  wait: 0,
+});
+```
+
 ### One run per key
 
 | Case under `whenBusy: 'fail'` | Answer |
@@ -499,6 +523,18 @@ export const exportMember = subjectExport({
 generated person, and searches every stored row. Their value outside a `retain` is
 `X_SUBJECT_ERASE_INCOMPLETE`, naming the table and column.
 
+### `personalData()` coverage
+
+Rule: `.personalData(kind)` on a column (`@ultimat3/entity`) adds NO second export or erase path — `subjectExport`/`subjectErase` stay the one. It is the proof that the declared subjects cover every marked column. `As of 2026-11-09`.
+
+| Check (`@ultimat3/jobs`) | Refuses |
+|---|---|
+| `unerasedPersonalData(plan)` | a reached table whose `{ anonymize }` names fewer than every marked column — `X_PERSONAL_DATA_UNERASED`. `'delete'` clears the row; `{ retain: '<why>' }` is a stated reason |
+| `unreachedPersonalData(plans)` | a marked entity no subject's walk reaches — `X_PERSONAL_DATA_UNREACHED` |
+| `personalDataProblems()` | both, over every `defineSubject()` and every marked entity |
+
+Enforced twice: a subject run refuses `X_PERSONAL_DATA_UNERASED` before it touches a row, and `x exercise` lists `X_PERSONAL_DATA_UNERASED` / `X_PERSONAL_DATA_UNREACHED` as findings. With an `auditSink` installed, `subjectErase` writes one `allowed` record per completed erase (`primitive: 'action'`, `surface: 'job'`, `input: { subject, run }` — the subject's entity and the run id, never the key, which an app may make an email) and one `failed` record per attempt that threw; a sink that refuses fails the run. At least once: a sink dedupes on the record's `idempotencyKey`, `<job>:<runId>`.
+
 ## Rollups and materialized views
 
 Two factories over `job()`, two jobs, `As of 2026-11`. A time window over append-mostly rows is
@@ -565,6 +601,20 @@ export const refreshPostTotals = refreshView({
 | Each run | `refresh materialized view [concurrently]` in one step; `tenant: 'none'` — the read path scopes the rows |
 | `concurrently` | readers keep the old rows meanwhile; needs a unique index on the view (`.unique()`) |
 | Refused at declaration | a table, a plain view, `concurrently` with no unique index — `X_JOB_REFRESH_VIEW_INVALID` |
+
+## Rebuilding a search index — `reindex()`
+
+`reindex({ name, entity, source, tenant, index? })` is a `backfill()` writing each row's `searchDocumentOf(entity, row)` to the `searchIndex` port (default: the installed one). Run it after swapping Postgres' built-in index for Meilisearch or Typesense, or after an index lost data. An entity with no `.searchable()` column is refused at declaration (`X_INVARIANT`). A deleted row is the write path's `remove`, never a sweep's. `As of 2026-11-09`.
+
+## Partition maintenance — `partitions()`
+
+`partitions({ name?, cron?, tz?, clock? })` keeps every `entity({ partitionBy })` table ready: one durable step per partitioned entity runs `@ultimat3/db`'s `maintainPartitions` — creation under a 5 s `lock_timeout` (`PARTITION_LOCK_TIMEOUT_MS`; a `55P03` is `X_DB_LOCK_TIMEOUT`, retryable, so a long report query delays the run rather than queueing every write behind ACCESS EXCLUSIVE on the parent), then each expired partition retired by `detach … concurrently` (outside any transaction, as Postgres requires) and dropped. It creates `ahead` partitions past the current one and retires those `retain` expired. A job plus a `.schedule` `task()` (`<name>.schedule`, default `'17 3 * * *'` UTC, daily), as `consumer()` carries `.supervisor`. `now` is the job's clock, so a test moves it; a second run at one instant changes nothing. Report: `{ tables: [{ table, created, dropped }] }`. Moving older rows in: enqueue it once with `{ from: '<the oldest row’s ISO instant>' }` — that run creates every partition back to it and retires nothing, and its idempotency key is its own, so it never folds into the schedule's — then run the `backfill()`. `As of 2026-11-09`.
+
+```ts
+import { partitions } from '@ultimat3/jobs';
+
+export const maintainPartitions = partitions(); // list it in defineApi({ jobs })
+```
 
 ## Outbound webhooks — `webhook()`
 
@@ -665,6 +715,56 @@ Worked example: the reference app's `apps/web/app/webhooks/jobs/billing-events-r
 Codes: `X_WEBHOOK_ENDPOINT_UNKNOWN`, `X_WEBHOOK_ENDPOINT_INVALID`, `X_WEBHOOK_ENDPOINT_DISABLED`,
 `X_WEBHOOK_EVENT_UNKNOWN`, `X_WEBHOOK_EVENT_INVALID`, `X_WEBHOOK_DELIVERY_FAILED`,
 `X_WEBHOOK_DELIVERY_THROTTLED`, `X_WEBHOOK_DELIVERY_REJECTED` ([Error codes](Error-Codes)).
+
+## Double-entry postings — `ledger()`
+
+`ledger({ name, tenant, book })` is a factory over `job()`. Input: `{ key, entries: [{ account, amount: Money }], orgId? }`. The run refuses anything that is not balanced Money before a line is written, then writes every line in ONE durable step through the app's `LedgerBook`. No provider, account plan or currency policy ships (axiom 8). `As of 2026-11-09`.
+
+| Rule | Code |
+|---|---|
+| each currency's entries sum to zero on their own (an FX posting balances its EUR legs and its USD legs separately) | `X_LEDGER_UNBALANCED` (422, terminal) |
+| integer `minor`, an ISO 4217 currency, one `scale` per currency, a non-blank account, two entries or more | `X_LEDGER_ENTRY_INVALID` (422, terminal) |
+| idempotent by key: the live key is `<name>:<key>`; `entityLedgerBook` is one `insert … on conflict (posting_key, line) do nothing`. A replay of the same lines writes 0 | — |
+| the key is already stored with OTHER lines — another count, another line | `X_LEDGER_POSTING_CONFLICT` (409, terminal); nothing is written, because the new lines beside the stored ones would unbalance the book |
+| `assertBalancedPosting(posting)` | the enqueuing action refuses at the request |
+
+A provider's payment webhook is a `webhookReceiver()` whose `handle` enqueues the posting keyed by the provider's id: the receiver dedupes the delivery, the ledger dedupes the posting.
+
+```ts
+import type { LedgerBook } from '@ultimat3/jobs';
+import { ledger, webhookReceiver } from '@ultimat3/jobs';
+
+declare const book: LedgerBook; // entityLedgerBook({ driver, entity: ledgerLines }) in an app
+declare function verifyPayment(bytes: Uint8Array, signature: string | null): {
+  id: string;
+  amountMinor: number;
+  currency: string;
+};
+
+export const postPayment = ledger({ name: 'payments.post', tenant: 'none', book: () => book });
+
+export const paymentEvents = webhookReceiver({
+  name: 'payments.events',
+  path: '/hooks/payments',
+  tenant: 'none',
+  verify: (inbound) => {
+    const event = verifyPayment(inbound.bytes, inbound.headers.get('x-signature'));
+    return { eventId: event.id, payload: event };
+  },
+  handle: async ({ eventId, payload, step }) => {
+    const { amountMinor, currency } = payload as { amountMinor: number; currency: string };
+    await step.run('post', () =>
+      postPayment.enqueue({
+        key: eventId,
+        entries: [
+          { account: 'cash', amount: { minor: amountMinor, currency } },
+          { account: 'revenue', amount: { minor: -amountMinor, currency } },
+        ],
+      }),
+    );
+  },
+});
+```
 
 ## Driver interface
 

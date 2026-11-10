@@ -14,6 +14,7 @@
 // sets. `cdp-browser.e2e.test.ts` carries the reason.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome } from '@ultimat3/scraping/cdp';
 // The browser is `@ultimat3/testing`'s since 22.0.0; this file stays in cli because what it drives
 // is cli's own emitted service worker, and `testing` may not import cli.
 import type { E2eBrowser, PageLike } from '@ultimat3/testing';
@@ -22,7 +23,6 @@ import {
   DEFAULT_SERVICE_WORKER_TIMEOUT_MS,
   E2E_BROWSER_OPEN_MS,
   e2ePage,
-  findChrome,
   openE2eBrowser,
   openE2eBrowserIfAvailable,
 } from '@ultimat3/testing';

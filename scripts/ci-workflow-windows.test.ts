@@ -27,7 +27,7 @@ describe('unit · ci.yml · the windows job runs in PowerShell, from a default-a
     './packages/cli/src/app-boundaries.test.ts',
     './packages/cli/src/path-segments.test.ts',
     './packages/cli/src/templates/scaffold-gitattributes.test.ts',
-    './packages/testing/src/cdp-launch.test.ts',
+    './packages/scraping/src/cdp-launch.test.ts',
   ];
   const windows = job('windows');
   const steps = windows.steps ?? [];

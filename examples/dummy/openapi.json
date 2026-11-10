@@ -1407,6 +1407,49 @@
         ],
         "type": "object"
       },
+      "PrintPostInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "format": "slug",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "PrintPostOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "contentType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "bytes",
+          "contentType"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "properties": {
           "cause": {
@@ -7698,6 +7741,75 @@
             "post"
           ],
           "mcpTool": "likePost",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts/print": {
+      "post": {
+        "operationId": "printPost",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintPostInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintPostOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "printPost",
+        "tags": [
+          "posts"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
           "rateLimit": null
         }
       }

@@ -8,6 +8,7 @@ import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/ent
 import { comments } from './schema/comments';
 import { connections } from './schema/connections';
 import { dailyLikes } from './schema/daily-likes';
+import { ledgerLines } from './schema/ledger-lines';
 import { likes } from './schema/likes';
 import { members } from './schema/members';
 import { orgs } from './schema/orgs';
@@ -59,6 +60,7 @@ const entities = {
   comments,
   connections,
   dailyLikes,
+  ledgerLines,
   likes,
   members,
   orgs,

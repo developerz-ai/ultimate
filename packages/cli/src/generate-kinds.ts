@@ -29,6 +29,8 @@ export const GENERATORS = [
   'guard',
   'sign-in',
   'chart-alerts',
+  'app',
+  'package',
 ] as const;
 
 export type Generator = (typeof GENERATORS)[number];
@@ -286,4 +288,7 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   'sign-in': '--password',
   // No name either: an app has one chart. `--print` runs with or without one.
   'chart-alerts': '--print',
+  // A workspace: `apps/admin`, `packages/domain`.
+  app: 'admin',
+  package: 'domain',
 };

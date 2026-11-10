@@ -5,8 +5,8 @@
 // `E2E_BROWSER_REQUIRED=1`.
 
 import { describe, expect, test } from 'bun:test';
+import { findChrome, launchChrome } from '@ultimat3/scraping/cdp';
 import { E2E_BROWSER_OPEN_MS } from '../src/cdp-browser';
-import { findChrome, launchChrome } from '../src/cdp-launch';
 
 const chrome = await findChrome(process.env);
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';

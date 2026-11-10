@@ -1,6 +1,7 @@
 // The lease-store suite over `memoryLeaseStore()` on a frozen clock, and the proof it can fail: a
 // store that reads the count, awaits, then grants (over-grants under a race), and one whose renew
-// revives a lapsed slot (the defect `SQL_LEASE_RENEW`'s expiry fence closed in Postgres).
+// revives a lapsed slot (the defect `SQL_LEASE_RENEW`'s expiry fence closed in Postgres), and one
+// that numbers its fences per slot, so a later holder shows an earlier holder's token.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
@@ -42,6 +43,15 @@ const reviving = (inner: LeaseStore): LeaseStore => ({
   },
 });
 
+/** A fence per SLOT, not per grant: the next holder of a slot shows the token its last one had. */
+const slotFenced = (inner: LeaseStore): LeaseStore => ({
+  ...inner,
+  async acquire(key, limit, ttlMs, holder) {
+    const lease = await inner.acquire(key, limit, ttlMs, holder);
+    return lease === undefined ? undefined : { ...lease, fence: lease.slot + 1 };
+  },
+});
+
 const check = (prefix: string) =>
   LEASE_STORE_CHECKS.find((each) => each.name.startsWith(prefix)) ??
   expect.unreachable(`no lease-store check named ${prefix}`);
@@ -55,6 +65,13 @@ describe(testName('unit', 'a store that breaks the lease contract fails conforma
   test('a renew that revives a lapsed slot', async () => {
     await check('renew lands').run(onFrozenClock(reviving));
     await expect(check('a lapsed slot').run(onFrozenClock(reviving))).rejects.toThrow();
+  });
+
+  test('a fence reused by a later grant of the slot', async () => {
+    await check('slots are granted').run(onFrozenClock(slotFenced));
+    await expect(
+      check('every grant carries a fence').run(onFrozenClock(slotFenced)),
+    ).rejects.toThrow();
   });
 
   test('every check has a name of its own', () => {

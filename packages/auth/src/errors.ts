@@ -39,6 +39,9 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_PASSKEY_INVALID',
   'X_PASSKEY_CHALLENGE_EXPIRED',
   'X_PASSKEY_STEP_UP_REQUIRED',
+  'X_SAML_RESPONSE_INVALID',
+  'X_SAML_METADATA_INVALID',
+  'X_IDENTITY_PROVIDER_UNKNOWN',
 ] as const;
 
 /**
@@ -99,6 +102,11 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
     'a passkey ceremony named a challenge that is unknown, already used or past its ttl',
   X_PASSKEY_STEP_UP_REQUIRED:
     'a sensitive action ran without a fresh user-verified passkey proof for its digest',
+  X_SAML_RESPONSE_INVALID:
+    'a saml response failed its signature, wrapping, audience, recipient, time, InResponseTo or replay check',
+  X_SAML_METADATA_INVALID:
+    'saml IdP metadata has no entity id, HTTP-Redirect sign-on endpoint or signing certificate',
+  X_IDENTITY_PROVIDER_UNKNOWN: 'the URL named an identity provider the sso routes were not given',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail

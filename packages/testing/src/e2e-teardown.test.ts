@@ -2,7 +2,7 @@
 // handshake that timed out left its socket dialling.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { cdpConnect } from './cdp-connection';
+import { cdpConnect } from '@ultimat3/scraping/cdp';
 import { openOrStop } from './e2e-run';
 
 const RealWebSocket = globalThis.WebSocket;

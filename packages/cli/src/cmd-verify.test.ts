@@ -260,8 +260,9 @@ describe('unit · x verify', () => {
 
   // `--workers` is a knob on how wide the test steps spread, never on which steps run. `--only`
   // IS a narrowing and is the one exception, decided as D6: it must announce itself in BOTH
-  // renderers, which is what keeps "green" meaning the no-flag run. Any THIRD flag arriving here
-  // — a `--skip`, above all — is the regression this test exists to catch.
+  // renderers, which is what keeps "green" meaning the no-flag run. `--changed` (with `--base` and
+  // `--dirty` scoping its diff) is `--only` with a derived list, through the same banner. Any other
+  // flag arriving here — a `--skip`, above all — is the regression this test exists to catch.
   test('the no-flag run is every step, and the only narrowing announces itself', async () => {
     const result = await runVerify(stubs, ctx);
     expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
@@ -269,6 +270,9 @@ describe('unit · x verify', () => {
     expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual([
       'workers',
       'only',
+      'changed',
+      'base',
+      'dirty',
       'shard',
       'timings',
       'isolate',

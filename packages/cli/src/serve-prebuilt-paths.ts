@@ -15,5 +15,8 @@ export const PREBUILT_ISLANDS_DIR = `${PREBUILT_DIR}/islands`;
 
 export const PREBUILT_SASS_DIR = `${PREBUILT_DIR}/sass`;
 
+/** The app's module registry: what a serving role imports instead of scanning (`build-registry.ts`). */
+export const PREBUILT_REGISTRY_DIR = `${PREBUILT_DIR}/registry`;
+
 /** The Dockerfile line that writes the store — one spelling, for the template and every `fix:`. */
 export const PREBUILT_COMMAND = 'bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt';

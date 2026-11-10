@@ -7,6 +7,7 @@
 // physical name even though two schema modules import each other in a cycle.
 
 import { invariantViolated } from './errors';
+import { isPersonalDataKind, PERSONAL_DATA_KINDS } from './personal-data-kind';
 import { refuseColumn } from './refuse';
 import { DEFAULT_SEARCH_WEIGHT, isSearchWeight } from './search';
 import type {
@@ -214,6 +215,17 @@ export const makeColumn = <T, Optional extends boolean>(
       );
     }
     return makeColumn<T, Optional>({ ...meta, searchable: weight }, parse, optional);
+  },
+
+  personalData: (kind) => {
+    if (!isPersonalDataKind(kind)) {
+      refuseColumn(
+        'personal-data',
+        `"${String(kind)}" is not a personal data kind`,
+        `text().personalData('contact') — one of: ${PERSONAL_DATA_KINDS.join(', ')}`,
+      );
+    }
+    return makeColumn<T, Optional>({ ...meta, personalData: kind }, parse, optional);
   },
 
   tenant: () => makeColumn<T, Optional>({ ...meta, tenant: true, index: true }, parse, optional),

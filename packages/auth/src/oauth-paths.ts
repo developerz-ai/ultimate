@@ -4,8 +4,11 @@
 // while no route was mounted anywhere. Deriving both the mount and the fix from here makes a fix
 // line that names a route nothing serves impossible rather than merely discouraged.
 
-/** Not configurable, on purpose: a movable base path is a `fix:` line that can go stale again. */
-export const OAUTH_BASE_PATH = '/auth/oauth';
+/**
+ * Not configurable, on purpose: a movable base path is a `fix:` line that can go stale again.
+ * `/auth/sso` since 31.0.0: every `IdentityProvider` — OIDC and SAML — signs in through it.
+ */
+export const OAUTH_BASE_PATH = '/auth/sso';
 
 /** The pattern a router mounts. `:provider` is the segment `oauthStartPath` fills in. */
 export const OAUTH_START_ROUTE_PATH = `${OAUTH_BASE_PATH}/:provider` as const;

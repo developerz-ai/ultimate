@@ -3,6 +3,7 @@
 // implementation can live beside the code it checks without importing the list.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import type { AppTestScope } from './affected-tests';
 import type { CoverageMap } from './coverage-lcov';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
@@ -70,6 +71,12 @@ export type VerifyStepName = (typeof VERIFY_STEP_NAMES)[number];
  */
 export type HostCheck = (root: string) => Promise<readonly Finding[]>;
 
+/** `VerifyContext.tests`: `x test --affected`'s selection, and the suites that run whole anyway. */
+export interface ChangedTestSelection {
+  readonly scope: AppTestScope;
+  readonly whole: readonly VerifyStepName[];
+}
+
 export interface VerifyContext {
   readonly root: string;
   readonly runner: Runner;
@@ -114,6 +121,12 @@ export interface VerifyContext {
    * name is accepted for the callers that narrow to one (`scripts/verify.ts`).
    */
   readonly only?: VerifyStepName | readonly VerifyStepName[];
+  /**
+   * `x verify --changed`: each suite but `eval` and those in `whole` runs what `x test --affected`
+   * would (`narrowToApp` over `scope`: the closure's tests and every test the graph never read); a
+   * suite left nothing spawns nothing; the unit floor is not judged on a subset. Absent: every test.
+   */
+  readonly tests?: ChangedTestSelection;
   /**
    * Per-step deadlines in milliseconds that beat `x.verify.json`'s `stepTimeoutMs`, which beat the
    * step class's declared number (`verify-deadline.ts`). A step past its deadline fails by name

@@ -33,7 +33,7 @@ import { staticReportData } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
 
 /** What the rules were when `BUILD_STATS_RULES` was last set. Re-pin only together with a bump. */
-const RULES_PIN = { rules: 5, fingerprint: '28db24d404acbc3d' } as const;
+const RULES_PIN = { rules: 6, fingerprint: '42b84720788cb25d' } as const;
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });
@@ -436,7 +436,13 @@ async function measurementRules(): Promise<string> {
       boot: { prefix: '/_x/page-boot/', supplies: new Set(['/islands/realtime-r.js']) },
     },
   );
+  // Which links are a fetch the document charges (rules v6, B4): a modulepreload, nothing else.
+  const linked = await measureDocumentJs(
+    '<link rel="modulepreload" href="/islands/dep.js"><link rel="preload" href="/islands/lazy.js">',
+    probe,
+  );
   return JSON.stringify({
+    linked: linked.entries.map((entry) => entry.url),
     booted: booted.entries.map((entry) => entry.url),
     followed: followed.entries.map((entry) => entry.url).sort(),
     spelled: spelled.entries.map((entry) => entry.url),

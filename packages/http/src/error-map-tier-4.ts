@@ -180,4 +180,19 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_TENANT_REQUIRED: 400,
   // @ultimat3/mcp — the tenant of an MCP call could not be resolved
   X_MCP_TENANT_UNRESOLVED: 500,
+  // @ultimat3/scraping — pdf() has no origin to render the route on
+  X_SCRAPE_PDF_ORIGIN_MISSING: 500,
+  // @ultimat3/scraping — a pdf() route is not a path on this app
+  X_SCRAPE_PDF_ROUTE_INVALID: 500,
+  // @ultimat3/scraping — the route pdf() printed answered an error status
+  X_SCRAPE_PDF_ROUTE_FAILED: 502,
+  // @ultimat3/scraping — the raw-CDP browser (`@ultimat3/scraping/cdp`), reached by a request
+  // through pdf(): no browser on this host and one that never started are this server's 503; a
+  // refused call is the upstream browser's 502, an unanswered one its 504.
+  X_CDP_BROWSER_MISSING: 503,
+  X_CDP_LAUNCH_FAILED: 503,
+  X_CDP_CALL_FAILED: 502,
+  X_CDP_TIMEOUT: 504,
+  // @ultimat3/scraping — every pdf() render slot stayed busy past the queue deadline
+  X_SCRAPE_PDF_BUSY: 503,
 } satisfies Readonly<Record<string, number>>;

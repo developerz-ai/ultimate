@@ -4,7 +4,7 @@
 // applies the cut is a bounded timeout, and a tab gone by the switch is dropped from it.
 
 import { describe, expect, test } from 'bun:test';
-import type { CdpConnection } from './cdp-connection';
+import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import { cdpE2eSession } from './cdp-e2e-session';
 import { fake } from './cdp-e2e-session-fake-fixture';
 import { NETWORK_PROBE } from './cdp-network-probe';

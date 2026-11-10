@@ -122,7 +122,7 @@ const pageOf = (claim: BenchClaim): string => claim.doc ?? CLAIMS_FILE;
 const mismatchFinding = (gap: BenchGap): Finding => ({
   code: 'X_BENCH_CLAIM_STALE',
   cause: `${pageOf(gap.claim)} states ${gap.stated ?? ''} for ${gap.claim.label} and ${gap.claim.file} measured ${gap.measured ?? ''}`,
-  fix: `edit ${pageOf(gap.claim)}: write ${gap.measured ?? ''} where it says ${gap.stated ?? ''} for ${gap.claim.label}, then bun run scripts/bench-claims.ts --json`,
+  fix: `bun run scripts/bench-claims.ts --json   # after editing ${pageOf(gap.claim)}: write ${gap.measured ?? ''} where it says ${gap.stated ?? ''} for ${gap.claim.label}`,
   at: pageOf(gap.claim),
 });
 

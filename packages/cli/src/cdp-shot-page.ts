@@ -4,8 +4,8 @@
 // mouse press at the element's centre, a keystroke is a key event — because an in-page `.click()`
 // skips `pointerdown`, which is what a dialog's backdrop listens to.
 import { assert, finiteCount, hostDecision } from '@ultimat3/core';
-import type { CdpConnection } from '@ultimat3/testing';
-import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/testing';
+import type { CdpConnection } from '@ultimat3/scraping/cdp';
+import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import type {
   ElementSnapshot,
   ShotCapture,

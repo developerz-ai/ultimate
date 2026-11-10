@@ -13,6 +13,13 @@ export interface HeldLease {
   readonly key: string;
   readonly slot: number;
   readonly holder: string;
+  /**
+   * The grant's FENCING number, assigned by the store on every acquire (a takeover too) and
+   * greater than every one it assigned before — `withLock`'s token. The store's counter and never
+   * a client clock: a host whose clock runs fast would otherwise win "refuse a smaller token".
+   * Optional so a store written before it still holds `job.concurrency`; `withLock` refuses one.
+   */
+  readonly fence?: number;
 }
 
 export interface LeaseStore {
@@ -66,6 +73,8 @@ export function memoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryL
   const clock = options.clock ?? liveClock;
   type Slots = Map<number, { holder: string; expiresAt: number }>;
   const slots = new Map<string, Slots>();
+  // One counter per store, as the pg store's one sequence: increasing across every key.
+  let fences = 0;
 
   /**
    * The live slots of `key`, expired ones dropped — and the KEY dropped with its last slot. A
@@ -101,7 +110,8 @@ export function memoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryL
         if (held.has(slot)) continue;
         held.set(slot, { holder, expiresAt: nowMs(clock) + ttlMs });
         slots.set(key, held);
-        return Promise.resolve({ key, slot, holder });
+        fences += 1;
+        return Promise.resolve({ key, slot, holder, fence: fences });
       }
       return Promise.resolve(undefined);
     },

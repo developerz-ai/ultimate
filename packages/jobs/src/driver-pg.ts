@@ -165,14 +165,15 @@ function postgresLeaseStore(exec: () => PgExecutor): LeaseStore {
   return {
     async acquire(key, limit, ttlMs, holder) {
       if (limit <= 0) return undefined;
-      const rows = await exec().query<{ slot: number | string }>(SQL_LEASE_ACQUIRE, [
-        key,
-        holder,
-        limit,
-        ttlMs,
-      ]);
+      const rows = await exec().query<{ slot: number | string; fence: number | string }>(
+        SQL_LEASE_ACQUIRE,
+        [key, holder, limit, ttlMs],
+      );
       const row = rows[0];
-      return row === undefined ? undefined : { key, slot: Number(row.slot), holder };
+      // `bigint` crosses as text; a sequence stays under 2^53 for any fleet's lifetime.
+      return row === undefined
+        ? undefined
+        : { key, slot: Number(row.slot), holder, fence: Number(row.fence) };
     },
     async renew(lease, ttlMs) {
       const rows = await exec().query<{ slot: number | string }>(SQL_LEASE_RENEW, [

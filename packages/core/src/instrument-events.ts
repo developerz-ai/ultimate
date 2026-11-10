@@ -4,6 +4,7 @@
 // it never owns a second shape. An app adds its own names by augmenting `InstrumentEventMap`.
 
 import type { LogLevel } from './logger';
+import type { MetricCollection } from './metrics-types';
 import type { ReadableSpan, SpanKind } from './telemetry';
 
 /** What every timed event carries: wall time from start to settle, and the failure, if any. */
@@ -213,6 +214,8 @@ export interface FrameworkEventMap {
   /** A SAMPLED span, ended — the trace export stream. Unsampled spans never reach it. */
   'span.end': ReadableSpan;
   'log.record': LogRecordEvent;
+  /** One push tick's cumulative collection (`exportMetrics()`) — the metric export stream. */
+  'metric.export': MetricCollection;
 }
 
 /**
@@ -262,6 +265,7 @@ export const INSTRUMENT_EVENTS = Object.freeze({
   'cache.tier_failure': { span: 'event', owner: '@ultimat3/cache' },
   'span.end': { span: 'event', owner: '@ultimat3/core' },
   'log.record': { span: 'event', owner: '@ultimat3/core' },
+  'metric.export': { span: 'event', owner: '@ultimat3/core' },
 } as const satisfies Record<keyof FrameworkEventMap, InstrumentEventSpec>);
 
 /** A framework event name — the closed half of `InstrumentName`. */

@@ -2,9 +2,8 @@
 // `e2eApp()`. On `globalThis` under one `Symbol.for` key, because the preload and a test may each
 // hold their own copy of this module — the page-client handle's reason, one runtime over.
 
+import { CdpBrowserMissingError, CHROME_CANDIDATES } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from './cdp-browser';
-import { CdpBrowserMissingError } from './cdp-errors';
-import { CHROME_CANDIDATES } from './cdp-launch';
 import type { E2eApp } from './e2e-app';
 
 /** Set by the e2e step to the app root; the preload spawns that app and opens a browser. */

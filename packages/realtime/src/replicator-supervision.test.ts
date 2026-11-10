@@ -22,7 +22,8 @@ import {
 } from './pg-replication-fixture';
 import { changeFeedReplicator, STOP_DEADLINE_MS } from './replicator';
 import { parseChange } from './replicator-envelope';
-import type { Scheduler } from './thundering-herd';
+import { reconnectBackoff } from './replicator-reconnect';
+import { policyDelay, type Scheduler } from './thundering-herd';
 
 /** A lock that counts, with the await a real session has between being asked and answering. */
 const countingLock = (): AdvisoryLock & {
@@ -190,7 +191,7 @@ describe('a replication stream that ends', () => {
     await replicator.stop();
   });
 
-  test('a restart that fails is retried on a longer delay, and stop ends the loop', async () => {
+  test('a restart that fails is retried, on the reconnect curve while no database answers', async () => {
     ensurePostsEntity();
     let dials = 0;
     const servers: FakeWalsender[] = [];
@@ -210,6 +211,7 @@ describe('a replication stream that ends', () => {
       transport: new InProcessTransport(),
       schedule: timers.schedule,
       backoff: { baseMs: 100, maxMs: 1_000, factor: 2, jitter: 'none' },
+      rng: () => 0.5,
     });
     await replicator.start();
     servers[0]?.push(copyDone());
@@ -224,7 +226,8 @@ describe('a replication stream that ends', () => {
 
     timers.fire();
     await turns();
-    expect(timers.delays).toEqual([100, 200, 400]);
+    // A refused dial is the connection, not the change: at once, then on the seconds-capped curve.
+    expect(timers.delays).toEqual([100, 0, policyDelay(reconnectBackoff, 1, () => 0.5)]);
 
     timers.fire();
     await turns();
@@ -235,7 +238,7 @@ describe('a replication stream that ends', () => {
     await turns();
     // A stream that came back is not progress — only a published change is. Nothing was
     // published, so the wait keeps growing rather than redialling at the base forever.
-    expect(timers.delays).toEqual([100, 200, 400, 800]);
+    expect(timers.delays).toEqual([100, 0, policyDelay(reconnectBackoff, 1, () => 0.5), 200]);
 
     await replicator.stop();
     timers.fire();

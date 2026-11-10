@@ -7,6 +7,22 @@ import { describe, expect, test } from 'bun:test';
 /** Every file that dials the platform's own `fetch`, and no others. */
 const DEADLINE_FILES = new Set(['http.ts', 'robots-fetch.ts']);
 
+/**
+ * The raw-CDP launcher and its wire (moved from `@ultimat3/testing` in 31.0.0). Their deadlines are
+ * on a CHILD PROCESS — a Chrome that has not answered, a SIGTERM's grace before SIGKILL — and
+ * belong to the operating system's time, not the run's: under a frozen test clock they would fire
+ * on the next microtask and kill a browser that was starting. Pinned by name, so a new file is not.
+ */
+const PROCESS_DEADLINE_FILES = new Set([
+  'cdp-connection.ts',
+  'cdp-launch.ts',
+  'cdp-launch-attempt.ts',
+  'cdp-launch-probe.ts',
+  'cdp-launch-profile.ts',
+  'cdp-launch-reap.ts',
+  'cdp-launch-wire.ts',
+]);
+
 const TIMERS = /\b(?:setTimeout|setInterval|Bun\.sleep|AbortSignal\.timeout)\s*\(/;
 
 describe('unit · no file here may make time pass — core’s SleepClock does', () => {
@@ -19,7 +35,7 @@ describe('unit · no file here may make time pass — core’s SleepClock does',
       // Comments quote the banned spellings on purpose (they explain why the rule exists), so the
       // scan reads code only — a rule that could be defeated by a comment is not a rule.
       const code = source.replaceAll(/\/\/[^\n]*|\/\*[\S\s]*?\*\//g, '');
-      if (!TIMERS.test(code)) continue;
+      if (!TIMERS.test(code) || PROCESS_DEADLINE_FILES.has(path)) continue;
       // These hand ONE deadline each to the platform's own `fetch`, which is not a wait this
       // package performs — and under a test clock a slept deadline fires on the next microtask
       // and cancels every request. Pinned here, in one place, with the reason. The exemption is

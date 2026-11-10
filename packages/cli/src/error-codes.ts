@@ -244,6 +244,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SOCKET_HAND_ROLLED',
   'X_EXERCISE_FILE_UNEDITABLE',
   'X_ERROR_REPORTER_DSN_UNCLAIMED',
+  'X_PREBUILT_REGISTRY_STALE',
+  'X_APP_ROOT_NESTED',
+  'X_WORKSPACE_NAME_TAKEN',
+  'X_PARTITIONS_UNMAINTAINED',
 ] as const;
 
 /**
@@ -465,6 +469,12 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_EXERCISE_FILE_UNEDITABLE: 'x g could not add an entry to apps/web/exercise.ts',
   X_ERROR_REPORTER_DSN_UNCLAIMED:
     'SENTRY_DSN is set, and the app installed a reporter marked neither as its Sentry transport nor as a local sink',
+  X_PREBUILT_REGISTRY_STALE:
+    "the image's prebuilt module registry does not list the app's modules, so the role scanned instead",
+  X_APP_ROOT_NESTED: 'a second app.config.ts inside the app',
+  X_WORKSPACE_NAME_TAKEN:
+    'x g app or x g package was given a name the other workspace kind already holds',
+  X_PARTITIONS_UNMAINTAINED: 'a partitioned entity with no partitions() job',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

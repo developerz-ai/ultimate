@@ -8,11 +8,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { defineConfig, resetLifecycle, useContext } from '@ultimat3/core';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, h, registerRoute } from '@ultimat3/render';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser, E2eBrowserLease, E2eTab } from '@ultimat3/testing';
 import {
   E2E_BROWSER_OPEN_MS,
   E2E_TAB_OPEN_MS,
-  findChrome,
   leaseE2eBrowser,
   openE2eBrowser,
   openE2eBrowserIfAvailable,

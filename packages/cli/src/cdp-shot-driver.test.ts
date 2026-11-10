@@ -8,7 +8,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: joining the script and marker paths.
 import { join } from 'node:path';
-import { launchChrome } from '@ultimat3/testing';
+import { launchChrome } from '@ultimat3/scraping/cdp';
 import { cdpShotDriver } from './cdp-shot-driver';
 import { attach, evaluating, fakeWire, init, opened } from './cdp-shot-wire-fixture';
 

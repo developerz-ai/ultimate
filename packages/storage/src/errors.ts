@@ -39,6 +39,8 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_MULTIPART_UNSUPPORTED',
   'X_STORAGE_UPLOAD_UNKNOWN',
   'X_STORAGE_PARTS_INVALID',
+  'X_STORAGE_UPLOAD_INFECTED',
+  'X_STORAGE_SCAN_UNAVAILABLE',
 ] as const;
 
 /**
@@ -89,6 +91,8 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_MULTIPART_UNSUPPORTED: 'this disk cannot take an upload in parts',
   X_STORAGE_UPLOAD_UNKNOWN: 'no open multipart upload has that id',
   X_STORAGE_PARTS_INVALID: 'the parts named do not match the parts stored',
+  X_STORAGE_UPLOAD_INFECTED: 'the upload scanner found malware in the file',
+  X_STORAGE_SCAN_UNAVAILABLE: 'the upload scanner could not give a verdict',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws

@@ -168,6 +168,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `drift-triggers.ts` (`X_LIFECYCLE_TRIGGER_MISSING`; `retain` on a partitioned table is
   `X_ENTITY_RETAIN_INVALID`).
 - **Views**: `generate-view.ts`.
+- **`partitionBy`** (`generate-partition.ts`): one plpgsql `ultimate_partitions` named/bounded for migration and `partitionMaintenance` alike; `X_MIGRATION_PARTITION_CHANGE`. README.
 - **`retired.ts`: a retired column**. Full rule: `docs/history/db.md`.
 - **`entity-shape.ts` holds the `*Like` interfaces** (every later field optional).
 - **`snapshot-json.ts` writes a fixed point of Biome** (an array collapses when it fits at `<= 100`

@@ -22,6 +22,8 @@ export const NOTIFY_ERROR_CODES = [
   'X_NOTIFY_PUSH_DEVICE_GONE',
   'X_NOTIFY_PUSH_PROVIDER_REFUSED',
   'X_NOTIFY_PUSH_MESSAGE_INVALID',
+  'X_NOTIFY_SMS_TRANSPORT_MISSING',
+  'X_NOTIFY_SMS_NUMBER_INVALID',
 ] as const;
 
 export type NotifyErrorCode = (typeof NOTIFY_ERROR_CODES)[number];
@@ -37,6 +39,8 @@ export const NOTIFY_ERROR_TITLES: Readonly<Record<NotifyErrorCode, string>> = {
   X_NOTIFY_PUSH_DEVICE_GONE: 'the push provider says a device token is dead',
   X_NOTIFY_PUSH_PROVIDER_REFUSED: 'APNs or FCM refused a push for good',
   X_NOTIFY_PUSH_MESSAGE_INVALID: 'a data-only push carries more than an id',
+  X_NOTIFY_SMS_TRANSPORT_MISSING: 'an SMS was sent with no SmsTransport installed',
+  X_NOTIFY_SMS_NUMBER_INVALID: 'an SMS number is not E.164',
 };
 
 // One unconditional call, so a second package claiming one of notify's codes throws
@@ -84,6 +88,10 @@ registerErrorRetry({
   // it never leaves a send.
   X_NOTIFY_PUSH_PROVIDER_REFUSED: 'terminal',
   X_NOTIFY_PUSH_MESSAGE_INVALID: 'terminal',
+  // SMS (`sms-errors.ts`). A transport is installed at boot or it is not, and a stored number is
+  // the same number on attempt 2: neither is the moment.
+  X_NOTIFY_SMS_TRANSPORT_MISSING: 'terminal',
+  X_NOTIFY_SMS_NUMBER_INVALID: 'terminal',
 });
 
 /** Refused where it is written: a notifier with no channel is a job that fans out to nobody. */

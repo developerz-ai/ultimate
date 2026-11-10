@@ -138,6 +138,15 @@ export type {
 } from './page';
 export type { PageContext } from './page-over-target';
 export { pageOverTarget } from './page-over-target';
+export type { PdfActionArgs, PdfActionOptions, PdfActionOutput } from './pdf-action';
+export { PDF_CONTENT_TYPE, pdf } from './pdf-action';
+export type {
+  ChromePdfRendererOptions,
+  PdfBrowser,
+  PdfRenderer,
+  PdfRenderRequest,
+} from './pdf-render';
+export { chromePdfRenderer, DEFAULT_PDF_TIMEOUT_MS } from './pdf-render';
 export type { PdfFormat, PdfLayout, PdfMarginMm, PdfRequest } from './pdf-request';
 export { PDF_FORMATS } from './pdf-request';
 export type { Pacer } from './rate';

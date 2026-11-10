@@ -399,6 +399,13 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'edit apps/web/runtime.ts — errorReporter: sentryTransport(yourWrapper) around the wrapper that sends to Sentry, or localErrorSink(yourSink) for a reporter that keeps reports on the box',
   X_BOUNDARY_ADAPTER_IMPORT:
     'export const runtime = { jobs: yourDriver } satisfies RuntimeOverrides;   # in apps/web/runtime.ts — name the port your import installed',
+  X_PREBUILT_REGISTRY_STALE:
+    'edit docker/Dockerfile: move RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt after the last COPY in the runtime stage, then rebuild the image',
+  X_APP_ROOT_NESTED:
+    'x verify --only drift --json   # after deleting the nested app.config.ts and moving what it configured into the root app.config.ts',
+  X_WORKSPACE_NAME_TAKEN: 'x g app admin-app --dry-run --json',
+  X_PARTITIONS_UNMAINTAINED:
+    'x verify --only manifest --json   # after exporting partitions() from @ultimat3/jobs in a module listed under jobs in apps/web/api/index.ts, and its .schedule under tasks',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

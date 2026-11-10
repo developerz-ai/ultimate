@@ -412,6 +412,23 @@ create trigger "ultimate_append_only" before update or delete on "ledger" for ea
 | Engines | Postgres and PGlite alike (`generate-append-only.live.test.ts`, `generate-append-only-embedded.test.ts`) |
 | Drift | `introspectSchema()` writes `triggerNames` (enabled, non-internal) on every table — the catalog half; `appendOnly` is the snapshot half, never read from the catalog |
 
+## Partitioned tables (`entity({ partitionBy })`)
+
+`As of 2026-11-09`. `EntityDescriptionLike.partition` (`PartitionDescriptionLike`: physical `column`, `interval` from `PARTITION_INTERVALS`, `ahead`, `retain?: { after, afterMs }`) is what `generate-partition.ts` reads.
+
+| Part | What |
+|---|---|
+| `x db gen`, new table | `create table … partition by range ("<column>")`, its indexes, then `create or replace function ultimate_partitions(…)` and one call: the current partition plus `ahead`, judged at APPLY time (`now()`) — never a retention sweep |
+| `partitionMaintenance(description, now, { from? })` | the function call, every value bound: creates ahead (and back to `from`'s partition, sweeping nothing then); NAMES expired partitions with their state (`attached`/`pending`/`detached`), never drops one; `null` on a plain table |
+| `maintainPartitions(client, description, now, { from?, lockTimeoutMs? })` | what `@ultimat3/jobs`' `partitions()` runs: the call in a transaction with `set local lock_timeout` (`PARTITION_LOCK_TIMEOUT_MS`, 5 s; a wait past it is `X_DB_LOCK_TIMEOUT`, retryable), then per expired partition: `comment` (`RETIRING_COMMENT`), `detach … concurrently` outside any transaction, `drop`. A `pending` detach is finalized, a marked `detached` one dropped. Answers `{ created, dropped }`. Never inside a caller's transaction |
+| Names and bounds | `<table>_pYYYYMMDD` (lower bound), UTC; `week` is ISO; `to_char`, so `DateStyle`/`TimeZone` never move a bound. Hand-made children are never touched |
+| Snapshot | the parent records `partitioned: true` and `partitionInterval` (snapshot only, never read off the catalog) |
+| Refusals | `X_MIGRATION_PARTITION_CHANGE`: from `x db gen` when a recorded partitioned table loses `partitionBy` (`partitionDropped`), from the function at migrate time when it meets a plain table (adoption on a table the hand recipe already partitioned passes) |
+| Interval change | refused by `x db gen` with `X_MIGRATION_PARTITION_CHANGE` (`partitionRewidened`): the snapshot records `partitionInterval` (parsed back by `parseSnapshot`), and partitions of another width would overlap |
+| No default partition | by decision: a default partition forbids `detach … concurrently`, and creating a month it holds rows for scans and moves them under ACCESS EXCLUSIVE. A row past every partition is `23514`; `ahead` is the scheduler-outage budget |
+
+Proof: `generate-partition-fixture.ts`, on PGlite (`generate-partition-embedded.test.ts`) and Postgres (`generate-partition.live.test.ts`); a reader holding the parent: `generate-partition-lock.live.test.ts`; the sidecar round trip: `generate-partition-sidecar.test.ts`.
+
 ## The schema dump
 
 **Imported from `@ultimat3/db/schema-dump`, never from the barrel** (23.0.0): `introspectCatalog`,

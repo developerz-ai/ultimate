@@ -360,6 +360,28 @@ A receiver that re-broadcast would be a storm bounded by nothing. A failed send 
 What happens to that bust is the sender's (`@ultimat3/cli` keeps the refused tags, bounded, and
 publishes them when the bus returns); with no such sender the other pods clear on TTL.
 
+**Which bus carries it — one rule, logged at boot as `cache.broadcast bus=… source=…`**
+(`packages/cli/src/runtime-cache-bus.ts`):
+
+| Deployment | Bus |
+|---|---|
+| `NATS_URL` set, or `runtime.ts` supplies a `transport` | that transport |
+| no NATS, `REDIS_URL` (else `VALKEY_URL`) set — rung 1 | Redis pub/sub, `redisPubSubAt(url)` |
+| neither | the in-process bus: this replica only |
+
+`redisPubSub({ publisher, subscriber })` is the protocol, over two dedicated connections
+(`REDIS_CLIENT_OPTIONS`): a subscribed connection refuses every other command, and the publisher's
+`onconnect` is how the hop hears it is back. Bun 1.4.4 reconnects a dropped subscriber but the
+server has forgotten the subscription and the client still holds the listener, so each connect
+unsubscribes, subscribes afresh — one SUBSCRIBE/UNSUBSCRIBE at a time, or a flapping connection
+registers the listener twice — then fires `onReconnect`; the CLI's listener calls
+`flushProcessTiers`, because pub/sub keeps nothing for the window it was away, and publishes the
+busts it deferred. A publisher connect fires `onReconnect` too: after a Redis restart the
+subscriber may be back first, and the deferred busts are refused until the publisher is. A publish
+on a disconnected publisher waits up to `PUBLISHER_CONNECT_WAIT_MS` (1 s) once per outage, then
+refuses at once and is deferred. The channel is the hop's one subject,
+unprefixed: old and new builds of one app must hear each other mid-rollout.
+
 **`flushProcessTiers(source)` is the repair for a process that cannot know what it missed** — its
 bus connection was down for a window, or a peer says it had more refused busts than it could keep.
 It calls `CacheTier.clear()` on every tier that has one (only a tier whose store is this process's

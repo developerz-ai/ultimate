@@ -14,6 +14,7 @@ export {
   listBranches,
   reapBranches,
 } from './branch';
+export { branchExists, branchNameInvalid } from './branch-errors';
 export {
   checkClauses,
   checkPlan,
@@ -84,12 +85,13 @@ export type {
   HistoryDescriptionLike,
   IndexDescriptionLike,
   InvariantDescriptionLike,
+  PartitionDescriptionLike,
+  PartitionInterval,
   RetainDescriptionLike,
 } from './entity-shape';
+export { PARTITION_INTERVALS } from './entity-shape';
 export type { DbErrorCode, DbErrorInit } from './errors';
 export {
-  branchExists,
-  branchNameInvalid,
   DB_ERROR_CODES,
   DB_ERROR_RETRY,
   DB_ERROR_TITLES,
@@ -134,6 +136,14 @@ export {
   PURGE_SETTING,
   REQUEST_SETTING,
 } from './generate-history';
+export type { PartitionMaintenanceOptions } from './generate-partition';
+export {
+  PARTITION_FUNCTION,
+  partitionDropped,
+  partitionMaintenance,
+} from './generate-partition';
+export type { PartitionRun, PartitionRunOptions } from './generate-partition-run';
+export { maintainPartitions, PARTITION_LOCK_TIMEOUT_MS } from './generate-partition-run';
 export type { RowSecurityOption, TenantColumnLike } from './generate-row-security';
 export { declaredTriggers } from './generate-triggers';
 export type { IndexMethod } from './index-method';

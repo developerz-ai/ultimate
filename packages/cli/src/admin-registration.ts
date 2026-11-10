@@ -41,7 +41,7 @@ export const adminResourceUnwiredFinding = (
 ): Finding => ({
   code: 'X_ADMIN_RESOURCE_UNWIRED',
   cause: `${ADMIN_FILE} ${reason}, so the override ${entry.binding} is read by nothing and /admin/${entry.table} keeps its derived defaults`,
-  fix: `add ${importLine(entry)} and "resources: { ${entry.table}: ${entry.binding} }" to the defineAdmin() call in ${ADMIN_FILE}`,
+  fix: `import { ${entry.binding} } from '${entry.specifier}';   # at the top of ${ADMIN_FILE}, then resources: { ${entry.table}: ${entry.binding} } in its defineAdmin() call`,
   docs: ERROR_DOCS_URL,
   at: ADMIN_FILE,
 });

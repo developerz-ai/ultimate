@@ -8,13 +8,17 @@
 // already decided a browser is required.
 
 import { finiteCount } from '@ultimat3/core';
+import type { LaunchedBrowser } from '@ultimat3/scraping/cdp';
+import {
+  CdpBrowserMissingError,
+  CHROME_CANDIDATES,
+  findChrome,
+  LAUNCH_BUDGET_MS,
+  launchChrome,
+} from '@ultimat3/scraping/cdp';
 import type { E2eTab } from './cdp-e2e-page';
 import type { E2eSession } from './cdp-e2e-session';
 import { cdpE2eSession } from './cdp-e2e-session';
-import { CdpBrowserMissingError } from './cdp-errors';
-import type { LaunchedBrowser } from './cdp-launch';
-import { CHROME_CANDIDATES, findChrome, LAUNCH_BUDGET_MS, launchChrome } from './cdp-launch';
-import { LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
 
 /** How long a launch, a connect or a single CDP call may take. One number, three deadlines. */
 export const DEFAULT_CDP_TIMEOUT_MS = 30_000;
@@ -41,13 +45,8 @@ export const E2E_TAB_OPEN_MS = TAB_OPEN_DEADLINES * DEFAULT_CDP_TIMEOUT_MS;
 export const E2E_BROWSER_OPEN_MS =
   LAUNCH_BUDGET_MS + SESSION_SETUP_DEADLINES * DEFAULT_CDP_TIMEOUT_MS + E2E_TAB_OPEN_MS;
 
-/**
- * The longest `E2eBrowser.close()` is DESIGNED to take — the launched browser's close, every step
- * bounded (`LAUNCHED_CLOSE_MS`). THE deadline for a hook that closes a browser it already holds: a
- * hook left at Bun's 5 s default is killed mid-close, and when it is the run's last the process
- * exits with the profile half-removed — the `x-e2e-chrome-*` directories found leaked in `/tmp`.
- */
-export const E2E_BROWSER_CLOSE_MS = LAUNCHED_CLOSE_MS;
+// The longest `E2eBrowser.close()` takes is `LAUNCHED_CLOSE_MS` (`@ultimat3/scraping/cdp`), the
+// launched browser's own close: THE deadline for a hook that closes a browser, one name since 31.0.0.
 
 /**
  * Sequential deadlines one `tab.goto()` spends: the load event raced against `Page.navigate`'s

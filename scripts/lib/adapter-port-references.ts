@@ -35,6 +35,11 @@ export const PORT_REFERENCES: Readonly<Record<AdapterPortName, PortReference>> =
     symbol: 'systemClock',
     note: '`noWaitClock` beside it is the one a test hands a run that must not wait',
   },
+  embedder: {
+    file: 'packages/ai/src/embeddings.ts',
+    symbol: 'hashEmbedder',
+    note: 'a network embedder is `remoteEmbedder` (`packages/ai/src/remote-embedder.ts`)',
+  },
   errorReporter: { file: 'packages/core/src/error-reporter.ts', symbol: 'memoryErrorReporter' },
   eventBus: { file: 'packages/jobs/src/events.ts', symbol: 'memoryEventBus' },
   failureStore: {
@@ -68,10 +73,25 @@ export const PORT_REFERENCES: Readonly<Record<AdapterPortName, PortReference>> =
   },
   rateLimitStore: { file: 'packages/http/src/rate-limit.ts', symbol: 'memoryRateLimitStore' },
   scrapeDriver: { file: 'packages/scraping/src/driver-fake.ts', symbol: 'fakeBrowser' },
+  searchIndex: {
+    file: 'packages/entity/src/search-index-memory.ts',
+    symbol: 'memorySearchIndex',
+    note: "the built-in `postgresSearchIndex` (`search-index-postgres.ts`) reads `.searchable()`'s generated tsvector and writes nothing on `index`",
+  },
+  semanticCache: {
+    file: 'packages/cache/src/semantic.ts',
+    symbol: 'memorySemanticCache',
+    note: 'the port is the factory: `(scope) => memorySemanticCache()`, one cache per scope',
+  },
   secretSource: { file: 'packages/core/src/secret-source.ts', symbol: 'envSecretSource' },
+  smsTransport: { file: 'packages/notify/src/sms-transport.ts', symbol: 'memorySmsTransport' },
   storage: { file: 'packages/storage/src/driver-memory.ts', symbol: 'memoryStorageDriver' },
   totpReplay: { file: 'packages/auth/src/mfa.ts', symbol: 'memoryTotpReplayGuard' },
   transport: { file: 'packages/realtime/src/fanout.ts', symbol: 'InProcessTransport' },
+  uploadScanner: {
+    file: 'packages/storage/src/upload-scanner-memory.ts',
+    symbol: 'memoryUploadScanner',
+  },
 });
 
 /**
@@ -86,6 +106,7 @@ export const CONFORMANCE_SUBJECTS: Readonly<Record<AdapterPortName, string>> = O
   authServerStore: 'store',
   cacheTiers: 'tier',
   clock: 'clock',
+  embedder: 'embedder',
   errorReporter: 'reporter',
   eventBus: '({ bus, elapse })',
   failureStore: '({ store, find, client })',
@@ -102,8 +123,12 @@ export const CONFORMANCE_SUBJECTS: Readonly<Record<AdapterPortName, string>> = O
   pushSubscriptionStore: 'store',
   rateLimitStore: 'store',
   scrapeDriver: 'driver',
+  searchIndex: '({ index, entity, store, drop })',
+  semanticCache: 'factory',
   secretSource: '({ source, holding, empty })',
+  smsTransport: 'transport',
   storage: 'driver',
   totpReplay: 'guard',
   transport: 'transport',
+  uploadScanner: 'scanner',
 });

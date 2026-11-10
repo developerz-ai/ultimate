@@ -14,6 +14,8 @@ export {
 } from './schema/connections';
 export type { DailyLikes } from './schema/daily-likes';
 export { dailyLikes } from './schema/daily-likes';
+export type { LedgerLine } from './schema/ledger-lines';
+export { ledgerLines } from './schema/ledger-lines';
 export type { Like } from './schema/likes';
 export { likes } from './schema/likes';
 export type { Member } from './schema/members';

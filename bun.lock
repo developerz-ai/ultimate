@@ -44,6 +44,7 @@
         "@biomejs/biome": "2.6.3",
         "@electric-sql/pglite": "^0.5.11",
         "@types/bun": "^1.4.0",
+        "@ultimat3/scraping": "30.9.0",
         "@ultimat3/testing": "30.9.0",
         "typescript": "^7.0.2",
       },
@@ -124,6 +125,7 @@
         "@biomejs/biome": "2.6.3",
         "@electric-sql/pglite": "^0.5.11",
         "@types/bun": "1.4.4",
+        "@ultimat3/scraping": "30.9.0",
         "@ultimat3/testing": "30.9.0",
         "typescript": "^7.0.2",
       },
@@ -604,6 +606,7 @@
       "name": "@ultimat3/scraping",
       "version": "30.9.0",
       "dependencies": {
+        "@ultimat3/action": "30.9.0",
         "@ultimat3/core": "30.9.0",
         "@ultimat3/jobs": "30.9.0",
         "@ultimat3/schema": "30.9.0",

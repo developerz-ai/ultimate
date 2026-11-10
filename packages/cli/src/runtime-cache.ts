@@ -4,7 +4,13 @@
 // and lru unconditionally, redis on `REDIS_URL` and cdn on any real purge driver, so the key was
 // declared, validated at boot, documented, and read by nothing.
 
-import type { CacheTier, PurgeDriver, RedisLike } from '@ultimat3/cache';
+import type {
+  CacheTier,
+  InvalidationBus,
+  InvalidationSubscription,
+  PurgeDriver,
+  RedisLike,
+} from '@ultimat3/cache';
 import {
   CacheDriverUnavailableError,
   cdnTier,
@@ -29,8 +35,9 @@ import {
   renderThrowable,
 } from '@ultimat3/core';
 import { redisClient, redisUrlSource } from '@ultimat3/core/redis';
-import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
+import type { Transport } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
+import { logCacheBus, selectCacheBus } from './runtime-cache-bus';
 
 /**
  * The subject every replica of every app publishes tag invalidations on. One subject and not one
@@ -78,6 +85,11 @@ export interface CacheTiersOptions {
   readonly firstDialGraceMs?: number | undefined;
   /** The client a `redis` rung reads, for the URL `env` names. Default core's `redisClient`. */
   readonly redisClient?: ((url: string) => RedisLike) | undefined;
+  /**
+   * The invalidation bus over Redis pub/sub, for the URL `env` names — used only when `transport`
+   * is the in-process bus (`selectCacheBus`). Default `@ultimat3/cache`'s `redisPubSubAt`.
+   */
+  readonly redisPubSub?: ((url: string) => InvalidationBus) | undefined;
 }
 
 /**
@@ -216,9 +228,17 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   const built = options.tiers.map((name) => supplied.get(name) ?? buildTier(name, options));
   for (const tier of built) registerTier(tier);
   warnUnnamed(options);
+  // NATS (or a supplied transport) when it crosses processes; Redis pub/sub when the transport is
+  // the in-process bus and REDIS_URL is set; else in-process. One rule, one boot line.
+  const selected = selectCacheBus({
+    env: options.env,
+    transport: options.transport,
+    redisPubSub: options.redisPubSub,
+  });
+  logCacheBus(selected);
+  const bus = selected.bus;
 
-  const send = (payload: string): Promise<void> =>
-    options.transport.publish(CACHE_INVALIDATE_SUBJECT, payload);
+  const send = (payload: string): Promise<void> => bus.publish(CACHE_INVALIDATE_SUBJECT, payload);
   // What the bus refused, kept for its return. A publish with no live connection is refused, not
   // buffered (`NatsTransport`), so without this a bust made during a two-second NATS restart
   // reached no peer at all. De-duplicated — a tag is a fact, not an event — and bounded.
@@ -323,15 +343,12 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   const bootedAt = performance.now();
   /** Whether an operator has been told of this outage — what makes `recovered` worth a line. */
   let warned = false;
-  const subscribing = (async (): Promise<TransportSubscription | undefined> => {
+  const subscribing = (async (): Promise<InvalidationSubscription | undefined> => {
     for (let attempt = 1; !stopped; attempt += 1) {
       try {
-        const subscription = await options.transport.subscribe(
-          CACHE_INVALIDATE_SUBJECT,
-          (payload: string) => {
-            void applyBroadcast(payload);
-          },
-        );
+        const subscription = await bus.subscribe(CACHE_INVALIDATE_SUBJECT, (payload: string) => {
+          void applyBroadcast(payload);
+        });
         subscribed = true;
         if (attempt > 1) {
           // The outage's one closing line, beside the thinned warnings it ends — and only then: a
@@ -364,7 +381,7 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   })();
   // The bus is (back) up. The subscription came back with the connection, so from here this
   // process hears again: drop what it held while deaf, and say what it could not say.
-  const offReconnect = options.transport.onReconnect(() => {
+  const offReconnect = bus.onReconnect(() => {
     wake();
     if (subscribed) flushDeaf('cache.bus-reconnect');
     settleQuietly();
@@ -378,6 +395,7 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
     released.resolve(undefined);
     (await subscribing)?.unsubscribe();
     resetTiers();
+    await selected.release();
   };
 }
 

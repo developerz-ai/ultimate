@@ -4,9 +4,9 @@
 // Chrome, and refuses to skip under `E2E_BROWSER_REQUIRED=1`, like `cdp-browser.e2e.test.ts`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { findChrome } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser } from '../src/cdp-browser';
 import { E2E_BROWSER_OPEN_MS, openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
-import { findChrome } from '../src/cdp-launch';
 
 /** The worker every tab connects to: one socket, opened at start-up, for all of them. */
 const WORKER = `

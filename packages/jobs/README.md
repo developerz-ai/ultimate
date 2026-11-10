@@ -482,6 +482,59 @@ the new pods serve, puts the sweeps on the queue and exits, and a slow UPDATE ne
 open against a database still serving the previous build. `--all` isolates per name and continues
 past a failure, so one wedged cleanup cannot block every later one forever.
 
+### Rebuilding a search index: `reindex()`
+
+`reindex({ name, entity, source, tenant, index? })` is a `backfill()` whose batch writes each row's
+document to the `searchIndex` port — entity's one builder, `searchDocumentOf`, so only
+`.searchable()` columns leave and each document keeps its tenant. Run it after moving from the
+built-in Postgres index to Meilisearch or Typesense, or after an index lost data. An entity with no
+searchable column is refused at declaration. The index keeps only the NEWER version of each id,
+so neither a replayed batch nor a stale read can overwrite a newer write or bring a deleted row
+back.
+
+```ts
+import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';
+import { reindex } from '@ultimat3/jobs';
+
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    title: text().searchable(),
+    updatedAt: timestamp().defaultNow().onUpdateNow(), // each document's version
+  },
+});
+const db = database({ posts });
+
+export const reindexPosts = reindex({
+  name: 'reindex-posts',
+  entity: posts,
+  tenant: 'none',
+  source: () => db.posts,
+});
+```
+
+## Partition maintenance is a job too
+
+`partitions({ name?, cron?, tz?, clock? })` keeps every `entity({ partitionBy })` table ready: one
+step per partitioned entity runs `@ultimat3/db`'s `partitionMaintenance(description, now)` — the
+function the migration also calls — creating `ahead` partitions past the current one and
+dropping those `retain` expired. It is a job plus a `.schedule` `task()` (`<name>.schedule`,
+default `DEFAULT_PARTITIONS_CRON`, 03:17 UTC daily), the shape `consumer()`'s `.supervisor` has.
+`now` is the job's clock, never the server's, so a test moves it; a second run at one instant
+changes nothing (`create … if not exists`). Entities are read per run, so one declared later is
+maintained from its first tick.
+
+```ts
+import { partitions } from '@ultimat3/jobs';
+
+export const maintainPartitions = partitions(); // list it in defineApi({ jobs })
+```
+
+Before a `backfill()` copies rows older than the first partition, enqueue it once with `{ from:
+'<oldest row ISO>' }`: that run creates every partition back to that row's period and drops
+nothing. Every DDL statement runs under a `lock_timeout`, failing fast with `X_DB_LOCK_TIMEOUT`
+(retryable — the job's retry absorbs it) rather than queueing behind a long transaction.
+
 ## Consumers are jobs too
 
 `consumer()` reads a queue, a change stream or a vendor's cursor: a factory over `job()` plus a
@@ -732,6 +785,29 @@ throws before a row is touched (`X_SUBJECT_TABLE_UNDECLARED`, `X_SUBJECT_TREATME
 `authSubjectTarget`, `auditSubjectTarget` and `storageSubjectTarget` satisfy it from their own
 packages. `{ target, retain: '<why>' }` exports a target and never erases it.
 
+### `personalData()` coverage
+
+`.personalData(kind)` on a column (`@ultimat3/entity`) marks it as a person's data. It adds no
+second export/erase path: it is the proof that the declared subjects cover every marked column.
+
+| Check | Refuses |
+|---|---|
+| `unerasedPersonalData(plan)` | a reached table whose `{ anonymize }` names fewer than every marked column (`X_PERSONAL_DATA_UNERASED`). `'delete'` clears the row; `{ retain: '<why>' }` is a stated reason |
+| `unreachedPersonalData(plans)` | a marked entity no subject's walk reaches (`X_PERSONAL_DATA_UNREACHED`) |
+| `personalDataProblems()` | both, over `registeredSubjects()` and every marked entity — what `x exercise` lists |
+
+Enforced twice: `plannedSubject()` throws the first `X_PERSONAL_DATA_UNERASED` when a run starts, so
+`subjectExport`/`subjectErase` refuse before a row is touched, and `x exercise` lists both codes
+as findings. **An erase is audited**: with an `auditSink` installed, `subjectErase` writes one
+`allowed` record per completed erase and a `failed` record per attempt that threw: `name` the job,
+`primitive: 'action'`, `surface: 'job'`, `input: { subject, run }` — the entity and the run id,
+never the subject's key, which an app may make an email. At least once: a sink dedupes on
+`idempotencyKey` (`<job>:<runId>`). A sink that refuses fails the run; one refusing every attempt
+can hold no record, and the dead-lettered run is the trail.
+
+`gdpr.job.test.ts` proves the property, not the shape: a covered erase leaves no marked value of the
+person in any marked table, and a declaration missing one column is named and does leak it.
+
 ## Outbound webhooks are jobs too
 
 `webhook()` is a factory over `job()` and delivers **one event to one endpoint**. Retry with
@@ -864,6 +940,53 @@ export const vendorEvents = webhookReceiver({
 | `verify` may answer `{ answer: Response }`, and `handshake` mounts `GET` | a subscription confirm or a challenge is the vendor's protocol; nothing queues |
 | `.routes()` is set on the job handle in place, never on a copy | `isJobHandle` proves the object `job()` built, so `defineApi({ jobs })` registers it like any job |
 | the path is absolute and outside `/api` and `/_x` | `X_WEBHOOK_RECEIVER_INVALID` at declaration, beside a missing `verify`/`handle` or a bad `maxBytes` |
+
+## Double-entry postings are jobs too
+
+`ledger({ name, tenant, book })` is a factory over `job()`. Its input is a posting — `{ key,
+entries: [{ account, amount: Money }], orgId? }` — and its run refuses, before a line is written,
+anything that is not balanced Money; then it writes every line in ONE durable step through the
+app's `LedgerBook`. No provider, account plan or currency policy ships (axiom 8): the accounts
+are your strings, the table is your entity.
+
+```ts
+import { defaultDriver, entity, integer, money, text } from '@ultimat3/entity';
+import { entityLedgerBook, ledger } from '@ultimat3/jobs';
+
+// The app's lines: keyed (postingKey, line) — (orgId, postingKey, line) when tenanted, where a key
+// is one posting PER TENANT and the posting's `orgId` fills the tenant column.
+export const ledgerLines = entity('ledger_lines', {
+  columns: { postingKey: text(), line: integer(), account: text(), amount: money() },
+  primaryKey: ['postingKey', 'line'],
+});
+
+export const postPayment = ledger({
+  name: 'payments.post',
+  tenant: (posting) => posting.orgId ?? 'none',
+  book: () => entityLedgerBook({ driver: defaultDriver(), entity: ledgerLines }),
+});
+
+await postPayment.enqueue({
+  key: 'pay_123',
+  entries: [
+    { account: 'cash', amount: { minor: 1299, currency: 'EUR' } },
+    { account: 'revenue', amount: { minor: -1099, currency: 'EUR' } },
+    { account: 'vat-payable', amount: { minor: -200, currency: 'EUR' } },
+  ],
+});
+```
+
+| Rule | Why |
+|---|---|
+| every currency's entries sum to zero, each on its own (`X_LEDGER_UNBALANCED`) | an FX posting balances in EUR and in USD separately; netting across currencies is the error |
+| `minor` a safe integer, the currency ISO 4217, one `scale` per currency, a non-blank account, at least two entries (`X_LEDGER_ENTRY_INVALID`) | no float money; a sum across two scales is not a sum |
+| both refusals TERMINAL | the posting is the input: attempt five sees the same entries |
+| idempotent by key: the job's live key is `<name>:<key>`; the book writes a key once per tenant, `(tenant, postingKey, line)` | a retry, a replay or a second enqueue of `pay_123` posts it once — `entityLedgerBook` is one `insert … on conflict do nothing` |
+| `assertBalancedPosting(posting)` is exported | the action that enqueues refuses at the request, before a row is queued |
+| a key already stored with other lines — another count, another line — is `X_LEDGER_POSTING_CONFLICT` (409, terminal), nothing written | a superset under one key would store only the new lines beside the old: an unbalanced book. A correction is a new key. The Postgres book inserts and reads the key back in ONE transaction |
+
+A payment provider's webhook is a `webhookReceiver()` whose `handle` enqueues the posting, keyed
+by the provider's own id — the receiver dedupes the delivery, the ledger dedupes the posting.
 
 ## The deadline cancels
 
@@ -1477,6 +1600,38 @@ Nor for a job being settled (`As of 2026-10-30`): the heartbeat stops when the w
 `ack` / `nack`, not when `executeJob` returns. In between ran the `onSettled` hook and the step
 listing, and a renewal there matched no row — `jobs.lease.lost` for a job that had finished, with
 the hook's `ctx.signal` aborted under it.
+
+### `withLock(key, fn, { ttl })`
+
+One holder fleet-wide for `fn`, held in the job driver's `LeaseStore` as one slot under
+`lock:<key>` — the rows `job.concurrency` already counts, so no table, no Redis, no second
+mechanism. Not a primitive: a helper a job or action body calls.
+
+```ts
+import { withLock } from '@ultimat3/jobs';
+
+// The app's two halves: the slow read, and a write its store refuses under an older token.
+declare function recompute(id: string, options: { signal: AbortSignal }): Promise<number>;
+declare function saveTotal(id: string, total: number, token: number): Promise<void>;
+
+export const recount = (id: string): Promise<void> =>
+  withLock(
+    `invoice:${id}`,
+    async ({ token, signal }) => {
+      const total = await recompute(id, { signal });
+      await saveTotal(id, total, token);
+    },
+    { ttl: '30s', wait: '5s' },
+  );
+```
+
+| Option / fact | Meaning |
+|---|---|
+| `ttl` (required) | how long the key outlives a dead holder; renewed at a third of it while `fn` runs |
+| `wait` (default one `ttl`, `0` = one try) | then `X_LOCK_NOT_ACQUIRED` (409, retryable), naming the holder |
+| `token` | a NUMBER the lease store assigns per grant (`HeldLease.fence`; Postgres: `x_job_leases.fence` from one sequence), greater than every earlier holder's — never a client clock. Write it beside the data and refuse a smaller one. A store answering no fence is `X_LOCK_STORE_MISSING` |
+| a renewal refused, or none landing within `ttl` — decided before each call, one in flight, a late `true` still late | `fn`'s `signal` aborts with `X_LOCK_LOST`, and the call rejects with it even if `fn` resolved — its work was not exclusive. A renew hung on a dead socket is caught by the next tick |
+| `store` | default the installed driver's `leases`; none is `X_LOCK_STORE_MISSING` |
 
 ## The operator surface
 

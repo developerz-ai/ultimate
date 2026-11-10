@@ -1,9 +1,10 @@
-// The registry for the browser-backed e2e driver's codes: the seven `X_E2E_*` a page refuses with
-// and the four `X_CDP_*` its raw-CDP browser refuses with. Registered here, not in `errors.ts`,
-// because that catalogue sits at its ceiling; anchored by the barrel and by both constructor files.
+// The registry for the browser-backed e2e driver's codes: the seven `X_E2E_*` a page refuses with,
+// registered here (not in `errors.ts`, which sits at its ceiling). The four `X_CDP_*` its raw-CDP
+// browser refuses with are `@ultimat3/scraping/cdp`'s since 31.0.0 — listed here, registered there.
 import { registerErrorCodes } from '@ultimat3/core';
+import { CDP_ERROR_CODES, CDP_ERROR_TITLES } from '@ultimat3/scraping/cdp';
 
-export const E2E_ERROR_CODES = [
+const OWN_E2E_CODES = [
   'X_E2E_EVALUATE_UNSUPPORTED',
   'X_E2E_EVALUATE_CAPTURED',
   'X_E2E_EVALUATE_THREW',
@@ -11,17 +12,16 @@ export const E2E_ERROR_CODES = [
   'X_E2E_LOCATOR_AMBIGUOUS',
   'X_E2E_SERVICE_WORKER_ABSENT',
   'X_E2E_APP_FAILED',
-  // Four and not one, because the four repairs differ: install a browser, read the browser's own
-  // stderr, look at the page, raise a deadline.
-  'X_CDP_BROWSER_MISSING',
-  'X_CDP_LAUNCH_FAILED',
-  'X_CDP_CALL_FAILED',
-  'X_CDP_TIMEOUT',
 ] as const;
+
+type OwnE2eCode = (typeof OWN_E2E_CODES)[number];
+
+/** Every code an e2e run can refuse with: this package's seven, then the browser's four. */
+export const E2E_ERROR_CODES = [...OWN_E2E_CODES, ...CDP_ERROR_CODES] as const;
 
 export type E2eErrorCode = (typeof E2E_ERROR_CODES)[number];
 
-export const E2E_ERROR_TITLES = Object.freeze<Record<E2eErrorCode, string>>({
+const OWN_E2E_TITLES = Object.freeze<Record<OwnE2eCode, string>>({
   X_E2E_EVALUATE_UNSUPPORTED: 'a page.evaluate() closure cannot be sent into the browser',
   X_E2E_EVALUATE_CAPTURED: 'a page.evaluate() closure named a binding the page does not have',
   X_E2E_EVALUATE_THREW: 'an expression an e2e page ran threw inside the browser',
@@ -29,14 +29,15 @@ export const E2E_ERROR_TITLES = Object.freeze<Record<E2eErrorCode, string>>({
   X_E2E_LOCATOR_AMBIGUOUS: 'an e2e locator matched more than one element and was asked to click',
   X_E2E_SERVICE_WORKER_ABSENT: 'no service worker took control of the page within the budget',
   X_E2E_APP_FAILED: 'the app an e2e run spawned did not come up',
-  X_CDP_BROWSER_MISSING: 'no Chrome or Chromium is installed for the e2e driver to launch',
-  X_CDP_LAUNCH_FAILED: 'the browser started and never announced a DevTools endpoint',
-  X_CDP_CALL_FAILED: 'the browser refused a DevTools call',
-  X_CDP_TIMEOUT: 'a DevTools call did not answer inside its deadline',
+});
+
+export const E2E_ERROR_TITLES = Object.freeze<Record<E2eErrorCode, string>>({
+  ...OWN_E2E_TITLES,
+  ...CDP_ERROR_TITLES,
 });
 
 // Owned here and borrowed by nobody, so unconditional: a second package claiming one must fail as
 // X_ERROR_CODE_DUPLICATE rather than quietly keep whichever title registered first.
 registerErrorCodes(
-  Object.fromEntries(Object.entries(E2E_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+  Object.fromEntries(Object.entries(OWN_E2E_TITLES).map(([code, title]) => [code, { title }])),
 );

@@ -70,6 +70,24 @@ export const SURFACE_SPECS = Object.freeze<Record<Surface, SurfaceSpec>>({
 });
 
 const SURFACE_SEGMENT = /(?:^|\/)(site|app|api|shared)\//;
+/**
+ * The surface directly under an app workspace, `apps/<name>/<surface>/`. Read first, so a workspace
+ * named like a surface (`apps/api/site/…`) and a root that contains one (`/srv/app/apps/web/…`)
+ * resolve to the real surface; `SURFACE_SEGMENT` alone took the first matching segment, and
+ * `apps/api/site/x/page.tsx` was surface `api` — `X_ROUTE_FILE_INVALID` for every route there.
+ */
+const WORKSPACE_SURFACE = /(?<=^|\/)apps\/[^/]+\/(site|app|api|shared)\//g;
+
+/**
+ * The LAST `apps/<name>/<surface>/`: an absolute path's checkout root may hold one of its own
+ * (`/home/u/apps/acme/app/apps/web/site/…` is surface `site`, never `app`). Lookbehind, not a
+ * consumed `/`, so two adjacent matches are both seen.
+ */
+const lastWorkspaceSurface = (path: string): RegExpExecArray | null => {
+  let last: RegExpExecArray | null = null;
+  for (const match of path.matchAll(WORKSPACE_SURFACE)) last = match as RegExpExecArray;
+  return last;
+};
 
 /** Where the surface segment is, and what follows it — the two halves of one match. */
 export interface SurfaceLocation {
@@ -86,7 +104,7 @@ export interface SurfaceLocation {
  */
 export function locateSurface(file: string): SurfaceLocation | null {
   const normalized = normalize(file);
-  const match = SURFACE_SEGMENT.exec(normalized);
+  const match = lastWorkspaceSurface(normalized) ?? SURFACE_SEGMENT.exec(normalized);
   const found = match?.[1];
   if (found === undefined || match === null) return null;
   return { surface: found as Surface, rest: normalized.slice(match.index + match[0].length) };

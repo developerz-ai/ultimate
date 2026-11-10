@@ -8,7 +8,8 @@ import { basename, dirname, join } from 'node:path';
 import { NotImplementedError, systemClock } from '@ultimat3/core';
 import type { BranchInfo } from './branch';
 import { assertBranchName } from './branch';
-import { branchExists, dbUnavailable } from './errors';
+import { branchExists } from './branch-errors';
+import { dbUnavailable } from './errors';
 import { PGLITE_MEMORY, pgliteDataDir } from './pglite';
 
 export interface PgliteBranchOptions {

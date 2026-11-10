@@ -140,6 +140,36 @@ export const LEASE_STORE_CHECKS: readonly LeaseStoreCheck[] = [
     },
   },
   {
+    // `withLock`'s token: a write fenced on it refuses a smaller one, so a later holder must
+    // never show an earlier holder's number — not after a release, not after a takeover.
+    name: 'every grant carries a fence greater than every earlier one, takeovers included',
+    async run(subject) {
+      const { store } = subject;
+      const key = keyOf();
+      const fences: number[] = [];
+      const fenceOf = (lease: HeldLease | undefined, what: string): number => {
+        const { fence } = granted(lease, what);
+        if (typeof fence !== 'number' || !Number.isSafeInteger(fence)) {
+          return expect.unreachable(`${what}: the grant carries no whole-number fence`);
+        }
+        fences.push(fence);
+        return fence;
+      };
+      fenceOf(await store.acquire(key, 2, LONG_TTL_MS, 'a'), 'slot 0');
+      const second = granted(await store.acquire(key, 2, SHORT_TTL_MS, 'b'), 'slot 1');
+      fenceOf(second, 'slot 1');
+      // The same slot, released and granted again.
+      await store.release(second);
+      fenceOf(await store.acquire(key, 2, SHORT_TTL_MS, 'c'), 'slot 1 again');
+      // The same slot, lapsed and TAKEN OVER without a release.
+      await elapse(subject, PAST_SHORT_TTL_MS);
+      fenceOf(await store.acquire(key, 2, LONG_TTL_MS, 'd'), 'slot 1 taken over');
+      for (const [index, fence] of fences.entries()) {
+        if (index > 0) expect(fence).toBeGreaterThan(fences[index - 1] ?? Number.NaN);
+      }
+    },
+  },
+  {
     name: 'holders names the live slots of one key in slot order, and nothing expired',
     async run(subject) {
       const { store } = subject;

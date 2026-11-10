@@ -585,6 +585,51 @@ await db.posts.where({ orgId }).search(term).orderBy('createdAt', 'desc').limit(
 | `memoryDriver()` **refuses** it — `X_SEARCH_IN_MEMORY` | stemming, stop words and a phrase parser are not a JS token comparison, and an answer memory could give is one Postgres would contradict. Assert a search in a `.live.test.ts` |
 | relevance is **not** an order the chain serves | `ts_rank` is a computed value and a cursor carries columns; the order is the one you declared, and it pages |
 
+## Search index (the `searchIndex` port)
+
+`.searchable()` columns are searched through one port, `SearchIndex` (`index` / `remove` / `query`,
+every call tenant-scoped by `{ entity, tenant }`).
+
+| Index | What it is |
+|---|---|
+| `postgresSearchIndex()` | the default: the generated `tsvector`; `index`/`remove` send nothing (the server keeps the vector), `query` is the repository's own `matches` read — tenancy, actor check and soft delete included. Hits in primary-key order (no rank) |
+| `memorySearchIndex()` | the reference to copy and the unit-test index: words, case-folded, every word required; no stemming |
+| Meilisearch / Typesense | the app's: implement `SearchIndex`, prove it with `behavesLike(searchIndexConformance, …)` from `@ultimat3/testing/conformance`, return it as `searchIndex` from `runtime.ts` |
+
+```ts
+import { database, entity, searchIndex, text, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    title: text().searchable('A'),
+    updatedAt: timestamp().defaultNow().onUpdateNow(), // the document's version
+  },
+});
+const db = database({ posts });
+
+export const find = async (orgId: string, q: string) => {
+  const hits = await searchIndex().query({ entity: 'posts', tenant: orgId, term: q, limit: 20 });
+  const page = await db.posts.where({ orgId }).search(q).page(); // the same port, one path
+  return { hits, page };
+};
+```
+
+| Rule | Detail |
+|---|---|
+| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first (at most `MAX_PAGE_SIZE`), then the chain reads those rows with its own tenancy, soft delete, order and cursor |
+| a document has a **version** | the row's `onUpdateNow()` instant, epoch ms. A searchable entity indexed by anything declares one — `updatedAt: timestamp().defaultNow().onUpdateNow()` — or `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
+| keep only newer | an index applies a document only when its version is newer than what it holds for that id: a document, or the tombstone `remove(scope, ids, deletedAt)` leaves. Equal = replay, a no-op. Millisecond resolution: two writes in one ms are one version |
+| the write path | while an external index is installed (`runtime.ts`'s `searchIndex`, `installSearchIndex`), every COMMITTED `insert`/`insertAll`/`upsertAll`/`update`/transition of a searchable entity indexes the row, and a `delete` (soft or hard) removes it at the delete's instant. Fed by `entity.row`, emitted after commit: a rollback indexes nothing |
+| a failed mirror never fails the write | logged as `entity.search-index.write-failed` (`entity`, `op`, `code`, `cause`, `fix`); `reindex()` (`@ultimat3/jobs`) is the repair |
+| not mirrored, logged the same way | `updateWhere`/`deleteWhere` (a count, no rows), and a delete on an entity whose key is not `id` (no row read). `reindex()` re-indexes updated rows; it never removes a deleted one |
+| the built-in index costs nothing | `postgresSearchIndex()` subscribes to nothing — not even `entity.row`'s `before` read |
+
+`searchDocumentOf(entity, row)` is the one document builder (only `.searchable()` columns leave).
+`searchVersionColumn` and `searchVersionOf` are on the `.` barrel; `installSearchIndex` is on
+`@ultimat3/entity/adapter`.
+
 ## A state machine over a column
 
 `.transitions()` on an `enumerated()` column. The states are yours; the machine is the framework's.
@@ -768,6 +813,60 @@ Three declarations, each a trigger or a purge target `x db gen` and `purge()` co
 | `references(() => posts.id, { countedIn: () => posts.likeCount })` | the child's trigger keeps the parent's `integer()` equal to its row count, in the write's transaction; a soft-deleted child is not counted. Declared on the key because the child already names its parent: a thunk on the parent naming the child would make each declaration the other's type. `X_ENTITY_COUNTS_INVALID` when the target is no integer or the key points at no single primary key |
 
 Memory parity: the memory driver records history and moves counters in its repository (`memory-lifecycle.ts`); `history.test.ts` and `counter.test.ts` are the parity tables.
+
+## Partitioned tables — `partitionBy`
+
+A range by one `timestamp()`/`date()` column, one partition per `interval`, bounds in UTC. `As of 2026-11-09`.
+
+```ts
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+export const events = entity('events', {
+  columns: { id: uuid(), at: timestamp().defaultNow(), orgId: uuid().tenant(), kind: text() },
+  primaryKey: ['id', 'at'],                       // must hold the partition column
+  partitionBy: { column: 'at', interval: 'month', ahead: 3, retain: { after: '400d' } },
+});
+```
+
+| Question | Answer |
+|---|---|
+| Refused at declaration (`X_ENTITY_PARTITION_INVALID`) | key or a unique index/invariant without the column (Postgres' rule), a column that is no `timestamp()`/`date()`, an interval outside `day`·`week`·`month`·`year`, `ahead` not 0–1000, a bad `retain.after`, row `retain` beside it, a `view`, a table name over 53 bytes |
+| `x db gen` | `create table … partition by range ("at")`, then `select ultimate_partitions(…)` — the current partition and `ahead` more, judged at APPLY time, so a migration replayed a year later still has this month's |
+| Partition names | `<table>_pYYYYMMDD`, the lower bound. `week` is ISO (Monday) |
+| Maintenance | `partitions()` from `@ultimat3/jobs`: a job plus a daily UTC `.schedule` task. Per table `maintainPartitions` (`@ultimat3/db`) creates `ahead` under a 5 s `lock_timeout` (a blocked step is `X_DB_LOCK_TIMEOUT`, retried — never a queue of inserts behind it), then retires each partition `retain.after` passed: marked, `detach … concurrently`, dropped; a run that died midway is resumed. Only `_pYYYYMMDD` children are touched |
+| A row past every partition | refused by Postgres (`23514`). No default partition, by decision: it forbids `detach … concurrently`, and creating a month it caught rows for scans and moves them under ACCESS EXCLUSIVE. Size `ahead` so `ahead × interval` outlasts the longest scheduler outage you would tolerate (default 3); a failing `partitions()` run dead-letters loudly long before |
+| Repository, tenancy, cursors | unchanged — partitions are storage. The memory driver has none to simulate |
+| Turning it on for an existing plain table | refused at migrate time by the function (`X_MIGRATION_PARTITION_CHANGE`): Postgres cannot partition in place. Taking it off a partitioned table is refused by `x db gen` (same code) |
+| Changing `interval` later | refused by `x db gen` (`X_MIGRATION_PARTITION_CHANGE`): the existing partitions would overlap the new width |
+| Moving rows in (a new entity replacing a plain or re-widened one) | enqueue `partitions()` once with `{ from: '<oldest row, ISO>' }` — it creates every partition back to that row's and sweeps nothing — then `backfill()` the copy. Rows older than `retain.after` are dropped by the next scheduled run |
+| A reference INTO it | a composite key by hand; a same-tenant key needs `crossTenant: '<why>'` — `wiki/Migrations-And-Backfills.md#partitioned-tables` |
+
+## Personal data (GDPR)
+
+`.personalData(kind)` marks a column as holding personal data. `kind` is one of `identifier` (ties
+rows to a person: a handle, a national id), `contact` (reaches one: email, phone, address) or
+`free-text` (may hold either: a bio, a message).
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+export const members = entity('members', {
+  columns: {
+    id: uuid().primaryKey(),
+    email: text().unique().personalData('contact'),
+    bio: text({ max: 400 }).nullable().personalData('free-text'),
+  },
+});
+```
+
+- Changes no DDL and no `$describe()` hash: marking an existing column is not a migration.
+- Every chain link after the marker keeps it.
+- `personalDataOf(entity)` lists the marked columns (`property`, physical `column`, `kind`,
+  `columnKind`, `nullable`); `personalDataEntities()` walks the registry, each entity with its
+  `tenantColumn`. `@ultimat3/jobs`' `accountExport`/`accountErase` read these.
+- Not wired into log redaction: `redactKeys()` (core) is by key name, and a `free-text` `name` column
+  would redact every `name` log field. An app wanting it calls
+  `redactKeys(personalDataEntities().flatMap((e) => e.columns.map((c) => c.property)))`.
 
 ## Writing many rows
 

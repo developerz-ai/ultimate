@@ -3,7 +3,7 @@
 // browser run is `e2e/cdp-session.e2e.test.ts`; this is the part a fake can pin exactly.
 
 import { describe, expect, test } from 'bun:test';
-import type { CdpConnection } from './cdp-connection';
+import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import { cdpE2eSession } from './cdp-e2e-session';
 import { type Call, confirming, fake } from './cdp-e2e-session-fake-fixture';
 import { NETWORK_PROBE } from './cdp-network-probe';

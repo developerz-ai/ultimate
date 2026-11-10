@@ -23,7 +23,12 @@ import {
 } from './llm-fixture';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
-import { configureAi, installAiGateway, resetAiRuntime } from './runtime';
+import {
+  installAiEmbedder,
+  installAiGateway,
+  installSemanticCache,
+  resetAiRuntime,
+} from './runtime';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -238,28 +243,26 @@ describe('the entry key', () => {
     const inner = memorySemanticCache();
     const { provider } = stub({ answer: 'ok' }, { answer: 'ok' });
     installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
-    configureAi({
-      // Orthogonal per first letter, so the two prompts never answer each other's lookup and the
-      // entry KEY is the only thing under test.
-      embedder: {
-        name: 'first-letter',
-        dimension: 26,
-        embed: async (texts) =>
-          texts.map((text) => {
-            const vector = new Float32Array(26);
-            vector[(text.charCodeAt(0) - 97 + 26) % 26] = 1;
-            return vector;
-          }),
-      },
-      semanticCache: () => ({
-        ...inner,
-        lookup: (embedding, threshold) => inner.lookup(embedding, threshold),
-        remember(key, embedding, value, options) {
-          keys.push(key);
-          return inner.remember(key, embedding, value, options);
-        },
-      }),
+    // Orthogonal per first letter, so the two prompts never answer each other's lookup and the
+    // entry KEY is the only thing under test.
+    installAiEmbedder({
+      name: 'first-letter',
+      dimension: 26,
+      embed: async (texts) =>
+        texts.map((text) => {
+          const vector = new Float32Array(26);
+          vector[(text.charCodeAt(0) - 97 + 26) % 26] = 1;
+          return vector;
+        }),
     });
+    installSemanticCache(() => ({
+      ...inner,
+      lookup: (embedding, threshold) => inner.lookup(embedding, threshold),
+      remember(key, embedding, value, options) {
+        keys.push(key);
+        return inner.remember(key, embedding, value, options);
+      },
+    }));
     const ask = llm({
       input: t.object({ q: t.string }),
       output: t.object({ answer: t.string }),
@@ -291,19 +294,17 @@ describe('a broken embedding never serves another prompt answer', () => {
   test('two unrelated prompts get two answers, even with a directionless embedding', async () => {
     const { provider, seen } = stub(ANSWER, { summary: 'the other post', tags: ['other'] });
     installAiGateway(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }));
-    configureAi({
-      embedder: {
-        name: 'nan-component',
-        dimension: 3,
-        embed: async (texts) =>
-          texts.map((text) => {
-            const vector = new Float32Array(3);
-            vector[0] = 1;
-            vector[1] = Number.NaN;
-            vector[2] = text.includes(POST_ID) ? 1 : 2;
-            return vector;
-          }),
-      },
+    installAiEmbedder({
+      name: 'nan-component',
+      dimension: 3,
+      embed: async (texts) =>
+        texts.map((text) => {
+          const vector = new Float32Array(3);
+          vector[0] = 1;
+          vector[1] = Number.NaN;
+          vector[2] = text.includes(POST_ID) ? 1 : 2;
+          return vector;
+        }),
     });
     const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.99 } } });
 

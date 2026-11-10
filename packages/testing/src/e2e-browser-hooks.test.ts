@@ -1,5 +1,5 @@
 // Every hook that opens or closes a browser has a deadline derived from what it does: an open
-// starts at `E2E_BROWSER_OPEN_MS`, a close at `E2E_BROWSER_CLOSE_MS`, an app boot adds
+// starts at `E2E_BROWSER_OPEN_MS`, a close at `LAUNCHED_CLOSE_MS`, an app boot adds
 // `E2E_APP_START_MS` and an app stop `E2E_APP_STOP_MS`. A literal there was the shape of four CI
 // flakes — Bun killed the hook before the relaunch — and Bun's 5 s default around a close was a
 // leaked Chrome profile per run cut short. Read from the suites' source, through their helpers.
@@ -30,7 +30,7 @@ const OPENERS = [
 const STARTERS = ['startE2eApp'];
 
 const OPEN = 'E2E_BROWSER_OPEN_MS';
-const CLOSE = 'E2E_BROWSER_CLOSE_MS';
+const CLOSE = 'LAUNCHED_CLOSE_MS';
 const APP_START = 'E2E_APP_START_MS';
 const APP_STOP = 'E2E_APP_STOP_MS';
 

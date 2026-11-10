@@ -52,6 +52,7 @@ import { loadSiteSettings } from './site-config';
 import { readStaticReport } from './static-report';
 import { unknownToolGateFindings } from './tool-gate-names';
 import { measureIfStale } from './verify-budgets-build';
+import { nestedAppRootFindings } from './verify-drift-owner';
 import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import { mcpMountFindings } from './verify-mcp-mount';
@@ -223,8 +224,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
           // The fifth: what the previous release would trip over during a roll. Off until the app
           // sets `rollingSince` in `x.verify.json`, since an applied migration cannot gain a marker.
           ...(await checkRollingMigrations(ctx.root)),
+          // The sixth: one migration owner. A nested `app.config.ts` is a second app root — its own
+          // registry, migrations and image (`X_APP_ROOT_NESTED`, `verify-drift-owner.ts`).
+          ...(await nestedAppRootFindings(ctx.root)),
         ],
-        // The sixth: a generated client (`x client`) against its own stamp — a source document that
+        // The seventh: a generated client (`x client`) against its own stamp — a source document that
         // moved (`X_CLIENT_STALE`) or a body edited by hand (`X_CLIENT_EDITED`). No database.
         client: () => checkClientDrift(ctx.root),
       });

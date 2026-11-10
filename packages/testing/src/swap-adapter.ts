@@ -4,7 +4,7 @@
 // `UNSWAPPED` with what a test does instead — a new row in core's table is a compile error here.
 
 import type { IdempotencyStore, MeterStore } from '@ultimat3/action/adapter';
-import type { Gateway } from '@ultimat3/ai/adapter';
+import type { Embedder, Gateway, SemanticCacheFactory } from '@ultimat3/ai/adapter';
 import type { AuthLimiterFactory, TotpReplayGuard } from '@ultimat3/auth/adapter';
 import type { AdapterPortName } from '@ultimat3/core';
 import type {
@@ -14,10 +14,11 @@ import type {
   SecretSource,
   SleepClock,
 } from '@ultimat3/core/adapter';
+import type { SearchIndex } from '@ultimat3/entity/adapter';
 import type { RateLimitStore } from '@ultimat3/http/adapter';
 import type { EventBus, JobDriver } from '@ultimat3/jobs/adapter';
 import type { MailDriver } from '@ultimat3/mail/adapter';
-import type { NotifyStores } from '@ultimat3/notify/adapter';
+import type { NotifyStores, SmsTransport } from '@ultimat3/notify/adapter';
 import type { Transport } from '@ultimat3/realtime/adapter';
 import type { ScrapeDriver } from '@ultimat3/scraping/adapter';
 import { TestAdapterPortUnswappableError } from './stub-errors';
@@ -30,6 +31,7 @@ export interface SwappableAdapters {
   readonly auditSink: AuditSink;
   readonly authLimiter: AuthLimiterFactory;
   readonly clock: SleepClock;
+  readonly embedder: Embedder;
   readonly errorReporter: ErrorReporter;
   readonly eventBus: EventBus;
   readonly failureStore: FailureStore;
@@ -40,7 +42,10 @@ export interface SwappableAdapters {
   readonly notifyStores: NotifyStores;
   readonly rateLimitStore: RateLimitStore;
   readonly scrapeDriver: ScrapeDriver;
+  readonly searchIndex: SearchIndex;
   readonly secretSource: SecretSource;
+  readonly semanticCache: SemanticCacheFactory;
+  readonly smsTransport: SmsTransport;
   readonly totpReplay: TotpReplayGuard;
   readonly transport: Transport;
 }
@@ -56,6 +61,7 @@ const BINDINGS: Bindings = {
   auditSink: async (impl) => (await import('@ultimat3/core/adapter')).installAuditSink(impl),
   authLimiter: async (impl) => (await import('@ultimat3/auth/adapter')).installAuthLimiters(impl),
   clock: async (impl) => (await import('@ultimat3/core/adapter')).installClock(impl),
+  embedder: async (impl) => (await import('@ultimat3/ai/adapter')).installAiEmbedder(impl),
   errorReporter: async (impl) =>
     (await import('@ultimat3/core/adapter')).installErrorReporter(impl),
   eventBus: async (impl) => (await import('@ultimat3/jobs/adapter')).installEventBus(impl),
@@ -71,7 +77,11 @@ const BINDINGS: Bindings = {
     (await import('@ultimat3/http/adapter')).installRateLimitStore(impl),
   scrapeDriver: async (impl) =>
     (await import('@ultimat3/scraping/adapter')).installScrapeDriver(impl),
+  searchIndex: async (impl) => (await import('@ultimat3/entity/adapter')).installSearchIndex(impl),
   secretSource: async (impl) => (await import('@ultimat3/core/adapter')).installSecretSource(impl),
+  semanticCache: async (impl) => (await import('@ultimat3/ai/adapter')).installSemanticCache(impl),
+  smsTransport: async (impl) =>
+    (await import('@ultimat3/notify/adapter')).installSmsTransport(impl),
   // The slot takes a factory; the port carries one guard, which every call hands back.
   totpReplay: async (impl) =>
     (await import('@ultimat3/auth/adapter')).installTotpReplay(() => impl),
@@ -98,6 +108,8 @@ export const UNSWAPPED: Readonly<Record<Exclude<AdapterPortName, SwappablePort>,
   purge: "handed to the cache's CDN purge at boot: pass your driver to the bust under test",
   pushSubscriptionStore: 'the push fixture owns one: destructure { push } in the test',
   storage: 'disks are built by the boot: build the disk over your driver in the test',
+  uploadScanner:
+    '@ultimat3/testing takes no dependency on @ultimat3/storage: call installUploadScanner(scanner) from @ultimat3/storage/adapter in the test and run the release it answers in afterEach',
 };
 
 const isSwappable = (port: string): port is SwappablePort => Object.hasOwn(BINDINGS, port);
