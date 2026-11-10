@@ -15,3 +15,12 @@
 
 ## Done when
 - The adopter pins 31.0.0 with no patch, no restated framework constant and no workaround this plan made obsolete; its gate is green on `main`.
+
+## Outcome (2026-11-10)
+Done. Run from this adopter's own repository, in a git worktree.
+
+| Step | Result |
+|---|---|
+| upgrade to 31.0.0 | done |
+| upgrade to 31.2.0 | done; it picks up the field-report fixes listed in [`39`](39-v31-release.md#outcome-2026-11-10) |
+| production | not recorded in this plan |

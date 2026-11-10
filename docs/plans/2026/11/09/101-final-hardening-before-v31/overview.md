@@ -1,5 +1,8 @@
 # Final hardening before v31: the last big change to Ultimate
 
+## Outcome (2026-11-10)
+v31 shipped. 31.0.0 (#1046), 31.1.0 (#1047, #1048) and 31.2.0 (#1049, #1050) are all on npm, with all 31 packages attested and annotated tags ([`39`](39-v31-release.md#outcome-2026-11-10)). Adopters A–I are on 31.2.0, each upgraded from its own repository. E, G and H were rolled and verified. A, C, D, F and I don't auto-roll production, or have no live deploy. B's rollout is not recorded here. The two point releases fixed 14 field reports from those upgrades. 36 of 40 slices are complete. Still open, so the plan stays `in_progress`: [`22`](22-scale.md) B4 island grouping (design only), [`23`](23-feature-gaps.md) `versioned()` and the reference usages, [`26`](26-infra.md) F2 and F4, and the owner settings in [`90`](90-owner-steps.md#outcome-2026-11-10).
+
 ## Goal
 **The bar: the best full-stack framework in the world — that is what the name claims.** Every slice is judged against it: would a serious team anywhere, inspecting this with or without an AI, find a reason to pick something else? If yes, the slice is not done.
 
@@ -110,3 +113,11 @@ About 820 files in this repo, 16 PRs, plus 10 PRs in other repositories.
 - **SAML** likely needs XML-DSig: a build-vs-wrap decision ([`docs/idea/18-build-vs-wrap.md`](../../../../../idea/18-build-vs-wrap.md)) before code.
 - **D10 barrel split** is the widest change: run it last among code sweeps; adopters feel it through `wiki/Upgrading.md`.
 - **v31-break list** (each needs an `Upgrading.md` row): tenant index (07 E1), IPv6 rate-limit keys (08 H5), remote MCP tools opt-in (15 I3), Sentry boot reporter (17 C4), semconv renames + removed observer slots (20), removed setters + transport config + `SecretSource` (21), partitioned entities (22, additive but schema-visible), deletions (29), `allowsMany` required (16 N1).
+
+## Follow-ups (not in this plan)
+| Issue | Follow-up |
+|---|---|
+| [#1051](https://github.com/developerz-ai/ultimate/issues/1051) | an `@ultimat3/auth/schema` subpath, so `packages/cli/src/framework-schema.ts` stops pulling the auth barrel into `ROLE=migrate`; 31.2.0 raised the serve-graph pins by 2 for it |
+| [#1052](https://github.com/developerz-ai/ultimate/issues/1052) | e2e outside UTC: the time-zone island reloads on the first visit, so `goto()` returns on the pre-reload load |
+| [#1053](https://github.com/developerz-ai/ultimate/issues/1053) | split `packages/cli/src/cmd-doctor.ts` (482 lines) before the next doctor check |
+| [#1054](https://github.com/developerz-ai/ultimate/issues/1054) | a bump branch must not be named `release/*`: name it `chore/release-X.Y.Z`, or narrow `release-tag.yml:36` to `release/*.x` |
