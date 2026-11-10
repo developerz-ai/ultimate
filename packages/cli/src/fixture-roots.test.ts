@@ -53,6 +53,7 @@ const PER_PROCESS_WRAP = /(?:processRoot|mkdtemp|mkdtempSync)\($/;
 const NEVER_CREATED = new Set([
   "packages/cli/src/cmd-generate.test.ts: tmpdir(), 'x-generate-absolute-probe.ts'",
   "packages/manifest/src/docs-scan.test.ts: tmpdir(), 'ultimate-docs-absent-scope'",
+  "packages/scraping/src/cdp-launch-profile.test.ts: tmpdir(), 'x-profile-long-'.repeat(8)",
 ]);
 
 /** The text of each `join(…)` call in `source`, balanced over nested parentheses. */
@@ -99,4 +100,6 @@ test('every fixture root a test builds is one process’s: processRoot, mkdtemp 
   // Read off the source, so a scan that matched nothing is a broken scan, not a clean tree.
   expect(seen).toBeGreaterThan(50);
   expect(fixed.sort()).toEqual([]);
-});
+  // This is intentionally a complete repository scan. Under unit-lane contention its deadline must
+  // measure the scan rather than Bun's default per-test budget.
+}, 120_000);

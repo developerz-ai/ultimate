@@ -5,13 +5,13 @@
 import { describe, expect, test } from 'bun:test';
 // why: a throwaway executable script is the fake browser; Bun has no mkdtemp, chmod or recursive rm of its own.
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 // why: the scratch directory lives under the OS temp dir, which Bun does not expose.
 import { tmpdir } from 'node:os';
 // why: joining the script and its profile-log paths.
 import { join } from 'node:path';
 import { launchChrome } from './cdp-launch';
-import { throwawayProfile } from './cdp-launch-profile';
+import { MAX_BROWSER_TMPDIR_CHARS, socketSafeEnv, throwawayProfile } from './cdp-launch-profile';
 
 /** Record `--user-data-dir`, answer the first call, then run `rest`. */
 const script = (rest: string): string => `#!/bin/bash
@@ -140,4 +140,49 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test('the TMPDIR byte bound covers both spellings, multibyte paths, fallback, and immutable input', () => {
+    // The arithmetic IS the constant: the socket is <TMPDIR>/<vendor dir>/SingletonSocket, and a Unix
+    // socket address holds 108 bytes including the terminator. The longer vendor spelling is the bound.
+    for (const dir of ['com.google.Chrome.XXXXXX', 'org.chromium.Chromium.XXXXXX']) {
+      expect(
+        MAX_BROWSER_TMPDIR_CHARS + dir.length + 2 + 'SingletonSocket'.length,
+      ).toBeLessThanOrEqual(107);
+    }
+    const byteBound = 'a'.repeat(MAX_BROWSER_TMPDIR_CHARS);
+    const multibyteAtCharacterBound = 'é'.repeat(MAX_BROWSER_TMPDIR_CHARS);
+    expect(new TextEncoder().encode(byteBound).byteLength).toBe(MAX_BROWSER_TMPDIR_CHARS);
+    expect(new TextEncoder().encode(multibyteAtCharacterBound).byteLength).toBeGreaterThan(
+      MAX_BROWSER_TMPDIR_CHARS,
+    );
+
+    const env = { TMPDIR: multibyteAtCharacterBound, KEEP: 'kept' };
+    expect(socketSafeEnv(env)).toEqual({ TMPDIR: '/tmp', KEEP: 'kept' });
+    expect(env).toEqual({ TMPDIR: multibyteAtCharacterBound, KEEP: 'kept' });
+    expect(socketSafeEnv({ TMPDIR: byteBound })).toEqual({ TMPDIR: byteBound });
+    expect(socketSafeEnv({}, multibyteAtCharacterBound)).toEqual({ TMPDIR: '/tmp' });
+    expect(socketSafeEnv({}, byteBound)).toEqual({});
+  });
+
+  test('a TMPDIR too long for the singleton socket still starts the browser, on a short root', async () => {
+    const longRoot = join(
+      await mkdtemp(join(tmpdir(), 'x-profile-work-')),
+      'ultimate-upgrade-e2e-Zz9xQ1',
+    );
+    await mkdir(longRoot, { recursive: true });
+    const savedTmp = process.env['TMPDIR'];
+    process.env['TMPDIR'] = longRoot; // what a sandboxed fixture e2e hands its children: 83 chars
+    try {
+      // Before the clamp this launch threw X_CDP_LAUNCH_FAILED with Chrome's
+      // "Socket path too long" fatal, before any DevTools endpoint existed.
+      await withFake('echo "$TMPDIR" >"$0.tmpdir"', async (fake) => {
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        expect((await readFile(fake + '.tmpdir', 'utf8')).trim()).toBe('/tmp');
+        await launched.close();
+      });
+    } finally {
+      process.env['TMPDIR'] = savedTmp;
+      await rm(longRoot, { recursive: true, force: true });
+    }
+  }, 20_000);
 });
