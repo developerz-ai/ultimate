@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"
 owner: sebi
-percent: 97
-current_focus: "v31 shipped (31.0.0, 31.1.0, 31.2.0 on 2026-11-10) and adopters A–I are on 31.2.0. Open: 22 B4, 23 versioned() + reference usage, 26 F2/F4, and the owner steps"
+percent: 99
+current_focus: "v31 shipped (31.0.0, 31.1.0, 31.2.0 on 2026-11-10) and adopters A–I are on 31.2.0. Owner steps done 2026-11-10 except the O10 org setting (Actions may create PRs). Open: 22 B4, 23 versioned() + reference usage, 26 F2 and the demo F7 reset"
 slices:
   - file: 28-open-prs.md
     tier: 5
@@ -218,14 +218,14 @@ slices:
     tier: 5
     sweep: "18"
     status: in_progress
-    percent: 85
-    notes: "F1, F3, F4, F5, F8 merged (infrastructure #2232, #2234, #2236, #2237, #2238); F6/F7 done for adopter E (NATS_URL #2254, LIVE_NATS_URL dropped #2258, pg_stat_statements reset; Grafana reads Prometheus metrics, unchanged by the span-attribute rename). Open: F2 (#2233) parked for the owner restart window; F4 read path waits on owner step O8 (the token); F7 reset for the demo not recorded"
+    percent: 92
+    notes: "F1, F3, F4, F5, F8 merged (infrastructure #2232, #2234, #2236, #2237, #2238); F6/F7 done for adopter E (NATS_URL #2254, LIVE_NATS_URL dropped #2258, pg_stat_statements reset; Grafana reads Prometheus metrics, unchanged by the span-attribute rename). Open: F2 (#2233) parked for the owner restart window; F7 reset for the demo not recorded. F4 done 2026-11-10: the read-only token is in the infra .env as GLITCHTIP_READ_TOKEN (owner step O8) and scripts/glitchtip/issues.ts --json exits 0, reading 31 projects"
   - file: 90-owner-steps.md
     tier: 5
     sweep: "18"
     status: in_progress
-    percent: 27
-    notes: "3 of 11 closed (O1, O9 moot, O11). Open with the owner: O2–O8, O10 — plus allow Actions to create PRs, which bench.yml needs (its 2026-11-09 run failed on it)"
+    percent: 95
+    notes: "10 of 11 done 2026-11-10 on the owner's instruction: O1, O2 (verify required, admin-role bypass), O3, O4, O5 (GOVERNANCE.md signed), O6 (Pages + ultimate.developerz.ai), O7, O8 (as GLITCHTIP_READ_TOKEN), O9 moot, O11. O10 partial: bench.yml dispatched (run 42879568783) and the stale branch deleted, but 'Allow GitHub Actions to create and approve pull requests' is an org setting needing admin:org: the owner runs gh auth refresh -h github.com -s admin:org or flips it in org Settings → Actions"
 evidence: ["#1035", "#1037", "#1038", "#1040", "#1042", "#1043", "#1044", "#1045", "#1046", "#1047", "#1048", "#1049", "#1050"]
 notes: "Sweeps 10 (19 part 9b + 21 part B), 13 (23 part 12b) and 15 (29 D10) carry second halves of slices listed above under their first sweep. Adopter letter mapping is off-tree with the owner."
 last_updated: 2026-11-10
