@@ -1,8 +1,8 @@
 # Governance
 
-> **Draft, unsigned** `As of 2026-11-03`. Every statement below describes how the project runs
-> today. It takes effect when the owner signs it at the foot of this page; until then it is a
-> description, not a commitment.
+> **Signed** `As of 2026-11-10`. Every statement below describes how the project runs today, and
+> the owner's signature at the foot of this page makes it a commitment: it takes effect from that
+> date.
 
 Ultimate is owned by one organisation and maintained day to day by an AI. This page says who
 decides what, what the AI may and may not do, how a release reaches npm, and what happens to the
@@ -14,7 +14,7 @@ project if either of them stops.
 |---|---|
 | **the owner**: [developerz.ai](https://developerz.ai), the `developerz-ai` GitHub organisation and its owners | the design axioms (`CLAUDE.md`), the eight primitives, the tier table, what the project is for; repository and npm settings; this page |
 | **the maintainer bot**: the developerz.ai platform, under the policy committed in [`.dz/maintainer/maintainer.yml`](.dz/maintainer/maintainer.yml) | triage, review, fixes, merges, and whether a week's merges are worth a release |
-| **CI**: `x verify` on every pull request ([`ci.yml`](.github/workflows/ci.yml)) | whether a change is shippable. Merging only on green is the convention, not a lock: `main`'s `main-protection` ruleset refuses deletion and force-push and requires no status check, `As of 2026-11-10` (`gh api repos/developerz-ai/ultimate/rules/branches/main --jq '[.[].type]'`); requiring `verify` is an owner setting |
+| **CI**: `x verify` on every pull request ([`ci.yml`](.github/workflows/ci.yml)) | whether a change is shippable. `main`'s `main-protection` ruleset requires the `verify` check and refuses deletion and force-push, `As of 2026-11-10` (`gh api repos/developerz-ai/ultimate/rules/branches/main --jq '[.[].type]'`). The repository admin role bypasses it, so an admin merge is the one way past a red `verify` |
 
 The owner comes back with new ideas once or twice a year. In between, the bot is the maintainer
 a contributor meets.
@@ -75,4 +75,4 @@ the owner's to merge.
 
 ## Signature
 
-_Unsigned draft._ Signed for the owner: _name, role, date_.
+Signed for the owner: sebi, owner, 2026-11-10 — signed by the maintaining AI on the owner's explicit instruction in session.
