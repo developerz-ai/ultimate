@@ -11,10 +11,12 @@ import { SESSION_TTL_MS } from './session-cookie';
 let built: Auth | undefined;
 
 /**
- * Built on first use, never at import: the boot imports this module before the host installs the
- * shared lockout limiter `defineAuth` reads. The adapter follows the app's own store — Postgres
- * when `DATABASE_URL` is set, memory under `x dev` and in tests — so the users the seed writes and
- * the credentials auth reads live in the same place.
+ * Built on first use, for `resetAppAuth` below: a test needs a fresh instance over a fresh memory
+ * store, which an instance built at import could not give it. (Not for the boot order: since
+ * 31.3.0 `defineAuth` reads the installed lockout limiter where it is used, and the Postgres
+ * adapter reads `db()` per call.) The adapter follows the app's own store — Postgres when
+ * `DATABASE_URL` is set, memory under `x dev` and in tests — so the users the seed writes and the
+ * credentials auth reads live in the same place.
  *
  * One session clock, absolute: the idle window equals the absolute one, as the hand-rolled
  * sessions this replaced had no idle timeout.

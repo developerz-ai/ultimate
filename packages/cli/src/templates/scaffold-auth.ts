@@ -117,16 +117,13 @@ export const authModule =
 // creates one.
 import { type Auth, defineAuth, postgresAuthAdapter } from '@ultimat3/auth';
 
-let built: Auth | undefined;
+// Built at import, and safe to be: the boot scan imports this module before the database and the
+// host's shared lockout limiter are installed, and both are read where they are used — the adapter
+// asks for \`db()\` per call, \`defineAuth\` for the installed limiter on its first attempt.
+const auth = defineAuth({ adapter: postgresAuthAdapter() });
 
-/**
- * Built on first use, never at import: the boot scan imports this module before the database and
- * the host's shared lockout limiter are installed, and \`defineAuth\` reads both.
- */
-export const appAuth = (): Auth => {
-  built ??= defineAuth({ adapter: postgresAuthAdapter() });
-  return built;
-};
+/** This app's \`Auth\`: the one instance every sign-in, session and api-key check runs through. */
+export const appAuth = (): Auth => auth;
 `;
 
 const authenticatorModule =
@@ -157,7 +154,7 @@ export interface SessionRequest extends HeaderRequest {
 }
 
 export interface SessionAuthenticatorOptions {
-  /** The app's \`Auth\`, asked for per request so it is built after the boot, not at import. */
+  /** The app's \`Auth\`, asked for per request so a test can hand in its own. */
   readonly auth: () => Auth;
   /** Whether a request with no session is the development viewer rather than anonymous. */
   readonly development: boolean;

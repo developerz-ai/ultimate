@@ -15,6 +15,7 @@ import { parseScriptArgs } from './lib/args';
 import type { Changelog } from './lib/changelog-sections';
 import { loadChangelog } from './lib/changelog-store';
 import { deprecatedIn, exportedNames, moduleCandidates } from './lib/export-names';
+import { fetchFromOrigin } from './lib/git-fetch';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { recordedException, WINDOW_OPENS_AT_MAJOR } from './lib/major-window';
@@ -44,7 +45,7 @@ const showAt = async (root: string, ref: string, path: string): Promise<string |
 const unreachable = (tag: string): Finding => ({
   code: 'X_RELEASE_TAG_UNREACHABLE',
   cause: `${tag} is the release this tree's exports are compared against, and neither this clone nor origin could answer for it — a shallow or tagless clone, or a remote that could not be asked`,
-  fix: `git fetch --depth=1 --no-tags origin ${quoteArg(`+refs/tags/${tag}:refs/tags/${tag}`)} && bun run scripts/deprecation-window.ts --json`,
+  fix: `git fetch --no-tags origin ${quoteArg(`+refs/tags/${tag}:refs/tags/${tag}`)} && bun run scripts/deprecation-window.ts --json`,
   at: 'CHANGELOG.md',
 });
 
@@ -70,16 +71,11 @@ async function baseTag(
     const held = await probe(tag);
     if (held === undefined) return { finding: unreachable(tag) };
     if (!held) continue;
-    const fetched = await git(
-      [
-        'fetch',
-        '--quiet',
-        '--depth=1',
-        '--no-tags',
-        'origin',
-        `+refs/tags/${tag}:refs/tags/${tag}`,
-      ],
+    // Depth 1 only into a clone already shallow: a depth fetch cuts a full clone's history.
+    const fetched = await fetchFromOrigin(
       root,
+      ['--quiet', '--no-tags', 'origin', `+refs/tags/${tag}:refs/tags/${tag}`],
+      (command, { cwd }) => git(command.slice(1), cwd),
     );
     return fetched.ok ? { tag } : { finding: unreachable(tag) };
   }

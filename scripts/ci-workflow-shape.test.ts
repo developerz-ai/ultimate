@@ -180,6 +180,17 @@ describe('unit · ci.yml · every reader of a job name still finds it', () => {
     expect(packages.strategy?.['fail-fast']).toBe(false);
     expect(runsOf(packages)).toContain('scripts/coverage-gate.ts --all --shard "$SHARD"');
   });
+
+  // Run 42941773147: `packages (2/3)` had no origin/main, so every `scripts/*.test.ts` worker that
+  // calls `baseRef()` fetched it AT ONCE; the losers died on `.git/shallow.lock` and one test read
+  // `undefined`. Each job running those tests fetches the base ONCE, before any test starts.
+  test('every job that runs the scripts tests fetches origin/main before them', () => {
+    for (const name of ['gate', 'packages']) {
+      expect(runsOf(job(name)), name).toContain(
+        'git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main',
+      );
+    }
+  });
 });
 
 describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot', () => {
