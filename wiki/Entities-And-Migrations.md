@@ -315,14 +315,14 @@ export const db = database(entities, { driver });
 | Raw `sql` | Where |
 |---|---|
 | belongs | a `query`'s source, built with `from()`; a migration |
-| is the exception | a `repo.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window. Its unit test runs [the migrated-database recipe](Testing#database-state-and-what-a-run-leaves-behind): the handle's `testDriver()` follows the installed client, so the handle's writes and the join meet in one database |
-| is refused | a `repo.ts`, for `select *` / `insert` / `update` / `delete` on one table, and `select * … where id = ? for update` (`db.<table>.lock(id, fn)`) |
+| is the exception | a `repo.ts` or a `repo-<part>.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window. Its unit test runs [the migrated-database recipe](Testing#database-state-and-what-a-run-leaves-behind): the handle's `testDriver()` follows the installed client, so the handle's writes and the join meet in one database |
+| is refused | a `repo.ts` or a `repo-<part>.ts`, for `select *` / `insert` / `update` / `delete` on one table, and `select * … where id = ? for update` (`db.<table>.lock(id, fn)`) |
 | is refused, any statement | `order by date_trunc('milliseconds', …)`: the index cannot serve it. `keyset()` pages at the column's own precision |
 
 | Enforced by | What fails |
 |---|---|
 | `tsc` | `db.widgets` exists only when `widget` is in the set; a renamed column is an error in the repo |
-| `guards/repo-raw-sql.ts` — `X_REPO_RAW_SQL`, `boundaries` step | a `sql` literal in a `repo.ts` the handle can express; the `fix:` is the handle call |
+| `guards/repo-raw-sql.ts` — `X_REPO_RAW_SQL`, `boundaries` step | a `sql` literal in a `repo.ts` or a `repo-<part>.ts` the handle can express; the `fix:` is the handle call |
 | `X_DB_HANDLE_UNREGISTERED` — `x g entity`, `x g resource` | a `client.ts` with no `const <set> = { … }` passed to `database()`, or an `index.ts` that does not export the handle; the `fix:` is the lines to add |
 
 ### Paging a raw join
