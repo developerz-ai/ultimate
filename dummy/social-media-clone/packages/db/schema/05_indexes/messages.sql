@@ -4,6 +4,4 @@ CREATE INDEX messages_author_id_idx ON public.messages USING btree (author_id);
 
 CREATE INDEX messages_conversation_id_created_at_id_08493ec4_idx ON public.messages USING btree (conversation_id DESC, created_at DESC, id DESC);
 
-CREATE INDEX messages_conversation_id_created_at_id_idx ON public.messages USING btree (conversation_id DESC, created_at DESC, id DESC);
-
 CREATE INDEX messages_conversation_id_idx ON public.messages USING btree (conversation_id);

@@ -483,5 +483,8 @@ export const MIGRATE_CEILING = 873;
  * because the serving roles import the auth barrel themselves (`runtime-services.ts`,
  * `runtime-mfa-warning.ts`, `runtime-purge.ts`). `auth/src/tables.ts` is still the leaf, so no
  * new module arrived either.
+ * raised 1401 → 1402, measured 1402 (2026-11-11, plan 101 sweep 0, H4/H5): `realtime/src/live-repair.ts`,
+ * the registry's two repair paths split out of `live-query.ts` to stay under the 500-line ceiling.
+ * No new behaviour.
  */
-export const SERVING_ROLE_CEILING = 1401;
+export const SERVING_ROLE_CEILING = 1402;

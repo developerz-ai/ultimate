@@ -5,7 +5,12 @@
 import type { LiveReadPhase } from '@ultimat3/query';
 import { WindowReadTimeoutError } from './errors';
 import type { JsonValue, LiveRow } from './json';
-import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
+import type {
+  LiveQueryDefinition,
+  LiveSubscription,
+  PreparedWindow,
+  SnapshotResult,
+} from './live-contract';
 import type { IncrementalMatcher, SubscriptionShape } from './matcher-bridge';
 import type { Scheduler } from './thundering-herd';
 import { timeoutScheduler } from './thundering-herd';
@@ -92,7 +97,14 @@ export function queryEntry(
   definition: LiveQueryDefinition,
   input: JsonValue,
   matcher: IncrementalMatcher,
-  options?: EntryOptions & { readonly tenant?: string | null },
+  options?: EntryOptions & {
+    readonly tenant?: string | null;
+    /**
+     * What `prepare` resolved for this input. Its row scope is taken as given, never looked up
+     * again by input: a bounded cache another subscribe evicted in between answers nothing.
+     */
+    readonly prepared?: PreparedWindow | undefined;
+  },
 ): QueryEntry {
   const tenant = options?.tenant ?? null;
   return {
@@ -102,8 +114,7 @@ export function queryEntry(
     tenant,
     // Resolved with the matcher, from the same build: `prepare` has already run, so a definition
     // that compiles its shape per input can answer.
-    rowEntity: definition.rowEntity?.(input) ?? null,
-    rowKey: definition.rowKey?.(input) ?? null,
+    ...rowScope(definition, input, options?.prepared),
     shape: {
       qid,
       // The matcher knows the dependency set this *input* produced; `definition.entities` is the
@@ -127,6 +138,25 @@ export function queryEntry(
     readDeadlineMs: usableDeadline(options?.readDeadlineMs),
     schedule: options?.schedule ?? timeoutScheduler,
     traceparent: null,
+  };
+}
+
+/**
+ * The identity scope an entry's rows travel under: what `prepare` resolved when it answered, else
+ * asked of the definition by input. Only a scope the definition states — one with no `rowEntity`
+ * sends none, whatever it resolved.
+ */
+function rowScope(
+  definition: LiveQueryDefinition,
+  input: JsonValue,
+  prepared: PreparedWindow | undefined,
+): Pick<QueryEntry, 'rowEntity' | 'rowKey'> {
+  const entity = definition.rowEntity;
+  const key = definition.rowKey;
+  return {
+    rowEntity:
+      entity === undefined ? null : prepared ? prepared.rowEntity : (entity(input) ?? null),
+    rowKey: key === undefined ? null : prepared ? prepared.rowKey : (key(input) ?? null),
   };
 }
 

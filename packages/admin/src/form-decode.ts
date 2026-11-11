@@ -92,6 +92,17 @@ const jsonOf = (raw: string): unknown => {
   }
 };
 
+/**
+ * `datetime-local` text → the UTC instant the control says it is, or the text as typed. Both an
+ * Invalid Date and a rolled-over one (`02-30` read as `03-02`) fail the round trip back to the
+ * minutes that were posted, so neither reaches the schema in place of what the operator wrote.
+ */
+const instantOf = (raw: string): unknown => {
+  const minutes = raw.slice(0, 16);
+  const at = new Date(`${minutes}:00.000Z`);
+  return isoOf(at) === `${minutes}:00.000Z` ? at : raw;
+};
+
 function decodeField(field: AdminField, form: Posted): unknown {
   const raw = posted(form, field.name);
   // An unchecked box posts nothing at all, so absence IS the answer for a checkbox.
@@ -111,7 +122,7 @@ function decodeField(field: AdminField, form: Posted): unknown {
     case 'datetime':
       // `datetime-local` posts `YYYY-MM-DDTHH:mm` and the control says UTC beside the box; a
       // calendar date stays the `YYYY-MM-DD` string its column holds.
-      return field.type === 'date' ? raw : new Date(`${raw.slice(0, 16)}:00.000Z`);
+      return field.type === 'date' ? raw : instantOf(raw);
     case 'json-editor':
       return jsonOf(raw);
     default:

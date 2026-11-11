@@ -107,6 +107,9 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   `live-fanout` tests).
 - **`startLiveReplicator` SUBSCRIBES to `entity.row`/`entity.bulk`**, never a slot: `stop()`
   releases its own; two both hear a write (`live-replicator.test.ts`). Its handlers never throw.
+- **A window is keyed by the PARSED input** (`LiveQueryDefinition.queryId`): a stripped junk key
+  opens no window. An entry is built from what `prepare` returned (`PreparedWindow`), never a
+  re-lookup (`live-definition-input.test.ts`). A cold window is staled only by a table it reads.
 - **A WINDOW is per TENANT** (`windowId(queryHash, tenant)`, `live-tenant.ts`); the read runs as a
   service actor carrying ONLY that org, never the subscriber. †
 - **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`** (`subscription-book.ts`);

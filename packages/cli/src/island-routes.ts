@@ -4,6 +4,7 @@
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
+import { assetRouteMeta } from './asset-route-meta';
 import type { IslandBundle } from './island-bundle';
 import { ISLAND_BASE_PATH } from './island-bundle';
 
@@ -24,7 +25,7 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
     {
       method: 'GET',
       path: `${ISLAND_BASE_PATH}/*file`,
-      meta: { name: 'assets.island', auth: 'public', tags: ['assets'] },
+      meta: assetRouteMeta({ name: 'assets.island', auth: 'public' }),
       handler: (request: UltimateRequest): Response => {
         // An entry or a shared chunk: an entry's bytes import its chunks by a relative name, so both
         // have to answer at the one base path, under the one cache rule.

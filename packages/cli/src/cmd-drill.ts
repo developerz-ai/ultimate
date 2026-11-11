@@ -5,7 +5,13 @@
 
 import type { AppConfig } from '@ultimat3/core';
 import { DRAIN_DEADLINE_DEFAULT_MS, MAX_TIMER_MS } from '@ultimat3/core';
-import type { Drill, DrillConfig, DrillDeclarations, DrillReport } from '@ultimat3/testing';
+import type {
+  Drill,
+  DrillConfig,
+  DrillDeclarations,
+  DrillFleet,
+  DrillReport,
+} from '@ultimat3/testing';
 import {
   bunDrillSql,
   DRILL_NAMES,
@@ -90,6 +96,33 @@ const findingsOf = (report: DrillReport): readonly Finding[] =>
     return { code: error.code, cause: error.cause, fix: error.fix };
   });
 
+/** The evidence connection: `bunDrillSql`'s shape, a seam so a test can make it throw. */
+type DrillSqlConnection = ReturnType<typeof bunDrillSql>;
+
+/**
+ * One drill's body over a started fleet, which is ALWAYS stopped. The fleet is spawned role
+ * processes: the connection was opened before the `try`, so a constructor that threw (a malformed
+ * URL is a synchronous `Invalid URL`) left every role running, and a `close()` that threw skipped
+ * `stop()` the same way.
+ */
+export async function withDrillFleet<T>(
+  fleet: Pick<DrillFleet, 'databaseUrl' | 'stop'>,
+  open: (url: string) => DrillSqlConnection,
+  body: (sql: DrillSqlConnection) => Promise<T>,
+): Promise<T> {
+  let sql: DrillSqlConnection | undefined;
+  try {
+    sql = open(fleet.databaseUrl);
+    return await body(sql);
+  } finally {
+    try {
+      await sql?.close();
+    } finally {
+      await fleet.stop();
+    }
+  }
+}
+
 export const drillCommand: CliCommand = {
   spec: drillSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -147,14 +180,11 @@ export const drillCommand: CliCommand = {
         roles: drillRoles(drill),
         readyTimeoutMs: READY_TIMEOUT_MS,
       });
-      const sql = bunDrillSql(fleet.databaseUrl);
-      try {
-        const sync = drillSyncLane(fleet);
-        reports.push(await runDrill({ drill, fleet, budgets, targets, sql, sync }));
-      } finally {
-        await sql.close();
-        await fleet.stop();
-      }
+      reports.push(
+        await withDrillFleet(fleet, bunDrillSql, (sql) =>
+          runDrill({ drill, fleet, budgets, targets, sql, sync: drillSyncLane(fleet) }),
+        ),
+      );
     }
     const held = reports.filter((report) => report.verdict.ok).length;
     const findings = reports.flatMap(findingsOf);

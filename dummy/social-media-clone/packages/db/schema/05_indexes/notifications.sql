@@ -4,6 +4,4 @@ CREATE INDEX notifications_actor_id_idx ON public.notifications USING btree (act
 
 CREATE INDEX notifications_user_id_created_at_08493ec4_idx ON public.notifications USING btree (user_id DESC, created_at DESC);
 
-CREATE INDEX notifications_user_id_created_at_idx ON public.notifications USING btree (user_id DESC, created_at DESC);
-
 CREATE INDEX notifications_user_id_idx ON public.notifications USING btree (user_id);

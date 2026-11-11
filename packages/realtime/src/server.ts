@@ -108,6 +108,7 @@ export {
 export type {
   LiveQueryDefinition,
   LiveSubscription,
+  PreparedWindow,
   SnapshotResult,
 } from './live-contract';
 export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';

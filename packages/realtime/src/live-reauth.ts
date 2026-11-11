@@ -3,12 +3,11 @@
 // rather than carried past a ceiling. Split from `live-query.ts` at its size ceiling: the registry
 // owns the entry table, this owns what a re-authorization does to one socket's subscriptions.
 
-import { queryHash } from '@ultimat3/query';
 import { isPolicyDenial } from './errors';
 import type { LiveSubscription } from './live-contract';
 import { refuseSubscription } from './live-refusal';
 import type { SubscribeArgs } from './live-spend';
-import { liveTenantOf, windowId } from './live-tenant';
+import { liveTenantOf, retenant } from './live-tenant';
 import type { SyncSocket } from './socket';
 import type { SubscriberGate } from './subscriber-gate';
 import type { SubscriptionBook } from './subscription-book';
@@ -19,6 +18,8 @@ export interface ReauthDeps {
   readonly book: SubscriptionBook;
   readonly gate: SubscriberGate;
   unsubscribe(socketId: string, sid: string): void;
+  /** The tenant a window is read for; `undefined` when no entry holds that id. */
+  tenantOf(qid: string): string | null | undefined;
   /** Subscribe again under the same sid, uncharged — a re-seat is not a new subscription. */
   resubscribe(args: SubscribeArgs): Promise<{ readonly frame: Frame }>;
 }
@@ -94,8 +95,14 @@ async function reseat(
   failed: { readonly error: unknown } | undefined,
 ): Promise<boolean> {
   const { sid, input, definition } = subscription;
-  const wanted = windowId(queryHash(definition.name, input), liveTenantOf(socket.actor));
-  if (wanted === subscription.qid) return false;
+  const tenant = liveTenantOf(socket.actor);
+  const seated = deps.tenantOf(subscription.qid);
+  // Derived from the window held, never re-hashed from the input: a window is keyed by the PARSED
+  // input (`LiveQueryDefinition.queryId`), so a hash of the input as sent names another id whenever
+  // the schema stripped a key, and every re-auth re-seated that subscription for nothing.
+  if (seated === tenant) return false;
+  const wanted =
+    seated === undefined ? subscription.qid : retenant(subscription.qid, seated, tenant);
   deps.unsubscribe(socket.id, sid);
   if (failed !== undefined) {
     refuseSubscription(socket, sid, failed.error);

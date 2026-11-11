@@ -34,6 +34,7 @@ import {
   type Move,
   type ReadBuilder,
 } from '@ultimat3/entity';
+import type { RowWindow } from '@ultimat3/query';
 import {
   type CommentView,
   PostAuthor,
@@ -180,10 +181,33 @@ export const byId = async (orgId: OrgId, id: PostId): Promise<PostView | null> =
  * Whole `posts` rows — RECORDS, not views: what the page's store holds under `posts:<id>`, so the
  * read answering them and the channel frame updating them write one object. `orgPosts` and
  * `postRecord` in `queries/` answer these, declared `rows: posts.$schema`.
+ *
+ * `recentWindow` is the window `from()` hands `orgPosts`' provider (`RowWindow`): the cursor is
+ * pushed down here, so page two is read past page one rather than cut from the same newest 50.
  */
-export const recentRows = async (orgId: OrgId, limit: number): Promise<Post[]> => [
-  ...(await db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()),
-];
+export const recentWindow = async (orgId: OrgId, window: RowWindow): Promise<readonly Post[]> => {
+  // `orgPosts`' whole listing is its newest 50, so a provider handed no window reads that many.
+  const take = window.limit ?? 50;
+  const inOrg = db.posts.where({ orgId });
+  if (window.after === null)
+    return inOrg.orderBy('createdAt', 'desc').orderBy('id').limit(take).all();
+  // Past a cursor, newest first with `id` breaking a tie, as two seeks: the rows sharing the
+  // cursor's instant, then the older ones. Never page one again, so every row is reachable.
+  const at = window.after.key[0];
+  const ties = await inOrg
+    .andWhere('createdAt', 'eq', at)
+    .andWhere('id', 'gt', window.after.id)
+    .orderBy('id')
+    .limit(take)
+    .all();
+  const older = await inOrg
+    .andWhere('createdAt', 'lt', at)
+    .orderBy('createdAt', 'desc')
+    .orderBy('id')
+    .limit(take)
+    .all();
+  return [...ties, ...older];
+};
 
 /**
  * One post as the page's store holds it: the whole row, plus `likedByMe` for the member READING it.

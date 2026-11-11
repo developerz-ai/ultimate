@@ -19,6 +19,7 @@ import {
   variantKey,
   variantRevision,
 } from '@ultimat3/storage';
+import { assetRouteMeta } from './asset-route-meta';
 import { faviconRoute } from './favicon';
 // The icon matrix's source, its base path and its renderer live in their own module so that
 // `pwa-artifacts.ts` — which this file imports for the manifest route — can reach them without
@@ -260,7 +261,7 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
   const routes: Route[] = plan.entries.map((entry) => ({
     method: 'GET',
     path: entry.outputPath,
-    meta: { name: `assets.icon.${entry.spec.filename}`, auth: 'public', tags: ['assets'] },
+    meta: assetRouteMeta({ name: `assets.icon.${entry.spec.filename}`, auth: 'public' }),
     // Revalidated, never `immutable` (22.3.2): the file name is the icon's SIZE, so a new
     // `icon.png` shipped under the same URLs and every client that had seen the old one kept it for
     // a year. The manifest and the apple-touch links name these paths, so a hashed URL would move
@@ -277,6 +278,8 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
   routes.push({
     method: 'GET',
     path: `${MEDIA_BASE_PATH}/*key`,
+    // Tagged `assets` (the retained-build lookup reads the tag) but NOT on the `assets` bucket: an
+    // authenticated storage read per request is not a content-hashed chunk, so it stays `default`.
     meta: {
       name: 'assets.media',
       auth: 'required',

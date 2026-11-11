@@ -23,3 +23,15 @@ export function liveTenantOf(actor: Actor | null): string | null {
 export function windowId(queryId: string, tenant: string | null): string {
   return tenant === null ? queryId : JSON.stringify([queryId, tenant]);
 }
+
+/**
+ * The same query id, read for another tenant: `windowId`'s inverse, then `windowId` again. A
+ * re-seat asks this of the window it holds rather than re-hashing the input, because the id is
+ * taken over the PARSED input (`LiveQueryDefinition.queryId`), which the input as sent is not.
+ */
+export function retenant(qid: string, from: string | null, to: string | null): string {
+  if (from === null) return windowId(qid, to);
+  const pair: unknown = JSON.parse(qid);
+  const queryId = Array.isArray(pair) && typeof pair[0] === 'string' ? pair[0] : qid;
+  return windowId(queryId, to);
+}

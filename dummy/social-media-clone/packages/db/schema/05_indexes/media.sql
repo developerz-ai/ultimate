@@ -2,8 +2,6 @@
 
 CREATE INDEX media_created_at_9510dee5_idx ON public.media USING btree (created_at) WHERE (state = 'pending'::text);
 
-CREATE INDEX media_created_at_idx ON public.media USING btree (created_at) WHERE (state = 'pending'::text);
-
 CREATE INDEX media_owner_id_idx ON public.media USING btree (owner_id);
 
 CREATE INDEX media_post_id_idx ON public.media USING btree (post_id);

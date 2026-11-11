@@ -8,6 +8,7 @@
 import { dirname, join, relative } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
+import { assetRouteMeta } from './asset-route-meta';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
 import { describeBuildError, graphHash, stripDebugId } from './island-identity';
 
@@ -204,7 +205,7 @@ function scriptRoute(
   return {
     method: 'GET',
     path: `${basePath}/:file`,
-    meta: { name, auth: 'public', tags: ['assets'] },
+    meta: assetRouteMeta({ name, auth: 'public' }),
     handler: (request: UltimateRequest): Response => {
       const script = source();
       if (script === undefined || script.url !== request.pathname) {

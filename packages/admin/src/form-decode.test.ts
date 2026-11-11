@@ -124,6 +124,15 @@ describe('unit · decodeForm, per widget', () => {
     expect(decoded instanceof Date ? decoded.toISOString() : '').toBe('2026-08-18T10:30:00.000Z');
   });
 
+  test('a datetime that will not convert stays the string that was typed, for the schema', () => {
+    // An Invalid Date reached the schema, whose refusal then named nothing the operator typed; a
+    // day past the month's end rolled silently into the next one.
+    const at = { widget: 'datetime', type: 'timestamptz', name: 'at' } as const;
+    for (const typed of ['tomorrow', '2026-13-01T10:00', '2026-02-30T10:00']) {
+      expect(decode(at, { at: typed })).toBe(typed);
+    }
+  });
+
   test('a calendar date stays the YYYY-MM-DD string its column holds — no zone can move it', () => {
     expect(decode({ widget: 'datetime', type: 'date', name: 'on' }, { on: '2026-08-18' })).toBe(
       '2026-08-18',

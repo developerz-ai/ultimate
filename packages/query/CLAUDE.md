@@ -14,6 +14,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 |---|---|
 | `query.ts` | the primitive: `query()`, `describeQuery`, `queryHash`; the front door for the read path |
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
+| `parsed-input.ts` | `parsedQueryInput`: the parse alone, the input every `(query, input)` key hashes |
 | `rows-override.ts`, `adapter.ts` | `@ultimat3/query/adapter`'s `overrideRows(query, rows \| fn \| undefined)`: canned rows where `sql()` is, answered in `buildSource` AFTER the parse and the policy, never cached (`rows-override.test.ts`). Never on the barrel — `@ultimat3/testing`'s `stub()` is its one caller |
 | `contract-test.ts` | `.contract()`, the generated suite. The three `X_CONTRACT_*` codes and `X_CONTRACT_DRIFT` are borrowed (`QUERY_BORROWED_ERROR_CODES`) |
 | `exercise.ts` | the exercise twin. "Reached" means `sql()` built a source, read off the refusal (`beforeSql`), because `read.ts` keeps no counter. No transaction: a read writes nothing |
@@ -217,7 +218,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `min(rowsLeft, first + 1)`, and a limited read's cursor carries the rows served so far at the
   tail of its key (after the typed id). A cursor without it is `X_CURSOR_INVALID` on a limited
   read. `Builder.seek()` takes the smaller limit too. `pagination-limit.test.ts`.
-- **A `RowProvider` may be a list, a sync function or an async one** (`source.test.ts`).
+- **A `RowProvider` may be a list, a sync function or an async one** (`source.test.ts`). A
+  function is HANDED the `RowWindow` (`after`, `limit`, `order`, `filters`) on every `execute()`,
+  and the builder re-applies all four over its answer (`pagination-window.test.ts`).
 - **A cursor is a position, not a row**: `isAfterKey` (`source.ts`) is the one definition of "after";
   never reintroduce a row lookup. The seek predicate is spelled out per key
   (`(a < $1) or (a = $2 and id > $3)`), never a row-value comparison.
@@ -252,14 +255,17 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `Map`, `Set`. `query-hash.test.ts` pins it at `queryHash` and `cacheKeyFor`. `stable.ts` keeps
   `columnOf`; core's `isJsonObject` is imported from core (`X_HELPER_COPY` refuses a re-export).
 - The cursor codec is `@ultimat3/core`'s; this package supplies only the scope (`queryHash(name,
-  input)`). An unverified cursor is `X_CURSOR_INVALID` (`CursorInvalidError`, core's — imported from `@ultimat3/core`, never re-exported).
+  input)`) — of the RAW input (known limit: a stripped key re-scopes a cursor; kept so outstanding
+  cursors stay valid). A live hash is the parsed input's (`builtFor`). An unverified cursor is `X_CURSOR_INVALID` (`CursorInvalidError`, core's — imported from `@ultimat3/core`, never re-exported).
 
 ## Invariants — caching
 
 - **The request memo holds the read, not the rows**: `readOnce` publishes the in-flight promise
   before its first await; a rejection is evicted. `requestMemo(ctx)` is `Map<string, Promise<unknown>>`.
 - **Every read is memoized; only a `cache:` read goes through the tier** (`readThrough`). One key
-  function, `cacheKeyFor`.
+  function, `cacheKeyFor`, over the PARSED input `admitAndBuild` returns — never `raw`, or a
+  stripped `?junk=N` is an entry and a read per N (`read-cache-key.test.ts`). Outside, a key
+  hashes `parsedQueryInput(query, raw)`.
 - **A cache key carries the read's AUTHORITY**: `readAuthority(actor, scope)` is its one producer and
   `cacheKeyFor`'s fourth argument is required. `scope` defaults to `'actor'`; `'tenant'` with no
   `orgId` (`undefined`, `''` or `null` — `orgless()`) narrows to the actor. The authority is JSON.

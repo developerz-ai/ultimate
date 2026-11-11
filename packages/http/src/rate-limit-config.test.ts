@@ -42,6 +42,29 @@ describe('resolveRateLimitConfig', () => {
     expect(resolved.buckets['default']).toEqual({ capacity: 120, refillPerSecond: 2 });
     expect(resolved.buckets['auth']).toEqual({ capacity: 10, refillPerSecond: 0.2 });
   });
+
+  // Built, content-hashed assets were charged to `default` (burst 120, then 2/s, per address): an
+  // office behind one NAT, or one cold load of a page with many chunks, met 429 on the chunks.
+  test('ships an assets bucket wide enough for a cold page load behind one address', () => {
+    const resolved = resolveRateLimitConfig({ scope: 'process' });
+    expect(resolved.buckets['assets']).toEqual({ capacity: 2000, refillPerSecond: 200 });
+  });
+
+  // Replacing the table whole meant an app that tuned `default` silently lost `assets`, `auth` and
+  // `mutation`: a route naming one fell through to `default`, and the asset 429s came back.
+  test("an app's buckets merge over the shipped ones key by key", () => {
+    const resolved = resolveRateLimitConfig({
+      scope: 'process',
+      buckets: {
+        default: { capacity: 9, refillPerSecond: 1 },
+        report: { capacity: 3, refillPerSecond: 0.5 },
+      },
+    });
+    expect(resolved.buckets['default']).toEqual({ capacity: 9, refillPerSecond: 1 });
+    expect(resolved.buckets['report']).toEqual({ capacity: 3, refillPerSecond: 0.5 });
+    expect(resolved.buckets['assets']).toEqual({ capacity: 2000, refillPerSecond: 200 });
+    expect(resolved.buckets['auth']).toEqual({ capacity: 10, refillPerSecond: 0.2 });
+  });
 });
 
 describe('toBucket', () => {

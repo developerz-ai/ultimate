@@ -132,6 +132,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `role-wake.ts` | the worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live` |
 | `role-sync.ts` / `role-replicator.ts` / `runtime-live-feed.ts` | the sync node, the change feed |
 | `runtime-render*.ts` / `runtime-{isr-outcome,assets,storage,hooks}.ts` / `route-islands.ts` / `api-routes.ts` | the HTTP surface both boots mount † |
+| `asset-route-meta.ts` | the ONE writer of an asset route's `tags: ['assets']` + `rateLimit: 'assets'`; the test walks `examples/dummy`'s built table and refuses an `assets.*` route on `default` |
 | `client-{errors,vitals}-*.ts` | `clientErrors` (and `.vitals`): the script on `app/` (vitals: listed) documents, its `POST` route, mounted by BOTH boots ‡ |
 | `retained-assets.ts` / `-layout.ts` / `-sweep.ts` / `-read.ts` / `-boot.ts` | `assets.retain`: the web boot publishes this build's hashed files before `/readyz` † |
 | `runtime-overrides.ts` / `runtime-ports.ts` / `runtime-port-bindings.ts` | `runtime.ts`: a field per `ADAPTER_PORTS` row, installed by ONE loop or read where used; unbound row = build error. Plus `routes`. `docs/history/cli-adapter-ports.md` |

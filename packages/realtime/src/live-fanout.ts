@@ -49,9 +49,11 @@ export async function fanoutChange(
   // No read has landed in this window yet: there is nothing to patch, and a patch folded into the
   // empty rows would move `entry.lsn` past the read in flight and get that read discarded as older
   // than the window — every row but the patched one lost, permanently. Marked stale instead, so the
-  // read that lands is applied and followed by one that includes this change.
+  // read that lands is applied and followed by one that includes this change. Only a change to a
+  // relation it READS (the guard `truncated` uses): any other is no hole in that read, and staling
+  // on it made every new window on a busy node read twice and re-snapshot every subscriber.
   if (entry.applied === 0) {
-    entry.stale = true;
+    if (entry.shape.entities.includes(change.table)) entry.stale = true;
     return { sent: 0, stale: 0 };
   }
   if (change.op === 'truncate') return await truncated(deps, entry, change);

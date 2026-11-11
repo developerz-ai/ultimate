@@ -10,7 +10,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- One address no longer meets 429 on a cold page load: built, content-hashed assets spend a new `assets` rate-limit bucket (2,000 burst, 200/s) instead of `default`. Measured: 180 of 300 island-chunk GETs from one address answered 429 before, 0 after.
+
+### Added
+
+- `@ultimat3/http`: a default `assets` bucket in `DEFAULT_RATE_LIMIT.buckets`, `{ capacity: 2_000, refillPerSecond: 200 }`. `@ultimat3/cli` tags every built, content-hashed asset route with it (island chunks, stylesheets, favicons and icons, site files, framework scripts, the web manifest), from one place, `asset-route-meta.ts`. `asset-route-meta.test.ts` walks the reference app's routes and refuses an asset route that is not tagged `assets` or spends another bucket; `asset-rate-limit.test.ts` serves 300 chunk GETs from one address with no 429 while the 121st POST still meets `default`. `/media` stays on `default`: it reads storage, not the build.
+- `@ultimat3/query`: `parsedQueryInput(query, raw)`, the input as the query's schema keeps it, which is what a key over `(query, input)` must hash. `X_INPUT_INVALID` for an input the schema refuses, as the read path answers it.
+- `@ultimat3/query`: the `RowWindow` type, `{ after, limit, order, filters }`, handed to a `from(entity, fn)` provider (below).
+- `@ultimat3/realtime/server`: the `PreparedWindow` type, what a live definition's `prepare` resolves and the entry is then built from (below).
+
+### Fixed
+
+- `@ultimat3/http`: an app's `rateLimit.buckets` merges over the shipped buckets key by key. It replaced the whole table, so an app that tuned `default` lost `auth`, `mutation` and now `assets`, and a route naming one fell through to `default` with nothing said.
+- `@ultimat3/query`: the read cache keys on the parsed input, not the raw one. `?junk=N`, a key the schema strips, was a new cache entry and a database read per value.
+- `@ultimat3/query`: a `from(entity, fn)` provider is called with the `RowWindow` and can push the cursor and limit down. Called with nothing, a repository's top N was the same N rows on every page: rows past it were unreachable and page two came back short or empty. A provider that ignores the argument behaves as before. The reference app's `orgPosts` reads its window.
+- `@ultimat3/realtime`: a live window is keyed on the parsed input, so a subscription differing only by a key the schema strips no longer opens a second window, build and lane. A cold window is re-read only for a change to a table it reads.
+- `@ultimat3/realtime`: a live entry is built from the window its `prepare` resolved, so concurrent subscribes evicting the bounded window cache can no longer leave a window that receives no changes.
+- `@ultimat3/cli` dev MCP server: a failed `db.migrate` answers the registered fix of `X_DB_MIGRATE_FAILED` (`x doctor --json`), never `x db reset`. `logs.tail` reads only the end of `dev.log`, not the whole file per call, and refuses a `role` that is not a runtime role (`../x` included).
+- `@ultimat3/cli` `x drill`: the drill's role processes are stopped even when opening or closing the evidence connection throws. Before, a throw there left them running.
+- `@ultimat3/money`: `convertWith` between one currency and itself refuses an invalid `at` or clock reading with `X_RATE_MISSING`, as the cross-currency path does. It threw a bare `RangeError` out of `toISOString()`.
+- `@ultimat3/admin`: a datetime field that will not convert reaches the schema as the text that was typed, so its refusal names what the operator wrote. It was an Invalid Date, and a day past the month's end (`2026-02-30T10:00`) rolled silently into the next month.
+- `@ultimat3/jobs`: at its tenant cap, the limiter ranks rate windows by their live starts. Expired stamps were counted until that tenant claimed again, so a mostly spent window outranked a busy one and the busy tenant was evicted, getting its whole `ratePerTenant` back. What eviction still costs is stated in `limits.ts`.
+- Demo app (`dummy/social-media-clone`): a migration drops seven duplicate indexes, concurrently. The 2026-08-24 index rename created each under its hashed name and never dropped the old `*_idx`, so every write to likes, media, messages, notifications, posts and users maintained both.
 
 ## Releases
 

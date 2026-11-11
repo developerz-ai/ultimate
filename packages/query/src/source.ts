@@ -41,14 +41,33 @@ export interface SqlSource<TRow> {
 }
 
 /**
+ * The window a source is asked for, handed to a function `RowProvider` on every `execute()`.
+ * `after` is the keyset position (rows strictly past it in `order`), `limit` the most rows wanted,
+ * `order` the order actually served (the declared keys, then `id` once paged), `filters` every
+ * `.where()`/`.compare()` on the chain. The builder re-applies all four over what comes back, so
+ * a provider may honour any of them or none — but one that honours `limit` must also honour
+ * `after`, `order` and `filters`, or the cut lands before the rows it was meant to keep.
+ */
+export interface RowWindow {
+  readonly after: SeekKey | null;
+  readonly limit: number | null;
+  readonly order: readonly OrderKey[];
+  readonly filters: readonly Filter[];
+}
+
+/**
  * Rows, or a function that answers them. The function half is `readonly TRow[] | Promise<…>`
  * because `execute()` **awaits** whatever it returns — declaring only the promise refused a
  * synchronous provider the implementation has always accepted, which is a repo method that
  * already has its page in hand, and every in-memory fixture.
+ *
+ * The function is handed the `RowWindow`. Called with nothing, a repository's top N was the same N
+ * rows on every page: rows past it were unreachable and page two came back short. A provider that
+ * reads a window pushes `after` and `limit` down; one that reads everything ignores the argument.
  */
 export type RowProvider<TRow> =
   | readonly TRow[]
-  | (() => readonly TRow[] | Promise<readonly TRow[]>);
+  | ((window: RowWindow) => readonly TRow[] | Promise<readonly TRow[]>);
 
 /**
  * In-memory reference source. `from<Post>('posts', rows).where({ orgId }).orderBy('createdAt')`
@@ -141,11 +160,20 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   }
 
   async execute(): Promise<readonly TRow[]> {
-    const source = typeof this.rows === 'function' ? await this.rows() : this.rows;
+    const keys = this.servedOrder();
+    const source =
+      typeof this.rows === 'function'
+        ? await this.rows({
+            after: this.after,
+            limit: this.rowLimit,
+            order: keys,
+            filters: this.filters,
+          })
+        : this.rows;
     this.assertCarried(source);
     const kindOf = kindsOf(this.entity);
+    // Idempotent over a window the provider already cut: filter, sort, seek and slice again.
     let result = source.filter((row) => matchesFilters(row, this.filters, kindOf));
-    const keys = this.servedOrder();
     if (keys.length > 0) {
       result = [...result].sort((a, b) => compareRows(a, b, keys, kindOf));
     }

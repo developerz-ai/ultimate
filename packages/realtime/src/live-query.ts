@@ -6,23 +6,24 @@
 // policy is never sent to that actor — it arrives as a `delete` if they hold it, and is dropped
 // otherwise.
 
-import { type Clock, finiteOption, systemClock, uuidV7 } from '@ultimat3/core';
+import { type Clock, systemClock, uuidV7 } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import { type LiveCursor, makeCursor } from './cursor';
-import { LiveQueryUnknownError, SubscriptionLimitError } from './errors';
+import { LiveQueryUnknownError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { DeliveryCounts, deliverChange } from './live-deliver';
 import { LiveEntries } from './live-entries';
-import { type FanoutDeps, repairSubscriber, repairWindow, snapshotFrame } from './live-fanout';
+import { type FanoutDeps, repairWindow, snapshotFrame } from './live-fanout';
 import { floorAfterRead } from './live-floor';
-import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
+import type { LiveQueryRegistryOptions } from './live-query-options';
 import { reauthorizeSocket } from './live-reauth';
+import { repairEveryWindow, repairSocket } from './live-repair';
 import { resumeOnto } from './live-resume';
 import { type Charge, type SubscribeArgs, spendOnce } from './live-spend';
 import { liveTenantOf, windowId } from './live-tenant';
-import { fillWindow, noteTraceparent, type QueryEntry, queryEntry } from './query-window';
+import { fillWindow, noteTraceparent, type QueryEntry } from './query-window';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
@@ -37,13 +38,12 @@ export {
 export class LiveQueryRegistry {
   readonly #definitions = new Map<string, LiveQueryDefinition>();
   /** Indexed by the relations each window reads (`live-entries.ts`): a change is work for few. */
-  readonly #entries = new LiveEntries();
+  readonly #entries: LiveEntries;
   /** Keyed by `(socket, sid)`, never by `sid` alone — `subscription-book.ts` owns why. */
   readonly #book: SubscriptionBook;
   readonly #options: LiveQueryRegistryOptions;
   readonly #clock: Clock;
   readonly #gate: SubscriberGate;
-  readonly #maxEntries: number;
   /** What one lane needs, and nothing this class holds beyond it. */
   readonly #fanout: FanoutDeps;
   #lastLsn = '';
@@ -58,11 +58,7 @@ export class LiveQueryRegistry {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#gate = new SubscriberGate(options);
-    this.#maxEntries = finiteOption(
-      'the live-query registry',
-      'maxEntries',
-      options.maxEntries ?? DEFAULT_MAX_ENTRIES,
-    );
+    this.#entries = new LiveEntries(options);
     // The book owns the caps because it is the only thing that can answer them in O(1).
     this.#book = new SubscriptionBook(options);
     this.#fanout = { gate: this.#gate, source: options.source, clock: this.#clock };
@@ -191,12 +187,14 @@ export class LiveQueryRegistry {
     // The window is the subscriber's TENANT's: two orgs on one `(query, input)` are two entries,
     // two reads and two retained rings, so no shared row ever stands between them and a policy.
     const tenant = liveTenantOf(args.socket.actor);
-    const qid = windowId(queryHash(args.name, args.input), tenant);
+    // The PARSED input's id when the definition can name it: a key the schema strips is no window.
+    const queryId = (await definition.queryId?.(args.input)) ?? queryHash(args.name, args.input);
+    const qid = windowId(queryId, tenant);
     // After this subscriber's own decision, never before it: resolving a shape for a caller who
     // may not subscribe is work an unauthorized client gets to schedule.
-    await definition.prepare?.(args.input);
+    const prepared = await definition.prepare?.(args.input);
 
-    const entry = this.#entryFor(qid, definition, args.input, tenant);
+    const entry = this.#entries.seat(qid, definition, args.input, tenant, prepared);
     noteTraceparent(entry, args.traceparent);
     try {
       // Charged where a read happens, never from the cursor's say-so (`live-spend.ts`).
@@ -206,7 +204,7 @@ export class LiveQueryRegistry {
       // The entry was born above, before anything could fill it. Everything below can throw — the
       // snapshot, the resume, the window's own read deadline — and `unsubscribe` is the only other
       // removal path, reachable only through a subscription that in this case was never attached.
-      this.#dropIfUnheld(qid, entry);
+      this.#entries.dropIfUnheld(qid, entry);
       throw error;
     }
   }
@@ -275,30 +273,7 @@ export class LiveQueryRegistry {
     entry.subscribers.delete(subscriptionKey(socketId, sid));
     // An entry with no subscribers stops costing a matcher and a change window.
     if (entry.subscribers.size !== 0) return;
-    this.#entries.delete(subscription.qid);
-    // And the retained patches go with it. `forget` had no caller: the entry was dropped here and
-    // the `ResumeSource` was never told, so its ring for that qid sat at full capacity until the
-    // LRU happened to evict it — a client-chosen input's memory outliving the last subscriber.
-    this.#options.source.forget?.(subscription.qid);
-  }
-
-  /**
-   * An entry nothing is holding, dropped with the retained patches that were kept for it — the
-   * same three steps `unsubscribe` takes when the last subscriber leaves, for the case where a
-   * subscriber never arrived. Five cold failures against `maxEntries: 5` used to refuse every
-   * later subscribe on the node with `X_SUBSCRIPTION_LIMIT`, forever, after the database recovered.
-   */
-  #dropIfUnheld(qid: string, entry: QueryEntry): void {
-    // Identity, never presence: an entry this subscribe did not create may already have been
-    // dropped and re-created under the same qid.
-    if (this.#entries.get(qid) !== entry) return;
-    if (entry.subscribers.size !== 0) return;
-    // A read published on the entry belongs to a subscriber that has not attached yet — it owns
-    // the entry's fate, and dropping it here would leave that subscriber holding a window no
-    // change is ever fanned out to.
-    if (entry.reading !== null) return;
-    this.#entries.delete(qid);
-    this.#options.source.forget?.(qid);
+    this.#entries.release(subscription.qid);
   }
 
   unsubscribeSocket(socketId: string): void {
@@ -326,6 +301,7 @@ export class LiveQueryRegistry {
         book: this.#book,
         gate: this.#gate,
         unsubscribe: (socketId, sid) => this.unsubscribe(socketId, sid),
+        tenantOf: (qid) => this.#entries.get(qid)?.tenant,
         // A re-seat is the subscription it already was, so it is never charged again.
         resubscribe: (args) => this.#subscribe(args, { due: false }),
       },
@@ -353,37 +329,14 @@ export class LiveQueryRegistry {
     );
   }
 
-  /**
-   * This socket's marked subscriptions, repaired now it can take a frame: Bun's `drain`. Frames that
-   * left. Every lane is entered before any is awaited, as `deliverChange` does, so one slow policy
-   * pass holds up its own query id and nothing else.
-   */
-  async repair(socket: SyncSocket): Promise<number> {
-    const repairs = [...socket.desynced].map(async (sid) => {
-      const subscription = this.#book.get(socket.id, sid);
-      const entry = subscription && this.#entries.get(subscription.qid);
-      if (!subscription || !entry) return false;
-      // Its rows are about to be replaced, so wait: this drain is the only one coming. Bounded by
-      // the read's own deadline, and a read that failed staled the window, which refuses below.
-      await entry.reading?.result.catch(() => undefined);
-      return await entry.lock.run(() => repairSubscriber(this.#fanout, entry, subscription));
-    });
-    return (await Promise.all(repairs)).filter(Boolean).length;
+  /** This socket's marked subscriptions, repaired now it can take a frame: Bun's `drain`. */
+  repair(socket: SyncSocket): Promise<number> {
+    return repairSocket(this.#fanout, this.#book, this.#entries, socket);
   }
 
   /** The node's sweep: every window owing a mark, each in its lane, one read a window at most. */
-  async repairMarked(): Promise<number> {
-    const lanes = [...this.#entries.values()].map((entry) =>
-      entry.lock.run(() => repairWindow(this.#fanout, entry)),
-    );
-    let sent = 0;
-    let failure: { readonly error: unknown } | null = null;
-    for (const lane of await Promise.allSettled(lanes)) {
-      if (lane.status === 'fulfilled') sent += lane.value;
-      else failure ??= { error: lane.reason };
-    }
-    if (failure !== null) throw failure.error;
-    return sent;
+  repairMarked(): Promise<number> {
+    return repairEveryWindow(this.#fanout, this.#entries);
   }
 
   #attachUnlessGone(
@@ -425,34 +378,6 @@ export class LiveQueryRegistry {
     socket.queries.set(sid, entry.qid);
     socket.clearDesynced(sid);
     return subscription;
-  }
-
-  #entryFor(
-    qid: string,
-    definition: LiveQueryDefinition,
-    input: JsonValue,
-    tenant: string | null,
-  ): QueryEntry {
-    const existing = this.#entries.get(qid);
-    if (existing) return existing;
-    // The node-wide ceiling, refused where the entry would be born. `qid` derives from
-    // client-chosen input, so one socket varying it mints a matcher, a row window and a
-    // `WindowLock` per value, and every change then fans out over all of them.
-    if (this.#entries.size >= this.#maxEntries) {
-      throw new SubscriptionLimitError({
-        scope: 'node',
-        id: definition.name,
-        limit: this.#maxEntries,
-        knob: 'maxEntries',
-      });
-    }
-    const created = queryEntry(qid, definition, input, definition.matcher(input), {
-      readDeadlineMs: this.#options.readDeadlineMs,
-      schedule: this.#options.schedule,
-      tenant,
-    });
-    this.#entries.add(created);
-    return created;
   }
 
   /**

@@ -128,6 +128,8 @@ export { MAX_WIRE_PAGE_SIZE } from './page-controls';
  * `@ultimat3/core`'s — one place to encode, decode or re-key a cursor.
  */
 export type { Page, PaginateArgs } from './pagination';
+/** The input as the schema keeps it — what a key over `(query, input)` hashes (`queryHash`). */
+export { parsedQueryInput } from './parsed-input';
 export type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
 /**
  * The one authz gate for reads, named after what it guards. The display label
@@ -171,7 +173,7 @@ export {
 /** What a `single: true` read answers — one rule, also `@ultimat3/mcp`'s served tool's. */
 export { readAnswer } from './single-answer';
 /** `Builder` is a type only: `from()` is the one way to build one, so there is no `new Builder()`. */
-export type { Builder, RowProvider, SqlSource, SqlText } from './source';
+export type { Builder, RowProvider, RowWindow, SqlSource, SqlText } from './source';
 /** `isAfterKey` is the one definition of "after this position" — both seek paths use it. */
 export { from, isAfterKey } from './source';
 export type { ExplainResult, QuerySqlInfo } from './sql';

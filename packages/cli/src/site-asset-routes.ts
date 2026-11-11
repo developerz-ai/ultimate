@@ -12,6 +12,7 @@ import {
   parseByteRange,
   RANGE_UNSATISFIABLE,
 } from '@ultimat3/http';
+import { assetRouteMeta } from './asset-route-meta';
 import type { SiteAsset, SiteAssetTable } from './site-assets';
 import { parseHashedAssetUrl, SITE_ASSET_BASE_PATH } from './site-assets';
 
@@ -65,7 +66,7 @@ export function siteAssetRoutes(table: SiteAssetTable): readonly Route[] {
     {
       method: 'GET',
       path: `${SITE_ASSET_BASE_PATH}/*file`,
-      meta: { name: 'assets.site', auth: 'public', tags: ['assets'] },
+      meta: assetRouteMeta({ name: 'assets.site', auth: 'public' }),
       handler: (request: UltimateRequest): Response => {
         const named = parseHashedAssetUrl(request.pathname);
         if (named === undefined) {

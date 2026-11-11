@@ -18,7 +18,7 @@ import type { AnyQuery, Query } from './query';
 import { queryHash } from './query';
 import type { QueryLimitCaller } from './rate-limit-gate';
 import { spendReadLimit } from './rate-limit-gate';
-import { queryName, sourceFor } from './read';
+import { builtFor, queryName } from './read';
 import { assertNoSealedKey } from './sealed-shape';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
@@ -131,7 +131,9 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   options: ToLiveOptions = {},
 ): Promise<LiveQuery> {
   const name = queryName(target);
-  const source = await sourceFor(target, input, {
+  // `builtFor`, not `sourceFor`: the hash below is the PARSED input's, so a key the schema strips
+  // (`{ q, junk }`) is the same live identity and cursor scope as `{ q }` (`read-cache-key.test.ts`).
+  const { source, input: parsed } = await builtFor(target, input, {
     ...(options.ctx === undefined ? {} : { ctx: options.ctx }),
     // The boolean stays this layer's spelling because it has exactly ONE reason, stated on
     // `ToLiveOptions.enforce` above; `sourceFor` takes that reason as a string so every skipped
@@ -150,7 +152,7 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   assertNoSealedKey(name, shape);
 
   const epoch = options.epoch ?? liveEpoch();
-  const hash = queryHash(name, input);
+  const hash = queryHash(name, parsed);
   const reads = [...new Set([shape.entity, ...tagKeys(target.cache?.tags ?? [])])].sort();
   // The query's own policy object, not a copy: the same authz a direct read runs.
   const policy = target.policy;

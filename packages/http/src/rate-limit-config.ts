@@ -22,6 +22,12 @@ export const DEFAULT_RATE_LIMIT: Omit<RateLimitConfig, 'scope'> = {
     // Login/signup style endpoints: slow, no burst.
     auth: { capacity: 10, refillPerSecond: 0.2 },
     mutation: { capacity: 30, refillPerSecond: 1 },
+    // Built, content-hashed assets (island chunks, styles, the runtime, favicons, the worker): an
+    // immutable file costs one read and no query, and one cold page load is dozens of them. On
+    // `default` an office behind one NAT met 429 from the fifth route on. 2,000 held covers a team
+    // of ~40 cold-loading a 50-chunk app at once; 200/s back is a steady fleet of reloads. It is a
+    // ceiling on abuse of a static file, never on reads — those stay on `default`.
+    assets: { capacity: 2_000, refillPerSecond: 200 },
   },
 };
 
@@ -57,7 +63,13 @@ const assertBucket = (name: string, bucket: Bucket): void => {
 export const resolveRateLimitConfig = (
   input: Partial<RateLimitConfig> | undefined,
 ): RateLimitConfig => {
-  const merged = { ...DEFAULT_RATE_LIMIT, ...input };
+  // Key by key, never the table whole: an app tuning `default` replaced every shipped bucket, so a
+  // route naming `assets` (or `auth`, `mutation`) fell through to `default` with nothing said.
+  const merged = {
+    ...DEFAULT_RATE_LIMIT,
+    ...input,
+    buckets: { ...DEFAULT_RATE_LIMIT.buckets, ...input?.buckets },
+  };
   for (const [name, bucket] of Object.entries(merged.buckets)) assertBucket(name, bucket);
   // Here and not at the first request, for `assertRateLimitScope`'s reason: an unknown name falls
   // through `bucketFor` to `default`, so a tenant allowance somebody wrote as 5,000 would silently

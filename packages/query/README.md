@@ -218,6 +218,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 |---|---|
 | `query.ts` | the primitive, `describeQuery`, `queryHash` |
 | `read.ts` | the one read path — `runQuery`, `sourceFor` — and the declaration store |
+| `parsed-input.ts` | `parsedQueryInput(query, raw)` — the input every key over `(query, input)` hashes |
 | `facade.ts` | binds each projection to the query; re-implements none of them |
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
@@ -399,6 +400,14 @@ HMAC-signed, and bound to one query + arguments — a cursor from another query 
 `query.page(input, { first, after })` is the only way to ask for one — `paginate` backs it and is
 not exported, because a page is the read's own answer rather than an imported helper.
 
+**A function `RowProvider` is handed the window** (`RowWindow`: `after`, `limit`, `order`,
+`filters`; `As of 31.4.3`). `from('posts', (window) => repo.page(window))` pushes the cursor down,
+so a provider that reads a bounded window (a repository's top N) reaches every row: called with
+nothing, it served page one's rows to every page and page two came back short. `from()` re-applies
+the filter, order, seek and cut over what comes back, so ignoring the argument is still correct —
+but a provider that honours `limit` must honour `after`, `order` and `filters` too
+(`pagination-window.test.ts`; the reference app's `org-posts.ts` is the worked push-down).
+
 ### The same page over HTTP — `?_first=` and `?_after=`
 
 The route reads two controls off the search string BEFORE the schema sees it, and with either
@@ -537,6 +546,12 @@ Request memo (same read twice in one render ⇒ one round trip), then the tier l
 up. Keys are `query:<name>:<authority>:<input fingerprint>:<tags>`. An action's `cache.invalidates`
 and a query's `cache.tags` meet in the one graph owned by `@ultimat3/cache`, because there is one
 registry and this package holds no store of its own.
+
+**The input fingerprint is the PARSED input, never the raw payload** (`As of 31.4.3`). A key the
+schema strips — `?junk=1`, `?junk=2`, … — is one entry and one read, not a new entry per value
+that evicts a hot one (`read-cache-key.test.ts`). Anything else keyed on `(query, input)` asks for
+the same value: `parsedQueryInput(query, raw)` is the parse alone (`X_INPUT_INVALID` on a refused
+input; no actor, policy, limit or `sql()`), then `queryHash(name, parsed)`.
 
 **The authority is who the read was answered for, and it is not optional.** `sql(input, ctx)` is
 handed the context and `@ultimat3/entity` derives every tenant predicate from `ctx.actor.orgId`,

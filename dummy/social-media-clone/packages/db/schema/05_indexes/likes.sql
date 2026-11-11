@@ -4,6 +4,4 @@ CREATE INDEX likes_post_id_idx ON public.likes USING btree (post_id);
 
 CREATE INDEX likes_user_id_created_at_08493ec4_idx ON public.likes USING btree (user_id DESC, created_at DESC);
 
-CREATE INDEX likes_user_id_created_at_idx ON public.likes USING btree (user_id DESC, created_at DESC);
-
 CREATE INDEX likes_user_id_idx ON public.likes USING btree (user_id);

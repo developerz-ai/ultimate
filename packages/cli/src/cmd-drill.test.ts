@@ -7,8 +7,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { NotImplementedError } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
-import { drillCommand } from './cmd-drill';
+import { drillCommand, withDrillFleet } from './cmd-drill';
 import type { CommandContext } from './command';
 import type { FlagValue } from './parse';
 import { processRoot } from './process-root-fixture';
@@ -90,5 +91,57 @@ describe('x drill', () => {
   test('--budget-ms must be a whole number of milliseconds', async () => {
     const error = await refusal(contextFor(['pg-slow'], [['budget-ms', '5s']]));
     expect(error).toBeUltimateError('X_CLI_BAD_FLAG');
+  });
+});
+
+// H9: the fleet is a set of spawned role processes. Whatever throws between their start and the
+// end of the drill — the evidence connection's constructor included — must not leak them.
+describe('x drill · the fleet is always stopped', () => {
+  const fleet = () => {
+    const stopped: string[] = [];
+    return {
+      stopped,
+      fleet: {
+        databaseUrl: 'postgres://u@[bad',
+        stop: async () => {
+          stopped.push('stop');
+        },
+      },
+    };
+  };
+  const boom = (what: string) =>
+    new NotImplementedError({
+      cause: `${what} in this test is not implemented`,
+      fix: 'x drill --list --json',
+    });
+
+  test('a throwing evidence connection still stops the fleet, and the throw is kept', async () => {
+    const { stopped, fleet: started } = fleet();
+    const run = withDrillFleet(
+      started,
+      () => {
+        throw boom('the connection');
+      },
+      async () => 'ran',
+    );
+    expect(await run.catch((error: unknown) => error)).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(stopped).toEqual(['stop']);
+  });
+
+  test('a close that throws still stops the fleet', async () => {
+    const { stopped, fleet: started } = fleet();
+    const sql = {
+      rows: async () => [],
+      close: async () => {
+        throw boom('close');
+      },
+    };
+    const run = withDrillFleet(
+      started,
+      () => sql,
+      async () => 'ran',
+    );
+    expect(await run.catch((error: unknown) => error)).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(stopped).toEqual(['stop']);
   });
 });

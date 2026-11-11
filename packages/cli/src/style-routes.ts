@@ -5,6 +5,7 @@
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
+import { assetRouteMeta } from './asset-route-meta';
 import type { StyleBundle } from './style-bundle';
 import { STYLE_BASE_PATH } from './style-bundle';
 
@@ -28,7 +29,7 @@ export function styleRoutes(source: StyleSource): readonly Route[] {
     {
       method: 'GET',
       path: `${STYLE_BASE_PATH}/*file`,
-      meta: { name: 'assets.style', auth: 'public', tags: ['assets'] },
+      meta: assetRouteMeta({ name: 'assets.style', auth: 'public' }),
       handler: (request: UltimateRequest): Response => {
         const chunk = source().chunkAt(request.pathname);
         if (chunk === undefined) {

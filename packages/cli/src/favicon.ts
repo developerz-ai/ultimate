@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { blankRaster, encodeImage } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
+import { assetRouteMeta } from './asset-route-meta';
 
 /** What a browser asks for with no `<link rel="icon">` to tell it otherwise. */
 export const FAVICON_PATH = '/favicon.ico';
@@ -108,6 +109,6 @@ export async function faviconResponse(root: string): Promise<Response> {
 export const faviconRoute = (root: string): Route => ({
   method: 'GET',
   path: FAVICON_PATH,
-  meta: { name: 'assets.favicon', auth: 'public', cache: FAVICON_CACHE, tags: ['assets'] },
+  meta: assetRouteMeta({ name: 'assets.favicon', auth: 'public', cache: FAVICON_CACHE }),
   handler: async (_request: UltimateRequest): Promise<Response> => faviconResponse(root),
 });
