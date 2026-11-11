@@ -1,6 +1,6 @@
-// Single responsibility: the adopter's say over what the Sentry transport sends — drop by code,
-// sample, regroup, scrub. Functions of the report or the event, decided per report; the envelope
-// format stays `error-reporter-sentry.ts`'s alone.
+// Single responsibility: the adopter's say over the Sentry transport — its one options object
+// (wiring, then drop by code, sample, regroup, scrub), applied per report. The envelope format
+// stays `error-reporter-sentry.ts`'s alone.
 
 import { renderThrowable } from './error-render';
 import type { ErrorReport } from './error-reporter';
@@ -10,22 +10,38 @@ import { logger } from './logger';
 /** The event payload as the envelope will carry it: the third line, before serialisation. */
 export type SentryEvent = Readonly<Record<string, unknown>>;
 
-export interface SentryReporterHooks {
+/**
+ * `sentryErrorReporter`'s options: the ONE seam over what reaches the monitor. Scrub, drop and
+ * regroup are options here, never a wrapper around the transport — a wrapper needs
+ * `sentryTransport()` to be recognised, and every behaviour below it is rebuilt by hand.
+ */
+export interface SentryReporterOptions {
+  /** From the app's typed env. The framework declares no default and ships no constant. */
+  readonly dsn: string;
+  /** Injected by tests; the preload seals the real one. */
+  readonly fetch?: typeof globalThis.fetch | undefined;
+  readonly clientName?: string | undefined;
   /**
-   * The last word on an event: return it (changed or not) to send, `null` to drop. Scrub by VALUE
-   * here — `redactFields` already masked by key. A hook that throws drops the event: an event the
-   * scrubber failed on is exactly the one that must not leave unscrubbed.
+   * SCRUB, and the last word on an event: return it (changed or not) to send, `null` to drop.
+   * Scrub by VALUE here — `redactFields` already masked by key. A hook that throws drops the event:
+   * an event the scrubber failed on is exactly the one that must not leave unscrubbed.
    */
   readonly beforeSend?: ((event: SentryEvent) => SentryEvent | null) | undefined;
-  /** `true` drops every report with this code, before the event is even built. */
+  /** DROP by code: `true` drops every report with this code, before the event is even built. */
   readonly ignore?: ((code: string) => boolean) | undefined;
-  /** The monitor's grouping, replacing `errorFingerprint`'s one-element default. */
+  /** The monitor's grouping, replacing `monitorFingerprint`'s default (`[code]`, …). */
   readonly fingerprint?: ((report: ErrorReport) => readonly string[]) | undefined;
   /** The share of reports sent, `0..1` inclusive. Default 1: every report. */
   readonly sampleRate?: number | undefined;
   /** `[0, 1)`, the sampling roll. Injected by tests; default `Math.random`. */
   readonly random?: (() => number) | undefined;
 }
+
+/**
+ * The options minus the wiring — the name the hooks shipped under (31.0), kept as an alias of
+ * `SentryReporterOptions` so a typed hooks object still spreads in. Not a second seam.
+ */
+export type SentryReporterHooks = Omit<SentryReporterOptions, 'dsn' | 'fetch' | 'clientName'>;
 
 /** Refused at wiring time, like the DSN: a rate past 1 or below 0 is a monitor nobody configured. */
 export function screenSampleRate(rate: number | undefined): number {

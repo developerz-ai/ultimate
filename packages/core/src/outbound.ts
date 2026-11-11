@@ -6,6 +6,7 @@
 import type { Schema } from '@ultimat3/schema';
 import type { Breaker } from './breaker';
 import { settleWith } from './breaker';
+import { retryBudgetOf } from './breaker-retry-budget';
 import { systemClock } from './clock';
 import { tryUseContext } from './context';
 import { platformDeadlineTimer } from './deadline-signal';
@@ -164,13 +165,19 @@ export async function outbound(
 ): Promise<OutboundAnswer | OutboundStreamAnswer> {
   const call = prepare(request, deps);
   const policy = policyFor(request, call.site);
-  const work = (): Promise<AttemptAnswer> =>
-    retry((attempt) => runAttempt(call, attempt), policy, {
+  // Per breaker key: retries at most a fifth of calls, so a partial outage the breaker does not
+  // trip on is not multiplied by the attempt count. A refused retry answers the last attempt's code.
+  const budget = request.breaker === undefined ? undefined : retryBudgetOf(request.breaker);
+  const work = (): Promise<AttemptAnswer> => {
+    budget?.called();
+    return retry((attempt) => runAttempt(call, attempt), policy, {
       sleep:
         deps.sleep ?? (request.signal === undefined ? undefined : signalledSleep(request.signal)),
       now: call.now,
       random: deps.random,
+      admitRetry: budget?.spend,
     });
+  };
   const answer = await instrumentedCall(
     { vendor: call.site.vendor, method: call.method, url: call.url },
     () => (request.breaker === undefined ? work() : guarded(request.breaker, request.signal, work)),

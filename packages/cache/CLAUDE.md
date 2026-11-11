@@ -201,7 +201,12 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `redis-buckets.ts` | the tag → keys sorted-set layout: join + prune + lease, paged read, `UNLINK`, sweep |
 | `set-options.ts` | how two callers' `CacheSetOptions` combine, and the `null`-load TTL |
 | `tier-failures.ts` | `bestEffort()`, and the `cache.tier_failure` event for each refusal it absorbs |
-| `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
+| `memo-store.ts` | the one per-ctx memo store (WeakMap on the ALS ctx) and its `MEMO_MAX_BYTES` (8 MiB) bound, oldest evicted silently |
+| `memo.ts` | `memoTier`: the request-memo rung over `memo-store.ts` |
+| `memo-flights.ts` | `memoFlights(ctx, name)`: a named namespace of reads in flight in an explicit ctx's memo — `@ultimat3/query`'s request memo |
+| `memo-per-request.ts` | `memoPerRequest(fn, key)`: the same store for a plain function; straight through outside a ctx |
+| `approx-bytes.ts` | `approxBytes`: a held value's cost from a bounded sample (8 elements, 32 members, depth 6, 512 nodes) — the memo charges every query read, so never a serialisation |
+| `byte-length.ts` | `utf8ByteLength`: UTF-8 length counted off code units, no `TextEncoder` copy |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `value-codec.ts` | the one value encoding every tier stores and decodes |
 | `redis.ts` | the shared tier over core's `redisClient()` (`@ultimat3/core/redis`, never `Bun.redis`), build-namespaced keys, the value budget, the write/bust order |

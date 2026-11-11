@@ -212,6 +212,11 @@ A setter still on a package's `.` barrel is `X_ADAPTER_PORT_INCOMPLETE` on the `
 | `x verify`'s `unit` step runs the app's seeds on the memory driver (**31.6.0**): a seed row the entity refuses — float money, a value its schema rejects — turns `unit` red under the entity's own code, and a seed that throws with no code is `X_SEED_FAILED` | fix the seed row the finding names, as its `fix:` says. Then `x verify --only unit` |
 | `x verify`'s `errors` step reports `X_ERROR_FIX_INVALID` on an app's own error whose `fix:` defers the edit (a whitespace-delimited `# after <verb>ing …` or `# once <…>ed`), only says re-run, or runs `x g … --force` (**31.6.0**) | rewrite that `fix:` as the edit itself (`edit <path>.<ext>:<line> — <instruction>`) or a command that works on its own, with no `--force` |
 | every island and `/_x/assets` URL changes once (**31.6.1**): each is now named by a hash of its final bytes, never its sources (#1075) | nothing to do; a CDN in front needs no purge, since new names never collide with old ones |
+| Sentry grouping (**31.7.0**): the default fingerprint is `[code]` (`X_INTERNAL`: `[code, '<fn> <path>']`; `X_CLIENT_ERROR`: `[code, '<pattern>#<island>']`), and `exception.values[0].stacktrace.frames` carries the stack | nothing: each existing issue reopens once under its code's group, and issues split by operation merge. An alert rule keyed on the old hash moves to the `code` tag (source is a tag, operation is the transaction). `extra.stack` stays through 31.x. Custom grouping: `sentryErrorReporter({ fingerprint })` |
+| `pollEvery` / `visibleInterval` back off on failure by default (**31.7.0**): `maxMs` is 8 × `ms` | nothing, unless a poll must keep hitting a failing endpoint at full rate: pass `{ maxMs: <ms> }` equal to `ms` |
+| `requestMemo(ctx)` from `@ultimat3/query` returns `MemoFlights`, not a `Map` (**31.7.0**) | a caller that wrote into it: use `memoFlights(ctx, name)` from `@ultimat3/cache`, or `memoPerRequest(fn, key)` for a plain function |
+| `buildSitemap` / `sitemapUrls` option `now: Date` is deprecated (**31.7.0**) | pass `clock: frozenClock(now)` instead |
+| a compiled web role cropping or compositing a raster above `RASTER_SYNC_PIXELS` where no Worker can start answers `X_IMAGE_RASTER_BUDGET` (503) (**31.7.0**) | move the transform into a `warmVariants` job |
 
 ## 29.x → 30.0.0, entry by entry
 

@@ -293,6 +293,53 @@ describe('retry', () => {
     expect(runs).toBe(2);
   });
 
+  test('a refused retry token stops the loop before the wait, the LAST error unchanged', async () => {
+    const timer = recorder();
+    const asked: number[] = [];
+    let runs = 0;
+    await expect(
+      retry(
+        async () => {
+          runs += 1;
+          throw coded('X_DRAINING');
+        },
+        policy,
+        {
+          sleep: timer.sleep,
+          // The second retry is refused: one retry ran, and the third attempt never did.
+          admitRetry: () => {
+            asked.push(runs);
+            return asked.length < 2;
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'X_DRAINING', fix: 'x doctor --json' });
+    expect([runs, asked, timer.slept]).toEqual([2, [1, 2], [1_000]]);
+  });
+
+  test('a token is asked for only a retry the policy would run: never on a terminal stop', async () => {
+    let asked = 0;
+    const asking = (): boolean => {
+      asked += 1;
+      return true;
+    };
+    await retry(
+      async () => {
+        throw coded('X_NOT_IMPLEMENTED');
+      },
+      policy,
+      { sleep: recorder().sleep, admitRetry: asking },
+    ).catch(() => undefined);
+    await retry(
+      async () => {
+        throw coded('X_DRAINING');
+      },
+      { ...policy, attempts: 1 },
+      { sleep: recorder().sleep, admitRetry: asking },
+    ).catch(() => undefined);
+    expect(asked).toBe(0);
+  });
+
   test('attempts below 1 still run the work once', async () => {
     const timer = recorder();
     let runs = 0;

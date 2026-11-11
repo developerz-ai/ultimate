@@ -15,6 +15,8 @@ export interface RetryDeps {
   /** Monotonic ms, read only when a time budget applies. Defaults to the system clock. */
   now?: (() => number) | undefined;
   random?: Random | undefined;
+  /** Asked before each retry's wait; `false` ends the loop with the last error (`retryLoop`). */
+  admitRetry?: (() => boolean) | undefined;
 }
 
 /** A timer an abort lets go of, so a retry abandoned mid-wait holds nothing for the full delay. */
@@ -63,5 +65,6 @@ export async function retry<T>(
     now: deps.now,
     random: deps.random,
     signal: ctx?.signal,
+    admitRetry: deps.admitRetry,
   });
 }

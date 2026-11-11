@@ -52,7 +52,8 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 - **A page's `lastmod` never reads the ambient zone, and a future one is clamped.**
   `sitemapDatetime` refuses a zoneless time before `Date.parse` can read it in the process's zone.
   Refusing a future date would fail a whole enumeration for one skewed row; clamping to `now` is
-  the true upper bound. A route's `lastmod` string is the caller's and is written as given.
+  the true upper bound. "Now" is `BuildSitemapOptions.clock`, read once per build — the feed's
+  seam; `now: Date` is a deprecated alias until the next major. A route's `lastmod` string is the caller's and is written as given.
 - **The hreflang cluster, `x-default` and the `<loc>`s read ONE trimmed list** — the page's
   `locales`, minus what `disallow` blocks. Never trim one of the three alone.
 - **Errors name the file, not the URL.** `RouteRecord.file` is in every cause and every fix; an agent must be able to open the source without guessing.

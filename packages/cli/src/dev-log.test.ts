@@ -1,13 +1,13 @@
 // `x dev`'s log on disk: every line the process logger writes lands in `.x/dev.log` as well as on
-// the terminal, and the file rotates once at its cap — `logs.tail` reads it, and an agent loop
-// against a dev server left up for a week must not fill the disk.
+// the terminal (a tee: the lanes stay core's), and the file rotates once at its cap — `logs.tail`
+// reads it, and an agent loop against a dev server left up for a week must not fill the disk.
 
 import { afterAll, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
 import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { logger } from '@ultimat3/core';
+import { installLogSink, logger } from '@ultimat3/core';
 import { DEV_LOG_MAX_BYTES, devLogPath, openDevLog, teeDevLog } from './dev-log';
 
 const dirs: string[] = [];
@@ -46,45 +46,30 @@ test('a restarted x dev appends, and counts what the file already held toward th
   expect(await Bun.file(join(dir, 'dev.log')).text()).toBe('next\n');
 });
 
-test('the process logger tees into dev.log until released', async () => {
+test('the process logger tees into dev.log until released, and the streams still get it', async () => {
   const dir = scratch();
-  const terminal: string[] = [];
-  const release = teeDevLog(dir, { json: false, write: (line) => terminal.push(line) });
+  const streams: string[] = [];
+  const releaseStreams = installLogSink((line) => streams.push(line));
+  const release = teeDevLog(dir);
   try {
     logger.info('dev.log.probe', { n: 1 });
+    logger.error('dev.log.probe-error');
   } finally {
     release();
+    releaseStreams();
   }
   logger.info('dev.log.after-release');
   const file = await Bun.file(join(dir, 'dev.log')).text();
+  // Byte for byte what the streams were handed: one line format, written by core alone.
+  expect(file).toBe(`${streams.join('\n')}\n`);
   expect(file).toContain('"msg":"dev.log.probe"');
   expect(file).not.toContain('dev.log.after-release');
-  // A tee, not a redirect: the terminal still gets the line.
-  expect(terminal.some((entry) => entry.includes('dev.log.probe'))).toBe(true);
 });
 
-test('the terminal half keeps the logger’s lanes: errors and --json go to stderr', () => {
-  const dir = scratch();
-  const lanes: string[] = [];
-  const release = teeDevLog(dir, {
-    json: false,
-    write: (_line, stream) => lanes.push(stream),
-  });
-  try {
-    logger.info('lane.info');
-    logger.error('lane.error');
-  } finally {
-    release();
-  }
-  expect(lanes).toEqual(['stdout', 'stderr']);
-  const jsonLanes: string[] = [];
-  const releaseJson = teeDevLog(dir, { json: true, write: (_l, stream) => jsonLanes.push(stream) });
-  try {
-    logger.info('lane.json');
-  } finally {
-    releaseJson();
-  }
-  expect(jsonLanes).toEqual(['stderr']);
+test('a second release is a no-op, not a second close of the file', () => {
+  const release = teeDevLog(scratch());
+  release();
+  expect(() => release()).not.toThrow();
 });
 
 test('a state directory nothing created yet is created, not refused', async () => {

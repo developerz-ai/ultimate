@@ -10,7 +10,37 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/core`: `mapBounded(items, fn, { width, signal })` — bounded concurrent map in input order; the first rejection aborts the rest, a missing `width` is `X_INVARIANT`, a caller abort is `X_ABORTED`.
+- `@ultimat3/core`: `teeLogLines(tee)` copies every process-logger line beside the streams; `x dev`'s `.x/dev.log` uses it.
+- `@ultimat3/core`: `outbound({ breaker })` caps retries at 20% of calls per breaker (burst 10) via `retryBudgetOf`; a refused retry returns the last attempt's error.
+- `@ultimat3/core`: `X_IMAGE_RASTER_BUDGET` (503) — where no raster Worker can start, the web role refuses an inline crop or composite above `RASTER_SYNC_PIXELS`; fix: `warmVariants`.
+- `@ultimat3/cache`: `memoPerRequest(fn, key)` — the request memo for a plain function.
+
+### Changed
+
+- `@ultimat3/schema`: composite schemas (object, array, record) check builtin members directly, and build an issue path only on failure. A valid 5-field object parses 1.69 → 0.60 µs; issue order and cap unchanged. `checkOf(builtin)` called standalone no longer trims to 100 issues (the collecting loops still bound results).
+- `@ultimat3/core`: Sentry events carry `exception.stacktrace.frames`, oldest first, `in_app: false` for `node_modules`, `@ultimat3/` and runtime frames; `extra.stack` stays through 31.x.
+- `@ultimat3/core`: the Sentry default fingerprint is the error code (`monitorFingerprint`) — one code from many operations is one issue; `X_INTERNAL` groups on its application frame, `X_CLIENT_ERROR` on code + `<pattern>#<island>`. Local admin grouping (`errorFingerprint`) unchanged.
+- `@ultimat3/core`: `SentryReporterOptions` is the one declaration of `sentryErrorReporter`'s options (`beforeSend`, `ignore`, `fingerprint`); `SentryReporterHooks` is an alias.
+- `@ultimat3/core` logger: `child()` no longer re-validates its level or re-redacts its parent's fields; the credential-key verdict is memoised per key (bounded at 4,096); bound fields are redacted once, when bound. `ctxOf` + one request log line 21 → 13 µs.
+- `@ultimat3/core`: `recordRequest` builds its series key once per label set, not twice per request; a series no longer aliases the caller's mutable label object.
+- `@ultimat3/core`: `visibleInterval` / `pollEvery` back off on failure by default — `maxMs` defaults to 8 × `ms` with equal jitter, a success resets to `ms`. `maxMs: ms` keeps the fixed rate.
+- `@ultimat3/core`: `transformImageBytes` runs raster work in a Worker, compiled binaries included; worst event-loop stall on a 4096² source 775 ms → 1–41 ms, output byte-identical.
+- `@ultimat3/cache`: the request memo is bounded at `MEMO_MAX_BYTES` (8 MiB) per ctx, oldest dropped silently (a job attempt reading a `cache:` query per batch: 198 MiB → 8.4 MiB over 2,000 batches). Held reads are charged by a bounded sample (~2 µs), never by serialising.
+- `@ultimat3/cache`: `estimateBytes` and the LRU's `set` count UTF-8 bytes without a `TextEncoder` copy.
+- `@ultimat3/query`: the request memo uses `@ultimat3/cache`'s per-ctx store and its 8 MiB bound; `requestMemo(ctx)` returns `MemoFlights`, not a `Map`.
+
+### Deprecated
+
+- `@ultimat3/seo`: `buildSitemap` / `sitemapUrls` take `clock?: Clock` (default `systemClock`, read once per build), like `buildFeed`; `now: Date` is deprecated → `clock: frozenClock(now)`. Removal on `next`.
+
+### Fixed
+
+- `@ultimat3/core`: a `cache.tiers` entry that is a Symbol or a null-prototype object is `X_CONFIG_INVALID`, not a bare `TypeError`.
+- `@ultimat3/i18n`: `extractKeys` no longer reports a `t('…')` written inside string or template text, and no longer loses a real call right after one.
+- `@ultimat3/time`: `nextLocalSlots` refuses a `count` that is NaN, negative, fractional or Infinity with `X_INVARIANT`.
 
 ## Releases
 

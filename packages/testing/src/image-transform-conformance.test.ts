@@ -52,7 +52,16 @@ const check = (prefix: string) => {
 describe(testName('unit', 'a driver that breaks the contract fails conformance'), () => {
   test('reporting the width asked fails the clamp check, passes the resize one', async () => {
     await check('a variant is the width asked').run(trusting());
-    await expect(check('a width past the source').run(trusting())).rejects.toThrow();
+    // Settled by hand, never `expect(…).rejects`: the transform answers from the raster Worker,
+    // and Bun 1.4.4's `.rejects`/`.resolves` wait never delivers a Worker message once the test
+    // has already awaited one — the line above did, so the matcher hung the file (measured).
+    const clamped = check('a width past the source').run(trusting());
+    expect(
+      await clamped.then(
+        () => 'passed',
+        () => 'refused',
+      ),
+    ).toBe('refused');
   });
 
   test('every check has a name of its own', () => {

@@ -3,6 +3,7 @@
 // must not carry at all: the ones `robots.txt` keeps crawlers out of.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { SEO_ERROR_CODES } from './errors';
 import type { RouteRecord, SitemapPage } from './routes';
 import { expandRoute, expandRoutePages } from './routes';
@@ -11,7 +12,7 @@ import { sitemapDatetime } from './sitemap-datetime';
 
 const ORIGIN = 'https://example.com';
 const NOW = new Date('2026-10-11T12:00:00.000Z');
-const BASE = { baseUrl: ORIGIN, now: NOW } as const;
+const BASE = { baseUrl: ORIGIN, clock: frozenClock(NOW) } as const;
 const LOCALES = { locales: ['es-co', 'en'], defaultLocale: 'es-co' } as const;
 
 function route(partial: Partial<RouteRecord> & Pick<RouteRecord, 'path' | 'file'>): RouteRecord {

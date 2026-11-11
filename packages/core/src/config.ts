@@ -5,9 +5,10 @@
 // Same rule for the same reason: `app.config.ts` CONSUMES the cache tier names, it does not own
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
-import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
+import type { CacheTierName } from './cache-vocabulary';
 import type { AiConfig, AiConfigInput } from './config-ai';
 import * as assetsSection from './config-assets';
+import { cacheTierIssues } from './config-cache';
 import * as clientErrors from './config-client-errors';
 import { countIssue } from './config-count';
 import { configDefaults } from './config-defaults';
@@ -349,17 +350,7 @@ function validate(config: AppConfig): void {
   failureCapture.failureCaptureIssues(config, issues);
   timeSection.timeIssues(config, issues);
 
-  // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
-  // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
-  // So an unknown tier is refused at boot rather than silently ignored or silently placed first.
-  // An EMPTY ladder is refused with the unknown rung: it builds no tier at all, so every read
-  // misses and nothing says the cache was configured away.
-  if (config.cache.tiers.length === 0) issues.push('cache.tiers must list at least one tier');
-  for (const tier of config.cache.tiers) {
-    if (CACHE_TIERS.includes(tier)) continue;
-    issues.push(`cache.tiers contains "${tier}", which is not one of ${CACHE_TIERS.join(', ')}`);
-    if (tierFix.length === 0) tierFix.push(CACHE_TIER_FIX);
-  }
+  if (cacheTierIssues(config.cache.tiers, issues)) tierFix.push(CACHE_TIER_FIX);
 
   if (issues.length > 0) {
     throw new ConfigInvalidError({

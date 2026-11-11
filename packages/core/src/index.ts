@@ -92,6 +92,8 @@ export type {
   BreakerVerdict,
 } from './breaker';
 export { breaker, settleWith } from './breaker';
+export type { RetryBudget } from './breaker-retry-budget';
+export { retryBudgetOf } from './breaker-retry-budget';
 export { isCompiledBundle } from './bunfs';
 export type { CacheEvictionOptions } from './cache-eviction';
 export { evictCacheFiles } from './cache-eviction';
@@ -571,6 +573,7 @@ export {
   memoryExporter,
   memoryMetricExporter,
   metricsText,
+  monitorFingerprint,
   noopErrorReporter,
   OTLP_RETRY_STATUSES,
   OtlpEndpointInvalidError,
@@ -724,6 +727,7 @@ export {
 export type { ImageFit, ResizeSpec } from './image/canvas';
 export {
   ImageDecodeFailedError,
+  ImageRasterBudgetError,
   ImageTooLargeError,
   ImageUnsupportedError,
   imageDecodeFailed,
@@ -749,6 +753,9 @@ export {
   hasAlpha,
   MAX_IMAGE_PIXELS,
 } from './image/raster';
+export { RASTER_SYNC_PIXELS } from './image/raster-pool';
+export type { RasterWorkerBundle } from './image/raster-worker-bundle';
+export { RASTER_WORKER_DEFINE, rasterWorkerBundle } from './image/raster-worker-bundle';
 export { impersonate, isImpersonating } from './impersonate';
 export { withInProcessFetch } from './in-process-fetch';
 export {
@@ -819,7 +826,9 @@ export type { LocalePathSplit } from './locale-path';
 export { localeSegment, localizePath, splitLocalePath } from './locale-path';
 // The process logger's test seam, beside nothing it groups with: where a default-writer line goes.
 export type { LogSink } from './logger';
-export { installLogSink } from './logger';
+export { installLogSink, teeLogLines } from './logger';
+export type { MapBoundedOptions } from './map-bounded';
+export { mapBounded } from './map-bounded';
 export {
   isAgentOffered,
   isMcpExposed,

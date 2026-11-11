@@ -29,12 +29,29 @@ const OVERFLOW_ATTRIBUTES: MetricAttributes = Object.freeze({ [OVERFLOW_ATTRIBUT
  * answer and is not slower: 644 ns/op against the join's 709, on a 3-label set. `String(value)`
  * stays, so `1` and `'1'` are still one series rather than two rows an exporter renders alike.
  */
-function seriesKey(attributes: MetricAttributes): string {
+function buildKey(attributes: MetricAttributes): string {
   const entries = Object.entries(attributes);
   if (entries.length === 0) return '';
   return JSON.stringify(
     entries.sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, value]) => [key, String(value)]),
   );
+}
+
+/**
+ * Keys of FROZEN label sets, by identity. A frozen set cannot spell another key later, so its key
+ * is built once however many instruments it is handed to — `recordRequest` gives one set to two
+ * (measured: two `JSON.stringify` per request before, one per distinct set now). A mutable set is
+ * keyed every call: caching it by identity would file a mutated set under its old labels.
+ */
+const frozenKeys = new WeakMap<MetricAttributes, string>();
+
+function seriesKey(attributes: MetricAttributes): string {
+  if (!Object.isFrozen(attributes)) return buildKey(attributes);
+  const known = frozenKeys.get(attributes);
+  if (known !== undefined) return known;
+  const key = buildKey(attributes);
+  frozenKeys.set(attributes, key);
+  return key;
 }
 
 /**
@@ -57,7 +74,9 @@ function reportOverflow(instrument: Instrument): void {
 
 function createSeries(instrument: Instrument, key: string, attributes: MetricAttributes): Series {
   const created: Series = {
-    attributes,
+    // A frozen COPY, once per series: a caller reusing one mutable object for its labels used to
+    // rename the series it had already filed, so the export carried labels no point was added under.
+    attributes: Object.isFrozen(attributes) ? attributes : Object.freeze({ ...attributes }),
     value: 0,
     count: 0,
     min: Number.POSITIVE_INFINITY,
@@ -71,7 +90,11 @@ function createSeries(instrument: Instrument, key: string, attributes: MetricAtt
 const OVERFLOW_KEY = seriesKey(OVERFLOW_ATTRIBUTES);
 
 export function seriesFor(instrument: Instrument, attributes: MetricAttributes): Series {
-  const key = seriesKey(attributes);
+  return seriesForKey(instrument, seriesKey(attributes), attributes);
+}
+
+/** `seriesFor` with the key already built: `key` MUST be `seriesKey(attributes)`. */
+function seriesForKey(instrument: Instrument, key: string, attributes: MetricAttributes): Series {
   const found = instrument.series.get(key);
   if (found !== undefined) return found;
   // On the MISS, ahead of the ceiling — never inside `createSeries`, which the overflow branch

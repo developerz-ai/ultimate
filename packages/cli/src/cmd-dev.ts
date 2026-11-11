@@ -56,7 +56,7 @@ export const devCommand: CliCommand = {
     // refuses every later one with a pid that is no longer running.
     // Before the boot, so its own lines are in it: `logs.tail` reads this file, and a dev server
     // that never wrote it answered every agent with X_NOT_IMPLEMENTED.
-    const untee = teeDevLog(services.stateDir, { json: ctx.args.json });
+    const untee = teeDevLog(services.stateDir);
     const restart = childRestart(root, ctx.env);
     const server = await startDev({
       root,

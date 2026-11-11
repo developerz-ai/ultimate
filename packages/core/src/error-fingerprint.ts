@@ -5,18 +5,13 @@
 import { fingerprint } from './canonical-json';
 import { stringField } from './error-render';
 import type { ErrorReport } from './error-reporter';
+import { stackFrames } from './sentry-frames';
 
 /** `errorReport()`'s code for a throw nobody classified: the one code too wide to group on. */
 const UNCLASSIFIED = 'X_INTERNAL';
 
-/** `    at fn (path:1:2)`, `    at async fn (path:1:2)`, `    at path:1:2`. */
-const FRAME = /^\s*at\s+(?:async\s+)?(?:(.*?)\s+\((.*)\)|(.*))$/;
-
-/** A line and a column, or a line alone: an edit above the throw moves both. */
-const POSITION = /(?::\d+){1,2}$/;
-
-/** Library frames: the first frame that is the APP's names the fault, not the library under it. */
-const LIBRARY = /(?:^|\/)(?:node_modules|@ultimat3)\//;
+/** `@ultimat3/cli`'s one code for every browser fault: its `operation` (pattern + island) is the fault. */
+const BROWSER = 'X_CLIENT_ERROR';
 
 /** Reads that cannot throw: this runs on the path that reports a failure, and adds none. */
 function read<T>(get: () => T): T | undefined {
@@ -27,53 +22,33 @@ function read<T>(get: () => T): T | undefined {
   }
 }
 
-function workingDirectory(): string | undefined {
-  const cwd = read(() => process.cwd());
-  return cwd === undefined ? undefined : `${cwd.replaceAll('\\', '/').replace(/\/$/, '')}/`;
-}
-
-/** `file://`, the working directory and the position dropped; `/` separators on every OS. */
-function relativePath(location: string, root: string | undefined): string {
-  let path = location.trim().replace(POSITION, '').replaceAll('\\', '/');
-  if (path.startsWith('file://')) path = path.slice('file://'.length);
-  if (root !== undefined && path.startsWith(root)) path = path.slice(root.length);
-  return path.replace(/^\.\//, '');
-}
-
-/**
- * The stack's FRAMES: the trailing run of `at …` lines. Read from the end, because the header
- * above them is the error's message, and a message may itself hold `\n    at x (y:1:1)` — which
- * read top-down would set the group to whatever the message's author typed.
- */
-function framesOf(stack: string): readonly RegExpExecArray[] {
-  const frames: RegExpExecArray[] = [];
-  const lines = stack.trimEnd().split('\n');
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const match = FRAME.exec(lines[index] ?? '');
-    if (match === null) break;
-    frames.unshift(match);
-  }
-  return frames;
-}
-
-/**
- * The top application frame as `fn path`, or `undefined`. A frame with no file location (`native`,
- * `<anonymous>`, `processTicksAndRejections (native:7:39)`) is skipped as well: it is the
- * runtime's, and two faults share it. A file location has a `/`; a runtime's never does.
- */
+/** The top application frame as `fn path` (no line, no column), or `undefined`. */
 function applicationFrame(stack: string | undefined): string | undefined {
   if (stack === undefined) return undefined;
-  const root = workingDirectory();
-  for (const match of framesOf(stack)) {
-    const location = match[2] ?? match[3] ?? '';
-    if (!POSITION.test(location.trim())) continue;
-    if (!location.replaceAll('\\', '/').includes('/')) continue;
-    const path = relativePath(location, root);
-    if (path === '' || LIBRARY.test(path)) continue;
-    const name = (match[1] ?? '').replace(/^new\s+/, '').trim();
-    return name === '' ? path : `${name} ${path}`;
-  }
-  return undefined;
+  const frame = read(() => stackFrames(stack).find((each) => each.inApp));
+  if (frame === undefined) return undefined;
+  return frame.fn === undefined ? frame.path : `${frame.fn} ${frame.path}`;
+}
+
+/**
+ * The monitor's group, as the envelope's `fingerprint` list: `[code]` for a classified code — one
+ * code raised from five operations is one issue, its `source` and `operation` facets of it (tags,
+ * `transaction`). `X_INTERNAL` adds the application frame, since on its code alone every
+ * unclassified throw is one issue; `X_CLIENT_ERROR` adds its operation, since a bundle's frame
+ * moves every deploy. Total: a report it cannot read degrades to `[X_INTERNAL]`.
+ */
+export function monitorFingerprint(report: ErrorReport): readonly string[] {
+  const code = stringField(report, 'code') ?? UNCLASSIFIED;
+  const extra =
+    code === UNCLASSIFIED
+      ? applicationFrame(stringField(report, 'stack'))
+      : code === BROWSER
+        ? stringField(
+            read(() => report.scope),
+            'operation',
+          )
+        : undefined;
+  return extra === undefined ? [code] : [code, extra];
 }
 
 /**
@@ -81,7 +56,8 @@ function applicationFrame(stack: string | undefined): string | undefined {
  * `scope.operation`; `X_INTERNAL` adds the top application frame (function and root-relative path,
  * no line or column), because on its code alone every unclassified throw in an app is one group.
  * Never `cause`, `meta`, an id or `release`: a row id splits one fault into a group per row, and a
- * deploy is not a new fault. Total: a report it cannot read degrades to the frameless key.
+ * deploy is not a new fault. The LOCAL group (`errorGroupsSink`, failure capture); the monitor's is
+ * `monitorFingerprint`. Total: a report it cannot read degrades to the frameless key.
  */
 export function errorFingerprint(report: ErrorReport): string {
   const code = stringField(report, 'code');

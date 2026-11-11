@@ -66,8 +66,12 @@ export const config = defineRoute({
    * measured: 110925 B (2026-11-09, plan 101 wave C; x build --target static, against 110,898)
    * — why: core's `singleLine` reading its escape table through `Object.hasOwn` (+27 B), so a
    * key on `Object.prototype` is never taken for an escape. Raised 108.3kb → 108.4kb.
+   * measured: 111061 B (2026-11-11, plan 101 efficiency sweep 1; x build --target static) — why:
+   * the board island 77,270 → 77,359 (+89 B), core's error-code title table gaining
+   * `X_IMAGE_RASTER_BUDGET`, so a client decoding that refusal knows its title. Raised 108.4kb →
+   * 108.5kb.
    */
-  budget: { js: '108.4kb' },
+  budget: { js: '108.5kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

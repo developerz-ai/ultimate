@@ -44,6 +44,7 @@ top-level `UltimateError` use in `error-codes.ts`.
   — on the `.` barrel, a test seam and not a port (`scripts/lib/adapter-port-pins.ts`); a stack,
   `finally` releases; preloads install one that drops lines (`LOG_LEVEL` named = none).
   WHERE a line goes, never whether: the level is untouched.
+- `teeLogLines(tee)` adds a COPY of every process-logger line beside the streams (a set, each release its own; a throwing tee loses only its copy) — `x dev`'s `dev.log`.
 - `logger.ts` must not import `context.ts` (`context.ts` injects ids via `setLoggerContextFields()`).
   It imports `secret.ts` one way only: `secret.ts` owns `REDACTED`, `logger.ts` re-exports it.
 - **`ActorFacts` is the app's extension point on `Actor`** (module augmentation). Core never declares
@@ -71,6 +72,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | how long to wait, and whether to wait at all | `backoff.ts` + `retry-loop.ts` + `retry.ts` | one curve, one loop, one executor that meets the caller's signal and deadline; `jitter` REQUIRED on a retry policy; `attempt` is 1-based † |
 | N callers on one key | `single-flight.ts` | identity-checked eviction, optional injected deadline, optional injected `signal`: a live joiner re-leads after its leader's abort. Reads no context |
 | how many at once | `flight-gate.ts` | hand-over on release, refusal past `maxQueued`, injectable `overflow:` refusal |
+| a fan-out with a bound | `map-bounded.ts` (`mapBounded`) | `width` REQUIRED, no default; input order; first rejection aborts the rest via the signal. Never a hand-rolled worker pool |
 | whether an answer still applies | `generation-fence.ts` | `X_SUPERSEDED` / `isSuperseded` |
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
 | how long this request has left | `request-budget.ts` (`Ctx.deadlineAt`) | http's `startDeadline` writes the instant, `traceHeaders()` the header † |
@@ -85,14 +87,16 @@ top-level `UltimateError` use in `error-codes.ts`.
 | gate shapes | `gate-shapes.ts` | shared by `action` and `query`: the audit outcome, the rate-limit subject/scope/limit. One copy, never one per primitive |
 | is this `unknown` a keyed record? | `json-object.ts` (`isJsonObject`) | narrows a shape; does not certify provenance |
 | may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
-| is this field a credential? | `logger.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it |
+| is this field a credential? | `logger-redact.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it; verdict memoised per key, 4,096, cleared by `redactKeys` |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one, greppable, way out |
 | an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` | refuse a non-tag (`X_LOCALE_INVALID`), key canonically, bound the cache — one file † |
 | the text direction of a locale | `locale-direction.ts` (`directionOf`, `isRtl`, `Direction`) | import from here, never `@ultimat3/i18n`; here so `@ultimat3/ui` skips the i18n barrel |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
 | ONE sealed value | `seal.ts` + `seal-keys.ts` + `seal-errors.ts` | the framework's one AES call above the envelope; `purpose` is required and is AAD † |
 | one outbound HTTP call | `outbound*.ts`, entry `outbound-subpath.ts` | never on the barrel; `screenDial` holds the one `Bun.dns.lookup` † |
+| retries as a share of calls | `breaker-retry-budget.ts` (`retryBudgetOf`) | per breaker key: a call earns 1, a retry costs 5 (≤ 20%), burst 10; a refused retry answers the last error |
 | is a dependency down | `breaker.ts` | the machine only; the trigger is `classify` or a hand-called `failed()`. Every settle takes the `admit()` ticket. `X_BREAKER_OPEN` registers its class here |
+| where a raster transform runs | `image/raster-pool.ts` + `raster-worker.ts` + `raster-wire.ts` | one lazy Worker; inline only where none starts (one warn), the web role then held to `RASTER_SYNC_PIXELS` (`X_IMAGE_RASTER_BUDGET`). A compile that bundles core adds `rasterWorkerBundle()` (`raster-worker-bundle.ts`). Never `transformInline` on a request path |
 | what an element carries, for a test | `render-nodes.ts` + `render-node.ts` | the one walker, imported from the subpath, never copied † |
 
 - **`installSecrets()` is the ONLY path from `secrets.enc.json` to an app value**, landing in
@@ -148,7 +152,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **`postOtlp` (`otlp-post.ts`) retries `OTLP_RETRY_STATUSES` and a transport failure only**, never `isRetryableStatus`. Full rule: `docs/history/core.md`.
 - **`errorFingerprint` (`error-fingerprint.ts`) is a function, never an `ErrorReport` field**:
   `code`, `source`, `scope.operation`, plus the top app frame for `X_INTERNAL` only. Never `cause`,
-  `meta`, ids or `release`. Total over hostile getters; the Sentry envelope's `fingerprint`.
+  `meta`, ids or `release`. Total over hostile getters; the LOCAL group; the monitor's is `monitorFingerprint` (`[code]`; `X_INTERNAL` + app frame; `X_CLIENT_ERROR` + operation).
 - **Failure capture is OFF by default** (`config-failure-capture.ts`, `failureCapture.enabled`;
   `x dev` forces it on): with no `FailureStore` installed nothing allocates. The OUTER
   `invoke`/`runQuery` opens one buffer (`withFailureCapture`, `failure-capture.ts`); seams record
