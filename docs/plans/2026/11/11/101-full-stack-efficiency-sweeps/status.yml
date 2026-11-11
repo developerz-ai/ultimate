@@ -1,17 +1,17 @@
 plan: 101-full-stack-efficiency-sweeps
 title: "Full-stack efficiency sweeps: every measured defect, idle cost and hand-rolled mechanism, closed"
-status: not_started        # not_started | in_progress | blocked | complete | superseded
+status: in_progress        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
-worked_by: ""              # executor fills with their git user.name
+worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 0
-current_focus: "Sweep 0: 01-hotfix-patch.md (twelve confirmed defects, ships alone as a patch)"
+percent: 4
+current_focus: "Sweep 0 PR open (ships as 31.5.0: new exports); next sweep 19a"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
     sweep: "0"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 19-agent-tooling-dx.md
     tier: 5
     sweep: "19a"           # FX1–FX11 right after sweep 0; Y1–Y11 in sweep 19b (last)
@@ -165,8 +165,8 @@ slices:
   - file: 90-owner-decisions.md
     tier: 0
     sweep: "0"             # asked once before sweep 5b; defaults recorded in the file
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
 evidence: []
 notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Nothing implemented. Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
 last_updated: 2026-11-11
