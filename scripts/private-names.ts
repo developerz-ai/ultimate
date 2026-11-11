@@ -38,7 +38,7 @@ export const REQUIRED_ENV = 'ULTIMATE_PRIVATE_NAMES_REQUIRED';
 export const SKIP_NOTE = `private-names: skipped, ${ENV_NAME} is unset`;
 
 /** Records whose history stands: the scrub never rewrites them. */
-const EXCLUDED = ['CHANGELOG.md', 'docs/history/', 'docs/plans/'];
+const EXCLUDED = ['CHANGELOG.md', 'docs/changelog/', 'docs/history/', 'docs/plans/'];
 
 /** Letters, digits, `.` and `-` make a token; a name matches a WHOLE token, never part of one. */
 const TOKEN = /[a-z0-9.-]+/g;

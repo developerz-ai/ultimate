@@ -6,6 +6,9 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { checkChangelog } from './changelog-check';
 import { highlightFindings } from './lib/changelog-highlights';
+import { indexFindings } from './lib/changelog-index';
+import { parseChangelog } from './lib/changelog-sections';
+import { assembleChangelog, readChangelogFiles } from './lib/changelog-store';
 import { bumpWindowFindings, nextMajorWindow } from './lib/major-window';
 import { promoteUnreleased } from './lib/release-changelog';
 import { nextVersion } from './lib/release-version';
@@ -33,14 +36,16 @@ const SEED = [
   '- **BREAKING — (#1) `@ultimat3/core`: a seeded entry.** Nothing ships it.',
 ].join('\n');
 
-function seeded(changelog: string): string {
-  return changelog.replace(/^## \[Unreleased\]\n+Nothing yet\.\n/m, `## [Unreleased]\n\n${SEED}\n`);
+function seeded(index: string): string {
+  return index.replace(/^## \[Unreleased\]\n+Nothing yet\.\n/m, `## [Unreleased]\n\n${SEED}\n`);
 }
 
 describe('the next major bump of the committed tree', () => {
   test('passes every stability rule and the changelog shape rules once promoted', async () => {
     const root = repoRoot();
-    const changelog = seeded(await Bun.file(`${root}/CHANGELOG.md`).text());
+    const read = await readChangelogFiles(root);
+    const index = seeded(read.index);
+    const changelog = assembleChangelog(index, read.files);
     const upgrading = await Bun.file(`${root}/wiki/Upgrading.md`).text();
     const page = await Bun.file(`${root}/${STABILITY_PATH}`).text();
     const current = publishOrder(await listWorkspaces(root))[0]?.version ?? '0.0.0';
@@ -52,11 +57,12 @@ describe('the next major bump of the committed tree', () => {
     expect(bumpWindowFindings({ version, changelog, today: date, security: undefined })).toEqual(
       [],
     );
-    const promoted = promoteUnreleased({ changelog, version, date, subjects: [] });
-    if ('findings' in promoted) expect.unreachable('[Unreleased] could not be promoted');
+    const promoted = promoteUnreleased({ index, changelog, version, date, subjects: [] });
+    if ('findings' in promoted) return expect.unreachable('[Unreleased] could not be promoted');
     const written = withNextWindowLine(page, promoted.changelog);
     expect({
-      highlights: highlightFindings(promoted.changelog),
+      highlights: highlightFindings(parseChangelog(promoted.file.text, promoted.file.path)),
+      index: indexFindings(promoted.index, [...read.files, promoted.file]),
       changelog: stabilityChangelogFindings(promoted.changelog, {}, date),
       page: stabilityPageFindings(written, promoted.changelog),
       // The shape rules a bump can break. The Upgrading row counts are the release commit's own
@@ -66,6 +72,6 @@ describe('the next major bump of the committed tree', () => {
         .filter((kind) =>
           ['duplicate', 'empty', 'commits-only', 'unreleased-breaking'].includes(kind),
         ),
-    }).toEqual({ highlights: [], changelog: [], page: [], shape: [] });
+    }).toEqual({ highlights: [], index: [], changelog: [], page: [], shape: [] });
   });
 });

@@ -12,6 +12,8 @@ import { CHART_FILE, setChartVersions } from './chart-version';
 import { rewriteMainCells } from './doc-unreleased';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import { highlightFindings } from './lib/changelog-highlights';
+import { parseChangelog } from './lib/changelog-sections';
+import { assembleChangelog, readChangelogFiles } from './lib/changelog-store';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import {
@@ -19,7 +21,6 @@ import {
   majorWindowFindings,
   refuseOutsideWindow,
   securityLines,
-  withSecurityException,
 } from './lib/major-window';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
 import { treeDirtyFindings } from './lib/release-preflight';
@@ -174,16 +175,15 @@ if (import.meta.main) {
   // step exists to refuse BEFORE the gate does, so the same three now have to answer here.
   const check = flagString(args, 'check');
   const changelogPath = join(root, 'CHANGELOG.md');
-  const changelogText = await Bun.file(changelogPath)
-    .text()
-    .catch(() => '');
+  const read = await readChangelogFiles(root);
+  const changelog = assembleChangelog(read.index, read.files);
   const date = releaseDate(new Date());
   if (check !== undefined) {
     // The window too (wiki/Stability.md): the same rule the bump ran, so no bump PR merges past it.
     const findings = SEMVER.test(check)
       ? [
           ...(await releaseCheckFindings(root, check)),
-          ...majorWindowFindings({ version: check, changelog: changelogText, today: date }),
+          ...majorWindowFindings({ version: check, changelog, today: date }),
         ]
       : [badFlagFinding('check', check, 'a semver version (e.g. 1.3.0)')];
     report(
@@ -222,7 +222,7 @@ if (import.meta.main) {
   const dryRun = flagBool(args, 'dry-run');
   const security = flagString(args, 'security');
   refuseOutsideWindow(
-    bumpWindowFindings({ version, changelog: changelogText, today: date, security }),
+    bumpWindowFindings({ version, changelog, today: date, security }),
     { version, current },
     args.json,
   );
@@ -277,14 +277,19 @@ if (import.meta.main) {
   // cannot be promoted is a release that must not start, and finding that out after 47 files have
   // moved is the expensive order to find it out in.
   const promoted = promoteUnreleased({
-    changelog: changelogText,
+    index: read.index,
+    changelog,
     version,
     date,
     subjects,
+    security,
   });
-  // A section from 30.0.0 without its Highlights would red the gate the moment it exists.
-  const promotedText = 'findings' in promoted ? '' : promoted.changelog;
-  const unpromotable = 'findings' in promoted ? promoted.findings : highlightFindings(promotedText);
+  // A section from 30.0.0 without its Highlights would red the gate the moment it exists: read
+  // off the new release file itself, the one the Release body is cut from.
+  const unpromotable =
+    'findings' in promoted
+      ? promoted.findings
+      : highlightFindings(parseChangelog(promoted.file.text, promoted.file.path));
   if (unpromotable.length > 0) {
     report(
       {
@@ -313,10 +318,17 @@ if (import.meta.main) {
         rewrite: (raw: string) => setChartVersions(raw, version),
         optional: true,
       },
-      {
-        path: changelogPath,
-        rewrite: () => withSecurityException(promotedText, version, security),
-      },
+      // The release's own file, then the index that links it: [Unreleased] reset, one row added.
+      ...('findings' in promoted
+        ? []
+        : [
+            {
+              path: join(root, promoted.file.path),
+              rewrite: () => promoted.file.text,
+              create: true,
+            },
+            { path: changelogPath, rewrite: () => promoted.index },
+          ]),
       // The same step as the promotion: a Known-Gaps `main` cell names what [Unreleased] carried,
       // and this release is where it shipped (`doc-unreleased.ts` refuses one left behind).
       {
@@ -328,7 +340,8 @@ if (import.meta.main) {
       // release PR would otherwise red the gate on the date it was never told (`stability-findings`).
       {
         path: join(root, STABILITY_PATH),
-        rewrite: (raw: string) => withNextWindowLine(raw, promotedText),
+        rewrite: (raw: string) =>
+          'findings' in promoted ? raw : withNextWindowLine(raw, promoted.changelog),
         optional: true,
       },
     ]);
@@ -379,9 +392,9 @@ if (import.meta.main) {
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,
         `  manifests ${manifests.length} rewritten (${published.size} published, the rest repinned)`,
         `  chart     ${CHART_FILE} version + appVersion -> ${version}`,
-        `  changelog [Unreleased] promoted to "## ${version} - ${date}", a fresh [Unreleased] above it`,
+        `  changelog [Unreleased] promoted to docs/changelog/${version}.md, its row in CHANGELOG.md, a fresh [Unreleased]`,
         `  gaps      wiki/Known-Gaps.md \`main\` cells -> **${version}**`,
-        `  stability ${STABILITY_PATH} next-window line from the promoted CHANGELOG.md`,
+        `  stability ${STABILITY_PATH} next-window line from the promoted changelog`,
         // Three lines either way: a dry run that listed only what it would NOT do is how the three
         // derived files stayed invisible for nineteen majors.
         ...(dryRun

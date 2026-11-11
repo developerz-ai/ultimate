@@ -1,8 +1,8 @@
 // The major window (wiki/Stability.md): from v31, at most one major per 90 days, read from the
-// dated section headings CHANGELOG.md already carries. Pure — the changelog and today are the
+// dated section headings of docs/changelog/. Pure — the changelog and today are the
 // caller's — so `release.ts --bump`, `release.ts --check` and the gate all ask one function.
 
-import { parseChangelog } from './changelog-sections';
+import { type Changelog, parseChangelog } from './changelog-sections';
 import type { Finding } from './log';
 import { report } from './log';
 
@@ -56,10 +56,10 @@ interface DatedMajor {
  * major is "the first release of a new major", never "a version that reads X.0.0": `31.1.0` cut
  * from 30.x opens the 31 line exactly as `31.0.0` would, and must wait for the window the same way.
  */
-const majors = (changelog: string): readonly DatedMajor[] => {
+const majors = (changelog: Changelog): readonly DatedMajor[] => {
   const opened = new Map<number, DatedMajor>();
   // Newest first on the page, so the last section seen for a line is the one that opened it.
-  for (const section of parseChangelog(changelog)) {
+  for (const section of changelog) {
     const major = lineOf(section.version);
     if (!section.released || major === undefined) continue;
     const date = DATED.exec(section.heading)?.[1];
@@ -69,7 +69,7 @@ const majors = (changelog: string): readonly DatedMajor[] => {
 };
 
 /** Whether `version` would open (or did open) its major line: no older release of that line. */
-export const opensMajorLine = (version: string, changelog: string): boolean => {
+export const opensMajorLine = (version: string, changelog: Changelog): boolean => {
   const major = lineOf(version);
   if (major === undefined) return false;
   const opener = majors(changelog).find((one) => one.major === major);
@@ -77,14 +77,14 @@ export const opensMajorLine = (version: string, changelog: string): boolean => {
 };
 
 /** The advisory a released section records, when it records one. */
-export const recordedException = (changelog: string, version: string): string | undefined => {
-  const section = parseChangelog(changelog).find((one) => one.version === version);
+export const recordedException = (changelog: Changelog, version: string): string | undefined => {
+  const section = changelog.find((one) => one.version === version);
   return section === undefined ? undefined : RECORDED.exec(section.body)?.[1];
 };
 
 /** The newest major from the opener on, and the day the next one may ship. Undefined before it. */
 export function nextMajorWindow(
-  changelog: string,
+  changelog: Changelog,
 ): { readonly after: string; readonly on: string; readonly opensOn: string } | undefined {
   const newest = majors(changelog)
     .filter((one) => one.major >= WINDOW_OPENS_AT_MAJOR && one.date !== undefined)
@@ -101,7 +101,7 @@ const refusal = (cause: string, opensOn: string | undefined): Finding => ({
   code: 'X_RELEASE_MAJOR_WINDOW',
   cause,
   fix: `bun run scripts/release.ts --bump major --security GHSA-xxxx-xxxx-xxxx --dry-run --json   # only for a security fix that cannot be non-breaking; otherwise the break waits on the next branch${opensOn === undefined ? '' : ` until ${opensOn}`} (wiki/Stability.md)`,
-  at: 'CHANGELOG.md',
+  at: 'docs/changelog/',
 });
 
 /**
@@ -111,7 +111,7 @@ const refusal = (cause: string, opensOn: string | undefined): Finding => ({
  */
 export function majorWindowFindings(input: {
   readonly version: string;
-  readonly changelog: string;
+  readonly changelog: Changelog;
   readonly today: string;
   readonly security?: string | undefined;
 }): readonly Finding[] {
@@ -128,7 +128,7 @@ export function majorWindowFindings(input: {
   if (previous?.date === undefined) {
     return [
       refusal(
-        `${input.version} is a major after v${WINDOW_OPENS_AT_MAJOR}, and CHANGELOG.md has no dated \`## X.0.0 - YYYY-MM-DD\` section for a major from ${WINDOW_OPENS_AT_MAJOR}.0.0 below it, so the ${MAJOR_WINDOW_DAYS}-day window cannot be read`,
+        `${input.version} is a major after v${WINDOW_OPENS_AT_MAJOR}, and docs/changelog/ has no dated \`## X.0.0 - YYYY-MM-DD\` section for a major from ${WINDOW_OPENS_AT_MAJOR}.0.0 below it, so the ${MAJOR_WINDOW_DAYS}-day window cannot be read`,
         undefined,
       ),
     ];
@@ -152,16 +152,17 @@ export function majorWindowFindings(input: {
   ];
 }
 
-/** The promoted changelog with the advisory recorded under `version`'s heading, exactly once. */
+/** The release's file text with the advisory recorded under `version`'s heading, exactly once. */
 export function withSecurityException(
-  changelog: string,
+  text: string,
   version: string,
   id: string | undefined,
 ): string {
-  if (id === undefined || recordedException(changelog, version) !== undefined) return changelog;
-  const section = parseChangelog(changelog).find((one) => one.version === version);
-  if (section === undefined) return changelog;
-  const lines = changelog.split('\n');
+  const sections = parseChangelog(text);
+  if (id === undefined || recordedException(sections, version) !== undefined) return text;
+  const section = sections.find((one) => one.version === version);
+  if (section === undefined) return text;
+  const lines = text.split('\n');
   // `line` is 1-based, so it is the index of the line after the heading.
   lines.splice(section.line, 0, '', securityExceptionLine(id));
   return lines.join('\n');
@@ -173,7 +174,7 @@ export function withSecurityException(
  */
 export function bumpWindowFindings(input: {
   readonly version: string;
-  readonly changelog: string;
+  readonly changelog: Changelog;
   readonly today: string;
   readonly security: string | undefined;
 }): readonly Finding[] {

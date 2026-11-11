@@ -9,12 +9,17 @@ import {
   rewriteMainCells,
   unreleasedPhrases,
 } from './doc-unreleased';
+import { parseChangelog } from './lib/changelog-sections';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const PENDING = '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- a fix\n\n## 1.0.0 - 2026-01-01\n';
-const RELEASED = '# Changelog\n\n## [Unreleased]\n\n## 1.1.0 - 2026-02-01\n\n- a fix\n';
+const PENDING = parseChangelog(
+  '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- a fix\n\n## 1.0.0 - 2026-01-01\n',
+);
+const RELEASED = parseChangelog(
+  '# Changelog\n\n## [Unreleased]\n\n## 1.1.0 - 2026-02-01\n\n- a fix\n',
+);
 
 const lines = (path: string, text: string): readonly string[] =>
   unreleasedPhrases(path, text).map((one) => `${one.line} ${one.phrase}`);

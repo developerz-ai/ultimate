@@ -36,7 +36,7 @@ answer means:
 | the GitHub Release exists | `gh release view v<version> --json tagName,isDraft,publishedAt` |
 | the OIDC trusted publisher is attached | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` |
 | the `v*` tag rule and no reviewers on `npm-publish` | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'` · `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — by hand, an admin token |
-| which majors shipped, and what each breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md) |
+| which majors shipped, and what each breaks | `ls docs/changelog/` · [`wiki/Upgrading.md`](wiki/Upgrading.md) |
 
 ## Design axioms (override any instinct that conflicts)
 

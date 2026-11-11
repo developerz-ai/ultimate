@@ -8,6 +8,7 @@
 
 import { flagString, parseScriptArgs } from './lib/args';
 import { BASE_REF, baseRef, FETCH_MAIN, type GitRunner } from './lib/base-ref';
+import { loadChangelog } from './lib/changelog-store';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { nextMajorWindow } from './lib/major-window';
@@ -318,9 +319,7 @@ export async function decideAt(
     return headNotMain(headSha, baseSha, headBranch, 'mismatch');
   }
   const files = await packageFiles(publishable);
-  const changelog = await Bun.file(`${root}/CHANGELOG.md`)
-    .text()
-    .catch(() => '');
+  const changelog = await loadChangelog(root);
   const opensOn = nextMajorWindow(changelog)?.opensOn;
   const facts: DueInput = {
     tagged,

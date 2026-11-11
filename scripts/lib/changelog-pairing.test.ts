@@ -13,6 +13,8 @@ import {
   pairingFinding,
   parseWalkthroughs,
 } from './changelog-pairing';
+import { parseChangelog } from './changelog-sections';
+import { loadChangelog } from './changelog-store';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -64,6 +66,11 @@ const upgrading = (options: {
     '',
   ].join('\n');
 
+/** The rules take parsed sections; these fixtures are one CHANGELOG.md's text. */
+const check = (log: string, page: string): readonly PairingGap[] =>
+  checkPairing(parseChangelog(log), page);
+const pairedOf = (log: string, page: string) => pairedSections(parseChangelog(log), page);
+
 const KEYED = ['- **BREAKING — (#1) one.** text', '- **BREAKING — (#2) two.** text'];
 
 const kinds = (gaps: readonly PairingGap[]): readonly string[] =>
@@ -84,11 +91,11 @@ describe('one statement of the format', () => {
 
 describe('pairing', () => {
   test('keyed lines and rows that agree are clean — a later table is not the entry table', () => {
-    expect(checkPairing(changelog(KEYED), upgrading({}))).toEqual([]);
+    expect(check(changelog(KEYED), upgrading({}))).toEqual([]);
   });
 
   test('an unkeyed BREAKING line is X_DOC_MIGRATION_UNPAIRED, naming the line', () => {
-    const gaps = checkPairing(
+    const gaps = check(
       changelog(['- **BREAKING — (#1) one.**', '- **BREAKING — two.**']),
       upgrading({}),
     );
@@ -100,21 +107,18 @@ describe('pairing', () => {
   });
 
   test('a key named twice, a key with no row, and keys out of order are each named', () => {
-    const twice = checkPairing(changelog([KEYED[0] ?? '', KEYED[0] ?? '']), upgrading({}));
+    const twice = check(changelog([KEYED[0] ?? '', KEYED[0] ?? '']), upgrading({}));
     expect(kinds(twice).join('\n')).toContain('#1 named twice');
-    const orphan = checkPairing(
-      changelog([...KEYED, '- **BREAKING — (#3) three.**']),
-      upgrading({}),
-    );
+    const orphan = check(changelog([...KEYED, '- **BREAKING — (#3) three.**']), upgrading({}));
     expect(kinds(orphan).join('\n')).toContain('#3 named and no such row');
-    const swapped = checkPairing(changelog([KEYED[1] ?? '', KEYED[0] ?? '']), upgrading({}));
+    const swapped = check(changelog([KEYED[1] ?? '', KEYED[0] ?? '']), upgrading({}));
     expect(kinds(swapped).join('\n')).toContain('#1 out of order');
   });
 
   test('one line added on EACH side — the case the count rule cannot see — is unpaired', () => {
     // Three lines, three rows: the count agrees. The third line names a row the table does not
     // number as its own change.
-    const gaps = checkPairing(
+    const gaps = check(
       changelog([...KEYED, '- **BREAKING — (#2) a second claim on row 2.**']),
       upgrading({ rows: 3, intro: '(1–3)', entriesCell: '1' }),
     );
@@ -124,9 +128,7 @@ describe('pairing', () => {
 
   test('a walkthrough with no `| # |` table pairs with nothing', () => {
     const page = upgrading({}).replace('| # | Surface', '| No | Surface');
-    expect(kinds(checkPairing(changelog(KEYED), page))[0]).toContain(
-      'has no "### Entry by entry" table',
-    );
+    expect(kinds(check(changelog(KEYED), page))[0]).toContain('has no "### Entry by entry" table');
   });
 
   test('a major below the floor is not read — its walkthrough predates the table', () => {
@@ -138,7 +140,7 @@ describe('pairing', () => {
       '## 23.0.0 - x',
       '## 22.0.0 - x\n\n- **BREAKING — unkeyed.**',
     );
-    expect(checkPairing(text, old)).toEqual([]);
+    expect(check(text, old)).toEqual([]);
   });
 });
 
@@ -151,10 +153,10 @@ describe('the in-flight major, before its release', () => {
 
   test('a walkthrough naming the next major pairs against [Unreleased]', () => {
     const drifted = changelog(['- **BREAKING — (#1) one.** text', '- **BREAKING — (#3) three.**']);
-    expect(kinds(checkPairing(drifted, inFlight(upgrading({})))).join('\n')).toContain(
+    expect(kinds(check(drifted, inFlight(upgrading({})))).join('\n')).toContain(
       "[Unreleased]'s BREAKING lines and the Entry by entry table",
     );
-    expect(checkPairing(changelog(KEYED), inFlight(upgrading({})))).toEqual([]);
+    expect(check(changelog(KEYED), inFlight(upgrading({})))).toEqual([]);
   });
 
   test('a released section of that version wins; a major two ahead is not the in-flight one', () => {
@@ -162,20 +164,20 @@ describe('the in-flight major, before its release', () => {
       '## 23.0.0 - x',
       '## 24.0.0 - x\n\n- **BREAKING — unkeyed.**\n\n## 23.0.0 - x',
     );
-    expect(kinds(checkPairing(released, inFlight(upgrading({}))))[0]).toContain(
+    expect(kinds(check(released, inFlight(upgrading({}))))[0]).toContain(
       'BREAKING line(s) in 24.0.0 name no Upgrading entry',
     );
     const ahead = upgrading({}).replace(
       '23.x → 24.0.0, entry by entry — **unreleased**',
       '24.x → 25.0.0, entry by entry',
     );
-    expect(pairedSections(changelog(KEYED), ahead)).toEqual([]);
+    expect(pairedOf(changelog(KEYED), ahead)).toEqual([]);
   });
 });
 
 describe('ranges', () => {
   test('an Entries cell naming a row the table lacks is X_DOC_MIGRATION_RANGE_STALE', () => {
-    const gaps = checkPairing(changelog(KEYED), upgrading({ entriesCell: '1, 2–4' }));
+    const gaps = check(changelog(KEYED), upgrading({ entriesCell: '1, 2–4' }));
     expect(kinds(gaps)).toEqual([
       "range: cites entry 3, 4, which the walkthrough's Entry by entry table has no row for",
     ]);
@@ -186,14 +188,14 @@ describe('ranges', () => {
 
   test('a lead callout naming a missing entry or upgrade step is named', () => {
     const page = upgrading({ lead: '**Operator: entries 2–3, upgrade steps 1 and 4.**' });
-    expect(kinds(checkPairing(changelog(KEYED), page))).toEqual([
+    expect(kinds(check(changelog(KEYED), page))).toEqual([
       "range: cites entry 3, which the walkthrough's Entry by entry table has no row for",
       "range: cites step 4, which the walkthrough's upgrade-step table has no row for",
     ]);
   });
 
   test('the intro package ranges must cover every row exactly once', () => {
-    const gap = checkPairing(changelog(KEYED), upgrading({ intro: '`a` (1), `b` (1)' }));
+    const gap = check(changelog(KEYED), upgrading({ intro: '`a` (1), `b` (1)' }));
     expect(kinds(gap)).toEqual([
       "range: the Entry by entry intro's package ranges must cover every row once: row 2 in no range; row 1 in two",
     ]);
@@ -205,21 +207,39 @@ describe('ranges', () => {
   });
 });
 
-describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
+describe('a release file', () => {
+  test('a finding names the docs/changelog/ file and the line inside it', () => {
+    const file = 'docs/changelog/24.0.0.md';
+    const sections = [
+      ...parseChangelog('## [Unreleased]\n\nNothing yet.\n'),
+      ...parseChangelog('## 24.0.0 - x\n\n### Changed\n\n- **BREAKING — unkeyed.**\n', file),
+    ];
+    const page = upgrading({}).replace(
+      '23.x → 24.0.0, entry by entry — **unreleased**',
+      '23.x → 24.0.0, entry by entry',
+    );
+    expect(checkPairing(sections, page)[0]?.at).toBe(`${file}:5`);
+  });
+});
+
+describe('the committed changelog and wiki/Upgrading.md', () => {
   test('pair one-to-one, and every number they cite is a row — read, not vacuous', async () => {
     const root = repoRoot();
-    const log = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const log = await loadChangelog(root);
     const page = await Bun.file(`${root}/wiki/Upgrading.md`).text();
     const paired = parseWalkthroughs(page).filter((walk) => walk.entries.length > 0);
     // 23.0.0 and the in-flight major at least, each with a table of rows and cited numbers.
     expect(paired.length).toBeGreaterThanOrEqual(2);
     for (const walk of paired) expect(walk.citations.length).toBeGreaterThan(0);
+    // Pairing reads no section it cannot find, so a loader that finds none passes on nothing:
+    // every paired walkthrough from 23.0.0 must have found its release file.
+    expect(pairedSections(log, page).length).toBeGreaterThanOrEqual(8);
     expect(checkPairing(log, page)).toEqual([]);
   });
 
   test('the newest walkthrough is paired, whether or not its major is released yet', async () => {
     const root = repoRoot();
-    const log = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const log = await loadChangelog(root);
     const page = await Bun.file(`${root}/wiki/Upgrading.md`).text();
     const newest = parseWalkthroughs(page)[0] ?? expect.unreachable();
     const paired = pairedSections(log, page).find((one) => one.walk.line === newest.line);

@@ -3,7 +3,8 @@
 // number a walkthrough cites is a row it has. The count rule proves both sides hold as many; only a
 // key proves line 57 and row 57 are the same change.
 
-import { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH } from './changelog-format';
+import { BREAKING_ENTRY, UPGRADING_PATH } from './changelog-format';
+import type { Changelog } from './changelog-sections';
 import type { Finding } from './log';
 
 /**
@@ -24,28 +25,30 @@ const LISTED = 8;
 export const FIRST_PAIRED_MAJOR = 23;
 
 export interface BreakingLine {
+  /** The file the line is in: `CHANGELOG.md` for [Unreleased], else `docs/changelog/X.Y.Z.md`. */
+  readonly file: string;
   readonly line: number;
   readonly key: number | undefined;
 }
 
-/** `unreleased` or the section's semver, per CHANGELOG `## ` heading, with its BREAKING lines. */
-export function breakingBySection(changelog: string): ReadonlyMap<string, readonly BreakingLine[]> {
+/** `unreleased` or the section's semver, per changelog section, with its BREAKING lines. */
+export function breakingBySection(
+  changelog: Changelog,
+): ReadonlyMap<string, readonly BreakingLine[]> {
   const out = new Map<string, BreakingLine[]>();
-  let current: BreakingLine[] | undefined;
-  changelog.split('\n').forEach((text, index) => {
-    if (text.startsWith('## ')) {
-      const heading = text.slice(3).trim();
-      const version = /^\[unreleased\]/i.test(heading)
-        ? 'unreleased'
-        : (/^\[?(\d+\.\d+\.\d+)\]?/.exec(heading)?.[1] ?? heading);
-      current = [];
-      out.set(version, current);
-      return;
-    }
-    if (current === undefined || !BREAKING_ENTRY.test(text)) return;
-    const key = KEYED.exec(text)?.[1];
-    current.push({ line: index + 1, key: key === undefined ? undefined : Number(key) });
-  });
+  for (const section of changelog) {
+    const found: BreakingLine[] = [];
+    section.lines.forEach((text, index) => {
+      if (!BREAKING_ENTRY.test(text)) return;
+      const key = KEYED.exec(text)?.[1];
+      found.push({
+        file: section.file,
+        line: section.line + 1 + index,
+        key: key === undefined ? undefined : Number(key),
+      });
+    });
+    out.set(section.version, found);
+  }
   return out;
 }
 
@@ -163,13 +166,15 @@ const listed = (items: readonly (number | string)[]): string =>
 /** Keys against rows, for one section that has both. */
 function pairSection(walk: Walkthrough, lines: readonly BreakingLine[]): readonly PairingGap[] {
   const gaps: PairingGap[] = [];
-  const at = `${CHANGELOG_PATH}:${String(lines[0]?.line ?? 1)}`;
+  const first = lines[0];
+  const at = `${first?.file ?? 'CHANGELOG.md'}:${String(first?.line ?? 1)}`;
   const name = walk.section === 'unreleased' ? '[Unreleased]' : walk.section;
-  const unkeyed = lines.filter((one) => one.key === undefined).map((one) => one.line);
+  const unkeyedLines = lines.filter((one) => one.key === undefined);
+  const unkeyed = unkeyedLines.map((one) => one.line);
   if (unkeyed.length > 0) {
     gaps.push({
       kind: 'unpaired',
-      at: `${CHANGELOG_PATH}:${String(unkeyed[0])}`,
+      at: `${unkeyedLines[0]?.file ?? 'CHANGELOG.md'}:${String(unkeyed[0])}`,
       detail: `${String(unkeyed.length)} BREAKING line(s) in ${name} name no Upgrading entry — no "(#N)" after the dash, at line ${listed(unkeyed)}`,
     });
   }
@@ -251,7 +256,7 @@ function inFlightMajor(sections: ReadonlyMap<string, readonly BreakingLine[]>): 
  * A released section of that version wins, and only the major right after the newest released
  * one is in flight: a walkthrough two majors ahead is a typo, not a plan.
  */
-export function pairedSections(changelog: string, upgrading: string): readonly PairedSection[] {
+export function pairedSections(changelog: Changelog, upgrading: string): readonly PairedSection[] {
   const sections = breakingBySection(changelog);
   const next = inFlightMajor(sections);
   const out: PairedSection[] = [];
@@ -272,7 +277,7 @@ export function pairedSections(changelog: string, upgrading: string): readonly P
  * Pure. Pairs every walkthrough whose CHANGELOG section is still in the file — an archived major
  * has nothing to pair against, which is the retention rule `changelog-check.ts` already states.
  */
-export function checkPairing(changelog: string, upgrading: string): readonly PairingGap[] {
+export function checkPairing(changelog: Changelog, upgrading: string): readonly PairingGap[] {
   const gaps: PairingGap[] = [];
   for (const { walk, lines } of pairedSections(changelog, upgrading)) {
     if (walk.entries.length === 0) {
@@ -302,7 +307,7 @@ export function pairingFinding(gap: PairingGap): Finding {
   return {
     code: 'X_DOC_MIGRATION_UNPAIRED',
     cause: `${gap.at} ${gap.detail}`,
-    fix: `write "(#N)" after the dash of each BREAKING line in CHANGELOG.md, N its row in that major's Entry by entry table in ${UPGRADING_PATH}, then rerun: ${RERUN}`,
+    fix: `write "(#N)" after the dash of each BREAKING line in the file the cause names, N its row in that major's Entry by entry table in ${UPGRADING_PATH}, then rerun: ${RERUN}`,
     at: gap.at,
   };
 }

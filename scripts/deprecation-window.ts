@@ -12,7 +12,8 @@
 // why: the LEAF module, never the `@ultimat3/cli` barrel — the same import registry-audit.ts makes.
 import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
-import { parseChangelog } from './lib/changelog-sections';
+import type { Changelog } from './lib/changelog-sections';
+import { loadChangelog } from './lib/changelog-store';
 import { deprecatedIn, exportedNames, moduleCandidates } from './lib/export-names';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -48,16 +49,16 @@ const unreachable = (tag: string): Finding => ({
 });
 
 /**
- * The tag to compare against: the newest released CHANGELOG.md section that origin holds a tag
+ * The tag to compare against: the newest released changelog section that origin holds a tag
  * for. On a bump PR the newest section is the version being cut, untagged, so the one below it is
  * the base. `inert` when that base is below `WINDOW_OPENS_AT_MAJOR`.
  */
 async function baseTag(
   root: string,
-  changelog: string,
+  changelog: Changelog,
   probe: TagProbe,
 ): Promise<{ readonly tag: string } | { readonly inert: true } | { readonly finding: Finding }> {
-  const released = parseChangelog(changelog)
+  const released = changelog
     .filter((section) => section.released && /^\d+\.\d+\.\d+$/.test(section.version))
     .slice(0, 2);
   for (const section of released) {
@@ -109,9 +110,7 @@ export async function deprecationWindowFindings(
   root: string,
   options: WindowOptions = {},
 ): Promise<readonly Finding[]> {
-  const changelog = await Bun.file(`${root}/CHANGELOG.md`)
-    .text()
-    .catch(() => '');
+  const changelog = await loadChangelog(root);
   // The security exception, as for the major window: recorded under [Unreleased] or the release.
   if (recordedException(changelog, 'unreleased') !== undefined) return [];
   const base = await baseTag(root, changelog, options.probe ?? remoteTagProbe(root));

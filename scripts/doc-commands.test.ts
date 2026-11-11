@@ -111,6 +111,11 @@ describe('what is not read, and why', () => {
     expect(skipDocPath('docs/architecture/04-error-contract.md')).toBe(false);
   });
 
+  test('the release record quotes each release as it shipped, commands included', () => {
+    expect(skipDocPath('docs/changelog/11.0.0.md')).toBe(true);
+    expect(skipDocPath('CHANGELOG.md')).toBe(true);
+  });
+
   test('the error reference has one owner, and it is scripts/doc-fixes.ts', () => {
     // Its Fix column is held to a STRICTER rule there — a fix may not cite a planned command.
     expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);

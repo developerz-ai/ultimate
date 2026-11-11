@@ -69,11 +69,11 @@ export function foldStatPairs(text: string): string {
 }
 
 /**
- * `CHANGELOG.md` names every past release's count by design, and `docs/plans/` is a dated record of
+ * `CHANGELOG.md` and `docs/changelog/` name every past release's count by design, and `docs/plans/` is a dated record of
  * work. Both are history: a rule that read them would demand that the past be rewritten.
  */
 export const skipFactPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'CHANGELOG.md';
+  path.startsWith('docs/plans/') || path.startsWith('docs/changelog/') || path === 'CHANGELOG.md';
 
 /** A line that pins an OLDER release names its own count — "1.0.0 shipped the 28 packages". */
 const HISTORICAL = /\b\d+\.\d+\.\d+\s+(?:shipped|published|carried|went out|had)\b|\bup from\b/;

@@ -3,6 +3,7 @@
 // window opens on is derived from the dated section heading, never kept by hand.
 
 import { describe, expect, test } from 'bun:test';
+import { type Changelog, parseChangelog } from './changelog-sections';
 import {
   addDays,
   majorWindowFindings,
@@ -13,8 +14,9 @@ import {
   withSecurityException,
 } from './major-window';
 
-const changelog = (...sections: readonly string[]): string =>
+const text = (...sections: readonly string[]): string =>
   ['# Changelog', '', '## [Unreleased]', '', 'Nothing yet.', '', ...sections].join('\n');
+const changelog = (...sections: readonly string[]): Changelog => parseChangelog(text(...sections));
 const V31 = '## 31.0.0 - 2026-11-10\n\n### Highlights\n\n- one major\n';
 const V30 = '## 30.0.0 - 2026-10-25\n\n- a floor\n';
 
@@ -94,7 +96,9 @@ describe('unit · major-window · the 90-day rule', () => {
         today: '2027-09-01',
       }),
     ).toHaveLength(1);
-    const excused = withSecurityException(changelog(v32, V31), '32.0.0', 'CVE-2026-12345');
+    const excused = parseChangelog(
+      withSecurityException(text(v32, V31), '32.0.0', 'CVE-2026-12345'),
+    );
     expect(recordedException(excused, '32.0.0')).toBe('CVE-2026-12345');
     expect(
       majorWindowFindings({ version: '32.0.0', changelog: excused, today: '2027-09-01' }),
@@ -146,9 +150,9 @@ describe('unit · major-window · when the next window opens', () => {
   });
 
   test('the recorded line sits under the heading, once, and never in another section', () => {
-    const once = withSecurityException(changelog(V31, V30), '31.0.0', 'CVE-2026-1');
+    const once = withSecurityException(text(V31, V30), '31.0.0', 'CVE-2026-1');
     expect(withSecurityException(once, '31.0.0', 'CVE-2026-1')).toBe(once);
-    expect(recordedException(once, '30.0.0')).toBeUndefined();
+    expect(recordedException(parseChangelog(once), '30.0.0')).toBeUndefined();
     expect(once).toContain('Security exception');
     expect(once).toContain('### Highlights');
     expect(once).toContain('## 31.0.0');

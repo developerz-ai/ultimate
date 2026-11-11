@@ -38,10 +38,11 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   schema: 7,
   scraping: 52,
   // 173 → 174: the `commits-only` finding in `changelog-check.ts`, one more fix: line in that file.
-  // why: the edit it names is to write release notes into CHANGELOG.md, which no command in this
-  // repo performs, so the line cannot open with a command — the seven sibling findings that edit
-  // that same file are already inside this number.
-  scripts: 172,
+  // why: the edit it names is to write release notes into the release's docs/changelog/X.Y.Z.md,
+  // which no command in this repo performs, so the line cannot open with a command — the sibling
+  // findings that edit the changelog are already inside this number. 172 → 171 at the changelog
+  // split (31.3.0): the duplicate-version refusal in `lib/release-changelog.ts` opens with its command.
+  scripts: 171,
   seo: 13,
   storage: 24,
   testing: 25,

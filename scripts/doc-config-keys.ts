@@ -44,10 +44,11 @@ import { repoRoot } from './lib/run';
 
 /**
  * The published pages. `docs/plans/**` is excluded on purpose: a plan describes the key it is about
- * to delete, so a working document citing a dead key is the document doing its job.
+ * to delete, so a working document citing a dead key is the document doing its job. The release
+ * record, `docs/changelog/**`, names the keys each release added or removed, so it stands too.
  */
 export const DOC_GLOBS = ['docs/**/*.md', 'wiki/**/*.md'] as const;
-const EXCLUDED = /^docs\/plans\//;
+const EXCLUDED = /^docs\/(?:plans|changelog)\//;
 
 /** The anchor that makes a dotted token a CONFIG citation rather than a property access. */
 const ANCHOR = /app\.config\.ts|defineConfig/;
