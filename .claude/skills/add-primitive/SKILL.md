@@ -21,7 +21,7 @@ In-repo, run it as `bun run x -- g … --cwd examples/dummy`.
 | Step | Generator |
 |---|---|
 | 1. entity + invariants, then its migration | `x g entity` · `x db gen "<what changed>"` |
-| 2. policy | `x g policy` |
+| 2. policy | `x g policy <slice>` writes the slice's `policy.ts`; a second permission set in it is `x g policy <name> --feature <slice>`, which **appends** `<name>:read`/`<name>:write` and its rules to that file (never `--force`: it holds every primitive's rules) |
 | 3. action / mutator | `x g action` · `x g mutator` |
 | 4. query (live?) | `x g query [--live]` |
 | 5. job / task | `x g job` · `x g task` |

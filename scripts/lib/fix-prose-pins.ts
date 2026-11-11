@@ -18,7 +18,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   ai: 21,
   auth: 46,
   cache: 10,
-  cli: 78,
+  cli: 77,
   core: 51,
   db: 28,
   entity: 49,
@@ -42,7 +42,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   // which no command in this repo performs, so the line cannot open with a command — the sibling
   // findings that edit the changelog are already inside this number. 172 → 171 at the changelog
   // split (31.3.0): the duplicate-version refusal in `lib/release-changelog.ts` opens with its command.
-  scripts: 171,
+  scripts: 167,
   seo: 13,
   storage: 24,
   testing: 25,

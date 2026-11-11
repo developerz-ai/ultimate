@@ -11,6 +11,7 @@ import { CLI_ERROR_CODES } from './error-codes';
 import { staticFix } from './error-contract';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';
 import { citedPathProblem } from './fix-path';
+import { generatorForceProblem } from './fix-sequence';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 
 /** This repo's root: the two `bun test <path>` fixes in the table are resolved against it. */
@@ -127,6 +128,17 @@ describe('unit · every fix in the table is a line a shell can run', () => {
     const offenders = explainEveryErrorCode()
       .filter((entry) => CLI_ERROR_CODES.includes(entry.code as (typeof CLI_ERROR_CODES)[number]))
       .filter((entry) => /<[a-zA-Z]/.test(entry.fix.split('#')[0] ?? ''))
+      .map((entry) => `${entry.code}: ${entry.fix}`);
+    expect(offenders).toEqual([]);
+  });
+
+  // The `errors` step reads `fix:` sites, and this table holds none — so its rule is held here.
+  // `x g route posts --force` was X_GENERATE_CONFLICT's answer: it overwrites a file a slice may
+  // share (FX2), pasted with no diff in front of it.
+  test('no entry runs a generator with --force', () => {
+    const offenders = explainEveryErrorCode()
+      .filter((entry) => CLI_ERROR_CODES.includes(entry.code as (typeof CLI_ERROR_CODES)[number]))
+      .filter((entry) => generatorForceProblem(staticFix(entry.fix)) !== undefined)
       .map((entry) => `${entry.code}: ${entry.fix}`);
     expect(offenders).toEqual([]);
   });

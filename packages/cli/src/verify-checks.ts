@@ -5,15 +5,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
-import type { Manifest } from '@ultimat3/manifest';
-import { AGENTS_MD_FILENAME, MANIFEST_FILENAME, verifyContract } from '@ultimat3/manifest';
+import { AGENTS_MD_FILENAME } from '@ultimat3/manifest';
 import type { MetaIssue } from '@ultimat3/seo';
 import { llmsDescriptionIssues, validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
 import { readAppSources } from './app-boundaries';
 import { envExampleFindings } from './app-env';
 import { loadApp } from './app-load';
-import { appManifest, readAppManifest } from './app-manifest';
+import { appManifest } from './app-manifest';
 import { policyFindings } from './app-permissions';
 import { asyncPageFindings } from './async-pages';
 import { appBoundaryFindings } from './boundary-findings';
@@ -32,7 +31,7 @@ import { readJobBudgetFindings } from './job-budget';
 import { unregisteredJobFindings } from './job-registration';
 import { LINT_ARGV, lintOutcome } from './lint-findings';
 import { liveRouteFindings } from './live-routes';
-import { withLoadFindings, withoutLoadFindings } from './load-findings';
+import { blockedByLoad, withLoadFindings } from './load-findings';
 import {
   hasCommittedContract,
   manifestMissingFindings,
@@ -41,7 +40,6 @@ import {
 import { mcpLockFindings } from './mcp-lock-findings';
 import { msg } from './messages';
 import type { Finding } from './output';
-import { findingFrom } from './output';
 import { retainUnsweptFindings } from './retain-sweep';
 import { checkMigrationDrift } from './schema-drift';
 import { checkSchemaDump } from './schema-dump-drift';
@@ -52,6 +50,7 @@ import { loadSiteSettings } from './site-config';
 import { readStaticReport } from './static-report';
 import { unknownToolGateFindings } from './tool-gate-names';
 import { measureIfStale } from './verify-budgets-build';
+import { contractDiffStep } from './verify-contract-diff';
 import { nestedAppRootFindings } from './verify-drift-owner';
 import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
@@ -192,9 +191,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     },
   },
   ...TEST_STEPS.slice(0, AFTER_JOB),
-  exerciseStep,
+  // Every step that loads the app stands down while the load is red: the cause is `manifest`'s,
+  // and what a half-filled registry looks like is not a finding (`load-findings.ts`).
+  blockedByLoad(exerciseStep),
   ...TEST_STEPS.slice(AFTER_JOB),
-  {
+  blockedByLoad({
     name: 'drift',
     summary:
       'entity declarations vs migrations, every destructive statement declared, every statement no declaration carries, and the committed schema dump',
@@ -235,26 +236,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         client: () => checkClientDrift(ctx.root),
       });
     },
-  },
-  {
-    name: 'contract-diff',
-    summary: 'the published contract vs the committed manifest',
-    // A BREAKING change against the committed manifest, and nothing else. Whether the committed
-    // files are stale — `openapi.json` included — is the `manifest` step's, through the one check
-    // `x manifest --check` runs (`manifest-staleness.ts`): reported here as well it was two
-    // steps and one command answering one question, and the step named `manifest` saying green.
-    applies: async (ctx) => existsSync(join(ctx.root, MANIFEST_FILENAME)),
-    async run(ctx) {
-      const committed = await readAppManifest(ctx.root);
-      const { manifest, findings } = await appManifest(ctx.root);
-      // A module that will not import is `manifest`'s to report (`load-findings.ts`).
-      return withoutLoadFindings(ctx.root, [
-        ...findings,
-        ...(committed === undefined ? [] : contractFindings(committed, manifest)),
-      ]);
-    },
-  },
-  {
+  }),
+  blockedByLoad(contractDiffStep),
+  blockedByLoad({
     name: 'budgets',
     summary:
       'per-route JS bytes, the global style layer every document carries, and the routes that boot nothing to receive their live rows',
@@ -288,12 +272,10 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // reported under `X_ISLAND_PROPS_INVALID` — the build's own sentence, naming the prop and
       // its bytes — and not as an `X_BUDGET_UNMEASURED` whose fix is to go and read this file.
       const report = await readStaticReport(ctx.root);
-      // The load's own findings are `manifest`'s, reported there once; this step's output says so.
-      // A module that would not import registers no route, so every route it declared still reads
-      // as `X_BUDGET_UNMEASURED` here — the symptom stays this step's, and the gate stays red.
-      const { manifest, findings } = await appManifest(ctx.root);
-      const outcome = await withoutLoadFindings(ctx.root, [
-        ...findings,
+      // Reached only over a clean load (`blockedByLoad`): a route a broken module never registered
+      // is the load's finding on `manifest`, never one `X_BUDGET_UNMEASURED` per route here.
+      const { manifest } = await appManifest(ctx.root);
+      const outcome = fromFindings([
         ...checkDocumentStyles(documentSurfaces()),
         // The third rider, and the same question this step already asks one level down: what
         // JavaScript does this route's document boot? A live read with no island is a route
@@ -314,8 +296,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         .join('\n');
       return output === '' ? outcome : { ...outcome, output };
     },
-  },
-  {
+  }),
+  blockedByLoad({
     name: 'seo',
     summary: 'every indexable site/ route has a title and a description a search result can render',
     // The SEO checkers shipped in `@ultimat3/seo` with no caller anywhere — `validateMeta` and its
@@ -349,8 +331,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...(warnings.length === 0 ? {} : { warnings }),
       };
     },
-  },
-  {
+  }),
+  blockedByLoad({
     name: 'i18n',
     summary: 'every string this app renders resolves — in the catalogs AND in the registry',
     // Its own step rather than a rider on `boundaries`, by that step's own test: a rider must ask
@@ -370,16 +352,16 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // is the vacuous green this check exists to refuse.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
     run: async (ctx) => fromFindings(await catalogFindings(ctx.root)),
-  },
-  {
+  }),
+  blockedByLoad({
     name: 'policy',
     summary: 'every permission this app grants or requires is one it declares',
     // A repo with no `app.config.ts` is the framework monorepo, which declares no roles and
     // registers no routes — SKIPPED there, never passed, for the reason `i18n` gives: a step that
     // answers `ok` about nothing is the vacuous green these checks exist to refuse.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
-    run: async (ctx) => withoutLoadFindings(ctx.root, await policyFindings(ctx.root)),
-  },
+    run: async (ctx) => fromFindings(await policyFindings(ctx.root)),
+  }),
   {
     name: 'manifest',
     summary: 'the files an agent reads: generated facts, hand-written conventions, the env example',
@@ -464,16 +446,6 @@ async function driftFindings(root: string): Promise<readonly Finding[]> {
   if (!hasCommittedContract(root)) return manifestMissingFindings(root);
   const { manifest, findings } = await appManifest(root);
   return [...findings, ...(await manifestStaleness(root, manifest))];
-}
-
-/** A breaking change is allowed — with a major bump. `verifyContract` is the one that decides. */
-function contractFindings(before: Manifest, after: Manifest): readonly Finding[] {
-  try {
-    verifyContract({ before, after });
-    return [];
-  } catch (error) {
-    return [{ ...findingFrom(error), at: MANIFEST_FILENAME }];
-  }
 }
 
 /**

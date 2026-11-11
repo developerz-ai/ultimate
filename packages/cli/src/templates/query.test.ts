@@ -24,7 +24,10 @@ describe('unit · x g query has one source of tenancy, the actor', () => {
     test(`${live ? 'live' : 'one-shot'}: no org in the input, the filter or the policy`, () => {
       const files = queryFiles('invoice-search', { ...target, live });
       const query = textAt(files, `/${live ? 'live' : 'queries'}/invoice-search.ts`);
-      expect(query).toContain('input: t.object({\n    limit: t.number.default(50),');
+      // Bounded: an unbounded `limit` is one request away from reading the whole table.
+      expect(query).toContain(
+        'input: t.object({\n    limit: t.number.int().min(1).max(500).default(50),',
+      );
       expect(query).not.toContain('.where({ orgId })');
       expect(query).not.toContain('orgId:');
       const policy = textAt(files, '/policy.ts');
@@ -133,5 +136,18 @@ describe('unit · x g query stores rows when the slice still takes the scaffold 
   test('x g resource hands its own entity to its live query', () => {
     const files = resourceFiles('invoice', { surfaceDir: 'apps/web/app', feature: 'invoice' });
     expect(textAt(files, '/live/invoice-list.test.ts')).toContain(STORED);
+  });
+});
+
+describe('unit · the scaffold dashboard asks within the bound', () => {
+  test("its ROW_LIMIT is no more than the generated query's max", async () => {
+    // The dashboard reads `postList({ limit: ROW_LIMIT })`: past the max, every signed-in render of
+    // a fresh `x new` app's `/dashboard` is X_INPUT_INVALID (the sign-in e2e caught it at 400).
+    const page = await Bun.file(new URL('./scaffold-dashboard-example.ts', import.meta.url)).text();
+    const rows = Number(/const ROW_LIMIT = (\d+);/.exec(page)?.[1]);
+    const query = textAt(queryFiles('post-list', target), '/queries/post-list.ts');
+    const max = Number(/limit: t\.number\.int\(\)\.min\(1\)\.max\((\d+)\)/.exec(query)?.[1]);
+    expect(rows).toBeGreaterThan(0);
+    expect(rows).toBeLessThanOrEqual(max);
   });
 });

@@ -36,21 +36,19 @@ import type {
   QueryLimits,
   QueryRows,
   VerifyResult,
-  VerifyStep,
 } from '@ultimat3/mcp';
 import { DEV_SCOPES, devHost, devMcpServer, frameworkIntrospection } from '@ultimat3/mcp';
 import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
 import { loadAppRuntime } from './app-runtime';
 import { loadAppGraph, resolveNode } from './cmd-graph-load';
-import { runVerify, VERIFY_STEPS } from './cmd-verify';
-import { declareDevEnvironment } from './dev-environment';
+import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
 import { loadCodeFixes } from './error-fixes';
 import { BadFlagError } from './errors';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
-import { testRunOf } from './mcp-test-run';
+import { type ShellRunInput, shellRunner, shellTests, shellVerify } from './mcp-host-shell';
 import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
@@ -59,8 +57,6 @@ import type { DevServices, Env } from './runtime-bindings';
 import { resolveServices } from './runtime-bindings';
 import type { RunningServices } from './runtime-services';
 import { startServices } from './runtime-services';
-import { testEnvOverrides } from './test-dotenv';
-import { measurePace } from './verify-pace';
 
 export interface DevHostInput {
   readonly root: string;
@@ -198,24 +194,6 @@ export async function readOnlyRows(
 }
 
 /**
- * `bun test`'s argv for a `test.run` filter. A filter is a PATH, and one starting with `-` is a
- * `bun test` flag — `--preload ./x.ts` loads a module into the child — so it is refused rather
- * than forwarded: a filter is a path, and no path this suite has starts with `-`.
- */
-export function testRunArgv(filter: string | undefined): readonly string[] {
-  if (filter === undefined) return ['bun', 'test'];
-  if (filter.trimStart().startsWith('-')) {
-    throw new BadFlagError({
-      flag: 'filter',
-      command: 'mcp serve',
-      reason: `test.run's filter "${filter}" starts with "-", which bun test would read as its own flag`,
-      fix: 'call test.run with a path filter such as packages/cli/src, or with no filter',
-    });
-  }
-  return ['bun', 'test', filter];
-}
-
-/**
  * `db.migrate`'s answer to a foreign throw. The fix is the REGISTERED one (`mcp-errors.ts`), never
  * a literal here: this said `x db reset`, and an agent that followed it wiped the database the
  * migration had failed against.
@@ -284,8 +262,10 @@ function capabilities(
   input: DevHostInput,
   lazy: LazyServices,
   ui: UiCapabilities,
+  declared: boolean,
 ): DevCapabilities {
-  const { root, runner, env } = input;
+  const { root } = input;
+  const shell: ShellRunInput = { ...input, declared };
   // Layer 1 is seven idempotent DDL statements, and `db.query` is a tool an agent calls in a
   // loop — resolve the role once per process and reuse the answer, `null` included. A FAILED
   // resolution is not an answer: `??=` kept the rejection, so a statement timeout on the DDL
@@ -338,31 +318,21 @@ function capabilities(
       }));
     },
 
-    // `bun test <filter>` matches on the test path, the same rule `x test`'s `discoverTests` uses.
-    async runTests(filter: string | undefined) {
-      // Same leak the CLI's own `x test`/`x verify` had: `.env.development` auto-loaded into
-      // THIS process must not ride along into the `bun test` child the dev MCP server spawns.
-      const envOverrides = testEnvOverrides(root, env);
-      const result = await runner(testRunArgv(filter), {
-        cwd: root,
-        ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
-      });
-      // The whole result, exit code included: `0 fail` beside `1 error` is a red run.
-      return testRunOf(result);
-    },
+    // `x test` itself, never a second test path: the files, batches and env the shell gets.
+    runTests: (filter: string | undefined) => shellTests(shell, filter),
 
     async tailLogs(lines: number, role: string | undefined) {
       const dir = lazy.services.stateDir;
       const path = logTailPath(dir, role);
       const file = Bun.file(path);
       if (!(await file.exists())) {
-        // `@ultimat3/core`'s `logger` is a module const with no sink seam, so there is nothing to
-        // intercept in-process — a log on disk is the only honest source, and the fix creates one.
+        // A log on disk is the only honest source: `x dev` tees every line of its own to
+        // `dev.log` (`dev-log.ts`), so starting it is the fix. No role writes a log of its own.
         throw new NotImplementedError({
           cause: `logs.tail without ${path} is not implemented in this build`,
           fix:
             role === undefined
-              ? `x dev > ${path} 2>&1`
+              ? 'x dev'
               : `mkdir -p ${renderFixShellArg(join(dir, 'logs'), '<the logs dir of the path the cause names>')} && x dev --role ${role} > ${path} 2>&1`,
         });
       }
@@ -389,21 +359,11 @@ function capabilities(
 
     ...ui,
 
-    async verify(fix: boolean): Promise<VerifyResult> {
+    async verify(fix: boolean, only?: readonly string[]): Promise<VerifyResult> {
       // The one safe autofix this repo actually has. Anything more would be the gate rewriting
       // code it was asked to judge.
-      if (fix) await runner(['bunx', 'biome', 'check', '--write', '.'], { cwd: root });
-      const result = await runVerify(VERIFY_STEPS, { root, runner, pace: measurePace() });
-      return {
-        ok: result.ok,
-        steps: (result.steps ?? []).map((step): VerifyStep => {
-          const detail = step.findings[0]?.cause;
-          // exactOptionalPropertyTypes: omit `detail`, never hand over an explicit undefined.
-          return detail === undefined
-            ? { name: step.name, ok: step.ok }
-            : { name: step.name, ok: step.ok, detail };
-        }),
-      };
+      if (fix) await shellRunner(shell)(['bunx', 'biome', 'check', '--write', '.'], { cwd: root });
+      return shellVerify(shell, only);
     },
   };
 }
@@ -421,6 +381,9 @@ export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpSer
   // into a process that has not said it is development. Measured on 20.1.5: the first `ui.shot`
   // in a session photographed a 401 (`actorKind: anonymous`), and only the second call — whose
   // scratch boot re-imported the app after declaring — rendered. Idempotent; a set key stays.
+  // Asked before declaring: whether the key is this process's own is what `tests.run` and
+  // `verify.run` strip from their children, so they run as the shell runs them.
+  const declared = needsDevEnvironmentDeclaration(input.env);
   declareDevEnvironment(input.env);
   await Promise.all([loadApp(input.root), loadCodeFixes()]);
   // The plain `runtime.ts` routes, read once: `routes.list` answers the table `x routes` prints.
@@ -431,7 +394,9 @@ export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpSer
     routes: () => routeRows(plain).map((row) => row.json),
     policies: () => policyFacts(),
   });
-  const server = devMcpServer({ host: devHost(introspection, capabilities(input, lazy, ui)) });
+  const server = devMcpServer({
+    host: devHost(introspection, capabilities(input, lazy, ui, declared)),
+  });
   const caller = localCaller();
   return {
     server,

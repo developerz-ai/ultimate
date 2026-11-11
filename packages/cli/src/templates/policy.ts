@@ -222,13 +222,17 @@ export function policyFiles(
 ): readonly GeneratedFile[] {
   const feature = names(rawName.length > 0 ? rawName : target.feature);
   const dir = `${target.surfaceDir}/${target.feature}`;
+  // A set named apart from its slice is a SECOND one there (`policy-append.ts` appends its rules
+  // to `policy.ts`), and its test lands beside the slice's own rather than over it.
+  const test =
+    feature.kebab === target.feature ? 'policy.test.ts' : `policy-${feature.kebab}.test.ts`;
   return [
     {
       path: `${dir}/policy.ts`,
       contents: shape.singleTenant ? singleTenantPolicySource(feature) : policySource(feature),
     },
     {
-      path: `${dir}/policy.test.ts`,
+      path: `${dir}/${test}`,
       contents: shape.singleTenant ? singleTenantPolicyTest(feature) : policyTest(feature),
     },
   ];

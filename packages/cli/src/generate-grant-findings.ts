@@ -8,9 +8,9 @@ import { appDisk } from './generate-disk';
 import type { RoleGrant } from './generate-grants';
 import {
   adminGrantsFor,
-  grantsForWritten,
   insertGrants,
   insertPermissions,
+  policyGrantsFor,
   writtenTables,
 } from './generate-grants';
 import type { Finding } from './output';
@@ -49,7 +49,7 @@ export async function ungrantedByGenerator(
   disk: GenerateDisk = appDisk(root),
 ): Promise<readonly Finding[]> {
   const admin = (await writtenTables(root, written, disk)).flatMap(adminGrantsFor);
-  const grants = [...grantsForWritten(written), ...admin];
+  const grants = [...(await policyGrantsFor(root, written, disk)), ...admin];
   if (grants.length === 0) return [];
   const source = await disk.read(ROLES_FILE);
   // The file whose declarations nobody granted: where a reader starts when the map is not ours.

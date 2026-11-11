@@ -8,6 +8,7 @@ import type { AppManifest } from './app-manifest';
 import { buildGeneration } from './dev-rebuild';
 import type { IslandBundle } from './island-bundle';
 import { islandBundle } from './island-bundle';
+import type { Finding } from './output';
 
 /** A promise whose resolution the test decides, and a flag saying whether it was asked for. */
 function deferred<T>() {
@@ -19,6 +20,8 @@ function deferred<T>() {
 }
 
 const manifest = { buildId: 'b1' } as unknown as Manifest;
+/** No entity ahead of its migration: the schema half of a generation that has nothing to say. */
+const inStep = async (): Promise<readonly Finding[]> => [];
 
 describe('buildGeneration', () => {
   test('starts the island build before the app load has finished', async () => {
@@ -33,6 +36,7 @@ describe('buildGeneration', () => {
         started.push(`islands ${root}`);
         return islandBundle([]);
       },
+      schema: inStep,
     });
     // Both asked for while the load is still pending: neither waits for the other.
     await Bun.sleep(0);
@@ -63,6 +67,7 @@ describe('buildGeneration', () => {
         await answer;
         return islandBundle([]);
       },
+      schema: inStep,
     });
     await generation;
     expect(steps).toEqual(['islands started', 'load resolving', 'persists undefined']);
@@ -72,7 +77,38 @@ describe('buildGeneration', () => {
     const failed = buildGeneration('/app', {
       manifest: async () => ({ manifest, findings: [] }),
       islands: (): Promise<IslandBundle> => Promise.reject(new TypeError('island did not bundle')),
+      schema: inStep,
     });
     await expect(failed).rejects.toThrow('island did not bundle');
+  });
+
+  // FX5: adding a column gave no message until the page answered X_DB_SCHEMA_STALE.
+  test("a schema ahead of the migrations is one of the generation's findings", async () => {
+    const ahead: Finding = {
+      code: 'X_DB_DRIFT',
+      cause: 'ahead',
+      fix: 'x db gen "a" && x db migrate',
+    };
+    const built = await buildGeneration('/app', {
+      manifest: async () => ({ manifest, findings: [] }),
+      islands: async () => islandBundle([]),
+      schema: async () => [ahead],
+    });
+    expect(built.findings).toEqual([ahead]);
+  });
+
+  test('a load with findings is never asked about its schema: the registry it left is short', async () => {
+    const broken: Finding = { code: 'X_CLI_UNEXPECTED', cause: 'syntax', fix: 'x doctor --json' };
+    let asked = false;
+    const built = await buildGeneration('/app', {
+      manifest: async () => ({ manifest, findings: [broken] }),
+      islands: async () => islandBundle([]),
+      schema: async () => {
+        asked = true;
+        return [];
+      },
+    });
+    expect(asked).toBe(false);
+    expect(built.findings).toEqual([broken]);
   });
 });

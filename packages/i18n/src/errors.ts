@@ -120,11 +120,30 @@ export function catalogsNeverRegistered(locale: string, unresolved: readonly str
   });
 }
 
+/** One segment of a catalog key — `catalog.ts`'s rule, restated here because it shapes the fix. */
+const SEGMENT = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * A dotted key (`"admin.posts.title": "…"`) is the one malformed entry with a mechanical repair:
+ * every key is NAMED dotted (`X_CATALOG_MISSING_KEYS` lists them so), and the file holds it nested.
+ * The fix is that nesting, pasteable JSON; `x i18n check --json` — the command that refused it —
+ * stays the fix only where nesting cannot help.
+ */
+function nestedFix(path: string): string | undefined {
+  const segments = path.split('.');
+  if (segments.length < 2 || !segments.every((segment) => SEGMENT.test(segment))) return undefined;
+  const shape = segments.reduceRight<string>(
+    (inner, segment) => `{ ${JSON.stringify(segment)}: ${inner} }`,
+    '"<the string>"',
+  );
+  return `${shape}   # in place of the dotted key "${path}" — a dot is not a key segment; x i18n sync <locale> writes every key it adds this way`;
+}
+
 export function catalogInvalid(path: string, cause: string): I18nError {
   return new I18nError({
     code: 'X_CATALOG_INVALID',
     cause: `catalog entry "${path}": ${cause}`,
-    fix: 'x i18n check --json',
+    fix: (cause.startsWith('key segments') ? nestedFix(path) : undefined) ?? 'x i18n check --json',
   });
 }
 

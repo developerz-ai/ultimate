@@ -27,8 +27,8 @@ defineAppMcp({ include: 'exposed' });
 | `graph.query` | `dev:read` | `{ node }` → what a change to a file or primitive reaches (`x impact`'s answer); `{ from, to }` → the chain of edges linking two nodes (`x graph --from --to`). The CLI answers through `DevCapabilities.queryGraph`: the graph is `@ultimat3/manifest`'s |
 | `db.query` | `db:read` | **read-only, enforced four ways** — SELECT-only role, `BEGIN READ ONLY`, one-statement parse, 5s/1000-row/256 KiB caps |
 | `db.migrate` | `db:migrate` | **branch DB only** — refuses production and any non-branch target |
-| `tests.run` | `dev:test` | runs the suite (executes project code) |
-| `verify.run` | `dev:test` | `x verify` — the shippable contract |
+| `tests.run` | `dev:test` | `x test [--filter]` — the shell's runner and environment (executes project code) |
+| `verify.run` | `dev:test` | `x verify` — the shippable contract; `only` is `--only` |
 | `logs.tail` | `dev:logs` | last N lines, optionally per runtime role |
 
 `db.query` and `db.migrate` are gated *and* say so in their own description, so a model that

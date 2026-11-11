@@ -283,9 +283,10 @@ describe('unit · a mounted admin’s DERIVED keys are audited per locale', () =
     ]);
     expect(report.findings[0]?.cause).toContain('admin.orgs.title');
     expect(report.findings[0]?.cause).not.toContain('app.play.title');
-    // An edit naming the file: `x i18n sync` seeds keys SOURCE uses and cannot know these.
-    expect(report.findings[0]?.fix).toContain('packages/i18n/catalogs/en.json');
-    expect(report.findings[0]?.fix).toContain('"admin.orgs.title"');
+    // The code's own fix: `x i18n sync` writes these keys too, nested — the hand edit this used
+    // to name was a dotted key, which `loadCatalog` refuses (`X_CATALOG_INVALID`).
+    expect(report.findings[0]?.fix.split('#')[0]?.trim()).toBe('x i18n sync en');
+    expect(report.findings[1]?.fix.split('#')[0]?.trim()).toBe('x i18n sync es');
   });
 
   test('a key the framework’s base layer answers needs nothing in the app’s catalog', async () => {

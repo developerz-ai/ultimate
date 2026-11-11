@@ -266,3 +266,45 @@ describe('unit · E2E_PATH_GLOBS is the e2e step, spelt as globs', () => {
     for (const glob of E2E_PATH_GLOBS) expect(unit).toContain(`--path-ignore-patterns=${glob}`);
   });
 });
+
+describe('unit · an app seed its entity refuses reds the unit step, with the inner code', () => {
+  test('the seed run is beside the suite, and its finding is the top-level one', async () => {
+    const app = await mkdtemp(join(tmpdir(), 'x-verify-seeds-'));
+    try {
+      await Bun.write(join(app, 'app.config.ts'), 'export {};\n');
+      await Bun.write(join(app, 'packages/db/seeds/dev.ts'), 'export {};\n');
+      await Bun.write(join(app, 'pkg/one.test.ts'), '// unit\n');
+      resetTestDiscovery();
+      const report = [
+        {
+          file: 'packages/db/seeds/dev.ts',
+          export: 'dev',
+          seed: 'dev',
+          code: 'X_INVARIANT_VIOLATED',
+          cause: 'got the float 19.99',
+          fix: '{ minor: 1999, currency: "USD" }',
+          message: 'X_INVARIANT_VIOLATED',
+        },
+      ];
+      const outcome = await stepFor('unit').run({
+        root: app,
+        workers: 1,
+        runner: async (command) => ({
+          command,
+          ok: true,
+          code: 0,
+          stdout: command.includes('--eval') ? JSON.stringify(report) : '',
+          stderr: '',
+          durationMs: 1,
+        }),
+      });
+      expect(outcome.ok).toBe(false);
+      // First, ahead of the suite's own findings (this bare app also states no coverage floor).
+      expect(outcome.findings[0]?.code).toBe('X_INVARIANT_VIOLATED');
+      expect(outcome.findings[0]?.at).toBe('packages/db/seeds/dev.ts');
+    } finally {
+      await rm(app, { recursive: true, force: true });
+      resetTestDiscovery();
+    }
+  });
+});

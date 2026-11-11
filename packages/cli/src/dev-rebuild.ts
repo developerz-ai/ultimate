@@ -2,6 +2,9 @@
 // one generation, the ISR store emptied, and a save this process cannot serve handed to the
 // supervisor as a restart. Coalesced, so a tick arriving mid-build is one trailing rebuild.
 
+// why: Bun ships no path API; a restart's pins are absolute, the watcher's file is root-relative.
+import { resolve } from 'node:path';
+
 import type { Manifest } from '@ultimat3/manifest';
 import { beginDeviceSocketGeneration } from '@ultimat3/realtime/server';
 import type { IsrController } from '@ultimat3/render/server';
@@ -9,12 +12,15 @@ import type { AppManifest } from './app-manifest';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
 import { takeStalePins } from './app-reload-graph';
+import { remountFinding, remountLine, remountReason } from './dev-rebuild-remount';
+import { schemaAheadFindings } from './dev-rebuild-schema';
 import type { ReloadTrigger } from './dev-reload';
 import { coalesceReloads } from './dev-reload';
-import { restartFinding } from './dev-supervisor';
+import { restartFinding, restartReason } from './dev-supervisor';
 import type { BuildIslandsOptions, IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
 import { appPersistsRecords } from './island-realtime-state';
+import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -38,13 +44,19 @@ export interface DevState {
   islands: IslandBundle;
 }
 
-/** The two builders of one generation — the seam a test times them through. */
+/** The builders of one generation — the seam a test times them through. */
 export interface GenerationBuilders {
   readonly manifest: (root: string) => Promise<AppManifest>;
   readonly islands: (root: string, options: BuildIslandsOptions) => Promise<IslandBundle>;
+  /** Entities ahead of the migrations (`dev-rebuild-schema.ts`); asked once the load is clean. */
+  readonly schema: (root: string) => Promise<readonly Finding[]>;
 }
 
-const BUILDERS: GenerationBuilders = { manifest: appManifest, islands: buildIslands };
+const BUILDERS: GenerationBuilders = {
+  manifest: appManifest,
+  islands: buildIslands,
+  schema: schemaAheadFindings,
+};
 
 /**
  * One generation — the app's manifest and its island bundle — both builders started at once, at
@@ -65,18 +77,26 @@ export async function buildGeneration(
       () => appPersistsRecords(),
       () => undefined,
     );
-  const [{ manifest, findings }, islands] = await Promise.all([
+  // After the load, beside the island build: the hash reads the registry the load filled, and a
+  // load with findings left it short — drift that is not there, so it is not asked.
+  const schema = loaded.then(({ findings }) => (findings.length > 0 ? [] : build.schema(root)));
+  const [{ manifest, findings }, islands, ahead] = await Promise.all([
     loaded,
     build.islands(root, { persists }),
+    schema,
   ]);
-  return { manifest, findings, islands };
+  return { manifest, findings: [...findings, ...ahead], islands };
 }
 
 /** What a rebuild reports to, read off `StartDevOptions`. */
 export interface DevRebuildOptions {
   readonly root: string;
   readonly onReload?: (file: string, durationMs: number) => void;
-  readonly onRestart?: (pins: readonly StalePin[]) => void;
+  /**
+   * `line` is the restart's own reason, rendered — a pinned module, a changed surface or a load
+   * finding that appeared or cleared — so the log never states one cause for another.
+   */
+  readonly onRestart?: (pins: readonly StalePin[], line: string) => void;
 }
 
 /**
@@ -103,6 +123,9 @@ export function devRebuilder(
   isr: IsrController,
   refreshDevices: () => Promise<readonly string[]>,
 ): ReloadTrigger {
+  // What the route table was built from: the boot's generation, for the life of this process. Each
+  // save is compared with IT, not with the save before — a route added two saves ago is still a 404.
+  const mounted = { manifest: state.manifest, findings: state.appFindings };
   // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
   // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
   return coalesceReloads(
@@ -110,6 +133,7 @@ export function devRebuilder(
       const started = performance.now();
       beginDeviceSocketGeneration();
       const { manifest, findings, islands } = await buildGeneration(options.root);
+      const remount = remountReason(mounted, { manifest, findings });
       state.manifest = manifest;
       state.appFindings = findings;
       state.islands = islands;
@@ -118,16 +142,29 @@ export function devRebuilder(
       for (const path of await isr.store().paths()) await isr.store().delete(path);
       state.reloads += 1;
       // Read on EVERY rebuild, so a pin one save reached is never reported against the next save.
-      const pins = takeStalePins();
+      const stale = takeStalePins();
+      // A generation this process cannot mount is a restart named after the saved file — never
+      // "reloaded" over a route table built for the generation before it.
+      const saved = resolve(options.root, file);
+      const pins =
+        stale.length > 0 || remount === undefined ? stale : [{ changed: saved, pinned: saved }];
       const [device] = unserved;
       state.reloadFinding =
-        pins.length > 0 && options.onRestart === undefined
-          ? restartFinding(options.root, pins)
-          : device === undefined
-            ? undefined
-            : unservedDeviceFinding(device, file);
-      if (pins.length > 0 && options.onRestart !== undefined) options.onRestart(pins);
-      else options.onReload?.(file, Math.round(performance.now() - started));
+        stale.length > 0 && options.onRestart === undefined
+          ? restartFinding(options.root, stale)
+          : device !== undefined
+            ? unservedDeviceFinding(device, file)
+            : remount !== undefined && options.onRestart === undefined
+              ? remountFinding(remount, file)
+              : undefined;
+      if (pins.length > 0 && options.onRestart !== undefined) {
+        options.onRestart(
+          pins,
+          stale.length > 0 || remount === undefined
+            ? msg('cli.dev.restart', { reason: restartReason(options.root, stale) })
+            : remountLine(remount, file),
+        );
+      } else options.onReload?.(file, Math.round(performance.now() - started));
     },
     // Same rule as a module that will not import: a save the manifest cannot be rebuilt from is
     // a finding on `/_x`, never an unhandled rejection that takes the dev server down.

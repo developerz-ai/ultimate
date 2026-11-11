@@ -41,12 +41,13 @@ const LITERAL_AT_KEY = new RegExp(`(?<![.\\w$])code\\s*[:=]\\s*(['"\`])${CODE}\\
  * manifest and `x errors explain` use — resolves `code: SOME_CONST` to the const's value, but its
  * mask loses its place after a template nested inside another's `${}`, and `admin/src/errors.ts`
  * hid its copy behind one. The literal read over stripped text has no such blind spot. Neither
- * reads a registry's `*_BORROWED_ERROR_CODES` list, which names the code and raises nothing.
+ * reads a registry's `*_BORROWED_ERROR_CODES` list, which names the code and raises nothing, and a
+ * `*FIXES` table key (`fromTable`) is a fix lookup, not a constructor.
  */
 function constructionLines(file: SourceFile): readonly number[] {
   const lines = new Set<number>();
   for (const site of scanCodeFixSites(file.text, file.at)) {
-    if (site.code === CODE) lines.add(site.line);
+    if (site.code === CODE && site.fromTable !== true) lines.add(site.line);
   }
   for (const hit of stripComments(file.text).matchAll(LITERAL_AT_KEY)) {
     lines.add(lineOf(file.text, hit.index));

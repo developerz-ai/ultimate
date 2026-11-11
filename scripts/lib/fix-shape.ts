@@ -1,11 +1,12 @@
-// What a `fix:` line is, read off how it OPENS: a command to run, a code shape to paste, or prose.
+// What a `fix:` line is, read off how it OPENS: a command to run, a code shape to paste, an edit at
+// a file and line, or prose.
 // Text only — `scripts/fix-prose.ts` owns what a prose fix costs. The opening is the whole test,
 // deliberately: a fix is pasted from its first character, and a sentence that names a command in
 // its middle (`run x verify — it names the step`) is still a sentence the reader has to translate.
 
 import { COMMAND_WORDS } from './fix-shell-arg-scan';
 
-export type FixShape = 'command' | 'code' | 'prose' | 'unknown';
+export type FixShape = 'command' | 'code' | 'edit' | 'prose' | 'unknown';
 
 /**
  * `fix-shell-arg`'s command words, plus the shell builtins and tools a `fix:` in this tree opens
@@ -44,6 +45,16 @@ const CALL = /^(?:await\s+|new\s+)?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:<[^
 const DECLARATION = /^(?:import|export|const|let|type|interface|function|class)\s/;
 /** `key: value` where the value is code: a literal, a bracket, a call. `Note: the …` is not. */
 const MEMBER = /^[a-z_$][\w$]*\??\s*:\s*(?:[{['"`(\d]|true\b|false\b|null\b|[A-Za-z_$][\w$.]*\()/;
+/** One `${…}` substitution, as the scan reads a template literal: its value is a path or a line. */
+const SUB = String.raw`\$\{[^}]+\}`;
+/**
+ * `edit <file>.<ext>:<line> — <instruction>`: the error contract's "an edit naming a file", opened
+ * at that line. The extension and the line number are what make it a place and not a sentence —
+ * `edit the config — …` is still prose.
+ */
+const EDIT = new RegExp(
+  String.raw`^edit\s+(?:[\w@./-]*\w\.[A-Za-z]{1,6}|${SUB}):(?:\d+|${SUB})\s+—\s+\S`,
+);
 const SQL =
   /^(?:ALTER|CREATE|DROP|SELECT|INSERT|UPDATE|DELETE|GRANT|REVOKE|VACUUM|REINDEX|ANALYZE|TRUNCATE)\b/;
 
@@ -56,6 +67,7 @@ export function fixShape(fix: string): FixShape {
   if (text.startsWith('${')) return 'unknown';
   const first = text.split(/\s+/)[0] ?? '';
   if (RUNNABLE.has(first) || PATH_COMMAND.test(first) || ENV_PREFIX.test(first)) return 'command';
+  if (EDIT.test(text)) return 'edit';
   if (
     CALL.test(text) ||
     DECLARATION.test(text) ||

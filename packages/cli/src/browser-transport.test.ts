@@ -10,6 +10,7 @@ import {
   bypassFinding,
   checkBrowserTransport,
 } from './browser-transport';
+import { fixSequenceProblem } from './fix-sequence';
 import { serverBarrels } from './server-barrels';
 
 const APP: FindingContext = {
@@ -158,14 +159,75 @@ describe('a server barrel in an island`s closure', () => {
         line: 2,
         barrel: '@ultimat3/entity',
         entry: '@ultimat3/entity/record',
+        chain: ['apps/web/app/a/r.island.tsx'],
+        names: ['recordKey'],
+        swaps: true,
       },
     ]);
     const finding = barrelFinding(barrels[0] ?? expect.unreachable('no barrel'), APP);
     expect(finding.code).toBe('X_BROWSER_SERVER_BARREL');
     expect(finding.at).toBe('apps/web/app/a/r.island.tsx:2');
     expect(finding.fix).toBe(
-      "x verify --only boundaries --json   # after changing the import at apps/web/app/a/r.island.tsx:2 from '@ultimat3/entity' to '@ultimat3/entity/record'",
+      "edit apps/web/app/a/r.island.tsx:2 — change the import from '@ultimat3/entity' to '@ultimat3/entity/record'",
     );
+  });
+
+  // FX1: the barrel three hops below the island was blamed on the module it landed in, and the
+  // swap printed for it does not compile — that module needs the server half.
+  const DEEP = {
+    'apps/web/app/a/r.island.tsx': "import { pick } from './x';\nimport { list } from './repo';\n",
+    'apps/web/app/a/x.ts': 'export const pick = 1;\n',
+    'apps/web/app/a/repo.ts': "import { db } from './db';\nexport const list = db;\n",
+    'apps/web/app/a/db.ts':
+      "\nimport { entity } from '@ultimat3/entity';\nexport const db = entity;\n",
+  };
+
+  test('a barrel below the island carries the chain from the island and the hop to cut', () => {
+    const [site] = checkBrowserTransport(app(DEEP)).barrels;
+    expect(site?.chain).toEqual([
+      'apps/web/app/a/r.island.tsx',
+      'apps/web/app/a/repo.ts',
+      'apps/web/app/a/db.ts',
+    ]);
+    expect(site?.hop).toEqual({ spec: './repo', line: 2 });
+    expect(site?.names).toEqual(['entity']);
+  });
+
+  test('server-only names below the island: the fix deletes the island`s import, never swaps', () => {
+    for (const published of [undefined, new Map([['@ultimat3/entity/record', new Set(['k'])]])]) {
+      const input = app(DEEP, published === undefined ? {} : { published });
+      const site = checkBrowserTransport(input).barrels[0] ?? expect.unreachable('no barrel');
+      expect(site.swaps).toBe(false);
+      const finding = barrelFinding(site, APP);
+      expect(finding.at).toBe('apps/web/app/a/r.island.tsx:2');
+      expect(finding.fix).toStartWith(
+        "edit apps/web/app/a/r.island.tsx:2 — delete the import of './repo'",
+      );
+      expect(finding.cause).toContain(
+        'r.island.tsx → apps/web/app/a/repo.ts → apps/web/app/a/db.ts',
+      );
+      expect(finding.meta?.['entry']).toBe('apps/web/app/a/r.island.tsx');
+    }
+  });
+
+  test('a browser helper taking only what the entry publishes is swapped where it stands', () => {
+    const published = new Map([['@ultimat3/entity/record', new Set(['entity'])]]);
+    const site =
+      checkBrowserTransport(app(DEEP, { published })).barrels[0] ?? expect.unreachable('none');
+    const finding = barrelFinding(site, APP);
+    expect(finding.at).toBe('apps/web/app/a/db.ts:2');
+    expect(finding.fix).toContain("from '@ultimat3/entity' to '@ultimat3/entity/record'");
+  });
+
+  test('two islands reaching one barrel are two cuts, one in each', () => {
+    const files = { ...DEEP, 'apps/web/app/b/b.island.tsx': "import { list } from '../a/repo';\n" };
+    const findings = checkBrowserTransport(app(files)).barrels.map((one) =>
+      barrelFinding(one, APP),
+    );
+    expect(findings.map((one) => one.at).sort()).toEqual([
+      'apps/web/app/a/r.island.tsx:2',
+      'apps/web/app/b/b.island.tsx:1',
+    ]);
   });
 
   test('a package`s own module importing its own barrel is not paying for a server half', () => {
@@ -180,13 +242,13 @@ describe('the finding is an instruction', () => {
     checkBrowserTransport(app({ 'apps/web/app/a/a.island.tsx': source })).bypasses[0] ??
     expect.unreachable('no bypass');
 
-  test('it runs as written: the gate step first, the edit behind a #', () => {
+  test('it leads with the edit, and the gate step re-reads after it', () => {
     const finding = bypassFinding(bypassOf("await fetch('/api/x');\n"), APP);
     expect(finding.code).toBe('X_BROWSER_TRANSPORT_BYPASS');
     expect(finding.at).toBe('apps/web/app/a/a.island.tsx:1');
-    expect(finding.fix).toStartWith(
-      'x verify --only boundaries --json   # after replacing fetch at apps/web/app/a/a.island.tsx:1 with ',
-    );
+    expect(finding.fix).toStartWith('edit apps/web/app/a/a.island.tsx:1 — replace fetch with ');
+    expect(finding.fix).toEndWith('; then x verify --only boundaries --json');
+    expect(fixSequenceProblem(finding.fix)).toBeUndefined();
     expect(finding.cause).toContain("only @ultimat3/core's clientTransport may");
     expect(finding.docs).toStartWith('https://');
   });
@@ -218,9 +280,8 @@ describe('the finding is an instruction', () => {
     expect(finding.cause).toStartWith(
       'apps/web/app/a/a.island.tsx:1 passes the global fetch as a value in browser-reachable code',
     );
-    expect(finding.fix).toStartWith(
-      'x verify --only boundaries --json   # after deleting fetch at apps/web/app/a/a.island.tsx:1 ',
-    );
+    expect(finding.fix).toStartWith('edit apps/web/app/a/a.island.tsx:1 — delete fetch ');
+    expect(fixSequenceProblem(finding.fix)).toBeUndefined();
     expect(finding.fix).toContain('`await browserClient.<action>(input)`');
   });
 

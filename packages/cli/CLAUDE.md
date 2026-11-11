@@ -51,14 +51,17 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `verify-floor.ts` | `x.verify.json`: a floor step that ran zero tests is `X_VERIFY_SUITE_VANISHED` |
 | `coverage-{floor,lcov,source}.ts` / `verify-coverage-run.ts` | an app's `unit` coverage floor; `coverage-lcov.ts` is the ONE lcov reader † |
 | `verify-deadline.ts` / `verify-stalled.ts` / `verify-progress.ts` | a step past its deadline is `X_VERIFY_STEP_TIMEOUT`; its children are killed by tag † |
-| `load-findings.ts` | module-load failures are reported once, by `manifest`; other steps point there |
+| `load-findings.ts` | a module-load failure is reported once, by `manifest`; while red, each step that loads the app is wrapped in `blockedByLoad`: `skipped: load failed (see manifest)`. Under `--only` without `manifest` it carries the findings itself |
+| `verify-contract-diff.ts` | `contract-diff`: baseline is `x.manifest.json` at HEAD; in CI, at the merge base with `origin/$GITHUB_BASE_REF`, or that ref itself when a shallow checkout reaches no merge base; HEAD plus a fetch notice when the ref is not fetched; outside git, the file on disk with a notice |
 | `verify-factories.ts` | `unit` lints `<app>/packages/db/factories.ts` (`X_TEST_FACTORY_INVALID`) |
+| `verify-seeds.ts` | `unit` runs the seeds on one memory driver; a refused row keeps the entity's code and fix, an uncoded throw is `X_SEED_FAILED` |
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` / `package-boundaries.ts` | surface + layer rules, `X_BOUNDARY_PACKAGE_TO_APP`; a `fix:` is the concrete cut † |
 | `app-boundaries.ts` (workspaces) | `@<scope>/<app>/<rest>` resolves onto `apps/<app>/<rest>` when that is an app source, so the surface rules hold across app workspaces |
-| `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `transport-values.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport; never a `guards/` file † |
+| `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `transport-values.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` / `browser-import-chain.ts` / `browser-barrel-cut.ts` | `boundaries`, built in: one browser transport; a server barrel below an island is cut at its first hop unless the browser entry exports every name taken (`meta.chain`; `x fix boundary` lists it, rule `browser-server-barrel`); never a `guards/` file † |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, run on `boundaries`; ONE shared walk (`GuardSources`) † |
 | `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`x new`, `x g guard`, `doctor-guards.ts`) † |
-| `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
+| `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file; `*FIXES` tables are throw sites |
+| `fix-sequence.ts` | `errors`: a `fix:` that defers its edit (`# after …`/`# once …`), only says re-run, or runs `x g … --force` is `X_ERROR_FIX_INVALID`; ratcheted per file (`FIX_SEQUENCE_BASELINE`) |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize` ‡ |
 | `workspace-external-deps.ts` · `tsconfig-aliases.ts` · `error-codes-package.ts` | `package-shape`: a registry import neither the workspace nor the root declares (`X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`); fix `bun add <pkg> --cwd <workspace>`. The step family's codes and titles, split out of `error-codes.ts` |
 | `app-permissions*.ts` / `permission-grants.ts` | `policy`: `X_PERMISSION_UNGRANTED`, `X_PERMISSION_BORROWED` † |
@@ -79,13 +82,13 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `job-budget.ts` | `X_JOB_OUTLASTS_DRAIN` (`manifest`): `timeout` vs `workerBudgetMs(drain)`, from the registry † |
 | `output-findings.ts` | render layer only: `runnableFix` (`bunx x`, decided by `dispatch.ts`'s `readerFor`) and `collapseFindings`. Throw sites keep `x …` |
 | `app-load-unresolved.ts` | `X_APP_IMPORT_UNRESOLVED`, read by the scan, `findingFrom` and `x doctor`'s `snapshots` probe |
-| `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed: each row breaks a scaffold, asserts the code and runs the line |
+| `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed: each row breaks a scaffold, asserts the code, runs the line; `typeErrors()` asserts the app still typechecks |
 
 ### Generators (`x g`, `x new`)
 
 | File | Job |
 |---|---|
-| `cmd-generate.ts` / `generate-files.ts` / `generate-kinds.ts` / `generate-write.ts` | argv → pure file list → writes (conflict-checked, `merge: 'json'` / `'if-absent'`) |
+| `cmd-generate.ts` / `generate-files.ts` / `generate-kinds.ts` / `generate-write.ts` | argv → pure file list → writes (conflict-checked, `merge: 'json'` / `'if-absent'`, `policy.ts` appended) |
 | `templates/workspace.ts` | `x g app` / `x g package`: a workspace the root globs and the one tsconfig alias (`@<app>/*` → `packages/*/src`, then `apps/*`) already reach |
 | `write-generated.ts` | `x new`'s writer: a `link` file is a relative symlink, a copy only on a refusing win32 |
 | `generate-feature.ts` | a `--feature` naming no slice is `X_FEATURE_UNKNOWN`; nothing invents an entity |
@@ -93,7 +96,9 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `generate-plural.ts` | a planned `entity.ts` in an already-plural slice (`posts` → `postses`) is `X_CLI_BAD_FLAG`; the fix names the singular |
 | `generate-catalog-locales.ts` | `--locales` never starts a catalog; missing locale is `X_CLI_BAD_FLAG` † |
 | `app-name.ts` | `x new`'s slug is asked of core's `defineConfig`, never a copied pattern; refused with a suggested name (`9lives` → `app-9lives`, `a` → `a-app`, cut at 64) |
-| `generate-grants.ts` | a written `policy.ts` or `entity.ts` declares and grants its permissions in `apps/web/shared/roles.ts` ‡ |
+| `generate-grants.ts` | a written `policy.ts` grants the set the run wrote — its LAST `definePermissions([...])` (`:read` → member, else admin), never a permission already in the file; the slice path only when nothing reads; in `apps/web/shared/roles.ts` ‡ |
+| `policy-append.ts` | a second `x g policy` appends its set; the same set again is the conflict, fix another set |
+| `scaffold-growth.contract.test.ts` | an entity gaining a defaulted and a nullable column breaks no generated insert (`Insertable`) |
 | `api-registration.ts` | a written job or task is listed in `apps/web/api/index.ts` |
 | `generate-exercise.ts` | a contract test's entry in `apps/web/exercise.ts` (`exercise-entry-edit.ts`) |
 | `handle-registration.ts` / `workspace-dep-edit.ts` / `templates/scaffold-db-client.ts` | a written entity joins `entities` (`X_DB_HANDLE_UNREGISTERED`) † |
@@ -116,6 +121,8 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `generate-refresh.ts` | `x g` refreshes the manifest only when a written file needs it |
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS` (`X_ROLE_LOAD_INCOMPLETE`) † |
 | `module-imports.ts` | a module's imports, resolved once for both graphs: `referenced` (reload), `evaluated` (document) |
+| `dev-rebuild-remount.ts` / `dev-rebuild-schema.ts` | a save that changes what `x dev` mounted or its load findings is a restart, naming what moved; entities ahead of migrations are `X_DB_DRIFT` (`x db gen "…" && x db migrate`), skipped after a failed load |
+| `dev-log.ts` | every logger line to `<stateDir>/dev.log` (`logs.tail`); `dev.log.1` at 16 MiB |
 | `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: every role in one process, `/_x`, the watcher; one save = one generation, and the boot is the first: `buildGeneration` builds the manifest and the islands at once † |
 | `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `NATS_URL` |
 | `runtime-queue.ts` / `runtime-services.ts` / `runtime-bus.ts` | db + queue; every other accessor; the bus |
@@ -167,7 +174,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
-| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 19 tools, two transports † |
+| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-host-shell.ts` / `mcp-test-{output,run}.ts` | `x mcp serve`: 19 tools, two transports; `tests.run`/`verify.run` ARE `x test`/`x verify`, `ULTIMATE_ENV` unset in children (`mcp-host.parity.test.ts`) † |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `shot-route.ts` / `shot-run.ts` / `shot-gpu.ts` | `x shot`'s route argument (`readRoute`, `shotSlug`); one capture (`runShot`); the page's `navigator.gpu` adapter (`verdict.gpu`, never gating). `cmd-shot.ts` re-exports the first two |
 | `cmd-pr.ts` / `cmd-ci.ts` / `ci-runs.ts` / `ci-tested.ts` | GitHub through `gh`, schema-parsed; not gate steps † |

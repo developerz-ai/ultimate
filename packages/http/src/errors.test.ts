@@ -65,6 +65,19 @@ describe('routeNotFound', () => {
     }
   });
 
+  // `api/` holds no route file — actions and queries mount there through `defineApi()` — so
+  // `x g route /api/posts` wrote a page under `app/api/posts`, a URL that still is not the action.
+  test('a miss under /api names the route table and the API, never x g route', () => {
+    for (const pathname of ['/api', '/api/posts/publish', '/api/sign-in']) {
+      const { fix } = routeNotFound('POST', pathname);
+      expect(fix.startsWith('x routes --json')).toBe(true);
+      expect(fix).not.toContain('x g route');
+      expect(fix).toContain('defineApi');
+    }
+    // A path that only starts with the letters is a page, and keeps the page fix.
+    expect(routeNotFound('GET', '/apiary').fix).toBe('x routes --json   # then: x g route /apiary');
+  });
+
   test('the pathname still travels where a reader needs it — the cause', () => {
     // The value is not suppressed, it is moved to the field that is READ rather than RUN.
     expect(routeNotFound('GET', '/$(id)').cause).toContain('/$(id)');

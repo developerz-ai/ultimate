@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "401c4e6053bc7a799a087b73b95200543f05198e5b8f51b4ebdcdd8a991904da",
+  "buildId": "52f5b529c2da789aded05fd8e1d64286120078bf8c9d210362128f66e2c9d703",
   "tiers": {
     "0": [
       "core",
@@ -5036,6 +5036,11 @@
     },
     {
       "code": "X_SEED_ENVIRONMENT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SEED_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

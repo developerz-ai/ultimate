@@ -44,11 +44,27 @@ describe('a code shape to paste', () => {
   });
 });
 
+// "An edit naming a file" is the third shape the error contract names: the file, the line, then
+// the instruction — opened in an editor at that line, never translated first.
+describe('an edit at a file and line', () => {
+  test.each([
+    'edit scripts/lib/x-pins.ts:3 — add // why: <reason>',
+    "edit apps/web/app/post/post-form.island.tsx:28 — delete the import of './repo'",
+    `edit \${site.file}:\${site.line} — replace fetch with clientTransport`,
+    `edit \${commentSafe(entry)}:\${cut.line} — delete the import`,
+  ])('%s', (fix) => {
+    expect(fixShape(fix)).toBe('edit');
+  });
+});
+
 describe('prose', () => {
   test.each([
     'set pwa.offline.fallback in app.config.ts to a path a route serves',
     'add a row for X_A to wiki/Error-Codes.md',
-    'edit scripts/lib/x-pins.ts:3 — add // why: <reason>',
+    'edit the config — add a row',
+    'edit scripts/lib/x-pins.ts — add // why: <reason>',
+    'edit README:3 — add a line',
+    'edit scripts/lib/x-pins.ts:3 add a line',
     'sign in again',
     'set OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318',
     'rewrite (the fix) as a command',

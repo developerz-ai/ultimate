@@ -18,6 +18,7 @@
 // one module later (`transport-values.ts`), reported with a fix that removes the hand-off.
 
 import { ERROR_DOCS_URL, maskLiterals } from '@ultimat3/core';
+import { importChain, namesFrom } from './browser-import-chain';
 import { commentSafe } from './comment-safe';
 import type { ClosureHost } from './import-closure';
 import { importClosure } from './import-closure';
@@ -37,6 +38,17 @@ export interface Bypass extends TransportCall {
 
 export interface ServerBarrel extends BarrelImport {
   readonly file: string;
+  /** The browser entry that reaches `file`, first, and `file` last: `[file]` when it IS the entry. */
+  readonly chain: readonly string[];
+  /** The import in `chain[0]` that starts the chain — the edge a cut deletes. */
+  readonly hop?: { readonly spec: string; readonly line: number };
+  /** What `file` takes from the barrel; `'*'` is the whole module. */
+  readonly names: readonly string[] | '*';
+  /**
+   * The edit is the swap to the browser entry, at `file` — else the cut of the entry's first hop.
+   * A swap only when the entry publishes every name taken; unread, only when `file` IS the entry.
+   */
+  readonly swaps: boolean;
 }
 
 export const isIsland = (path: string): boolean => path.endsWith('.island.tsx');
@@ -78,6 +90,11 @@ export interface TransportInput {
   readonly barrels: ReadonlyMap<string, string>;
   /** A package's own modules may import its own barrel; only a FOREIGN import pays for it. */
   readonly ownsBarrel?: (file: string, barrel: string) => boolean;
+  /**
+   * Browser entry → every name it exports, where the caller could read it. A swap promised without
+   * it compiles only by luck: `entity()` is in the barrel and not in `@ultimat3/entity/record`.
+   */
+  readonly published?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** The whole rule over a tree, pure. */
@@ -88,7 +105,6 @@ export function checkBrowserTransport(input: TransportInput): {
 } {
   const reachable = importClosure(input.host, input.entries);
   const bypasses: Bypass[] = [];
-  const barrels: ServerBarrel[] = [];
   for (const file of reachable) {
     if (input.exempt?.has(file) === true) continue;
     const source = input.host.read(file) ?? '';
@@ -100,12 +116,34 @@ export function checkBrowserTransport(input: TransportInput): {
       if (input.seams.get(value.shape) === file) continue;
       bypasses.push({ ...value, file, passed: true });
     }
-    for (const found of barrelImports(source, input.barrels)) {
-      if (input.ownsBarrel?.(file, found.barrel) === true) continue;
-      barrels.push({ ...found, file });
+  }
+  return { reachable, bypasses, barrels: serverBarrelSites(input) };
+}
+
+/**
+ * Per ENTRY, never per tree: a barrel three hops below two islands is two mistakes, one in each
+ * island, and a finding that names only the module it landed in blames a file nobody edited.
+ */
+function serverBarrelSites(input: TransportInput): readonly ServerBarrel[] {
+  const barrels: ServerBarrel[] = [];
+  for (const entry of input.entries) {
+    for (const file of importClosure(input.host, [entry])) {
+      if (input.exempt?.has(file) === true) continue;
+      const source = input.host.read(file) ?? '';
+      for (const found of barrelImports(source, input.barrels)) {
+        if (input.ownsBarrel?.(file, found.barrel) === true) continue;
+        const path = importChain(input.host, entry, file) ?? { chain: [entry, file] };
+        const names = namesFrom(source, found.barrel);
+        const published = input.published?.get(found.entry);
+        const swaps =
+          published === undefined
+            ? entry === file
+            : names !== '*' && names.every((name) => published.has(name));
+        barrels.push({ ...found, file, ...path, names, swaps });
+      }
     }
   }
-  return { reachable, bypasses, barrels };
+  return barrels;
 }
 
 /**
@@ -143,8 +181,8 @@ const siteOf = (site: { readonly file: string; readonly line: number }): string 
   `${commentSafe(site.file)}:${site.line}`;
 
 /**
- * One runnable line, the edit behind a `#` — the shape `app-boundaries.ts` gives every fix. The
- * command re-reads the tree; the comment is the edit, because only the finding knows the line.
+ * The edit first, the re-read after: a line pasted before it is read must not re-run the failure
+ * unchanged (`fix-sequence.ts`). Only the finding knows the line, so it names it.
  */
 export function bypassFinding(bypass: Bypass, context: FindingContext): Finding {
   if (bypass.passed === true) return passedFinding(bypass, context);
@@ -154,7 +192,7 @@ export function bypassFinding(bypass: Bypass, context: FindingContext): Finding 
     code: 'X_BROWSER_TRANSPORT_BYPASS',
     at: `${bypass.file}:${bypass.line}`,
     cause: `${site} calls ${bypass.spelled} in browser-reachable code; ${holder === undefined ? 'no module may' : `only ${holder} may`}, so this request skips the page's record store, idempotency header and principal fence`,
-    fix: `${context.rerun}   # after replacing ${bypass.spelled} at ${site} with ${REPLACEMENT.get(bypass.shape) ?? ''}`,
+    fix: `edit ${commentSafe(bypass.file)}:${bypass.line} — replace ${bypass.spelled} with ${REPLACEMENT.get(bypass.shape) ?? ''}; then ${context.rerun}`,
     docs: ERROR_DOCS_URL,
   };
 }
@@ -171,18 +209,52 @@ function passedFinding(bypass: Bypass, context: FindingContext): Finding {
     code: 'X_BROWSER_TRANSPORT_BYPASS',
     at: `${bypass.file}:${bypass.line}`,
     cause: `${site} passes the global ${bypass.spelled} as a value in browser-reachable code; whatever receives it calls it directly, and ${holder === undefined ? 'no module may' : `only ${holder} may`}, so those requests skip the page's record store, idempotency header and principal fence`,
-    fix: `${context.rerun}   # after deleting ${bypass.spelled} at ${site} (rpc() and queryClient() send through clientTransport when given none) and making the module that took it use ${REPLACEMENT.get(bypass.shape) ?? ''}`,
+    fix: `edit ${commentSafe(bypass.file)}:${bypass.line} — delete ${bypass.spelled} (rpc() and queryClient() send through clientTransport when given none), and make the module that took it use ${REPLACEMENT.get(bypass.shape) ?? ''}; then ${context.rerun}`,
     docs: ERROR_DOCS_URL,
   };
 }
 
-export function barrelFinding(site: ServerBarrel, context: FindingContext): Finding {
+/**
+ * Where the barrel is cut (`ServerBarrel.swaps`). A site that needs the server half is server code,
+ * so the mistake is the browser entry's first hop: that edge is the one to delete. `meta` carries
+ * the chain for a `--json` reader and for `x fix boundary`, which lists the cut for any file on it.
+ */
+export function barrelFinding(site: ServerBarrel, _context: FindingContext): Finding {
+  const entry = site.chain[0] ?? site.file;
   const at = siteOf(site);
+  const meta = {
+    entry,
+    chain: [...site.chain],
+    sites: [`${site.file}:${site.line}`],
+    barrel: site.barrel,
+    browserEntry: site.entry,
+    names: site.names === '*' ? '*' : [...site.names],
+    cut: site.swaps ? 'swap' : 'entry',
+    ...(site.hop === undefined ? {} : { hop: { spec: site.hop.spec, line: site.hop.line } }),
+  };
+  const through = site.chain.length > 1 ? ` (${site.chain.map(commentSafe).join(' → ')})` : '';
+  if (site.swaps) {
+    return {
+      code: 'X_BROWSER_SERVER_BARREL',
+      at: `${site.file}:${site.line}`,
+      cause: `${at} imports ${site.barrel} in browser-reachable code${through}; that barrel is the package's server half, and ${site.entry} is the entry it publishes for a browser`,
+      fix: `edit ${commentSafe(site.file)}:${site.line} — change the import from '${site.barrel}' to '${site.entry}'`,
+      docs: ERROR_DOCS_URL,
+      meta,
+    };
+  }
+  const taken = site.names === '*' ? 'the whole module' : site.names.join(', ');
+  const cut =
+    site.hop === undefined
+      ? { line: site.line, spec: site.barrel }
+      : { line: site.hop.line, spec: site.hop.spec };
+  const where = siteOf({ file: entry, line: cut.line });
   return {
     code: 'X_BROWSER_SERVER_BARREL',
-    at: `${site.file}:${site.line}`,
-    cause: `${at} imports ${site.barrel} in browser-reachable code; that barrel is the package's server half, and ${site.entry} is the entry it publishes for a browser`,
-    fix: `${context.rerun}   # after changing the import at ${at} from '${site.barrel}' to '${site.entry}'`,
+    at: `${entry}:${cut.line}`,
+    cause: `${where} pulls server code into a browser bundle: ${at} takes ${taken} from ${site.barrel}, its server half, not ${site.entry}${through}`,
+    fix: `edit ${commentSafe(entry)}:${cut.line} — delete the import of '${cut.spec}' and every use of what it binds; in a browser, read rows through a query (useQuery(<QUERY_REF>, input) from '@ultimat3/realtime') and write through an action (await browserClient.<action>(input))`,
     docs: ERROR_DOCS_URL,
+    meta,
   };
 }

@@ -150,7 +150,11 @@ export interface DevCapabilities extends DevGraphHost {
   tailLogs(lines: number, role: string | undefined): Promise<readonly string[]>;
   readManifest(): Promise<string>;
   explainError(code: string): ErrorExplanation | undefined;
-  verify(fix: boolean): Promise<VerifyResult>;
+  /**
+   * `x verify`, the same command the shell runs. `only` is its `--only`: the named steps, every
+   * other one skipped and the run marked "not a gate run". Absent, the whole gate.
+   */
+  verify(fix: boolean, only?: readonly string[]): Promise<VerifyResult>;
   /**
    * Photograph one route against the running dev server (or a scratch one), the way `x shot
    * <route>` does, at a viewport and colour scheme the caller names. Refuses a route that declares
@@ -314,7 +318,9 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
     },
     {
       name: 'tests.run',
-      description: 'Run the test suite (executes project code). Optional substring filter.',
+      description:
+        'Run x test (executes project code): the same files, runner and environment as the shell. ' +
+        'Optional substring filter on the test path.',
       scope: DEV_SCOPES.test,
       destructive: true,
       inputSchema: {
@@ -332,16 +338,23 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
       name: 'verify.run',
       description:
         'Run x verify: types, lint, boundaries, migrations, manifest drift, tests, budgets. ' +
-        'This is the shippable contract. `fix: true` applies safe autofixes.',
+        'This is the shippable contract. `fix: true` applies safe autofixes; `only` runs the ' +
+        'named steps (x verify --only), which is not a gate run.',
       scope: DEV_SCOPES.test,
       destructive: true,
       inputSchema: {
         type: 'object',
-        properties: { fix: { type: 'boolean', default: false } },
+        properties: {
+          fix: { type: 'boolean', default: false },
+          only: { type: 'array', items: { type: 'string' }, minItems: 1 },
+        },
         additionalProperties: false,
       },
       async handle(args: ToolArgs) {
-        const result = await host.verify(args['fix'] === true);
+        const only = Array.isArray(args['only'])
+          ? args['only'].filter((step): step is string => typeof step === 'string')
+          : undefined;
+        const result = await host.verify(args['fix'] === true, only);
         return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
       },
     },

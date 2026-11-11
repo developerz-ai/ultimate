@@ -301,7 +301,7 @@ unchanged tree, nothing. A failed build is the step's verdict, with the build's 
 | `X_DB_DRIFT` from `x verify` | source drift: an entity was edited and no migration recorded it | `x db gen "describe the change"` |
 | `X_DB_DRIFT` from `x db migrate` | live-catalog drift: the database that just migrated still disagrees with the ledger | `x verify --json` |
 | `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policy explain <subject> --json` |
-| `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, or one the `en` catalog defines | `x i18n sync <locale>` |
+| `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, one the `en` catalog defines, or one a mounted admin derives (`admin.<table>.field.<column>`). The sync writes the catalog nested — never hand-add a dotted key, `loadCatalog` refuses one (`X_CATALOG_INVALID`). The default locale's admin keys get the generator's label; every other key a `⟦…⟧` placeholder to replace | `x i18n sync <locale>` |
 | `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x routes --json` to see the chain, then move the heavy import behind `hydrate: 'interaction'` |
 | `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
 | `X_IDEMPOTENCY_REQUIRED` | job declared without a key | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |

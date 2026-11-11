@@ -85,6 +85,18 @@ export const GATE_MESSAGES = {
   'cli.verify.failSkipped': '{failed} of {count} steps failed — {skipped} skipped: {names}',
   // The `errors` step's own coverage, in `output`: a scan without a parser reads most fix lines
   // and not all of them, and a step that reports findings alone claims a completeness it lacks.
+  // `contract-diff`'s baseline whenever it is not HEAD's file (`verify-contract-diff.ts`).
+  'cli.verify.contract.mergeBase': 'baseline: {file} at the merge base with {ref}',
+  'cli.verify.contract.baseTip':
+    'baseline: {file} at {ref} — a shallow checkout reaches no merge base with it',
+  'cli.verify.contract.baseUnfetched':
+    '{ref} is not fetched, so {file} at HEAD is the baseline — run `{fix}` for the merge base',
+  'cli.verify.contract.noCheckout': 'not a git checkout: {file} on disk is the baseline',
+  'cli.verify.contract.noCommit': 'no commit yet: no published {file} to break',
+  'cli.verify.contract.uncommitted': '{file} is not committed at {rev}: nothing published to break',
+  'cli.verify.contract.notManifest': '{file} at {rev} is not a manifest: no baseline',
+  // A step standing down while the app's load is red (`load-findings.ts`).
+  'cli.verify.loadBlocked': 'skipped: load failed (see {owner})',
   'cli.verify.fixCoverage': 'checked {checked} fix line(s), could not read {unreadable}',
   // The `drift` step on an app whose only store is a `defineDriver` one: migrations describe
   // Postgres, and that store owns its schema — said in `output`, so the step is not a silent green.
