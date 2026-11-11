@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {
-    "@ultimat3/core": "31.2.0",
-    "@ultimat3/manifest": "31.2.0",
-    "@ultimat3/seo": "31.2.0"
+    "@ultimat3/core": "31.3.0",
+    "@ultimat3/manifest": "31.3.0",
+    "@ultimat3/seo": "31.3.0"
   }
 }
