@@ -1,12 +1,12 @@
 // The source text of `bindsLocally()`, spliced into each shipped guard that refuses a call to a
 // global by name (`confirm(`, `fetch(`, `setInterval(`): a file that declares its own binding of
-// that name calls its own function, never the global. One copy here, so the three guards read a
-// binding the same way. `String.raw` keeps the regexes as written; the text holds no backtick.
+// that name calls its own function, never the global. `String.raw` keeps the regexes as written;
+// the text holds no backtick and is ASCII only: Bun escapes `—` and `String.raw` keeps `\u2014`.
 
 export const LOCAL_BINDING_SOURCE = String.raw`const DECLARED = /\b(?:const|let|var|class|function\s*\*?)\s+([A-Za-z_$][\w$]*)/g;
 const ARROW_PARAMETER = /(?<![\w$.])([A-Za-z_$][\w$]*)\s*=>/g;
 const IMPORT_CLAUSE = /\bimport\s+([^;]*?)\bfrom\b/g;
-/** A name an import clause binds: 'a', '{ a }', '* as a', '{ b as a }' — never the 'b' of 'b as a'. */
+/** A name an import clause binds: 'a', '{ a }', '* as a', '{ b as a }', never the 'b' of 'b as a'. */
 const IMPORTED = /(?<![\w$])([A-Za-z_$][\w$]*)(?![\w$])(?!\s+as\b)/g;
 const IDENTIFIER = /(?<![\w$.])[A-Za-z_$][\w$]*(?![\w$])/g;
 /** After a pattern's closing bracket: '=' closes a destructuring, '=>' or a body a parameter list. */
@@ -57,7 +57,7 @@ const inPattern = (text: string, at: number, name: string): boolean => {
 };
 
 /**
- * Whether the file binds 'name' itself — declared, imported, a parameter or destructured — so a
+ * Whether the file binds 'name' itself (declared, imported, a parameter or destructured), so a
  * bare 'name(' is its own function and not the global. File-wide, not scoped: a guard is a regex.
  */
 const bindsLocally = (text: string, name: string): boolean => {

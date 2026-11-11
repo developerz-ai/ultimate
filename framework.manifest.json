@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a1173f564e7a24b061a24b81dcc7efc8facfa17419a8df8f6557e54220d7ef58",
+  "buildId": "90c6b2a65ee358fde43e55d96aacc257b14f6bc6b0e584c7fb337e90e92aabea",
   "tiers": {
     "0": [
       "core",
@@ -1703,6 +1703,11 @@
       "code": "X_DOC_GATE_STEPS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/gate-steps.ts"
+    },
+    {
+      "code": "X_DOC_GUARD_REFRESH_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/lib/guard-refresh-git.ts"
     },
     {
       "code": "X_DOC_MIGRATION_COUNT_STALE",

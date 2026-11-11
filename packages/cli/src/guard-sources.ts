@@ -40,6 +40,13 @@ export interface GuardSources {
   compileError?(path: string): Promise<string | undefined>;
 }
 
+/**
+ * `@ultimat3/render`'s asset resolver slot (`asset.ts`): global by design, so every copy of render
+ * reads the one table installed. Read here only to put back what a compile found; a renamed key
+ * fails `guard-sources.test.ts`' restore case, which goes through render's own `asset()`.
+ */
+const RESOLVER_SLOT = Symbol.for('ultimate.render.assetResolver');
+
 /** Path segments that are never the app's own source. */
 const NOT_SOURCE = /(?:^|\/)(?:node_modules|dist|\.x|\.git)\//;
 
@@ -84,8 +91,21 @@ export function guardSources(
       // Imported here, not at the top: Sass loads on the first compile, and a gate run whose
       // guards compile nothing must not pay for the compiler (`sass-lazy.test.ts`).
       const { compileStylesheet } = await import('@ultimat3/render/server');
-      const { css, classes } = compileStylesheet(join(root, path), source);
-      return { css, classes };
+      const { setAssetResolver } = await import('@ultimat3/render');
+      const { siteAssetTable } = await import('./site-assets');
+      // A sheet's `asset()` resolves through the table `loadApp` installs for the build — the same
+      // table, so a file the app holds compiles and one it does not is `X_ASSET_MISSING`. Installed
+      // around the one synchronous compile and handed back after: no await runs in between, so no
+      // other code ever sees it, and a table a caller had installed is the one it still has.
+      const table = siteAssetTable(root);
+      const previous: unknown = Reflect.get(globalThis, RESOLVER_SLOT);
+      setAssetResolver((asset) => table.resolve(asset).url);
+      try {
+        const { css, classes } = compileStylesheet(join(root, path), source);
+        return { css, classes };
+      } finally {
+        Reflect.set(globalThis, RESOLVER_SLOT, previous);
+      }
     } catch (error) {
       // The compiler's own words: render's `X_PRERENDER_FAILED` carries them in its cause behind
       // the absolute path, which names a temp root in a test and a different checkout in CI.
