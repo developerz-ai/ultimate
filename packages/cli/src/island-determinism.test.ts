@@ -111,14 +111,13 @@ describe('an island chunk URL', () => {
     expect([...urls]).toHaveLength(1);
   }, 120_000);
 
-  test('is not a hash of the emitted bytes, which is what made it flap', async () => {
+  test('is the hash of the emitted bytes, so the test above holds the bundler', async () => {
     const { url, code } = await buildOnce();
 
-    // The deterministic half of this file: under output-addressing the URL was exactly
-    // `${moduleId}-${contentHash(code)}.js`, so this fails the moment anyone puts that back —
-    // whether or not the bundler's race fires in that particular run.
-    expect(url).not.toContain(contentHash(code));
-    expect(url).toMatch(/^\/islands\/graph-[0-9a-f]{8}\.js$/);
+    // Source-addressing kept a URL while its bytes moved (#1075, `island-identity.ts`). Named by
+    // its bytes, a URL cannot outlive them; what the test above then demands is that Bun emit one
+    // byte string for one graph, which it has since 1.4.1.
+    expect(url).toBe(`/islands/graph-${contentHash(code)}.js`);
   }, 60_000);
 
   test('a rebuild of unchanged sources serves the byte string the first one emitted', async () => {
@@ -147,9 +146,9 @@ describe('an island chunk URL', () => {
 });
 
 // The split half: two islands over the same third-party graph put Solid and realtime in SHARED
-// chunks, and an entry's bytes name those chunks. A shared chunk named by its output hash would
-// flap, and every entry importing it would flap with it — so the names are source identities
-// (`island-link.ts`), and they have to hold across the same race the single-island case does.
+// chunks, and an entry's bytes name those chunks. Every name is a hash of final bytes
+// (`island-link.ts`), so a shared chunk that flapped would move every entry importing it — and
+// they have to hold across the same race the single-island case does.
 describe('a shared chunk URL', () => {
   const SECOND = 'apps/web/app/graph-twin.island.tsx';
 

@@ -1,11 +1,8 @@
-// An island output's identity and the one byte string served under it: the source-graph hash
-// that names a URL (`graphHash`), the per-process pin that keeps one URL one byte string
-// (`stableChunk`), and the bundler-diagnostic flattening every island refusal carries. Split from
-// `island-bundle.ts`, which builds; `worker-bundle.ts` names its chunks by the same rules.
+// What an island output is, beyond its bytes: the source map's inputs (`sourcesContentOf`), the
+// per-process pin that keeps one URL one byte string (`stableChunk`), and the bundler-diagnostic
+// flattening every island refusal carries. Split from `island-bundle.ts`, which builds.
 
-import { frameworkVersion, renderThrowable } from '@ultimat3/core';
-import { contentHash } from '@ultimat3/render/server';
-import { IslandBuildFailedError } from './errors';
+import { renderThrowable } from '@ultimat3/core';
 
 /**
  * `sourcemap: 'external'` appends `//# debugId=<hex>` to the chunk. It is a pointer to a map this
@@ -21,48 +18,20 @@ export function stripDebugId(code: string): string {
   return at === -1 ? code : code.slice(0, at);
 }
 
-/**
- * The chunk's identity, computed from what went IN rather than from what came out.
- *
- * `Bun.build` was not byte-deterministic under `minify` before 1.4.1 (oven-sh/bun#40657). Measured
- * on 1.4.0, one entry point, no source file touched: a 131,589-byte island alternated between two
- * outputs of IDENTICAL length differing only in minified identifier names
- * (`var ca=Object.defineProperty` against `var la=…`) — roughly one build in ten, a race in the
- * renamer and not anything a caller can order. Hashing that output made the URL flap: ten distinct
- * `session-console-*.js` names in ten minutes, so a service worker's precache manifest named a
- * chunk that already 404ed and a browser's `immutable` cache never hit on a 131 kB download.
- * Fixed upstream in 1.4.1; on 1.4.2, 192 child-process build pairs of `examples/dummy`'s islands
- * under 12- and 16-way contention emitted one byte string per island (2026-10-05, issue #354), and
- * `island-bytes.test.ts` now demands byte identity outright.
- *
- * `sourcesContent`, hashed per file and SORTED, so the identity is independent of the order the
- * bundler happened to visit the graph in. The PATHS are deliberately not in it: they are absolute
- * on the build machine and would make a chunk built in a container disagree with the same chunk
- * built on a laptop for no difference a browser could observe. `file` is, so two islands with
- * byte-identical sources under different names stay two chunks; the framework version and the Bun
- * version are, because both decide the emitted bytes while no source file moves — an upgrade must
- * mint a new URL rather than leave a stale chunk pinned in a browser for a year.
- *
- * What this gives up, stated plainly: the URL is source-addressed, not byte-addressed. On a Bun
- * with the renamer race (< 1.4.1) two processes building the same sources served two byte-strings
- * at one URL — the same program under different local identifier names — and the alternative,
- * `minify: { identifiers: false }`, was +47% raw and +20% gzipped. The `engines` floor is now past
- * the fix, so the reason this function exists is gone; it is kept for now because moving every
- * island URL to a content hash re-keys every browser cache and every precache manifest, which is a
- * change of its own to make deliberately (issue #354's follow-up), not a comment edit.
- */
-export function graphHash(file: string, map: string): string {
-  const parsed: unknown = JSON.parse(map);
-  const contents = sourcesContentOf(parsed);
-  if (contents === undefined) {
-    throw new IslandBuildFailedError({
-      file,
-      logs: 'the bundler emitted a source map with no sourcesContent, so the chunk has no stable identity',
-    });
-  }
-  const graph = contents.map((source) => contentHash(source)).sort();
-  return contentHash([file, frameworkVersion(), Bun.version, ...graph].join('\u0000'));
-}
+// An island output's URL is `contentHash` of the bytes served under it (`island-link.ts`), never of
+// its sources. Both were tried:
+//
+// - Output-addressed, then flapped: `Bun.build` under `minify` was not byte-deterministic before
+//   1.4.1 (oven-sh/bun#40657) — ten `session-console-*.js` names in ten minutes on 1.4.0 — so a
+//   precache manifest named a chunk that already 404ed (19.2.0). Fixed upstream; on 1.4.2, 192
+//   contended build pairs of `examples/dummy`'s islands emitted one byte string per island (#354),
+//   and `island-determinism.test.ts` holds it.
+// - Source-addressed, then served the wrong program (#1075): the minifier names a shared chunk's
+//   exports by how often the WHOLE build uses them, so editing one entry swapped two export
+//   names in a chunk whose sources had not moved. One URL, two byte strings, `immutable` — and a CDN handed
+//   the next build's islands the action client where they imported the query client.
+//
+// A flapping name costs a cache miss; a stuck one ships a broken page. So the name is the bytes.
 
 /**
  * `sourcesContent`, read the way `aggregatedErrors` below reads `errors`: narrowed first,
@@ -89,7 +58,9 @@ export function sourcesContentOf(
 }
 
 /**
- * The code this process already emitted for these inputs, or the code it just built.
+ * The code this process already emitted under this identity, or the code it just built. Every
+ * caller's identity is now `contentHash(code)`, so a hit is these bytes again: the table pins
+ * nothing the name does not, and `bytes` is measured here, once, on what is served.
  *
  * Keyed by PATH and validated by the input hash, `transformIslandTsx`'s cache's shape and for its
  * reason: one entry per island bounds the map by the island count, which is the only quantity that
@@ -104,7 +75,7 @@ export function clearIslandChunkCache(): void {
 
 /**
  * `graph`, never `hash`: `bun run secret-compare` reads the NAME of a comparison's operands, and a
- * value called `hash` is a digest an attacker may be probing. This one is a build input's
+ * value called `hash` is a digest an attacker may be probing. This one is a build output's
  * identity — the same reason `pr-threads.ts` calls a review state `wanted`.
  */
 export function stableChunk(

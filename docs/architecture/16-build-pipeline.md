@@ -73,8 +73,9 @@ Both halves of the config stay as they are, and each now means one thing:
 - **No page bundle; islands only.** A page module is never bundled for the browser — the server
   renders it through the inert `h` above. What the browser gets is one `Bun.build` entry point per
   `*.island.tsx` (`packages/cli/src/island-bundle.ts`), minified, Solid-compiled by
-  `babel-preset-solid` inside that build's plugin (`packages/cli/src/solid-loader.ts`), addressed by
-  a hash of its source graph. `As of 2026-10`, this replaced the 2026-08 statement that `Bun.build`
+  `babel-preset-solid` inside that build's plugin (`packages/cli/src/solid-loader.ts`), named by a
+  hash of its final bytes (`As of 2026-11`, #1075: a source hash kept one URL for two byte strings
+  when the minifier renamed a shared chunk's exports). `As of 2026-10`, this replaced the 2026-08 statement that `Bun.build`
   was called nowhere.
 - **Islands are grouped by route** (`packages/cli/src/island-groups.ts`, `As of 2026-11-10`).
   Islands rendered on exactly the same set of routes are one split build sharing their modules as

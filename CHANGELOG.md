@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `@ultimat3/cli`: island chunks, the page runtime and the `/_x/assets` scripts (sync worker, page boot, client router) are named by a hash of their final emitted bytes. A shared chunk was named by its sources, so it kept its URL when the minifier swapped its export names after an edit to another island, and a CDN holding the old copy under `immutable` handed the next build's islands the wrong export (#1075). Every island and `/_x/assets` URL changes once on upgrade.
 
 ## Releases
 

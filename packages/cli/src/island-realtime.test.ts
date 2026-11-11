@@ -99,9 +99,9 @@ describe('the realtime install the island bundle writes', () => {
     expect(chunk?.code).not.toContain('ultimate.realtime');
   });
 
-  // The wrapper's source is part of `sourcesContent`, which names the chunk's URL. It spliced in
-  // the ABSOLUTE path realtime resolved to, so one island had a different URL in every checkout
-  // — and a chunk built on the box that built the image never matched the one it served.
+  // The wrapper once spliced in the ABSOLUTE path realtime resolved to, and while URLs were named
+  // by `sourcesContent` one island had a different URL in every checkout. Bare, it resolves from
+  // the island's own directory, which is what keeps the bundle to one realtime copy.
   test('the install source names realtime bare, never a path on this machine', async () => {
     const loads: ((args: { path: string }) => { contents: string })[] = [];
     const build = {

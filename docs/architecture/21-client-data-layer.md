@@ -264,7 +264,7 @@ The framework decides this; no app owns a `sync-url.ts`, `As of 2026-09-22`.
 | `SYNC_URL` overrides the target, and must be `ws:`/`wss:` or boot fails with `X_CONFIG_INVALID`. It is never derived from a port: behind any ingress, a neighbouring port is a URL nothing publishes | `packages/cli/src/sync-url.ts` |
 | the Compose rung needs `SYNC_URL`, because `sync` is published on its own port with no proxy | [`docs/ops/README.md`](../ops/README.md), rung 2 |
 | every document carries `<meta name="ultimate-sync">` and `<meta name="x-ultimate-build">`, plus `<meta name="ultimate-sync-worker">` when the app has realtime (and so has a worker). All principal-free, so a shareable document may carry them | `packages/render/src/client-sync-tags.ts`; the names are declared once, in `packages/core/src/page-meta.ts` |
-| the worker is built once at boot, from its source graph, and served `immutable` at `/_x/assets/sync-worker/<hash>.js`, so a deploy gets a new URL and an open tab keeps the worker it started with | `packages/cli/src/worker-bundle.ts` |
+| the worker is built once at boot and served `immutable` at `/_x/assets/sync-worker/<hash>.js`, the hash of its bytes, so a deploy gets a new URL and an open tab keeps the worker it started with | `packages/cli/src/worker-bundle.ts` |
 | `x dev` and `serve.ts` compose all of it through one call, so the two cannot serve different targets | `packages/cli/src/page-sync.ts` |
 
 ## What each hook costs

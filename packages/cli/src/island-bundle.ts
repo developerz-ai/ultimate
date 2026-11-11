@@ -1,6 +1,6 @@
 // The island chunk table: every `*.island.tsx` in the app compiled as a bundle entry point,
-// addressed by a hash of its SOURCE GRAPH (`graphHash` — `Bun.build`'s minified output is not
-// byte-deterministic), plus the resolver that turns a page's `src` specifier into the URL its
+// named by a hash of its final BYTES (`island-link.ts`; why not its sources: `island-identity.ts`),
+// plus the resolver that turns a page's `src` specifier into the URL its
 // `data-x-entry` carries. The page's graph never reaches an island, so a `site/` document stays at
 // 0kb whatever the island imports — axiom 6 made mechanical.
 //
@@ -74,8 +74,8 @@ export interface IslandChunk {
   /** `islandModuleId` of the filename — the id the document, the budget and a finding all name. */
   readonly moduleId: string;
   /**
-   * Immutable, source-addressed URL. What `data-x-entry` carries and what a route serves — stable
-   * for as long as the sources, the framework version and the Bun version are. See `graphHash`.
+   * Immutable URL named by `contentHash(code)`. What `data-x-entry` carries and what a route
+   * serves — one name, one byte string, across every build that emits it (#1075).
    */
   readonly url: string;
   /** The built JavaScript. Held in memory so `x dev` and the container serve without a disk hop. */
@@ -98,7 +98,7 @@ export interface IslandChunk {
 
 /** A module two or more islands import, served once beside them. */
 export interface SharedChunk {
-  /** `/islands/chunk-<identity>.js` — source-addressed like an entry, so `immutable` holds. */
+  /** `/islands/chunk-<contentHash(code)>.js` — named by its bytes, so `immutable` holds. */
   readonly url: string;
   readonly code: string;
   readonly bytes: number;
@@ -181,7 +181,7 @@ async function buildAll(
       format: 'esm',
       splitting,
       // `[dir]` keeps two islands sharing a filename apart and maps an output back to its island;
-      // a chunk's Bun hash is only a placeholder — `island-link.ts` renames every one.
+      // a chunk's Bun hash is only a placeholder — `island-link.ts` renames every one by its bytes.
       naming: { entry: '[dir]/[name].[ext]', chunk: 'chunk-[hash].[ext]' },
       minify: true,
       // A build with no `plugins` is a build with no JSX transform: `Bun.plugin` installs into the
@@ -222,9 +222,9 @@ async function buildAll(
       // `x dev` serves the same chunk the container does, and bytes that depend on the ambient
       // NODE_ENV are a content hash and a byte budget measured on a build nobody ships.
       define: { 'process.env.NODE_ENV': '"production"' },
-      // The fourth, and it is asked for its INPUT list rather than its output: `sourcesContent` is
-      // the whole module graph each output was built from, which is the only stable identity an
-      // output has. See `graphHash`. Measured on 1.4.0 against a 131 kB island: 277ms with it and
+      // The fourth, and it is asked for its INPUT list rather than its output: `sources` are the
+      // files each output was built from, which the island store re-checks a prebuilt chunk
+      // against (`island-sources.ts`). Measured on 1.4.0 against a 131 kB island: 277ms with it and
       // 276ms without, so the map costs nothing worth naming.
       sourcemap: 'external',
       // The fifth: which inputs each output carries, so one module bundled twice is refused below
