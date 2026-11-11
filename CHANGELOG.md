@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 31.3.0 - 2026-11-11
+
 ### Highlights
 
 - Read one row's recorded history in write order with `history(db.postsHistory, id)`: versions numbered from 1, scoped to the tenant.
@@ -46,6 +50,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/entity`: an invariant over a nullable column passes `NULL` in the app as its CHECK does. `c.slug.matches(/…/)`, `minLength`, `contains`, `atLeast`, `eq`, `isTrue` and a column-to-column `eq` refused a `NULL` the database stored, so the memory driver and `$assert` rejected rows Postgres accepted. A rule now answers SQL's unknown for a `NULL` operand, `iff` composes unknowns, and a rule holds unless it is false. `isNull()`/`isNotNull()` stay total. To refuse `NULL`, declare the column NOT NULL or add `.isNotNull()`.
 - Repo tooling: every repo script that runs a published or scaffolded app hands it an allowlisted env (`scripts/lib/stranger-env.ts`), never the repo's `.env` (`NPM_TOKEN`, `NPM_PASSWORD`, the TOTP seed): the first-hour bench, `scaffold-gate`, `scaffold-first-run`, `scaffold-admin`, `scaffold-agent` and `tutorial-run`. `scaffold-first-run` follows each generator's `data.next` but `x verify`, in place of a hard-coded `x db gen "generated"`.
 - Repo tooling: the first-hour bench runs the commands `x g resource --json` names in `data.next` before its second gate. It skipped the migration, so the gate was red on `unit`, `exercise` and `drift` (bench run 42879568783).
+
+### Commits
+
+- feat(31.3): close plan 101 — history(), per-route island groups + cache (x dev 21s→5.7s), every factory in the reference app, security fixes (#1060)
+- test: seed e2e time zone before first navigation (#1059)
+- docs: sign GOVERNANCE.md on the owner's instruction; record plan-101 owner steps O2–O8 done, O10 waits on the org setting (#1056)
+- docs(plan-101): record v31.0.0/31.1.0/31.2.0 releases and adopter A–I outcomes; 36/40 slices complete (#1055)
 
 ## 31.2.0 - 2026-11-10
 
