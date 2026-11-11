@@ -1,0 +1,172 @@
+plan: 101-full-stack-efficiency-sweeps
+title: "Full-stack efficiency sweeps: every measured defect, idle cost and hand-rolled mechanism, closed"
+status: not_started        # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: ""              # executor fills with their git user.name
+owner: sebi
+percent: 0
+current_focus: "Sweep 0: 01-hotfix-patch.md (twelve confirmed defects, ships alone as a patch)"
+slices:
+  - file: 01-hotfix-patch.md
+    tier: 1
+    sweep: "0"
+    status: not_started
+    percent: 0
+  - file: 19-agent-tooling-dx.md
+    tier: 5
+    sweep: "19a"           # FX1–FX11 right after sweep 0; Y1–Y11 in sweep 19b (last)
+    status: not_started
+    percent: 0
+  - file: 02-schema-core.md
+    tier: 0
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 04-cache-seo.md
+    tier: 1
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 03-db.md
+    tier: 1
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 06-http.md
+    tier: 2
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 05-entity.md
+    tier: 2
+    sweep: "5a"            # E1–E4, E13 in 5a; E5–E12 (E14 if OD6) in 5b
+    status: not_started
+    percent: 0
+  - file: 07-auth-policy.md
+    tier: 2
+    sweep: "5b"
+    status: not_started
+    percent: 0
+  - file: 08-action-query.md
+    tier: 3
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 09-jobs.md
+    tier: 3
+    sweep: "9a"            # J1–J10 in 9a; J11–J19 in 9b
+    status: not_started
+    percent: 0
+  - file: 10-realtime.md
+    tier: 3
+    sweep: "9b"
+    status: not_started
+    percent: 0
+  - file: 11-render-islands.md
+    tier: 4
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 12-notify-ai-mcp-pwa.md
+    tier: 4
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 13-cli-exercise-verify.md
+    tier: 5
+    sweep: "13a"           # X1, X2, X4, X7, X10 in 13a; the rest in 13b
+    status: not_started
+    percent: 0
+  - file: 14-cli-commands-upgrade.md
+    tier: 5
+    sweep: "13a"           # U1–U4 in 13a; U5–U12 in 13b
+    status: not_started
+    percent: 0
+  - file: 15-admin-ui-testing.md
+    tier: 4
+    sweep: "15"
+    status: not_started
+    percent: 0
+  - file: 20-ops-defaults.md
+    tier: 5
+    sweep: "15"
+    status: not_started
+    percent: 0
+  - file: 16-gate-ci-docker.md
+    tier: 5
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 17-test-determinism.md
+    tier: 0
+    sweep: "17a"           # every package but cli in 17a; cli in 17b
+    status: not_started
+    percent: 0
+  - file: 18-tracked-apps.md
+    tier: 5
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 30-infra.md
+    tier: 5
+    sweep: "R"             # other repositories, one agent per repository
+    status: not_started
+    percent: 0
+  - file: 40-adopter-a.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 41-adopter-b.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 42-adopter-c.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 43-adopter-d.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 44-adopter-e.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 45-adopter-f.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 46-adopter-g.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 47-adopter-h.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 48-adopter-i.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 49-adopter-j.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 90-owner-decisions.md
+    tier: 0
+    sweep: "0"             # asked once before sweep 5b; defaults recorded in the file
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Nothing implemented. Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+last_updated: 2026-11-11
