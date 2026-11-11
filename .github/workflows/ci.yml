@@ -332,6 +332,18 @@ jobs:
       - name: fetch origin/main's tip for budget-raises
         if: github.ref != 'refs/heads/main'
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # `changelog-check` diffs the guard templates between the two newest release tags and since
+      # the newest (`scripts/lib/guard-refresh-git.ts`): both tags once, at depth 1, before the
+      # parallel tests that would otherwise each fetch them and race on `.git/shallow.lock`.
+      - name: fetch the two newest release tags for the guard-refresh rule
+        run: |
+          refs=""
+          for tag in $(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -2); do
+            refs="$refs +refs/tags/$tag:refs/tags/$tag"
+          done
+          # shellcheck disable=SC2086
+          [ -z "$refs" ] || git fetch --no-tags --depth=1 origin $refs
       - uses: ./.github/actions/setup
       # `time` in the log above prints what the services cost this part to start; the wait here is
       # what they cost it on top of setup — the line to read when this step is suspected of being
@@ -1237,6 +1249,18 @@ jobs:
       - name: fetch origin/main's tip for the base-ref tests
         if: github.ref != 'refs/heads/main'
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # `changelog-check` diffs the guard templates between the two newest release tags and since
+      # the newest (`scripts/lib/guard-refresh-git.ts`): both tags once, at depth 1, before the
+      # parallel tests that would otherwise each fetch them and race on `.git/shallow.lock`.
+      - name: fetch the two newest release tags for the guard-refresh rule
+        run: |
+          refs=""
+          for tag in $(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -2); do
+            refs="$refs +refs/tags/$tag:refs/tags/$tag"
+          done
+          # shellcheck disable=SC2086
+          [ -z "$refs" ] || git fetch --no-tags --depth=1 origin $refs
       - uses: ./.github/actions/setup
       - name: tests + coverage per package, each in its own process, all cores
         env:

@@ -101,6 +101,8 @@ describe('every app module', () => {
   // The boot is not the whole app: the island build's client entry points and the e2e suites'
   // fixtures are modules of this app too, and each must import against the real package APIs.
   // Every source on disk but the `bin/` entry points, which are scripts — importing one RUNS it.
+  // The same module-graph cost as the hook above, so the same 30_000: at bun's 5000ms default it
+  // timed out on a loaded CI shard (run 43028264586, 5000.39ms) once the app grew in 31.3.
   test('every other source module imports against the real package APIs', async () => {
     const rest = (await sources()).filter(
       (file) => !file.startsWith('bin/') && !booted.files.includes(file),
@@ -115,7 +117,7 @@ describe('every app module', () => {
       }
     }
     expect(failed).toEqual([]);
-  });
+  }, 30_000);
 
   // `bin/setup.ts` is what `bun run setup` executes: importing it
   // RUNS it (an install, a migration, a seed). Present on disk, absent from the boot.
