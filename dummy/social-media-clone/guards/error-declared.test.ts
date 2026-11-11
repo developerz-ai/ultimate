@@ -82,6 +82,17 @@ unitTest(
   },
 );
 
+unitTest('defineError from the barrel is refused; from the page subpath it is the rule', () => {
+  const declared =
+    "defineError({ code: 'X_NOT_FOUND', title: 't', status: 404, cause: 'c', fix: 'x' });";
+  expect(
+    undeclaredErrors(file(`import { defineError } from '@ultimat3/core';\n${declared}`)),
+  ).toHaveLength(1);
+  expect(
+    undeclaredErrors(file(`import { defineError } from '@ultimat3/core/page';\n${declared}`)),
+  ).toEqual([]);
+});
+
 unitTest('an alias from the page subpath and a quoted code key are the same rule', () => {
   const paged = "import { UltimateError as PageError } from '@ultimat3/core/page';\n";
   expect(

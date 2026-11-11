@@ -74,7 +74,15 @@ unitTest('a computed key, a comment and another object are out of scope', async 
   for (const body of silent) expect(await check(body)).toEqual([]);
 });
 
-unitTest("a sheet that does not compile is the build's finding, not this guard's", async () => {
+unitTest('a sheet that does not compile is refused at its import, once', async () => {
   const imports = "import styles from './broken.module.scss';";
-  expect(await check('export const Page = () => <h1 class={styles.any} />;', imports)).toEqual([]);
+  const findings = await check('export const Page = () => <h1 class={styles.any} />;', imports);
+  expect(findings.map((finding) => finding.at)).toEqual(['apps/web/site/page.tsx:1']);
+  expect(findings[0]?.cause).toContain('apps/web/site/broken.module.scss, which does not compile');
+  // With the compiler's line to give, the finding quotes it.
+  const quoted = await undefinedStyleClasses(
+    page('export const Page = () => <h1 class={styles.any} />;'),
+    async () => ({ error: 'Error: expected "}".' }),
+  );
+  expect(quoted[0]?.cause).toContain('which does not compile: Error: expected "}".');
 });

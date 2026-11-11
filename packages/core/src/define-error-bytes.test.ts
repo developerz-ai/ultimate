@@ -18,16 +18,20 @@ afterAll(async () => {
   await rm(FIXTURE_DIR, { recursive: true, force: true });
 });
 
-async function retained(name: string, source: string): Promise<readonly string[]> {
+async function chunk(name: string, source: string, minify = false): Promise<string> {
   const entry = join(FIXTURE_DIR, `${name}.ts`);
   await Bun.write(entry, source);
-  const built = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm' });
+  const built = await Bun.build({ entrypoints: [entry], target: 'browser', format: 'esm', minify });
   const output = built.outputs[0];
   if (!built.success || output === undefined) {
     return expect.unreachable(`${name} did not bundle: ${built.logs.map(String).join('; ')}`);
   }
+  return output.text();
+}
+
+async function retained(name: string, source: string): Promise<readonly string[]> {
   const modules: string[] = [];
-  for (const line of (await output.text()).split('\n')) {
+  for (const line of (await chunk(name, source)).split('\n')) {
     if (!line.startsWith('// ')) continue;
     const inside = relative(PACKAGES, resolve(process.cwd(), line.slice(3)));
     if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) continue;
@@ -59,5 +63,32 @@ describe('the browser chunk that only throws UltimateError', () => {
     expect(modules.filter((module) => DEFINE_MODULES.includes(module)).sort()).toEqual(
       DEFINE_MODULES,
     );
+  }, 60_000);
+});
+
+// An island that throws an app code reaches the declaration's module, and so `defineError`. From
+// the barrel that drags both anchored titles tables in (`core-error-codes.ts`, `schema-error-codes.ts`
+// — 12,019 B minified, measured 2026-11-11); from `@ultimat3/core/page`, the one light browser
+// entry, it is the class, the lookup and the declaration only.
+describe('the browser chunk that declares an app code and throws it', () => {
+  const ISLAND =
+    "import { defineError } from '@ultimat3/core/page';\n" +
+    "export const Gone = defineError({ code: 'X_APP_GONE', title: 'gone', status: 410, cause: 'c', fix: 'x verify' });\n" +
+    'globalThis.probe = () => {\n  throw new Gone();\n};\n';
+  const TABLES = ['core/src/core-error-codes.ts', 'core/src/schema-error-codes.ts'];
+
+  test('retains defineError and no titles table', async () => {
+    const modules = await retained('island', ISLAND);
+    expect(modules).toContain('core/src/define-error.ts');
+    expect(modules.filter((module) => TABLES.includes(module))).toEqual([]);
+    expect(await chunk('island-text', ISLAND)).not.toContain('X_OUTBOUND_TIMEOUT');
+  }, 60_000);
+
+  // measured: 6,507 B (2026-11-11, Bun 1.4.4), against 12,019 B through the barrel. why: the
+  // class, the registry lookup, the retry and status tables and `defineError` itself — the next
+  // half kilobyte above the measurement.
+  test('stays under 7,168 B minified (6,507 B as of 2026-11-11)', async () => {
+    const minified = await chunk('island-min', ISLAND, true);
+    expect(new TextEncoder().encode(minified).length).toBeLessThan(7_168);
   }, 60_000);
 });

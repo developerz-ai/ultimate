@@ -57,6 +57,12 @@ unitTest('toDateString and toTimeString name the zoned call', () => {
   expect(time[0]?.fix).toContain('toLocaleTimeString(locale');
 });
 
+unitTest('reading the host zone through resolvedOptions() formats no date', () => {
+  const read = 'const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;';
+  expect(unzonedDates(file(read))).toEqual([]);
+  expect(unzonedDates(file("Intl.DateTimeFormat('en').formatToParts(at);"))).toHaveLength(1);
+});
+
 unitTest('a commented-out call is a note, not a call', () => {
   expect(unzonedDates(file("// at.toLocaleDateString('en-US');"))).toEqual([]);
 });

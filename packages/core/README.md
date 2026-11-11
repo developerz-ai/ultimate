@@ -173,10 +173,13 @@ Registering a code twice throws `X_ERROR_CODE_DUPLICATE`.
 ### An app's own codes: `defineError`
 
 A framework package registers codes as above, through `bun run new-error-code`. An APP declares
-each of its codes once, and gets the class back:
+each of its codes once, and gets the class back. Import it from `@ultimat3/core/page`: an errors
+module is shared by actions and islands, and any barrel import carries both titles tables into
+every island that throws (12,019 B against 6,507 B for one declaration thrown,
+`define-error-bytes.test.ts`):
 
 ```ts
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 export const PostNotFound = defineError<{ readonly ref: string }>({
   code: 'X_POST_NOT_FOUND',
@@ -199,7 +202,8 @@ is `X_ERROR_DECLARATION_INVALID`. A code some package already registered — a f
 under its own title or not — is `X_ERROR_CODE_DUPLICATE`: its status is not the app's to give. The
 table itself is INTERNAL (`@ultimat3/core/internal/error-status`, read by `@ultimat3/http`): an app
 declares through `defineError`, and a re-raised library code through `registerErrorStatus`. A
-scaffolded app's `guards/error-declared.ts` refuses a handwritten `UltimateError` subclass.
+scaffolded app's `guards/error-declared.ts` refuses a handwritten `UltimateError` subclass and a
+`defineError` imported from the barrel.
 
 `isUltimateError()` is duck-typed on `Symbol.for('ultimate.error')`, not `instanceof` — that is
 how `@ultimat3/schema` (tier 0, cannot import core) still produces matching errors.
@@ -887,7 +891,7 @@ A refusal is Bun's `ERR_REDIS_CONNECTION_CLOSED`, untyped here: the job driver t
 | Export | The one answer | The question it settles |
 |---|---|---|
 | `clientTransport({ method, url, body?, rawBody?, headers?, signal?, idempotencyKey?, flight?, fresh?, retry?, responseType?, onResponse?, decodeError?, onEnvelope?, fetchImpl? })` | every browser request | `credentials: 'same-origin'`, JSON in and out, the `idempotency-key` header, a non-2xx `problem+json` back into the server's code (`meta.origin: 'remote'`) unless `decodeError` answers first, a network `TypeError` into `X_CLIENT_TRANSPORT_FAILED`. A GET is abortable on `rescope()` and deduped only when a `flight` is passed (`fresh` refuses to join); any other method is never deduped and never aborted by the fence. `rawBody` goes out verbatim with no default header and resolves `undefined` (the body as a string with `responseType: 'text'`). `responseType: 'text'` resolves a 2xx body as a string (typed `Promise<string>`), sends `accept: */*` unless `headers` names one, and adopts no envelope — for an HTML fragment or a CSV; a non-2xx is still decoded as a refusal. About 10.7 kB minified (4.6 kB gzipped) through `@ultimat3/core/page`, no titles table — pinned in `page-bundle.test.ts`. `onResponse` sees headers before the body is read. `onEnvelope` sees the decoded records envelope after adoption — the one way to learn the order of `records[type]`. `fetchImpl` defaults to `globalThis.fetch`, read at call time |
-| `@ultimat3/core/page` — what a typed client reads, never the barrel: `clientTransport`, `clientStream`, `clientFlight` (+ types `ClientFlight`, `ClientFlightOptions`, `ClientRetry`, `ActionPathStyle`), `BUILD_ID_HEADER`, `IDEMPOTENCY_HEADER`, `FRAMEWORK_CODE`, `problemOf`, `remoteTitleOf`, `retryForStatus`, `withRequestId`, `withStatedDelay`, `registerErrorCodes`, `registerErrorRetry`, `hasErrorCode`, `ERROR_DOCS_URL`, `deniedCallerFix`, `renderCauseValue` beside the page handle, fence and names | the one light browser entry | no titles table, no `node:` module, no build warning (`page-bundle.test.ts`). The whole entry is 32,269 B minified; an island pays only what it imports — `@ultimat3/action`'s `rpc` 24,473 B, + `clientFlight` 32,929 B (`client-bundle.test.ts`). Every name is on the barrel too |
+| `@ultimat3/core/page` — what a typed client reads, never the barrel: `clientTransport`, `clientStream`, `clientFlight` (+ types `ClientFlight`, `ClientFlightOptions`, `ClientRetry`, `ActionPathStyle`), `BUILD_ID_HEADER`, `IDEMPOTENCY_HEADER`, `FRAMEWORK_CODE`, `problemOf`, `remoteTitleOf`, `retryForStatus`, `withRequestId`, `withStatedDelay`, `registerErrorCodes`, `registerErrorRetry`, `hasErrorCode`, `ERROR_DOCS_URL`, `deniedCallerFix`, `renderCauseValue`, `defineError` (+ types `DefineErrorSpec`, `DefinedError`, `DefinedErrorExtra`) beside the page handle, fence and names | the one light browser entry, and where an app imports `defineError` | no titles table, no `node:` module, no build warning (`page-bundle.test.ts`). The whole entry is 35,150 B minified; an island pays only what it imports — `@ultimat3/action`'s `rpc` 24,473 B, + `clientFlight` 32,929 B (`client-bundle.test.ts`). Every name is on the barrel too |
 | `actionPath(name)`, `actionRoute(name)`, `queryPath(name)`, `QUERY_PATH_PREFIX`, `splitWords`, `pluralize` | the one URL rule | `publishPost` → `/api/posts/publish`, `liveFeed` → `/_x/query/live-feed`. Tier 0 so `action`, `query` and `realtime` derive one URL with no sideways import |
 | `templateParams`, `fillTemplate`, `pathTemplateProblem`, `templateKeyProblem`, `toOpenApiPath` (`route-path-template.ts`; the first two also on `./page`) · `mergePathParams`, `HttpPathInputConflictError` (`route-path-merge.ts`) | the one `http.path` template rule | an action's and a query's pin (`/orders/:id/refund`): lowercase static segments and `:param`s, each a required string input key; filled with each value one encoded segment; `{id}` in OpenAPI; the URL's values merged into the input, a disagreeing key `X_HTTP_PATH_INPUT_CONFLICT` (400). Tier 0 because `action` and `query` share a tier |
 | `actionPath(name)` with no `style`, `renderedActionPathStyle()`, `CLIENT_PATH_STYLE_META` | the style nobody restates | `actionPath(name)` reads the document's `<meta name="ultimate-path-style">` stamp, so a browser caller derives under the style the server serves (`defineApi({ http: { pathStyle } })`). No document, no stamp or an unknown value is `'resource'` — a `'resource'` server writes no stamp. A named `style` is never overridden |

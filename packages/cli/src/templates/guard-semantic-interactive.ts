@@ -67,6 +67,14 @@ const ROLE = /(?<![\\w-])role\\s*=\\s*["']([a-z]+)["']/;
 const TABINDEX = /(?<![\\w-])tab[Ii]ndex\\s*=/;
 const KEYS = /(?<![\\w-])onKey(?:Down|Up|Press)\\s*=/;
 
+/**
+ * An option an \`aria-activedescendant\` combobox manages: focus stays on the input, which answers
+ * the keys, so the option is \`tabIndex={-1}\` with a pointer handler and nothing more — the WAI-ARIA
+ * combobox pattern, complete as written. \`option\` only: no other role is exempted by this shape.
+ */
+const MANAGED = /(?<![\\w-])role\\s*=\\s*["']option["']/;
+const UNFOCUSED = /(?<![\\w-])tab[Ii]ndex\\s*=\\s*(?:\\{\\s*-1\\s*\\}|["']-1["'])/;
+
 export interface SourceFile {
   /** App-root-relative POSIX path, so the finding names the file an author opens. */
   readonly path: string;
@@ -134,6 +142,7 @@ export function semanticInteractive(files: readonly SourceFile[]): readonly Find
       // guide asks for — a deliberate widget, written by someone who read the obligation. This
       // rule is about the incomplete ones, so all three present is the one shape it passes over.
       if (ROLE.test(tag.attrs) && TABINDEX.test(tag.attrs) && KEYS.test(tag.attrs)) continue;
+      if (MANAGED.test(tag.attrs) && UNFOCUSED.test(tag.attrs)) continue;
       const at = \`\${file.path}:\${lineOf(text, tag.index)}\`;
       const role = ROLE.exec(tag.attrs)?.[1] ?? '';
       const native = NATIVE.get(role);
@@ -170,8 +179,9 @@ export const guard: Guard = {
     // \`{apps/web,packages/ui}/**/*.tsx\` each match ZERO files, where \`apps/*/{site,app}/**/*.tsx\`
     // matches 17 — so folding these into one line silently turns the guard off, which is worse than
     // the hole it closes. A LEADING group is fine and the stylesheet guards here rely on it:
-    // \`{apps,packages}/**/*.scss\` matches all 15.
-    for (const pattern of ['apps/*/{site,app}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
+    // \`{apps,packages}/**/*.scss\` matches all 15. \`shared/\` is read too: a component there renders
+    // on every page that imports it, and leaving it out was a directory the rule never saw.
+    for (const pattern of ['apps/*/{site,app,shared}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
       // The run's ONE read: every guard asking for these two globs shares the walk.
       for (const file of await sources.files(pattern)) {
         if (/\\.test\\.tsx?$/.test(file.path)) continue;
@@ -219,6 +229,14 @@ unitTest('the native control it names is not itself a finding', () => {
 unitTest('a role with a tab stop and a key handler is a deliberate widget', () => {
   const widget = '<div role="button" tabindex="0" onClick={go} onKeyDown={go}>Go</div>';
   expect(semanticInteractive(file(widget))).toEqual([]);
+});
+
+// The WAI-ARIA combobox: focus stays on the input, which answers the keys for its options.
+unitTest('a managed option is silent; one with a tab stop is not', () => {
+  const managed = '<div role="option" tabIndex={-1} onMouseDown={pick}>A</div>';
+  expect(semanticInteractive(file(managed))).toEqual([]);
+  const focusable = '<div role="option" onMouseDown={pick}>A</div>';
+  expect(semanticInteractive(file(focusable))).toHaveLength(1);
 });
 
 unitTest('data-role is not role, and a live region is not a control', () => {

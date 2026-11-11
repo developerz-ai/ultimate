@@ -6,7 +6,7 @@
 // no anchor. The `https://ultimate.dev/errors/<code>` links these classes built until 2026-08-23
 // answered 404, host included, on every error this app has ever thrown.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 /**
  * 404, declared in the same call as the code. Until 2026-11 this was a handwritten subclass with no

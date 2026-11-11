@@ -195,7 +195,7 @@ No new run outcome and no deferred tool. The call is a `tool_result` flagged `is
 
 ```ts
 import { inProcessTool } from '@ultimat3/ai';
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 import { t } from '@ultimat3/schema';
 
 declare function loadDoc(id: string): Promise<{ id: string; body: string } | undefined>;

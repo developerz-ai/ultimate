@@ -38,7 +38,7 @@ describe('unit · shipped guard · error-declared', () => {
 
   test('a re-raise passing err.code, a defineError and a comment are silent', async () => {
     const findings = await findingsFor(
-      "import { defineError, UltimateError } from '@ultimat3/core';\n" +
+      "import { defineError, UltimateError } from '@ultimat3/core/page';\n" +
         "export const Gone = defineError({ code: 'X_POST_GONE', title: 't', status: 410, cause: 'c', fix: 'x' });\n" +
         'export const wrap = (err: UltimateError) =>\n' +
         "  new UltimateError({ code: err.code, cause: err.cause, fix: 'x verify', sourceError: err });\n" +
@@ -94,5 +94,31 @@ describe('unit · shipped guard · error-declared', () => {
         'throw new UltimateError({ "code": "X_C", cause: "c", fix: "x" });\n',
     );
     expect(findings).toHaveLength(3);
+  });
+
+  test('defineError from the barrel is refused at its import line, with the page subpath as the fix', async () => {
+    const findings = await findingsFor(
+      "import { UltimateError } from '@ultimat3/core/page';\n" +
+        "import { type Actor, defineError } from '@ultimat3/core';\n" +
+        "import * as core from '@ultimat3/core';\n" +
+        "export const Gone = core.defineError({ code: 'X_A', title: 't', status: 410, cause: 'c', fix: 'x' });\n",
+    );
+    expect(findings.map((finding) => finding.cause.split(' ')[0])).toEqual([
+      `${ERRORS}:2`,
+      `${ERRORS}:4`,
+    ]);
+    expect(findings[0]?.fix).toContain("import { defineError } from '@ultimat3/core/page'");
+    expect(findings[0]?.cause).toContain('titles table');
+  });
+
+  test('defineError from the page subpath, and a barrel import without it, are silent', async () => {
+    const findings = await findingsFor(
+      "import { defineError } from '@ultimat3/core/page';\n" +
+        "import { useContext } from '@ultimat3/core';\n" +
+        "import * as page from '@ultimat3/core/page';\n" +
+        "export const Gone = page.defineError({ code: 'X_A', title: 't', status: 410, cause: 'c', fix: 'x' });\n" +
+        "export const Lost = defineError({ code: 'X_B', title: 't', status: 410, cause: 'c', fix: 'x' });\n",
+    );
+    expect(findings).toEqual([]);
   });
 });

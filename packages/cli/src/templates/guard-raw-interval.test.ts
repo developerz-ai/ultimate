@@ -43,4 +43,20 @@ describe('unit · shipped guard · raw-interval', () => {
     });
     expect(findings).toEqual([]);
   });
+
+  test('a setInterval the island binds itself is its own; window.setInterval( never is', async () => {
+    const findings = await shippedGuardFindings('raw-interval', {
+      'apps/web/app/a.island.tsx':
+        "import { setInterval } from './clock';\nsetInterval(tick, 5);\n",
+      'apps/web/app/b.island.tsx':
+        'export const run = ({ setInterval }) => setInterval(tick, 5);\n',
+      'apps/web/app/c.island.tsx':
+        'const setInterval = fake();\nsetInterval(tick, 5);\nwindow.setInterval(poll, 5000);\n',
+      'apps/web/app/d.island.tsx': 'export const run = (opts) => setInterval(poll, opts.ms);\n',
+    });
+    expect(findings.map((finding) => finding.at)).toEqual([
+      'apps/web/app/c.island.tsx:3',
+      'apps/web/app/d.island.tsx:1',
+    ]);
+  });
 });

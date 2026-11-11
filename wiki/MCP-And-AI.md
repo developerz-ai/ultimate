@@ -241,7 +241,7 @@ verdict a production problem document gives. The developer audience keeps both. 
 same two fields, plus `docs` — declared once with `defineError`:
 
 ```ts
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 export const RefundWindowClosed = defineError<{ readonly ageDays: number }>({
   code: 'X_REFUND_WINDOW_CLOSED',

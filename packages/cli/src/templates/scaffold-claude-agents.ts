@@ -100,7 +100,7 @@ renders. A change outside that set is a collision — report it, do not make it.
 | Generate, then edit | \`bunx x g <kind> <name> --feature <slice>\` for every one of them — a hand-written primitive is missing from every registry that projects it |
 | One authz object | the policy decides; a route or a UI that re-checks is a second answer that will drift |
 | Data through the repo | an action calls \`repo.ts\`, never the database |
-| Errors are instructions | never \`throw new Error\` — declare each code once with \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core\`: a stable \`X_SCREAMING_SNAKE\` code, a cause and a \`fix:\` a caller can actually run. \`guards/error-declared.ts\` refuses a handwritten \`UltimateError\` subclass |
+| Errors are instructions | never \`throw new Error\` — declare each code once with \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core/page\`: a stable \`X_SCREAMING_SNAKE\` code, a cause and a \`fix:\` a caller can actually run. \`guards/error-declared.ts\` refuses a handwritten \`UltimateError\` subclass |
 | Jobs run at least once | a handler must be idempotent — an upsert or a statement whose second run changes nothing, never \`count + 1\` |
 | Tasks name a time zone | a cron schedule with an ambient zone is a different time twice a year |
 | No \`any\` | \`unknown\` plus a schema parse |

@@ -40,4 +40,26 @@ describe('unit · shipped guard · native-confirm', () => {
     });
     expect(findings).toEqual([]);
   });
+
+  test('a confirm the file binds itself is its own; a bare global or window.confirm( is not', async () => {
+    const findings = await shippedGuardFindings('native-confirm', {
+      'apps/web/app/a.ts': 'const confirm = async () => {};\nvoid confirm();\n',
+      'apps/web/app/b.ts': 'export function ask(confirm) {\n  return confirm();\n}\n',
+      'apps/web/app/c.tsx':
+        'export const Ask = ({ confirm }: Props) => <b onClick={() => confirm()} />;\n',
+      'apps/web/app/d.ts': "import { confirm } from './x';\nconfirm('Delete?');\n",
+      'apps/web/app/e.ts':
+        "let confirm;\nconfirm = make();\nconfirm('x');\nwindow.confirm('Really?');\n",
+      'apps/web/app/f.ts': "const { confirm: ask } = deps;\nask();\nconfirm('x');\n",
+      'apps/web/app/g.ts': "import { confirm as ask } from './x';\nif (confirm('x')) ask();\n",
+      'apps/web/app/h.ts': 'export const run = confirm => confirm();\n',
+      'apps/web/app/i.ts': "export function ask(ok = confirm('Sure?')) {\n  return ok;\n}\n",
+    });
+    expect(findings.map((finding) => finding.at)).toEqual([
+      'apps/web/app/e.ts:4',
+      'apps/web/app/f.ts:3',
+      'apps/web/app/g.ts:2',
+      'apps/web/app/i.ts:1',
+    ]);
+  });
 });

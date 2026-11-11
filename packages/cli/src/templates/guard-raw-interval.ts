@@ -4,6 +4,7 @@
 // A `// why:` on the call's line, or the line above it, admits a tick that is not a read.
 
 import { guardCode } from './guard';
+import { LOCAL_BINDING_SOURCE } from './guard-local-binding';
 import type { GeneratedFile } from './naming';
 
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
@@ -19,7 +20,8 @@ const source =
 // for a 401 forever. \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` makes no call while the
 // tab is hidden, one when it is shown, and stops at the first lost session. Read: a bare,
 // \`window.\`, \`self.\` or \`globalThis.\` \`setInterval(\` in a \`*.island.tsx\`. Admitted: a \`// why:\` on
-// the call's line or the line above it — an animation tick is not a read.
+// the call's line or the line above it — an animation tick is not a read. Not read: a bare
+// \`setInterval(\` in a file that binds its own (declared, imported, a parameter, destructured).
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -34,6 +36,8 @@ export interface SourceFile {
 
 const CALL = /(?<![\\w$.])(?:(?:globalThis|window|self)\\s*\\.\\s*)?setInterval\\s*\\(/g;
 const WHY = /\\/\\/\\s*why:/;
+
+${LOCAL_BINDING_SOURCE}
 
 /** Comments and string bodies blanked IN PLACE, so a line number still points at the source. */
 const blank = (text: string): string =>
@@ -50,7 +54,10 @@ export function rawIntervals(files: readonly SourceFile[]): readonly Finding[] {
   for (const file of files) {
     const lines = file.source.split('\\n');
     const text = blank(file.source);
+    const local = bindsLocally(text, 'setInterval');
     for (const match of text.matchAll(CALL)) {
+      // A bare call to the file's own \`setInterval\` is not the timer; \`window.\` always is.
+      if (local && match[0].startsWith('setInterval')) continue;
       const line = text.slice(0, match.index).split('\\n').length;
       if (WHY.test(lines[line - 1] ?? '') || WHY.test(lines[line - 2] ?? '')) continue;
       const at = \`\${file.path}:\${line}\`;

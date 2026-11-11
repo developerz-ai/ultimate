@@ -130,7 +130,7 @@ Both will bite. Both are the app's job, one line each.
 
 A primitive is wrapped; an error code is not. Declare each code at its own call site with
 `defineError({ code: 'X_INVOICE_NOT_FOUND', title, status: 404, cause, fix })` from
-`@ultimat3/core` — the title, the HTTP status and the class in one call. The `errors` step and the
+`@ultimat3/core/page` — the title, the HTTP status and the class in one call. The `errors` step and the
 manifest read the `code:` literal where it is written, so a factory that takes the code as a
 parameter hides it (`X_ERROR_CODE_UNRESOLVED`). A family of codes is a prefix (`X_BILLING_*`),
 never a base class: `guards/error-declared.ts` refuses `extends UltimateError`, and

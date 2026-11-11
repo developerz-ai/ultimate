@@ -245,7 +245,7 @@ them: [Testing](Testing#seeing-what-you-built).
 
 ## Stylesheets
 
-Biome does not read `.scss`. These seven guards are the only thing that does. `As of 2026-10`.
+Biome does not read `.scss`. These seven guards are the only thing that does. `As of 2026-11`.
 
 | Rule | Refused by | The `fix:` it names |
 |---|---|---|
@@ -253,9 +253,10 @@ Biome does not read `.scss`. These seven guards are the only thing that does. `A
 | A viewport query names a rung of the one ladder | `guards/raw-breakpoint.ts` — `@media` with a `width` feature | `@include tokens.respond-to(md)` / `respond-down(md)` / `respond-between(md, lg)` |
 | A layer is a name | `guards/raw-z-index.ts` — a number in `z-index` | `z-index: tokens.z(dropdown)`; behind its own stacking context, `calc(-1 * #{tokens.z(raised)})` |
 | Elevation comes off the themed shadow scale | `guards/raw-shadow.ts` — a hand-written length in `box-shadow`, `text-shadow` or `drop-shadow()` | `box-shadow: tokens.shadow('sm')`, or `@include tokens.surface` |
-| One tempo | `guards/raw-motion.ts` — a duration or `cubic-bezier()` literal in `transition*` / `animation*` | `transition: opacity tokens.duration(fast) tokens.easing(out)` |
+| One tempo | `guards/raw-motion.ts` — a duration or `cubic-bezier()` literal in `transition*` / `animation*`, or assigned to a custom property (`--ease: cubic-bezier(…)`) | `transition: opacity tokens.duration(fast) tokens.easing(out)`; in a custom property, interpolated: `--ease: #{tokens.easing(out)}` |
 | A class a component reads is a class its sheet compiles | `guards/undefined-style-class.ts` — `styles.x` / `styles['x-y']` against the COMPILED `.module.scss` | the nearest class the sheet declares, or the rule to add |
 | A custom property a sheet reads is one the app declares | `guards/undeclared-custom-property.ts` — `var(--x)` in the compiled CSS with no declaration anywhere and no fallback | the steps the scale really has: `tokens.space(7)` → `0 \| 1 \| 2 \| …` |
+| A guard that reads compiled sheets never passes by reading nothing | `guards/undeclared-custom-property.ts` and `guards/undefined-style-class.ts` — a sheet that does not compile, or an imported one that does not exist, is a finding quoting the compiler's first line; while one is broken, no `var()` read is judged | repair the Sass at the error quoted |
 
 | Not a finding | Why |
 |---|---|
@@ -266,7 +267,6 @@ Biome does not read `.scss`. These seven guards are the only thing that does. `A
 | `linear`, `ease`, `0s`, `calc(#{tokens.duration(slower)} * 2)` | a keyword, a zero, a multiple of a token |
 | `styles[name]` | a computed key is only known when the component runs |
 | `var(--x, fallback)`; a property a `.ts`/`.tsx` file names | it declares its own answer; an inline `style` sets it |
-| a sheet that does not compile | the build's refusal (`X_PRERENDER_FAILED`), not a guard's |
 
 ## Data access
 

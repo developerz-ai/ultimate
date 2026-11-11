@@ -1,6 +1,6 @@
 /** Errors the billing feature can raise. Codes are stable; the message names the fix. */
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 /**
  * The vendor refused an invoice because it closed the org's account. Terminal: the same account

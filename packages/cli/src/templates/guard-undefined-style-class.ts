@@ -17,7 +17,8 @@ const source =
 //
 // Read from the COMPILED sheet, so a class a mixin generates or \`&-suffix\` nests is one, and a
 // class inside \`:global()\` is not. A computed member (\`styles[name]\`) is out of scope: its key is
-// only known when the component runs. A sheet that does not compile is the build's refusal.
+// only known when the component runs. A sheet that does not compile, or is not there, is a finding
+// at its import: no read off it can be checked, and a rule that read nothing never passes.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -30,8 +31,13 @@ export interface MarkupFile {
   readonly tsx: string;
 }
 
-/** The classes a stylesheet compiles, by app-root-relative path; \`undefined\` when it does not. */
-export type CompiledClasses = (sheet: string) => Promise<readonly string[] | undefined>;
+/**
+ * The classes a stylesheet compiles, by app-root-relative path; \`{ error }\` with the compiler's
+ * first line when it does not, \`undefined\` when there is no line to give.
+ */
+export type CompiledClasses = (
+  sheet: string,
+) => Promise<readonly string[] | { readonly error: string } | undefined>;
 
 const blank = (text: string): string => text.replaceAll(/[^\\n]/g, ' ');
 
@@ -80,7 +86,17 @@ export async function undefinedStyleClasses(
       const binding = imported[1] ?? '';
       const sheet = resolve(file.path, imported[2] ?? '');
       const declared = await classesOf(sheet);
-      if (declared === undefined) continue;
+      if (declared === undefined || 'error' in declared) {
+        const at = \`\${file.path}:\${lineOf(tsx, imported.index)}\`;
+        const said = declared === undefined ? '' : \`: \${declared.error}\`;
+        findings.push({
+          code: CODE,
+          cause: \`\${at} imports \${sheet}, which does not compile\${said} — no class read off \${binding} was checked, and each may render as nothing\`,
+          fix: \`repair the Sass in \${sheet}\${said === '' ? " (x build --target static prints the compiler's error)" : ' at the error the cause quotes'}, or correct the import at \${at}, then: x verify\`,
+          at,
+        });
+        continue;
+      }
       // \`styles.hero\` and \`styles['hero-title']\` — a static key either way. \`styles[name]\` has no
       // quote after the bracket and is not matched. A path is not a read: \`'./shell.module.scss'\`
       // holds \`shell.module\`, so a name that follows a slash, a quote or a dash is skipped.
@@ -118,7 +134,10 @@ export const guard: Guard = {
       markup.map((file) => ({ path: file.path, tsx: file.text })),
       async (sheet) => {
         const compiled = await sources.compiled(sheet);
-        return compiled === undefined ? undefined : Object.keys(compiled.classes);
+        if (compiled !== undefined) return Object.keys(compiled.classes);
+        // \`compileError\` is optional on \`GuardSources\`: an older CLI reports the sheet without it.
+        const error = await sources.compileError?.(sheet);
+        return error === undefined ? undefined : { error };
       },
     );
   },
@@ -202,9 +221,17 @@ unitTest('a computed key, a comment and another object are out of scope', async 
   for (const body of silent) expect(await check(body)).toEqual([]);
 });
 
-unitTest("a sheet that does not compile is the build's finding, not this guard's", async () => {
+unitTest('a sheet that does not compile is refused at its import, once', async () => {
   const imports = "import styles from './broken.module.scss';";
-  expect(await check('export const Page = () => <h1 class={styles.any} />;', imports)).toEqual([]);
+  const findings = await check('export const Page = () => <h1 class={styles.any} />;', imports);
+  expect(findings.map((finding) => finding.at)).toEqual(['apps/web/site/page.tsx:1']);
+  expect(findings[0]?.cause).toContain('apps/web/site/broken.module.scss, which does not compile');
+  // With the compiler's line to give, the finding quotes it.
+  const quoted = await undefinedStyleClasses(
+    page('export const Page = () => <h1 class={styles.any} />;'),
+    async () => ({ error: 'Error: expected "}".' }),
+  );
+  expect(quoted[0]?.cause).toContain('which does not compile: Error: expected "}".');
 });
 `;
 

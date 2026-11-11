@@ -1,6 +1,6 @@
 /** Errors the runs feature can raise. No `docs:` — `UltimateError` resolves it from the code. */
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 export const ConnectionNotFound = defineError<string>({
   code: 'X_CONNECTION_NOT_FOUND',

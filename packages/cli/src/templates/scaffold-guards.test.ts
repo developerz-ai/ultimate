@@ -22,26 +22,22 @@ import { scaffoldGuardFiles } from './scaffold-guards';
 import { linkUi } from './shipped-guard-fixture';
 
 /**
- * The scaffold's own files, written to a temp root — the tree every case below starts from.
- * `ui` is what `bun install` would have done for the one package a stylesheet resolves: without
- * it no scaffolded sheet compiles and the two guards that read COMPILED sheets see nothing. Only
- * the cases that are ABOUT those sheets pay for the nine compiles.
+ * The scaffold's own files, written to a temp root — the tree every case below starts from —
+ * with `@ultimat3/ui` linked, as `bun install` would: without it no scaffolded sheet compiles, and
+ * the two guards that read COMPILED sheets report each one that does not.
  */
-async function scaffoldInto(dir: string, ui = false): Promise<void> {
+async function scaffoldInto(dir: string): Promise<void> {
   for (const file of planNewApp({ name: 'guard-demo', example: true })) {
     await Bun.write(join(dir, file.path), file.contents);
   }
-  if (ui) await linkUi(dir);
+  await linkUi(dir);
 }
 
 /** One extra file on top of the scaffold, then the gate's own guard pass over the result. */
-async function findingsWith(
-  files: Readonly<Record<string, string>>,
-  ui = false,
-): Promise<readonly Finding[]> {
+async function findingsWith(files: Readonly<Record<string, string>>): Promise<readonly Finding[]> {
   const dir = mkdtempSync(join(tmpdir(), 'x-guards-'));
   try {
-    await scaffoldInto(dir, ui);
+    await scaffoldInto(dir);
     for (const [path, contents] of Object.entries(files)) {
       await Bun.write(join(dir, path), contents);
     }
@@ -103,22 +99,18 @@ describe('unit · x new · the guards it ships', () => {
   // SILENT. A guard that reports on the scaffold's own files is a scaffold whose first `x verify`
   // is red for something the author did not write, which is worse than the rule being absent.
   test('a pristine scaffold trips none of them', async () => {
-    expect(await findingsWith({}, true)).toEqual([]);
+    expect(await findingsWith({})).toEqual([]);
   }, 30_000);
 
-  // Non-vacuity for the line above. The two compiled-sheet guards are silent on a sheet that does
-  // not compile, so "a pristine scaffold trips none" is only a claim about them if the scaffold's
-  // own sheets DID compile here — proven by breaking one the way an author would.
+  // Non-vacuity for the line above: the two compiled-sheet guards still judge what compiled —
+  // proven by breaking one sheet the way an author would.
   test('and its stylesheets really were compiled: a class and a token step that do not exist', async () => {
-    const findings = await findingsWith(
-      {
-        'apps/web/site/probe.module.scss':
-          "@use '@ultimat3/ui/tokens' as tokens;\n.probe {\n  padding: tokens.space(7);\n}\n",
-        'apps/web/site/probe.tsx':
-          "import styles from './probe.module.scss';\nexport const classes = [styles.probe, styles.gone];\n",
-      },
-      true,
-    );
+    const findings = await findingsWith({
+      'apps/web/site/probe.module.scss':
+        "@use '@ultimat3/ui/tokens' as tokens;\n.probe {\n  padding: tokens.space(7);\n}\n",
+      'apps/web/site/probe.tsx':
+        "import styles from './probe.module.scss';\nexport const classes = [styles.probe, styles.gone];\n",
+    });
     expect(codes(findings)).toEqual(['X_UNDECLARED_CUSTOM_PROPERTY', 'X_UNDEFINED_STYLE_CLASS']);
     expect(findings[1]?.cause).toContain('styles.gone');
   }, 30_000);

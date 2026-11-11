@@ -8,7 +8,7 @@ disagree, `packages/core/CLAUDE.md` wins. Older long forms: [`core.md`](core.md)
 
 ## Exports
 
-explicit in `src/index.ts`; no `export *`. SIX public subpaths (`./adapter`, `./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`, 1.5 kB). `./page` is what a browser client imports — `@ultimat3/action`'s `client.ts` and error modules read it, never the barrel; the barrel itself must build for a browser with no warning (no static `node:` import a polyfill lacks — `image/png-pixels.ts` resolves `node:zlib` at the call). Full rule: `docs/history/core.md`
+explicit in `src/index.ts`; no `export *`. SIX public subpaths (`./adapter`, `./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one INTERNAL (`./internal/error-status`); nothing that loads a titles table joins `./page` (`page-bundle.test.ts`; the rule read "constructs an error" until `UltimateError` joined in plan 101 K6). `./page` is what a browser client imports — `@ultimat3/action`'s `client.ts` and error modules read it, never the barrel, and so does an app's errors module: `defineError` is on `./page` (`define-error-bytes.test.ts`, 6,507 B for one declaration thrown against 12,019 B through the barrel) and the scaffold's `error-declared` guard refuses the barrel import; the barrel itself must build for a browser with no warning (no static `node:` import a polyfill lacks — `image/png-pixels.ts` resolves `node:zlib` at the call). Full rule: `docs/history/core.md`
 
 ## Errors
 

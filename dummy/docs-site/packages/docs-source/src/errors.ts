@@ -1,7 +1,7 @@
 // The reader's refusals. Each one stops the static build and names the wiki file to edit: a docs
 // site that printed a dead link, a missing code or an empty description would ship it silently.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 interface DeadLink {
   /** `Getting-Started.md`, the wiki file the link is written in. */

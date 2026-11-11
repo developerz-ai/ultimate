@@ -3,7 +3,7 @@
 // file in the same bun process.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { defineError } from './define-error';
+import { definedErrorSites, defineError } from './define-error';
 import { describeErrorCode, errorCodeSnapshot, hasErrorCode } from './error-codes';
 import { declaredErrorRetry, registeredErrorRetry, resetErrorRetry } from './error-retry';
 import {
@@ -288,5 +288,27 @@ describe('unit · defineError', () => {
         defineError({ code: 'X_DEFINE_TEST_RESET', title: 'r', status: 409, cause: 'c', fix: 'x' }),
       ).code,
     ).toBe('X_ERROR_CODE_DUPLICATE');
+  });
+});
+
+// `recordSite` feeds a test-time source scan; a browser with no `Error.captureStackTrace` (Firefox
+// before 136) runs the same declaration at island load and must not die on the bookkeeping.
+describe('unit · defineError in an engine without Error.captureStackTrace', () => {
+  test('declares the code and records no site', () => {
+    const capture = Error.captureStackTrace;
+    Reflect.deleteProperty(Error, 'captureStackTrace');
+    try {
+      const Gone = defineError({
+        code: 'X_DEFINE_TEST_NO_CAPTURE',
+        title: 'gone',
+        status: 410,
+        cause: 'c',
+        fix: 'x',
+      });
+      expect(new Gone().code).toBe('X_DEFINE_TEST_NO_CAPTURE');
+      expect(definedErrorSites().has('X_DEFINE_TEST_NO_CAPTURE')).toBe(false);
+    } finally {
+      Error.captureStackTrace = capture;
+    }
   });
 });

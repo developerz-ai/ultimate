@@ -105,7 +105,7 @@ While you iterate, narrow the *feedback*, not the gate:
 
 ## 5. Hard rules
 
-Never a bare \`throw new Error\` — declare each code once with \`defineError\` from \`@ultimat3/core\`:
+Never a bare \`throw new Error\` — declare each code once with \`defineError\` from \`@ultimat3/core/page\`:
 a stable code, a title, a status, a cause and a runnable \`fix:\`.
 No \`any\`; use \`unknown\` and parse. Named exports only. \`import type\` for types.
 Tests next to the source as \`<file>.test.ts\`, failure case first — a test that cannot fail is not a

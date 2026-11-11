@@ -1,6 +1,6 @@
 /** Errors the webhooks feature can raise. Codes are stable; the message names the fix. */
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 /** 409: the request is well formed, and the org's current state refuses it. */
 export const EndpointLimitReached = defineError<{ readonly orgId: string; readonly limit: number }>(
