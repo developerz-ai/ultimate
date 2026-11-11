@@ -89,7 +89,7 @@ export function scanDeadHostDoc(path: string, text: string): readonly DeadHostSi
 
 /** Every page and YAML file a reader or a workflow reads; dated records are not current links. */
 const DOC_GLOBS = ['**/*.{md,yaml,yml}', '.github/**/*.{md,yaml,yml}'] as const;
-const NOT_CURRENT = /(?:^|\/)node_modules\/|^docs\/plans\/|^CHANGELOG\.md$/;
+const NOT_CURRENT = /(?:^|\/)node_modules\/|^docs\/plans\/|^docs\/changelog\/|^CHANGELOG\.md$/;
 
 export async function docSites(
   root: string,

@@ -1,11 +1,13 @@
-// The notes `release-tag.yml` puts on a GitHub Release: exactly one version's CHANGELOG.md
-// section, never its neighbour's, and a refusal — not an empty Release — when there is none.
+// The notes `release-tag.yml` puts on a GitHub Release: exactly one version's changelog section
+// (`docs/changelog/X.Y.Z.md`), never its neighbour's, and a refusal — not an empty Release — when there is none.
 
 import { describe, expect, test } from 'bun:test';
+import { parseChangelog } from './lib/changelog-sections';
+import { loadChangelog } from './lib/changelog-store';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { highlightNotes, notesFindings, sectionBody, UNRELEASED_VERSION } from './release-notes';
 
-const CHANGELOG = [
+const TEXT = [
   '# Changelog',
   '',
   'Preamble that belongs to no release.',
@@ -31,6 +33,7 @@ const CHANGELOG = [
   '- an older thing',
   '',
 ].join('\n');
+const CHANGELOG = parseChangelog(TEXT);
 
 describe('unit · release-notes · one section, and only that one', () => {
   test('a released section is its body, without its heading or the next section', () => {
@@ -42,7 +45,7 @@ describe('unit · release-notes · one section, and only that one', () => {
 
   test('[Unreleased] with only its placeholder is empty, never "Nothing yet."', () => {
     expect(sectionBody(CHANGELOG, UNRELEASED_VERSION)).toBe('');
-    const filled = CHANGELOG.replace('Nothing yet.', '### Fixed\n\n- pending');
+    const filled = parseChangelog(TEXT.replace('Nothing yet.', '### Fixed\n\n- pending'));
     expect(sectionBody(filled, UNRELEASED_VERSION)).toBe('### Fixed\n\n- pending');
   });
 
@@ -54,7 +57,7 @@ describe('unit · release-notes · one section, and only that one', () => {
 
 describe('unit · release-notes · refusals', () => {
   test('no section, or an empty one, refuses with a coded finding', () => {
-    const emptied = CHANGELOG.replace('### Fixed\n\n- an older thing', '');
+    const emptied = parseChangelog(TEXT.replace('### Fixed\n\n- an older thing', ''));
     for (const [changelog, version] of [
       [CHANGELOG, '9.9.9'],
       [emptied, '1.1.0'],
@@ -83,10 +86,11 @@ describe('unit · release-notes · refusals', () => {
 describe('unit · release-notes · the CLI', () => {
   // The workflow reads `.data.notes` off `--json`; the envelope is the contract it relies on.
   test(
-    '--json carries the newest released section of the real CHANGELOG.md, short when it has Highlights',
+    '--json carries the newest released section of the real changelog, short when it has Highlights',
     async () => {
-      const changelog = await Bun.file(`${repoRoot()}/CHANGELOG.md`).text();
-      const newest = /^## (\d+\.\d+\.\d+)/m.exec(changelog)?.[1] ?? '';
+      const changelog = await loadChangelog(repoRoot());
+      const newest = changelog.find((one) => one.released)?.version ?? '';
+      expect(newest).toMatch(/^\d+\.\d+\.\d+$/);
       const out = await run(
         ['bun', 'run', 'scripts/release-notes.ts', '--version', newest, '--json'],
         { cwd: repoRoot() },
@@ -123,9 +127,9 @@ describe('unit · release-notes · the CLI', () => {
 });
 
 // wiki/Stability.md: from 30.0.0 a Release body is the Highlights and where to read the rest,
-// so it reads in under 30 seconds. The full section stays in CHANGELOG.md, linked at the tag.
+// so it reads in under 30 seconds. The full section stays in docs/changelog/, linked at the tag.
 describe('unit · release-notes · a highlighted section is a short Release body', () => {
-  const highlighted = [
+  const highlightedText = [
     '# Changelog',
     '',
     '## [Unreleased]',
@@ -147,6 +151,7 @@ describe('unit · release-notes · a highlighted section is a short Release body
     '',
     '- older',
   ].join('\n');
+  const highlighted = parseChangelog(highlightedText);
 
   test('a major opens with its Highlights, then its Upgrading anchor and the full section', () => {
     const read = notesFindings(highlighted, '30.0.0');
@@ -157,12 +162,16 @@ describe('unit · release-notes · a highlighted section is a short Release body
     expect(notes).toContain(
       'https://github.com/developerz-ai/ultimate/wiki/Upgrading#29x--3000-entry-by-entry',
     );
-    expect(notes).toContain('https://github.com/developerz-ai/ultimate/blob/v30.0.0/CHANGELOG.md');
+    expect(notes).toContain(
+      'https://github.com/developerz-ai/ultimate/blob/v30.0.0/docs/changelog/30.0.0.md',
+    );
     expect(notes).not.toContain('a long entry nobody reads');
   });
 
   test('a minor names no Upgrading walkthrough: it has nothing to migrate', () => {
-    const minor = highlighted.replace('## 30.0.0 - 2026-11-10', '## 30.1.0 - 2026-11-17');
+    const minor = parseChangelog(
+      highlightedText.replace('## 30.0.0 - 2026-11-10', '## 30.1.0 - 2026-11-17'),
+    );
     const read = notesFindings(minor, '30.1.0');
     const notes = 'notes' in read ? read.notes : '';
     expect(notes).toStartWith('### Highlights');

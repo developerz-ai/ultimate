@@ -194,9 +194,12 @@ describe('the vacuous guard', () => {
 });
 
 describe('what is history and not a claim', () => {
-  test.each(['docs/plans/2026/08/12/x.md', 'CHANGELOG.md'])('skips %s', (path) => {
-    expect(skipStepPath(path)).toBe(true);
-  });
+  test.each(['docs/plans/2026/08/12/x.md', 'CHANGELOG.md', 'docs/changelog/1.0.0.md'])(
+    'skips %s',
+    (path) => {
+      expect(skipStepPath(path)).toBe(true);
+    },
+  );
 
   test('reads a wiki page', () => {
     expect(skipStepPath('wiki/CLI-Reference.md')).toBe(false);

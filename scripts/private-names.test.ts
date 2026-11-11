@@ -115,9 +115,10 @@ describe('private-names · a listed name in the tree', () => {
     expect(out).toContain('git ls-files');
   });
 
-  test('CHANGELOG.md, docs/history/ and docs/plans/ are records and pass', async () => {
+  test('CHANGELOG.md, docs/changelog/, docs/history/ and docs/plans/ are records and pass', async () => {
     const root = await tree({
       'CHANGELOG.md': 'quimtel\n',
+      'docs/changelog/1.0.0.md': 'quimtel\n',
       'docs/history/a.md': 'quimtel\n',
       'docs/plans/2026/a.md': 'zorblax.io\n',
     });

@@ -9,13 +9,17 @@ import {
   releaseHighlights,
   targetBranch,
 } from './changelog-highlights';
+import { type Changelog, parseChangelog } from './changelog-sections';
+import { loadChangelog } from './changelog-store';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
-// Reads the real CHANGELOG.md, so the repo-scan guard holds it to the repo-scan backstop.
+// Reads the real changelog, so the repo-scan guard holds it to the repo-scan backstop.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const log = (unreleased: string, ...sections: readonly string[]): string =>
-  ['# Changelog', '', '## [Unreleased]', '', unreleased, '', ...sections].join('\n');
+const log = (unreleased: string, ...sections: readonly string[]): Changelog =>
+  parseChangelog(
+    ['# Changelog', '', '## [Unreleased]', '', unreleased, '', ...sections].join('\n'),
+  );
 const HIGHLIGHTED =
   '## 30.0.0 - 2026-11-10\n\n### Highlights\n\n- one\n- two\n\n### Added\n\n- x\n';
 // The window opens at v31 (wiki/Stability.md, the 2026-11-09 ruling): v30 starts no clock.
@@ -109,9 +113,21 @@ describe('unit · changelog-highlights · a break never reaches main inside the 
   });
 });
 
-describe('the committed CHANGELOG.md', () => {
+describe('the committed changelog', () => {
   test('every section from 30.0.0 carries its Highlights', async () => {
-    const changelog = await Bun.file(`${repoRoot()}/CHANGELOG.md`).text();
+    const changelog = await loadChangelog(repoRoot());
     expect(highlightFindings(changelog)).toEqual([]);
+    // Zero sections from 30.0.0 would pass the line above while reading nothing.
+    expect(
+      changelog.filter((one) => releaseHighlights(changelog, one.version)).length,
+    ).toBeGreaterThan(10);
+  });
+
+  test("a release file's finding names that file and its heading line", () => {
+    const file = 'docs/changelog/30.1.0.md';
+    const [finding] = highlightFindings(
+      parseChangelog('## 30.1.0 - 2026-11-20\n\n### Added\n', file),
+    );
+    expect(finding?.at).toBe(`${file}:1`);
   });
 });

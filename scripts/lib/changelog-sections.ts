@@ -7,7 +7,7 @@
 // "does each section match the shape" and emits a gap per breakage. This file answers only
 // "where does this page claim a section, a count, or a walkthrough".
 
-import { BREAKING_ENTRY } from './changelog-format';
+import { BREAKING_ENTRY, CHANGELOG_PATH } from './changelog-format';
 
 /** `## [Unreleased]` holds work that has no version yet, so the released-section rules skip it. */
 export const UNRELEASED = 'unreleased';
@@ -21,21 +21,29 @@ export interface ChangelogSection {
   /** `unreleased`, a bare semver, or the lowercased heading when it is neither. */
   readonly version: string;
   readonly released: boolean;
-  /** 1-based, so `CHANGELOG.md:13` opens it in an editor. */
+  /** The repo-relative file the section lives in: `CHANGELOG.md` or `docs/changelog/X.Y.Z.md`. */
+  readonly file: string;
+  /** 1-based within `file`, so `CHANGELOG.md:13` opens it in an editor. */
   readonly line: number;
   readonly breaking: number;
   /** Whether any non-blank line sits under the heading. */
   readonly filled: boolean;
   /** The lines between this heading and the next `## `, trimmed — the body the gate grades. */
   readonly body: string;
+  /** The same lines untrimmed: `lines[i]` is line `line + 1 + i` of `file`. */
+  readonly lines: readonly string[];
 }
+
+/** Every section of the changelog, newest first: what `loadChangelog` reads and the rules take. */
+export type Changelog = readonly ChangelogSection[];
 
 const versionOf = (heading: string): string => {
   if (/^\[unreleased\]/i.test(heading)) return UNRELEASED;
   return /^\[?(\d+\.\d+\.\d+)\]?/.exec(heading)?.[1] ?? heading.toLowerCase();
 };
 
-export function parseChangelog(text: string): readonly ChangelogSection[] {
+/** The `## ` sections of one markdown file, attributed to `file` (repo-relative). */
+export function parseChangelog(text: string, file: string = CHANGELOG_PATH): Changelog {
   const sections: ChangelogSection[] = [];
   const lines = text.split('\n');
   let current:
@@ -47,10 +55,12 @@ export function parseChangelog(text: string): readonly ChangelogSection[] {
       heading: current.heading,
       version: versionOf(current.heading),
       released: versionOf(current.heading) !== UNRELEASED,
+      file,
       line: current.line,
       breaking: current.breaking,
       filled: current.filled,
       body: current.bodyLines.join('\n').trim(),
+      lines: current.bodyLines,
     });
   };
   for (let index = 0; index < lines.length; index += 1) {
@@ -134,13 +144,9 @@ export function parseUpgradeSections(text: string): ReadonlySet<string> {
 }
 
 /**
- * The oldest released version CHANGELOG.md still carries — the RETENTION BOUNDARY, derived from the
- * file rather than configured, so trimming the file again is deleting sections and nothing else.
- *
- * CHANGELOG.md is trimmed BY HAND — older sections deleted, because they are one
- * `git show v<tag>:CHANGELOG.md` away and a file nobody scrolls is a file nobody reads. No length
- * cap is enforced (it once claimed 1,000 lines while carrying 9,654); this boundary is what makes a
- * trim safe, whenever one is made.
+ * The oldest released version the changelog still carries — the RETENTION BOUNDARY, derived from
+ * the files rather than configured: `docs/changelog/` starts at 11.0.0, and 10.0.0 and everything
+ * before it are one `git show v10.0.0:CHANGELOG.md` away.
  * wiki/Upgrading.md is NOT trimmed with it: a reader upgrading across four majors needs every
  * walkthrough in order, where a reader of the changelog wants the last release. Two documents, two
  * jobs — so a row naming a section BELOW this boundary is the archive working, not a stale row,
@@ -157,7 +163,7 @@ export function retentionBoundary(sections: readonly ChangelogSection[]): string
 const versionOrder = (version: string): readonly number[] =>
   version.split('.').map((part) => Number.parseInt(part, 10));
 
-/** True when `version` is older than `boundary` — i.e. archived out of CHANGELOG.md on purpose. */
+/** True when `version` is older than `boundary` — i.e. archived out of the changelog on purpose. */
 export function isArchived(version: string, boundary: string | undefined): boolean {
   if (boundary === undefined) return false;
   const left = versionOrder(version);
@@ -170,10 +176,10 @@ export function isArchived(version: string, boundary: string | undefined): boole
   return false;
 }
 
-/** The `# <n>` the fenced `grep -cE` in wiki/Upgrading.md promises the reader they will see. */
+/** The `# <n>` the fenced `grep -cE` over docs/changelog/ in wiki/Upgrading.md promises. */
 export function parseDerivedTotal(text: string): { line: number; claimed: number } | undefined {
   const lines = text.split('\n');
-  const at = lines.findIndex((line) => /grep -cE.*BREAKING.*CHANGELOG\.md/.test(line));
+  const at = lines.findIndex((line) => /docs\/changelog\/.*grep -cE.*BREAKING/.test(line));
   if (at === -1) return undefined;
   for (let index = at + 1; index < lines.length && index <= at + 4; index += 1) {
     const claimed = /^#\s*(\d+)\b/.exec(lines[index] ?? '')?.[1];

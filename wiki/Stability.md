@@ -40,13 +40,13 @@ Never "stable forever": a covered surface can change, in a scheduled major, with
 
 | Release | When | Branch | npm dist-tag |
 |---|---|---|---|
-| major | at most once per 90 days from v31, counted from the previous major's `CHANGELOG.md` heading date | `next`, merged into `main` when the window opens | `latest` |
+| major | at most once per 90 days from v31, counted from the heading date of the previous major's `docs/changelog/<major>.0.0.md` | `next`, merged into `main` when the window opens | `latest` |
 | minor | weekly, when something shipped | `main` | `latest` |
 | patch to the current major | as needed | `main` | `latest` |
 | patch to the previous major | security fixes only, until 6 months after its successor shipped | `release/<major>.x` | `maint-<major>` |
 | prerelease of the next major — **planned, nothing ships one yet** | `release-tag.yml` cuts only `X.Y.Z` release commits, so no workflow publishes from `next` | `next` | `next` (`scripts/dist-tag.ts` already names it) |
 
-**v31 is the stable line**, dated 2026-11-10 by its `CHANGELOG.md` heading. It was the exception that starts the clock: it carried every break queued before the promise bound anyone (74, [Upgrading](Upgrading#30x--3100-entry-by-entry)), and `scripts/release.ts` does not refuse it (`WINDOW_OPENS_AT_MAJOR` in `scripts/lib/major-window.ts`). From it on, a `BREAKING —` entry waits on `next` and a removal ships its deprecation minor first.
+**v31 is the stable line**, dated 2026-11-10 by the heading of `docs/changelog/31.0.0.md`. It was the exception that starts the clock: it carried every break queued before the promise bound anyone (74, [Upgrading](Upgrading#30x--3100-entry-by-entry)), and `scripts/release.ts` does not refuse it (`WINDOW_OPENS_AT_MAJOR` in `scripts/lib/major-window.ts`). From it on, a `BREAKING —` entry waits on `next` and a removal ships its deprecation minor first.
 
 Ruling 2026-11-09: the clock moved from v30 to v31. v30 shipped 2026-11-07 while only our own apps ran Ultimate in production, so the window protected no one yet; v31 carries the breaks of plan 101-final-hardening-before-v31, and the window protects adopters from there.
 
@@ -82,7 +82,7 @@ A security fix that cannot be made non-breaking may ship a major inside the wind
 bun run scripts/release.ts --bump major --security GHSA-xxxx-xxxx-xxxx --dry-run --json
 ```
 
-The advisory id (a `GHSA-…` or `CVE-…`) is recorded under the section heading in `CHANGELOG.md` as `> **Security exception:** \`<id>\``, and the bump commit's body carries `Security-Exception: <id>`. The same recorded line lets a removal skip its deprecation minor.
+The advisory id (a `GHSA-…` or `CVE-…`) is recorded under the heading of the release's `docs/changelog/<version>.md` (under `[Unreleased]` in `CHANGELOG.md` before the bump) as `> **Security exception:** \`<id>\``, and the bump commit's body carries `Security-Exception: <id>`. The same recorded line lets a removal skip its deprecation minor.
 
 ## Who decides
 
@@ -95,5 +95,5 @@ The maintainer bot judges whether a release is due and which kind (`.dz/briefs/r
 | one major per 90 days | `scripts/release.ts --bump`, `--check`, and the gate's `boundaries` step | `X_RELEASE_MAJOR_WINDOW` |
 | no break on `main` while the window is closed | `bun run changelog-check` and the gate, on the pull request's base branch | `X_BREAKING_ON_MAIN` |
 | a removal was deprecated first | `bun run scripts/deprecation-window.ts` and the gate | `X_RELEASE_UNDEPRECATED_REMOVAL` |
-| every release from 30.0.0 opens with Highlights, the Release body | `bun run changelog-check` and the gate | `X_CHANGELOG_HIGHLIGHTS_MISSING` |
+| every release from 30.0.0 opens with Highlights, the Release body | `bun run changelog-check` and the gate, over `docs/changelog/` | `X_CHANGELOG_HIGHLIGHTS_MISSING` |
 | a maintenance publish never moves `latest` | `scripts/dist-tag.ts` in `release.yml`; `scripts/registry-audit.ts` audits `latest` and each `maint-*` tag | `X_REGISTRY_LATEST_DRIFT` |

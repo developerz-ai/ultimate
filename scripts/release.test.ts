@@ -1,10 +1,11 @@
 // The release script writes the artefacts nobody can un-publish, so its three text rewrites are
 // pinned here: the manifest's own version, the sibling pins that make a lockstep release
-// installable, and where a new section lands in a newest-first changelog.
+// installable, and the date a release is stamped with. Where a new section lands is
+// `lib/release-changelog.test.ts`'s.
 
 import { describe, expect, test } from 'bun:test';
-import { checkChangelog } from './changelog-check';
-import { commitBlock, promoteUnreleased, releaseDate } from './lib/release-changelog';
+import { parseChangelog } from './lib/changelog-sections';
+import { releaseDate } from './lib/release-changelog';
 import {
   askIssueArgs,
   askLookupFailedLine,
@@ -93,145 +94,6 @@ describe('repinFrameworkDeps', () => {
     expect(repinFrameworkDeps(raw, '1.0.0')).toBe(
       '{ "@ultimat3/core": "1.0.0", "solid-js": "0.0.1" }',
     );
-  });
-});
-
-describe('promoteUnreleased', () => {
-  const changelog = [
-    '# Changelog',
-    '',
-    'Preamble.',
-    '',
-    '## [Unreleased]',
-    '',
-    '### Changed',
-    '',
-    '- **BREAKING — a thing moved.** Do the edit.',
-    '',
-    '## 1.0.0 - 2026-08-10',
-    '',
-    '- first',
-    '',
-  ].join('\n');
-
-  const promote = (text: string, version = '2.0.0', subjects: readonly string[] = []): string => {
-    const result = promoteUnreleased({ changelog: text, version, date: '2026-08-20', subjects });
-    return 'changelog' in result ? result.changelog : '';
-  };
-
-  // The whole issue, in one assertion: the migration ends up IN the version's own section, and
-  // there is exactly one heading for that version — not a generated one above a hand-written one.
-  test('the [Unreleased] body becomes the version section, migration and all', () => {
-    const out = promote(changelog);
-    const headings = out.split('\n').filter((line) => line.startsWith('## '));
-    expect(headings).toEqual(['## [Unreleased]', '## 2.0.0 - 2026-08-20', '## 1.0.0 - 2026-08-10']);
-    const section = out.slice(out.indexOf('## 2.0.0'), out.indexOf('## 1.0.0'));
-    expect(section).toContain('- **BREAKING — a thing moved.** Do the edit.');
-  });
-
-  test('a fresh, empty [Unreleased] is opened above it', () => {
-    const out = promote(changelog);
-    const head = out.slice(out.indexOf('## [Unreleased]'), out.indexOf('## 2.0.0'));
-    expect(head).toBe('## [Unreleased]\n\nNothing yet.\n\n');
-    expect(head).not.toContain('BREAKING');
-  });
-
-  // A second release is a second promotion, and the placeholder must not accumulate down the file.
-  test('the placeholder is never carried into a release section', () => {
-    const next = promote(changelog).replace('Nothing yet.', '- **BREAKING — the next one.** Edit.');
-    const twice = promote(next, '2.0.1');
-    expect(twice.split('Nothing yet.').length - 1).toBe(1);
-    expect(twice.indexOf('Nothing yet.')).toBeLessThan(twice.indexOf('## 2.0.1'));
-  });
-
-  test('commit subjects land INSIDE the section, under a heading nothing hand-written uses', () => {
-    const out = promote(changelog, '2.0.0', ['fix(cli): a thing', 'docs: another']);
-    const section = out.slice(out.indexOf('## 2.0.0'), out.indexOf('## 1.0.0'));
-    expect(section).toContain('### Commits\n\n- fix(cli): a thing\n- docs: another\n');
-    // Verbatim: a subject is provenance, and rewriting it is how it stops matching `git log`.
-    expect(section).not.toContain('### Fixed');
-  });
-
-  test('the promoted file passes the changelog gate rules, tagged', () => {
-    // The heading as well as the row: `changelog-check` asserts both, because a row pointing at a
-    // section that does not exist is what let `1.x → 2.0.0` promise a walkthrough for six releases.
-    const upgrading = [
-      '| From → to | Breaking entries | Read |',
-      '|---|---|---|',
-      '| 1.x → 2.0.0 | **1** | the `2.0.0` section, in order |',
-      '',
-      '## 1.x → 2.0.0, entry by entry',
-      '',
-      '- the one entry',
-    ].join('\n');
-    expect(
-      checkChangelog({ changelog: promote(changelog), upgrading, taggedVersion: '2.0.0' }),
-    ).toEqual([]);
-    // And the file it was promoted FROM does not, which is what the promotion is for.
-    expect(
-      checkChangelog({ changelog, upgrading, taggedVersion: '2.0.0' }).map((gap) => gap.kind),
-    ).toContain('unreleased-breaking');
-  });
-
-  test('no [Unreleased] heading is a refusal, never a guess', () => {
-    const result = promoteUnreleased({
-      changelog: '# Changelog\n\n## 1.0.0\n\n- first\n',
-      version: '2.0.0',
-      date: '2026-08-20',
-      subjects: [],
-    });
-    expect('findings' in result && result.findings[0]?.code).toBe('X_RELEASE_UNRELEASED_MISSING');
-  });
-
-  test('nothing to say is a refusal too, so no release ships an empty section', () => {
-    const result = promoteUnreleased({
-      changelog: '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 1.0.0\n\n- first\n',
-      version: '1.0.1',
-      date: '2026-08-20',
-      subjects: [],
-    });
-    expect('findings' in result && result.findings[0]?.code).toBe(
-      'X_DOC_CHANGELOG_SECTION_INVALID',
-    );
-  });
-
-  // 93443aeb is a human writing a version's section by hand after a botched release, which is the
-  // shape this refuses: the section for `version` is already on the page, so promotion would put a
-  // SECOND one above it — the two-headings-per-version defect the promotion rewrite was for, one
-  // step further along. Refused here, so it happens before the 47 manifests move.
-  test('a version the changelog already holds is a refusal, not a second section', () => {
-    const held = [
-      '# Changelog',
-      '',
-      '## [Unreleased]',
-      '',
-      '- **BREAKING — a thing moved.** Do the edit.',
-      '',
-      '## 6.0.0 - 2026-08-19',
-      '',
-      '- released by hand',
-      '',
-    ].join('\n');
-    const result = promoteUnreleased({
-      changelog: held,
-      version: '6.0.0',
-      date: '2026-08-20',
-      subjects: ['fix(cli): a thing'],
-    });
-    expect('findings' in result && result.findings[0]?.code).toBe(
-      'X_DOC_CHANGELOG_SECTION_INVALID',
-    );
-    expect('changelog' in result).toBe(false);
-  });
-
-  // The refusal is about the TARGET version only — an unrelated section on the page is not one.
-  test('a different version already on the page still promotes', () => {
-    const out = promote(changelog, '2.0.0');
-    expect(out.split('\n').filter((line) => line.startsWith('## 2.0.0')).length).toBe(1);
-  });
-
-  test('an empty subject list adds no heading at all', () => {
-    expect(commitBlock([])).toEqual([]);
   });
 });
 
@@ -397,7 +259,7 @@ describe('unit · the commands a release prints are the safe form', () => {
   test('an id that is no advisory is refused on any bump, before it can reach a fix line', () => {
     const findings = bumpWindowFindings({
       version: '31.0.0',
-      changelog: '# Changelog\n\n## 30.0.0 - 2026-01-01\n\n- x\n',
+      changelog: parseChangelog('# Changelog\n\n## 30.0.0 - 2026-01-01\n\n- x\n'),
       today: '2026-11-03',
       security: 'x; rm -rf /',
     });

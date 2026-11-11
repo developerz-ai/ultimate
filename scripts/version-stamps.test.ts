@@ -89,6 +89,7 @@ describe('a version without an `As of` beside it is an example, not a stamp', ()
 
   test('CHANGELOG.md names every past version by design, and docs/plans are dated records', () => {
     expect(skipStampPath('CHANGELOG.md')).toBe(true);
+    expect(skipStampPath('docs/changelog/1.0.0.md')).toBe(true);
     expect(skipStampPath('docs/plans/2026/08/16/101/13-docs-drift.md')).toBe(true);
     expect(skipStampPath('wiki/_Footer.md')).toBe(false);
   });

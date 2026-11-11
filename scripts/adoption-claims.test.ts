@@ -43,6 +43,7 @@ describe('scanAdoptionClaims', () => {
 describe('the corpus', () => {
   test('records are skipped: their history stands', () => {
     expect(skipAdoptionPath('CHANGELOG.md')).toBe(true);
+    expect(skipAdoptionPath('docs/changelog/1.0.0.md')).toBe(true);
     expect(skipAdoptionPath('docs/plans/2026/11/09/x.md')).toBe(true);
     expect(skipAdoptionPath('docs/history/x.md')).toBe(true);
     expect(skipAdoptionPath('wiki/FAQ.md')).toBe(false);

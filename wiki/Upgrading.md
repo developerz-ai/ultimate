@@ -4,7 +4,7 @@
 
 > **From v31, one major per 90 days.** The window, what semver covers, the support window and the security exception: [Stability](Stability). A removal now ships its `@deprecated` alias for at least one minor before a major takes it, so `x upgrade` across one major names no edit a minor did not already warn about. The 30 sections below stay as they are.
 
-**Thirty majors have shipped since 1.0.0, and this page walks all thirty** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Thirty majors have shipped since 1.0.0, and this page walks all thirty** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`docs/changelog/`](https://github.com/developerz-ai/ultimate/tree/main/docs/changelog) — one file per release, indexed by [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) — is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
@@ -38,14 +38,14 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | [the `4.0.0` section](#300--400-entry-by-entry), in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | [the `3.0.0` section](#200--300-entry-by-entry), in order |
 | 1.x → 2.0.0 | **33** | [the `2.0.0` section](#1x--200-entry-by-entry), in order |
-| 11.x → 20.0.0 | **47** | every major section `CHANGELOG.md` still carries, oldest first |
+| 11.x → 20.0.0 | **47** | every major section `docs/changelog/` still carries, oldest first |
 
-An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
+An entry is a line a release file in `docs/changelog/` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
-grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 634 As of 2026-11-10 — every RELEASED section, which is the sum of every row above whose section
-# the changelog still carries.
+cat docs/changelog/*.md | grep -cE '^(- \*\*|### )BREAKING —'
+# 634 As of 2026-11-10 — every RELEASED section ([Unreleased] stays in CHANGELOG.md), which is the
+# sum of every row above whose section docs/changelog/ still carries.
 ```
 
 How that total is counted, and why `[Unreleased]` is cut: the header of [`scripts/changelog-check.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/changelog-check.ts).
@@ -3202,7 +3202,7 @@ Seven breaking entries, and the first is a **runtime** refusal with no compile e
 
 ### Start here — the one edit
 
-Every single-label timezone name except `UTC` is refused. `isValidTimeZone` answers `false`, `canonicalTimeZone` answers `undefined`, `assertTimeZone` throws `X_TIMEZONE_INVALID` — and every `@ultimat3/time` formatter is downstream of that one call. **43 names change answer**, tabulated once under [the `6.0.0` section of `CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md#600); that table is the source and is deliberately not copied here.
+Every single-label timezone name except `UTC` is refused. `isValidTimeZone` answers `false`, `canonicalTimeZone` answers `undefined`, `assertTimeZone` throws `X_TIMEZONE_INVALID` — and every `@ultimat3/time` formatter is downstream of that one call. **43 names change answer**, tabulated once under the `6.0.0` section of `git show v6.0.0:CHANGELOG.md`; that table is the source and is deliberately not copied here.
 
 ```diff
 - formatDate(at, { locale, zone: 'CET' })
@@ -3334,7 +3334,7 @@ carry.
 
 ## 3.0.0 → 4.0.0, entry by entry
 
-Twenty-five `BREAKING —` entries. Most are one of two shapes: a **declaration nothing read**, deleted rather than implemented, and a **surface that answered the wrong thing**, corrected. Full rationale per row in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `4.0.0` section.
+Twenty-five `BREAKING —` entries. Most are one of two shapes: a **declaration nothing read**, deleted rather than implemented, and a **surface that answered the wrong thing**, corrected. Full rationale per row in the `4.0.0` section of `git show v4.0.0:CHANGELOG.md`.
 
 **Start here — these three change behaviour whether or not you edit anything:**
 
@@ -3385,7 +3385,7 @@ Twenty-five `BREAKING —` entries. Most are one of two shapes: a **declaration 
 
 ## 2.0.0 → 3.0.0, entry by entry
 
-Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surface that did nothing, or did the wrong thing; the fix is the edit named beside it. Full rationale per row in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `3.0.0` section.
+Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surface that did nothing, or did the wrong thing; the fix is the edit named beside it. Full rationale per row in the `3.0.0` section of `git show v3.0.0:CHANGELOG.md`.
 
 | Surface | The edit |
 |---|---|
@@ -3404,7 +3404,7 @@ Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surfac
 
 ## 1.x → 2.0.0, entry by entry
 
-**Thirty-three `BREAKING —` entries — the largest major this project has shipped, and the first one semver covered.** Written up here `As of 2026-08`; the page carried a row pointing at this section for six releases and never carried the section. Full rationale per entry in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section — the numbers below are that section's own order. No codemod.
+**Thirty-three `BREAKING —` entries — the largest major this project has shipped, and the first one semver covered.** Written up here `As of 2026-08`; the page carried a row pointing at this section for six releases and never carried the section. Full rationale per entry in the `2.0.0` section of `git show v2.0.0:CHANGELOG.md` — the numbers below are that section's own order. No codemod.
 
 Two things are not compile errors and are the ones to read first: the **seven behaviour changes** under *Start here*, and the **one migration** every app with a `money()` column owes.
 

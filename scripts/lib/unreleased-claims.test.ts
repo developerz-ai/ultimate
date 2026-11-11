@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { parseChangelog } from './changelog-sections';
+import { loadChangelog } from './changelog-store';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import { UNRELEASED_CLAIM_PINS } from './unreleased-claim-pins';
 import { claimGaps, datedVersions, treeClaims, unreleasedClaims } from './unreleased-claims';
@@ -10,7 +12,7 @@ const CHANGELOG = [
   '',
   '## 20.2.1 - 2026-09-19',
 ].join('\n');
-const DATED = datedVersions(CHANGELOG);
+const DATED = datedVersions(parseChangelog(CHANGELOG));
 
 describe('unit · "unreleased" beside a version CHANGELOG.md has dated', () => {
   test('only a dated heading counts as released', () => {
@@ -68,7 +70,10 @@ describe('the real tree', () => {
     'is on the ratchet, and the scan really read pages',
     async () => {
       const root = repoRoot();
-      const claims = await treeClaims(root, await Bun.file(`${root}/CHANGELOG.md`).text());
+      const changelog = await loadChangelog(root);
+      // Zero dated versions makes every "unreleased" line a non-claim: the rule would pass on nothing.
+      expect(datedVersions(changelog).size).toBeGreaterThan(100);
+      const claims = await treeClaims(root, changelog);
       expect(claimGaps(claims)).toEqual([]);
       // Non-vacuity: while the table holds rows, the scan must be finding the lines they pin.
       const pinned = Object.values(UNRELEASED_CLAIM_PINS).reduce((sum, n) => sum + n, 0);

@@ -1,8 +1,12 @@
-// `[Unreleased]` promoted to the version being released, and the date it is stamped with. The
+// `[Unreleased]` promoted to the version being released — its own `docs/changelog/X.Y.Z.md`, a
+// row in the CHANGELOG.md index, a fresh `[Unreleased]` — and the date it is stamped with. The
 // changelog half of `scripts/release.ts`, split out so that script stays under the size ceiling.
 
-import { parseChangelog } from '../changelog-check';
+import { withReleaseTable } from './changelog-index';
+import { type Changelog, parseChangelog } from './changelog-sections';
+import { type ChangelogFile, versionFile } from './changelog-store';
 import type { Finding } from './log';
+import { withSecurityException } from './major-window';
 
 export const UNRELEASED_HEADING = '## [Unreleased]';
 /** What a fresh `[Unreleased]` says once the release has taken its body. */
@@ -40,31 +44,36 @@ export const commitBlock = (subjects: readonly string[]): readonly string[] =>
  * is refused, not written: `checkChangelog` would red on the result, and it would red after 47
  * manifests, the chart and CHANGELOG.md had already moved.
  *
- * Keep a Changelog stays newest-first for free — `[Unreleased]` is the top section, so the version
- * it becomes lands above every previous one.
+ * Since 31.3.0 the promoted section is its own file, `docs/changelog/X.Y.Z.md`, and the index gains
+ * its row in the same write; `--security` records its advisory in that file. The `changelog` it
+ * returns is the after-state every later step reads (the Stability page's next-window line).
  */
 export function promoteUnreleased(input: {
-  readonly changelog: string;
+  readonly index: string;
+  readonly changelog: Changelog;
   readonly version: string;
   readonly date: string;
   readonly subjects: readonly string[];
-}): { readonly changelog: string } | { readonly findings: readonly Finding[] } {
-  // `parseChangelog`, not a regex of this file's own: what counts as "the 6.0.0 section" is the
+  readonly security?: string | undefined;
+}):
+  | { readonly index: string; readonly file: ChangelogFile; readonly changelog: Changelog }
+  | { readonly findings: readonly Finding[] } {
+  // The loaded sections, not a regex of this file's own: what counts as "the 6.0.0 section" is the
   // gate's question, and two answers to it is how a release passes here and reds there.
-  const held = parseChangelog(input.changelog).find((section) => section.version === input.version);
+  const held = input.changelog.find((section) => section.version === input.version);
   if (held !== undefined) {
     return {
       findings: [
         {
           code: 'X_DOC_CHANGELOG_SECTION_INVALID',
-          cause: `CHANGELOG.md:${held.line} already holds \`## ${held.heading}\`, so promoting [Unreleased] to ${input.version} would write a second section for one version`,
-          fix: `release a version CHANGELOG.md does not already hold: bun run scripts/release.ts --bump patch --dry-run --json, or delete the \`## ${held.heading}\` section if that release never shipped`,
-          at: `CHANGELOG.md:${held.line}`,
+          cause: `${held.file}:${held.line} already holds \`## ${held.heading}\`, so promoting [Unreleased] to ${input.version} would write a second section for one version`,
+          fix: `bun run scripts/release.ts --bump patch --dry-run --json   # a version docs/changelog/ does not hold yet; or delete ${held.file} if that release never shipped`,
+          at: `${held.file}:${held.line}`,
         },
       ],
     };
   }
-  const lines = input.changelog.split('\n');
+  const lines = input.index.split('\n');
   const at = lines.findIndex((line) => /^## \[Unreleased\]/i.test(line));
   if (at === -1) {
     return {
@@ -106,17 +115,23 @@ export function promoteUnreleased(input: {
   const section = [`## ${input.version} - ${input.date}`, ''];
   if (body.length > 0) section.push(...body.split('\n'), '');
   section.push(...commits);
-  return {
-    changelog: [
-      ...lines.slice(0, at),
-      UNRELEASED_HEADING,
-      '',
-      UNRELEASED_PLACEHOLDER,
-      '',
-      ...section,
-      ...lines.slice(end),
-    ].join('\n'),
-  };
+  const path = versionFile(input.version);
+  const text = `${withSecurityException(section.join('\n'), input.version, input.security).trimEnd()}\n`;
+  const reset = [
+    ...lines.slice(0, at),
+    UNRELEASED_HEADING,
+    '',
+    UNRELEASED_PLACEHOLDER,
+    '',
+    ...lines.slice(end),
+  ].join('\n');
+  // The after-state: the fresh [Unreleased], the new release, then every release before it.
+  const changelog = [
+    ...parseChangelog(reset).filter((one) => !one.released),
+    ...parseChangelog(text, path),
+    ...input.changelog.filter((one) => one.released),
+  ];
+  return { index: withReleaseTable(reset, changelog), file: { path, text }, changelog };
 }
 
 /**

@@ -2,6 +2,8 @@
 // no recorded advisory reds the gate on its own bump PR, beside the Highlights and main rules.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { type Changelog, parseChangelog } from './changelog-sections';
+import { loadChangelog } from './changelog-store';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import {
   stabilityChangelogFindings,
@@ -11,11 +13,13 @@ import {
   withNextWindowLine,
 } from './stability-findings';
 
-// Reads the real CHANGELOG.md, so the repo-scan guard holds it to the repo-scan backstop.
+// Reads the real changelog, so the repo-scan guard holds it to the repo-scan backstop.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const log = (...sections: readonly string[]): string =>
-  ['# Changelog', '', '## [Unreleased]', '', 'Nothing yet.', '', ...sections].join('\n');
+const log = (...sections: readonly string[]): Changelog =>
+  parseChangelog(
+    ['# Changelog', '', '## [Unreleased]', '', 'Nothing yet.', '', ...sections].join('\n'),
+  );
 const section = (heading: string): string => `## ${heading}\n\n### Highlights\n\n- one\n`;
 
 describe('unit · stability-findings · the changelog rules, together', () => {
@@ -34,16 +38,18 @@ describe('unit · stability-findings · the changelog rules, together', () => {
   });
 
   test('each rule contributes: highlights, breaking on main', () => {
-    const changelog = [
-      '# Changelog',
-      '',
-      '## [Unreleased]',
-      '',
-      '- **BREAKING — (#1) a thing goes.**',
-      '',
-      '## 31.1.0 - 2026-11-12\n\n- no highlights\n',
-      section('31.0.0 - 2026-11-10'),
-    ].join('\n');
+    const changelog = parseChangelog(
+      [
+        '# Changelog',
+        '',
+        '## [Unreleased]',
+        '',
+        '- **BREAKING — (#1) a thing goes.**',
+        '',
+        '## 31.1.0 - 2026-11-12\n\n- no highlights\n',
+        section('31.0.0 - 2026-11-10'),
+      ].join('\n'),
+    );
     expect(
       stabilityChangelogFindings(changelog, { GITHUB_BASE_REF: 'main' }, '2026-11-20').map(
         (one) => one.code,
@@ -87,10 +93,15 @@ describe('unit · stability-findings · wiki/Stability.md states the next window
 
 // The changelog rules only: the deprecation rule reads a release tag, which after v31 can mean
 // asking origin, and a unit suite never reaches the network. `deprecation-window.test.ts` owns it.
-describe('the committed CHANGELOG.md and wiki/Stability.md', () => {
+describe('the committed changelog and wiki/Stability.md', () => {
   test('hold every stability rule, wherever this branch is headed', async () => {
-    const changelog = await Bun.file(`${repoRoot()}/CHANGELOG.md`).text();
+    const changelog = await loadChangelog(repoRoot());
     const page = await Bun.file(`${repoRoot()}/wiki/Stability.md`).text();
+    // Every rule here passes on an empty list: read none and the gate is green over nothing.
+    expect(changelog.filter((one) => one.released).length).toBeGreaterThan(100);
+    expect(changelog.filter((one) => one.body.startsWith('### Highlights')).length).toBeGreaterThan(
+      10,
+    );
     expect([
       ...stabilityChangelogFindings(changelog, {}, '2026-11-03'),
       ...stabilityPageFindings(page, changelog),

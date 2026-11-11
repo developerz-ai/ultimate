@@ -61,7 +61,7 @@ what each answer means.
 | a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command`, `.data.headSha` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 | the `npm-publish` environment's `v*` tag rule and empty reviewer list | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'`, then `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — expect `[]`, `custom_branch_policies: true`, and one entry `{"name":"v*","type":"tag"}` — a person with an admin token; the one boundary fact here no automation reads |
-| which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
+| which majors have shipped, and what each one breaks | `ls docs/changelog/` · [`CHANGELOG.md`](CHANGELOG.md), the index · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
 
 ## Lockstep versioning — the rule
 
@@ -353,7 +353,10 @@ appears in the real list by existing on disk, whether or not anyone updates this
 ## Ongoing releases (automated)
 
 **`## [Unreleased]` in `CHANGELOG.md` IS the release notes.** Write them there as each change
-lands; step 1 renames that heading to the version and opens a fresh empty `[Unreleased]` above it.
+lands; step 1 moves that body to `docs/changelog/<version>.md`, adds its row to the index table in
+`CHANGELOG.md` and opens a fresh empty `[Unreleased]`. `CHANGELOG.md` is the index, one file per
+release holds its notes; a release section written into the index, or a table row out of step with
+its file, is `X_DOC_CHANGELOG_SECTION_INVALID`, fixed by `bun run scripts/changelog-index.ts --write`.
 A release with nothing under `[Unreleased]` and no commit since the previous tag is **refused**
 (`X_DOC_CHANGELOG_SECTION_INVALID`), never published as an empty section.
 
@@ -379,11 +382,12 @@ every `maint-*` tag.
    from its heading and updating the summary table's counts. If the section does not exist, stop and
    write it before tagging; the procedure is
    [`docs/architecture/19-cutting-a-major.md`](docs/architecture/19-cutting-a-major.md).
-   The counts are checked against that major's own `CHANGELOG.md` section —
+   The counts are checked against that major's own file, `docs/changelog/<major>.0.0.md` —
    `bun run scripts/changelog-check.ts --json`.
 1. `bun run scripts/release.ts --bump patch|minor|major` — bumps every package in lockstep and
-   **promotes** `## [Unreleased]` to `## X.Y.Z - <date>`, opening a fresh empty `[Unreleased]` above
-   it. Commit subjects since the previous tag are appended **inside** that section under
+   **promotes** `## [Unreleased]` to `docs/changelog/<version>.md`, headed `## X.Y.Z - <date>`, with its
+   row in the `CHANGELOG.md` index and a fresh empty `[Unreleased]`. Commit subjects since the
+   previous tag are appended **inside** that file under
    `### Commits`. Dry it first: `--bump patch --dry-run --json` computes the promotion, refuses on
    the same findings, names the three writes below, and writes nothing.
 
@@ -417,7 +421,7 @@ every `maint-*` tag.
    `.github/workflows/release-tag.yml` reads the stamped version and, if `vX.Y.Z` does not exist
    yet: refuses unless `bun run scripts/release.ts --check X.Y.Z` passes, creates the **annotated**
    tag on the commit ci.yml judged (a tag object, then its ref), creates the GitHub Release with that
-   version's `CHANGELOG.md` section as its notes (`bun run scripts/release-notes.ts --version X.Y.Z`)
+   version's `docs/changelog/<version>.md` as its notes (`bun run scripts/release-notes.ts --version X.Y.Z`)
    and `--verify-tag`, and dispatches `release.yml` at the tag. If the tag already exists it stops
    quietly — a maintainer who still tags by hand races nothing. A release commit whose own CI was
    red or cancelled is cut by re-running its failed jobs (`gh run rerun <run-id> --failed`), which

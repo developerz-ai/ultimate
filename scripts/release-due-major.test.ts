@@ -36,8 +36,8 @@ const NOW = Date.UTC(2026, 9, 14, 12);
 
 const MANIFEST = (version: string): string =>
   `${JSON.stringify({ name: '@ultimat3/core', version, files: ['src', '!src/**/*.test.ts'] }, null, 2)}\n`;
-const CHANGELOG =
-  '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 1.0.0 - 2026-10-01\n\n- first\n';
+const CHANGELOG = '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n';
+const RELEASE_1_0_0 = '## 1.0.0 - 2026-10-01\n\n- first\n';
 /** A repository with one publishable package, released and tagged at 1.0.0. */
 async function released() {
   const dir = await mkdtemp(join(tmpdir(), 'release-due-major-'));
@@ -101,6 +101,7 @@ async function released() {
       'packages/core/package.json': MANIFEST('1.0.0'),
       'packages/core/src/a.ts': 'export const a = 1;\n',
       'CHANGELOG.md': CHANGELOG,
+      'docs/changelog/1.0.0.md': RELEASE_1_0_0,
     },
     'chore: release 1.0.0 (#1)',
   );
