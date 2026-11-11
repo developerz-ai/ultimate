@@ -247,7 +247,7 @@ describe('the precache manifest', () => {
 
   // An offline reload that cannot load the page boot restores no persisted record, so the like a
   // visitor took offline reads the old count — the framework scripts ride the manifest too.
-  test('names the page boot and the sync worker, keyed by their source-addressed URL', () => {
+  test('names the page boot and the sync worker, keyed by their byte-addressed URL', () => {
     const scripts = [
       { url: '/_x/page-boot/1a2b3c4d.js', bytes: 35_000 },
       { url: '/_x/sync-worker/5e6f7a8b.js', bytes: 24_000 },

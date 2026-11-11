@@ -1,6 +1,6 @@
 // The page's ONE sync worker bundle, against a real `Bun.build` and the real route: built from a
 // fixture entry (the shape `@ultimat3/realtime/sync-worker` has), served immutable at a
-// source-addressed URL, and absent — not an error — for an app with no realtime.
+// URL named by its bytes, and absent — not an error — for an app with no realtime.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
@@ -39,7 +39,7 @@ afterEach(async () => {
 });
 
 describe('buildSyncWorker', () => {
-  test('one classic-script bundle at a source-addressed URL under the worker base', async () => {
+  test('one classic-script bundle at a byte-addressed URL under the worker base', async () => {
     const worker = await buildSyncWorker(ROOT, { entry: ENTRY });
 
     expect(worker?.url).toMatch(new RegExp(`^${SYNC_WORKER_BASE_PATH}/[0-9a-f]{8}\\.js$`));

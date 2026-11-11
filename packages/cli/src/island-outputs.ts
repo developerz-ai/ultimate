@@ -59,14 +59,13 @@ export async function builtOutputs(
     if (sources === undefined || (artifact.kind === 'entry-point' && file === undefined)) {
       throw new IslandBuildFailedError({
         file: file ?? key,
-        logs: `the bundler emitted ${key} with no source map or no island behind it, so the output has no stable identity`,
+        logs: `the bundler emitted ${key} with no source map or no island behind it, so the files it was built from are unknown`,
       });
     }
     outputs.push({
       path: key,
       ...(file === undefined ? {} : { file }),
       code: stripDebugId(await artifact.text()),
-      sources,
     });
   }
   return outputs;
@@ -117,10 +116,7 @@ export function entryChunks(
       file,
       moduleId,
       url: `${ISLAND_BASE_PATH}/${moduleId}-${entry.identity}.js`,
-      // The FIRST bytes this process emitted for these inputs, so a URL served `immutable` answers
-      // one byte string for as long as the process lives. Without it `x dev` re-mints the chunk on
-      // every watcher tick and a browser holding the previous one under `max-age=31536000` has two
-      // different files at one address. `bytes` is measured on THAT code, never on this build's.
+      // The identity IS `contentHash(entry.code)` (`island-link.ts`), so the URL names these bytes.
       ...stableChunk(file, entry.identity, entry.code),
       imports: closure(entry.imports),
       sources: withOwnFile(file, sources.get(entry.path) ?? []),

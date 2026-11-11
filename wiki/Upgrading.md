@@ -211,6 +211,7 @@ A setter still on a package's `.` barrel is `X_ADAPTER_PORT_INCOMPLETE` on the `
 | `x verify`'s `contract-diff` step is red, `X_MANIFEST_BREAKING`, on a breaking change that `x manifest` or `x g` had already written into `x.manifest.json`: from **31.6.0** the baseline is the manifest as committed (at `HEAD`, or at the merge base with `origin/$GITHUB_BASE_REF` in a GitHub pull request), never the working-tree file | bump the major version, or restore the removed surface. Regenerating the manifest no longer clears it |
 | `x verify`'s `unit` step runs the app's seeds on the memory driver (**31.6.0**): a seed row the entity refuses — float money, a value its schema rejects — turns `unit` red under the entity's own code, and a seed that throws with no code is `X_SEED_FAILED` | fix the seed row the finding names, as its `fix:` says. Then `x verify --only unit` |
 | `x verify`'s `errors` step reports `X_ERROR_FIX_INVALID` on an app's own error whose `fix:` defers the edit (a whitespace-delimited `# after <verb>ing …` or `# once <…>ed`), only says re-run, or runs `x g … --force` (**31.6.0**) | rewrite that `fix:` as the edit itself (`edit <path>.<ext>:<line> — <instruction>`) or a command that works on its own, with no `--force` |
+| every island and `/_x/assets` URL changes once (**31.6.1**): each is now named by a hash of its final bytes, never its sources (#1075) | nothing to do; a CDN in front needs no purge, since new names never collide with old ones |
 
 ## 29.x → 30.0.0, entry by entry
 

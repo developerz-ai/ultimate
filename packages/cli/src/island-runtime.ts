@@ -1,16 +1,17 @@
 // The page runtime as ONE chunk beside the islands (#505): realtime's `page-runtime.ts` — the store,
-// the socket stack, the query client, core's transport — built once per build, addressed by its
-// source graph like any island, and loaded by a realtime island only on a document the page boot
+// the socket stack, the query client, core's transport — built once per build, named by its
+// bytes like any island, and loaded by a realtime island only on a document the page boot
 // is absent from. Islands carry thin hooks over it; none carries a copy of it.
 
 // why: Bun ships no path API; the runtime is resolved beside the realtime the islands bundle.
 import { dirname, join } from 'node:path';
+import { contentHash } from '@ultimat3/render/server';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';
 import type { IslandChunk, SharedChunk } from './island-bundle';
 import { inputFiles } from './island-cache-inputs';
 import { realSpelling } from './island-duplicates';
-import { describeBuildError, graphHash, stableChunk, stripDebugId } from './island-identity';
+import { describeBuildError, stableChunk, stripDebugId } from './island-identity';
 import { frameworkDedupePlugins } from './island-package-dedupe';
 import type { SourcePaths } from './island-sources';
 import { sourcesOnDisk } from './island-sources';
@@ -147,7 +148,7 @@ async function buildRuntime(
       minify: true,
       plugins: [runtimeEntryPlugin(file), ...frameworkDedupePlugins(root)],
       // `island-bundle.ts`'s reasons, verbatim: only ever built to be shipped, and the map's
-      // `sourcesContent` is the one stable identity a minified bundle has.
+      // sources are what the island store re-checks a prebuilt chunk against.
       define: { 'process.env.NODE_ENV': '"production"' },
       sourcemap: 'external',
       metafile: true,
@@ -164,13 +165,15 @@ async function buildRuntime(
     });
   }
   const text = await map.text();
-  const identity = graphHash(ENTRY, text);
+  // Named by its bytes (#1075), as every island output is: `immutable` is a promise about them.
+  const code = stripDebugId(await output.text());
+  const identity = contentHash(code);
   const url = `${basePath}/page-runtime.${identity}.js`;
   return {
     realtime,
     wait,
     url,
-    ...stableChunk(url, identity, stripDebugId(await output.text())),
+    ...stableChunk(url, identity, code),
     sources: await sourcesOnDisk(root, JSON.parse(text)),
     inputs: await inputFiles(Object.keys(built.metafile?.inputs ?? {})),
   };
@@ -178,8 +181,8 @@ async function buildRuntime(
 
 /**
  * The entry installs the runtime as its whole body; the module is named BARE in that source and
- * resolved here, because the source is part of `sourcesContent` and a machine path in it would give
- * one runtime a different URL in every checkout (the reason `island-realtime.ts` names realtime).
+ * resolved here, the reason `island-realtime.ts` names realtime: resolved from where the islands
+ * resolve it, it is the one copy they bundle.
  */
 function runtimeEntryPlugin(file: string): BunPlugin {
   return {

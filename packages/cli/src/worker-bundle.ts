@@ -1,5 +1,5 @@
 // The page's framework scripts (plan 101), each built as its own classic-script browser bundle,
-// addressed by a hash of its source graph, served `immutable` by the same route in `x dev` and the
+// named by a hash of its bytes, served `immutable` by the same route in `x dev` and the
 // container: the ONE sync worker (`@ultimat3/realtime/sync-worker`, slice 11) and the ONE page boot
 // (`@ultimat3/realtime/boot` — the disk restore and the outbox, once per page instead of once per
 // island). A new deploy is a new URL, so an old tab keeps what it started with.
@@ -8,9 +8,10 @@
 import { dirname, join, relative } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
+import { contentHash } from '@ultimat3/render/server';
 import { assetRouteMeta } from './asset-route-meta';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
-import { describeBuildError, graphHash, stripDebugId } from './island-identity';
+import { describeBuildError } from './island-identity';
 
 /**
  * The ONE prefix every framework-served, content-addressed script lives under — the sync worker,
@@ -128,10 +129,8 @@ async function buildFrameworkScript(
       format: 'iife',
       splitting: false,
       minify: true,
-      // `island-bundle.ts`'s reasons, verbatim: a chunk is only ever built to be shipped, and the
-      // map's `sourcesContent` is the one stable identity a minified bundle has.
+      // `island-bundle.ts`'s reason, verbatim: a chunk is only ever built to be shipped.
       define: { 'process.env.NODE_ENV': '"production"' },
-      sourcemap: 'external',
     });
   } catch (error) {
     throw new FrameworkScriptBuildFailedError({
@@ -141,17 +140,17 @@ async function buildFrameworkScript(
     });
   }
   const output = built.outputs.find((artifact) => artifact.kind === 'entry-point');
-  const map = built.outputs.find((artifact) => artifact.kind === 'sourcemap');
-  if (!built.success || output === undefined || map === undefined) {
+  if (!built.success || output === undefined) {
     throw new FrameworkScriptBuildFailedError({
       what,
       entry: label,
       logs: built.logs.map((log) => String(log)).join('; '),
     });
   }
-  const code = stripDebugId(await output.text());
+  const code = await output.text();
   return {
-    url: `${basePath}/${graphHash(specifier, await map.text())}.js`,
+    // Named by its bytes (#1075): served `immutable`, so the name must change whenever they do.
+    url: `${basePath}/${contentHash(code)}.js`,
     code,
     bytes: new TextEncoder().encode(code).byteLength,
   };

@@ -172,7 +172,7 @@ const loaded = (chunk: IslandChunk, build: Built): string =>
 
 /**
  * The SECOND build, in a process of its own — and it has to be. `buildIslands` answers the FIRST
- * code it emitted for an unchanged source graph for as long as the process lives (`stableChunk` in
+ * code it emitted under one identity for as long as the process lives (`stableChunk` in
  * `packages/cli/src/island-identity.ts`, so one URL serves one byte string), which made a second
  * in-process build hand back the first one's code: every "byte-identical" below compared a cached
  * string to itself and proved nothing. A child process has no cache, which is also what two real
@@ -335,8 +335,8 @@ test('every island is byte-identical to its rebuild in another process', () => {
   for (const [file, before] of first) {
     const after = second.get(file) as IslandChunk;
     // URL and size first, so a failure names the island instead of printing 100 kB of chunk. The
-    // URL is source-addressed (`graphHash`), so it alone cannot see a bundler that emits other
-    // bytes for one graph — the code comparison is the claim, and it has no tolerance.
+    // URL is a hash of the bytes, so it moves with them — the code comparison is the claim, and
+    // it has no tolerance.
     expect(line(after)).toBe(line(before));
     expect(after.code === before.code, `${line(before)}: same length, different bytes`).toBe(true);
   }
