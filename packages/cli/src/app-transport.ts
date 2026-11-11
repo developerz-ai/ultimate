@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isJsonObject } from '@ultimat3/core';
 import type { SourceFile } from './app-boundaries';
+import { mergeBarrelFindings, publishedEntries } from './browser-barrel-cut';
 import type { FindingContext } from './browser-transport';
 import {
   barrelFinding,
@@ -200,13 +201,16 @@ export async function appTransportFindings(
     workspaces(root),
     installedSpecifiers(root),
   ]);
-  const published = [...installed, ...own.patterns.filter((p) => !p.wild).map((p) => p.head)];
+  const specifiers = [...installed, ...own.patterns.filter((p) => !p.wild).map((p) => p.head)];
+  const barrelMap = serverBarrels(specifiers);
   const { bypasses, barrels } = checkBrowserTransport({
     entries,
     // The tsconfig first: it is what the app's own typecheck resolves through.
     host: hostOf(root, sources, [...paths, ...own.patterns]),
     seams: new Map(),
-    barrels: serverBarrels(published),
+    barrels: barrelMap,
+    // What each browser entry exports: a swap is printed only where it compiles.
+    published: await publishedEntries(root, barrelMap.values()),
     ownsBarrel: (file, barrel) => {
       const dir = own.dirs.get(barrel);
       return dir !== undefined && file.startsWith(`${dir}/`);
@@ -214,6 +218,6 @@ export async function appTransportFindings(
   });
   return [
     ...bypasses.map((bypass) => bypassFinding(bypass, CONTEXT)),
-    ...barrels.map((barrel) => barrelFinding(barrel, CONTEXT)),
+    ...mergeBarrelFindings(barrels.map((barrel) => barrelFinding(barrel, CONTEXT))),
   ];
 }

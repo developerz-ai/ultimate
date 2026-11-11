@@ -16,6 +16,11 @@ import { repoFiles } from './scaffold-repo';
 
 interface BiomeConfig {
   readonly vcs?: Readonly<Record<string, unknown>>;
+  readonly linter?: { readonly rules?: { readonly style?: Readonly<Record<string, unknown>> } };
+  readonly overrides?: readonly {
+    readonly includes?: readonly string[];
+    readonly linter?: { readonly rules?: { readonly style?: Readonly<Record<string, unknown>> } };
+  }[];
   readonly files?: { readonly includes?: readonly string[] };
 }
 
@@ -68,6 +73,18 @@ describe('unit · the biome.json x new writes · Bun-only rules', () => {
       readonly linter?: { readonly rules?: { readonly style?: Readonly<Record<string, unknown>> } };
     };
     expect(config.linter?.rules?.style?.['useNodejsImportProtocol']).toBe('error');
+  });
+});
+
+describe('unit · the biome.json x new writes · named exports', () => {
+  // A default-exported action registers under the name `"default"`: the export IS the name an
+  // app's API, manifest and MCP tool carry. The one ambient `export default` (`*.module.scss`'s
+  // class map, in `types/scss.d.ts`) is the override, not a rule turned off everywhere.
+  test('a default export is a lint error, outside the scss type shim', () => {
+    expect(biome().linter?.rules?.style?.['noDefaultExport']).toBe('error');
+    const shim = biome().overrides?.find((one) => one.includes?.includes('**/scss.d.ts'));
+    expect(shim?.linter?.rules?.style?.['noDefaultExport']).toBe('off');
+    expect(emitted('types/scss.d.ts')).toContain('export default classes;');
   });
 });
 

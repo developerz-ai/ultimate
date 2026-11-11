@@ -32,6 +32,7 @@ import { factoryFindings } from './verify-factories';
 import { readVerifyFloor } from './verify-floor';
 import type { MachinePace } from './verify-pace';
 import { DECLARED_PACE, defaultTimeoutArgs, pacedMs, paceEnv } from './verify-pace';
+import { seedFindings } from './verify-seeds';
 import { shardFiles } from './verify-shard';
 import type { ChangedTestSelection, StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
@@ -449,16 +450,21 @@ const summaryOf = (type: TypedTest): string =>
   Object.hasOwn(SUMMARIES, type) ? SUMMARIES[type] : `${type} tests`;
 
 /**
- * The unit suite, and an app's factory lint beside it (`verify-factories.ts`): a factory that
- * builds a row its entity refuses is a failing test in every file that uses it, found here once.
- * Under `--shard` only slice 1 lints, so `x verify merge` reports each finding once.
+ * The unit suite, and beside it an app's factory lint (`verify-factories.ts`) and seed run
+ * (`verify-seeds.ts`): a factory or a seed row its entity refuses is found here, with the entity's
+ * own code, not by every test that uses it or inside e2e's X_E2E_APP_FAILED. The two are separate
+ * children run at once, so the step pays the slower one. Under `--shard` only slice 1 runs them,
+ * so `x verify merge` reports each finding once.
  */
 const unitStep = async (ctx: VerifyContext): Promise<StepOutcome> => {
   const suite = await runType(ctx, 'unit');
   if (!isApp(ctx.root) || (ctx.shard !== undefined && ctx.shard.index !== 1)) return suite;
-  const factories = await factoryFindings(ctx.root, ctx.runner);
-  if (factories.length === 0) return suite;
-  return { ...suite, ok: false, findings: [...factories, ...suite.findings] };
+  const [factories, seeds] = await Promise.all([
+    factoryFindings(ctx.root, ctx.runner),
+    seedFindings(ctx.root, ctx.runner),
+  ]);
+  if (factories.length === 0 && seeds.length === 0) return suite;
+  return { ...suite, ok: false, findings: [...factories, ...seeds, ...suite.findings] };
 };
 
 const stepFor = (type: TestType): VerifyStep => {

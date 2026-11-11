@@ -1,15 +1,19 @@
-// One cause, one step. A module that will not import was reported by up to four steps at once —
-// `contract-diff`, `budgets`, `policy` and `manifest` all load the app, and each carried the load's
-// findings — so one syntax error read as four red steps and four copies of one line (plan 101
-// slice 11 i). The `manifest` step owns them: it runs in every repo, and "does the projection
-// describe the code?" is the question a module that will not import answers first.
+// One cause, one finding. A module that will not import leaves every registry half-filled, and each
+// step that loaded the app reported what half a registry looks like — a permission typo read as 9
+// findings across 7 steps (plan 101 19a FX8). The `manifest` step owns the load's findings: it runs
+// in every repo, and "does the projection describe the code?" is the question a broken module
+// answers first. Every other step that loads the app stands down while the load is red.
 
 import { loadApp } from './app-load';
+import { msg } from './messages';
 import type { Finding } from './output';
-import type { StepOutcome, VerifyStepName } from './verify-step';
+import type { VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
 
 /** The step that reports the app's load failures. Every other step points at it. */
 export const LOAD_OWNER: VerifyStepName = 'manifest';
+
+/** What a dependent step says instead of running over a half-loaded registry. */
+export const LOAD_BLOCKED = msg('cli.verify.loadBlocked', { owner: LOAD_OWNER });
 
 /** What the app load reports, as the step sees it. */
 export type LoadProbe = (root: string) => Promise<{ readonly findings: readonly Finding[] }>;
@@ -17,25 +21,28 @@ export type LoadProbe = (root: string) => Promise<{ readonly findings: readonly 
 const keyOf = (finding: Finding): string =>
   [finding.code, finding.at ?? '', finding.cause].join('\u0000');
 
+/** Whether this run reports the owner step: the gate always does, `--only` when it names it. */
+function ownerRuns(ctx: VerifyContext): boolean {
+  if (ctx.only === undefined) return true;
+  return typeof ctx.only === 'string' ? ctx.only === LOAD_OWNER : ctx.only.includes(LOAD_OWNER);
+}
+
 /**
- * `findings` without the ones the app load raised, and an `output` line saying where they went.
- * The step's own verdict stands on what is left: a budget the broken module left unmeasured is
- * still this step's finding, only its cause moved.
+ * `step`, standing down while the app's load has findings. A run that includes the owner gets one
+ * line saying where the cause went and no findings — the gate is red on `manifest` already. A
+ * narrowed run without the owner (`x verify --only budgets`) carries the load's findings itself:
+ * skipping there would be a green over an app that does not load.
  */
-export async function withoutLoadFindings(
-  root: string,
-  findings: readonly Finding[],
-  load: LoadProbe = loadApp,
-): Promise<StepOutcome> {
-  const loaded = new Set((await load(root)).findings.map(keyOf));
-  const kept = findings.filter((finding) => !loaded.has(keyOf(finding)));
-  const moved = findings.length - kept.length;
+export function blockedByLoad(step: VerifyStep, load: LoadProbe = loadApp): VerifyStep {
   return {
-    ok: kept.length === 0,
-    findings: kept,
-    ...(moved === 0
-      ? {}
-      : { output: `skipped: ${moved} module-load finding(s) — see ${LOAD_OWNER}` }),
+    ...step,
+    async run(ctx) {
+      const { findings } = await load(ctx.root);
+      if (findings.length === 0) return step.run(ctx);
+      return ownerRuns(ctx)
+        ? { ok: true, findings: [], output: LOAD_BLOCKED }
+        : { ok: false, findings, output: LOAD_BLOCKED };
+    },
   };
 }
 

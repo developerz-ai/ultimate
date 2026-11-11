@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { maskLiterals, stripComments } from '@ultimat3/core';
-import { isCodeRegistry, scanBorrowedCodes, scanCodeDeclarations, scanCodes } from './ts-scan';
+import {
+  isCodeRegistry,
+  scanBorrowedCodes,
+  scanCodeDeclarations,
+  scanCodeFixSites,
+  scanCodes,
+} from './ts-scan';
 
 describe('stripComments', () => {
   test('blanks line and block comments but keeps line numbers', () => {
@@ -306,5 +312,15 @@ describe('the mask stays aligned with its input', () => {
     const masked = stripComments(source);
     const at = masked.indexOf('const f');
     expect(source.slice(at, at + 7)).toBe('const f');
+  });
+});
+
+describe('scanCodeFixSites marks table-sourced sites', () => {
+  test('a `*FIXES` key is fromTable, a `code:` construction is not', () => {
+    const source =
+      "export const CLI_FIXES = {\n  X_A: 'x doctor --json',\n};\nnew E({ code: 'X_B', fix: 'x help' });\n";
+    const sites = scanCodeFixSites(source, 'a.ts');
+    expect(sites.find((site) => site.code === 'X_A')?.fromTable).toBe(true);
+    expect(sites.find((site) => site.code === 'X_B')?.fromTable).toBeUndefined();
   });
 });

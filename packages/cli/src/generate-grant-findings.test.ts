@@ -70,3 +70,17 @@ describe('unit · a grant the generator could not make is a finding with the lin
     expect(await ungrantedByGenerator(root, ['apps/web/app/run/jobs/reindex-run.ts'])).toEqual([]);
   });
 });
+
+describe('unit · the finding names what the policy declares, not what its slice is called', () => {
+  test('a second set in the slice: its own permissions, never the first set', async () => {
+    await Bun.write(
+      join(root, POLICY),
+      "definePermissions(['run:read', 'run:write']);\ndefinePermissions(['approval:read', 'approval:write']);\n",
+    );
+    const [finding] = await ungrantedByGenerator(root, [POLICY]);
+    // The set this run wrote — the file's last — never the slice's first, which it did not write.
+    expect(finding?.fix).toContain("member: 'approval:read'");
+    expect(finding?.fix).toContain("admin: 'approval:write'");
+    expect(finding?.fix).not.toContain('run:');
+  });
+});

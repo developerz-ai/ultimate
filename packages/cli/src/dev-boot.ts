@@ -73,11 +73,13 @@ export interface StartDevOptions {
   readonly roles?: readonly Role[];
   readonly onReload?: (file: string, durationMs: number) => void;
   /**
-   * A save reached a module that defines a primitive, so this process cannot serve it
-   * (`takeStalePins`). Given, it is called INSTEAD of `onReload` — `x dev`'s child drains and exits
-   * for its supervisor to boot a fresh one. Absent, the save is `X_DEV_RESTART_REQUIRED` on `/_x`.
+   * A save this process cannot serve: it reached a module that defines a primitive
+   * (`takeStalePins`), or changed what the boot mounted (`dev-rebuild-remount.ts`). Given, it is
+   * called INSTEAD of `onReload` — `x dev`'s child prints `line`, the restart's own reason, then
+   * drains and exits for its supervisor to boot a fresh one. Absent, the save is
+   * `X_DEV_RESTART_REQUIRED` on `/_x`.
    */
-  readonly onRestart?: (pins: readonly StalePin[]) => void;
+  readonly onRestart?: (pins: readonly StalePin[], line: string) => void;
 }
 
 /**

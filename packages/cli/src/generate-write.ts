@@ -13,6 +13,7 @@ import { commentSafe } from './comment-safe';
 import { GenerateJsonInvalidError, ScaffoldPathEscapeError } from './errors';
 import { mergeJsonDeep, mergeJsonInPlace, sortJsonDeep } from './json-merge';
 import type { Finding } from './output';
+import { appendPolicy } from './policy-append';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 
@@ -188,6 +189,12 @@ const conflictFix = (
     return `${invocation} --force   # overwrites ${path}, or pass a different name`;
   const into = `--feature ${quoteArg(slice)}`;
   const named = quoteArg(name);
+  // `x g policy` on a slice that already declares this very set: an action is the wrong kind and
+  // `--force` deletes every other rule in the file. A second set under its own name APPENDS.
+  const head = /^(?<head>.*? g) policy /.exec(invocation)?.groups?.['head'];
+  if (module === 'policy.ts' && head !== undefined) {
+    return `${head} policy ${quoteArg(`${name}-admin`)} ${into}   # appends a second permission set: ${commentSafe(path)} already exports ${commentSafe(name)}'s`;
+  }
   // A read needs the slice's table (X_FEATURE_REQUIRED), so it is offered only beside one.
   const read = existsSync(join(dirname(absolute), 'entity.ts'))
     ? `or x g query ${named} ${into}`
@@ -211,6 +218,15 @@ function planFile(
     return existsSync(absolute)
       ? { kind: 'skip' }
       : { kind: 'write', file, absolute, contents: file.contents };
+  }
+  // A slice's `policy.ts` holds every primitive's rules: a second permission set is appended to it,
+  // `--force` included — overwriting it would delete the rules already there. The same set again
+  // does not merge (`appendPolicy` answers undefined) and is the conflict below.
+  if (file.merge === undefined && typeof file.contents === 'string' && existsSync(absolute)) {
+    const merged = file.path.endsWith('/policy.ts')
+      ? appendPolicy(readFileSync(absolute, 'utf8'), file.contents)
+      : undefined;
+    if (merged !== undefined) return { kind: 'write', file, absolute, contents: merged };
   }
   // The scaffold's own copy, untouched, is replaced without asking; an edited one is the author's.
   if (file.merge === 'replaces-pristine' && existsSync(absolute)) {

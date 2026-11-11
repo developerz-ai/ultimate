@@ -253,6 +253,8 @@ export interface CodeFixSite extends CodeSite {
    * branches — because a fix the scan has to guess at is one it must not report.
    */
   readonly fix?: string;
+  /** Read off a `*FIXES` table key: a fix lookup by code, which constructs nothing. */
+  readonly fromTable?: true;
 }
 
 /** `code:` / `code =`, or `fix:`. `fix =` is deliberately not a declaration — `scanFixes` agrees. */
@@ -339,10 +341,93 @@ export function scanCodeFixSites(source: string, at: string): readonly CodeFixSi
       codes.set(scope, { at, line: literal?.line ?? lineAt(key.from), code });
     }
   }
-  return [...codes].map(([scope, site]) => {
+  const paired = [...codes].map(([scope, site]) => {
     const fix = fixes.get(scope);
     return fix === undefined ? site : { ...site, fix };
   });
+  return [...paired, ...fixTableSites(masked, source, at, lineAt)];
+}
+
+/**
+ * A module-scope `const <NAME>FIXES = {…}` or `Object.freeze(…)({…})` — the table a factory reads
+ * as `fix: SQLSTATE_FIXES[code]`. No `code:` literal anywhere, so the adjacency rule above never
+ * saw one of its codes, and `x errors explain X_DB_SCHEMA_STALE` answered "nothing raises it".
+ * The NAME is the rule: a titles table is keyed by the same codes and holds no fix.
+ */
+const FIX_TABLE =
+  /(?<![.\w$])const\s+[A-Z][A-Z0-9_]*FIXES\s*(?::[^=;]*)?=\s*(?:Object\.freeze\s*(?:<[^(]*>)?\(\s*)?\{/g;
+
+/** A table key: an `X_*` code right after the `{` or a `,` of its own object. */
+const TABLE_KEY = /(?<=[{,]\s*)(X_[A-Z0-9_]+)\s*:\s*/g;
+
+/** A value that is literals joined by `+` and nothing else — one fix line, written over lines. */
+const ONLY_JOINS = /^[\s+]*$/;
+
+function fixTableSites(
+  masked: string,
+  source: string,
+  at: string,
+  lineAt: (index: number) => number,
+): readonly CodeFixSite[] {
+  const sites: CodeFixSite[] = [];
+  for (const table of masked.matchAll(FIX_TABLE)) {
+    const open = table.index + table[0].length - 1;
+    let depth = 0;
+    let close = masked.length;
+    for (let i = open; i < masked.length; i += 1) {
+      const ch = masked[i] as string;
+      if (QUOTES.has(ch)) i = Math.max(i, endOfLiteral(masked, i) - 1);
+      else if (OPENERS.has(ch)) depth += 1;
+      else if (CLOSERS.has(ch) && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    const body = masked.slice(open, close);
+    for (const key of body.matchAll(TABLE_KEY)) {
+      if (depthAt(body, key.index) !== 1) continue;
+      const from = open + key.index + key[0].length;
+      const site: CodeFixSite = {
+        at,
+        line: lineAt(open + key.index),
+        code: key[1] as string,
+        fromTable: true,
+      };
+      const fix = joinedLiterals(masked, source, from);
+      sites.push(fix === undefined ? site : { ...site, fix });
+    }
+  }
+  return sites;
+}
+
+/** Bracket depth at `index` of a masked span that opens with its own `{`. */
+function depthAt(body: string, index: number): number {
+  let depth = 0;
+  for (let i = 0; i < index; i += 1) {
+    const ch = body[i] as string;
+    if (QUOTES.has(ch)) i = Math.max(i, endOfLiteral(body, i) - 1);
+    else if (OPENERS.has(ch)) depth += 1;
+    else if (CLOSERS.has(ch)) depth -= 1;
+  }
+  return depth;
+}
+
+/**
+ * The fix the value at `from` evaluates to when it is one literal or literals joined by `+`;
+ * `undefined` for anything else between them (a call, a ternary, an identifier) — never half a fix.
+ */
+function joinedLiterals(masked: string, source: string, from: number): string | undefined {
+  const parts: string[] = [];
+  for (let i = from; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    if (QUOTES.has(ch)) {
+      const end = endOfLiteral(masked, i);
+      parts.push(source.slice(i + 1, end - 1));
+      i = end - 1;
+    } else if (ch === ',' || ch === '}') break;
+    else if (!ONLY_JOINS.test(ch)) return undefined;
+  }
+  return parts.length === 0 ? undefined : parts.join('');
 }
 
 const BORROWED_LIST = /BORROWED_ERROR_CODES[^=]*=[^[]*\[([^\]]*)\]/g;

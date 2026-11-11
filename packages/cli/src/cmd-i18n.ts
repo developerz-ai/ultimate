@@ -10,7 +10,8 @@ import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { DEFAULT_LOCALE, stringField } from '@ultimat3/core';
 import type { Catalog } from '@ultimat3/i18n';
-import { auditCatalogs, catalogKeys } from '@ultimat3/i18n';
+import { auditCatalogs, catalogFor, catalogKeys } from '@ultimat3/i18n';
+import { adminKeyLabel, mountedAdminKeys } from './admin-catalog-keys';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { i18nSpec } from './cmd-i18n-spec';
@@ -29,8 +30,10 @@ import { syncI18nIndex } from './i18n-index';
 import { localeParityFindings } from './i18n-locale-parity';
 import {
   checkRegistration,
+  isLoudMiss,
   loudMiss,
   missingKeyFindings,
+  unanswered,
   withPlaceholdersMissing,
 } from './i18n-registration';
 import { msg } from './messages';
@@ -118,6 +121,14 @@ function resolveOneLocale(ctx: CommandContext, sub: string): string {
   return locale;
 }
 
+/**
+ * The admin-derived keys `locale`'s REGISTRY does not answer with a real string — the question
+ * `checkRegistration` asks of the same keys, so `sync` writes and `check` counts exactly what the
+ * `i18n` step refuses. Asked after `loadApp`: the registry holds the app's catalogs only then.
+ */
+const unansweredAdminKeys = (locale: string, keys: readonly string[]): readonly string[] =>
+  unanswered(catalogFor(locale), keys);
+
 async function runCheck(root: string): Promise<CommandResult> {
   const { report: audited, catalogs, extraction, ignoreUnused } = await auditApp(root);
   // Corrected once, before anything reads it: the table's `missing` column, the summary count, the
@@ -165,11 +176,22 @@ async function runCheck(root: string): Promise<CommandResult> {
   }
 
   // A key that renders a loud miss counts once, whichever half of the check found it: a missing
-  // catalog entry and an entry no registry holds are the same `⟦key⟧` on the same page.
+  // catalog entry and an entry no registry holds are the same `⟦key⟧` on the same page. The keys a
+  // mounted admin derives are counted too — they fail `ok`, and a summary of "0 missing key(s)"
+  // over `ok: false` sent the reader looking for a finding the count said was not there.
+  const adminKeys = await mountedAdminKeys();
+  const adminGaps = Object.keys(catalogs)
+    .filter((locale) => !unregistered.has(locale))
+    .map((locale) => ({ locale, missing: unansweredAdminKeys(locale, adminKeys).length }))
+    .filter((gap) => gap.missing > 0);
   const gapLocales =
-    report.locales.filter((audit) => audit.missing.length > 0).length + registration.locales;
+    new Set([
+      ...report.locales.filter((audit) => audit.missing.length > 0).map((audit) => audit.locale),
+      ...adminGaps.map((gap) => gap.locale),
+    ]).size + registration.locales;
   const missingTotal =
     report.locales.reduce((sum, audit) => sum + audit.missing.length, 0) +
+    adminGaps.reduce((sum, gap) => sum + gap.missing, 0) +
     registration.unregistered;
   const ok = report.ok && registration.ok && parity.length === 0;
   // The summary names the parity findings when there are any: `cli.i18n.gaps` counts MISSING KEYS,
@@ -270,6 +292,20 @@ async function untranslatedKeys(
 const placeholderCatalog = (keys: readonly string[]): Catalog =>
   Object.fromEntries(keys.map((key) => [key, loudMiss(key)]));
 
+/**
+ * The keys a mounted admin derives that `locale` does not answer — spelled in no source file, so
+ * the source scan above can never seed one, and `X_CATALOG_MISSING_KEYS` names this command as the
+ * fix for them all the same. The default locale gets the label `x g resource --admin` writes
+ * (`adminKeyLabel`), a real string the gate accepts; any other locale gets it MARKED, a translation
+ * a human still owes, exactly as a merged key is.
+ */
+async function adminCatalog(locale: string, seeded: boolean): Promise<Catalog> {
+  const keys = unansweredAdminKeys(locale, await mountedAdminKeys());
+  const label = (key: string): string =>
+    seeded ? adminKeyLabel(key) : loudMiss(adminKeyLabel(key));
+  return Object.fromEntries(keys.map((key) => [key, label(key)]));
+}
+
 async function runSync(root: string, ctx: CommandContext): Promise<CommandResult> {
   const locale = resolveOneLocale(ctx, 'sync');
   const catalogs = await loadCatalogs(root);
@@ -290,9 +326,14 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   // A real merge copies the default locale's strings MARKED (`seedCatalog`, as `x i18n add` does):
   // copied bare they rendered English to every `fr` reader under a green gate.
   const seeded = from === undefined || from === locale;
-  const source = seeded
-    ? placeholderCatalog(await untranslatedKeys(root, catalogs, locale))
-    : seedCatalog(catalogs[from] ?? {});
+  // The admin's keys first, so a value the default locale already carries for one (copied, marked)
+  // wins over a label read off the key.
+  const source = {
+    ...(await adminCatalog(locale, seeded)),
+    ...(seeded
+      ? placeholderCatalog(await untranslatedKeys(root, catalogs, locale))
+      : seedCatalog(catalogs[from] ?? {})),
+  };
   const { merged, added } = syncCatalog(target, source);
   if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
   // Unconditional, and not only when keys moved: a catalog that reached disk some other way — a
@@ -319,10 +360,11 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       total,
       path: catalogPath(locale),
       registered,
-      // Which of `added` still need a human: all of them. `⟦key⟧` where there was no catalog to
-      // copy from, `⟦<default string>⟧` on a real merge — both are what `x i18n check` counts as
-      // missing until replaced, so `--json` never reports a copy as a translation.
-      placeholders: added,
+      // Which of `added` still need a human: every one but an admin label in the default locale.
+      // `⟦key⟧` where there was no catalog to copy from, `⟦<default string>⟧` on a real merge —
+      // both are what `x i18n check` counts as missing until replaced, so `--json` never reports a
+      // copy as a translation.
+      placeholders: added.filter((key) => isLoudMiss(merged[key])),
     },
   };
 }

@@ -17,7 +17,6 @@ import {
 import { devPortFor } from './dev-port';
 import { type RetiringWorker, retireThenDrain } from './dev-restart-retire';
 import { PORT_RANGE } from './flag-number';
-import { msg } from './messages';
 import type { Finding } from './output';
 import { parseArgs } from './parse';
 import { posixRelative } from './posix-path';
@@ -237,7 +236,7 @@ export function restartFinding(root: string, pins: readonly StalePin[]): Finding
 
 /** The child's half: what `startDev` is handed, and what the hold calls once released. */
 export interface ChildRestart {
-  readonly options: { readonly onRestart?: (pins: readonly StalePin[]) => void };
+  readonly options: { readonly onRestart?: (pins: readonly StalePin[], line: string) => void };
   readonly exit: (code: number) => void;
   /**
    * The worker this child booted, handed over once `startDev` returns: a restart retires it before
@@ -278,11 +277,13 @@ export function childRestart(
         });
   return {
     options: {
-      onRestart: (pins) => {
+      // `line` is the rebuild's, rendered for the restart's own cause (`dev-rebuild.ts`): a pinned
+      // module, a changed route table or a load finding that appeared or cleared.
+      onRestart: (_pins, line) => {
         // Already stopping for a signal (`x stop`, Ctrl-C) or a gone supervisor or root: a save
         // landing during that drain must not respawn a child its operator asked to end.
         if (leaving !== undefined && leaving !== 'restart') return;
-        writeErrorLine(msg('cli.dev.restart', { reason: restartReason(root, pins) }));
+        writeErrorLine(line);
         leaving ??= 'restart';
         watched?.stopping(DEV_RESTART_EXIT_CODE);
         if (restarting) return;

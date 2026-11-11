@@ -39,8 +39,10 @@ export const ${name.camel}Sorts = ['createdAt', 'title'] as const;
 // tenant. One source of tenancy — a parameter would be a second one a caller could set.
 export const ${name.camel} = query({
   input: t.object({
-    limit: t.number.default(50),
-    // A closed set, so a sort is a column this read has an order for, never a caller's string.
+    limit: t.number.int().min(1).max(500).default(50),
+    // Bounded above, so no request reads the whole table — at the scaffold dashboard's ROW_LIMIT,
+    // its one caller past the default; a closed set, so a sort is a column this read has an order
+    // for, never a caller's string.
     sort: t.enum(${name.camel}Sorts).default('createdAt'),
     dir: t.enum(['asc', 'desc']).default('desc'),
   }),

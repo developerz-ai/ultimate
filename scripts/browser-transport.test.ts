@@ -96,8 +96,9 @@ describe('where each shape may live', () => {
     // The repo's context: the seam is a FILE here, and the re-run is this repo's own script.
     expect(finding.cause).toContain(`only ${FETCH_SEAM} may`);
     expect(finding.fix).toStartWith(
-      'bun run browser-transport --json   # after replacing fetch at ',
+      'edit examples/app/apps/web/settings.island.tsx:1 — replace fetch with ',
     );
+    expect(finding.fix).toEndWith('; then bun run browser-transport --json');
     expect(finding.fix).toContain('`await browserClient.<action>(input)`');
   });
 

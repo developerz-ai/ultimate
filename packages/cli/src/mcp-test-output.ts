@@ -6,7 +6,10 @@ import type { TestRun } from '@ultimat3/mcp';
 
 const TAIL_LINES = 20;
 const FAIL_LINE = /^\(fail\)\s+(.*?)(?:\s+\[[\d.]+\s*m?s\])?$/;
-const ERROR_LINE = /^\s*error:\s*(.+)$/;
+// Bun's own assertion line, or an uncaught `UltimateError` subclass, which bun prints as
+// `DbError: X_CODE: cause` and never as `error: …`. Anchored on the code, so a source excerpt that
+// only names an Error type is not read as a message.
+const ERROR_LINE = /^\s*(?:error:\s*(.+)|[A-Z]\w*Error:\s*(X_[A-Z0-9_]+\b.*))$/;
 
 const lastCount = (output: string, label: string): number | undefined => {
   const last = [...output.matchAll(new RegExp(`^\\s*(\\d+)\\s+${label}\\b`, 'gm'))].at(-1);
@@ -35,7 +38,7 @@ export function parseBunTest(output: string, durationMs: number): TestRun {
   for (const line of output.split('\n')) {
     const error = ERROR_LINE.exec(line);
     if (error !== null) {
-      message = error[1] ?? '';
+      message = error[1] ?? error[2] ?? '';
       continue;
     }
     const fail = FAIL_LINE.exec(line.trimEnd());

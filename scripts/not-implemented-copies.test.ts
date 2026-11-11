@@ -79,6 +79,11 @@ describe('what is not a constructor is not refused', () => {
     expect(codes([{ at: 'packages/jobs/src/errors.ts', text }])).toEqual([]);
   });
 
+  test('a `*FIXES` table key looks a fix up and constructs nothing', () => {
+    const text = "export const CLI_FIXES = {\n  X_NOT_IMPLEMENTED: 'x doctor --json',\n};\n";
+    expect(codes([{ at: 'packages/cli/src/mcp-errors.ts', text }])).toEqual([]);
+  });
+
   test("throwing core's helper, or core's class, is the one way", () => {
     const text =
       "import { notImplemented, NotImplementedError } from '@ultimat3/core';\nexport const a = () => notImplemented('x', 'y');\nexport const b = () => new NotImplementedError({ cause: 'x', fix: 'y' });\n";

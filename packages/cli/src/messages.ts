@@ -47,6 +47,22 @@ const CATALOG = {
   'cli.dev.mail.refused': 'mail=refused({detail})',
   'cli.dev.hmr': 'reloaded {file} in {ms}ms',
   'cli.dev.restart': 'restarting: {reason} — a module that defines a primitive holds the old code',
+  // The two other restarts (`dev-rebuild-remount.ts`), each saying its own cause: the route table is
+  // mounted once at boot, and a module that failed to import is served only by a new process.
+  'cli.dev.restartSurface':
+    'restarting: {file} changed what x dev mounts ({changes}) — the route table is built once, at boot',
+  'cli.dev.restartFindings':
+    'restarting: {file} changed which modules load ({changes}) — the new process prints the verdict',
+  'cli.dev.change.added': '{what} added',
+  'cli.dev.change.removed': '{what} removed',
+  'cli.dev.change.failing': '{file} fails to load',
+  'cli.dev.change.loads': '{file} loads again',
+  'cli.dev.mounted.route': 'route {name}',
+  'cli.dev.mounted.action': 'action {name}',
+  'cli.dev.mounted.query': 'query {name}',
+  'cli.dev.mounted.channel': 'channel {name}',
+  'cli.dev.mounted.admin': 'admin {name}',
+  'cli.dev.mounted.mount': 'mount {name}',
   // The restart's wait, said while it waits: a save never cancels a running job (issue #677).
   'cli.dev.restartWaiting':
     'restart waits for {count} running job(s) to finish — no new job is claimed; Ctrl-C stops now (a job still running is cut off at the drain deadline and requeued)',

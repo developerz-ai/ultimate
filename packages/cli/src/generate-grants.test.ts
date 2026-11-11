@@ -5,9 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   adminGrantsFor,
+  declaredPermissions,
   grantsForWritten,
   insertGrants,
   insertPermissions,
+  introducedPermissions,
 } from './generate-grants';
 import { rolesFiles } from './templates/scaffold-roles';
 
@@ -29,6 +31,28 @@ describe('unit · the grants a generated policy implies', () => {
 
   test('nothing else implies a grant', () => {
     expect(grantsForWritten(['apps/web/app/customer/actions/create-customer.ts'])).toEqual([]);
+  });
+});
+
+describe('unit · the permissions a policy declares', () => {
+  test('every literal in every definePermissions([...]) call, comments ignored', () => {
+    const source = [
+      "// definePermissions(['ghost:read'])",
+      "export const a = definePermissions(['invoice:read', 'invoice:write']);",
+      'export const b = definePermissions([',
+      "  'approval:read',",
+      "  // 'approval:old',",
+      "  'approval:write',",
+      ']);',
+    ].join('\n');
+    expect(declaredPermissions(source)).toEqual([
+      'invoice:read',
+      'invoice:write',
+      'approval:read',
+      'approval:write',
+    ]);
+    // What a run introduced is the last call alone: the set an append put after the author's.
+    expect(introducedPermissions(source)).toEqual(['approval:read', 'approval:write']);
   });
 });
 

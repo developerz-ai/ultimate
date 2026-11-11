@@ -269,7 +269,9 @@ defineMeasurementActor(async () => {
 // Go-templated manifests are a parse ERROR, not a format miss. `css.quoteStyle` is `single` and SCSS
 // turns `noUnknownUnit` off: 2.6 begins PARSING SCSS too, its default is double, and a token call
 // reads as a dimension (`tokens.text('lg')` → unit `lg`), so both misfire on the framework's own
-// idiom.
+// idiom. `noDefaultExport`: a default-exported action registered under the name "default" — the
+// export is the name the API, the manifest and the MCP tool carry. `types/scss.d.ts`'s ambient class
+// map is the one default export, and the override names that file alone.
 const biome = (): string => `{
   "$schema": "https://biomejs.dev/schemas/${BIOME_VERSION}/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
@@ -292,7 +294,7 @@ const biome = (): string => `{
       "preset": "recommended",
       "suspicious": { "noExplicitAny": "error" },
       "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" },
-      "style": { "useNodejsImportProtocol": "error" }
+      "style": { "useNodejsImportProtocol": "error", "noDefaultExport": "error" }
     }
   },
   "javascript": {
@@ -301,6 +303,10 @@ const biome = (): string => `{
   "markdown": { "formatter": { "enabled": false } },
   "yaml": { "formatter": { "enabled": false } },
   "overrides": [
+    {
+      "includes": ["**/scss.d.ts"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    },
     {
       "includes": ["**/*.scss"],
       "linter": { "rules": { "correctness": { "noUnknownUnit": "off" } } }

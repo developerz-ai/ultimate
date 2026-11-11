@@ -120,7 +120,8 @@ describe('the browser-transport rule over an app on disk', () => {
     const findings = await appTransportFindings(broken, await readAppSources(broken));
     const fetched = findings.find((f) => f.at === 'apps/web/app/bad/fetch.island.tsx:3');
     expect(fetched?.cause).toContain("only @ultimat3/core's clientTransport may");
-    expect(fetched?.fix).toStartWith('x verify --only boundaries --json   # ');
+    expect(fetched?.fix).toStartWith('edit apps/web/app/bad/fetch.island.tsx:3 — replace fetch');
+    expect(fetched?.fix).toEndWith('; then x verify --only boundaries --json');
     const xhr = findings.find((f) => f.at === 'apps/web/app/bad/xhr.island.tsx:1');
     expect(xhr?.cause).toContain("only @ultimat3/storage's uploadFile may");
     const socket = findings.find((f) => f.at === 'packages/kit/lib/socket.ts:1');
@@ -174,5 +175,34 @@ describe('the tracked apps', () => {
   test('the demo app ships no island, so the rule has nothing to read', async () => {
     const root = join(REPO, 'dummy/social-media-clone');
     expect(await appTransportFindings(root, await readAppSources(root))).toEqual([]);
+  });
+});
+
+// FX1: the installed browser entry's exports decide the edit. A helper taking only what
+// `@ultimat3/entity/record` publishes is swapped where it stands; a repository taking `entity` is
+// server code, so the island's import of it is the edge to delete.
+describe('a server barrel below an island, decided against the installed browser entry', () => {
+  let root = '';
+  beforeAll(async () => {
+    root = await appAt({
+      'node_modules/@ultimat3/entity/package.json':
+        '{ "name": "@ultimat3/entity", "exports": { ".": "./src/index.ts", "./record": "./src/record.ts" } }',
+      'node_modules/@ultimat3/entity/src/record.ts': 'export const recordKey = 1;\n',
+      'apps/web/app/p/fmt.island.tsx': "import { k } from './fmt';\nexport const a = k;\n",
+      'apps/web/app/p/fmt.ts':
+        "import { recordKey } from '@ultimat3/entity';\nexport const k = recordKey;\n",
+      'apps/web/app/p/list.island.tsx': "import { list } from './repo';\nexport const b = list;\n",
+      'apps/web/app/p/repo.ts':
+        "import { entity } from '@ultimat3/entity';\nexport const list = entity;\n",
+    });
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test('the swap at the helper, the cut at the repository`s island', async () => {
+    const findings = await appTransportFindings(root, await readAppSources(root));
+    expect(findings.map((one) => [one.at, one.fix.split(' — ')[1]?.split(' ')[0]])).toEqual([
+      ['apps/web/app/p/fmt.ts:1', 'change'],
+      ['apps/web/app/p/list.island.tsx:1', 'delete'],
+    ]);
   });
 });

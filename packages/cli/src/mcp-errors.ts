@@ -143,7 +143,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PORT_INVALID: 'docker run -e PORT=3000 my-app:latest',
   X_RUNTIME_DRIVER_SPLIT:
     'x dev --json   # the boot names the driver; move it to `export const runtime = { jobs }` in apps/web/runtime.ts',
-  X_GENERATE_CONFLICT: 'x g route posts --force --json',
+  // `generate-write.ts`'s `conflictFix` shape, without the run's own name: list what the run would
+  // write, then a free name or the slice to add into — never `--force` over a file a slice shares.
+  X_GENERATE_CONFLICT:
+    'x g route posts --dry-run --json   # lists each file the run would write; then the same command under a name no file holds, or x g query posts --feature posts to add into that slice',
   X_APP_NAME_EMPTY:
     'x new my-app --json   # a name with letters or digits; it becomes the directory',
   X_APP_EMPTY:
@@ -210,8 +213,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // The finding's own `fix:` is this command plus the edit — the line, and what replaces the call.
   X_BROWSER_TRANSPORT_BYPASS:
     'x verify --only boundaries --json   # each finding names the line and the transport to use instead',
+  // `x errors explain` holds no finding, so the runnable half is the step that prints one; that
+  // finding's own fix IS the edit, edit first (`fix-sequence.ts`): a swap, or a cut.
   X_BROWSER_SERVER_BARREL:
-    'x verify --only boundaries --json   # each finding names the import and the browser entry to import instead',
+    'x verify --only boundaries --json   # each finding opens with its edit: the import swapped to the browser entry it names (@ultimat3/query/client for @ultimat3/query), or the cut where the island first reaches the barrel',
   // `EDITOR=` inline rather than `export`: the variable is only needed for the one invocation, and
   // an agent copying this line gets a working command instead of a shell it has to keep.
   X_SECRETS_EDITOR_MISSING: 'EDITOR=nano x secrets edit',
@@ -374,6 +379,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only package-shape --json   # each finding carries its own `bun add <package> --cwd <workspace>` line',
   X_TYPESCRIPT_VERSION:
     'x doctor --json   # each X_TYPESCRIPT_VERSION finding names its manifest and the bun add that moves it',
+  X_SEED_FAILED: 'bun --eval \'await (await import("./packages/db/seeds/dev.ts")).dev.run()\'',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
@@ -413,7 +419,9 @@ function projectedFix(code: string): string {
       // with the same line, because it is the same condition seen from a second command.
       return `bun install && x doctor --json   # the installed @ultimat3 packages could not be read, so no throw site could be quoted for ${code}`;
     }
-    return `x errors list --json   # nothing in the installed framework raises ${code}, so the package that registered it owns its fix`;
+    // Not "nothing raises it": the scan reads literals and `*FIXES` table keys, and a code raised
+    // from a computed value is neither — that claim told the reader of a live error it was dead.
+    return `x errors list --json   # no throw site in the installed framework spells ${code} as a literal or a *FIXES table key: it is raised from a computed value, and the raised error carries its own fix line`;
   }
   // Both notes name a thing this answer does NOT know, because an answer that hides either is one
   // an agent acts on without noticing: which of several throw sites it is quoting, and which words

@@ -40,6 +40,16 @@ const FILES: Readonly<Record<string, string>> = {
   // s5: two files share a basename, so the short suffix "service.ts" is ambiguous.
   'apps/s5/app/orders/service.ts': 'export const noop = 1;\n',
   'apps/s5/app/billing/service.ts': 'export const noop = 1;\n',
+
+  // s6: an island reaching a server barrel through the slice's repository — the browser graph.
+  'apps/s6/app/p/form.island.tsx': "import { list } from './repo';\nexport const l = list;\n",
+  'apps/s6/app/p/repo.ts':
+    "import { entity } from '@ultimat3/entity';\nexport const list = entity;\n",
+  'node_modules/@ultimat3/entity/package.json': JSON.stringify({
+    name: '@ultimat3/entity',
+    exports: { '.': './src/index.ts', './record': './src/record.ts' },
+  }),
+  'node_modules/@ultimat3/entity/src/record.ts': 'export const recordKey = 1;\n',
 };
 
 const contextFor = (file: string): CommandContext => ({
@@ -154,6 +164,26 @@ describe('unit · x fix boundary', () => {
     expect(data.cuts[0]?.edit).toContain('api');
     expect(data.cuts[0]?.edit).toContain('app');
     expect(result.findings?.[0]?.fix).not.toContain('git mv');
+  });
+
+  test('an island reaching a server barrel is cut at the island, and the chain is named', async () => {
+    const island = 'apps/s6/app/p/form.island.tsx';
+    const result = await fixCommand.run(contextFor(island));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((one) => [one.code, one.at])).toEqual([
+      ['X_BROWSER_SERVER_BARREL', `${island}:1`],
+    ]);
+    expect(result.findings?.[0]?.fix).toStartWith(
+      `edit ${island}:1 — delete the import of './repo'`,
+    );
+    const data = result.data as {
+      cuts: readonly { code: string; edge: { from: string; to: string }; chain: string[] }[];
+    };
+    expect(data.cuts[0]?.edge).toEqual({ from: island, to: 'apps/s6/app/p/repo.ts' });
+    expect(data.cuts[0]?.chain).toEqual([island, 'apps/s6/app/p/repo.ts']);
+    // The module the barrel landed in names the same cut: it is on the chain, not the mistake.
+    const fromRepo = await fixCommand.run(contextFor('apps/s6/app/p/repo.ts'));
+    expect(fromRepo.findings?.map((one) => one.at)).toEqual([`${island}:1`]);
   });
 
   test('a clean file reports no findings', async () => {

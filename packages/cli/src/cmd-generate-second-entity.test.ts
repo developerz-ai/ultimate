@@ -117,7 +117,7 @@ describe('unit · x g entity --feature: the first entity and every one after it'
     expect(await read(`${SLICE}/repo.ts`)).toBe(repo);
     // Each sibling reads its own module, never the slice's first.
     expect(await read(`${SLICE}/repo-blog-attempt.ts`)).toContain(
-      "import type { BlogAttempt } from './entity-blog-attempt';",
+      "import type { BlogAttempt, blogAttempt } from './entity-blog-attempt';",
     );
     expect(await read(`${SLICE}/repo-blog-attempt.test.ts`)).toContain(
       "import * as repo from './repo-blog-attempt';",

@@ -10,7 +10,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `contract-diff` compares against the manifest as committed, so `x manifest` or `x g` can no longer rebaseline a breaking change away before the gate sees it.
+
+### Added
+
+- `@ultimat3/cli` `x verify`: the `unit` step runs the app's seeds on the memory driver (`verify-seeds.ts`). A seed row the entity refuses is reported under the entity's own code and fix; a seed that throws with no code is the new `X_SEED_FAILED`.
+- `@ultimat3/cli` dev MCP server: `verify.run` accepts `only`.
+- `@ultimat3/cli`: `x fix boundary <file>` also lists browser-graph cuts (`data.cuts`, rule `browser-server-barrel`).
+
+### Changed
+
+- `@ultimat3/cli` `contract-diff`: the baseline is `x.manifest.json` as committed — at `HEAD`, or in a GitHub pull request at the merge base with `origin/$GITHUB_BASE_REF` (that ref itself when a shallow checkout reaches no merge base; `HEAD` with a fetch notice when the ref is not fetched); outside a git checkout, the file on disk with a notice. A breaking change already written into the working-tree manifest is now `X_MANIFEST_BREAKING`; the fix is a major bump or the removed surface restored.
+- `@ultimat3/cli` `x verify`: when an app module fails to load, the failure is reported once, under `manifest`. `exercise`, `drift`, `contract-diff`, `budgets`, `seo`, `i18n` and `policy` print `skipped: load failed (see manifest)`; under `--only` without `manifest`, those steps carry the load findings themselves.
+- `@ultimat3/cli` `errors` step: a `fix:` that runs its command before the edit it needs (a whitespace-delimited `# after <verb>ing …` or `# once <…>ed`), only says re-run, or runs a generator with `--force` is `X_ERROR_FIX_INVALID`, ratcheted per file. `x errors explain` names throw sites written as code-keyed `*FIXES` tables (`X_DB_SCHEMA_STALE` …), and fix prose accepts `edit <path>.<ext>:<line> — <instruction>`.
+- `@ultimat3/cli` `x g policy <name> --feature <slice>`: appends a second permission set to the slice's `policy.ts` (with `--force` too) instead of overwriting it. The same set again prints a runnable `x g policy` fix, never `--force`. The generator grants only the set this run wrote (`<name>:read` to member, `<name>:write` to admin), never a permission already in the file, and `X_PERMISSION_UNGRANTED` names the same grants.
+
+### Fixed
+
+- `@ultimat3/cli`: `X_BROWSER_SERVER_BARREL` names the island import that pulled server code into a browser bundle, with the import chain in `meta.chain`, and its fix is an edit that leaves the tree typechecking. `fix-truth.test.ts` asserts that for every row.
+- `@ultimat3/cli` generators: a generated repo inserts through `Insertable` (`New<Row>`), so a new defaulted or nullable column no longer breaks generated inserts and their tests; a generated query bounds `limit` to 1–500; a scaffolded `biome.json` errors on a default export.
+- `@ultimat3/cli` dev MCP server: `tests.run` and `verify.run` run `x test` and `x verify` themselves and no longer leak `ULTIMATE_ENV=development` into test processes, so they agree with the shell. A `tests.run` failure carries the coded error (`X_CODE: cause`).
+- `@ultimat3/cli` `x dev`: always writes `.x/dev.log`, rotated at 16 MiB to `dev.log.1`.
+- `@ultimat3/cli` `x dev`: restarts on a save that adds or removes a route, action, query, channel or mount, or adds or clears a load failure — a new or fixed page no longer stays 404 after "reloaded". The restart line names its cause. Entities ahead of migrations show as `X_DB_DRIFT` with `x db gen "…" && x db migrate`.
+- `@ultimat3/cli` `x i18n`: `sync <locale>` writes the catalog keys a mounted admin derives (the default locale gets the generator's labels), and `check` counts them. `X_CATALOG_INVALID` for a dotted key prints the nested JSON to paste.
+- `@ultimat3/cli`: a 404 under `/api/` suggests `x routes --json`, not `x g route`.
+- `@ultimat3/testing`: `X_E2E_APP_FAILED` names the first coded error the app printed and uses its fix.
+- `@ultimat3/cli` generators: a fresh scaffold's `/dashboard` no longer answers 400: the generated list query's `limit` bound (`.max(500)`) now covers the dashboard's 500-row read.
+- `@ultimat3/cli` `x errors explain X_ROUTE_NOT_FOUND`: quotes the HTTP throw site's `x routes` fix again (one constructor per branch, each with a literal fix).
+- `scripts/not-implemented-copies.ts`: no longer counts a `*FIXES` table key as an `X_NOT_IMPLEMENTED` constructor (`CodeFixSite.fromTable`).
 
 ## Releases
 
