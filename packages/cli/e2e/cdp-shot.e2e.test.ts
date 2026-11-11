@@ -24,7 +24,7 @@ const DOCUMENT = `<!doctype html><html><head><title>Shot fixture</title>
   addEventListener('keydown', (event) => {
     if (event.metaKey && event.key === 'K') document.getElementById('out').textContent = 'palette';
   });
-  setTimeout(() => { throw new TypeError('island exploded'); }, 0);
+  setTimeout(() => { const error = new TypeError('island exploded'); throw error; }, 0);
 </script></body></html>`;
 
 const clock: SleepClock = {

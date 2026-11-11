@@ -3,7 +3,7 @@
 // table the boot loads, never from a build artifact; this pins that, because "works in `x dev`,
 // ignored in the prebuilt image" is a failure only a prebuilt boot can show.
 //
-//   bun test packages/cli/e2e/isr-purge-prebuilt.e2e.test.ts
+//   bun test ./packages/cli/e2e/isr-purge-prebuilt.e2e.test.ts
 
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.

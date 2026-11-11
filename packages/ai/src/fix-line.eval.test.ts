@@ -1,10 +1,4 @@
-/**
- * `@ultimat3/ai`'s first framework-level eval suite — `x verify`'s `eval` step finds a
- * `*.eval.test.ts` under `packages/*` for the first time, which is what turns that step from an
- * honest skip into a real run. Proof, not narration, that the convention every app is required
- * to follow (`defineEval` + a committed baseline) actually fails a build on a regression, the
- * same shape as `examples/dummy/apps/web/app/posts/prompts/summarize.eval.test.ts`.
- */
+// Holds @ultimat3/ai's committed fix-line evaluation baseline and regression cases.
 
 import { expect, test } from 'bun:test';
 import { echoProvider } from './echo-provider';

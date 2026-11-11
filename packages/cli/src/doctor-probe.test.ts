@@ -1,5 +1,6 @@
 // `x doctor`'s probe and command: what `probeFor` reads off the real machine, the command's own
-// wiring, and the whole surface `x dev` binds. The findings over a fixed probe are `cmd-doctor.test.ts`.
+// wiring, and the whole surface `x dev` binds. The findings over a fixed probe are
+// `doctor-checks.test.ts`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
@@ -11,9 +12,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PGLITE_FIX, PGLITE_MISSING } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
-import { doctorCommand, runDoctor } from './cmd-doctor';
+import { doctorCommand } from './cmd-doctor';
 import { codes, probe } from './cmd-doctor-fixture';
 import type { CommandContext } from './command';
+import { runDoctor } from './doctor-checks';
 import { probeFor } from './doctor-probe';
 import type { Finding } from './output';
 import { parseArgs } from './parse';
@@ -117,6 +119,54 @@ describe('unit · x doctor · probeFor', () => {
 // asserted: a port THIS test holds is not free, and the readers that depend on an app root answer
 // nothing when there is none. Whether an arbitrary port is free is not a fact a test can own.
 describe('unit · x doctor · probeFor reaches the real machine', () => {
+  test('injected blank DATABASE_URL overrides an ambient external database for every reader', async () => {
+    const saved = Bun.env['DATABASE_URL'];
+    const root = doctorAppRoot();
+    Bun.env['DATABASE_URL'] = 'postgres://user@localhost:1/ambient';
+    try {
+      writeFileSync(
+        join(root, 'app.config.ts'),
+        "export const config = { name: 'fixture', database: { rowSecurity: true } };\n",
+      );
+      const machine = probeFor(root, REQUIRED_BUN, 3000, {
+        DATABASE_URL: '   ',
+        DATABASE_POOLER: 'invalid',
+      });
+      expect(await machine.database()).toBeNull();
+      expect((await machine.embeddedDatabase()).selected).toBe(true);
+      expect(await machine.authStorage()).toEqual({ unsealedMfaSecrets: 0, retiredTables: [] });
+      expect(await machine.pooler()).toEqual({
+        role: undefined,
+        pooler: undefined,
+        bound: undefined,
+        refused: undefined,
+      });
+      expect(await machine.rowSecurity?.()).toEqual([]);
+    } finally {
+      if (saved === undefined) delete Bun.env['DATABASE_URL'];
+      else Bun.env['DATABASE_URL'] = saved;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('injected external DATABASE_URL overrides an ambient blank without connecting', async () => {
+    const saved = Bun.env['DATABASE_URL'];
+    Bun.env['DATABASE_URL'] = '   ';
+    try {
+      // Invalid pooler configuration refuses before creating a session: no external service needed.
+      const machine = probeFor(import.meta.dir, REQUIRED_BUN, 3000, {
+        DATABASE_URL: 'postgres://user@localhost:1/injected',
+        DATABASE_POOLER: 'invalid',
+      });
+      expect((await machine.embeddedDatabase()).selected).toBe(false);
+      expect(await machine.database()).toMatchObject({ code: 'X_ENV_MISSING' });
+      expect((await machine.pooler()).refused).toMatchObject({ code: 'X_ENV_MISSING' });
+    } finally {
+      if (saved === undefined) delete Bun.env['DATABASE_URL'];
+      else Bun.env['DATABASE_URL'] = saved;
+    }
+  });
+
   test('a port this process is holding is reported as not free', async () => {
     const server = Bun.serve({ port: 0, fetch: () => new Response('') });
     try {
@@ -157,9 +207,7 @@ describe('unit · x doctor · the command', () => {
     args: parseArgs(argv, [doctorCommand.spec]),
     cwd,
     // `x doctor` diagnoses in-process; a subprocess from it is the bug, not a fixture.
-    runner: (command) => {
-      throw new Error(`x doctor spawned ${command.join(' ')}`);
-    },
+    runner: () => expect.unreachable('x doctor must not spawn a subprocess'),
     env: {},
     bunVersion: REQUIRED_BUN,
   });

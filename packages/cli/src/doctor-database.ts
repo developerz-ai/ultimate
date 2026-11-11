@@ -5,20 +5,9 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { checkDb, PGLITE_FIX, PGLITE_MISSING, postgresClient } from '@ultimat3/db';
+import { checkDb, postgresClient } from '@ultimat3/db';
 import type { Finding } from './output';
 import { findingFrom } from './output';
-
-/** What `x doctor` reads about the embedded database, without opening it. */
-export interface EmbeddedDatabase {
-  /**
-   * True while `DATABASE_URL` is unset or blank — the condition that makes PGlite the app's
-   * database (`resolveServices`), and the same reading `probeDatabase` returns `null` on.
-   */
-  readonly selected: boolean;
-  /** Does `@electric-sql/pglite` resolve from the app root? */
-  readonly resolved: boolean;
-}
 
 const finding = (code: string, cause: string, fix: string): Finding => ({
   code,
@@ -26,24 +15,6 @@ const finding = (code: string, cause: string, fix: string): Finding => ({
   fix,
   docs: ERROR_DOCS_URL,
 });
-
-/**
- * The rule, pure. Red only where the embedded database is the one that would be opened: an app
- * pointed at a real Postgres never loads PGlite, and a finding about an absent optional peer there
- * is noise the reader learns to skim.
- *
- * `@ultimat3/db`'s own refusal, not a CLI twin of it — same `X_DB_UNAVAILABLE`, same sentence,
- * same runnable fix. The package already says this the moment a query arrives; `x doctor` is what
- * says it before `bin/setup` gets that far.
- */
-export const embeddedDatabaseFinding = (fact: EmbeddedDatabase): Finding | undefined =>
-  fact.selected && !fact.resolved
-    ? finding(
-        'X_DB_UNAVAILABLE',
-        `${PGLITE_MISSING} — and DATABASE_URL is unset or blank, so the embedded one is the database this app would open`,
-        PGLITE_FIX,
-      )
-    : undefined;
 
 /**
  * `DATABASE_URL` as BOTH halves of the database question read it: unset and blank are one case.

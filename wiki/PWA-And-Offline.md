@@ -316,7 +316,7 @@ travel as RFC 8030 headers.
 
 ## What is checked, and where
 
-`x verify` has **no PWA step** — its 21 steps are typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. The two PWA checks that ship run in **`x doctor`** ([`packages/cli/src/cmd-doctor.ts:129`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-doctor.ts)), and report `@ultimat3/pwa`'s own codes rather than CLI twins of them.
+`x verify` has **no PWA step** — its 21 steps are typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. The two PWA checks that ship run in **`x doctor`** — [`packages/cli/src/doctor-checks.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/doctor-checks.ts) for the source icon, [`packages/cli/src/doctor-offline.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/doctor-offline.ts) for the offline fallback — and report `@ultimat3/pwa`'s own codes rather than CLI twins of them.
 
 | Check | Where | Fails on | `As of 2026-08` |
 |---|---|---|---|

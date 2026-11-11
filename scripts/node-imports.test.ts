@@ -1,6 +1,4 @@
-// The enforcement half of `scripts/node-imports.ts`: this file IS the build error. The gate's
-// `unit` step runs every `scripts/**/*.test.ts`, so a new unexplained `node:` import fails
-// `bun run verify` with no extra wiring.
+// Tests the node-import ratchet and its repository-wide enforcement scan.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { NODE_IMPORT_PINS } from './lib/node-import-pins';

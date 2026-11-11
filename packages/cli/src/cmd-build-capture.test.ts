@@ -2,7 +2,7 @@
 // static target takes the flag — the gate's builds pass it, a deployable build takes the pictures.
 
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no recursive remove.
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no recursive remove.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
@@ -22,6 +22,7 @@ afterEach(() => {
 async function staticApp(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-build-capture-'));
   dirs.push(dir);
+  mkdirSync(join(dir, 'apps/web'), { recursive: true });
   await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   await Bun.write(join(dir, 'apps/web/prerender.ts'), 'export {};\n');
   await Bun.write(join(dir, 'apps/web/server.ts'), 'export {};\n');

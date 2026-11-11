@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { PGLITE_FIX, PGLITE_MISSING, PGLITE_PACKAGE } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
-import { embeddedDatabaseFinding } from './doctor-database';
+import { embeddedDatabaseFinding } from './doctor-embedded';
 import { probeFor } from './doctor-probe';
 
 describe('unit · x doctor · the embedded database rule', () => {
@@ -52,22 +52,16 @@ describe('unit · x doctor · probeFor reads the embedded database without openi
   });
 
   // A SET variable holding only whitespace is not a database, and `x db migrate` on it fails the
-  // same way an unset one does — so the probe reads it the same way, and the cause above says
-  // "unset or blank" rather than describing a variable the reader has already exported.
-  test('a whitespace-only DATABASE_URL selects the embedded database, like an unset one', async () => {
-    const before = process.env['DATABASE_URL'];
-    try {
-      process.env['DATABASE_URL'] = '   ';
-      expect(
-        (await probeFor(import.meta.dir, REQUIRED_BUN, 3000).embeddedDatabase()).selected,
-      ).toBe(true);
-      process.env['DATABASE_URL'] = 'postgres://user@localhost:5432/app';
-      expect(
-        (await probeFor(import.meta.dir, REQUIRED_BUN, 3000).embeddedDatabase()).selected,
-      ).toBe(false);
-    } finally {
-      if (before === undefined) delete process.env['DATABASE_URL'];
-      else process.env['DATABASE_URL'] = before;
-    }
+  // same way an unset one does. The injected environment is the whole machine view of a command,
+  // so this also guards against consulting the host process for just this one fact.
+  test('the injected DATABASE_URL selects the embedded database like x db migrate', async () => {
+    const blank = await probeFor(import.meta.dir, REQUIRED_BUN, 3000, {
+      DATABASE_URL: '   ',
+    }).embeddedDatabase();
+    const external = await probeFor(import.meta.dir, REQUIRED_BUN, 3000, {
+      DATABASE_URL: 'postgres://user@localhost:5432/app',
+    }).embeddedDatabase();
+    expect(blank.selected).toBe(true);
+    expect(external.selected).toBe(false);
   });
 });

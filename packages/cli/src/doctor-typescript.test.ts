@@ -8,8 +8,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { runDoctor } from './cmd-doctor';
 import { codes, probe } from './cmd-doctor-fixture';
+import { runDoctor } from './doctor-checks';
 import { typescriptFindings, typescriptProbe } from './doctor-typescript';
 import { TYPESCRIPT_VERSION } from './templates/scaffold-repo';
 

@@ -1,6 +1,4 @@
-// The failure case first — a fix that opens with a sentence — then the ratchet's two ways of
-// lying: a pin above what the tree holds, and a scan that read nothing. The real tree is read last,
-// which is what holds this rule on the gate's `unit` step.
+// Tests the fix-prose ratchet's classifications, failure reporting, and real-tree scan.
 
 import { describe, expect, test } from 'bun:test';
 import { fixProseFindingFor, fixProseGaps, fixProseScan, proseFixes } from './fix-prose';

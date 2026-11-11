@@ -1,6 +1,4 @@
-// `x errors` is the command an agent reaches for when it has a code and no context, so the two
-// things asserted hardest here are that a real code answers with a runnable fix, and that an
-// invented one is refused instead of explained.
+// Tests x errors lookup, listing, and refusal contracts for registered and unknown codes.
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';

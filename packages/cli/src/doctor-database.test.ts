@@ -1,4 +1,4 @@
-// The database probe's own seams, which `cmd-doctor-probe.test.ts` only ever stubs: the reading of
+// The database probe's own seams, which `doctor-probe.test.ts` only ever stubs: the reading of
 // `DATABASE_URL`, the `node_modules` walk, and a real `select 1` against a port nothing listens on.
 
 import { afterAll, describe, expect, test } from 'bun:test';

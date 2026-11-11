@@ -1,9 +1,4 @@
-// `assets.retain` across a rollout, for real: two `ROLE=web` processes booted from two builds of
-// one app — different CSS, a different island — over ONE local disk, each serving the other
-// build's stylesheet and island chunk. Without the window each process 404s every URL it did not
-// build, which is the dead button an open tab meets on every deploy.
-//
-//   bun test packages/cli/e2e/retained-assets.e2e.test.ts
+// Exercises two web builds serving each other's retained assets from one shared deployment disk.
 
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.

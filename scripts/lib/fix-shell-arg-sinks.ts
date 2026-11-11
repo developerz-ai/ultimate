@@ -121,7 +121,7 @@ const addSinks = (into: Map<string, Set<number>>, one: Declaration): void => {
  * name, not a type — `fix: string` is how every error factory in this tree spells it, and a sink
  * that names it otherwise is the gap the header states. Exported only, because a module-private
  * helper is reachable from its own file alone, and two private `finding()`s with the fix in
- * different places (`cmd-doctor.ts`, `doctor-offline.ts`) must not read each other's argument.
+ * different places (`doctor-checks.ts`, `doctor-offline.ts`) must not read each other's argument.
  */
 export function fixParamsOf(valueEnd: ValueEnd, masked: readonly string[]): FixParams {
   const params = new Map<string, Set<number>>();

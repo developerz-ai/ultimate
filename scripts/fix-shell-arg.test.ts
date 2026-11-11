@@ -1,11 +1,5 @@
-// biome-ignore-all lint/suspicious/noTemplateCurlyInString: every fixture below is SOURCE TEXT — a
-// literal ${…} inside a string is the case under test, and this rule cannot be exercised without one
-//
-// The enforcement half of `scripts/fix-shell-arg.ts`: this file IS the build error. The gate's
-// `unit` step runs every `scripts/**/*.test.ts`, so a value spliced into the command position of a
-// `fix:` line fails `bun run verify` with no extra wiring. The real tree is asserted
-// NON-VACUOUSLY — a scan that read nothing reports "every package at its pin", which is the answer
-// a clean tree gives.
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: fixtures contain literal ${…} source text.
+// Tests shell-command substitutions in fix values, including the non-vacuous repository ratchet.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
@@ -219,7 +213,7 @@ describe('a constructor sink', () => {
 });
 
 describe('a sink is resolved per file', () => {
-  // Measured on the first run of the second pass: `cmd-doctor.ts` and `doctor-offline.ts` each
+  // Measured on the first run of the second pass: `doctor-checks.ts` and `doctor-offline.ts` each
   // declare a private `finding()`, with the fix at index 2 and index 1. Unioned across files, the
   // CAUSE argument of one was read as the fix of the other.
   test('a local declaration shadows a same-named export elsewhere', () => {

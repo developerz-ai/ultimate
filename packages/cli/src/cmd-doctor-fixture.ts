@@ -1,10 +1,10 @@
 // TEST-ONLY. The probe a `runDoctor` test edits one field of, and the codes it answers — shared by
-// `cmd-doctor.test.ts` (the findings) and `cmd-doctor-probe.test.ts` (reading the real machine).
+// `doctor-checks.test.ts` (the findings) and `doctor-probe.test.ts` (reading the real machine).
 
 import { REQUIRED_BUN } from './app-root';
-import { runDoctor } from './cmd-doctor';
+import { runDoctor } from './doctor-checks';
 import { NO_POOLER_FACT } from './doctor-pooler';
-import type { DoctorProbe } from './doctor-probe';
+import type { DoctorProbe } from './doctor-probe-types';
 
 export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: REQUIRED_BUN,

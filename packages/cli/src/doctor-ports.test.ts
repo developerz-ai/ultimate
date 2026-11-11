@@ -3,13 +3,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { REQUIRED_BUN } from './app-root';
-import { doctorCommand, runDoctor } from './cmd-doctor';
+import { doctorCommand } from './cmd-doctor';
 import { devPortFor } from './dev-port';
 import { appUrlFindings } from './doctor-app-url';
+import { runDoctor } from './doctor-checks';
 import { NO_POOLER_FACT } from './doctor-pooler';
-import { doctorPort } from './doctor-port';
-import type { DoctorProbe } from './doctor-probe';
+import { doctorPort } from './doctor-ports';
 import { probeFor } from './doctor-probe';
+import type { DoctorProbe } from './doctor-probe-types';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 

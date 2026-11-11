@@ -43,7 +43,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   ai: 18,
   auth: 11, // why: 4 -> 11, the K19 class list; the new sites are stubs (input)
   cache: 5, // why: 3 -> 6, the K19 class list; the new sites are stubs (input). 6 -> 5: the duplicate redis fake in invalidate.test.ts is gone
-  cli: 29, // why: 9 -> 29, the K19 class list; the new sites are stubs (input)
+  cli: 28, // why: 9 -> 29, the K19 class list; the new sites are stubs (input). 29 -> 28: the doctor split's verdicts are expect.unreachable calls, not throws
   core: 42, // why: 30 -> 43, the K19 class list; the new sites are stubs (input)
   db: 32, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)
   entity: 25, // why: 17 -> 25, the K19 class list; the new sites are stubs (input)

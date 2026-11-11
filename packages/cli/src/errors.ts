@@ -474,8 +474,9 @@ export class StorageUnwritableError extends UltimateError {
  * an unlimited upload of any type, for any key, including another org's.
  *
  * `X_ENV_MISSING`, the code `@ultimat3/storage` already refuses this with, rather than a CLI twin:
- * two codes for one condition is what `cmd-doctor.ts` says out loud about the PWA pair. What this
- * adds is the sentence storage cannot write — that the disk itself was a fallback nobody chose.
+ * two codes for one condition is what `doctor-checks.ts` and `doctor-offline.ts` say out loud
+ * about the PWA pair. What this adds is the sentence storage cannot write — that the disk itself
+ * was a fallback nobody chose.
  * The fix names object storage first, because that is the answer for most deployments; the volume
  * rung is behind the `#`, so the line still runs verbatim.
  */

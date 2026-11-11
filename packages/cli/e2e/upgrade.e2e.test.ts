@@ -1,11 +1,5 @@
-// The whole promise, once, for real: a scaffolded app that holds a real old release — whose own CLI
-// has no `x upgrade` and answers `X_NOT_IMPLEMENTED` — takes the hop by the one line the wiki gives
-// it, `bun x @ultimat3/cli@latest upgrade`, against a registry where this checkout IS the newest.
-//
-// Needs npm for the real old release: skips when npm does not answer, and refuses to under
-// `E2E_NPM_REQUIRED=1`, which `ci.yml` sets.
-//
-//   bun test packages/cli/e2e/upgrade.e2e.test.ts
+// Exercises a real old-release app upgrading through the newest CLI against the fixture registry.
+// Requires npm; CI sets E2E_NPM_REQUIRED so unavailable registry access refuses rather than skips.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.

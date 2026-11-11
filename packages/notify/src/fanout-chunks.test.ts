@@ -1,7 +1,4 @@
-// A big audience in bounded round trips. One preference read per recipient per channel and one
-// durable step per recipient made a 10k fan-out 20k+ reads and 10k `x_job_steps` rows; the walk
-// now reads preferences one chunk at a time (`allowsMany`) and delivers one chunk per step, named
-// by the chunk's place in the audience the `open` step froze — stable across a replay.
+// Tests chunked notification fan-out's bounded reads, replay stability, and digest delivery.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
