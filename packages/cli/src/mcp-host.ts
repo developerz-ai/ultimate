@@ -272,9 +272,10 @@ export async function tailLines(file: TailSource, lines: number): Promise<readon
     const start = Math.max(0, file.size - Math.min(window, TAIL_MAX_BYTES));
     const all = (await file.slice(start, file.size).text()).trimEnd().split('\n');
     const whole = start === 0 ? all : all.slice(1);
-    if (whole.length >= lines || start === 0 || window >= TAIL_MAX_BYTES) {
-      return whole.slice(-lines);
-    }
+    if (whole.length >= lines || start === 0) return whole.slice(-lines);
+    // At the cap with no newline inside it, the one line there is longer than the cap: answered
+    // cut, never as `[]` — an empty tail reads as an empty log.
+    if (window >= TAIL_MAX_BYTES) return (whole.length === 0 ? all : whole).slice(-lines);
     window *= 4;
   }
 }

@@ -184,29 +184,57 @@ export const byId = async (orgId: OrgId, id: PostId): Promise<PostView | null> =
  *
  * `recentWindow` is the window `from()` hands `orgPosts`' provider (`RowWindow`): the cursor is
  * pushed down here, so page two is read past page one rather than cut from the same newest 50.
+ *
+ * The cursor's `Date` is a MILLISECOND and `created_at` keeps microseconds (`now()`), so every
+ * seek here is on whole milliseconds — `[ms, ms + 1)` — exactly the order `from()` re-sorts and
+ * cuts in. Seeking on the `Date` itself skipped every row with a non-zero microsecond.
  */
 export const recentWindow = async (orgId: OrgId, window: RowWindow): Promise<readonly Post[]> => {
   // `orgPosts`' whole listing is its newest 50, so a provider handed no window reads that many.
   const take = window.limit ?? 50;
   const inOrg = db.posts.where({ orgId });
-  if (window.after === null)
-    return inOrg.orderBy('createdAt', 'desc').orderBy('id').limit(take).all();
-  // Past a cursor, newest first with `id` breaking a tie, as two seeks: the rows sharing the
-  // cursor's instant, then the older ones. Never page one again, so every row is reachable.
+  const newest = (below: Date | null) =>
+    (below === null ? inOrg : inOrg.andWhere('createdAt', 'lt', below))
+      .orderBy('createdAt', 'desc')
+      .orderBy('id')
+      .limit(take)
+      .all();
+  if (window.after === null) return wholeLastMilli(orgId, await newest(null), take);
   const at = window.after.key[0];
+  assert(
+    at instanceof Date,
+    `orgPosts' cursor carries ${typeof at} where its createdAt instant should be`,
+    'page orgPosts with the nextCursor its previous page answered — never a hand-built cursor',
+  );
+  // The cursor's own millisecond, past its id — then everything older, completed to a whole one.
   const ties = await inOrg
-    .andWhere('createdAt', 'eq', at)
+    .andWhere('createdAt', 'gte', at)
+    .andWhere('createdAt', 'lt', new Date(at.getTime() + 1))
     .andWhere('id', 'gt', window.after.id)
     .orderBy('id')
     .limit(take)
     .all();
-  const older = await inOrg
-    .andWhere('createdAt', 'lt', at)
-    .orderBy('createdAt', 'desc')
-    .orderBy('id')
-    .limit(take)
+  return [...ties, ...(await wholeLastMilli(orgId, await newest(at), take))];
+};
+
+/**
+ * A full window may end inside a millisecond — Postgres cut it by microsecond, `from()` re-sorts
+ * it by `(ms, id)` — so the rest of that millisecond is read too, and `from()`'s cut lands right.
+ */
+const wholeLastMilli = async (
+  orgId: OrgId,
+  rows: readonly Post[],
+  take: number,
+): Promise<readonly Post[]> => {
+  const last = rows[rows.length - 1];
+  if (last === undefined || rows.length < take) return rows;
+  const held = new Set(rows.map((row) => row.id));
+  const rest = await db.posts
+    .where({ orgId })
+    .andWhere('createdAt', 'gte', last.createdAt)
+    .andWhere('createdAt', 'lt', new Date(last.createdAt.getTime() + 1))
     .all();
-  return [...ties, ...older];
+  return [...rows, ...rest.filter((row) => !held.has(row.id))];
 };
 
 /**

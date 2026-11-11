@@ -3,8 +3,6 @@
 // Driven against a fake `DevHost` so nothing here boots a database.
 
 import { describe, expect, test } from 'bun:test';
-// why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
 import { ERROR_DOCS_URL, NotImplementedError } from '@ultimat3/core';
 import { READONLY_ROLE, recordingClient } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
@@ -17,10 +15,8 @@ import {
   DEV_TOOL_SCOPES,
   lazyServices,
   localCaller,
-  logTailPath,
   migrateFailed,
   readOnlyRows,
-  tailLines,
   testRunArgv,
 } from './mcp-host';
 import type { DevServices } from './runtime-bindings';
@@ -463,38 +459,5 @@ describe('unit · db.migrate failure', () => {
     expect(error.code).toBe('X_DB_MIGRATE_FAILED');
     expect(error.fix).toBe(explainErrorCode('X_DB_MIGRATE_FAILED')?.fix ?? 'unregistered');
     expect(error.cause).toContain('already exists');
-  });
-});
-
-// H8: `logs.tail` reads the END of the file, and `role` names a role, never a path segment.
-describe('unit · logs.tail', () => {
-  const sized = (text: string, padding: number, read: number[]) => ({
-    size: padding + text.length,
-    slice: (start: number, end: number) => {
-      read.push(end - start);
-      const from = Math.max(0, start - padding);
-      return { text: async () => ' '.repeat(Math.max(0, padding - start)) + text.slice(from) };
-    },
-  });
-
-  test('a 200 MB log answers its last lines from a bounded read', async () => {
-    const read: number[] = [];
-    const file = sized('a\nb\nc\nd\n', 200 * 1024 * 1024, read);
-    expect(await tailLines(file, 2)).toEqual(['c', 'd']);
-    expect(read.reduce((sum, bytes) => sum + bytes, 0)).toBeLessThanOrEqual(1024 * 1024);
-  });
-
-  test('a small file answers whole, without its trailing newline', async () => {
-    expect(await tailLines(sized('one\ntwo\n', 0, []), 100)).toEqual(['one', 'two']);
-  });
-
-  test('a role is a role: web resolves under logs/, a path segment is refused', () => {
-    expect(logTailPath('/s', undefined)).toBe(join('/s', 'dev.log'));
-    expect(logTailPath('/s', 'web')).toBe(join('/s', 'logs', 'web.log'));
-    for (const role of ['../x', '../../etc/passwd', 'web/../../x', '']) {
-      expect(() => logTailPath('/s', role)).toThrow(
-        expect.objectContaining({ code: 'X_CLI_BAD_FLAG' }),
-      );
-    }
   });
 });

@@ -1,8 +1,9 @@
 // A live window is keyed by the input the query PARSED, never by the bytes a client sent: a key
 // the schema strips must not open a second window, a second build and a second fan-out lane.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { ctxOf, userActor } from '@ultimat3/core';
+import * as queryModule from '@ultimat3/query';
 import { from, type QueryPolicy, query, resetQueries, t } from '@ultimat3/query';
 import { registerQuery } from '@ultimat3/query/loader';
 import { RingChangeBuffer } from './change-buffer';
@@ -129,6 +130,22 @@ describe('a live window is keyed by the parsed input', () => {
     expect(served.map(({ frame }) => frame.type === 'snapshot' && frame.entity)).toEqual(
       inputs.map(() => 'posts'),
     );
+  });
+
+  test("the id is taken through the query's own capped parse, never the schema called raw", async () => {
+    const parse = spyOn(queryModule, 'parsedQueryInput');
+    try {
+      const live = registry();
+      await live.subscribe({
+        socket: socket('s1').socket,
+        name: 'junkFeed',
+        input: { orgId: 'o1', junk: 'x' },
+      });
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(parse.mock.calls[0]?.[1]).toEqual({ orgId: 'o1', junk: 'x' });
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   test('an input the schema refuses is still refused with the query error', async () => {

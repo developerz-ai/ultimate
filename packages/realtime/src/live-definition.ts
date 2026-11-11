@@ -18,6 +18,8 @@ import {
 } from '@ultimat3/core';
 import {
   type AnyQuery,
+  parsedQueryInput,
+  QueryInputInvalidError,
   queryHash,
   queryName,
   spendQueryLimit,
@@ -144,11 +146,18 @@ export function liveQueryDefinition(
     const sent = queryHash(name, input);
     const known = ids.get(sent);
     if (known !== undefined) return known;
-    const result = await target.input['~standard'].validate(input);
-    // A refused input keeps the id of what was sent and is not remembered: `target.live` raises
-    // the query's own `X_INPUT_INVALID` for it, exactly as before.
-    if (result.issues !== undefined) return sent;
-    const parsed = queryHash(name, result.value);
+    let value: unknown;
+    try {
+      // The query's own capped parse (`MAX_ISSUES`), never the schema called raw: this is client
+      // input, and the read path's bound on what one refusal costs holds here too.
+      value = await parsedQueryInput(target, input);
+    } catch (error) {
+      // A refused input keeps the id of what was sent and is not remembered: `target.live` raises
+      // the query's own `X_INPUT_INVALID` for it, exactly as before.
+      if (error instanceof QueryInputInvalidError) return sent;
+      throw error;
+    }
+    const parsed = queryHash(name, value);
     ids.set(sent, parsed);
     evictOldest(ids, maxWindows);
     return parsed;
