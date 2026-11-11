@@ -5,7 +5,7 @@
 
 import { action, t } from '@ultimat3/action';
 import { disk, grantMultipart } from '@ultimat3/storage';
-import { postsImportPolicy, postsImportTarget } from '../import-upload';
+import { postsImportPolicy } from '../import-upload';
 import { postImport } from '../policy';
 
 /**
@@ -37,9 +37,12 @@ export const grantPostsImport = action({
     const grant = await grantMultipart({
       disk: disk(),
       orgId: input.orgId,
-      request: { filename: input.filename, contentType: input.contentType, size: input.size },
+      // `.csv` whatever the browser named it — the policy admits `text/csv` alone — so the session
+      // key is `org/<orgId>/pending/<importId>.csv`, the shape `importIdOf` reads the id back from.
+      request: { filename: 'posts.csv', contentType: input.contentType, size: input.size },
       policy: postsImportPolicy,
-      target: postsImportTarget(importId),
+      // No `target`: the app's `uploadScanner` refuses one. `completePostsImport` promotes it.
+      uploadId: () => importId,
       clock: ctx.clock,
     });
     return { importId, ...grant };

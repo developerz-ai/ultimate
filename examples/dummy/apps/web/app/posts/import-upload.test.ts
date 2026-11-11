@@ -13,7 +13,9 @@ import {
   memoryStorageDriver,
   resetStorage,
 } from '@ultimat3/storage';
+import { installUploadScanner } from '@ultimat3/storage/adapter';
 import { afterEach, beforeEach, expect, unitTest } from '@ultimat3/testing';
+import { postlyUploadScanner } from '../uploads/scanner';
 import { abortPostsImport } from './actions/abort-posts-import';
 import { completePostsImport } from './actions/complete-posts-import';
 import { grantPostsImport } from './actions/grant-posts-import';
@@ -84,7 +86,8 @@ unitTest(
     const grant = await open();
     expect(grant.maxParts).toBe(2);
     expect(isPostsImportKey(grant.key)).toBe(true);
-    expect(grant.key.startsWith(`org/${ORG}/imports/posts/${grant.importId}/`)).toBe(true);
+    // The session lands under `pending/`, named by its import id: the scanner refuses a target.
+    expect(grant.key).toBe(`org/${ORG}/pending/${grant.importId}.csv`);
     const ref = { orgId: ORG, key: grant.key, uploadId: grant.uploadId };
 
     await send(grant, 1);
@@ -96,17 +99,84 @@ unitTest(
       ...ref,
       parts: [{ partNumber: 1 }, { partNumber: 2 }],
     });
-    expect(done).toEqual({ importId: grant.importId, key: grant.key, size: SIZE });
-    expect((await disk().get(grant.key)).bytes.byteLength).toBe(SIZE);
+    const promoted = `org/${ORG}/imports/posts/${grant.importId}/${grant.importId}.csv`;
+    expect(done).toEqual({ importId: grant.importId, key: promoted, size: SIZE });
+    expect((await disk().get(promoted)).bytes.byteLength).toBe(SIZE);
+    expect(await disk().stat(grant.key)).toBeUndefined();
     const [queued] = (await jobDriver()?.introspect?.list()) ?? [];
     expect(queued?.input).toEqual({
       orgId: ORG,
       importId: grant.importId,
       authorId: admin.id,
-      key: grant.key,
+      key: promoted,
     });
   },
 );
+
+unitTest(
+  'a file the sandbox holds is quarantined; the same complete again imports it once cleared',
+  async () => {
+    // Every file to the sandbox, as a past-the-inline-limit export would go.
+    const unscan = installUploadScanner(postlyUploadScanner({ inlineMaxBytes: 0 }));
+    try {
+      const grant = await open();
+      await send(grant, 1);
+      await send(grant, 2);
+      const complete = {
+        orgId: ORG,
+        key: grant.key,
+        uploadId: grant.uploadId,
+        parts: [{ partNumber: 1 }, { partNumber: 2 }],
+      };
+
+      await expect(completePostsImport.as(admin, complete)).rejects.toBeUltimateError(
+        'X_STORAGE_QUARANTINED',
+      );
+      // Held: assembled and still pending, and nothing queued to read it.
+      expect((await disk().stat(grant.key))?.size).toBe(SIZE);
+      expect((await jobDriver()?.introspect?.list()) ?? []).toEqual([]);
+
+      // The session is gone now; the retry promotes the assembled file the sandbox cleared.
+      const done = await completePostsImport.as(admin, complete);
+      expect(done.key).toBe(`org/${ORG}/imports/posts/${grant.importId}/${grant.importId}.csv`);
+      expect((await jobDriver()?.introspect?.list())?.length).toBe(1);
+    } finally {
+      unscan();
+    }
+  },
+);
+
+unitTest('a held file swapped for other bytes is not attached on the next complete', async () => {
+  const unscan = installUploadScanner(postlyUploadScanner({ inlineMaxBytes: 0 }));
+  try {
+    const grant = await open();
+    await send(grant, 1);
+    await send(grant, 2);
+    const complete = {
+      orgId: ORG,
+      key: grant.key,
+      uploadId: grant.uploadId,
+      parts: [{ partNumber: 1 }, { partNumber: 2 }],
+    };
+    await expect(completePostsImport.as(admin, complete)).rejects.toBeUltimateError(
+      'X_STORAGE_QUARANTINED',
+    );
+    // What a still-live presigned PUT could do while the file is held: other bytes, same key.
+    await disk().put(grant.key, new TextEncoder().encode('id,slug\nswapped,in\n'), {
+      contentType: 'text/csv',
+    });
+
+    await expect(completePostsImport.as(admin, complete)).rejects.toBeUltimateError(
+      'X_STORAGE_QUARANTINED',
+    );
+    expect(
+      await disk().stat(`org/${ORG}/imports/posts/${grant.importId}/${grant.importId}.csv`),
+    ).toBeUndefined();
+    expect((await jobDriver()?.introspect?.list()) ?? []).toEqual([]);
+  } finally {
+    unscan();
+  }
+});
 
 unitTest('a part missing at complete is refused, and nothing is queued', async () => {
   const grant = await open();
@@ -156,6 +226,9 @@ unitTest('another org names this org’s session and reaches nothing', async () 
 unitTest('the purge scope is every org’s imports and nothing beside them', () => {
   expect(isPostsImportKey(`org/${ORG}/imports/posts/1/f.csv`)).toBe(true);
   expect(isPostsImportKey(`org/${OTHER}/imports/posts/2/f.csv`)).toBe(true);
+  // A session, or a file the scanner holds: an abandoned one is swept too, after the window.
+  expect(isPostsImportKey(`org/${ORG}/pending/${ORG}.csv`)).toBe(true);
+  expect(isPostsImportKey(`org/${ORG}/pending/${ORG}.png`)).toBe(false);
   expect(isPostsImportKey(`org/${ORG}/member/m/avatar/a.png`)).toBe(false);
   expect(isPostsImportKey(`org/${ORG}/exports/posts/3/part-1.csv`)).toBe(false);
   expect(isPostsImportKey(`pending/org/${ORG}/imports/posts/1/f.csv`)).toBe(false);

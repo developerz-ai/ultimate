@@ -19,6 +19,8 @@ export interface UploadScannerLike {
   scan(input: {
     readonly key: string;
     readonly pendingKey: string;
+    /** Which bytes under `pendingKey`: a held decision is keyed by `(pendingKey, revision)`. */
+    readonly revision?: string | undefined;
     readonly size: number;
     readonly contentType: string;
     readonly body: ReadableStream<Uint8Array>;
@@ -47,10 +49,11 @@ function streamOf(bytes: Uint8Array, size: number): ReadableStream<Uint8Array> {
   });
 }
 
-const scan = (scanner: UploadScannerLike, bytes: Uint8Array, chunk = 64 * 1024) =>
+const scan = (scanner: UploadScannerLike, bytes: Uint8Array, chunk = 64 * 1024, revision = 'r-1') =>
   scanner.scan({
-    key: 'org/conformance/pending/scan/a1-u-1.txt',
+    key: `org/conformance/pending/scan/${revision}-u-1.txt`,
     pendingKey: 'org/conformance/pending/u-1.txt',
+    revision,
     size: bytes.byteLength,
     contentType: 'text/plain',
     body: streamOf(bytes, chunk),
@@ -96,6 +99,18 @@ export const UPLOAD_SCANNER_CHECKS: readonly UploadScannerCheck[] = [
     async run(scanner) {
       expect((await scan(scanner, encode(UPLOAD_SCANNER_EICAR))).verdict).toBe('infected');
       expect(await scan(scanner, PLAIN)).toEqual({ verdict: 'clean' });
+    },
+  },
+  {
+    // The upload URL stays valid after the sniff: the bytes under one pending key can be rewritten
+    // between two confirms. A scanner (or the review behind it) keyed by `pendingKey` alone clears
+    // the rewrite with the original's verdict — EICAR attached unscanned.
+    name: 'a new revision of one upload is judged on its own bytes: clean, then EICAR is never clean',
+    async run(scanner) {
+      const first = await scan(scanner, PLAIN, 64 * 1024, 'r-1');
+      expect(first.verdict === 'infected').toBe(false);
+      const second = await scan(scanner, encode(UPLOAD_SCANNER_EICAR), 64 * 1024, 'r-2');
+      expect(second.verdict).not.toBe('clean');
     },
   },
 ];

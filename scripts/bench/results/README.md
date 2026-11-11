@@ -146,3 +146,42 @@ docker` and deployed by `x deploy` on its own `docker-compose.prod.yml`
 `/` for 30 s at concurrency 16 per pod, every answer 2xx. One `web` pod: **1,439 req/s**, p50 9.4 ms, p99 38.09 ms — 5.4× the 267 req/s `x dev` served above. Three pods on the same host: 1,196 req/s in sum, p99 203.89 ms: on one saturated box three pods and the load generator
 share the same cores, so this is **not** a horizontal-scaling figure, and none is claimed. A clean
 1-vs-3 comparison needs pods on separate hosts.
+
+**The large app, booted whole** ([`boot-large-app.bench.ts`](../boot-large-app.bench.ts),
+[`boot-large-app.json`](boot-large-app.json)), `As of 2026-11-10`: the plan's 5k-file done-when,
+timed end to end rather than as module load. The app is `examples/dummy` as committed at `HEAD`
+(`git archive`) plus 150 generated resources, **5,124 TypeScript files** — every one made by the
+real `x g resource` (entity, policy, actions, live query, job, page, island, their tests): 168
+entities, 347 actions, 164 queries, 182 jobs, 218 routes, 159 islands. The framework is the
+working tree that ran it. One local run, 12-core Haswell VM, Bun 1.4.4, other agents' work on the
+box (load average 3.7 at the start, 4.1 at the end); median of 3 boots each, wall clock from spawn
+to the first 200 on `/`, peak RSS summed over the process group.
+
+| Boot | Target | Median | Peak RSS | Verdict |
+|---|---|---|---|---|
+| `x dev`, a restart (`.x/` kept) | < 10 s | 5,686 ms | 643 MiB | met |
+| `x dev`, a fresh clone (`.x/` deleted: embedded Postgres made and migrated, no island cache) | — | 29,321 ms | 1,811 MiB | — |
+| `web` pod from the prebuilt registry | < 3 s | 2,407 ms | 240 MiB | met |
+| the same pod with the registry moved aside (it scans) | — | 3,310 ms | 244 MiB | — |
+
+`x dev` to the first 200 on `/`: **5.7 s** on a restart, and with `.x/` deleted first 29.3 s.
+The restart was 21.1 s on the first run of this bench, the same day: the island build was ~12–18 s
+of it — 159 islands, one `Bun.build` per route group, nearly every island its own
+(`packages/cli/src/island-bundle.ts`). Two changes since: the boot builds the islands beside the
+app load instead of after it (`dev-rebuild.ts` `buildGeneration`; 21.0 s → 18.9 s alone), and each
+route group's build is cached under `.x/cache/islands/`, keyed by its sources, which took the
+islands from ~14.6 s to ~0.4 s on a restart. Since then the cache key gained Sass partials,
+per-input directory digests, the tsconfig and `package.json` environment and per-chunk code
+hashes: 5.2 s → 5.7 s, inside the box's noise. A fresh clone has no `.x/`, so it builds every island
+and creates and migrates the embedded Postgres: the fresh-clone figure is not under 10 s, and the
+plan's target is the restart's. A busier run of the same tree (load 18–27 by its pod phase)
+measured 7.8 s, 45.2 s and a 3.2 s pod — the box, not the code, as the run above shows.
+
+A `web` pod from the prebuilt registry: **2.4 s**, after `x build --target prebuilt` (the
+Dockerfile's `RUN`, 13.1 s once per image). The registry moved aside, so the role scans: 3.3 s. On
+the host, not in a container: the entry the image runs (`bun apps/web/server.ts`, `ROLE=web`,
+`NODE_ENV=production`, `x env init --production`'s secrets, the image's prebuilt store, a real
+Postgres migrated by `ROLE=migrate`), without the container's own start-up. Re-run:
+`bun run scripts/bench/boot-large-app.bench.ts --out scripts/bench/results/boot-large-app.json`
+with the test services up (`--keep` leaves the app under `.x/bench-large-app/`, `--reuse` boots it
+again).

@@ -1,0 +1,103 @@
+{
+  "box": {
+    "os": "linux-x64",
+    "cpu": "Intel Core Processor (Haswell, no TSX)",
+    "cores": 12,
+    "memoryGb": 46,
+    "bun": "1.4.4",
+    "runner": "local",
+    "loadAvg1m": 3.7
+  },
+  "runs": 3,
+  "app": {
+    "resources": 150,
+    "tsFiles": 5124,
+    "islands": 159,
+    "entities": 168,
+    "actions": 347,
+    "queries": 164,
+    "jobs": 182,
+    "routes": 218
+  },
+  "dev": {
+    "targetMs": 10000,
+    "verdict": "met",
+    "warm": {
+      "medianMs": 5686,
+      "medianPeakRssMb": 643,
+      "runs": [
+        {
+          "toFirst200Ms": 5588,
+          "peakRssMb": 643
+        },
+        {
+          "toFirst200Ms": 5686,
+          "peakRssMb": 645
+        },
+        {
+          "toFirst200Ms": 5853,
+          "peakRssMb": 610
+        }
+      ]
+    },
+    "cold": {
+      "medianMs": 29321,
+      "medianPeakRssMb": 1811,
+      "runs": [
+        {
+          "toFirst200Ms": 29321,
+          "peakRssMb": 1835
+        },
+        {
+          "toFirst200Ms": 28892,
+          "peakRssMb": 1596
+        },
+        {
+          "toFirst200Ms": 31268,
+          "peakRssMb": 1811
+        }
+      ]
+    }
+  },
+  "pod": {
+    "prebuildMs": 13075,
+    "registry": {
+      "medianMs": 2407,
+      "medianPeakRssMb": 240,
+      "runs": [
+        {
+          "toFirst200Ms": 2407,
+          "peakRssMb": 240
+        },
+        {
+          "toFirst200Ms": 2446,
+          "peakRssMb": 220
+        },
+        {
+          "toFirst200Ms": 2354,
+          "peakRssMb": 242
+        }
+      ]
+    },
+    "scan": {
+      "medianMs": 3310,
+      "medianPeakRssMb": 244,
+      "runs": [
+        {
+          "toFirst200Ms": 3310,
+          "peakRssMb": 233
+        },
+        {
+          "toFirst200Ms": 3218,
+          "peakRssMb": 244
+        },
+        {
+          "toFirst200Ms": 3544,
+          "peakRssMb": 244
+        }
+      ]
+    },
+    "targetMs": 3000,
+    "verdict": "met"
+  }
+}

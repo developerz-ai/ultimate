@@ -145,7 +145,7 @@ Gotchas:
 - **`serverSideEncryption` is declared and refused by BOTH drivers.** Full rule: `docs/history/storage.md`.
 - **The `uploadScanner` port is the ONE scan path** (`As of 31.0.0`; the `quarantine: true` segment
   and `releaseQuarantine` are retired). An out-of-band decision — a review, an async vendor scan —
-  is the verdict `hold`, keyed by `ScanInput.pendingKey`: `X_STORAGE_QUARANTINED` (409), upload
+  is the verdict `hold`, keyed by `(ScanInput.pendingKey, ScanInput.revision)` — the etag, or the bytes' sha256 (31.3; `pendingKey` alone cleared a rewrite): `X_STORAGE_QUARANTINED` (409), upload
   kept pending, attempt deleted, no policy overrides it. A scanner that holds declares `holds: true`
   (else its `hold` is `X_INVARIANT`), and its outage then refuses even under `'accept'`. A targeted
   grant is refused while a scanner is installed (`X_STORAGE_TARGET_UNSCANNED`): it skips promotion.

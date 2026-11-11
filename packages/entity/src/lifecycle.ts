@@ -11,7 +11,7 @@ import { columnName } from './column';
 import { countersOf, describeCounter } from './counter';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
-import { type HistoryEntity, type HistoryInit, historyEntity } from './history';
+import { type HistoryEntity, type HistoryInit, historyEntity, historyIgnored } from './history';
 import type { Retain } from './retain';
 import type { ColumnMap } from './types';
 
@@ -89,7 +89,12 @@ export function describeLifecycle(
             table: history.$table,
             key: physical(core, core.$primaryKey[0] ?? ''),
             tenant: core.$tenantColumn === null ? null : physical(core, core.$tenantColumn),
-            ignore: counters.map((counter) => physical(core, counter.column)),
+            ignore: [
+              ...new Set([
+                ...counters.map((counter) => physical(core, counter.column)),
+                ...historyIgnored(history),
+              ]),
+            ],
             ...exactColumns(core),
           },
         }),

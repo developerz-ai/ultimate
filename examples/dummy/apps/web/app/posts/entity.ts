@@ -113,3 +113,21 @@ export const DraftReview = t.object({
 });
 
 export type DraftReview = Infer<typeof DraftReview>;
+
+/**
+ * One recorded version of a post, as `postRevisions` lists it: what changed it (`op`), when, who
+ * (`actorId`, `null` for a job or a migration) and the title and status it left — the image AFTER
+ * the write, or the one before it for a delete. Never the body: a list, not a diff viewer.
+ */
+export const PostRevision = t.object({
+  orgId: t.uuid,
+  postId: t.uuid,
+  version: t.number.int().min(1),
+  op: t.enumerated('insert', 'update', 'delete'),
+  at: t.date,
+  actorId: t.nullable(t.string),
+  title: t.nullable(t.string.max(TITLE_MAX)),
+  status: t.nullable(t.enumerated(...POST_STATUSES)),
+});
+
+export type PostRevision = Infer<typeof PostRevision>;

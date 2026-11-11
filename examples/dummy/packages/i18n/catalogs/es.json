@@ -385,6 +385,7 @@
         "locale": "Idioma",
         "theme": "Tema",
         "digestOptIn": "Resumen nocturno",
+        "phone": "Teléfono (SMS)",
         "createdAt": "Se unió el"
       }
     },
@@ -674,5 +675,8 @@
       "title": "{commenter} comentó en {title}",
       "body": "Abre el artículo para leerlo."
     }
+  },
+  "sms": {
+    "quotaAlert": "Postly: tu organización ha usado {used} de sus {limit} borradores de hoy. Mejora el plan para escribir más."
   }
 }

@@ -11,8 +11,40 @@ import { entity } from './entity';
 import { invariantViolated } from './errors';
 import type { AnyColumn, ColumnMap, RowOf } from './types';
 
-/** `history: true`, or with a retention window of its own. No default window, here or anywhere. */
-export type HistoryInit = true | { readonly retain?: { readonly after: string } };
+/**
+ * `history: true`, or with a retention window of its own (no default window, here or anywhere)
+ * and the columns whose change alone records nothing — the ones that churn (`likeCount`,
+ * `updatedAt`). `K` is the entity's own column names: anything else is a compile error.
+ */
+export type HistoryInit<K extends string = string> =
+  | true
+  | {
+      readonly retain?: { readonly after: string };
+      readonly ignore?: readonly K[];
+    };
+
+/** Each history entity's declared `ignore`, as physical names. A map, so no `$`-member is added. */
+const declaredIgnore = new WeakMap<object, readonly string[]>();
+
+/** The physical columns `history: { ignore }` named; `[]` for none or no history. */
+export const historyIgnored = (history: object | null): readonly string[] =>
+  history === null ? [] : (declaredIgnore.get(history) ?? []);
+
+/** Each `ignore` name, refused unless it is one of the parent's columns, as its physical name. */
+function ignoredColumns(parent: HistoryParent, init: HistoryInit): readonly string[] {
+  if (init === true) return [];
+  return (init.ignore ?? []).map((property) => {
+    const column = Object.hasOwn(parent.columns, property) ? parent.columns[property] : undefined;
+    if (column === undefined) {
+      throw invariantViolated(
+        parent.name,
+        'history',
+        `ignore names ${JSON.stringify(property)}, which is no column of ${parent.name}; its columns are ${Object.keys(parent.columns).join(', ')}`,
+      );
+    }
+    return columnName(property, column.$meta);
+  });
+}
 
 /** The parent facts the history table is built from. */
 export interface HistoryParent {
@@ -63,6 +95,7 @@ export function historyEntity(parent: HistoryParent, init: HistoryInit): History
       'history records a row by its single primary key, and this entity declares a composite one',
     );
   }
+  const ignore = ignoredColumns(parent, init);
   const tenant = parent.tenantColumn;
   const tenantColumn = tenant === null ? undefined : parent.columns[tenant];
   const columns = {
@@ -73,7 +106,7 @@ export function historyEntity(parent: HistoryParent, init: HistoryInit): History
   };
   const after = init === true ? undefined : init.retain?.after;
   // Typed as its fixed columns: the tenant key is a runtime name, so it cannot be in the type.
-  return entity<ColumnMap>(`${parent.name}_history`, {
+  const declared = entity<ColumnMap>(`${parent.name}_history`, {
     table: `${parent.table}_history`,
     columns,
     historyOf: parent.name,
@@ -83,4 +116,6 @@ export function historyEntity(parent: HistoryParent, init: HistoryInit): History
     ],
     ...(after === undefined ? {} : { retain: { after, on: 'at' } }),
   }) as unknown as HistoryEntity;
+  declaredIgnore.set(declared, ignore);
+  return declared;
 }

@@ -27,6 +27,7 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { LONG_RUN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+import { strangerEnv } from './lib/stranger-env';
 import type { TutorialStep } from './lib/tutorial-steps';
 import { matchesSummary, summaryLines, tutorialSteps } from './lib/tutorial-steps';
 
@@ -42,8 +43,12 @@ export const TUTORIALS: readonly string[] = [
   'wiki/Tutorial-04-Jobs-And-Realtime.md',
 ];
 
-/** A fresh machine's environment: no service a tutorial says it never needs locally. */
-const UNSET = ['DATABASE_URL', 'NATS_URL', 'REDIS_URL', 'S3_ENDPOINT'];
+/**
+ * A fresh machine's environment: the allowlist and NO service URL — a tutorial says it never needs
+ * one locally — so `DATABASE_URL`, `NATS_URL`, `REDIS_URL` and `S3_ENDPOINT` never pass, and
+ * neither does anything Bun loaded from the repo's `.env` (`NPM_TOKEN`).
+ */
+const freshMachine = (): Record<string, string> => strangerEnv(Bun.env, [], {});
 
 export interface StepRun {
   readonly code: number | null;
@@ -72,8 +77,11 @@ export const shellExecute =
       'set -eo pipefail',
       fromCheckout(command, root),
     ].join('\n');
-    const env = Object.fromEntries(Object.entries(Bun.env).filter(([key]) => !UNSET.includes(key)));
-    const result = await run(['bash', '-c', script], { cwd, timeoutMs: LONG_RUN_TIMEOUT_MS, env });
+    const result = await run(['bash', '-c', script], {
+      cwd,
+      timeoutMs: LONG_RUN_TIMEOUT_MS,
+      env: freshMachine(),
+    });
     const marked = result.output.split('\n').findLast((line) => line.startsWith(CWD_MARK));
     return {
       code: result.code,

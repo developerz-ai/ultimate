@@ -13,11 +13,7 @@ import {
 } from '@ultimat3/auth';
 import { frozenClock } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter, type Route } from '@ultimat3/http';
-import {
-  encodeResponse,
-  readAuthnRequest,
-  samlTestIdp,
-} from '../packages/auth/src/saml-idp-fixture';
+import { encodeResponse, readAuthnRequest, samlTestIdp } from '../packages/auth/src/saml-test-idp';
 
 const BASE = 'https://app.example.test';
 const SP = 'https://app.example.test/saml/metadata';

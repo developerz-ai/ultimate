@@ -63,6 +63,34 @@ const failureOf = async (run: () => Promise<unknown>): Promise<unknown> => {
 };
 
 describe(testName('unit', 'seedPass'), () => {
+  test('a row no partition holds is refused with the partitions() repair, not a factory', async () => {
+    // Postgres' answer when the partitions were made around a migrate long past and never kept
+    // ahead since: 23514 "no partition of relation … found for row" — no factory fixes that.
+    const failure = await failureOf(() =>
+      seedPass(
+        entities,
+        {
+          insert: () =>
+            Promise.reject(
+              new UltimateError({
+                code: 'X_DB_STATEMENT_FAILED',
+                cause:
+                  '[SQLSTATE 23514] PostgresError: no partition of relation "sgp_plans" found for row',
+                fix: 'x doctor',
+                meta: { sqlState: '23514' },
+              }),
+            ),
+          update: async () => undefined,
+          snapshot: async (asked) => asked.map(() => null),
+        },
+        { primitives: 1, seed: 3 },
+      ),
+    );
+    const coded = isUltimateError(failure) ? [failure.code, failure.fix] : ['uncoded', ''];
+    expect(coded[0]).toBe('X_SEED_GRAPH_UNSATISFIED');
+    expect(coded[1]).toContain('partitions(');
+  });
+
   test('a tenantless table is seeded once; every primitive owns a fresh tenant pair', async () => {
     const { writer, rows } = collecting();
     const graph = await seedPass(entities, writer, { primitives: 5, seed: 3 });

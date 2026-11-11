@@ -32,7 +32,7 @@
 // Both imports are public package specifiers, the same rule `settings.island.test.ts` follows.
 
 import { dirname, join } from 'node:path';
-import type { IslandChunk } from '@ultimat3/cli';
+import type { IslandChunk, SharedChunk } from '@ultimat3/cli';
 import { buildIslands } from '@ultimat3/cli';
 import { SCHEMA_ERROR_CODE_TITLES } from '@ultimat3/core';
 import { REALTIME_PAGE_ERROR_TITLES } from '@ultimat3/realtime';
@@ -55,8 +55,8 @@ const REPO_ROOT = join(APP_ROOT, '..', '..');
  * is left. **If an island ever imports something that uses schema's error path, this predicate
  * goes always-`true`** — check that first if the retention test below stops being able to fail.
  */
-const carriesRegisteredTitles = (chunk: IslandChunk): boolean =>
-  Object.values(SCHEMA_ERROR_CODE_TITLES).every((title) => chunk.code.includes(title));
+const carriesRegisteredTitles = (code: string): boolean =>
+  Object.values(SCHEMA_ERROR_CODE_TITLES).every((title) => code.includes(title));
 
 /**
  * One transpiler per loader, chosen by extension — the same rule `packages/cli/src/live-routes.ts`
@@ -140,11 +140,35 @@ const OWN_TITLES_ONLY = '@ultimat3/realtime';
 const LEAN_ACTION_CLIENT = '@ultimat3/action';
 
 /** Whether realtime's anchored titles module reached this chunk: every title, as for core's. */
-const carriesRealtimeTitles = (chunk: IslandChunk): boolean =>
-  Object.values(REALTIME_PAGE_ERROR_TITLES).every((title) => chunk.code.includes(title));
+const carriesRealtimeTitles = (code: string): boolean =>
+  Object.values(REALTIME_PAGE_ERROR_TITLES).every((title) => code.includes(title));
 
-const byFile = async (): Promise<ReadonlyMap<string, IslandChunk>> =>
-  new Map((await buildIslands(APP_ROOT)).chunks.map((chunk) => [chunk.file, chunk]));
+/** One build: each island's entry by file, and the code of every shared chunk by URL. */
+interface Built {
+  readonly chunks: ReadonlyMap<string, IslandChunk>;
+  readonly shared: ReadonlyMap<string, string>;
+}
+
+const builtFrom = (chunks: readonly IslandChunk[], shared: readonly SharedChunk[]): Built => ({
+  chunks: new Map(chunks.map((chunk) => [chunk.file, chunk])),
+  shared: new Map(shared.map((one) => [one.url, one.code])),
+});
+
+const byFile = async (): Promise<Built> => {
+  // `reuse: false` in both builds: a group read back from `.x/cache/islands` is the other build's
+  // bytes replayed, and this file is about the bundler emitting them.
+  const bundle = await buildIslands(APP_ROOT, { reuse: false });
+  return builtFrom(bundle.chunks, bundle.shared);
+};
+
+/**
+ * Everything booting `chunk` loads: its entry and every shared chunk in its import closure. Islands
+ * one route renders together are one split build (`packages/cli/src/island-groups.ts`), so a module
+ * two of them import — realtime's titles for `like` and `likes-badge` — sits in a shared chunk
+ * both load, not inline in either entry.
+ */
+const loaded = (chunk: IslandChunk, build: Built): string =>
+  [chunk.code, ...chunk.imports.map((url) => build.shared.get(url) ?? '')].join('\n');
 
 /**
  * The SECOND build, in a process of its own — and it has to be. `buildIslands` answers the FIRST
@@ -154,11 +178,11 @@ const byFile = async (): Promise<ReadonlyMap<string, IslandChunk>> =>
  * string to itself and proved nothing. A child process has no cache, which is also what two real
  * builds are: two machines, two processes.
  */
-async function byFileInChildProcess(): Promise<ReadonlyMap<string, IslandChunk>> {
+async function byFileInChildProcess(): Promise<Built> {
   const script =
     "const { buildIslands } = await import('@ultimat3/cli');" +
-    `const built = await buildIslands(${JSON.stringify(APP_ROOT)});` +
-    'await Bun.write(Bun.stdout, JSON.stringify(built.chunks));';
+    `const built = await buildIslands(${JSON.stringify(APP_ROOT)}, { reuse: false });` +
+    'await Bun.write(Bun.stdout, JSON.stringify({ chunks: built.chunks, shared: built.shared }));';
   const child = Bun.spawn(['bun', '-e', script], { cwd: APP_ROOT, stdout: 'pipe', stderr: 'pipe' });
   const [out, err, code] = await Promise.all([
     new Response(child.stdout).text(),
@@ -166,18 +190,25 @@ async function byFileInChildProcess(): Promise<ReadonlyMap<string, IslandChunk>>
     child.exited,
   ]);
   if (code !== 0) expect.unreachable(`the second build exited ${code}:\n${err}`);
-  const chunks = JSON.parse(out) as readonly IslandChunk[];
-  return new Map(chunks.map((chunk) => [chunk.file, chunk]));
+  const parsed = JSON.parse(out) as {
+    readonly chunks: readonly IslandChunk[];
+    readonly shared: readonly SharedChunk[];
+  };
+  return builtFrom(parsed.chunks, parsed.shared);
 }
 
 /** Both builds up front: `fixtureTest` takes no timeout, and a Babel pass is not a 5s budget. */
+let firstBuild: Built = { chunks: new Map(), shared: new Map() };
+let secondBuild: Built = { chunks: new Map(), shared: new Map() };
 let first: ReadonlyMap<string, IslandChunk> = new Map();
 let second: ReadonlyMap<string, IslandChunk> = new Map();
 let reachable: ReadonlyMap<string, readonly string[]> = new Map();
 
 beforeAll(async () => {
-  first = await byFile();
-  second = await byFileInChildProcess();
+  firstBuild = await byFile();
+  secondBuild = await byFileInChildProcess();
+  first = firstBuild.chunks;
+  second = secondBuild.chunks;
   reachable = new Map(
     await Promise.all(
       [...first.keys()].map(
@@ -287,15 +318,13 @@ test('every island reaching core keeps its side-effecting module, in both builds
   expect(realtime).toHaveLength(4);
   expect(realtime).toContain('apps/web/app/posts/[id]/like.island.tsx');
   expect(realtime).toContain('apps/web/app/posts/[id]/likes-badge.island.tsx');
-  const carrying = (
-    build: ReadonlyMap<string, IslandChunk>,
-    carries: (chunk: IslandChunk) => boolean,
-  ): string[] =>
-    [...build.values()]
-      .filter(carries)
+  // Judged on what each island LOADS (`loaded`): grouped islands share the module's one copy.
+  const carrying = (build: Built, carries: (code: string) => boolean): string[] =>
+    [...build.chunks.values()]
+      .filter((chunk) => carries(loaded(chunk, build)))
       .map((chunk) => chunk.file)
       .sort();
-  for (const build of [first, second]) {
+  for (const build of [firstBuild, secondBuild]) {
     expect(carrying(build, carriesRegisteredTitles)).toEqual(expected);
     expect(carrying(build, carriesRealtimeTitles)).toEqual(realtime);
   }
@@ -310,5 +339,11 @@ test('every island is byte-identical to its rebuild in another process', () => {
     // bytes for one graph — the code comparison is the claim, and it has no tolerance.
     expect(line(after)).toBe(line(before));
     expect(after.code === before.code, `${line(before)}: same length, different bytes`).toBe(true);
+  }
+  // And every shared chunk an entry loads: an entry names its chunks by URL, so a chunk that
+  // rebuilt to other bytes under the same URL is the same immutable-URL defect one file over.
+  expect([...secondBuild.shared.keys()].sort()).toEqual([...firstBuild.shared.keys()].sort());
+  for (const [url, code] of firstBuild.shared) {
+    expect(secondBuild.shared.get(url) === code, `${url}: different bytes`).toBe(true);
   }
 });

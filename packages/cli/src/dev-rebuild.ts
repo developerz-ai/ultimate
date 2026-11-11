@@ -5,14 +5,16 @@
 import type { Manifest } from '@ultimat3/manifest';
 import { beginDeviceSocketGeneration } from '@ultimat3/realtime/server';
 import type { IsrController } from '@ultimat3/render/server';
+import type { AppManifest } from './app-manifest';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
 import { takeStalePins } from './app-reload-graph';
 import type { ReloadTrigger } from './dev-reload';
 import { coalesceReloads } from './dev-reload';
 import { restartFinding } from './dev-supervisor';
-import type { IslandBundle } from './island-bundle';
+import type { BuildIslandsOptions, IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
+import { appPersistsRecords } from './island-realtime-state';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -34,6 +36,40 @@ export interface DevState {
    * a save serves a new island under an old page, which is what it did until 2026-09-07.
    */
   islands: IslandBundle;
+}
+
+/** The two builders of one generation — the seam a test times them through. */
+export interface GenerationBuilders {
+  readonly manifest: (root: string) => Promise<AppManifest>;
+  readonly islands: (root: string, options: BuildIslandsOptions) => Promise<IslandBundle>;
+}
+
+const BUILDERS: GenerationBuilders = { manifest: appManifest, islands: buildIslands };
+
+/**
+ * One generation — the app's manifest and its island bundle — both builders started at once, at
+ * the boot as on every save. The island build is Bun's bundler, off the JS thread, and the app
+ * load is imports on it: one after the other, a 5,000-file app's boot paid ~4 s and ~12 s in sum
+ * before its first 200 (`scripts/bench/results/boot-large-app.json`).
+ */
+export async function buildGeneration(
+  root: string,
+  build: GenerationBuilders = BUILDERS,
+): Promise<AppManifest & { readonly islands: IslandBundle }> {
+  const loaded = build.manifest(root);
+  // The one answer the island build takes from the app — whether it persists records — read only
+  // once the load has settled: before it the registry is empty, and every reader island would be
+  // built as one that restores (`island-realtime.ts`). Only realtime groups wait for it.
+  const persists = (): Promise<boolean | undefined> =>
+    loaded.then(
+      () => appPersistsRecords(),
+      () => undefined,
+    );
+  const [{ manifest, findings }, islands] = await Promise.all([
+    loaded,
+    build.islands(root, { persists }),
+  ]);
+  return { manifest, findings, islands };
 }
 
 /** What a rebuild reports to, read off `StartDevOptions`. */
@@ -73,10 +109,7 @@ export function devRebuilder(
     async (file) => {
       const started = performance.now();
       beginDeviceSocketGeneration();
-      const [{ manifest, findings }, islands] = await Promise.all([
-        appManifest(options.root),
-        buildIslands(options.root),
-      ]);
+      const { manifest, findings, islands } = await buildGeneration(options.root);
       state.manifest = manifest;
       state.appFindings = findings;
       state.islands = islands;

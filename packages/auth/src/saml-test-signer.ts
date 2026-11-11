@@ -1,5 +1,6 @@
-// TEST-ONLY. An RSA-2048 key pair and a self-signed X.509 certificate for it, minted in-process
-// with Web Crypto and hand-written DER: what a SAML IdP's metadata publishes and signs with.
+// TEST TOOL, `saml-test-idp.ts`'s signer. An RSA-2048 key pair and a self-signed X.509 certificate
+// for it, minted in-process with Web Crypto and hand-written DER: what a SAML IdP's metadata
+// publishes and signs with.
 
 export interface TestRsaSigner {
   /** Base64 DER, as `<ds:X509Certificate>` carries it. */

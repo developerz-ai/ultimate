@@ -4,7 +4,7 @@
 
 import { expect } from 'bun:test';
 import { type DbClient, sql } from '@ultimat3/db';
-import { entity, text, uuid } from '@ultimat3/entity';
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
 import type { SeedRow } from './seed-graph-plan';
 import { entitySeedWriter } from './seed-writer';
 
@@ -14,6 +14,15 @@ const pins = entity('sp_pins', {
 });
 
 const ID = '00000000-0000-7000-8000-0000000000a1';
+
+/** Keyed on an instant, as `partitionBy` requires its column to be: the key is a `Date`. */
+const events = entity('sp_events', {
+  columns: { id: uuid().primaryKey(), at: timestamp().primaryKey(), label: text() },
+});
+const AT = new Date('2026-11-10T14:05:06.789Z');
+const EVENT_ROWS: readonly SeedRow[] = [
+  { entity: 'sp_events', table: 'sp_events', tenant: 't', row: { id: ID, at: AT, label: 'one' } },
+];
 
 const ROWS: readonly SeedRow[] = [
   { entity: 'sp_notes', table: 'sp_notes', tenant: 't', row: { id: ID, body: 'one' } },
@@ -79,4 +88,27 @@ export function expectSnapshotProof(proof: SnapshotProof): void {
     null,
     null,
   ]);
+}
+
+/**
+ * A `timestamp()` key, under a session zone that is not UTC: the key crosses as its instant and is
+ * matched back as one, never as `String(date)` (`… GMT-0500 …`, which no server parses) nor as the
+ * session's own `at::text` spelling. `[before, after an update]`: both digests, and they differ.
+ */
+export async function timestampKeyProof(client: DbClient): Promise<readonly (string | null)[]> {
+  await client.execute(sql`set time zone 'America/New_York'`);
+  await client.execute(
+    sql`create table sp_events (id uuid, at timestamptz, label text not null, primary key (id, at))`,
+  );
+  const writer = entitySeedWriter({ entities: { events }, client });
+  for (const row of EVENT_ROWS) await writer.insert(row);
+  const [before] = await writer.snapshot(EVENT_ROWS);
+  await client.execute(sql`update sp_events set label = 'changed' where id = ${ID}`);
+  const [after] = await writer.snapshot(EVENT_ROWS);
+  return [before ?? null, after ?? null];
+}
+
+export function expectTimestampKeyProof(digests: readonly (string | null)[]): void {
+  const [before, after] = digests;
+  expect([typeof before, typeof after, before === after]).toEqual(['string', 'string', false]);
 }

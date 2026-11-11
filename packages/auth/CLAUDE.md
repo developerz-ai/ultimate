@@ -41,6 +41,11 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
   window, a one-statement take; a live lockout is never rewritten. †
 - **`installAuthLimiters` (`@ultimat3/auth/adapter`) is the HOST's install point and takes a
   FACTORY**: `config.limiter` → installed factory → `memoryAuthLimiter`. †
+- **Every installed port is read where it is USED, never captured by `defineAuth`** (`auth-ports.ts`,
+  31.3): `limiter`, `orgLimiter`, `orgRateLimit`, `totpReplay` are getters, rebuilt only when the
+  install changes. The boot installs after `runtime.ts` loads; a captured port was per-pod memory
+  for life. Installed at construction: judged then; not yet: judged at first use
+  (`X_AUTH_LIMITER_NOT_SHARED` there). `limiter-install.test.ts` "installed AFTER defineAuth".
 - **`normaliseEmail` is the ONE normalisation, ABOVE the `AuthAdapter` seam**: trim + lowercase,
   never a `+tag` or gmail dot; no adapter folds case. †
 - **`json.ts` owns `isRecord` and `decodeJwtSegment`; no second copy.** An array is not a record.
@@ -200,6 +205,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `client-scope.ts` | `clientScopeOf(actor)`, the OPAQUE id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`, else a per-process key and one warning) over kind, id, impersonator; `''` anonymous |
 | `identity-provider*.ts` | SSO port, `signInWithIdentity`, OIDC adapter, route core, state cookie, status table |
 | `saml-*.ts` | SAML adapter: strict XML reader, exc-c14n, XML-DSig, response checks, metadata, AuthnRequest |
+| `saml-test-idp.ts` / `saml-test-signer.ts` (`./saml-test-idp`) | the in-process test IdP and its RSA signer, SHIPPED (moved from `*-fixture.ts` in 31.3): this package's SAML suites, `@ultimat3/testing`'s `fakeSamlIdentityProvider` and an app's test sign with the one implementation. Never on `.` |
 
 ```bash
 bun test ./packages/auth/

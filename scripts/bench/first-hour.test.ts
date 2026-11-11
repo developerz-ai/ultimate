@@ -9,6 +9,19 @@ import { firstHourOk, firstHourSteps, runFirstHour } from './first-hour-run';
 
 const input = { app: 'firsthour', work: '/work', version: '30.0.0', image: false };
 
+/**
+ * What `x g resource note --json` prints on a clean run: the verdict, carrying the commands its
+ * author is told to run next (`nextSteps()` in `packages/cli/src/cmd-generate.ts`).
+ */
+const FEATURE_VERDICT = JSON.stringify({
+  ok: true,
+  command: 'g',
+  data: { next: ['bunx x db gen "create notes"', 'bunx x db migrate'] },
+});
+
+/** The stdout a fake answers `command` with: the generator's verdict for the feature step. */
+const stdoutOf = (line: string): string => (line.includes(' g resource ') ? FEATURE_VERDICT : '');
+
 /** Answers every command `ok`, except one whose first word set includes `failing`. */
 const runner =
   (calls: { command: string; cwd: string }[], failing?: string): Runner =>
@@ -20,7 +33,7 @@ const runner =
       command,
       code: ok ? 0 : 1,
       ok,
-      stdout: ok ? '' : 'X_TYPECHECK_FAILED',
+      stdout: ok ? stdoutOf(line) : 'X_TYPECHECK_FAILED',
       stderr: '',
       durationMs: 1234.4,
     };
@@ -41,7 +54,7 @@ const redGate =
       command,
       code: failed ? 1 : 0,
       ok: !failed,
-      stdout: failed ? stdout : '',
+      stdout: failed ? stdout : stdoutOf(command.join(' ')),
       stderr: failed ? stderr : '',
       durationMs: 1,
     };
@@ -56,6 +69,7 @@ describe('unit · first-hour', () => {
       'setup',
       'verify',
       'first feature',
+      'feature next steps',
       'setup after feature',
       'verify after feature',
     ]);
@@ -64,8 +78,57 @@ describe('unit · first-hour', () => {
       cwd: '/work',
     });
     expect(calls.slice(1).every((call) => call.cwd === '/work/firsthour')).toBe(true);
-    expect(records.every((record) => record.status === 'ok' && record.ms === 1234)).toBe(true);
+    expect(records.every((record) => record.status === 'ok')).toBe(true);
     expect(firstHourOk(records)).toBe(true);
+  });
+
+  test('the generator’s own next commands run before the gate — x db gen included', async () => {
+    // Run 42879568783: the bench went from `x g resource note` straight to the gate, skipping the
+    // `x db gen` the generator printed, and `unit`, `exercise` and `drift` were red on `notes`.
+    const calls: { command: string; cwd: string }[] = [];
+    const records = await runFirstHour(input, runner(calls), {});
+    expect(calls.map((call) => call.command).slice(3)).toEqual([
+      'bun x x g resource note --json',
+      'bun x x db gen create notes',
+      'bun x x db migrate',
+      'bun run setup',
+      'bun run verify --json',
+    ]);
+    // One record for the list, timed as their sum, under the commands as printed.
+    expect(records.find((record) => record.name === 'feature next steps')).toEqual({
+      name: 'feature next steps',
+      command: 'bun x x db gen create notes && bun x x db migrate',
+      ms: 2469,
+      status: 'ok',
+    });
+  });
+
+  test('a red next command fails the step under its own name; the gate never runs', async () => {
+    const records = await runFirstHour(input, runner([], 'db gen'), {});
+    expect(records.find((record) => record.name === 'feature next steps')).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        command: 'bun x x db gen create notes',
+        tail: 'X_TYPECHECK_FAILED',
+      }),
+    );
+    expect(records.at(-1)).toEqual(expect.objectContaining({ status: 'skipped', ms: null }));
+  });
+
+  test('a feature whose verdict cannot be read is a failure, never "nothing to run"', async () => {
+    const plain: Runner = async (command) => ({
+      command,
+      code: 0,
+      ok: true,
+      stdout: command.join(' ').includes(' g resource ') ? '✓ wrote 40 file(s)' : '',
+      stderr: '',
+      durationMs: 1,
+    });
+    const records = await runFirstHour(input, plain, {});
+    expect(records.find((record) => record.name === 'feature next steps')).toEqual(
+      expect.objectContaining({ status: 'failed', ms: 0 }),
+    );
+    expect(firstHourOk(records)).toBe(false);
   });
 
   test('a failed step keeps its real time and its output; every later step is skipped, untimed', async () => {
@@ -165,7 +228,7 @@ describe('unit · first-hour disk facts', () => {
         calls.push({ command: line, cwd: options.cwd });
         if (line.includes('create-ultimate'))
           mkdirSync(join(options.cwd, 'firsthour'), { recursive: true });
-        return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 7 };
+        return { command, code: 0, ok: true, stdout: stdoutOf(line), stderr: '', durationMs: 7 };
       };
 
     const calls: { command: string; cwd: string }[] = [];
@@ -189,6 +252,34 @@ describe('unit · first-hour disk facts', () => {
       expect(existsSync(dropped.work)).toBe(false);
     } finally {
       rmSync(dropped.work, { recursive: true, force: true });
+    }
+  });
+
+  test('no step sees a secret of the parent’s env — every one is unset for exec’s merge', async () => {
+    // why: Bun has no recursive-remove API; `node:fs` owns the throwaway tree.
+    const { mkdirSync, rmSync } = await import('node:fs');
+    // why: Bun exposes no path-join primitive.
+    const { join } = await import('node:path');
+    const { oneRun } = await import('./first-hour');
+    const envs: Readonly<Record<string, string | undefined>>[] = [];
+    const capture: Runner = async (command, options) => {
+      envs.push(options.env ?? {});
+      if (command.join(' ').includes('create-ultimate'))
+        mkdirSync(join(options.cwd, 'firsthour'), { recursive: true });
+      const stdout = stdoutOf(command.join(' '));
+      return { command, code: 0, ok: true, stdout, stderr: '', durationMs: 1 };
+    };
+    const parentEnv = { PATH: '/usr/bin', NPM_TOKEN: 'x', NPM_TOTP_SECRET: 'x', HOME: '/me' };
+    const run = await oneRun('30.0.0', false, { runner: capture, parentEnv });
+    rmSync(run.work, { recursive: true, force: true });
+    // Every step's command, and the generator's next one twice: `db gen` and `db migrate`.
+    expect(envs.length).toBe(run.steps.length + 1);
+    for (const env of envs) {
+      expect('NPM_TOKEN' in env && env['NPM_TOKEN'] === undefined).toBe(true);
+      expect('NPM_TOTP_SECRET' in env && env['NPM_TOTP_SECRET'] === undefined).toBe(true);
+      expect(env['PATH']).toBe('/usr/bin');
+      expect(env['HOME']).toBe(join(run.work, 'home'));
+      expect(env['NPM_CONFIG_USERCONFIG']).toBeDefined();
     }
   });
 

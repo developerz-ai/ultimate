@@ -209,9 +209,10 @@ export function isScannedModule(root: string, absolute: string): boolean {
   // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
   // file it holds, so this loop imported none of them and the app registered nothing.
   // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
-  // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
+  // `~/work/my.test.app` matched `.test.` on every file and loaded none of them, and one under
+  // `<anything>/node_modules/<app>` matched the segment on every file the same way.
   const file = posixRelative(root, absolute);
-  if (hasPathSegment(absolute, 'node_modules') || isTest(file)) return false;
+  if (hasPathSegment(file, 'node_modules') || isTest(file)) return false;
   return !(
     ENTRY_POINT.test(file) ||
     EXERCISE_FILE.test(file) ||

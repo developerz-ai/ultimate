@@ -355,7 +355,7 @@ Rule: an `uploadScanner` returned from `apps/<app>/runtime.ts` is asked about ev
 
 | Fact | Detail |
 |---|---|
-| the port | `UploadScanner = { name, holds?, scan({ key, pendingKey, size, contentType, body }) → Promise<ScanVerdict> }` on `@ultimat3/storage/adapter`. `key` is the per-attempt scan copy, `pendingKey` the upload's own key, stable across retries — what a `hold` is decided by. "Cannot decide" is a rejection, never a verdict. A scanner that answers `hold` declares `holds: true`; a `hold` from one that did not is `X_INVARIANT`, nothing attached |
+| the port | `UploadScanner = { name, holds?, scan({ key, pendingKey, revision, size, contentType, body }) → Promise<ScanVerdict> }` on `@ultimat3/storage/adapter`. `key` is the per-attempt scan copy, `pendingKey` the upload's own key, stable across retries, `revision` which bytes are under it (the etag, or `sha256:<hex>`) — a `hold` is decided by `(pendingKey, revision)`, because the upload URL stays valid and a rewrite is new bytes (31.3). "Cannot decide" is a rejection, never a verdict. A scanner that answers `hold` declares `holds: true`; a `hold` from one that did not is `X_INVARIANT`, nothing attached |
 | the reference | `memoryUploadScanner()` flags the EICAR test string (`EICAR_TEST_STRING`), across chunk boundaries |
 | prove yours | `behavesLike(uploadScannerConformance, () => yours)` from `@ultimat3/testing/conformance` |
 | ClamAV | the app's adapter (axiom 8): stream `body` to clamd's `INSTREAM` over `Bun.connect`; `stream: OK` → clean, `stream: <sig> FOUND` → infected, anything else → reject |

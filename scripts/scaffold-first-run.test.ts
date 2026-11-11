@@ -23,11 +23,17 @@ import { SETUP_TEMPLATE, setupSteps } from './setup-commands';
 // to take minutes, and a test that does has hung.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
+/** A clean generator run's `--json` verdict: no table declared, so no `next`. */
+const QUIET_VERDICT = JSON.stringify({ ok: true, command: 'g', data: { files: [] } });
+
+/** The child env a sweep hands every command: the allowlist, never this process's. */
+const ENV = { PATH: '/usr/bin', HOME: '/home/runner' };
+
 const result = (over: Partial<RunResult> = {}): RunResult => ({
   command: ['x', 'g', 'route', 'smoke-route'],
   code: 0,
   ok: true,
-  output: '',
+  output: QUIET_VERDICT,
   durationMs: 1,
   timedOut: false,
   ...over,
@@ -138,12 +144,12 @@ describe('firstRunPlan', () => {
     }
   });
 
-  // Every generator that emits an entity feeds it, and this is the only migration in CI written
-  // from generator output rather than from the scaffold's own example entity. The apply is
-  // `bun run setup`'s, on the `scaffold-gate` run that follows this sweep.
-  test('regenerates after the generators, as the plan’s last step', () => {
-    expect(stepsAmong(['g entity', 'db gen generated'])).toEqual(['g entity', 'db gen generated']);
-    expect(firstRunPlan().at(-1)?.name).toBe('db gen generated');
+  // The migration is the generator's own `next` (`runFirstRun` follows it), never a line here: a
+  // hard-coded `db gen` is how the first-hour bench and this sweep came to disagree with what `x g`
+  // tells its author, and how a generator that forgot its `next` would go unseen.
+  test('spells no database command — every one is a generator’s next', () => {
+    expect(firstRunPlan().filter((step) => step.args[0] === 'db')).toEqual([]);
+    expect(stepsAmong(['db gen generated'])).toEqual([]);
   });
 
   test('every step is named distinctly, so a red run says which one', () => {
@@ -168,6 +174,7 @@ describe('runFirstRun', () => {
       '/tmp/demoapp',
       [{ name: 'db migrate', args: ['db', 'migrate'] }],
       fakeRunner(seen),
+      ENV,
     );
     expect(seen).toEqual([['/tmp/demoapp/node_modules/.bin/x', 'db', 'migrate']]);
   });
@@ -184,6 +191,7 @@ describe('runFirstRun', () => {
       '/tmp/demoapp',
       steps,
       fakeRunner(seen, (command) => command[2] !== 'route'),
+      ENV,
     );
     expect(seen).toHaveLength(3);
     const findings = firstRunFindings('/tmp/demoapp', outcomes);
@@ -192,6 +200,93 @@ describe('runFirstRun', () => {
       'g action',
       'g query',
     ]);
+  });
+
+  test('runs each generator’s own next commands right after it, in its order', async () => {
+    const seen: string[][] = [];
+    const next = ['bunx x db gen "create smoke_resources"', 'bunx x db migrate'];
+    const runner: Runner = async (command) => {
+      seen.push([...command]);
+      return command[2] === 'resource'
+        ? result({ command, output: JSON.stringify({ ok: true, command: 'g', data: { next } }) })
+        : result({ command });
+    };
+    const outcomes = await runFirstRun(
+      '/tmp/demoapp',
+      [
+        { name: 'g resource', args: ['g', 'resource', 'smoke-resource', '--json'] },
+        { name: 'g route', args: ['g', 'route', 'smoke-route', '--json'] },
+      ],
+      runner,
+      ENV,
+    );
+    expect(seen.map((command) => command.slice(1).join(' '))).toEqual([
+      'g resource smoke-resource --json',
+      'x x db gen create smoke_resources',
+      'x x db migrate',
+      'g route smoke-route --json',
+    ]);
+    expect(outcomes.map((outcome) => outcome.step.name)).toEqual([
+      'g resource',
+      "g resource → bun x x db gen 'create smoke_resources'",
+      'g resource → bun x x db migrate',
+      'g route',
+    ]);
+  });
+
+  test('a next x verify is skipped — the gate after the sweep runs it; every other verb runs', async () => {
+    const seen: string[][] = [];
+    const next = [
+      'bun install',
+      'bunx x db gen "create smoke_apps"',
+      'bunx x verify --changed --dirty',
+      'bunx x verify --only budgets',
+      'bunx x db seed',
+    ];
+    const runner: Runner = async (command) => {
+      seen.push([...command]);
+      return command[2] === 'app'
+        ? result({ command, output: JSON.stringify({ ok: true, command: 'g', data: { next } }) })
+        : result({ command });
+    };
+    await runFirstRun(
+      '/tmp/demoapp',
+      [{ name: 'g app', args: ['g', 'app', 'smoke-app', '--json'] }],
+      runner,
+      ENV,
+    );
+    expect(seen.slice(1).map((command) => command.join(' '))).toEqual([
+      'bun install',
+      'bun x x db gen create smoke_apps',
+      'bun x x db seed',
+    ]);
+  });
+
+  test('a generator whose verdict cannot be read is a finding, not "nothing to run"', async () => {
+    const runner: Runner = async (command) => result({ command, output: '✓ wrote 3 file(s)' });
+    const outcomes = await runFirstRun(
+      '/tmp/demoapp',
+      [{ name: 'g route', args: ['g', 'route', 'smoke-route', '--json'] }],
+      runner,
+      ENV,
+    );
+    const findings = firstRunFindings('/tmp/demoapp', outcomes);
+    expect(findings.map((finding) => finding.cause.split(' exited')[0])).toEqual(['g route next']);
+  });
+
+  test('every command runs in the env it is handed, never this process’s', async () => {
+    const envs: unknown[] = [];
+    const runner: Runner = async (command, options) => {
+      envs.push(options.env);
+      return result({ command });
+    };
+    await runFirstRun(
+      '/tmp/demoapp',
+      [{ name: 'g route', args: ['g', 'route', 'smoke-route', '--json'] }],
+      runner,
+      ENV,
+    );
+    expect(envs).toEqual([ENV]);
   });
 });
 

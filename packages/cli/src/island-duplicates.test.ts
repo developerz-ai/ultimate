@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
 import { buildIslands } from './island-bundle';
 import type { IslandMetafile, ModuleIdentityIo } from './island-duplicates';
-import { duplicatedModules, hostIo, realSpelling } from './island-duplicates';
+import { duplicatedModules, hostIo, memoizedIo, realSpelling } from './island-duplicates';
 import { processRoot } from './process-root-fixture';
 
 const OUT = './apps/web/app/post/post-form.island.js';
@@ -217,4 +217,32 @@ describe('the host filesystem and the real pipeline', () => {
     const bundle = await buildIslands(join(import.meta.dir, '..', '..', '..', 'examples', 'dummy'));
     expect(bundle.chunks.length).toBeGreaterThan(0);
   }, 60_000);
+});
+
+describe('memoizedIo', () => {
+  test('asks each path once, and answers a miss with the same throw every time', async () => {
+    const asked: string[] = [];
+    // The foreign error a real `realpath` raises for a missing file: input, never a verdict.
+    const missing = new TypeError('no file');
+    const io = memoizedIo({
+      cwd: '/',
+      platform: 'linux',
+      realpath: (path) => {
+        asked.push(path);
+        if (path === '/virtual') throw missing;
+        return `/real${path}`;
+      },
+      readText: async (path) => {
+        asked.push(`text:${path}`);
+        return 'x';
+      },
+    });
+    expect(io.realpath('/a')).toBe('/real/a');
+    expect(io.realpath('/a')).toBe('/real/a');
+    expect(() => io.realpath('/virtual')).toThrow('no file');
+    expect(() => io.realpath('/virtual')).toThrow('no file');
+    expect(await io.readText('/a')).toBe('x');
+    expect(await io.readText('/a')).toBe('x');
+    expect(asked).toEqual(['/a', '/virtual', 'text:/a']);
+  });
 });

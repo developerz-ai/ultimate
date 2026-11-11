@@ -24,6 +24,8 @@ import { adminFindings, walkAdmin } from './lib/admin-walk';
 import { parseScriptArgs } from './lib/args';
 import type { ScriptResult } from './lib/log';
 import { report } from './lib/log';
+import { repoRoot } from './lib/run';
+import { strangerEnvAt } from './lib/stranger-env';
 import { appBin, generatorName } from './scaffold-first-run';
 
 const SCRIPT = 'scaffold-admin';
@@ -174,6 +176,8 @@ const realIo: AdminCheckIo = {
   boot: (dir, port) => {
     const server = Bun.spawn([appBin(dir), 'dev', '--port', String(port), '--json'], {
       cwd: dir,
+      // A whole env: `Bun.spawn` replaces, and the app is not this repo's code.
+      env: strangerEnvAt(repoRoot()),
       stdout: 'pipe',
       stderr: 'pipe',
     });

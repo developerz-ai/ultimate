@@ -31,9 +31,22 @@ const ROW_REFUSALS: ReadonlySet<string> = new Set([
   'X_DB_STATEMENT_FAILED',
 ]);
 
+/** Postgres' 23514 for a row whose partition key no partition covers, in its own words. */
+const NO_PARTITION = 'no partition of relation';
+
 const refused = (write: SeedRow | SeedUpdate, error: unknown): unknown => {
   if (isUltimateError(error) && !ROW_REFUSALS.has(error.code)) return error;
   const why = isUltimateError(error) ? `${error.code}: ${error.cause}` : renderThrowable(error);
+  if (why.includes(NO_PARTITION)) {
+    // No factory repairs this: the database's partitions stop short of the seed's anchor — made
+    // around a migrate long past (or a clock other than the seed's) and never kept ahead since.
+    return seedGraphUnsatisfied({
+      entity: write.entity,
+      what: `the database holds no partition for a generated row — ${why}. The seed anchors a partitionBy column on its clock's now; the partitions were made around the migration's apply time and are kept ahead only by the app's partitions() job`,
+      columns: [],
+      fix: "await maintainPartitions.enqueue({})   # the app's partitions() job — makes every partition up to now and its ahead; or pass seedGraph(entities, { now }) the database's select now()",
+    });
+  }
   return seedGraphUnsatisfied({
     entity: write.entity,
     what: `the database refused a generated row — ${why}`,

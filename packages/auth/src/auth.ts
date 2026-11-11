@@ -6,12 +6,12 @@
 import { type Clock, systemClock, timingSafeEqual, uuidV7 } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
+import { limiterPort, totpReplayPort } from './auth-ports';
 import { normaliseEmail } from './email';
-import { mfaRequiredUnenforceable, sessionUnknown, totpReplayGuardInvalid } from './errors';
-import { installedAuthLimiter, installedTotpReplay } from './limiter-install';
+import { mfaRequiredUnenforceable, sessionUnknown } from './errors';
 import { openLoginAttempt } from './login-attempt';
 import { type HandleDirectory, loginIdentity } from './login-identity';
-import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
+import type { TotpReplayGuard } from './mfa';
 import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthProviderId } from './oauth';
 import {
@@ -31,10 +31,8 @@ import { assertPasswordPolicy, assertRateLimitPolicy, assertSessionPolicy } from
 import {
   type AuthLimiter,
   type AuthRateLimitPolicy,
-  assertAuthLimiterPolicy,
   DEFAULT_AUTH_RATE_LIMIT,
   loginFailed,
-  memoryAuthLimiter,
   orgRateLimit,
 } from './rate-limit';
 import {
@@ -218,23 +216,9 @@ export function defineAuth(config: AuthConfigInput): Auth {
   // the database connection), then one process' worth of state. Without the middle arm a
   // scaffolded app had to remember to build a shared limiter itself, which is the opposite of
   // what this framework promises — and `x new` scaffolds two replicas.
-  const limiter =
-    config.limiter ?? installedAuthLimiter(rateLimit) ?? memoryAuthLimiter(clock, rateLimit);
-  assertAuthLimiterPolicy(rateLimit, limiter);
-  // The tenant bucket is a noisy-neighbour cap, not a credential-guessing allowance, so an app
-  // that declares `scope: 'shared'` for its LOCKOUT is not also required to ship a shared limiter
-  // for this one — per replica it approximates to `orgMaxAttempts × replicas`, which is a
-  // throughput ceiling and discloses nothing. Only the LOCAL fallback is exempt, and exempting it
-  // is what buys that: `memoryAuthLimiter` always reports `'process'`, which is the one arm the
-  // scope check would refuse. A limiter somebody else supplied — injected by the app or built by
-  // the host's factory — is compared exactly as the general bucket's is, because a factory that
-  // ignores the policy it was handed otherwise enforces numbers the app never declared while
-  // `Auth.orgRateLimit` reports the app's. That asymmetry was the whole defect: the same factory
-  // is refused for one bucket and trusted for the other.
+  const limiter = limiterPort(config.limiter, rateLimit, clock, false);
   const orgLimits = orgRateLimit(rateLimit);
-  const suppliedOrgLimiter = config.orgLimiter ?? installedAuthLimiter(orgLimits);
-  const orgLimiter = suppliedOrgLimiter ?? memoryAuthLimiter(clock, orgLimits);
-  if (suppliedOrgLimiter !== undefined) assertAuthLimiterPolicy(orgLimits, suppliedOrgLimiter);
+  const orgLimiter = limiterPort(config.orgLimiter, orgLimits, clock, true);
   // Read through a widened local on purpose: the field's type is the literal `false`, so this
   // branch is unreachable from TypeScript and reachable from every JS caller and every config
   // parsed out of JSON — the same split `invariantColumns()` keeps its Proxy behind a compile
@@ -242,11 +226,9 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const declaredMfa: { readonly required?: unknown } = config.mfa ?? {};
   if (declaredMfa.required === true) throw mfaRequiredUnenforceable();
   const mfa: AuthMfaPolicy = { issuer: config.mfa?.issuer ?? DEFAULT_MFA_ISSUER, required: false };
-  const totpReplay = config.totpReplay ?? installedTotpReplay() ?? memoryTotpReplayGuard();
-  // Unreachable from TypeScript and reachable from a guard written before `claim`, which would
-  // otherwise be found at the first second factor, as a TypeError, on a production sign-in.
-  const declaredReplay: { readonly claim?: unknown } = totpReplay;
-  if (typeof declaredReplay.claim !== 'function') throw totpReplayGuardInvalid();
+  // Each port is read where it is used (`auth-ports.ts`): the boot installs them after `runtime.ts`
+  // loads, so one captured here would be the per-process default for the app's whole life.
+  const totpReplay = totpReplayPort(config.totpReplay);
   const passkeys =
     config.passkeys === undefined ? undefined : resolvePasskeyPolicy(config.passkeys);
   return Object.freeze({
@@ -255,13 +237,21 @@ export function defineAuth(config: AuthConfigInput): Auth {
     sessions: { store: config.adapter, policy: session, clock },
     password,
     rateLimit,
-    limiter,
+    get limiter(): AuthLimiter {
+      return limiter();
+    },
     // What the limiter in use actually enforces, not the derivation — the two differ in `scope`
     // exactly when the app declared 'shared' and left this limiter to the default.
-    orgRateLimit: orgLimiter.policy,
-    orgLimiter,
+    get orgRateLimit(): AuthRateLimitPolicy {
+      return orgLimiter().policy;
+    },
+    get orgLimiter(): AuthLimiter {
+      return orgLimiter();
+    },
     mfa,
-    totpReplay,
+    get totpReplay(): TotpReplayGuard {
+      return totpReplay();
+    },
     // BREAKING (majors only): the default is `[]`, never the live registry.
     //
     // It was `oauthProviderIds()`, so `defineAuth({ providers })`'s own documented purpose — the

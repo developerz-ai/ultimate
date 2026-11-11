@@ -288,12 +288,13 @@ workspace app, the reference app included, got neither a worker nor a boot. It r
 persisted records and opens the outbox once per page, so that work is not repeated in every island
 chunk. `X_BUILD_FAILED` names `page boot` or `sync worker` when one of them fails to bundle.
 
-## Shared chunks, opt-in
+## Shared chunks: per-route groups, or one opt-in group
 
-By default every island is still its own `Bun.build` with `splitting: false`: each chunk is
-self-contained and its size is the whole cost of booting it. `islands: { sharedChunks: true }`
-(As of 2026-09-29, `packages/cli/src/island-bundle.ts`, `buildAll`) builds every island in ONE
-split bundle instead: a module two islands import is one shared chunk, named by its source identity
+By default islands are grouped by route (As of 2026-11-10, `packages/cli/src/island-groups.ts`):
+islands rendered on exactly the same set of routes are one split `Bun.build`, and every other
+island is its own build with `splitting: false`, self-contained, its size the whole cost of booting
+it. `islands: { sharedChunks: true }` (`packages/cli/src/island-bundle.ts`, `buildAll`) is one
+group holding every island, ONE split bundle: a module two islands import is one shared chunk, named by its source identity
 (`island-link.ts`), fetched once per page and cached across pages. A route's budget is the graph
 walk `measureDocumentJs` does off the emitted files, each file counted once. Module state in a
 shared chunk is one instance per PAGE, not per island; the page handle on `globalThis` was already

@@ -3,8 +3,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { NAMEID_EMAIL, NAMEID_TRANSIENT } from './saml-dom';
-import { readAuthnRequest, samlTestIdp } from './saml-idp-fixture';
 import { samlIdentityProvider } from './saml-provider';
+import { readAuthnRequest, samlTestIdp } from './saml-test-idp';
 import {
   ACS_URL,
   refusalOf,

@@ -2,11 +2,12 @@
 // key accepts, each child pointing at a parent of its OWN tenant, every value storable and every
 // declared rule kept. Pure: it returns the plan, `insertSeedGraph` writes it. Same seed, same bytes.
 
-import { finiteCount, finiteOption, fnv1a } from '@ultimat3/core';
+import { finiteCount, finiteOption, fnv1a, systemClock } from '@ultimat3/core';
 import type { ReferenceDescription } from '@ultimat3/entity';
 import { DEFAULT_SEED, seededUuid } from './determinism';
 import { seedGraphUnsatisfied } from './seed-graph-error';
 import { edgeKey, insertOrder } from './seed-graph-order';
+import { partitionWindow, valuesInWindow } from './seed-graph-partition';
 import { declaredPatterns } from './seed-graph-patterns';
 import type {
   SeedCanary,
@@ -97,6 +98,7 @@ export function seedGraph(
   const seed = finiteOption('seedGraph', 'seed', options.seed ?? DEFAULT_SEED);
   const tenantCount = finiteCount('seedGraph', 'tenants', options.tenants ?? 2, 1);
   const perTable = finiteCount('seedGraph', 'perTable', options.perTable ?? 3, 1);
+  const anchor = options.now ?? systemClock.now();
   // A view entity is a relation Postgres derives: no row is ever written to it, so it is no part of
   // the graph (`X_ENTITY_VIEW_READ_ONLY` otherwise) — the tables it reads from carry the rows. A
   // history table is the same from this side: its trigger writes every row, from the parent's.
@@ -197,6 +199,12 @@ export function seedGraph(
     const rootProperty = roots.get(name);
     // Read once per table: each `matches(/…/)` an invariant holds a column to, sampled from.
     const patterns = declaredPatterns(entity);
+    // A `partitionBy` column takes values from the bucket the migration made first (`anchor`'s).
+    const description = entity.$describe();
+    const window = partitionWindow(description.partition, anchor);
+    const partitioned = description.columns.find(
+      (column) => column.column === description.partition?.column,
+    );
     const buckets: readonly (string | null)[] = scoped(name) ? tenants : [null];
     // Positions continue past the graph written before this one: a reset factory rebuilt that
     // graph's first values, and a unique column refused the second copy.
@@ -231,13 +239,18 @@ export function seedGraph(
                       : parentValues(reference, tenant, index)
                     : Object.hasOwn(built, property)
                       ? storable(column, [built[property]])
-                      : candidatesFor(property, column, {
-                          ordinal,
-                          canary,
-                          position,
-                          patterns: patterns.get(property),
-                          uuid: stream,
-                        });
+                      : window !== null && property === partitioned?.property
+                        ? storable(
+                            column,
+                            valuesInWindow(partitioned.kind, window, ordinal, position),
+                          )
+                        : candidatesFor(property, column, {
+                            ordinal,
+                            canary,
+                            position,
+                            patterns: patterns.get(property),
+                            uuid: stream,
+                          });
           return [
             property,
             candidates.length === 0 ? refuseEmpty(shape, property, tenant) : candidates,

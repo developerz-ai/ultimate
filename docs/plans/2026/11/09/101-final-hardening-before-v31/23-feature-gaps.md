@@ -33,3 +33,27 @@ Per row; each adds its `PRIMITIVE_FACTORIES` or `ADAPTER_PORTS` row, a README se
 
 ## Done when
 - `examples/dummy` uses each new factory once and the app gate is green.
+
+## Outcome (2026-11-10)
+Done. All 10 rows shipped, and `examples/dummy` uses each factory once with its gate green.
+
+- **Record history wasn't missing.** It already existed as `entity({ history: true })`, with its DDL in `packages/db` (`packages/entity/src/registry.ts:173`). The earlier "`versioned()` not built" was a false premise: the audit grepped for the word.
+- **Shipped in #1043:** GDPR (`subjectExport`/`subjectErase` + `.personalData()`, not `accountExport`/`accountErase`), `withLock`, `UploadScanner`, `SearchIndex` + `reindex()`, SMS, `pdf()`, `variant()`, SAML (built, no dependency) and `ledger()`.
+- **Added by the closing PR:**
+  - the `history(table, id)` read (`packages/entity/src/history-read.ts`, `history-order.ts`), with one conformance case run on memory, PGlite and live pg
+  - `fakeSamlIdentityProvider` in `@ultimat3/testing`
+
+| Factory | Where `examples/dummy` uses it |
+|---|---|
+| `withLock`, upload scanner (`hold`), `variant()` | org avatars |
+| `partitionBy`, `smsChannel` | `quota_alerts` |
+| `history()` | `postRevisions` |
+| SAML | `identityProviderRoutes`, tested against `fakeSamlIdentityProvider` |
+| `ledger()`, `pdf()`, `reindex()`, `subjectExport`/`subjectErase` | as before (#1043) |
+
+Defects found and fixed while adding the reference usages:
+- `partitionBy` and row-security statements were missing from `GENERATABLE_FORMS`, so they showed as drift.
+- The seed writer mishandled `Date` primary keys.
+- Nullable `matches()` and other operators were judged with two-valued logic; they now use SQL's three-valued logic.
+- Seed values fell outside the partition window.
+- There was no SAML test IdP.

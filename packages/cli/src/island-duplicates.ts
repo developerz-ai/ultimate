@@ -41,6 +41,42 @@ export const hostIo = (): ModuleIdentityIo => ({
 });
 
 /**
+ * `io` with each realpath and each text asked once: one `buildIslands` judges every group's
+ * metafile, and the design system's files are in all of them — 2.3 s of `realpathSync` and
+ * `statSync` across the 159-island bench app's builds (one CPU profile, As of 2026-11-10). Made per
+ * call, never per process, so a link or a file changed between two `x dev` rebuilds is read again.
+ */
+export function memoizedIo(io: ModuleIdentityIo): ModuleIdentityIo {
+  const reals = new Map<string, { readonly real: string } | { readonly missing: unknown }>();
+  const texts = new Map<string, Promise<string | undefined>>();
+  return {
+    ...io,
+    realpath: (path) => {
+      let known = reals.get(path);
+      if (known === undefined) {
+        try {
+          known = { real: io.realpath(path) };
+        } catch (missing) {
+          known = { missing };
+        }
+        reals.set(path, known);
+      }
+      // The same throw the unmemoized call raises: the caller reads "no file" from it.
+      if ('missing' in known) throw known.missing;
+      return known.real;
+    },
+    readText: (path) => {
+      let text = texts.get(path);
+      if (text === undefined) {
+        text = io.readText(path);
+        texts.set(path, text);
+      }
+      return text;
+    },
+  };
+}
+
+/**
  * `path` as `island-package-dedupe.ts` spells every framework file it answers: the realpath. What a
  * resolver answered under another spelling (a Windows junction) is renamed through this before a
  * plugin hands it to `Bun.build`, so one file is one module string. A path with no file stays.

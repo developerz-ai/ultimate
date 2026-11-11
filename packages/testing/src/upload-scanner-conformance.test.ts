@@ -49,6 +49,27 @@ function sticky(): UploadScannerLike {
   };
 }
 
+/**
+ * A review queue keyed by `pendingKey` alone: whatever it cleared once it clears again, so the bytes
+ * PUT to the same pending key after the approval are attached unscanned.
+ */
+function keyedByUpload(): UploadScannerLike {
+  const inner = memoryUploadScanner();
+  const cleared = new Set<string>();
+  return {
+    name: 'keyed-by-upload',
+    async scan(input) {
+      if (cleared.has(input.pendingKey)) {
+        await input.body.cancel();
+        return { verdict: 'clean' };
+      }
+      const verdict = await inner.scan(input);
+      if (verdict.verdict === 'clean') cleared.add(input.pendingKey);
+      return verdict;
+    },
+  };
+}
+
 const paranoid = (): UploadScannerLike => ({
   name: 'paranoid',
   scan: async () => ({ verdict: 'infected', signature: 'everything' }),
@@ -72,6 +93,12 @@ describe(testName('unit', 'a scanner that breaks the contract fails conformance'
 
   test('a scanner that keeps its verdict fails the bytes-only check', async () => {
     await expect(check('a verdict is about these bytes only').run(sticky())).rejects.toThrow();
+  });
+
+  test('a scanner that keys its decision by the upload alone fails the revision check', async () => {
+    const revision = check('a new revision of one upload is judged on its own bytes');
+    await expect(revision.run(keyedByUpload())).rejects.toThrow();
+    await revision.run(memoryUploadScanner());
   });
 
   test('a scanner that calls everything infected fails the clean checks', async () => {

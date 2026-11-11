@@ -177,18 +177,24 @@ Full rows: [Error codes](Error-Codes).
 
 ## Shared island chunks
 
-**`islands: { sharedChunks: true }` in `app.config.ts` builds every island in one split build**, so
-a module two islands import is one `/islands/chunk-<hash>.js` a page fetches once. Off by default,
-by measurement (`packages/core/src/config-islands.ts`): tree shaking across one build keeps what
-any importer uses, so an island that takes one helper from a module the others use heavily pays for
-all of it — the reference app's plain-DOM update banner went 712 → 16,288 B with it on.
+**By default the build groups islands by route.** Islands rendered on exactly the same set of
+routes are one split build: a module they share is one `/islands/chunk-<hash>.js` the page fetches
+once. Every other island is built alone, self-contained, so no route pays for an island it does
+not render. The groups are read from each `page.tsx`'s `island({ src })` declarations
+(`packages/cli/src/island-groups.ts`). Measured `As of 2026-11-10`: the reference app's
+`/posts/:id` (three islands on that route only) 95,754 → 65,676 B; every other route unchanged.
+
+**`islands: { sharedChunks: true }` in `app.config.ts` is one group holding every island.** Off by
+default, by measurement (`packages/core/src/config-islands.ts`): tree shaking across one build
+keeps what any importer uses, so an island that takes one helper from a module the others use
+heavily pays for all of it — the reference app's plain-DOM update banner went 712 → 16,288 B.
 
 | Turn it on when | Leave it off when |
 |---|---|
-| one surface's pages render several islands over one shared graph (the same form kit, the same chart) | an island is small and plain-DOM, or the islands share little |
-| `x build --target static`, then `x verify --only budgets`, shows the routes that render several islands getting smaller | any route's `budget.js` grows past its budget |
+| shared code cached across pages is worth more than each page's first-visit bytes | an island is small and plain-DOM, or the islands share little |
+| `x build --target static`, then `x verify --only budgets`, shows no route growing | any route's `budget.js` grows past its budget |
 
 Layering: the last config layer that states `sharedChunks` wins; absent everywhere is `false`
 (`mergeIslands`). A value that is not a boolean is refused at boot (`X_CONFIG_INVALID`). `As of
-2026-10`.
+2026-11`.
 

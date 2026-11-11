@@ -52,8 +52,20 @@ export const setPlan = (orgId: OrgId, planCode: PlanCode): Promise<Org> =>
 export const updatePreferences = (
   orgId: OrgId,
   memberId: MemberId,
-  values: { tz?: AppZone; locale?: AppLocale; theme?: AppTheme; digestOptIn?: boolean },
+  values: {
+    tz?: AppZone;
+    locale?: AppLocale;
+    theme?: AppTheme;
+    digestOptIn?: boolean;
+    phone?: string | null | undefined;
+  },
 ): Promise<Member> => db.members.update(memberId, values, { orgId });
+
+/** The org's owners who gave a phone: who a quota alert is texted to. `(orgId, role)` is indexed. */
+export const textableOwners = async (orgId: OrgId): Promise<readonly Member[]> =>
+  (await db.members.where({ orgId, role: 'owner' }).orderBy('id').all()).filter(
+    (member) => member.phone !== null,
+  );
 
 /** Everyone who asked for mail. The partial index on `tz` is what makes this cheap. */
 export const digestRecipients = (orgId: OrgId): Promise<readonly Member[]> =>

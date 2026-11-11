@@ -42,6 +42,13 @@ const LOCK_TX = ['lock', 'transactions'] as const;
 // A foreign failure handed to the subject: test input, never its verdict.
 const CALLBACK_FAILED = new Error('the callback failed');
 
+/**
+ * How long the outer holder waits for a contender a released row would let through: a lock request
+ * and its answer, one round trip to a loaded server, with room to spare. Paid only when the lock
+ * holds — a contender that got in ends the wait at once.
+ */
+const HOLD_WINDOW_MS = 100;
+
 /** A turn of the event loop, so a read-modify-write has a window if the lock does not close it. */
 const yieldNow = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 1));
 
@@ -151,18 +158,24 @@ const lockChecks: readonly EntityDriverCheck[] = [
       await counter(db, idAt('c3'));
       await counter(db, idAt('c4'));
       const order: string[] = [];
+      // Sequenced on events, never on a timer: the second contender asks for c4 only once the
+      // nested lock HOLDS it — a 1 ms head start lost that race to a server round trip. The outer
+      // then ends as soon as the second has run (a nested lock released with its own end: caught at
+      // once) or after `HOLD_WINDOW_MS`, the time a released row gives the second to take it.
+      const nestedHeld = Promise.withResolvers<void>();
+      const secondRan = Promise.withResolvers<void>();
       await inOrg(ORG_A, () =>
         Promise.all([
           db.counters.lock(idAt('c3'), async () => {
-            await db.counters.lock(idAt('c4'), () => undefined);
-            await yieldNow();
-            await yieldNow();
+            await db.counters.lock(idAt('c4'), () => nestedHeld.resolve());
+            await Promise.race([secondRan.promise, Bun.sleep(HOLD_WINDOW_MS)]);
             order.push('outer ending');
           }),
           (async () => {
-            await yieldNow();
+            await nestedHeld.promise;
             await db.counters.lock(idAt('c4'), () => {
               order.push('second ran');
+              secondRan.resolve();
             });
           })(),
         ]),

@@ -6,6 +6,7 @@
 
 import { MeterWarning } from '@ultimat3/action';
 import { job } from '@ultimat3/jobs';
+import { quotaAlert } from '../../quota/jobs/quota-alert';
 
 export const postsQuotaWarning = job({
   input: MeterWarning,
@@ -16,14 +17,20 @@ export const postsQuotaWarning = job({
   // It reads no tenant row — the warning carries every fact it logs — so it acts as no org.
   tenant: 'none',
   retry: { attempts: 3, backoff: 'exponential' },
-  async run({ input, ctx }) {
-    // A structured line, which is what an operator's alerting reads. An app that mails the org's
-    // owners or offers an upgrade does it here — the framework only says the threshold was crossed.
+  async run({ input, ctx, step }) {
+    // A structured line, which is what an operator's alerting reads.
     ctx.logger.warn('posts.quota.warning', {
       orgId: input.orgId,
       used: input.used,
       limit: input.limit,
       resetsAt: input.resetsAt,
     });
+    // The org's own half — recorded and texted to its owners — runs AS that org (`quotaAlert`'s
+    // tenant). A meter counted for no org has nobody to tell.
+    const { orgId, meter, used, limit, periodStart, resetsAt } = input;
+    if (orgId === null) return;
+    await step.run('alert-org', () =>
+      quotaAlert.enqueue({ orgId, meter, used, limit, periodStart, resetsAt }),
+    );
   },
 });

@@ -34,4 +34,5 @@ export const sqlSubject = (client: () => DbClient): EntityDriverSubject => ({
   },
   capabilities: DRIVER_CAPABILITIES,
   foreignKeys: true,
+  history: true,
 });

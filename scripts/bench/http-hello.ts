@@ -13,6 +13,8 @@ import { renderFixShellArg } from '@ultimat3/core';
 import { parseScriptArgs } from '../lib/args';
 import type { Finding } from '../lib/log';
 import { report } from '../lib/log';
+import { repoRoot } from '../lib/run';
+import { strangerEnvAt } from '../lib/stranger-env';
 import { spreads } from './bench-spread';
 import { type LoadResult, loadVerdict, runLoad } from './http-hello-load';
 
@@ -85,6 +87,9 @@ async function coldStart(command: string, url: string, cwd: string) {
   const started = performance.now();
   const child = Bun.spawn(['sh', '-c', command], {
     cwd,
+    // The stranger's env, never this process's: the repo's `.env` holds publish tokens and seeds
+    // the benched app has no business reading (`scripts/lib/stranger-env.ts`).
+    env: strangerEnvAt(repoRoot()),
     // `stop` ends it; this is for the run that never reaches `stop`. Three 30 s runs and a cold
     // start fit many times over, so a server alive past it is a bench that hung.
     timeout: SERVER_DEADLINE_MS,

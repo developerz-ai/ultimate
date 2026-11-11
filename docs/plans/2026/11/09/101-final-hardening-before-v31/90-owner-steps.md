@@ -13,11 +13,11 @@
 | O7 | Enable GitHub Discussions | repo settings | support surface |
 | O8 | Mint a read-only GlitchTip API token into the infra `.env` (`GLITCHTIP_API_TOKEN`) | GlitchTip UI | [`26`](26-infra.md) F4 |
 | O9 | Approve a SAML build-vs-wrap call if the slice proposes a dependency | PR review | [`23`](23-feature-gaps.md) |
-| O10 | Dispatch `bench.yml` once | `gh workflow run bench.yml` | [`27`](27-trust-docs.md) |
+| O10 | **done** | `bench.yml` was dispatched (run 42879568783), and the stale branch `bench/42624860823` was deleted. "Allow GitHub Actions to create and approve pull requests" is now on for both the organisation and the repository: `gh api orgs/developerz-ai/actions/permissions/workflow` and `gh api repos/developerz-ai/ultimate/actions/permissions/workflow` both return `can_approve_pull_request_reviews: true`. The first-hour step was fixed in the closing PR: the bench now runs `x db gen`, and its child processes no longer inherit the repo `.env`. `bench.yml` gets dispatched again after that PR merges
 | O11 | Decide adopter F: walk 19 → 31 or re-scaffold | reply | [`45`](45-adopter-f.md) |
 
 ## Outcome (2026-11-10)
-On the owner's explicit instruction in session ("mint tokens etc, do full work, admin merge"), the coordinator carried out the settings steps. Each row was read back with the read-only command in its evidence column. Ten of eleven are done. O10 is done except for one organisation setting that only the owner's token can change.
+On the owner's explicit instruction in session ("mint tokens etc, do full work, admin merge"), the coordinator carried out the settings steps. Each row was read back with the read-only command in its evidence column. All eleven are done.
 
 | # | State | Evidence |
 |---|---|---|
@@ -33,4 +33,4 @@ On the owner's explicit instruction in session ("mint tokens etc, do full work, 
 | O10 | **done except the org setting** | `bench.yml` was dispatched (run 42879568783), and the stale branch `bench/42624860823` was deleted. Actions still cannot open a PR, because that is an **organisation** setting and needs the `admin:org` scope. **Owner action:** run `gh auth refresh -h github.com -s admin:org` and give the token to the coordinator, or turn on org Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests". Until then the coordinator opens the bench PR from the run's branch by hand |
 | O11 | **done** | adopter F was upgraded to 31.2.0 ([`45`](45-adopter-f.md#outcome-2026-11-10)) |
 
-Still with the owner: the O10 organisation setting. Nothing else here waits on the owner.
+Nothing here waits on the owner.

@@ -165,6 +165,42 @@ describe('installAuthLimiters', () => {
   });
 });
 
+describe('a port installed AFTER defineAuth', () => {
+  // The boot installs the services ports after `runtime.ts` loads, and anything `runtime.ts`
+  // imports may call `defineAuth` first. Captured at construction, such an app kept per-pod memory
+  // guards for life: lockouts multiplied by the replica count, a TOTP code or SAML assertion
+  // replayable on every other pod. Each port is read where it is used.
+  test('the limiter, the tenant limiter and the TOTP replay guard are the installed ones', () => {
+    const auth = defineAuth({ adapter: adapter() });
+    const guard: TotpReplayGuard = { claim: async () => true };
+    installAuthLimiters((policy) => tableLimiter(policy, 0));
+    installTotpReplay(() => guard);
+    expect([
+      auth.limiter.policy.scope,
+      auth.orgLimiter.policy.scope,
+      auth.orgRateLimit.scope,
+    ]).toEqual(['shared', 'shared', 'shared']);
+    expect(auth.totpReplay).toBe(guard);
+    // Read again, the same instances: a port is built once per install, not once per login.
+    expect(auth.limiter).toBe(auth.limiter);
+    resetAuthLimiters();
+    resetTotpReplay();
+    expect(auth.limiter.policy.scope).toBe('process');
+    expect(auth.totpReplay).not.toBe(guard);
+  });
+
+  test("a 'shared' declaration constructed before the boot installs its limiter is not refused", () => {
+    const auth = defineAuth({ adapter: adapter(), rateLimit: { scope: 'shared' } });
+    installAuthLimiters((policy) => tableLimiter(policy, 0));
+    expect(auth.limiter.policy.scope).toBe('shared');
+  });
+
+  test('…and with nothing ever installed it is refused where the limiter is first used', () => {
+    const auth = defineAuth({ adapter: adapter(), rateLimit: { scope: 'shared' } });
+    expect(codeOf(() => auth.limiter)).toBe('X_AUTH_LIMITER_NOT_SHARED');
+  });
+});
+
 describe('purgeAuthLimits', () => {
   test('answers 0 when no host installed anything', async () => {
     expect(await purgeAuthLimits()).toBe(0);

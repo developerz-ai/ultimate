@@ -26,7 +26,7 @@ export const memberSubject = defineSubject<MemberSubjectInput>(members, {
   driver,
   key: (input) => input.memberId,
   tables: {
-    members: { anonymize: { email: ERASED_EMAIL, name: '' } },
+    members: { anonymize: { email: ERASED_EMAIL, name: '', phone: null } },
     posts: { retain: 'published work belongs to the org; its author row is anonymized' },
     comments: 'delete',
     likes: 'delete',

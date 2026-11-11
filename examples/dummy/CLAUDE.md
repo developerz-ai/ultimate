@@ -332,7 +332,10 @@ The two guards measured here, and their repairs, are recorded in
   dead-lettered `notifySubscribers` on every run is deleted, because a `ChannelHub` is built by the
   socket process and no seam hands one to an app.
 - Uploads are `grantUpload` wrapped in an app `action` — the app owns the policy, the framework
-  owns the key and the signature. Nothing here builds an object key by hand.
+  owns the key and the signature. Nothing here builds an object key by hand. A grant lands in
+  `pending/`; a second action promotes it through `runtime.ts`'s `postlyUploadScanner()`.
+- `withLock`, `variant()`: `app/orgs/avatar*.ts`; `partitionBy`, `smsChannel`: `app/quota/`;
+  SAML: `app/auth/sso.ts`, mounted only when `POSTLY_SSO_IDP_METADATA` is set.
 - `app/auth/login.ts` is the whole of "log in with GitHub" — `defineAuth` + `oauthLogin`, and the
   three decisions an app owns: `providers`, `link` and where a signed-in member lands. Its two
   route descriptors are **declared and driven by `login.test.ts`, but not yet served**. The seam

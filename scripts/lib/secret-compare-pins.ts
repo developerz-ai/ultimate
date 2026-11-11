@@ -110,6 +110,18 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'Groups a screenshot by island STATE ID — a slug the filesystem already publishes as the screenshot filename stem.',
   },
+  "packages/cli/src/island-group-cache.ts: one[' '] === contentHash(one[' '])": {
+    // why: a content digest of build output this process wrote, compared to detect a torn cache entry — no secret, so timing leaks nothing.
+    count: 1,
+    reason:
+      'A cached island group chunk’s `code` against the `codeHash` written beside it in `.x/cache/islands/`, so a torn or edited entry is a miss — a digest of build output this process wrote.',
+  },
+  'packages/cli/src/island-group-cache.ts: digests[index] === stamp.digest': {
+    // why: a content digest of the app's own source, compared to detect a stale cache entry — no secret, so timing leaks nothing.
+    count: 1,
+    reason:
+      'Each input file’s content digest now against the one the cached island group recorded, to decide whether the group must rebuild — a digest of the app’s own source.',
+  },
   'packages/cli/src/island-sources.ts: (await digestOf(stamp.path)) !== stamp.digest': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `cli` package row.
     count: 1,

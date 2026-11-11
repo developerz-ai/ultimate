@@ -74,10 +74,31 @@ Both halves of the config stay as they are, and each now means one thing:
   renders it through the inert `h` above. What the browser gets is one `Bun.build` entry point per
   `*.island.tsx` (`packages/cli/src/island-bundle.ts`), minified, Solid-compiled by
   `babel-preset-solid` inside that build's plugin (`packages/cli/src/solid-loader.ts`), addressed by
-  a hash of its source graph. `islands: { sharedChunks: true }` builds them in one split build
-  instead; off by default, by measurement (`packages/core/src/config-islands.ts`). No
-  `modulepreload`. `As of 2026-10`, this replaced the 2026-08 statement that `Bun.build` was called
-  nowhere.
+  a hash of its source graph. `As of 2026-10`, this replaced the 2026-08 statement that `Bun.build`
+  was called nowhere.
+- **Islands are grouped by route** (`packages/cli/src/island-groups.ts`, `As of 2026-11-10`).
+  Islands rendered on exactly the same set of routes are one split build sharing their modules as
+  chunks; every other island — one route's only island, the layout-wide banner, an island no page
+  names — is built alone, splitting off, byte for byte what it was. `islands: { sharedChunks: true }`
+  is one group holding every island; off by default, by measurement
+  (`packages/core/src/config-islands.ts`). The groups are read from the **page sources** — each
+  `page.tsx`'s `*.island.tsx` string literals, comments stripped, resolved from the page's directory
+  — not from a render or the route registry: `x dev`, the container, the image's island store and
+  the static export all build islands before (or without) rendering, and `dev-rebuild.ts` builds
+  them in parallel with the app load, so a source read is the one input every caller has and gives
+  one grouping per tree. A literal it misses only leaves that island alone, which is the old
+  behaviour. Each eagerly booted island's shared chunks are `<link rel="modulepreload">`ed
+  (`route-islands-preload.ts`).
+- **A group's output is reused while its inputs are unchanged** (`packages/cli/src/island-group-cache.ts`,
+  `As of 2026-11-10`): `.x/cache/islands/<key>.json`, the key the group, its splitting, the
+  framework and Bun versions, the environment (`bun.lock`, each root/`apps/*` `package.json` and
+  `tsconfig.json` with its relative `extends`) and the app's realtime answer; the entry holds the
+  digest of every file the build read (the bundler's inputs, a linked framework package's
+  included, and every Sass partial a sheet `@use`s; `node_modules` left to the lockfile) and of
+  each directory listing an import resolved in, all rehashed before use, plus each chunk's own
+  hash. Entries untouched for 14 days are swept. Same bytes, same URLs, same layout in `x dev`,
+  `x build` and the image — a restart rebuilds only the groups an edit reached. On the 159-island
+  bench app: islands 14.6–21 s built, 0.42 s reused, 0.8 s with one island edited.
 - **Hydration is per island, never per page.** An island mounts with Solid's own runtime when its
   `hydrate` timing fires; the page shell around it is server HTML and is never hydrated. There is
   still no whole-page client graph, by design (axiom 6: the static path never pays for the app

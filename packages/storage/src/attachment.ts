@@ -223,7 +223,13 @@ async function scannedAttempt(
     pending.etag === '' ? undefined : { ifMatch: pending.etag },
   );
   await assertCopyIsWhatWasJudged(disk, pending, attempt, input.policy);
-  await scanAttempt({ disk, pendingKey: input.key, attempt, policy: input.policy });
+  await scanAttempt({
+    disk,
+    pendingKey: input.key,
+    attempt,
+    revision: pending.etag,
+    policy: input.policy,
+  });
   return attempt;
 }
 

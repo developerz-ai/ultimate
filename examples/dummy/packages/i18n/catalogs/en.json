@@ -388,6 +388,7 @@
         "locale": "Language",
         "theme": "Theme",
         "digestOptIn": "Nightly digest",
+        "phone": "Phone (texts)",
         "createdAt": "Joined at"
       }
     },
@@ -677,5 +678,8 @@
       "title": "{commenter} commented on {title}",
       "body": "Open the post to read it."
     }
+  },
+  "sms": {
+    "quotaAlert": "Postly: your org has used {used} of its {limit} drafts for today. Upgrade the plan to write more."
   }
 }

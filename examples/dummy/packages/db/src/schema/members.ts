@@ -34,6 +34,11 @@ export const members = entity('members', {
     /** Preference, not a device setting: the same person gets the same theme on every device. */
     theme: enumerated(THEMES).default('system'),
     digestOptIn: boolean().default(true),
+    /**
+     * E.164, for the texts an owner asks for (`quotaAlert`). Nullable because most members never
+     * give one, and a member without one is simply not texted — never a placeholder number.
+     */
+    phone: text({ max: 16 }).nullable().personalData('contact'),
     createdAt: timestamp().defaultNow(),
   },
   invariants: (c) => [
@@ -54,6 +59,12 @@ export const members = entity('members', {
     invariant('member_email_shape', c.email.matches(/^[^@]+@[^@]+$/)),
     /** One membership per user per org: the uniqueness makes `inviteMember` replay-safe. */
     invariant('member_unique_per_org', c.unique(['orgId', 'userId'])),
+    /**
+     * E.164 — `+`, a country code, at most 15 digits — exactly notify's `isSmsNumber`, so a number
+     * `savePreferences` accepted is one the CHECK accepts and every SMS transport sends to. A NULL
+     * passes, as Postgres' CHECK passes it.
+     */
+    invariant('member_phone_e164', c.phone.matches(/^\+[1-9][0-9]{1,14}$/)),
   ],
   indexes: [
     { on: ['orgId', 'role'] },

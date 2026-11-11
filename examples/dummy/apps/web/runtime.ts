@@ -1,17 +1,20 @@
 /**
  * Postly's `RuntimeOverrides`, read by `x dev` and `apps/web/server.ts` alike: the plain routes no
  * primitive projects to — the partner authorization server's RFC 6749 wire,
- * `/.well-known/oauth-authorization-server` and `POST /oauth/{token,revoke,introspect}` — and the
+ * `/.well-known/oauth-authorization-server` and `POST /oauth/{token,revoke,introspect}`, and the
+ * SAML sign-in legs (`app/auth/sso-routes.ts`) — and the
  * `errorReporter` port, Postly's error-group sink — and the `auditSink` `issueRunKey`'s
- * `audit: true` writes to.
+ * `audit: true` writes to — and the `uploadScanner` every attached upload passes first.
  */
 
 import { memoryAuditSink, postgresAuditSink } from '@ultimat3/action';
 import type { RuntimeOverrides } from '@ultimat3/cli/serve';
 import { storeMode } from '@ultimat3/core';
 import { dbExecutor } from '@ultimat3/db';
+import { ssoRoutes } from './app/auth/sso-routes';
 import { errorSink } from './app/errors/reporting';
 import { partnerOAuth } from './app/partners/oauth';
+import { postlyUploadScanner } from './app/uploads/scanner';
 
 /**
  * The sink in every process but a test's, by `storeMode`: under `bun test` a job a test dead-letters
@@ -31,7 +34,11 @@ const auditSink =
     : memoryAuditSink();
 
 export const runtime = {
-  routes: partnerOAuth.routes,
+  // The partner authorization server, and the SAML sign-in when the deploy configured an IdP.
+  routes: [...partnerOAuth.routes, ...ssoRoutes(Bun.env)],
   auditSink,
+  // In every mode: a scanner is what makes a targeted grant `X_STORAGE_TARGET_UNSCANNED`, so the
+  // upload paths are the same ones in development as in production — pending, then promoted.
+  uploadScanner: postlyUploadScanner(),
   ...reporting,
 } satisfies RuntimeOverrides;

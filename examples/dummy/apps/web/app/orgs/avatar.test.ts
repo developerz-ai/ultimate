@@ -14,7 +14,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { memberId as toMemberId, orgId as toOrgId } from '@postly/domain';
 import type { Page } from '@ultimat3/core';
-import { frozenClock, pageOf } from '@ultimat3/core';
+import { blankRaster, encodeImage, frozenClock, pageOf } from '@ultimat3/core';
 import type { ListOptions, StorageDriver, StorageListEntry } from '@ultimat3/storage';
 import {
   attachmentKey,
@@ -23,9 +23,11 @@ import {
   isStorageError,
   localDriver,
   resetStorage,
+  variantSourceOf,
   verifySignedUrl,
 } from '@ultimat3/storage';
 import {
+  AVATAR_RENDER_WIDTH,
   AVATAR_URL_TTL_MS,
   avatarTarget,
   avatarUploadPolicy,
@@ -42,7 +44,6 @@ const BASE_URL = '/_storage/local';
 const NOW = '2026-08-14T09:00:00.000Z';
 
 const clock = frozenClock(NOW);
-const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 const request = { filename: 'holiday-snap.PNG', contentType: 'image/png', size: 1024 };
 
 let root = '';
@@ -61,9 +62,12 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** What the browser does with a grant, minus the browser. */
-const put = (key: string, body: string): Promise<unknown> =>
-  disk().put(key, bytes(body), { contentType: 'image/png' });
+/** A real image: the read half resizes what it hands out, so the bytes must decode. */
+const png = (side: number): Uint8Array => encodeImage(blankRaster(side, side));
+
+/** What the browser does with a grant, minus the browser; `side` tells two uploads apart. */
+const put = (key: string, side = 8): Promise<unknown> =>
+  disk().put(key, png(side), { contentType: 'image/png' });
 
 const codeOf = async (call: Promise<unknown>): Promise<string | undefined> => {
   try {
@@ -75,10 +79,12 @@ const codeOf = async (call: Promise<unknown>): Promise<string | undefined> => {
 };
 
 describe('the upload grant', () => {
-  test('derives a key under the member’s own prefix and keeps only the extension', async () => {
+  test('derives a pending key in the org and keeps only the extension', async () => {
     const grant = await mintAvatarGrant({ orgId: ORG, memberId: MEMBER, request, clock });
 
-    expect(grant.key.startsWith(`org/${ORG}/member/${MEMBER}/avatar/`)).toBe(true);
+    // `pending/`, never the member's prefix: the app's scanner refuses a targeted grant, and
+    // `attachAvatar` is the step that scans it onto the avatar prefix.
+    expect(grant.key.startsWith(`org/${ORG}/pending/`)).toBe(true);
     expect(grant.key.endsWith('.png')).toBe(true);
     // The filename survives as a lower-cased extension and in no other form.
     expect(grant.key).not.toContain('holiday');
@@ -124,9 +130,9 @@ describe('the rendered avatar', () => {
     expect(await signedAvatarUrl(ORG, MEMBER)).toBeNull();
   });
 
-  test('round-trips: the granted key is the key the read half signs', async () => {
-    const grant = await mintAvatarGrant({ orgId: ORG, memberId: MEMBER, request, clock });
-    await put(grant.key, 'pretend-png');
+  test('hands out the stored resize of the current avatar, never the upload itself', async () => {
+    const original = attachmentKey(ORG, avatarTarget(MEMBER), 'me.png');
+    await put(original, 400);
 
     const url = await signedAvatarUrl(ORG, MEMBER);
     expect(url).not.toBeNull();
@@ -139,16 +145,30 @@ describe('the rendered avatar', () => {
 
     expect(verified.ok).toBe(true);
     if (!verified.ok) return;
-    expect(verified.constraints.key).toBe(grant.key);
+    const signed = verified.constraints.key;
+    expect(variantSourceOf(signed)?.source).toBe(original);
+    expect(signed).toContain(`@w${AVATAR_RENDER_WIDTH}`);
+    expect(signed.endsWith('.webp')).toBe(true);
     expect(verified.constraints.method).toBe('GET');
     expect(verified.constraints.expiresAt).toBe(clock.now().getTime() + AVATAR_URL_TTL_MS);
-    expect(new TextDecoder().decode((await disk().get(grant.key)).bytes)).toBe('pretend-png');
+    // Kept, so the next render is a `stat`: `variant()` wrote it once, under the key it signed.
+    expect((await disk().stat(signed))?.contentType).toBe('image/webp');
+  });
+
+  test('a resized copy beside the avatar is never mistaken for the current avatar', async () => {
+    const original = attachmentKey(ORG, avatarTarget(MEMBER), 'a-first.png');
+    await put(original);
+    // Sorts after the original and is newer: picked as "the last upload" if copies counted.
+    await put(`${original}@w96-r0123abcd.png`);
+
+    const signed = decodeURIComponent((await signedAvatarUrl(ORG, MEMBER)) ?? '');
+    expect(signed).toContain(`a-first.png@w${AVATAR_RENDER_WIDTH}`);
   });
 
   test('is the last upload even when it lands past the first page of the listing', async () => {
     const target = avatarTarget(MEMBER);
-    await put(attachmentKey(ORG, target, 'a-first.png'), 'old');
-    await put(attachmentKey(ORG, target, 'b-second.png'), 'new');
+    await put(attachmentKey(ORG, target, 'a-first.png'), 8);
+    await put(attachmentKey(ORG, target, 'b-second.png'), 9);
 
     // One object per page — S3's own shape at 1000 keys, made cheap. A single `list` call sees
     // only `a-first.png`, so the read half must follow the cursor to find the current avatar.
@@ -170,8 +190,8 @@ describe('the rendered avatar', () => {
 
   test('a disk that reports no dates still answers one avatar — the key decides', async () => {
     const target = avatarTarget(MEMBER);
-    await put(attachmentKey(ORG, target, 'a-first.png'), 'old');
-    await put(attachmentKey(ORG, target, 'b-second.png'), 'new');
+    await put(attachmentKey(ORG, target, 'a-first.png'), 8);
+    await put(attachmentKey(ORG, target, 'b-second.png'), 9);
 
     // A provider whose listing carries no LastModified: the entries have no date at all.
     const inner = disk();
@@ -195,9 +215,9 @@ describe('the rendered avatar', () => {
     const target = avatarTarget(MEMBER);
     // Written in ascending key order so the assertion holds whatever the disk reports for
     // `lastModified` — a local disk's file times can tie inside one millisecond.
-    await put(attachmentKey(ORG, target, 'a-first.png'), 'old');
-    await put(attachmentKey(ORG, target, 'b-second.png'), 'new');
-    await put(attachmentKey(ORG, avatarTarget(OTHER), 'c-theirs.png'), 'theirs');
+    await put(attachmentKey(ORG, target, 'a-first.png'), 8);
+    await put(attachmentKey(ORG, target, 'b-second.png'), 9);
+    await put(attachmentKey(ORG, avatarTarget(OTHER), 'c-theirs.png'), 10);
 
     const url = (await signedAvatarUrl(ORG, MEMBER)) ?? '';
     expect(url).toContain('b-second.png');

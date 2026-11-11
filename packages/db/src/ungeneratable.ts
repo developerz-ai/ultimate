@@ -106,6 +106,30 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
     name: 'select set_config(…, true)',
     pattern: /^select\s+set_config\s*\(\s*''\s*,\s*''\s*,\s*true\s*\)$/,
   },
+  // `entity({ partitionBy })` (`generate-partition.ts`): the retired signature's drop, the
+  // maintenance function and the call that makes the first partitions. Absent until 31.3, so an app
+  // declaring `partitionBy` had its own generated migration reported by its own `drift` step.
+  {
+    name: 'drop function if exists … (retired partition signature)',
+    pattern:
+      /^drop\s+function\s+if\s+exists\s+""\s*\(\s*text\s*,\s*text\s*,\s*text\s*,\s*integer\s*,\s*bigint\s*,\s*timestamptz\s*\)$/,
+  },
+  {
+    name: 'create or replace function … returns jsonb',
+    pattern:
+      /^create\s+or\s+replace\s+function\s+""\s*\(\s*parent\s+text\s*,\s*kind\s+text\s*,[\s\S]*\)\s+returns\s+jsonb\s+language\s+plpgsql\s+as\s*$/,
+  },
+  {
+    name: 'select … partitions',
+    pattern: /^select\s+""\s*\(\s*''\s*,\s*''\s*,\s*''\s*,\s*\d+\s*,\s*null\s*\)$/,
+  },
+  // `database.rowSecurity` (`row-security-plan.ts`): both halves. Absent until 31.3 as well.
+  {
+    name: 'alter table … enable/disable/force/no force row level security',
+    pattern: /^alter\s+table\s+""\s+(?:enable|disable|force|no\s+force)\s+row\s+level\s+security$/,
+  },
+  { name: 'create policy', pattern: /^create\s+policy\s+""\s+on\s+""\s+using\s*\(/ },
+  { name: 'drop policy if exists', pattern: /^drop\s+policy\s+if\s+exists\s+""\s+on\s+""$/ },
   {
     name: 'update … recount',
     pattern:

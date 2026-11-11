@@ -10,7 +10,6 @@ import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
 import { loadAppConfig } from './app-config-load';
-import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
 import { enableReloadTracking } from './app-reload-graph';
 import { loadAppRuntime } from './app-runtime';
@@ -20,12 +19,11 @@ import { createInvalidationLog } from './dev-dashboard-invalidations';
 import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
 import { createStatementLedger } from './dev-n-plus-one';
 import type { DevState } from './dev-rebuild';
-import { devRebuilder } from './dev-rebuild';
+import { buildGeneration, devRebuilder } from './dev-rebuild';
 import { devRouteTable } from './dev-route-table';
 import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
 import { armFailureCapture } from './failure-capture-boot';
-import { buildIslands } from './island-bundle';
 import { FRAME_STYLE } from './island-harness';
 import type { Finding } from './output';
 import { plainRoutes } from './plain-routes';
@@ -184,13 +182,14 @@ async function bootDev(
   // two projections of one scan. Until 2026-09-07 this was `loadApp` for the findings and then
   // `appManifest` — which loads again — for the manifest, so a save landing between the two put
   // `/_x`'s findings and its manifest on different registration states.
-  const app = await appManifest(options.root);
+  // The islands are built beside that load, never after it: `buildGeneration`, as every save does.
+  const app = await buildGeneration(options.root);
   const state: DevState = {
     manifest: app.manifest,
     reloads: 0,
     reloadFinding: undefined,
     appFindings: app.findings,
-    islands: await buildIslands(options.root),
+    islands: app.islands,
   };
   // `serve-boot.ts`'s guard, at its point: after the app's modules, before any role serves. On
   // PGlite the boot serves as `x_app`; on an external database a role that bypasses is refused.

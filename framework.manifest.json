@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "98cdb5d62d2a63515f6a59315a208a22d4f777b13a57224d61d7df3d60ed1b96",
+  "buildId": "a77966d3d2caf160132467c0df3a97cfd8cad3d9109f00a78213932d0b45a0c3",
   "tiers": {
     "0": [
       "core",
@@ -707,7 +707,7 @@
     {
       "code": "X_BENCH_RUN_FAILED",
       "owner": "scripts",
-      "at": "scripts/bench/boot-vs-files-child.ts"
+      "at": "scripts/bench/boot-large-app-fixture.ts"
     },
     {
       "code": "X_BENCH_RUN_TOO_SHORT",

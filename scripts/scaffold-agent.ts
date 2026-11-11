@@ -11,6 +11,8 @@ import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
+import { repoRoot } from './lib/run';
+import { strangerEnvAt } from './lib/stranger-env';
 import { appDirWord, type DevServer, freeDevPair } from './scaffold-admin';
 import { appBin } from './scaffold-first-run';
 
@@ -214,6 +216,8 @@ export async function checkAgent(dir: string, io: AgentCheckIo): Promise<ScriptR
 async function stdioAnswers(dir: string, argv: readonly string[], messages: readonly unknown[]) {
   const child = Bun.spawn([...argv], {
     cwd: dir,
+    // A whole env: `Bun.spawn` replaces, and `.mcp.json`'s command is the app's, not this repo's.
+    env: strangerEnvAt(repoRoot()),
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'ignore',
@@ -251,6 +255,7 @@ const realIo: AgentCheckIo = {
   boot: (dir, port) => {
     const server = Bun.spawn([appBin(dir), 'dev', '--port', String(port), '--json'], {
       cwd: dir,
+      env: strangerEnvAt(repoRoot()),
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: SERVE_BUDGET_MS,

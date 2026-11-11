@@ -199,6 +199,14 @@ export type {
   FakeIdpUser,
 } from './fake-identity-provider';
 export { fakeIdentityProvider } from './fake-identity-provider';
+export type {
+  FakeSamlAuthnRequest,
+  FakeSamlIdentityProvider,
+  FakeSamlIdentityProviderInput,
+  FakeSamlTamper,
+  FakeSamlUser,
+} from './fake-saml-identity-provider';
+export { fakeSamlIdentityProvider } from './fake-saml-identity-provider';
 export type { FaultMode, FaultProxy, FaultProxyCounts } from './fault-proxy';
 export { faultProxy } from './fault-proxy';
 export type { TestClock, TestDuration } from './fixture-clock';
