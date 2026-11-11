@@ -1229,6 +1229,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Once, before any test: the `scripts` unit runs on parallel workers, and each `baseRef()`
+      # that found no origin/main fetched it at the same moment — the losers died on
+      # `.git/shallow.lock` and `pin-raises.test.ts` read `undefined` (run 42941773147). Skipped on
+      # a push to main for the reason the gate's identical step gives.
+      - name: fetch origin/main's tip for the base-ref tests
+        if: github.ref != 'refs/heads/main'
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
       - uses: ./.github/actions/setup
       - name: tests + coverage per package, each in its own process, all cores
         env:

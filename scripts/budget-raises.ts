@@ -9,9 +9,9 @@
 // measured the old number) and the measurement must fit the new budget. No raise buys an axiom 6
 // exception: `site/` importing `app/` stays a `boundaries` error whatever the number says.
 //
-// The tip, not the merge-base: CI then needs one commit (`FETCH_MAIN`, `--depth=1`) instead of the
-// whole history a merge-base walks. A branch behind main compares against main's CURRENT budget,
-// which is the number the merge will actually change.
+// The tip, not the merge-base: CI's shallow checkout then needs one commit (`baseRef()` fetches at
+// `--depth=1` there) instead of the whole history a merge-base walks. A branch behind main compares
+// against main's CURRENT budget, which is the number the merge will actually change.
 //
 // A checkout with no `origin/main` (a tag checkout in `release.yml`, a fresh clone of a fork) FETCHES
 // it — one commit — and, if the fetch fails, refuses `X_BUDGET_BASE_MISSING`. It used to pass with

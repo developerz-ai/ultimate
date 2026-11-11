@@ -8,6 +8,7 @@
 
 import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
+import { fetchFromOrigin } from './lib/git-fetch';
 import { report } from './lib/log';
 // A release commit is what release.yml publishes from, so its proof is never inherited. It matched
 // `release:` alone until 2026-10, so every `chore: release X.Y.Z (#N)` merge could inherit one.
@@ -210,9 +211,12 @@ export const changedFilesCommand = (base: string): readonly string[] => [
   'HEAD',
 ];
 
-/** The files changed between `base` and HEAD, fetching `base` at depth 1; undefined on failure. */
+/**
+ * The files changed between `base` and HEAD, fetching `base` first — at depth 1 in CI's shallow
+ * checkout, in full anywhere else; undefined on failure.
+ */
 async function changedSince(base: string, cwd: string): Promise<readonly string[] | undefined> {
-  const fetched = await run(['git', 'fetch', '--no-tags', '--depth=1', 'origin', base], { cwd });
+  const fetched = await fetchFromOrigin(cwd, ['--no-tags', 'origin', base]);
   if (!fetched.ok) return undefined;
   const diff = await run(changedFilesCommand(base), { cwd });
   return diff.ok ? diff.output.split('\n').filter((line) => line !== '') : undefined;

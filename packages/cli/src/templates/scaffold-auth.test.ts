@@ -58,12 +58,14 @@ describe('unit · the scaffold authenticates through @ultimat3/auth', () => {
     expect(code(text('apps/web/app/auth/dev-actor.ts'))).not.toContain('configureAuthenticator');
   });
 
-  // Built on first use: the boot scan imports this module before `db()` and the host's shared
-  // lockout limiter exist, and `defineAuth` reads both.
-  test('the Auth instance is built lazily over the framework tables, never at import', () => {
+  // Built at import, since 31.3.0: `defineAuth` reads the installed limiters where they are used
+  // and `postgresAuthAdapter()` reads `db()` per call, so the boot scan importing this module
+  // before either exists is harmless — and a lazy `built ??=` wrapper buys nothing.
+  test('the Auth instance is built once, at import, over the framework tables', () => {
     const auth = code(text('apps/web/app/auth/auth.ts'));
-    expect(auth).toContain('defineAuth({ adapter: postgresAuthAdapter() })');
-    expect(auth).toContain('built ??=');
+    expect(auth).toContain('const auth = defineAuth({ adapter: postgresAuthAdapter() });');
+    expect(auth).toContain('export const appAuth = (): Auth => auth;');
+    expect(auth).not.toContain('built ??=');
   });
 
   test('the emitted tests cover the session, the fallback and the install', () => {
