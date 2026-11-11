@@ -740,6 +740,17 @@ brought up to date with no hand-run migration. There is nothing to paste: the pe
 constants and `X_USERS_MIGRATION_1_3` are gone, and a hand-written migration that pasted them
 should be deleted. They are still not `entity()` declarations, so `x db gen` does not see them.
 
+**Read the DDL from `@ultimat3/auth/schema`, a leaf — `As of 2026-11-10`.** It exports
+`AUTH_TABLES`, `AUTH_TABLE_NAMES`, `AUTH_SERVER_TABLES`, `SQL_AUTH_SERVER_TABLES`,
+`SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE`, and imports no runtime: reading table names
+costs 2 modules, not the barrel's 106. `FRAMEWORK_SCHEMA` reads it there, which took `ROLE=migrate`
+from 977 modules to 873. The `.` barrel still exports the same six values, so a caller that also
+needs `postgresAuthAdapter` or a store keeps one import.
+
+```ts
+import { AUTH_TABLE_NAMES, AUTH_TABLES } from '@ultimat3/auth/schema';
+```
+
 ## Sessions are not a write path
 
 `verifySession` used to `UPDATE x_sessions … RETURNING *` on **every** authenticated request: one

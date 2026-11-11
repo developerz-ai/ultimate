@@ -23,7 +23,7 @@ import {
   securityLines,
 } from './lib/major-window';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
-import { treeDirtyFindings } from './lib/release-preflight';
+import { branchNameFindings, treeDirtyFindings } from './lib/release-preflight';
 import { askIssueArgs, askLookupFailedLine, askTwin, parseAskIssues } from './lib/release-subject';
 import {
   type Bump,
@@ -249,6 +249,24 @@ if (import.meta.main) {
         script: 'release',
         summary: 'refusing to release: the working tree is not clean',
         findings: dirty,
+        data: { version, current, dryRun },
+      },
+      args.json,
+    );
+  }
+
+  // Under `--dry-run` too. `release/*` is the maintenance lines' namespace, and both workflows run
+  // on `release/<major>.x`: a bump branch named like one is how v31.1.0 got tagged off main (#1054).
+  // A detached HEAD prints nothing and names no branch; a git that could not run refuses nothing.
+  const branch = await run(['git', 'branch', '--show-current'], { cwd: root });
+  const misnamed = branchNameFindings(branch.ok ? branch.output.trim() : undefined, version);
+  if (misnamed.length > 0) {
+    report(
+      {
+        ok: false,
+        script: 'release',
+        summary: 'refusing to release: the branch is named like a maintenance line',
+        findings: misnamed,
         data: { version, current, dryRun },
       },
       args.json,

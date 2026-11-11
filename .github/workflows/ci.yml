@@ -32,9 +32,10 @@ name: ci
 
 on:
   push:
-    # `next` holds the breaks that wait for the major window, `release/*` the maintained majors
-    # (wiki/Stability.md): each is a branch something publishes from, so each is gated on push.
-    branches: [main, next, 'release/*']
+    # `next` holds the breaks that wait for the major window, `release/<major>.x` the maintained
+    # majors (wiki/Stability.md): each is a branch something publishes from, so each is gated on
+    # push. Never `release/*`: a bump branch's push would run it and release-tag.yml would tag it.
+    branches: [main, next, 'release/[0-9]+.x']
   pull_request:
   workflow_dispatch:
 

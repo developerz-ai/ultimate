@@ -4,12 +4,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { TOTP_DRIFT_STEPS, TOTP_STEP_SECONDS, totpStep } from './mfa';
-import {
-  postgresTotpReplayGuard,
-  SQL_TOTP_CLAIM,
-  SQL_TOTP_PURGE,
-  SQL_TOTP_REPLAY_TABLE,
-} from './mfa-replay-postgres';
+import { postgresTotpReplayGuard, SQL_TOTP_CLAIM, SQL_TOTP_PURGE } from './mfa-replay-postgres';
+import { SQL_TOTP_REPLAY_TABLE } from './tables';
 
 const AT = new Date(1_700_000_000_000);
 

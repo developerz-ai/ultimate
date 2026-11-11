@@ -10,8 +10,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- `ROLE=migrate` loads 104 fewer modules (977 → 873): the framework schema now reads the auth tables from the new `@ultimat3/auth/schema` leaf instead of the whole auth package.
+
+### Added
+
+- `@ultimat3/auth`: an `@ultimat3/auth/schema` subpath exports `AUTH_TABLES`, `AUTH_TABLE_NAMES`, `AUTH_SERVER_TABLES`, `SQL_AUTH_SERVER_TABLES`, `SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE`, and imports no runtime. `@ultimat3/cli`'s `FRAMEWORK_SCHEMA` reads them there, so `ROLE=migrate` stops loading the auth barrel. `MIGRATE_CEILING` drops from 977 to 873, and a new auth runtime module no longer raises it. The serving roles import the barrel themselves, so `SERVING_ROLE_CEILING` stays at 1401. `.` still exports all six names (#1051).
+
+### Changed
+
+- `@ultimat3/cli`: `x doctor`'s checks move out of `cmd-doctor.ts` (482 → 178 lines) into `doctor-probe.ts`, `doctor-database.ts` and `doctor-port.ts`; output, order and codes unchanged (#1053).
+
 ### Fixed
 
+- Repo tooling: a bump branch named `release/X.Y.Z` no longer gets its tag off `main` (#1054). `release-tag.yml`, `ci.yml` and `workflow-lint.yml` match only `release/[0-9]+.x` maintenance lines, and `scripts/release.ts --bump` refuses any other `release/*` branch with `X_RELEASE_BRANCH_NAME`, fix `git switch -c chore/release-<version>`.
 - `scripts/lib/base-ref.ts`, `scripts/deprecation-window.ts`, `scripts/deploy-proof-due.ts`: running the gate's scripts no longer turns a developer's full clone shallow. Each fetched `origin/main`, a release tag or a base commit with `--depth=1` whenever the ref was missing, which wrote `.git/shallow` and made the next `git pull` refuse "unrelated histories" (`git fetch --unshallow` repairs a clone it already hit). Every fetch now goes through `scripts/lib/git-fetch.ts`'s `fetchFromOrigin`, which passes `--depth=1` only when `git rev-parse --is-shallow-repository` says the clone is already shallow, as CI's checkout is. The `fix:` lines of `X_BUDGET_BASE_MISSING`, `X_PIN_BASE_MISSING`, `X_RELEASE_HEAD_NOT_MAIN` and `X_RELEASE_TAG_UNREACHABLE` drop `--depth=1` too, so pasting one is safe in any clone.
 - CI `packages` job: `scripts/pin-raises.test.ts` could read no `origin/main` (run 42941773147). The job never fetched it, so every parallel test worker calling `baseRef()` fetched it at once into the shallow checkout, and the losers failed on `.git/shallow.lock` before the winner wrote the ref. The job now fetches `origin/main` once before the tests, as `gate` already did; `scripts/ci-workflow-shape.test.ts` holds both jobs to it.
 - `@ultimat3/cli`: the scaffold's `apps/web/app/auth/auth.ts` builds its `Auth` at import instead of behind a lazy `built ??=` wrapper whose comment said `defineAuth` reads the database and the lockout limiter when called. Since 31.3.0 both are read where they are used, so import-time construction is safe; `appAuth()` stays the accessor every sign-in template calls.

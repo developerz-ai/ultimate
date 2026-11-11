@@ -370,7 +370,7 @@ Every section from 30.0.0 opens with `### Highlights` (at most five bullets), wh
 body with the Upgrading anchor and a link to the full section.
 
 **Branches and dist-tags.** `main` ships minors and patches under `latest`; `next` holds the breaks
-and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (a convention: no script cuts or checks it). A bump PR
+and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (no script cuts it; `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts` refuses any other `release/*` name, `X_RELEASE_BRANCH_NAME`). A bump PR
 merged to `release/<major>.x` is released exactly as on `main` (`release-tag.yml` runs on both), and
 `release.yml` publishes it with `npm publish --tag` from `scripts/dist-tag.ts`: `latest` while that
 major is current, `maint-<major>` once its successor ships, `next` for a prerelease — so a
@@ -409,11 +409,15 @@ every `maint-*` tag.
    run published nothing. Read the state, never this paragraph:
    `bun run scripts/release.ts --check <version> --json`.
 
-   **It refuses two things before it writes anything**, `As of 2026-09-23`: a working tree with
+   **It refuses three things before it writes anything**, `As of 2026-11-10`: a working tree with
    changes in it (`X_RELEASE_TREE_DIRTY` — the release commit would carry them; the cause lists the
-   paths), and a version that does not move forward (`X_RELEASE_VERSION_INVALID` — `--version` at or
-   below the current one, or `--version` and `--bump` together, where one used to win silently).
-2. Commit on a branch, open the `chore: release X.Y.Z` PR and merge it. **That is the whole
+   paths), a version that does not move forward (`X_RELEASE_VERSION_INVALID` — `--version` at or
+   below the current one, or `--version` and `--bump` together, where one used to win silently),
+   and a `release/*` branch that is not a `release/<major>.x` line (`X_RELEASE_BRANCH_NAME`).
+2. Commit on a branch named **`chore/release-X.Y.Z`**, open the `chore: release X.Y.Z` PR and merge
+   it. Never `release/X.Y.Z`: the 31.1.0 bump branch was, and `v31.1.0` was tagged on the PR head
+   instead of `main`'s merge commit (#1054); `ci.yml` and `release-tag.yml` now run on
+   `release/[0-9]+.x` only. **That is the whole
    release**, `As of 2026-10`, for a maintainer and `developerz-ai[bot]` alike — no hand tag, no
    `gh release create`. When ci.yml concludes `success` on the push of the **release commit** to
    `main` — its subject matches `scripts/lib/release-subject.ts`, so no later commit (a Dependabot
@@ -565,7 +569,7 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
-| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/*` branch | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
+| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/<major>.x` branch (`release/[0-9]+.x`) | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
 | `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version, and a major is inside its window — see below |
 | `npm publish --tag "$DIST_TAG"`, the tag from `scripts/dist-tag.ts` in the `check` job | a maintenance release of an older major never moves `latest`; held by `scripts/release-workflow-shape.test.ts` |
 | ci.yml's whole run `success` on the tagged commit | nothing reaches the registry unverified: the framework gate (`verify`, the merge of every `gate` part) AND every tracked app, scaffold, per-package coverage bar and container build of the same run. It read the `verify` job alone until 2026-10, so a tag with a red app gate published. The workflow used to re-run `verify` itself with no services: the 21.0.0 run executed 10 of 342 live tests |

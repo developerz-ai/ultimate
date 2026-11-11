@@ -5,7 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import { PGLITE_FIX, PGLITE_MISSING, PGLITE_PACKAGE } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
-import { embeddedDatabaseFinding, probeFor } from './cmd-doctor';
+import { embeddedDatabaseFinding } from './doctor-database';
+import { probeFor } from './doctor-probe';
 
 describe('unit · x doctor · the embedded database rule', () => {
   // The bare-VM hole, and the reason it stayed open: `probeDatabase` answers `null` with no

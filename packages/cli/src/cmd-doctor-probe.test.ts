@@ -11,9 +11,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PGLITE_FIX, PGLITE_MISSING } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
-import { doctorCommand, probeFor, runDoctor } from './cmd-doctor';
+import { doctorCommand, runDoctor } from './cmd-doctor';
 import { codes, probe } from './cmd-doctor-fixture';
 import type { CommandContext } from './command';
+import { probeFor } from './doctor-probe';
 import type { Finding } from './output';
 import { parseArgs } from './parse';
 

@@ -58,7 +58,7 @@ Ruling 2026-11-09: the clock moved from v30 to v31. v30 shipped 2026-11-07 while
 | the previous major | security fixes, as patches on `release/<major>.x` | 6 months after the current major's `## X.0.0` date |
 | anything older | none | [Upgrading](Upgrading), one major per `x upgrade` run |
 
-**Convention, not enforced:** `release/<major>.x` is cut by hand at each major and kept at that major's newest minor; no script cuts or checks it. Once it exists, a patch is `latest` while its major is current and `maint-<major>` once its successor ships. `scripts/dist-tag.ts` decides the tag from the registry's `latest`, and `npm publish` never runs without it.
+**Convention, not enforced:** `release/<major>.x` is cut by hand at each major and kept at that major's newest minor; no script cuts it. Its name is enforced: `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts --bump` refuses any other `release/*` branch (`X_RELEASE_BRANCH_NAME`). A bump PR's own branch is `chore/release-X.Y.Z`, never `release/X.Y.Z` (#1054). Once it exists, a patch is `latest` while its major is current and `maint-<major>` once its successor ships. `scripts/dist-tag.ts` decides the tag from the registry's `latest`, and `npm publish` never runs without it.
 
 ## Deprecation
 
@@ -96,4 +96,5 @@ The maintainer bot judges whether a release is due and which kind (`.dz/briefs/r
 | no break on `main` while the window is closed | `bun run changelog-check` and the gate, on the pull request's base branch | `X_BREAKING_ON_MAIN` |
 | a removal was deprecated first | `bun run scripts/deprecation-window.ts` and the gate | `X_RELEASE_UNDEPRECATED_REMOVAL` |
 | every release from 30.0.0 opens with Highlights, the Release body | `bun run changelog-check` and the gate, over `docs/changelog/` | `X_CHANGELOG_HIGHLIGHTS_MISSING` |
+| a bump branch is `chore/release-X.Y.Z`; `release/*` is only `release/<major>.x` | `scripts/release.ts --bump`; `ci.yml` and `release-tag.yml` filter on `release/[0-9]+.x` (`scripts/release-tag-workflow-shape.test.ts`) | `X_RELEASE_BRANCH_NAME` |
 | a maintenance publish never moves `latest` | `scripts/dist-tag.ts` in `release.yml`; `scripts/registry-audit.ts` audits `latest` and each `maint-*` tag | `X_REGISTRY_LATEST_DRIFT` |

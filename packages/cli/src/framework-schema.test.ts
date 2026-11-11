@@ -4,7 +4,7 @@
 // list still reads as complete.
 
 import { describe, expect, test } from 'bun:test';
-import { AUTH_TABLE_NAMES } from '@ultimat3/auth';
+import { AUTH_TABLE_NAMES } from '@ultimat3/auth/schema';
 import {
   applyFrameworkSchema,
   FRAMEWORK_SCHEMA,
@@ -53,6 +53,22 @@ describe('unit · framework schema', () => {
     // `errorGroupsSink` only LOGS a failed write, so a missing table is an outage nobody is paged
     // for: every group lost, `/admin/errors` empty, and the app looking like it never failed.
     expect(frameworkTableNames()).toContain('x_error_groups');
+  });
+
+  test('every framework package is read through its schema leaf, never its barrel', async () => {
+    // A barrel here is every module of that package in `ROLE=migrate`'s graph: the auth barrel was
+    // 106 modules to read eight table names and their DDL (#1051). `serve-graph.test.ts` pins the
+    // count; this names the line that would raise it.
+    const source = await Bun.file(new URL('./framework-schema.ts', import.meta.url)).text();
+    const specifiers = new Bun.Transpiler({ loader: 'ts' })
+      .scanImports(source)
+      .map((edge) => edge.path);
+    for (const pkg of ['admin', 'auth', 'mcp', 'pwa']) {
+      expect([pkg, specifiers.filter((path) => path.startsWith(`@ultimat3/${pkg}`))]).toEqual([
+        pkg,
+        [`@ultimat3/${pkg}/schema`],
+      ]);
+    }
   });
 
   test('no table is created by two rows, so no row can be deleted as a duplicate', () => {

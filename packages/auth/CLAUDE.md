@@ -164,12 +164,13 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
+| `tables.ts` (`./schema`) | every auth table the boot applies — `AUTH_TABLES`, the limiter and TOTP DDL, and `authorization-server-schema.ts` re-exported. A LEAF: it imports nothing else (`schema-subpath.test.ts`), so `FRAMEWORK_SCHEMA` keeps the barrel off `ROLE=migrate` (`MIGRATE_CEILING`). The per-table constants stay module-private (removed from the API in 22.0.0). Also on `.` |
 | `adapter-subpath.ts` | `@ultimat3/auth/adapter`: the `authLimiter`/`totpReplay`/`authServerStore` port types, their installers and resets, and `installKdfGate` |
 | `authorization-server-installed.ts` | the `authServerStore` slot: `authorizationServer()` with no `store` reads it per CALL (never captured: `runtime.ts` may build the server first); empty, Postgres over the ambient pool |
 | `builtin-adapter-violation.ts` | a Postgres unique violation on an auth table → `authUniqueViolation` |
 | `rate-limit.ts` | per-ip, per-account and per-org buckets as reservations, lockout, scope check, `loginFailed()` |
 | `login-attempt.ts` | one attempt's reservations across the three buckets, taken before the check and settled after it |
-| `rate-limit-postgres.ts` | the SHARED limiter: one table, one row per key, a one-statement take, over a structural `PgExecutor` |
+| `rate-limit-postgres.ts` | the SHARED limiter: one row per key, a one-statement take, over a structural `PgExecutor`. Its DDL is in `tables.ts` |
 | `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it, and the TOTP guard's |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-builtins.ts` | the two shipped IdPs (`github`, `google`), as data. Imports only the type, so no cycle |
@@ -180,7 +181,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `jwt-bearer-resolver.ts` | an external bearer JWT → `{ actor, scopes } \| null` |
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
-| `mfa-replay-postgres.ts` | the shared replay guard: one table, the claim, the sweep |
+| `mfa-replay-postgres.ts` | the shared replay guard: the claim and the sweep. Its DDL is in `tables.ts` |
 | `mfa-secret.ts` | the TOTP secret at rest: seal on write, open on read, the one-shot that seals older rows |
 | `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |
 | `privileges.ts` | `updatePrivileges` — the grant, the rotation it requires, and the sessions a changed password ends |

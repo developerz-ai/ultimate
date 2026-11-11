@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "aa2b1b8f8eec782d3ecfb0d8a8f81ef102f856ab98de18de83667288d140e434",
+  "buildId": "aadcd822dc3a284215a0a3e8a90af314d62cef50b11d07a8fe89cc451004a7ac",
   "tiers": {
     "0": [
       "core",
@@ -4408,6 +4408,11 @@
       "code": "X_RELATIVE_PATH_NOT_POSIX",
       "owner": "scripts",
       "at": "scripts/posix-relative.ts"
+    },
+    {
+      "code": "X_RELEASE_BRANCH_NAME",
+      "owner": "scripts",
+      "at": "scripts/lib/release-preflight.ts"
     },
     {
       "code": "X_RELEASE_FLAG_UNKNOWN",

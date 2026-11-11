@@ -5,9 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   annotatedTagCommand,
+  branchNameFindings,
   compareReleaseVersions,
   DIRTY_PATHS_SHOWN,
   dirtyPaths,
+  MAINTENANCE_BRANCH_GLOB,
   treeDirtyFindings,
 } from './release-preflight';
 
@@ -61,6 +63,39 @@ describe('unit · a release refuses a working tree with changes in it', () => {
     const [finding] = treeDirtyFindings(undefined, RERUN);
     expect(finding?.code).toBe('X_RELEASE_TREE_DIRTY');
     expect(finding?.fix).toContain('git status --porcelain');
+  });
+});
+
+describe('unit · a bump never runs on a release/* branch that is not a maintenance line', () => {
+  // release-tag.yml and ci.yml run on `release/<major>.x`, so a bump branch named `release/31.1.0`
+  // got CI on push and v31.1.0 was tagged on the PR head instead of main's merge commit (#1054).
+  test('release/31.1.0 is refused, and the fix switches to chore/release-<version>', () => {
+    const [finding, ...rest] = branchNameFindings('release/31.1.0', '31.1.0');
+    expect(rest).toEqual([]);
+    expect(finding?.code).toBe('X_RELEASE_BRANCH_NAME');
+    expect(finding?.cause).toContain('release/31.1.0');
+    expect(finding?.fix).toStartWith('git switch -c chore/release-31.1.0');
+  });
+
+  test('any other release/* name is refused too', () => {
+    for (const branch of ['release/31', 'release/31.x.1', 'release/x', 'release/31.1.x']) {
+      expect(branchNameFindings(branch, '31.1.0').map((f) => f.code)).toEqual([
+        'X_RELEASE_BRANCH_NAME',
+      ]);
+    }
+  });
+
+  test('a maintenance line, a chore/release-* branch, main and a detached HEAD are allowed', () => {
+    for (const branch of ['release/31.x', 'release/7.x', 'chore/release-31.1.0', 'main', '']) {
+      expect(branchNameFindings(branch, '31.1.0')).toEqual([]);
+    }
+    expect(branchNameFindings(undefined, '31.1.0')).toEqual([]);
+  });
+
+  // The workflows' glob and this predicate are one rule: release-tag-workflow-shape.test.ts holds
+  // the YAML to MAINTENANCE_BRANCH_GLOB, and this holds the glob's meaning to the predicate.
+  test('MAINTENANCE_BRANCH_GLOB is the GitHub filter for exactly release/<major>.x', () => {
+    expect(MAINTENANCE_BRANCH_GLOB).toBe('release/[0-9]+.x');
   });
 });
 

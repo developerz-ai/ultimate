@@ -75,7 +75,6 @@ export type {
 export type { PostgresAuthServerStoreOptions } from './authorization-server-postgres';
 export { postgresAuthServerStore } from './authorization-server-postgres';
 export type { ReadRequestResult } from './authorization-server-request';
-export { AUTH_SERVER_TABLES, SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';
 export type { AuthServerStore } from './authorization-server-store';
 export { memoryAuthServerStore } from './authorization-server-store';
 export type {
@@ -212,7 +211,7 @@ export type {
   PostgresTotpReplayGuard,
   PostgresTotpReplayGuardOptions,
 } from './mfa-replay-postgres';
-export { postgresTotpReplayGuard, SQL_TOTP_REPLAY_TABLE } from './mfa-replay-postgres';
+export { postgresTotpReplayGuard } from './mfa-replay-postgres';
 export type { MfaSecretStore, SealMfaSecretsReport } from './mfa-secret';
 export {
   countUnsealedMfaSecrets,
@@ -369,10 +368,7 @@ export {
   orgRateLimit,
 } from './rate-limit';
 export type { PostgresAuthLimiter, PostgresAuthLimiterOptions } from './rate-limit-postgres';
-export {
-  postgresAuthLimiter,
-  SQL_AUTH_LIMIT_TABLES,
-} from './rate-limit-postgres';
+export { postgresAuthLimiter } from './rate-limit-postgres';
 export type { DisabledUser } from './revocation';
 export {
   disableUser,
@@ -419,9 +415,14 @@ export type {
 } from './subject-target';
 export { authSubjectTarget } from './subject-target';
 
+/** Also `@ultimat3/auth/schema`, the leaf a schema reader imports instead of this barrel. */
 export {
+  AUTH_SERVER_TABLES,
   AUTH_TABLE_NAMES,
   AUTH_TABLES,
+  SQL_AUTH_LIMIT_TABLES,
+  SQL_AUTH_SERVER_TABLES,
+  SQL_TOTP_REPLAY_TABLE,
 } from './tables';
 export {
   randomToken,

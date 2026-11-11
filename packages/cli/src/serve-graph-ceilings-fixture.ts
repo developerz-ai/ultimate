@@ -235,8 +235,13 @@
  * invariant's NULL judged in three values, the same on the app side and in the CHECK) and
  * `auth/src/auth-ports.ts` (the limiters and TOTP guard read where used, never captured by
  * `defineAuth`). No existing module newly reached: the delta is exactly these four.
+ * lowered 977 → 873, measured 873 (2026-11-10, #1051, metafile diff against HEAD 37b0d74cc):
+ * why: `framework-schema.ts` reads the auth DDL from the leaf `@ultimat3/auth/schema`
+ * (`auth/src/tables.ts`, which re-exports `authorization-server-schema.ts`) instead of the barrel,
+ * so 104 auth modules left (106 reached before, these 2 stay) and nothing else moved. A new auth
+ * runtime module no longer raises this pin.
  */
-export const MIGRATE_CEILING = 977;
+export const MIGRATE_CEILING = 873;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -474,5 +479,9 @@ export const MIGRATE_CEILING = 977;
  * `MIGRATE_CEILING`. Nothing serving-only.
  * raised 1397 → 1401, measured 1401 (2026-11-10, 31.3.0 gate fix): `MIGRATE_CEILING`'s four new
  * modules. Nothing serving-only.
+ * unchanged at 1401, measured 1401 (2026-11-10, #1051): the migrate pin's −104 does not reach here,
+ * because the serving roles import the auth barrel themselves (`runtime-services.ts`,
+ * `runtime-mfa-warning.ts`, `runtime-purge.ts`). `auth/src/tables.ts` is still the leaf, so no
+ * new module arrived either.
  */
 export const SERVING_ROLE_CEILING = 1401;

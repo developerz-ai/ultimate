@@ -1,7 +1,11 @@
-// Single responsibility: the DDL `PostgresAuthAdapter` expects, as `AUTH_TABLES` — applied at every boot
-// by `@ultimat3/cli`'s `FRAMEWORK_SCHEMA`, upgrades of an older table included. Plain strings, so
-// what auth stores is verifiable by reading, never by trusting. There is nothing to paste into a
-// migration any more: the per-table exports and `X_USERS_MIGRATION_1_3` are gone (22.0.0).
+// Single responsibility: every auth table the boot applies, and nothing else — shipped as the LEAF
+// `@ultimat3/auth/schema`, so `@ultimat3/cli`'s `FRAMEWORK_SCHEMA` reads the DDL in every role
+// (`ROLE=migrate` first) without the barrel. Imports only its sibling leaf; `schema-subpath.test.ts`
+// refuses anything more. Plain strings: what auth stores is verifiable by reading, never by trusting.
+//
+// `AUTH_TABLES` is the DDL `PostgresAuthAdapter` expects, upgrades of an older table included.
+// There is nothing to paste into a migration: the per-table exports and `X_USERS_MIGRATION_1_3`
+// are gone (22.0.0), and the per-table constants below stay module-private for that reason.
 //
 // What is at rest, stated column by column rather than as a claim:
 //
@@ -25,7 +29,7 @@
 // through its own `linkAccount` has somewhere to put them, and so an existing deployment needs
 // no migration to stop.
 
-export const X_USERS_TABLE = `create table if not exists x_users (
+const X_USERS_TABLE = `create table if not exists x_users (
   id                    uuid primary key,
   email                 text not null unique,
   email_verified_at     timestamptz,
@@ -58,7 +62,7 @@ const X_USERS_UPGRADE = [
 ].join(';\n');
 
 // `id` is the public half of the cookie; `token_hash` is sha256 of the secret half.
-export const X_SESSIONS_TABLE = `create table if not exists x_sessions (
+const X_SESSIONS_TABLE = `create table if not exists x_sessions (
   id                    text primary key,
   user_id               uuid not null references x_users (id) on delete cascade,
   token_hash            text not null,
@@ -73,7 +77,7 @@ create index if not exists x_sessions_user_id_idx on x_sessions (user_id);
 create index if not exists x_sessions_absolute_expires_at_idx on x_sessions (absolute_expires_at);
 create index if not exists x_sessions_created_at_idx on x_sessions (created_at)`;
 
-export const X_ACCOUNTS_TABLE = `create table if not exists x_accounts (
+const X_ACCOUNTS_TABLE = `create table if not exists x_accounts (
   id                    uuid primary key,
   user_id               uuid not null references x_users (id) on delete cascade,
   provider              text not null,
@@ -88,7 +92,7 @@ export const X_ACCOUNTS_TABLE = `create table if not exists x_accounts (
 )`;
 
 // One live token per (purpose, identifier): issuing a new one overwrites the old.
-export const X_VERIFICATIONS_TABLE = `create table if not exists x_verifications (
+const X_VERIFICATIONS_TABLE = `create table if not exists x_verifications (
   id                    text primary key,
   purpose               text not null,
   identifier            text not null,
@@ -99,7 +103,7 @@ export const X_VERIFICATIONS_TABLE = `create table if not exists x_verifications
   unique (purpose, identifier)
 )`;
 
-export const X_API_KEYS_TABLE = `create table if not exists x_api_keys (
+const X_API_KEYS_TABLE = `create table if not exists x_api_keys (
   id                    text primary key,
   prefix                text not null unique,
   key_hash              text not null,
@@ -114,7 +118,7 @@ export const X_API_KEYS_TABLE = `create table if not exists x_api_keys (
 
 // Passkeys (`passkey-*.ts`). Byte fields are base64url text; the challenge row holds the
 // challenge's sha256, never the challenge; evidence carries its own key so it verifies alone.
-export const X_PASSKEYS_TABLE = `create table if not exists x_passkeys (
+const X_PASSKEYS_TABLE = `create table if not exists x_passkeys (
   id                    text primary key,
   user_id               uuid not null references x_users (id) on delete cascade,
   public_key            text not null,
@@ -126,7 +130,7 @@ export const X_PASSKEYS_TABLE = `create table if not exists x_passkeys (
 );
 create index if not exists x_passkeys_user_id_idx on x_passkeys (user_id)`;
 
-export const X_PASSKEY_CHALLENGES_TABLE = `create table if not exists x_passkey_challenges (
+const X_PASSKEY_CHALLENGES_TABLE = `create table if not exists x_passkey_challenges (
   id                    text primary key,
   ceremony              text not null,
   user_id               uuid references x_users (id) on delete cascade,
@@ -137,7 +141,7 @@ export const X_PASSKEY_CHALLENGES_TABLE = `create table if not exists x_passkey_
 );
 create index if not exists x_passkey_challenges_expires_at_idx on x_passkey_challenges (expires_at)`;
 
-export const X_PASSKEY_EVIDENCE_TABLE = `create table if not exists x_passkey_evidence (
+const X_PASSKEY_EVIDENCE_TABLE = `create table if not exists x_passkey_evidence (
   id                    text primary key,
   user_id               uuid not null references x_users (id) on delete cascade,
   credential_id         text not null,
@@ -175,3 +179,49 @@ export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
   'x_passkey_challenges',
   'x_passkey_evidence',
 ]);
+
+/**
+ * `postgresAuthLimiter`'s table (`rate-limit-postgres.ts`).
+ *
+ * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, so
+ * `x dev`, the container's `web` role and `ROLE=migrate` all install it.
+ *
+ * ONE row per key, holding every attempt still inside the window. The window this package enforces
+ * is a SLIDING one, so the instants are kept (a counter plus a window end is a fixed window, which
+ * admits `maxAttempts` at the end of one and `maxAttempts` again at the start of the next). They
+ * are kept IN the row because the row is what a concurrent take waits on: a count over a second
+ * table reads its statement's snapshot, and that snapshot predates the wait.
+ *
+ * The two `add column` lines are the upgrade of a table made before the reservation, on the rule
+ * `x_users` follows: additive, defaulted, idempotent, applied at every boot. The name and the
+ * first two columns are unchanged on purpose — a replica still running the previous release reads
+ * and writes this table as it always did, so a lockout holds on both sides of a rolling deploy.
+ */
+export const SQL_AUTH_LIMIT_TABLES = `
+create table if not exists x_auth_lockouts (
+  key             text     primary key,
+  locked_until_ms bigint   not null,
+  attempts_ms     bigint[] not null default '{}',
+  admitted        boolean  not null default true
+);
+
+alter table x_auth_lockouts add column if not exists attempts_ms bigint[] not null default '{}';
+alter table x_auth_lockouts add column if not exists admitted boolean not null default true;
+
+create index if not exists x_auth_lockouts_until_idx on x_auth_lockouts (locked_until_ms);
+`;
+
+/** `postgresTotpReplayGuard`'s spent steps (`mfa-replay-postgres.ts`). Applied by the boot, likewise. */
+export const SQL_TOTP_REPLAY_TABLE = `
+create table if not exists x_totp_steps (
+  subject text        not null,
+  step    bigint      not null,
+  used_at timestamptz not null,
+  primary key (subject, step)
+);
+
+create index if not exists x_totp_steps_step_idx on x_totp_steps (step);
+`;
+
+/** The authorization server's five tables: their own leaf, re-exported so `./schema` is one import. */
+export { AUTH_SERVER_TABLES, SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';

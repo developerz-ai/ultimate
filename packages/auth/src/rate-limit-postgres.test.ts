@@ -12,11 +12,11 @@ import {
 } from './rate-limit';
 import {
   postgresAuthLimiter,
-  SQL_AUTH_LIMIT_TABLES,
   SQL_AUTH_PURGE,
   SQL_AUTH_REFUND,
   SQL_AUTH_TAKE,
 } from './rate-limit-postgres';
+import { SQL_AUTH_LIMIT_TABLES } from './tables';
 
 const NOW = new Date('2026-08-09T12:00:00.000Z');
 const clock = frozenClock(NOW);
