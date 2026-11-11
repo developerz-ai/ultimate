@@ -2,7 +2,7 @@
 // file, the dial, a reply. Nothing here spawns, so it runs alike on Windows — where this wire is
 // the default — and on the Linux runner.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, jest, test } from 'bun:test';
 // why: Bun exposes no temp-directory primitive and no recursive remove.
 import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
@@ -148,6 +148,108 @@ describe('portConnection', () => {
     } finally {
       await server.stop(true);
     }
+  });
+
+  // windows CI, run 42978963381: "DevTools listening" on stderr, the port announced, and the launch
+  // failed `"connect" did not answer inside 10000ms` with 50 s of its 60 s deadline left. The dial
+  // was bounded by the PER-CALL deadline (`timeoutMs`), not the launch's: a cold Chrome that had
+  // bound its port but not yet answered the WebSocket upgrade was given up on as dead. Held here
+  // by a stand-in that answers the upgrade only after the per-call deadline has passed.
+  describe('the dial is bounded by the LAUNCH deadline, never the per-call one', () => {
+    const held = () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let dialled: () => void = () => undefined;
+      const arrived = new Promise<void>((resolve) => {
+        dialled = resolve;
+      });
+      const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        fetch: async (request, srv) => {
+          dialled();
+          await gate;
+          return srv.upgrade(request) ? undefined : new Response('upgrade', { status: 426 });
+        },
+        websocket: {
+          message(socket, raw) {
+            const { id } = JSON.parse(String(raw)) as { id: number };
+            socket.send(JSON.stringify({ id, result: { product: 'StandIn' } }));
+          },
+        },
+      });
+      return { server, release, arrived };
+    };
+
+    test('an upgrade slower than timeoutMs but inside deadlineMs connects', async () => {
+      const { server, release, arrived } = held();
+      const profileDir = mkdtempSync(join(scratch, 'profile-'));
+      await Bun.write(
+        join(profileDir, DEVTOOLS_ACTIVE_PORT),
+        `${String(server.port)}\n/devtools/browser/stand-in\n`,
+      );
+      jest.useFakeTimers();
+      try {
+        const dial = portConnection({
+          profileDir,
+          exited: () => false,
+          deadlineMs: 60_000,
+          timeoutMs: 100,
+        }).then(
+          (connection) => ({ connection }),
+          (error: unknown) => ({ error }),
+        );
+        await arrived;
+        // Ten per-call deadlines pass with the upgrade still unanswered: a dial bounded by
+        // `timeoutMs` has given up by now.
+        jest.advanceTimersByTime(1_000);
+        release();
+        const settled = await dial;
+        if (!('connection' in settled)) {
+          expect.unreachable(
+            `the dial gave up inside the launch deadline: ${String(settled.error)}`,
+          );
+        }
+        jest.useRealTimers();
+        expect(await settled.connection.send('Browser.getVersion')).toEqual({
+          result: { product: 'StandIn' },
+        });
+        settled.connection.close();
+      } finally {
+        jest.useRealTimers();
+        release();
+        await server.stop(true);
+      }
+    });
+
+    test('an upgrade still unanswered at deadlineMs is a TIMED-OUT launch', async () => {
+      const { server, release, arrived } = held();
+      const profileDir = mkdtempSync(join(scratch, 'profile-'));
+      await Bun.write(
+        join(profileDir, DEVTOOLS_ACTIVE_PORT),
+        `${String(server.port)}\n/devtools/browser/stand-in\n`,
+      );
+      jest.useFakeTimers();
+      try {
+        const dial = portConnection({
+          profileDir,
+          exited: () => false,
+          deadlineMs: 2_000,
+          timeoutMs: 60_000,
+        }).catch((e: unknown) => e);
+        await arrived;
+        jest.advanceTimersByTime(2_001);
+        const error = await dial;
+        expect(error).toBeUltimateError('X_CDP_TIMEOUT');
+        expect((error as { cause: string }).cause).toContain('"connect"');
+      } finally {
+        jest.useRealTimers();
+        release();
+        await server.stop(true);
+      }
+    });
   });
 
   // Only the two codes that mean "not there yet": anything else is the launch failing, by name.
