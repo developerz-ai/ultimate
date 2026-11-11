@@ -10,6 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- An island that throws an app error code ships about half the bytes: import `defineError` from `@ultimat3/core/page` (12,019 B â†’ 6,507 B).
+- A guard that reads compiled stylesheets no longer passes silently on a sheet that fails to compile: the broken sheet is a finding that quotes the compiler's first line.
+- Five shipped guards stop flagging correct code: a function the file binds itself named `confirm`, `fetch` or `setInterval`; reading the browser's zone with `resolvedOptions()`; and a combobox `role="option"` with `tabIndex={-1}`.
+- The `image-dimensions`, `semantic-interactive` and `untranslated-string` guards now read components under `apps/*/shared/`, and `raw-motion` reads custom properties. Refresh a guard with `x g guard <name> --force`.
+
 ### Fixed
 
 - `@ultimat3/core`: an island that throws an app code no longer carries the framework's error titles. `defineError` is now exported from `@ultimat3/core/page`, the one light browser entry; from the barrel, any import retains both anchored titles tables (`core-error-codes.ts`, `schema-error-codes.ts`). Measured (Bun 1.4.4, minified, one declaration thrown): 12,019 B through `@ultimat3/core`, 6,507 B through `@ultimat3/core/page`. `define-error-bytes.test.ts` pins the island at no table and under 7,168 B. The whole `./page` entry is now 35,150 B, up from 32,707 B (ceiling 35,840 B). `defineError` also no longer throws at module load in a browser without `Error.captureStackTrace`, such as Firefox before 136. The scaffolded `error-declared` guard refuses `defineError` imported from the barrel (`X_ERROR_DECLARED`; refresh it with `x g guard error-declared --force`), and the files `x new` and `x g` write (a slice's `errors.ts`, the domain package) now import it from `@ultimat3/core/page`. An app that added `/* @__PURE__ */` or `"sideEffects": false` to keep the table out can stop relying on them for that: switch the import instead. `/* @__PURE__ */` still drops each declaration an island never throws, about 50 B apiece.
