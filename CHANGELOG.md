@@ -10,7 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `launchChrome` no longer gives up on a cold Chrome that has already opened its debugging port: the connection now gets what is left of the 60 s launch deadline, not the 10 s per-call one.
+
+### Fixed
+
+- `@ultimat3/scraping`: `launchChrome` over the port wire (the Windows default) capped the WebSocket dial at the per-call `timeoutMs` (10 s), not at what was left of the launch deadline (`LAUNCH_TIMEOUT_MS`, 60 s). A cold Chrome that had printed "DevTools listening" but not yet answered the upgrade was killed and reported `X_CDP_LAUNCH_FAILED`. On windows CI (run 42978963381) that happened with 50 s of the deadline left. `cdpConnect` takes a new optional `CdpConnectionOptions.connectTimeoutMs` for the handshake, defaulting to `timeoutMs`, and the launcher passes the launch time that is left. `cdp-launch-wire.test.ts` holds an upgrade past `timeoutMs` and inside the deadline, and one past the deadline.
+- Tests: `@ultimat3/cache`'s `purge-http.test.ts` and `@ultimat3/auth`'s `oauth-discovery.test.ts` gave a 10 ms and a 50 ms deadline to a call whose subject is a rejected `fetch`. `outbound()` retries that rejection inside the deadline, and a short random backoff on a loaded runner let the deadline win: `X_OUTBOUND_TIMEOUT` where the test asserts the rejection (main CI, run 42978963381). Those tests now get a 60 s deadline that cannot fire first. `purge-http.test.ts` gains a test of the deadline path itself: a CDN that never answers is `X_CACHE_PURGE_FAILED`, retryable, naming `X_OUTBOUND_TIMEOUT`.
 
 ## Releases
 
