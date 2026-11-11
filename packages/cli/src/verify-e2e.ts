@@ -17,9 +17,25 @@ import type { ExecResult } from './exec';
 export const e2ePreload = (): string =>
   Bun.resolveSync('@ultimat3/testing/e2e-preload', import.meta.dir);
 
+/** The device zone every browser-backed app e2e run uses, never the runner's ambient zone. */
+export const E2E_TIME_ZONE = 'America/Los_Angeles';
+
 export interface E2eRun {
   readonly command: readonly string[];
   readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/** Add the app preload and its deterministic device zone after a browser was found. */
+export function appE2eRun(input: {
+  readonly root: string;
+  readonly command: readonly string[];
+  readonly env: Readonly<Record<string, string | undefined>>;
+}): E2eRun {
+  const [bun = 'bun', test = 'test', ...rest] = input.command;
+  return {
+    command: [bun, test, '--preload', e2ePreload(), ...rest],
+    env: { ...input.env, [E2E_ROOT_ENV]: input.root, TZ: E2E_TIME_ZONE },
+  };
 }
 
 /** Wrap one e2e `bun test` invocation: `run` receives the command and extra environment to use. */
@@ -34,9 +50,5 @@ export async function withE2eApp(
 ): Promise<ExecResult> {
   const chrome = input.isApp ? await findChrome(Bun.env) : undefined;
   if (chrome === undefined) return run({ command: input.command, env: input.env });
-  const [bun = 'bun', test = 'test', ...rest] = input.command;
-  return run({
-    command: [bun, test, '--preload', e2ePreload(), ...rest],
-    env: { ...input.env, [E2E_ROOT_ENV]: input.root },
-  });
+  return run(appE2eRun(input));
 }
