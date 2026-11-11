@@ -48,6 +48,14 @@ const ROLE = /(?<![\w-])role\s*=\s*["']([a-z]+)["']/;
 const TABINDEX = /(?<![\w-])tab[Ii]ndex\s*=/;
 const KEYS = /(?<![\w-])onKey(?:Down|Up|Press)\s*=/;
 
+/**
+ * An option an `aria-activedescendant` combobox manages: focus stays on the input, which answers
+ * the keys, so the option is `tabIndex={-1}` with a pointer handler and nothing more — the WAI-ARIA
+ * combobox pattern, complete as written. `option` only: no other role is exempted by this shape.
+ */
+const MANAGED = /(?<![\w-])role\s*=\s*["']option["']/;
+const UNFOCUSED = /(?<![\w-])tab[Ii]ndex\s*=\s*(?:\{\s*-1\s*\}|["']-1["'])/;
+
 export interface SourceFile {
   /** App-root-relative POSIX path, so the finding names the file an author opens. */
   readonly path: string;
@@ -115,6 +123,7 @@ export function semanticInteractive(files: readonly SourceFile[]): readonly Find
       // guide asks for — a deliberate widget, written by someone who read the obligation. This
       // rule is about the incomplete ones, so all three present is the one shape it passes over.
       if (ROLE.test(tag.attrs) && TABINDEX.test(tag.attrs) && KEYS.test(tag.attrs)) continue;
+      if (MANAGED.test(tag.attrs) && UNFOCUSED.test(tag.attrs)) continue;
       const at = `${file.path}:${lineOf(text, tag.index)}`;
       const role = ROLE.exec(tag.attrs)?.[1] ?? '';
       const native = NATIVE.get(role);

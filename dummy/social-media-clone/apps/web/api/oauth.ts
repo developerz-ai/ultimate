@@ -4,7 +4,7 @@
 // code is, where it goes) is `@ultimat3/auth`'s; this file only says WHO approved.
 
 import { action, t } from '@ultimat3/action';
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 import { setRedirect, useRequestHeader } from '@ultimat3/http';
 import { oauthConsent } from '../app/oauth/policy';
 import { appOrigin, callerKey, mayRedirectRefusal, mcpOAuth } from '../app/oauth/server';

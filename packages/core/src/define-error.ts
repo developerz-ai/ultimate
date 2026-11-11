@@ -1,7 +1,7 @@
 // Single responsibility: `defineError` — an APP code's one declaration: its title, its HTTP status
 // (or `offSocket`), its retry, and the `UltimateError` subclass that throws it. Its own module so a
-// chunk importing only `UltimateError` never retains it (`define-error-bytes.test.ts`). A framework
-// code goes through `bun run new-error-code` instead; the split is in this package's CLAUDE.md.
+// chunk importing only `UltimateError` never retains it; on `./page` so an island throwing an app
+// code carries no titles table (`define-error-bytes.test.ts`). Framework codes: `new-error-code`.
 
 import { describeErrorCode, hasErrorCode, registerErrorCodes } from './error-codes';
 import { renderCauseValue } from './error-render';
@@ -94,7 +94,9 @@ const DECLARED_AT = new Map<string, string>();
 export const definedErrorSites = (): ReadonlyMap<string, string> => DECLARED_AT;
 
 function recordSite(code: string): void {
-  if (DECLARED_AT.has(code)) return;
+  // A browser island declares at load too, and Firefox before 136 has no `captureStackTrace`: the
+  // site is a test-time scan's input, never worth an island that dies evaluating its errors module.
+  if (DECLARED_AT.has(code) || typeof Error.captureStackTrace !== 'function') return;
   const holder: { stack?: string } = {};
   Error.captureStackTrace(holder, defineError);
   const frame = holder.stack?.split('\n')[1];

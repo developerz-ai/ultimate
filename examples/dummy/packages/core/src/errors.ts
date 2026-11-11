@@ -10,7 +10,7 @@
 // code from another with `SeatsExceeded.is(error)` — which also holds for the browser's rebuilt
 // refusal, where `instanceof` cannot.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 /**
  * The actor carries no membership, so nothing in this app can decide about them or write a row

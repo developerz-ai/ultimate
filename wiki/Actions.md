@@ -249,11 +249,12 @@ X_ACTION_POLICY_MISSING: action registered without a policy
 
 Every code carries the same `{ code, cause, fix, docs }` in the terminal, the dev overlay, the HTTP body, `--json`, and the MCP tool error. Full list: [Error codes](Error-Codes).
 
-A handler's OWN refusals are app codes, each declared once with `defineError` from `@ultimat3/core`
+A handler's OWN refusals are app codes, each declared once with `defineError` from
+`@ultimat3/core/page` (the barrel carries the framework's titles into every island that throws one)
 — the title, the status the HTTP projection answers and the class `handle` throws:
 
 ```ts
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 export const PostNotFound = defineError<string>({
   code: 'X_POST_NOT_FOUND',

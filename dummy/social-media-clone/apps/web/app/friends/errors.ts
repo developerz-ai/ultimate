@@ -2,7 +2,7 @@
 // is a call or a command a caller can run verbatim — a friendship refusal that says "check the
 // state" sends an agent hunting for a row it already had the id of.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 // No `docs:` at any declaration in this file. `UltimateError` fills it from
 // `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for

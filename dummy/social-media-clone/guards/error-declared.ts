@@ -1,6 +1,8 @@
 // error-declared: an app code is declared once, with defineError — its title, its status and its class.
 // `x verify` discovers every file in `guards/` and runs its `guard` inside the `boundaries`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
+// defineError is imported from @ultimat3/core/page: an errors module is shared by actions and
+// islands, and the barrel carries the framework's titles tables into every island that throws.
 //
 // Known limits, both read by nothing short of a type checker: an alias by assignment
 // (const Base = UltimateError) and a shorthand key whose value is a literal elsewhere
@@ -17,6 +19,12 @@ const NAMED_IMPORT =
 const NAMESPACE_IMPORT =
   /\bimport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s*['"]@ultimat3\/core(?:\/page)?['"]/g;
 const ALIAS = /^\s*UltimateError\s+as\s+([A-Za-z_$][\w$]*)\s*$/;
+
+/** The barrel alone — never its page subpath — and defineError in a named list, aliased or not. */
+const BARREL_NAMED = /\bimport\s+\{([^}]*)\}\s*from\s*['"]@ultimat3\/core['"]/g;
+const BARREL_NAMESPACE =
+  /\bimport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s*['"]@ultimat3\/core['"]/g;
+const DEFINE_ERROR = /^\s*defineError(?:\s+as\s+[A-Za-z_$][\w$]*)?\s*$/;
 
 /** A literal code as the object's own key — bare or quoted — read where the walk below stands. */
 const LITERAL_CODE = /^(?:code|'code'|"code")\s*:\s*['"`]/;
@@ -95,9 +103,33 @@ const literalCodeIn = (text: string, open: number): boolean => {
 const finding = (file: SourceFile, line: number, what: string): Finding => ({
   code: CODE,
   cause: `${file.path}:${line} ${what} — the title, the HTTP status and the class are then declared apart, and a code with no status answers 500 and hides its cause`,
-  fix: `rewrite it in ${file.path} as defineError({ code, title, status, cause, fix }) from @ultimat3/core (offSocket: true for a code no response carries), then: x verify`,
+  fix: `rewrite it in ${file.path} as defineError({ code, title, status, cause, fix }) from @ultimat3/core/page (offSocket: true for a code no response carries), then: x verify`,
   at: file.path,
 });
+
+const barrelFinding = (file: SourceFile, line: number): Finding => ({
+  code: CODE,
+  cause: `${file.path}:${line} takes defineError from the @ultimat3/core barrel — every island that throws the code then carries the framework's titles table, ~5.5 kB it never reads`,
+  fix: `import { defineError } from '@ultimat3/core/page' in ${file.path} — the same function, without the table — then: x verify`,
+  at: file.path,
+});
+
+/** Each line that reaches defineError through the barrel: a named import, or a namespace's member. */
+const barrelDefineErrorLines = (text: string): readonly number[] => {
+  const lines: number[] = [];
+  for (const match of text.matchAll(BARREL_NAMED)) {
+    if ((match[1] ?? '').split(',').some((part) => DEFINE_ERROR.test(part))) {
+      lines.push(lineOf(text, match.index));
+    }
+  }
+  for (const match of text.matchAll(BARREL_NAMESPACE)) {
+    const member = nameSource([`${match[1] ?? ''}.defineError`]);
+    for (const use of text.matchAll(new RegExp(`\\b${member}\\b`, 'g'))) {
+      lines.push(lineOf(text, use.index));
+    }
+  }
+  return lines;
+};
 
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function undeclaredErrors(files: readonly SourceFile[]): readonly Finding[] {
@@ -109,6 +141,9 @@ export function undeclaredErrors(files: readonly SourceFile[]): readonly Finding
       const line = lineOf(text, index);
       found.push({ path: file.path, line, finding: finding(file, line, what) });
     };
+    for (const line of barrelDefineErrorLines(text)) {
+      found.push({ path: file.path, line, finding: barrelFinding(file, line) });
+    }
     for (const match of text.matchAll(new RegExp(`\\bextends\\s+(?:${names})\\b`, 'g'))) {
       push(match.index, 'subclasses UltimateError by hand');
     }

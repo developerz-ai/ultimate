@@ -10,7 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `@ultimat3/core`: an island that throws an app code no longer carries the framework's error titles. `defineError` is now exported from `@ultimat3/core/page`, the one light browser entry; from the barrel, any import retains both anchored titles tables (`core-error-codes.ts`, `schema-error-codes.ts`). Measured (Bun 1.4.4, minified, one declaration thrown): 12,019 B through `@ultimat3/core`, 6,507 B through `@ultimat3/core/page`. `define-error-bytes.test.ts` pins the island at no table and under 7,168 B. The whole `./page` entry is now 35,150 B, up from 32,707 B (ceiling 35,840 B). `defineError` also no longer throws at module load in a browser without `Error.captureStackTrace`, such as Firefox before 136. The scaffolded `error-declared` guard refuses `defineError` imported from the barrel (`X_ERROR_DECLARED`; refresh it with `x g guard error-declared --force`), and the files `x new` and `x g` write (a slice's `errors.ts`, the domain package) now import it from `@ultimat3/core/page`. An app that added `/* @__PURE__ */` or `"sideEffects": false` to keep the table out can stop relying on them for that: switch the import instead. `/* @__PURE__ */` still drops each declaration an island never throws, about 50 B apiece.
+- `@ultimat3/cli` `native-confirm`, `raw-fetch` and `raw-interval` guards: a bare `confirm(`, `fetch(` or `setInterval(` in a file that binds that name itself is the file's own function and no longer a finding. A binding is a declaration, an import, a parameter or a destructured name; `const confirm = async () => {}; void confirm();` was reported as the browser dialog. `window.`, `self.` and `globalThis.` calls are still findings. An app picks the fix up with `x g guard <name> --force`.
+- `@ultimat3/cli` `unzoned-date` guard: `Intl.DateTimeFormat().resolvedOptions().timeZone` is no longer a finding. It reads the host's zone and formats no date. An `Intl.DateTimeFormat` that calls `.format(` or `.formatToParts(` with no `timeZone` still is. An app picks the fix up with `x g guard unzoned-date --force`.
+- `@ultimat3/cli` `semantic-interactive` guard: a `role="option"` element with `tabIndex={-1}` is no longer `X_SEMANTIC_INTERACTIVE`. That is an option of an `aria-activedescendant` combobox, where the input keeps focus and handles the keys. A clickable inert element, a `role="button"` with no key handler and an option that takes focus are still findings. An app picks the fix up with `x g guard semantic-interactive --force`.
 
 ## Releases
 

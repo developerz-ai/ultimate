@@ -38,6 +38,11 @@ export type { ConflictPolicy, Row } from './conflict-policy';
 // Registry-free: it merges two rows and throws nothing, so the page's record store settles a
 // write under a conflict policy without loading the error table.
 export { resolveConflict } from './conflict-policy';
+// An app's error module is shared by its actions and its islands: declared from here, an island
+// that throws one code carries the class and the declaration, never the barrel's titles tables
+// (`define-error-bytes.test.ts`). The app's `error-declared` guard refuses the barrel import.
+export type { DefinedError, DefinedErrorExtra, DefineErrorSpec } from './define-error';
+export { defineError } from './define-error';
 // The registry's one writer, for a package that titles its OWN codes in a browser chunk
 // (`@ultimat3/realtime`'s `error-titles.ts`). A function, not a table: `errors.ts` already retains
 // `error-codes.ts`, so this adds no module — and through the barrel it cost both anchored tables.

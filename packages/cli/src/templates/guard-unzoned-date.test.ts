@@ -49,4 +49,22 @@ describe('unit · shipped guard · unzoned-date', () => {
       expect(await findingsFor(zoned)).toEqual([]);
     }
   });
+
+  test('reading the host zone through resolvedOptions() formats nothing; .format( still does', async () => {
+    for (const read of [
+      'export const z = Intl.DateTimeFormat().resolvedOptions().timeZone;',
+      'export const z = new Intl.DateTimeFormat().resolvedOptions().timeZone;',
+      "export const z = new Intl.DateTimeFormat('en')\n  .resolvedOptions().timeZone;",
+    ]) {
+      expect(await findingsFor(read)).toEqual([]);
+    }
+    for (const formatted of [
+      "export const s = (at: Date) => new Intl.DateTimeFormat('en').format(at);",
+      "export const p = (at: Date) => Intl.DateTimeFormat('en').formatToParts(at);",
+    ]) {
+      expect((await findingsFor(formatted)).map((finding) => finding.code)).toEqual([
+        'X_UNZONED_DATE',
+      ]);
+    }
+  });
 });

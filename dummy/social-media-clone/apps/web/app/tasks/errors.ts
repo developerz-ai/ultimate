@@ -2,7 +2,7 @@
 // tell the demo's own database from anyone else's — an hourly job that wipes a production table
 // because someone pointed this image at it is not a bug you get to find twice.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 export interface DemoResetUnsafeInit {
   /**
