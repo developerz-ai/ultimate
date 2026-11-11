@@ -276,13 +276,13 @@ a `fix:` — documented where its subject is: [Entities and migrations](Entities
 
 | Rule | Refused by | The `fix:` it names |
 |---|---|---|
-| A `repo.ts` reads through the typed handle | `guards/repo-raw-sql.ts` — a `sql` literal the handle can express: `select *`, `insert`, `update` or `delete` on one table, plain comparisons | the handle call: `db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()` |
+| A `repo.ts` or a `repo-<part>.ts` reads through the typed handle | `guards/repo-raw-sql.ts` — a `sql` literal the handle can express: `select *`, `insert`, `update` or `delete` on one table, plain comparisons | the handle call: `db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()` |
 
 | Not a finding | Why |
 |---|---|
 | a join, an aggregate, a CTE, a window, an `or`, a function call | the handle has no word for it; raw SQL in the repo is the answer |
 | a statement composed from another `sql` fragment | composition, not one statement |
-| `sql` in a `query`'s source, a migration, a comment or a string | only a tagged template in a `repo.ts` is read |
+| `sql` in a `query`'s source, a migration, a comment or a string | only a tagged template in a `repo.ts` or a `repo-<part>.ts` is read |
 
 A sheet that defines its own `@function rem` / `fluid` or `@mixin respond-*` is refused by
 `raw-length` and `raw-breakpoint`: Sass lets a module that forwards the tokens redefine one with no

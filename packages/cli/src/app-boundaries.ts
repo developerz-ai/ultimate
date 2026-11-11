@@ -72,10 +72,11 @@ const isService = (path: string): boolean => /\/service\.[cm]?ts$/.test(path);
  * query that carries the read's policy, bound and cache tag — the scaffold's own dashboard showed
  * every post to a viewer holding `dashboard:read` alone. Matched as a whole module name, resolved
  * (`…/repo.ts`), NodeNext-spelled (`./repo.js`, `.mjs`, `.cjs`) or bare (`../post/repo`), so
- * `report` and `repository` are names, not repos.
+ * `report` and `repository` are names, not repos. A `repo-<part>` module is the same repo split at
+ * the file ceiling (`repo-window.ts`): without it the split was a door around this rule.
  */
 const isRepoSpecifier = (specifier: string): boolean =>
-  /(^|\/)repo(\/index)?(\.[cm]?[jt]sx?)?$/.test(specifier);
+  /(^|\/)repo(-[a-z0-9]+)*(\/index)?(\.[cm]?[jt]sx?)?$/.test(specifier);
 const isDbSpecifier = (specifier: string): boolean =>
   /(^|\/)packages\/db($|\/)/.test(specifier) ||
   specifier.endsWith('/db') ||

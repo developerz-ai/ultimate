@@ -11,7 +11,14 @@ import { loadCodeFixes } from './error-fixes';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
-import { DEV_TOOL_SCOPES, lazyServices, localCaller, readOnlyRows, testRunArgv } from './mcp-host';
+import {
+  DEV_TOOL_SCOPES,
+  lazyServices,
+  localCaller,
+  migrateFailed,
+  readOnlyRows,
+  testRunArgv,
+} from './mcp-host';
 import type { DevServices } from './runtime-bindings';
 
 /** Every tool `@ultimat3/mcp` ships for dev, in `tools/list` order. */
@@ -442,5 +449,15 @@ describe('unit · test.run never hands bun test a flag', () => {
         expect.objectContaining({ code: 'X_CLI_BAD_FLAG' }),
       );
     }
+  });
+});
+
+// H2: the fix an agent follows must be the registered one — `x db reset` wiped the database.
+describe('unit · db.migrate failure', () => {
+  test('a foreign throw is X_DB_MIGRATE_FAILED with the registered fix, never x db reset', () => {
+    const error = migrateFailed(new RangeError('relation "posts" already exists'));
+    expect(error.code).toBe('X_DB_MIGRATE_FAILED');
+    expect(error.fix).toBe(explainErrorCode('X_DB_MIGRATE_FAILED')?.fix ?? 'unregistered');
+    expect(error.cause).toContain('already exists');
   });
 });

@@ -206,5 +206,12 @@
  * hashes the same; 0.42 s against 14.6–21 s on the bench app), `island-build-pool.ts` (the bounded
  * pool, stopped by its first failure) and `island-outputs.ts` (a build's outputs as the chunk table,
  * split out of `island-bundle.ts`). No existing module newly reached.
+ * raised 1591 → 1593, measured 1593 (2026-11-11, plan 101 sweep 0): `SERVING_ROLE_CEILING`'s 1,
+ * `realtime/src/live-repair.ts` (the registry's repair paths, split out of `live-query.ts` at its
+ * size ceiling), plus `cli/src/asset-route-meta.ts` — the one place an asset route's `assets` tag
+ * and rate-limit bucket are written, replacing seven inline metas that left every chunk on
+ * `default` (429 from one address after 120). No existing module newly reached.
+ * raised 1593 → 1594, measured 1594 (2026-11-11, plan 101 sweep 0): `SERVING_ROLE_CEILING`'s 1,
+ * `query/src/parsed-input.ts` — the one capped parse path live window ids hash through.
  */
-export const WEB_ROLE_CEILING = 1591;
+export const WEB_ROLE_CEILING = 1594;

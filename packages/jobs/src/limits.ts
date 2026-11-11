@@ -136,6 +136,17 @@ const compact = (window: StartWindow): void => {
   window.head = 0;
 };
 
+/**
+ * Move the head past every stamp at or before `cutoff`. Spent stamps leave from the HEAD, never by
+ * copying the window: a filter per acquire made a window of n stamps O(n) a claim — 20k acquires
+ * were 3.9 s of event loop.
+ */
+const expire = (window: StartWindow, cutoff: number): void => {
+  while (window.head < window.stamps.length && (window.stamps[window.head] ?? 0) <= cutoff) {
+    window.head += 1;
+  }
+};
+
 /** Tenant key resolution. Structural on purpose: `jobs` must not import the auth types. */
 export function tenantKeyFrom(actor: { readonly orgId?: string } | undefined): string {
   return actor?.orgId ?? NO_TENANT;
@@ -221,13 +232,19 @@ export function concurrencyLimiter(
    * does the cap evict live state, and then the LEAST throttled tenants go first — discarding a
    * full window is what would hand a tenant a free rate reset, which is the order
    * `@ultimat3/http`'s `memoryRateLimitStore` evicts in and for the same reason.
+   *
+   * The drop, stated: past `maxTenants` tenants with a LIVE window, an evicted tenant regains the
+   * starts its window still held — at most `ratePerTenant.limit`, and by this order the fewest any
+   * tenant could. That is the price of a bounded map; the fleet gate is `JobDriver.leases`.
    */
   const sweep = (at: number): void => {
     lastSweepMs = at;
+    // Expired here, not only when the tenant's own key is next claimed: the cap below ranks by
+    // `live`, and an unread expired prefix made a mostly-spent window look like the busiest one.
     for (const [tenant, window] of starts) {
-      if (live(window) === 0 || (window.stamps.at(-1) ?? 0) <= at - rateWindowMs) {
-        starts.delete(tenant);
-      }
+      expire(window, at - rateWindowMs);
+      if (live(window) === 0) starts.delete(tenant);
+      else compact(window);
     }
     for (const [key, refusal] of refusals) {
       if (refusal.atMs <= at - REFUSAL_TTL_MS) refusals.delete(key);
@@ -263,14 +280,7 @@ export function concurrencyLimiter(
     if (rate === undefined) return false;
     const window = starts.get(tenant);
     if (window === undefined) return rate.limit <= 0;
-    // Spent stamps leave from the HEAD, never by copying the window: a filter per acquire made a
-    // window of n stamps O(n) a claim — 20k acquires were 3.9 s of event loop.
-    while (
-      window.head < window.stamps.length &&
-      (window.stamps[window.head] ?? 0) <= at - rate.windowMs
-    ) {
-      window.head += 1;
-    }
+    expire(window, at - rate.windowMs);
     // An empty window is a tenant with no rate state at all — deleted rather than kept, which is
     // what kept one array per org that ever ran a job.
     if (live(window) === 0) {

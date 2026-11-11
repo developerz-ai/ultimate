@@ -366,11 +366,17 @@ Two actors on one live query get two different result sets, and a row that leave
 is delivered to them as a `delete` — never as silence.
 
 **The shared read is a TENANT's, never the node's.** One `(query, input)` is one window per org:
-its id is `windowId(queryHash(name, input), tenant)`, the tenant being the subscriber's
-`actor.orgId`, and its source is read in a context that carries that org and nothing else of any
-subscriber's. So a repo that leaves the tenant to the acting actor — what `x g query --live`
-generates — reads on a sync node exactly as it reads over HTTP, and no org predicate is written
-by hand.
+its id is `windowId(queryHash(name, parsed), tenant)` — `parsed` the input as the query's own
+schema parsed it (`LiveQueryDefinition.queryId`), so a key the schema strips opens no second window
+— the tenant being the subscriber's `actor.orgId`, and its source is read in a context that
+carries that org and nothing else of any subscriber's. So a repo that leaves the tenant to the
+acting actor — what `x g query --live` generates — reads on a sync node exactly as it reads over
+HTTP, and no org predicate is written by hand.
+
+A hand-written `LiveQueryDefinition` (`@ultimat3/realtime/server`) that resolves per input in
+`prepare` returns a `PreparedWindow` — `{ matcher, rowEntity, rowKey }` — and the entry is built
+from that answer, never looked up again: a bounded cache another subscribe evicted in between would
+answer nothing, and the entry would be born reading no table.
 
 | On a sync node | Answer |
 |---|---|
@@ -665,8 +671,9 @@ made it — a key already queued collapses as always, and nothing queued is ever
   `subscribe` is one lane per sid, or per topic name; `hello` and
   the server-authored kinds are unlaned. A lane exists only while work is queued on it, because a
   lane keyed by a client-chosen sid that outlived its work is an unbounded map one socket can grow.
-- **A window's `qid` is `@ultimat3/query`'s `queryHash(name, input)`, qualified by the tenant it
-  is read for** (`windowId`) — `<name>:<first 16 hex of SHA-256(canonicalJson(input))>`, 64 bits
+- **A window's `qid` is `@ultimat3/query`'s `queryHash(name, input)` over the PARSED input,
+  qualified by the tenant it is read for** (`windowId`; a re-seat derives the new tenant's id from
+  the held one, `retenant`, never re-hashing the input as sent) — `<name>:<first 16 hex of SHA-256(canonicalJson(input))>`, 64 bits
   `As of 2026-08` where it was a 32-bit FNV-1a. It is a *sharing* key: a hit is answered with the existing entry and the seated window, both holding the
   first subscriber's input and rows, and input is client-chosen, so a collision is one client served
   out of another's window. This package derives none of its own — `qidOf` was a second spelling of

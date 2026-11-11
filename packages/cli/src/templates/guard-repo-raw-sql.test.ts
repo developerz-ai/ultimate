@@ -107,4 +107,16 @@ describe('unit · shipped guard · repo-raw-sql', () => {
       await shippedGuardFindings('repo-raw-sql', { 'apps/web/app/post/repo.ts': statement }),
     ).toHaveLength(1);
   });
+
+  // A repo split at the file ceiling is still the repo: `repo-window.ts` beside `repo.ts`.
+  test('a repo-<part>.ts is read too; a repository.ts or report.ts is not', async () => {
+    const statement = `export const q = sql\`select * from posts where id = ${hole('id')}\`;\n`;
+    const at = (name: string) =>
+      shippedGuardFindings('repo-raw-sql', { [`apps/web/app/post/${name}`]: statement });
+    expect(await at('repo-window.ts')).toHaveLength(1);
+    expect(await at('repository.ts')).toEqual([]);
+    expect(await at('report.ts')).toEqual([]);
+    // The glob reaches `repo-join.test.ts` too, and a test's fixture SQL is not the repo's.
+    expect(await at('repo-join.test.ts')).toEqual([]);
+  });
 });

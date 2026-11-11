@@ -100,6 +100,10 @@ describe('unit · app boundaries', () => {
       '../post/repo.mjs',
       '../post/repo.cjs',
       '../post/repo/index.js',
+      // A repo split at the file ceiling (`repo-window.ts`) is still the handle one hop away.
+      '../post/repo-window',
+      './repo-window.ts',
+      '../post/repo-window.js',
     ]) {
       const page = file('apps/web/app/dashboard/page.tsx', `import * as r from '${specifier}';`);
       const codes = checkImportRules([repo, page])
@@ -140,6 +144,8 @@ describe('unit · app boundaries', () => {
       '../post/repository',
       '../repos/list',
       '../post/repo.json',
+      '../post/repo-window.json',
+      '../post/repo-',
     ]) {
       const page = file('apps/web/app/dashboard/page.tsx', `import * as r from '${specifier}';`);
       expect({ specifier, findings: checkImportRules([page]) }).toEqual({

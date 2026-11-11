@@ -68,7 +68,7 @@ export function convert(
     throw rateUnusable(amount.currency, target, 'rate');
   }
   // `at` is the audit trail: an Invalid Date threw a bare `RangeError` out of `toISOString`.
-  if (!(rate.at instanceof Date) || Number.isNaN(rate.at.getTime())) {
+  if (!isValidDate(rate.at)) {
     throw rateUnusable(amount.currency, target, 'at');
   }
   if (rate.ratio !== undefined && !isPositiveFraction(rate.ratio)) {
@@ -98,6 +98,11 @@ export function convert(
     at: rate.at.toISOString(),
     ...(rate.source === undefined ? {} : { provider: rate.source }),
   };
+}
+
+/** A `Date` whose instant exists — `toISOString()` on any other throws a bare `RangeError`. */
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime());
 }
 
 /** Both terms positive BIGINTS — a provider's `{ numerator: 23 }` mixed a number into bigint maths. */
@@ -130,8 +135,10 @@ export async function convertWith(
     // The instant the parity was asserted, never `new Date(0)`: `ExchangeRate.at` is the audit
     // trail, and a ledger row claiming its rate was observed on 1970-01-01 is a claim nobody
     // made. The clock is injected for the same reason the rest of the framework injects one.
-    const at = (options.at ?? (options.clock ?? systemClock).now()).toISOString();
-    return { amount, source: amount, rate: 1, at, provider: 'identity' };
+    const at = options.at ?? (options.clock ?? systemClock).now();
+    // Screened exactly as `convert` screens `rate.at`: the same mistake, the same code.
+    if (!isValidDate(at)) throw rateUnusable(amount.currency, target, 'at');
+    return { amount, source: amount, rate: 1, at: at.toISOString(), provider: 'identity' };
   }
   const rate = await provider.rateFor(amount.currency, target, options.at);
   if (rate === undefined) throw rateMissing(amount.currency, target);

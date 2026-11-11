@@ -2,7 +2,10 @@ import { type Post, posts } from '@postly/db';
 import { orgId as toOrgId } from '@postly/domain';
 import { from, query, t } from '@ultimat3/query';
 import { feedRead } from '../policy';
-import * as repo from '../repo';
+import { recentWindow } from '../repo-window';
+
+/** The read's whole listing: the org's newest posts, never more. */
+export const ORG_POSTS_MAX = 50;
 
 /**
  * The org's recent posts as whole ROWS — the `org-posts` channel's catch-up read (`channels.ts`).
@@ -14,9 +17,9 @@ export const orgPosts = query({
   policy: feedRead,
   rows: posts.$schema,
   sql: ({ orgId }) =>
-    from<Post>('posts', () => repo.recentRows(toOrgId(orgId), 50))
+    from<Post>('posts', (window) => recentWindow(toOrgId(orgId), window))
       .where({ orgId })
       .orderBy('createdAt', 'desc')
       .orderBy('id')
-      .limit(50),
+      .limit(ORG_POSTS_MAX),
 });

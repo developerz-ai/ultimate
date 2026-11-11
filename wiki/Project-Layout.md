@@ -64,7 +64,7 @@ Enforcement, not vigilance:
 | A `shared/` module exceeding its own byte budget | build error, so `shared/ui` cannot silently fatten |
 | `site/` route emitting >0kb JS without an explicit `hydrate` | build error |
 | `app/` → `api/` | **types only** (`import type`); a runtime import is a build error, call the typed client instead |
-| routes → DB | build error. Routes call actions/queries; only `repo.ts` touches the DB |
+| routes → DB | build error. Routes call actions/queries; only `repo.ts` or a `repo-<part>.ts` touches the DB |
 | components → business logic | build error via the feature-slice rule below |
 | services → HTTP | build error. A service that knows about requests cannot be reused by a job |
 
@@ -99,7 +99,7 @@ apps/web/app/<feature>/ui/                                           # component
 | File | Owns | Never — and the error |
 |---|---|---|
 | `entity.ts` | table + domain type + invariants | I/O, policy |
-| `repo.ts` | the feature's reads and writes, through the typed handle | a raw SQL literal the handle can express — `guards/repo-raw-sql.ts` |
+| `repo.ts` or a `repo-<part>.ts` | the feature's reads and writes, through the typed handle | a raw SQL literal the handle can express — `guards/repo-raw-sql.ts` |
 | `service.ts` | business logic, composed from repos | an HTTP import — `X_BOUNDARY_SERVICE_TO_HTTP` |
 | `page.tsx` · `layout.tsx` | a URL | a database import — `X_BOUNDARY_ROUTE_TO_DB` |
 | `actions/` | `action` / `mutator` declarations, one per file | logic (delegate to `service.ts`) |
@@ -108,7 +108,7 @@ apps/web/app/<feature>/ui/                                           # component
 | `policy.ts` | `policy` rules for this feature | data shaping |
 | `ui/` | Solid components | fetching, business logic, its own authz |
 
-A feature imports another feature through that feature's `service.ts` or its published types, never its `repo.ts` — a convention, **not a build error** (`As of 2026-10-06`: no boundary rule reads it from a `service.ts`). A **route** importing any `repo.ts` is a build error, `X_BOUNDARY_ROUTE_TO_DB`; `x new`'s own dashboard reads through the `postList` query (`../post/live/post-list`).
+A feature imports another feature through that feature's `service.ts` or its published types, never its `repo.ts` — a convention, **not a build error** (`As of 2026-10-06`: no boundary rule reads it from a `service.ts`). A **route** importing any `repo.ts` or a `repo-<part>.ts` is a build error, `X_BOUNDARY_ROUTE_TO_DB`; `x new`'s own dashboard reads through the `postList` query (`../post/live/post-list`).
 
 ## App packages
 

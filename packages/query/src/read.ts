@@ -127,18 +127,35 @@ export function runQuery(
  * `explain` and the MCP tool all build on this, so none of them re-implement the
  * front half and none of them can skip the policy while doing it.
  */
-export function sourceFor(
+export async function sourceFor(
   target: AnyQuery,
   raw: unknown,
   options: SourceOptions = {},
 ): Promise<SqlSource<object>> {
-  return asActor(options, (ctx) => {
+  return (await builtFor(target, raw, options)).source;
+}
+
+/**
+ * `sourceFor` keeping the input `admit` parsed — `toLiveQuery` hashes THAT, so a key the schema
+ * strips cannot mint a second live identity. Internal: never re-exported from `src/index.ts`.
+ */
+export function builtFor(
+  target: AnyQuery,
+  raw: unknown,
+  options: SourceOptions = {},
+): Promise<{ readonly source: SqlSource<object>; readonly input: unknown }> {
+  return asActor(options, async (ctx) => {
     const audit = auditFor(target, ctx, options);
     // A source handed out is executed by its caller — `@ultimat3/mcp`'s served tool among them —
     // so an audited read records per `execute()`, and a build that refuses records here.
-    return audit === null
-      ? buildSource(target, raw, ctx, options, null)
-      : auditedBuild(audit, () => buildSource(target, raw, ctx, options, audit.trace));
+    if (audit === null) return admitAndBuild(target, raw, ctx, options, null);
+    let input: unknown;
+    const source = await auditedBuild(audit, async () => {
+      const built = await admitAndBuild(target, raw, ctx, options, audit.trace);
+      input = built.input;
+      return built.source;
+    });
+    return { source, input };
   });
 }
 
@@ -252,7 +269,7 @@ async function readRowsIn(
 ): Promise<readonly object[]> {
   const def = defOf(target);
   const name = queryName(target);
-  const source = await buildSource(target, raw, ctx, options, trace);
+  const { source, input } = await admitAndBuild(target, raw, ctx, options, trace);
   // Whether THIS call executed, for the audit record: a memo or tier hit never calls `read`, and
   // its record says so (`replayed: true`) rather than being skipped.
   if (trace !== null) trace.replayed = true;
@@ -275,7 +292,9 @@ async function readRowsIn(
   // nothing — a memo is already per-ctx — and it is the whole of what the tier was missing: keyed
   // on the name, the input and the tags alone, the process-wide tier handed one org's rows to the
   // next org that asked for them. `actor` when the declaration named no scope, always.
-  const key = cacheKeyFor(name, raw, tags, readAuthority(ctx.actor, def.cache?.scope ?? 'actor'));
+  // The PARSED input, never `raw`: a key the schema strips (`?junk=N`) would otherwise be a new
+  // entry and a database read per value, each evicting a hot one (`read-cache-key.test.ts`).
+  const key = cacheKeyFor(name, input, tags, readAuthority(ctx.actor, def.cache?.scope ?? 'actor'));
   // `fresh` is the caller saying no cache may answer this one — the memo included, a memo being
   // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
   // newest answer the request has, so the next plain read of the key joins it rather than the
@@ -335,7 +354,28 @@ async function buildSource(
   options: SourceOptions,
   trace: ReadTrace | null,
 ): Promise<SqlSource<object>> {
+  return (await admitAndBuild(target, raw, ctx, options, trace)).source;
+}
+
+/** `buildSource`, keeping the admitted input: the cache key is what the policy decided about. */
+async function admitAndBuild(
+  target: AnyQuery,
+  raw: unknown,
+  ctx: Ctx,
+  options: SourceOptions,
+  trace: ReadTrace | null,
+): Promise<{ readonly source: SqlSource<object>; readonly input: unknown }> {
   const input = await admit(target, raw, ctx, options, trace);
+  return { source: sourceOver(target, input, ctx, options), input };
+}
+
+/** `sql()` — or the canned rows — over an input `admit` already let through. */
+function sourceOver(
+  target: AnyQuery,
+  input: unknown,
+  ctx: Ctx,
+  options: SourceOptions,
+): SqlSource<object> {
   const canned = rowsOverrideOf(defOf(target));
   if (canned !== undefined) {
     const rows = canned;

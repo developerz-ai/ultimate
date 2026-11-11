@@ -106,6 +106,23 @@ describe('convertWith', () => {
     });
     expect(asked.at).toBe('2020-01-01T00:00:00.000Z');
   });
+
+  test('an Invalid Date `at` on the identity path is refused by code, as on the cross path', async () => {
+    // `toISOString()` on an Invalid Date threw a bare `RangeError` here, while the cross-currency
+    // path answered `X_RATE_MISSING` for the same mistake.
+    for (const options of [
+      { at: new Date('not a date') },
+      { clock: { now: () => new Date(Number.NaN), monotonic: () => 0 } },
+    ]) {
+      let code = 'no-throw';
+      try {
+        await convertWith(provider, fromMinor(1000, 'USD'), 'USD', options);
+      } catch (error) {
+        code = String((error as { code?: unknown }).code);
+      }
+      expect(code).toBe('X_RATE_MISSING');
+    }
+  });
 });
 
 function codeOf(run: () => unknown): string {

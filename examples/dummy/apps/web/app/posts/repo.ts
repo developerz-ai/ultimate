@@ -177,15 +177,6 @@ export const byId = async (orgId: OrgId, id: PostId): Promise<PostView | null> =
 };
 
 /**
- * Whole `posts` rows — RECORDS, not views: what the page's store holds under `posts:<id>`, so the
- * read answering them and the channel frame updating them write one object. `orgPosts` and
- * `postRecord` in `queries/` answer these, declared `rows: posts.$schema`.
- */
-export const recentRows = async (orgId: OrgId, limit: number): Promise<Post[]> => [
-  ...(await db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()),
-];
-
-/**
  * One post as the page's store holds it: the whole row, plus `likedByMe` for the member READING it.
  * The flag is per actor, so it rides only this read — never the `org-posts` channel, whose frames
  * every member of the org receives. The store merges a frame column by column, so a frame leaves the

@@ -16,6 +16,13 @@ import type { JsonValue, LiveRow } from './json';
 import type { IncrementalMatcher } from './matcher-bridge';
 import type { SyncSocket } from './socket';
 
+/** One input's resolved, subject-less half — what `prepare` hands the entry it is about to build. */
+export interface PreparedWindow {
+  readonly matcher: IncrementalMatcher;
+  readonly rowEntity: string | null;
+  readonly rowKey: ((row: LiveRow) => string) | null;
+}
+
 export interface SnapshotResult<R extends LiveRow = LiveRow> {
   readonly rows: readonly R[];
   readonly lsn: string;
@@ -76,8 +83,18 @@ export interface LiveQueryDefinition<R extends LiveRow = LiveRow> {
    * design — a change event must not await anything — so a definition that has to compile a
    * source or a shape does it here, after `authorize` allowed this subscriber and before the
    * shared window exists.
+   *
+   * What it resolved comes BACK, and the entry is built from that: looked up again by input, a
+   * bounded cache another subscribe evicted in between answered nothing, and the entry was born
+   * reading no table. `undefined` = resolve through `matcher` / `rowEntity` / `rowKey`.
    */
-  prepare?(input: JsonValue): Promise<void>;
+  prepare?(input: JsonValue): Promise<PreparedWindow | undefined>;
+  /**
+   * The query id this input names: `queryHash(name, parsed)` over the input the read PARSED, so
+   * a key the schema strips opens no second window. Asked after `authorize`, before `prepare`.
+   * Absent, the registry keys the window by the input as sent.
+   */
+  queryId?(input: JsonValue): Promise<string>;
 }
 
 /** Who a live subscribe is charged to: the socket's actor, else its address, on the node's clock. */

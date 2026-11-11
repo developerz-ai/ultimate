@@ -18,6 +18,8 @@ import {
 } from '@ultimat3/core';
 import {
   type AnyQuery,
+  parsedQueryInput,
+  QueryInputInvalidError,
   queryHash,
   queryName,
   spendQueryLimit,
@@ -135,9 +137,39 @@ export function liveQueryDefinition(
   const name = queryName(target);
   // Keyed by query id, and holding no subscriber's decision — that is what makes it shareable.
   const windows = new Map<string, SharedWindow>();
+  const maxWindows = finiteOption('live()', 'maxWindows', options.maxWindows ?? 256);
+  // Input as sent → query id of the input as parsed. Bounded like `windows`, for the same reason:
+  // its key is client-chosen. An eviction costs one parse.
+  const ids = new Map<string, string>();
+
+  const queryId = async (input: JsonValue): Promise<string> => {
+    const sent = queryHash(name, input);
+    const known = ids.get(sent);
+    if (known !== undefined) return known;
+    let value: unknown;
+    try {
+      // The query's own capped parse (`MAX_ISSUES`), never the schema called raw: this is client
+      // input, and the read path's bound on what one refusal costs holds here too.
+      value = await parsedQueryInput(target, input);
+    } catch (error) {
+      // A refused input keeps the id of what was sent and is not remembered: `target.live` raises
+      // the query's own `X_INPUT_INVALID` for it, exactly as before.
+      if (error instanceof QueryInputInvalidError) return sent;
+      throw error;
+    }
+    const parsed = queryHash(name, value);
+    ids.set(sent, parsed);
+    evictOldest(ids, maxWindows);
+    return parsed;
+  };
+  /** Synchronous, for a caller that did not take `prepare`'s answer: may miss after an eviction. */
+  const seatedFor = (input: JsonValue): SharedWindow | undefined => {
+    const sent = queryHash(name, input);
+    return windows.get(ids.get(sent) ?? sent);
+  };
 
   const resolve = async (input: JsonValue): Promise<SharedWindow> => {
-    const qid = queryHash(name, input);
+    const qid = await queryId(input);
     const seated = windows.get(qid);
     if (seated !== undefined) return seated;
     const live = await target.live(input, {
@@ -168,7 +200,7 @@ export function liveQueryDefinition(
       },
     };
     windows.set(qid, built);
-    evictOldest(windows, finiteOption('live()', 'maxWindows', options.maxWindows ?? 256));
+    evictOldest(windows, maxWindows);
     return built;
   };
 
@@ -178,8 +210,10 @@ export function liveQueryDefinition(
     // it off the resolved matcher. This is the value for a definition asked before `prepare` ran,
     // and it matches nothing rather than guessing an entity.
     entities: [],
+    queryId,
     prepare: async (input) => {
-      await resolve(input);
+      const { matcher, rowEntity, rowKey } = await resolve(input);
+      return { matcher, rowEntity, rowKey };
     },
     snapshot: async ({ input, tenant, traceparent, phase }): Promise<SnapshotResult> => {
       const window = await resolve(input);
@@ -198,11 +232,11 @@ export function liveQueryDefinition(
       );
       return { rows, lsn };
     },
-    matcher: (input) => windows.get(queryHash(name, input))?.matcher ?? UNRESOLVED,
+    matcher: (input) => seatedFor(input)?.matcher ?? UNRESOLVED,
     // Read off the same resolved window as the matcher, so the scope the client keys rows under and
     // the entity the matcher patches them from can never be two different names.
-    rowEntity: (input) => windows.get(queryHash(name, input))?.rowEntity ?? null,
-    rowKey: (input) => windows.get(queryHash(name, input))?.rowKey ?? null,
+    rowEntity: (input) => seatedFor(input)?.rowEntity ?? null,
+    rowKey: (input) => seatedFor(input)?.rowKey ?? null,
     // The two per-subscriber gates, both through the package's one authz seam. Neither result is
     // memoised anywhere: `authorize` runs on every subscribe, `visible` on every row of every
     // delivery, and there is no key here an actor could share with another actor.
@@ -216,7 +250,7 @@ export function liveQueryDefinition(
 }
 
 /** Insertion-ordered, so the oldest compiled input is the one that goes. */
-function evictOldest(windows: Map<string, SharedWindow>, max: number): void {
+function evictOldest(windows: Map<string, unknown>, max: number): void {
   while (windows.size > max) {
     const oldest = windows.keys().next();
     if (oldest.done === true) return;

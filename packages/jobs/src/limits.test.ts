@@ -125,6 +125,29 @@ describe('concurrencyLimiter', () => {
     expect(limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' })).toBeDefined();
   });
 
+  test('the cap ranks windows by their LIVE stamps, not by stamps that expired unread', () => {
+    // `org-stale` holds three stamps but two expired; its head only moves when ITS key is claimed
+    // again. Ranked by the unread count it looked the busiest, so the sweep evicted `org-mid`,
+    // whose two live stamps then came back as a free reset.
+    const clock = fakeClock(T0);
+    const limiter = concurrencyLimiter({ ratePerTenant: { limit: 3, windowMs: 1_000 } }, clock, {
+      maxTenants: 3,
+    });
+    const take = (tenantId: string) => limiter.tryAcquire({ queue: 'default', tenantId });
+    take('org-stale')?.release();
+    take('org-stale')?.release();
+    clock.advance(900);
+    for (const tenant of ['org-stale', 'org-mid', 'org-mid', 'org-other', 'org-other']) {
+      take(tenant)?.release();
+    }
+    clock.advance(101);
+    take('org-new')?.release();
+    expect(limiter.snapshot().tracked.rateWindows).toBeLessThanOrEqual(3);
+    // `org-mid` has one start left of three in this window, never a fresh three.
+    expect(take('org-mid')).toBeDefined();
+    expect(take('org-mid')).toBeUndefined();
+  });
+
   test('the tenant key comes from the actor orgId', () => {
     expect(tenantKeyFrom({ orgId: 'org-7' })).toBe('org-7');
     expect(tenantKeyFrom(undefined)).toBe('global');

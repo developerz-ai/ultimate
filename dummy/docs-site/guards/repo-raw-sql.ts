@@ -264,8 +264,11 @@ export function rawRepoSql(files: readonly RepoFile[]): readonly Finding[] {
 export const guard: Guard = {
   summary: 'a repo.ts reads through the typed handle, never a sql literal the handle can express',
   async check(_root, sources) {
-    // The run's ONE read of these files: every guard asking for this glob shares the walk.
-    const repos = await sources.files('{apps,packages}/**/repo.ts');
-    return rawRepoSql(repos.map((file) => ({ path: file.path, source: file.text })));
+    // The run's ONE read of these files: every guard asking for this glob shares the walk. A
+    // `repo-<part>.ts` is the same repo split at the file ceiling, so it is read too — but not a
+    // `repo-<part>.test.ts`, which the same glob reaches and whose fixture SQL is no repo's.
+    const repos = await sources.files('{apps,packages}/**/repo{,-*}.ts');
+    const read = repos.filter((file) => !file.path.endsWith('.test.ts'));
+    return rawRepoSql(read.map((file) => ({ path: file.path, source: file.text })));
   },
 };

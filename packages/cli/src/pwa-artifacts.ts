@@ -31,6 +31,7 @@ import {
 import type { AssetPath } from '@ultimat3/render';
 import { assetPathProblem } from '@ultimat3/render';
 import { loadAppConfig } from './app-config-load';
+import { assetRouteMeta } from './asset-route-meta';
 import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
 import type { AppLocales } from './pwa-manifest-locales';
 import { appLocales, localeMembers, spellIn } from './pwa-manifest-locales';
@@ -253,13 +254,12 @@ export const pwaManifestRoute = (artifacts: PwaArtifacts): Route => ({
   path: WEB_MANIFEST_PATH,
   // `'path'`: `/en/manifest.webmanifest` reaches this route with its prefix split off and `en` as the
   // locale, and the bare path is the default locale's — never negotiated, so a CDN may cache both.
-  meta: {
+  meta: assetRouteMeta({
     name: 'assets.manifest',
     auth: 'public',
     cache: MANIFEST_CACHE,
-    tags: ['assets'],
     localeSource: 'path',
-  },
+  }),
   handler: async (_request: UltimateRequest, ctx: RequestContext): Promise<Response> =>
     applyCacheHeaders(
       // `textResponse` for the length it declares: `compress` reads nothing undeclared.

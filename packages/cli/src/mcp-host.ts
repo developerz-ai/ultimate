@@ -9,8 +9,10 @@
 import { join } from 'node:path';
 import {
   agentActor,
+  isRole,
   isUltimateError,
   NotImplementedError,
+  ROLES,
   renderFixShellArg,
   renderThrowable,
   UltimateError,
@@ -213,6 +215,71 @@ export function testRunArgv(filter: string | undefined): readonly string[] {
   return ['bun', 'test', filter];
 }
 
+/**
+ * `db.migrate`'s answer to a foreign throw. The fix is the REGISTERED one (`mcp-errors.ts`), never
+ * a literal here: this said `x db reset`, and an agent that followed it wiped the database the
+ * migration had failed against.
+ */
+export function migrateFailed(error: unknown): UltimateError {
+  return new UltimateError({
+    code: 'X_DB_MIGRATE_FAILED',
+    // The blessed total renderer: `String(error)` runs the value's own `toString`, and this is
+    // the last hop before an agent is handed the three-line result.
+    cause: renderThrowable(error),
+    fix:
+      explainErrorCode('X_DB_MIGRATE_FAILED')?.fix ?? 'x errors explain X_DB_MIGRATE_FAILED --json',
+  });
+}
+
+/**
+ * The log `logs.tail` reads. `role` is joined into a path, so it must BE a role: `'../x'` named a
+ * file outside the state directory. The tool's schema lists the roles, but a schema is advice to a
+ * client and this is the line that opens the file.
+ */
+export function logTailPath(dir: string, role: string | undefined): string {
+  if (role === undefined) return join(dir, 'dev.log');
+  if (!isRole(role)) {
+    throw new BadFlagError({
+      flag: 'role',
+      command: 'mcp serve',
+      reason: `logs.tail's role "${role}" is not a runtime role`,
+      fix: `logs.tail({ role: 'web' })   # role is one of ${ROLES.join(', ')}; none reads dev.log`,
+    });
+  }
+  return join(dir, 'logs', `${role}.log`);
+}
+
+/** The first window read from a log's end; each further one is four times wider. */
+const TAIL_WINDOW_BYTES = 64 * 1024;
+/** The most a tail ever reads: past this, lines that long are cut rather than the log loaded. */
+const TAIL_MAX_BYTES = 1024 * 1024;
+
+/** What `tailLines` reads of a file: its size and a byte range — `Bun.file`'s own shape. */
+export interface TailSource {
+  readonly size: number;
+  slice(start: number, end: number): { text(): Promise<string> };
+}
+
+/**
+ * The last `lines` lines, read from the END in widening windows. `file.text()` loaded the whole
+ * `dev.log` per call, and an agent calls this in a loop against a log `x dev` never rotates. A
+ * window that does not start at byte 0 drops its first line: it may be partial, and may begin
+ * mid-character.
+ */
+export async function tailLines(file: TailSource, lines: number): Promise<readonly string[]> {
+  let window = TAIL_WINDOW_BYTES;
+  for (;;) {
+    const start = Math.max(0, file.size - Math.min(window, TAIL_MAX_BYTES));
+    const all = (await file.slice(start, file.size).text()).trimEnd().split('\n');
+    const whole = start === 0 ? all : all.slice(1);
+    if (whole.length >= lines || start === 0) return whole.slice(-lines);
+    // At the cap with no newline inside it, the one line there is longer than the cap: answered
+    // cut, never as `[]` — an empty tail reads as an empty log.
+    if (window >= TAIL_MAX_BYTES) return (whole.length === 0 ? all : whole).slice(-lines);
+    window *= 4;
+  }
+}
+
 function capabilities(
   input: DevHostInput,
   lazy: LazyServices,
@@ -249,13 +316,7 @@ function capabilities(
         // code/cause/fix result, which is what an agent needs to act without a round trip. The
         // engine's own errors already carry that shape and pass through untouched.
         if (isUltimateError(error)) throw error;
-        throw new UltimateError({
-          code: 'X_DB_MIGRATE_FAILED',
-          // The blessed total renderer: `String(error)` runs the value's own `toString`, and
-          // this is the last hop before an agent is handed the three-line result.
-          cause: renderThrowable(error),
-          fix: 'x db reset',
-        });
+        throw migrateFailed(error);
       }
       // The ledger is the evidence for "applied" — never the migrator's own return value.
       const pending = await pendingIds(root, lazy);
@@ -292,7 +353,7 @@ function capabilities(
 
     async tailLogs(lines: number, role: string | undefined) {
       const dir = lazy.services.stateDir;
-      const path = role === undefined ? join(dir, 'dev.log') : join(dir, 'logs', `${role}.log`);
+      const path = logTailPath(dir, role);
       const file = Bun.file(path);
       if (!(await file.exists())) {
         // `@ultimat3/core`'s `logger` is a module const with no sink seam, so there is nothing to
@@ -305,7 +366,7 @@ function capabilities(
               : `mkdir -p ${renderFixShellArg(join(dir, 'logs'), '<the logs dir of the path the cause names>')} && x dev --role ${role} > ${path} 2>&1`,
         });
       }
-      return (await file.text()).trimEnd().split('\n').slice(-lines);
+      return tailLines(file, lines);
     },
 
     async readManifest() {
