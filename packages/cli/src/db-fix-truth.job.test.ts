@@ -9,8 +9,12 @@ import { type FixtureApp, fixtureApp, GIT } from './fix-truth-fixture';
 import { MIGRATIONS_DIR } from './migrations';
 import type { Finding } from './output';
 
-// A WASM compile, an initdb and a replay per `x db gen` and per `drift`. A hang detector.
-const SEQUENCE_MS = 180_000;
+// A WASM compile, an initdb and a replay per `x db gen` and per `drift`: three of each across
+// this sequence — two `x db gen` plus the printed fix's own, and three drift reads. One boot
+// measures 32-42 s here (2026-10), and the gate's loaded run of 2026-11 (unit and e2e beside the
+// `job` step) pushed the whole sequence past 180 s. A hang detector sized to the measured
+// sequence, not to the happy path.
+const SEQUENCE_MS = 300_000;
 
 let app: FixtureApp;
 

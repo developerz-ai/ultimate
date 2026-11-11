@@ -9,8 +9,10 @@ import { join } from 'node:path';
 const BIN = join(import.meta.dir, 'bin.ts');
 
 // A cold `bun bin.ts` loads the whole catalog — every `@ultimat3/*` package — and that is time, not
-// correctness: 15.8s and 16.1s measured on this box idle, so 30s left under 2x headroom and the unit
-// step's six workers tipped both past it. Kill before the test's deadline: a wedged child must not
+// correctness: 15.8s and 16.1s measured on this box idle, so 30s left under 2x headroom. Measured
+// quiet, the two bare-CLI children import every package in 6.7 s and 8.0 s. The gate's six unit
+// workers were what reached 30 s — the test died, not the child. Two minutes is ~15x the
+// measured slowest, not a guess. Kill before the test's deadline: a wedged child must not
 // survive a timed-out test worker.
 const PROCESS_TIMEOUT_MS = 110_000;
 const TEST_TIMEOUT_MS = 120_000;

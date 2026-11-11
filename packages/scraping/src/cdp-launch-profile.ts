@@ -64,6 +64,12 @@ export function socketSafeEnv(
 export interface ThrowawayProfile {
   readonly path: string;
   /**
+   * The temp root the BROWSER must see as TMPDIR: the profile's own root, unless that root was
+   * too long for the ProcessSingleton socket, in which case the short shared fallback the profile
+   * itself landed on. Chrome makes its `<TMPDIR>/com.google.Chrome.XXXXXX` socket directory there.
+   */
+  readonly tempRoot: string;
+  /**
    * Where the browser's singleton socket lives, read off the profile's own link. Asked BEFORE the
    * browser is signalled: a browser that exits cleanly removes the link first, and one killed
    * leaves the directory with nothing in the profile pointing at it.
@@ -103,11 +109,41 @@ function removeSingleton(dir: string): void {
   quietly(() => rmdirSync(dir));
 }
 
+/**
+ * The bound Chrome itself enforces on the paths it is handed: the ProcessSingleton socket is a
+ * unix socket, whose address lives in a `sun_path` of 108 bytes INCLUDING its terminator. The
+ * socket sits inside a directory Chrome makes under ITS OWN TMPDIR, linked from the profile — so
+ * both the profile path and the browser's temp root must leave room for the suffix.
+ */
+const SUN_PATH_LIMIT = 108;
+/** mkdtemp's random suffix: six characters, always. */
+const MKDTEMP_SUFFIX = 6;
+/** The socket file ProcessSingleton appends whole to its directory. */
+const SINGLETON_SOCKET = '/SingletonSocket';
+/** The longest singleton temp dir, across Chrome (`com.google.Chrome.XXXXXX`) and Chromium. */
+const CHROMIUM_SINGLETON_DIR = 'org.chromium.Chromium.XXXXXX';
+/** The one short temp root POSIX itself guarantees: the sticky `/tmp`. */
+const POSIX_TEMP_ROOT = '/tmp';
+
+const socketPathFits = (root: string): boolean =>
+  Math.max(join(root, 'x-e2e-chrome-').length, join(root, CHROMIUM_SINGLETON_DIR).length) +
+    MKDTEMP_SUFFIX +
+    SINGLETON_SOCKET.length <
+  SUN_PATH_LIMIT;
+
 /** A fresh profile directory under the temp root, named so a leak is recognisable as ours. */
 export function throwawayProfile(root: string = tmpdir()): ThrowawayProfile {
-  const path = mkdtempSync(join(root, 'x-e2e-chrome-'));
+  // A runner that namespaces its temp root per run — measured: a 54-byte root, and a suite that
+  // hands the browser an 82-byte TMPDIR under it — pushes the socket path past `sun_path`, and
+  // Chrome FATALs at start ("Socket path too long") before any CDP call: a dead browser, twice.
+  // Both the profile and the browser's own TMPDIR then land on the short shared root; the profile
+  // is 0700 (`mkdtempSync`), so it stays private, and the prefix still marks it ours for a leak.
+  const fallback = process.platform !== 'win32' && !socketPathFits(root);
+  const base = fallback ? POSIX_TEMP_ROOT : root;
+  const path = mkdtempSync(join(base, 'x-e2e-chrome-'));
   return {
     path,
+    tempRoot: base,
     singletonDir() {
       try {
         const target = readlinkSync(join(path, 'SingletonSocket'));

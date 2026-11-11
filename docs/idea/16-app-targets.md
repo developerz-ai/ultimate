@@ -314,7 +314,7 @@ can be packaging rather than a second product — before anything spends effort 
 
 | Risk | Honest size |
 |---|---|
-| **A second view layer is a permanent tax** | Mirroring the `@ultimat3/ui` catalog ([`packages/ui/CATALOG.md`](../../packages/ui/CATALOG.md), generated and drift-tested) means maintaining a native counterpart for every component forever, with duplicated maintenance for every future addition. The design's answer to "give me a Button on both" is **no** — tokens and a runtime, not a kit. That cut is the difference between this shipping and not |
+| **A second view layer is a permanent tax** | Mirroring the 99 source-derived UI components ([`packages/ui/CATALOG.md`](../../packages/ui/CATALOG.md), generated and drift-tested) means maintaining a native counterpart for every component forever, with duplicated maintenance for every future addition. The design's answer to "give me a Button on both" is **no** — tokens and a runtime, not a kit. That cut is the difference between this shipping and not |
 | **Two screens, one behaviour, no check** | `screens` catches a *missing* file. Nothing catches a mobile screen that quietly does something different. An agent asked to "fix the dashboard" will fix one of them. Unsolved |
 | **React inside a Solid framework** | [`01-stack.md`](./01-stack.md) locks one choice per layer; this is the first second choice. Defensible — no Solid renderer for iOS/Android has adoption — but agents now have to know which target they are in, and `X_VIEW_RUNTIME_MIXED` is the only thing stopping that from being a guess |
 | **Metro is Node** | the first Node dependency in a build path in a Bun-only repo. `x dev --target native` and `x build --target native` shell out to it. A written exception, not a quiet one |

@@ -52,7 +52,7 @@ setDefaultTimeout(PGLITE_BOOT_MS);
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/** Observation window with no wake: still below that arm's 400 ms poll. */
+/** Observation window with no wake: still below the no-wake arm's poll, margin for a loaded box. */
 const SOON_MS = 250;
 /** Completion budget, separate from the latency assertion, for a loaded runner. */
 const BUDGET_MS = 2_000;
@@ -149,7 +149,11 @@ async function idleWorker(ms: number, idlePollMaxMs = 60_000): Promise<Worker> {
   });
   worker.start();
   cleanups.push(() => worker.stop());
-  await until(async () => (await worker.stats()).pollDelayMs >= ms);
+  // The ramp to the 2 s ceiling is 5.2 s of timer arithmetic alone (25 doubling to 2000), plus
+  // one queue-depth round per pass — which a loaded runner multiplies — so the default budget
+  // sat under the climb it was waiting for. `until` returns the moment the condition holds; the
+  // budget bounds pathology, not the wait.
+  await until(async () => (await worker.stats()).pollDelayMs >= ms, 15_000);
   return worker;
 }
 
@@ -329,8 +333,17 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
-    // No `startQueueWake`: a transaction-pooling proxy, or a session that died.
-    const ceiling = 400;
+    // No `startQueueWake`: a transaction-pooling proxy, or a session that died. The arm is a
+    // LOADED number, like WAKE_BOUND_MS: `idleWorker` returns on a `stats()` observation that
+    // awaits a queue-depth round, so the ceiling's wait is already that round old when `before`
+    // is read — and the window below is safe exactly while one queue-depth round plus the
+    // enqueue's commit stay under `ceiling - SOON_MS`. At 400 ms that margin went red on the
+    // `job` step — the armed poll claimed the job inside the window; 800 leaves ~550, and the
+    // gate's loaded run of 2026-11 (unit and e2e beside the `job` step) measured a single
+    // queue-depth round at 300-800 ms and crossed that too. So this arm idles at
+    // POLL_CEILING_MS, the ceiling the poll alone guarantees — 1.75 s of room for the rounds —
+    // and the wake tests keep the tighter bound, which the wake itself buys.
+    const ceiling = POLL_CEILING_MS;
     await idleWorker(ceiling, ceiling);
 
     const other = postgresJobDriver({ executor: pg.executor });
@@ -339,7 +352,9 @@ describe('the loops it wakes', () => {
     // Nothing told the worker: where the wake starts the job, this one is still waiting.
     await Bun.sleep(SOON_MS);
     expect(started).toEqual([]);
-    await until(() => started.length === 1, 3_000);
+    // A budget past the bound below, so a late start fails on the bound — the promise —
+    // rather than on this wait.
+    await until(() => started.length === 1, ceiling + WAKE_BOUND_MS + 2_000);
     // The guarantee: never past the ceiling, plus one loaded pass.
     expect((started[0] ?? 0) - before).toBeLessThan(ceiling + WAKE_BOUND_MS);
     expect(wakeIsLive()).toBe(false);

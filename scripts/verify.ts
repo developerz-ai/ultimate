@@ -62,6 +62,7 @@ import {
 import { boundaryRuleDocFindings } from './boundary-rule-docs';
 import { chartVersionFindings } from './chart-version';
 import { cliOutboundFindings } from './cli-outbound';
+import { derivedDocCountFindings } from './derived-doc-counts';
 import { docCommandFindings } from './doc-commands';
 import { docFixAgreementFindings } from './doc-fix-agreement';
 import { docFixFindings } from './doc-fixes';
@@ -371,6 +372,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await testDiscoveryFindings(root)),
   ...(await testTypecheckFindings(root)),
   ...(await generatorCountFindings(root)),
+  ...(await derivedDocCountFindings(root)),
   ...(await releaseFactFindings(root)),
   ...(await setupCommandFindings(root)),
   ...(await llmsTxtFindings(root)),

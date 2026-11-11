@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "401c4e6053bc7a799a087b73b95200543f05198e5b8f51b4ebdcdd8a991904da",
+  "buildId": "7cf6b9c1685b697296266ce1b0c6687d4c421229b2ba4b89898675adf360aef2",
   "tiers": {
     "0": [
       "core",
@@ -1543,6 +1543,16 @@
       "code": "X_DEPLOY_UNSTABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DERIVED_DOC_COUNT_STALE",
+      "owner": "scripts",
+      "at": "scripts/derived-doc-counts.ts"
+    },
+    {
+      "code": "X_DERIVED_DOC_COUNT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/derived-doc-counts.ts"
     },
     {
       "code": "X_DEV_ALREADY_RUNNING",

@@ -115,9 +115,26 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
       ],
       { stdout: 'pipe', stderr: 'inherit', timeout: 1_500_000 },
     );
+    // One line of JSON — but a pipe read may return a partial line, and a fixture that died
+    // mid-pack ends the stream with no line at all: both surfaced as a bare JSON SyntaxError that
+    // names nothing (the gate's `(unnamed)` failure). Accumulate to the newline; on end of
+    // stream, name the exit and where the real cause went — stderr is inherited, so the failing
+    // pack is above in this log.
     const reader = (registry.stdout as ReadableStream<Uint8Array>).getReader();
-    const { value } = await reader.read();
-    const { url } = JSON.parse(new TextDecoder().decode(value)) as { readonly url: string };
+    const decoder = new TextDecoder();
+    let line = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        const code = await registry.exited;
+        expect.unreachable(
+          `the registry fixture exited (code ${String(code)}) before serving; its stderr is inherited, so the cause is in this log`,
+        );
+      }
+      line += decoder.decode(value, { stream: true });
+      if (line.includes('\n')) break;
+    }
+    const { url } = JSON.parse(line) as { readonly url: string };
     // A cache of its own: a stamped 30.0.0 from an earlier run must never stand in for this checkout.
     env = {
       NPM_CONFIG_REGISTRY: url,

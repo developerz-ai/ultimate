@@ -122,7 +122,7 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
   const began = performance.now();
   let child: ReturnType<typeof spawnBrowser>;
   try {
-    child = spawnBrowser(options, profileDir, platform);
+    child = spawnBrowser(options, profileDir, profile.tempRoot, platform);
   } catch (error) {
     // A binary that cannot be started at all — not there, not executable, not an executable FORMAT
     // this OS runs (a `#!` script on Windows). Bun throws from `spawn`, synchronously, and that
@@ -220,14 +220,21 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
  * reaped with it (`killTree`). It still ends with this process on the pipe wire: Chrome exits when
  * its fd 3 closes. Windows has no group to make — `detached` there is a console flag — so not.
  */
-function spawnBrowser(options: LaunchAttemptOptions, profileDir: string, platform: string) {
+function spawnBrowser(
+  options: LaunchAttemptOptions,
+  profileDir: string,
+  tempRoot: string,
+  platform: string,
+) {
   // Spread into a fresh tuple: Bun's `stdio` type takes a mutable tuple, never a readonly one.
   const [stdin, stdout, stderr, ...extra] = wireStdio(options.wire);
   return Bun.spawn([options.executable, ...options.flags(profileDir)], {
     stdio: [stdin, stdout, stderr, ...extra],
-    // Chrome's ProcessSingleton socket is below the child's TMPDIR, never the profile's parent. Its
-    // Unix socket address is byte-bounded, so socketSafeEnv clamps an unsafe inherited temp root.
-    env: socketSafeEnv(),
+    // The browser's TMPDIR is the profile's own socket-safe root: Chrome's ProcessSingleton
+    // socket is made under the CHILD's TMPDIR, never the profile's parent, and the profile was
+    // chosen so that path fits the unix-socket bound. socketSafeEnv clamps an unsafe inherited
+    // temp root, so an unsafe root can never reach the ProcessSingleton socket.
+    env: socketSafeEnv({ ...process.env, TMPDIR: tempRoot }),
     detached: platform !== 'win32',
     // A backstop, never the close: `close()` ends a browser its caller is done with. This ends one
     // whose caller vanished, so no Chrome outlives every reason it was started for.

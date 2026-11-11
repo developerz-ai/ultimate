@@ -81,7 +81,7 @@ export async function fixtureApp(): Promise<FixtureApp> {
     ULTIMATE_ENV: 'development',
   };
   const sh = async (line: string): Promise<ShellResult> => {
-    // Under the slowest suite's whole budget (`db-fix-truth.job.test.ts`, 180 s): a printed fix
+    // Under the slowest suite's whole budget (`db-fix-truth.job.test.ts`, 300 s): a printed fix
     // that hangs is killed and answers its exit code, rather than holding the worker past it.
     const child = Bun.spawn(['sh', '-c', line], {
       cwd: root,

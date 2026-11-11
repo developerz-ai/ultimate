@@ -14,7 +14,10 @@ import { ON_SETTLED_TIMEOUT_MS } from './settled';
 import { jobWorker } from './worker';
 
 const clock = frozenClock('2026-10-01T00:00:30.000Z');
-const PGLITE_BOOT_MS = 30_000;
+// The beforeAll boots a PGlite — a WASM compile plus an initdb — against bun's 5s default. A
+// budget, not a deadline, and one that sits above the boot: this box measures that boot alone
+// at 32-42s (2026-10), the 120_000 `queue-wake.job.test.ts` pins for the same shape.
+const PGLITE_BOOT_MS = 120_000;
 
 interface Seen {
   aborted?: boolean;
