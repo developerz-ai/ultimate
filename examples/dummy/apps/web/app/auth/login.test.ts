@@ -14,7 +14,8 @@ import {
   readSessionCookie,
 } from '@ultimat3/auth';
 import { frozenClock, installLogSink } from '@ultimat3/core';
-import { AFTER_SIGN_IN, postlyAuth, postlyLogin } from './login';
+import { postlyAuth, postlyLogin } from './login';
+import { AFTER_SIGN_IN } from './sign-in-paths';
 
 const NOW = new Date('2026-08-15T12:00:00.000Z');
 /** Before `NOW`: a member who proved the address on some earlier day, not during this login. */

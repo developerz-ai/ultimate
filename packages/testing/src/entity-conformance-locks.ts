@@ -147,22 +147,34 @@ const lockChecks: readonly EntityDriverCheck[] = [
   checkOver(
     SET,
     'a nested lock is held to the outer end, not released with its own',
-    async (db) => {
+    async (db, raw) => {
+      // Sequenced on what the driver REPORTS, never on a clock: the outer ends once the contender is
+      // queued behind c4 (a held lock) or has run (a released one) — whichever the driver does. A
+      // wall-clock window let a broken driver pass whenever its contender was slow.
+      const waiters = raw.lockWaiters;
+      if (waiters === undefined) return;
       await counter(db, idAt('c3'));
       await counter(db, idAt('c4'));
       const order: string[] = [];
+      const nestedHeld = Promise.withResolvers<void>();
+      let secondRan = false;
+      const queuedOrRan = async (): Promise<void> => {
+        while (!secondRan && (await waiters()) < 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      };
       await inOrg(ORG_A, () =>
         Promise.all([
           db.counters.lock(idAt('c3'), async () => {
-            await db.counters.lock(idAt('c4'), () => undefined);
-            await yieldNow();
-            await yieldNow();
+            await db.counters.lock(idAt('c4'), () => nestedHeld.resolve());
+            await queuedOrRan();
             order.push('outer ending');
           }),
           (async () => {
-            await yieldNow();
+            await nestedHeld.promise;
             await db.counters.lock(idAt('c4'), () => {
               order.push('second ran');
+              secondRan = true;
             });
           })(),
         ]),

@@ -21,3 +21,14 @@
 
 ## Done when
 - Both drills green on their schedule; an agent can run `scripts/glitchtip/issues.ts --json` and a SELECT-only stats script against both clusters.
+
+## Outcome (2026-11-10)
+Done. Every finding is closed, run from the infrastructure repository.
+
+| # | Result |
+|---|---|
+| F1, F3, F5, F8 | merged: infrastructure #2232, #2234, #2237, #2238 |
+| F2 | infrastructure #2233 (merge `9815ab284`, 2026-11-09 23:18 UTC). The `ultimate-social-db` image moved from `ghcr.io/cloudnative-pg/postgresql:18.6` (bullseye) to `18.6-system-trixie`, digest-pinned, same PG major. Afterwards: cluster 1/1 ready; 0 "distribution is not supported" lines in the postgres or operator logs; demo returns 200; daily dumps succeeded |
+| F4 | infrastructure #2236. Read path live as `GLITCHTIP_READ_TOKEN` ([`90`](90-owner-steps.md) O8); `scripts/glitchtip/issues.ts --json` exits 0 and reads 31 projects |
+| F6 | adopter E: `NATS_URL` set before the roll (#2254), `LIVE_NATS_URL` dropped after it (#2258). Dashboards read Prometheus metrics, which the span-attribute rename leaves unchanged |
+| F7 | `pg_stat_statements` reset after the v31 rollout, each scoped to one database: adopter E's database, and the demo's `ultimate_social` at 2026-11-10 22:46:44 UTC (469 → 1 entries). The finding's 2026-10-06 date came from the shared `postgres` cluster's old copy, not the live database |

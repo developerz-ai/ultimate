@@ -14,6 +14,15 @@ export interface ScanInput {
    * attempt.
    */
   readonly pendingKey: string;
+  /**
+   * WHICH bytes under `pendingKey` this is: the confirmed upload's etag, or `sha256:<hex>` of the
+   * bytes on a disk that keeps none. The upload URL stays valid after the sniff, so the object under
+   * `pendingKey` can be rewritten between two confirms — a held verdict, and the decision that
+   * clears it, MUST be keyed by `(pendingKey, revision)`: an approval of one revision is no
+   * approval of the next. Always set by `promoteAttachment`; optional only so a scanner's own test
+   * written before 31.3 still compiles.
+   */
+  readonly revision?: string | undefined;
   readonly size: number;
   /** The type the object is stored under, already sniffed against its bytes. */
   readonly contentType: string;
@@ -28,7 +37,7 @@ export interface ScanInput {
  *
  * `hold` is a decision too: not yet cleared, by something outside this call — a human review, a
  * vendor's asynchronous sandbox. The upload stays pending and promotion answers
- * `X_STORAGE_QUARANTINED` until the scanner answers `clean` for that `pendingKey`. Neither `hold`
+ * `X_STORAGE_QUARANTINED` until the scanner answers `clean` for that `pendingKey` AND `revision`. Neither `hold`
  * nor `infected` is something a policy can wave through.
  */
 export type ScanVerdict =

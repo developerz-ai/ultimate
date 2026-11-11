@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // A stranger's first hour, measured: the PUBLISHED `create-ultimate`, under a clean `HOME` and
 // `BUN_INSTALL` (no warm cache, no global config), then the scaffold's own commands — setup, the
-// gate, a first feature, the gate again, and with `--image` the container image. Times and sizes.
+// gate, a first feature and the commands its generator names next, the gate again, and with
+// `--image` the container image. Times and sizes.
 //
 //   bun run scripts/bench/first-hour.ts [--version latest] [--runs 5] [--image] [--out <file.json>]
 //     [--json]
@@ -18,7 +19,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exec, type Runner } from '@ultimat3/cli';
 import { parseScriptArgs } from '../lib/args';
+import { serviceKeys } from '../lib/coverage-schedule';
 import { report } from '../lib/log';
+import { asOverlay, strangerChild } from '../lib/stranger-env';
 import { spreads } from './bench-spread';
 import { type FirstHourSizes, firstHourOk, runFirstHour, type StepRecord } from './first-hour-run';
 import { boxFacts, readCount } from './http-hello';
@@ -119,12 +122,17 @@ export interface FirstHourRun {
 export async function oneRun(
   version: string,
   image: boolean,
-  options: { readonly keep?: boolean; readonly runner?: Runner } = {},
+  options: {
+    readonly keep?: boolean;
+    readonly runner?: Runner;
+    /** The environment `exec` merges onto — `Bun.env`; a fake one in a test. */
+    readonly parentEnv?: Readonly<Record<string, string | undefined>>;
+  } = {},
 ): Promise<FirstHourRun> {
-  const { keep = false, runner = exec } = options;
+  const { keep = false, runner = exec, parentEnv = Bun.env } = options;
   const work = mkdtempSync(join(tmpdir(), 'first-hour-'));
   try {
-    return await measuredRun(work, version, image, runner);
+    return await measuredRun(work, version, image, runner, parentEnv);
   } finally {
     if (!keep) rmSync(work, { recursive: true, force: true });
   }
@@ -135,11 +143,18 @@ async function measuredRun(
   version: string,
   image: boolean,
   runner: Runner,
+  parentEnv: Readonly<Record<string, string | undefined>>,
 ): Promise<FirstHourRun> {
   const app = join(work, APP);
-  // A stranger's machine: no Bun cache, no global config. PATH is kept — Bun and git are the
-  // prerequisites, and nothing else is assumed.
-  const env = { HOME: join(work, 'home'), BUN_INSTALL: join(work, 'bun'), CI: Bun.env['CI'] };
+  // A stranger's machine: no Bun cache, no global config, no home of ours (`HOME`, `XDG_*`,
+  // `BUN_INSTALL` under `work`, npm's user config at the null device) and none of this process's
+  // environment but an allowlist — Bun loaded the repo's `.env` (`NPM_TOKEN`) into it, and every
+  // step runs code from npm (`scripts/lib/stranger-env.ts`). The test-service URLs pass, so a box
+  // that sourced them gates the scaffold against them.
+  const clean = strangerChild(parentEnv, serviceKeys(join(import.meta.dir, '..', '..')), work, {
+    warmCache: false,
+  });
+  const env = asOverlay(parentEnv, clean);
   const steps = await runFirstHour({ app: APP, work, version, image }, runner, env);
   const modules = bytesUnder(join(app, 'node_modules'));
   const sizes: FirstHourSizes = {

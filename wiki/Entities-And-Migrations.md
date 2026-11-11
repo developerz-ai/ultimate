@@ -88,14 +88,18 @@ migration or a psql session can violate.
 | `c.slug.matches(isValidSlug)` — a **function** | **no** | `sql: null` |
 | `c.satisfies(fn, ['status', 'publishedAt'])` | **no** | `sql: null`, by construction — a JS function over several columns |
 
-**`iff` renders `=`, not `IS NOT DISTINCT FROM`, and that is not an oversight.** Every operator in
-this language is *false* on a null operand in TypeScript, and `=` between two booleans where either
-is NULL yields NULL — which a CHECK **passes**. The total form fixes that row and breaks a worse
-one: with a partial operand it makes Postgres **refuse a row TypeScript accepted**, which reaches
-the caller as a raw `23514` instead of `X_INVARIANT_VIOLATED`. `=` keeps the disagreement in the
-direction where the app refuses first, so no write reaches a CHECK that would have refused it.
-Where both operands are total — a non-nullable column, an `IS NOT NULL` — the two spellings are the
-same predicate, measured.
+**A rule over a nullable column passes `NULL`, in the app as in the CHECK.** Every operator but
+`isNull()`/`isNotNull()` answers SQL's *unknown* for a NULL operand, in TypeScript too, and a rule
+holds unless it is false — so `c.slug.matches(SLUG_PATTERN)` on a `.nullable()` slug accepts a
+NULL in `$assert`, the memory driver and Postgres alike (`invariant-null.test.ts`, every operator on
+PGlite). To refuse NULL, declare the column NOT NULL or add `.isNotNull()`. As of 31.3; before it
+the app refused the NULL its CHECK stored.
+
+**`iff` renders `=`, not `IS NOT DISTINCT FROM`, and that is not an oversight.** `=` between two
+booleans where either is NULL yields NULL, which a CHECK **passes** and the app now passes too. The
+total form would make Postgres **refuse a row TypeScript accepted**, which reaches the caller as a
+raw `23514` instead of `X_INVARIANT_VIOLATED`. Where both operands are total — a non-nullable
+column, an `IS NOT NULL` — the two spellings are the same predicate, measured.
 
 Pass the pattern, not a function wrapping it. `matches(isValidSlug)` and `matches(SLUG_PATTERN)`
 read almost identically and only one of them reaches a constraint.
@@ -913,7 +917,7 @@ Three declarations on the entity, each compiled to a trigger or a purge target, 
 | Declaration | Compiles to | Refused when |
 |---|---|---|
 | `retain: { after: '90d', on: 'createdAt' }` | a `PurgeTarget` per entity — batched, cross-tenant `delete … where created_at < now - after` | no window (`X_ENTITY_RETAIN_INVALID`), `on` not an indexed `timestamp()` (`X_ENTITY_RETAIN_UNINDEXED`), beside `appendOnly`, or on a table the catalog holds partitioned (drift, `X_ENTITY_RETAIN_INVALID`: detach partitions in a `task`) |
-| `history: true` · `history: { retain: { after: '365d' } }` | `<table>_history (id, <tenant>, row_id, op, at, actor_id, request_id, before, after)` — a registered entity (`posts.$history`), written by the `ultimate_history` trigger, guarded by `ultimate_history_guard` | a composite primary key, `appendOnly` (`X_INVARIANT_VIOLATED`) |
+| `history: true` · `history: { retain: { after: '365d' }, ignore: ['likeCount', 'updatedAt'] }` | `<table>_history (id, <tenant>, row_id, op, at, actor_id, request_id, before, after)` — a registered entity (`posts.$history`), written by the `ultimate_history` trigger, guarded by `ultimate_history_guard` | a composite primary key, `appendOnly` (`X_INVARIANT_VIOLATED`) |
 | `references(() => posts.id, { countedIn: () => posts.likeCount })` | a trigger on the child moving `posts.like_count` by one in the write's own transaction | the column is no `integer()`, or the key points at no single primary key (`X_ENTITY_COUNTS_INVALID`) |
 
 ```ts
@@ -935,7 +939,8 @@ export const likes = entity('likes', {
 ```
 
 - **Retention is a promise `x verify` checks.** A `retain` no `purge()` covers is `X_ENTITY_RETAIN_UNSWEPT` in the `manifest` step. `purge({ entities: 'declared' })` covers every one, history tables included, and needs no line per entity.
-- **History is recorded by trigger**, so `updateWhere`, a cascade and raw SQL are recorded too. An update that changes nothing records nothing; a change to a counted column alone records nothing. `.sealed()` columns stay ciphertext in the images. `actor_id`/`request_id` are what the WRITE'S transaction set (`x.actor`, `x.request`): the repository sets them before its first write to a history entity inside a transaction; an autocommit write records `null`, never a guess. Update of a history row is refused always; delete only under `x.purge` naming that table, which the retention sweep sets (`X_ENTITY_APPEND_ONLY`, SQLSTATE `23001`). Reading it is an ordinary, tenant-scoped, cursor-paged read: `database({ posts, postsHistory: posts.$history })`.
+- **History is recorded by trigger**, so `updateWhere`, a cascade and raw SQL are recorded too. An update that changes nothing records nothing; a change to a counted column, or to columns `history: { ignore }` names, alone records nothing — on both drivers (`history-ignore.test.ts`). `ignore` takes the entity's own columns, typed; another name is `X_INVARIANT_VIOLATED`. Declaring it changes the trigger's arguments, so `x db gen` writes the migration that reinstalls it. `.sealed()` columns stay ciphertext in the images. `actor_id`/`request_id` are what the WRITE'S transaction set (`x.actor`, `x.request`): the repository sets them before its first write to a history entity inside a transaction; an autocommit write records `null`, never a guess. Update of a history row is refused always; delete only under `x.purge` naming that table, which the retention sweep sets (`X_ENTITY_APPEND_ONLY`, SQLSTATE `23001`). Reading it is an ordinary, tenant-scoped, cursor-paged read: `database({ posts, postsHistory: posts.$history })`.
+- **One row's history is `history(db.postsHistory, id)`**: every version, oldest first, each numbered `version` from 1 — ordered by chaining each `before` onto the previous `after` across every version, `at` only breaking ties: `at` is the transaction's START, so a transaction that began first and committed last carries the earlier `at` and the later image. `history(table, id, { limit: n })` reads the `n` versions with the latest `at` (ties at the edge kept), numbered as the whole history numbers them — chosen by transaction start, so a transaction that began before that window and committed inside it can fall outside. The read is the history table's, so another tenant's row reads back `[]`; the policy is the query or action that calls it. `version` counts what is retained: after a `retain` sweep, 1 is the oldest kept. As of 31.3.
 - **A counter locks its parent row.** A hot parent serializes its writers; where that matters, `countBy` plus a cache is the alternative. A soft-deleted child is not counted. A new counter's migration recounts once, so an existing table starts true; `x db recount posts.likeCount` reports drift and `--write` repairs it.
 - **A counter's write is the trigger's, not the repository's.** The WAL replicator reports it; the in-process `entity.row` event (what `x dev` on PGlite and the memory driver feed live queries from) does not, so a live view of the counter on those does not move until the parent row is written again. A counter a page shows live stays the mutator's job until that event reports trigger writes. As of 2026-11.
 - **Memory answers as Postgres does**: the memory driver records history and moves counters in its repository (`counter.test.ts`, `history.test.ts` are the parity tables).

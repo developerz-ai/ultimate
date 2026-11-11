@@ -27,6 +27,11 @@ export const savePreferences = action({
     /** Stored on the member, not in localStorage: the same person, the same theme, every device. */
     theme: t.enumerated(...THEMES),
     digestOptIn: t.boolean.default(true),
+    /**
+     * E.164, where an owner's quota alerts are texted (`quotaAlert`); `null` takes it off. Held to
+     * E.164 by `ctx.orgs.savePreferences` with notify's own check (`X_NOTIFY_SMS_NUMBER_INVALID`).
+     */
+    phone: t.nullable(t.string.max(16)).optional(),
   }),
   // The whole `members` row, because that is what `updatePreferences` returns: an entity row
   // schema is what makes the answer a RECORD the page store adopts (plan 101), where the
@@ -36,7 +41,7 @@ export const savePreferences = action({
   cache: { invalidates: [tag.member] },
   mcp: {
     expose: true,
-    description: 'Update the acting member’s locale, timezone, theme and digest opt-in',
+    description: 'Update the acting member’s locale, timezone, theme, digest opt-in and phone',
   },
   async handle({ input, ctx }) {
     return ctx.orgs.savePreferences(input);

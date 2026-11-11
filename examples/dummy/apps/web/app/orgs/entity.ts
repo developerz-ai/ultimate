@@ -83,6 +83,11 @@ export const AvatarUploadGrant = t.object({
 
 export type AvatarUploadGrant = Infer<typeof AvatarUploadGrant>;
 
+/** What `attachAvatar` answers: where the scanned upload now lives, and its measured size. */
+export const AvatarAttached = t.object({ key: t.string, size: t.number.int() });
+
+export type AvatarAttached = Infer<typeof AvatarAttached>;
+
 /** A member's current avatar, `null` until they upload one. */
 export const AvatarView = t.object({ url: t.nullable(t.string) });
 

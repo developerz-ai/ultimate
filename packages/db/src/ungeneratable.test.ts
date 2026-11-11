@@ -80,6 +80,27 @@ ALTER TABLE likes REPLICA IDENTITY FULL;
     ]);
   });
 
+  test('a hand-written function call, policy or overload drop stays reported', () => {
+    // The partition and row-security forms match the generator's shapes only: a backfill through a
+    // function, a policy with an unquoted name and another overload's drop are still the author's.
+    expect(
+      ungeneratableStatements(
+        [
+          `select "ultimate_partitions"('events', 'timestamptz', 'month', 2, null, now());`,
+          `select backfill_slugs();`,
+          `create policy owner_only on posts using (true);`,
+          `drop function if exists "ultimate_partitions"(text);`,
+          `alter table "posts" enable trigger all;`,
+          // The partition call's and the policy's SHAPES with another name: blanked, each reads
+          // like the generator's, so the name is what tells them apart.
+          `SELECT "backfill"('a', 'b', 'c', 2, NULL);`,
+          `drop function if exists "my_fn"(text, text, text, integer, bigint, timestamptz);`,
+          `create policy "owner_only" on "posts" using (true);`,
+        ].join('\n'),
+      ),
+    ).toHaveLength(8);
+  });
+
   test('a statement split across lines is judged whole and reported on one line', () => {
     // `create table` is generatable, so its absence from the report above is the assertion: a
     // classifier reading line by line calls the `CONSTRAINT …` line an unknown verb.
@@ -294,9 +315,23 @@ describe('unit · the generatable list is the generators own output', () => {
     appendOnly: true,
   };
 
+  // A range-partitioned table, so the corpus carries the partition function's retired-signature
+  // drop, its `create or replace … returns jsonb` and the `select` that makes the first partitions.
+  // Absent until 31.3: an app declaring `partitionBy` had its own generated migration reported.
+  const events: EntityDescriptionLike = {
+    name: 'Event',
+    table: 'events',
+    primaryKey: ['id', 'at'],
+    columns: [id, column('at', { kind: 'timestamptz', notNull: true, primaryKey: true })],
+    indexes: [],
+    partition: { column: 'at', interval: 'month', ahead: 2 },
+  };
+
   const corpus = (): readonly string[] => {
     const migration = generateMigration({
-      entities: [posts, fresh, plainView, totals, lifecycle, ledger],
+      entities: [posts, fresh, plainView, totals, lifecycle, ledger, events],
+      // Every tenant table's policy, so `enable row level security` and `create policy` are in it.
+      rowSecurity: { enabled: true, tenants: [{ table: 'posts', column: 'org_id' }] },
       current: before,
       name: 'every form',
       now: new Date('2026-01-01T00:00:00.000Z'),

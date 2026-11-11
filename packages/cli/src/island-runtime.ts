@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';
 import type { IslandChunk, SharedChunk } from './island-bundle';
+import { inputFiles } from './island-cache-inputs';
 import { realSpelling } from './island-duplicates';
 import { describeBuildError, graphHash, stableChunk, stripDebugId } from './island-identity';
 import { frameworkDedupePlugins } from './island-package-dedupe';
@@ -57,6 +58,8 @@ export interface RuntimeChunk {
   readonly code: string;
   readonly bytes: number;
   readonly sources: SourcePaths;
+  /** Every file the runtime's build read, absolute (`inputFiles`): what a cached group rehashes. */
+  readonly inputs: readonly string[];
 }
 
 /**
@@ -147,6 +150,7 @@ async function buildRuntime(
       // `sourcesContent` is the one stable identity a minified bundle has.
       define: { 'process.env.NODE_ENV': '"production"' },
       sourcemap: 'external',
+      metafile: true,
     });
   } catch (error) {
     throw new IslandBuildFailedError({ file: island, logs: describeBuildError(error) });
@@ -168,6 +172,7 @@ async function buildRuntime(
     url,
     ...stableChunk(url, identity, stripDebugId(await output.text())),
     sources: await sourcesOnDisk(root, JSON.parse(text)),
+    inputs: await inputFiles(Object.keys(built.metafile?.inputs ?? {})),
   };
 }
 

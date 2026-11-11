@@ -90,7 +90,10 @@ unitTest('every posts-import session call resumes the session its input opened',
 
   const complete = await inputFor('completePostsImport', completePostsImport);
   const done = await completePostsImport.as(admin, complete);
-  expect(done.key).toBe(complete.key);
+  // Promoted off the session's `pending/` key onto the import's own, under the id it was opened as.
+  expect(done.key).toBe(
+    `org/${ORG}/imports/posts/${importIdOf(ORG, complete.key)}/${done.importId}.csv`,
+  );
   expect(new TextDecoder().decode((await disk().get(done.key)).bytes)).toStartWith('id,slug,');
 });
 
@@ -106,7 +109,8 @@ unitTest(
     const imported = await inputOf('posts.import');
     const key = String(imported['key']);
     expect(isPostsImportKey(key)).toBe(true);
-    expect(importIdOf(ORG, key)).toBe(String(imported['importId']));
+    // The promoted file's key, as `completePostsImport` enqueues it: under its own import's prefix.
+    expect(key).toStartWith(`org/${ORG}/imports/posts/${String(imported['importId'])}/`);
     expect(new TextDecoder().decode((await disk().get(key)).bytes)).toStartWith('id,slug,');
   },
 );

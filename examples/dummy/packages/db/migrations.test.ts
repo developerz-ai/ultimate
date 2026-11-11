@@ -352,6 +352,7 @@ describe('the newest migration records the schema this chain creates', () => {
       'post_reviews',
       'posts',
       'posts_history',
+      'quota_alerts',
       'run_events',
       'runs',
       'stream_cursors',

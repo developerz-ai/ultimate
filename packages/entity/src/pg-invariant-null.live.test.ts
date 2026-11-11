@@ -139,12 +139,11 @@ describe.skipIf(!hasPostgres)('live · postgres · iff over a null test becomes 
   });
 
   /**
-   * The measurement behind `=`. With a NULL operand the emitted CHECK PASSES the row while
-   * TypeScript refuses it — the app is the stricter half, so nothing ever reaches the server that
-   * the CHECK would have refused. The total spelling inverts exactly that, which the next test
-   * measures on the same server.
+   * The measurement behind `=`. With a NULL operand the emitted CHECK PASSES the row, and since
+   * 31.3 TypeScript judges the same three values and passes it too (`expr.ts`, `verdicts`). The
+   * total spelling would refuse it, which the next test measures on the same server.
    */
-  test('a NULL operand leaves the CHECK permissive, and the app refuses the row first', async () => {
+  test('a NULL operand leaves the CHECK permissive, and the app agrees', async () => {
     const stored = await client
       .execute(
         sql`insert into "null_probe_partial" (id, label, mark) values (gen_random_uuid(), null, ${AT})`,
@@ -154,7 +153,7 @@ describe.skipIf(!hasPostgres)('live · postgres · iff over a null test becomes 
         (error: unknown) => sqlState(error) ?? 'no-sqlstate',
       );
     expect(stored).toBeUndefined();
-    expect(partial.$invariants[0]?.holds({ id: 'x', label: null, mark: new Date(AT) })).toBe(false);
+    expect(partial.$invariants[0]?.holds({ id: 'x', label: null, mark: new Date(AT) })).toBe(true);
   });
 
   test('is not distinct from would refuse a row TypeScript accepts — the dangerous direction', async () => {
@@ -162,8 +161,7 @@ describe.skipIf(!hasPostgres)('live · postgres · iff over a null test becomes 
       const rows = await client.query<{ m: boolean | null }>(sql`select (${raw(expression)}) as m`);
       return rows[0]?.m ?? null;
     };
-    // `label` NULL and `mark` NULL: TypeScript reads both predicates as false, so both-or-neither
-    // ACCEPTS the row.
+    // `label` NULL and `mark` NULL: `label = 'on'` is unknown, so both halves ACCEPT the row.
     expect(partial.$invariants[0]?.holds({ id: 'x', label: null, mark: null })).toBe(true);
     // `=` agrees by passing on NULL; `is not distinct from` answers false and would refuse it,
     // reaching the caller as a raw 23514 in place of X_INVARIANT_VIOLATED.

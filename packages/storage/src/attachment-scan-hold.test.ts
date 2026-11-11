@@ -7,7 +7,9 @@ import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { attachmentKey, pendingKey, promoteAttachment } from './attachment';
 import { memoryStorageDriver } from './driver-memory';
 import { uploadPolicy } from './upload';
+import { scanAttempt } from './upload-scan';
 import { installUploadScanner, resetUploadScanner, type UploadScanner } from './upload-scanner';
+import { EICAR_TEST_STRING } from './upload-scanner-memory';
 
 const ORG = 'org-1';
 const TARGET = { entity: 'post', id: 'p-1', field: 'file' } as const;
@@ -98,6 +100,63 @@ describe("promoteAttachment with a scanner that answers 'hold'", () => {
     const object = await promote();
     expect(object.key).toBe(attachmentKey(ORG, TARGET, 'u-3.txt'));
     expect(await store.exists(key)).toBe(false);
+  });
+});
+
+describe('a held upload rewritten after its review', () => {
+  // The upload URL stays valid after the sniff, so the bytes under a pending key can change between
+  // two confirms. A review keyed by `pendingKey` alone cleared the NEXT bytes too: confirm a clean
+  // file (held), approve it, PUT EICAR to the same key, confirm again — attached unscanned.
+  test('the scanner is told the revision, so an approval keyed by it does not carry over', async () => {
+    const approved = new Set<string>();
+    const seen: string[] = [];
+    installUploadScanner({
+      name: 'review',
+      holds: true,
+      async scan(input) {
+        await input.body.cancel();
+        const id = `${input.pendingKey}@${String(input.revision)}`;
+        seen.push(id);
+        return approved.has(id)
+          ? { verdict: 'clean' }
+          : { verdict: 'hold', reason: 'awaiting a moderator' };
+      },
+    });
+    const store = disk();
+    const key = pendingKey(ORG, 'u-swap.txt');
+    await store.put(key, encode('a plain note'), { contentType: 'text/plain' });
+    const promote = () =>
+      promoteAttachment({ disk: store, key, orgId: ORG, target: TARGET, policy: TEXT });
+    expect(await caught(promote)).toMatchObject({ code: 'X_STORAGE_QUARANTINED' });
+    approved.add(seen[0] ?? '');
+    await store.put(key, encode(EICAR_TEST_STRING), { contentType: 'text/plain' });
+    expect(await caught(promote)).toMatchObject({ code: 'X_STORAGE_QUARANTINED' });
+    expect(new Set(seen).size).toBe(2);
+    expect(await store.exists(attachmentKey(ORG, TARGET, 'u-swap.txt'))).toBe(false);
+  });
+});
+
+describe('scanAttempt on a disk that keeps no etag', () => {
+  test('the revision is the sha256 of the bytes, so a rewrite is still a new revision', async () => {
+    const revisions: (string | undefined)[] = [];
+    installUploadScanner({
+      name: 'review',
+      holds: true,
+      async scan(input) {
+        await input.body.cancel();
+        revisions.push(input.revision);
+        return { verdict: 'clean' };
+      },
+    });
+    const store = disk();
+    const key = pendingKey(ORG, 'scan/a-1.txt');
+    for (const text of ['one', 'two']) {
+      const attempt = await store.put(key, encode(text), { contentType: 'text/plain' });
+      await scanAttempt({ disk: store, pendingKey: key, attempt, revision: '', policy: TEXT });
+    }
+    const sha = (text: string) =>
+      `sha256:${new Bun.CryptoHasher('sha256').update(text).digest('hex')}`;
+    expect(revisions).toEqual([sha('one'), sha('two')]);
   });
 });
 

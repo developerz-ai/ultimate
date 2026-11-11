@@ -116,7 +116,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `generate-refresh.ts` | `x g` refreshes the manifest only when a written file needs it |
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS` (`X_ROLE_LOAD_INCOMPLETE`) † |
 | `module-imports.ts` | a module's imports, resolved once for both graphs: `referenced` (reload), `evaluated` (document) |
-| `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: every role in one process, `/_x`, the watcher; one save = one generation † |
+| `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: every role in one process, `/_x`, the watcher; one save = one generation, and the boot is the first: `buildGeneration` builds the manifest and the islands at once † |
 | `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `NATS_URL` |
 | `runtime-queue.ts` / `runtime-services.ts` / `runtime-bus.ts` | db + queue; every other accessor; the bus |
 | `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables, applied in one locked transaction † |
@@ -141,7 +141,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
 | `page-speculation.ts` | Speculation Rules for documents WITHOUT the router (`navigation.speculation`): an allow-list of pure-read pages ‡ |
 | `static-document.ts` | a served `static` page: `304` on `If-None-Match`; container keeps the document (never `x dev`) † |
-| `island-{bundle,store,sources,runtime}.ts` / `island-realtime*.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed † |
+| `island-{bundle,groups,outputs,build-pool,group-cache,cache-inputs,store,sources,runtime}.ts` / `island-realtime*.ts` / `solid-loader.ts` | islands, source-addressed: one `Bun.build` per route group — islands on exactly the same routes split together, every other alone; groups read from `page.tsx` sources, the one input every caller has before rendering (`islands.sharedChunks` = one group). A group's output is reused from `.x/cache/islands/` while every file it read (Sass partials included), every directory listing it resolved in and the lockfile/tsconfig/`package.json` environment hash the same (`reuse: false` for a determinism test) † |
 | `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`) |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store; a boot that built anything logs `X_IMAGE_NOT_PREBUILT` † |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, watcher, reload, lock, port |

@@ -199,5 +199,12 @@
  * `entity/src/search-mirror-batch.ts`. Nothing web-only.
  * raised 1580 → 1582, measured 1582 (2026-11-10, fix/adopter-round-2): `MIGRATE_CEILING`'s 2,
  * `auth/src/sign-in-callback-path.ts` and `auth/src/oauth-handshake-cookie.ts`. Nothing web-only.
+ * raised 1582 → 1591, measured 1591 (2026-11-10, 31.3.0 gate fix): `MIGRATE_CEILING`'s 4, plus
+ * five web-only — the source-addressed island build: `cli/src/island-groups.ts` (which islands
+ * split together, read from `page.tsx` sources), `island-group-cache.ts` and
+ * `island-cache-inputs.ts` (a group's output reused from `.x/cache/islands/` while every input
+ * hashes the same; 0.42 s against 14.6–21 s on the bench app), `island-build-pool.ts` (the bounded
+ * pool, stopped by its first failure) and `island-outputs.ts` (a build's outputs as the chunk table,
+ * split out of `island-bundle.ts`). No existing module newly reached.
  */
-export const WEB_ROLE_CEILING = 1582;
+export const WEB_ROLE_CEILING = 1591;

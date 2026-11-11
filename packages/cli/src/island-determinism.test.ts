@@ -39,7 +39,7 @@ import { processRoot } from './process-root-fixture';
 // source change and failed, looking exactly like the bundler non-determinism this file catches.
 const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'determinism'));
 /** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
-const SHARED = { sharedChunks: true } as const;
+const SHARED = { sharedChunks: true, reuse: false } as const;
 const ISLAND = 'apps/web/app/graph.island.tsx';
 
 /** Enough builds that a one-in-ten race is all but certain to fire; ~25ms each on this fixture. */
@@ -94,8 +94,9 @@ afterAll(async () => {
 const buildOnce = async (): Promise<{ url: string; code: string }> => {
   // The emitted-code cache is what keeps ONE process serving one byte string at one URL, so
   // clearing it is what puts the bundler's own determinism under test rather than the cache's.
+  // And `reuse: false`: a group read back from `.x/cache/islands` is one build's bytes replayed.
   clearIslandChunkCache();
-  const chunk = (await buildIslands(ROOT, { only: ISLAND })).chunks[0];
+  const chunk = (await buildIslands(ROOT, { only: ISLAND, reuse: false })).chunks[0];
   if (chunk === undefined) expect.unreachable('the fixture island was not built');
   return { url: chunk.url, code: chunk.code };
 };

@@ -4,9 +4,9 @@
 // comment, read as exactly what was signed.
 
 import { describe, expect, test } from 'bun:test';
-import { testRsaSigner } from './saml-cert-fixture';
 import { NAMEID_EMAIL } from './saml-dom';
-import { samlTestIdp } from './saml-idp-fixture';
+import { samlTestIdp } from './saml-test-idp';
+import { testRsaSigner } from './saml-test-signer';
 import { refusalOf, samlHarness } from './saml-test-support-fixture';
 import { SIGNED_MESSAGE_RESPONSE } from './saml-vectors-fixture';
 

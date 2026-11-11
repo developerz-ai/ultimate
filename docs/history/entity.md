@@ -516,8 +516,16 @@ a current fact: the rules that still hold are in that file, and where the two di
   server — the same silent collapse one layer down, and invisible to a drift check comparing
   DECLARED names, which still differ.
 
-- **`isNull()`/`isNotNull()` are the ONLY total members of the invariant vocabulary, and `iff` is
-  built out of them — `As of 2026-08-25`.** Postgres' `IS NULL` answers true or false for every
+- **As of 2026-11-10 (31.3.0): rules use SQL's three-valued logic in the app too.** An operator
+  over a NULL operand answers unknown, `iff` composes unknowns, and a rule holds unless it is false
+  (`expr-verdict.ts`) — so a NULL operand PASSES, in `$assert` and the memory driver exactly as in
+  the CHECK, unless the rule is `.isNotNull()` or the column is NOT NULL. The trigger: `examples/dummy`
+  declared `c.col.matches(re)` on a nullable column, and the memory driver refused the NULL Postgres
+  stored. `invariant-null.test.ts` holds every operator to PGlite's CHECK, row by row. The entry
+  below is the reasoning this SUPERSEDES — the app as the stricter half — kept as history; its
+  choice of `=` over `is not distinct from` still stands, now with both halves agreeing.
+- **(Superseded 2026-11-10, see above.) `isNull()`/`isNotNull()` are the ONLY total members of the
+  invariant vocabulary, and `iff` is built out of them — `As of 2026-08-25`.** Postgres' `IS NULL` answers true or false for every
   input NULL included; every other operator here answers NULL for a NULL operand and **a CHECK
   PASSES on NULL**, so the database is the more permissive half wherever a predicate reads a
   nullable column. The app side reads an ABSENT key and a stored `null` as one value, which is

@@ -29,6 +29,7 @@ export { DRIVER_CAPABILITIES } from './driver-kit-types';
 export type { DriverStoreKind } from './driver-registry';
 export { clearDriverStores, driverStores, noteDriverStore } from './driver-registry';
 export { afterSeek, projectRow, selectRows } from './driver-rows';
+export { memoryLockWaiters } from './memory-lock';
 export { compareByKind, matchesPredicate, sameValueOfKind } from './memory-match';
 export type { PostgresDriverOptions } from './pg-driver';
 export {

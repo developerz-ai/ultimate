@@ -4,6 +4,7 @@
 import { AGGREGATE_CHECKS } from './entity-conformance-aggregates';
 import { BATCH_CHECKS } from './entity-conformance-batches';
 import { BULK_CHECKS } from './entity-conformance-bulk';
+import { HISTORY_CHECKS } from './entity-conformance-history';
 import { LOCK_CHECKS } from './entity-conformance-locks';
 import { MATRIX_CHECKS } from './entity-conformance-matrix';
 import { READ_CHECKS } from './entity-conformance-reads';
@@ -24,4 +25,5 @@ export const ENTITY_DRIVER_CHECKS: readonly EntityDriverCheck[] = [
   ...LOCK_CHECKS,
   ...MATRIX_CHECKS,
   ...VERSION_CHECKS,
+  ...HISTORY_CHECKS,
 ];

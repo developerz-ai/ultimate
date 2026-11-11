@@ -1042,6 +1042,12 @@ is `X_SAML_METADATA_INVALID` at boot. An id the routes do not serve is `X_IDENTI
 An adapter of your own is held to the same contract by
 `identityProviderConformance` (`@ultimat3/testing/conformance`).
 
+Testing a SAML sign-in: `fakeSamlIdentityProvider({ audience, users })` from `@ultimat3/testing`
+answers the AuthnRequest an SP's redirect carries with a signed response, as a chosen user, and `tamper()`s
+it. It runs over `@ultimat3/auth/saml-test-idp` (`samlTestIdp()`, `readAuthnRequest()`,
+`encodeResponse()`), the in-process IdP this package's own SAML suites sign with — one signer,
+one path.
+
 ## API keys — how an agent authenticates
 
 `ult_<env>_<id>_<secret>`. The plaintext is shown once; the row holds `sha256(secret)` and is

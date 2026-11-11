@@ -43,6 +43,16 @@ const timedOut = (key: string, waitMs: number): Error =>
     message: `canceling statement: waited ${waitMs} ms for a lock another caller still holds, usually two locks taken in opposite order`,
   });
 
+/** Lock requests queued behind a holder right now, across every memory driver in the process. */
+let waiting = 0;
+
+/**
+ * TEST SEAM: how many memory lock requests are blocked behind a holder this moment — what a
+ * conformance check waits on to know a contender has REACHED the lock, never a clock. Postgres'
+ * twin is `pg_stat_activity.wait_event_type = 'Lock'`.
+ */
+export const memoryLockWaiters = (): number => waiting;
+
 export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks => {
   instances += 1;
   const instance = instances;
@@ -72,6 +82,7 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
     const bound = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => reject(timedOut(name, waitMs)), waitMs);
     });
+    waiting += 1;
     try {
       await Promise.race([previous, bound]);
       return release;
@@ -80,6 +91,7 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
       release();
       throw error;
     } finally {
+      waiting -= 1;
       clearTimeout(timer);
     }
   };

@@ -10,8 +10,8 @@ import { identityProviderRoutes } from './identity-provider-routes';
 import { memoryAuthAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
 import { credentials, json } from './oauth-login-fixture';
-import { encodeResponse, readAuthnRequest, samlTestIdp, type TestIdp } from './saml-idp-fixture';
 import { samlIdentityProvider } from './saml-provider';
+import { encodeResponse, readAuthnRequest, samlTestIdp, type TestIdp } from './saml-test-idp';
 import { ACS_URL, SAML_NOW, SP_ENTITY_ID } from './saml-test-support-fixture';
 
 const BASE = 'https://app.example.test';

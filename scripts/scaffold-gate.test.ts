@@ -169,12 +169,25 @@ describe('unit · the two scripts, and what they cost', () => {
   const table = (steps: string) => `{"ok":true,"steps":[${steps}]}`;
   const green = '{"name":"lint","ok":true,"skipped":false,"durationMs":81,"findings":[]}';
 
+  /** One call the gate made: what, where, and in which env. */
+  interface Call {
+    readonly command: readonly string[];
+    readonly cwd: string;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+  }
+
+  /** The env the gate is handed: the stranger overlay, never this process's. */
+  const ENV = { PATH: '/usr/bin', NPM_TOKEN: undefined };
+
   const fakeExec = (
-    calls: { command: readonly string[]; cwd: string }[],
+    calls: Call[],
     over: (command: readonly string[]) => Partial<ExecResult> = () => ({}),
   ) => {
-    return async (command: readonly string[], options: { cwd: string }) => {
-      calls.push({ command, cwd: options.cwd });
+    return async (
+      command: readonly string[],
+      options: { cwd: string; env?: Readonly<Record<string, string | undefined>> },
+    ) => {
+      calls.push({ command, cwd: options.cwd, ...(options.env ? { env: options.env } : {}) });
       return {
         command,
         code: 0,
@@ -188,10 +201,11 @@ describe('unit · the two scripts, and what they cost', () => {
   };
 
   test('the app’s own setup and verify run, in the app’s own directory, once each', async () => {
-    const calls: { command: readonly string[]; cwd: string }[] = [];
+    const calls: Call[] = [];
     const run = await runScaffoldGate(
       DIR,
       fakeExec(calls, (command) => (command[2] === 'verify' ? { stdout: table(green) } : {})),
+      ENV,
     );
     expect(calls.map((call) => call.command)).toEqual([
       [process.execPath, 'run', 'setup'],
@@ -201,16 +215,23 @@ describe('unit · the two scripts, and what they cost', () => {
     expect(run.steps?.map((entry) => entry.name)).toEqual(['lint']);
   });
 
+  test('both commands run in the env the gate is handed — the scaffold never sees ours', async () => {
+    const calls: Call[] = [];
+    await runScaffoldGate(DIR, fakeExec(calls), ENV);
+    expect(calls.map((call) => call.env)).toEqual([ENV, ENV]);
+  });
+
   /**
    * `bun run verify` on an app whose database was never migrated reports a red table describing the
    * setup failure in steps that have nothing to do with it — so the failure is reported where it
    * happened, and the gate that cannot mean anything yet is not run at all.
    */
   test('a red bun run setup short-circuits the gate and is its own finding', async () => {
-    const calls: { command: readonly string[]; cwd: string }[] = [];
+    const calls: Call[] = [];
     const run = await runScaffoldGate(
       DIR,
       fakeExec(calls, () => ({ ok: false, code: 1, stderr: 'X_BUN_MISSING: install bun' })),
+      ENV,
     );
     expect(calls).toHaveLength(1);
     expect(run.setupOk).toBe(false);
@@ -223,7 +244,7 @@ describe('unit · the two scripts, and what they cost', () => {
   // The PR body's table is this, and a timing of 0 for every step would look exactly like a
   // measurement nobody took.
   test('per-step wall time comes off the gate’s own json, beside both commands', async () => {
-    const calls: { command: readonly string[]; cwd: string }[] = [];
+    const calls: Call[] = [];
     const run = await runScaffoldGate(
       DIR,
       fakeExec(calls, (command) =>
@@ -231,6 +252,7 @@ describe('unit · the two scripts, and what they cost', () => {
           ? { stdout: `built static\n${table(green)}`, durationMs: 9770 }
           : { durationMs: 12051 },
       ),
+      ENV,
     );
     expect(run.timings).toEqual([
       { name: SETUP_COMMAND, ms: 12051, ok: true },
@@ -270,10 +292,11 @@ describe('unit · the two scripts, and what they cost', () => {
    */
   test('a relative app directory still runs from an absolute cwd', async () => {
     expect(appDir('demoapp')).toBe(resolve(process.cwd(), 'demoapp'));
-    const calls: { command: readonly string[]; cwd: string }[] = [];
+    const calls: Call[] = [];
     await runScaffoldGate(
       'demoapp',
       fakeExec(calls, () => ({})),
+      ENV,
     );
     expect(calls.map((call) => call.cwd)).toEqual([resolve('demoapp'), resolve('demoapp')]);
   });

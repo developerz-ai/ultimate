@@ -28,6 +28,9 @@ export const likePost = mutator({
   // Closed: see `publishPost`.
   errors: [PostNotFound.code],
   idempotent: true,
+  // Every like rewrites the post's row and its count: a member clicking faster than once a second
+  // is a script, and a script is what a write amplifier needs.
+  rateLimit: { windowMs: 60_000, limit: 60 },
   cache: { invalidates: [tag.post, tag.feed] },
   mcp: { expose: true, description: 'Like a post on behalf of the acting member' },
   local: likePostLocally,

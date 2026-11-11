@@ -13,6 +13,7 @@
       "@ultimat3/admin/error-groups": ["./packages/admin/src/error-groups.ts"],
       "@ultimat3/auth/client": ["./packages/auth/src/client.ts"],
       "@ultimat3/auth/soft-authenticator": ["./packages/auth/src/soft-authenticator.ts"],
+      "@ultimat3/auth/saml-test-idp": ["./packages/auth/src/saml-test-idp.ts"],
       "@ultimat3/mail/events": ["./packages/mail/src/events.ts"],
       "@ultimat3/mcp/schema": ["./packages/mcp/src/confirmation-schema.ts"],
       "@ultimat3/pwa/client": ["./packages/pwa/src/client.ts"],

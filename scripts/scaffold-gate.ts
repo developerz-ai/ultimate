@@ -27,6 +27,8 @@ import { exec, quoteArg, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { repoRoot } from './lib/run';
+import { strangerOverlayAt } from './lib/stranger-env';
 import type { GateStep } from './reference-app-gate';
 import {
   declaredStepIssues,
@@ -208,8 +210,13 @@ export interface ScaffoldRun {
  * A failed `bun run setup` short-circuits: `bun run verify` on an app whose database was never
  * migrated reports a red table describing the setup failure twice, in steps that have nothing to do with it.
  */
-export const runScaffoldGate = async (dir: string, runner: Runner): Promise<ScaffoldRun> => {
-  const setup = await runner(appCommand('setup'), { cwd: appDir(dir) });
+export const runScaffoldGate = async (
+  dir: string,
+  runner: Runner,
+  /** An `exec` overlay: `strangerOverlayAt` — the scaffold is not this repo's code. */
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<ScaffoldRun> => {
+  const setup = await runner(appCommand('setup'), { cwd: appDir(dir), env });
   if (!setup.ok) {
     return {
       setupMs: setup.durationMs,
@@ -220,7 +227,7 @@ export const runScaffoldGate = async (dir: string, runner: Runner): Promise<Scaf
       timings: [{ name: SETUP_COMMAND, ms: setup.durationMs, ok: false }],
     };
   }
-  const check = await runner(appCommand('verify', '--json'), { cwd: appDir(dir) });
+  const check = await runner(appCommand('verify', '--json'), { cwd: appDir(dir), env });
   return {
     setupMs: setup.durationMs,
     setupOk: true,
@@ -255,7 +262,9 @@ if (import.meta.main) {
       args.json,
     );
   }
-  const run = await runScaffoldGate(dir, exec);
+  // The scaffold's own scripts run code this checkout did not write, and this process holds
+  // whatever Bun loaded from the repo's `.env` (`NPM_TOKEN`): an allowlist only.
+  const run = await runScaffoldGate(dir, exec, strangerOverlayAt(repoRoot()));
   const findings = run.setupOk
     ? scaffoldFindings({ dir, steps: run.steps, declaredSteps: VERIFY_STEP_NAMES })
     : [setupFinding(dir, run.setupOutput)];

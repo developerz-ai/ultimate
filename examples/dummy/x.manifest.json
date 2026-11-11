@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "8905100dc383093c",
+  "buildId": "34d04a67b183127d",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -861,6 +861,12 @@
           "references": "orgs.id"
         },
         {
+          "name": "phone",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
           "name": "role",
           "type": "text",
           "nullable": false,
@@ -890,6 +896,7 @@
       ],
       "invariants": [
         "member_email_shape",
+        "member_phone_e164",
         "member_unique_per_org"
       ]
     },
@@ -1277,6 +1284,52 @@
         }
       ],
       "invariants": []
+    },
+    {
+      "name": "quota_alerts",
+      "table": "quota_alerts",
+      "columns": [
+        {
+          "name": "day",
+          "type": "date",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "meter",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "orgs.id"
+        },
+        {
+          "name": "resets_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "used",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "quota_alert_used_non_negative"
+      ]
     },
     {
       "name": "run_events",
@@ -1747,6 +1800,52 @@
       }
     },
     {
+      "name": "attachAvatar",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "key",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "cancelRun",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1842,11 +1941,11 @@
           "parts"
         ],
         "additionalProperties": false,
-        "description": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+        "description": "key must be one grantPostsImport minted: org/<orgId>/pending/<importId>.csv",
         "x-ultimate-refinements": [
           {
             "name": "key-is-a-posts-import",
-            "message": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+            "message": "key must be one grantPostsImport minted: org/<orgId>/pending/<importId>.csv",
             "path": [
               "key"
             ]
@@ -3023,6 +3122,10 @@
         "feed",
         "post"
       ],
+      "rateLimit": {
+        "limit": 60,
+        "windowMs": 60000
+      },
       "mcp": {
         "expose": true,
         "description": "Like a post on behalf of the acting member"
@@ -3984,6 +4087,18 @@
           "digestOptIn": {
             "type": "boolean",
             "default": true
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4057,6 +4172,17 @@
           "digestOptIn": {
             "type": "boolean"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -4073,6 +4199,7 @@
           "locale",
           "theme",
           "digestOptIn",
+          "phone",
           "createdAt"
         ],
         "additionalProperties": false
@@ -4086,7 +4213,7 @@
       ],
       "mcp": {
         "expose": true,
-        "description": "Update the acting member’s locale, timezone, theme and digest opt-in"
+        "description": "Update the acting member’s locale, timezone, theme, digest opt-in and phone"
       }
     },
     {
@@ -4178,6 +4305,17 @@
           "digestOptIn": {
             "type": "boolean"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -4194,6 +4332,7 @@
           "locale",
           "theme",
           "digestOptIn",
+          "phone",
           "createdAt"
         ],
         "additionalProperties": false
@@ -4742,6 +4881,17 @@
           "digestOptIn": {
             "type": "boolean"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -4758,6 +4908,7 @@
           "locale",
           "theme",
           "digestOptIn",
+          "phone",
           "createdAt"
         ],
         "additionalProperties": false
@@ -5673,6 +5824,104 @@
       "cacheTags": []
     },
     {
+      "name": "postRevisions",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "postId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
+      "live": false,
+      "cacheTags": [],
+      "rows": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "postId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "insert",
+              "update",
+              "delete"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "scheduled",
+                  "published"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "postId",
+          "version",
+          "op",
+          "at",
+          "actorId",
+          "title",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "publicPost",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5955,6 +6204,7 @@
                 "locale",
                 "theme",
                 "digestOptIn",
+                "phone",
                 "createdAt"
               ]
             }
@@ -5970,7 +6220,8 @@
                 "tz",
                 "locale",
                 "theme",
-                "digestOptIn"
+                "digestOptIn",
+                "phone"
               ]
             }
           ],
@@ -7712,6 +7963,27 @@
       "steps": []
     },
     {
+      "name": "partitions",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "post-excerpts",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -8117,6 +8389,139 @@
       "steps": []
     },
     {
+      "name": "quota.alert.sms",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "orgId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "meter": {
+                "type": "string",
+                "minLength": 1
+              },
+              "used": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "periodStart": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "orgId",
+              "meter",
+              "used",
+              "limit",
+              "periodStart"
+            ],
+            "additionalProperties": false
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "locale": {
+                  "type": "string",
+                  "format": "bcp47-locale"
+                },
+                "tz": {
+                  "type": "string",
+                  "format": "iana-time-zone"
+                },
+                "to": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "params"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "quotaAlert",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "meter": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "used": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "periodStart": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resetsAt": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "orgId",
+          "meter",
+          "used",
+          "limit",
+          "periodStart",
+          "resetsAt"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "reindex-posts",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -8422,7 +8827,8 @@
           "treatment": "anonymize",
           "columns": [
             "email",
-            "name"
+            "name",
+            "phone"
           ]
         },
         {
@@ -8484,6 +8890,14 @@
       "tz": "UTC",
       "enqueues": [
         "sendDigest"
+      ]
+    },
+    {
+      "name": "partitions.schedule",
+      "cron": "17 3 * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "partitions"
       ]
     }
   ],
@@ -8588,6 +9002,7 @@
     {
       "permission": "member:self",
       "enforcedIn": [
+        "action:attachAvatar",
         "action:grantAvatarUpload",
         "action:memberAvatar",
         "action:passkeyRegisterOptions",
@@ -8694,7 +9109,8 @@
         "query:postById",
         "query:postLikesByDay",
         "query:postRecord",
-        "query:postReview"
+        "query:postReview",
+        "query:postRevisions"
       ]
     },
     {
@@ -8852,6 +9268,10 @@
     },
     {
       "code": "X_BILLING_INVOICE_REFUSED",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_CONFIG_INVALID",
       "package": "apps/web"
     },
     {

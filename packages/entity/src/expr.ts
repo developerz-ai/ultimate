@@ -14,6 +14,7 @@
 
 import { literal as sqlLiteral } from '@ultimat3/db';
 import { invariantViolated } from './errors';
+import { check, unknownOnNull, verdictOf } from './expr-verdict';
 import { isNullish } from './is-null';
 import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import { unportableConstruct } from './pattern-portability';
@@ -74,8 +75,9 @@ export interface ColumnExpr {
    * `col is null` / `col is not null`, and the only pair in this vocabulary that is TOTAL over
    * NULL in both halves: Postgres' `IS NULL` answers true or false for every input including NULL,
    * and the app side reads absent and `null` as one value (`is-null.ts`). Every other operator
-   * here answers NULL in SQL for a NULL operand, and a CHECK PASSES on NULL — which is why these
-   * two are what an `iff` can be built out of.
+   * here answers NULL (unknown) for a NULL operand in BOTH halves, and a rule passes on unknown as
+   * a CHECK does — so a nullable column's rule never refuses NULL. Refusing NULL is `.isNotNull()`
+   * (or a NOT NULL column), never a side effect of another operator.
    */
   isNull(): Expr;
   isNotNull(): Expr;
@@ -174,13 +176,6 @@ const patternSql = (pattern: RegExp): string => {
   return `${operator} ${literal(pattern.source)}`;
 };
 
-const check = (
-  paths: readonly (readonly string[])[],
-  message: string,
-  sql: (resolve: Resolve) => string | null,
-  holds: (row: Row) => boolean,
-): Expr => ({ kind: 'check', paths, message, toSql: sql, holds });
-
 /**
  * A numeric operand a CHECK can spell. `NaN` and the infinities render as `col >= NaN` — a column
  * reference Postgres does not have — so they are refused on the line that wrote them.
@@ -201,6 +196,12 @@ const isColumnExpr = (value: unknown): value is ColumnExpr =>
 
 const expr = (term: Term): ColumnExpr => {
   const one = (
+    message: string,
+    sql: (resolve: Resolve) => string | null,
+    holds: (value: unknown) => boolean,
+  ): Expr => check([term.path], message, sql, unknownOnNull(term.read, holds));
+  /** `is null` / `is not null`: decided for every input, NULL included. */
+  const total = (
     message: string,
     sql: (resolve: Resolve) => string | null,
     holds: (value: unknown) => boolean,
@@ -289,10 +290,10 @@ const expr = (term: Term): ColumnExpr => {
       ),
 
     isNull: () =>
-      one(`${term.label} is not set`, (resolve) => `${term.sql(resolve)} is null`, isNullish),
+      total(`${term.label} is not set`, (resolve) => `${term.sql(resolve)} is null`, isNullish),
 
     isNotNull: () =>
-      one(
+      total(
         `${term.label} is set`,
         (resolve) => `${term.sql(resolve)} is not null`,
         (value) => !isNullish(value),
@@ -336,10 +337,11 @@ const sameAs = (left: Term, other: ColumnExpr): Expr => {
     (resolve) => `${left.sql(resolve)} = ${right.sql(resolve)}`,
     // Two numeric columns are equal when their NUMBERS are: `'2' = '2.00'` across a `bigint()` and
     // a `decimal()`, which `===` over the two row strings denied.
-    (row) =>
-      left.decimal || right.decimal
-        ? numericOrder(true, left.read(row), right.read(row)) === 0
-        : left.read(row) === right.read(row),
+    (row) => {
+      const [a, b] = [left.read(row), right.read(row)];
+      if (isNullish(a) || isNullish(b)) return null;
+      return left.decimal || right.decimal ? numericOrder(true, a, b) === 0 : a === b;
+    },
   );
 };
 
@@ -386,15 +388,12 @@ const satisfies = (predicate: RowPredicate, columns: readonly string[]): Expr =>
  * **`=` and not `is not distinct from`, decided on a measurement.** With both operands total the two
  * are identical for all four boolean pairs. They part when an operand is NULL — a predicate on a
  * nullable column — and there `=` answers NULL, which a CHECK PASSES, while `is not distinct from`
- * answers false, which a CHECK REFUSES. The app side reads a NULL operand as false either way, so
- * the total form is the one that refuses a row TypeScript ACCEPTED: `(NULL) is not distinct from
- * (false)` is false where `false === false` is true. That is the raw `23514` in place of
- * `X_INVARIANT_VIOLATED` this whole file exists against, and it is why the more permissive spelling
- * is the safer one. `pg-invariant-null.live.test.ts` measures both.
+ * answers false, which a CHECK REFUSES. The app side judges the same three values (`verdicts`), so
+ * `=` is the spelling both halves agree on: the row passes in each. The total form would refuse a
+ * row TypeScript accepted — the raw `23514` in place of `X_INVARIANT_VIOLATED` this whole file
+ * exists against. `pg-invariant-null.live.test.ts` measures both.
  *
- * So an operand that can be NULL leaves the CHECK permissive — the language's one existing
- * disagreement, inherited here and not widened. `isNull()`/`isNotNull()` are total, which is what
- * makes a rule built from them exact.
+ * `isNull()`/`isNotNull()` are total, which is what makes a rule built from them decide a NULL.
  */
 export const iff = (left: Expr, right: Expr): Expr => {
   for (const side of [left, right] as const) {
@@ -434,7 +433,12 @@ export const iff = (left: Expr, right: Expr): Expr => {
       const b = right.toSql(resolve);
       return a === null || b === null ? null : `(${a}) = (${b})`;
     },
-    (row) => left.holds(row) === right.holds(row),
+    (row) => {
+      // `(a) = (b)` in three values: UNKNOWN when either side is, which the CHECK then passes.
+      const a = verdictOf(left)(row);
+      const b = verdictOf(right)(row);
+      return a === null || b === null ? null : a === b;
+    },
   );
 };
 

@@ -3,8 +3,9 @@
  * presigned PUT to upload one, and a short-lived signed GET to render it.
  *
  * Every key is `@ultimat3/storage`'s construction, never this file's string arithmetic —
- * `grantUpload` derives `org/<orgId>/member/<memberId>/avatar/<opaque><ext>` from the org the
- * SERVER resolved, so the client names no key and cannot aim an upload at another tenant.
+ * `grantUpload` derives `org/<orgId>/pending/<opaque><ext>` from the org the SERVER resolved, and
+ * `attachAvatar` (`./avatar-attach.ts`) moves it to `org/<orgId>/member/<memberId>/avatar/…` once
+ * the scanner passed it, so the client names no key and cannot aim an upload at another tenant.
  *
  * Nothing is created before the first upload, and that is the whole answer to "provision the
  * org's storage": a disk is declared in `app.config.ts` and built once at boot, and the tenant
@@ -13,13 +14,22 @@
 
 import type { MemberId, OrgId } from '@postly/domain';
 import type { Clock } from '@ultimat3/core';
+import { builtinImageDriver } from '@ultimat3/seo';
 import type {
   AttachmentTarget,
   StorageListEntry,
   UploadGrant,
   UploadRequest,
 } from '@ultimat3/storage';
-import { attachmentPrefix, disk, grantUpload, uploadPolicy } from '@ultimat3/storage';
+import {
+  attachmentPrefix,
+  disk,
+  grantUpload,
+  isStorageError,
+  uploadPolicy,
+  variant,
+  variantSourceOf,
+} from '@ultimat3/storage';
 
 /** Singular: the segment names one row's field, the way `attachmentKey` composes it. */
 const AVATAR_ENTITY = 'member';
@@ -37,6 +47,16 @@ export const avatarUploadPolicy = uploadPolicy({
 
 /** Short: the URL is a capability, not a CDN address, and it is minted per render. */
 export const AVATAR_URL_TTL_MS = 5 * 60_000;
+
+/**
+ * The size an avatar is HANDED OUT at: the 96px profile drawn at 2x, in webp. One of
+ * `warmAvatar`'s widths, so after the warm job ran the read below is a `stat` and never a decode;
+ * a member uploading a 2 MB photo never makes every reader download 2 MB.
+ */
+export const AVATAR_RENDER_WIDTH = 192;
+
+/** `@ultimat3/seo`'s built-in pipeline over the SAME disk `variant()` writes to — its contract. */
+const avatarImages = builtinImageDriver({ read: async (src) => (await disk().get(src)).bytes });
 
 export const avatarTarget = (memberId: MemberId): AttachmentTarget => ({
   entity: AVATAR_ENTITY,
@@ -57,6 +77,10 @@ export interface AvatarGrantInput {
  * over-limit size costs one round trip instead of a full transfer, and both constraints then
  * ride inside the signature where the client cannot widen them.
  *
+ * The bytes land under `pending/`, never on the member's prefix: `apps/web/runtime.ts` installs an
+ * `uploadScanner`, which `promoteAttachment` is the one caller of — so a targeted grant is refused
+ * (`X_STORAGE_TARGET_UNSCANNED`) and `attachAvatar` is the step that makes an upload an avatar.
+ *
  * The browser half is the framework's, handed this action's own typed client:
  * `uploadFile({ file, grant: client.grantAvatarUpload })` from `@ultimat3/storage`. Against an S3
  * disk that PUT lands in the bucket with no server of ours in the path; against the embedded dev
@@ -69,19 +93,17 @@ export const mintAvatarGrant = (input: AvatarGrantInput): Promise<UploadGrant> =
     orgId: input.orgId,
     request: input.request,
     policy: avatarUploadPolicy,
-    // The member row already exists, so the bytes land on the row rather than under `pending/`:
-    // no promotion step, and nothing for `sweepOrphans` to collect.
-    target: avatarTarget(input.memberId),
     clock: input.clock,
   });
 
 /**
  * Last upload wins. `lastModified` is the disk's own — the local driver reports the file's mtime,
  * so two uploads inside one millisecond tie and the key breaks it: arbitrary, but never
- * ambiguous. Earlier uploads stay on the disk; reclaiming them needs the key on the member row,
- * a column this app deliberately does not have, so the prefix is the record and this picks.
+ * ambiguous. `attachAvatar` prunes the earlier ones, so this picks between more than one only for
+ * an avatar attached before it did; the prefix is the record, there is no key column to read.
+ *
+ * A disk that reported no date sorts before every dated object; the key still breaks the tie.
  */
-/** A disk that reported no date sorts before every dated object; the key still breaks the tie. */
 const modifiedAt = (object: StorageListEntry): number =>
   object.lastModified?.getTime() ?? Number.NEGATIVE_INFINITY;
 
@@ -92,8 +114,12 @@ const newest = (objects: readonly StorageListEntry[]): StorageListEntry | undefi
     return at > bestAt || (at === bestAt && object.key > best.key) ? object : best;
   }, undefined);
 
+/** An original upload, not one of the resized copies `warmAvatar` and `variant()` keep beside it. */
+export const isAvatarOriginal = (key: string): boolean => variantSourceOf(key) === undefined;
+
 /**
- * A signed GET for the member's current avatar, or `null` before they have uploaded one.
+ * A signed GET for the member's current avatar at `AVATAR_RENDER_WIDTH`, or `null` before they
+ * have uploaded one. `variant()` answers the stored copy, or makes and keeps it on the first ask.
  *
  * The prefix is listed to exhaustion, not one page deep: `list` answers `truncated` with a
  * `cursor` (S3 pages at 1000 keys, and the local driver declares the same contract), so a member
@@ -101,19 +127,36 @@ const newest = (objects: readonly StorageListEntry[]): StorageListEntry | undefi
  * happened to land on page one. Folded a page at a time rather than collected — the answer is one
  * object, so holding every key to pick from is a list this function never needs.
  */
-export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise<string | null> {
-  const driver = disk();
+async function currentAvatar(orgId: OrgId, memberId: MemberId): Promise<string | undefined> {
   const prefix = attachmentPrefix(orgId, avatarTarget(memberId));
   let current: StorageListEntry | undefined;
   let cursor: string | null = null;
-
   do {
-    const page = await driver.list({ prefix, cursor });
-    current = newest(current === undefined ? page.rows : [current, ...page.rows]);
+    const page = await disk().list({ prefix, cursor });
+    const originals = page.rows.filter((row) => isAvatarOriginal(row.key));
+    current = newest(current === undefined ? originals : [current, ...originals]);
     // `nextCursor` is null exactly on the last page — the one page shape says so.
     cursor = page.nextCursor;
   } while (cursor !== null);
+  return current?.key;
+}
 
-  if (current === undefined) return null;
-  return driver.signedUrl(current.key, { method: 'GET', expiresInMs: AVATAR_URL_TTL_MS });
+const sizedOf = (key: string) =>
+  variant(key, { disk: disk(), images: avatarImages, width: AVATAR_RENDER_WIDTH, format: 'webp' });
+
+export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise<string | null> {
+  const listed = await currentAvatar(orgId, memberId);
+  if (listed === undefined) return null;
+  let sized: Awaited<ReturnType<typeof sizedOf>>;
+  try {
+    sized = await sizedOf(listed);
+  } catch (error) {
+    // An `attachAvatar` replaced and pruned the listed avatar between the list and the read: the
+    // read is unlocked on purpose (every render), so it lists once more and reads what is current.
+    if (!isStorageError(error) || error.code !== 'X_STORAGE_NOT_FOUND') throw error;
+    const relisted = await currentAvatar(orgId, memberId);
+    if (relisted === undefined) return null;
+    sized = await sizedOf(relisted);
+  }
+  return disk().signedUrl(sized.key, { method: 'GET', expiresInMs: AVATAR_URL_TTL_MS });
 }

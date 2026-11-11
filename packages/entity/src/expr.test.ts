@@ -202,12 +202,13 @@ describe('iff is the biconditional, and it is one node in both halves', () => {
    * NULL operand, so `(NULL) is not distinct from (false)` refuses a row TypeScript accepts — the
    * dangerous direction, on the row nobody would think to test.
    */
-  test('a partial operand leaves the CHECK permissive, and that is the safe direction', () => {
+  test('a partial operand is UNKNOWN in both halves, and both pass the row', () => {
     const partial = iff(c.title.eq('published'), c.slug.isNotNull());
-    // TypeScript reads an absent `title` as false, so both-or-neither refuses this row...
-    expect(partial.holds({ slug: 'x' })).toBe(false);
-    // ...while the SQL it emits leaves `title = 'published'` NULL, and `(NULL) = (true)` is NULL,
-    // which a CHECK accepts. Asserted here so a change that flips the direction fails loudly.
+    // An absent `title` makes `title = 'published'` NULL; `(NULL) = (true)` is NULL, which a CHECK
+    // accepts — and since 31.3 the app judges it in the same three values and accepts it too.
+    expect(partial.holds({ slug: 'x' })).toBe(true);
+    // A decided false still refuses: `title` set to something else, `slug` present.
+    expect(partial.holds({ title: 'draft', slug: 'x' })).toBe(false);
     expect(partial.toSql(resolve)).toBe("(title = 'published') = (slug is not null)");
     expect(partial.toSql(resolve)).not.toContain('is not distinct from');
   });
@@ -304,9 +305,10 @@ describe('a numeric rule compares the NUMBER the column holds, whatever JS type 
     expect(n.count.eq(n.total).holds({ count: 2, total: '2' })).toBe(true);
   });
 
-  test('a NULL operand satisfies none of them', () => {
-    expect(n.total.atLeast(0).holds({ total: null })).toBe(false);
-    expect(n.rate.eq(1.5).holds({})).toBe(false);
+  test('a NULL operand is unknown, which the rule passes — as its CHECK does', () => {
+    expect(n.total.atLeast(0).holds({ total: null })).toBe(true);
+    expect(n.rate.eq(1.5).holds({})).toBe(true);
+    expect(n.total.atLeast(0).holds({ total: -1 })).toBe(false);
   });
 
   test('a bound no CHECK can spell is refused where it is written', () => {

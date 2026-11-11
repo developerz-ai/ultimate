@@ -149,3 +149,16 @@ export function resetTotpReplay(): void {
 export function installedTotpReplay(): TotpReplayGuard | undefined {
   return replayFactory.current()?.();
 }
+
+/**
+ * The installed limiter FACTORY itself, so a reader can tell one install from the next and rebuild
+ * only then (`auth-ports.ts`). Not exported from `src/index.ts`, for `installedAuthLimiter`'s reason.
+ */
+export function authLimiterInstall(): AuthLimiterFactory | undefined {
+  return factory.current();
+}
+
+/** The installed TOTP replay factory, for `authLimiterInstall`'s reason. */
+export function totpReplayInstall(): TotpReplayFactory | undefined {
+  return replayFactory.current();
+}

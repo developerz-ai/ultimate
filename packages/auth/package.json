@@ -30,6 +30,7 @@
     ".": "./src/index.ts",
     "./adapter": "./src/adapter-subpath.ts",
     "./client": "./src/client.ts",
+    "./saml-test-idp": "./src/saml-test-idp.ts",
     "./soft-authenticator": "./src/soft-authenticator.ts"
   },
   "files": [

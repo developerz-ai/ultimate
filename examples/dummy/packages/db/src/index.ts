@@ -32,6 +32,8 @@ export type { PostReview, PostReviewVerdict } from './schema/post-reviews';
 export { POST_REVIEW_VERDICTS, postReviews, REVIEW_NOTES_MAX } from './schema/post-reviews';
 export type { Post } from './schema/posts';
 export { posts } from './schema/posts';
+export type { QuotaAlert } from './schema/quota-alerts';
+export { QUOTA_METER_MAX, quotaAlerts } from './schema/quota-alerts';
 export type { RunEvent, RunEventKind } from './schema/run-events';
 export { RUN_EVENT_KINDS, RUN_EVENT_MESSAGE_MAX, RunUsage, runEvents } from './schema/run-events';
 export type { Run, RunStatus } from './schema/runs';

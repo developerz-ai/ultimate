@@ -3,8 +3,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { samlTestIdp, TEST_IDP_ENTITY_ID, TEST_IDP_SSO_URL } from './saml-idp-fixture';
 import { parseSamlMetadata, samlMetadataKeys } from './saml-metadata';
+import { samlTestIdp, TEST_IDP_ENTITY_ID, TEST_IDP_SSO_URL } from './saml-test-idp';
 import { VECTOR_CERTIFICATE } from './saml-vectors-fixture';
 
 const codeOf = (run: () => unknown): string => {

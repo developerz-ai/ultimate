@@ -256,14 +256,15 @@ describe('auth rate limiting', () => {
       expect(locked.code).toBe('X_ACCOUNT_LOCKED');
     });
 
-    test('a shared declaration with a per-process limiter refuses at defineAuth', () => {
-      expect(() =>
-        defineAuth({
-          adapter: memoryAuthAdapter(),
-          clock: frozenClock(0),
-          rateLimit: { scope: 'shared' },
-        }),
-      ).toThrow(/X_AUTH_LIMITER_NOT_SHARED/);
+    // At first USE, not at `defineAuth`: the boot installs the shared limiter after `runtime.ts`
+    // loads, so a construction-time verdict refused an app the boot was about to satisfy.
+    test('a shared declaration with a per-process limiter refuses where the limiter is used', () => {
+      const auth = defineAuth({
+        adapter: memoryAuthAdapter(),
+        clock: frozenClock(0),
+        rateLimit: { scope: 'shared' },
+      });
+      expect(() => auth.limiter).toThrow(/X_AUTH_LIMITER_NOT_SHARED/);
     });
 
     test('the default declaration still builds the in-memory limiter', () => {

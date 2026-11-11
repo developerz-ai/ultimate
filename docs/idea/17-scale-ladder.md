@@ -30,19 +30,23 @@ Costs are order-of-magnitude, not quotes. No price in this table is verified aga
 
 ## Each rung, measured
 
-`As of 2026-11-09`. Every figure is one committed result, held to the prose by `bun run scripts/bench-claims.ts` (`X_BENCH_CLAIM_STALE`); the box, the method and the caveats are on [the claims page](../../scripts/bench/results/README.md). One busy 12-core machine unless the row says otherwise — an order of magnitude, never a ceiling.
+`As of 2026-11-10`. Every row names a committed result or says it has none, and what would make one. A figure in a `.json` is held to the prose by `bun run scripts/bench-claims.ts` (`X_BENCH_CLAIM_STALE`); the box, the method and the caveats are on [the claims page](../../scripts/bench/results/README.md). One busy 12-core machine unless the row says otherwise — an order of magnitude, never a ceiling.
 
 | Rung | What was measured | Figure | Result |
 |---|---|---|---|
 | 0 | `x dev` on a fresh scaffold, `/` | 267 req/s median, p99 181.85 ms | [`http-hello.json`](../../scripts/bench/results/http-hello.json) |
-| 0 → 2 | `x build --target docker` on a fresh scaffold, the production image, one `web` pod: 1,439 req/s | p99 on the claims page; three pods on one host did not scale, and no scaling figure is claimed | [`http-prod-image.json`](../../scripts/bench/results/http-prod-image.json) |
+| 0 | a 5,124-file app (the reference app + 150 generated resources), `x dev` to the first 200: 5.7 s | meets the 10 s target on a restart; a fresh clone (no `.x/`: no island cache, a new embedded Postgres) is 29.3 s | [`boot-large-app.json`](../../scripts/bench/results/boot-large-app.json) |
+| 0–3 | the same app, a `web` pod from the prebuilt registry to the first 200: 2.4 s | meets the 3 s target; on the host, the image's entry and store, not inside a container | [`boot-large-app.json`](../../scripts/bench/results/boot-large-app.json) |
+| 0–3 | module load against file count | 5,000 modules batched vs serial on the claims page | [`boot-vs-files.json`](../../scripts/bench/results/boot-vs-files.json) |
 | 1 | the Postgres job queue, 1 / 4 / 16 worker processes | defaults: 799 / 1,618 / 2,277 claims/s; tuned, the queue itself plateaus near 3,724 claims/s | [`worker-throughput.json`](../../scripts/bench/results/worker-throughput.json) |
 | 1 | scheduler failover | a live test, not a bench: no double fire, no skip | [`scheduler-failover.live.test.ts`](../../packages/jobs/src/scheduler-failover.live.test.ts) |
-| 1–3 | boot: module load against file count | 5,000 modules batched vs serial on the claims page | [`boot-vs-files.json`](../../scripts/bench/results/boot-vs-files.json) |
+| 1 | cache/ISR invalidation over Redis pub/sub, 2+ web replicas | **unmeasured**: a live test proves a bust on one process reaches the other over one real Redis ([`runtime-cache-redis.live.test.ts`](../../packages/cli/src/runtime-cache-redis.live.test.ts)); no latency figure. Would measure it: two `web` processes on one Redis, write on A, time to B's miss | — |
+| 2 | Compose on one host: `x build --target docker`, `x deploy` on `docker-compose.prod.yml`, the production image, one `web` pod: 1,439 req/s | p99 on the claims page; three pods on one host did not scale, and no scaling figure is claimed | [`http-prod-image.json`](../../scripts/bench/results/http-prod-image.json) |
 | 3 | 10,000 subscribers across 3 `sync` nodes over NATS: p99 23.26 ms | every one of 200,000 deliveries arrived | [`fanout-3-nodes.json`](../../scripts/bench/results/fanout-3-nodes.json) |
 | 3 | one `sync` node, 50,000 sockets SIGKILLed | p50 54.0s to the first patch after reconnect | [`50k-restart.json`](../../scripts/bench/results/50k-restart.json) |
-| 3 | a `helm upgrade` under load on kind | 0 of 8,686 requests failed | `deploy-proof`, [`14-roadmap.md`](./14-roadmap.md) milestone 11 |
-| 4 | — | **nothing measured**: no distributed SQL, no multi-region run, no clustered cache node | — |
+| 3 | a `helm upgrade` under load on kind | 0 of 8,686 requests failed, `As of 2026-09-23` — **no committed result file**: `docker/deploy-proof/run.sh` prints it and nothing keeps it. Would make it one: that run writing its counts to `scripts/bench/results/` | [`14-roadmap.md`](./14-roadmap.md) milestone 11 |
+| 3 | production req/s with pods on separate hosts | **unmeasured**: the three-pod run above shared one box. Would measure it: `http-hello.ts` against a `web` Deployment on a multi-node cluster | — |
+| 4 | — | **nothing measured**: no distributed SQL, no multi-region run, no clustered cache node. Would measure it: the fan-out and worker benches against YugabyteDB / a clustered Redis, and a zone-loss drill | — |
 
 ---
 
@@ -365,6 +369,7 @@ Two rules underneath all of them:
 | Postgres job queue throughput | **measured, one box** — defaults bounded by the queue, not the poll floor, since a full pass marks a backlog (As of 2026-11-09), plateau of the queue itself between 4 and 16 tuned workers, `scripts/bench/results/worker-throughput.json` |
 | scheduler failover: the leader dies mid-fire, a standby takes over | **proved live** — `packages/jobs/src/scheduler-failover.live.test.ts`: the standby fires only after the lease expires, fires the occurrence the dead leader held, the dead leader's late fire is refused by the watermark, and every occurrence is queued exactly once |
 | cross-node fan-out over NATS | **measured at 10k subscribers, 3 nodes, one box** — `scripts/bench/results/fanout-3-nodes.json`; in-process sockets, a real nats-server |
+| a 5k-file app boots `x dev` under 10 s and a `web` pod under 3 s | **measured and met** `As of 2026-11-10` — one box, `scripts/bench/results/boot-large-app.json`: the pod from the prebuilt registry 2.4 s; an `x dev` restart 5.7 s (a fresh clone 29.3 s: every island built, the embedded Postgres made) |
 | read replicas with read-your-writes | **true and wired** — the boot opens the scope per request and carries the write's WAL position to the next one (`runtime-replica.ts`) |
 | cache/ISR invalidation across replicas without NATS | **true** — Redis pub/sub on `REDIS_URL` (`runtime-cache-bus.ts`) |
 | 50k sockets, forced restart, p50 54.0s to the first patch on the reconnected socket | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json`. Reachability; it cannot see a lost patch |

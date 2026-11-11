@@ -515,7 +515,7 @@ export const runtime = {
 } satisfies RuntimeOverrides;
 ```
 
-`UploadScanner` (`@ultimat3/storage/adapter`) is `{ name, holds?, scan({ key, pendingKey, size, contentType, body }) }`,
+`UploadScanner` (`@ultimat3/storage/adapter`) is `{ name, holds?, scan({ key, pendingKey, revision, size, contentType, body }) }`,
 `body` a `ReadableStream`. `memoryUploadScanner()` is the reference: it flags the EICAR test string
 (`EICAR_TEST_STRING`) anywhere in the stream, across chunk boundaries. Hold your adapter to the
 contract with `behavesLike(uploadScannerConformance, () => yours)` from
@@ -526,20 +526,22 @@ latency budget are the app's (axiom 8). No scanner installed, nothing is scanned
 
 Magic-byte sniffing closes stored XSS. It is **not** malware scanning: `application/zip` is the
 OOXML container, so a macro-laden `.docx` passes `validateUpload` as a clean one does. A verdict
-that is not ready inside the confirm is the scanner's `hold`, keyed by `pendingKey` — the upload's
-own key, stable across retries (`key` is the per-attempt copy). One scan path; the v30
+that is not ready inside the confirm is the scanner's `hold`, keyed by `(pendingKey, revision)` —
+the upload's own key, stable across retries (`key` is the per-attempt copy), and WHICH bytes are
+under it: the confirmed upload's etag, or `sha256:<hex>` on a disk with none. The upload URL stays
+valid after the sniff, so a decision keyed by `pendingKey` alone clears whatever is PUT there next. One scan path; the v30
 `grantUpload({ quarantine: true })` + `releaseQuarantine` flow is retired.
 
 ```ts
 import type { UploadScanner } from '@ultimat3/storage/adapter';
 
 // `approved` is your app's own store — a table a moderator's action writes.
-export const reviewScanner = (approved: (key: string) => Promise<boolean>): UploadScanner => ({
+export const reviewScanner = (approved: (upload: string) => Promise<boolean>): UploadScanner => ({
   name: 'review',
   holds: true,
-  async scan({ pendingKey, body }) {
+  async scan({ pendingKey, revision, body }) {
     await body.cancel();
-    return (await approved(pendingKey))
+    return (await approved(`${pendingKey}@${revision}`))
       ? { verdict: 'clean' }
       : { verdict: 'hold', reason: 'awaiting a moderator' };
   },
