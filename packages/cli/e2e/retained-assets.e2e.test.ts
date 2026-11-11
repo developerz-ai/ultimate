@@ -13,7 +13,8 @@ import { allowHost, paced } from '@ultimat3/testing';
 import { pump, reapIn, waitFor } from '../src/dev-live-fixture';
 import { processRoot } from '../src/process-root-fixture';
 
-const TIMEOUT_MS = paced(180_000);
+// Bound the two build-and-boot cycles together; pacing belongs to this runner, not another test.
+const TIMEOUT_MS = paced(120_000);
 const BASE = processRoot(join(import.meta.dir, '..', '.retained-assets-e2e-fixture'));
 const DISK = join(BASE, 'shared-disk');
 

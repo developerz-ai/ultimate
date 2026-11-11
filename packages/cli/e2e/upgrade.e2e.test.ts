@@ -26,6 +26,11 @@ const GUARD = 'guards/bare-error.ts';
 const REPO = join(import.meta.dir, '../../..');
 const BIN = join(REPO, 'packages/cli/src/bin.ts');
 
+// Separate setup, hop and removal caps; the registry must outlive both phases that use it.
+const SETUP_MS = 300_000;
+const HOP_MS = 600_000;
+const CLEANUP_MS = 30_000;
+
 /** Through the same proxy env `bun install` uses, so a dead proxy and a 5xx both read as no npm. */
 const npmAnswers = (): boolean => {
   const probe = Bun.spawnSync(
@@ -92,14 +97,11 @@ const pinAll = async (version: string): Promise<void> => {
 };
 
 describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
-  // The bound is the removal's own: `work` holds two full installs and a private install cache,
-  // ~49k entries. Measured: 0.7–1.3 s on a local NVMe, 5.46 s on the ubuntu runner under
-  // `--coverage` (ci run 42392549959, attempt 1), which bun's 5 s hook default failed as a timeout
-  // though nothing was wrong. A minute is ten times the slowest measured, not a guess.
+  // Removal covers both installed trees and the private install cache, not just test assertions.
   afterAll(() => {
     registry?.kill();
     if (work !== '') rmSync(work, { recursive: true, force: true });
-  }, 60_000);
+  }, CLEANUP_MS);
 
   beforeAll(async () => {
     work = realpathSync(mkdtempSync(join(tmpdir(), 'ultimate-upgrade-e2e-')));
@@ -113,7 +115,7 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
         TO,
         work,
       ],
-      { stdout: 'pipe', stderr: 'inherit', timeout: 1_500_000 },
+      { stdout: 'pipe', stderr: 'inherit', timeout: SETUP_MS + HOP_MS + CLEANUP_MS },
     );
     const reader = (registry.stdout as ReadableStream<Uint8Array>).getReader();
     const { value } = await reader.read();
@@ -144,75 +146,85 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
     await pinAll(FROM);
     await must(inApp([process.execPath, 'install']));
     await commit('the app, one major behind');
-  }, 600_000);
+  }, SETUP_MS);
 
-  test('an old app takes the hop with the newest CLI, and the report says what is left', async () => {
-    const installed = async (): Promise<string> =>
-      (
-        (await Bun.file(join(app, 'node_modules/@ultimat3/cli/package.json')).json()) as {
-          version: string;
-        }
-      ).version;
-    expect(await installed()).toBe(FROM);
+  test(
+    'an old app takes the hop with the newest CLI, and the report says what is left',
+    async () => {
+      const installed = async (): Promise<string> =>
+        (
+          (await Bun.file(join(app, 'node_modules/@ultimat3/cli/package.json')).json()) as {
+            version: string;
+          }
+        ).version;
+      expect(await installed()).toBe(FROM);
 
-    // The premise: the app's own CLI cannot do this, so anything answering below is the newest one.
-    const own = await inApp([process.execPath, join(app, LOCAL_CLI_BIN), 'upgrade', '--json']);
-    expect(JSON.parse(own.stdout).findings[0].code).toBe('X_NOT_IMPLEMENTED');
+      // The premise: the app's own CLI cannot do this, so anything answering below is the newest one.
+      const own = await inApp([process.execPath, join(app, LOCAL_CLI_BIN), 'upgrade', '--json']);
+      expect(JSON.parse(own.stdout).findings[0].code).toBe('X_NOT_IMPLEMENTED');
 
-    const dry = await inApp([
-      process.execPath,
-      'x',
-      '@ultimat3/cli@latest',
-      'upgrade',
-      '--dry-run',
-      '--json',
-    ]);
-    expect(execOutput(dry)).not.toContain('X_NOT_IMPLEMENTED');
-    expect(JSON.parse(dry.stdout).data).toMatchObject({ from: FROM, to: TO, dryRun: true });
-    expect(await must(inApp(['git', 'status', '--porcelain']))).toMatchObject({ stdout: '' });
+      const dry = await inApp([
+        process.execPath,
+        'x',
+        '@ultimat3/cli@latest',
+        'upgrade',
+        '--dry-run',
+        '--json',
+      ]);
+      expect(execOutput(dry)).not.toContain('X_NOT_IMPLEMENTED');
+      expect(JSON.parse(dry.stdout).data).toMatchObject({ from: FROM, to: TO, dryRun: true });
+      expect(await must(inApp(['git', 'status', '--porcelain']))).toMatchObject({ stdout: '' });
 
-    const hop = await inApp([process.execPath, 'x', '@ultimat3/cli@latest', 'upgrade', '--json']);
-    const report = JSON.parse(hop.stdout);
+      const hop = await inApp([process.execPath, 'x', '@ultimat3/cli@latest', 'upgrade', '--json']);
+      const report = JSON.parse(hop.stdout);
 
-    // Exactly one document on fd 1, and the exit code is the verdict.
-    expect(report.command).toBe('upgrade');
-    expect(hop.code === 0).toBe(report.data.done);
-    expect(report.data.done).toBe(report.data.verify.ok);
-    expect(report.data).toMatchObject({
-      from: FROM,
-      to: TO,
-      next: null,
-      section: {
-        title: '29.x → 30.0.0, entry by entry',
-        url: 'https://github.com/developerz-ai/ultimate/wiki/Upgrading#29x--3000-entry-by-entry',
-      },
-    });
+      // Exactly one document on fd 1, and the exit code is the verdict.
+      expect(report.command).toBe('upgrade');
+      expect(hop.code === 0).toBe(report.data.done);
+      expect(report.data.done).toBe(report.data.verify.ok);
+      expect(report.data).toMatchObject({
+        from: FROM,
+        to: TO,
+        next: null,
+        section: {
+          title: '29.x → 30.0.0, entry by entry',
+          url: 'https://github.com/developerz-ai/ultimate/wiki/Upgrading#29x--3000-entry-by-entry',
+        },
+      });
 
-    // The hop happened, for every workspace, through the installed tree.
-    expect(await installed()).toBe(TO);
-    const pins = await Bun.file(join(app, 'package.json')).text();
-    expect(pins).not.toContain(`"${FROM}"`);
-    expect(pins).toContain(`"@ultimat3/cli": "${TO}"`);
+      // The hop happened, for every workspace, through the installed tree.
+      expect(await installed()).toBe(TO);
+      const pins = await Bun.file(join(app, 'package.json')).text();
+      expect(pins).not.toContain(`"${FROM}"`);
+      expect(pins).toContain(`"@ultimat3/cli": "${TO}"`);
 
-    // The local guard edit survives, is offered, and nothing was committed.
-    expect((await must(inApp(['git', 'diff', '--', 'guards/']))).stdout).toBe('');
-    expect(report.data.guards.reported).toBe(true);
-    expect(report.data.guards.differs.map((guard: { name: string }) => guard.name)).toContain(
-      'bare-error',
-    );
-    expect((await must(inApp(['git', 'rev-list', '--count', 'HEAD']))).stdout.trim()).toBe('2');
+      // The local guard edit survives, is offered, and nothing was committed.
+      expect((await must(inApp(['git', 'diff', '--', 'guards/']))).stdout).toBe('');
+      expect(report.data.guards.reported).toBe(true);
+      expect(report.data.guards.differs.map((guard: { name: string }) => guard.name)).toContain(
+        'bare-error',
+      );
+      expect((await must(inApp(['git', 'rev-list', '--count', 'HEAD']))).stdout.trim()).toBe('2');
 
-    // The gate really ran, and a scaffold one hop on is green. `budgets` alone may be red: nothing in
-    // this hop has built, and that step's finding names the build.
-    expect(report.data.verify.failed.filter((step: string) => step !== 'budgets')).toEqual([]);
-    expect(report.data.verify.summary.length).toBeGreaterThan(0);
-    for (const finding of report.data.verify.findings) {
-      expect(finding.code).toStartWith('X_');
-      expect(finding.fix.length).toBeGreaterThan(0);
-    }
+      // The gate really ran, and a scaffold one hop on is green. `budgets` alone may be red: nothing in
+      // this hop has built, and that step's finding names the build.
+      expect(report.data.verify.failed.filter((step: string) => step !== 'budgets')).toEqual([]);
+      expect(report.data.verify.summary.length).toBeGreaterThan(0);
+      for (const finding of report.data.verify.findings) {
+        expect(finding.code).toStartWith('X_');
+        expect(finding.fix.length).toBeGreaterThan(0);
+      }
 
-    // The next walk's refusal: an uncommitted hop must be committed first.
-    const again = await inApp([process.execPath, 'x', '@ultimat3/cli@latest', 'upgrade', '--json']);
-    expect(JSON.parse(again.stdout).findings[0].code).toBe('X_UPGRADE_DIRTY_TREE');
-  }, 1_200_000);
+      // The next walk's refusal: an uncommitted hop must be committed first.
+      const again = await inApp([
+        process.execPath,
+        'x',
+        '@ultimat3/cli@latest',
+        'upgrade',
+        '--json',
+      ]);
+      expect(JSON.parse(again.stdout).findings[0].code).toBe('X_UPGRADE_DIRTY_TREE');
+    },
+    HOP_MS,
+  );
 });

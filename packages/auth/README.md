@@ -28,6 +28,15 @@ const byHandle = await login(auth, { handle: 'ada', password, ip });
 const { start, callback } = oauthLogin(auth);
 ```
 
+## Schema boot entry point
+
+**Hosts apply framework-owned auth tables through `@ultimat3/auth/schema`; apps never copy them
+into migrations.** This entry resolves to the existing `src/tables.ts` leaf and exports only
+`AUTH_TABLE_NAMES`, `AUTH_TABLES`, `AUTH_SERVER_TABLES`, `SQL_AUTH_SERVER_TABLES`,
+`SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE`, without evaluating authentication runtime code.
+The existing `@ultimat3/auth` barrel retains the same six values unchanged for compatible consumers;
+boot code uses the schema entry point.
+
 ## Rules
 
 - Every login failure throws `loginFailed()` from `rate-limit.ts`. Never a specific message.
@@ -740,12 +749,15 @@ brought up to date with no hand-run migration. There is nothing to paste: the pe
 constants and `X_USERS_MIGRATION_1_3` are gone, and a hand-written migration that pasted them
 should be deleted. They are still not `entity()` declarations, so `x db gen` does not see them.
 
-**Read the DDL from `@ultimat3/auth/schema`, a leaf — `As of 2026-11-10`.** It exports
+**Read the DDL from `@ultimat3/auth/schema`, a leaf — `As of 2026-11`.** It exports
 `AUTH_TABLES`, `AUTH_TABLE_NAMES`, `AUTH_SERVER_TABLES`, `SQL_AUTH_SERVER_TABLES`,
-`SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE`, and imports no runtime: reading table names
-costs 2 modules, not the barrel's 106. `FRAMEWORK_SCHEMA` reads it there, which took `ROLE=migrate`
-from 977 modules to 873. The `.` barrel still exports the same six values, so a caller that also
-needs `postgresAuthAdapter` or a store keeps one import.
+`SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE` from `src/tables.ts`, whose only dependency is
+`authorization-server-schema.ts` — no auth runtime (`schema-subpath.test.ts`). With
+`FRAMEWORK_SCHEMA` reading that leaf, `serve-graph.test.ts` measures 873 modules for `ROLE=migrate`,
+including exactly those two auth modules, using static edges in a `Bun.build` metafile. Serving
+and web graphs remain at 1401 and 1591: they independently import the auth runtime barrel.
+The `.` barrel still exports the same six values, so a caller that also needs
+`postgresAuthAdapter` or a store keeps one import.
 
 ```ts
 import { AUTH_TABLE_NAMES, AUTH_TABLES } from '@ultimat3/auth/schema';

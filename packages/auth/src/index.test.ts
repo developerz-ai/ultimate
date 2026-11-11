@@ -2,8 +2,11 @@
 // does not re-export is a call an app cannot make — the failure this file exists to catch.
 
 import { describe, expect, test } from 'bun:test';
+import * as schema from '@ultimat3/auth/schema';
 import * as auth from './index';
 import { BUILTIN_OAUTH_PROVIDER_IDS as declared } from './oauth-builtins';
+
+const manifest: unknown = await Bun.file(new URL('../package.json', import.meta.url)).json();
 
 describe('@ultimat3/auth public surface', () => {
   test('re-exports `BUILTIN_OAUTH_PROVIDER_IDS`, the list README.md tells an app to read', () => {
@@ -64,5 +67,21 @@ describe('@ultimat3/auth public surface', () => {
     ]) {
       expect(name in auth).toBe(true);
     }
+  });
+
+  test('keeps framework DDL on the barrel and publishes it alone through ./schema', () => {
+    const ddl = [
+      'AUTH_SERVER_TABLES',
+      'AUTH_TABLE_NAMES',
+      'AUTH_TABLES',
+      'SQL_AUTH_LIMIT_TABLES',
+      'SQL_AUTH_SERVER_TABLES',
+      'SQL_TOTP_REPLAY_TABLE',
+    ] as const;
+    expect(Object.keys(schema).sort()).toEqual([...ddl].sort());
+    for (const name of ddl) {
+      expect(schema[name]).toBe(auth[name]);
+    }
+    expect(manifest).toMatchObject({ exports: { './schema': './src/tables.ts' } });
   });
 });

@@ -53,11 +53,12 @@ describe('contract · the customer client', () => {
     const tsc = Bun.spawnSync([join(REPO, 'node_modules/.bin/tsc'), '-p', dir], {
       stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 60_000,
+      // Stop the compiler before the enclosing test's deadline so its diagnostics are asserted.
+      timeout: 30_000,
     });
     expect(`${tsc.stdout.toString()}${tsc.stderr.toString()}`).toBe('');
     expect(tsc.exitCode).toBe(0);
-  });
+  }, 35_000);
 
   test('carries every operation the document publishes', async () => {
     const published = Object.values(

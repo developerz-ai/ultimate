@@ -11,16 +11,19 @@ import type { StepStore } from './steps';
 import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
+// Boot belongs to the fixture hooks; serialization assertions keep the runner's default budget.
+const PGLITE_BOOT_MS = 120_000;
+
 let pg: EmbeddedPg;
 
 beforeEach(async () => {
   pg = await embeddedPg();
   await pg.reset();
-});
+}, PGLITE_BOOT_MS);
 
 afterAll(async () => {
   await (await embeddedPg()).close();
-});
+}, PGLITE_BOOT_MS);
 
 const stores = (): readonly (readonly ['memory' | 'postgres', StepStore])[] => [
   ['memory', memoryStepStore()],

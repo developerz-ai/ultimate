@@ -206,5 +206,8 @@
  * hashes the same; 0.42 s against 14.6–21 s on the bench app), `island-build-pool.ts` (the bounded
  * pool, stopped by its first failure) and `island-outputs.ts` (a build's outputs as the chunk table,
  * split out of `island-bundle.ts`). No existing module newly reached.
+ * unchanged at 1591, measured 1591 (As of 2026-11, `serve-graph.test.ts`, static edges from
+ * `serve-entry.ts`, `serve-boot.ts` and `serve-web.ts` in a `Bun.build` metafile): web includes
+ * the serving graph's independent auth runtime imports; the schema leaf removes nothing here.
  */
 export const WEB_ROLE_CEILING = 1591;

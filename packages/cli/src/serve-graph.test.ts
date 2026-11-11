@@ -33,11 +33,10 @@ const FORBIDDEN = /packages\/testing\/|packages\/cli\/src\/templates\/|\/e2e-|\/
  * What only a process that serves documents evaluates. In the static graph these were 107 modules
  * every worker, scheduler and migrate pod loaded to render nothing (966 static, 2026-10-01).
  */
-// `admin/src/{audit,error-groups}-schema.ts`, `mcp/src/confirmation-schema.ts` and
-// `pwa/src/push-schema.ts` are the admin, mcp and pwa modules every role may load: the leaves the
-// boot's `FRAMEWORK_SCHEMA` applies `x_admin_audit`, `x_error_groups`, `x_mcp_confirmations` and
-// `x_push_subscriptions` from, reached as
-// `@ultimat3/admin/schema`, `@ultimat3/mcp/schema` and `@ultimat3/pwa/schema`.
+// `admin/src/{audit,error-groups}-schema.ts`, `auth/src/authorization-server-schema.ts`,
+// `auth/src/tables.ts`, `mcp/src/confirmation-schema.ts` and
+// `pwa/src/push-schema.ts` are schema leaves every role may load: `FRAMEWORK_SCHEMA` applies their
+// DDL through the packages' `./schema` exports without evaluating the auth runtime barrel.
 const WEB_ONLY =
   /packages\/pwa\/src\/(?!push-schema\.ts$)|packages\/(?:manifest|ui)\/src\/|packages\/mcp\/src\/(?!confirmation-schema\.ts$)|packages\/admin\/src\/(?!(?:audit|error-groups)-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
 
@@ -136,20 +135,30 @@ describe('the @ultimat3/cli/serve module graph', () => {
     expect(all.filter((path) => FORBIDDEN.test(path))).toEqual([]);
 
     const migrate = evaluatedWith(inputs, [entry]);
+    const everyRole = evaluatedWith(inputs, serving);
+    const web = evaluatedWith(inputs, [...serving, webEntry]);
+    console.info(
+      `serve graph modules: migrate=${migrate.length}, serving=${everyRole.length}, web=${web.length}`,
+    );
     // `ROLE=migrate` applies SQL files and exits: it boots no service and no role.
     expect(
       migrate.filter((path) => /cli\/src\/(?:runtime-services|serve-boot|role-)/.test(path)),
     ).toEqual([]);
+    // Exact membership also fails if the auth DDL leaves disappear: no vacuous exclusion check.
+    expect(
+      migrate
+        .filter((path) => /packages\/auth\/src\//.test(path))
+        .map((path) => path.slice(path.indexOf('packages/auth/src/')))
+        .sort(),
+    ).toEqual(['packages/auth/src/authorization-server-schema.ts', 'packages/auth/src/tables.ts']);
     expect(migrate.length).toBeLessThanOrEqual(MIGRATE_CEILING);
 
-    const everyRole = evaluatedWith(inputs, serving);
     // The property per-role loading rests on: the web surface is a CHOICE of the boot. One static
     // import of `serve-web.ts`, or of anything only it needs, puts it back in every role.
     expect(everyRole.filter((path) => WEB_ONLY.test(path))).toEqual([]);
     expect(everyRole.length).toBeGreaterThan(migrate.length);
     expect(everyRole.length).toBeLessThanOrEqual(SERVING_ROLE_CEILING);
 
-    const web = evaluatedWith(inputs, [...serving, webEntry]);
     expect(web.length).toBeGreaterThan(everyRole.length);
     expect(web.length).toBeLessThanOrEqual(WEB_ROLE_CEILING);
 

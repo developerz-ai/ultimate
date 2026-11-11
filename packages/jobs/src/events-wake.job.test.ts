@@ -13,12 +13,15 @@ import { job, resetJobs } from './job';
 import { WAKING_EVENT_POLL_MS } from './steps';
 import { jobWorker } from './worker';
 
+// Boot belongs to the fixture hooks; the wake assertions keep the test runner's default budget.
+const PGLITE_BOOT_MS = 120_000;
+
 let pg: EmbeddedPg;
 
 beforeEach(async () => {
   pg = await embeddedPg();
   await pg.reset();
-});
+}, PGLITE_BOOT_MS);
 
 afterEach(() => {
   resetJobs();
@@ -26,7 +29,7 @@ afterEach(() => {
 
 afterAll(async () => {
   await (await embeddedPg()).close();
-});
+}, PGLITE_BOOT_MS);
 
 describe('a waking bus over the queue database', () => {
   test('a publish resumes the parked run on the next tick, in one replay', async () => {

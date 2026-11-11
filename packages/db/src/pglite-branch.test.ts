@@ -37,7 +37,7 @@ const failure = async (run: () => Promise<unknown>): Promise<{ code: string; fix
   } catch (error) {
     return error as { code: string; fix: string };
   }
-  throw new Error('expected the branch to be refused');
+  return expect.unreachable('expected the branch to be refused');
 };
 
 describe('pgliteBranchDir', () => {

@@ -45,7 +45,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   cache: 5, // why: 3 -> 6, the K19 class list; the new sites are stubs (input). 6 -> 5: the duplicate redis fake in invalidate.test.ts is gone
   cli: 29, // why: 9 -> 29, the K19 class list; the new sites are stubs (input)
   core: 42, // why: 30 -> 43, the K19 class list; the new sites are stubs (input)
-  db: 32, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)
+  db: 31, // why: 24 -> 34, the K19 class list; the new sites are stubs (input). 32 -> 31: pglite-branch.test.ts uses expect.unreachable for its rejection verdict
   entity: 25, // why: 17 -> 25, the K19 class list; the new sites are stubs (input)
   flags: 1,
   http: 32, // why: 11 -> 32, the K19 class list; the new sites are stubs (input)

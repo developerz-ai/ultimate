@@ -56,9 +56,9 @@ describe('unit · framework schema', () => {
   });
 
   test('every framework package is read through its schema leaf, never its barrel', async () => {
-    // A barrel here is every module of that package in `ROLE=migrate`'s graph: the auth barrel was
-    // 106 modules to read eight table names and their DDL (#1051). `serve-graph.test.ts` pins the
-    // count; this names the line that would raise it.
+    // A barrel here puts auth runtime on `ROLE=migrate`'s path just to read DDL.
+    // `serve-graph.test.ts` pins the count and exact two auth leaves; this identifies the import
+    // that would violate that boundary without changing any table or application order.
     const source = await Bun.file(new URL('./framework-schema.ts', import.meta.url)).text();
     const specifiers = new Bun.Transpiler({ loader: 'ts' })
       .scanImports(source)
