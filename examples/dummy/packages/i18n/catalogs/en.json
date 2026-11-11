@@ -359,7 +359,8 @@
     "seatsExceeded": "Your plan is full. Upgrade to add another member.",
     "offlineQueued": "You are offline — this will be sent when you reconnect.",
     "updateAvailable": "A new version is ready.",
-    "updateAction": "Reload"
+    "updateAction": "Reload",
+    "ssoUnavailable": "Single sign-on is not available right now."
   },
   "admin": {
     "title": "Postly admin",

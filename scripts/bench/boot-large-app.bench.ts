@@ -134,12 +134,24 @@ export interface LargeAppResult {
     | { readonly skipped: string };
 }
 
-export async function runLargeAppBench(
-  argv: readonly string[],
-  log: (line: string) => void = console.log,
-): Promise<LargeAppResult> {
-  const args = largeAppArgs(argv);
-  const dir = fixtureDir();
+/**
+ * `work` over the fixture under `parent`, which is removed afterwards — when `work` throws too —
+ * unless `keep`: its 5,000 generated files hold tests a root `bun test` would find.
+ */
+export async function withFixture<T>(
+  parent: string,
+  keep: boolean,
+  work: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await work();
+  } finally {
+    if (!keep) await rm(parent, { recursive: true, force: true });
+  }
+}
+
+/** Every figure, on the app under `dir` (written fresh unless `--reuse` finds one). */
+async function measure(dir: string, args: LargeAppArgs): Promise<LargeAppResult> {
   const reuse = args.reuse && (await Bun.file(`${dir}/x.manifest.json`).exists());
   if (!reuse) await writeLargeApp(args.resources, dir);
   const app = await appShape(dir, args.resources);
@@ -155,20 +167,32 @@ export async function runLargeAppBench(
           targetMs: POD_TARGET_MS,
           verdict: verdict(result.registry.medianMs, POD_TARGET_MS),
         }));
-  const result: LargeAppResult = {
+  return {
     box: { ...boxFacts(Bun.env), loadAvg1m: Math.round(load * 10) / 10 },
     runs: args.runs,
     app,
     dev: { targetMs: DEV_TARGET_MS, verdict: verdict(warm.medianMs, DEV_TARGET_MS), warm, cold },
     pod,
   };
-  if (!args.keep) await rm(fixtureParent(), { recursive: true, force: true });
+}
+
+export async function runLargeAppBench(
+  argv: readonly string[],
+  log: (line: string) => void = console.log,
+): Promise<LargeAppResult> {
+  const args = largeAppArgs(argv);
+  const result = await withFixture(fixtureParent(), args.keep, () => measure(fixtureDir(), args));
+  const { app, dev, pod } = result;
   if (args.out !== undefined) await Bun.write(args.out, `${JSON.stringify(result, null, 2)}\n`);
   if (args.json) log(JSON.stringify(result, null, 2));
   else {
     log(`${String(app.tsFiles)} TS files, ${String(app.resources)} generated resources`);
-    log(`x dev warm: ${String(warm.medianMs)} ms, ${String(warm.medianPeakRssMb)} MiB peak`);
-    log(`x dev cold: ${String(cold.medianMs)} ms, ${String(cold.medianPeakRssMb)} MiB peak`);
+    log(
+      `x dev warm: ${String(dev.warm.medianMs)} ms, ${String(dev.warm.medianPeakRssMb)} MiB peak`,
+    );
+    log(
+      `x dev cold: ${String(dev.cold.medianMs)} ms, ${String(dev.cold.medianPeakRssMb)} MiB peak`,
+    );
     if ('registry' in pod) {
       log(
         `pod (registry): ${String(pod.registry.medianMs)} ms; scan: ${String(pod.scan.medianMs)}`,

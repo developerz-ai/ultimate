@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
-import { integer, text, timestamp, uuid } from './columns';
+import { integer, money, text, timestamp, uuid } from './columns';
 import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
 import { history } from './history-read';
@@ -23,8 +23,9 @@ const posts = entity('hist_ignore_posts', {
     title: text(),
     likeCount: integer().default(0),
     seenAt: timestamp().column('seen_on').nullable(),
+    price: money().nullable(),
   },
-  history: { ignore: ['likeCount', 'seenAt'] },
+  history: { ignore: ['likeCount', 'seenAt', 'price'] },
 });
 const postsHistory = posts.$history ?? expect.unreachable('history declares a history entity');
 const ENTITIES = { posts, postsHistory };
@@ -52,7 +53,14 @@ afterAll(() => {
 
 describe('history: { ignore } · the declaration', () => {
   test('the physical names reach $describe().history.ignore, which the trigger takes', () => {
-    expect(posts.$describe().history?.ignore).toEqual(['like_count', 'seen_on']);
+    // Money is three physical columns, and the image holds all three: each is named.
+    expect(posts.$describe().history?.ignore).toEqual([
+      'like_count',
+      'seen_on',
+      'price_minor',
+      'price_currency',
+      'price_scale',
+    ]);
   });
 
   test('a name that is no column is refused where it is written', () => {
@@ -82,6 +90,8 @@ const run = async (driver: Driver) => {
     await db.posts.insert({ id: ID, orgId: ORG, title: 'a' });
     await db.posts.update(ID, { likeCount: 3 });
     await db.posts.update(ID, { seenAt: new Date('2026-11-10T09:00:00.000Z') });
+    await db.posts.update(ID, { price: { minor: 1900, currency: 'USD' } });
+    await db.posts.update(ID, { price: { minor: 2500, currency: 'EUR' } });
     await db.posts.update(ID, { title: 'b', likeCount: 4 });
     await db.posts.updateWhere({ orgId: ORG }, { likeCount: 9 });
     const versions = await history(db.postsHistory, ID);

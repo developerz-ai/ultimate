@@ -63,6 +63,20 @@ describe('orderVersions', () => {
     expect(titles(orderVersions(rows))).toEqual(['1:insert:a', '2:update:b', '3:update:c']);
   });
 
+  test('a whole lifecycle starts at the insert, even when the delete carries the earlier `at`', () => {
+    // T2 began first, T1 inserted and committed, then T2 deleted: every image balances, and the
+    // delete's `at` is the earliest — the walk must still start at the insert's NULL `before`.
+    const EARLIER = new Date(AT.getTime() - 1_000);
+    const rows = [
+      row('delete', { title: 'a' }, null, EARLIER),
+      row('insert', null, { title: 'a' }),
+    ];
+    expect(orderVersions(rows).map((r) => `${r.version}:${r.op}`)).toEqual([
+      '1:insert',
+      '2:delete',
+    ]);
+  });
+
   test('no chain across rows (a purged prefix): by `at`, then within an instant', () => {
     const rows = [
       row('update', { title: 'q' }, { title: 'r' }, LATER),

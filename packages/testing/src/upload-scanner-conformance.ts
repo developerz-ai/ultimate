@@ -49,15 +49,25 @@ function streamOf(bytes: Uint8Array, size: number): ReadableStream<Uint8Array> {
   });
 }
 
-const scan = (scanner: UploadScannerLike, bytes: Uint8Array, chunk = 64 * 1024, revision = 'r-1') =>
-  scanner.scan({
-    key: `org/conformance/pending/scan/${revision}-u-1.txt`,
+/**
+ * The revision `promoteAttachment` would hand over for these bytes: one identity per content. A true
+ * retry of the same bytes keeps it; different bytes never share it — so a scanner caching by
+ * `(pendingKey, revision)`, as a held decision must, is judged on what it was actually sent.
+ */
+const revisionOf = (bytes: Uint8Array): string =>
+  `sha256:${new Bun.CryptoHasher('sha256').update(bytes).digest('hex')}`;
+
+const scan = (scanner: UploadScannerLike, bytes: Uint8Array, chunk = 64 * 1024) => {
+  const revision = revisionOf(bytes);
+  return scanner.scan({
+    key: `org/conformance/pending/scan/${revision.slice(7, 19)}-u-1.txt`,
     pendingKey: 'org/conformance/pending/u-1.txt',
     revision,
     size: bytes.byteLength,
     contentType: 'text/plain',
     body: streamOf(bytes, chunk),
   });
+};
 
 const PLAIN = encode('A plain note: nothing in here is a virus.\n');
 
@@ -107,9 +117,9 @@ export const UPLOAD_SCANNER_CHECKS: readonly UploadScannerCheck[] = [
     // the rewrite with the original's verdict — EICAR attached unscanned.
     name: 'a new revision of one upload is judged on its own bytes: clean, then EICAR is never clean',
     async run(scanner) {
-      const first = await scan(scanner, PLAIN, 64 * 1024, 'r-1');
+      const first = await scan(scanner, PLAIN);
       expect(first.verdict === 'infected').toBe(false);
-      const second = await scan(scanner, encode(UPLOAD_SCANNER_EICAR), 64 * 1024, 'r-2');
+      const second = await scan(scanner, encode(UPLOAD_SCANNER_EICAR));
       expect(second.verdict).not.toBe('clean');
     },
   },

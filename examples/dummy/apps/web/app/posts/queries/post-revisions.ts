@@ -7,7 +7,7 @@
 
 import { orgId as toOrgId, postId as toPostId } from '@postly/domain';
 import { from, query, t } from '@ultimat3/query';
-import type { PostRevision } from '../entity';
+import { PostRevision } from '../entity';
 import { postRead } from '../policy';
 import * as repo from '../repo';
 
@@ -19,6 +19,9 @@ import * as repo from '../repo';
 export const postRevisions = query({
   input: t.object({ orgId: t.uuid, postId: t.uuid }),
   policy: postRead,
+  // The published row: OpenAPI, the MCP tool's `outputSchema` and the typed client read it from
+  // here. Not an entity's schema, so the answer stays bare rows rather than a record envelope.
+  rows: PostRevision,
   mcp: { expose: true, description: 'List the recorded revisions of a post, newest first' },
   sql: ({ orgId, postId }) =>
     from<PostRevision>('posts_history', () => repo.revisionsOf(toOrgId(orgId), toPostId(postId)))

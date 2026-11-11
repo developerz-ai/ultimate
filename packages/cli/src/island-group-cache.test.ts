@@ -68,12 +68,12 @@ async function markEntries(): Promise<void> {
 }
 
 /**
- * Every fixture file an hour old. A file modified within seconds of a build's start is treated as
- * raced (`writeGroup`'s mtime slack), so a fixture written just now would never be cached.
+ * Every fixture file and directory an hour old. One modified within seconds of a build's start is
+ * treated as raced (`writeGroup`'s mtime slack), so a fixture written just now is never cached.
  */
 async function age(): Promise<void> {
   const old = new Date(performance.timeOrigin + performance.now() - 3_600_000);
-  for await (const one of new Bun.Glob('**/*').scan({ cwd: ROOT, dot: false })) {
+  for await (const one of new Bun.Glob('**/*').scan({ cwd: ROOT, onlyFiles: false })) {
     await utimes(join(ROOT, one), old, old);
   }
 }

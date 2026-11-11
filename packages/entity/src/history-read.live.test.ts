@@ -154,4 +154,50 @@ describe.skipIf(!hasPostgres)('live · postgres · history(id)', () => {
       await second.close();
     }
   });
+
+  test('a delete by a transaction that began before the insert still reads after it', async () => {
+    // T2 begins, T1 inserts the row and commits, T2 deletes it: the delete's `at` is the earlier.
+    const ROW = '00000000-0000-7000-8000-000000000104';
+    const second = postgresClient({ url: adminUrl ?? '' });
+    try {
+      let began: () => void = () => undefined;
+      const t2Began = new Promise<void>((resolve) => {
+        began = resolve;
+      });
+      let t1Done: () => void = () => undefined;
+      const t1Committed = new Promise<void>((resolve) => {
+        t1Done = resolve;
+      });
+      const t2 = withTransaction(
+        async (tx) => {
+          await tx.execute(raw('select 1'));
+          began();
+          await t1Committed;
+          await tx.execute(sql`delete from "hist_live_docs" where id = ${ROW}`);
+        },
+        { client: second },
+      );
+      await t2Began;
+      await withTransaction(
+        (tx) =>
+          tx.execute(
+            sql`insert into "hist_live_docs" (id, org_id, title) values (${ROW}, ${ORG_A}, 'a')`,
+          ),
+        { client },
+      );
+      t1Done();
+      await t2;
+      const db = database({ docs, docsHistory }, { driver: postgresDriver() });
+      const versions = await runWithContext(as(ORG_A), () => history(db.docsHistory, ROW));
+      const atOf = (op: string): number =>
+        versions.find((v) => v.op === op)?.at.getTime() ?? Number.NaN;
+      expect(atOf('delete') < atOf('insert')).toBe(true);
+      expect(versions.map((v) => [v.version, v.op])).toEqual([
+        [1, 'insert'],
+        [2, 'delete'],
+      ]);
+    } finally {
+      await second.close();
+    }
+  });
 });

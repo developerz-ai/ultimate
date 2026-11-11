@@ -16,18 +16,20 @@ export async function boundedMap<T, R>(
   // Set by the first rejection and read before every start: the builds already in flight finish
   // (a `Bun.build` cannot be cancelled), but no idle worker takes another group — in `x dev` one
   // island's syntax error left every remaining group bundling, ~12 s, into the next generation.
-  let failed = false;
+  // And the call answers only once those in flight HAVE finished: each registers stylesheets and
+  // pins chunk bytes process-wide, so one outliving the call would write into the next generation.
+  let failure: { readonly error: unknown } | undefined;
   const worker = async (): Promise<void> => {
-    for (let index = next++; !failed && index < items.length; index = next++) {
+    for (let index = next++; failure === undefined && index < items.length; index = next++) {
       try {
         results[index] = await run(items[index] as T);
       } catch (error) {
-        failed = true;
-        throw error;
+        if (failure === undefined) failure = { error };
       }
     }
   };
   const workers = Math.max(1, Math.min(width, items.length));
   await Promise.all(Array.from({ length: items.length === 0 ? 0 : workers }, worker));
+  if (failure !== undefined) throw failure.error;
   return results;
 }

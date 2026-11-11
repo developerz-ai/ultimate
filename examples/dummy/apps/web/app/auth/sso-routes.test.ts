@@ -65,7 +65,10 @@ unitTest('a bad IdP config fails the SSO legs with a logged code, never the moun
     const response = await server.fetch(new Request(`${ORIGIN}/auth/sso/corp`));
 
     expect(response.status).toBe(503);
-    expect(((await response.json()) as { code?: unknown }).code).toMatch(/^X_[A-Z_]+$/);
+    const body = (await response.json()) as { code?: unknown; title?: unknown };
+    expect(body.code).toMatch(/^X_[A-Z_]+$/);
+    // The catalog's words, never a key left unrendered.
+    expect(body.title).toBe('Single sign-on is not available right now.');
     expect(logged.some((line) => line.includes('postly.sso.unavailable'))).toBe(true);
   } finally {
     release();

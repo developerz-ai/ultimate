@@ -89,6 +89,16 @@ describe(testName('unit', 'seedPass'), () => {
     const coded = isUltimateError(failure) ? [failure.code, failure.fix] : ['uncoded', ''];
     expect(coded[0]).toBe('X_SEED_GRAPH_UNSATISFIED');
     expect(coded[1]).toContain('partitions(');
+    // An executable fix: the line an author pastes parses as TypeScript, comment included.
+    const transpiles = (() => {
+      try {
+        new Bun.Transpiler({ loader: 'ts' }).transformSync(String(coded[1]));
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    expect(transpiles).toBe(true);
   });
 
   test('a tenantless table is seeded once; every primitive owns a fresh tenant pair', async () => {

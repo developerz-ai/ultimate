@@ -103,10 +103,42 @@ const hashed = (value: unknown): boolean => {
   return typeof one?.['code'] === 'string' && one['codeHash'] === contentHash(one['code']);
 };
 
+const strings = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((one) => typeof one === 'string');
+
+const count = (value: unknown): boolean => Number.isSafeInteger(value) && (value as number) >= 0;
+
+/** Every field a served chunk is read by: a hit hands it to the resolver, the store and the route. */
+const isChunk = (value: unknown): boolean => {
+  const one = value as Record<string, unknown>;
+  const kind = one['realtime'];
+  return (
+    hashed(value) &&
+    typeof one['file'] === 'string' &&
+    typeof one['moduleId'] === 'string' &&
+    typeof one['url'] === 'string' &&
+    count(one['bytes']) &&
+    strings(one['imports']) &&
+    (one['sources'] === undefined || strings(one['sources'])) &&
+    (kind === undefined || kind === 'restores' || kind === 'follows')
+  );
+};
+
+const isShared = (value: unknown): boolean => {
+  const one = value as Record<string, unknown>;
+  return (
+    hashed(value) &&
+    typeof one['url'] === 'string' &&
+    count(one['bytes']) &&
+    strings(one['importers']) &&
+    (one['sources'] === undefined || strings(one['sources']))
+  );
+};
+
 /**
  * A file on disk is input, so the entry proves what it serves before any of it is: inputs to
- * rehash (none is a refusal — it would verify trivially), every chunk's code matching its recorded
- * hash, and every stylesheet one of the recorded inputs or an installed package's (`node_modules`,
+ * rehash (none is a refusal — it would verify trivially), every chunk whole (each field a hit
+ * reads, its code matching its recorded hash), and every stylesheet one of the recorded inputs or an installed package's (`node_modules`,
  * versioned by the lockfile in the key) — a sheet is compiled into served CSS.
  */
 function parseEntry(value: unknown, key: string): Entry | undefined {
@@ -118,7 +150,9 @@ function parseEntry(value: unknown, key: string): Entry | undefined {
   const stamps = inputs as readonly unknown[];
   if (stamps.length === 0 || !stamps.every(isStamp)) return undefined;
   if (!(dirs as readonly unknown[]).every(isStamp)) return undefined;
-  if (![...(chunks as unknown[]), ...(shared as unknown[])].every(hashed)) return undefined;
+  if (!(chunks as unknown[]).every(isChunk) || !(shared as unknown[]).every(isShared)) {
+    return undefined;
+  }
   const recorded = new Set((stamps as readonly Stamp[]).map((stamp) => stamp.path));
   const sheetOk = (sheet: unknown): boolean =>
     typeof sheet === 'string' &&
@@ -175,10 +209,11 @@ export async function readGroup(
 }
 
 /**
- * Records the group's output and what it read. The digests are `digestOf`'s — memoised, so a file
- * the pre-build `readGroup` already hashed is stamped with the bytes seen BEFORE the build, and an
- * edit during it is a miss next time whatever its mtime says. A file hashed only now is guarded by
- * its mtime, with `MTIME_SLACK_MS` for coarse clocks: modified near or after the start, no entry.
+ * Records the group's output and what it read. The digests are `digestOf`'s and `listingOf`'s —
+ * memoised, so a file or directory the pre-build `readGroup` already hashed is stamped as it was
+ * BEFORE the build, and an edit during it is a miss next time whatever its mtime says. One hashed
+ * only now is guarded by its mtime, with `MTIME_SLACK_MS` for coarse clocks: modified near or
+ * after the start — a directory included, which an added or removed name moves — no entry.
  */
 export async function writeGroup(
   root: string,
@@ -188,7 +223,10 @@ export async function writeGroup(
   digestOf: InputDigester,
   listingOf: InputDigester = listingDigester(),
 ): Promise<void> {
-  const raced = output.inputs.some(
+  // A directory's mtime moves when a name is added or removed in it: `util.ts` landing beside
+  // `util/` mid-build changes no input's bytes, only what `./util` would now resolve to.
+  const listed = resolutionDirs(output.inputs);
+  const raced = [...output.inputs, ...listed].some(
     (path) => Bun.file(path).lastModified > startedAt - MTIME_SLACK_MS,
   );
   if (raced || output.inputs.length === 0) return;
@@ -198,7 +236,7 @@ export async function writeGroup(
     return stamps.every((one): one is Stamp => one.digest !== undefined) ? stamps : undefined;
   };
   const inputs = await stamp(output.inputs, digestOf);
-  const dirs = await stamp(resolutionDirs(output.inputs), listingOf);
+  const dirs = await stamp(listed, listingOf);
   if (inputs === undefined || dirs === undefined) return;
   const withHash = <T extends { readonly code: string }>(one: T): Stored<T> => ({
     ...one,

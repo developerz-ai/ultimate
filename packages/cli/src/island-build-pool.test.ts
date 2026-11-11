@@ -57,11 +57,38 @@ describe('boundedMap', () => {
       await inFlight.promise;
       return n;
     });
-    await expect(run).rejects.toThrow('island 0 did not bundle');
-    // The two already in flight beside it finish; nothing after them begins.
-    inFlight.open();
     await turn();
+    // Item 0 has failed; the two beside it are still running and nothing after them has begun.
     expect(started).toEqual([0, 1, 2]);
+    inFlight.open();
+    await expect(run).rejects.toThrow('island 0 did not bundle');
+    expect(started).toEqual([0, 1, 2]);
+  });
+
+  test('the rejection waits for every item already started, so none outlives the call', async () => {
+    const inFlight = gate();
+    const finished: number[] = [];
+    let answered = false;
+    const run = boundedMap([0, 1, 2], 3, async (n) => {
+      if (n === 0) return Promise.reject(new TypeError('island 0 did not bundle'));
+      await inFlight.promise;
+      finished.push(n);
+      return n;
+    });
+    const outcome = run.then(
+      () => 'resolved',
+      (error: unknown) => {
+        answered = true;
+        return String(error);
+      },
+    );
+    await turn();
+    // Item 0 failed a turn ago, yet the caller has not heard: 1 and 2 still register sheets and
+    // pin chunks process-wide, and a next `x dev` generation must not interleave with them.
+    expect(answered).toBe(false);
+    inFlight.open();
+    expect(await outcome).toContain('island 0 did not bundle');
+    expect(finished.sort()).toEqual([1, 2]);
   });
 
   test('no items, no workers', async () => {

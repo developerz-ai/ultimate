@@ -356,7 +356,8 @@
     "seatsExceeded": "Tu plan está lleno. Cambia de plan para añadir a otra persona.",
     "offlineQueued": "Sin conexión: se enviará cuando vuelvas a conectarte.",
     "updateAvailable": "Hay una versión nueva lista.",
-    "updateAction": "Recargar"
+    "updateAction": "Recargar",
+    "ssoUnavailable": "El inicio de sesión único no está disponible ahora."
   },
   "admin": {
     "title": "Administración de Postly",

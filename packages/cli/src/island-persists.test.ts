@@ -27,7 +27,7 @@ beforeEach(async () => {
   await Bun.write(join(ROOT, PLAIN), 'export function mount(): void {}\n');
   // An hour old, so the cache records them (`writeGroup`'s mtime slack).
   const old = new Date(performance.timeOrigin + performance.now() - 3_600_000);
-  for (const file of [READER, PLAIN]) await utimes(join(ROOT, file), old, old);
+  for (const path of [READER, PLAIN, 'apps/web/app']) await utimes(join(ROOT, path), old, old);
 });
 
 afterEach(async () => {

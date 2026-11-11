@@ -3,7 +3,7 @@
 // subject data walk it, and a read of it is an ordinary tenant-scoped, cursor-paged read.
 
 import { t } from '@ultimat3/schema';
-import { columnName, makeColumn } from './column';
+import { columnName, makeColumn, moneyColumns } from './column';
 import { text, timestamp, uuid } from './columns';
 import { json } from './columns-data';
 import type { Entity } from './entity';
@@ -33,7 +33,7 @@ export const historyIgnored = (history: object | null): readonly string[] =>
 /** Each `ignore` name, refused unless it is one of the parent's columns, as its physical name. */
 function ignoredColumns(parent: HistoryParent, init: HistoryInit): readonly string[] {
   if (init === true) return [];
-  return (init.ignore ?? []).map((property) => {
+  return (init.ignore ?? []).flatMap((property) => {
     const column = Object.hasOwn(parent.columns, property) ? parent.columns[property] : undefined;
     if (column === undefined) {
       throw invariantViolated(
@@ -42,7 +42,10 @@ function ignoredColumns(parent: HistoryParent, init: HistoryInit): readonly stri
         `ignore names ${JSON.stringify(property)}, which is no column of ${parent.name}; its columns are ${Object.keys(parent.columns).join(', ')}`,
       );
     }
-    return columnName(property, column.$meta);
+    // Money is three physical columns and the image holds each: ignoring the base name ignores none.
+    if (column.$meta.kind !== 'money') return [columnName(property, column.$meta)];
+    const parts = moneyColumns(property, column.$meta);
+    return [parts.minor, parts.currency, ...(parts.scale === null ? [] : [parts.scale])];
   });
 }
 

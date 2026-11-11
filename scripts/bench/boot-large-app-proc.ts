@@ -27,19 +27,51 @@ export function groupRssMb(pgid: number): number {
   return Math.round(kib.reduce((sum, value) => sum + value, 0) / 1024);
 }
 
-const status = (url: string): Promise<number> =>
-  fetch(url, { signal: AbortSignal.timeout(5_000), redirect: 'manual' }).then(
-    async (response) => {
-      await response.arrayBuffer();
-      return response.status;
-    },
-    () => 0,
-  );
+/**
+ * The URL's status once its whole body arrived, or 0. The body is read inside the same `try`: a
+ * read that aborts on the timeout after the headers said 200 is not ready either, and it must not
+ * reject past the poll that has a process group to reap.
+ */
+async function status(url: string): Promise<number> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5_000), redirect: 'manual' });
+    await response.arrayBuffer();
+    return response.status;
+  } catch {
+    return 0;
+  }
+}
 
-/** SIGTERM the group, wait for the leader, SIGKILL whatever is left of it. */
+/** Whether anything accepts a connection on the URL's port — a server this boot did not start. */
+async function portTaken(url: string): Promise<boolean> {
+  const target = new URL(url);
+  const port = Number(target.port === '' ? 80 : target.port);
+  try {
+    const socket = await Bun.connect({
+      hostname: target.hostname,
+      port,
+      socket: { data: () => undefined },
+    });
+    socket.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One poll's verdict. A child that has exited is never ready, whatever answers its URL: that 200
+ * is another process's, and timing it would publish a stranger's boot.
+ */
+export function readiness(status: number, exitCode: number | null): 'ready' | 'waiting' | 'exited' {
+  if (exitCode !== null) return 'exited';
+  return status === 200 ? 'ready' : 'waiting';
+}
+
 /** How long a stopped group gets to exit on SIGTERM before SIGKILL. */
 const STOP_GRACE_MS = 15_000;
 
+/** SIGTERM the group, wait for the leader, SIGKILL whatever is left of it. */
 async function stopGroup(child: Bun.Subprocess, pgid: number): Promise<void> {
   const signal = (name: NodeJS.Signals): void => {
     try {
@@ -60,6 +92,13 @@ async function stopGroup(child: Bun.Subprocess, pgid: number): Promise<void> {
  * tail — never a figure.
  */
 export async function timeBoot(command: BootCommand): Promise<Boot> {
+  if (await portTaken(command.url)) {
+    throw new ScriptError({
+      code: 'X_BENCH_RUN_FAILED',
+      cause: `something already listens on ${command.url}, so a 200 there would time a server this bench did not start`,
+      fix: `curl -sS -o /dev/null -w '%{http_code}\\n' ${quoteArg(command.url)}   # whatever answers is the listener: stop it, or re-run the bench with another --port`,
+    });
+  }
   const started = performance.now();
   const child = Bun.spawn([...command.cmd], {
     cwd: command.cwd,
@@ -82,18 +121,23 @@ export async function timeBoot(command: BootCommand): Promise<Boot> {
   let peak = 0;
   let last = 0;
   let toFirst200: number | undefined;
-  while (performance.now() - started < command.timeoutMs) {
-    peak = Math.max(peak, groupRssMb(child.pid));
-    last = await status(command.url);
-    if (last === 200) {
-      toFirst200 = Math.round(performance.now() - started);
-      break;
+  // The group is reaped however the poll ends: a figure, a timeout, or a throw out of the loop.
+  try {
+    while (performance.now() - started < command.timeoutMs) {
+      peak = Math.max(peak, groupRssMb(child.pid));
+      last = await status(command.url);
+      const verdict = readiness(last, child.exitCode);
+      if (verdict === 'ready') {
+        toFirst200 = Math.round(performance.now() - started);
+        break;
+      }
+      if (verdict === 'exited') break;
+      await Bun.sleep(100);
     }
-    if (child.exitCode !== null) break;
-    await Bun.sleep(100);
+    peak = Math.max(peak, groupRssMb(child.pid));
+  } finally {
+    await stopGroup(child, child.pid);
   }
-  peak = Math.max(peak, groupRssMb(child.pid));
-  await stopGroup(child, child.pid);
   if (toFirst200 === undefined) {
     throw new ScriptError({
       code: 'X_BENCH_RUN_FAILED',

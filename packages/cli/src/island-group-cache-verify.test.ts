@@ -8,7 +8,7 @@ import { mkdir, readdir, rm, utimes } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a directory to a file.
 import { join } from 'node:path';
 import type { IslandChunk } from './island-bundle';
-import { inputDigester } from './island-cache-inputs';
+import { inputDigester, listingDigester } from './island-cache-inputs';
 import type { GroupOutput } from './island-group-cache';
 import {
   groupKey,
@@ -57,6 +57,8 @@ beforeEach(async () => {
   const old = new Date(Date.UTC(2026, 0, 1));
   await utimes(ISLAND, old, old);
   await utimes(SHEET, old, old);
+  // And its directory: a listing that changed during the build refuses the write too.
+  await utimes(join(ROOT, 'apps/web/site'), old, old);
 });
 
 afterEach(async () => {
@@ -98,6 +100,31 @@ describe('readGroup refuses an entry that cannot prove what it serves', () => {
     expect(await readGroup(ROOT, key, inputDigester())).toBeUndefined();
   });
 
+  test.each([
+    ['no url', (one: Record<string, unknown>) => delete one['url']],
+    ['no file', (one: Record<string, unknown>) => delete one['file']],
+    ['imports not a list of strings', (one: Record<string, unknown>) => (one['imports'] = [1])],
+    ['bytes not a count', (one: Record<string, unknown>) => (one['bytes'] = '12')],
+    ['an unknown realtime kind', (one: Record<string, unknown>) => (one['realtime'] = 'maybe')],
+  ])('a chunk with valid code but %s', async (_, edit) => {
+    await writeGroup(ROOT, key, output(), later(), inputDigester());
+    await tamper((entry) => {
+      const [first] = entry['chunks'] as Record<string, unknown>[];
+      if (first !== undefined) edit(first);
+    });
+    expect(await readGroup(ROOT, key, inputDigester())).toBeUndefined();
+  });
+
+  test('a shared chunk with valid code but no importers', async () => {
+    const shared = { url: '/islands/chunk-ab12cd34.js', code: 'x', bytes: 1, importers: [] };
+    await writeGroup(ROOT, key, output({ shared: [shared] }), later(), inputDigester());
+    await tamper((entry) => {
+      const [first] = entry['shared'] as Record<string, unknown>[];
+      if (first !== undefined) delete first['importers'];
+    });
+    expect(await readGroup(ROOT, key, inputDigester())).toBeUndefined();
+  });
+
   test('a stylesheet that is not one of the recorded inputs', async () => {
     await writeGroup(ROOT, key, output(), later(), inputDigester());
     await tamper((entry) => {
@@ -123,6 +150,24 @@ describe('writeGroup', () => {
     const old = new Date(Date.UTC(2026, 0, 1));
     await utimes(ISLAND, old, old);
     await writeGroup(ROOT, key, output(), later(), digestOf);
+    expect(await readGroup(ROOT, key, inputDigester())).toBeUndefined();
+  });
+
+  test('records nothing when a file was added beside an input while the build ran', async () => {
+    // `util.ts` landing beside `util/` mid-build: every input's bytes are unchanged, the listing is
+    // not — and the bundle was resolved against the listing before it.
+    await Bun.write(join(ROOT, 'apps/web/site/util.ts'), 'export const word = 1;\n');
+    await writeGroup(ROOT, key, output(), later() - 10_000, inputDigester());
+    expect(await Bun.file(entryFile()).exists()).toBe(false);
+  });
+
+  test('stamps the listing read BEFORE the build when the pre-build read took one', async () => {
+    const listingOf = listingDigester();
+    await listingOf(join(ROOT, 'apps/web/site')); // the pre-build `readGroup` saw this listing
+    await Bun.write(join(ROOT, 'apps/web/site/util.ts'), 'export const word = 1;\n');
+    const old = new Date(Date.UTC(2026, 0, 1));
+    await utimes(join(ROOT, 'apps/web/site'), old, old);
+    await writeGroup(ROOT, key, output(), later(), inputDigester(), listingOf);
     expect(await readGroup(ROOT, key, inputDigester())).toBeUndefined();
   });
 

@@ -82,11 +82,30 @@ async function tsconfigChain(file: string, seen: Set<string>): Promise<readonly 
   return [text, ...(await tsconfigChain(next, seen))];
 }
 
+/** A manifest's `workspaces` globs — the array form or Bun's `{ packages }` — or none. */
+function workspaceGlobs(text: string): readonly string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const field =
+    typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'workspaces') : [];
+  const list = Array.isArray(field)
+    ? field
+    : typeof field === 'object' && field !== null
+      ? Reflect.get(field, 'packages')
+      : [];
+  return Array.isArray(list) ? list.filter((one): one is string => typeof one === 'string') : [];
+}
+
 /**
  * Everything every group's resolution shares, hashed once per build: the nearest `bun.lock` (the
  * third-party code installed), and each `package.json` (`imports`, `exports`, workspaces) and
- * `tsconfig.json` (`paths`, with its relative `extends` chain) at the app root, each `apps/*`, and
- * the lockfile's directory.
+ * `tsconfig.json` (`paths`, with its relative `extends` chain) at the app root, each `apps/*`, the
+ * lockfile's directory, and every workspace member either root declares — a member's `exports`
+ * decides which of its files an island's `import 'lib'` reaches, and no bundler input says so.
  */
 export async function environmentDigest(root: string): Promise<string> {
   let lockDir: string | undefined;
@@ -94,11 +113,22 @@ export async function environmentDigest(root: string): Promise<string> {
     if (await Bun.file(join(dir, 'bun.lock')).exists()) lockDir = dir;
     else if (dirname(dir) === dir) break;
   }
-  const apps: string[] = [];
+  const roots = [...new Set([root, ...(lockDir === undefined ? [] : [lockDir])])];
+  const members = new Set<string>();
   for await (const one of new Bun.Glob('apps/*/package.json').scan({ cwd: root })) {
-    apps.push(dirname(join(root, one)));
+    members.add(dirname(join(root, one)));
   }
-  const dirs = [...new Set([root, ...apps.sort(), ...(lockDir === undefined ? [] : [lockDir])])];
+  for (const dir of roots) {
+    const manifest = Bun.file(join(dir, 'package.json'));
+    if (!(await manifest.exists())) continue;
+    for (const pattern of workspaceGlobs(await manifest.text())) {
+      const glob = new Bun.Glob(`${pattern.replace(/\/+$/, '')}/package.json`);
+      for await (const one of glob.scan({ cwd: dir })) {
+        if (!hasPathSegment(one, 'node_modules')) members.add(dirname(join(dir, one)));
+      }
+    }
+  }
+  const dirs = [...roots, ...[...members].filter((dir) => !roots.includes(dir)).sort()];
   const parts: string[] = [];
   const seen = new Set<string>();
   if (lockDir !== undefined) parts.push(await Bun.file(join(lockDir, 'bun.lock')).text());

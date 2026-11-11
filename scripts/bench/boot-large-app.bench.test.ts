@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { allowHost } from '../../packages/testing/src/sealed-network';
 import { ScriptError } from '../lib/script-error';
-import { devEnv, largeAppArgs } from './boot-large-app.bench';
+import { devEnv, largeAppArgs, withFixture } from './boot-large-app.bench';
 import { databaseUrl, parseEnvFile } from './boot-large-app-pod';
 import { timeBoot } from './boot-large-app-proc';
 
@@ -113,6 +113,29 @@ describe('boot-large-app flags and pod inputs', () => {
       3901,
     );
     expect(env).toEqual({ PATH: '/bin', TEST_REDIS_URL: 'r', METRICS_PORT: '3903' });
+  });
+
+  // 5,000 generated files hold thousands of tests a root `bun test` would find: a boot, prebuild or
+  // migration that throws must still take them away.
+  test('the fixture is removed when the work throws, and kept only under --keep', async () => {
+    const make = async () => {
+      const dir = await mkdtemp(`${tmpdir()}/boot-fixture-`);
+      scratch.push(dir);
+      await Bun.write(`${dir}/app/a.test.ts`, '');
+      return dir;
+    };
+    const thrown = await make();
+    const failed = await withFixture(thrown, false, () =>
+      Promise.reject(new TypeError('migration failed')),
+    ).then(
+      () => 'resolved',
+      (error: unknown) => (error instanceof TypeError ? error.message : 'other'),
+    );
+    expect(failed).toBe('migration failed');
+    expect(await Bun.file(`${thrown}/app/a.test.ts`).exists()).toBe(false);
+    const kept = await make();
+    expect(await withFixture(kept, true, async () => 7)).toBe(7);
+    expect(await Bun.file(`${kept}/app/a.test.ts`).exists()).toBe(true);
   });
 
   test('the env file is read as KEY=value, comments and blanks skipped', () => {

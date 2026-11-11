@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { authenticate, memoryAuthAdapter, readSessionCookie } from '@ultimat3/auth';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, installLogSink } from '@ultimat3/core';
 import { type FakeSamlIdentityProvider, fakeSamlIdentityProvider } from '@ultimat3/testing';
 import { postlyAuth } from './login';
 import { AFTER_SIGN_IN, SSO_PROVIDER } from './sign-in-paths';
@@ -41,22 +41,21 @@ beforeEach(async () => {
 
 const cookiePair = (setCookie: string): string => setCookie.slice(0, setCookie.indexOf(';'));
 
+/** The ACS POST a browser makes: the IdP's form body, with the sealed state cookie it holds. */
+const acsRequest = (cookie: string, answer: Readonly<Record<string, string>>): Request =>
+  new Request(`${ORIGIN}/auth/sso/${SSO_PROVIDER}/callback`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
+    body: new URLSearchParams({ ...answer }),
+  });
+
 /** Start, let the IdP answer, POST that answer to the ACS with the sealed state cookie. */
-async function signIn(form?: Readonly<Record<string, string>>) {
+async function signIn() {
   const start = await routes.start.handle(new Request(`${ORIGIN}/auth/sso/${SSO_PROVIDER}`));
-  const location = start.headers.get('location') ?? '';
-  const answer = form ?? (await idp.answer(location));
-  const acs = await routes.acs.handle(
-    new Request(`${ORIGIN}/auth/sso/${SSO_PROVIDER}/callback`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        cookie: cookiePair(start.headers.getSetCookie()[0] ?? ''),
-      },
-      body: new URLSearchParams({ ...answer }),
-    }),
-  );
-  return { start, location, answer, acs };
+  const answer = await idp.answer(start.headers.get('location') ?? '');
+  const cookie = cookiePair(start.headers.getSetCookie()[0] ?? '');
+  const acs = await routes.acs.handle(acsRequest(cookie, answer));
+  return { start, cookie, answer, acs };
 }
 
 const codeOf = async (response: Response): Promise<unknown> =>
@@ -91,13 +90,31 @@ describe('SAML sign-in', () => {
     expect(acs.headers.getSetCookie().some((c) => c.startsWith('__Host-x_session='))).toBe(false);
   });
 
-  test('an answer is spent once: replayed into a fresh login, it is refused', async () => {
-    const first = await signIn();
-    expect(first.acs.status).toBe(303);
+  test('the same ACS POST sent twice signs in once: the replay is refused as one', async () => {
+    const logged: string[] = [];
+    const release = installLogSink((line) => {
+      logged.push(line);
+    });
+    try {
+      const first = await signIn();
+      expect(first.acs.status).toBe(303);
 
-    const replay = await signIn(first.answer);
-    expect(replay.acs.status).toBeGreaterThanOrEqual(400);
-    expect(await codeOf(replay.acs)).toMatch(/^X_[A-Z_]+$/);
+      // Byte for byte the POST that succeeded — its state cookie, its RelayState, its InResponseTo:
+      // only the spent assertion tells it apart, which is what the replay guard is for.
+      const replay = await routes.acs.handle(acsRequest(first.cookie, first.answer));
+
+      expect(replay.status).toBeGreaterThanOrEqual(400);
+      expect(await codeOf(replay)).toBe('X_SAML_RESPONSE_INVALID');
+      expect(replay.headers.getSetCookie().some((c) => c.startsWith('__Host-x_session='))).toBe(
+        false,
+      );
+      // The check that refused it is the replay check, not a state or signature one.
+      expect(
+        logged.some((line) => line.includes('auth.sso.refused') && line.includes('replay')),
+      ).toBe(true);
+    } finally {
+      release();
+    }
   });
 
   test('an address outside the directory’s domain neither signs up nor signs in', async () => {

@@ -5020,7 +5020,76 @@
                 "schema": {
                   "oneOf": [
                     {
-                      "items": {},
+                      "items": {
+                        "properties": {
+                          "actorId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "op": {
+                            "enum": [
+                              "insert",
+                              "update",
+                              "delete"
+                            ],
+                            "type": "string"
+                          },
+                          "orgId": {
+                            "type": "string"
+                          },
+                          "postId": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "scheduled",
+                                  "published"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "version": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "orgId",
+                          "postId",
+                          "version",
+                          "op",
+                          "at",
+                          "actorId",
+                          "title",
+                          "status"
+                        ],
+                        "type": "object"
+                      },
                       "type": "array"
                     },
                     {
@@ -5059,7 +5128,76 @@
                           ]
                         },
                         "rows": {
-                          "items": {},
+                          "items": {
+                            "properties": {
+                              "actorId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "op": {
+                                "enum": [
+                                  "insert",
+                                  "update",
+                                  "delete"
+                                ],
+                                "type": "string"
+                              },
+                              "orgId": {
+                                "type": "string"
+                              },
+                              "postId": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "draft",
+                                      "scheduled",
+                                      "published"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "version": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "orgId",
+                              "postId",
+                              "version",
+                              "op",
+                              "at",
+                              "actorId",
+                              "title",
+                              "status"
+                            ],
+                            "type": "object"
+                          },
                           "type": "array"
                         }
                       },

@@ -211,6 +211,35 @@ describe('the rendered avatar', () => {
     expect((await signedAvatarUrl(ORG, MEMBER)) ?? '').toContain('b-second.png');
   });
 
+  test('an avatar replaced between the listing and the read is read as its replacement', async () => {
+    const target = avatarTarget(MEMBER);
+    const first = attachmentKey(ORG, target, 'a-first.png');
+    const second = attachmentKey(ORG, target, 'b-second.png');
+    await put(first, 8);
+
+    // What a concurrent `attachAvatar` does right after this read listed `a-first.png`: attach
+    // `b-second.png` and prune the one listed. Once, on the first listing only.
+    const inner = disk();
+    let raced = false;
+    const racing: StorageDriver = {
+      ...inner,
+      async list(options?: ListOptions): Promise<Page<StorageListEntry>> {
+        const page = await inner.list(options);
+        if (!raced) {
+          raced = true;
+          await put(second, 9);
+          await inner.delete(first);
+        }
+        return page;
+      },
+    };
+    resetStorage();
+    defineStorage({ disks: { local: racing }, default: 'local' });
+
+    const signed = decodeURIComponent((await signedAvatarUrl(ORG, MEMBER)) ?? '');
+    expect(signed).toContain(`b-second.png@w${AVATAR_RENDER_WIDTH}`);
+  });
+
   test('is the last upload, and never another member’s', async () => {
     const target = avatarTarget(MEMBER);
     // Written in ascending key order so the assertion holds whatever the disk reports for

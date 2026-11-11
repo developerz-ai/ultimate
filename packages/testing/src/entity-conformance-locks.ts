@@ -42,13 +42,6 @@ const LOCK_TX = ['lock', 'transactions'] as const;
 // A foreign failure handed to the subject: test input, never its verdict.
 const CALLBACK_FAILED = new Error('the callback failed');
 
-/**
- * How long the outer holder waits for a contender a released row would let through: a lock request
- * and its answer, one round trip to a loaded server, with room to spare. Paid only when the lock
- * holds — a contender that got in ends the wait at once.
- */
-const HOLD_WINDOW_MS = 100;
-
 /** A turn of the event loop, so a read-modify-write has a window if the lock does not close it. */
 const yieldNow = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 1));
 
@@ -154,28 +147,34 @@ const lockChecks: readonly EntityDriverCheck[] = [
   checkOver(
     SET,
     'a nested lock is held to the outer end, not released with its own',
-    async (db) => {
+    async (db, raw) => {
+      // Sequenced on what the driver REPORTS, never on a clock: the outer ends once the contender is
+      // queued behind c4 (a held lock) or has run (a released one) — whichever the driver does. A
+      // wall-clock window let a broken driver pass whenever its contender was slow.
+      const waiters = raw.lockWaiters;
+      if (waiters === undefined) return;
       await counter(db, idAt('c3'));
       await counter(db, idAt('c4'));
       const order: string[] = [];
-      // Sequenced on events, never on a timer: the second contender asks for c4 only once the
-      // nested lock HOLDS it — a 1 ms head start lost that race to a server round trip. The outer
-      // then ends as soon as the second has run (a nested lock released with its own end: caught at
-      // once) or after `HOLD_WINDOW_MS`, the time a released row gives the second to take it.
       const nestedHeld = Promise.withResolvers<void>();
-      const secondRan = Promise.withResolvers<void>();
+      let secondRan = false;
+      const queuedOrRan = async (): Promise<void> => {
+        while (!secondRan && (await waiters()) < 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      };
       await inOrg(ORG_A, () =>
         Promise.all([
           db.counters.lock(idAt('c3'), async () => {
             await db.counters.lock(idAt('c4'), () => nestedHeld.resolve());
-            await Promise.race([secondRan.promise, Bun.sleep(HOLD_WINDOW_MS)]);
+            await queuedOrRan();
             order.push('outer ending');
           }),
           (async () => {
             await nestedHeld.promise;
             await db.counters.lock(idAt('c4'), () => {
               order.push('second ran');
-              secondRan.resolve();
+              secondRan = true;
             });
           })(),
         ]),

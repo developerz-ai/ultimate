@@ -120,3 +120,36 @@ export default function Page() { return <main><Like /><Badge n={1} /><Summary />
     expect(await islandGroups(ROOT, [BADGE, FEED, LIKE])).toEqual([[LIKE, BADGE].sort(), [FEED]]);
   });
 });
+
+describe('an app checked out under a node_modules directory', () => {
+  // `<anything>/node_modules/<app>`: the segment is in every absolute path the app holds, so a test
+  // of the absolute path skipped every page and every island lost its group.
+  const NESTED = processRoot(join(import.meta.dir, '..', '.island-fixture', 'node_modules', 'grp'));
+
+  test('still reads its pages', async () => {
+    await rm(NESTED, { recursive: true, force: true });
+    try {
+      await Bun.write(join(NESTED, LIKE), MOUNT);
+      await Bun.write(join(NESTED, POST), `island({ src: './like.island.tsx' });\n`);
+      const references = await routeIslandReferences(NESTED, new Set([LIKE]));
+      expect(references.get(POST)).toEqual(new Set([LIKE]));
+    } finally {
+      await rm(NESTED, { recursive: true, force: true });
+    }
+  });
+
+  test("still reads a page's own node_modules as not the app's", async () => {
+    await rm(NESTED, { recursive: true, force: true });
+    try {
+      const vendored = 'apps/web/app/node_modules/pkg/page.tsx';
+      await Bun.write(join(NESTED, LIKE), MOUNT);
+      await Bun.write(
+        join(NESTED, vendored),
+        `island({ src: '../../posts/[id]/like.island.tsx' });\n`,
+      );
+      expect((await routeIslandReferences(NESTED, new Set([LIKE]))).size).toBe(0);
+    } finally {
+      await rm(NESTED, { recursive: true, force: true });
+    }
+  });
+});

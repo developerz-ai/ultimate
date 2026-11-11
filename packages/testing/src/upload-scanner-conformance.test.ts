@@ -70,6 +70,30 @@ function keyedByUpload(): UploadScannerLike {
   };
 }
 
+/**
+ * CORRECT caching: one verdict per `(pendingKey, revision)`, what a review queue or an async vendor
+ * keeps. Distinct bytes are distinct revisions, so it must pass every check — a suite that sends two
+ * contents under one revision would fail it for being right.
+ */
+function pairCached(): UploadScannerLike {
+  const inner = memoryUploadScanner();
+  const seen = new Map<string, Awaited<ReturnType<UploadScannerLike['scan']>>>();
+  return {
+    name: 'pair-cached',
+    async scan(input) {
+      const id = `${input.pendingKey}@${String(input.revision)}`;
+      const cached = seen.get(id);
+      if (cached !== undefined) {
+        await input.body.cancel();
+        return cached;
+      }
+      const verdict = await inner.scan(input);
+      seen.set(id, verdict);
+      return verdict;
+    },
+  };
+}
+
 const paranoid = (): UploadScannerLike => ({
   name: 'paranoid',
   scan: async () => ({ verdict: 'infected', signature: 'everything' }),
@@ -99,6 +123,11 @@ describe(testName('unit', 'a scanner that breaks the contract fails conformance'
     const revision = check('a new revision of one upload is judged on its own bytes');
     await expect(revision.run(keyedByUpload())).rejects.toThrow();
     await revision.run(memoryUploadScanner());
+  });
+
+  test('a scanner caching by (pendingKey, revision) passes every check: distinct bytes, distinct revisions', async () => {
+    const scanner = pairCached();
+    for (const each of UPLOAD_SCANNER_CHECKS) await each.run(scanner);
   });
 
   test('a scanner that calls everything infected fails the clean checks', async () => {

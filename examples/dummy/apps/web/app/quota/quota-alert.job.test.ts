@@ -5,6 +5,7 @@
  * is one row and one text however many times it runs.
  */
 
+import { db } from '@postly/db';
 import { orgId as toOrgId } from '@postly/domain';
 import { ctxOf, runWithContext } from '@ultimat3/core';
 import { memorySmsTransport } from '@ultimat3/notify';
@@ -17,6 +18,10 @@ jobTest(
   'a crossing is recorded once and texted once to the owner with a phone',
   async ({ seed, actorFor, runJobs }) => {
     const { ada, bruno } = await seed('dev').pick({ ada: 'member:ada', bruno: 'member:bruno' });
+    // Bruno gives a phone too, and is an author: the alert is the plan's, so owners hear it alone.
+    await runWithContext(ctxOf({ actor: actorFor(bruno) }), () =>
+      db.members.update(bruno.id, { phone: '+34600123456' }, { orgId: bruno.orgId }),
+    );
     const sms = memorySmsTransport();
     const release = installSmsTransport(sms);
     try {
@@ -37,7 +42,7 @@ jobTest(
       await runJobs(postsQuotaWarning, warning);
       await runJobs.drain();
 
-      // Ada is Acme's owner and the one member with a phone; Bruno, the author who crossed it, is not.
+      // Ada is Acme's owner; Bruno, the author who crossed it, has a phone and is not texted.
       expect(sms.sent.map((message) => [message.to, message.body])).toEqual([
         [
           '+12025550142',

@@ -44,7 +44,7 @@ const refused = (write: SeedRow | SeedUpdate, error: unknown): unknown => {
       entity: write.entity,
       what: `the database holds no partition for a generated row — ${why}. The seed anchors a partitionBy column on its clock's now; the partitions were made around the migration's apply time and are kept ahead only by the app's partitions() job`,
       columns: [],
-      fix: "await maintainPartitions.enqueue({})   # the app's partitions() job — makes every partition up to now and its ahead; or pass seedGraph(entities, { now }) the database's select now()",
+      fix: "await maintainPartitions.enqueue({}); // the app's partitions() job: every partition up to now and its ahead — or pass seedGraph(entities, { now }) the database's select now()",
     });
   }
   return seedGraphUnsatisfied({

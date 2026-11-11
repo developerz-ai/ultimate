@@ -56,10 +56,12 @@ export async function routeIslandReferences(
 ): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
   const references = new Map<string, ReadonlySet<string>>();
   for await (const absolute of new Bun.Glob(ROUTE_GLOB).scan({ cwd: root, absolute: true })) {
-    if (hasPathSegment(absolute, 'node_modules')) continue;
+    // The ROOT-RELATIVE path, as `isScannedModule` tests it: an app checked out under
+    // `<anything>/node_modules/<app>` holds the segment in every absolute path it has.
+    const file = posixRelative(root, absolute);
+    if (hasPathSegment(file, 'node_modules')) continue;
     const source = await Bun.file(absolute).text();
     if (!source.includes(ISLAND_EXTENSION)) continue;
-    const file = posixRelative(root, absolute);
     const dir = posix.dirname(file);
     const named = new Set<string>();
     for (const match of codeOf(source).matchAll(ISLAND_LITERAL)) {

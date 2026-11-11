@@ -30,6 +30,13 @@ export interface EntityDriverSubject {
    * nothing: absent here, the history check is not run against it (there is no refusal to assert).
    */
   readonly history?: boolean;
+  /**
+   * How many lock requests are blocked behind a holder right now — `memoryLockWaiters` from
+   * `@ultimat3/entity/adapter`, or `pg_stat_activity`'s `wait_event_type = 'Lock'` on a pool. What
+   * the hold check waits on to know a contender REACHED the lock, never a clock. Absent (PGlite:
+   * one connection, so a contender waits on the client where no query sees it): that check skips.
+   */
+  readonly lockWaiters?: (() => number | Promise<number>) | undefined;
 }
 
 /** What one check sees: the opened driver, and the subject's declared traits. */
@@ -38,6 +45,8 @@ export interface EntityDriverRun {
   readonly foreignKeys: boolean;
   /** The subject's `history`, `false` when it declared none. */
   readonly history: boolean;
+  /** The subject's `lockWaiters`, when it can see one. */
+  readonly lockWaiters: (() => number | Promise<number>) | undefined;
 }
 
 export interface EntityDriverCheck {
@@ -90,7 +99,12 @@ export const runEntityDriverCheck = async (
     for (const capability of missing) await assertRefused(driver, capability);
     return;
   }
-  await check.run({ driver, foreignKeys: subject.foreignKeys, history: subject.history === true });
+  await check.run({
+    driver,
+    foreignKeys: subject.foreignKeys,
+    history: subject.history === true,
+    lockWaiters: subject.lockWaiters,
+  });
 };
 
 /** Generous: a SQL subject re-creates its tables per check, and one check writes 40,000 rows. */

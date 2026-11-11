@@ -12,7 +12,7 @@
 
 import { type Clock, systemClock } from '@ultimat3/core';
 import { memoryUploadScanner } from '@ultimat3/storage';
-import type { ScanInput, ScanVerdict } from '@ultimat3/storage/adapter';
+import type { ScanInput, ScanVerdict, UploadScanner } from '@ultimat3/storage/adapter';
 
 /** What a file waiting in the sandbox is held with — `meta.reason` of `X_STORAGE_QUARANTINED`. */
 export const SANDBOX_PENDING = 'in the malware sandbox; confirm the same upload again shortly';
@@ -23,26 +23,33 @@ export const SANDBOX_VERDICT_TTL_MS = 24 * 3_600_000;
 export interface ScanSandbox {
   /** The sandbox's verdict on THESE bytes of `pendingKey`, or `hold` while it has none yet. */
   check(input: ScanInput): Promise<ScanVerdict>;
-  /** How many submissions it holds — what a test reads to prove the bytes were sent once. */
-  readonly submitted: () => number;
+}
+
+export interface ScanSandboxSeams {
+  readonly clock?: Clock | undefined;
+  /** What detonates a submission — the vendor's side. Called once per submission, never per poll. */
+  readonly engine?: UploadScanner | undefined;
 }
 
 interface Submission {
-  /** SHA-256 of the bytes judged: a verdict is about them, never about the key they sat under. */
-  readonly digest: string;
+  /** WHICH bytes were judged: a verdict is about them, never about the key they sat under. */
+  readonly revision: string;
   readonly verdict: ScanVerdict;
   readonly at: number;
 }
 
 /**
- * The body, judged by the engine and hashed in the same read. The upload stays writable under
- * `pending/` while it is held — a presigned PUT outlives the hold — so a verdict for the key alone
- * would clear whatever was swapped in after it: the digest is what the verdict belongs to.
+ * `ScanInput.revision` — the upload's etag, or its SHA-256 on a disk that keeps none — names the
+ * bytes before a byte is read, so a poll for bytes already judged sends nothing. A caller from
+ * before 31.3 passes none: the bytes are hashed while they are submitted, and every ask is new.
  */
-async function judged(
-  engine: ReturnType<typeof memoryUploadScanner>,
+async function submitted(
+  engine: UploadScanner,
   input: ScanInput,
-): Promise<{ digest: string; verdict: ScanVerdict }> {
+): Promise<{ revision: string; verdict: ScanVerdict }> {
+  if (input.revision !== undefined) {
+    return { revision: input.revision, verdict: await engine.scan(input) };
+  }
   const [toScan, toHash] = input.body.tee();
   const hasher = new Bun.CryptoHasher('sha256');
   const hashing = (async () => {
@@ -50,11 +57,12 @@ async function judged(
   })();
   const verdict = await engine.scan({ ...input, body: toScan });
   await hashing;
-  return { digest: hasher.digest('hex'), verdict };
+  return { revision: `sha256:${hasher.digest('hex')}`, verdict };
 }
 
-export function memoryScanSandbox(clock: Clock = systemClock): ScanSandbox {
-  const engine = memoryUploadScanner();
+export function memoryScanSandbox(seams: ScanSandboxSeams = {}): ScanSandbox {
+  const clock = seams.clock ?? systemClock;
+  const engine = seams.engine ?? memoryUploadScanner();
   const submissions = new Map<string, Submission>();
   return {
     async check(input) {
@@ -62,13 +70,16 @@ export function memoryScanSandbox(clock: Clock = systemClock): ScanSandbox {
       for (const [key, held] of submissions) {
         if (now - held.at >= SANDBOX_VERDICT_TTL_MS) submissions.delete(key);
       }
-      const { digest, verdict } = await judged(engine, input);
       const held = submissions.get(input.pendingKey);
-      // The bytes the sandbox already judged: its verdict. Anything else is a new submission.
-      if (held?.digest === digest) return held.verdict;
-      submissions.set(input.pendingKey, { digest, verdict, at: now });
+      // The revision the sandbox already judged: its verdict, and the bytes are not sent again.
+      if (held !== undefined && input.revision !== undefined && held.revision === input.revision) {
+        await input.body.cancel();
+        return held.verdict;
+      }
+      const fresh = await submitted(engine, input);
+      if (held?.revision === fresh.revision) return held.verdict;
+      submissions.set(input.pendingKey, { ...fresh, at: now });
       return { verdict: 'hold', reason: SANDBOX_PENDING };
     },
-    submitted: () => submissions.size,
   };
 }

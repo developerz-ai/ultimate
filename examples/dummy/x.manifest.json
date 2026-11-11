@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "820d75785471a1fe",
+  "buildId": "34d04a67b183127d",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -5849,7 +5849,77 @@
         "post:read"
       ],
       "live": false,
-      "cacheTags": []
+      "cacheTags": [],
+      "rows": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "postId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "insert",
+              "update",
+              "delete"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "scheduled",
+                  "published"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "postId",
+          "version",
+          "op",
+          "at",
+          "actorId",
+          "title",
+          "status"
+        ]
+      }
     },
     {
       "name": "publicPost",

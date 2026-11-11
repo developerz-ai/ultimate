@@ -7,6 +7,7 @@
  * never the import of `runtime.ts`, which every role loads, `migrate` included.
  */
 
+import { useT } from '@postly/i18n';
 import type { IdentityProviderRoutes } from '@ultimat3/auth';
 import { isUltimateError, logger, renderThrowable } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
@@ -45,7 +46,9 @@ function unavailable(error: unknown): Response {
     detail: renderThrowable(error),
     fix: 'x secrets set POSTLY_SSO_IDP_METADATA "<the IdP metadata XML>"   # and POSTLY_SSO_EMAIL_DOMAINS',
   });
-  return Response.json({ code, title: 'single sign-on is not available' }, { status: 503 });
+  // The app's catalog module: it registers the catalogs and types the key (`imports.test.ts`).
+  const title = useT()('errors.ssoUnavailable');
+  return Response.json({ code, title }, { status: 503 });
 }
 
 export function ssoRoutes(env: Readonly<Record<string, string | undefined>>): readonly Route[] {

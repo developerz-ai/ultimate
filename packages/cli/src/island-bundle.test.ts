@@ -59,6 +59,21 @@ describe('discoverIslands', () => {
     ]);
   });
 
+  test('an app checked out under a node_modules directory still finds its islands', async () => {
+    // The segment is in every absolute path such an app holds: only the root-relative one is tested.
+    const nested = processRoot(
+      join(import.meta.dir, '..', '.island-fixture', 'node_modules', 'disc'),
+    );
+    await rm(nested, { recursive: true, force: true });
+    try {
+      await Bun.write(join(nested, 'apps/web/app/panel.island.tsx'), MODULE('app'));
+      await Bun.write(join(nested, 'apps/web/app/node_modules/x/vendored.island.tsx'), MODULE('v'));
+      expect(await discoverIslands(nested)).toEqual(['apps/web/app/panel.island.tsx']);
+    } finally {
+      await rm(nested, { recursive: true, force: true });
+    }
+  });
+
   test('an app with no island builds an empty table rather than failing', async () => {
     expect((await buildIslands(ROOT)).chunks).toEqual([]);
   });

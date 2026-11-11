@@ -70,7 +70,7 @@ function walk(
 /**
  * Where the one walk over EVERY row starts: the image that is produced one time fewer than it is
  * consumed (the first insert's `null`, or the oldest retained `before`), or — when every image
- * balances, a row deleted at the end — the earliest row's `before`. `null` when no single walk can
+ * balances, a row deleted at the end — the insert's `null`, else the earliest row's `before`. `null` when no single walk can
  * use every row: a purged middle, a hand-written row.
  */
 function startOf(sorted: readonly HistoryRecord[], ignored: ReadonlySet<string>): string | null {
@@ -86,7 +86,12 @@ function startOf(sorted: readonly HistoryRecord[], ignored: ReadonlySet<string>)
   const ends = [...balance].filter(([, n]) => n === -1);
   if (odd.length > 0) return null;
   if (starts.length === 1 && ends.length === 1) return starts[0] ?? null;
-  if (starts.length === 0 && ends.length === 0) return nodeOf(sorted[0]?.before, ignored);
+  if (starts.length === 0 && ends.length === 0) {
+    // A circuit: every life of the row closed. It began at an insert — the NULL image — whatever
+    // `at` the delete carries (a transaction that began first and deleted last stamps the earlier).
+    const hasInsert = sorted.some((row) => nodeOf(row.before, ignored) === 'null');
+    return hasInsert ? 'null' : nodeOf(sorted[0]?.before, ignored);
+  }
   return null;
 }
 

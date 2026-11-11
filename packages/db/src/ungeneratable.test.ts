@@ -91,9 +91,14 @@ ALTER TABLE likes REPLICA IDENTITY FULL;
           `create policy owner_only on posts using (true);`,
           `drop function if exists "ultimate_partitions"(text);`,
           `alter table "posts" enable trigger all;`,
+          // The partition call's and the policy's SHAPES with another name: blanked, each reads
+          // like the generator's, so the name is what tells them apart.
+          `SELECT "backfill"('a', 'b', 'c', 2, NULL);`,
+          `drop function if exists "my_fn"(text, text, text, integer, bigint, timestamptz);`,
+          `create policy "owner_only" on "posts" using (true);`,
         ].join('\n'),
       ),
-    ).toHaveLength(5);
+    ).toHaveLength(8);
   });
 
   test('a statement split across lines is judged whole and reported on one line', () => {

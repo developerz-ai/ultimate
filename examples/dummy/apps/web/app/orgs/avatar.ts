@@ -25,6 +25,7 @@ import {
   attachmentPrefix,
   disk,
   grantUpload,
+  isStorageError,
   uploadPolicy,
   variant,
   variantSourceOf,
@@ -126,26 +127,36 @@ export const isAvatarOriginal = (key: string): boolean => variantSourceOf(key) =
  * happened to land on page one. Folded a page at a time rather than collected — the answer is one
  * object, so holding every key to pick from is a list this function never needs.
  */
-export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise<string | null> {
-  const driver = disk();
+async function currentAvatar(orgId: OrgId, memberId: MemberId): Promise<string | undefined> {
   const prefix = attachmentPrefix(orgId, avatarTarget(memberId));
   let current: StorageListEntry | undefined;
   let cursor: string | null = null;
-
   do {
-    const page = await driver.list({ prefix, cursor });
+    const page = await disk().list({ prefix, cursor });
     const originals = page.rows.filter((row) => isAvatarOriginal(row.key));
     current = newest(current === undefined ? originals : [current, ...originals]);
     // `nextCursor` is null exactly on the last page — the one page shape says so.
     cursor = page.nextCursor;
   } while (cursor !== null);
+  return current?.key;
+}
 
-  if (current === undefined) return null;
-  const sized = await variant(current.key, {
-    disk: driver,
-    images: avatarImages,
-    width: AVATAR_RENDER_WIDTH,
-    format: 'webp',
-  });
-  return driver.signedUrl(sized.key, { method: 'GET', expiresInMs: AVATAR_URL_TTL_MS });
+const sizedOf = (key: string) =>
+  variant(key, { disk: disk(), images: avatarImages, width: AVATAR_RENDER_WIDTH, format: 'webp' });
+
+export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise<string | null> {
+  const listed = await currentAvatar(orgId, memberId);
+  if (listed === undefined) return null;
+  let sized: Awaited<ReturnType<typeof sizedOf>>;
+  try {
+    sized = await sizedOf(listed);
+  } catch (error) {
+    // An `attachAvatar` replaced and pruned the listed avatar between the list and the read: the
+    // read is unlocked on purpose (every render), so it lists once more and reads what is current.
+    if (!isStorageError(error) || error.code !== 'X_STORAGE_NOT_FOUND') throw error;
+    const relisted = await currentAvatar(orgId, memberId);
+    if (relisted === undefined) return null;
+    sized = await sizedOf(relisted);
+  }
+  return disk().signedUrl(sized.key, { method: 'GET', expiresInMs: AVATAR_URL_TTL_MS });
 }

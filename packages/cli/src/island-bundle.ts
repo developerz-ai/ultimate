@@ -26,7 +26,12 @@ import { loadAppConfig } from './app-config-load';
 import type { IslandResolve } from './document-options';
 import { IslandBuildFailedError } from './errors';
 import { boundedMap } from './island-build-pool';
-import { environmentDigest, inputDigester, inputFiles } from './island-cache-inputs';
+import {
+  environmentDigest,
+  inputDigester,
+  inputFiles,
+  listingDigester,
+} from './island-cache-inputs';
 import { refuseDuplicatedModules } from './island-duplicate-refusal';
 import type { ModuleIdentityIo } from './island-duplicates';
 import { hostIo, memoizedIo } from './island-duplicates';
@@ -124,8 +129,10 @@ export interface IslandBundle {
 export async function discoverIslands(root: string): Promise<readonly string[]> {
   const files: string[] = [];
   for await (const absolute of new Bun.Glob(ISLAND_GLOB).scan({ cwd: root, absolute: true })) {
-    if (hasPathSegment(absolute, 'node_modules')) continue;
-    files.push(relative(root, absolute).split(sep).join('/'));
+    // Root-relative, as `isScannedModule` tests it: an app under `<anything>/node_modules/<app>`
+    // holds the segment in every absolute path, and found no island at all.
+    const file = relative(root, absolute).split(sep).join('/');
+    if (!hasPathSegment(file, 'node_modules')) files.push(file);
   }
   return files.sort();
 }
@@ -368,6 +375,9 @@ export async function buildIslands(
   const cache = {
     environment: reuse ? await environmentDigest(root) : '',
     digestOf: inputDigester(),
+    // One per call, shared by every read and write: a listing hashed before a build is the one
+    // its entry is stamped with.
+    listingOf: listingDigester(),
     warned: false,
   };
   const build = async (group: readonly string[]): Promise<GroupBuild> => {
@@ -381,17 +391,19 @@ export async function buildIslands(
     const persists = reaches.includes(true) ? await persistsOnce() : undefined;
     if (!reuse) return buildAll(root, group, splitting, context, persists);
     const key = groupKey({ group, splitting, environment: cache.environment, persists });
-    const hit = await readGroup(root, key, cache.digestOf);
+    const hit = await readGroup(root, key, cache.digestOf, cache.listingOf);
     if (hit !== undefined) return hit;
     // The wall clock as the filesystem stamps an mtime — never `Date.now()`, which a test may freeze.
     const startedAt = performance.timeOrigin + performance.now();
     const output = await buildAll(root, group, splitting, context, persists);
     // Best effort: a read-only tree (a pod whose image skipped `x build --target prebuilt`) still
     // serves what it just built — a cache it cannot write is a slower next boot, never a failed one.
-    await writeGroup(root, key, output, startedAt, cache.digestOf).catch((error: unknown) => {
-      if (!cache.warned) logger.warn(`island cache not written: ${renderThrowable(error)}`);
-      cache.warned = true;
-    });
+    await writeGroup(root, key, output, startedAt, cache.digestOf, cache.listingOf).catch(
+      (error: unknown) => {
+        if (!cache.warned) logger.warn(`island cache not written: ${renderThrowable(error)}`);
+        cache.warned = true;
+      },
+    );
     return output;
   };
   if (reuse) await sweepOnce(root);
