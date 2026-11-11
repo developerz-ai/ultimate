@@ -16,8 +16,9 @@ import { memoryAuthAdapter } from './memory-adapter';
 import { TOTP_STEP_SECONDS, totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import type { PostgresTotpReplayGuard } from './mfa-replay-postgres';
-import { postgresTotpReplayGuard, SQL_TOTP_REPLAY_TABLE } from './mfa-replay-postgres';
+import { postgresTotpReplayGuard } from './mfa-replay-postgres';
 import { saveTotpSecret } from './mfa-secret';
+import { SQL_TOTP_REPLAY_TABLE } from './tables';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;

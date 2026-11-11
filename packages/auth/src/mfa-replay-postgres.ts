@@ -4,18 +4,6 @@
 import type { PgExecutor } from '@ultimat3/core';
 import { TOTP_DRIFT_STEPS, type TotpReplayGuard, totpStep } from './mfa';
 
-/** Applied by the boot, never by an app migration: `SQL_AUTH_LIMIT_TABLES`' rule. */
-export const SQL_TOTP_REPLAY_TABLE = `
-create table if not exists x_totp_steps (
-  subject text        not null,
-  step    bigint      not null,
-  used_at timestamptz not null,
-  primary key (subject, step)
-);
-
-create index if not exists x_totp_steps_step_idx on x_totp_steps (step);
-`;
-
 /** `$1` subject, `$2` step, `$3` the caller's clock. A row back is the first use; none, a replay. */
 export const SQL_TOTP_CLAIM = `
 insert into x_totp_steps (subject, step, used_at)

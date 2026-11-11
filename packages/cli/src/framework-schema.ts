@@ -20,7 +20,7 @@ import {
   SQL_AUTH_LIMIT_TABLES,
   SQL_AUTH_SERVER_TABLES,
   SQL_TOTP_REPLAY_TABLE,
-} from '@ultimat3/auth';
+} from '@ultimat3/auth/schema';
 import { FAILURES_TABLE, SQL_FAILURES_TABLE } from '@ultimat3/db';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
@@ -123,7 +123,9 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
    * here on exactly the rule the rate-limit and audit rows already follow.
    *
    * `AUTH_TABLE_NAMES` rather than eight literals: @ultimat3/auth already publishes the list, and a
-   * second copy is a second thing to keep right when a table is added.
+   * second copy is a second thing to keep right when a table is added. Every auth row reads
+   * `@ultimat3/auth/schema`, a leaf, for the admin row's reason: not one auth runtime module on
+   * `ROLE=migrate`'s path (#1051).
    */
   Object.freeze({
     pkg: '@ultimat3/auth',
