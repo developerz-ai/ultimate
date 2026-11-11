@@ -1,10 +1,13 @@
-// TEST-ONLY. A SAML IdP in-process: metadata, and signed responses written DIRECTLY in canonical
-// form — every namespace declared where exc-c14n renders it, attributes pre-sorted, no empty-tag
-// shorthand — so the digest is SHA-256 of the literal string and the signer never calls the
-// `saml-c14n.ts` it is testing. `@ultimat3/testing`'s IdentityProvider conformance drives it too.
+// TEST TOOL, shipped as `@ultimat3/auth/saml-test-idp`. A SAML IdP in-process: metadata, and signed
+// responses written DIRECTLY in canonical form — every namespace declared where exc-c14n renders it,
+// attributes pre-sorted, no empty-tag shorthand — so the digest is SHA-256 of the literal string and
+// the signer never calls the `saml-c14n.ts` it is testing.
+//
+// This package's suites, `@ultimat3/testing`'s `fakeSamlIdentityProvider` and an app's sign-in test
+// share it: one signer, one path.
 
+import { finiteOption } from '@ultimat3/core';
 import { c14nAttribute, c14nText } from './saml-c14n';
-import { type TestRsaSigner, testRsaSigner } from './saml-cert-fixture';
 import {
   BEARER,
   DSIG_NS,
@@ -19,6 +22,10 @@ import {
   STATUS_SUCCESS,
 } from './saml-dom';
 import { parseSamlMetadata, type SamlIdpMetadata } from './saml-metadata';
+import { type TestRsaSigner, testRsaSigner } from './saml-test-signer';
+
+export type { TestRsaSigner } from './saml-test-signer';
+export { testRsaSigner } from './saml-test-signer';
 
 export const TEST_IDP_ENTITY_ID = 'https://idp.example.test/metadata';
 export const TEST_IDP_SSO_URL = 'https://idp.example.test/sso';
@@ -32,6 +39,8 @@ export interface TestResponseSpec {
   readonly nameIdFormat?: string;
   /** `null` omits the email attribute. */
   readonly email?: string | null;
+  /** The `displayName` attribute; default `Ada Lovelace`, `null` omits it. */
+  readonly name?: string | null;
   /** The confirmation's Recipient alone; default `acsUrl`. */
   readonly recipient?: string;
   readonly issuer?: string;
@@ -91,13 +100,20 @@ const envelop = (canonical: string, signature: string): string =>
   canonical.replace('</saml:Issuer>', `</saml:Issuer>${signature}`);
 
 function assertionXml(spec: TestResponseSpec, id: string): string {
-  const notOnOrAfter = at(new Date(spec.now.getTime() + (spec.lifetimeMs ?? 300_000)));
+  // Negative is legal — an already-expired assertion is a case a test signs — so finite, not a count.
+  const lifetimeMs = finiteOption('samlTestIdp', 'lifetimeMs', spec.lifetimeMs ?? 300_000);
+  const notOnOrAfter = at(new Date(spec.now.getTime() + lifetimeMs));
   const notBefore = at(spec.notBefore ?? new Date(spec.now.getTime() - 30_000));
   const email = spec.email === undefined ? 'ada@corp.example' : spec.email;
   const emailAttribute =
     email === null
       ? ''
       : `<saml:Attribute Name="email"><saml:AttributeValue>${esc(email)}</saml:AttributeValue></saml:Attribute>`;
+  const name = spec.name === undefined ? 'Ada Lovelace' : spec.name;
+  const nameAttribute =
+    name === null
+      ? ''
+      : `<saml:Attribute Name="displayName"><saml:AttributeValue>${esc(name)}</saml:AttributeValue></saml:Attribute>`;
   return (
     `<saml:Assertion xmlns:saml="${SAML_NS}" ID="${id}" IssueInstant="${at(spec.now)}" Version="2.0">` +
     `<saml:Issuer>${esc(spec.issuer ?? TEST_IDP_ENTITY_ID)}</saml:Issuer><saml:Subject>` +
@@ -110,7 +126,7 @@ function assertionXml(spec: TestResponseSpec, id: string): string {
     '<saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password' +
     '</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement>' +
     emailAttribute +
-    '<saml:Attribute Name="displayName"><saml:AttributeValue>Ada Lovelace</saml:AttributeValue></saml:Attribute>' +
+    nameAttribute +
     '</saml:AttributeStatement></saml:Assertion>'
   );
 }

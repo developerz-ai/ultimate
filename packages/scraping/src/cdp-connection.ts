@@ -96,6 +96,12 @@ export interface CdpConnectionOptions {
   readonly endpoint: string;
   /** Per-call deadline. A CDP call that never answers is a suite that never finishes. */
   readonly timeoutMs: number;
+  /**
+   * The handshake's deadline, when it is not a call's: a launcher dials a browser that is still
+   * starting, inside what is left of its LAUNCH deadline (`cdp-launch-wire.ts`). `timeoutMs` if
+   * unset.
+   */
+  readonly connectTimeoutMs?: number | undefined;
 }
 
 /**
@@ -120,14 +126,15 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
     `the CDP endpoint is ${options.endpoint === '' ? 'empty' : 'not a WebSocket url'}`,
     'pass the `webSocketDebuggerUrl` Chrome prints on stderr, or the one /json/version answers',
   );
+  const connectTimeoutMs = options.connectTimeoutMs ?? options.timeoutMs;
   const socket = new WebSocket(options.endpoint);
   await new Promise<void>((resolve, reject) => {
     // The socket is CLOSED on both failures: a handshake that timed out otherwise kept dialling
     // in the background, holding a descriptor and a pending connection for a caller that gave up.
     const timer = setTimeout(() => {
       socket.close();
-      reject(new CdpTimeoutError({ method: 'connect', timeoutMs: options.timeoutMs }));
-    }, options.timeoutMs);
+      reject(new CdpTimeoutError({ method: 'connect', timeoutMs: connectTimeoutMs }));
+    }, connectTimeoutMs);
     socket.onopen = (): void => {
       clearTimeout(timer);
       resolve();

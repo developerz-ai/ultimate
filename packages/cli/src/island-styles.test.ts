@@ -84,6 +84,19 @@ describe('an island that imports a CSS module', () => {
     expect(sheet?.surface).toBe('app');
   });
 
+  test('a sheet edited between two builds of one process is compiled afresh', async () => {
+    // Each `buildIslands` compiles a sheet once for all its groups; a SECOND call — the next
+    // `x dev` rebuild — must not answer the first call's CSS.
+    await write('apps/web/app/switch.module.scss', SCSS);
+    await write('apps/web/app/panel.island.tsx', ISLAND);
+    await buildIslands(ROOT, { reuse: false });
+    await write('apps/web/app/switch.module.scss', '.track { color: green; }\n');
+    await buildIslands(ROOT, { reuse: false });
+
+    const sheet = registeredStylesheets().find((each) => each.file.endsWith('switch.module.scss'));
+    expect(sheet?.css).toContain('color:green');
+  });
+
   test('a stylesheet that will not compile fails the build naming the island', async () => {
     await write('apps/web/app/switch.module.scss', '.track { @include nope(); }\n');
     await write('apps/web/app/panel.island.tsx', ISLAND);

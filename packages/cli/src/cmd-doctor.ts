@@ -2,202 +2,39 @@
 // carries the command that fixes it; a diagnostic that only describes a problem has handed the
 // work back to the reader.
 
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
 import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL } from '@ultimat3/core';
-import { checkDb, PGLITE_FIX, PGLITE_MISSING, PGLITE_PACKAGE, postgresClient } from '@ultimat3/db';
-import { loadApp } from './app-load';
-import { IMPORT_UNRESOLVED } from './app-load-unresolved';
-import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
+import { REQUIRED_BUN, versionAtLeast } from './app-root';
 import { doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
-import { checkMigrationSnapshots } from './db-snapshot';
 import { appUrlFindings } from './doctor-app-url';
-import { type AuthStorageFact, authStorageFindings, authStorageProbe } from './doctor-auth';
+import { authStorageFindings } from './doctor-auth';
 import { chartAlertsProbe, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
+import { embeddedDatabaseFinding } from './doctor-database';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
-import type { OfflineFallbackFact } from './doctor-offline';
-import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
-import type { PoolerFact } from './doctor-pooler';
-import { NO_POOLER_FACT, poolerFindings, poolerProbe, withPoolerReport } from './doctor-pooler';
+import { offlineFallbackFinding } from './doctor-offline';
+import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
+import { doctorPort, portFindings } from './doctor-port';
+import type { DoctorProbe } from './doctor-probe';
+import { probeFor } from './doctor-probe';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
-import { rowSecurityProbe } from './doctor-row-security';
-import type { SealedKeysFact } from './doctor-sealed';
-import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
-import { typescriptFindings, typescriptProbe } from './doctor-typescript';
-import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
-import { machineSecretFindings } from './framework-env';
+import { sealedKeyFindings } from './doctor-sealed';
+import { typescriptFindings } from './doctor-typescript';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { findingFrom } from './output';
-import type { ParsedArgs } from './parse';
-import { portFree } from './port-probe';
-import { syncPortFor } from './role-sync';
-import { checkMigrationDrift } from './schema-drift';
-import { portFromEnv } from './serve-env';
 import { quoteArg } from './shell-quote';
-import type { TypescriptLag } from './typescript-floor';
 
-/**
- * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
- * `wiki/Upgrading.md` covers `X_*` codes, the eight primitive shapes, the `x` CLI surface, the
- * tier table and `app.config.ts` fields, and not this — so a new fact the probe must report is a
- * REQUIRED field: an optional one lets an implementation skip the check and still typecheck.
- */
-export interface DoctorProbe {
-  readonly bunVersion: string;
-  /** App root, or undefined when the command runs outside an app. */
-  readonly root: string | undefined;
-  readonly port: number;
-  /** `APP_URL` as this environment declares it; `undefined` when unset. */
-  readonly appUrl: string | undefined;
-  /**
-   * The framework's own secrets this machine lacks — `framework-env.ts`'s
-   * `machineSecretFindings`, gated by `namedDeployed`: only an environment NAMED staging or
-   * production (an unnamed developer shell owes nothing; `x env check` is the fail-closed answer).
-   * The list's own `needed`/`unsafe` decide; doctor reports.
-   */
-  readonly frameworkFindings: readonly Finding[];
-  exists(relativePath: string): boolean;
-  portFree(port: number): Promise<boolean>;
-  /**
-   * Is the configured database reachable, and what refused? `null` is "reachable, or there is
-   * nothing external to reach" — an unset `DATABASE_URL` is embedded PGlite, which `x dev` owns
-   * and which a probe would take the single-writer lock on.
-   *
-   * Until this existed `x doctor` answered "no findings — environment is shippable" against
-   * `DATABASE_URL=postgres://nope:nope@localhost:5432/nope`, while `x db migrate` on the same env
-   * correctly answered `X_DB_UNAVAILABLE` (#F5).
-   */
-  database(): Promise<Finding | null>;
-  /**
-   * Is the EMBEDDED database usable, and is it the one this environment would open? A FACT and not
-   * a finding, the split `offlineFallback` makes below: reaching a module resolver is IO, and what
-   * an unresolvable optional peer MEANS is a pure rule with a pure test.
-   *
-   * `database()` answers `null` the moment `DATABASE_URL` is unset — which is exactly a bare VM,
-   * the configuration `x dev` invents a database FOR — so until this existed `x doctor` was silent
-   * about the only database a fresh box has. `bin/setup` found out instead, at `x db migrate`.
-   */
-  embeddedDatabase(): Promise<EmbeddedDatabase>;
-  drift(): Promise<readonly Finding[]>;
-  /**
-   * The other half of the migrations directory: a newest migration with no `.snapshot.json`, which
-   * is what `x db gen` refuses on. Separate from `drift()` because they are separate questions with
-   * separate remedies — one is "generate a migration", the other is "this migration is incomplete".
-   */
-  snapshots(): Promise<readonly Finding[]>;
-  /**
-   * What the app declared as its offline fallback, and which routes it really serves. A FACT and
-   * not a finding, because deciding is `offlineFallbackFinding`'s and this seam's whole job is
-   * reaching the disk — the same split `drift()` makes one question over.
-   */
-  offlineFallback(): Promise<OfflineFallbackFact>;
-  /**
-   * The app's `.sealed()` columns and the master keys this environment declares. A FACT, for the
-   * reason `offlineFallback` is one: loading the app and opening the secrets file is IO, and what
-   * a retired key beside a sealed column means is `sealedKeyFindings`' pure rule.
-   */
-  sealedKeys(): Promise<SealedKeysFact>;
-  /**
-   * What an upgrade left in the auth tables for an operator to finish: unsealed second-factor
-   * secrets, and tables no release reads. Asked of an external database only.
-   */
-  authStorage(): Promise<AuthStorageFact>;
-  /** The statement bound the session really reads, and what a pooler refused (`doctor-pooler.ts`). */
-  pooler(): Promise<PoolerFact>;
-  /** Each manifest whose `typescript` range lags the scaffold's (`doctor-typescript.ts`). */
-  typescript(): Promise<readonly TypescriptLag[]>;
-  /** With `database.rowSecurity` on, whether the serving role is exempt (`doctor-row-security.ts`). */
-  rowSecurity?(): Promise<readonly Finding[]>;
-}
-
-/** What `x doctor` reads about the embedded database, without opening it. */
-export interface EmbeddedDatabase {
-  /**
-   * True while `DATABASE_URL` is unset or blank — the condition that makes PGlite the app's
-   * database (`resolveServices`), and the same reading `probeDatabase` returns `null` on.
-   */
-  readonly selected: boolean;
-  /** Does `@electric-sql/pglite` resolve from the app root? */
-  readonly resolved: boolean;
-}
+// `src/index.ts` publishes the seam from here; its declaration lives in `doctor-probe.ts`.
+export type { DoctorProbe } from './doctor-probe';
 
 const finding = (code: string, cause: string, fix: string, at?: string): Finding =>
   at === undefined
     ? { code, cause, fix, docs: ERROR_DOCS_URL }
     : { code, cause, fix, docs: ERROR_DOCS_URL, at };
 
-/**
- * The rule, pure. Red only where the embedded database is the one that would be opened: an app
- * pointed at a real Postgres never loads PGlite, and a finding about an absent optional peer there
- * is noise the reader learns to skim.
- *
- * `@ultimat3/db`'s own refusal, not a CLI twin of it — same `X_DB_UNAVAILABLE`, same sentence,
- * same runnable fix. The package already says this the moment a query arrives; `x doctor` is what
- * says it before `bin/setup` gets that far.
- */
-export const embeddedDatabaseFinding = (fact: EmbeddedDatabase): Finding | undefined =>
-  fact.selected && !fact.resolved
-    ? finding(
-        'X_DB_UNAVAILABLE',
-        `${PGLITE_MISSING} — and DATABASE_URL is unset or blank, so the embedded one is the database this app would open`,
-        PGLITE_FIX,
-      )
-    : undefined;
-
 /** The file `x doctor` reports missing, and the one the reader creates. */
 export const ENV_DEVELOPMENT = '.env.development';
-
-/**
- * Both ports `x dev` binds, each labelled with the role that wants it. `x dev --port 3999` printed
- * `web listening on 3999`, then died on 4000 as `X_CLI_UNEXPECTED` with a caught `Error` rendered
- * into its cause — and `x doctor --port 3999` answered "no findings", because it probed the web
- * port and only the web port (#F5). The neighbouring port is not an implementation detail an
- * operator can ignore: `docker-compose.prod.yml` publishes `3001:3001` from it and `docker/helm`
- * derives `PORT = .port - 1` from it, so it is part of the contract `x dev` runs by.
- *
- * The suggested port moves BOTH: `x dev --port N` occupies N and N+1, so a free N beside a taken
- * N+1 is still not a runnable command. It did not move both until 2026-09 — the line was
- * `neighbouringPort(probe.port)`, which for the sync finding IS the port the finding is about, and
- * a docblock claiming otherwise is how it survived. `portPairAfter` is the one reader of that rule
- * and `role-sync.ts`'s own refusal shares it.
- *
- * The sync port is `syncPortFor`, never `neighbouringPort` again: that helper answers 65534 for a
- * web port of 65535 — BELOW the web port, and a port `x dev` never binds — where the boot refuses
- * the run outright with `X_PORT_INVALID`. A probe that reports on a socket the command would never
- * open is answering a question nobody asked, so the boot's own rule decides, and its refusal is
- * reported instead of a probe. Alone, and ahead of the web port: there is no runnable `x dev` at
- * this port whatever the other one answers, and a second finding about it is noise over the cause.
- */
-async function portFindings(probe: DoctorProbe): Promise<readonly Finding[]> {
-  let syncPort: number;
-  try {
-    syncPort = syncPortFor(probe.port);
-  } catch (error) {
-    // The boot's own error, carried whole — `findingFrom` reads its code, cause and fix off the
-    // value rather than rendering it, which is what `scripts/catch-render.ts` requires.
-    return [findingFrom(error)];
-  }
-  const wanted = [
-    { port: probe.port, role: 'web' },
-    { port: syncPort, role: 'sync' },
-  ] as const;
-  const findings: Finding[] = [];
-  for (const entry of wanted) {
-    if (await probe.portFree(entry.port)) continue;
-    findings.push(
-      finding(
-        'X_PORT_IN_USE',
-        `port ${entry.port} is already listening, and \`x dev --port ${probe.port}\` binds it for the ${entry.role} role`,
-        `x dev --port ${quoteArg(String(portPairAfter(probe.port)))}`,
-      ),
-    );
-  }
-  return findings;
-}
 
 /**
  * Ordered cheapest-first so the first failure is usually the root cause: a wrong Bun explains
@@ -296,147 +133,6 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   findings.push(...authStorageFindings(await probe.authStorage()));
   return findings;
 }
-
-/**
- * The port to TEST, and the one place `x doctor` reads it: `devPortFor`'s order — `--port`, then
- * `PORT` (`portFromEnv`, the one reader of it), then 3000 — so the probe answers about the port
- * `x dev` will bind. It probed 3000 under `PORT=4000` while dev bound 4000 and 4001. `PORT_RANGE.min`
- * is 0 because `x dev --port 0` means "let the kernel pick"; here 0 means nothing, and
- * `Bun.serve({ port: 0 })` always succeeds — so the port check could not fail.
- */
-export const doctorPort = (
-  args: ParsedArgs,
-  env: Readonly<Record<string, string | undefined>>,
-): number =>
-  readIntFlag(args, {
-    name: 'port',
-    command: 'doctor',
-    ...PORT_RANGE,
-    min: 1,
-    example: 'x doctor --port 3000',
-  }) ?? portFromEnv(env);
-
-/**
- * `DATABASE_URL` as BOTH halves of the database question read it: unset and blank are one case.
- * One seam, because the two halves are complementary — a second reading of the same variable is
- * how a configuration ends up reported by neither probe, or by both.
- */
-const externalUrl = (raw: string | undefined): string | undefined =>
-  raw === undefined || raw.trim() === '' ? undefined : raw;
-
-/**
- * Is the optional peer INSTALLED for this app — a `node_modules` walk up from the app root.
- *
- * Never an IMPORT: loading PGlite boots 26 MB of WASM and takes the single-writer lock the next
- * command needs, and a diagnostic must not be the reason `x dev` cannot open the database it just
- * reported on.
- *
- * Never `Bun.resolveSync` either, which was this check's first draft. It falls back to Bun's
- * machine-global install cache: measured 2026-09-11 against a freshly scaffolded app with no
- * `node_modules` anywhere above it, `Bun.resolveSync('@electric-sql/pglite', <app>)` answered
- * `~/.bun/install/cache/@electric-sql/pglite@0.5.8@@@1/dist/index.js` — a version the app does not
- * depend on, in a directory `bun install` never wrote for it. A box that had downloaded the package
- * ONCE, for anything, would have read as ready on every app after it, which is the exact opposite
- * of the question. The walk asks what `bun add` answers, and nothing else.
- *
- * Up from the root and not at it, because an app checked out inside a larger workspace is installed
- * by the hoisting one: `examples/dummy` in this repository has no `node_modules` of its own.
- */
-const installedAbove = (dir: string, specifier: string): boolean => {
-  let current = resolve(dir);
-  // Bounded by the path itself — one segment per step — rather than by `for (;;)` and the promise
-  // that `dirname('/')` is `/`. The loop still stops on that, one step earlier.
-  for (let remaining = current.split(sep).length; remaining > 0; remaining -= 1) {
-    if (existsSync(join(current, 'node_modules', specifier, 'package.json'))) return true;
-    const parent = dirname(current);
-    if (parent === current) return false;
-    current = parent;
-  }
-  return false;
-};
-
-/**
- * A real `select 1` through the app's own driver, not a TCP connect: a running Postgres with the
- * wrong credentials or a database that does not exist accepts the socket and refuses the session,
- * which is the case an operator most needs told about before a deploy.
- *
- * The pool is CLOSED on every path — this command exits, and a held pool is a connection slot the
- * next `x db migrate` cannot have.
- */
-async function probeDatabase(
-  url: string | undefined,
-  env: Readonly<Record<string, string | undefined>>,
-): Promise<Finding | null> {
-  if (externalUrl(url) === undefined) return null;
-  let client: ReturnType<typeof postgresClient>;
-  try {
-    client = postgresClient({ url, env, applicationName: 'x-doctor' });
-  } catch (error) {
-    return findingFrom(error);
-  }
-  try {
-    const report = await checkDb(client);
-    if (report.ok) return null;
-    // `DbHealthReport.error` is `checkDb`'s own rendering of what refused, never this file's — the
-    // caught value is `checkDb`'s to read, and it is the one function that already reads it safely.
-    return finding(
-      'X_DB_UNAVAILABLE',
-      `DATABASE_URL does not answer \`select 1\`: ${report.error ?? 'no reason reported'}`,
-      // `dbUnavailable`'s own two branches, verbatim: a second wording for one condition is two
-      // answers to "what do I do", and this one is reached first, before any command opens a pool.
-      'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
-    );
-  } finally {
-    await client.close();
-  }
-}
-
-export function probeFor(
-  cwd: string,
-  bunVersion: string,
-  port: number,
-  // The environment `doctorPort` read `PORT` from, so `APP_URL` is judged against the same one.
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): DoctorProbe {
-  const root = findAppRoot(cwd)?.dir;
-  return {
-    bunVersion,
-    root,
-    port,
-    appUrl: env['APP_URL'],
-    frameworkFindings: machineSecretFindings(env),
-    exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
-    portFree,
-    database: () => probeDatabase(process.env['DATABASE_URL'], env),
-    // `root ?? cwd` because the walk needs a directory that exists; outside an app `runDoctor`
-    // returns on `X_NOT_IN_APP` before this is ever asked, so the value only has to be honest.
-    embeddedDatabase: async () => ({
-      selected: externalUrl(process.env['DATABASE_URL']) === undefined,
-      resolved: installedAbove(root ?? cwd, PGLITE_PACKAGE),
-    }),
-    drift: async () => (root === undefined ? [] : checkMigrationDrift(root)),
-    // The import half too: `X_CLI_UNEXPECTED` used to send a reader here and find this silent.
-    snapshots: async () =>
-      root === undefined
-        ? []
-        : [...(await unresolvedImportFindings(root)), ...(await checkMigrationSnapshots(root))],
-    // `routes: undefined` outside an app is "not judged", which is what the caller already is:
-    // `runDoctor` returns on `X_NOT_IN_APP` before this can be asked.
-    offlineFallback: async () =>
-      root === undefined ? { fallback: null, routes: undefined } : offlineFallbackProbe(root),
-    sealedKeys: async () =>
-      root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
-    authStorage: () => authStorageProbe(process.env['DATABASE_URL'], env),
-    pooler: () => poolerProbe(process.env['DATABASE_URL'], env),
-    typescript: async () => (root === undefined ? [] : typescriptProbe(root)),
-    rowSecurity: async () =>
-      root === undefined ? [] : rowSecurityProbe(root, process.env['DATABASE_URL'], env),
-  };
-}
-
-/** What a load reports, narrowed to the one failure a doctor can name a repair for. */
-const unresolvedImportFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await loadApp(root)).findings.filter((finding) => finding.code === IMPORT_UNRESOLVED);
 
 export const doctorCommand: CliCommand = {
   spec: doctorSpec,

@@ -2,13 +2,19 @@
 // commands in the order its README gives them, each timed. Pure over an injected runner and sizer,
 // so the order, the JSON and a failed step's record are tested without a network or a registry.
 
-import type { Runner } from '@ultimat3/cli';
+import type { ExecResult, Runner } from '@ultimat3/cli';
+import { nextCommands } from './first-hour-next';
 
 export interface FirstHourStep {
   readonly name: string;
   readonly command: readonly string[];
   /** `work` is the clean parent directory; `app` is the scaffold inside it. */
   readonly in: 'work' | 'app';
+  /**
+   * The step whose `--json` verdict names this one's commands (`data.next`): run what the
+   * generator told its author to run, never a copy of it. `command` is then empty.
+   */
+  readonly follows?: string;
 }
 
 export interface StepRecord {
@@ -49,7 +55,14 @@ export function firstHourSteps(input: FirstHourInput): readonly FirstHourStep[] 
     { name: 'scaffold', in: 'work', command: ['bun', 'x', create, input.app, '--no-git'] },
     { name: 'setup', in: 'app', command: ['bun', 'run', 'setup'] },
     { name: 'verify', in: 'app', command: ['bun', 'run', 'verify', '--json'] },
-    { name: 'first feature', in: 'app', command: ['bun', 'x', 'x', 'g', 'resource', 'note'] },
+    {
+      name: 'first feature',
+      in: 'app',
+      command: ['bun', 'x', 'x', 'g', 'resource', 'note', '--json'],
+    },
+    // `x g resource` writes no migration: its `next` is `x db gen` and `x db migrate`, and a gate
+    // run without them is red on a table that does not exist (bench run 42879568783).
+    { name: 'feature next steps', in: 'app', command: [], follows: 'first feature' },
     { name: 'setup after feature', in: 'app', command: ['bun', 'run', 'setup'] },
     { name: 'verify after feature', in: 'app', command: ['bun', 'run', 'verify', '--json'] },
     ...(input.image
@@ -107,10 +120,33 @@ const tailOf = (text: string): string => {
   return [...failed, ...lines.slice(-TAIL_LINES).filter((line) => !red.has(line))].join(' | ');
 };
 
+/** One step's commands, run in order until one fails: their summed time and the last stdout. */
+async function runCommands(
+  commands: readonly (readonly string[])[],
+  cwd: string,
+  runner: Runner,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<{
+  readonly ms: number;
+  readonly stdout: string;
+  readonly failed?: { readonly argv: string; readonly result: ExecResult };
+}> {
+  let ms = 0;
+  let stdout = '';
+  for (const argv of commands) {
+    const result = await runner(argv, { cwd, env });
+    ms += result.durationMs;
+    stdout = result.stdout;
+    if (!result.ok) return { ms: Math.round(ms), stdout, failed: { argv: argv.join(' '), result } };
+  }
+  return { ms: Math.round(ms), stdout };
+}
+
 /**
  * Every step in order. The first failure is recorded with the time it actually took, and every
  * step after it as `skipped` with no time: a total over a broken run would be a figure for a
- * first hour that never happened.
+ * first hour that never happened. A step that `follows` another runs the commands that step's
+ * verdict named, timed as their sum, and fails under the one that went red.
  */
 export async function runFirstHour(
   input: FirstHourInput,
@@ -118,23 +154,33 @@ export async function runFirstHour(
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<readonly StepRecord[]> {
   const records: StepRecord[] = [];
+  const stdout = new Map<string, string>();
   let broken = false;
   for (const step of firstHourSteps(input)) {
-    const command = step.command.join(' ');
+    const planned =
+      step.follows === undefined
+        ? { ok: true as const, commands: [step.command] }
+        : nextCommands(stdout.get(step.follows) ?? '');
+    const command = planned.ok ? planned.commands.map((argv) => argv.join(' ')).join(' && ') : '';
     if (broken) {
       records.push({ name: step.name, command, ms: null, status: 'skipped' });
       continue;
     }
+    if (!planned.ok) {
+      broken = true;
+      records.push({ name: step.name, command, ms: 0, status: 'failed', tail: planned.reason });
+      continue;
+    }
     const cwd = step.in === 'work' ? input.work : `${input.work}/${input.app}`;
-    const result = await runner(step.command, { cwd, env });
-    const ms = Math.round(result.durationMs);
-    if (result.ok) {
-      records.push({ name: step.name, command, ms, status: 'ok' });
+    const ran = await runCommands(planned.commands, cwd, runner, env);
+    stdout.set(step.name, ran.stdout);
+    if (ran.failed === undefined) {
+      records.push({ name: step.name, command, ms: ran.ms, status: 'ok' });
       continue;
     }
     broken = true;
-    const tail = tailOf(`${result.stdout}\n${result.stderr}`);
-    records.push({ name: step.name, command, ms, status: 'failed', tail });
+    const tail = tailOf(`${ran.failed.result.stdout}\n${ran.failed.result.stderr}`);
+    records.push({ name: step.name, command: ran.failed.argv, ms: ran.ms, status: 'failed', tail });
   }
   return records;
 }

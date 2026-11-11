@@ -59,7 +59,9 @@ export const posts = entity('posts', {
    * a member's feed is theirs to see, and every other record is re-read on the next page.
    */
   persist: true,
-  history: { retain: { after: '365d' } },
+  // A like moves `likeCount` and `updatedAt` and nothing a reader would call a revision: ignored,
+  // so liking a post writes no history row (`post-revisions.test.ts`).
+  history: { retain: { after: '365d' }, ignore: ['likeCount', 'updatedAt'] },
   invariants: (c) => [
     /**
      * The PATTERN, not the predicate — `matches(SLUG_PATTERN)` renders `slug ~ '…'` into a real

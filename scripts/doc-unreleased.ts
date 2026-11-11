@@ -15,7 +15,8 @@
 
 import { CHANGELOG_PATH, taggedVersion } from './changelog-check';
 import { parseScriptArgs } from './lib/args';
-import { parseChangelog, UNRELEASED } from './lib/changelog-sections';
+import { type Changelog, UNRELEASED } from './lib/changelog-sections';
+import { loadChangelog } from './lib/changelog-store';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { toPosix } from './lib/posix-path';
@@ -25,7 +26,7 @@ import { CLAIM_SURFACES } from './lib/unreleased-claims';
 const SCRIPT = 'doc-unreleased';
 const KNOWN_GAPS = 'wiki/Known-Gaps.md';
 /** Dated records: true of the tree they describe, which is not this one. */
-const NOT_CURRENT = /^(?:docs\/plans\/|docs\/history\/|CHANGELOG\.md$)/;
+const NOT_CURRENT = /^(?:docs\/plans\/|docs\/history\/|docs\/changelog\/|CHANGELOG\.md$)/;
 const FENCE = /^\s*(?:```|~~~)/;
 const MAIN_CELL = /\|\s*`main`\s*(?=\|)/g;
 /**
@@ -79,14 +80,14 @@ export function unreleasedPhrases(path: string, text: string): readonly Unreleas
 }
 
 /** Whether everything the tree describes has shipped: a tagged HEAD, or an empty `[Unreleased]`. */
-export function atRelease(changelog: string, tagged: string | undefined): boolean {
+export function atRelease(changelog: Changelog, tagged: string | undefined): boolean {
   if (tagged !== undefined) return true;
-  const pending = parseChangelog(changelog).find((section) => section.version === UNRELEASED);
+  const pending = changelog.find((section) => section.version === UNRELEASED);
   return pending === undefined || !pending.filled;
 }
 
 export interface UnreleasedInput {
-  readonly changelog: string;
+  readonly changelog: Changelog;
   readonly tagged?: string | undefined;
   readonly pages: readonly { readonly path: string; readonly text: string }[];
 }
@@ -152,7 +153,7 @@ export async function docUnreleasedFindings(root: string): Promise<readonly Find
     ];
   }
   return checkUnreleasedPhrases({
-    changelog: await log.text(),
+    changelog: await loadChangelog(root),
     tagged: await taggedVersion(root),
     pages: await currentPages(root),
   });

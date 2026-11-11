@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { planNewApp } from '../cmd-new';
 import { guardFindings } from '../guards';
 import type { Finding } from '../output';
+import { linkUi } from './shipped-guard-fixture';
 
 /** One extra file on top of a real `x new` tree, then the gate's own guard pass over the result. */
 async function findingsWith(files: Readonly<Record<string, string>>): Promise<readonly Finding[]> {
@@ -24,6 +25,8 @@ async function findingsWith(files: Readonly<Record<string, string>>): Promise<re
     for (const file of planNewApp({ name: 'guard-demo', example: true })) {
       await Bun.write(join(dir, file.path), file.contents);
     }
+    // As `bun install` would: unlinked, no sheet compiles and the compiled-sheet guards say so.
+    await linkUi(dir);
     for (const [path, contents] of Object.entries(files)) {
       await Bun.write(join(dir, path), contents);
     }
@@ -67,6 +70,7 @@ describe('unit · x new · the interface guards refuse the mistake they name', (
   test('a nested :focus-visible that paints one back is silent', async () => {
     const findings = await findingsWith({
       'apps/web/app/post/panel.module.scss': [
+        "@use '@ultimat3/ui/tokens' as tokens;",
         '.trigger {',
         '  outline: none;',
         '',
@@ -100,7 +104,7 @@ describe('unit · x new · the interface guards refuse the mistake they name', (
   test('a transition on a layout property is X_ANIMATED_LAYOUT_PROPERTY', async () => {
     const findings = await findingsWith({
       'apps/web/app/post/panel.module.scss':
-        '.panel {\n  transition: width tokens.duration(base) ease;\n}\n',
+        "@use '@ultimat3/ui/tokens' as tokens;\n.panel {\n  transition: width tokens.duration(base) ease;\n}\n",
     });
     expect(codes(findings)).toEqual(['X_ANIMATED_LAYOUT_PROPERTY']);
     expect(findings[0]?.fix).toContain('scaleX');
@@ -109,7 +113,7 @@ describe('unit · x new · the interface guards refuse the mistake they name', (
   test('the compositor-only pair the fix names is silent', async () => {
     const findings = await findingsWith({
       'apps/web/app/post/panel.module.scss':
-        '.panel {\n  transition: transform tokens.duration(base) ease;\n}\n',
+        "@use '@ultimat3/ui/tokens' as tokens;\n.panel {\n  transition: transform tokens.duration(base) ease;\n}\n",
     });
     expect(findings).toEqual([]);
   }, 30_000);

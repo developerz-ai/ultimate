@@ -24,7 +24,13 @@ import type {
 } from '@postly/domain';
 import type { AgentTranscript } from '@ultimat3/ai';
 import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
-import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
+import type {
+  AvatarAttached,
+  InviteInput,
+  MemberView,
+  OrgView,
+  UpgradeReceipt,
+} from '../app/orgs/entity';
 import type {
   CommentView,
   CreatePostInput,
@@ -88,6 +94,7 @@ export interface OrgsService {
     tz?: AppZone;
     theme?: AppTheme;
     digestOptIn?: boolean;
+    phone?: string | null | undefined;
     /** The WHOLE row: the preference actions answer it as a record the page store adopts. */
   }): Promise<MemberRow>;
   /** A member and their org, read inside a NAMED org — what a background run acts for. */
@@ -107,8 +114,12 @@ export interface OrgsService {
    * is derived from the actor's org, so there is no value a caller could pass to widen it.
    */
   grantAvatarUpload(request: UploadRequest): Promise<UploadGrant>;
+  /** The granted upload, scanned and attached as the acting member's one avatar. */
+  attachAvatar(key: string): Promise<AvatarAttached>;
   /** The acting member's avatar as a short-lived signed URL, `null` until they upload one. */
   avatarUrl(): Promise<string | null>;
+  /** A NAMED org's owners with a phone on file, no acting member needed: what `quotaAlert` texts. */
+  textableOwners(orgId: OrgId): Promise<readonly MemberRow[]>;
   digestRecipients(orgId: OrgId): Promise<MemberView[]>;
   /** Cross-tenant on purpose, and only reachable from the scheduler's job. */
   allDigestRecipients(): Promise<MemberView[]>;

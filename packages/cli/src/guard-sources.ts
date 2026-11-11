@@ -5,6 +5,7 @@
 
 // why: `join` builds the host-separator path a glob entry is read at; Bun ships no path API.
 import { join } from 'node:path';
+import { renderThrowable, stringField } from '@ultimat3/core';
 
 export interface GuardFile {
   /** App-root-relative POSIX path, so a finding names the file an author opens. */
@@ -31,6 +32,12 @@ export interface GuardSources {
    * (`X_PRERENDER_FAILED`, with the Sass error), never a guard's to repeat.
    */
   compiled(path: string): Promise<GuardStylesheet | undefined>;
+  /**
+   * Why `compiled(path)` is `undefined`: the compiler's (or the read's) first line, so a guard
+   * that reports a broken sheet names the error. `undefined` when the sheet compiles. Optional
+   * so a `GuardSources` an app built itself, before this existed, still satisfies the type.
+   */
+  compileError?(path: string): Promise<string | undefined>;
 }
 
 /** Path segments that are never the app's own source. */
@@ -49,7 +56,7 @@ export function guardSources(
   const texts = new Map<string, Promise<string>>();
   for (const file of seed) texts.set(file.path, Promise.resolve(file.source));
   const walks = new Map<string, Promise<readonly GuardFile[]>>();
-  const sheets = new Map<string, Promise<GuardStylesheet | undefined>>();
+  const sheets = new Map<string, Promise<GuardStylesheet | string>>();
 
   const textOf = (path: string): Promise<string> => {
     let text = texts.get(path);
@@ -70,7 +77,8 @@ export function guardSources(
     return Promise.all(paths.map(async (path) => ({ path, text: await textOf(path) })));
   };
 
-  const compile = async (path: string): Promise<GuardStylesheet | undefined> => {
+  /** The sheet, or the first line of why it is not one. */
+  const compile = async (path: string): Promise<GuardStylesheet | string> => {
     try {
       const source = await textOf(path);
       // Imported here, not at the top: Sass loads on the first compile, and a gate run whose
@@ -78,9 +86,22 @@ export function guardSources(
       const { compileStylesheet } = await import('@ultimat3/render/server');
       const { css, classes } = compileStylesheet(join(root, path), source);
       return { css, classes };
-    } catch {
-      return undefined;
+    } catch (error) {
+      // The compiler's own words: render's `X_PRERENDER_FAILED` carries them in its cause behind
+      // the absolute path, which names a temp root in a test and a different checkout in CI.
+      const absolute = join(root, path);
+      const said = (stringField(error, 'cause') ?? renderThrowable(error)).split('\n')[0] ?? '';
+      return said.replace(`${absolute} did not compile: `, '').replaceAll(absolute, path);
     }
+  };
+
+  const compiledOnce = (path: string): Promise<GuardStylesheet | string> => {
+    let sheet = sheets.get(path);
+    if (sheet === undefined) {
+      sheet = compile(path);
+      sheets.set(path, sheet);
+    }
+    return sheet;
   };
 
   return {
@@ -92,13 +113,13 @@ export function guardSources(
       }
       return found;
     },
-    compiled(path) {
-      let sheet = sheets.get(path);
-      if (sheet === undefined) {
-        sheet = compile(path);
-        sheets.set(path, sheet);
-      }
-      return sheet;
+    async compiled(path) {
+      const sheet = await compiledOnce(path);
+      return typeof sheet === 'string' ? undefined : sheet;
+    },
+    async compileError(path) {
+      const sheet = await compiledOnce(path);
+      return typeof sheet === 'string' ? sheet : undefined;
     },
   };
 }

@@ -127,7 +127,7 @@ export interface EntityInit<C extends ColumnMap> {
   /** Rows older than `after` by `on` are swept by `purge({ entities: 'declared' })` (`retain.ts`). */
   readonly retain?: RetainInit<keyof C & string>;
   /** Every row change recorded into `<table>_history` by trigger (`history.ts`, `$history`). */
-  readonly history?: HistoryInit;
+  readonly history?: HistoryInit<keyof C & string>;
   /**
    * Range-partitioned by a `timestamp()`/`date()` in the primary key, one partition per `interval`
    * (`partition.ts`). `x db gen` writes `partition by range` and the first partitions; a scheduled

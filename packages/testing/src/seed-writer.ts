@@ -23,13 +23,28 @@ type SeedRepo = Repo<Record<string, unknown>>;
  */
 export const digestRow = (row: unknown): string => fingerprint(row);
 
-/** The physical columns of an entity's primary key, in key order. */
-const keyColumns = (entity: EntityCore): readonly string[] => {
+/** The physical columns of an entity's primary key, in key order, with each one's kind. */
+const keyColumns = (entity: EntityCore): readonly { name: string; kind: string }[] => {
   const columns = entity.$describe().columns;
-  return entity.$primaryKey.map(
-    (property) => columns.find((column) => column.property === property)?.column ?? property,
-  );
+  return entity.$primaryKey.map((property) => {
+    const found = columns.find((column) => column.property === property);
+    return { name: found?.column ?? property, kind: found?.kind ?? 'text' };
+  });
 };
+
+/**
+ * One key part as text, the same on both sides of the match: a `Date` as its ISO instant — never
+ * `String(date)`, the process zone's `… GMT-0500 (…)` that no server parses — which is also what
+ * `instantText` below spells a stored `timestamptz` as, whatever the session's zone.
+ */
+const keyText = (value: unknown): string =>
+  value instanceof Date ? value.toISOString() : String(value);
+
+/** A key column as text: a `timestamptz` in UTC ISO to the millisecond, as `toISOString` is. */
+const columnText = (column: { name: string; kind: string }): SqlFragment =>
+  column.kind === 'timestamptz'
+    ? sql`to_char(${identifier(column.name)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+    : sql`${identifier(column.name)}::text`;
 
 /** Joins a composite key's parts, in Postgres and here alike: no seeded key holds a unit separator. */
 const KEY_SEPARATOR = '\u001f';
@@ -53,17 +68,18 @@ async function snapshotOnClient(
     else indexes.push(i);
   });
   const keyOf = (entity: EntityCore, i: number): string =>
-    entity.$primaryKey.map((property) => String(rows[i]?.row[property])).join(KEY_SEPARATOR);
+    entity.$primaryKey.map((property) => keyText(rows[i]?.row[property])).join(KEY_SEPARATOR);
   const branches = [...byEntity].map(([entity, indexes], at): SqlFragment => {
-    const columns = keyColumns(entity).map((column) => identifier(column));
+    const keys = keyColumns(entity);
+    const columns = keys.map((column) => identifier(column.name));
     // Each key column against its values, the parameter UNTYPED so Postgres types it as the
     // column: `id::text = any(…)` read every row of a table that grows with the primitives. A
     // composite key matches a superset here; the full key is matched below.
     const matched = entity.$primaryKey.map(
       (property, part) =>
-        sql`${columns[part] as SqlFragment} = any(${[...new Set(indexes.map((i) => String(rows[i]?.row[property])))]})`,
+        sql`${columns[part] as SqlFragment} = any(${[...new Set(indexes.map((i) => keyText(rows[i]?.row[property])))]})`,
     );
-    const texts = columns.map((column) => sql`${column}::text`);
+    const texts = keys.map(columnText);
     return sql`select ${at}::int as e, concat_ws(${KEY_SEPARATOR}, ${join(texts)}) as k, md5(t::text) as h from ${identifier(entity.$table)} t where ${join(matched, ' and ')}`;
   });
   if (branches.length === 0) return [];

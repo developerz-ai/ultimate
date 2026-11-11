@@ -27,4 +27,22 @@ describe('unit · shipped guard · raw-motion', () => {
     ].join('\n');
     expect(await shippedGuardFindings('raw-motion', { [SHEET]: scss })).toEqual([]);
   });
+
+  test('a raw curve or duration held in a custom property is the same finding', async () => {
+    const findings = await shippedGuardFindings('raw-motion', {
+      [SHEET]: [
+        ':root {',
+        '  --my-ease: cubic-bezier(0, 0, 1, 1);',
+        '  --my-wait: 300ms;',
+        '  --ok-ease: #{tokens.easing(out)};',
+        '  --ok-wait: var(--duration-fast);',
+        '  --gap: 12px;',
+        '}',
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.at)).toEqual([`${SHEET}:2`, `${SHEET}:3`]);
+    expect(findings[0]?.fix).toStartWith('--my-ease: #{tokens.easing(out)} — ');
+    expect(findings[1]?.fix).toStartWith('--my-wait: #{tokens.duration(base)} — ');
+  });
 });

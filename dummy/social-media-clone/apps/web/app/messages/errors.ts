@@ -3,7 +3,7 @@
 // missing or merely not yours, because telling those two apart turns the thread table into
 // something an outsider can enumerate one id at a time. So it is a 404 either way.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 export interface NotAParticipantInit {
   readonly conversationId: string;

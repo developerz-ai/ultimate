@@ -2,7 +2,7 @@
 // is the stable contract and the `fix:` is the command that clears it. Each is declared once, with
 // `defineError`: the title, the status a response answers and the class are one call.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 /**
  * One code for "no such handle" AND for "wrong password", deliberately. Two codes would be an

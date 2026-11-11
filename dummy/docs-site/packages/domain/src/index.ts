@@ -1,7 +1,7 @@
 // Pure types and constants. No I/O of any kind: no fs, no network, no database, no env reads.
 // `Money` is @ultimat3/schema's, re-exported and never restated: one declaration of
 // { minor, currency } is what makes an entity column, a form field and this module the same type.
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 import type { MoneyValue as Money } from '@ultimat3/schema';
 
 export type { MoneyValue as Money } from '@ultimat3/schema';

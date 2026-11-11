@@ -222,11 +222,15 @@ const RELEASE_STEPS: readonly {
   { spec: STAMP_WRITE, failed: 'stamped', run: writeFooter },
 ];
 
-/** One file a bump rewrites: its path, and the text it becomes. `optional` may be absent. */
+/**
+ * One file a bump rewrites: its path, and the text it becomes. `optional` may be absent; `create`
+ * is new in this release (its `docs/changelog/X.Y.Z.md`) and is written without being read.
+ */
 export interface StampEdit {
   readonly path: string;
   readonly rewrite: (raw: string) => string;
   readonly optional?: boolean;
+  readonly create?: boolean;
 }
 
 /**
@@ -246,7 +250,7 @@ export async function stampReleaseFiles(
     try {
       const file = Bun.file(edit.path);
       if (edit.optional === true && !(await file.exists())) continue;
-      await Bun.write(edit.path, edit.rewrite(await file.text()));
+      await Bun.write(edit.path, edit.rewrite(edit.create === true ? '' : await file.text()));
       written.push(at);
     } catch (error) {
       const list = written.length === 0 ? 'nothing' : written.join(', ');

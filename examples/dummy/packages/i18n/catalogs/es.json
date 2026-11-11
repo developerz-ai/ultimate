@@ -356,7 +356,8 @@
     "seatsExceeded": "Tu plan está lleno. Cambia de plan para añadir a otra persona.",
     "offlineQueued": "Sin conexión: se enviará cuando vuelvas a conectarte.",
     "updateAvailable": "Hay una versión nueva lista.",
-    "updateAction": "Recargar"
+    "updateAction": "Recargar",
+    "ssoUnavailable": "El inicio de sesión único no está disponible ahora."
   },
   "admin": {
     "title": "Administración de Postly",
@@ -385,6 +386,7 @@
         "locale": "Idioma",
         "theme": "Tema",
         "digestOptIn": "Resumen nocturno",
+        "phone": "Teléfono (SMS)",
         "createdAt": "Se unió el"
       }
     },
@@ -674,5 +676,8 @@
       "title": "{commenter} comentó en {title}",
       "body": "Abre el artículo para leerlo."
     }
+  },
+  "sms": {
+    "quotaAlert": "Postly: tu organización ha usado {used} de sus {limit} borradores de hoy. Mejora el plan para escribir más."
   }
 }

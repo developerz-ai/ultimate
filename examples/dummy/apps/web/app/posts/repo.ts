@@ -27,8 +27,20 @@ import {
   postId as toPostId,
 } from '@postly/domain';
 import { assert, serviceActor, withChildContext } from '@ultimat3/core';
-import { CROSS_TENANT_SCOPE, crossTenant, type Move, type ReadBuilder } from '@ultimat3/entity';
-import { type CommentView, PostAuthor, type PostSummary, type PostView } from './entity';
+import {
+  CROSS_TENANT_SCOPE,
+  crossTenant,
+  history,
+  type Move,
+  type ReadBuilder,
+} from '@ultimat3/entity';
+import {
+  type CommentView,
+  PostAuthor,
+  PostRevision,
+  type PostSummary,
+  type PostView,
+} from './entity';
 
 /** The post page's aggregate: one row, its comments attached. Shared by the query and the route. */
 export type PostWithComments = PostView & { readonly comments: readonly CommentView[] };
@@ -454,3 +466,26 @@ export const checkpointReviewRun = (
 /** The run is over: its review is kept. */
 export const closeReviewRun = (orgId: OrgId, postId: PostId): Promise<number> =>
   db.postReviewRuns.deleteWhere({ orgId, postId });
+
+/**
+ * Every retained version of one post, oldest first — `history()`, the history table's own read, so
+ * scoped to the acting org like `byId`: another org's post reads back as `[]`, never as an error.
+ * Each image is the stored row (`to_jsonb`, physical names); the revision keeps two of its columns.
+ */
+/** The newest revisions a post's history shows; the read stops there instead of loading a year. */
+export const REVISIONS_SHOWN = 50;
+
+export const revisionsOf = async (orgId: OrgId, postId: PostId): Promise<PostRevision[]> =>
+  (await history(db.postsHistory, postId, { limit: REVISIONS_SHOWN })).map((version) => {
+    const image = version.after ?? version.before;
+    return PostRevision.parse({
+      orgId,
+      postId,
+      version: version.version,
+      op: version.op,
+      at: version.at,
+      actorId: version.actorId,
+      title: image?.['title'] ?? null,
+      status: image?.['status'] ?? null,
+    });
+  });

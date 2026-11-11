@@ -4,13 +4,13 @@
 import { type Clock, frozenClock, isUltimateError } from '@ultimat3/core';
 import type { IdentityProvider, VerifiedIdentity } from './identity-provider';
 import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
+import { type SamlIdentityProviderConfig, samlIdentityProvider } from './saml-provider';
 import {
   readAuthnRequest,
   samlTestIdp,
   type TestIdp,
   type TestResponseSpec,
-} from './saml-idp-fixture';
-import { type SamlIdentityProviderConfig, samlIdentityProvider } from './saml-provider';
+} from './saml-test-idp';
 
 export const SAML_NOW = new Date('2026-11-09T12:00:00.000Z');
 export const SP_ENTITY_ID = 'https://app.example.test/saml/metadata';

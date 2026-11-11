@@ -27,11 +27,26 @@ export const recreateTables = async (
 };
 
 /** `setDbClient(client)` first: seeds, locks and transactions resolve the ambient client. */
-export const sqlSubject = (client: () => DbClient): EntityDriverSubject => ({
+/** Backends of this database blocked on a lock, this one aside: the pool's contenders. */
+export const pgLockWaiters = (client: () => DbClient) => async (): Promise<number> =>
+  (
+    await client().one<{ n: number }>(
+      raw(
+        "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()",
+      ),
+    )
+  )?.n ?? 0;
+
+export const sqlSubject = (
+  client: () => DbClient,
+  options: { readonly lockWaiters?: () => Promise<number> } = {},
+): EntityDriverSubject => ({
   open: async (entities) => {
     await recreateTables(client(), entities);
     return postgresDriver();
   },
   capabilities: DRIVER_CAPABILITIES,
   foreignKeys: true,
+  history: true,
+  ...(options.lockWaiters === undefined ? {} : { lockWaiters: options.lockWaiters }),
 });

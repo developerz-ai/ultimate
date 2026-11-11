@@ -73,6 +73,8 @@ export type { ColumnExpr, Expr, InvariantColumns, Resolve } from './expr';
 export { iff } from './expr';
 /** The two DECLARED capabilities' refusals — a third-party driver raises the same ones. */
 export type { HistoryColumns, HistoryEntity, HistoryInit } from './history';
+export type { HistoryRecord, HistoryVersion } from './history-order';
+export { history } from './history-read';
 export type { IndexInit } from './index-init';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';

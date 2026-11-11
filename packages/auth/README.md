@@ -740,6 +740,17 @@ brought up to date with no hand-run migration. There is nothing to paste: the pe
 constants and `X_USERS_MIGRATION_1_3` are gone, and a hand-written migration that pasted them
 should be deleted. They are still not `entity()` declarations, so `x db gen` does not see them.
 
+**Read the DDL from `@ultimat3/auth/schema`, a leaf — `As of 2026-11-10`.** It exports
+`AUTH_TABLES`, `AUTH_TABLE_NAMES`, `AUTH_SERVER_TABLES`, `SQL_AUTH_SERVER_TABLES`,
+`SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE`, and imports no runtime: reading table names
+costs 2 modules, not the barrel's 106. `FRAMEWORK_SCHEMA` reads it there, which took `ROLE=migrate`
+from 977 modules to 873. The `.` barrel still exports the same six values, so a caller that also
+needs `postgresAuthAdapter` or a store keeps one import.
+
+```ts
+import { AUTH_TABLE_NAMES, AUTH_TABLES } from '@ultimat3/auth/schema';
+```
+
 ## Sessions are not a write path
 
 `verifySession` used to `UPDATE x_sessions … RETURNING *` on **every** authenticated request: one
@@ -1041,6 +1052,12 @@ check, logged as `auth.sso.refused`; the anonymous caller gets the code and titl
 is `X_SAML_METADATA_INVALID` at boot. An id the routes do not serve is `X_IDENTITY_PROVIDER_UNKNOWN`.
 An adapter of your own is held to the same contract by
 `identityProviderConformance` (`@ultimat3/testing/conformance`).
+
+Testing a SAML sign-in: `fakeSamlIdentityProvider({ audience, users })` from `@ultimat3/testing`
+answers the AuthnRequest an SP's redirect carries with a signed response, as a chosen user, and `tamper()`s
+it. It runs over `@ultimat3/auth/saml-test-idp` (`samlTestIdp()`, `readAuthnRequest()`,
+`encodeResponse()`), the in-process IdP this package's own SAML suites sign with — one signer,
+one path.
 
 ## API keys — how an agent authenticates
 

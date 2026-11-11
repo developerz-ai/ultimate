@@ -6,7 +6,12 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { type PgliteClient, pgliteClient } from '@ultimat3/db';
 import { seedAppThrough, TRACKED_APPS } from './seed-graph-apps-fixture';
-import { expectSnapshotProof, snapshotProof } from './seed-writer-snapshot-fixture';
+import {
+  expectSnapshotProof,
+  expectTimestampKeyProof,
+  snapshotProof,
+  timestampKeyProof,
+} from './seed-writer-snapshot-fixture';
 import { testName } from './test-types';
 
 /** A cold PGlite boot plus each app's whole migration history. */
@@ -47,6 +52,15 @@ describe(testName('unit', 'entitySeedWriter snapshot, on PGlite'), () => {
       const client = pgliteClient();
       opened.push(client);
       expectSnapshotProof(await snapshotProof(client));
+    },
+    PGLITE_SEED_MS,
+  );
+  test(
+    'a timestamp() key, under a non-UTC session zone, is written and digested by its instant',
+    async () => {
+      const client = pgliteClient();
+      opened.push(client);
+      expectTimestampKeyProof(await timestampKeyProof(client));
     },
     PGLITE_SEED_MS,
   );

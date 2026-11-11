@@ -35,7 +35,10 @@ GitHub wiki on merge and projected to `dummy/docs-site` (one page per major at `
 split from the section you write here), and this page is neither. That split is the whole reason the convention lives here
 and the walkthrough lives there.
 
-## `CHANGELOG.md` is the record; the wiki section is the walkthrough
+## The changelog is the record; the wiki section is the walkthrough
+
+The changelog is `[Unreleased]` in the `CHANGELOG.md` index and one `docs/changelog/<version>.md` per
+release (`scripts/lib/changelog-store.ts`), so "`CHANGELOG.md`" below means the release's file.
 
 Link across, never duplicate. A table copied into both disagrees with itself by the next patch.
 
@@ -92,7 +95,8 @@ cross` over a table ending at `3.0.0 → 4.0.0` and a `1.x → 4.0.0 | 68` total
 Re-derive the counts, never increment them:
 
 ```sh
-grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
+grep -cE '^(- \*\*|### )BREAKING —' docs/changelog/<major>.0.0.md   # one major
+cat docs/changelog/*.md | grep -cE '^(- \*\*|### )BREAKING —'  # every retained release
 ```
 
 An **entry** is a line marked `BREAKING —`, which is what makes the number reproducible. It is not

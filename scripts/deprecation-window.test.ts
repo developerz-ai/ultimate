@@ -92,7 +92,8 @@ async function released(version: string, index: string, extra: Record<string, st
   };
   await run(['init', '--quiet', '-b', 'main']);
   await write({
-    'CHANGELOG.md': `# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## ${version} - 2026-11-10\n\n- x\n`,
+    'CHANGELOG.md': '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n',
+    [`docs/changelog/${version}.md`]: `## ${version} - 2026-11-10\n\n- x\n`,
     'packages/core/src/index.ts': index,
     ...extra,
   });
@@ -139,7 +140,7 @@ describe('unit · deprecation-window · against a release tag', () => {
     await write({
       'packages/core/src/index.ts': 'export const b = 2;\n',
       'CHANGELOG.md':
-        '# Changelog\n\n## [Unreleased]\n\n> **Security exception:** `CVE-2026-1234` — why\n\n## 31.0.0 - 2026-11-10\n\n- x\n',
+        '# Changelog\n\n## [Unreleased]\n\n> **Security exception:** `CVE-2026-1234` — why\n',
     });
     expect(await deprecationWindowFindings(dir, options)).toEqual([]);
   });
@@ -161,15 +162,14 @@ describe('unit · deprecation-window · against a release tag', () => {
     await write({ 'packages/core/src/index.ts': 'export const b = 2;\n' });
     const findings = await deprecationWindowFindings(dir, { ...options, probe: async () => true });
     expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_TAG_UNREACHABLE']);
-    expect(findings[0]?.fix).toStartWith('git fetch --depth=1 --no-tags origin');
+    expect(findings[0]?.fix).toStartWith('git fetch --no-tags origin');
   });
 
   test('a base tag origin does not hold falls back to the release below it', async () => {
     const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
     await write({
       'packages/core/src/index.ts': 'export const b = 2;\n',
-      'CHANGELOG.md':
-        '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 31.1.0 - 2026-11-17\n\n- y\n\n## 31.0.0 - 2026-11-10\n\n- x\n',
+      'docs/changelog/31.1.0.md': '## 31.1.0 - 2026-11-17\n\n- y\n',
     });
     const findings = await deprecationWindowFindings(dir, options);
     expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_UNDEPRECATED_REMOVAL']);

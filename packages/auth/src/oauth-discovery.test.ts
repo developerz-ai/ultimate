@@ -202,7 +202,10 @@ describe('an issuer the process cannot reach', () => {
     const thrown = await discoverOAuthProvider({
       id: 'bigco',
       issuer: 'https://sso.bigco.test',
-      timeoutMs: 50,
+      // Never the deadline's: a GET's transport failure is retried inside it, so a 50 ms deadline
+      // raced the retries and, on a loaded runner, could answer X_OUTBOUND_TIMEOUT in place of the
+      // rejection this test asserts on (the race that failed purge-http.test.ts on main CI).
+      timeoutMs: 60_000,
       fetch: async () => {
         throw new Error('The operation timed out.');
       },

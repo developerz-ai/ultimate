@@ -39,4 +39,15 @@ describe('unit · shipped guard · raw-fetch', () => {
     });
     expect(findings).toEqual([]);
   });
+
+  test('a fetch the file binds itself is its own; globalThis.fetch( never is', async () => {
+    const findings = await shippedGuardFindings('raw-fetch', {
+      'apps/web/a.ts': "const { fetch } = deps;\nawait fetch('https://x.test');\n",
+      'apps/web/b.ts': "export const get = (fetch: Fetch) => fetch('https://x.test');\n",
+      'apps/web/c.ts':
+        "import { fetch } from './client';\nawait fetch('https://x.test');\nawait globalThis.fetch('https://x.test');\n",
+      'apps/web/d.ts': "export const get = (deps) => fetch('https://x.test');\n",
+    });
+    expect(findings.map((finding) => finding.at)).toEqual(['apps/web/c.ts:3', 'apps/web/d.ts:1']);
+  });
 });

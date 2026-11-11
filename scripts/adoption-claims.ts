@@ -31,7 +31,10 @@ export const ADOPTION_GLOBS: readonly string[] = [
 ];
 
 export const skipAdoptionPath = (path: string): boolean =>
-  path === 'CHANGELOG.md' || path.startsWith('docs/plans/') || path.startsWith('docs/history/');
+  path === 'CHANGELOG.md' ||
+  path.startsWith('docs/changelog/') ||
+  path.startsWith('docs/plans/') ||
+  path.startsWith('docs/history/');
 
 /**
  * The phrasings of a who-uses-it claim, each narrow enough that ordinary production prose ("in

@@ -47,6 +47,7 @@ import * as nightlyDigest from '../app/digest/tasks/nightly-digest';
 import * as openErrorIssue from '../app/errors/jobs/open-error-issue';
 import * as purgeMcpConfirmations from '../app/mcp/jobs/purge-mcp-confirmations';
 import * as hourlyPurge from '../app/mcp/tasks/hourly-purge';
+import * as attachAvatar from '../app/orgs/actions/attach-avatar';
 import * as grantAvatarUpload from '../app/orgs/actions/grant-avatar-upload';
 import * as inviteMember from '../app/orgs/actions/invite-member';
 import * as memberAvatar from '../app/orgs/actions/member-avatar';
@@ -92,10 +93,14 @@ import * as postBySlug from '../app/posts/queries/post-by-slug';
 import * as postLikesByDay from '../app/posts/queries/post-likes-by-day';
 import * as postRecord from '../app/posts/queries/post-record';
 import * as postReview from '../app/posts/queries/post-review';
+import * as postRevisions from '../app/posts/queries/post-revisions';
 import * as publicPost from '../app/posts/queries/public-post';
 import * as publicPostSlugs from '../app/posts/queries/public-post-slugs';
 import * as publicPosts from '../app/posts/queries/public-posts';
 import * as hourlyLikes from '../app/posts/tasks/hourly-likes';
+import * as maintainPartitions from '../app/quota/jobs/partitions';
+import * as quotaAlert from '../app/quota/jobs/quota-alert';
+import * as quotaAlertSms from '../app/quota/jobs/quota-alert-sms';
 import * as answerPrompt from '../app/runs/actions/answer-prompt';
 import * as cancelRun from '../app/runs/actions/cancel-run';
 import * as connectSite from '../app/runs/actions/connect-site';
@@ -146,6 +151,7 @@ export const api = defineApi({
     inviteMember,
     upgradePlan,
     grantAvatarUpload,
+    attachAvatar,
     memberAvatar,
     createPost,
     publishPost,
@@ -192,6 +198,7 @@ export const api = defineApi({
     feedActivity,
     postLikesByDay,
     postReview,
+    postRevisions,
     publicPost,
     publicPosts,
     publicPostSlugs,
@@ -205,6 +212,9 @@ export const api = defineApi({
   jobs: [
     notifySubscribers,
     postsQuotaWarning,
+    quotaAlert,
+    quotaAlertSms,
+    maintainPartitions,
     exportPosts,
     importPosts,
     commentPosted,

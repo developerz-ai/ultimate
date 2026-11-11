@@ -38,7 +38,7 @@ const errorsSource = (feature: NameSet): string => {
   return `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
 // needs the code, the cause and the exact command that fixes it.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 // One declaration: the title, the 404 a response answers, and the class a service throws. No
 // \`docs:\` — it resolves from the code's registered descriptor, so the link has one home.

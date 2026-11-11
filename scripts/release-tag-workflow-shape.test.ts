@@ -4,9 +4,11 @@
 // quiet edit to it would otherwise break with nothing red.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { MAINTENANCE_BRANCH_GLOB } from './lib/release-preflight';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 const RELEASE_TAG_WORKFLOW = '.github/workflows/release-tag.yml';
+const CI_WORKFLOW = '.github/workflows/ci.yml';
 
 interface Step {
   readonly id?: string;
@@ -44,6 +46,9 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const text = await Bun.file(`${repoRoot()}/${RELEASE_TAG_WORKFLOW}`).text();
 const workflow = Bun.YAML.parse(text) as Workflow;
+const ci = Bun.YAML.parse(await Bun.file(`${repoRoot()}/${CI_WORKFLOW}`).text()) as {
+  readonly on?: { readonly push?: { readonly branches?: readonly string[] } };
+};
 const job = (name: string): Job => workflow.jobs?.[name] ?? {};
 const stepsOf = (name: string): readonly Step[] => job(name).steps ?? [];
 const runsOf = (name: string): string =>
@@ -56,13 +61,53 @@ const cut = runsOf('cut');
 const at = (shell: string, needle: string): number => shell.indexOf(needle);
 
 describe('unit · release-tag.yml starts only on a green push run of a release commit', () => {
-  // `release/*` since v30 (wiki/Stability.md): a maintenance major's bump PR merges there, and
-  // merging it is that release exactly as on main. `next` is not here: it publishes no release.
-  test('workflow_run of ci, completed, on main or a release/* branch — and no other trigger', () => {
+  // `release/<major>.x` since v30 (wiki/Stability.md): a maintenance major's bump PR merges there,
+  // and merging it is that release exactly as on main. `next` is not here: it publishes no release.
+  // Never `release/*`: the 31.1.0 bump branch was `release/31.1.0`, ci.yml ran on its push, and
+  // v31.1.0 was tagged on the PR head instead of main's merge commit (#1054).
+  test('workflow_run of ci, completed, on main or a release/<major>.x branch — and no other trigger', () => {
     expect(Object.keys(workflow.on ?? {})).toEqual(['workflow_run']);
     expect(workflow.on?.workflow_run?.workflows).toEqual(['ci']);
     expect(workflow.on?.workflow_run?.types).toEqual(['completed']);
-    expect(workflow.on?.workflow_run?.branches).toEqual(['main', 'release/*']);
+    expect(workflow.on?.workflow_run?.branches).toEqual(['main', MAINTENANCE_BRANCH_GLOB]);
+  });
+
+  // The other half: a maintenance line's push must still run ci.yml, or release-tag.yml never fires
+  // for its release commit; and no broader `release/*` may, or a bump branch's push runs it too.
+  test('ci.yml is gated on push to main, next and release/<major>.x — never release/*', () => {
+    expect(ci.on?.push?.branches).toEqual(['main', 'next', MAINTENANCE_BRANCH_GLOB]);
+  });
+
+  // Every workflow, not a list of three: a `release/*` filter added to a new workflow tomorrow
+  // runs on a bump branch's push exactly as ci.yml's did. Any branch filter naming `release/`
+  // names it as MAINTENANCE_BRANCH_GLOB and nothing else.
+  test('no workflow filters on a release/ branch other than release/<major>.x', async () => {
+    const dir = `${repoRoot()}/.github/workflows`;
+    const offenders: string[] = [];
+    let named = 0;
+    for (const file of new Bun.Glob('*.{yml,yaml}').scanSync(dir)) {
+      const parsed = Bun.YAML.parse(await Bun.file(`${dir}/${file}`).text()) as {
+        readonly on?: unknown;
+      };
+      const events = typeof parsed.on === 'object' && parsed.on !== null ? parsed.on : {};
+      for (const [event, body] of Object.entries(events)) {
+        const filters =
+          typeof body === 'object' && body !== null
+            ? [
+                (body as { branches?: unknown }).branches,
+                (body as { 'branches-ignore'?: unknown })['branches-ignore'],
+              ]
+            : [];
+        for (const branch of filters.flatMap((list) => (Array.isArray(list) ? list : []))) {
+          if (typeof branch !== 'string' || !branch.startsWith('release/')) continue;
+          named += 1;
+          if (branch !== MAINTENANCE_BRANCH_GLOB) offenders.push(`${file} on.${event}: ${branch}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+    // release-tag.yml, ci.yml and workflow-lint.yml: a scan that found none proves nothing.
+    expect(named).toBeGreaterThanOrEqual(3);
   });
 
   test('prepare requires success, a push, main, this repository and a release subject', () => {
@@ -70,7 +115,7 @@ describe('unit · release-tag.yml starts only on a green push run of a release c
     expect(guard).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(guard).toContain("github.event.workflow_run.event == 'push'");
     expect(guard).toContain(
-      "(github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'release/'))",
+      "(github.event.workflow_run.head_branch == 'main' || (startsWith(github.event.workflow_run.head_branch, 'release/') && endsWith(github.event.workflow_run.head_branch, '.x')))",
     );
     expect(guard).toContain(
       'github.event.workflow_run.head_repository.full_name == github.repository',

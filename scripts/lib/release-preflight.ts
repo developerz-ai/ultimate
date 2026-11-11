@@ -1,7 +1,9 @@
 // What `scripts/release.ts` refuses before it rewrites a single file: a working tree with changes
-// in it, and a version that does not move forward. Plus the one tag command it prints, so every
-// tag this repo tells a reader to cut is annotated. Pure — release.ts does the one `git status`.
+// in it, a `release/*` branch that is not a maintenance line, and a version that does not move
+// forward. Plus the one tag command it prints, so every tag this repo tells a reader to cut is
+// annotated. Pure — release.ts does the one `git status` and the one `git branch --show-current`.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import type { Finding } from './log';
 
 /** How many dirty paths a refusal names before it summarises the rest. */
@@ -52,6 +54,40 @@ export function treeDirtyFindings(
     },
   ];
 }
+
+/**
+ * GitHub's branch filter for exactly `release/<major>.x` (`+` is one-or-more of the preceding
+ * character, `.` is literal). `release-tag.yml` and `ci.yml` carry it verbatim, held there by
+ * `scripts/release-tag-workflow-shape.test.ts`; `MAINTENANCE_BRANCH` is the same rule locally.
+ */
+export const MAINTENANCE_BRANCH_GLOB = 'release/[0-9]+.x';
+const MAINTENANCE_BRANCH = /^release\/[0-9]+\.x$/;
+
+/**
+ * A bump branch named `release/X.Y.Z` is refused. `release/*` reads as a maintenance line to a
+ * human, and was one to the workflows until #1054: ci.yml ran on the bump branch's push and
+ * release-tag.yml tagged v31.1.0 on the PR head, off main's history. `undefined` or `''` is a
+ * detached HEAD (CI's checkout), which names no branch to refuse.
+ */
+export function branchNameFindings(
+  branch: string | undefined,
+  version: string,
+): readonly Finding[] {
+  if (branch === undefined || !branch.startsWith('release/') || MAINTENANCE_BRANCH.test(branch)) {
+    return [];
+  }
+  return [
+    {
+      code: 'X_RELEASE_BRANCH_NAME',
+      cause: `the bump is on branch ${JSON.stringify(branch)}; \`release/*\` is reserved for \`release/<major>.x\` maintenance lines, and a bump branch named like one is tagged off main's history`,
+      fix: `git switch -c ${renderFixShellArg(bumpBranch(version), 'chore/release-<version>')}   # then rerun the bump there; a bump PR's branch is chore/release-<version>`,
+      at: 'scripts/release.ts',
+    },
+  ];
+}
+
+/** The one bump-branch name this repo uses, so the refusal and the docs name the same branch. */
+export const bumpBranch = (version: string): string => `chore/release-${version}`;
 
 const numbers = (version: string): readonly number[] =>
   (version.split('-')[0] ?? '').split('.').map((part) => Number.parseInt(part, 10) || 0);

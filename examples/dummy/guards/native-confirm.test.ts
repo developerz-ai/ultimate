@@ -31,6 +31,14 @@ unitTest('a comment, a string, a method and a definition are not calls', () => {
   expect(nativeConfirms(file('function confirm(input) { return input; }'))).toEqual([]);
 });
 
+unitTest('a confirm the file binds itself is its own; window.confirm( never is', () => {
+  expect(nativeConfirms(file('const confirm = async () => {};\nvoid confirm();'))).toEqual([]);
+  expect(nativeConfirms(file('const ask = (confirm) => confirm();'))).toEqual([]);
+  expect(nativeConfirms(file("import { confirm } from './x';\nconfirm('Delete?');"))).toEqual([]);
+  expect(nativeConfirms(file("let confirm;\nwindow.confirm('Delete?');"))).toHaveLength(1);
+  expect(nativeConfirms(file("const { confirm: ask } = deps;\nconfirm('x');"))).toHaveLength(1);
+});
+
 unitTest('islands and apps/web are read; tests and other packages are not', () => {
   expect(readsFile('apps/web/app/posts/page.tsx')).toBe(true);
   expect(readsFile('packages/ui/src/delete.island.tsx')).toBe(true);

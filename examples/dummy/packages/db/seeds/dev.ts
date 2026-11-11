@@ -68,6 +68,8 @@ export const dev = defineSeed('dev', async ({ insert, upsert, id }) => {
       locale: 'en',
       theme: 'dark',
       digestOptIn: true,
+      // A 555-01xx number, reserved for fiction: Acme's owner is texted its quota alerts.
+      phone: '+12025550142',
       createdAt: new Date('2026-01-05T09:00:00Z'),
     },
     {

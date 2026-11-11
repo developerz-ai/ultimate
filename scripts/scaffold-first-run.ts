@@ -5,7 +5,9 @@
 // database commands and the manifest write that used to be re-spelled here are gone: they were an
 // approximation of a script nobody executed, and two spellings of one sequence is the second path
 // axiom 1 forbids. What is left is the half `bun run setup` does not do and no other check reaches
-// — `x g` for every kind the CLI offers, then the migration the entities they emit earn.
+// — `x g` for every kind the CLI offers, each followed by the commands its own `--json` verdict
+// names next (`data.next`: `x db gen`, `x db migrate`, `bun install`, …) bar the `x verify` the
+// gate after this sweep runs anyway.
 //
 // The generators all exit 0 even when what they emit cannot resolve an import, so this sweep is not
 // itself the catch: the `bun run verify` that follows it is (`TS2307: Cannot find module '../repo'`
@@ -19,14 +21,16 @@
 
 // why: Bun exposes no path-join or path-resolve primitive.
 import { join, resolve } from 'node:path';
-import { GENERATORS } from '@ultimat3/cli';
+import { GENERATORS, quoteArg } from '@ultimat3/cli';
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import { nextCommandsIn } from './bench/first-hour-next';
 import { parseScriptArgs } from './lib/args';
 import { localBin } from './lib/local-bin';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
-import { run } from './lib/run';
+import { repoRoot, run } from './lib/run';
+import { strangerEnvAt } from './lib/stranger-env';
 
 const SCRIPT = 'scaffold-first-run';
 
@@ -48,6 +52,8 @@ export interface FirstRunStep {
   /** Names the step in the log and in the `fix:`, so a red run says WHICH generator broke. */
   readonly name: string;
   readonly args: readonly string[];
+  /** The whole command, run as given — a generator's `next` line — rather than through the app's x. */
+  readonly argv?: readonly string[];
 }
 
 /**
@@ -128,11 +134,11 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
  * | # | Step | What only this step can tell you |
  * |---|---|---|
  * | 1 | `g <kind>` x 15 | every generator runs |
- * | 2 | `db gen "generated"` | `x db gen` against entities from every generator that emits one, in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
+ * | 2 | its `data.next`, after each, but `x verify` (`SKIPPED_NEXT_VERBS`) | the commands the generator tells its author to run — the migration of every entity it emitted, written and applied — so a generator that forgets one leaves the gate after this sweep red on `drift` |
  *
- * Nothing APPLIES that migration here, deliberately: `bun run setup` runs `x db migrate`, and the
- * `scripts/scaffold-gate.ts` run after this sweep runs `bun run setup` again — which is also what
- * makes the script's own "idempotent, safe to re-run" claim a measurement rather than a comment.
+ * The plan spells no `db` command (a test holds it): the sweep used to run one `db gen
+ * "generated"` here, which is how it went green while the first-hour bench, which ran no such
+ * line, went red on the very migration the generator's `next` named.
  *
  * What is NOT here, and where it went: `x db migrate` over the empty migrations directory, the
  * `x db gen "initial"` that follows it, and `x manifest` are `bun run setup`'s own lines, run from
@@ -172,7 +178,6 @@ export const firstRunPlan = (
     }),
   ),
   ...SECOND_SHAPES,
-  { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
 ];
 
 /** Enough of the failure to read in a CI log without the finding swallowing the step table. */
@@ -198,7 +203,13 @@ export const verdict = (output: string): string => {
 export const stepFinding = (dir: string, step: FirstRunStep, result: RunResult): Finding => ({
   code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
   cause: `${step.name} ${result.timedOut ? 'was killed at its deadline' : `exited ${result.code}`} in the scaffolded app: ${verdict(result.output)}`,
-  fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && ${appBin(dir)} ${step.args.join(' ')}`,
+  // Built as words, never a template: every word of the command is quoted on its own by `quoteArg`.
+  fix: [
+    'cd',
+    renderFixShellArg(dir, '<the scaffolded app directory>'),
+    '&&',
+    ...(step.argv ?? [appBin(dir), ...step.args]).map(quoteArg),
+  ].join(' '),
   at: dir,
 });
 
@@ -209,8 +220,47 @@ export interface StepOutcome {
 
 export type Runner = (
   command: readonly string[],
-  options: { readonly cwd: string },
+  options: { readonly cwd: string; readonly env: Readonly<Record<string, string>> },
 ) => Promise<RunResult>;
+
+/**
+ * The `x` verbs of a generator's `next` this sweep does NOT run: `x verify` changes no state the
+ * gate after the sweep needs, and that gate (`scripts/scaffold-gate.ts`, the second pass) runs the
+ * whole of it — following both `--changed --dirty` lines and `--only budgets` cost 103 s of a
+ * 10-minute job (measured on `demoapp`, 2026-11-10). A SKIP list, not an allow list: a verb a
+ * generator starts naming tomorrow is state until proven otherwise, so it is followed.
+ */
+export const SKIPPED_NEXT_VERBS: ReadonlySet<string> = new Set(['verify']);
+
+/** The `x` verb of a next command — `bun x x <verb>` or `x <verb>` — or none for any other program. */
+const xVerb = (argv: readonly string[]): string | undefined =>
+  argv[0] === 'bun' && argv[1] === 'x' && argv[2] === 'x'
+    ? argv[3]
+    : argv[0] === 'x'
+      ? argv[1]
+      : undefined;
+
+/**
+ * The steps a generator's verdict names next, each its own named step; a verdict that cannot be
+ * read is one failed step, because the sweep could not know what the author was told.
+ */
+const nextOf = (step: FirstRunStep, result: RunResult): readonly (FirstRunStep | StepOutcome)[] => {
+  const planned = nextCommandsIn(result.output);
+  if (planned.ok)
+    return planned.commands
+      .filter((argv) => !SKIPPED_NEXT_VERBS.has(xVerb(argv) ?? ''))
+      .map((argv) => ({
+        name: `${step.name} → ${argv.map(quoteArg).join(' ')}`,
+        args: [],
+        argv,
+      }));
+  return [
+    {
+      step: { name: `${step.name} next`, args: step.args },
+      result: { ...result, code: 1, ok: false, output: planned.reason },
+    },
+  ];
+};
 
 /**
  * Every step runs, and a failure never stops the sweep: the human who found this reported FOUR
@@ -220,11 +270,23 @@ export const runFirstRun = async (
   dir: string,
   steps: readonly FirstRunStep[],
   runner: Runner,
+  /** Every child's whole environment — `strangerEnvAt`'s allowlist, never this process's. */
+  env: Readonly<Record<string, string>>,
 ): Promise<readonly StepOutcome[]> => {
   const bin = appBin(dir);
   const outcomes: StepOutcome[] = [];
+  const once = async (step: FirstRunStep): Promise<RunResult> => {
+    const result = await runner(step.argv ?? [bin, ...step.args], { cwd: dir, env });
+    outcomes.push({ step, result });
+    return result;
+  };
   for (const step of steps) {
-    outcomes.push({ step, result: await runner([bin, ...step.args], { cwd: dir }) });
+    const result = await once(step);
+    if (!result.ok || step.args[0] !== 'g') continue;
+    for (const next of nextOf(step, result)) {
+      if ('result' in next) outcomes.push(next);
+      else if (!(await once(next)).ok) break;
+    }
   }
   return outcomes;
 };
@@ -293,7 +355,10 @@ if (import.meta.main) {
   }
   const steps = firstRunPlan({ signedIn: await Bun.file(join(dir, SIGN_IN_PAGE)).exists() });
   await plantHandWrittenSlices(dir);
-  const outcomes = await runFirstRun(dir, steps, run);
+  // The app is code a generator wrote, and this process holds whatever Bun loaded from the
+  // repo's `.env` (`NPM_TOKEN`): every child gets the allowlist and the test-service URLs only.
+  const env = strangerEnvAt(repoRoot());
+  const outcomes = await runFirstRun(dir, steps, run, env);
   const findings = firstRunFindings(dir, outcomes);
   report(
     {
@@ -301,8 +366,8 @@ if (import.meta.main) {
       script: SCRIPT,
       summary:
         findings.length === 0
-          ? `${dir}: ${steps.length} of ${steps.length} first-run commands pass`
-          : `${findings.length} of ${steps.length} first-run commands failed in ${dir}`,
+          ? `${dir}: ${outcomes.length} of ${outcomes.length} first-run commands pass`
+          : `${findings.length} of ${outcomes.length} first-run commands failed in ${dir}`,
       findings,
       lines: firstRunLines(outcomes),
       data: {

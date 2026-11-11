@@ -108,16 +108,17 @@ export const guard: Guard = {
     const files: SourceFile[] = [];
     // Every rendered surface: an app's \`site/\` and \`app/\`, and the shared components under
     // \`packages/*/src\` — \`x new\` scaffolds a \`packages/ui\` whose components render to a user, so
-    // a hardcoded string there used to be green. \`api/\` renders nothing and \`shared/\` is a leaf of
-    // helpers; \`packages/*/dist\` is a build output, not source.
+    // a hardcoded string there used to be green. \`shared/\` holds the components both surfaces
+    // import, so it renders too; \`api/\` renders nothing; \`packages/*/dist\` is a build output.
     //
     // TWO globs, and the rule is that a brace ALTERNATIVE may not contain a \`/\`. Measured on Bun
     // 1.4.0 against \`examples/dummy\`: \`{apps/*/{site,app},packages/*/src}/**/*.tsx\` and
     // \`{apps/web,packages/ui}/**/*.tsx\` each match ZERO files, where \`apps/*/{site,app}/**/*.tsx\`
     // matches 17 — so folding these into one line silently turns the guard off, which is worse than
     // the hole it closes. A LEADING group is fine and the stylesheet guards here rely on it:
-    // \`{apps,packages}/**/*.scss\` matches all 15.
-    for (const pattern of ['apps/*/{site,app}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
+    // \`{apps,packages}/**/*.scss\` matches all 15. \`shared/\` is read too: a component there renders
+    // on every page that imports it, and leaving it out was a directory the rule never saw.
+    for (const pattern of ['apps/*/{site,app,shared}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
       // The run's ONE read: every guard asking for these two globs shares the walk.
       for (const file of await sources.files(pattern)) {
         if (/\\.test\\.tsx?$/.test(file.path)) continue;

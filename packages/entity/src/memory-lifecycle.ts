@@ -8,6 +8,7 @@ import { columnName, moneyColumns } from './column';
 import { countersOf, countersTargeting } from './counter';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
+import { historyIgnored } from './history';
 import type { MemoryTables } from './memory-same-tenant';
 import type { Tx } from './repo';
 
@@ -63,7 +64,7 @@ export function memoryLifecycle(
     if (history === null || target?.raw === undefined) return;
     const prior = before === undefined ? null : imageOf(entity, before);
     const next = after === undefined ? null : imageOf(entity, after);
-    const counted = new Set(countingColumns(entity));
+    const counted = new Set([...countingColumns(entity), ...historyIgnored(history)]);
     if (prior !== null && next !== null && sameIgnoring(prior, next, counted)) return;
     const source = after ?? before;
     const ctx = tx === undefined ? undefined : tryUseContext();

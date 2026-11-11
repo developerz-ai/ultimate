@@ -9,12 +9,7 @@ import type { Auth, AuthAdapter, OAuthLoginOptions, OAuthLoginRoutes } from '@ul
 import { defineAuth, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 import type { Clock } from '@ultimat3/core';
 import { appOrigin } from '../../shared/app-origin';
-
-/**
- * Where a signed-in member lands. A fixed path and never a `?next=` off the callback: the one
- * endpoint whose job is to hand out a session is the classic open redirect.
- */
-export const AFTER_SIGN_IN = '/feed';
+import { AFTER_SIGN_IN, SSO_PROVIDER } from './sign-in-paths';
 
 export interface PostlyAuthSeams {
   /**
@@ -44,9 +39,10 @@ export const postlyRelyingParty = (origin: string = appOrigin()) => {
 export function postlyAuth(seams: PostlyAuthSeams = {}): Auth {
   return defineAuth({
     adapter: seams.adapter ?? postgresAuthAdapter(),
-    // GitHub alone. Every provider listed here is a button someone has to keep working, and a
-    // provider missing from this list is a 404 rather than a half-configured redirect.
-    providers: ['github'],
+    // GitHub, and `corp` — the SAML directory `./sso.ts` mounts when a deploy configures one.
+    // Every provider listed here is a button someone has to keep working, and a provider missing
+    // from this list is a 404 rather than a half-configured redirect.
+    providers: ['github', SSO_PROVIDER],
     // The default, spelled out because it is Postly's to keep: a provider identity joins an
     // existing member only when the provider AND that member both proved the address.
     link: 'verified-email',

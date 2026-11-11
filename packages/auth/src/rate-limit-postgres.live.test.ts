@@ -17,7 +17,8 @@ import type { Clock, PgExecutor } from '@ultimat3/core';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { type AuthRateLimitPolicy, accountKey } from './rate-limit';
 import type { PostgresAuthLimiter } from './rate-limit-postgres';
-import { postgresAuthLimiter, SQL_AUTH_LIMIT_TABLES } from './rate-limit-postgres';
+import { postgresAuthLimiter } from './rate-limit-postgres';
+import { SQL_AUTH_LIMIT_TABLES } from './tables';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;

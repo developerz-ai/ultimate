@@ -60,9 +60,9 @@ const DATE_FIRST =
 /** Group 1 is a version-first stamp's version, group 2 a date-first one's. */
 const STAMP = new RegExp(`${VERSION_FIRST.source}|${DATE_FIRST.source}`, 'g');
 
-/** `docs/plans/` is a dated record; `CHANGELOG.md` names every past version by design. */
+/** `docs/plans/` is a dated record; the changelog names every past version by design. */
 export const skipStampPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'CHANGELOG.md';
+  path.startsWith('docs/plans/') || path.startsWith('docs/changelog/') || path === 'CHANGELOG.md';
 
 export interface VersionStamp {
   readonly path: string;

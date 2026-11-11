@@ -6,7 +6,6 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { ChangelogGapKind } from './changelog-check';
 import {
   BREAKING_ENTRY,
-  CHANGELOG_PATH,
   changelogFinding,
   changelogFindings,
   checkChangelog,
@@ -16,6 +15,7 @@ import {
   taggedVersion,
   UPGRADING_PATH,
 } from './changelog-check';
+import { loadChangelog } from './lib/changelog-store';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -52,7 +52,7 @@ const GOOD_UPGRADING = `# Upgrading
 | 1.x → 2.0.0 | **2** | all one sections, oldest first |
 
 \`\`\`sh
-grep -cE '^(- \\*\\*|### )BREAKING —' CHANGELOG.md
+cat docs/changelog/*.md | grep -cE '^(- \\*\\*|### )BREAKING —'
 # 2 As of 2026-08
 \`\`\`
 
@@ -61,8 +61,15 @@ grep -cE '^(- \\*\\*|### )BREAKING —' CHANGELOG.md
 The section the row above sends the reader to.
 `;
 
+/** The rule takes parsed sections; every fixture here is one CHANGELOG.md's text. */
+const check = (input: {
+  readonly changelog: string;
+  readonly upgrading: string;
+  readonly taggedVersion?: string | undefined;
+}) => checkChangelog({ ...input, changelog: parseChangelog(input.changelog) });
+
 const kinds = (changelog: string, upgrading: string, taggedVersion?: string): readonly string[] =>
-  checkChangelog({ changelog, upgrading, taggedVersion }).map((gap) => gap.kind);
+  check({ changelog, upgrading, taggedVersion }).map((gap) => gap.kind);
 
 describe('parsing', () => {
   test('a section owns the lines under its heading, and knows its own breaking count', () => {
@@ -136,16 +143,16 @@ describe('the unreleased summary row', () => {
   });
 
   test('the real page`s in-flight row is read — the rule is not vacuous on this repo', async () => {
-    const changelog = await Bun.file(`${repoRoot()}/${CHANGELOG_PATH}`).text();
+    const changelog = await loadChangelog(repoRoot());
     const upgrading = await Bun.file(`${repoRoot()}/${UPGRADING_PATH}`).text();
-    const pending = parseChangelog(changelog).find((one) => one.version === 'unreleased');
+    const pending = changelog.find((one) => one.version === 'unreleased');
     const rows = parseMigrationTable(upgrading).filter((row) => row.unreleased);
     // While a major is in flight, its row exists and is compared; between majors, neither.
     expect(rows.length).toBe((pending?.breaking ?? 0) > 0 ? 1 : 0);
   });
 
   test('a count that does not is a count finding at the row', () => {
-    const gaps = checkChangelog({ changelog: PENDING, upgrading: withRow(1) });
+    const gaps = check({ changelog: PENDING, upgrading: withRow(1) });
     expect(gaps.map((gap) => gap.kind)).toEqual(['count']);
     expect(gaps[0]?.at).toBe(`${UPGRADING_PATH}:5`);
     expect(gaps[0]?.detail).toContain('[Unreleased]');
@@ -302,7 +309,7 @@ describe('the rules, each proved against the fixture that breaks it', () => {
 
 describe('findings', () => {
   test('every kind maps to a code, and every fix is runnable as written', () => {
-    const gaps = checkChangelog({
+    const gaps = check({
       changelog: GOOD_CHANGELOG.replace(
         '## 1.0.0 - 2026-08-10',
         '## 2.0.0\n\n- generated\n\n## 1.0.0 - 2026-08-10',
@@ -328,14 +335,14 @@ describe('findings', () => {
   // The `contains` test above stays green on that fall-through: `duplicate` already supplies the
   // section code there, which is exactly how the hole survived.
   test('the commits-only finding names the section code and the file the notes go into', () => {
-    const gap = checkChangelog({
+    const gap = check({
       changelog: GOOD_CHANGELOG.replace('First release.', '### Commits'),
       upgrading: GOOD_UPGRADING,
     }).find((one) => one.kind === 'commits-only');
     expect(gap).toBeDefined();
     const finding = changelogFinding(gap ?? { kind: 'commits-only', at: '', detail: '' });
     expect(finding.code).toBe('X_DOC_CHANGELOG_SECTION_INVALID');
-    expect(finding.fix).toContain(CHANGELOG_PATH);
+    expect(finding.fix).toContain('docs/changelog/');
   });
 
   // `--dry-run` writes nothing, so a fix: whose whole remedy is a --dry-run command hands the
@@ -344,6 +351,7 @@ describe('findings', () => {
     const kinds: readonly ChangelogGapKind[] = [
       'duplicate',
       'empty',
+      'no-releases',
       'commits-only',
       'unreleased-breaking',
       'count',
@@ -360,7 +368,7 @@ describe('findings', () => {
     }
     expect(
       changelogFinding({ kind: 'unreleased-breaking', at: 'CHANGELOG.md:9', detail: 'd' }).fix,
-    ).toContain('CHANGELOG.md');
+    ).toContain('docs/changelog/');
   });
 
   // Axiom 4, on the one line the reader acts on. `missing-row` fires when NO row exists, so
@@ -370,7 +378,7 @@ describe('findings', () => {
       '## 2.0.0 - 2026-08-17',
       '## 3.0.0 - 2026-08-19\n\nA major.\n\n## 2.0.0 - 2026-08-17',
     );
-    const gap = checkChangelog({ changelog: third, upgrading: GOOD_UPGRADING }).find(
+    const gap = check({ changelog: third, upgrading: GOOD_UPGRADING }).find(
       (one) => one.kind === 'missing-row',
     );
     expect(gap).toBeDefined();
@@ -383,20 +391,20 @@ describe('findings', () => {
 
   // The same defect one row along: the row exists and points at a section that does not, so the
   // count it claims cannot be read from anywhere. The edit is to the row or to CHANGELOG.md.
-  test('a row naming a section CHANGELOG.md does not have is not told to set a count', () => {
-    const finding = checkChangelog({
+  test('a row naming a section docs/changelog/ does not have is not told to set a count', () => {
+    const finding = check({
       changelog: GOOD_CHANGELOG,
       upgrading: GOOD_UPGRADING.replace('the `2.0.0` section', 'the `9.9.9` section'),
     })
       .map(changelogFinding)
-      .find((one) => one.cause.includes('does not have'));
+      .find((one) => one.cause.includes('has no file for'));
     expect(finding).toBeDefined();
     expect(finding?.fix).not.toContain('set that count');
-    expect(finding?.fix).toContain(CHANGELOG_PATH);
+    expect(finding?.fix).toContain('docs/changelog/');
   });
 
   test('the unscanned kind names the file to edit, not the file it read', () => {
-    const gap = checkChangelog({ changelog: GOOD_CHANGELOG, upgrading: '# Upgrading\n' })[0];
+    const gap = check({ changelog: GOOD_CHANGELOG, upgrading: '# Upgrading\n' })[0];
     expect(gap).toBeDefined();
     expect(changelogFinding(gap ?? { kind: 'unscanned', at: '', detail: '' }).code).toBe(
       'X_DOC_MIGRATION_UNSCANNED',
@@ -406,10 +414,10 @@ describe('findings', () => {
 
 // The point of the whole file: these two are what ships, and they have to be clean under the same
 // rules the fixtures above are graded by.
-describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
+describe('the committed changelog and wiki/Upgrading.md', () => {
   test('pass every rule, at whatever commit this is', async () => {
     const root = repoRoot();
-    const changelog = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const changelog = await loadChangelog(root);
     const upgrading = await Bun.file(`${root}/wiki/Upgrading.md`).text();
     // The real tag, never a literal. Hardcoding one asserts the tree must be RELEASABLE at every
     // commit, which forbids the ordinary state of development: a `BREAKING —` entry accumulating
@@ -426,15 +434,39 @@ describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
   // one a slice is told to keep green. Asserting the count rule alone let Upgrading rows #29–#31
   // land outside the intro's ranges with this file green (plan 101, wave C): the red surfaced only
   // at the gate. The file an author runs now asks what the gate asks.
+  // Every rule above passes on an empty list, so a loader that reads the wrong place is green over
+  // nothing. These two are what make reading zero sections a failure rather than a clean bill.
+  test('read every release, not none: the rules are not vacuous on this repo', async () => {
+    const changelog = await loadChangelog(repoRoot());
+    expect(changelog[0]?.version).toBe('unreleased');
+    expect(changelog.filter((one) => one.released).length).toBeGreaterThan(100);
+    expect(changelog.filter((one) => one.breaking > 0).length).toBeGreaterThan(10);
+    // The page's fenced grep over docs/changelog/ is found, so the total is compared at all.
+    const upgrading = await Bun.file(`${repoRoot()}/${UPGRADING_PATH}`).text();
+    expect(parseDerivedTotal(upgrading)?.claimed).toBeGreaterThan(0);
+  });
+
+  test('a changelog with no released section is refused, never read as clean', () => {
+    const gaps = check({
+      changelog: '## [Unreleased]\n\nNothing yet.\n',
+      upgrading: GOOD_UPGRADING,
+    });
+    expect(gaps.map((gap) => gap.kind)).toContain('no-releases');
+    const finding = changelogFinding(
+      gaps.find((gap) => gap.kind === 'no-releases') ?? expect.unreachable(),
+    );
+    expect(finding.code).toBe('X_DOC_CHANGELOG_SECTION_INVALID');
+  });
+
   test('pass the whole rule set the gate runs, not just the count rule', async () => {
     expect(await changelogFindings(repoRoot())).toEqual([]);
   });
 
   test('the same files WOULD be refused if this commit were tagged with breaking entries stranded', async () => {
     const root = repoRoot();
-    const changelog = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const changelog = await loadChangelog(root);
     const upgrading = await Bun.file(`${root}/wiki/Upgrading.md`).text();
-    const stranded = parseChangelog(changelog).find((section) => !section.released)?.breaking ?? 0;
+    const stranded = changelog.find((section) => !section.released)?.breaking ?? 0;
     const gaps = checkChangelog({ changelog, upgrading, taggedVersion: '99.0.0' });
     // Non-vacuous in both directions: when [Unreleased] holds a breaking entry the tagged reading
     // must refuse it, and when it holds none the tagged reading must be as clean as the untagged
@@ -449,12 +481,10 @@ describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
   // bare auto-generated block through by reading the field as something other than the trimmed body.
   test('no released section reads as the auto-generated `### Commits` block alone', async () => {
     const root = repoRoot();
-    const changelog = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const changelog = await loadChangelog(root);
     const upgrading = await Bun.file(`${root}/wiki/Upgrading.md`).text();
     const gaps = checkChangelog({ changelog, upgrading, taggedVersion: await taggedVersion(root) });
     expect(gaps.map((gap) => gap.kind)).not.toContain('commits-only');
-    expect(parseChangelog(changelog).filter((section) => section.body === '### Commits')).toEqual(
-      [],
-    );
+    expect(changelog.filter((section) => section.body === '### Commits')).toEqual([]);
   });
 });

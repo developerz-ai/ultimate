@@ -37,11 +37,8 @@ const CHANGELOG = `# Changelog
 ## [Unreleased]
 
 Nothing yet.
-
-## 1.0.0 - 2026-10-01
-
-- first
 `;
+const RELEASE_1_0_0 = '## 1.0.0 - 2026-10-01\n\n- first\n';
 
 /** A repository with one publishable package, released and tagged at 1.0.0. */
 async function released() {
@@ -106,6 +103,7 @@ async function released() {
       'packages/core/package.json': MANIFEST('1.0.0'),
       'packages/core/src/a.ts': 'export const a = 1;\n',
       'CHANGELOG.md': CHANGELOG,
+      'docs/changelog/1.0.0.md': RELEASE_1_0_0,
     },
     'chore: release 1.0.0 (#1)',
   );

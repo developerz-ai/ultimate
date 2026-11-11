@@ -199,6 +199,7 @@ describe('which pages are published', () => {
     expect(skipDocPage('docs/plans/2026/10/04/x/07-cleanup.md')).toBe(true);
     expect(skipDocPage('docs/history/cli.md')).toBe(true);
     expect(skipDocPage('CHANGELOG.md')).toBe(true);
+    expect(skipDocPage('docs/changelog/1.0.0.md')).toBe(true);
     expect(skipDocPage('packages/x/node_modules/y/README.md')).toBe(true);
   });
 

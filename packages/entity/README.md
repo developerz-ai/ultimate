@@ -812,10 +812,37 @@ Three declarations, each a trigger or a purge target `x db gen` and `purge()` co
 | Declaration | Does |
 |---|---|
 | `retain: { after: '90d', on: 'createdAt' }` | `purge({ entities: 'declared' })` (`@ultimat3/jobs`) deletes older rows in batches, across tenants. The window is required; `on` is an indexed `timestamp()` (`X_ENTITY_RETAIN_UNINDEXED`); never beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). `$retain` is the checked declaration. `x verify` refuses one no purge covers (`X_ENTITY_RETAIN_UNSWEPT`) |
-| `history: true` · `{ retain: { after } }` | `<table>_history`, a registered entity (`$history`; it carries `$historyOf`), written by trigger with a before and after image of every change — `updateWhere`, cascades and raw SQL included. Its repository refuses every rewrite (`X_ENTITY_APPEND_ONLY`), the table too, except a retention sweep's delete |
+| `history: true` · `{ retain: { after }, ignore: ['likeCount', 'updatedAt'] }` | `<table>_history`, a registered entity (`$history`; it carries `$historyOf`), written by trigger with a before and after image of every change — `updateWhere`, cascades and raw SQL included. A change to `ignore`d columns alone (typed: the entity's own columns) records nothing, as a counter's does; a name that is no column is `X_INVARIANT_VIOLATED`. Its repository refuses every rewrite (`X_ENTITY_APPEND_ONLY`), the table too, except a retention sweep's delete |
 | `references(() => posts.id, { countedIn: () => posts.likeCount })` | the child's trigger keeps the parent's `integer()` equal to its row count, in the write's transaction; a soft-deleted child is not counted. Declared on the key because the child already names its parent: a thunk on the parent naming the child would make each declaration the other's type. `X_ENTITY_COUNTS_INVALID` when the target is no integer or the key points at no single primary key |
 
 Memory parity: the memory driver records history and moves counters in its repository (`memory-lifecycle.ts`); `history.test.ts` and `counter.test.ts` are the parity tables.
+
+Reading one row's history is `history(table, id)` — the history table's own read, so tenant-scoped like any other, oldest first, each row numbered `version` from 1:
+
+```ts
+import { database, entity, history, invariantViolated, text, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), title: text() },
+  history: true,
+});
+const postsHistory = posts.$history;
+if (postsHistory === null) throw invariantViolated('posts', 'history', 'declare history: true');
+const db = database({ posts, postsHistory });
+
+export const versionsOf = (postId: string) => history(db.postsHistory, postId);
+// [{ version: 1, op: 'insert', at, actorId, requestId, before, after, … }, …]
+```
+
+| Rule | Why |
+|---|---|
+| Ordered by chaining each `before` onto the previous `after`, across every version; `at` only breaks ties | `at` is the transaction's START (`now()`): a transaction that began first and committed last carries the earlier `at` and the later image. Delete-then-reinsert and A→B→A chain too; an image revisited across transactions admits more than one walk, and the earliest-`at` edge goes first. No single walk (a purged middle): by `at` (`history-order.ts`) |
+| `history(table, id, { limit: n })` | the newest `n` versions, oldest first, numbered as the whole history numbers them (one `count` beside the read). Read newest-first and stopped there, every tie at the edge included; chosen by `at`, so a transaction that began before the window and committed inside it can sit outside it. `limit` is a page size: 1 to `MAX_PAGE_SIZE`, else `X_INVARIANT_VIOLATED` |
+| `version` is a position in what is RETAINED | a `retain` sweep removes the oldest; version 1 is the oldest kept, not a stored number |
+| Another tenant reads `[]` | it is the history entity's read (`$tenantColumn` copied from the parent); who may read it at all is the calling query's or action's policy |
+| A counted column is left out of the chain | its change alone records nothing, so the next `before` differs from the previous `after` there |
+
+`history-read.test.ts` (memory and PGlite), `history-read.live.test.ts` (a server), `history-order.test.ts`.
 
 ## Partitioned tables — `partitionBy`
 

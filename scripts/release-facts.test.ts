@@ -70,6 +70,7 @@ describe('history is not a stale claim', () => {
 
   test('the changelog and the plan record are not read at all', () => {
     expect(skipFactPath('CHANGELOG.md')).toBe(true);
+    expect(skipFactPath('docs/changelog/1.0.0.md')).toBe(true);
     expect(skipFactPath('docs/plans/2026/08/x.md')).toBe(true);
     expect(skipFactPath('README.md')).toBe(false);
   });

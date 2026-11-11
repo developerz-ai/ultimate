@@ -68,27 +68,20 @@ export function devToolsEndpoint(text: string): string | undefined {
 const ANNOUNCE_POLL_MS = 25;
 
 /**
- * Dial, inside what is left of the LAUNCH deadline — `cdpConnect`'s own deadline is the per-call one
- * the connection keeps afterwards, so it cannot also be the launch's. A dial that loses the race
- * and connects later is closed, never left holding a socket nobody reads.
+ * Dial, inside what is left of the LAUNCH deadline. The handshake gets `leftMs`; `timeoutMs` is the
+ * per-call deadline the connection keeps afterwards, and it was the handshake's too until windows
+ * CI (run 42978963381) gave up on a cold Chrome 10 s into the upgrade with 50 s of its launch left —
+ * a browser that has bound its port is still starting, not dead. `cdpConnect` closes a socket whose
+ * handshake ran out, so a late upgrade never holds a socket nobody reads.
  */
 async function dialWithin(
   endpoint: string,
   leftMs: number,
   timeoutMs: number,
 ): Promise<CdpConnection> {
-  const dialing = cdpConnect({ endpoint, timeoutMs });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new CdpTimeoutError({ method: 'connect', timeoutMs: leftMs })),
-      leftMs,
-    );
-  });
   try {
-    return await Promise.race([dialing, late]);
+    return await cdpConnect({ endpoint, timeoutMs, connectTimeoutMs: leftMs });
   } catch (error) {
-    void dialing.then((connection) => connection.close()).catch(() => undefined);
     // A timeout stays one — the launcher reads it as the deadline. Any other refusal names the
     // endpoint it was for: the browser announced it, so the dial is the step that failed.
     if (error instanceof CdpTimeoutError) throw error;
@@ -96,8 +89,6 @@ async function dialWithin(
       method: `connect ${endpoint}`,
       detail: renderThrowable(error),
     });
-  } finally {
-    clearTimeout(timer);
   }
 }
 

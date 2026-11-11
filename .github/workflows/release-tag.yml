@@ -33,7 +33,9 @@ on:
   workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [ci]
     types: [completed]
-    branches: [main, 'release/*']
+    # Exactly `release/<major>.x` (`+`: one or more of the preceding character), never `release/*`:
+    # a bump branch named `release/31.1.0` was tagged off main's history (#1054).
+    branches: [main, 'release/[0-9]+.x']
 
 # One release cut at a time, and never cancelled: a tag without its Release, or a Release without
 # its dispatch, is a half-cut release a human then has to finish.
@@ -53,7 +55,7 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      (github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'release/')) &&
+      (github.event.workflow_run.head_branch == 'main' || (startsWith(github.event.workflow_run.head_branch, 'release/') && endsWith(github.event.workflow_run.head_branch, '.x'))) &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (startsWith(github.event.workflow_run.head_commit.message, 'chore: release ') ||
        startsWith(github.event.workflow_run.head_commit.message, 'release: '))

@@ -53,18 +53,20 @@ describe('unit · shipped guard · undefined-style-class', () => {
     ]);
   });
 
-  test("a computed key is out of scope, and a sheet that does not compile is the build's", async () => {
+  test('a computed key is out of scope, and a sheet that does not compile is refused', async () => {
     expect(
       await shippedGuardFindings('undefined-style-class', {
         [SHEET]: '.hero { color: inherit; }\n',
         [PAGE]: page('styles[props.tone]'),
       }),
     ).toEqual([]);
-    expect(
-      await shippedGuardFindings('undefined-style-class', {
-        [SHEET]: '.hero { color: ; \n',
-        [PAGE]: page('styles.anything'),
-      }),
-    ).toEqual([]);
+    const broken = await shippedGuardFindings('undefined-style-class', {
+      [SHEET]: '.hero { color: ; \n',
+      [PAGE]: page('styles.anything'),
+    });
+    expect(broken.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_UNDEFINED_STYLE_CLASS', `${PAGE}:1`],
+    ]);
+    expect(broken[0]?.cause).toContain(`${SHEET}, which does not compile: Error: `);
   });
 });

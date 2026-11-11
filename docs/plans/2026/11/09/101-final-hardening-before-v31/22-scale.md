@@ -68,3 +68,15 @@ Not audited by the 2026-11-09 sweep. The executor starts this part with a `dx-au
 ## Done when
 - Large synthetic app (5k files): dev boot < 10 s; production pod boot from the prebuilt registry < 3 s.
 - Every rung in `17-scale-ladder.md` cites a committed measurement.
+
+## Outcome (2026-11-10)
+Done. #1043 and #1044 shipped B1–B3, B5, M1–M4, the Redis invalidation bus, `partitionBy` and the benches. Worker and scheduler boot from the prebuilt registry since #1044. This plan's closing PR adds B4 and the large-app boot bench.
+
+| Item | Result |
+|---|---|
+| B4 per-route island grouping | built: `packages/cli/src/island-groups.ts`. `/posts/:id` islands 95,754 → 65,676 B (runtime chunk aside); every other route byte-identical |
+| dev boot < 10 s, 5k files | **met**: `x dev` restart to first 200, median 5,686 ms (was 21.1 s before this PR). The gain comes from a per-group island cache at `.x/cache/islands/`, islands built alongside the app load, and stylesheets compiled once per build |
+| pod boot < 3 s from the prebuilt registry | **met**: a `web` pod to first 200, median 2,407 ms (a scan boot takes 3,310 ms) |
+| fresh clone | 29.3 s, no target |
+| conditions | `scripts/bench/boot-large-app.bench.ts` → `scripts/bench/results/boot-large-app.json`. Synthetic app of 5,124 TS files (150 resources, 159 islands, 218 routes); 3 runs; one local 12-core box, load average 3.7–4.1 |
+| every rung cites a measurement | `docs/idea/17-scale-ladder.md` "Each rung, measured"; rung 4 states that nothing was measured |

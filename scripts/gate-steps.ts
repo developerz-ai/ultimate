@@ -53,7 +53,7 @@ export const STEP_GLOBS: readonly string[] = [
 ];
 
 /**
- * `docs/plans/` is a dated record of work and `CHANGELOG.md` names every past release's step count
+ * `docs/plans/` is a dated record of work and the changelog (`docs/changelog/`) names every past release's step count
  * by design — 1.0.0 really did ship 17. Both are history: a rule that read them would demand the
  * past be rewritten, which is what `scripts/release-facts.ts` and `scripts/doc-commands.ts` both
  * say about the same two paths.
@@ -62,7 +62,10 @@ export const STEP_GLOBS: readonly string[] = [
  * wrong count is INPUT to the rule under test, never a claim a reader could be misled by.
  */
 export const skipStepPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'CHANGELOG.md' || /\.test\.tsx?$/.test(path);
+  path.startsWith('docs/plans/') ||
+  path.startsWith('docs/changelog/') ||
+  path === 'CHANGELOG.md' ||
+  /\.test\.tsx?$/.test(path);
 
 /** A line pinning an OLDER release states that release's count — "1.0.0 shipped 17 steps". */
 const HISTORICAL =

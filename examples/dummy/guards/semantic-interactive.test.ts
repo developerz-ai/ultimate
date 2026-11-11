@@ -35,6 +35,14 @@ unitTest('a role with a tab stop and a key handler is a deliberate widget', () =
   expect(semanticInteractive(file(widget))).toEqual([]);
 });
 
+// The WAI-ARIA combobox: focus stays on the input, which answers the keys for its options.
+unitTest('a managed option is silent; one with a tab stop is not', () => {
+  const managed = '<div role="option" tabIndex={-1} onMouseDown={pick}>A</div>';
+  expect(semanticInteractive(file(managed))).toEqual([]);
+  const focusable = '<div role="option" onMouseDown={pick}>A</div>';
+  expect(semanticInteractive(file(focusable))).toHaveLength(1);
+});
+
 unitTest('data-role is not role, and a live region is not a control', () => {
   expect(semanticInteractive(file('<p data-role="status" role="status">Saved</p>'))).toEqual([]);
 });

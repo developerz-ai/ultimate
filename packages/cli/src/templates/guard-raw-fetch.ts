@@ -4,6 +4,7 @@
 // signal it stays legal: the guard cannot prove the other properties, and outbound() is the way.
 
 import { guardCode } from './guard';
+import { LOCAL_BINDING_SOURCE } from './guard-local-binding';
 import type { GeneratedFile } from './naming';
 
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
@@ -15,9 +16,11 @@ const source =
 // \`x verify\` discovers every file in \`guards/\` and runs its \`guard\` inside the \`boundaries\`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
-// Read: a bare or \`globalThis.\` \`fetch(\` call. Not read: an injected \`deps.fetch(\`, a method
-// DEFINITION (\`fetch(request) {\`, Bun.serve's handler), a test, or an island (a browser has no
-// request to outlive). Options passed as a variable read as unsignalled: spread them and add the key.
+// Read: a bare or \`globalThis.\` \`fetch(\` call. Not read: an injected \`deps.fetch(\`, a bare
+// \`fetch(\` in a file that binds its own \`fetch\` (declared, imported, a parameter, destructured),
+// a method DEFINITION (\`fetch(request) {\`, Bun.serve's handler), a test, or an island (a browser
+// has no request to outlive). Options passed as a variable read as unsignalled: spread them and add
+// the key.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -32,6 +35,8 @@ export interface SourceFile {
 
 const CALL = /(?<![\\w$.])(?:globalThis\\s*\\.\\s*)?fetch\\s*\\(/g;
 const SIGNAL = /(?<![\\w$.])signal\\s*[:,}]/g;
+
+${LOCAL_BINDING_SOURCE}
 
 /** Comments and string bodies blanked IN PLACE, so a line number still points at the source. */
 const blank = (text: string): string =>
@@ -72,7 +77,10 @@ export function rawFetches(files: readonly SourceFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     const text = blank(file.source);
+    const local = bindsLocally(text, 'fetch');
     for (const match of text.matchAll(CALL)) {
+      // A bare call to the file's own \`fetch\` is an injected client; \`globalThis.fetch(\` never is.
+      if (local && match[0].startsWith('fetch')) continue;
       const open = match.index + match[0].length - 1;
       const close = closeOf(text, open);
       const after = text.slice(close + 1).trimStart();

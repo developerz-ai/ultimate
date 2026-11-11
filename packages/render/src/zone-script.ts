@@ -12,6 +12,9 @@ export const ZONE_SCRIPT_MAX_BYTES = 200;
 /** A year: the zone a device is in changes rarely, and every load rewrites it anyway. */
 const MAX_AGE_SECONDS = 31_536_000;
 
+/** The request pipeline's detected-zone cookie, exported for harnesses that must seed it. */
+export const DETECTED_ZONE_COOKIE = DEFAULT_TZ_CONFIG.detectedCookie;
+
 /**
  * The body alone, so the CSP hash and the tag come from one string (`themeScriptBody`'s rule).
  * The name is `@ultimat3/http`'s `detectedCookie` — the one `resolvePreferences` reads, ranked
@@ -20,7 +23,7 @@ const MAX_AGE_SECONDS = 31_536_000;
  * the zone: `httpOnly: false` because a script writes it, and an IANA name is all cookie octets.
  */
 export function zoneScriptBody(): string {
-  const line = serializeSetCookie(DEFAULT_TZ_CONFIG.detectedCookie, '', {
+  const line = serializeSetCookie(DETECTED_ZONE_COOKIE, '', {
     maxAge: MAX_AGE_SECONDS,
     httpOnly: false,
   });

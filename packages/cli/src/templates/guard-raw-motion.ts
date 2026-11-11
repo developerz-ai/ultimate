@@ -15,7 +15,9 @@ const source =
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
 // A keyword is not a literal: \`linear\`, \`ease\`, \`infinite\` and \`0s\` are never reported, and a
-// multiple of a token is still the token — \`calc(#{tokens.duration(slower)} * 2)\`.
+// multiple of a token is still the token — \`calc(#{tokens.duration(slower)} * 2)\`. A custom
+// property is read too: \`--ease: cubic-bezier(…)\` is a second scale that every \`var(--ease)\` then
+// moves at. The scale's own properties come from \`@ultimat3/ui\`, which this never scans.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -58,7 +60,8 @@ const namespaceOf = (scss: string): string =>
 
 /** A declaration; a Sass \`#{…}\` interpolation is a value that carries braces. */
 const DECLARATION = /(?<![\\w$-])([\\w-]+)\\s*:\\s*((?:#\\{[^}]*\\}|[^;{}])+)/g;
-const MOTION_PROPERTY = /^(?:transition|animation)(?:-|$)/;
+/** A motion property, or a custom property — whose value Sass does not evaluate, hence \`#{…}\`. */
+const MOTION_PROPERTY = /^(?:transition|animation)(?:-|$)|^--/;
 /** A token read, with its argument list: \`tokens.duration(fast)\`, \`var(--duration-fast)\`. */
 const TOKEN_CALL = /(?<![\\w-])(?:var|(?:[\\w-]+\\.)[\\w-]+|duration|easing)\\([^()]*\\)/g;
 const TIME = /(?<![\\w.#-])(\\d*\\.?\\d+)(ms|s)\\b/g;
@@ -85,6 +88,8 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
       const property = match[1] ?? '';
       if (!MOTION_PROPERTY.test(property)) continue;
       const value = (match[2] ?? '').trim().replaceAll(/\\s+/g, ' ');
+      const custom = property.startsWith('--');
+      const token = (call: string): string => (custom ? \`#{\${call}}\` : call);
       const read = value.replaceAll(TOKEN_CALL, (call) => ' '.repeat(call.length));
       const literals: string[] = [];
       let written = '';
@@ -98,14 +103,18 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
         ...[...read.matchAll(CURVE)].map((curve) => ({
           index: curve.index,
           text: curve[0],
-          token: \`\${ns}.easing(\${EASINGS[(curve[1] ?? '').replaceAll(/\\s+/g, '')] ?? 'out'})\`,
+          token: token(
+            \`\${ns}.easing(\${EASINGS[(curve[1] ?? '').replaceAll(/\\s+/g, '')] ?? 'out'})\`,
+          ),
         })),
         ...[...read.replaceAll(CURVE, (curve) => ' '.repeat(curve.length)).matchAll(TIME)]
           .filter((time) => Number(time[1]) !== 0)
           .map((time) => ({
             index: time.index,
             text: time[0],
-            token: \`\${ns}.duration(\${durationFor(Number(time[1]) * (time[2] === 's' ? 1000 : 1))})\`,
+            token: token(
+              \`\${ns}.duration(\${durationFor(Number(time[1]) * (time[2] === 's' ? 1000 : 1))})\`,
+            ),
           })),
       ].sort((a, b) => a.index - b.index);
       for (const hit of hits) {
@@ -182,6 +191,13 @@ unitTest('one declaration is one finding, with every literal in it rewritten', (
   expect(findings[0]?.fix).toStartWith(
     'transition: color tokens.duration(base) tokens.easing(in-out), opacity tokens.duration(slower) ease — ',
   );
+});
+
+unitTest('a custom property holding a raw curve or time is refused, the fix interpolated', () => {
+  expect(fixes(':root { --ease: cubic-bezier(0, 0, 1, 1); }')[0]).toStartWith(
+    '--ease: #{tokens.easing(out)} — ',
+  );
+  expect(fixes(':root { --wait: 0.4s; --gap: 12px; --ok: var(--duration-fast); }')).toHaveLength(1);
 });
 
 unitTest('the fix speaks the namespace the sheet uses the tokens under', () => {

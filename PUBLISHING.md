@@ -61,7 +61,7 @@ what each answer means.
 | a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command`, `.data.headSha` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 | the `npm-publish` environment's `v*` tag rule and empty reviewer list | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'`, then `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — expect `[]`, `custom_branch_policies: true`, and one entry `{"name":"v*","type":"tag"}` — a person with an admin token; the one boundary fact here no automation reads |
-| which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
+| which majors have shipped, and what each one breaks | `ls docs/changelog/` · [`CHANGELOG.md`](CHANGELOG.md), the index · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
 
 ## Lockstep versioning — the rule
 
@@ -353,7 +353,10 @@ appears in the real list by existing on disk, whether or not anyone updates this
 ## Ongoing releases (automated)
 
 **`## [Unreleased]` in `CHANGELOG.md` IS the release notes.** Write them there as each change
-lands; step 1 renames that heading to the version and opens a fresh empty `[Unreleased]` above it.
+lands; step 1 moves that body to `docs/changelog/<version>.md`, adds its row to the index table in
+`CHANGELOG.md` and opens a fresh empty `[Unreleased]`. `CHANGELOG.md` is the index, one file per
+release holds its notes; a release section written into the index, or a table row out of step with
+its file, is `X_DOC_CHANGELOG_SECTION_INVALID`, fixed by `bun run scripts/changelog-index.ts --write`.
 A release with nothing under `[Unreleased]` and no commit since the previous tag is **refused**
 (`X_DOC_CHANGELOG_SECTION_INVALID`), never published as an empty section.
 
@@ -367,7 +370,7 @@ Every section from 30.0.0 opens with `### Highlights` (at most five bullets), wh
 body with the Upgrading anchor and a link to the full section.
 
 **Branches and dist-tags.** `main` ships minors and patches under `latest`; `next` holds the breaks
-and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (a convention: no script cuts or checks it). A bump PR
+and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (no script cuts it; `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts` refuses any other `release/*` name, `X_RELEASE_BRANCH_NAME`). A bump PR
 merged to `release/<major>.x` is released exactly as on `main` (`release-tag.yml` runs on both), and
 `release.yml` publishes it with `npm publish --tag` from `scripts/dist-tag.ts`: `latest` while that
 major is current, `maint-<major>` once its successor ships, `next` for a prerelease — so a
@@ -379,11 +382,12 @@ every `maint-*` tag.
    from its heading and updating the summary table's counts. If the section does not exist, stop and
    write it before tagging; the procedure is
    [`docs/architecture/19-cutting-a-major.md`](docs/architecture/19-cutting-a-major.md).
-   The counts are checked against that major's own `CHANGELOG.md` section —
+   The counts are checked against that major's own file, `docs/changelog/<major>.0.0.md` —
    `bun run scripts/changelog-check.ts --json`.
 1. `bun run scripts/release.ts --bump patch|minor|major` — bumps every package in lockstep and
-   **promotes** `## [Unreleased]` to `## X.Y.Z - <date>`, opening a fresh empty `[Unreleased]` above
-   it. Commit subjects since the previous tag are appended **inside** that section under
+   **promotes** `## [Unreleased]` to `docs/changelog/<version>.md`, headed `## X.Y.Z - <date>`, with its
+   row in the `CHANGELOG.md` index and a fresh empty `[Unreleased]`. Commit subjects since the
+   previous tag are appended **inside** that file under
    `### Commits`. Dry it first: `--bump patch --dry-run --json` computes the promotion, refuses on
    the same findings, names the three writes below, and writes nothing.
 
@@ -405,11 +409,15 @@ every `maint-*` tag.
    run published nothing. Read the state, never this paragraph:
    `bun run scripts/release.ts --check <version> --json`.
 
-   **It refuses two things before it writes anything**, `As of 2026-09-23`: a working tree with
+   **It refuses three things before it writes anything**, `As of 2026-11-10`: a working tree with
    changes in it (`X_RELEASE_TREE_DIRTY` — the release commit would carry them; the cause lists the
-   paths), and a version that does not move forward (`X_RELEASE_VERSION_INVALID` — `--version` at or
-   below the current one, or `--version` and `--bump` together, where one used to win silently).
-2. Commit on a branch, open the `chore: release X.Y.Z` PR and merge it. **That is the whole
+   paths), a version that does not move forward (`X_RELEASE_VERSION_INVALID` — `--version` at or
+   below the current one, or `--version` and `--bump` together, where one used to win silently),
+   and a `release/*` branch that is not a `release/<major>.x` line (`X_RELEASE_BRANCH_NAME`).
+2. Commit on a branch named **`chore/release-X.Y.Z`**, open the `chore: release X.Y.Z` PR and merge
+   it. Never `release/X.Y.Z`: the 31.1.0 bump branch was, and `v31.1.0` was tagged on the PR head
+   instead of `main`'s merge commit (#1054); `ci.yml` and `release-tag.yml` now run on
+   `release/[0-9]+.x` only. **That is the whole
    release**, `As of 2026-10`, for a maintainer and `developerz-ai[bot]` alike — no hand tag, no
    `gh release create`. When ci.yml concludes `success` on the push of the **release commit** to
    `main` — its subject matches `scripts/lib/release-subject.ts`, so no later commit (a Dependabot
@@ -417,7 +425,7 @@ every `maint-*` tag.
    `.github/workflows/release-tag.yml` reads the stamped version and, if `vX.Y.Z` does not exist
    yet: refuses unless `bun run scripts/release.ts --check X.Y.Z` passes, creates the **annotated**
    tag on the commit ci.yml judged (a tag object, then its ref), creates the GitHub Release with that
-   version's `CHANGELOG.md` section as its notes (`bun run scripts/release-notes.ts --version X.Y.Z`)
+   version's `docs/changelog/<version>.md` as its notes (`bun run scripts/release-notes.ts --version X.Y.Z`)
    and `--verify-tag`, and dispatches `release.yml` at the tag. If the tag already exists it stops
    quietly — a maintainer who still tags by hand races nothing. A release commit whose own CI was
    red or cancelled is cut by re-running its failed jobs (`gh run rerun <run-id> --failed`), which
@@ -561,7 +569,7 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
-| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/*` branch | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
+| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/<major>.x` branch (`release/[0-9]+.x`) | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
 | `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version, and a major is inside its window — see below |
 | `npm publish --tag "$DIST_TAG"`, the tag from `scripts/dist-tag.ts` in the `check` job | a maintenance release of an older major never moves `latest`; held by `scripts/release-workflow-shape.test.ts` |
 | ci.yml's whole run `success` on the tagged commit | nothing reaches the registry unverified: the framework gate (`verify`, the merge of every `gate` part) AND every tracked app, scaffold, per-package coverage bar and container build of the same run. It read the `verify` job alone until 2026-10, so a tag with a red app gate published. The workflow used to re-run `verify` itself with no services: the 21.0.0 run executed 10 of 342 live tests |

@@ -134,6 +134,41 @@
         ],
         "type": "object"
       },
+      "AttachAvatarInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "AttachAvatarOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "size"
+        ],
+        "type": "object"
+      },
       "CancelRunInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -170,7 +205,7 @@
       "CompletePostsImportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+        "description": "key must be one grantPostsImport minted: org/<orgId>/pending/<importId>.csv",
         "properties": {
           "key": {
             "maxLength": 512,
@@ -219,7 +254,7 @@
         "type": "object",
         "x-ultimate-refinements": [
           {
-            "message": "key must be one grantPostsImport minted: org/<orgId>/imports/posts/<importId>/<name>",
+            "message": "key must be one grantPostsImport minted: org/<orgId>/pending/<importId>.csv",
             "name": "key-is-a-posts-import",
             "path": [
               "key"
@@ -2009,6 +2044,18 @@
             ],
             "type": "string"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "theme": {
             "enum": [
               "system",
@@ -2072,6 +2119,17 @@
             "format": "uuid",
             "type": "string"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "role": {
             "enum": [
               "owner",
@@ -2118,6 +2176,7 @@
           "locale",
           "theme",
           "digestOptIn",
+          "phone",
           "createdAt"
         ],
         "type": "object"
@@ -2179,6 +2238,17 @@
             "format": "uuid",
             "type": "string"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "role": {
             "enum": [
               "owner",
@@ -2225,6 +2295,7 @@
           "locale",
           "theme",
           "digestOptIn",
+          "phone",
           "createdAt"
         ],
         "type": "object"
@@ -2670,6 +2741,17 @@
             "format": "uuid",
             "type": "string"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "role": {
             "enum": [
               "owner",
@@ -2716,6 +2798,7 @@
           "locale",
           "theme",
           "digestOptIn",
+          "phone",
           "createdAt"
         ],
         "type": "object"
@@ -4887,6 +4970,283 @@
         }
       }
     },
+    "/_x/query/post-revisions": {
+      "get": {
+        "operationId": "postRevisions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "postId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 500)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the nextCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {
+                        "properties": {
+                          "actorId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "op": {
+                            "enum": [
+                              "insert",
+                              "update",
+                              "delete"
+                            ],
+                            "type": "string"
+                          },
+                          "orgId": {
+                            "type": "string"
+                          },
+                          "postId": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "scheduled",
+                                  "published"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "version": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "orgId",
+                          "postId",
+                          "version",
+                          "op",
+                          "at",
+                          "actorId",
+                          "title",
+                          "status"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": true
+                            },
+                            "nextCursor": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": false
+                            },
+                            "nextCursor": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "hasMore": {
+                          "description": "whether another page follows",
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rows": {
+                          "items": {
+                            "properties": {
+                              "actorId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "op": {
+                                "enum": [
+                                  "insert",
+                                  "update",
+                                  "delete"
+                                ],
+                                "type": "string"
+                              },
+                              "orgId": {
+                                "type": "string"
+                              },
+                              "postId": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "draft",
+                                      "scheduled",
+                                      "published"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "version": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "orgId",
+                              "postId",
+                              "version",
+                              "op",
+                              "at",
+                              "actorId",
+                              "title",
+                              "status"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor",
+                        "hasMore"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "List the recorded revisions of a post, newest first",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [],
+          "capability": "post:read",
+          "live": false,
+          "tool": "postRevisions"
+        }
+      }
+    },
     "/_x/query/public-post": {
       "get": {
         "operationId": "publicPost",
@@ -5777,6 +6137,75 @@
         "summary": "grantAvatarUpload",
         "tags": [
           "avatar-uploads"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/avatars/attach": {
+      "post": {
+        "operationId": "attachAvatar",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachAvatarInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachAvatarOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "attachAvatar",
+        "tags": [
+          "avatars"
         ],
         "x-ultimate": {
           "capability": "member:self",
@@ -7741,7 +8170,10 @@
             "post"
           ],
           "mcpTool": "likePost",
-          "rateLimit": null
+          "rateLimit": {
+            "limit": 60,
+            "windowMs": 60000
+          }
         }
       }
     },
@@ -8198,7 +8630,7 @@
             "description": "X_BODY_INVALID"
           }
         },
-        "summary": "Update the acting member’s locale, timezone, theme and digest opt-in",
+        "summary": "Update the acting member’s locale, timezone, theme, digest opt-in and phone",
         "tags": [
           "preferences"
         ],

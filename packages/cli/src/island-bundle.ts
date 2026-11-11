@@ -1,16 +1,15 @@
-// The island chunk table: every `*.island.tsx` in the app compiled as its OWN bundle entry point,
+// The island chunk table: every `*.island.tsx` in the app compiled as a bundle entry point,
 // addressed by a hash of its SOURCE GRAPH (`graphHash` — `Bun.build`'s minified output is not
 // byte-deterministic), plus the resolver that turns a page's `src` specifier into the URL its
-// `data-x-entry` carries. One entry point per island is axiom 6 made mechanical — the page's graph
-// never reaches an island, so a `site/` document stays at 0kb whatever the island imports.
+// `data-x-entry` carries. The page's graph never reaches an island, so a `site/` document stays at
+// 0kb whatever the island imports — axiom 6 made mechanical.
 //
-// `islands: { sharedChunks: true }` builds every island in ONE split build instead, so a module two
-// islands import is one shared chunk a browser fetches once (`island-link.ts` names and links the
-// outputs). Measured on a fixture of two islands sharing a 20 kB module, As of 2026-09-29: 41,926 B
-// charged to the page with both off, 21,996 B on; the page with one of them 21,837 → 21,894 B. Off
-// by default: tree shaking across one split build keeps what ANY importer uses (`config-islands.ts`
-// in `@ultimat3/core` has the measurement that decided it).
-//
+// Islands every route renders together are ONE split build, sharing what they import as chunks;
+// every other island is built alone (`island-groups.ts` has the rule and the measurement).
+// `islands: { sharedChunks: true }` makes every island one group: tree shaking across one split
+// build keeps what ANY importer uses, so it trades single-island routes' bytes for cache reuse
+// across routes (`config-islands.ts` in `@ultimat3/core` has the measurement).
+
 // No page-client bootstrap is prepended (plan 101, decided 2026-09-22): the handle is one
 // `globalThis` object created lazily by the first transport call or realtime hook. Measured before
 // that decision on `examples/dummy`, a core-importing wrapper cost contact-sales 875 → 8,827 B.
@@ -20,20 +19,33 @@
 
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
-import { basename, join, posix, relative, sep } from 'node:path';
-import { ISLAND_EXTENSION, islandModuleId } from '@ultimat3/render';
+import { join, posix, relative, sep } from 'node:path';
+import { logger, renderThrowable } from '@ultimat3/core';
+import { ISLAND_EXTENSION } from '@ultimat3/render';
 import { loadAppConfig } from './app-config-load';
 import type { IslandResolve } from './document-options';
 import { IslandBuildFailedError } from './errors';
+import { boundedMap } from './island-build-pool';
+import {
+  environmentDigest,
+  inputDigester,
+  inputFiles,
+  listingDigester,
+} from './island-cache-inputs';
 import { refuseDuplicatedModules } from './island-duplicate-refusal';
+import type { ModuleIdentityIo } from './island-duplicates';
+import { hostIo, memoizedIo } from './island-duplicates';
 import { entryMissing, onlyMissing } from './island-entry-missing';
-import { describeBuildError, sourcesContentOf, stableChunk, stripDebugId } from './island-identity';
-import type { BuiltOutput, LinkedFile } from './island-link';
-import { linkOutputs, sharedChunkName } from './island-link';
+import type { GroupOutput } from './island-group-cache';
+import { groupKey, readGroup, sweepOnce, writeGroup } from './island-group-cache';
+import { islandGroups } from './island-groups';
+import { describeBuildError } from './island-identity';
+import { linkOutputs } from './island-link';
+import { builtOutputs, entryChunks, ISLAND_BASE_PATH, sharedChunks } from './island-outputs';
 import { frameworkDedupePlugins } from './island-package-dedupe';
 import {
   islandRealtimePlugin,
-  REALTIME_ISLAND_ENTRY,
+  reachesRealtime,
   realtimeIslandEntry,
   realtimeKind,
 } from './island-realtime';
@@ -42,17 +54,12 @@ import type { Runtimes } from './island-runtime';
 import { loadingRuntime, mergeBuilds, runtimeBuilder, runtimeShared } from './island-runtime';
 import { solidDedupePlugin } from './island-solid-dedupe';
 import type { SourcePaths } from './island-sources';
-import { sourcesOnDisk } from './island-sources';
-import { islandStylesPlugin } from './island-styles';
+import type { IslandStyles } from './island-styles';
+import { islandStylesPlugin, stylesheetsOf } from './island-styles';
 import { hasPathSegment } from './path-segments';
 import { solidJsxPlugin } from './solid-loader';
 
-/**
- * Where a chunk is served from, in `x dev`, in the container and in a static export — one base
- * path, because the URL is minted by one resolver and baked into the document. Sits beside
- * `ICON_BASE_PATH` and `MEDIA_BASE_PATH`, deliberately outside the dev-only `/_x` namespace.
- */
-export const ISLAND_BASE_PATH = '/islands';
+export { ISLAND_BASE_PATH } from './island-outputs';
 
 /**
  * `shared/` is in and `api/` is out: an island is markup, and an API route has no document to put
@@ -122,8 +129,10 @@ export interface IslandBundle {
 export async function discoverIslands(root: string): Promise<readonly string[]> {
   const files: string[] = [];
   for await (const absolute of new Bun.Glob(ISLAND_GLOB).scan({ cwd: root, absolute: true })) {
-    if (hasPathSegment(absolute, 'node_modules')) continue;
-    files.push(relative(root, absolute).split(sep).join('/'));
+    // Root-relative, as `isScannedModule` tests it: an app under `<anything>/node_modules/<app>`
+    // holds the segment in every absolute path, and found no island at all.
+    const file = relative(root, absolute).split(sep).join('/');
+    if (!hasPathSegment(file, 'node_modules')) files.push(file);
   }
   return files.sort();
 }
@@ -139,13 +148,14 @@ async function buildAll(
   root: string,
   files: readonly string[],
   splitting: boolean,
-  runtimes: Runtimes,
-): Promise<{ readonly chunks: readonly IslandChunk[]; readonly shared: readonly SharedChunk[] }> {
-  if (files.length === 0) return { chunks: [], shared: [] };
+  context: BuildContext,
+  persists: boolean | undefined,
+): Promise<GroupOutput> {
+  if (files.length === 0) return { chunks: [], shared: [], inputs: [], stylesheets: [] };
+  const { runtimes } = context;
   // Inside the refusal: the realtime probe PARSES the island's graph, and a file that will not
   // parse rejected with a raw `AggregateError: Failed to scan imports` — out of the web boot, with
   // no code, no file and no fix — before `Bun.build` ever ran to raise the one below.
-  const persists = appPersistsRecords();
   const realtime = await Promise.all(
     files.map((file) =>
       realtimeKind(root, file, persists).catch((error: unknown) => {
@@ -196,7 +206,7 @@ async function buildAll(
         solidDedupePlugin(root),
         ...frameworkDedupePlugins(root),
         solidJsxPlugin,
-        islandStylesPlugin,
+        context.styles,
       ],
       // The third one, and it is a `define` rather than the plugin this used to be: Bun selects
       // the `development`/`production` export condition from the BUILD PROCESS's own `NODE_ENV`,
@@ -223,7 +233,7 @@ async function buildAll(
       metafile: true,
     });
   } catch (error) {
-    throw await blame(root, files, error, splitting, runtimes);
+    throw await blame(root, files, error, splitting, context, persists);
   }
   if (!built.success) {
     throw new IslandBuildFailedError({
@@ -237,7 +247,7 @@ async function buildAll(
       logs: 'the bundler returned no metafile',
     });
   }
-  await refuseDuplicatedModules(files.join(', '), built.metafile);
+  await refuseDuplicatedModules(files.join(', '), built.metafile, context.io);
   const sources = new Map<string, SourcePaths>();
   const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
   const chunks = loadingRuntime(entryChunks(files, linked, sources), live, runtime).map(
@@ -247,7 +257,18 @@ async function buildAll(
     },
   );
   const shared = sharedChunks(chunks, linked, sources);
-  return { chunks, shared: [...shared, ...runtimeShared(runtime, live)] };
+  const read = Object.keys(built.metafile.inputs);
+  const stylesheets = stylesheetsOf(read);
+  // The bundler's inputs, the runtime's, and every Sass partial a sheet `@use`s: a partial moves
+  // the sheet's class hashes and is read by the Sass compiler, never by the bundler.
+  const partials = context.styles.dependenciesOf(stylesheets);
+  const readFiles = [...(await inputFiles(read)), ...(runtime?.inputs ?? []), ...partials];
+  return {
+    chunks,
+    shared: [...shared, ...runtimeShared(runtime, live)],
+    inputs: [...new Set(readFiles)].sort(),
+    stylesheets,
+  };
 }
 
 /**
@@ -260,12 +281,13 @@ async function blame(
   files: readonly string[],
   error: unknown,
   splitting: boolean,
-  runtimes: Runtimes,
+  context: BuildContext,
+  persists: boolean | undefined,
 ): Promise<IslandBuildFailedError> {
   if (files.length > 1) {
     for (const file of files) {
       try {
-        await buildAll(root, [file], splitting, runtimes);
+        await buildAll(root, [file], splitting, context, persists);
       } catch (alone) {
         if (alone instanceof IslandBuildFailedError) return alone;
       }
@@ -274,135 +296,13 @@ async function blame(
   return new IslandBuildFailedError({ file: files.join(', '), logs: describeBuildError(error) });
 }
 
-/**
- * Bun's `./a/b.island.js` → `a/b.island.js`. A realtime wrapper's output is named after its
- * VIRTUAL entry, which Bun places relative to the cwd behind `_.._/` segments — so everything up to
- * and including the prefix goes, leaving the island's own spelling.
- */
-const outputKey = (path: string): string => {
-  const bare = path.startsWith('./') ? path.slice(2) : path;
-  const at = bare.indexOf(REALTIME_ISLAND_ENTRY);
-  return at === -1 ? bare : bare.slice(at + REALTIME_ISLAND_ENTRY.length);
-};
-
-const withoutExtension = (file: string): string =>
-  file.slice(0, file.length - posix.extname(file).length);
-
-/** Every code output paired with its source map's inputs and, for an entry, its island. */
-async function builtOutputs(
-  root: string,
-  files: readonly string[],
-  artifacts: readonly Bun.BuildArtifact[],
-  sourcePaths: Map<string, SourcePaths>,
-): Promise<readonly BuiltOutput[]> {
-  const byStem = new Map(files.map((file) => [withoutExtension(file), file]));
-  const maps = new Map<string, string>();
-  for (const artifact of artifacts) {
-    if (artifact.kind === 'sourcemap') maps.set(artifact.path, await artifact.text());
-  }
-  const outputs: BuiltOutput[] = [];
-  for (const artifact of artifacts) {
-    if (artifact.kind !== 'entry-point' && artifact.kind !== 'chunk') continue;
-    const key = outputKey(artifact.path);
-    const file = artifact.kind === 'entry-point' ? byStem.get(withoutExtension(key)) : undefined;
-    const map = maps.get(`${artifact.path}.map`);
-    const parsed: unknown = map === undefined ? undefined : JSON.parse(map);
-    const sources = parsed === undefined ? undefined : sourcesContentOf(parsed, true);
-    sourcePaths.set(key, await sourcesOnDisk(root, parsed));
-    if (sources === undefined || (artifact.kind === 'entry-point' && file === undefined)) {
-      throw new IslandBuildFailedError({
-        file: file ?? key,
-        logs: `the bundler emitted ${key} with no source map or no island behind it, so the output has no stable identity`,
-      });
-    }
-    outputs.push({
-      path: key,
-      ...(file === undefined ? {} : { file }),
-      code: stripDebugId(await artifact.text()),
-      sources,
-    });
-  }
-  return outputs;
-}
-
-/**
- * The entry's own file, added to sources the map resolved into the root. A pure re-export island
- * (`export { mountMenu as mount } from '../shared/menu'`) emits no code of its own, so its source
- * map names only what it re-exports: the store then recorded nothing that changes when the entry
- * is edited, and `writeIslandStore` refused it as a map whose paths left the root. A map that
- * resolved NOTHING into the root stays empty — that is the cwd failure, and it is still refused.
- */
-function withOwnFile(file: string, sources: SourcePaths): SourcePaths {
-  return sources.length === 0 || sources.includes(file) ? sources : [...sources, file].sort();
-}
-
-/** The linked outputs, as the chunk table: the entries in `files` order, their chunks attached. */
-function entryChunks(
-  files: readonly string[],
-  linked: readonly LinkedFile[],
-  sources: ReadonlyMap<string, SourcePaths>,
-): readonly IslandChunk[] {
-  const shared = new Map(
-    linked
-      .filter((one) => one.file === undefined)
-      .map((one) => [sharedChunkName(one.identity), one]),
-  );
-  const closure = (start: readonly string[]): readonly string[] => {
-    const seen = new Set<string>();
-    const walk = (names: readonly string[]): void => {
-      for (const name of names) {
-        if (seen.has(name)) continue;
-        seen.add(name);
-        walk(shared.get(name)?.imports ?? []);
-      }
-    };
-    walk(start);
-    return [...seen].sort().map((name) => `${ISLAND_BASE_PATH}/${name}`);
-  };
-  const chunks: IslandChunk[] = [];
-  for (const file of files) {
-    const entry = linked.find((one) => one.file === file);
-    if (entry === undefined) {
-      throw new IslandBuildFailedError({ file, logs: 'the bundler emitted no entry point for it' });
-    }
-    const moduleId = islandModuleId(basename(file));
-    chunks.push({
-      file,
-      moduleId,
-      url: `${ISLAND_BASE_PATH}/${moduleId}-${entry.identity}.js`,
-      // The FIRST bytes this process emitted for these inputs, so a URL served `immutable` answers
-      // one byte string for as long as the process lives. Without it `x dev` re-mints the chunk on
-      // every watcher tick and a browser holding the previous one under `max-age=31536000` has two
-      // different files at one address. `bytes` is measured on THAT code, never on this build's.
-      ...stableChunk(file, entry.identity, entry.code),
-      imports: closure(entry.imports),
-      sources: withOwnFile(file, sources.get(entry.path) ?? []),
-    });
-  }
-  return chunks;
-}
-
-/** Every shared chunk the entries load, pinned the same way, with the islands that load it. */
-function sharedChunks(
-  chunks: readonly IslandChunk[],
-  linked: readonly LinkedFile[],
-  sources: ReadonlyMap<string, SourcePaths>,
-): readonly SharedChunk[] {
-  const out: SharedChunk[] = [];
-  for (const one of linked) {
-    if (one.file !== undefined) continue;
-    const url = `${ISLAND_BASE_PATH}/${sharedChunkName(one.identity)}`;
-    out.push({
-      url,
-      ...stableChunk(url, one.identity, one.code),
-      importers: chunks
-        .filter((chunk) => chunk.imports.includes(url))
-        .map((chunk) => chunk.file)
-        .sort(),
-      sources: sources.get(one.path) ?? [],
-    });
-  }
-  return out.sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
+/** What every group's build of one `buildIslands` call shares. */
+interface BuildContext {
+  readonly runtimes: Runtimes;
+  /** One styles plugin per call: each sheet compiled once, however many groups load it. */
+  readonly styles: IslandStyles;
+  /** One realpath per file per call, however many groups' metafiles name it. */
+  readonly io: ModuleIdentityIo;
 }
 
 export interface BuildIslandsOptions {
@@ -418,10 +318,24 @@ export interface BuildIslandsOptions {
   readonly only?: string;
   /**
    * One split build over every island (`app.config.ts`'s `islands.sharedChunks`, off by default),
-   * or one self-contained build per island. Passed, it overrides the app's config — the seam a test
-   * asks both questions of one fixture through.
+   * or one build per route group (`island-groups.ts`). Passed, it overrides the app's config — the
+   * seam a test asks both questions of one fixture through.
    */
   readonly sharedChunks?: boolean;
+  /**
+   * Reuse a group's output from `.x/cache/islands/` while every file it read is unchanged
+   * (`island-group-cache.ts`) — on by default. `false` is the seam a determinism test builds
+   * through: a reused byte string proves nothing about the bundler that emitted it.
+   */
+  readonly reuse?: boolean;
+  /**
+   * Whether the app persists records (`appPersistsRecords`), asked only by a group one of whose
+   * islands reaches realtime, and once per call. `x dev` builds islands BESIDE the app load
+   * (`buildGeneration`), so it passes the answer the registry gives once the load settles; read
+   * any earlier it is the empty registry's `undefined`, and every reader islands is held. Absent,
+   * the registry is read as it stands: the caller loaded the app first.
+   */
+  readonly persists?: () => Promise<boolean | undefined>;
 }
 
 /** `islands.sharedChunks` off the one loader (`app-config-load.ts`) — `false` with no config file. */
@@ -441,16 +355,63 @@ export async function buildIslands(
   // an empty bundle here would surface two steps later, as a chunk table with no entry for a file
   // the caller can see on disk.
   if (only !== undefined && files.length === 0) throw onlyMissing(only, discovered);
-  const runtimes = runtimeBuilder(root, ISLAND_BASE_PATH);
-  if (options.sharedChunks ?? (await loadSharedChunks(root))) {
-    const built = await buildAll(root, files, true, runtimes);
-    return islandBundle(built.chunks, built.shared);
-  }
-  // One build per island, splitting off: each chunk is self-contained but for the page runtime,
-  // the ONE file beside it every realtime island loads, counted once however many load it.
-  const solo = await Promise.all(files.map((file) => buildAll(root, [file], false, runtimes)));
-  return islandBundle(...mergeBuilds(solo));
+  const context: BuildContext = {
+    runtimes: runtimeBuilder(root, ISLAND_BASE_PATH),
+    styles: islandStylesPlugin(),
+    io: memoizedIo(hostIo()),
+  };
+  let asked: Promise<boolean | undefined> | undefined;
+  const persistsOnce = (): Promise<boolean | undefined> => {
+    asked ??= options.persists?.() ?? Promise.resolve(appPersistsRecords());
+    return asked;
+  };
+  // One build per group (`island-groups.ts`): islands every route renders together are one split
+  // build; every other island is alone, splitting off, self-contained but for the page runtime —
+  // the ONE file every realtime island loads, counted once however many load it.
+  // `islands.sharedChunks` is the one group of every island, split as it always was.
+  const everyIsland = files.length > 0 && (options.sharedChunks ?? (await loadSharedChunks(root)));
+  const groups = everyIsland ? [files] : files.length === 0 ? [] : await islandGroups(root, files);
+  const reuse = options.reuse ?? true;
+  const cache = {
+    environment: reuse ? await environmentDigest(root) : '',
+    digestOf: inputDigester(),
+    // One per call, shared by every read and write: a listing hashed before a build is the one
+    // its entry is stamped with.
+    listingOf: listingDigester(),
+    warned: false,
+  };
+  const build = async (group: readonly string[]): Promise<GroupBuild> => {
+    const splitting = everyIsland || group.length > 1;
+    // The registry's answer only where it changes the bytes: a group with no realtime island
+    // builds at once, while `x dev`'s app load is still running beside it. A probe that cannot
+    // parse reads as reaching, so `buildAll` raises the island's own coded refusal.
+    const reaches = await Promise.all(
+      group.map((file) => reachesRealtime(root, file).catch(() => true)),
+    );
+    const persists = reaches.includes(true) ? await persistsOnce() : undefined;
+    if (!reuse) return buildAll(root, group, splitting, context, persists);
+    const key = groupKey({ group, splitting, environment: cache.environment, persists });
+    const hit = await readGroup(root, key, cache.digestOf, cache.listingOf);
+    if (hit !== undefined) return hit;
+    // The wall clock as the filesystem stamps an mtime — never `Date.now()`, which a test may freeze.
+    const startedAt = performance.timeOrigin + performance.now();
+    const output = await buildAll(root, group, splitting, context, persists);
+    // Best effort: a read-only tree (a pod whose image skipped `x build --target prebuilt`) still
+    // serves what it just built — a cache it cannot write is a slower next boot, never a failed one.
+    await writeGroup(root, key, output, startedAt, cache.digestOf, cache.listingOf).catch(
+      (error: unknown) => {
+        if (!cache.warned) logger.warn(`island cache not written: ${renderThrowable(error)}`);
+        cache.warned = true;
+      },
+    );
+    return output;
+  };
+  if (reuse) await sweepOnce(root);
+  const width = navigator.hardwareConcurrency;
+  return islandBundle(...mergeBuilds(await boundedMap(groups, width, build)));
 }
+
+type GroupBuild = Pick<GroupOutput, 'chunks' | 'shared'>;
 
 export function islandBundle(
   chunks: readonly IslandChunk[],

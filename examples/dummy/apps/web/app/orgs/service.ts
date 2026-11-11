@@ -20,11 +20,14 @@ import { type MemberId, type OrgId, type PlanCode, seatLimit } from '@postly/dom
 // handed. Aliased because `@postly/core` already binds `Actor` to this app's membership.
 import { type Actor as CtxActor, defineService } from '@ultimat3/core';
 import { newId } from '@ultimat3/entity';
+import { assertSmsNumber } from '@ultimat3/notify';
 import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import { daysBetween, instant } from '@ultimat3/time';
 import { mintAvatarGrant, signedAvatarUrl } from './avatar';
-import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from './entity';
+import { attachAvatar } from './avatar-attach';
+import type { AvatarAttached, InviteInput, MemberView, OrgView, UpgradeReceipt } from './entity';
 import { OrgNotFound } from './errors';
+import { warmAvatar } from './jobs/warm-avatar';
 import {
   allDigestRecipients,
   digestRecipients,
@@ -33,6 +36,7 @@ import {
   memberCount,
   orgById,
   setPlan,
+  textableOwners,
   updatePreferences,
 } from './repo';
 
@@ -133,8 +137,11 @@ export const orgsService = defineService('orgs', (ctx) => ({
     locale?: AppLocale;
     theme?: AppTheme;
     digestOptIn?: boolean;
+    phone?: string | null | undefined;
   }): Promise<MemberRow> {
     const acting = actingMember(ctx.actor);
+    // The rule every SMS transport applies, refused at the write rather than at the first text.
+    if (typeof values.phone === 'string') assertSmsNumber(values.phone, acting.memberId);
     return updatePreferences(acting.orgId, acting.memberId, values);
   },
 
@@ -196,12 +203,25 @@ export const orgsService = defineService('orgs', (ctx) => ({
     });
   },
 
+  /**
+   * The upload `grantAvatarUpload` answered becomes the acting member's avatar — scanned, attached
+   * and the earlier ones pruned (`avatar-attach.ts`) — then `warmAvatar` pays the resizes once, in
+   * this request's transaction, so no reader's first render decodes it.
+   */
+  async attachAvatar(key: string): Promise<AvatarAttached> {
+    const member = actingMember(ctx.actor);
+    const attached = await attachAvatar({ orgId: member.orgId, memberId: member.memberId, key });
+    await warmAvatar.enqueue({ orgId: member.orgId, key: attached.key });
+    return { key: attached.key, size: attached.size };
+  },
+
   /** The acting member's current avatar as a short-lived signed URL, or `null` if they have none. */
   async avatarUrl(): Promise<string | null> {
     const member = actingMember(ctx.actor);
     return signedAvatarUrl(member.orgId, member.memberId);
   },
 
+  textableOwners,
   digestRecipients,
 
   /** Cross-tenant on purpose, and only reachable from the scheduler's job. */

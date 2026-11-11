@@ -4,7 +4,13 @@
  */
 
 import { storeMode } from '@ultimat3/core';
-import { type Driver, database, postgresDriver, testDriver } from '@ultimat3/entity';
+import {
+  type Driver,
+  database,
+  invariantViolated,
+  postgresDriver,
+  testDriver,
+} from '@ultimat3/entity';
 import { comments } from './schema/comments';
 import { connections } from './schema/connections';
 import { dailyLikes } from './schema/daily-likes';
@@ -17,6 +23,7 @@ import { postLikeTotals } from './schema/post-like-totals';
 import { postReviewRuns } from './schema/post-review-runs';
 import { postReviews } from './schema/post-reviews';
 import { posts } from './schema/posts';
+import { quotaAlerts } from './schema/quota-alerts';
 import { runEvents } from './schema/run-events';
 import { runs } from './schema/runs';
 import { streamCursors } from './schema/stream-cursors';
@@ -52,6 +59,15 @@ export const selectDriver = (env: Readonly<Record<string, string | undefined>>):
 export const driver = selectDriver(Bun.env);
 
 /**
+ * `posts_history`, the table `history: { retain }` on `posts` records into — typed nullable because
+ * an entity without `history` has none, so the declaration that it exists is checked here, at load.
+ */
+const postsHistory = posts.$history;
+if (postsHistory === null) {
+  throw invariantViolated('posts', 'history', "declare history: { retain: { after: '365d' } }");
+}
+
+/**
  * The entity set, named so `x g entity` has a list to add to: the generator edits THIS literal
  * (`X_DB_HANDLE_UNREGISTERED` when it finds none), and a handle built from an inline object gave
  * it nothing to find.
@@ -69,6 +85,8 @@ const entities = {
   postReviewRuns,
   postReviews,
   posts,
+  postsHistory,
+  quotaAlerts,
   runEvents,
   runs,
   streamCursors,

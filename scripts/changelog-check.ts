@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
-// Enforce, as a gate rule, that CHANGELOG.md's sections are well-formed, that every migration
-// count in wiki/Upgrading.md is read out of that major's OWN section, and that each `BREAKING —`
-// line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`).
+// Enforce, as a gate rule, that the changelog's sections are well-formed — `[Unreleased]` in the
+// CHANGELOG.md index, one `docs/changelog/<version>.md` per release (`lib/changelog-index.ts`) — that
+// every migration count in wiki/Upgrading.md is read out of that major's OWN section, and that each
+// `BREAKING —` line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`).
 //
 // The gap this closes is at commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`. That is
 // `release: 6.0.0`, the release script's OWN output: seven `BREAKING —` entries still under
@@ -23,32 +24,33 @@
 // - `[Unreleased]` is cut by the awk deliberately: a whole-file grep agrees only while that section
 //   is empty, so it moved on every PR that landed a breaking change and moved BACK when the release
 //   promoted the section. Corrected 2026-08-26, after it failed exactly that way.
-// - The total is SMALLER than the entries that page walks: CHANGELOG.md keeps the recent releases
+// - Since the split (31.3.0) the grep reads `docs/changelog/*.md`, which holds released sections
+//   only, so the awk is gone: `[Unreleased]` stays in the CHANGELOG.md index and is never counted.
+// - The total is SMALLER than the entries that page walks: docs/changelog/ keeps 11.0.0 onwards
 //   (`git show v10.0.0:CHANGELOG.md` has the rest) and the page keeps every major's row. The oldest
-//   `## X.Y.Z` heading still in the changelog is the retention boundary (`retentionBoundary`); no
-//   count is asked for below it.
+//   release file is the retention boundary (`retentionBoundary`); no count is asked for below it.
 // - At a TAGGED commit `[Unreleased]` holds no `BREAKING —` line
 //   (X_DOC_CHANGELOG_UNRELEASED_BREAKING): the release promotes the section, never appends one.
-// - One row's count: `sed -n '<start>,<end>p' CHANGELOG.md | grep -cE '^(- \*\*|### )BREAKING —'`
-//   with bounds from `grep -n '^## ' CHANGELOG.md`. Line numbers are never written down.
+// - One row's count: `grep -cE '^(- \*\*|### )BREAKING —' docs/changelog/<version>.md`.
 // - Both directions are compared: each row against its OWN section, the total against the file.
 //
 //   bun run scripts/changelog-check.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
 import { CHANGELOG_PATH, UPGRADING_PATH } from './lib/changelog-format';
+import { indexFindings } from './lib/changelog-index';
 import { checkPairing, pairingFinding } from './lib/changelog-pairing';
-import type { ChangelogSection } from './lib/changelog-sections';
+import type { Changelog, ChangelogSection } from './lib/changelog-sections';
 import {
   FIRST_MIGRATABLE_MAJOR,
   isArchived,
-  parseChangelog,
   parseDerivedTotal,
   parseMigrationTable,
   parseUpgradeSections,
   retentionBoundary,
   UNRELEASED,
 } from './lib/changelog-sections';
+import { assembleChangelog, readChangelogFiles } from './lib/changelog-store';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -61,7 +63,7 @@ const SCRIPT = 'changelog-check';
 // Re-exported here for the callers that already name this module — `release-notes.ts`,
 // `lib/release-changelog.ts`, `lib/changelog-pairing.test.ts`, this file's own test.
 export { BREAKING_ENTRY, CHANGELOG_PATH, UPGRADING_PATH } from './lib/changelog-format';
-export type { ChangelogSection, MigrationRow } from './lib/changelog-sections';
+export type { Changelog, ChangelogSection, MigrationRow } from './lib/changelog-sections';
 export {
   isArchived,
   parseChangelog,
@@ -74,6 +76,10 @@ export {
 export type ChangelogGapKind =
   | 'duplicate'
   | 'empty'
+  // Not one released section was read: the changelog moved, or the reader looks in the wrong
+  // place, and every rule below would pass on nothing. The count, pairing and claim rules all go
+  // quiet on an empty list, so this is the one finding that says the list is empty.
+  | 'no-releases'
   // A released section whose body is only the auto-generated `### Commits` block — `promoteUnreleased`
   // writes THAT shape when `[Unreleased]` has no human-written notes, so a section whose body starts
   // with `### Commits` is the file saying "this release shipped with no release notes of its own".
@@ -100,7 +106,7 @@ export interface ChangelogGap {
 }
 
 export interface ChangelogInput {
-  readonly changelog: string;
+  readonly changelog: Changelog;
   readonly upgrading: string;
   /** The version this commit is tagged as, when it is tagged — `undefined` between releases. */
   readonly taggedVersion?: string | undefined;
@@ -108,7 +114,7 @@ export interface ChangelogInput {
 
 export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
   const gaps: ChangelogGap[] = [];
-  const sections = parseChangelog(input.changelog);
+  const sections = input.changelog;
   const byVersion = new Map<string, ChangelogSection>();
 
   for (const section of sections) {
@@ -116,8 +122,8 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     if (first !== undefined) {
       gaps.push({
         kind: 'duplicate',
-        at: `${CHANGELOG_PATH}:${section.line}`,
-        detail: `a second \`## ${section.heading}\` — ${section.version} is already the section at line ${first.line}`,
+        at: `${section.file}:${section.line}`,
+        detail: `a second \`## ${section.heading}\` — ${section.version} is already the section at ${first.file}:${first.line}`,
       });
       continue;
     }
@@ -125,10 +131,19 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     if (section.released && !section.filled) {
       gaps.push({
         kind: 'empty',
-        at: `${CHANGELOG_PATH}:${section.line}`,
+        at: `${section.file}:${section.line}`,
         detail: `\`## ${section.heading}\` has no body, so the release it names says nothing`,
       });
     }
+  }
+
+  if (!sections.some((section) => section.released)) {
+    gaps.push({
+      kind: 'no-releases',
+      at: 'docs/changelog/',
+      detail:
+        'holds no released `## X.Y.Z - YYYY-MM-DD` section, so every changelog rule read nothing',
+    });
   }
 
   // The shape `promoteUnreleased` writes when `[Unreleased]` is empty: the section's body holds only
@@ -143,7 +158,7 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     if (!section.body.startsWith('### Commits')) continue;
     gaps.push({
       kind: 'commits-only',
-      at: `${CHANGELOG_PATH}:${section.line}`,
+      at: `${section.file}:${section.line}`,
       detail: `\`## ${section.heading}\` body is the auto-generated \`### Commits\` block alone, so the release it names ships no human-written release notes`,
     });
   }
@@ -183,12 +198,12 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
         ? {
             kind: 'unknown-section',
             at: `${UPGRADING_PATH}:${row.line}`,
-            detail: `names a \`${row.target}\` section that ${CHANGELOG_PATH} does not have`,
+            detail: `names a \`${row.target}\` section that docs/changelog/ has no file for`,
           }
         : {
             kind: 'count',
             at: `${UPGRADING_PATH}:${row.line}`,
-            detail: `claims ${row.claimed} breaking entries; the \`${row.target}\` section of ${CHANGELOG_PATH} holds ${actual}`,
+            detail: `claims ${row.claimed} breaking entries; ${section.file} holds ${actual}`,
           },
     );
   }
@@ -267,6 +282,14 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
 const RERUN = 'bun run scripts/changelog-check.ts --json';
 
 export function changelogFinding(gap: ChangelogGap): Finding {
+  if (gap.kind === 'no-releases') {
+    return {
+      code: 'X_DOC_CHANGELOG_SECTION_INVALID',
+      cause: `${gap.at} ${gap.detail}`,
+      fix: 'ls docs/changelog/   # run from the repository root; one X.Y.Z.md per release must be there',
+      at: gap.at,
+    };
+  }
   if (gap.kind === 'duplicate' || gap.kind === 'empty') {
     return {
       code: 'X_DOC_CHANGELOG_SECTION_INVALID',
@@ -283,7 +306,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // same heading, above the auto-generated `### Commits` block `promoteUnreleased` will append
       // next. The "edit this file" fix-line form — a `fix:` the reader can paste into a `code_edit`
       // and act on without first reading another script.
-      fix: `write human-written release notes for the version the cause names under its heading in CHANGELOG.md, above the auto-generated \`### Commits\` block at the bottom, then rerun: ${RERUN}`,
+      fix: `write human-written release notes in the docs/changelog/ file the cause names, above the auto-generated \`### Commits\` block at the bottom, then rerun: ${RERUN}`,
       at: gap.at,
     };
   }
@@ -294,7 +317,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // `--dry-run` writes NOTHING (release.ts, `if (!dryRun)`), so naming it here handed the
       // reader a command that validates the promotion and does not perform it. Axiom 4 at the one
       // point it is read: state the edit, and say which command performs it and which only checks.
-      fix: 'move those entries under the released version heading in CHANGELOG.md — a release performs this promotion (bun run scripts/release.ts --bump major), and --dry-run only validates it',
+      fix: 'move those entries into the file of that release under docs/changelog/ — a release performs this promotion (bun run scripts/release.ts --bump major), and --dry-run only validates it',
       at: gap.at,
     };
   }
@@ -314,7 +337,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       cause: `${gap.at} ${gap.detail}`,
       // A literal path, never an interpolation: the fix-line rule reads these statically.
       // No angle brackets: a fix line is pasted, and the test holds every one of them to that.
-      fix: 'write the walkthrough in wiki/Upgrading.md under a heading of the form "## 1.x → 2.0.0, entry by entry" naming the version the cause names, one subsection per entry of that section of CHANGELOG.md, then rerun: bun run scripts/changelog-check.ts --json',
+      fix: 'write the walkthrough in wiki/Upgrading.md under a heading of the form "## 1.x → 2.0.0, entry by entry" naming the version the cause names, one subsection per entry of that release in docs/changelog/, then rerun: bun run scripts/changelog-check.ts --json',
       at: UPGRADING_PATH,
     };
   }
@@ -322,7 +345,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
     return {
       code: 'X_DOC_MIGRATION_COUNT_STALE',
       cause: `${gap.at} ${gap.detail}`,
-      fix: `point that row at a version CHANGELOG.md has a section for, or write the section it names in CHANGELOG.md, then rerun: ${RERUN}`,
+      fix: `point that row at a version docs/changelog/ has a file for, or write the docs/changelog/ file it names, then rerun: ${RERUN}`,
       at: gap.at,
     };
   }
@@ -354,23 +377,26 @@ export async function taggedVersion(root: string): Promise<string | undefined> {
 }
 
 export async function changelogGaps(root: string): Promise<readonly ChangelogGap[]> {
+  const { index, files } = await readChangelogFiles(root);
   return checkChangelog({
-    changelog: await Bun.file(`${root}/${CHANGELOG_PATH}`).text(),
+    changelog: assembleChangelog(index, files),
     upgrading: await Bun.file(`${root}/${UPGRADING_PATH}`).text(),
     taggedVersion: await taggedVersion(root),
   });
 }
 
 /**
- * Every finding this rule contributes, for a caller that folds it into a gate step. The count rule
- * above, the one-to-one pairing of each line with its row (`lib/changelog-pairing.ts`), and the
- * unreleased-claim rule.
+ * Every finding this rule contributes, for a caller that folds it into a gate step. The index
+ * against the release files, the count rule above, the one-to-one pairing of each line with its row
+ * (`lib/changelog-pairing.ts`), and the unreleased-claim rule.
  */
 export const changelogFindings = async (root: string): Promise<readonly Finding[]> => {
-  const changelog = await Bun.file(`${root}/${CHANGELOG_PATH}`).text();
+  const { index, files } = await readChangelogFiles(root);
+  const changelog = assembleChangelog(index, files);
   const upgrading = await Bun.file(`${root}/${UPGRADING_PATH}`).text();
-  // Each file read ONCE, and every rule handed the same text: two reads could see two versions.
+  // Each file read ONCE, and every rule handed the same sections: two reads could see two versions.
   return [
+    ...indexFindings(index, files),
     ...checkChangelog({ changelog, upgrading, taggedVersion: await taggedVersion(root) }).map(
       changelogFinding,
     ),
@@ -390,7 +416,7 @@ if (import.meta.main) {
       script: SCRIPT,
       summary:
         findings.length === 0
-          ? `${CHANGELOG_PATH} sections are well-formed and every ${UPGRADING_PATH} count is read from its own section`
+          ? `${CHANGELOG_PATH} and docs/changelog/ are well-formed and every ${UPGRADING_PATH} count is read from its own section`
           : `${findings.length} finding(s): the changelog and the upgrade guide disagree`,
       findings,
     },

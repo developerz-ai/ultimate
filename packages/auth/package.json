@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/auth",
-  "version": "31.2.0",
+  "version": "31.4.1",
   "description": "Sessions, passwords, OAuth, MFA and api keys — resolved to one Actor",
   "keywords": [
     "ultimate",
@@ -30,6 +30,8 @@
     ".": "./src/index.ts",
     "./adapter": "./src/adapter-subpath.ts",
     "./client": "./src/client.ts",
+    "./saml-test-idp": "./src/saml-test-idp.ts",
+    "./schema": "./src/tables.ts",
     "./soft-authenticator": "./src/soft-authenticator.ts"
   },
   "files": [
@@ -48,8 +50,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "31.2.0",
-    "@ultimat3/db": "31.2.0",
-    "@ultimat3/schema": "31.2.0"
+    "@ultimat3/core": "31.4.1",
+    "@ultimat3/db": "31.4.1",
+    "@ultimat3/schema": "31.4.1"
   }
 }

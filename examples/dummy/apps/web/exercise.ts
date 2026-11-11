@@ -2,6 +2,7 @@
 // minimal draw plus seeded ids cannot reach, and why a primitive cannot run in the pass at all.
 // Each entry is the value a `.contract({ exercise })` takes, so a test and the pass share a shape.
 
+import { memberOf } from '@postly/core';
 import { members } from '@postly/db';
 import { type SoftAuthenticator, softAuthenticator } from '@ultimat3/auth/soft-authenticator';
 import {
@@ -12,7 +13,7 @@ import {
   useContext,
   userActor,
 } from '@ultimat3/core';
-import { acceptSignedPart, disk, grantMultipart, signPart } from '@ultimat3/storage';
+import { acceptSignedPart, disk, grantMultipart, pendingKey, signPart } from '@ultimat3/storage';
 import { defineExercise } from '@ultimat3/testing';
 
 /** Re-homed by the pass into each primitive's own tenant, and bound to a seeded `owner` row. */
@@ -85,15 +86,16 @@ async function importSession(
   drawn: Readonly<Record<string, unknown>>,
   options: { readonly sent?: boolean } = {},
 ) {
-  const { postsImportPolicy, postsImportTarget } = await import('./app/posts/import-upload');
+  const { postsImportPolicy } = await import('./app/posts/import-upload');
   const orgId = String(drawn['orgId']);
   const policy = postsImportPolicy;
+  const importId = crypto.randomUUID();
   const grant = await grantMultipart({
     disk: disk(),
     orgId,
     request: { filename: 'posts.csv', contentType: 'text/csv', size: CSV_HEADER.byteLength },
     policy,
-    target: postsImportTarget(crypto.randomUUID()),
+    uploadId: () => importId,
     clock: systemClock,
   });
   const session = { orgId, key: grant.key, uploadId: grant.uploadId };
@@ -181,6 +183,19 @@ export const exercise = defineExercise(
       }),
     },
 
+    // The meter's period is a UTC day, its bounds ISO instants the draw does not produce: TODAY's,
+    // on the pass's clock, because `quota_alerts` has partitions for this month and three ahead.
+    quotaAlert: {
+      input: (drawn) => {
+        const day = Math.floor(systemClock.now().getTime() / 86_400_000) * 86_400_000;
+        return {
+          ...drawn,
+          periodStart: new Date(day).toISOString(),
+          resetsAt: new Date(day + 86_400_000).toISOString(),
+        };
+      },
+    },
+
     answerPrompt: { off: 'answers a prompt a live run is waiting on; only runs.sync writes one' },
     cancelRun: { off: 'cancels the queued job behind a run; the seed writes the run row alone' },
     confirmAgentPublish: {
@@ -199,6 +214,16 @@ export const exercise = defineExercise(
     },
     grantPostsImport: {
       input: (drawn) => ({ ...drawn, filename: 'p.csv', contentType: 'text/csv', size: 1024 }),
+    },
+    // What the grant's URL would have received: a real PNG under the ACTING member's org's
+    // `pending/`, the one place `promoteAttachment` takes an upload from.
+    attachAvatar: {
+      input: async (drawn) => {
+        const orgId = memberOf(useContext().actor)?.orgId ?? 'no-member';
+        const key = pendingKey(orgId, `${crypto.randomUUID()}.png`);
+        await disk().put(key, encodeImage(blankRaster(8, 8)), { contentType: 'image/png' });
+        return { ...drawn, key };
+      },
     },
     // A key the job checks is inside the org it runs for, holding a real image to decode.
     warmAvatar: {

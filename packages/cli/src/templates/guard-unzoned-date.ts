@@ -40,6 +40,9 @@ const FORMATTER =
  */
 const ZONED = /\\btimeZone\\s*[:,}]|(['"])timeZone\\1\\s*:/;
 
+/** What follows a formatter's \`)\` when it only reports its options — the host zone among them. */
+const RESOLVED = /^\\s*\\.\\s*resolvedOptions\\s*\\(/;
+
 /**
  * The zoned call that replaces a formatter with no zone option. A \`Map\`, not an object: an
  * object literal's prototype answers \`toLocaleString\`, and the bare call would read as one.
@@ -93,7 +96,11 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
     const text = blank(file.source);
     for (const match of text.matchAll(FORMATTER)) {
       const open = match.index + match[0].length - 1;
-      if (ZONED.test(argumentsOf(text, open))) continue;
+      const args = argumentsOf(text, open);
+      if (ZONED.test(args)) continue;
+      // \`Intl.DateTimeFormat().resolvedOptions()\` READS the host's zone and formats nothing: it is
+      // how a browser learns which zone to pass. Only a formatter that goes on to format is a date.
+      if (RESOLVED.test(text.slice(open + args.length + 2))) continue;
       const line = lineOf(text, match.index);
       // The bare \`.toLocaleString(\` is ALSO \`Number.prototype.toLocaleString\`, and a regex cannot
       // tell a count from a date. The match stands — a date formatted this way is the defect this
@@ -191,6 +198,12 @@ unitTest('toDateString and toTimeString name the zoned call', () => {
   const time = unzonedDates(file('const shown = at.toTimeString();'));
   expect(time).toHaveLength(1);
   expect(time[0]?.fix).toContain('toLocaleTimeString(locale');
+});
+
+unitTest('reading the host zone through resolvedOptions() formats no date', () => {
+  const read = 'const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;';
+  expect(unzonedDates(file(read))).toEqual([]);
+  expect(unzonedDates(file("Intl.DateTimeFormat('en').formatToParts(at);"))).toHaveLength(1);
 });
 
 unitTest('a commented-out call is a note, not a call', () => {

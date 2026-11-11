@@ -55,3 +55,16 @@ test('a partial write leaves the fields it does not name alone', async ({ seed, 
   expect(saved.tz).toBe(member.tz);
   expect(saved.locale).toBe(member.locale);
 });
+
+test('a phone is kept in E.164 and refused in any other spelling', async ({ seed, actorFor }) => {
+  const { member } = await seed('dev').pick({ member: 'member:bruno' });
+  const prefs = { locale: member.locale, tz: member.tz, theme: member.theme };
+
+  const saved = await savePreferences.as(actorFor(member), { ...prefs, phone: '+34600123456' });
+  expect(saved.phone).toBe('+34600123456');
+  // A local spelling would be refused by every SMS transport on the first text: refused here.
+  await expect(
+    savePreferences.as(actorFor(member), { ...prefs, phone: '0600 123 456' }),
+  ).rejects.toBeUltimateError('X_NOTIFY_SMS_NUMBER_INVALID');
+  expect((await savePreferences.as(actorFor(member), { ...prefs, phone: null })).phone).toBeNull();
+});

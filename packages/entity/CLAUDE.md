@@ -101,7 +101,7 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
 - **Invariants run twice and only ONE side is rendered here**: app-side `assertInvariants`, and the
   CHECK/UNIQUE DDL is `@ultimat3/db`'s `invariant-ddl.ts` reading `$describe()`. An untranslatable predicate is `kind: 'assert'`, `sql: null`.
   **`InvariantDescription.columns` is projected** (`describe-invariant.test.ts`).
-- **The two halves must AGREE, term by term** (`expr.ts`, `pg-invariant-null.live.test.ts`); one app-only operand makes the whole rule app-only. Full rule: `docs/history/entity.md`.
+- **The two halves must AGREE, term by term** (`expr.ts`, `pg-invariant-null.live.test.ts`); one app-only operand makes the whole rule app-only. **NULL is judged in three values in both** (`expr-verdict.ts`): an operand NULL is unknown, a rule holds unless false, `isNull`/`isNotNull` total (`invariant-null.test.ts`, 31.3). Full rule: `docs/history/entity.md`.
 - **A `matches()` pattern reaches the CHECK as the same string or is refused**
   (`pattern-portability.ts`, every entry measured; `pg-invariant-pattern.live.test.ts` asserts kept
   constructs agree and refused ones disagree).
@@ -186,7 +186,8 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
 | Declaration | Here | The rule |
 |---|---|---|
 | `retain: { after, on }` | `retain.ts` | no default window; `on` a `timestamp()` some index STARTS with (`X_ENTITY_RETAIN_UNINDEXED`); refused beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). The sweep is `@ultimat3/jobs`' `retainTarget` |
-| `history: true` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null`. `bigint`/`decimal`/`timestamp` columns ride `text`/`instants`: the image is the memory driver's strings (`history-values.test.ts`) |
+| `history: true` · `{ ignore }` | `history.ts`, `history-actor.ts` | `<table>_history` is a REAL registered entity (`$historyOf`), tenant column copied without its key. `ignore` (typed column names, refused otherwise) joins the counters in `$describe().history.ignore` — the trigger's, memory's (`historyIgnored`) and `history-order`'s one list. Written by `@ultimat3/db`'s trigger; `stampHistoryActor` sets `x.actor`/`x.request` once per transaction, never on a pinned repository — no transaction records `null`. `bigint`/`decimal`/`timestamp` columns ride `text`/`instants`: the image is the memory driver's strings (`history-values.test.ts`) |
+| `history(table, id)` | `history-read.ts`, `history-order.ts` | the history table's ordinary read (tenant scope, `inBatches`), then ONE ordering: the before→after walk (Hierholzer) across EVERY version — `at` is a transaction's start, so it only breaks ties — counted columns left out; no single walk: by `at`, the walk inside each instant. `{ limit }`: newest-first window, ties at its edge kept, numbered via `count`. `version` is a position, never stored — no schema change. `history-read.test.ts` (memory + PGlite), `.live.` |
 | `countedIn` on a key | `counter.ts` | the target is a NOT NULL `integer()` of the entity the key points at (Postgres' `NULL + 1` stays NULL), by its single primary key (`X_ENTITY_COUNTS_INVALID`); resolved at describe time, memoised on `registryGeneration()` |
 | all three, described | `lifecycle.ts` | each `$describe()` key ABSENT unless declared, so no other entity's hash moves |
 | the memory driver | `memory-lifecycle.ts` | mirrors both triggers through the table's raw store |

@@ -29,6 +29,12 @@ export interface SeedGraphOptions {
    * from a position (`code: \`c${index}\``) never repeats one of its rows on a unique column.
    */
   readonly beside?: SeedGraph;
+  /**
+   * The instant the database's partitions were made around — the migration's apply time. A
+   * `partitionBy` column's values land in the bucket holding it, which the migration always makes.
+   * Default `systemClock.now()`: in a test under a frozen clock, pass the database's `now()`.
+   */
+  readonly now?: Date | undefined;
 }
 
 export interface SeedRow {

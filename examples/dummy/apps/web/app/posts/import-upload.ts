@@ -3,9 +3,11 @@
  * org's whole history is the one file in Postly big enough that a phone on a train must resume it
  * from the last part, not from byte 0, and past 5 GiB a single PUT is refused by S3 outright.
  *
- * The key is `@ultimat3/storage`'s construction under the ACTOR's org (`grantMultipart`'s target),
- * `org/<orgId>/imports/posts/<importId>/<opaque>.csv` — the prefix `posts.import` holds its `key`
- * to — so the import job reads exactly what this session assembled and nothing another org owns.
+ * Two keys, both `@ultimat3/storage`'s construction under the ACTOR's org. The session's is
+ * `org/<orgId>/pending/<importId>.csv`: no target, because the app's `uploadScanner` refuses one
+ * (`X_STORAGE_TARGET_UNSCANNED`). `completePostsImport` then promotes the assembled file — scanned —
+ * to `org/<orgId>/imports/posts/<importId>/<importId>.csv`, the prefix `posts.import` holds its
+ * `key` to, so the import job reads exactly what was scanned and nothing another org owns.
  */
 
 import { t } from '@ultimat3/action';
@@ -33,17 +35,26 @@ export const ImportSession = t.object({
   uploadId: t.string.min(1).max(1024),
 });
 
-const IMPORT_KEY = /^org\/([0-9a-f-]{36})\/imports\/posts\/([0-9a-f-]{36})\/[^/]+$/;
+/** A session's key: the import id IS the upload's opaque name (`grantPostsImport`'s `uploadId`). */
+const SESSION_KEY = /^org\/([0-9a-f-]{36})\/pending\/([0-9a-f-]{36})\.csv$/;
 
-/** Any org's posts-import file or session: what `purgeImports` may sweep, and nothing beside it. */
-export const isPostsImportKey = (key: string): boolean => /^org\/[^/]+\/imports\/posts\//.test(key);
+/** A posts import still in flight: an open session, or an assembled file the scanner holds. */
+export const isPostsImportUpload = (key: string): boolean =>
+  /^org\/[^/]+\/pending\/[0-9a-f-]{36}\.csv$/.test(key);
+
+/**
+ * Any org's posts-import file, session or held upload: what `purgeImports` may sweep, and nothing
+ * beside it — an avatar waiting under `pending/` is an image, never a `.csv`.
+ */
+export const isPostsImportKey = (key: string): boolean =>
+  /^org\/[^/]+\/imports\/posts\//.test(key) || isPostsImportUpload(key);
 
 /**
  * The import id a session's key was minted with. A key of another shape never reaches the queue:
  * `grantPostsImport` is the only thing that mints one, so another shape is a forged call.
  */
 export function importIdOf(orgId: string, key: string): string {
-  const match = IMPORT_KEY.exec(key);
+  const match = SESSION_KEY.exec(key);
   const importId = match?.[2];
   assert(
     match?.[1] === orgId && importId !== undefined,

@@ -57,13 +57,7 @@ export const NODE_PINS_FILE = 'scripts/lib/node-import-pins.ts';
 export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
   admin: 1,
   ai: 9,
-  // 77 → 79: cmd-doctor.ts imports `node:fs`'s existsSync and `node:path`'s dirname, join, resolve
-  // and sep; island-bundle.ts' `node:path` line widens by `basename`. Main has since drained and
-  // explained these exact lines — this branch was cut before that landed, so the tree holds the
-  // sites its base measured, not new debt.
-  // why: Bun ships no exists probe and no path API, the sentence this file's header records; the
-  // imports are the same debt the row already counts, in files main has since swept.
-  cli: 79,
+  cli: 77,
   core: 14,
   db: 8,
   entity: 1,

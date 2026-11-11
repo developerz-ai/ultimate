@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe } from 'bun:test';
 import type { PostgresClient } from '@ultimat3/db';
 import { postgresClient, setDbClient } from '@ultimat3/db';
-import { sqlSubject } from './entity-conformance-sql-fixture';
+import { pgLockWaiters, sqlSubject } from './entity-conformance-sql-fixture';
 import { entityDriverConformance } from './entity-driver-conformance';
 import { behavesLike } from './shared-examples';
 import type { WorkerDatabase } from './template-db';
@@ -33,5 +33,9 @@ describe.skipIf(adminUrl === '')(testName('live', 'the postgres entity driver'),
     if (failures.length > 0) throw failures[0];
   });
 
-  behavesLike(entityDriverConformance, () => sqlSubject(() => client as PostgresClient));
+  behavesLike(entityDriverConformance, () =>
+    sqlSubject(() => client as PostgresClient, {
+      lockWaiters: pgLockWaiters(() => client as PostgresClient),
+    }),
+  );
 });

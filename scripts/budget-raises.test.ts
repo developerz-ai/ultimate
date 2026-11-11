@@ -159,7 +159,8 @@ describe('the base the rule compares against', () => {
     expect(result.summary).toContain('NO budget was compared');
     expect(result.findings?.map((one) => one.code)).toEqual(['X_BUDGET_BASE_MISSING']);
     expect(result.findings?.[0]?.fix).toBe(FETCH_MAIN);
-    expect(FETCH_MAIN).toContain('--depth=1');
+    // Handed to a person, so never `--depth`: that would make a full clone shallow.
+    expect(FETCH_MAIN).not.toContain('--depth');
     expect(BASE_REF).toBe('origin/main');
   });
 
@@ -172,13 +173,14 @@ describe('the base the rule compares against', () => {
   test('a checkout without origin/main fetches it, then compares against it', async () => {
     const calls: string[] = [];
     expect(await baseRef('/nowhere', fakeGit(true, calls))).toBe(BASE_REF);
-    expect(calls).toEqual(['git rev-parse', 'git fetch', 'git rev-parse']);
+    // The second rev-parse asks whether the clone is shallow, which picks the fetch's depth.
+    expect(calls).toEqual(['git rev-parse', 'git rev-parse', 'git fetch', 'git rev-parse']);
   });
 
   test('a fetch that fails leaves no base, which budgetResult refuses', async () => {
     const calls: string[] = [];
     expect(await baseRef('/nowhere', fakeGit(false, calls))).toBeUndefined();
-    expect(calls).toEqual(['git rev-parse', 'git fetch', 'git rev-parse']);
+    expect(calls).toEqual(['git rev-parse', 'git rev-parse', 'git fetch', 'git rev-parse']);
   });
 
   test('a raise is reported against the ref it was compared with', () => {

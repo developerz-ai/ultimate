@@ -7,35 +7,6 @@ import { accountLocked, authWriteFailed } from './errors';
 import type { AuthLimiter, AuthRateLimitPolicy, AuthReservation } from './rate-limit';
 
 /**
- * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, so
- * `x dev`, the container's `web` role and `ROLE=migrate` all install it.
- *
- * ONE row per key, holding every attempt still inside the window. The window this package enforces
- * is a SLIDING one, so the instants are kept (a counter plus a window end is a fixed window, which
- * admits `maxAttempts` at the end of one and `maxAttempts` again at the start of the next). They
- * are kept IN the row because the row is what a concurrent take waits on: a count over a second
- * table reads its statement's snapshot, and that snapshot predates the wait.
- *
- * The two `add column` lines are the upgrade of a table made before the reservation, on the rule
- * `x_users` follows: additive, defaulted, idempotent, applied at every boot. The name and the
- * first two columns are unchanged on purpose — a replica still running the previous release reads
- * and writes this table as it always did, so a lockout holds on both sides of a rolling deploy.
- */
-export const SQL_AUTH_LIMIT_TABLES = `
-create table if not exists x_auth_lockouts (
-  key             text     primary key,
-  locked_until_ms bigint   not null,
-  attempts_ms     bigint[] not null default '{}',
-  admitted        boolean  not null default true
-);
-
-alter table x_auth_lockouts add column if not exists attempts_ms bigint[] not null default '{}';
-alter table x_auth_lockouts add column if not exists admitted boolean not null default true;
-
-create index if not exists x_auth_lockouts_until_idx on x_auth_lockouts (locked_until_ms);
-`;
-
-/**
  * The attempts still inside the window, read off the row as it is AFTER its lock is taken. It is
  * repeated in the statement below rather than computed once in a CTE, and the repetition is
  * required: only a direct `x_auth_lockouts.<column>` reference inside `on conflict do update` sees

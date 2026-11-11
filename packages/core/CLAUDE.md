@@ -20,7 +20,7 @@ change to every package. A row or rule marked `†` has its full text in
 | Time | take a `Clock` (a `SleepClock` to wait); `Date.now()` / `new Date()` only in `clock.ts`; a waiting timer only in `sleep-clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
-| Exports | explicit in `src/index.ts`; no `export *`. Six public subpaths (`./adapter`, `./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one internal (`./internal/error-status`); nothing that constructs an error joins `./page` (`page-bundle.test.ts`) † |
+| Exports | explicit in `src/index.ts`; no `export *`. Six public subpaths (`./adapter`, `./page`, `./outbound`, `./redis`, `./render-node`, `./render-nodes`), one internal (`./internal/error-status`); nothing that loads a titles table joins `./page` (`page-bundle.test.ts`); an app imports `defineError` there (`define-error-bytes.test.ts`) † |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests |
 

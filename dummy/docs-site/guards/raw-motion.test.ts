@@ -46,6 +46,13 @@ unitTest('one declaration is one finding, with every literal in it rewritten', (
   );
 });
 
+unitTest('a custom property holding a raw curve or time is refused, the fix interpolated', () => {
+  expect(fixes(':root { --ease: cubic-bezier(0, 0, 1, 1); }')[0]).toStartWith(
+    '--ease: #{tokens.easing(out)} — ',
+  );
+  expect(fixes(':root { --wait: 0.4s; --gap: 12px; --ok: var(--duration-fast); }')).toHaveLength(1);
+});
+
 unitTest('the fix speaks the namespace the sheet uses the tokens under', () => {
   const scss = "@use '../shared/tokens' as t;\n.a { transition-duration: 120ms; }";
   expect(fixes(scss)[0]).toStartWith('transition-duration: t.duration(fast) — ');

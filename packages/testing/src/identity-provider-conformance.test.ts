@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type IdentityProvider, oidcIdentityProvider, samlIdentityProvider } from '@ultimat3/auth';
+import { encodeResponse, readAuthnRequest, samlTestIdp } from '@ultimat3/auth/saml-test-idp';
 import { frozenClock } from '@ultimat3/core';
-import { encodeResponse, readAuthnRequest, samlTestIdp } from '../../auth/src/saml-idp-fixture';
 import {
   IDENTITY_PROVIDER_CHECKS,
   type IdentityProviderHarness,

@@ -3,6 +3,7 @@
 // so the docs told an agent the installable version did not have what it had. One rule, read off
 // the changelog's own dated headings, so it goes stale exactly when the release happens.
 
+import type { Changelog } from './changelog-sections';
 import { toPosix } from './posix-path';
 import { UNRELEASED_CLAIM_PINS, UNRELEASED_PINS_FILE } from './unreleased-claim-pins';
 
@@ -16,15 +17,14 @@ export const CLAIM_SURFACES = [
   'examples/*/*.md',
   'dummy/*/*.md',
 ] as const;
-const NOT_CURRENT = /^(?:docs\/plans\/|CHANGELOG\.md$)/;
+const NOT_CURRENT = /^(?:docs\/plans\/|docs\/changelog\/|CHANGELOG\.md$)/;
 
 /** Every version whose `## X.Y.Z - YYYY-MM-DD` heading carries a date: it has shipped. */
-export function datedVersions(changelog: string): ReadonlySet<string> {
+export function datedVersions(changelog: Changelog): ReadonlySet<string> {
   const dated = new Set<string>();
-  for (const match of changelog.matchAll(
-    /^## \[?(\d+\.\d+\.\d+)\]?\s*[-—]\s*\d{4}-\d{2}-\d{2}/gm,
-  )) {
-    if (match[1] !== undefined) dated.add(match[1]);
+  for (const section of changelog) {
+    const match = /^\[?(\d+\.\d+\.\d+)\]?\s*[-—]\s*\d{4}-\d{2}-\d{2}/.exec(section.heading);
+    if (match?.[1] !== undefined) dated.add(match[1]);
   }
   return dated;
 }
@@ -95,7 +95,7 @@ export function claimGaps(
     if (found.length > pinned && first !== undefined) {
       gaps.push({
         code: 'X_DOC_UNRELEASED_STALE',
-        cause: `${first.path}:${first.line} calls ${first.version} unreleased, and CHANGELOG.md dates ${first.version} — ${found.length} such line(s) there, pinned at ${pinned}`,
+        cause: `${first.path}:${first.line} calls ${first.version} unreleased, and docs/changelog/ dates ${first.version} — ${found.length} such line(s) there, pinned at ${pinned}`,
         fix: `edit ${first.path}:${first.line} — drop "unreleased" (or name the version that is), then rerun: bun run changelog-check`,
         at: `${first.path}:${first.line}`,
       });
@@ -112,7 +112,7 @@ export function claimGaps(
 }
 
 /** The claims on every current page of the tree. */
-export async function treeClaims(root: string, changelog: string): Promise<UnreleasedClaim[]> {
+export async function treeClaims(root: string, changelog: Changelog): Promise<UnreleasedClaim[]> {
   const dated = datedVersions(changelog);
   const paths = new Set<string>();
   for (const pattern of CLAIM_SURFACES) {

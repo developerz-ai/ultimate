@@ -9,7 +9,7 @@
 // no anchor. The `https://ultimate.dev/errors/<code>` links these classes built until 2026-08-23
 // answered 404, host included, on every error this app has ever thrown.
 
-import { defineError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
 
 /** 422: every invariant here is a value a caller handed in that the domain cannot hold. */
 export const InvariantViolation = defineError<{

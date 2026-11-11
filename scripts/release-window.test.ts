@@ -1,25 +1,32 @@
 // The major window as `scripts/release.ts` applies it (wiki/Stability.md): a bump refused or let
-// through by the dated CHANGELOG.md headings, and a major line that opens only at X.0.0. Split
+// through by the dated changelog headings, and a major line that opens only at X.0.0. Split
 // from `release.test.ts` at the size ceiling.
 
 import { describe, expect, test } from 'bun:test';
+import { parseChangelog } from './lib/changelog-sections';
 import { bumpWindowFindings, readReleaseVersion } from './release';
 
 // wiki/Stability.md: from v31, one major per 90 days (the 2026-11-09 ruling moved it from v30). The dates are the CHANGELOG.md headings the
 // bump writes, so every case is a fixture, never the clock.
 describe('unit · a major waits for its window', () => {
-  const log = (...headings: readonly string[]): string =>
-    [
-      '# Changelog',
-      '',
-      '## [Unreleased]',
-      '',
-      '- next',
-      '',
-      ...headings.map((h) => `## ${h}\n\n- x\n`),
-    ].join('\n');
-  const codes = (version: string, changelog: string, today: string, security?: string) =>
-    bumpWindowFindings({ version, changelog, today, security }).map((finding) => finding.code);
+  const log = (...headings: readonly string[]) =>
+    parseChangelog(
+      [
+        '# Changelog',
+        '',
+        '## [Unreleased]',
+        '',
+        '- next',
+        '',
+        ...headings.map((h) => `## ${h}\n\n- x\n`),
+      ].join('\n'),
+    );
+  const codes = (
+    version: string,
+    changelog: ReturnType<typeof log>,
+    today: string,
+    security?: string,
+  ) => bumpWindowFindings({ version, changelog, today, security }).map((finding) => finding.code);
 
   test('v31 passes inside 90 days of v30: the clock starts there', () => {
     expect(

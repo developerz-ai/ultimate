@@ -117,6 +117,7 @@ describe('the realtime install the island bundle writes', () => {
       code: '',
       bytes: 0,
       sources: [],
+      inputs: [],
     };
     islandRealtimePlugin(ROOT, runtime).setup(build as never);
     const install = loads[0]?.({ path: 'install' }).contents ?? '';
@@ -144,6 +145,7 @@ describe('the first-paint wait, only where there is state to restore', () => {
       code: '',
       bytes: 0,
       sources: [],
+      inputs: [],
     };
     islandRealtimePlugin(ROOT, runtime, follows).setup(build as never);
     return (path) => loads[0]?.({ path }).contents ?? '';

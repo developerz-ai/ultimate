@@ -87,7 +87,16 @@ export const seedAppThrough = async (
 ): Promise<readonly SeededCount[]> => {
   await migrate({ migrations: await migrationsOf(root), client, lock: false });
   const entities = await entitiesOf(root);
-  const graph = seedGraph(entities, { tenants: 2, perTable: 3, seed: 11 });
+  // The database's clock, not the test's frozen one: the migration made its partitions around it.
+  const clock = await client.one<{ ms: string }>(
+    raw('select (extract(epoch from now()) * 1000)::bigint::text as ms'),
+  );
+  const graph = seedGraph(entities, {
+    tenants: 2,
+    perTable: 3,
+    seed: 11,
+    ...(clock == null ? {} : { now: new Date(Number(clock.ms)) }),
+  });
   await insertSeedGraph(graph, entitySeedWriter({ entities, client }));
   const counts: SeededCount[] = [];
   // A view or a history table holds no seeded row of its own (`seedGraph` skips both).

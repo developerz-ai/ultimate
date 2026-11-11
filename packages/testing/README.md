@@ -30,7 +30,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `sealed-sockets.ts` | the `WebSocket` and `Bun.connect` patches, behind `sealed-network.ts`'s one gate |
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
 | `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, each value read off its column's declaration (default, enum, kind, money, nullability) through `$parse`, never off its name |
-| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories, beside })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. Pure, same seed same bytes |
+| `seed-graph.ts` | `seedGraph(entities, { tenants, perTable, seed, factories, beside, now })` — rows for every table with no factory written: parents first, same-tenant keys, every declared rule kept. A `partitionBy` column lands in the UTC bucket holding `now` (default `systemClock.now()`; under a frozen test clock pass the database's `now()`) — the partition the migration always makes (`seed-graph-partition.ts`). Pure, same seed and `now`, same bytes |
 | `repro.ts` | `reproduce(bundle, { driver })` and `reproJob(runJobs, failure)` — what a test `x repro --write` generated calls: captured reads seeded, clock frozen at the failure, the same actor and input (masked fields stood in from the schema); a dead job's completed steps replayed from storage |
 | `seed-graph-plan.ts` | the plan's types and `insertSeedGraph(graph, writer)` — every insert, then every deferred key, sequentially |
 | `seed-graph-values.ts` | one column's candidate values, off its declaration, kept only where `$parse` accepts them — `factoriesFor`'s source too |
@@ -518,7 +518,7 @@ is meant to FAIL it. The subject is called once per test.
 | `AuthServerStore` (auth) | `behavesLike(authServerStoreConformance, () => store)` |
 | `BudgetStore` (ai) | `behavesLike(budgetStoreConformance, () => store)` |
 | `CacheTier` (cache) | `behavesLike(cacheTierConformance, () => tier)` — each check runs inside a request |
-| entity `Driver` (entity) | `behavesLike(entityDriverConformance, () => ({ open: (entities) => driver, capabilities, foreignKeys }))` — `open` hands a driver over EMPTY tables for `entities`; an undeclared capability is asserted REFUSED |
+| entity `Driver` (entity) | `behavesLike(entityDriverConformance, () => ({ open: (entities) => driver, capabilities, foreignKeys }))` — `open` hands a driver over EMPTY tables for `entities`; an undeclared capability is asserted REFUSED. `history: true` when the store records `entity({ history: true })` (memory, Postgres): the history check runs `history(table, id)` against it; absent, as for a `defineDriver` store with no lifecycle hook, that check is skipped |
 | `ErrorGroupsStore` (admin) | `behavesLike(errorGroupsStoreConformance, () => store)` |
 | `ErrorReporter` (core) | `behavesLike(errorReporterConformance, () => ({ reporter, delivered }))` — `delivered()` is the text each report left as; only a `localErrorSink`-marked reporter may carry a secret |
 | `EventBus` (jobs) | `behavesLike(eventBusConformance, () => ({ bus, elapse }))` |
@@ -806,6 +806,57 @@ unitTest('the provider registers from its own discovery document', async () => {
 Each tamper is refused by `@ultimat3/auth`'s real `verifyIdToken` with the code a real provider's
 broken token gets (`packages/testing/src/fake-identity-provider.test.ts`). An unknown `sub` and an
 empty `users` are `X_INVARIANT`.
+
+### SAML
+
+`As of 31.3`. `fakeSamlIdentityProvider({ audience, users, clock? })` is the SAML twin: metadata
+for `samlIdentityProvider`, and a signed answer to the AuthnRequest an SP's redirect carries — no
+socket, no browser. `audience` is the SP's `spEntityId`; a user is `{ nameId, email?, name? }`.
+
+```ts
+import { memoryTotpReplayGuard, parseSamlMetadata, samlIdentityProvider } from '@ultimat3/auth';
+import { frozenClock } from '@ultimat3/core';
+import { expect, fakeSamlIdentityProvider, unitTest } from '@ultimat3/testing';
+
+unitTest('a SAML sign-in completes as the IdP user', async () => {
+  const clock = frozenClock('2026-11-10T09:00:00.000Z');
+  const spEntityId = 'https://app.example.test/saml/metadata';
+  const callbackUrl = 'https://app.example.test/auth/sso/corp/callback';
+  const idp = await fakeSamlIdentityProvider({
+    audience: spEntityId,
+    clock,
+    users: [{ nameId: 'u-ada', email: 'ada@corp.example' }],
+  });
+  const provider = samlIdentityProvider({
+    id: 'corp',
+    idp: parseSamlMetadata(idp.metadataXml),
+    spEntityId,
+    trustEmail: true,
+    emailDomains: ['corp.example'],
+  });
+  const redirect = await provider.begin({ callbackUrl, clock });
+  const identity = await provider.complete({
+    state: redirect.state,
+    params: await idp.answer(redirect.location), // { SAMLResponse, RelayState }
+    callbackUrl,
+    clock,
+    replay: memoryTotpReplayGuard(),
+  });
+  expect(identity.profile.providerAccountId).toBe('u-ada');
+});
+```
+
+| Member | Does |
+|---|---|
+| `entityId` · `metadataXml` | the IdP's identity; `parseSamlMetadata(metadataXml)` is the provider's `idp` |
+| `signInAs(nameId)` | who the next answer signs in as; the first user until called |
+| `tamper({ wrongAudience?, expired?, unsigned?, wrongKey? })` | every answer after it is broken that way; `tamper({})` restores honesty |
+| `readAuthnRequest(location)` | the inflated AuthnRequest: `id`, `relayState`, `acsUrl`, `xml` |
+| `answer(location)` | the ACS form body for that request: `{ SAMLResponse, RelayState }` |
+
+The signer is `@ultimat3/auth/saml-test-idp`'s, the one auth's own SAML suites sign with —
+loaded on first call, so this barrel stays auth-free. Each tamper is refused by the real verifier
+with an `X_SAML_*` code (`fake-saml-identity-provider.test.ts`).
 
 ## Testing a passkey ceremony
 

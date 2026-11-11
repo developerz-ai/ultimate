@@ -6,7 +6,12 @@ import { describe, expect, test } from 'bun:test';
 import { readCookie } from '@ultimat3/core';
 import { DEFAULT_TZ_CONFIG } from '@ultimat3/http';
 import { renderHead } from './head';
-import { ZONE_SCRIPT_MAX_BYTES, zoneScript, zoneScriptBody } from './zone-script';
+import {
+  DETECTED_ZONE_COOKIE,
+  ZONE_SCRIPT_MAX_BYTES,
+  zoneScript,
+  zoneScriptBody,
+} from './zone-script';
 
 /** Runs the body with `document.cookie` captured and the zone `Intl` answers stubbed. */
 function written(zone: string): string {
@@ -22,6 +27,13 @@ function written(zone: string): string {
 }
 
 describe('zoneScript', () => {
+  test('exports the exact detected cookie definition its generated body writes', () => {
+    const cookie = written('Pacific/Auckland');
+    const [pair = ''] = cookie.split(';');
+    expect(DETECTED_ZONE_COOKIE).toBe(DEFAULT_TZ_CONFIG.detectedCookie);
+    expect(readCookie(pair, DETECTED_ZONE_COOKIE)).toBe('Pacific/Auckland');
+  });
+
   test("writes the browser's zone to the cookie the request pipeline reads as `detected`", () => {
     const cookie = written('America/Argentina/Buenos_Aires');
     const [pair = ''] = cookie.split(';');

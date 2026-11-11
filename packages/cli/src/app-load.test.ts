@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import type { LocaleConfig } from '@ultimat3/i18n';
 import { configureLocales, localeConfig } from '@ultimat3/i18n';
 import { UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
-import { appModulePaths, loadApp, sortModulePaths, workspaceOf } from './app-load';
+import { appModulePaths, isScannedModule, loadApp, sortModulePaths, workspaceOf } from './app-load';
 import { toPosix } from './posix-path';
 
 let root = '';
@@ -76,6 +76,23 @@ describe('unit · loadApp', () => {
     // It is a FINDING (the specifier cannot resolve from /tmp) rather than silence, which is the
     // whole point: the file was seen. Skipped, it produced neither a finding nor a registration.
     expect(app.findings.map((finding) => finding.at)).toEqual(['packages/i18n/src/index.ts']);
+  });
+
+  // A SEGMENT this time, not a substring: an app checked out at `<anything>/node_modules/<app>`
+  // (a bench fixture under `node_modules/.cache/`) registered nothing, because the segment test
+  // read the ABSOLUTE path. Only the app's own `node_modules` is the dependencies'.
+  test('a root UNDER a node_modules directory still loads the app; its own node_modules does not', async () => {
+    const dir = join(tempRoot('x-app-load-under-'), 'node_modules', '.cache', 'app');
+    await Bun.write(
+      join(dir, 'packages/i18n/src/index.ts'),
+      "import { defineCatalogs } from '@ultimat3/i18n';\nexport const catalogs = defineCatalogs({});\n",
+    );
+
+    const app = await loadApp(dir);
+
+    expect(app.findings.map((finding) => finding.at)).toEqual(['packages/i18n/src/index.ts']);
+    expect(isScannedModule(dir, join(dir, 'apps/web/app/posts/page.tsx'))).toBe(true);
+    expect(isScannedModule(dir, join(dir, 'apps/web/node_modules/solid-js/index.ts'))).toBe(false);
   });
 
   test('a module that will not import is a finding at its app-root-relative path', async () => {

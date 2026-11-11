@@ -240,12 +240,18 @@ describe('the browser path to the page seam', () => {
   // `deniedCallerFix`, `hasErrorCode`, `renderCauseValue`); +6,859 B, `clientFlight`, so an island
   // that opts into flight control stops pulling the barrel (`rpc` + it: 38,416 → 32,929 B). An
   // island pays only what it imports; this is the whole entry. The next whole kilobyte above it.
-  test('the whole entry reaches no titles table and stays under 32 kB (32,269 B as of 2026-11-09)', async () => {
+  //
+  // measured: 35,150 B (2026-11-11, Bun 1.4.4), 32,707 without this change. why: +2,443 B,
+  // `defineError` joins the entry (`define-error.ts`, `error-status-declared.ts`): an app's error
+  // module is shared by its actions and its islands, and through the barrel each island that threw
+  // one app code carried both titles tables — an adopter measured +11 kB on three routes. The next
+  // whole kilobyte above the measurement.
+  test('the whole entry reaches no titles table and stays under 35 kB (35,150 B as of 2026-11-11)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(32_768);
+    expect(bytes).toBeLessThan(35_840);
   }, 60_000);
 
   // The barrel PARSES every module it names before shaking; a static `node:zlib` import in

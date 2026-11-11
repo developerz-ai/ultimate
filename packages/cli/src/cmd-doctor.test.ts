@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
-import { doctorCommand, doctorPort, ENV_DEVELOPMENT, runDoctor } from './cmd-doctor';
+import { doctorCommand, ENV_DEVELOPMENT, runDoctor } from './cmd-doctor';
 import { codes, probe } from './cmd-doctor-fixture';
+import { doctorPort } from './doctor-port';
 import { PORT_RANGE, parseIntFlag } from './flag-number';
 import { frameworkSecretFindings } from './framework-env';
 import { ICON_SOURCE } from './icon-assets';

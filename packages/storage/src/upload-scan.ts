@@ -23,6 +23,8 @@ export interface ScanAttemptInput {
   readonly pendingKey: string;
   /** The attempt copy under `SCAN_SEGMENT`, already sniffed. */
   readonly attempt: StorageObject;
+  /** The confirmed upload's etag; `''` when its disk keeps none, and the bytes are hashed instead. */
+  readonly revision: string;
   readonly policy: UploadPolicy;
 }
 
@@ -37,6 +39,14 @@ async function removeAll(disk: StorageDriver, keys: readonly string[]): Promise<
     }
   }
   return removed;
+}
+
+/** `sha256:<hex>` of the attempt, streamed: the revision of an upload whose disk keeps no etag. */
+async function digestOf(disk: StorageDriver, attempt: StorageObject): Promise<string> {
+  const hasher = new Bun.CryptoHasher('sha256');
+  const body = await disk.stream(attempt.key);
+  for await (const chunk of body) hasher.update(chunk);
+  return `sha256:${hasher.digest('hex')}`;
 }
 
 /** True when a scanner is installed — `promoteAttachment` stages an attempt copy only then. */
@@ -57,10 +67,12 @@ export async function scanAttempt(input: ScanAttemptInput): Promise<void> {
   try {
     // Inside the `try`: an attempt that cannot be READ for the scanner (an S3 GET reset, an
     // etag-pinned read refused) is no verdict too, never a raw error past the cleanup.
+    const revision = input.revision === '' ? await digestOf(disk, attempt) : input.revision;
     body = await disk.stream(attempt.key, attempt.etag === '' ? undefined : { etag: attempt.etag });
     verdict = await scanner.scan({
       key: attempt.key,
       pendingKey: input.pendingKey,
+      revision,
       size: attempt.size,
       contentType: attempt.contentType,
       body,

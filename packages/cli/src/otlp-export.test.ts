@@ -1,7 +1,7 @@
 // `OTEL_EXPORTER_OTLP_ENDPOINT` is in the shipped Helm chart and nothing read it. The failure case
 // is the one that shipped: a deployment configures a collector and the collector receives nothing.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 import {
   drain,
   exportMetrics,
@@ -297,17 +297,39 @@ describe('the release ships what was queued before it', () => {
 
 describe('the drain flush is bounded by the drain deadline', () => {
   test('a black-holed collector costs the drain its share of the deadline, never more', async () => {
+    // Fake timers, not elapsed wall time: a loaded runner fires a real timer late, so a bound on
+    // `performance.now()` deltas measured the machine (it flaked at 132 ms under the full gate).
+    // What `flushWithin` DECIDES is the observable: the timer it arms is for the share of what is
+    // left (0.8 × 100 ms = 80 ms), never more, and the drain returns when it fires although the
+    // flushes never settle. 75/85 straddle 80 with room for the microseconds between the two
+    // monotonic reads; the full deadline (100) or no cap at all leaves the drain pending at 85.
     const hang = (): Promise<void> => new Promise<void>(() => undefined);
-    const releaseLogSink = installLogSink(() => undefined);
-    const started = performance.now();
+    const lines: string[] = [];
+    const releaseLogSink = installLogSink((line) => {
+      lines.push(line);
+    });
+    jest.useFakeTimers();
     try {
-      await flushWithin([hang, hang, hang], { deadlineAt: systemClock.monotonic() + 100 });
+      let returned = false;
+      const flushed = flushWithin([hang, hang, hang], {
+        deadlineAt: systemClock.monotonic() + 100,
+      }).then(() => {
+        returned = true;
+      });
+      expect(jest.getTimerCount()).toBe(1);
+      jest.advanceTimersByTime(75);
+      await settleMicrotasks();
+      expect(returned).toBe(false);
+      jest.advanceTimersByTime(10);
+      await settleMicrotasks();
+      expect(returned).toBe(true);
+      await flushed;
+      expect(jest.getTimerCount()).toBe(0);
+      expect(lines.join('\n')).toContain('otlp flush abandoned at the drain deadline');
     } finally {
+      jest.useRealTimers();
       releaseLogSink();
     }
-    const took = performance.now() - started;
-    expect(took).toBeLessThan(100);
-    expect(took).toBeGreaterThanOrEqual(60);
   });
 
   test('flushes run in parallel: all three are started before any of them settles', async () => {
@@ -326,3 +348,8 @@ describe('the drain flush is bounded by the drain deadline', () => {
     await flushed;
   });
 });
+
+/** Drain the microtask queue a few hops deep — no timer, so fake timers cannot swallow the turn. */
+async function settleMicrotasks(): Promise<void> {
+  for (let hop = 0; hop < 10; hop += 1) await Promise.resolve();
+}

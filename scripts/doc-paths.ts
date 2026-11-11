@@ -70,6 +70,7 @@ export const APP_ROOTS: readonly string[] = ['examples/dummy', 'dummy/social-med
 export const skipDocPage = (path: string): boolean =>
   path.startsWith('docs/plans/') ||
   path.startsWith('docs/history/') ||
+  path.startsWith('docs/changelog/') ||
   path === 'CHANGELOG.md' ||
   /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 

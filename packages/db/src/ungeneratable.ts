@@ -4,6 +4,8 @@
 // declaration-based drift check can see them, because a regenerated sidecar equals the declaration
 // by construction. The rail is the same shape `destructive.ts` is — statements in, statements out.
 
+import { PARTITION_FUNCTION } from './generate-partition';
+import { ROW_SECURITY_POLICY } from './row-security';
 import { stripSqlNoise } from './sql-noise';
 import { statementExcerpt } from './statement-excerpt';
 import { statementsOf } from './statement-split';
@@ -14,6 +16,12 @@ export interface GeneratableForm {
   readonly name: string;
   /** Anchored at the statement's start, against blanked and lowercased text. */
   readonly pattern: RegExp;
+  /**
+   * The name the statement's FIRST quoted identifier must be, read off the original text. Blanking
+   * erases every identifier, so a hand-written `select "backfill"('a', 'b', 'c', 2, null)` has the
+   * partition call's exact shape; only the generator's own name tells the two apart.
+   */
+  readonly identifier?: string;
 }
 
 /**
@@ -106,12 +114,54 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
     name: 'select set_config(…, true)',
     pattern: /^select\s+set_config\s*\(\s*''\s*,\s*''\s*,\s*true\s*\)$/,
   },
+  // `entity({ partitionBy })` (`generate-partition.ts`): the retired signature's drop, the
+  // maintenance function and the call that makes the first partitions. Absent until 31.3, so an app
+  // declaring `partitionBy` had its own generated migration reported by its own `drift` step.
+  {
+    name: 'drop function if exists … (retired partition signature)',
+    identifier: PARTITION_FUNCTION,
+    pattern:
+      /^drop\s+function\s+if\s+exists\s+""\s*\(\s*text\s*,\s*text\s*,\s*text\s*,\s*integer\s*,\s*bigint\s*,\s*timestamptz\s*\)$/,
+  },
+  {
+    name: 'create or replace function … returns jsonb',
+    identifier: PARTITION_FUNCTION,
+    pattern:
+      /^create\s+or\s+replace\s+function\s+""\s*\(\s*parent\s+text\s*,\s*kind\s+text\s*,[\s\S]*\)\s+returns\s+jsonb\s+language\s+plpgsql\s+as\s*$/,
+  },
+  {
+    name: 'select … partitions',
+    identifier: PARTITION_FUNCTION,
+    pattern: /^select\s+""\s*\(\s*''\s*,\s*''\s*,\s*''\s*,\s*\d+\s*,\s*null\s*\)$/,
+  },
+  // `database.rowSecurity` (`row-security-plan.ts`): both halves. Absent until 31.3 as well.
+  {
+    name: 'alter table … enable/disable/force/no force row level security',
+    pattern: /^alter\s+table\s+""\s+(?:enable|disable|force|no\s+force)\s+row\s+level\s+security$/,
+  },
+  {
+    name: 'create policy',
+    identifier: ROW_SECURITY_POLICY,
+    pattern: /^create\s+policy\s+""\s+on\s+""\s+using\s*\(/,
+  },
+  {
+    name: 'drop policy if exists',
+    identifier: ROW_SECURITY_POLICY,
+    pattern: /^drop\s+policy\s+if\s+exists\s+""\s+on\s+""$/,
+  },
   {
     name: 'update … recount',
     pattern:
       /^update\s+""\s+p\s+set\s+""\s*=\s*\(\s*select\s+count\s*\(\s*\*\s*\)::integer\s+from\s+""\s+c\s+where\s/,
   },
 ];
+
+/** The first `"…"` identifier after any leading comments, unescaped; `undefined` when none. */
+const firstIdentifier = (statement: string): string | undefined => {
+  const code = statement.replace(/^(?:\s*--[^\n]*(?:\n|$)|\s*\/\*[\s\S]*?\*\/)*/, '');
+  const found = /"((?:[^"]|"")*)"/.exec(code)?.[1];
+  return found?.replaceAll('""', '"');
+};
 
 /**
  * Every statement in `up` that a regenerated migration would not carry, in apply order, as the one
@@ -131,7 +181,10 @@ export function ungeneratableStatements(up: string): readonly string[] {
   const found: string[] = [];
   for (const statement of statementsOf(up)) {
     const bare = stripSqlNoise(statement).trim().toLowerCase();
-    if (GENERATABLE_FORMS.some((form) => form.pattern.test(bare))) continue;
+    const named = firstIdentifier(statement);
+    const generated = (form: GeneratableForm): boolean =>
+      form.pattern.test(bare) && (form.identifier === undefined || form.identifier === named);
+    if (GENERATABLE_FORMS.some(generated)) continue;
     found.push(statementExcerpt(statement));
   }
   return found;

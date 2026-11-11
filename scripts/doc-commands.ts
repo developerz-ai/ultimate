@@ -72,6 +72,7 @@ export const PINS_FILE = 'scripts/doc-commands.ts';
  */
 export const skipDocPath = (path: string): boolean =>
   path.startsWith('docs/plans/') ||
+  path.startsWith('docs/changelog/') ||
   path === 'CHANGELOG.md' ||
   path === 'wiki/Error-Codes.md' ||
   // An installed dependency's or a build's pages are not this repo's to keep runnable.
