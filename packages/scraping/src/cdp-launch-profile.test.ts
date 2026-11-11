@@ -165,13 +165,20 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
   });
 
   test('a TMPDIR too long for the singleton socket still starts the browser, on a short root', async () => {
-    const longRoot = join(
-      await mkdtemp(join(tmpdir(), 'x-profile-work-')),
-      'ultimate-upgrade-e2e-Zz9xQ1',
+    const scratch = await mkdtemp(join(tmpdir(), 'x-profile-work-'));
+    // A sandboxed fixture e2e hands its children a root this deep. CI's temp root is bare `/tmp`,
+    // where the suffix alone stays under the bound and a launch rightly does not clamp, so the leaf
+    // is padded until the WHOLE root crosses the bound on any machine — in bytes, as socketSafeEnv
+    // measures it.
+    const pad = Math.max(
+      0,
+      MAX_BROWSER_TMPDIR_CHARS - new TextEncoder().encode(scratch).byteLength + 1,
     );
+    const longRoot = join(scratch, `ultimate-upgrade-e2e-${'Z'.repeat(pad)}`);
+    expect(new TextEncoder().encode(longRoot).byteLength).toBeGreaterThan(MAX_BROWSER_TMPDIR_CHARS);
     await mkdir(longRoot, { recursive: true });
     const savedTmp = process.env['TMPDIR'];
-    process.env['TMPDIR'] = longRoot; // what a sandboxed fixture e2e hands its children: 83 chars
+    process.env['TMPDIR'] = longRoot;
     try {
       // Before the clamp this launch threw X_CDP_LAUNCH_FAILED with Chrome's
       // "Socket path too long" fatal, before any DevTools endpoint existed.
