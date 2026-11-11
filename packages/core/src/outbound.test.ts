@@ -115,12 +115,32 @@ describe('unit · outbound · the body', () => {
 describe('unit · outbound · lifetime', () => {
   test('no answer by deadlineMs is X_OUTBOUND_TIMEOUT, the deadline phase', async () => {
     const timer = manualTimer();
-    const pending = caught(outbound(call({ deadlineMs: 900 }), { fetch: hangingFetch, timer }));
+    // A held monotonic clock: on the platform one, a millisecond spent between the call and its
+    // attempt (a cold JIT, a loaded runner) armed 899, and `armedWith(900)` waited forever.
+    const now = (): number => 5_000;
+    const pending = caught(
+      outbound(call({ deadlineMs: 900 }), { fetch: hangingFetch, timer, now }),
+    );
     await timer.armedWith(900);
+    expect(timer.armed()).toEqual([900]);
     timer.fire(900);
     const error = await pending;
     expect(error.code).toBe('X_OUTBOUND_TIMEOUT');
     expect(error.meta?.['phase']).toBe('deadline');
+  });
+
+  test('time spent before the attempt comes off its deadline timer', async () => {
+    const timer = manualTimer();
+    // The call reads the clock once at its start; the attempt reads it 250 ms later.
+    const reads = [5_000, 5_250];
+    const now = (): number => reads.shift() ?? 5_250;
+    const pending = caught(
+      outbound(call({ deadlineMs: 900 }), { fetch: hangingFetch, timer, now }),
+    );
+    await timer.armedWith(650);
+    expect(timer.armed()).toEqual([650]);
+    timer.fire(650);
+    expect((await pending).meta?.['phase']).toBe('deadline');
   });
 
   test("the ambient request's abort reaches the call, its reason unchanged", async () => {
@@ -156,7 +176,7 @@ describe('unit · outbound · lifetime', () => {
     const timer = manualTimer();
     const ctx = ctxOf({ clock: frozenClock(1_000), deadlineAt: 1_400 });
     const pending = runWithContext(ctx, () =>
-      caught(outbound(call(), { fetch: hangingFetch, timer })),
+      caught(outbound(call(), { fetch: hangingFetch, timer, now: () => 5_000 })),
     );
     await new Promise<void>((done) => queueMicrotask(done));
     const armed = timer.armed();

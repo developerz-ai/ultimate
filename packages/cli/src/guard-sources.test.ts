@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { asset, setAssetResolver } from '@ultimat3/render';
 import { guardSources } from './guard-sources';
 import { GUARD_DIR, guardFindings } from './guards';
 
@@ -93,8 +94,8 @@ describe('unit · guard sources · one read of the app per gate run', () => {
     );
   });
 
-  // Never a throw: \`compiled()\` answers \`undefined\` for a sheet it cannot read, and a guard that
-  // reports the sheet asks \`compileError()\` for the compiler's own first line to say why.
+  // Never a throw: `compiled()` answers `undefined` for a sheet it cannot read, and a guard that
+  // reports the sheet asks `compileError()` for the compiler's own first line to say why.
   test('a stylesheet that does not compile, or does not exist, is undefined', async () => {
     await withApp({ 'apps/web/bad.module.scss': '.a { color: ; ' }, async (root) => {
       const sources = guardSources(root);
@@ -149,6 +150,53 @@ describe('unit · guard sources · one read of the app per gate run', () => {
         expect(holder.__seen).toHaveLength(2);
         expect(holder.__seen[0]).toBe(holder.__seen[1]);
         holder.__seen = undefined as never;
+      },
+    );
+  });
+});
+
+// A sheet's `asset()` resolves through the site asset table `loadApp` installs for the build. A
+// guard compiles before any app is loaded, and with no table every sheet naming a font read as
+// broken — or, before 31.4.1, made the custom-property guard pass the whole app on nothing.
+describe('unit · guard sources · asset() in a sheet resolves as the build resolves it', () => {
+  const FONT = '@font-face { font-family: x; src: url(asset("assets/fonts/a.woff2")); }\n';
+  const SHEET = 'apps/web/shared/global.scss';
+
+  test("a sheet naming an asset the app holds compiles, to the asset's hashed URL", async () => {
+    await withApp(
+      { [SHEET]: FONT, 'apps/web/site/assets/fonts/a.woff2': 'font bytes' },
+      async (root) => {
+        const sources = guardSources(root);
+        expect(await sources.compileError?.(SHEET)).toBeUndefined();
+        expect((await sources.compiled(SHEET))?.css).toMatch(
+          /\/assets\/fonts\/a\.[0-9a-f]{8}\.woff2/,
+        );
+      },
+    );
+  });
+
+  test('an asset() naming a file the app does not hold is still a compile error', async () => {
+    await withApp({ [SHEET]: FONT }, async (root) => {
+      const error = await guardSources(root).compileError?.(SHEET);
+      expect(error).toContain('no file at apps/web/site/assets/fonts/a.woff2');
+      expect(error).not.toContain(root);
+    });
+  });
+
+  test('a table installed before the compile is the one installed after it', async () => {
+    await withApp(
+      { [SHEET]: FONT, 'apps/web/site/assets/fonts/a.woff2': 'font bytes' },
+      async (root) => {
+        setAssetResolver((path) => `/installed/${path}`);
+        try {
+          expect(await guardSources(root).compileError?.(SHEET)).toBeUndefined();
+          expect(asset('assets/fonts/a.woff2')).toBe('/installed/assets/fonts/a.woff2');
+        } finally {
+          setAssetResolver(undefined);
+        }
+        // And none left behind where none was installed.
+        await guardSources(root).compiled(SHEET);
+        expect(() => asset('assets/fonts/a.woff2')).toThrow(/no site asset table installed/);
       },
     );
   });

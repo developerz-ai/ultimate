@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 // Enforce, as a gate rule, that the changelog's sections are well-formed — `[Unreleased]` in the
 // CHANGELOG.md index, one `docs/changelog/<version>.md` per release (`lib/changelog-index.ts`) — that
-// every migration count in wiki/Upgrading.md is read out of that major's OWN section, and that each
-// `BREAKING —` line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`).
+// every migration count in wiki/Upgrading.md is read out of that major's OWN section, that each
+// `BREAKING —` line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`), and that each
+// shipped guard template a release changed is named there with `x g guard` (`lib/guard-refresh-*`).
 //
 // The gap this closes is at commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`. That is
 // `release: 6.0.0`, the release script's OWN output: seven `BREAKING —` entries still under
@@ -51,6 +52,7 @@ import {
   UNRELEASED,
 } from './lib/changelog-sections';
 import { assembleChangelog, readChangelogFiles } from './lib/changelog-store';
+import { guardRefreshFindings } from './lib/guard-refresh-git';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -402,6 +404,9 @@ export const changelogFindings = async (root: string): Promise<readonly Finding[
     ),
     ...checkPairing(changelog, upgrading).map(pairingFinding),
     ...claimGaps(await treeClaims(root, changelog)),
+    // A shipped guard template that changed since the last release, or in it, is named on the page
+    // with its `x g guard <name> --force` refresh (`lib/guard-refresh-rows.ts`).
+    ...(await guardRefreshFindings(root, changelog, upgrading)),
     // wiki/Stability.md's changelog rules: the major window, Highlights, no break on main.
     ...stabilityChangelogFindings(changelog, Bun.env, todayUtc()),
   ];

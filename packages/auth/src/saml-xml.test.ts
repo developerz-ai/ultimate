@@ -63,15 +63,35 @@ describe('parseXml refuses', () => {
 });
 
 describe('parseXml bounds namespace work', () => {
-  test('K declarations over N elements is refused fast, never K × N copies', () => {
-    // 8,000 prefixes on the root and 8,000 children each declaring one more: a copied scope per
-    // element made this 5 GB of RSS through the ACS route, before any signature was looked at.
+  // 8,000 prefixes on the root and 8,000 children each declaring one more: a copied scope per
+  // element made this 5 GB of RSS through the ACS route, before any signature was looked at.
+  // What bounds it is WHERE the refusal lands, so that is what is pinned — never elapsed time.
+  test('K declarations over N elements is refused at the bound, before the children are read', () => {
     const declarations = Array.from({ length: 8000 }, (_, i) => ` xmlns:p${i}="u"`).join('');
-    const xml = `<r${declarations}>${'<a xmlns:b="u"/>'.repeat(8000)}</r>`;
-    const started = performance.now();
+    // No closing tag: a refusal deferred past the children would name the unclosed root instead.
+    const xml = `<r${declarations}>${'<a xmlns:b="u"/>'.repeat(8000)}`;
     const parsed = parseXml(xml);
-    expect(performance.now() - started).toBeLessThan(100);
     expect(parsed.ok ? 'accepted' : parsed.reason).toContain('namespace declarations');
+  });
+
+  test('the bound counts the whole document: one declaration on each of many elements', () => {
+    const children = (n: number): string => '<a xmlns:b="u"/>'.repeat(n);
+    expect(refused(`<r xmlns:p="u">${children(MAX_NAMESPACE_DECLARATIONS - 1)}</r>`)).toBe(false);
+    const over = parseXml(`<r xmlns:p="u">${children(MAX_NAMESPACE_DECLARATIONS)}</r>`);
+    expect(over.ok ? 'accepted' : over.reason).toContain('namespace declarations');
+  });
+
+  test('an element that declares nothing shares its parent scope, never a copy of it', () => {
+    const r = root('<r xmlns:p="urn:p"><a/><b xmlns:q="urn:q"/></r>');
+    const [a, b] = r.children;
+    if (a?.kind !== 'element' || b?.kind !== 'element') return expect.unreachable('no children');
+    expect(a.scope).toBe(r.scope);
+    expect(b.scope).not.toBe(r.scope);
+    expect([b.scope.get('p'), b.scope.get('q'), r.scope.get('q')]).toEqual([
+      'urn:p',
+      'urn:q',
+      undefined,
+    ]);
   });
 
   test(`up to ${MAX_NAMESPACE_DECLARATIONS} declarations in a document are read`, () => {
