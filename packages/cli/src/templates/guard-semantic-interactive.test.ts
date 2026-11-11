@@ -33,4 +33,11 @@ describe('unit · shipped guard · semantic-interactive', () => {
       expect(await findingsFor(refused)).toEqual(['X_SEMANTIC_INTERACTIVE']);
     }
   });
+
+  test('a clickable div is refused in apps/*/shared too', async () => {
+    const findings = await shippedGuardFindings('semantic-interactive', {
+      'apps/web/shared/row.tsx': 'export const R = () => <div onClick={go}>Go</div>;\n',
+    });
+    expect(findings.map((finding) => finding.code)).toEqual(['X_SEMANTIC_INTERACTIVE']);
+  });
 });

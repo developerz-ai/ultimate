@@ -93,15 +93,34 @@ describe('unit · guard sources · one read of the app per gate run', () => {
     );
   });
 
-  // Not a finding and not a throw: a sheet that does not compile is the BUILD's refusal
-  // (`X_PRERENDER_FAILED`, naming the Sass error); a guard that also reported it would say the
-  // same thing twice, under a code about something else.
+  // Never a throw: \`compiled()\` answers \`undefined\` for a sheet it cannot read, and a guard that
+  // reports the sheet asks \`compileError()\` for the compiler's own first line to say why.
   test('a stylesheet that does not compile, or does not exist, is undefined', async () => {
     await withApp({ 'apps/web/bad.module.scss': '.a { color: ; ' }, async (root) => {
       const sources = guardSources(root);
       expect(await sources.compiled('apps/web/bad.module.scss')).toBeUndefined();
       expect(await sources.compiled('apps/web/absent.module.scss')).toBeUndefined();
     });
+  });
+
+  test("compileError() is the compiler's first line, and undefined for a sheet that compiles", async () => {
+    await withApp(
+      { 'apps/web/bad.module.scss': '.a { color: ; ', 'apps/web/ok.module.scss': '.a{color:red}' },
+      async (root) => {
+        const sources = guardSources(root);
+        const error = await sources.compileError?.('apps/web/bad.module.scss');
+        expect(error).toBeString();
+        expect(error).not.toContain('\n');
+        expect(error?.toLowerCase()).toContain('expected');
+        // The compiler's words, never the temp root or render's wrapper around them.
+        expect(error).not.toContain(root);
+        expect(error).not.toContain('did not compile');
+        expect(await sources.compileError?.('apps/web/ok.module.scss')).toBeUndefined();
+        const absent = await sources.compileError?.('apps/web/absent.module.scss');
+        expect(absent).toContain('apps/web/absent.module.scss');
+        expect(absent).not.toContain(root);
+      },
+    );
   });
 
   test('every guard in one run is handed the SAME sources', async () => {

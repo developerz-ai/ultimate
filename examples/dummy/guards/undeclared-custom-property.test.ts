@@ -62,6 +62,17 @@ unitTest('a property an inline style can set is declared', () => {
   expect(check('.bar { width: var(--fill); }', '.bar{width:var(--fill)}', [tsx])).toEqual([]);
 });
 
+unitTest('a sheet that does not compile is the finding, and no read is judged while it is', () => {
+  const broken = { path: 'apps/web/shared/broken.scss', scss: ':root { --x: ; ', css: undefined };
+  const findings = undeclaredCustomProperties(
+    [GLOBAL, broken, sheet('', '.a{color:var(--x)}')],
+    [],
+  );
+  expect(findings.map((finding) => finding.at)).toEqual(['apps/web/shared/broken.scss']);
+  const quoted = undeclaredCustomProperties([{ ...broken, error: 'Error: expected "}".' }], []);
+  expect(quoted[0]?.cause).toContain('does not compile: Error: expected "}".');
+});
+
 unitTest('a read with a fallback declares its own answer', () => {
   expect(check('.a { color: var(--maybe, inherit); }', '.a{color:var(--maybe, inherit)}')).toEqual(
     [],

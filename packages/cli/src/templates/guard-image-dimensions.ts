@@ -148,8 +148,9 @@ export const guard: Guard = {
     // \`{apps/web,packages/ui}/**/*.tsx\` each match ZERO files, where \`apps/*/{site,app}/**/*.tsx\`
     // matches 17 — so folding these into one line silently turns the guard off, which is worse than
     // the hole it closes. A LEADING group is fine and the stylesheet guards here rely on it:
-    // \`{apps,packages}/**/*.scss\` matches all 15.
-    for (const pattern of ['apps/*/{site,app}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
+    // \`{apps,packages}/**/*.scss\` matches all 15. \`shared/\` is read too: a component there renders
+    // on every page that imports it, and leaving it out was a directory the rule never saw.
+    for (const pattern of ['apps/*/{site,app,shared}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
       // The run's ONE read: every guard asking for these two globs shares the walk.
       for (const file of await sources.files(pattern)) {
         if (/\\.test\\.tsx?$/.test(file.path)) continue;

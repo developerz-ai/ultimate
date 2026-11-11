@@ -47,14 +47,20 @@ describe('unit · shipped guard · undeclared-custom-property', () => {
     expect(findings).toEqual([]);
   });
 
-  // The declared set is only known when EVERY sheet compiled. With one broken, each read of a
-  // property it declares would be reported — sixty findings about one Sass error the build names.
-  test('a sheet that does not compile silences the rule rather than flooding it', async () => {
+  // The declared set is only known when EVERY sheet compiled. A broken one is the finding — never
+  // a silent pass over a rule that read nothing — and the reads wait for it, never sixty of them
+  // about the declarations one Sass error hid.
+  test('a sheet that does not compile is the finding, and the reads wait for it', async () => {
     const findings = await shippedGuardFindings('undeclared-custom-property', {
       [GLOBAL]: ':root { --brand-ink: ; \n',
-      [SHEET]: '.a {\n  color: var(--brand-ink);\n}\n',
+      [SHEET]: '.a {\n  color: var(--brand-ink);\n  color: var(--nowhere);\n}\n',
     });
-    expect(findings).toEqual([]);
+    expect(findings.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_UNDECLARED_CUSTOM_PROPERTY', GLOBAL],
+    ]);
+    // The compiler's own line, so the author reads the error without a second command.
+    expect(findings[0]?.cause).toMatch(/does not compile: Error: expected /i);
+    expect(findings[0]?.fix).toContain('at the error the cause quotes');
   });
 
   test('a property nothing declares is refused without the token package, too', async () => {

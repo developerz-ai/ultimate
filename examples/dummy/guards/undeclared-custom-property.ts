@@ -5,8 +5,9 @@
 // Read from the COMPILED sheets, so `tokens.space(7)` — a step the scale does not have — is the
 // `var(--space-7)` it compiles to. Declared means: set by any stylesheet in the app (the global
 // one emits every token), or named in a `.ts`/`.tsx` file, where an inline `style` sets it. A
-// `var(--x, fallback)` declares its own answer and is never reported. While ANY sheet fails to
-// compile the rule is silent: that sheet's declarations are unknown, and the build names it.
+// `var(--x, fallback)` declares its own answer and is never reported. A sheet that fails to
+// compile is itself a finding, and while one does no read is judged: its declarations are unknown,
+// and a rule that read nothing never passes.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -18,7 +19,10 @@ export interface CompiledSheet {
   readonly path: string;
   /** The source, to find the line a compiled `var()` came from. */
   readonly scss: string;
-  readonly css: string;
+  /** `undefined` when the sheet does not compile. */
+  readonly css: string | undefined;
+  /** The compiler's first line, when it does not. */
+  readonly error?: string | undefined;
 }
 
 const DECLARED = /(--[A-Za-z_][\w-]*)\s*:/g;
@@ -71,9 +75,20 @@ export function undeclaredCustomProperties(
   sheets: readonly CompiledSheet[],
   sources: readonly string[],
 ): readonly Finding[] {
+  // One sheet that does not compile and the declared set is incomplete: every read of what it
+  // declares would be reported. The broken sheet is the finding; the reads wait for its repair.
+  const broken = sheets.filter((sheet) => sheet.css === undefined);
+  if (broken.length > 0) {
+    return broken.map((sheet) => ({
+      code: CODE,
+      cause: `${sheet.path} does not compile${sheet.error === undefined ? '' : `: ${sheet.error}`} — so the custom properties it declares are unknown and no var() read in this app was checked`,
+      fix: `repair the Sass in ${sheet.path}${sheet.error === undefined ? " — x build --target static prints the compiler's error for a sheet a page uses —" : ' at the error the cause quotes,'} then: x verify`,
+      at: sheet.path,
+    }));
+  }
   const declared = new Set<string>();
   for (const sheet of sheets) {
-    for (const match of sheet.css.matchAll(DECLARED)) declared.add(match[1] ?? '');
+    for (const match of (sheet.css ?? '').matchAll(DECLARED)) declared.add(match[1] ?? '');
   }
   for (const source of sources) {
     for (const match of source.matchAll(NAMED)) declared.add(match[0]);
@@ -82,7 +97,7 @@ export function undeclaredCustomProperties(
   const findings: Finding[] = [];
   for (const sheet of sheets) {
     const reported = new Set<string>();
-    for (const match of sheet.css.matchAll(READ)) {
+    for (const match of (sheet.css ?? '').matchAll(READ)) {
       const name = match[1] ?? '';
       if (declared.has(name) || reported.has(name)) continue;
       reported.add(name);
@@ -110,11 +125,9 @@ export const guard: Guard = {
       // A partial is `@use`d into the sheets that are compiled here; alone it is not a stylesheet.
       if ((file.path.split('/').pop() ?? '').startsWith('_')) continue;
       const compiled = await sources.compiled(file.path);
-      // One sheet that does not compile and the declared set is incomplete: its declarations are
-      // unknown, so every read of one would be reported as undeclared. That sheet is the build's
-      // finding (X_PRERENDER_FAILED, with the Sass error); this rule waits for it to be repaired.
-      if (compiled === undefined) return [];
-      sheets.push({ path: file.path, scss: file.text, css: compiled.css });
+      // `compileError` is optional on `GuardSources`: an older CLI reports the sheet without it.
+      const error = compiled === undefined ? await sources.compileError?.(file.path) : undefined;
+      sheets.push({ path: file.path, scss: file.text, css: compiled?.css, error });
     }
     const code = await sources.files('{apps,packages}/**/*.{ts,tsx}');
     return undeclaredCustomProperties(
