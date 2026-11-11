@@ -118,6 +118,12 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
     reason:
       '`surfaces.ts:224` splices an ENTRY PATH into `x routes`. The path is a route file this build already resolved on disk, under `apps/*/`.',
   },
+  // 24 → 25: scaffold-first-run.ts' stepFinding still builds its `fix:` as one template —
+  // `cd ${renderFixShellArg(dir, …)} && ${appBin(dir)} ${step.args.join(' ')}`. Main has since
+  // rebuilt it as words quoted one by one, which erases the site; this branch was cut before that
+  // rewrite landed, so the tree holds one more site than origin/main measured, not new debt.
+  // why: `dir` is the app directory this process itself scaffolded — the finding's own `at:` —
+  // never a request, a file's text or the network; the sentence the row's prose already states.
   scripts: {
     count: 24,
     reason:

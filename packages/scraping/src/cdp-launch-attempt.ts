@@ -6,7 +6,7 @@ import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpTimeoutError } from './cdp-errors';
-import { throwawayProfile } from './cdp-launch-profile';
+import { socketSafeEnv, throwawayProfile } from './cdp-launch-profile';
 import { CLOSE_GRACE_MS, killTree } from './cdp-launch-reap';
 import type { CdpWire } from './cdp-launch-wire';
 import { pipeConnection, portConnection, wireStdio } from './cdp-launch-wire';
@@ -225,6 +225,9 @@ function spawnBrowser(options: LaunchAttemptOptions, profileDir: string, platfor
   const [stdin, stdout, stderr, ...extra] = wireStdio(options.wire);
   return Bun.spawn([options.executable, ...options.flags(profileDir)], {
     stdio: [stdin, stdout, stderr, ...extra],
+    // Chrome's ProcessSingleton socket is below the child's TMPDIR, never the profile's parent. Its
+    // Unix socket address is byte-bounded, so socketSafeEnv clamps an unsafe inherited temp root.
+    env: socketSafeEnv(),
     detached: platform !== 'win32',
     // A backstop, never the close: `close()` ends a browser its caller is done with. This ends one
     // whose caller vanished, so no Chrome outlives every reason it was started for.

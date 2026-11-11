@@ -31,6 +31,36 @@ const SINGLETON_FILES: ReadonlySet<string> = new Set([
   'SingletonLock',
 ]);
 
+/**
+ * The longest a TMPDIR may be, in UTF-8 bytes, for the browser to START at all: Chrome's ProcessSingleton
+ * makes its socket under the CHILD's own temp root, at
+ * `<TMPDIR>/org.chromium.Chromium.XXXXXX/SingletonSocket`, and a Unix socket address carries 108 bytes
+ * including the terminator — so a longer TMPDIR is a FATAL at start-up, before any DevTools endpoint
+ * exists ("Socket path too long"), reported as `X_CDP_LAUNCH_FAILED` carrying Chrome's stderr. A
+ * sandboxed CI checkout's TMPDIR crosses it — measured 2026-11-10: an 83-char TMPDIR made Chrome die
+ * twice on launch, the scaffold's one e2e test red through `x verify`, and an app's `x upgrade` hop
+ * red with it. The profile's own directory is NOT the bound — the socket never lives beside the
+ * profile — so a launch handed a deep profile dir still starts. The constant's test pins the arithmetic.
+ */
+// Retains the exported name for callers that used the former character-count limit.
+export const MAX_BROWSER_TMPDIR_CHARS =
+  108 - 1 - '/org.chromium.Chromium.XXXXXX/SingletonSocket'.length;
+
+/**
+ * The env a browser starts with: the caller's, except TMPDIR replaced by POSIX `/tmp` when it cannot
+ * carry the singleton socket (`MAX_BROWSER_TMPDIR_CHARS` UTF-8 bytes) — a machine with a long sandbox
+ * TMPDIR still keeps `/tmp` writable. Windows names no Unix socket and keeps the caller's env as given.
+ */
+export function socketSafeEnv(
+  env: Record<string, string | undefined> = { ...Bun.env },
+  fallbackTmpdir: string = tmpdir(),
+): Record<string, string | undefined> {
+  if (process.platform === 'win32') return env;
+  const tmp = env['TMPDIR'] ?? fallbackTmpdir;
+  if (new TextEncoder().encode(tmp).byteLength <= MAX_BROWSER_TMPDIR_CHARS) return env;
+  return { ...env, TMPDIR: '/tmp' };
+}
+
 export interface ThrowawayProfile {
   readonly path: string;
   /**
