@@ -67,15 +67,25 @@ describe('unit · stranger env', () => {
     Bun.env['NPM_TOKEN'] = 'x';
     const cwd = mkdtempSync(join(tmpdir(), 'stranger-env-'));
     try {
-      const env = asOverlay(Bun.env, strangerEnv(Bun.env, [], { HOME: cwd }));
-      const result = await exec(
-        [process.execPath, '-e', 'console.log(JSON.stringify(Object.keys(process.env)))'],
-        { cwd, env },
+      const keysOf = async (env: Record<string, string | undefined>): Promise<string[]> => {
+        const result = await exec(
+          [process.execPath, '-e', 'console.log(JSON.stringify(Object.keys(process.env)))'],
+          { cwd, env },
+        );
+        return JSON.parse(result.stdout) as string[];
+      };
+      // What the OS or Bun gives every child on its own — Windows adds `USERNAME`, `HOMEPATH`, … —
+      // learned from a child handed nothing, so no platform's list is written here.
+      // Built by hand, not with `asOverlay`: a baseline that shared its bug would hide it.
+      const baseline = await keysOf(
+        Object.fromEntries(Object.keys(Bun.env).map((key) => [key, undefined])),
       );
-      const keys: unknown = JSON.parse(result.stdout);
+      const keys = await keysOf(asOverlay(Bun.env, strangerEnv(Bun.env, [], { HOME: cwd })));
       expect(keys).not.toContain('NPM_TOKEN');
-      const allowed = new Set([...STRANGER_KEYS, 'HOME'].map((key) => key.toUpperCase()));
-      expect((keys as string[]).filter((key) => !allowed.has(key.toUpperCase()))).toEqual([]);
+      const allowed = new Set(
+        [...STRANGER_KEYS, 'HOME', ...baseline].map((key) => key.toUpperCase()),
+      );
+      expect(keys.filter((key) => !allowed.has(key.toUpperCase()))).toEqual([]);
     } finally {
       if (prior === undefined) delete Bun.env['NPM_TOKEN'];
       else Bun.env['NPM_TOKEN'] = prior;
