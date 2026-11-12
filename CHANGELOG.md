@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- Security: the framework's lockfile resolves `source-map-js` 1.2.2 (GHSA-68fv-2mgg-jv7q). Not reachable through `@ultimat3/render` — `sass` declares it but never loads it — so an app needs only `bun update source-map-js` to clear `bun audit`.
+
 ### Fixed
 
 - Security: `bun.lock` resolves `source-map-js` 1.2.2 ([GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q), event-loop DoS on oversized indexed source-map offsets). `sass` declares it but loads none of it, and its range already admits 1.2.2, so an app needs only a refreshed lockfile (`bun update source-map-js`).
