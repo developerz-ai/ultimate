@@ -10,6 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- A rate-limit check writes no WAL: `x_rate_limit` is unlogged at fillfactor 70 (2 WAL records per take → 0).
+- A slow request and a slow statement are each one grep-able log line with the request id (`http.request.slow`, `db.statement.slow`).
+- Responses are zstd-coded when the client offers it; `x db gen` builds indexes on existing tables `concurrently`, and `X_MIGRATION_LOCK_HEAVY` refuses a hand-written lock-heavy migration.
+- `x verify`'s seed run gets a real migrated database, so a seed calling `register()` passes again.
+
 ### Added
 
 - `@ultimat3/db`: `slowStatementLog({ thresholdMs })` — one grep-able `db.statement.slow` warn line per statement shape per 10 s, with the request id and no bind values. `x serve` installs it at `SLOW_STATEMENT_THRESHOLD_MS` (500 ms) in production, off elsewhere.
