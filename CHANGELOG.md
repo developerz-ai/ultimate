@@ -10,7 +10,27 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/jobs`: `cronJob({ name, cron, tz, input?, payload?, catchUp?, maxCatchUp?, …job })` — a job and the task that fires it, one declaration. The handle is the job; `.schedule` is the `task()`, named `<name>.schedule`. `name` and `tz` required; `input` comes with `payload(occurrenceMs)` or not at all (each occurrence enqueues `{}`); `idempotencyKey` defaults to `() => name`. A factory over `job()` and `task()`, one `PRIMITIVE_FACTORIES` row, no ninth primitive. `defineApi({ jobs })` registers the task with the job. The reference app's nightly digest is one (`examples/dummy/apps/web/app/digest/jobs/send-digest.ts`).
+- `@ultimat3/jobs`: `onSettled` is at least once across a crash. The settle that ends a run of a hooked job records the debt in its own write (`x_jobs.settle_owed`, partial index `x_jobs_settle_owed_idx`), the hook's return pays it, and the scheduler leader re-drives a debt older than `onSettledTimeout` × 3 (`SETTLE_GRACE_FACTOR`) with `redriven: true, reason: 'lost'` — ≤ 50 a pass, every 60 s after a pass that found some, every 5 min after one that found none. Memory, Postgres and Redis drivers. **Two endings stay at most once:** a completion whose body returned a value (no result column, so a re-drive could not hand it over), and a row the claim settles itself — a final-attempt lease lapse buried `dead`, an expired row. `JobDriver.settleDebt` is optional; a driver without it runs the hook at most once.
+- `@ultimat3/jobs`: `run({ lease })` — `renew()` renews now and answers whether this attempt still holds the row, `lost()`, `signal`. For a section that outlasts the visibility timeout, where the renewal timer cannot fire. `JobLease` type exported.
+- `@ultimat3/jobs`: debounce and expiry on `enqueue`. `onConflict: 'replace'` gives a holder still `ready`/`delayed` under the same idempotency key the new `input` and `runAt` (`SQL_ENQUEUE_REPLACE`; a running or suspended holder is untouched; answered `deduped: true` either way) and the newer request's `expiresAt`, or none. Fenced by request order (`x_jobs.debounced_id`, the request's uuidV7, partial index `x_jobs_debounced_idx`): a replace no newer than the input a row of the key holds, live or finished, moves nothing and starts no run — an outbox row published again after a relay crash never restores old input. `expiresAt` (epoch ms): a claim that finds the row still waiting past it settles it `failed`, `lastError` `JOB_EXPIRED` (`'expired'`), `onSettled` hearing `dropped`; only a row never claimed expires — a retry waiting out its backoff is never expired. `x jobs retry` clears a row's expiry and its old `onSettled` debt. Both hold inside a transaction: the outbox stages them (`x_outbox.on_conflict`, `x_outbox.expires_at`) and the relay publishes such a row alone through `driver.enqueue`, in staged order. Neither is an `enqueueMany` option.
+- `@ultimat3/jobs`: `job({ maxPending })` — an enqueue onto a queue already holding that many `ready` + `delayed` rows is `X_JOB_BACKLOG_FULL` (429, `JobBacklogFullError`); a batch that would cross it is refused whole. One capped count before the write (`JobDriver.backlog`, optional; memory, Postgres and Redis implement it) plus the rows the caller's transaction already staged for the queue; an enqueue that adds no row (a dedupe, a replace onto a live holder — `JobDriver.holds`, optional, asked only once full) is never refused. Soft: concurrent producers can overshoot by their number.
+- `@ultimat3/jobs`: `job({ stepOutputMax })` — a `step.run` output past that many bytes of JSON is `X_STEP_OUTPUT_TOO_LARGE`, terminal, nothing stored. Undeclared, past `STEP_OUTPUT_MAX_BYTES` (256 KiB) it is stored and logged once per job and step (`jobs.step.output-too-large`, same code).
+- `@ultimat3/jobs`: `isPartitionsJob(handle)`, `SETTLE_GRACE_FACTOR`, `SETTLE_REDRIVE_INTERVAL_MS`, `SETTLE_REDRIVE_IDLE_INTERVAL_MS`, `JOB_EXPIRED`, `SettleDebt`, `SettleDebtJob`.
+- `@ultimat3/testing`: `jobDriverConformance` checks debounce, expiry, `backlog` and the `onSettled` debt; `outboxStoreConformance` checks a staged row keeps `onConflict: 'replace'` and `expiresAt`.
+
+### Changed
+
+- `@ultimat3/jobs`: the Redis driver sends each Lua script as `EVALSHA` (40 bytes, where the claim's body is ~2.5 KB) and falls back to `EVAL` on `NOSCRIPT` (`driver-redis-eval.ts`).
+- `x verify`: a `partitions()` maintainer is recognised by identity (`isPartitionsJob`), no longer by its `<name>.schedule` shape — a `cronJob()`, or a hand-built job carrying a `<name>.schedule` task, no longer silences `X_PARTITIONS_UNMAINTAINED`.
+- Priority inside a queue is decided out: a separate queue, never a field ([Jobs](https://github.com/developerz-ai/ultimate/wiki/Jobs-And-Workflows#concurrency-rate-limits-queues-retry)).
+
+### Fixed
+- `@ultimat3/time`: `parseDuration` reads its input in one linear scan (no regex) and refuses an input over 64 characters (`MAX_DURATION_LENGTH`) with `X_DURATION_INVALID` — a long run of digits could make the old pattern backtrack (CodeQL `js/polynomial-redos`). Every duration it accepted before still parses.
+
+- `@ultimat3/jobs`: a job a `postgresJobDriver` enqueues inside a transaction open longer than one wake slot (250 ms) notifies at commit, so a resting worker starts it then — it was left for the worker's next pass, up to 60 s. The wake reads the wall clock (`clock_timestamp()`), not the transaction's `now()` (`driver-pg-wake.live.test.ts`). Still silent: a transaction that enqueues inside its first slot and commits after the woken worker's next pass. The outbox path (`NOTIFY_STAGED`) was not affected.
 
 ## Releases
 

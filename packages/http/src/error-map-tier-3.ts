@@ -145,4 +145,6 @@ export const TIER_3_ERROR_STATUS = {
   X_QUERY_SCOPE_UNCOMPOSABLE: 500,
   // @ultimat3/query — a live query is ordered by a text column the matcher cannot order as Postgres does
   X_LIVE_ORDER_COLLATION: 500,
+  // @ultimat3/jobs — an enqueue past the job's declared maxPending backlog was refused
+  X_JOB_BACKLOG_FULL: 429,
 } satisfies Readonly<Record<string, number>>;

@@ -98,7 +98,9 @@ select ${JOB_ROW_COLUMNS}
 `.trim();
 
 /**
- * `run_at = now()` makes the requeued job due immediately; the attempt counter starts over. Fenced
+ * `run_at = now()` makes the requeued job due immediately; the attempt counter starts over, and
+ * the old run's `onSettled` debt and `expires_at` go with it: a retry is new work an operator
+ * asked for, never one the leader re-tells an old ending of or the claim buries as expired. Fenced
  * to FINISHED states and releasing the claim: requeueing a running row left `claimed_by` set with
  * state `ready`, and a second worker claimed it — the job ran twice. `REQUEUEABLE_STATES`
  * (`driver.ts`) is the same set; a row this matches nothing for was refused before it was sent,
@@ -119,7 +121,7 @@ export const SQL_JOB_REQUEUE = `
 with requeued as (
   update x_jobs
      set state = 'ready', attempt = 0, run_at = now(), updated_at = now(),
-         claimed_by = null, visible_at = null
+         claimed_by = null, visible_at = null, settle_owed = false, expires_at = null
    where id = $1 and state in ('dead', 'cancelled', 'done', 'failed')
   returning ${JOB_ROW_COLUMNS},
             pg_notify('${JOBS_WAKE_CHANNEL}', queue)::text as woke

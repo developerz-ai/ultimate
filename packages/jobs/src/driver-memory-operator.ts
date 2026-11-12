@@ -38,8 +38,11 @@ export interface MemoryQueueState {
   readonly clock: Clock;
   /** The LIVE row holding this record's `(name, tenant, key)`, other than itself. */
   liveHolder(record: JobRecord): JobRecord | undefined;
-  /** Rewrite a row and release its claim — the driver's own `settle`. */
-  settle(id: string, patch: Partial<JobRecord>): void;
+  /**
+   * Make a finished row `ready` again, its claim released and its old run's `onSettled` debt and
+   * expiry forgotten — the driver's own requeue write, `SQL_JOB_REQUEUE`'s `set` list.
+   */
+  requeue(id: string): void;
 }
 
 export type MemoryOperatorMembers = Omit<
@@ -202,7 +205,7 @@ export function memoryOperator(state: MemoryQueueState): MemoryOperator {
         filter,
         (record) => {
           if (!free(record)) return false;
-          state.settle(record.id, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
+          state.requeue(record.id);
           return true;
         },
         (record) => candidates.has(record.id),

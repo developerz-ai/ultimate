@@ -1,11 +1,12 @@
 // The outbox-store suite over `memoryOutboxStore()` on a frozen clock, and the proof it can fail: a
 // claim that is only a read (handed back the moment it is taken), and a mark that drops the
-// claimant — so a relay whose lease lapsed retires rows a newer one has not published.
+// claimant — so a relay whose lease lapsed retires rows a newer one has not published — and a
+// stage that drops a debounced row's onConflict and expiresAt.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
-import type { OutboxStore } from '@ultimat3/jobs';
+import type { OutboxRecord, OutboxStore } from '@ultimat3/jobs';
 import { memoryOutboxStore } from '@ultimat3/jobs';
 import type { OutboxStoreSubject } from './outbox-store-conformance';
 import { OUTBOX_STORE_CHECKS, outboxStoreConformance } from './outbox-store-conformance';
@@ -54,6 +55,16 @@ const unfencedMark = (inner: OutboxStore): OutboxStore => ({
   markPublishedMany: (ids, at) => inner.markPublishedMany?.(ids, at) ?? Promise.resolve(),
 });
 
+/** A store that stages only the columns `x_outbox` had before debounce and expiry were staged. */
+const plainOnly = (inner: OutboxStore): OutboxStore => {
+  const strip = ({ onConflict: _c, expiresAt: _e, ...rest }: OutboxRecord): OutboxRecord => rest;
+  return {
+    ...inner,
+    stage: (tx, record) => inner.stage(tx, strip(record)),
+    stageMany: (tx, records) => inner.stageMany?.(tx, records.map(strip)) ?? Promise.resolve(),
+  };
+};
+
 const check = (prefix: string) =>
   OUTBOX_STORE_CHECKS.find((each) => each.name.startsWith(prefix)) ??
   expect.unreachable(`no outbox-store check named ${prefix}`);
@@ -67,6 +78,11 @@ describe(testName('unit', 'a store that breaks the outbox contract fails conform
   test('a mark with no fence lets a lapsed relay retire a live batch', async () => {
     await check('a published row').run(onFrozenClock(unfencedMark));
     await expect(check('a lapsed claimant').run(onFrozenClock(unfencedMark))).rejects.toThrow();
+  });
+
+  test('a store that drops onConflict and expiresAt hands the relay a plain row', async () => {
+    await check('commit reports').run(onFrozenClock(plainOnly));
+    await expect(check('a staged row keeps').run(onFrozenClock(plainOnly))).rejects.toThrow();
   });
 
   test('every check has a name of its own', () => {

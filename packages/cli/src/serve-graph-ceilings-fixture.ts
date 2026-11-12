@@ -277,8 +277,15 @@
  * raised 936 → 937, measured 937 (2026-11-12, sweep 9a jobs idle cost, the test's own walk):
  * `jobs/src/counter-batch.ts` — the per-process counter batch every pg driver settles into,
  * reached through `driver-pg.ts` on the jobs barrel. A new file; no existing module newly reached.
+ * raised 937 → 948, measured 948 (2026-11-12, sweep 9b jobs mechanisms, the test's own walk): 11
+ * new jobs files on the jobs barrel — `cron-job.ts` (`cronJob()`), `job-lease.ts` (`run({ lease
+ * })`), `enqueue-backlog.ts` (`maxPending`), `driver-settle.ts`, `driver-memory-settle.ts`,
+ * `driver-pg-settle-debt.ts`, `settle-redrive.ts`, `scheduler-upkeep.ts` (`onSettled` at least
+ * once), `driver-memory-enqueue.ts`, `driver-pg-enqueue-sql.ts` (debounce and expiry, split off at
+ * the file ceiling) and `outbox-relay-publish.ts` (the relay's single-row publish). No existing
+ * module newly reached.
  */
-export const MIGRATE_CEILING = 937;
+export const MIGRATE_CEILING = 948;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

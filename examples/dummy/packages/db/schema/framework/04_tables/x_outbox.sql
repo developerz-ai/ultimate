@@ -16,5 +16,7 @@ create table "x_outbox" (
   "claimed_at" timestamp with time zone,
   "claimed_by" text,
   "run_id" uuid default gen_random_uuid() not null,
+  "on_conflict" text,
+  "expires_at" timestamp with time zone,
   constraint "x_outbox_pkey" PRIMARY KEY (id)
 );

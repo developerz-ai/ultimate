@@ -10,7 +10,7 @@
 //   park:<queue>  ZSET   suspended, by runAt        run:<queue>   ZSET  running, by lease end
 //   dead:<queue>  ZSET   dead letters, by time      failed:<queue> ZSET failed rows, by time
 //   queues        SET    every queue named          idem          HASH  live key → row id
-//   steps:<runId> HASH   step name → record JSON
+//   steps:<runId> HASH   step name → record JSON    owed          ZSET  onSettled debts, by time
 
 import type { Clock } from '@ultimat3/core';
 import { finiteCount, finiteOption, liveClock, uuidV7 } from '@ultimat3/core';
@@ -33,6 +33,7 @@ import {
   isJobState,
   nackState,
 } from './driver';
+import { evalCached } from './driver-redis-eval';
 import { typedRefusals } from './driver-redis-refusal';
 import {
   REDIS_ACK,
@@ -41,9 +42,11 @@ import {
   REDIS_ENQUEUE,
   REDIS_ENQUEUE_MANY,
   REDIS_HEARTBEAT,
+  REDIS_HOLDS,
   REDIS_NACK,
   REDIS_STATS,
 } from './driver-redis-scripts';
+import { redisSettleDebt } from './driver-redis-settle';
 import { redisStepStore, stepsOf } from './driver-redis-steps';
 import { JobDuplicateError } from './errors';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
@@ -128,8 +131,9 @@ function toRecord(fields: ReadonlyMap<string, string>): JobRecord {
  * The idempotency namespace field: name, tenant (`''` for none, as the index's `coalesce`) and
  * key, JSON-joined so no separator inside a value can make two triples one field.
  */
-const namespaceField = (request: EnqueueRequest): string =>
-  JSON.stringify([request.name, request.tenantId ?? '', request.idempotencyKey]);
+const namespaceField = (
+  request: Pick<EnqueueRequest, 'name' | 'tenantId' | 'idempotencyKey'>,
+): string => JSON.stringify([request.name, request.tenantId ?? '', request.idempotencyKey]);
 
 /** One request as `ENQUEUE_ONE` reads it: `ENQUEUE_ARITY` fields, in its order. */
 function enqueueArgs(request: EnqueueRequest, runId: string, at: number): (string | number)[] {
@@ -147,6 +151,8 @@ function enqueueArgs(request: EnqueueRequest, runId: string, at: number): (strin
     request.traceparent ?? '',
     request.enqueuedBy ?? '',
     namespaceField(request),
+    request.expiresAt ?? '',
+    request.onConflict === 'replace' ? '1' : '',
   ];
 }
 
@@ -167,11 +173,28 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
   );
   // `KEYS[1]` routes the call to the namespace's slot; every key a script builds is in it.
   const run = (script: string, args: readonly (string | number)[]): Promise<unknown> =>
-    client.send('EVAL', [script, '1', `${ns}:queues`, ns, ...args.map(String)]);
+    evalCached(client, script, ['1', `${ns}:queues`, ns, ...args.map(String)]);
 
   return {
     name: 'redis',
     steps: redisStepStore({ ns, run, client }),
+    settleDebt: redisSettleDebt({ run, clock, record: (flat) => toRecord(fieldsOf(flat)) }),
+
+    // `wait:<queue>` IS the ready and delayed rows of the queue: one `ZCARD`, capped here.
+    async backlog(queue, cap): Promise<number> {
+      const limit = finiteCount('the redis driver backlog', 'cap', cap);
+      return Math.min(Number(await client.send('ZCARD', [`${ns}:wait:${queue}`])), limit);
+    },
+
+    // Only a full `maxPending` asks: a live holder means the enqueue adds no row.
+    async holds(name, idempotencyKey, tenantId): Promise<boolean> {
+      const field = namespaceField({
+        name,
+        idempotencyKey,
+        ...(tenantId === undefined ? {} : { tenantId }),
+      });
+      return Number(await run(REDIS_HOLDS, [field])) === 1;
+    },
 
     async enqueue(request): Promise<EnqueueResult> {
       const runId = request.runId ?? uuidV7();
@@ -243,7 +266,15 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
     },
 
     async ack(jobId, by): Promise<boolean> {
-      const reply = await run(REDIS_ACK, [jobId, by.workerId, by.claim, nowMs(clock), doneTtlMs]);
+      const owes = by.owesSettle === true ? '1' : '0';
+      const reply = await run(REDIS_ACK, [
+        jobId,
+        by.workerId,
+        by.claim,
+        nowMs(clock),
+        doneTtlMs,
+        owes,
+      ]);
       return Number(reply) === 1;
     },
 
@@ -262,6 +293,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
         error === undefined ? '0' : '1',
         error ?? '',
         error === undefined ? '' : (nackOptions.stack ?? '').slice(0, MAX_ERROR_STACK_LENGTH),
+        nackOptions.owesSettle === true ? '1' : '0',
       ]);
       return Number(reply) === 1;
     },

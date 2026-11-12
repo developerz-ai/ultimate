@@ -83,6 +83,7 @@ function endings(options: UnwindSettleOptions) {
         claimed,
         ctx: options.ctx,
         ...(options.run === undefined ? {} : { run: options.run }),
+        owed: { debt: options.driver.settleDebt, claim: claimed.claim },
         settlement: { outcome, error, code },
       }),
   };

@@ -2,7 +2,13 @@
 // `EnqueueRequest`, for `enqueue` and `enqueueMany` alike. Split from `outbox.ts` so the batch path
 // builds the identical row the single one does, instead of a second spelling of it.
 
-import { currentSpanContext, describeValue, traceparent, UltimateError } from '@ultimat3/core';
+import {
+  currentSpanContext,
+  describeValue,
+  finiteOption,
+  traceparent,
+  UltimateError,
+} from '@ultimat3/core';
 import type { EnqueueRequest } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobHandle } from './job';
@@ -75,6 +81,23 @@ const optional = (
   ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
 });
 
+/**
+ * `onConflict: 'replace'` and `expiresAt`, as both paths carry them: the direct request hands them
+ * to the driver, the staged row to the relay's single enqueue. `expiresAt` is screened here, the
+ * one place, so a `NaN` fails the caller and never reaches a column or a claim.
+ */
+function debounce(
+  job: string,
+  options: EnqueueOptions,
+): { readonly onConflict?: 'replace'; readonly expiresAt?: number } {
+  return {
+    ...(options.onConflict === 'replace' ? { onConflict: 'replace' } : {}),
+    ...(options.expiresAt === undefined
+      ? {}
+      : { expiresAt: finiteOption(`enqueue of job "${job}"`, 'expiresAt', options.expiresAt) }),
+  };
+}
+
 /** The row a staged enqueue writes to the outbox; its `id` and `runId` are the job's to be. */
 export function stagedRecord<I>(
   handle: JobHandle<I>,
@@ -92,6 +115,7 @@ export function stagedRecord<I>(
     maxAttempts: enqueuedAttempts(handle.retry, handle.compensates),
     runAt: options.runAt ?? facts.at,
     stagedAt: facts.at,
+    ...debounce(handle.name, options),
     // Stamped at STAGE time and not at publish time: the relay runs after commit, in its own
     // timer, with no request span in scope — a trace read there would be nobody's.
     ...optional(queuedFor(handle, input, options), options, facts.trace),
@@ -114,6 +138,7 @@ export function directRequest<I>(
     maxAttempts: enqueuedAttempts(handle.retry, handle.compensates),
     runAt: options.runAt ?? facts.at,
     ...(facts.runId === undefined ? {} : { runId: facts.runId }),
+    ...debounce(handle.name, options),
     ...optional(queuedFor(handle, input, options), options, facts.trace),
   };
 }
@@ -133,5 +158,8 @@ export function publishRequest(record: OutboxRecord): EnqueueRequest {
     ...(record.tenantId === undefined ? {} : { tenantId: record.tenantId }),
     ...(record.traceparent === undefined ? {} : { traceparent: record.traceparent }),
     ...(record.enqueuedBy === undefined ? {} : { enqueuedBy: record.enqueuedBy }),
+    // Carried, so the relay's single enqueue debounces or expires it as the direct path would.
+    ...(record.onConflict === 'replace' ? { onConflict: 'replace' } : {}),
+    ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
   };
 }

@@ -2,7 +2,8 @@
 //
 // The nightly digest. The scheduler fires once, in UTC; the *delivery* is per member, at 09:00
 // on their own wall clock. That is why this is two jobs: one fan-out that computes slots, and one
-// delivery whose idempotency key is the slot it is for.
+// delivery whose idempotency key is the slot it is for. The fan-out is a `cronJob()`: the job and
+// the task that fires it are one declaration, and `sendDigest.schedule` is that task.
 //
 // The delivery's unit is one (org, zone) group, not one member. Both halves of that follow from
 // what a digest costs: the post window is org-scoped and bounded by the group's own instant, so a
@@ -16,7 +17,7 @@
 import { localDateIn, scheduleByOrgAndZone } from '@postly/core';
 import { assert } from '@ultimat3/core';
 import { defineFlag, isEnabled } from '@ultimat3/flags';
-import { job, t } from '@ultimat3/jobs';
+import { cronJob, t } from '@ultimat3/jobs';
 import { deliverDigest } from './deliver-digest';
 
 /** The shape the nightly task sends, and the only one the slot arithmetic below can read. */
@@ -35,7 +36,7 @@ const startOfRunDate = (runDate: string): Date => {
   assert(
     RUN_DATE.test(runDate),
     `sendDigest was enqueued with runDate ${JSON.stringify(runDate)}, which is not YYYY-MM-DD`,
-    'enqueue it from the nightly task, which formats the occurrence: x jobs show sendDigest --json',
+    'enqueue it from sendDigest.schedule, which formats the occurrence: x jobs show sendDigest --json',
   );
   return new Date(`${runDate}T00:00:00.000Z`);
 };
@@ -52,12 +53,22 @@ export const digestEnabled = defineFlag({
   targeting: { default: true },
 });
 
-export const sendDigest = job({
+export const sendDigest = cronJob({
+  // Pinned: the scheduler keys `sendDigest.schedule`'s last firing by this name, and the queue
+  // keys the rows already stored by it.
+  name: 'sendDigest',
   /**
-   * The task passes the UTC date of the occurrence it is firing for — not the worker's clock,
-   * which a late or caught-up tick has already moved past. An idempotency key must derive from
-   * `input` alone, so an empty payload would make every night's run collide with the first one.
+   * Once, in UTC, before any member's 09:00 — the fan-out then schedules each member for their
+   * own local morning. The `tz` is explicit because "server time" is not a timezone.
    */
+  cron: '0 3 * * *',
+  tz: 'UTC',
+  /**
+   * The UTC date of the OCCURRENCE the scheduler fires for — not the worker's clock, which a late
+   * or caught-up tick has already moved past. An idempotency key must derive from `input` alone,
+   * so an empty payload would make every night's run collide with the first one.
+   */
+  payload: (occurrenceMs) => ({ runDate: localDateIn(new Date(occurrenceMs), 'UTC') }),
   input: t.object({ runDate: t.string }),
   idempotencyKey: ({ runDate }) => `digest:${runDate}`,
   /**

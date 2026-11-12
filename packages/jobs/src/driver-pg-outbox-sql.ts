@@ -11,9 +11,9 @@ export const SQL_OUTBOX_STAGE = `
 with staged as (
   insert into x_outbox
     (id, job, queue, input, idempotency_key, max_attempts, run_at, staged_at, tenant_id,
-     traceparent, enqueued_by, run_id)
+     traceparent, enqueued_by, run_id, on_conflict, expires_at)
   values ($1, $2, $3, $4::jsonb, $5, $6, to_timestamp($7 / 1000.0), to_timestamp($8 / 1000.0),
-          $9, $10, $11, $12)
+          $9, $10, $11, $12, $13::text, to_timestamp($14::numeric / 1000.0))
   returning id
 )
 select id,${NOTIFY_STAGED}::text as woke
@@ -32,11 +32,12 @@ export const SQL_OUTBOX_STAGE_MANY = `
 with staged as (
   insert into x_outbox
     (id, job, queue, input, idempotency_key, max_attempts, run_at, staged_at, tenant_id,
-     traceparent, enqueued_by, run_id)
+     traceparent, enqueued_by, run_id, on_conflict, expires_at)
   select (r->>'id')::uuid, r->>'job', r->>'queue', r->'input', r->>'idempotencyKey',
          (r->>'maxAttempts')::int, to_timestamp((r->>'runAt')::numeric / 1000.0),
          to_timestamp((r->>'stagedAt')::numeric / 1000.0), r->>'tenantId', r->>'traceparent',
-         r->>'enqueuedBy', (r->>'runId')::uuid
+         r->>'enqueuedBy', (r->>'runId')::uuid, r->>'onConflict',
+         to_timestamp((r->>'expiresAt')::numeric / 1000.0)
     from jsonb_array_elements($1::jsonb) with ordinality as t(r, ord)
    order by t.ord
   returning id
@@ -85,12 +86,14 @@ with claimable as (
     from claimable c
    where o.id = c.id
   returning o.id, o.run_id, o.job, o.queue, o.input, o.idempotency_key, o.max_attempts,
-            o.tenant_id, o.traceparent, o.enqueued_by, o.claimed_by, o.run_at, o.staged_at
+            o.tenant_id, o.traceparent, o.enqueued_by, o.claimed_by, o.run_at, o.staged_at,
+            o.on_conflict, o.expires_at
 )
 select id, run_id, job, queue, input, idempotency_key, max_attempts, tenant_id,
-       traceparent, enqueued_by, claimed_by,
-       (extract(epoch from run_at) * 1000)::bigint    as run_at,
-       (extract(epoch from staged_at) * 1000)::bigint as staged_at${horizon ? HORIZON_COLUMN : ''}
+       traceparent, enqueued_by, claimed_by, on_conflict,
+       (extract(epoch from run_at) * 1000)::bigint     as run_at,
+       (extract(epoch from staged_at) * 1000)::bigint  as staged_at,
+       (extract(epoch from expires_at) * 1000)::bigint as expires_at${horizon ? HORIZON_COLUMN : ''}
   from claimed${horizon ? OUTBOX_HORIZON_ARM : ''}
  order by staged_at, id
 `.trim();
@@ -106,7 +109,8 @@ const HORIZON_COLUMN = `,
  */
 const OUTBOX_HORIZON_ARM = `
 union all
-select null, null, null, null, null, null, null, null, null, null, null, null, null,
+select null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+       null,
        (select (extract(epoch from (min(o.claimed_at) - now())) * 1000)::bigint + $2::bigint
           from x_outbox o
          where o.published_at is null and o.claimed_at is not null)

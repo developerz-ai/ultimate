@@ -272,5 +272,7 @@
  * file; no existing module newly reached.
  * raised 1471 → 1472, measured 1472 (2026-11-12, sweep 9a jobs idle cost, the test's own walk):
  * `MIGRATE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing else moved.
+ * raised 1472 → 1483, measured 1483 (2026-11-12, sweep 9b jobs mechanisms, the test's own walk):
+ * `MIGRATE_CEILING`'s 11, the modules named there. Nothing else moved.
  */
-export const SERVING_ROLE_CEILING = 1472;
+export const SERVING_ROLE_CEILING = 1483;

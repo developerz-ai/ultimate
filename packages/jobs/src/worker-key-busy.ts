@@ -48,6 +48,7 @@ export async function refuseKeyBusy(
     error,
     countsAsAttempt: false,
     fail: true,
+    owesSettle: getJob(claimed.name)?.declaresOnSettled === true,
   });
   if (!settled) {
     // The claim lapsed and the row is another worker's now, or it was cancelled: nothing was
@@ -89,6 +90,7 @@ export async function refuseKeyBusy(
         handle,
         claimed,
         ctx,
+        owed: { debt: driver.settleDebt, claim: claimed.claim },
         settlement: { outcome: 'refused', error, code: refusal.code },
       });
     }

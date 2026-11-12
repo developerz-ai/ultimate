@@ -116,6 +116,16 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     `job "${name}" declares onSettledTimeout ${String(definition.onSettledTimeout)}, which is no ceiling at all`,
     `set a finite positive onSettledTimeout on job("${name}") — "30s" or 30_000 — or omit the field for the default`,
   );
+  const stepOutputMaxBytes =
+    definition.stepOutputMax === undefined
+      ? undefined
+      : finiteCount(`job "${name}"`, 'stepOutputMax', definition.stepOutputMax, 1);
+  // A whole count of at least one: `0` refuses every enqueue, `NaN` and `Infinity` none — the
+  // opposite of a ceiling each way, so refused where it is written.
+  const maxPending =
+    definition.maxPending === undefined
+      ? undefined
+      : finiteCount(`job "${name}"`, 'maxPending', definition.maxPending, 1);
   const eventPollMs =
     definition.eventPoll === undefined
       ? undefined
@@ -146,6 +156,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     retry: { ...DEFAULT_RETRY, ...definition.retry },
     concurrency: concurrency.limit,
     whenBusy: concurrency.whenBusy,
+    maxPending,
     timeoutMs:
       definition.timeout === undefined
         ? undefined
@@ -153,6 +164,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     stepTimeoutMs,
     onSettledTimeoutMs,
     eventPollMs,
+    stepOutputMaxBytes,
     compensates: definition.compensates === true,
     input: definition.input,
     parse(raw: unknown): I {

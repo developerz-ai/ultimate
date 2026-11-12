@@ -30,6 +30,7 @@ import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
 import { jobDriver } from './driver';
+import { backlogLedger, gateBacklog } from './enqueue-backlog';
 import { ambientTraceparent, directRequest, namedRunId, stagedRecord } from './enqueue-record';
 import { signalEnqueued, signalStaged } from './enqueue-signal';
 import { DriverUnavailableError, OutboxNoTxError } from './errors';
@@ -55,6 +56,13 @@ export interface OutboxRecord {
   /** The enqueuing request's trace, carried across the relay so the job's span still has a parent. */
   readonly traceparent?: string;
   readonly enqueuedBy?: string;
+  /**
+   * Debounce, staged (`EnqueueOptions.onConflict`). Only `'replace'` is ever a field: `'dedupe'` is
+   * what a row without it does. The relay publishes such a row alone — `enqueueMany` refuses it.
+   */
+  readonly onConflict?: 'replace';
+  /** `EnqueueOptions.expiresAt`, staged: epoch ms, published with the row the same single way. */
+  readonly expiresAt?: number;
   readonly publishedAt?: number;
   /**
    * Stamped by `claim()`, absent on a staged row. Hand it back to `release`/`markPublished`: it is
@@ -265,6 +273,20 @@ export interface EnqueueOptions {
    * row its own table keys the run by. `EnqueueResult.runId` answers it back either way.
    */
   readonly runId?: string;
+  /**
+   * `'replace'` is debounce: a row of this job still WAITING under the same idempotency key takes
+   * this input and `runAt` instead of the enqueue being dropped as a duplicate — "run once, with
+   * the latest input, `runAt` after the last call". A running holder is past replacing. Default
+   * `'dedupe'`. Inside a transaction it is staged with the row (`x_outbox.on_conflict`) and the
+   * relay publishes it through the single enqueue, after commit, as a direct one would be.
+   */
+  readonly onConflict?: 'dedupe' | 'replace';
+  /**
+   * Epoch ms past which the work is worthless: a claim after then settles the row `failed` with
+   * `lastError` `'expired'` (its `onSettled` hears `dropped`) instead of running it. Never expires
+   * a run already started. Staged with the row inside a transaction, as `onConflict` is.
+   */
+  readonly expiresAt?: number;
 }
 
 export interface OutboxDeps {
@@ -318,6 +340,8 @@ export interface JobsFacade {
 }
 
 export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefined): JobsFacade {
+  // What each open transaction staged under a `maxPending` job, by queue (`enqueue-backlog.ts`).
+  const ledger = backlogLedger();
   return {
     async enqueue<I>(
       handle: JobHandle<I>,
@@ -334,6 +358,7 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       // A payload naming one org, enqueued for — or by an actor of — another (`tenant.ts`).
       refuseEnqueueTenant(handle.name, handle.tenantFor(input), options.tenantId);
       const tx = options.outbox === false ? undefined : currentTx();
+      await gateBacklog(() => deps.driver, ledger, handle, [input], options, tx);
 
       if (tx === undefined) {
         if (deps.mode === 'required' && options.outbox !== false) {
@@ -361,8 +386,13 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       // LIVE job holds creates nothing, and these ids then name no row.
       return { id: record.id, runId: record.runId, deduped: false };
     },
-    enqueueMany<I>(handle: JobHandle<I>, inputs: readonly I[], options: EnqueueManyOptions = {}) {
+    async enqueueMany<I>(
+      handle: JobHandle<I>,
+      inputs: readonly I[],
+      options: EnqueueManyOptions = {},
+    ) {
       const tx = options.outbox === false ? undefined : currentTx();
+      await gateBacklog(() => deps.driver, ledger, handle, inputs, options, tx);
       return enqueueMany(deps, tx, handle, inputs, options);
     },
   };

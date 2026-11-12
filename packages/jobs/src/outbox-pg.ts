@@ -40,6 +40,8 @@ interface OutboxRow {
   readonly traceparent: string | null;
   readonly enqueued_by: string | null;
   readonly claimed_by?: string | null;
+  readonly on_conflict?: string | null;
+  readonly expires_at?: number | string | null;
 }
 
 /** A claim answer row: a claimed `OutboxRow` — or, idle and empty, nulls and the horizon. */
@@ -95,6 +97,11 @@ function toRecord(row: OutboxRow): OutboxRecord {
     ...(row.traceparent === null ? {} : { traceparent: row.traceparent }),
     ...(row.enqueued_by === null ? {} : { enqueuedBy: row.enqueued_by }),
     ...(typeof row.claimed_by === 'string' ? { claimedBy: row.claimed_by } : {}),
+    // Only `'replace'` is a staged policy; anything else in the column is read as the plain row.
+    ...(row.on_conflict === 'replace' ? { onConflict: 'replace' } : {}),
+    ...(row.expires_at === null || row.expires_at === undefined
+      ? {}
+      : { expiresAt: Number(row.expires_at) }),
   };
 }
 
@@ -129,6 +136,8 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
           record.traceparent ?? null,
           record.enqueuedBy ?? null,
           record.runId,
+          record.onConflict ?? null,
+          record.expiresAt ?? null,
         ]);
       const bucket = staged.get(key(tx)) ?? [];
       bucket.push(record);
@@ -151,6 +160,8 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
         tenantId: record.tenantId,
         traceparent: record.traceparent,
         enqueuedBy: record.enqueuedBy,
+        onConflict: record.onConflict,
+        expiresAt: record.expiresAt,
       }));
       await options.txExecutor(tx).query(SQL_OUTBOX_STAGE_MANY, [JSON.stringify(rows)]);
       const bucket = staged.get(key(tx)) ?? [];

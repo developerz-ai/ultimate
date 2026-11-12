@@ -155,6 +155,13 @@ alter table x_outbox add column if not exists claimed_by text;
 -- given a run id by the default, which is what the driver would have minted at its publish.
 alter table x_outbox add column if not exists run_id uuid not null default gen_random_uuid();
 
+-- Debounce and expiry, staged: an enqueue inside a transaction asking onConflict replace or an
+-- expiresAt keeps both on its row, and the relay publishes that row alone with them. Null is a
+-- plain row, which is every row staged before these columns existed.
+alter table x_outbox add column if not exists on_conflict text;
+
+alter table x_outbox add column if not exists expires_at timestamptz;
+
 -- The scheduler watermark. Without a durable one a redeployed scheduler has no idea what the
 -- pod it replaced already fired, so runRound takes the arming branch and every occurrence
 -- between the two processes is dropped with nothing logged.
@@ -238,6 +245,11 @@ alter table x_jobs add column if not exists last_error_stack text;
 -- id as the body still unwinding from the first claim, and only the ordinal tells the two apart.
 alter table x_jobs add column if not exists claims int not null default 0;
 
+-- The instant past which a waiting row is worthless (EnqueueRequest.expiresAt). Read only by the
+-- claim, on rows it already picked, so no index: a claim that finds it past settles the row failed
+-- with last_error expired instead of running it. Added by alter because x_jobs shipped without it.
+alter table x_jobs add column if not exists expires_at timestamptz;
+
 -- The keyset a paged listing seeks by. Newest first, id as the tiebreak, so a page is an index
 -- range and never a sort of the whole table. Not a copy of the primary key order to drop: every
 -- immediate enqueue asks it which rows its queue created in the current wake slot (notifyJobReady
@@ -263,6 +275,26 @@ drop index if exists x_jobs_finished_idx;
 -- over every younger dead row between the old done ones on every batch. Partial over the one state,
 -- so the sweep seeks to its cutoff and every row it reads is a row it deletes.
 create index if not exists x_jobs_done_idx on x_jobs (updated_at) where state = 'done';
+
+-- The onSettled debt. Set by the settle that ends a run of a job declaring the hook, in the same
+-- write, and cleared once the hook returns, so a worker killed between the two leaves it set for
+-- the scheduler leader to re-drive. Partial, so the index holds only the debts in flight, oldest
+-- first. Added by alter because x_jobs shipped without it.
+alter table x_jobs add column if not exists settle_owed boolean not null default false;
+
+create index if not exists x_jobs_settle_owed_idx on x_jobs (updated_at) where settle_owed;
+
+-- The debounce fence (EnqueueOptions.onConflict 'replace'): the id of the request whose input the
+-- row holds, a uuidV7 minted when that request was staged or sent, so a later one is a greater one.
+-- A replace moves a waiting holder only for a newer request, and a request no newer than a row of
+-- its key — live or finished — inserts nothing: a relay publishing a staged replace again after a
+-- crash can neither put old input back nor start a stale run. Null on every row a plain enqueue
+-- wrote, so the partial index holds the debounced rows alone. Added by alter, as above.
+alter table x_jobs add column if not exists debounced_id uuid;
+
+create index if not exists x_jobs_debounced_idx
+  on x_jobs (name, (coalesce(tenant_id, '')), idempotency_key, debounced_id)
+  where debounced_id is not null;
 
 -- What the queue depth read (SQL_STATS) reads, once per claim pass and at most every 15 seconds,
 -- from every worker: once a rest, when it idles. Partial over the six states it counts, so the

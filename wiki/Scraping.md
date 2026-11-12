@@ -386,7 +386,9 @@ No quota, plan or ledger reads these numbers. What a number is worth is the app'
 | `dead-lettered` / `dropped` | `error`, `code`, and `usage`: what the last attempt used. A failed run has no report and was billed all the same |
 | `refused` | `code: 'X_JOB_KEY_BUSY'`; `usage` is `undefined` — the body never ran |
 
-After the row is settled, under the job's tenant, **at most once** across a crash; a hook that
+After the row is settled, under the job's tenant. A `completed` run carries its report, a value, so
+it is told **at most once** across a crash; any other ending is **at least once** — re-driven with
+`redriven: true` and `usage: undefined` when its worker died first. A hook that
 throws is `X_JOB_ON_SETTLED_FAILED` and changes nothing. `run({ progress })` is the job's own
 `progress(done, total, note?)`, passed through.
 

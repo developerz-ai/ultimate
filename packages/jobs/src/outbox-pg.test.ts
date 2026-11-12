@@ -74,7 +74,31 @@ describe('the pg outbox store', () => {
       '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
       'user-9',
       'run-1',
+      null,
+      null,
     ]);
+  });
+
+  test('a debounced, expiring row binds both at stage and reads both back from the claim', async () => {
+    const transaction = recorder();
+    const debounced = { ...record, onConflict: 'replace' as const, expiresAt: 9_000 };
+    await postgresOutboxStore({ executor: recorder(), txExecutor: () => transaction }).stage(
+      tx('tx-1'),
+      debounced,
+    );
+    expect(transaction.calls[0]?.params.slice(-2)).toEqual(['replace', 9_000]);
+    const pool = recorder([
+      {
+        ...{ id: 'row-1', run_id: 'run-1', job: 'chargeCard', queue: 'payments' },
+        ...{ input: { orderId: 'o-1' }, idempotency_key: 'order:o-1', max_attempts: 3 },
+        ...{ run_at: '1000', staged_at: '1000', tenant_id: 'org-1', enqueued_by: 'user-9' },
+        traceparent: record.traceparent,
+        on_conflict: 'replace',
+        expires_at: '9000',
+      },
+    ]);
+    const claimed = await postgresOutboxStore({ executor: pool, txExecutor: () => pool }).claim(1);
+    expect(claimed[0]).toEqual(debounced);
   });
 
   test('commit() writes NOTHING — the rows committed with the business rows', async () => {

@@ -13,6 +13,7 @@ import type { JobExecution } from './execute-result';
 import { startLeaseHeartbeat } from './heartbeat';
 import { getJob } from './job';
 import { messagingAttributes } from './job-instrument';
+import { jobLease, withLease } from './job-lease';
 import type { IntervalScheduler } from './renewal-timer';
 import type { RunSignal } from './run-signal';
 import { createRunSignal } from './run-signal';
@@ -216,7 +217,8 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
         return executeJob({
           driver: settlingStops(driver, heartbeat.stop),
           claimed,
-          handle,
+          // `args.lease` is this heartbeat: a body that outruns its renewal timer renews by hand.
+          handle: withLease(handle, jobLease(heartbeat)),
           ctx,
           ...(options.clock === undefined ? {} : { clock: options.clock }),
           ...(options.events === undefined ? {} : { events: options.events }),

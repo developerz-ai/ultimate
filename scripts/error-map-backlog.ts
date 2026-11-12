@@ -159,6 +159,7 @@ export const OFF_SOCKET: Pins = {
     'X_SUBJECT_CYCLE',
     'X_PERSONAL_DATA_UNERASED',
     'X_PERSONAL_DATA_UNREACHED',
+    'X_STEP_OUTPUT_TOO_LARGE',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).

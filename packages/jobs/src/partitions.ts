@@ -62,6 +62,17 @@ export interface PartitionsJob extends JobHandle<PartitionsInput> {
   readonly schedule: TaskHandle;
 }
 
+/** Every handle `partitions()` minted: what `x verify` asks, since `cronJob()` has the same shape. */
+const minted = new WeakSet<object>();
+
+/**
+ * A handle `partitions()` returned, under whatever name it was declared — what clears
+ * `X_PARTITIONS_UNMAINTAINED`. By identity, never by shape: a `cronJob()` also carries a
+ * `<name>.schedule` task, and maintains no partition.
+ */
+export const isPartitionsJob = (value: unknown): value is PartitionsJob =>
+  typeof value === 'object' && value !== null && minted.has(value);
+
 /** Every registered entity declaring `partitionBy`, described, in registry name order. */
 export const partitionedEntities = (): readonly EntityDescription[] =>
   registeredEntities()
@@ -115,5 +126,7 @@ export function partitions(definition: PartitionsDefinition = {}): PartitionsJob
     tz: definition.tz ?? 'UTC',
     enqueue: () => [[handle, {}]],
   });
-  return Object.assign(handle, { schedule });
+  const maintain = Object.assign(handle, { schedule });
+  minted.add(maintain);
+  return maintain;
 }

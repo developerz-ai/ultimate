@@ -75,6 +75,8 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_PERSONAL_DATA_UNERASED',
   'X_PERSONAL_DATA_UNREACHED',
   'X_LEDGER_POSTING_CONFLICT',
+  'X_JOB_BACKLOG_FULL',
+  'X_STEP_OUTPUT_TOO_LARGE',
 ] as const;
 
 /**
@@ -167,6 +169,8 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
     'a subject erase would leave a personalData() column of a reached table',
   X_PERSONAL_DATA_UNREACHED: 'an entity carries personalData() columns no declared subject reaches',
   X_LEDGER_POSTING_CONFLICT: 'a ledger posting key is already stored with other entries',
+  X_JOB_BACKLOG_FULL: "an enqueue past the job's declared maxPending backlog was refused",
+  X_STEP_OUTPUT_TOO_LARGE: 'a step returned more bytes than a step output may hold',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -230,6 +234,9 @@ registerErrorRetry({
   X_JOB_TENANT_MISMATCH: 'terminal',
   // The same value is refused on attempt five; the step's side effect has already happened.
   X_STEP_OUTPUT_UNSERIALIZABLE: 'terminal',
+  // The same body answers the same bytes on attempt five, after running its side effect again:
+  // the repair is the step (return a key) or the declaration (`stepOutputMax`).
+  X_STEP_OUTPUT_TOO_LARGE: 'terminal',
   // The stored event is the same on every attempt: the repair is the publisher or the schema.
   X_JOB_EVENT_INVALID: 'terminal',
   // The same list is the same length on every attempt: the repair is the caller's slicing.

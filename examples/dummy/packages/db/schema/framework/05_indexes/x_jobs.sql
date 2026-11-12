@@ -4,6 +4,8 @@ CREATE INDEX x_jobs_claim_idx ON public.x_jobs USING btree (queue, run_at) WHERE
 
 CREATE INDEX x_jobs_created_idx ON public.x_jobs USING btree (created_at DESC, id DESC);
 
+CREATE INDEX x_jobs_debounced_idx ON public.x_jobs USING btree (name, COALESCE(tenant_id, ''::text), idempotency_key, debounced_id) WHERE (debounced_id IS NOT NULL);
+
 CREATE INDEX x_jobs_depth_idx ON public.x_jobs USING btree (queue, state, run_at) WHERE (state = ANY (ARRAY['ready'::text, 'delayed'::text, 'running'::text, 'suspended'::text, 'failed'::text, 'dead'::text]));
 
 CREATE INDEX x_jobs_done_idx ON public.x_jobs USING btree (updated_at) WHERE (state = 'done'::text);
@@ -13,3 +15,5 @@ CREATE INDEX x_jobs_ended_idx ON public.x_jobs USING btree (updated_at) WHERE (s
 CREATE UNIQUE INDEX x_jobs_name_tenant_idempotency_live_idx ON public.x_jobs USING btree (name, COALESCE(tenant_id, ''::text), idempotency_key) WHERE (state = ANY (ARRAY['ready'::text, 'delayed'::text, 'running'::text, 'suspended'::text]));
 
 CREATE INDEX x_jobs_run_idx ON public.x_jobs USING btree (run_id);
+
+CREATE INDEX x_jobs_settle_owed_idx ON public.x_jobs USING btree (updated_at) WHERE settle_owed;

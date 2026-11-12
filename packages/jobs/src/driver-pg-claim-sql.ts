@@ -5,7 +5,12 @@
 import type { Clock, PgExecutor } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, ClaimOptions, JobRecord } from './driver';
-import { assertClaimBounds, assertClaimQueues, LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
+import {
+  assertClaimBounds,
+  assertClaimQueues,
+  JOB_EXPIRED,
+  LEASE_LAPSED_FINAL_ATTEMPT,
+} from './driver';
 import type { JobRow, StepRow } from './driver-pg-rows';
 import { toJobRecord, toStepRecord } from './driver-pg-rows';
 import { COUNTER_BUCKET_MS } from './introspection';
@@ -77,6 +82,11 @@ select ${CLAIM_ROW_NAMES.replace(/[a-z_]+/g, 'null')}, null, (${HORIZON})
  * `claimed_by` is cleared with the lease, so the body that stalled rather than died cannot settle
  * the row it lost. A buried row spends a slot of `$2`: the pass after it claims what it displaced.
  * `$5` names the jobs declaring `retry.deadLetter: false`: their rows are buried `failed`.
+ * A waiting row past its `expires_at` (`EnqueueRequest.expiresAt`) is buried too — `exhausted`,
+ * and `expired` says why: settled `failed` with `JOB_EXPIRED` and reported with the others. Lazy
+ * on purpose: decided only for a row the claim already picked, so it costs no index and no sweep.
+ * Only a row never claimed (`attempt = 0`): a retry waiting out its backoff is a run that STARTED,
+ * and burying it would drop work its first attempt may already have half done.
  *
  * `picked` SEEKS, so a claim costs the same at any backlog. One `state in (...) or running` test
  * over `queue = any(...)` cannot be served in `run_at` order by any index, so it read and sorted
@@ -108,12 +118,14 @@ with open as (
      select 1 from x_job_pauses p where p.kind = 'queue' and p.name = q.queue
    )
 ), picked as (
-  select id, exhausted
+  select id, exhausted, expired
     from (
-      select due.id, due.run_at, due.exhausted
+      select due.id, due.run_at, due.expired as exhausted, due.expired
         from open
        cross join lateral (
-         select id, run_at, false as exhausted
+         select id, run_at,
+                coalesce(state <> 'suspended' and attempt = 0 and expires_at <= now(), false)
+                  as expired
            from x_jobs
           where queue = open.queue
             and state in ('ready', 'delayed', 'suspended')
@@ -123,7 +135,7 @@ with open as (
             for update skip locked
        ) due
       union all
-      select lapsed.id, lapsed.run_at, lapsed.exhausted
+      select lapsed.id, lapsed.run_at, lapsed.exhausted, false as expired
         from open
        cross join lateral (
          select id, run_at, attempt >= max_attempts as exhausted
@@ -141,13 +153,15 @@ with open as (
 ), taken as (
   update x_jobs j
      set state            = case when not p.exhausted then 'running'
+                                 when p.expired then 'failed'
                                  when j.name = any($5::text[]) then 'failed' else 'dead' end,
          attempt          = j.attempt + (not p.exhausted)::int,
          claims           = j.claims + (not p.exhausted)::int,
          claimed_by       = case when p.exhausted then null else $3 end,
          visible_at       = case when p.exhausted then null
                                  else now() + ($4::bigint * interval '1 millisecond') end,
-         last_error       = case when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'
+         last_error       = case when p.expired then '${JOB_EXPIRED}'
+                                 when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'
                                  else j.last_error end,
          last_error_stack = case when p.exhausted then null else j.last_error_stack end,
          updated_at       = now()
