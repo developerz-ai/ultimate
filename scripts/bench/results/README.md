@@ -105,6 +105,19 @@ pool filled by one `crypto.getRandomValues` call, each byte handed out once. Bef
 and 3,712 ns. The regression test holds the COUNTS (clock reads, random draws, dispatches), never a
 wall-clock figure: [`span-overhead.bench.test.ts`](../span-overhead.bench.test.ts).
 
+## The request floor, in-process — `As of 2026-11-11`
+
+One local run (12-core Haswell VM, Bun 1.4.4, `box.runner: local`, load average 17–29 from other
+agents' work on the same box), [`http-pipeline.bench.ts`](../http-pipeline.bench.ts) →
+[`http-pipeline.json`](http-pipeline.json): `pipeline.handle` with no socket, production config, 64
+pooled caller addresses, median of five 30,000-request loops. A public `GET` answering `'ok'` costs
+**91.8 µs** and a 404 **132.3 µs**. Before (sweep 2, H1/H2), on the same tree with sweep 1's core changes
+already in: 145–181 µs and 113–155 µs over three runs — on a box this loaded the spread is wider than
+the change, so read the two as one order of magnitude. An interleaved A/B of the slice alone put the 404
+~14% lower (no stack render) and the `GET` within noise. The regression test holds the COUNTS —
+`AbortSignal.any` calls, `URLSearchParams` builds, `Set`s, entry arrays, header writes, stack reads —
+never a wall-clock figure: [`http-pipeline.bench.test.ts`](../http-pipeline.bench.test.ts).
+
 ## The scale ladder, measured — `As of 2026-11-09`
 
 Four benches for [`docs/idea/17-scale-ladder.md`](../../../docs/idea/17-scale-ladder.md) (plan 101

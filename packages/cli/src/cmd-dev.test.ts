@@ -259,6 +259,12 @@ describe('unit · x dev boots the app', () => {
   // events, and `x dev` is what subscribes — `serve.ts` never does. Until
   // it did, the timeline had no DB children at all and `repeatedSql` grouped span names, which is
   // what made an N+1 invisible in the one panel built to show it.
+  // The `Server-Timing` breakdown and the slow-request line read what this subscriber heard;
+  // `render.page` has no other subscriber in `x dev`, so it is this one's switch.
+  test('x dev installs the request timings beside the semconv histograms', () => {
+    expect(subscribed('render.page')).toBe(true);
+  });
+
   test('x dev installs the statement ledger, so the timeline has SQL children', async () => {
     expect(subscribed('db.statement')).toBe(true);
     await runSql('select 1 as n');

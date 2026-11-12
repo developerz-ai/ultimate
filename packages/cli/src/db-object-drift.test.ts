@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { raw } from '@ultimat3/db';
 import { type CatalogDescription, emptyCatalog } from '@ultimat3/db/schema-dump';
-import { liveObjectDrift } from './db-object-drift';
+import { frameworkStorageDrift, liveObjectDrift } from './db-object-drift';
 import { resolveServices } from './runtime-bindings';
 import { startQueue } from './runtime-queue';
 
@@ -56,6 +56,33 @@ describe('liveObjectDrift · a real embedded dev database', () => {
           'trigger "posts_touch" on table "posts" exists in this database and no migration creates it',
         ],
       ]);
+    },
+    BOOT_MS,
+  );
+
+  test(
+    'a framework table altered by hand off its tableStorage() is drift, with the alter that undoes it',
+    async () => {
+      const queue = await startQueue(resolveServices(root, env), undefined, env);
+      try {
+        // Clean as applied: the framework apply wrote what each row declares.
+        expect(await frameworkStorageDrift(queue.db)).toEqual([]);
+        await queue.db.execute(raw('alter table x_rate_limit set logged'));
+        const drift = await frameworkStorageDrift(queue.db);
+        expect(
+          drift.map((difference) => [difference.kind, difference.cause, difference.fix]),
+        ).toEqual([
+          [
+            'changed-table-storage',
+            'framework table "x_rate_limit" has persistence logged; its tableStorage() declares unlogged',
+            `psql "$DATABASE_URL" -c 'alter table x_rate_limit set unlogged;'   # then x db migrate, which re-checks`,
+          ],
+        ]);
+        await queue.db.execute(raw('alter table x_rate_limit set unlogged'));
+        expect(await frameworkStorageDrift(queue.db)).toEqual([]);
+      } finally {
+        await queue.stop();
+      }
     },
     BOOT_MS,
   );

@@ -144,7 +144,11 @@ export { assertInstalledRateLimitScope, installedRateLimitStore } from './rate-l
 export type { RateLimitPeek } from './rate-limit-peek';
 export { rateLimitPeek, refilledTokens } from './rate-limit-peek';
 export type { PostgresRateLimitStore, PostgresRateLimitStoreOptions } from './rate-limit-postgres';
-export { postgresRateLimitStore, SQL_RATE_LIMIT_TABLE } from './rate-limit-postgres';
+export {
+  postgresRateLimitStore,
+  RATE_LIMIT_STORAGE,
+  SQL_RATE_LIMIT_TABLE,
+} from './rate-limit-postgres';
 export type {
   RedisRateLimitClient,
   RedisRateLimitStore,
@@ -159,6 +163,8 @@ export type { ExerciseRequest, ExerciseRequestOption } from './request-as';
 export { withRequestAs } from './request-as';
 export type { RequestFacts, RequestFactsInput } from './request-facts';
 export { requestFacts } from './request-facts';
+export type { RequestTimings } from './request-timings';
+export { requestTimings, subscribeRequestTimings } from './request-timings';
 export type { CacheHint, RedirectIntent, RedirectStatus } from './response';
 export {
   applyCacheHeaders,
@@ -198,6 +204,7 @@ export { httpServer } from './server';
 export type { WebSocketOption } from './server-websocket';
 export type { DeleteCookieOptions } from './set-cookie';
 export { deleteCookie, setCookie } from './set-cookie';
+export { SLOW_REQUEST_MESSAGE } from './slow-request-log';
 // The stage vocabulary comes from its declaration site, beside the fifteen implementations it
 // names; `PIPELINE_STAGES` — the ORDER — stays `pipeline.ts`'s.
 export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';

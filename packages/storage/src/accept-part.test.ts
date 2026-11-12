@@ -89,3 +89,14 @@ describe('acceptSignedPart', () => {
     expect(codeOf(closed)).toBe('X_STORAGE_UPLOAD_UNKNOWN');
   });
 });
+
+describe('acceptSignedPart holds a part to its signed length', () => {
+  test('a part shorter than its signed length is refused, as s3 refuses it', async () => {
+    const { disk, grant, url } = await setup();
+    const short = await catchError(() =>
+      acceptSignedPart({ url, disk, orgId: 'org-1', bytes: bytesOf('abc') }),
+    );
+    expect(codeOf(short)).toBe('X_STORAGE_URL_INVALID');
+    expect((await disk.multipart?.listParts(grant.key, grant.uploadId))?.length).toBe(0);
+  });
+});

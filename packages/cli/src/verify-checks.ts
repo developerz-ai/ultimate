@@ -39,6 +39,7 @@ import {
 } from './manifest-staleness';
 import { mcpLockFindings } from './mcp-lock-findings';
 import { msg } from './messages';
+import { checkLockHeavyMigrations } from './migration-lock-check';
 import type { Finding } from './output';
 import { retainUnsweptFindings } from './retain-sweep';
 import { checkMigrationDrift } from './schema-drift';
@@ -215,6 +216,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         schema: async () => [
           ...(await checkMigrationDrift(ctx.root)),
           ...(await checkDestructiveMigrations(ctx.root)),
+          // Beside it, the same shape: a statement that stops a live table's writes for a full scan
+          // must take the two-step form or say so. Judged only past `LOCK_HEAVY_SINCE`.
+          ...(await checkLockHeavyMigrations(ctx.root)),
           // The third rail, and the one the other two cannot see: a hand-written statement is
           // recorded by no snapshot and hashed by no source, so both halves above are green over SQL
           // a squash silently drops. Same directory, same reader, no database — this step's own

@@ -1,7 +1,8 @@
-// `concurrently: true` on an index, through `generateMigration`: which step each statement lands
-// in, the ids and snapshots of the two files, and — just as load-bearing — that an index declaring
-// nothing generates byte-for-byte what it always did. `migration-step.test.ts` pins how the runner
-// applies the step; `concurrent-index-embedded.test.ts` that it applies on a real engine.
+// How an index is built, through `generateMigration`: which step each statement lands in and the
+// ids and snapshots of the two files. An existing table's index is concurrent unless it declares
+// `concurrently: false` — absent and `true` generate the same — and the opt-out is a plain build
+// carrying `-- lock-heavy: true`. `migration-step.test.ts` pins how the runner applies the step;
+// `concurrent-index-embedded.test.ts` that it applies on a real engine.
 
 import { describe, expect, test } from 'bun:test';
 import type {
@@ -197,7 +198,7 @@ describe('generateMigration · `concurrently: true`', () => {
     expect(migration.up).not.toContain('concurrently');
   });
 
-  test('an ordinary index generates exactly what it always did — no marker, no second file', () => {
+  test('an index declaring nothing on a live table is built as `concurrently: true` is', () => {
     const migration = generateMigration({
       entities: [runs([index('runs_bank_idx', ['bank'])])],
       current: recorded(),
@@ -205,9 +206,28 @@ describe('generateMigration · `concurrently: true`', () => {
       now: at,
     });
 
+    expect(migration.transactional).toBe(false);
+    expect(migration.followUp).toBeUndefined();
+    expect(migration.up).toBe(
+      '-- transaction: false\n' +
+        'create index concurrently if not exists "runs_bank_idx" on "runs" ("bank");',
+    );
+    expect(migration.down).toBe('drop index concurrently if exists "runs_bank_idx";');
+  });
+
+  test('`concurrently: false` is the plain build it always was, marked lock-heavy, no second file', () => {
+    const migration = generateMigration({
+      entities: [runs([index('runs_bank_idx', ['bank'], { concurrently: false })])],
+      current: recorded(),
+      name: 'index bank',
+      now: at,
+    });
+
     expect(migration.transactional).toBe(true);
     expect(migration.followUp).toBeUndefined();
-    expect(migration.up).toBe('create index "runs_bank_idx" on "runs" ("bank");');
+    expect(migration.up).toBe(
+      '-- lock-heavy: true\ncreate index "runs_bank_idx" on "runs" ("bank");',
+    );
     expect(migration.down).toBe('drop index "runs_bank_idx";');
   });
 });

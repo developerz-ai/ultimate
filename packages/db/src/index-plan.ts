@@ -22,11 +22,37 @@ import {
   redefineConcurrently,
   removeConcurrently,
 } from './concurrent-plan';
-import type { EntityDescriptionLike } from './entity-shape';
+import type { EntityDescriptionLike, IndexDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
-import { createIndex, dropIndex, impliedByColumnClause, redefineIndex } from './index-ddl';
+import {
+  createIndex,
+  dropIndex,
+  impliedByColumnClause,
+  indexShape,
+  redefineIndex,
+} from './index-ddl';
 import type { TableDescription } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
+import { LOCK_HEAVY_MARKER } from './migration-lock-lint';
+
+/**
+ * An existing table's index is built `concurrently` unless the entity says `concurrently: false`:
+ * a plain build holds SHARE on the table, stopping every write for the length of the scan, and
+ * `X_MIGRATION_LOCK_HEAVY` refuses one the generator did not mark. A partitioned parent is the
+ * exception Postgres makes (`0A000`, `X_MIGRATION_CONCURRENT_PARTITIONED`): built plainly, marked.
+ */
+const buildsConcurrently = (entity: EntityDescriptionLike, index: IndexDescriptionLike): boolean =>
+  index.concurrently !== false && entity.partition === undefined;
+
+/**
+ * A plain build on a table that was already there is a lock the author chose (`concurrently:
+ * false`, a partitioned parent, a column rebuilt under ACCESS EXCLUSIVE anyway). The marker goes on
+ * the line directly above THAT build, the only statement it admits, so `x db gen` never writes what
+ * `x verify` refuses and a hand-added lock beside it is still judged.
+ */
+function pushPlainBuild(plan: Plan, build: string): void {
+  plan.up.push(LOCK_HEAVY_MARKER, build);
+}
 
 /**
  * What the rest of this migration has already done to the columns underneath the indexes — every
@@ -75,12 +101,18 @@ export function indexPlan(
     // `concurrently` only where the table is live and the index is the only thing moving: a
     // rebuilt or retyped column already holds ACCESS EXCLUSIVE inside the transaction, so a
     // concurrent rebuild after it buys nothing and leaves the table without the index between.
-    const concurrently = index.concurrently === true && !gone;
+    const concurrently = buildsConcurrently(entity, index) && !gone;
     if (recorded !== undefined && !gone) {
       if (concurrently) {
         redefineConcurrently(entity.table, index, recorded, context.concurrent);
-      } else {
-        redefineIndex(entity.table, index, recorded, plan);
+      } else if (indexShape(index) !== indexShape(recorded)) {
+        // `redefineIndex`'s drop + create, with the marker between them: above the create only.
+        const moved: Plan = { up: [], down: [] };
+        redefineIndex(entity.table, index, recorded, moved);
+        const [drop, ...builds] = moved.up;
+        if (drop !== undefined) plan.up.push(drop);
+        for (const build of builds) pushPlainBuild(plan, build);
+        plan.down.push(...moved.down);
       }
       continue;
     }
@@ -91,7 +123,7 @@ export function indexPlan(
       buildConcurrently(entity.table, index, context.concurrent);
       continue;
     }
-    plan.up.push(createIndex(entity.table, index));
+    pushPlainBuild(plan, createIndex(entity.table, index));
     // The plain drop, always: this migration CREATED it, with `create index`, so it is an index
     // and never a constraint's — the ambiguity is about the recorded side only.
     plan.down.push(dropIndex(index.name));

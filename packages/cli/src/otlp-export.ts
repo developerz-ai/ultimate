@@ -1,10 +1,13 @@
 // OTLP export, switched on by the variable the shipped Helm chart already sets. Until this file
 // `OTEL_EXPORTER_OTLP_ENDPOINT` was in `docker/helm/values.yaml` and **no code read it**: a
 // deployment configured a collector, the collector received nothing, and the only signal that
-// anything was wrong was an empty dashboard.
+// anything was wrong was an empty dashboard. Also the bus subscribers every production boot
+// records whether or not a collector is set: the semconv histograms, the slow-statement line and
+// the per-request timings the slow-request line reads.
 
 import type { OtlpSignal, ShutdownReason } from '@ultimat3/core';
 import {
+  isProduction,
   logger,
   onShutdown,
   otlpEndpointLabel,
@@ -17,6 +20,8 @@ import {
   systemClock,
   tryOtlpEndpoint,
 } from '@ultimat3/core';
+import { SLOW_STATEMENT_THRESHOLD_MS, slowStatementLog } from '@ultimat3/db';
+import { subscribeRequestTimings } from '@ultimat3/http';
 import type { Env } from './runtime-bindings';
 
 /**
@@ -68,7 +73,37 @@ export function startOtlpExport(env: Env = process.env): () => void {
   // them to a scrape-only deployment exactly as OTLP pushes them to a collector. Pushed first, so
   // the reversed release below drops them last — the drain's own statements are still counted.
   releases.push(subscribeSemconvMetrics());
+  // One grep-able warn line per slow statement shape, with the request id. Production only: a
+  // test suite's deliberately slow statements are not an operator's incident. Released with the
+  // rest, so a second boot in this process never logs each statement twice.
+  const production = isProduction({ env });
+  releases.push(slowStatementLog({ thresholdMs: production ? SLOW_STATEMENT_THRESHOLD_MS : 0 }));
+  // Every environment: the statements, renders and cache lookups each request caused, which
+  // `http.request.slow` carries (its own threshold, `http.slowRequestMs`, decides whether it is
+  // written). Without it the line holds the gate and handler split and no statement count.
+  releases.push(subscribeRequestTimings());
 
+  // An exporter refused at construction (`X_OTLP_PROTOCOL_UNSUPPORTED`) fails the boot, and the
+  // subscribers above go with it: the caller never got a release to call, so a refused boot that
+  // left them behind counted every later statement twice in this process.
+  try {
+    installExporters(env, releases, flushes);
+  } catch (error) {
+    for (const release of releases.reverse()) release();
+    throw error;
+  }
+
+  return () => {
+    for (const release of releases.reverse()) release();
+  };
+}
+
+/** One exporter per signal whose endpoint is set, each pushed with its release and its flush. */
+function installExporters(
+  env: Env,
+  releases: (() => void)[],
+  flushes: (() => Promise<void>)[],
+): void {
   // The boot's OWN env, not `process.env`, and the resolved endpoint is then passed to the
   // exporter explicitly: `runRole({ env })` is a real seam — a test and an in-process host both
   // pass an env that is not the process's — and an exporter that re-read `process.env` would
@@ -112,10 +147,6 @@ export function startOtlpExport(env: Env = process.env): () => void {
   if (flushes.length > 0) {
     releases.push(onShutdown('otlp', (reason) => flushWithin(flushes, reason), { phase: 'close' }));
   }
-
-  return () => {
-    for (const release of releases.reverse()) release();
-  };
 }
 
 /**

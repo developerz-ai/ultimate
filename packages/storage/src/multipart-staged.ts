@@ -77,7 +77,8 @@ export function stagedMultipart(options: StagedMultipartOptions): MultipartCapab
         contentLength,
         maxBytes: contentLength,
         expiresInMs,
-        part: { uploadId, partNumber },
+        // The exact length rides inside the signature: `acceptSignedPart` refuses any other.
+        part: { uploadId, partNumber, length: contentLength },
       }),
 
     async listParts(key, uploadId): Promise<readonly UploadedPart[]> {

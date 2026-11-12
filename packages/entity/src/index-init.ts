@@ -36,6 +36,9 @@ export interface IndexInit<C extends ColumnMap> {
    * `<id>_concurrently.sql` beside the migration (or as the migration, when it is the only change),
    * marked `-- transaction: false`; an index on a table the same migration creates is still built
    * inside that migration's transaction — the table is empty and nobody else can see it.
+   *
+   * Absent is the default: concurrent on a table that already exists; `false` is the plain build
+   * `x db gen` marks `-- lock-heavy: true`.
    */
   readonly concurrently?: boolean;
 }

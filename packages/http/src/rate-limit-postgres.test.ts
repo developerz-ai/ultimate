@@ -124,7 +124,11 @@ describe('the postgres rate-limit store', () => {
   });
 
   test('the install statement is idempotent, because the boot runs it on every start', () => {
-    expect(SQL_RATE_LIMIT_TABLE).toContain('create table if not exists x_rate_limit');
+    expect(SQL_RATE_LIMIT_TABLE).toContain('create unlogged table if not exists x_rate_limit');
+    // The alters converge a table an earlier boot created logged at the default fillfactor, and
+    // are no-ops on one already there: `x_rate_limit` is UNLOGGED at fillfactor 70 (H5).
+    expect(SQL_RATE_LIMIT_TABLE).toContain('alter table x_rate_limit set (fillfactor = 70)');
+    expect(SQL_RATE_LIMIT_TABLE).toContain('alter table x_rate_limit set unlogged');
   });
 
   // v31: the purge reads `last_ms`, so an index on `updated_at` was never scanned (idx_scan = 0
@@ -140,8 +144,13 @@ describe('the postgres rate-limit store', () => {
         .filter((line) => !line.trim().startsWith('--'))
         .join('\n')
         .trim();
-      expect(code).toMatch(/^(create|drop) /);
+      expect(code).toMatch(/^(create|alter|drop) /);
     }
+  });
+
+  // H5: nothing reads `updated_at`, and its write was a column of every row version per take.
+  test('a take never writes updated_at', () => {
+    expect(SQL_RATE_LIMIT_TAKE).not.toContain('updated_at');
   });
 
   test('no secondary index is created, and the dead updated_at one is dropped', () => {
@@ -187,7 +196,12 @@ describe('the postgres store peek', () => {
     const peek = await postgresRateLimitStore({ executor: exec }).peek('k', bucket, 5_000);
     expect(peek).toEqual({ remaining: 3, retryAfterSeconds: 0 });
     expect(calls).toEqual([{ sql: SQL_RATE_LIMIT_PEEK, params: ['k'] }]);
-    expect(SQL_RATE_LIMIT_PEEK.trim().toLowerCase()).toStartWith('select ');
+    // A select, never the upsert — under one comment line that keeps it off a standby, which
+    // cannot read the unlogged table (`rate-limit-postgres-primary.test.ts`).
+    const [marker, statement] = SQL_RATE_LIMIT_PEEK.split('\n');
+    expect(marker).toStartWith('/* primary only');
+    expect(statement?.trim().toLowerCase()).toStartWith('select ');
+    expect(SQL_RATE_LIMIT_PEEK).not.toContain('insert');
   });
 
   test('refills the stored row in JS, string columns included, and says when to come back', async () => {

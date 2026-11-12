@@ -2,9 +2,9 @@
 // and that nobody leaves a slot behind. `client-pool.test.ts` proves the client actually asks it.
 
 import { describe, expect, test } from 'bun:test';
-import type { Scheduler } from '@ultimat3/core';
+import { ctxOf, runWithContext, type Scheduler, UltimateError } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
-import { poolGate } from './pool-gate';
+import { type GatedPool, poolGate, type QueueExit, takeSlot } from './pool-gate';
 
 /** Fires what is due when the test says so, so a deadline is provable without waiting one out. */
 function manualTimers(): { schedule: Scheduler; fire(): void; armed(): number } {
@@ -22,6 +22,18 @@ function manualTimers(): { schedule: Scheduler; fire(): void; armed(): number } 
     },
     armed: () => armed.size,
   };
+}
+
+/** A coded abort, as a deadline or a job's cancel hands it. */
+const coded = (): UltimateError =>
+  new UltimateError({ code: 'X_TIMEOUT', cause: 'the deadline passed', fix: 'raise the deadline' });
+
+/** The exit `takeSlot` builds, by hand: leaves with whatever `reason` names, stays on `undefined`. */
+function exitOn(
+  controller: AbortController,
+  reason: () => unknown = () => coded(),
+): () => QueueExit {
+  return () => ({ signal: controller.signal, reason });
 }
 
 describe('poolGate', () => {
@@ -130,5 +142,111 @@ describe('poolGate', () => {
 
     expect(gate.enter(250)).toBeUndefined();
     expect(gate.enter(250)).toBeInstanceOf(Promise);
+  });
+
+  test('abort while queued: the waiter is gone, the next leave() admits the live waiter', async () => {
+    const timers = manualTimers();
+    const gate = poolGate(1, timers.schedule);
+    expect(gate.enter(250)).toBeUndefined();
+    const controller = new AbortController();
+    const dead = gate.enter(250, exitOn(controller))?.catch((error: unknown) => error);
+    let liveAdmitted = false;
+    const live = gate.enter(250)?.then((admitted) => {
+      liveAdmitted = admitted;
+    });
+
+    controller.abort();
+
+    expect(await dead).toMatchObject({ code: 'X_TIMEOUT' });
+    // The dead waiter's deadline is disarmed; only the live one's is still armed.
+    expect(timers.armed()).toBe(1);
+    gate.leave();
+    await live;
+    expect(liveAdmitted).toBe(true);
+  });
+
+  test('an abort that names no reason to leave keeps its place in the queue', async () => {
+    const gate = poolGate(1, manualTimers().schedule);
+    void gate.enter(250);
+    const controller = new AbortController();
+    const waiting = gate.enter(
+      250,
+      exitOn(controller, () => undefined),
+    );
+
+    controller.abort();
+    gate.leave();
+
+    expect(await waiting).toBe(true);
+  });
+
+  test('a waiter admitted before the abort is not refused by it', async () => {
+    const gate = poolGate(1, manualTimers().schedule);
+    void gate.enter(250);
+    const controller = new AbortController();
+    const waiting = gate.enter(250, exitOn(controller));
+
+    gate.leave();
+    expect(await waiting).toBe(true);
+    controller.abort();
+    // Still exactly one slot out: the late abort freed nothing and refused nothing.
+    expect(gate.enter(250)).toBeInstanceOf(Promise);
+  });
+});
+
+describe('takeSlot under a scope', () => {
+  function gated(): GatedPool {
+    return {
+      gate: poolGate(1, manualTimers().schedule),
+      demand: { enter: () => undefined, leave: () => undefined, close: () => undefined },
+    };
+  }
+
+  test('a queued read leaves on a hang-up, refused as X_ABORTED', async () => {
+    const pool = gated();
+    void pool.gate.enter(250);
+    const controller = new AbortController();
+    const waiting = runWithContext(ctxOf({ signal: controller.signal }), () =>
+      Promise.resolve(takeSlot(() => pool, 250, 'select 1')).catch((error: unknown) => error),
+    );
+
+    controller.abort();
+
+    expect(await waiting).toMatchObject({ code: 'X_ABORTED' });
+  });
+
+  test('a queued write stays through a hang-up, and leaves on a coded abort with its reason', async () => {
+    const pool = gated();
+    void pool.gate.enter(250);
+    const hangUp = new AbortController();
+    const write = runWithContext(ctxOf({ signal: hangUp.signal }), () =>
+      Promise.resolve(takeSlot(() => pool, 250, 'update t set a = 1')),
+    );
+    hangUp.abort();
+    pool.gate.leave();
+    expect(await write).toBe(pool);
+
+    const deadline = new AbortController();
+    const reason = coded();
+    const late = runWithContext(ctxOf({ signal: deadline.signal }), () =>
+      Promise.resolve(takeSlot(() => pool, 250, 'update t set a = 1')).catch(
+        (error: unknown) => error,
+      ),
+    );
+    deadline.abort(reason);
+    expect(await late).toBe(reason);
+  });
+
+  test('a scope already aborted when it asks queues as before: it is not watched', async () => {
+    const pool = gated();
+    void pool.gate.enter(250);
+    const controller = new AbortController();
+    controller.abort(coded());
+    const waiting = runWithContext(ctxOf({ signal: controller.signal }), () =>
+      Promise.resolve(takeSlot(() => pool, 250, 'select 1')),
+    );
+
+    pool.gate.leave();
+    expect(await waiting).toBe(pool);
   });
 });

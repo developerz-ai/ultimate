@@ -66,7 +66,8 @@ export const declaredIndexOf = <C extends ColumnMap>(
     // Absent stays absent: `btree` written out would be a field every existing snapshot lacks,
     // and `indexMethodOf` reads the two the same way precisely so nothing regenerates.
     ...(index.using === undefined || index.using === 'btree' ? {} : { using: index.using }),
-    // How it is BUILT, so not part of the name: `true` or absent, like `appendOnly`.
-    ...(index.concurrently === true ? { concurrently: true as const } : {}),
+    // How it is BUILT, so not part of the name. Absent stays absent — the default every existing
+    // index already projects — and only an explicit ask, either way, rides along.
+    ...(index.concurrently === undefined ? {} : { concurrently: index.concurrently }),
   };
 };

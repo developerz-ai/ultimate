@@ -147,15 +147,16 @@ describe('a generated column added to an existing table', () => {
       columns: posts(TSV).columns.filter((c) => c.column !== 'search_tsv'),
       indexes: [],
     };
-    const { up } = migrate(posts(TSV), before);
+    const { up, followUp } = migrate(posts(TSV), before);
     expect(up).toContain(
       `alter table "posts" add column "search_tsv" tsvector generated always as (${TSV}) stored not null;`,
     );
     // The backfill comment an ordinary NOT NULL add leaves behind is a step a human must remember.
     // The database computes this column for every existing row, so there is nothing to backfill.
     expect(up).not.toContain('backfill');
-    expect(up).toContain(
-      'create index "posts_search_tsv_idx" on "posts" using gin ("search_tsv");',
+    // Its index is built concurrently after the add commits: the table already held rows.
+    expect(followUp?.up).toContain(
+      'create index concurrently if not exists "posts_search_tsv_idx" on "posts" using gin ("search_tsv");',
     );
   });
 });

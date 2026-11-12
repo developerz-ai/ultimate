@@ -54,6 +54,27 @@ describe('a response that qualifies', () => {
     expect(weak.headers.get('etag')).toBe('W/"abc"');
   });
 
+  test('zstd, when offered, is coded by Bun.zstdCompressSync and decodes to its source', async () => {
+    const coded = await compressAnonymous(asking('gzip, deflate, br, zstd'), answer());
+    expect(coded.headers.get('content-encoding')).toBe('zstd');
+    const wire = new Uint8Array(await coded.arrayBuffer());
+    expect(coded.headers.get('content-length')).toBe(String(wire.byteLength));
+    expect(new TextDecoder().decode(Bun.zstdDecompressSync(wire))).toBe(SOURCE);
+  });
+
+  test('zstd past the ceiling is coded as a stream and decodes to its source', async () => {
+    const big = 'a { color: var(--text); }\n'.repeat(12_000);
+    const length = String(bytesOf(big).byteLength);
+    const coded = await compressAnonymous(
+      asking('zstd'),
+      answer(new Blob([big]).stream(), { 'content-length': length }),
+    );
+    expect(coded.headers.get('content-encoding')).toBe('zstd');
+    expect(coded.headers.has('content-length')).toBe(false);
+    const wire = new Uint8Array(await coded.arrayBuffer());
+    expect(new TextDecoder().decode(Bun.zstdDecompressSync(wire))).toBe(big);
+  });
+
   test('a file body is read and coded like any other', async () => {
     const path = join(tmpdir(), `compress-${crypto.randomUUID()}.css`);
     await Bun.write(path, SOURCE);
@@ -344,8 +365,9 @@ describe('a gzip failure', () => {
       const out = await compressAnonymous(asking(), answer(SOURCE, { etag: '"abc"' }));
       expect(out.status).toBe(200);
       expect(out.headers.has('content-encoding')).toBe(false);
-      // Identity again, so the strong validator was never weakened.
-      expect(out.headers.get('etag')).toBe('"abc"');
+      // Identity bytes, but the validator follows the coding OFFERED, never the outcome: the 304
+      // that revalidates this answer cannot know the codec failed (`etag-form.ts`).
+      expect(out.headers.get('etag')).toBe('W/"abc"');
       expect(out.headers.get('vary')).toBe('accept-encoding');
       expect(await out.text()).toBe(SOURCE);
       expect(warn.mock.calls.filter(([line]) => line === 'http.compress_failed').length).toBe(1);

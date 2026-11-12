@@ -111,7 +111,8 @@ export interface SignedUrlOptions {
    * The exact size of a `PUT`, inside the signature. On `s3Driver` the URL then signs
    * `content-length`, so the provider refuses any other length, a chunked body with none included
    * (403 `SignatureDoesNotMatch`). The local disks hold it as a ceiling (`x-max`): they count what
-   * arrives, so a shorter body passes there and not on s3. `driver-parity.test.ts` pins both.
+   * arrives, so a shorter body passes there and not on s3 (a part URL signs it exactly: `x-len`).
+   * `driver-parity.test.ts` pins both.
    */
   readonly contentLength?: number | undefined;
   readonly contentType?: string | undefined;

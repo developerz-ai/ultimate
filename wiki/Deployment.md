@@ -428,7 +428,7 @@ table per mode: [`docs/ops/04-datastores.md`](https://github.com/developerz-ai/u
 
 ## Compression
 
-The container gzips a public text answer of 1 KiB to 256 KiB with a declared length. Nothing to configure, and nothing to add in front.
+The container codes a public text answer of 1 KiB to 256 KiB with a declared length: zstd when the client offers it, gzip otherwise, by RFC 9110 weights (`As of 2026-11`). Nothing to configure, and nothing to add in front.
 
 | Situation | What happens |
 |---|---|
@@ -437,8 +437,23 @@ The container gzips a public text answer of 1 KiB to 256 KiB with a declared len
 | a handler streaming public text it must not buffer | sets `cache-control: no-transform`, or declares no `content-length` |
 | a `stream()` body | never read: it declares no length |
 | an action's `text/event-stream` answer (`stream:`, `llm()`, `agent()`) | never coded or buffered: the type is off the list, it is `no-store`, and it sends `x-accel-buffering: no` for an nginx in front |
+| a public answer with a strong ETag | coded once per process and kept (bounded LRU: 512 entries, 16 MiB), not re-coded on every hit. Its ETag is `W/"…"` whenever a coding is offered, and the 304 carries the same form |
+| `Accept-Encoding: br` alone | identity. Bun's only native brotli is `CompressionStream('brotli')` at quality 11 — 854 ms per 256 KiB against zstd's 2.9 ms (Bun 1.4.4) — so brotli is build-time work: precompressed hashed assets are **planned**, not shipped |
 
 Rule and figures: [`docs/architecture/16-build-pipeline.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/16-build-pipeline.md#what-is-compressed).
+
+## The rate-limit table is unlogged
+
+`x_rate_limit`, the shared rate-limit store, is an `unlogged` table at `fillfactor = 70` (`As of 2026-11`): a take writes no WAL. The boot applies it to an existing table with `alter table x_rate_limit set unlogged` — a rewrite under ACCESS EXCLUSIVE of a small table, bounded by the migrate `lock_timeout`.
+
+| Event | The buckets |
+|---|---|
+| a clean restart or upgrade | kept |
+| a Postgres crash | truncated: every bucket answers full, so each key gets one free burst. Never a lockout |
+| a failover to a promoted standby | the same: an unlogged table is not replicated |
+| `x_auth_lockouts` | not this table: it stays logged, because a lockout forgotten by a crash is the attack it exists to stop |
+
+`x db migrate` reports a hand change to its persistence or fillfactor as `changed-table-storage`, with the `alter` that undoes it.
 
 ## Static deploys independently
 

@@ -75,9 +75,10 @@ export interface RollingUnsafeStatement {
 /**
  * Words, quoted identifiers and punctuation, with comments, literals and dollar bodies gone. Why
  * not `stripSqlNoise`, which `destructive.ts` reads: it blanks a quoted identifier too, and this
- * rail has to say WHICH column.
+ * rail has to say WHICH column. Exported with the readers below for `migration-lock-lint.ts`: two
+ * lexical rails over one token stream, never two tokenizers.
  */
-function tokensOf(statement: string): readonly string[] {
+export function tokensOf(statement: string): readonly string[] {
   let text = '';
   let index = 0;
   while (index < statement.length) {
@@ -94,30 +95,42 @@ function tokensOf(statement: string): readonly string[] {
   return text.match(/"(?:[^"]|"")*"|[A-Za-z_][\w$]*|\S/g) ?? [];
 }
 
-const isWord = (lexeme: string | undefined, word: string): boolean =>
+export const isWord = (lexeme: string | undefined, word: string): boolean =>
   lexeme !== undefined && !lexeme.startsWith('"') && lexeme.toLowerCase() === word;
 
 /** What Postgres folds a token to: a quoted one keeps its case, a bare one lowers. */
-const nameOf = (token: string): string =>
+export const nameOf = (token: string): string =>
   token.startsWith('"') ? token.slice(1, -1).replaceAll('""', '"') : token.toLowerCase();
 
-/** `alter table [if exists] [only] [schema.]t`, as the table and where its subcommands start. */
-function alteredTable(tokens: readonly string[]): { table: string; next: number } | undefined {
-  if (!isWord(tokens[0], 'alter') || !isWord(tokens[1], 'table')) return undefined;
-  let at = 2;
-  if (isWord(tokens[at], 'if') && isWord(tokens[at + 1], 'exists')) at += 2;
-  if (isWord(tokens[at], 'only')) at += 1;
+/** `[schema.]name` from `at`, as the last part folded and where the tokens after it start. */
+export function qualifiedNameAt(
+  tokens: readonly string[],
+  start: number,
+): { name: string; next: number } | undefined {
+  let at = start;
   let name = tokens[at];
   at += 1;
   while (tokens[at] === '.') {
     name = tokens[at + 1];
     at += 2;
   }
-  return name === undefined ? undefined : { table: nameOf(name), next: at };
+  return name === undefined ? undefined : { name: nameOf(name), next: at };
+}
+
+/** `alter table [if exists] [only] [schema.]t`, as the table and where its subcommands start. */
+export function alteredTable(
+  tokens: readonly string[],
+): { table: string; next: number } | undefined {
+  if (!isWord(tokens[0], 'alter') || !isWord(tokens[1], 'table')) return undefined;
+  let at = 2;
+  if (isWord(tokens[at], 'if') && isWord(tokens[at + 1], 'exists')) at += 2;
+  if (isWord(tokens[at], 'only')) at += 1;
+  const named = qualifiedNameAt(tokens, at);
+  return named === undefined ? undefined : { table: named.name, next: named.next };
 }
 
 /** Top-level commas only: `add constraint … (a, b)` is one subcommand. */
-function subcommands(tokens: readonly string[]): readonly (readonly string[])[] {
+export function subcommands(tokens: readonly string[]): readonly (readonly string[])[] {
   const parts: string[][] = [[]];
   let depth = 0;
   for (const token of tokens) {

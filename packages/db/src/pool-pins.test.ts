@@ -118,6 +118,96 @@ describe('the bound a pin is judged by', () => {
   });
 });
 
+describe('a savepoint and a reset, on the bound a pin is judged by', () => {
+  const note = (pin: ReturnType<typeof pinBound>, text: string): void =>
+    noteAnswered(pin, { text, values: [] }, 1_000);
+
+  test('a rollback to savepoint restores the bound the savepoint saw', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'set local statement_timeout = 9000');
+    note(pin, 'SAVEPOINT x_sp_1');
+    note(pin, "select set_config('statement_timeout', '30000', true)");
+    note(pin, 'SAVEPOINT x_sp_2');
+    note(pin, 'set local statement_timeout = 60000');
+    expect(pin.boundMs).toBe(60_000);
+
+    // Back past both: the server undid both SETs, and `x_sp_1` itself is still open.
+    note(pin, 'ROLLBACK TO SAVEPOINT x_sp_1');
+    expect(pin.boundMs).toBe(9_000);
+    note(pin, 'set local statement_timeout = 45000');
+    note(pin, 'rollback to x_sp_1;');
+    expect(pin.boundMs).toBe(9_000);
+  });
+
+  test('a released savepoint keeps what was set inside it, and a later rollback skips it', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT x_sp_1');
+    note(pin, 'SAVEPOINT x_sp_2');
+    note(pin, 'set local statement_timeout = 7000');
+    note(pin, 'RELEASE SAVEPOINT x_sp_2');
+    expect(pin.boundMs).toBe(7_000);
+    note(pin, 'ROLLBACK TO SAVEPOINT x_sp_1');
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a savepoint a rollback or a release destroyed restores nothing', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT a');
+    note(pin, 'set local statement_timeout = 2000');
+    note(pin, 'SAVEPOINT b');
+    note(pin, 'ROLLBACK TO SAVEPOINT a');
+    note(pin, 'set local statement_timeout = 5000');
+    note(pin, 'ROLLBACK TO SAVEPOINT b');
+    expect(pin.boundMs).toBe(5_000);
+
+    note(pin, 'SAVEPOINT c');
+    note(pin, 'RELEASE SAVEPOINT c');
+    note(pin, 'set local statement_timeout = 6000');
+    note(pin, 'ROLLBACK TO SAVEPOINT c');
+    expect(pin.boundMs).toBe(6_000);
+  });
+
+  test('a repeated name means the newest savepoint, as the server reads it', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT s');
+    note(pin, 'set local statement_timeout = 2000');
+    note(pin, 'savepoint S');
+    note(pin, 'set local statement_timeout = 3000');
+    note(pin, 'ROLLBACK TO s');
+    expect(pin.boundMs).toBe(2_000);
+  });
+
+  test('the transaction end forgets every savepoint', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT x_sp_1');
+    note(pin, 'set local statement_timeout = 7000');
+    note(pin, 'COMMIT');
+    note(pin, 'set local statement_timeout = 8000');
+    // A name from the finished transaction restores nothing.
+    note(pin, 'ROLLBACK TO SAVEPOINT x_sp_1');
+    expect(pin.boundMs).toBe(8_000);
+  });
+
+  test.each([
+    'RESET statement_timeout',
+    'reset all;',
+    'set local statement_timeout to default',
+    'SET statement_timeout = DEFAULT',
+  ])('%s puts the role bound back', (text) => {
+    const pin = pinBound(1_000);
+    note(pin, 'set local statement_timeout = 9000');
+    note(pin, text);
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a reset of another setting leaves the bound alone', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'set local statement_timeout = 9000');
+    note(pin, 'RESET lock_timeout');
+    expect(pin.boundMs).toBe(9_000);
+  });
+});
+
 describe('a statement on a pin nobody answers', () => {
   test('rejects at the bound, retires the pool, and the pin sends nothing more', async () => {
     // Reproduced by `x drill pg-blackhole`: a write inside a transaction ran ~30 s, answered by the

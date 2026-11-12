@@ -149,13 +149,17 @@ describe('the snapshot', () => {
       now: at,
     });
 
+    // Concurrent, the default on a table that already exists (`index-plan.ts`).
     expect(migration.up).toBe(
-      'drop index "posts_tags_idx";\ncreate index "posts_tags_idx" on "posts" using gin ("tags");',
+      '-- transaction: false\n' +
+        'drop index concurrently if exists "posts_tags_idx";\n' +
+        'create index concurrently if not exists "posts_tags_idx" on "posts" using gin ("tags");',
     );
     // `down` drops the gin and recreates what the previous snapshot recorded — the btree, not
     // another gin. The pair is pushed forwards and read backwards, so the recreate lands last.
     expect(migration.down).toBe(
-      'drop index "posts_tags_idx";\ncreate index "posts_tags_idx" on "posts" ("tags");',
+      'drop index concurrently if exists "posts_tags_idx";\n' +
+        'create index concurrently if not exists "posts_tags_idx" on "posts" ("tags");',
     );
   });
 });

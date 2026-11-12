@@ -9,7 +9,7 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 | Change | Write |
 |---|---|
 | Add, rename, retype, drop a column or table; add an index or constraint | a **migration** — `x db gen "<name>"` |
-| Add an index to a big, hot table, or drop one from it | a **migration** too — `indexes: [{ on, concurrently: true }]` for the build; every drop is concurrent already. [Indexes built concurrently](#indexes-built-concurrently--expand--contract) |
+| Add an index to a big, hot table, or drop one from it | a **migration** too — `indexes: [{ on }]`: on an existing table the build is concurrent by default, and every drop is concurrent already. [Indexes built concurrently](#indexes-built-concurrently--expand--contract) |
 | Rewrite, normalize, re-derive or backfill values in rows that already exist | a **backfill** — `backfill({ … })` |
 | Add a nullable column, then populate every existing row before making it required | both: the migration adds the column, the backfill sweeps the rows, a second migration adds the `not null` once the sweep is done (expand → migrate → contract) |
 
@@ -98,7 +98,7 @@ fixed point of Biome 2.5.5 at `lineWidth: 100`, and `x new`'s `biome.json` exclu
 
 ## Indexes built concurrently — expand → contract
 
-`As of 2026-10-31`. `create index` holds SHARE on the table for the whole build, so every write
+`As of 2026-11`: the default on a table that already exists. `create index` holds SHARE on the table for the whole build, so every write
 waits; `drop index` takes ACCESS EXCLUSIVE, so every read waits too. On a big, hot table either one
 stalls the app or trips the migration's 3 s `lock_timeout` mid-deploy. The concurrent forms block
 neither, and Postgres refuses them inside a transaction — so they ship in a migration of their own.
@@ -108,7 +108,7 @@ import { entity, text, uuid } from '@ultimat3/entity';
 
 export const runs = entity('runs', {
   columns: { id: uuid().primaryKey(), status: text({ max: 20 }), bank: text({ max: 40 }) },
-  indexes: [{ on: ['status'], concurrently: true }],
+  indexes: [{ on: ['status'] }],
 });
 ```
 
@@ -126,17 +126,20 @@ drop index concurrently if exists "runs_status_idx";
 
 | | |
 |---|---|
-| Build | `concurrently: true` on an `indexes:` entry. On a table the same migration creates it changes nothing — the table is empty and invisible until COMMIT, so it is built in that transaction |
+| Build | every `indexes:` entry on a table that already exists, unless it says `concurrently: false` — the plain build, which `x db gen` marks `-- lock-heavy: true`. A partitioned parent is built plainly and marked too (Postgres refuses `concurrently` there, `0A000`). On a table the same migration creates nothing changes — the table is empty and invisible until COMMIT, so it is built in that transaction |
 | Drop | **every** removed index, concurrently built or not: delete it from `indexes`, `x db gen`. A total unique btree (a shape a UNIQUE constraint may back) is first unhooked with `alter table … drop constraint if exists` in the same step, right before its concurrent drop — `drop index concurrently` on a constraint's index is `2BP01`. That ALTER takes ACCESS EXCLUSIVE, so the runner gives it a short transaction of its own under the 3 s `lock_timeout` |
-| Files | no concurrent work (no `concurrently: true` build on a live table, no removed index) → ONE transactional migration, exactly as before. Concurrent work and nothing else → ONE `-- transaction: false` migration. Concurrent work beside other changes → TWO: `<id>.sql` (the transaction: new columns, tables, constraints, plain indexes) then `<id>_concurrently.sql` (the concurrent builds, then every drop). Each has its own snapshot and hash, and `--json` names the second as `followUp` |
+| Files | no concurrent work (no new index on a live table, or only `concurrently: false` ones; no removed index) → ONE transactional migration, exactly as before. Concurrent work and nothing else → ONE `-- transaction: false` migration. Concurrent work beside other changes → TWO: `<id>.sql` (the transaction: new columns, tables, constraints, plain indexes) then `<id>_concurrently.sql` (the concurrent builds, then every drop). Each has its own snapshot and hash, and `--json` names the second as `followUp` |
 | Order | expand, then contract: inside the step every build runs before any drop or constraint unhook, across tables — a renamed key's replacement exists before the old key goes, so for a moment both exist and never neither |
 | Failure | an interrupted build leaves an INVALID index under the name. The next `x db migrate` finds it (`pg_index.indisvalid`), drops it concurrently, and builds it again; no row was written, so nothing is skipped |
-| Never recorded | `concurrently` is how an index is built, not what it is — not in the name, not in the snapshot. Adding or removing it on an existing index generates nothing |
+| Never recorded | `concurrently` is how an index is built, not what it is — not in the name, not in the snapshot. Changing it on an existing index generates nothing |
 | Not destructive | an index holds no rows, so the destructive rail leaves a concurrent drop alone — and still requires `-- destructive: true` for a column or table drop beside it |
 
 A hand-written migration with `create index concurrently`, `drop index concurrently` or
 `reindex … concurrently` and no `-- transaction: false` line is refused before `BEGIN`:
-`X_MIGRATION_CONCURRENT_IN_TRANSACTION`.
+`X_MIGRATION_CONCURRENT_IN_TRANSACTION`. One newer than `20261113000000` that runs `create index`
+without `concurrently` on a table it did not create, or `set not null` with no validated
+`check (… is not null)` before it, is refused by `x verify`'s drift step: `X_MIGRATION_LOCK_HEAVY`.
+A deliberate one carries `-- lock-heavy: true`.
 
 ## Partitioned tables
 

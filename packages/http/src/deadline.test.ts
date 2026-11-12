@@ -147,6 +147,24 @@ describe('the caller going away', () => {
     deadline.clear();
   });
 
+  // The caller's abort is forwarded into the deadline's own controller (no `AbortSignal.any`), so
+  // these two are what that forwarding must keep: the first abort's reason, and a caller who left
+  // before the pipeline was even entered.
+  test("the signal carries the caller's reason, and a caller already gone aborts it at once", () => {
+    const client = new AbortController();
+    const reason = new Error('the tab was closed');
+    const deadline = start(30_000, client.signal);
+    client.abort(reason);
+    expect(deadline.signal.reason).toBe(reason);
+    deadline.clear();
+    const gone = new AbortController();
+    gone.abort(reason);
+    const late = start(30_000, gone.signal);
+    expect(late.signal.aborted).toBe(true);
+    expect(late.signal.reason).toBe(reason);
+    late.clear();
+  });
+
   test('and the timer still fires for a caller that stays', async () => {
     const client = new AbortController();
     const deadline = start(5, client.signal);

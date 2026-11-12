@@ -4,17 +4,9 @@
 // work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fifteen implementations
 // it names, so `Record<StageName, StageRun>` below is the build error that catches a missing one.
 
-import {
-  anonymousActor,
-  BUILD_ID_HEADER,
-  inflightCount,
-  isAnonymous,
-  isDraining,
-  lifecycleState,
-  reportError,
-} from '@ultimat3/core';
+import { anonymousActor, BUILD_ID_HEADER, isAnonymous, reportError } from '@ultimat3/core';
+import { admitRequest } from './admit-stage';
 import { signInRedirect } from './auth-redirect';
-import { assertDeclaredBody } from './body-ceiling';
 import { finalizeCacheHeaders } from './cache-stage';
 import { compressResponse } from './compress';
 import { type HttpConfig, stripBasePath } from './config';
@@ -22,20 +14,18 @@ import { elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
 import { checkCsrf, csrfBlocked, selfOrigin } from './csrf';
 import { factsOf, retryAfterOf } from './error-facts';
-import { errorLogLevel } from './error-log-level';
 import { errorPageResponse } from './error-page';
 import {
   bodyInvalid,
-  draining,
   forbidden,
   methodNotAllowed,
-  overloaded,
   pathInvalid,
   routeNotFound,
   unauthenticated,
 } from './errors';
 import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
+import { type LagSampler, processLagSampler } from './lag-shed';
 import { acceptLanguageConsulted, dropVary, routeLocalePrefix } from './locale-prefix';
 import { compose, type Middleware } from './middleware';
 import { navigationGate, redirectForRouter } from './navigation';
@@ -47,11 +37,13 @@ import {
   spendRequestBuckets,
   spendUnauthenticated,
 } from './rate-limit-stage';
+import { refusalLogLevel } from './refusal-log';
 import type { UltimateRequest } from './request';
-import { addVary, problem, redirect } from './response';
+import { noteHandlerTimings, requestTimings, serverTimingValue } from './request-timings';
+import { addVary, applySecurityHeaders, problem, redirect } from './response';
 import { canonicalPath } from './route-path';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
-import { responseSecurityHeaders } from './security-headers';
+import { logSlowRequest } from './slow-request-log';
 import { validateBody } from './validate';
 
 export type StageName =
@@ -96,17 +88,6 @@ export interface Stage extends StageDoc {
 }
 
 /**
- * A shed request must say when to come back, or it comes back immediately and the retry storm is
- * the load it was shed to avoid. One second: long enough to matter across a fleet, short enough
- * that a client is not parked past a rolling restart.
- */
-const SHED_RETRY_AFTER_SECONDS = '1';
-
-/** The two names a policy travels under — the enforced one and `reportOnly`'s. */
-const isCspHeader = (name: string): boolean =>
-  name === 'content-security-policy' || name === 'content-security-policy-report-only';
-
-/**
  * The one label a request with no matched route may carry. Every 404 and every scan of `/wp-admin`
  * would otherwise be its own rate-limit bucket and its own metric series — an attacker choosing
  * the server's cardinality is how a Prometheus dies. Exported because `pipeline.ts` labels the
@@ -125,6 +106,8 @@ export interface StageRunnersInput {
   readonly limiter: RateLimiter;
   readonly hooks: ServerHooks;
   readonly middleware: readonly Middleware[];
+  /** The lag reading `admit` sheds on; a test's scripted one. Read only when `shedLagMs > 0`. */
+  readonly lag?: LagSampler | undefined;
 }
 
 /** The stage table, closed over one pipeline's config, routes, hooks and limiter. */
@@ -133,6 +116,12 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
   const wrapped = new Map<Route, RouteHandler>();
   const wrap = compose(input.middleware);
   for (const route of input.table.routes) wrapped.set(route, wrap(route.handler));
+  // Off (`0`, OD1) starts no sampler: the default process runs no timer for a decision it never makes.
+  const lag = config.shedLagMs > 0 ? (input.lag ?? processLagSampler()) : undefined;
+  // The handler split is kept only for a request someone will read it for: `x dev`'s header, or one
+  // already past the slow line's threshold — so a fast production request allocates nothing here.
+  const keepSplit = (ctx: RequestContext): boolean =>
+    config.dev || (config.slowRequestMs > 0 && elapsedMs(ctx) >= config.slowRequestMs);
 
   const table: Record<StageName, StageRun> = {
     // Both ids are resolved in `correlation.ts`, before the context and the root span exist —
@@ -144,30 +133,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       return undefined;
     },
 
-    admit: (request, ctx) => {
-      // Before the trace, the route match, auth, the body — everything. A refusal that costs as
-      // much as a served request is not load shedding, and this is the stage that makes
-      // "reject 40% fast, serve 60% at p99" expressible at all.
-      // DRAINING is served, never refused: a request reaching the pipeline mid-drain came in on
-      // a kept-alive connection or before the listener closed, and the readiness grace exists so
-      // it is answered. `connection: close` moves the client's NEXT request to another pod.
-      // Refusing it failed 598 of 7,690 requests in one helm upgrade (kind). Only STOPPED refuses.
-      if (lifecycleState() === 'stopped') {
-        ctx.headers.set('retry-after', SHED_RETRY_AFTER_SECONDS);
-        throw draining();
-      }
-      if (isDraining()) ctx.headers.set('connection', 'close');
-      // A declared body over the transport ceiling is refused before anything reads it.
-      assertDeclaredBody(request.raw, ctx.url.pathname, config.maxRequestBodyBytes);
-      const ceiling = config.maxInflight;
-      // `beginWork()` in `server.ts` counted THIS request before the pipeline was entered, so the
-      // ceiling is compared against a number that already includes it.
-      if (ceiling > 0 && inflightCount() > ceiling) {
-        ctx.headers.set('retry-after', SHED_RETRY_AFTER_SECONDS);
-        throw overloaded(inflightCount(), ceiling);
-      }
-      return undefined;
-    },
+    admit: (request, ctx) => admitRequest(request, ctx, config, lag),
 
     trace: (_request, ctx) => {
       ctx.headers.set('x-trace-id', ctx.traceId);
@@ -317,7 +283,14 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       const route = ctx.route;
       if (route === undefined) throw routeNotFound(ctx.method, ctx.url.pathname);
       const handler = wrapped.get(route) ?? route.handler;
-      return await handler(request, ctx);
+      const began = performance.now();
+      try {
+        return await handler(request, ctx);
+      } finally {
+        if (keepSplit(ctx)) {
+          noteHandlerTimings(ctx, began - ctx.startedAt, performance.now() - began);
+        }
+      }
     },
 
     'cache-headers': (_request, ctx) => {
@@ -353,7 +326,16 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // The other half of this is `@ultimat3/schema`'s, and it is the load-bearing one: an issue
       // message must stop echoing the rejected value at all. This change makes the value
       // redactable; it does not make it absent.
-      ctx.logger[errorLogLevel(facts.status, error)](facts.code, {
+      // A routine refusal (a scanner on the login wall) is counted, and `info` once per route per
+      // minute — `debug` after (`refusal-log.ts`).
+      const level = refusalLogLevel({
+        status: facts.status,
+        code: facts.code,
+        error,
+        route: ctx.route?.path ?? UNMATCHED_ROUTE,
+        nowMs: performance.now(),
+      });
+      ctx.logger[level](facts.code, {
         cause: facts.cause,
         status: facts.status,
       });
@@ -462,20 +444,19 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // reads the header — makes `accept-language` a key nothing varies on, and a CDN keying on it
       // stores one copy per browser for nothing.
       if (!acceptLanguageConsulted(ctx)) dropVary(response, 'accept-language');
-      for (const [name, value] of Object.entries(
-        responseSecurityHeaders(config.security, ctx.https),
-      )) {
-        // A policy the handler set is KEPT and the app's is added beside it — comma-joined, two
-        // policies, both enforced — so a handler can only narrow (a `sandbox` on an uploaded file),
-        // never widen. Overwritten, that `sandbox` never reached a browser.
-        if (isCspHeader(name) && response.headers.has(name)) response.headers.append(name, value);
-        // The strictest referrer policy a handler set is KEPT for the same reason — it narrows: a
-        // file served at a bearer URL (a query's download) must name that URL to nobody.
-        else if (name === 'referrer-policy' && response.headers.get(name) === 'no-referrer')
-          continue;
-        else response.headers.set(name, value);
-      }
-      response.headers.set('server-timing', `total;dur=${elapsedMs(ctx)}`);
+      // A handler's CSP and `no-referrer` are kept — it may only narrow (`response.ts`).
+      applySecurityHeaders(response, config.security, ctx.https);
+      // One reading, two readers: the header and the slow line can never disagree. The breakdown
+      // is `x dev`'s only — a statement's duration is a timing oracle (`request-timings.ts`).
+      const totalMs = elapsedMs(ctx);
+      const timings = config.dev ? requestTimings(ctx) : undefined;
+      response.headers.set('server-timing', serverTimingValue(totalMs, timings, config.dev));
+      logSlowRequest(ctx, {
+        status: response.status,
+        route: ctx.route?.path ?? UNMATCHED_ROUTE,
+        totalMs,
+        thresholdMs: config.slowRequestMs,
+      });
       return undefined;
     },
 

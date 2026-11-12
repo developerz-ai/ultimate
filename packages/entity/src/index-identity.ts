@@ -28,8 +28,9 @@ const identity = (index: IndexDef): string =>
  * definition keeps both, and two `create index` statements sharing a name is `42P07` on the next
  * migration.
  *
- * A duplicate that asks for `concurrently: true` hands that ask to the one kept: dropping it would
- * silently build a hot table's index inside the migration's transaction after all.
+ * A duplicate's ask about how to build is handed to the one kept: `true` over everything, since
+ * dropping it would build a hot table's index inside a transaction after all, then an explicit
+ * `false` over the default it opted out of.
  */
 export function distinctIndexes(declared: readonly IndexDef[]): readonly IndexDef[] {
   return declared
@@ -37,10 +38,14 @@ export function distinctIndexes(declared: readonly IndexDef[]): readonly IndexDe
       (index, position) =>
         declared.findIndex((other) => identity(other) === identity(index)) === position,
     )
-    .map((index) =>
-      index.concurrently !== true &&
-      declared.some((other) => other.concurrently === true && identity(other) === identity(index))
-        ? { ...index, concurrently: true as const }
-        : index,
-    );
+    .map((index) => {
+      const asks = declared
+        .filter((other) => identity(other) === identity(index))
+        .map((other) => other.concurrently);
+      const ask = asks.includes(true) ? true : asks.includes(false) ? false : undefined;
+      // `undefined` means no duplicate asked, so `index` itself asked nothing either.
+      return ask === undefined || ask === index.concurrently
+        ? index
+        : { ...index, concurrently: ask };
+    });
 }

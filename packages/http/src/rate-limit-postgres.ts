@@ -4,12 +4,33 @@
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
 import type { PgExecutor, Scheduler } from '@ultimat3/core';
+import { createTableDdl, type TableStorage, tableStorage } from '@ultimat3/db';
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';
 import { degradedFallback, isRateLimitStoreUnreachable } from './rate-limit-degrade';
 import { rateLimitStoreUnavailable } from './rate-limit-errors';
 import { rateLimitPeek, refilledTokens } from './rate-limit-peek';
 import { storeDeadline } from './rate-limit-store-deadline';
+
+/**
+ * How the table is STORED, one declaration the DDL below renders, the framework-schema apply
+ * re-applies to an existing table and drift compares against `pg_class`.
+ *
+ * `unlogged`: a take writes no WAL — it was a whole-row WAL record per request (production: 10,540
+ * upserts, 3,259 autovacuums on a 160 kB table). The price is the crash semantics, and they are
+ * the safe direction: after a crash (never after a clean restart or a failover-free upgrade)
+ * Postgres truncates an unlogged table, every bucket answers as a missing one — FULL — and the
+ * fleet grants one free burst per key. Nothing is ever locked out by it. An unlogged table is not
+ * replicated either, so a promoted standby starts the same way. `x_auth_lockouts` is not this
+ * table and stays logged: a lockout forgotten by a crash IS the attack it exists to stop.
+ *
+ * `fillfactor = 70`: room on the page for the new row version, so a take stays a HOT update and
+ * never writes the primary-key index.
+ */
+export const RATE_LIMIT_STORAGE: TableStorage = tableStorage('x_rate_limit', {
+  fillfactor: 70,
+  unlogged: true,
+});
 
 /**
  * Installed by the boot, not by an app migration — the same rule `SQL_IDEMPOTENCY_TABLE` follows,
@@ -19,17 +40,23 @@ import { storeDeadline } from './rate-limit-store-deadline';
  * makes `purgeExpired` able to ask "has this bucket refilled to full?" — the same question the
  * memory store answers with `forgetAtMs` — instead of guessing an idle TTL that is wrong for any
  * app declaring a window longer than the guess.
+ *
+ * `updated_at` is written once, by its default at the insert, and never by a take: nothing has read
+ * it since v31, and the write was a column of every row version. Kept, so a table an earlier boot
+ * made and one this boot makes are the same shape.
  */
 export const SQL_RATE_LIMIT_TABLE = `
-create table if not exists x_rate_limit (
+${createTableDdl(
+  RATE_LIMIT_STORAGE,
+  `
   key               text             primary key,
   tokens            double precision not null,
   capacity          double precision not null,
   refill_per_second double precision not null,
   last_ms           bigint           not null,
   spent             boolean          not null,
-  updated_at        timestamptz      not null default now()
-);
+  updated_at        timestamptz      not null default now()`,
+)}
 
 -- v31: never scanned (the purge reads last_ms) and paid on every take. Dropped where an earlier
 -- boot created it, idempotent like the rest. Never a semicolon in a comment here: the boot splits
@@ -78,19 +105,31 @@ on conflict (key) do update
        capacity          = $2::double precision,
        refill_per_second = $3::double precision,
        last_ms           = greatest(x_rate_limit.last_ms, $5::bigint),
-       spent             = ${REFILLED} >= $4::double precision,
-       updated_at        = now()
+       spent             = ${REFILLED} >= $4::double precision
 returning tokens, spent
 `;
 
 export const SQL_RATE_LIMIT_RESET = 'delete from x_rate_limit where key = $1';
 
 /**
+ * The peek's first line, and what keeps it off a standby. The table is UNLOGGED, and a hot standby
+ * refuses to read one (`0A000`), so inside a `withReplicaReads` scope over a routed client — the
+ * executor an app writes as `db().query(…)` — a plain read here was a 500 on every signed-in page.
+ * `isPlainRead` (`@ultimat3/db`) offers a replica only a statement whose first word is a read verb
+ * and that names no write word anywhere: this comment fails both, so the routed client answers it
+ * from the primary. Pinned by `rate-limit-postgres-primary.test.ts`, which goes red if either half
+ * of that rule ever changes. The other three statements are writes, which no replica is offered.
+ */
+const PRIMARY_ONLY =
+  '/* primary only: x_rate_limit is unlogged and a standby cannot read it, so this is routed as an update is */';
+
+/**
  * `peek`: a plain read, never the upsert — it runs on every request to a required route, and a
  * write there was a row lock and a WAL record per signed-in page. The refill is computed in JS
  * from the row by `refilledTokens`, the memory store's own arithmetic; no row means full.
  */
-export const SQL_RATE_LIMIT_PEEK = 'select tokens, last_ms from x_rate_limit where key = $1';
+export const SQL_RATE_LIMIT_PEEK = `${PRIMARY_ONLY}
+select tokens, last_ms from x_rate_limit where key = $1`;
 
 /**
  * The memory store's forget rule, in SQL: a bucket back at capacity answers exactly as a missing
