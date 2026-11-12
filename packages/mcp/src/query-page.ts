@@ -3,7 +3,7 @@
 // `truncated` and a `nextCursor` the agent hands back as `_after`. A read with no `.limit()` dumped
 // every row into a model's context; an answer that fits is still the bare rows it always was.
 
-import { isUltimateError } from '@ultimat3/core';
+import { finiteCount, isUltimateError } from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
 import { MAX_WIRE_PAGE_SIZE, sourceFor } from '@ultimat3/query';
 import { QUERY_LIMITS } from './query-limits';
@@ -93,7 +93,8 @@ export async function pagedRows(
   input: unknown,
   after: string | undefined,
 ): Promise<readonly object[]> {
-  const first = Math.min(MAX_WIRE_PAGE_SIZE, target.maxPage ?? MAX_WIRE_PAGE_SIZE);
+  const ceiling = finiteCount('query', 'maxPage', target.maxPage ?? MAX_WIRE_PAGE_SIZE, 1);
+  const first = Math.min(MAX_WIRE_PAGE_SIZE, ceiling);
   const read = (size: number) =>
     target.page(
       input,

@@ -1,8 +1,7 @@
 // Solid as ONE output beside the islands: `vendor-solid.<contentHash>.js`, re-exporting `solid-js`,
-// `solid-js/web` and `solid-js/store` whole, built once per `buildIslands` call. Every island build
-// resolves those specifiers to it as an external, so a page rendering three islands built apart
-// downloads one Solid, not three. Whole and fixed: its bytes move with a Solid install, never with
-// an island edit, so no island's change re-names the file every other island imports.
+// `solid-js/web` and `solid-js/store` whole, once per `buildIslands` call. Every island resolves
+// them to it as an external, so three islands built apart download one Solid. Its bytes move with
+// a Solid install, never an island edit, so no island's change re-names the file the rest import.
 
 // why: Bun ships no path API; the vendor's URL is basePath joined to its file name.
 import { posix } from 'node:path';
