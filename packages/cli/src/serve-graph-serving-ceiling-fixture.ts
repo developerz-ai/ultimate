@@ -266,5 +266,9 @@
  * raised 1467 → 1468, measured 1468 (2026-11-12, sweep 5b review fixes, the test's own walk at
  * a1051fd3a): `entity/src/driver-versioned-write.ts` (the `defineDriver` versioned filtered write's
  * retry, through `driver-repo-writes.ts`), serving-only; `MIGRATE_CEILING` unchanged at 934.
+ * raised 1468 → 1471, measured 1471 (2026-11-12, sweep 8 action+query, the test's own walk):
+ * `MIGRATE_CEILING`'s 2, plus one serving-only: `query/src/scope-compose.ts` (a `scoped()`
+ * predicate composed into the source before the page is cut, through `read.ts`). Every one a new
+ * file; no existing module newly reached.
  */
-export const SERVING_ROLE_CEILING = 1468;
+export const SERVING_ROLE_CEILING = 1471;

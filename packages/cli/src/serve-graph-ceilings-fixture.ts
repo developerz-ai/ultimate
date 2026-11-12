@@ -270,8 +270,12 @@
  * history purge scope) on the entity barrel; jobs' `{subject-erase-history,subject-plan-history}.ts`
  * (a subject's history tables); policy's `scope.ts` (`scoped`). Every one a new file; no existing
  * module newly reached.
+ * raised 934 → 936, measured 936 (2026-11-12, sweep 8 action+query, the test's own walk, new files
+ * listed against origin/main 7ae8b31f7): `action/src/{native-answer,action-answer}.ts` — the 303
+ * and one-read flash a browser form gets from an action declaring `native`, reached through
+ * `action.ts` and `http.ts` on the action barrel. No existing module newly reached.
  */
-export const MIGRATE_CEILING = 934;
+export const MIGRATE_CEILING = 936;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

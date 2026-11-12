@@ -154,9 +154,21 @@ policyScope(seePost, actor); // the frozen conditions, or undefined for an unsco
 - **Tenant scoping is not scope.** Tenancy stays the entity layer's (the tenant predicate every
   repository applies, [below](#tenancy)); a scope narrows what one actor sees inside a tenant and
   never replaces it.
-- **Planned, not shipped:** composing a scope into `@ultimat3/query` reads, and a finding for a
-  scope that admits other rows than its rule on the exercise seed. Until then `policyScope` is the
-  read an app composes itself, e.g. `db.posts.where({ orgId })` plus each condition as `andWhere`.
+- **A query read composes it**, `As of 31.11.0`: a `query({ policy: seePost, sql })` whose `sql`
+  returns `from()` gets each condition as a filter before the page is cut, and still runs the rule
+  on every row — [Queries: a scoped policy narrows the read](Queries-And-Live-Queries#a-scoped-policy-narrows-the-read).
+  Another `SqlSource` is `X_QUERY_SCOPE_UNCOMPOSABLE`. An action, or a repository read outside a
+  query, composes nothing: there `policyScope` is the read an app composes itself, e.g.
+  `db.posts.where({ orgId })` plus each condition as `andWhere`.
+- **AND-only, by decision** (2026-11, `packages/policy/src/scope.ts`). A scope lands as query
+  filters, so it reaches the live matcher's shape, every provider's `RowWindow.filters` and the
+  entity chain, each a conjunction; an `or` group would widen all of them at once. A rule whose
+  visibility is a disjunction (a friend OR the author OR public, minus a block set) stays unscoped
+  and keeps the JS rule over what it reads.
+- **Planned, not shipped:** a finding for a scope that admits other rows than its rule on the
+  exercise seed (`X_POLICY_SCOPE_MISMATCH`, not registered yet). Until then, a scope wider than its
+  rule costs rows the rule then drops — a short page again — and a narrower one hides rows the rule
+  would admit, silently.
 
 ## Tenancy
 

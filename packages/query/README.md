@@ -241,6 +241,9 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `source.ts` | the `SqlSource` contract + `from()`, the in-memory reference |
 | `column-kinds.ts` | `kindsOf(relation)` — the declared kind of each column, which every comparison is decided by |
 | `sealed-shape.ts` | a live read may not filter or order on a `.sealed()` column — refused at subscribe |
+| `live-collation.ts` | a live read ordered by a declared text column not `collate('C')` — a `query.live.order_collation` warning (`X_LIVE_ORDER_COLLATION`) in development and test, once per query; a refusal waits for `next` |
+| `scope-compose.ts` | a `scoped()` policy's predicate composed into the read before the page is cut; the rule per row |
+| `page-window.ts` | the rows one page serves and where the next resumes — from the rows the source read; a bounded refill past rows a rule dropped |
 | `download.ts` | `query({ download })` — the declaration, the in-process file, the mint and the serve |
 | `download-token.ts` | the `_token`: claims sealed with core's `seal()`, opened against one query, one input, the clock |
 | `download-http.ts` | the route's two answers — mint JSON or the file: `content-disposition`, one `Range:` window, `no-store` |
@@ -319,6 +322,24 @@ every projection because `@ultimat3/entity` answers it as a server-only (non-enu
 
 `sealed-egress.test.ts` holds one assertion per projection.
 
+## A scoped policy narrows the read before the page is cut
+
+A policy built with `@ultimat3/policy`'s `scoped(rule, (actor) => conditions)` hands its
+conditions down: the read adds them to its `from()` builder as `.compare()` filters, so they are in
+the SQL text, the live shape and every provider's `RowWindow.filters` — a viewer whose hidden rows
+precede their visible ones gets a full page. The rule stays the authority and runs on every row the
+narrowed source returns; a row it refuses is dropped (`read-scope.test.ts`).
+
+- A scoped read's cache key is the ACTOR's, whatever `cache.scope` says: the rows are the actor's.
+- An `unenforced` build (`sourceFor(…, { unenforced })`, the shared live window) composes no scope.
+- A `sql` that returns anything but `from()` is `X_QUERY_SCOPE_UNCOMPOSABLE`, never served unscoped.
+- Conditions are a conjunction — no `or` group (`packages/policy/src/scope.ts` says why).
+- A rule STRICTER than its scope never ends a listing early: a page's cursor and `hasMore` come
+  from the rows the source read, not the rows the rule left. Dropped rows are refilled from up to
+  `RULE_REFILL_WINDOWS` (4) further windows; a page the bound cuts short still carries a cursor at
+  the last row read. A declared `.limit()` counts source rows, as the whole read does
+  (`page-window.ts`, `scope-page.test.ts`).
+
 ## Matcher support
 
 | Shape | Result |
@@ -328,6 +349,7 @@ every projection because `@ultimat3/entity` answers it as a server-only (non-enu
 | `limit` | tail eviction on insert, `refill` patch on removal |
 | joins, aggregates, `group by`, subqueries | `X_MATCHER_UNSUPPORTED` with a fix line |
 | a `.sealed()` column in a filter or an order | `X_MATCHER_UNSUPPORTED` — a change row carries no sealed column |
+| an `orderBy` on a declared `text` column not `.collate('C')` | patched, and warned: a `query.live.order_collation` event (`X_LIVE_ORDER_COLLATION`) in development and test, once per query — the matcher orders by code point, Postgres by the column's collation (`en_US.utf8`: `apple` before `Banana`). A refusal waits for `next` |
 
 An honest refusal beats a silently wrong result set, so unsupported shapes fail at
 **subscribe** time, not on the first change event.
@@ -800,6 +822,8 @@ or a stream with `size`, served without buffering.
 | `X_QUERY_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_QUERY_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_MATCHER_UNSUPPORTED` | live query the matcher cannot patch | reshape it, or `live: false` |
+| `X_LIVE_ORDER_COLLATION` | a warning event, not a throw (`As of 2026-11`): a live query ordered by a declared text column not `.collate('C')` | `text().collate('C')` on the column + `x db gen`, or `.orderBy('createdAt', 'desc').orderBy('id')` |
+| `X_QUERY_SCOPE_UNCOMPOSABLE` | a `scoped()` policy on a read whose `sql` returns a hand-written `SqlSource`, not `from()` | return `from(entity, (window) => repo.window(window))`, or drop `scoped()` |
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
 | `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
 | `X_INPUT_INVALID` | input failed the Standard Schema (`meta.issues` by path, at most `MAX_ISSUES`, `meta.issuesTruncated` when cut); a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries show <name> --json` |

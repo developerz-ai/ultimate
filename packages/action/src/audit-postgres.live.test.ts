@@ -1,12 +1,14 @@
 // The durable sink against Postgres 17: a table created before `primitive` existed gains it by the
 // boot's own DDL, an old row reads as what it always was — an action's — and a record's `name`
-// lands in the `action` column, which 25.0.0 kept. Skips unless `TEST_DATABASE_URL` is set.
+// lands in the `action` column, which 25.0.0 kept; under group commit a record Postgres refuses
+// fails its own call alone. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, probeDatabaseName, sweepProbeDatabases, userActor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
 import type { AuditRecord } from './audit';
+import { UNREPRESENTABLE } from './audit-input';
 import { postgresAuditSink, SQL_AUDIT_TABLE } from './audit-postgres';
 import { executorFor } from './idempotency-tx-fixture';
 
@@ -102,10 +104,48 @@ describe.skipIf(!hasPostgres)(
       expect(rows).toEqual([{ primitive: 'query' }]);
     });
 
+    test('group commit: one record Postgres refuses fails its own call, never its batch', async () => {
+      const sink = postgresAuditSink({ executor: executorFor(client), groupCommit: true });
+      try {
+        // A NUL in a text column is refused (22P05 in the batch's jsonb, 22021 alone); the input
+        // walk cannot see `idempotencyKey`, so this is the retry's case and not the marker's.
+        const settled = await Promise.allSettled([
+          sink.write(recordNamed('batchA')),
+          sink.write({ ...recordNamed('batchPoisoned'), idempotencyKey: 'k\u0000' }),
+          sink.write(recordNamed('batchC')),
+        ]);
+        expect(settled.map((each) => each.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
+      } finally {
+        await sink.close();
+      }
+      const rows = await client.query<{ action: string }>(
+        raw(`select action from x_audit where action like 'batch%' order by action`),
+      );
+      expect(rows).toEqual([{ action: 'batchA' }, { action: 'batchC' }]);
+    });
+
+    test('group commit: an input jsonb cannot hold is stored as the marker, beside its batch', async () => {
+      const sink = postgresAuditSink({ executor: executorFor(client), groupCommit: true });
+      try {
+        await Promise.all([
+          sink.write(recordNamed('nulA')),
+          sink.write({ ...recordNamed('nulInput'), input: { title: 'a\u0000b', lone: '\uD800' } }),
+          sink.write(recordNamed('nulC')),
+        ]);
+      } finally {
+        await sink.close();
+      }
+      const rows = await client.query<{ action: string; input: unknown }>(
+        raw(`select action, input from x_audit where action like 'nul%' order by action`),
+      );
+      expect(rows.map((row) => row.action)).toEqual(['nulA', 'nulC', 'nulInput']);
+      expect(rows[2]?.input).toEqual({ title: UNREPRESENTABLE, lone: UNREPRESENTABLE });
+    });
+
     test('the DDL is idempotent: applying it again over the migrated table changes nothing', async () => {
       await applyDdl(client);
       const rows = await client.query<{ n: number }>(raw('select count(*)::int as n from x_audit'));
-      expect(rows).toEqual([{ n: 3 }]);
+      expect(rows).toEqual([{ n: 8 }]);
     });
   },
 );

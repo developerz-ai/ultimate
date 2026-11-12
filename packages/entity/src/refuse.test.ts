@@ -120,6 +120,8 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['searchable weight', () => text().searchable('Z' as 'A')],
   // Same arrival path as the weight: a JS caller, or a kind read from configuration.
   ['personal data kind', () => text().personalData('secret' as 'contact')],
+  // `'C'` is typed; a JS caller or a cast reaches the runtime refusal with any string.
+  ['collate collation', () => text().collate('en_US' as 'C')],
   ['transitions table', () => enumerated(['a', 'b']).transitions({ a: ['c'], b: [] } as never)],
   [
     'transitions nullable',

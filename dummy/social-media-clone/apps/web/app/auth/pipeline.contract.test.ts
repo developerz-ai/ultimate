@@ -189,3 +189,24 @@ contractTest('an agent still gets the output schema from every one of them', asy
     expect(response.headers.get('content-type')).toContain('application/json');
   }
 });
+
+contractTest('a wrong password lands back on the form, its code in a flash', async () => {
+  // `createSession` declares `native`: a refusal — a 401 included, which is not "no session" but
+  // "these credentials" — goes back to the form's own page (the `Referer`, `?next=` intact), and
+  // the code rides in the one-read flash `site/signin`'s `load` renders. Never the password.
+  const response = await call('/api/sessions/create', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'text/html',
+      origin: ORIGIN,
+      referer: `${ORIGIN}/signin?next=%2Fmessages`,
+    },
+    body: 'handle=user&password=not-the-password',
+  });
+  expect(response.status).toBe(303);
+  expect(response.headers.get('location')).toBe('/signin?next=%2Fmessages');
+  const flash = response.headers.getSetCookie().find((line) => line.startsWith('x_action_answer='));
+  expect(decodeURIComponent(flash ?? '')).toContain('"code":"X_AUTH_CREDENTIALS_INVALID"');
+  expect(decodeURIComponent(flash ?? '')).not.toContain('not-the-password');
+});

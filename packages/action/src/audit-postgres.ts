@@ -1,14 +1,14 @@
 /**
- * The durable audit sink: one append-only Postgres table, one insert per record. Without it the
- * shortest edit that clears `X_AUDIT_SINK_MISSING` is `auditSink: memoryAuditSink()`, which
- * reads durable at the line and is a ring that DROPS — compliant in dev, amnesiac in
- * production. Statements are spelled out so an agent can run the exact one it saw in a log.
+ * The durable audit sink: one append-only Postgres table, one row per record — an insert each, or
+ * one per batch under `groupCommit`. Without it the shortest edit clearing `X_AUDIT_SINK_MISSING`
+ * is `memoryAuditSink()`, a ring that DROPS. Statements are spelled out so an agent can run them.
  */
 
-import type { Actor, PgExecutor } from '@ultimat3/core';
-import { uuidV7 } from '@ultimat3/core';
-import type { AuditRecord, AuditSink } from './audit';
-import { auditableInput } from './audit-input';
+import type { PgExecutor } from '@ultimat3/core';
+import type { AuditRecord } from './audit';
+import type { BatchAuditSink, BatchedAuditSink, BatchedAuditSinkOptions } from './audit-batch';
+import { batchedAuditSink } from './audit-batch';
+import { rowOf } from './audit-postgres-row';
 
 /**
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, and
@@ -93,11 +93,43 @@ insert into x_audit (
 )
 `;
 
+/**
+ * Group commit's statement: N rows in one round trip, as ONE `jsonb` parameter unpacked by
+ * `jsonb_to_recordset`. Not `unnest($1::uuid[], …)`: `PgExecutor` is structural, and how a JS
+ * array binds is the driver's business — a JSON text binds the same through every one of them.
+ * `input` travels as the text `write` binds and is cast here, so a JSON `null` input stays the
+ * jsonb `null` it is in a single-row insert and only an unparsed input is a SQL NULL.
+ */
+export const SQL_AUDIT_INSERT_MANY = `
+insert into x_audit (
+  id, at, action, mutator, surface, outcome, replayed, idempotency_key, failure_code,
+  actor_id, actor_kind, org_id, on_behalf_of_id, on_behalf_of_kind,
+  request_id, trace_id, locale, tz, build_id, role, input, primitive
+)
+select
+  id, at, action, mutator, surface, outcome, replayed, idempotency_key, failure_code,
+  actor_id, actor_kind, org_id, on_behalf_of_id, on_behalf_of_kind,
+  request_id, trace_id, locale, tz, build_id, role, input::jsonb, primitive
+from jsonb_to_recordset($1::jsonb) as r (
+  id uuid, at timestamptz, action text, mutator boolean, surface text, outcome text,
+  replayed boolean, idempotency_key text, failure_code text,
+  actor_id text, actor_kind text, org_id text, on_behalf_of_id text, on_behalf_of_kind text,
+  request_id text, trace_id text, locale text, tz text, build_id text, role text,
+  input text, primitive text
+)
+`;
+
 export interface PostgresAuditSinkOptions {
   readonly executor: PgExecutor;
+  /**
+   * Group commit: concurrent writes share one `SQL_AUDIT_INSERT_MANY`, and each `write()` still
+   * settles with its own batch (`batchedAuditSink`). `true` takes the defaults; an object sets
+   * `maxRecords` / `maxDelayMs`. Absent: one insert per record, as before.
+   */
+  readonly groupCommit?: boolean | BatchedAuditSinkOptions | undefined;
 }
 
-export interface PostgresAuditSink extends AuditSink {
+export interface PostgresAuditSink extends BatchAuditSink {
   write(record: AuditRecord): Promise<void>;
 }
 
@@ -119,62 +151,28 @@ export interface PostgresAuditSink extends AuditSink {
  * `Cookie` headers — so a projection that walked it would write an app's database clients and its
  * caller's credentials into an audit table. An app that wants more columns writes its own
  * `AuditSink`; the seam is one method, and that is the extension point.
+ *
+ * `groupCommit` trades up to `maxDelayMs` of latency per audited call for one round trip per batch
+ * instead of per call; the sink then flushes on drain, before the pool closes.
  */
-export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAuditSink {
+export function postgresAuditSink(
+  options: PostgresAuditSinkOptions & { readonly groupCommit: true | BatchedAuditSinkOptions },
+): BatchedAuditSink;
+export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAuditSink;
+export function postgresAuditSink(
+  options: PostgresAuditSinkOptions,
+): PostgresAuditSink | BatchedAuditSink {
   const exec = options.executor;
-  return {
+  const sink: PostgresAuditSink = {
     async write(record: AuditRecord): Promise<void> {
-      const actor = record.ctx.actor;
-      const at = record.at instanceof Date && !Number.isNaN(record.at.getTime()) ? record.at : null;
-      const onBehalfOf = onBehalfOfOf(actor);
-      const input = auditableInput(record.input);
-      await exec.query(SQL_AUDIT_INSERT, [
-        uuidV7(),
-        at === null ? null : at.toISOString(),
-        // `name`, into the column the seam named before reads were audited: renaming it is a data
-        // migration for every installed table, and the value it holds is the same.
-        record.name,
-        record.mutator,
-        record.surface,
-        record.outcome,
-        record.replayed,
-        record.idempotencyKey,
-        record.failure?.code ?? null,
-        actor.id,
-        actor.kind,
-        actor.orgId ?? null,
-        onBehalfOf?.actorId ?? null,
-        onBehalfOf?.actorKind ?? null,
-        record.ctx.requestId,
-        record.ctx.traceId,
-        record.ctx.locale,
-        record.ctx.tz,
-        record.ctx.buildId,
-        record.ctx.role,
-        // `undefined` in means a parse that never produced an input, which is a NULL column and
-        // not the four characters `JSON.stringify(undefined)` does not produce either.
-        input === undefined ? null : JSON.stringify(input),
-        record.primitive,
-      ]);
+      await exec.query(SQL_AUDIT_INSERT, Object.values(rowOf(record)));
+    },
+    async writeMany(records: readonly AuditRecord[]): Promise<void> {
+      if (records.length === 0) return;
+      await exec.query(SQL_AUDIT_INSERT_MANY, [JSON.stringify(records.map(rowOf))]);
     },
   };
-}
-
-/**
- * Both halves of an impersonation, recorded and interpreted as NEITHER. `actor_id` is who the
- * framework ran the attempt as and `on_behalf_of_*` is what `impersonate()` recorded; which of
- * them an app calls "who did this" is the convention four apps model four ways, so the row carries
- * the two facts and takes no position between them.
- *
- * Read through a guard rather than off the type: `Actor.onBehalfOf` is optional, and an actor
- * minted by an app's own `resolveToken` is a plain object nothing in this package validated.
- */
-function onBehalfOfOf(actor: Actor): { actorId: string; actorKind: string } | null {
-  const origin: unknown = actor.onBehalfOf;
-  if (typeof origin !== 'object' || origin === null) return null;
-  const record = origin as Record<string, unknown>;
-  const actorId = record['actorId'];
-  const actorKind = record['actorKind'];
-  if (typeof actorId !== 'string' || typeof actorKind !== 'string') return null;
-  return { actorId, actorKind };
+  const group = options.groupCommit;
+  if (group === undefined || group === false) return sink;
+  return batchedAuditSink(sink, group === true ? {} : group);
 }

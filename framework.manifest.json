@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c2d9698be1df0e2cba0e5c524720e66d50dc8cf8467d81d405dc5f03708f1b8f",
+  "buildId": "beeb9b135962517a466acd73ca8828d44da90c910a0c1cd4f5e6702043a55176",
   "tiers": {
     "0": [
       "core",
@@ -2910,6 +2910,11 @@
       "at": "packages/realtime/src/error-titles.ts"
     },
     {
+      "code": "X_LIVE_ORDER_COLLATION",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_LIVE_QUERY_UNKNOWN",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
@@ -3563,6 +3568,11 @@
       "code": "X_N_PLUS_ONE_WRITE",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_NATIVE_FORM_UNANSWERED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_NAVIGATION_MODAL_PATH_INVALID",
@@ -4228,6 +4238,11 @@
       "code": "X_QUERY_SCALES_WITH_ROWS",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SCOPE_UNCOMPOSABLE",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
     },
     {
       "code": "X_QUERY_SINGLE_INVALID",

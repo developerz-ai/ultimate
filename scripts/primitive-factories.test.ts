@@ -48,6 +48,9 @@ const ROOTS: ReadonlyMap<string, FactoryKind> = new Map([
   // so the one route value a factory returns is seeded by its own name. A second route factory
   // that returns another type is a missing row this scan does not see — say so in its review.
   ['DeviceSocket', 'route'],
+  // A PAIR of actions (`request`, `confirm`): no single `Action<…>` names it, so it is seeded by
+  // its own name as `DeviceSocket` is. `kind: 'action'` — what each of its two members is.
+  ['UploadFlow', 'action'],
 ]);
 
 /**
@@ -206,6 +209,7 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
   test('the shipped rows, spelled out, so a scan that finds nothing cannot pass', () => {
     expect(PRIMITIVE_FACTORIES.map((row) => `${row.pkg}.${row.factory}:${row.kind}`)).toEqual([
       '@ultimat3/action.transition:mutator',
+      '@ultimat3/action.uploadFlow:action',
       '@ultimat3/ai.agent:action',
       '@ultimat3/ai.agentJob:job',
       '@ultimat3/ai.hive:action',
@@ -333,6 +337,19 @@ describe('unit · the scan itself can fail', () => {
         pkg: '@ultimat3/realtime',
         kind: 'route',
         at: 'packages/realtime/src/device-socket.ts',
+      },
+    ]);
+  });
+
+  test('an UploadFlow-returning export is an action factory', () => {
+    const source =
+      'export function uploadFlow(options: UploadFlowOptions): UploadFlow {\n  return pair;\n}\n';
+    expect(factoriesIn('packages/action/src/upload-flow.ts', source, ROOTS)).toEqual([
+      {
+        factory: 'uploadFlow',
+        pkg: '@ultimat3/action',
+        kind: 'action',
+        at: 'packages/action/src/upload-flow.ts',
       },
     ]);
   });

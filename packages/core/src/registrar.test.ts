@@ -116,6 +116,7 @@ describe('PRIMITIVE_FACTORIES', () => {
       // `@ultimat3/action` sorts before `@ultimat3/ai`: the common prefix is `@ultimat3/a`, and
       // `c` precedes `i`. Code-unit order, like every other sorted list this repo commits.
       '@ultimat3/action#transition',
+      '@ultimat3/action#uploadFlow',
       '@ultimat3/ai#agent',
       '@ultimat3/ai#agentJob',
       '@ultimat3/ai#hive',

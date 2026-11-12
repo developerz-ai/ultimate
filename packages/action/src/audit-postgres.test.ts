@@ -10,7 +10,13 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { ctxOf, REDACTED, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord } from './audit';
-import { postgresAuditSink, SQL_AUDIT_INSERT, SQL_AUDIT_TABLE } from './audit-postgres';
+import {
+  postgresAuditSink,
+  SQL_AUDIT_INSERT,
+  SQL_AUDIT_INSERT_MANY,
+  SQL_AUDIT_TABLE,
+} from './audit-postgres';
+import { AUDIT_COLUMNS } from './audit-postgres-row';
 
 interface Call {
   readonly sql: string;
@@ -232,5 +238,100 @@ describe('nothing about a record can make the sink itself throw', () => {
 
     expect(calls).toHaveLength(1);
     expect(paramsOf(calls)[1]).toBeNull();
+  });
+});
+
+/**
+ * Group commit (`writeMany`, `groupCommit: true`): N records are ONE statement, and each row holds
+ * exactly the facts `write` would have bound — the same projection, never a second one to drift.
+ */
+describe('the postgres audit sink writes many records in one statement', () => {
+  const rowsOf = (calls: readonly Call[]): readonly Record<string, unknown>[] =>
+    JSON.parse(String(calls[0]?.params[0])) as readonly Record<string, unknown>[];
+
+  test('writeMany is one insert … select over every record', async () => {
+    const { exec, calls } = executor();
+    await postgresAuditSink({ executor: exec }).writeMany([
+      recordFor({ name: 'a' }),
+      recordFor({ name: 'b', primitive: 'query', mutator: false }),
+    ]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sql).toBe(SQL_AUDIT_INSERT_MANY);
+    expect(rowsOf(calls).map((row) => [row['action'], row['primitive']])).toEqual([
+      ['a', 'action'],
+      ['b', 'query'],
+    ]);
+  });
+
+  test('a row in the batch binds what write() binds, column for column', async () => {
+    const one = executor();
+    const many = executor();
+    const record = recordFor({
+      input: { postId: 'p1', password: 'hunter2' },
+      outcome: 'denied',
+      failure: { code: 'X_FORBIDDEN', error: new RangeError('no') },
+    });
+    await postgresAuditSink({ executor: one.exec }).write(record);
+    await postgresAuditSink({ executor: many.exec }).writeMany([record]);
+
+    const [row] = rowsOf(many.calls);
+    const single = paramsOf(one.calls);
+    expect(Object.keys(row ?? {})).toEqual([...AUDIT_COLUMNS]);
+    // `id` is minted per row, so it is the one column the two calls cannot share.
+    expect(Object.values(row ?? {}).slice(1)).toEqual([...single.slice(1)]);
+    expect(JSON.stringify(row)).not.toContain('hunter2');
+  });
+
+  test('an input that never parsed and an Invalid Date are nulls in a batch too', async () => {
+    const { exec, calls } = executor();
+    await postgresAuditSink({ executor: exec }).writeMany([
+      recordFor({ input: undefined, at: new Date(Number.NaN) }),
+    ]);
+
+    const [row] = rowsOf(calls);
+    expect(row?.['input']).toBeNull();
+    expect(row?.['at']).toBeNull();
+  });
+
+  test('both statements name AUDIT_COLUMNS, in order — the insert list and the recordset', () => {
+    const listed = (text: string): readonly string[] =>
+      text.split(',').map((column) => column.trim().split(/\s+/)[0] ?? '');
+    const insertList = (sql: string): string => sql.slice(sql.indexOf('(') + 1, sql.indexOf(')'));
+    expect(listed(insertList(SQL_AUDIT_INSERT))).toEqual([...AUDIT_COLUMNS]);
+    expect(listed(insertList(SQL_AUDIT_INSERT_MANY))).toEqual([...AUDIT_COLUMNS]);
+    const recordset = SQL_AUDIT_INSERT_MANY.slice(SQL_AUDIT_INSERT_MANY.indexOf('as r (') + 6);
+    expect(listed(recordset.slice(0, recordset.lastIndexOf(')')))).toEqual([...AUDIT_COLUMNS]);
+  });
+
+  test('an empty writeMany is no statement at all', async () => {
+    const { exec, calls } = executor();
+    await postgresAuditSink({ executor: exec }).writeMany([]);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('groupCommit: concurrent writes are one statement, and each write settles', async () => {
+    const { exec, calls } = executor();
+    const sink = postgresAuditSink({ executor: exec, groupCommit: { maxDelayMs: 0 } });
+    try {
+      await Promise.all(['a', 'b', 'c'].map((name) => sink.write(recordFor({ name }))));
+    } finally {
+      await sink.close();
+    }
+
+    expect(calls).toHaveLength(1);
+    expect(rowsOf(calls)).toHaveLength(3);
+  });
+
+  test('groupCommit: a failed statement fails every write it carried', async () => {
+    const refusal = new RangeError('connection reset');
+    const exec: PgExecutor = { query: () => Promise.reject(refusal) };
+    const sink = postgresAuditSink({ executor: exec, groupCommit: true });
+    try {
+      const settled = await Promise.allSettled([sink.write(recordFor()), sink.write(recordFor())]);
+      expect(settled.map((each) => each.status)).toEqual(['rejected', 'rejected']);
+    } finally {
+      await sink.close();
+    }
   });
 });

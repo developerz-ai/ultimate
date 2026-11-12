@@ -24,6 +24,8 @@ export const createComment = action({
   // Closed: see `publishPost`.
   errors: [OrgNotFound.code, PostNotFound.code],
   cache: { invalidates: [tag.comment, tag.post] },
+  // The comment form on the post page: a browser lands back on the thread with its comment in it.
+  native: { success: (comment) => `/posts/${comment.postId}` },
   mcp: { expose: true, description: 'Comment on a post the actor can read' },
   async handle({ input, ctx }) {
     const comment = await ctx.posts.comment(postId(input.postId), input.body);

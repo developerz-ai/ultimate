@@ -1,8 +1,10 @@
 // The audit-sink suite over `postgresAuditSink` and a real Postgres (`TEST_DATABASE_URL`): what the
-// suite reads back is the `x_audit` row, so a fact filed in the wrong column is a red case here.
+// suite reads back is the `x_audit` row, so a fact filed in the wrong column is a red case here —
+// once per record, and once group-committed, where N rows ride one `jsonb_to_recordset` insert.
 
 import { afterAll, beforeAll, describe } from 'bun:test';
 import { postgresAuditSink, SQL_AUDIT_TABLE } from '@ultimat3/action';
+import type { BatchedAuditSink } from '@ultimat3/action/adapter';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw, sql } from '@ultimat3/db';
 import type { AuditKept, AuditSinkSubject } from './audit-sink-conformance';
@@ -63,6 +65,8 @@ describe.skipIf(adminUrl === '')(testName('live', 'the postgres audit sink'), ()
   let db: WorkerDatabase | undefined;
   let client: PostgresClient | undefined;
   let subject: AuditSinkSubject | undefined;
+  let grouped: AuditSinkSubject | undefined;
+  let groupedSink: BatchedAuditSink | undefined;
 
   beforeAll(async () => {
     db = await acquireWorkerDatabase({ adminUrl, templateName: 'ultimate_audit_conformance' });
@@ -79,15 +83,25 @@ describe.skipIf(adminUrl === '')(testName('live', 'the postgres audit sink'), ()
         ).map(keptOf),
       persists: true,
     };
+    groupedSink = postgresAuditSink({
+      executor: dbExecutor(() => pool),
+      groupCommit: { maxDelayMs: 0 },
+    });
+    grouped = { ...subject, sink: groupedSink };
   });
 
   // Both run, whatever the first does; the first failure is the one reported.
   afterAll(async () => {
     const failures: unknown[] = [];
+    await Promise.resolve(groupedSink?.close()).catch((error: unknown) => failures.push(error));
     await Promise.resolve(client?.close()).catch((error: unknown) => failures.push(error));
     await Promise.resolve(db?.drop()).catch((error: unknown) => failures.push(error));
     if (failures.length > 0) throw failures[0];
   });
 
   behavesLike(auditSinkConformance, () => subject as AuditSinkSubject);
+
+  describe('group-committed', () => {
+    behavesLike(auditSinkConformance, () => grouped as AuditSinkSubject);
+  });
 });

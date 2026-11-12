@@ -58,7 +58,7 @@ export function locationFor(target: string, base: URL): string {
  * `window.location`. `/.` in front is how WHATWG URL serialisation keeps a host-less `//` path a
  * path; it resolves back to the same pathname, so nothing legitimate changes.
  */
-function hostlessPath(pathname: string): string {
+export function hostlessPath(pathname: string): string {
   return pathname.startsWith('//') ? `/.${pathname}` : pathname;
 }
 

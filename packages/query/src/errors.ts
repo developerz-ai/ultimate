@@ -40,6 +40,10 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_ETAG_INVALID: 'etag: true on a read that has its own validator',
   X_QUERY_TIMEOUT_INVALID: 'a read declares a timeoutMs that is not a whole positive number of ms',
   X_QUERY_MAX_PAGE_INVALID: 'a query declares a maxPage no page bound can hold',
+  X_QUERY_SCOPE_UNCOMPOSABLE:
+    'a scoped policy guards a read whose source cannot take its predicate',
+  X_LIVE_ORDER_COLLATION:
+    'a live query is ordered by a text column the matcher cannot order as Postgres does',
 };
 
 /**
@@ -361,6 +365,21 @@ export class QuerySingleInvalidError extends UltimateError {
       code: 'X_QUERY_SINGLE_INVALID',
       cause: `a query declares single: as ${typeof value}, and only a boolean says whether it reads one object`,
       fix: 'write single: true for a read of one object, or drop the key for a list read',
+    });
+  }
+}
+
+/**
+ * A `scoped()` policy guards a read whose `sql` answered a hand-written `SqlSource`, which has no
+ * way to take a predicate. Refused rather than served unscoped: the page would be cut BEFORE the
+ * rule drops the rows the scope was there to keep out, which is the short page `scope` exists to end.
+ */
+export class QueryScopeUncomposableError extends UltimateError {
+  constructor(name: string) {
+    super({
+      code: 'X_QUERY_SCOPE_UNCOMPOSABLE',
+      cause: `query "${name}" has a scoped policy and its sql returns a source that is not from(), so the scope has nowhere to go`,
+      fix: `sql: (input) => from<Row>('<table>', (window) => repo.window(window))  # in query "${name}" — or drop scoped() from its policy`,
     });
   }
 }

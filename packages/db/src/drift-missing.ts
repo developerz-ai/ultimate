@@ -24,10 +24,11 @@ import { identifier } from './sql';
  */
 
 /**
- * A snapshot column as a column definition. `dataType`, `default` and `generated` are the DECLARED
- * side's own text, out of the author's migration — the trust `missingCheck` gives its predicate —
- * and `psqlCommand` closes the shell layer around all of it. `notNull` is the caller's: an `add
- * column … not null` with no value to fill existing rows with is refused on a table holding any.
+ * A snapshot column as a column definition. `dataType`, `collation`, `default` and `generated` are
+ * the DECLARED side's own text, out of the author's migration — the trust `missingCheck` gives its
+ * predicate — and `psqlCommand` closes the shell layer around all of it. `notNull` is the caller's:
+ * an `add column … not null` with no value to fill existing rows with is refused on a table holding
+ * any.
  */
 const columnClause = (column: ColumnDescription, notNull: boolean): string => {
   const value =
@@ -36,7 +37,9 @@ const columnClause = (column: ColumnDescription, notNull: boolean): string => {
       : column.default === null
         ? ''
         : ` default ${column.default}`;
-  return `${identifier(column.name).text} ${column.dataType}${value}${notNull ? ' not null' : ''}`;
+  const collate =
+    column.collation === undefined ? '' : ` collate ${identifier(column.collation).text}`;
+  return `${identifier(column.name).text} ${column.dataType}${collate}${value}${notNull ? ' not null' : ''}`;
 };
 
 /** Every row an `add column` lands on gets a value, so `not null` can ride on the same statement. */

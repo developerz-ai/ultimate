@@ -991,7 +991,39 @@ refuses it at the wire first, as a 400. `As of 2026-09-29`.
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
 `.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)` ·
-`.sealed()` on `text()` — [Sealed columns](#sealed-columns).
+`.sealed()` on `text()` — [Sealed columns](#sealed-columns) · `.collate('C')` on `text()` — [below](#code-point-collation).
+
+### Code-point collation
+
+`text().collate('C')` declares `collate "C"`, `As of 31.11.0`: the column orders and compares by
+code point — the order the memory driver and a live window's matcher already keep. Without it
+Postgres orders by the database's collation (`en_US.utf8`: `apple` before `Banana`), which is why a
+live query ordered by such a column logs `query.live.order_collation`
+([Queries](Queries-And-Live-Queries#live-true-requires-deterministic-bounded-sql)).
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+export const tags = entity('tags', {
+  columns: {
+    id: uuid().primaryKey(),
+    name: text({ max: 40 }).collate('C'), // a live list may .orderBy('name')
+  },
+});
+```
+
+| Rule | Where |
+|---|---|
+| `'C'` is the only collation a column may declare; another is `X_INVARIANT_VIOLATED` at `entity()` | `packages/entity/src/sealed-column.ts` (`declaredCollation`) |
+| only `text()` has `.collate()`; `enumerated()`, `url()`, `tz()`, `locale()` store text and do not | `TextColumn` in `packages/entity/src/types.ts` |
+| `x db gen` writes `collate "C"` after the type on `create table` and `add column`; declaring or dropping it on an existing column is one in-place `alter column … type text collate "C"` (or `"default"`), its reverse in `down`; a retype restates it, since Postgres resets a collation on a type change | `packages/db/src/generate-collation.test.ts` |
+| the snapshot records `collation` only when declared, so no existing snapshot moves | same |
+| drift does not read a live column's collation, as it reads no column type: a hand-set collation is not reported | `packages/db/README.md`, "A declared collation" |
+
+Declaring it changes the visible order of every read of that column, not only the live one. On an
+existing table the `alter` is Postgres' `alter column … type`: an `ACCESS EXCLUSIVE` lock while every
+index on the column is rebuilt. `X_MIGRATION_LOCK_HEAVY` does not flag it — a large table wants a
+quiet window.
 
 **A date is not an instant.** `effective_on` is the date a rate applies, not a moment; stored as a
 `timestamptz` it is a different date on either side of midnight for half the planet. `PlainDate`

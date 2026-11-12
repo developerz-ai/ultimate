@@ -62,6 +62,13 @@ export const contactSales = action({
    * replayed enquiry mailing twice.
    */
   rateLimit: { limit: 5, windowMs: 600_000 },
+  /**
+   * With scripting off the pricing page's form posts natively: the browser lands back on the
+   * form rather than on `{"received":true}`. `/pricing` is `isr` — one document for every visitor
+   * — so it cannot read the outcome (`useActionAnswer` is `null` there); with scripting on the
+   * island calls this through the typed client and shows the answer in place.
+   */
+  native: { success: () => '/pricing#contact' },
   async handle({ input }) {
     // Read here, in the visitor's locale, so a typo is a 422 on THIS request (`X_MONEY_INPUT_INVALID`)
     // the form can show — not a receipt minutes later quoting a number they never meant.

@@ -11,7 +11,8 @@
 
 import { excerptOf } from '@postly/domain';
 import { useT } from '@postly/i18n';
-import { actionHttpPath, derivePath } from '@ultimat3/action';
+import type { ActionAnswer } from '@ultimat3/action';
+import { actionHttpPath, derivePath, useActionAnswer } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
 import {
@@ -35,6 +36,7 @@ import { pluralFormsOf } from '../../../shared/plural-forms';
 import { oneRow } from '../../../shared/rows';
 import { Layout, updateBannerIsland } from '../../layout';
 import { useViewer } from '../../viewer-context';
+import { ActionRefusal } from '../ui/action-refusal';
 import { LikeButton } from '../ui/like-button';
 import styles from './page.module.scss';
 
@@ -187,11 +189,14 @@ export const config = defineRoute({
    * than the URL because `/posts/{id}` carries no tenant and an id from another org must read as
    * absent, which is exactly what an org-scoped read of a foreign id answers.
    */
-  load: async ({ params }) => {
+  load: async ({ params }): Promise<PostPage> => {
     const postId = params.id ?? '';
     // Both instants arrive as the `Date`s the row type says: the read names them on the wire and
     // the query client revives them, nested comments included.
-    return oneRow(await memberQueries.postById({ orgId: useActor().orgId, postId }), postId);
+    const row = oneRow(await memberQueries.postById({ orgId: useActor().orgId, postId }), postId);
+    // Publish, withdraw and comment all declare `native`: each lands back here, and a refused one
+    // left its code in the flash. Read once, here, where a header can still be set.
+    return { ...row, answer: useActionAnswer() };
   },
   meta: ({ data, t }) => ({
     title: t('app.post.metaTitle', { title: data.title }),
@@ -200,8 +205,13 @@ export const config = defineRoute({
   }),
 });
 
-/** The row the loader unwrapped, not the page of rows the read answered. */
-type PostPage = Awaited<ReturnType<typeof memberQueries.postById>>[number];
+/**
+ * The row the loader unwrapped, not the page of rows the read answered — and what the last native
+ * form on this page left. `answer` is optional: a test's `load` answers the row alone.
+ */
+type PostPage = Awaited<ReturnType<typeof memberQueries.postById>>[number] & {
+  readonly answer?: ActionAnswer | null;
+};
 
 export function Page(props: { readonly data: PostPage }): JSX.Element {
   const t = useT();
@@ -222,6 +232,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
       <article class={styles.article}>
         <Stack gap={4}>
           <h1>{props.data.title}</h1>
+          <ActionRefusal answer={props.data.answer} />
 
           <Show when={props.data.status === 'draft'}>
             <p class={styles.draft}>{t('app.post.draftNotice')}</p>

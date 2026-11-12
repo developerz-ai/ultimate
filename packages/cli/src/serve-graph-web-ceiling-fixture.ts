@@ -226,5 +226,7 @@
  * modules named there. Nothing web-only.
  * raised 1658 → 1659, measured 1659 (2026-11-12, sweep 5b review fixes): `SERVING_ROLE_CEILING`'s
  * 1, `entity/src/driver-versioned-write.ts`. Nothing web-only.
+ * raised 1659 → 1662, measured 1662 (2026-11-12, sweep 8 action+query): `SERVING_ROLE_CEILING`'s
+ * 3, the modules named there. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1659;
+export const WEB_ROLE_CEILING = 1662;

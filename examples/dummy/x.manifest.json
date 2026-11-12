@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "481805f46640e369",
+  "buildId": "35c67aa748f3202f",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -2119,6 +2119,62 @@
       }
     },
     {
+      "name": "confirmPostAttachment",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "key",
+          "contentType",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "connectSite",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3906,6 +3962,92 @@
         "expose": false
       },
       "errors": []
+    },
+    {
+      "name": "requestPostAttachment",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUT"
+            ]
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "key",
+          "url",
+          "method",
+          "contentType",
+          "maxBytes",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
     },
     {
       "name": "requestPostsExport",
@@ -9092,10 +9234,12 @@
       "permission": "post:publish",
       "enforcedIn": [
         "action:confirmAgentPublish",
+        "action:confirmPostAttachment",
         "action:keepDraftReview",
         "action:movePostStatus",
         "action:publishPost",
         "action:requestDraftReview",
+        "action:requestPostAttachment",
         "action:withdrawPost"
       ]
     },

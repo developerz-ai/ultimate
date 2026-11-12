@@ -90,3 +90,11 @@ describe('a repair no statement can spell', () => {
     );
   });
 });
+
+describe('a missing column with a declared collation', () => {
+  test('the repair re-adds it with the collation the snapshot recorded', () => {
+    expect(missingColumn('public', 'people', column('name', { collation: 'C' })).fix).toContain(
+      'add column "name" text collate "C"',
+    );
+  });
+});

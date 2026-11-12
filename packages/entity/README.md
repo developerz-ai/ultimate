@@ -552,6 +552,28 @@ rebuilt by the next `x db migrate`. It is how the index is built, not what it is
 name, not recorded, and toggling it generates nothing. Every index REMOVED from `indexes` is dropped
 the same way, concurrently or not — `@ultimat3/db`'s README, "Indexes built concurrently".
 
+## Code-point collation
+
+`text().collate('C')` declares `collate "C"`: the column orders and compares by code point, the
+order the memory driver and a live window's matcher already keep. `'C'` is the only collation a
+column may declare (another is `X_INVARIANT_VIOLATED` where written). A live query ordered by a text
+column WITHOUT it is a `query.live.order_collation` warning in development and test
+(`X_LIVE_ORDER_COLLATION`): Postgres orders `apple` before `Banana`, the matcher does not.
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+export const tags = entity('tags', {
+  columns: {
+    id: uuid().primaryKey(),
+    name: text({ max: 40 }).collate('C'),   // a live list may .orderBy('name')
+  },
+});
+```
+
+Declaring or dropping it on an existing column is `x db gen`: `alter column … type text collate "C"`,
+in place, with its reverse in `down`.
+
 ## Full-text search
 
 `.searchable()` on a `text()` column puts it in the entity's **one** generated `tsvector`, with a

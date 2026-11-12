@@ -43,6 +43,9 @@ export const publishPost = action({
   // `site/blog/*` sets `revalidate: { tags: [tag.blog] }`. Omitting it left those ISR pages
   // pinned to whatever the build saw — the tag existed, nothing ever evicted it.
   cache: { invalidates: [tag.post, tag.feed, tag.blog] },
+  // The post page's Publish button is a native form: the browser lands back on the post, now
+  // published. A refusal goes back to the page it came from (the `Referer`), whose `load` reads it.
+  native: { success: (post) => `/posts/${post.id}` },
   mcp: { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(postId(input.postId));

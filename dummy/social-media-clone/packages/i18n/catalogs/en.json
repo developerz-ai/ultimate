@@ -441,5 +441,16 @@
       "haveAccount": "Already have one?",
       "signIn": "Sign in"
     }
+  },
+  "refusal": {
+    "general": "That did not go through. Check the form and try again.",
+    "invalid": "Some of the fields need another look.",
+    "credentials": "That handle and password do not match.",
+    "captcha": "The anti-bot check did not pass. Complete it and try again.",
+    "handleTaken": "That handle is taken. Pick another.",
+    "emailTaken": "An account already uses that email address.",
+    "notParticipant": "You are not in this conversation.",
+    "forbidden": "You do not have permission to do that.",
+    "rateLimited": "Too many tries in a row. Wait a moment, then try again."
   }
 }

@@ -408,6 +408,51 @@
         ],
         "type": "object"
       },
+      "ConfirmPostAttachmentInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "ConfirmPostAttachmentOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "contentType",
+          "size"
+        ],
+        "type": "object"
+      },
       "ConnectSiteInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1919,6 +1964,81 @@
         "required": [
           "exportId",
           "prefix"
+        ],
+        "type": "object"
+      },
+      "RequestPostAttachmentInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "contentType",
+          "size"
+        ],
+        "type": "object"
+      },
+      "RequestPostAttachmentOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "method": {
+            "enum": [
+              "PUT"
+            ],
+            "type": "string"
+          },
+          "url": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "url",
+          "method",
+          "contentType",
+          "maxBytes",
+          "expiresAt"
         ],
         "type": "object"
       },
@@ -7424,6 +7544,144 @@
         }
       }
     },
+    "/api/post-attachments/confirm": {
+      "post": {
+        "operationId": "confirmPostAttachment",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPostAttachmentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmPostAttachmentOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "confirmPostAttachment",
+        "tags": [
+          "post-attachments"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/post-attachments/request": {
+      "post": {
+        "operationId": "requestPostAttachment",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestPostAttachmentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestPostAttachmentOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "requestPostAttachment",
+        "tags": [
+          "post-attachments"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/post-status/move": {
       "post": {
         "operationId": "movePostStatus",
@@ -10040,6 +10298,9 @@
     },
     {
       "name": "plans"
+    },
+    {
+      "name": "post-attachments"
     },
     {
       "name": "post-status"

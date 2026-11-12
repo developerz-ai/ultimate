@@ -3,6 +3,7 @@
 // table in this app — and in Spanish the one form that language has.
 
 import { useT } from '@postly/i18n';
+import type { ActionAnswer } from '@ultimat3/action';
 import { ctxOf, runWithContext } from '@ultimat3/core';
 import { expect, renderRoute, unitTest } from '@ultimat3/testing';
 import { demoActorFor } from '../../auth/demo-actor';
@@ -106,4 +107,34 @@ unitTest('a draft whose body moved on shows its stale excerpt as a diff', async 
   expect(html).toContain('<mark');
   expect(html).toContain('Removed');
   expect(html).toContain('Added');
+});
+
+// A native form on this page (publish, withdraw, comment) refused: the flash's code, read in
+// `load`, is shown as the app's own sentence — and a success shows nothing.
+unitTest('a refused native form shows its code as a translated sentence', async () => {
+  const refused = (answer: ActionAnswer) => ({
+    ...page,
+    config: { ...page.config, load: () => Promise.resolve({ ...POST_ROW, answer }) },
+  });
+  const render = async (answer: ActionAnswer) =>
+    (
+      await renderRoute(refused(answer), {
+        url: `https://example.test/posts/${POST}`,
+        actor: demoActorFor('ada'),
+      })
+    ).text;
+  const notFound: ActionAnswer = {
+    action: 'publishPost',
+    outcome: 'refusal',
+    code: 'X_POST_NOT_FOUND',
+    issues: [],
+    truncated: false,
+  };
+  expect(await render(notFound)).toContain('That post no longer exists.');
+  expect(await render({ ...notFound, code: 'X_SOMETHING_ELSE' })).toContain(
+    'That did not go through.',
+  );
+  expect(await render({ action: 'createComment', outcome: 'success' })).not.toContain(
+    'That did not go through.',
+  );
 });

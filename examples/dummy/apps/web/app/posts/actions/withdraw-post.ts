@@ -21,5 +21,7 @@ export const withdrawPost = action({
   row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
   // The same three tags `publishPost` busts: the post, the org feed, and the public blog.
   cache: { invalidates: [tag.post, tag.feed, tag.blog] },
+  // `ConfirmDialog`'s form posts natively with scripting off: back to the post, now a draft.
+  native: { success: (post) => `/posts/${post.id}` },
   handle: ({ input, ctx }) => ctx.posts.withdraw(postId(input.postId)),
 });

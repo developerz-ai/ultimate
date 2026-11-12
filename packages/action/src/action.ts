@@ -27,6 +27,7 @@ import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
 import type { ActionMeter, ActionMeterFact, ResolvedLimit } from './meter';
 import { assertMeterDeclaration, meterFact } from './meter';
+import type { AnyNativeAnswer, NativeAnswer } from './native-answer';
 import type { ActionPolicy, Surface } from './policy-gate';
 import { fixedRateLimit } from './rate-limit-gate';
 
@@ -112,6 +113,12 @@ export interface ActionDef<
    * source for one. The OpenAPI operation and the MCP tool publish it. Absent: today's open contract.
    */
   readonly errors?: readonly string[];
+  /**
+   * The page a browser's own `<form method="post">` lands on: a 303 to `success(output)`, or to
+   * `refusal(refusal)` (else the form's page) with the code and field issues in a one-read flash
+   * (`useActionAnswer`). Read by the HTTP projection for a form POST alone (`native-answer.ts`).
+   */
+  readonly native?: NativeAnswer<InferOutput<TOutput>>;
   /**
    * Record every attempt at this action through the installed `AuditSink` — allowed, denied and
    * failed alike. Opt-in per declaration and never a global switch: a login and a price change
@@ -252,6 +259,7 @@ export interface AnyActionDef {
   readonly deprecated?: Deprecation;
   readonly idempotent?: boolean;
   readonly errors?: readonly string[];
+  readonly native?: AnyNativeAnswer;
   readonly audit?: boolean;
   readonly stream?: StandardSchemaV1;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;

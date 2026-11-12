@@ -141,4 +141,8 @@ export const TIER_3_ERROR_STATUS = {
   X_LEDGER_ENTRY_INVALID: 422,
   // @ultimat3/jobs — a ledger posting key is already stored with other entries
   X_LEDGER_POSTING_CONFLICT: 409,
+  // @ultimat3/query — a scoped policy guards a read whose source cannot take its predicate
+  X_QUERY_SCOPE_UNCOMPOSABLE: 500,
+  // @ultimat3/query — a live query is ordered by a text column the matcher cannot order as Postgres does
+  X_LIVE_ORDER_COLLATION: 500,
 } satisfies Readonly<Record<string, number>>;

@@ -40,6 +40,8 @@ export type {
   StreamActionDef,
 } from './action';
 export { action, describeAction, isAction } from './action';
+export type { ActionAnswer, ActionAnswerIssue } from './action-answer';
+export { ACTION_ANSWER_COOKIE, useActionAnswer } from './action-answer';
 export { chunksRead } from './action-stream';
 /**
  * The app's API as a whole — `defineApi({ http: { pathStyle, mounts }, openapi })` — read back by
@@ -207,6 +209,8 @@ export type {
 export { custom, isMutator, mutator } from './mutator';
 export type { ActionPath } from './naming';
 export { derivePath, inputSchemaName } from './naming';
+export type { ActionRefusal, NativeAnswer } from './native-answer';
+export { answersNatively } from './native-answer';
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
 export { completeOpenApi, mountOpenApi } from './openapi-complete';
@@ -257,6 +261,18 @@ export {
  */
 export type { TransitionDef, TransitionInput, TransitionTarget } from './transition';
 export { transition } from './transition';
+/**
+ * A direct upload as one declaration: `request` grants a pending PUT under the actor's org,
+ * `confirm` attaches it once storage has measured, sniffed and scanned it. A factory over `action`.
+ */
+export type {
+  UploadFlow,
+  UploadFlowAttached,
+  UploadFlowGrant,
+  UploadFlowOptions,
+  UploadFlowTarget,
+} from './upload-flow';
+export { uploadFlow } from './upload-flow';
 /**
  * `invoke`'s input parse and its `X_INPUT_INVALID` refusal, alone. Exported so a caller that must
  * hold something else to an action's input — an agent eval's tool double (`@ultimat3/ai`) — runs
