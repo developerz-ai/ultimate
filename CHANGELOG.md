@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- An island whose render throws keeps its server HTML instead of going blank (`mountOver`, used by `x g island`, `x new` and the resource form; the `island-mount-clears` guard finds older islands).
+- Lighter documents and assets: the app brand ships in the stylesheet (about 6 kB less per themed page), immutable assets are compressed once in the background, a static export writes `.br`/`.gz` siblings, documents send a `Link` preload header, and cacheable SSR pages answer 304.
+- Safer limits: an aborted or abandoned AI call is billed once the request is sent; MCP list tools answer a bounded page with a cursor; stdio cancellation works under load; a notification fan-out interrupted by a deploy no longer sends twice.
+
 ### Added
 
 - `@ultimat3/render/client`: `mountOver(el, draw)` â€” an island's `mount` clears its server markup for the live render and puts it back when the render throws, then rethrows (the root is still marked `data-x-failed` and reported once through `clientErrors`). A throwing island shows its server HTML instead of a blank box. 167 B in a chunk; framework-neutral. `x g island`, `x new` and the resource form island write `return mountOver(el, (root) => render(() => <X {...props} />, root))`.
