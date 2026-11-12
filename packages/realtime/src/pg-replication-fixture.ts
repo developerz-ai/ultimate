@@ -168,6 +168,8 @@ export interface ServerScript {
    * its way out. Absent is a slot nobody holds. `Infinity` is a genuine second replicator.
    */
   readonly slotHeldFor?: number;
+  /** The slot's `confirmed_flush_lsn` as Postgres prints it (`0/6000`). Absent is NULL. */
+  readonly slotConfirmed?: string;
   /** Table names `pg_class` reports with `relreplident <> 'f'`. Empty is the healthy answer. */
   readonly partialIdentity?: readonly string[];
   /** Table names `pg_class` reports as not FULL when asked on behalf of a params channel. */
@@ -220,6 +222,8 @@ export class FakeWalsender implements PgStream {
     reader.int32();
     if (tag === 'Q') this.#answer(reader.cstring());
     if (tag === 'd') this.#recordStandby(reader.rest());
+    // What a walsender answers a CopyDone with: its own, the command's completion, ready again.
+    if (tag === 'c') this.push(joined(copyDone(), complete(), ready()));
     return Promise.resolve();
   }
 
@@ -280,7 +284,9 @@ export class FakeWalsender implements PgStream {
       this.push(joined(...rows, complete(), ready()));
       return;
     }
-    if (sql.includes('pg_replication_slots')) this.#answerSlot(sql);
+    if (sql.startsWith('SELECT confirmed_flush_lsn')) {
+      this.push(joined(dataRow([this.#script.slotConfirmed ?? null]), complete(), ready()));
+    } else if (sql.includes('pg_replication_slots')) this.#answerSlot(sql);
     else this.push(joined(dataRow(['ok']), complete(), ready()));
   }
 

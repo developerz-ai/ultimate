@@ -15,6 +15,7 @@ import {
   parseEnvelope,
   type SeqGapDetector,
 } from './replicator-envelope';
+import { parseHandover } from './replicator-handover';
 import type { BusOutage } from './sync-bus-outage';
 
 export interface SyncBus {
@@ -94,6 +95,12 @@ export function changeHandler(bus: SyncBus): (payload: string) => void {
       });
       return;
     }
+    // A replicator run's clean goodbye: the next run, in any process, chains on from it.
+    const handover = parseHandover(payload);
+    if (handover !== null) {
+      if (bus.gaps.handOver(handover)) desync(bus, '-handover');
+      return;
+    }
     const envelope = parseEnvelope(payload);
     if (!envelope) return;
     // Before the gap detector: a dropped producer's sequence is no stream this node follows.
@@ -103,18 +110,7 @@ export function changeHandler(bus: SyncBus): (payload: string) => void {
     // ever asked for a re-snapshot. A gap invalidates every window here instead, and the
     // subscribers are re-served on the next change to each query.
     const replicated = envelope.source !== 'publisher';
-    if (bus.gaps.observe(envelope)) {
-      // A publisher's lost change was never a window's (below), so only the channels re-read.
-      const marked = replicated ? bus.registry.invalidate() : 0;
-      // Channels too: their seq is minted from what this node sees, so the hole is invisible
-      // to a ring that would otherwise replay across it as complete history.
-      const channelGaps = bus.hub.invalidate();
-      logger.warn('live.change_gap', {
-        table: envelope.change.table,
-        desynced: marked,
-        channelGaps,
-      });
-    }
+    if (bus.gaps.observe(envelope)) desync(bus, envelope.change.table, replicated);
     // Not awaited: the bus handler must return before the next change, and ordering is the
     // registry's — one serial lane per query id. What this call site owes is the failure. An
     // unhandled rejection here is a fanout that reached nobody, reported as a dead process.
@@ -140,6 +136,16 @@ export function reconnectHandler(bus: SyncBus): () => void {
     bus.outage?.answered();
     resyncAll(bus, 'live.bus_reconnected', {});
   };
+}
+
+/** A gap: every window (a replicator's) and every records topic re-read, said once. */
+function desync(bus: SyncBus, table: string, replicated = true): void {
+  // A publisher's lost change was never a window's (below), so only the channels re-read.
+  const marked = replicated ? bus.registry.invalidate() : 0;
+  // Channels too: their seq is minted from what this node sees, so the hole is invisible
+  // to a ring that would otherwise replay across it as complete history.
+  const channelGaps = bus.hub.invalidate();
+  logger.warn('live.change_gap', { table, desynced: marked, channelGaps });
 }
 
 /** Every window and every records topic re-read, the producer history forgotten, said once. */

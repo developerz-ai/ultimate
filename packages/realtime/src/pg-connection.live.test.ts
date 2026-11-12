@@ -113,4 +113,38 @@ describeLive('live · pg connection session pins', () => {
       await session.close();
     }
   });
+
+  // The goodbye `stop()` now reads (`awaitCopyEnd`): a real walsender answers a CopyDone with
+  // CopyDone, CommandComplete and ReadyForQuery. Closed over them unread, the socket was reset and
+  // the server logged `Connection reset by peer` on every replicator shutdown.
+  test('a walsender answers CopyDone through ReadyForQuery, so close() leaves nothing unread', async () => {
+    const target = parsePgUrl(url ?? '');
+    const setup = await admin();
+    await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
+    await setup.query('CREATE PUBLICATION x_live_drain_pub');
+    const session = await connect(
+      { user: target.user, password: target.password ?? '' },
+      'database',
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await session.query('CREATE_REPLICATION_SLOT x_live_drain_slot TEMPORARY LOGICAL pgoutput');
+      await session.startCopyBoth(
+        "START_REPLICATION SLOT x_live_drain_slot LOGICAL 0/0 (proto_version '1', " +
+          "publication_names 'x_live_drain_pub')",
+      );
+      await session.endCopy();
+      const deadline = new Promise<void>((resolve) => {
+        // real-clock: only a bound — a real walsender answers in one round trip, on its own time.
+        timer = setTimeout(resolve, 10_000);
+      });
+      expect(await session.awaitCopyEnd(deadline)).toBe(true);
+      expect(session.inCopyBoth).toBe(false);
+    } finally {
+      clearTimeout(timer);
+      await session.close();
+      await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
+      await setup.close();
+    }
+  });
 });

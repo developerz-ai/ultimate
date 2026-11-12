@@ -5,7 +5,7 @@
 
 import type { AsyncState, Row } from '@ultimat3/core/page';
 import { pageStore } from './page-store';
-import { isServerRender, signalFor } from './reactivity';
+import { isServerRender, ownedRelease, signalFor } from './reactivity';
 import { keptAnswer, throttledNotify } from './record-answer';
 import { type RecordKey, type RecordStore, recordKey } from './record-store';
 import type { Scheduler } from './thundering-herd';
@@ -13,7 +13,7 @@ import type { Scheduler } from './thundering-herd';
 /**
  * A callable `AsyncState`: `pending` until the record first arrives, `ready` from then on —
  * `ready` with `undefined` once the server removed it, so a deleted record is a settled answer
- * and never a skeleton forever. `release()` lets go; the caller owns it (Solid: `onCleanup`).
+ * and never a skeleton forever. `release()` lets go; the component's cleanup calls it on its own.
  */
 export type RecordAccessor<R extends object = Row> = (() => AsyncState<R | undefined>) & {
   release(): void;
@@ -56,13 +56,10 @@ export function useRecord<R extends object = Row>(type: string, key: string): Re
     if (answer.status !== 'ready' || answer.data !== row) answer = { status: 'ready', data: row };
     return answer;
   };
-  let held = true;
-  const release = (): void => {
-    if (!held) return;
-    held = false;
+  const release = ownedRelease(() => {
     unsubscribe();
     store.release(type, key);
-  };
+  });
   return Object.assign(read, { release, [Symbol.dispose]: release });
 }
 
@@ -162,15 +159,12 @@ function byKeys<R extends object>(
     answer = keptAnswer(answer, 'ready', rows);
     return answer;
   };
-  let held = true;
-  const release = (): void => {
-    if (!held) return;
-    held = false;
+  const release = ownedRelease(() => {
     unsubscribe();
     store.batch(() => {
       for (const key of keys) store.release(type, key);
     });
-  };
+  });
   return Object.assign(read, { release, [Symbol.dispose]: release });
 }
 
@@ -234,13 +228,10 @@ function ofType<R extends object>(
     answered = at;
     return answer;
   };
-  let held = true;
-  const release = (): void => {
-    if (!held) return;
-    held = false;
+  const release = ownedRelease(() => {
     notify.cancel();
     unsubscribe();
     store.releaseType(type);
-  };
+  });
   return Object.assign(read, { release, [Symbol.dispose]: release });
 }

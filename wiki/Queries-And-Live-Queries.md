@@ -90,7 +90,7 @@ const feed = useQuery<FeedRow>({ name: 'liveFeed', live: true }, { orgId });
 | Lists hold ids | the rows come from the page's `RecordStore`, so a record updated through any path re-renders every list holding it |
 | Input | read **once**, at call time. A changed input is a new `useQuery` |
 | `poll` | `pollEvery(ms, { maxMs? })` from `@ultimat3/realtime`; non-live only, refused by type on a live ref: `refetch` every `ms` through `visibleInterval` from `@ultimat3/core/page`, which only an island importing `pollEvery` carries — hidden tab skipped with one make-up read on show, stopped by a lost session and by `release()`. A non-finite value is `finiteOption`'s refusal |
-| Lifetime | the caller owns `release()` (Solid: `onCleanup`) |
+| Lifetime | released with the component that called it (**31.14.0**: `x build`'s island bootstrap installs Solid's `onCleanup` as `installRealtime({ cleanup })`); `release()` lets go sooner, and is the caller's for a hook held outside a component. A release runs once however many of them fire |
 | Not derived, `As of 2026-09-22` | `live` and `entity` are stated on the ref by hand, and nothing checks them against the query declaration. A ref saying `live: true` for a non-live query subscribes to nothing |
 | Types | the row type is the caller's annotation (`useQuery<FeedRow>`), not inferred from the query. That is the price of never importing the query value |
 | A server render | answers `pending` with no subscription |

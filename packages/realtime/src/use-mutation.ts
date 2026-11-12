@@ -14,9 +14,9 @@ import {
 import type { JsonValue } from './json';
 import { knownOffline, type OutboxHandle, peekOutbox } from './outbox-slot';
 import { OfflineQueueAbandonedError, ServerRenderLiveError } from './page-errors';
-import { installedPage, type PageWrites, pageRealtime } from './page-store';
+import { enterLane, installedPage, type PageWrites, pageRealtime } from './page-store';
 import { mutationWire } from './pinned-wire';
-import { isServerRender, signalFor } from './reactivity';
+import { isServerRender, ownedRelease, signalFor } from './reactivity';
 import { carriedBy } from './record-store';
 
 /**
@@ -42,7 +42,7 @@ export interface MutatorLike {
 export type Mutate = ((input: JsonValue) => Promise<unknown>) & {
   /** Calls of this mutator the server has not answered yet. */
   readonly pending: number;
-  /** Stop counting for this hook (Solid: `onCleanup`). A call already made still settles. */
+  /** Stop counting for this hook; the component's cleanup does too. A call made still settles. */
   release(): void;
   [Symbol.dispose](): void;
 };
@@ -52,7 +52,7 @@ export interface MutationQueue extends Disposable {
   readonly pending: number;
   /** Writes the server refused since the page loaded. */
   readonly failed: number;
-  /** Stop listening (Solid: `onCleanup`) — a page-wide listener outlives any one component. */
+  /** Stop listening; the component's cleanup does too — the page-wide counts outlive it. */
   release(): void;
 }
 
@@ -80,8 +80,9 @@ function count(writes: PageWrites, name: string, delta: number): void {
 function watch(hook: string, writes: PageWrites | undefined): [() => number, () => void] {
   const [version, setVersion] = signalFor(hook)(0);
   const listener = (): void => setVersion(version() + 1);
-  writes?.listeners.add(listener);
-  return [version, () => writes?.listeners.delete(listener)];
+  if (writes === undefined) return [version, () => undefined];
+  writes.listeners.add(listener);
+  return [version, ownedRelease(() => writes.listeners.delete(listener))];
 }
 
 /**
@@ -110,6 +111,27 @@ function restoreOverlays(mutator: MutatorLike): void {
       );
     }
   });
+}
+
+/**
+ * How long a write waits for the previous write of its mutator before the outbox takes it over.
+ * Writes carry no client deadline (`clientFlight` never aborts one), so a POST on a half-open
+ * socket can hang for minutes; ten seconds is past any answer a live server gives, and short of
+ * the point a user gives up on the tap.
+ */
+export const LANE_WAIT_MS = 10_000;
+
+/** The lane's `ready`, or `'late'` once `LANE_WAIT_MS` passed first. The timer goes either way. */
+async function laneTurn(ready: Promise<void>): Promise<'turn' | 'late'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), LANE_WAIT_MS);
+  });
+  try {
+    return await Promise.race([ready.then(() => 'turn' as const), late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The page's outbox once the boot has finished opening it; `undefined` on a page with no boot. */
@@ -179,22 +201,10 @@ export function useMutation(mutator: MutatorLike): Mutate {
         throw error;
       }
     };
-    // Asked of the DURABLE queue, re-read now: another tab of this user may have queued writes this
-    // tab's copy has not heard of yet, and sending past them reorders the user's intent. Offline,
-    // nothing is sent, so the question is moot and its read would only delay the disk write.
-    if (queued !== undefined && !offline) {
-      await queued.refresh().catch(() => undefined);
-      // That read is an await: a principal that left meanwhile must not have this write POSTed, or
-      // queued, as the next one. Refused by the code `enqueue` uses for the same departure.
-      if (pageClient().scope.epoch !== issued) {
-        page.store.drop(key);
-        count(writes, mutator.name, -1);
-        throw new OfflineQueueAbandonedError({ name: mutator.name });
-      }
-    }
-    if (queued !== undefined && (offline || queued.pending().length > 0)) {
+    /** The write is the outbox's: queued under its key, behind what is already there, replayed. */
+    const viaOutbox = async (outbox: OutboxHandle): Promise<undefined> => {
       try {
-        await enqueue(queued);
+        await enqueue(outbox);
         if (offline) {
           // Queued under the principal that made it; one that left since takes its page with it.
           if (pageClient().scope.epoch !== issued) {
@@ -202,63 +212,107 @@ export function useMutation(mutator: MutatorLike): Mutate {
           }
           paint();
         }
-        void queued.replay().catch(() => undefined);
+        void outbox.replay().catch(() => undefined);
         return undefined;
       } finally {
         count(writes, mutator.name, -1);
       }
-    }
-    let output: unknown;
-    /** The records the answer carried, `type:key` — what the overlay may be settled against. */
-    const carried = new Set<string>();
+    };
+    // Offline, nothing is sent, so the lane below has nothing to order: the outbox's replay orders
+    // the queue. Joining it held the write off the disk behind a POST that may never answer (a
+    // half-open socket) — and a reload in that wait lost a write the user saw made (#777).
+    if (offline) return viaOutbox(queued);
+    // One lane per mutator NAME, page-wide: this write's network leg starts when the previous
+    // one of the same mutator settled — sent, queued or refused. Two online calls (like, then
+    // unlike) POSTed together could commit in either order, and the final row would contradict
+    // the last overlay the user saw. The overlay above is never held back: the screen is at once.
+    const lane = enterLane(writes, mutator.name);
     try {
-      output = await page.services.send({
-        method: wire.method,
-        url: wire.url,
-        body: wire.body,
-        idempotencyKey: key,
-        onEnvelope: (envelope) => carriedBy(envelope, carried),
-      });
-    } catch (error) {
-      const failure = transportFailure(error);
-      // No response at all — which is NOT "the write did not land": the POST may have committed
-      // and lost its answer. The write is the outbox's now, under the SAME idempotency key, and
-      // that replay is safe only because `mutator()` refuses a declaration without
-      // `idempotent: true` (`X_MUTATOR_NOT_IDEMPOTENT`): the server reads the key and answers the
-      // replay from its idempotency store, so the handler never runs twice. The overlay stays on
-      // screen until the replay settles or refuses it. Only a page the boot opened
-      // an outbox on can promise that; with none (no boot, so nothing on this page persists) the
-      // write is refused like any other, never held in a memory queue a reload would silently lose.
-      const outbox = failure === 'network' ? await bootedOutbox(page) : undefined;
-      if (outbox !== undefined) {
-        await enqueue(outbox);
-        return undefined;
+      /** The lane's wait ran out: the write goes to the outbox, which orders whatever follows. */
+      let late = false;
+      // Only a write that found the lane busy awaits: an idle lane sends in this same tick.
+      if (lane.ready !== undefined) {
+        // Bounded only where a durable queue can take the write over; with none it waits its turn.
+        if (queued === undefined) await lane.ready;
+        else late = (await laneTurn(lane.ready)) === 'late';
+        // Waiting is an await: a principal that left meanwhile does not get this write sent as
+        // the next one — refused by the code the outbox path uses for the same departure.
+        if (pageClient().scope.epoch !== issued) {
+          page.store.drop(key);
+          count(writes, mutator.name, -1);
+          throw new OfflineQueueAbandonedError({ name: mutator.name });
+        }
       }
-      if (failure === 'body') {
-        // A 2xx whose body was not JSON: the write may well have landed, so it is neither queued
-        // (a replay would be a second attempt) nor taken back — its overlay waits for the next
-        // server row it touched. The caller is still told: nothing here can confirm it.
-        page.store.awaitServer(key);
-        writes.failed += 1;
+      // Asked of the DURABLE queue, re-read now: another tab of this user may have queued writes this
+      // tab's copy has not heard of yet, and sending past them reorders the user's intent.
+      if (queued !== undefined && !late) {
+        await queued.refresh().catch(() => undefined);
+        // That read is an await: a principal that left meanwhile must not have this write POSTed, or
+        // queued, as the next one. Refused by the code `enqueue` uses for the same departure.
+        if (pageClient().scope.epoch !== issued) {
+          page.store.drop(key);
+          count(writes, mutator.name, -1);
+          throw new OfflineQueueAbandonedError({ name: mutator.name });
+        }
+      }
+      // Awaited, not returned: the lane opens for the next write only once this one is on disk.
+      if (queued !== undefined && (late || queued.pending().length > 0)) {
+        return await viaOutbox(queued);
+      }
+      let output: unknown;
+      /** The records the answer carried, `type:key` — what the overlay may be settled against. */
+      const carried = new Set<string>();
+      try {
+        output = await page.services.send({
+          method: wire.method,
+          url: wire.url,
+          body: wire.body,
+          idempotencyKey: key,
+          onEnvelope: (envelope) => carriedBy(envelope, carried),
+        });
+      } catch (error) {
+        const failure = transportFailure(error);
+        // No response at all — which is NOT "the write did not land": the POST may have committed
+        // and lost its answer. The write is the outbox's now, under the SAME idempotency key, and
+        // that replay is safe only because `mutator()` refuses a declaration without
+        // `idempotent: true` (`X_MUTATOR_NOT_IDEMPOTENT`): the server reads the key and answers the
+        // replay from its idempotency store, so the handler never runs twice. The overlay stays on
+        // screen until the replay settles or refuses it. Only a page the boot opened
+        // an outbox on can promise that; with none (no boot, so nothing on this page persists) the
+        // write is refused like any other, never held in a memory queue a reload would silently lose.
+        const outbox = failure === 'network' ? await bootedOutbox(page) : undefined;
+        if (outbox !== undefined) {
+          await enqueue(outbox);
+          return undefined;
+        }
+        if (failure === 'body') {
+          // A 2xx whose body was not JSON: the write may well have landed, so it is neither queued
+          // (a replay would be a second attempt) nor taken back — its overlay waits for the next
+          // server row it touched. The caller is still told: nothing here can confirm it.
+          page.store.awaitServer(key);
+          writes.failed += 1;
+          throw error;
+        }
+        page.store.drop(key);
+        // A write superseded by a principal change DID land; it is the previous principal's, and
+        // nothing about it is this page's failure to report.
+        if (!isSuperseded(error)) writes.failed += 1;
+        throw error;
+      } finally {
+        count(writes, mutator.name, -1);
+      }
+      try {
+        // A row the answer did not carry keeps its overlay until the server's row reaches it.
+        page.store.settle(key, carried);
+      } catch (error) {
+        // A custom merge that answered no row: the server's truth stands, and the caller is told.
+        page.store.drop(key);
         throw error;
       }
-      page.store.drop(key);
-      // A write superseded by a principal change DID land; it is the previous principal's, and
-      // nothing about it is this page's failure to report.
-      if (!isSuperseded(error)) writes.failed += 1;
-      throw error;
+      return output;
     } finally {
-      count(writes, mutator.name, -1);
+      lane.leave();
     }
-    try {
-      // A row the answer did not carry keeps its overlay until the server's row reaches it.
-      page.store.settle(key, carried);
-    } catch (error) {
-      // A custom merge that answered no row: the server's truth stands, and the caller is told.
-      page.store.drop(key);
-      throw error;
-    }
-    return output;
   };
   Object.defineProperty(call, 'pending', {
     get: (): number => {

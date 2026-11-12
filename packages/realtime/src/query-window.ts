@@ -107,7 +107,11 @@ export function queryEntry(
   },
 ): QueryEntry {
   const tenant = options?.tenant ?? null;
-  return {
+  // `stale` is written from four modules; an accessor is the one place every write passes, so the
+  // registry's owing set (`live-entries.ts`) is kept here rather than found by a walk per change.
+  let stale = false;
+  let watch: StaleWatch | null = null;
+  const entry: QueryEntry = {
     qid,
     definition,
     input,
@@ -130,7 +134,14 @@ export function queryEntry(
     subscribers: new Map(),
     rows: [],
     lsn: '',
-    stale: false,
+    get stale(): boolean {
+      return stale;
+    },
+    set stale(value: boolean) {
+      if (value === stale) return;
+      stale = value;
+      watch?.(entry, value);
+    },
     lock: new WindowLock(),
     reading: null,
     generation: 0,
@@ -139,6 +150,33 @@ export function queryEntry(
     schedule: options?.schedule ?? timeoutScheduler,
     traceparent: null,
   };
+  watchers.set(entry, (next, holder) => {
+    if (holder === undefined || watch === holder) watch = next;
+  });
+  return entry;
+}
+
+/** Told every time an entry's `stale` actually moves — never for a write of the same value. */
+export type StaleWatch = (entry: QueryEntry, stale: boolean) => void;
+
+/** How each entry `queryEntry` built takes its one watcher. Weak: an entry is never kept by it. */
+const watchers = new WeakMap<QueryEntry, (watch: StaleWatch | null, holder?: StaleWatch) => void>();
+
+/**
+ * Hand `entry`'s `stale` transitions to `watch` (`null` stops them) — only if `holder` is the one
+ * watching now, when given, so an owner letting go never detaches its successor. `false` for an
+ * entry `queryEntry` did not build: a hand-written literal has no accessor to report through, so
+ * its owner must keep reading the field.
+ */
+export function watchStale(
+  entry: QueryEntry,
+  watch: StaleWatch | null,
+  holder?: StaleWatch,
+): boolean {
+  const attach = watchers.get(entry);
+  if (attach === undefined) return false;
+  attach(watch, holder);
+  return true;
 }
 
 /**

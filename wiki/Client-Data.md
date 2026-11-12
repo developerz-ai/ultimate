@@ -20,7 +20,7 @@ answered before that wait on the page handle until it is. The design is
 | call a query from an island | `queryClient<Api['queries']>({ baseUrl: '' })` | shipped; now goes through the one transport |
 | ignore an answer for a principal that signed out | `if (isSuperseded(error)) return;` | shipped in 21.0.0 |
 | any other failure | `isUltimateError(error)`, then switch on `error.code` | shipped |
-| install realtime in an island | nothing: `x build` does it for every island whose own graph imports `@ultimat3/realtime`. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal })` in `mount` | shipped in 21.0.0 |
+| install realtime in an island | nothing: `x build` does it for every island whose own graph imports `@ultimat3/realtime`. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal, cleanup: onCleanup })` in `mount` — `cleanup` releases each hook with its component (31.14.0) | shipped in 21.0.0 |
 | show one record in a component | `useRecord('post', id)`: record type, then record key, from `@ultimat3/realtime` | shipped in 21.0.0 |
 | show a list | `useQuery({ name: 'postList', entity: 'post' }, input)`, or `{ name, live: true }` for a live query | shipped in 21.0.0 |
 | read once, no socket | `useQuery({ name: 'postList', entity: 'post' }, input)` with no `live` — one HTTP GET through the query client, rows into the same store. Nothing opens a socket (`packages/realtime/src/use-query.ts`): a list that needs no push needs no timer either — never poll | shipped in 21.0.0 |
@@ -169,7 +169,7 @@ export async function rename(postId: string, title: string): Promise<void> {
 | `X_CLIENT_RECORD_ENVELOPE_INVALID` | a response carried `x-ultimate-records: 1` and a body of the wrong shape | build the body with `encodeRecordEnvelope()` from `@ultimat3/core` in the handler that set the header, or stop setting the header |
 | `X_RECORD_KEY_MISSING` | a returned row lacks a primary-key column | `x entities show <entity> --json` lists the key. Return the whole row |
 | `X_MUTATOR_CLOCK_MISSING` | a mutator declares `conflict: 'last-write-wins'` and its entity has no number `updatedAt`, or its output has no entity row | add `updatedAt` (a number, epoch ms, written by the server) to the entity, or declare `conflict: 'server-wins'` |
-| `X_REALTIME_UNINSTALLED` | a realtime hook ran in an island that never called `installRealtime()` | `x build`. If the island reaches realtime only through a package, call `installRealtime({ signal: createSignal })` in its `mount` |
+| `X_REALTIME_UNINSTALLED` | a realtime hook ran in an island that never called `installRealtime()` | `x build`. If the island reaches realtime only through a package, call `installRealtime({ signal: createSignal, cleanup: onCleanup })` in its `mount` |
 | `X_RECORD_REJECTED` | a row reached the store with no key, or not as an object | `x entities show <entity> --json` lists the key. Return whole rows |
 | `X_CONTRACT_DRIFT` | the client bundle and the server are on different builds | reload the page to pick up the new client bundle |
 

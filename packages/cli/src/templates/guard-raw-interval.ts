@@ -18,7 +18,8 @@ const source =
 //
 // Why: a raw interval keeps asking from a background tab, and from a tab past its session it asks
 // for a 401 forever. \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` makes no call while the
-// tab is hidden, one when it is shown, and stops at the first lost session. Read: a bare,
+// tab is hidden, one when it is shown, and stops at the first lost session; a query's re-read is
+// \`useQuery(ref, input, { poll: pollEvery(ms) })\`, the same timer, built. Read: a bare,
 // \`window.\`, \`self.\` or \`globalThis.\` \`setInterval(\` in a \`*.island.tsx\`. Admitted: a \`// why:\` on
 // the call's line or the line above it — an animation tick is not a read. Not read: a bare
 // \`setInterval(\` in a file that binds its own (declared, imported, a parameter, destructured).
@@ -64,7 +65,7 @@ export function rawIntervals(files: readonly SourceFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${at} polls with setInterval, which keeps asking from a hidden tab and asks for a 401 forever once the session is gone\`,
-        fix: \`import { visibleInterval } from '@ultimat3/core/page' and call visibleInterval(run, ms) at \${at}, disposing it on cleanup — or add a // why: comment on that line naming why this interval is not a read — then: x verify\`,
+        fix: \`re-read a query with useQuery(ref, input, { poll: pollEvery(ms) }) (pollEvery is exported by @ultimat3/realtime) at \${at}; any other read: import { visibleInterval } from '@ultimat3/core/page' and call visibleInterval(run, ms) there, disposing it on cleanup — or add a // why: comment on that line naming why this interval is not a read — then: x verify\`,
         at,
       });
     }

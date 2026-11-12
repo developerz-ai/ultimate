@@ -4,10 +4,10 @@
 
 import { peekOutbox } from './outbox-slot';
 import { installedPage } from './page-store';
-import { isServerRender, signalFor } from './reactivity';
+import { isServerRender, ownedRelease, signalFor } from './reactivity';
 
 export interface OutboxView extends Disposable {
-  /** Stop listening (Solid: `onCleanup`). The outbox itself stays, and keeps its writes. */
+  /** Stop listening — the component's cleanup does it too. The outbox stays, with its writes. */
   release(): void;
   /** Writes queued and not yet taken by the server; `0` before the boot has opened the outbox. */
   readonly size: number;
@@ -34,10 +34,10 @@ export function useOutbox(): OutboxView {
     unsubscribe = outbox.subscribe(moved);
     moved();
   });
-  const release = (): void => {
+  const release = ownedRelease(() => {
     released = true;
     unsubscribe();
-  };
+  });
   return {
     release,
     [Symbol.dispose]: release,

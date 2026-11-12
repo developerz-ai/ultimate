@@ -59,7 +59,7 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
   },
   {
     path: 'packages/realtime/src/pg-replication-fixture.ts',
-    line: 351,
+    line: 357,
     reason:
       'the socket whose close() raises — the one way a teardown failure reaches a caller of start()',
   },

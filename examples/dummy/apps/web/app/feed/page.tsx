@@ -204,7 +204,17 @@ export const config = defineRoute({
   // byte→hex table (+333 B, in BOTH the page boot and the feed island, which each bundle it), so a
   // `uuidV7` the tab mints costs a table lookup and no CSPRNG call; and `singleLine` reading its
   // escape table through `Object.hasOwn` (+27 B per chunk). Raised 208.5kb → 209.2kb.
-  budget: { js: '209.2kb' },
+  // measured: 214415 B (2026-11-12, plan 101 sweep 9b realtime; x build --target static, against
+  // 213,859 built from the parent commit) — why: the feed island +516 B (95,650 B): every realtime
+  // hook releasing itself with its component (`ownedRelease`, the bootstrap's `cleanup: onCleanup`),
+  // so a forgotten `onCleanup` no longer holds a subscription, and `useMutation`'s per-mutator lane
+  // that sends a like and an unlike in call order; the page boot +40 B (84,526 B), the install
+  // fixes naming `cleanup`. Raised 209.2kb → 209.4kb.
+  // measured: 214687 B (2026-11-12, plan 101 sweep 9b realtime review; x build --target static,
+  // against 214,415) — why: the feed island +272 B (95,922 B): `useMutation` sending an offline
+  // write straight to the outbox instead of queueing it behind the lane, and bounding the lane
+  // wait at 10 s so one stalled mutation cannot hold every later one. Raised 209.4kb → 209.7kb.
+  budget: { js: '209.7kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

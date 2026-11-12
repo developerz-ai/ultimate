@@ -287,6 +287,24 @@ export class PgConnection {
     await this.#stream.write(copyDoneMessage());
   }
 
+  /**
+   * After `endCopy()`: read the walsender's answer — CopyData still in flight, its CopyDone, the
+   * CommandComplete — through `ReadyForQuery`, so `close()` leaves no byte unread. Unread bytes at
+   * close are a TCP reset, and the server logs `Connection reset by peer` for every shutdown.
+   * `false` when `deadline` settled first; the read left behind ends with the socket. The caller
+   * owns the reader: nothing else may be reading this connection.
+   */
+  async awaitCopyEnd(deadline: Promise<void>): Promise<boolean> {
+    const drained = (async (): Promise<boolean> => {
+      for (;;) {
+        const message = await this.#reader.next();
+        if (message === undefined || message.tag === 'Z') return message !== undefined;
+        if (message.tag === 'c') this.#copyBoth = false;
+      }
+    })().catch(() => false);
+    return Promise.race([drained, deadline.then(() => false)]);
+  }
+
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
