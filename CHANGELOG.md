@@ -10,7 +10,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
 
 - `@ultimat3/jobs`: `JOBS_TABLE_STORAGE` — `x_jobs` at `fillfactor = 80`, the framework schema's storage row for it, so `x db migrate` reports a hand-reset fillfactor as `changed-table-storage`.
 - `@ultimat3/jobs`: a claim answers two more things. `ClaimOptions.onEmpty(dueInMs)` — a claim that took nothing says how long until a row of those queues can next be taken (`null`: none waits or is held); `OutboxStore.claim(limit, { onEmpty })` the same for a held outbox row's lease. `ClaimedJob.steps` carries the run's step records (`[]` on a first attempt). All optional: a driver or store without them keeps the poll and the step list. `JobIntrospection.renewWorker(id, ttlMs)`, optional, pushes a registry row's expiry alone.
