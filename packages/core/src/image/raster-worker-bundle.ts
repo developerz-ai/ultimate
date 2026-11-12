@@ -18,6 +18,9 @@ export interface RasterWorkerBundle {
   readonly define: Readonly<Record<string, string>>;
 }
 
+/** A module specifier is `/`-separated on every host; Windows' `relative()` answers with `\`. */
+const toPosix = (path: string): string => path.split(sep).join('/');
+
 /** The deepest directory holding every path: where Bun roots `/$bunfs/root/` with no `root` set. */
 function commonDirectory(paths: readonly string[]): string {
   const split = paths.map((path) => path.split(sep));
@@ -44,7 +47,7 @@ export function rasterWorkerBundle(entrypoints: readonly string[]): RasterWorker
     ...entrypoints.map((entry) => resolve(entry)),
     RASTER_WORKER_ENTRY,
   ]);
-  const inside = relative(root, RASTER_WORKER_ENTRY).split(sep).join('/');
+  const inside = toPosix(relative(root, RASTER_WORKER_ENTRY));
   return {
     entrypoint: RASTER_WORKER_ENTRY,
     define: { [RASTER_WORKER_DEFINE]: JSON.stringify(`./${inside}`) },

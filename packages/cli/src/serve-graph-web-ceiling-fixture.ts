@@ -213,5 +213,8 @@
  * `default` (429 from one address after 120). No existing module newly reached.
  * raised 1593 → 1594, measured 1594 (2026-11-11, plan 101 sweep 0): `SERVING_ROLE_CEILING`'s 1,
  * `query/src/parsed-input.ts` — the one capped parse path live window ids hash through.
+ * raised 1594 → 1608, measured 1608 (2026-11-11, sweep 1 schema+core): `SERVING_ROLE_CEILING`'s
+ * 14 (bounded memos, retry budget, log redaction, Sentry frames, the off-loop raster). Nothing
+ * web-only.
  */
-export const WEB_ROLE_CEILING = 1594;
+export const WEB_ROLE_CEILING = 1608;
