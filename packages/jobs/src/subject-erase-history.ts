@@ -1,42 +1,90 @@
 // Single responsibility: one parent key's write, for a table whose `<table>_history` the subject
-// deletes. The rows' ids are read first, the write made, then every history row of those ids
-// removed — in ONE transaction under `x.purge`, because the write's own trigger has just recorded
-// the person's data in one more image, and a replayed step must find all three done or none.
+// deletes, or whose delete the database carries into a child that keeps one. The write is made,
+// then every history row whose before or after image names that key removed — in ONE transaction
+// under `x.purge`, because the write's own trigger (and an `on delete set null | cascade` child's)
+// has just recorded the person's data in one more image, and a replay must find all of it or none.
+//
+// Matched by the IMAGE, never by the live rows' ids: a row deleted or soft-deleted before the
+// erase, or inserted after an id read, left images naming the subject all the same. Cost: the
+// predicate is `before @> {key} or after @> {key}` within the tenant — no index serves it (the
+// history index is tenant, row_id, at), so it reads the tenant's history once per key and image.
+// Erase is rare; an app with a large trail adds a GIN `jsonb_path_ops` index on `before`/`after`.
 
-import { identifier, sql } from '@ultimat3/db';
-import type { SubjectStep } from './subject-plan';
-import type { SubjectReader, SubjectRow } from './subject-select';
+import type { SubjectOrphan, SubjectStep } from './subject-plan';
+import type { SubjectReader, SubjectTable } from './subject-select';
 
-/** What one page of parent keys did: the table's rows written, and its history rows removed. */
+/** What one page of parent keys did: the table's rows written, and each history's rows removed. */
 export interface HistoryPage {
   readonly treated: number;
-  readonly history: number;
+  readonly history: Readonly<Record<string, number>>;
 }
 
-/** The physical column a history row names its parent row by (`generate-history.ts`). */
-const ROW_ID = identifier('row_id');
+/** Every history row whose before or after image names `value` in `property`. */
+async function purgeImages(
+  reader: SubjectReader,
+  history: string,
+  property: string,
+  value: unknown,
+): Promise<number> {
+  let removed = 0;
+  // Sequential: a row naming the key in both images goes with the first and is counted once.
+  for (const images of reader.imagesNaming(history, property, value)) {
+    removed += await images.deleteAll();
+  }
+  return removed;
+}
+
+/** `parentKey` on the rows `property = value` is about to delete: what an orphan's image names. */
+async function keysOf(
+  reader: SubjectReader,
+  table: SubjectTable,
+  property: string,
+  value: unknown,
+  parentKey: string,
+): Promise<readonly unknown[]> {
+  if (property === parentKey) return [value];
+  const keys = new Set<unknown>();
+  for await (const page of table.andWhere(property, 'eq', value).inBatches(reader.size)) {
+    for (const row of page) keys.add(row[parentKey]);
+  }
+  keys.delete(null);
+  keys.delete(undefined);
+  return [...keys];
+}
 
 export async function treatPageWithHistory(
   reader: SubjectReader,
-  step: SubjectStep & { readonly history: string },
+  step: SubjectStep,
   property: string,
   values: readonly unknown[],
 ): Promise<HistoryPage> {
   const table = reader.table(step.entity);
-  const trail = identifier(reader.core(step.history).$table);
-  const key = reader.core(step.entity).$primaryKey[0] ?? 'id';
   const anonymize =
     typeof step.treatment === 'object' && 'anonymize' in step.treatment
       ? step.treatment.anonymize
       : undefined;
+  const orphans: readonly SubjectOrphan[] = step.orphans ?? [];
+  const first = step.history ?? orphans[0]?.history;
+  const history: Record<string, number> = {};
+  const add = (name: string, n: number): void => {
+    history[name] = (history[name] ?? 0) + n;
+  };
   let treated = 0;
-  let history = 0;
+  if (first === undefined) return { treated, history };
   for (const value of values) {
     const filter = { [property]: value };
-    const done = await reader.purging(step.history, async (tx) => {
-      const ids: string[] = [];
-      for await (const page of table.where(filter).inBatches(reader.size)) {
-        ids.push(...page.map((row: SubjectRow) => String(row[key])));
+    // Postgres: `purging` set `x.purge` in this transaction, which the guard trigger reads; memory:
+    // `purgingHistory` opened the history repository to this one table's deletes. A nested
+    // `purging` names the next table: own history first, so `x.purge` moves only forward.
+    treated += await reader.purging(first, async () => {
+      const named = new Map<string, readonly unknown[]>();
+      for (const orphan of orphans) {
+        if (!named.has(orphan.parentKey)) {
+          named.set(
+            orphan.parentKey,
+            await keysOf(reader, table, property, value, orphan.parentKey),
+          );
+        }
       }
       const written =
         step.treatment === 'delete'
@@ -44,20 +92,21 @@ export async function treatPageWithHistory(
           : anonymize === undefined
             ? 0
             : await table.updateWhere(filter, anonymize);
-      // SQL on a database (only the guard trigger knows `x.purge`); in memory, the history
-      // repository itself, which `purging` opened to this one delete (`purgingHistory`).
-      let removed = 0;
-      for (let at = 0; at < ids.length; at += reader.size) {
-        const chunk = ids.slice(at, at + reader.size);
-        removed +=
-          tx === undefined
-            ? await reader.table(step.history).andWhere('rowId', 'in', chunk).deleteAll()
-            : await tx.execute(sql`delete from ${trail} where ${ROW_ID} = any(${chunk}::text[])`);
+      if (step.history !== undefined) {
+        add(step.history, await purgeImages(reader, step.history, property, value));
       }
-      return { written, removed };
+      for (const orphan of orphans) {
+        const removed = await reader.purging(orphan.history, async () => {
+          let n = 0;
+          for (const key of named.get(orphan.parentKey) ?? []) {
+            n += await purgeImages(reader, orphan.history, orphan.property, key);
+          }
+          return n;
+        });
+        add(orphan.history, removed);
+      }
+      return written;
     });
-    treated += done.written;
-    history += done.removed;
   }
   return { treated, history };
 }

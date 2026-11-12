@@ -2,6 +2,7 @@
 // history row names its parent by `row_id`, which is no foreign key — so the walk never finds it —
 // and every write the erase makes to the parent records the person's data in a before image. Reached
 // exactly when its parent is deleted or anonymized; `'delete'` rides the parent's step, after it.
+// Its ROWS are found by image, never by `row_id` (`imagesNaming`, `subject-select.ts`).
 
 import type { UltimateError } from '@ultimat3/core';
 import type { RegistryEntry } from '@ultimat3/entity';
@@ -15,7 +16,11 @@ const ROW_ID = 'rowId';
 export interface HistoryReach {
   /** Parent → its history table, deleted inside the parent's own step. */
   readonly deletedWith: ReadonlyMap<string, string>;
-  /** History tables kept, each a step of its own run before its parent: what to count by. */
+  /**
+   * History tables kept, each a step of its own run before its parent. `via` (`rowId` → parent)
+   * names the parent and orders the step; the rows counted are those whose images name the
+   * subject, by the parent's own reach — so a parent row deleted before the erase still counts.
+   */
   readonly retained: ReadonlyMap<string, { readonly parent: string; readonly via: SubjectVia }>;
   /** Every history table the erase reaches, whatever its treatment: none is a stray declaration. */
   readonly reached: ReadonlySet<string>;

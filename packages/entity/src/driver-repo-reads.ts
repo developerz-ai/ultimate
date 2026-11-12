@@ -95,7 +95,13 @@ export const driverReads = <Row>(scope: DriverScope<Row>): DriverReads<Row> => {
         op,
         (await raw.countBy?.(column, { plan: planOf(where), tx })) ?? [],
       );
-      return new Map([...all.keys()].map((key) => [key, hit.get(key) ?? 0]));
+      // Re-ordered by the FILTERED count, as memory's `countsFrom` pass orders its pairs.
+      return countsFrom(
+        entity,
+        column,
+        op,
+        [...all.keys()].map((key) => [key, hit.get(key) ?? 0] as const),
+      );
     },
 
     /**

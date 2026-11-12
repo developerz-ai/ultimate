@@ -24,12 +24,27 @@ entity('sph_posts', {
   },
 });
 
+// Kept under the subject by `on delete set null`: the subject's delete rewrites it, in the database.
+entity('sph_notes', {
+  history: true,
+  columns: {
+    id: uuid().primaryKey(),
+    authorId: uuid()
+      .nullable()
+      .references(() => people.id, { onDelete: 'set null' }),
+    body: text({ max: 80 }),
+  },
+});
+
 const NAMES = ['sph_people', 'sph_posts', 'sph_posts_history'] as const;
-const plan = (tables: Readonly<Record<string, SubjectTreatment>>) =>
+const plan = (
+  tables: Readonly<Record<string, SubjectTreatment>>,
+  names: readonly string[] = NAMES,
+) =>
   planSubject({
     subject: 'sph_people',
     tables,
-    entries: NAMES.map((name) => getEntity(name) as RegistryEntry),
+    entries: names.map((name) => getEntity(name) as RegistryEntry),
   });
 const codes = (result: ReturnType<typeof plan>) =>
   result.problems.map((problem) => (isUltimateError(problem) ? problem.code : 'not-ultimate'));
@@ -75,6 +90,27 @@ describe('unit · planSubject · history tables', () => {
       { property: 'rowId', parent: 'sph_posts', parentKey: 'id' },
     ]);
     expect(result.plan.steps[1]?.history).toBeUndefined();
+  });
+
+  test("a deleted table's step names each child history its set null writes into, and no other", () => {
+    const tables = {
+      sph_people: 'delete',
+      sph_posts: 'delete',
+      sph_posts_history: 'delete',
+      sph_notes: { anonymize: { body: 'gone' } },
+      sph_notes_history: 'delete',
+    } as const;
+    const result = plan(tables, [...NAMES, 'sph_notes', 'sph_notes_history']);
+    expect(result.problems).toEqual([]);
+    const step = (name: string) => result.plan.steps.find((s) => s.entity === name);
+    // `sph_posts.authorId` is `restrict`: the database writes nothing into its history on delete.
+    expect(step('sph_people')?.orphans).toEqual([
+      { history: 'sph_notes_history', property: 'authorId', parentKey: 'id' },
+    ]);
+    expect(step('sph_notes')?.orphans).toBeUndefined();
+    const kept = { ...tables, sph_notes_history: { retain: 'kept' } };
+    const retained = plan(kept, [...NAMES, 'sph_notes', 'sph_notes_history']);
+    expect(retained.plan.steps.find((s) => s.entity === 'sph_people')?.orphans).toBeUndefined();
   });
 
   test('anonymize on a history table is refused: its rows are never rewritten', () => {

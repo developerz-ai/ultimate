@@ -97,9 +97,21 @@ describe('a defineDriver store composes the new reads from what it declares', ()
     const db = database({ messages }, { driver: mapStore(['aggregate:countBy']) });
     await db.messages.insertAll([...seed('a', [1, 2, 3], 1), ...seed('b', [1], 10)]);
     const counts = await db.messages.countBy('thread', { where: [['seq', 'gte', 2]] });
-    expect([...counts].sort()).toEqual([
+    // In the map's own order — biggest filtered group first — never sorted here, which hid it.
+    expect([...counts]).toEqual([
       ['a', 2],
       ['b', 0],
+    ]);
+  });
+
+  test('a filtered countBy orders groups by the FILTERED count, not the unfiltered one', async () => {
+    const messages = messagesEntity();
+    const db = database({ messages }, { driver: mapStore(['aggregate:countBy']) });
+    await db.messages.insertAll([...seed('a', [1, 1, 1], 1), ...seed('b', [5], 10)]);
+    const counts = await db.messages.countBy('thread', { where: [['seq', 'gte', 2]] });
+    expect([...counts]).toEqual([
+      ['b', 1],
+      ['a', 0],
     ]);
   });
 

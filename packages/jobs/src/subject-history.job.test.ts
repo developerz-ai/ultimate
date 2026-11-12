@@ -7,7 +7,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { ctxOf, userActor } from '@ultimat3/core';
 import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import type { Driver } from '@ultimat3/entity';
-import { clearRegistry, database, entity, postgresDriver, text, uuid } from '@ultimat3/entity';
+import {
+  clearRegistry,
+  database,
+  entity,
+  postgresDriver,
+  text,
+  timestamp,
+  uuid,
+} from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import { installJobDriver, resetJobDriver } from './adapter';
 import type { ClaimedJob, JobDriver } from './driver';
@@ -39,16 +47,49 @@ const posts = entity('sjh_posts', {
   },
 });
 const postsHistory = posts.$history ?? expect.unreachable('sjh_posts declares history');
+// Soft-deletable, so only ever anonymized: a note soft-deleted before the erase is hidden from
+// every filtered write, and its images still name its author.
+const notes = entity('sjh_notes', {
+  history: true,
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    authorId: uuid()
+      .nullable()
+      .references(() => people.id, { onDelete: 'set null' }),
+    body: text({ max: 80 }),
+    deletedAt: timestamp().nullable(),
+  },
+});
+const notesHistory = notes.$history ?? expect.unreachable('sjh_notes declares history');
+// Kept, under a post the erase deletes: the post's delete (not the subject's) sets its key null.
+const likes = entity('sjh_likes', {
+  history: true,
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    postId: uuid()
+      .nullable()
+      .references(() => posts.id, { onDelete: 'set null' }),
+    note: text({ max: 80 }),
+  },
+});
+const likesHistory = likes.$history ?? expect.unreachable('sjh_likes declares history');
+const ENTITIES = [people, posts, postsHistory, notes, notesHistory, likes, likesHistory];
 
 const client = pgliteClient();
 let jobs: JobDriver;
 const rows: Driver = postgresDriver();
-const db = () => database({ people, posts, postsHistory }, { driver: rows });
+const db = () =>
+  database(
+    { people, posts, postsHistory, notes, notesHistory, likes, likesHistory },
+    { driver: rows },
+  );
 
 beforeAll(async () => {
   setDbClient(client);
   const migration = generateMigration({
-    entities: [people.$describe(), posts.$describe(), postsHistory.$describe()],
+    entities: ENTITIES.map((e) => e.$describe()),
     name: 'subject history',
     now: new Date('2026-11-12T00:00:00.000Z'),
   });
@@ -68,11 +109,15 @@ beforeEach(async () => {
   resetSubjects();
   jobs = memoryJobDriver();
   installJobDriver(jobs);
+  await client.execute(raw('delete from "sjh_likes"'));
   await client.execute(raw('delete from "sjh_posts"'));
+  await client.execute(raw('delete from "sjh_notes"'));
   await client.execute(raw('delete from "sjh_people"'));
   // The guard refuses a plain delete of history: only a purge empties it between tests.
-  await client.execute(raw(`select set_config('x.purge', 'sjh_posts_history', false)`));
-  await client.execute(raw('delete from "sjh_posts_history"'));
+  for (const history of ['sjh_posts_history', 'sjh_notes_history', 'sjh_likes_history']) {
+    await client.execute(raw(`select set_config('x.purge', '${history}', false)`));
+    await client.execute(raw(`delete from "${history}"`));
+  }
   await client.execute(raw(`select set_config('x.purge', '', false)`));
   const scope = { orgId: ORG };
   for (const [n, who] of [ME, YOU].entries()) {
@@ -86,7 +131,19 @@ beforeEach(async () => {
 
 afterEach(() => resetJobDriver());
 
-const run = async (history: SubjectTreatment): Promise<JobExecution | undefined> => {
+type Tables = Readonly<Record<string, SubjectTreatment>>;
+/** The subject deleted, its posts with it; its notes (none unless a test writes one) unlinked. */
+const withPosts = (history: SubjectTreatment): Tables => ({
+  sjh_people: 'delete',
+  sjh_posts: 'delete',
+  sjh_posts_history: history,
+  sjh_notes: { anonymize: { authorId: null } },
+  sjh_notes_history: 'delete',
+  sjh_likes: { anonymize: { note: 'gone' } },
+  sjh_likes_history: 'delete',
+});
+
+const run = async (tables: Tables): Promise<JobExecution | undefined> => {
   const handle: AnyJobHandle = subjectErase({
     name: 'members.erase',
     input: t.object({ orgId: t.string, memberId: t.string }),
@@ -94,7 +151,7 @@ const run = async (history: SubjectTreatment): Promise<JobExecution | undefined>
     subject: defineSubject<{ readonly orgId: string; readonly memberId: string }>(people, {
       driver: rows,
       key: (input) => input.memberId,
-      tables: { sjh_people: 'delete', sjh_posts: 'delete', sjh_posts_history: history },
+      tables,
       batch: 1,
     }),
   });
@@ -116,14 +173,14 @@ const run = async (history: SubjectTreatment): Promise<JobExecution | undefined>
   return executeJob({ driver: jobs, claimed: claimed as ClaimedJob, handle, ctx });
 };
 
-const historyOf = async (): Promise<readonly string[]> =>
-  (await client.query<{ row_id: string }>(raw('select row_id from "sjh_posts_history"')))
+const historyOf = async (table = 'sjh_posts_history'): Promise<readonly string[]> =>
+  (await client.query<{ row_id: string }>(raw(`select row_id from "${table}"`)))
     .map((row) => row.row_id)
     .sort();
 
 describe('job · subjectErase · history', () => {
   test("'delete': every image of the erased rows goes, its own delete's included", async () => {
-    const done = await run('delete');
+    const done = await run(withPosts('delete'));
     expect([done?.outcome, done?.error]).toEqual(['completed', undefined]);
     // YOU's post kept its two images (insert, update); nothing of mine is left.
     expect(await historyOf()).toEqual([id(3), id(3)]);
@@ -137,11 +194,110 @@ describe('job · subjectErase · history', () => {
   });
 
   test('{ retain }: the images stay, counted, and the run still completes', async () => {
-    const done = await run({ retain: 'the audit trail outlives the post' });
+    const done = await run(withPosts({ retain: 'the audit trail outlives the post' }));
     expect(done?.outcome).toBe('completed');
     expect(await historyOf()).toEqual([id(1), id(1), id(1), id(2), id(2), id(2), id(3), id(3)]);
     expect(done?.result).toMatchObject({
       tables: { sjh_posts_history: { deleted: 0, anonymized: 0, retained: 4 } },
+    });
+  });
+  test('a row deleted before the erase still loses its images: they name the subject', async () => {
+    await db().posts.delete(id(1), { orgId: ORG });
+    const done = await run(withPosts('delete'));
+    expect([done?.outcome, done?.error]).toEqual(['completed', undefined]);
+    expect(await historyOf('sjh_posts_history')).toEqual([id(3), id(3)]);
+    expect(done?.result).toMatchObject({
+      tables: {
+        sjh_posts: { deleted: 1, anonymized: 0, retained: 0 },
+        // id(1)'s insert, update and delete; id(2)'s insert, update and the erase's own delete.
+        sjh_posts_history: { deleted: 6, anonymized: 0, retained: 0 },
+      },
+    });
+  });
+
+  test('{ retain } counts the images of a row deleted before the erase too', async () => {
+    await db().posts.delete(id(1), { orgId: ORG });
+    const done = await run(withPosts({ retain: 'the audit trail outlives the post' }));
+    expect(done?.outcome).toBe('completed');
+    expect(done?.result).toMatchObject({
+      tables: { sjh_posts_history: { deleted: 0, anonymized: 0, retained: 5 } },
+    });
+  });
+
+  test('a soft-deleted row, which no filtered write reaches, still loses its images', async () => {
+    const scope = { orgId: ORG };
+    for (const [n, who] of [ME, ME, YOU].entries()) {
+      await db().notes.insert({ id: id(n + 11), orgId: ORG, authorId: who, body: `n${n}` }, scope);
+    }
+    await db().notes.delete(id(11), scope);
+    const done = await run({
+      sjh_people: { anonymize: { email: 'gone' } },
+      sjh_posts: { retain: 'a post outlives its author' },
+      sjh_notes: { anonymize: { body: 'gone' } },
+      sjh_notes_history: 'delete',
+    });
+    expect([done?.outcome, done?.error]).toEqual(['completed', undefined]);
+    expect(await historyOf('sjh_notes_history')).toEqual([id(13)]);
+    expect(done?.result).toMatchObject({
+      tables: {
+        sjh_notes: { deleted: 0, anonymized: 1, retained: 0 },
+        // id(11)'s insert and soft delete; id(12)'s insert and the erase's own anonymize.
+        sjh_notes_history: { deleted: 4, anonymized: 0, retained: 0 },
+      },
+    });
+  });
+
+  test("the subject's own delete, which sets a kept row's key null, leaves no image naming it", async () => {
+    const scope = { orgId: ORG };
+    for (const [n, who] of [ME, ME, YOU].entries()) {
+      await db().notes.insert({ id: id(n + 11), orgId: ORG, authorId: who, body: `n${n}` }, scope);
+    }
+    // Soft-deleted: no filtered write reaches it, and the subject's delete still sets its key null.
+    await db().notes.delete(id(12), scope);
+    const done = await run({ ...withPosts('delete'), sjh_notes: { anonymize: { body: 'gone' } } });
+    expect([done?.outcome, done?.error]).toEqual(['completed', undefined]);
+    // `on delete set null` really ran: the notes are kept, unlinked from the erased subject.
+    const kept = await client.query<{ id: string; author_id: string | null }>(
+      raw('select id, author_id from "sjh_notes" order by id'),
+    );
+    expect(kept).toEqual([
+      { id: id(11), author_id: null },
+      { id: id(12), author_id: null },
+      { id: id(13), author_id: YOU },
+    ]);
+    expect(await historyOf('sjh_notes_history')).toEqual([id(13)]);
+    expect(done?.result).toMatchObject({
+      tables: {
+        sjh_notes: { deleted: 0, anonymized: 1, retained: 0 },
+        // id(11): insert, the erase's anonymize, the set null; id(12): insert, soft delete, set null.
+        sjh_notes_history: { deleted: 6, anonymized: 0, retained: 0 },
+      },
+    });
+  });
+
+  test("a deleted child's own delete, setting a grandchild's key null, leaves no image of it", async () => {
+    const scope = { orgId: ORG };
+    // Two likes on my posts, one on yours: the erase reaches mine through the posts it deletes.
+    for (const [n, post] of [id(1), id(2), id(3)].entries()) {
+      await db().likes.insert({ id: id(n + 21), orgId: ORG, postId: post, note: `l${n}` }, scope);
+    }
+    const done = await run(withPosts('delete'));
+    expect([done?.outcome, done?.error]).toEqual(['completed', undefined]);
+    const kept = await client.query<{ id: string; post_id: string | null }>(
+      raw('select id, post_id from "sjh_likes" order by id'),
+    );
+    expect(kept).toEqual([
+      { id: id(21), post_id: null },
+      { id: id(22), post_id: null },
+      { id: id(23), post_id: id(3) },
+    ]);
+    expect(await historyOf('sjh_likes_history')).toEqual([id(23)]);
+    expect(done?.result).toMatchObject({
+      tables: {
+        sjh_likes: { deleted: 0, anonymized: 2, retained: 0 },
+        // Each of mine: insert, the erase's anonymize, and the set null its post's delete made.
+        sjh_likes_history: { deleted: 6, anonymized: 0, retained: 0 },
+      },
     });
   });
 });

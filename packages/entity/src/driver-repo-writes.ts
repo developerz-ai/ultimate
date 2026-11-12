@@ -11,6 +11,7 @@ import { copyColumns } from './copy-plan';
 import { kindOf, valueAt } from './cursor';
 import { byKeys, checkedDelete } from './driver-delete';
 import type { DriverScope } from './driver-scope';
+import { versionedWrites } from './driver-versioned-write';
 import {
   assertWrittenInScope,
   sameTenantProperties,
@@ -29,7 +30,6 @@ import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 import { judgeUpdateMany, updateManyPlan } from './update-many';
 import { assertVersionedUpdate, versionOf } from './version-lock';
-import { entityStale } from './version-lock-errors';
 import { updateWherePlan, writeWherePlan } from './write-where';
 
 export type DriverWrites<Row> = Pick<
@@ -113,7 +113,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       Object.fromEntries(namedColumns(patch)),
     );
     // A declared version lock is per row (`v = stored + 1`), which one store patch cannot say: the
-    // judged path below, one compare-and-set write per row.
+    // judged path below, one write per row (`driver-versioned-write.ts`).
     const lock = versionOf(entity);
     if (entity.$invariants.length === 0 && !movesReference && lock === null) {
       // The search mirror asked for the rows: read them first, as the judged path does. Past the
@@ -147,38 +147,25 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$assert(merged);
     }
     await references(results);
-    // The narrowed values the merge produced — the same for every row — so the store holds what
-    // was judged rather than a money `bigint` the row type never carries. The version is the
-    // patch's instant: the store advances it per row.
     if (lock !== null) {
-      let written = 0;
-      for (const [at, row] of found.entries()) {
-        const result = results[at] as Readonly<Record<string, unknown>>;
-        const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, result[key]]));
-        values[lock] = result[lock];
-        if (advance !== undefined) values[advance.property] = narrowed[advance.property];
-        // Conditioned on the version the row was READ at: a writer in between matches nothing.
-        const keyed = {
-          ...plan,
-          where: [
-            ...plan.where,
-            ...entity.$primaryKey.map((key) => ({
-              column: key,
-              op: 'eq' as const,
-              value: valueAt(row, key),
-            })),
-            { column: lock, op: 'eq' as const, value: valueAt(row, lock) },
-          ],
-        };
-        const count = await raw.update({ plan: keyed, tx }, values, advance);
-        if (count === 0) {
-          throw entityStale(entity.$name, lock, rowKey(entity, row), valueAt(row, lock), undefined);
-        }
-        written += count;
-      }
+      const written = await versionedWrites(scope, {
+        op,
+        plan,
+        patch,
+        lock,
+        found,
+        results,
+        advance,
+        narrowed,
+        tx,
+        references,
+      });
       if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
       return written;
     }
+    // The narrowed values the merge produced — the same for every row — so the store holds what
+    // was judged rather than a money `bigint` the row type never carries. The version is the
+    // patch's instant: the store advances it per row.
     const merged = mergedRow(entity, first, patch) as Record<string, unknown>;
     const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, merged[key]]));
     if (advance !== undefined) values[advance.property] = narrowed[advance.property];

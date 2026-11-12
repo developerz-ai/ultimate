@@ -29,6 +29,22 @@ export interface SubjectStep {
    * in the same transaction, after the write — whose own trigger has just recorded one more image.
    */
   readonly history?: string;
+  /**
+   * A deleted table's children whose key into it the DATABASE rewrites on this step's delete
+   * (`on delete set null | cascade`), each with its history declared `'delete'`. The
+   * referential action fires the child's trigger after the child's own step purged, recording one
+   * more image naming this row — so it is purged here, in the same transaction, after the delete.
+   */
+  readonly orphans?: readonly SubjectOrphan[];
+}
+
+/** A child history the delete of its parent writes into: images whose `property` names its key. */
+export interface SubjectOrphan {
+  readonly history: string;
+  /** The child's key column into the deleted table, as its images spell it by property. */
+  readonly property: string;
+  /** The deleted table's column that key names. */
+  readonly parentKey: string;
 }
 
 /** A key closing a loop: set to null on the rows naming a parent the erase deletes, before any. */
@@ -304,15 +320,34 @@ export function planSubject(input: SubjectPlanInput): {
     .filter((entity) => treatmentOf(entity) !== undefined)
     .map((entity) => {
       const kept = history.deletedWith.get(entity);
+      const orphans = isDelete(treatmentOf(entity))
+        ? orphansOf(inbound.get(entity) ?? [], history.deletedWith)
+        : [];
       return {
         entity,
         treatment: treatmentOf(entity) as SubjectTreatment,
         via: via.get(entity) ?? [],
         ...(kept === undefined ? {} : { history: kept }),
+        ...(orphans.length === 0 ? {} : { orphans }),
       };
     });
   return { plan: { subject, key, unlink, steps }, problems };
 }
+
+/** Actions by which the database itself writes a child row when its parent row is deleted. */
+const REWRITES: ReadonlySet<string> = new Set(['cascade', 'set null']);
+
+/** Every child history the delete of one table writes an image into, by a referential action. */
+const orphansOf = (
+  edges: readonly Edge[],
+  deletedWith: ReadonlyMap<string, string>,
+): SubjectOrphan[] =>
+  edges.flatMap((edge) => {
+    const history = deletedWith.get(edge.from);
+    return history === undefined || edge.onDelete === null || !REWRITES.has(edge.onDelete)
+      ? []
+      : [{ history, property: edge.property, parentKey: edge.parentKey }];
+  });
 
 const edgeVia = (edge: Edge): SubjectVia => ({
   property: edge.property,

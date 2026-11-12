@@ -5,7 +5,15 @@
 import type { AuditEntry, AuditLog } from './audit';
 import { type AdminActor, type AdminAuthz, type AdminDecision, decideAll } from './authz';
 import { onlyFor, rowDiff, splitSecrets, withoutTenant, withTenant } from './crud-input';
-import { auditedWrite, deniedEntry, invalid, missingRow, refuse, staleRow } from './crud-outcome';
+import {
+  auditedUpdate,
+  auditedWrite,
+  deniedEntry,
+  invalid,
+  missingRow,
+  refuse,
+  staleRow,
+} from './crud-outcome';
 import { type AdminListRequest, findRow, listWhere } from './list-scope';
 import { type AdminPage, fetchPage } from './pagination';
 import {
@@ -337,18 +345,39 @@ export async function adminUpdate<Row extends AdminRow>(
         .map((key) => [key, parsed.value[key]]),
     ),
     ...secrets,
+    // A declared lock: the version the admin READ, which the form's `_version` just matched — so a
+    // write landing after that read is the entity's X_ENTITY_STALE, answered `stale` below.
+    ...versionRead(resource, before, submittedKeys),
   };
-  const { value: after, audit } = await auditedWrite(
+  const outcome = await auditedUpdate(
     resource,
-    'update',
     ctx,
     id,
     written,
     () => repo.update(id, validatedPatch),
     (changed) => ({ entityId: id, diff: rowDiff(resource, before, changed, secrets) }),
   );
-  return { ok: true, row: after, audit };
+  if (!outcome.stale) return { ok: true, row: outcome.value, audit: outcome.audit };
+  const current = (await findRow(resource, ctx.actor, id)) ?? before;
+  return {
+    ok: false,
+    kind: 'stale',
+    row: current,
+    version: rowVersion(current),
+    audit: outcome.audit,
+  };
 }
+
+/** `{ [lock]: before[lock] }` for an entity declaring `version:`, unless the caller named it. */
+const versionRead = (
+  resource: AdminResource,
+  before: AdminRow,
+  submitted: readonly string[],
+): Readonly<Record<string, unknown>> => {
+  const lock = resource.entity.$version;
+  if (typeof lock !== 'string' || submitted.includes(lock)) return {};
+  return { [lock]: before[lock] };
+};
 
 /** Destructive: the caller must echo `confirmationToken(entity, id)` or nothing happens. */
 export async function adminDestroy<Row extends AdminRow>(

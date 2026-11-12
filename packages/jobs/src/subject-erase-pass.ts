@@ -1,6 +1,7 @@
 // One `subjectErase()` pass: the framework targets first (they read the subject's row), then every
-// loop-closing key cleared, then each table children first, the subject last. Every page of
-// parent keys is its own step, so a killed run resumes at the page it stopped on; each statement
+// loop-closing key cleared, then each table children first, the subject last — a deleted table's
+// step also purging the images its `set null`/`cascade` wrote into a child's history. Every page
+// of parent keys is its own step, so a killed run resumes at the page it stopped on; each statement
 // is an equality on one key, so a replayed step deletes or overwrites nothing twice.
 
 import type { StepApi } from './steps-api';
@@ -75,10 +76,10 @@ async function countRows(reader: SubjectReader, entity: string): Promise<number>
   return seen.size;
 }
 
-/** One table's tally, and its history's when the step deletes that with it. */
+/** One table's tally, and the rows removed from each history its step purges. */
 interface TableErased {
   readonly own: SubjectTally;
-  readonly history?: { readonly table: string; readonly tally: SubjectTally };
+  readonly history: Readonly<Record<string, number>>;
 }
 
 /** One page of parent keys: the table's own write, and with a history, that history's rows. */
@@ -88,11 +89,10 @@ const treat = async (
   property: string,
   values: readonly unknown[],
 ): Promise<HistoryPage> => {
-  const { history } = step;
-  if (history === undefined) {
-    return { treated: await treatPage(reader, step, property, values), history: 0 };
+  if (step.history === undefined && step.orphans === undefined) {
+    return { treated: await treatPage(reader, step, property, values), history: {} };
   }
-  return treatPageWithHistory(reader, { ...step, history }, property, values);
+  return treatPageWithHistory(reader, step, property, values);
 };
 
 async function eraseTable(
@@ -103,13 +103,14 @@ async function eraseTable(
   const { entity, treatment } = step;
   if (typeof treatment === 'object' && 'retain' in treatment) {
     const kept = await stepApi.run(`retain:${entity}`, () => countRows(reader, entity));
-    return { own: tally(0, 0, kept) };
+    return { own: tally(0, 0, kept), history: {} };
   }
   let count = 0;
-  let history = 0;
+  const history: Record<string, number> = {};
   const add = (page: HistoryPage): void => {
     count += page.treated;
-    history += page.history;
+    for (const [table, n] of Object.entries(page.history))
+      history[table] = (history[table] ?? 0) + n;
   };
   if (entity === reader.plan.subject) {
     add(
@@ -130,9 +131,9 @@ async function eraseTable(
     }
   }
   const own = treatment === 'delete' ? tally(count, 0, 0) : tally(0, count, 0);
-  return step.history === undefined
-    ? { own }
-    : { own, history: { table: step.history, tally: tally(history, 0, 0) } };
+  // A table's own history is reported even at zero: the plan declared it, the erase reached it.
+  if (step.history !== undefined) history[step.history] ??= 0;
+  return { own, history };
 }
 
 export async function subjectErasePass(
@@ -164,7 +165,10 @@ export async function subjectErasePass(
   for (const step of reader.plan.steps) {
     const erased = await eraseTable(stepApi, reader, step);
     tables.set(step.entity, erased.own);
-    if (erased.history !== undefined) tables.set(erased.history.table, erased.history.tally);
+    // Summed: an orphan's history is purged again by each parent whose delete wrote into it.
+    for (const [table, n] of Object.entries(erased.history)) {
+      tables.set(table, tally((tables.get(table)?.deleted ?? 0) + n, 0, 0));
+    }
   }
   return { tables: Object.fromEntries(tables) };
 }
