@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/entity",
-  "version": "31.13.1",
+  "version": "31.14.0",
   "description": "A table + its domain type + invariants the database also enforces",
   "keywords": [
     "ultimate",
@@ -44,9 +44,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "31.13.1",
-    "@ultimat3/db": "31.13.1",
-    "@ultimat3/schema": "31.13.1",
-    "@ultimat3/time": "31.13.1"
+    "@ultimat3/core": "31.14.0",
+    "@ultimat3/db": "31.14.0",
+    "@ultimat3/schema": "31.14.0",
+    "@ultimat3/time": "31.14.0"
   }
 }
