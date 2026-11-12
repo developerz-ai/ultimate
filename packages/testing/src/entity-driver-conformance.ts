@@ -31,6 +31,13 @@ export interface EntityDriverSubject {
    */
   readonly history?: boolean;
   /**
+   * Whether the store keeps a `references(…, { countedIn })` counter — Postgres by trigger, memory
+   * in its repository. A `defineDriver` store has no lifecycle hook, so it refuses a counted child's
+   * repository (`X_DRIVER_UNSUPPORTED`, capability `countedIn`): absent here, that refusal is
+   * asserted and the counter checks themselves are not run (there is no handle to run them on).
+   */
+  readonly counters?: boolean;
+  /**
    * How many lock requests are blocked behind a holder right now — `memoryLockWaiters` from
    * `@ultimat3/entity/adapter`, or `pg_stat_activity`'s `wait_event_type = 'Lock'` on a pool. What
    * the hold check waits on to know a contender REACHED the lock, never a clock. Absent (PGlite:
@@ -45,6 +52,8 @@ export interface EntityDriverRun {
   readonly foreignKeys: boolean;
   /** The subject's `history`, `false` when it declared none. */
   readonly history: boolean;
+  /** The subject's `counters`, `false` when it declared none. */
+  readonly counters: boolean;
   /** The subject's `lockWaiters`, when it can see one. */
   readonly lockWaiters: (() => number | Promise<number>) | undefined;
 }
@@ -103,6 +112,7 @@ export const runEntityDriverCheck = async (
     driver,
     foreignKeys: subject.foreignKeys,
     history: subject.history === true,
+    counters: subject.counters === true,
     lockWaiters: subject.lockWaiters,
   });
 };

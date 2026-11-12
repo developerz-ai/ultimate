@@ -574,6 +574,10 @@ export const choosePreferences = action({
 One `factsOf()` feeds three renderings — terminal, `application/problem+json`, dev
 overlay — so the `code`/`cause`/`fix` strings can never diverge.
 
+Which of them a caller gets is one sniff, `acceptsHtml(request)` — an `Accept` naming
+`text/html`. Exported so a projection answering a browser differently (an action's `native`
+form answer) asks the same question the error page does, never a copy of it.
+
 Every problem document carries `retry` (`terminal`, `retryable` or `retry-after`, core's
 `errorRetry`) at its root, a 401 and a scope 404 included. A hidden 5xx answers the class and
 nothing else about the failure. It is what a client maps to an exception, so no app carries a

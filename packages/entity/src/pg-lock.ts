@@ -1,12 +1,12 @@
-// Single responsibility: `lock` and `lockKey` on Postgres. A transaction, through the driver's own
+// Single responsibility: `lock`, `lockKey` and `lockKeys` on Postgres. A transaction, through the driver's own
 // transactor, so nested in `withTransaction` it is a savepoint and the lock lives to the root COMMIT.
 // No wait option: the bound is the role's `statement_timeout`, and a deadlock the server breaks is
 // `X_DB_SERIALIZATION_FAILURE` through the funnel like any other statement.
 
-import { type DbClient, type SqlFragment, sql, withStatementAttribution } from '@ultimat3/db';
+import { type DbClient, join, type SqlFragment, sql, withStatementAttribution } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { notFound } from './errors';
-import { lockKeyInput } from './lock-key';
+import { lockKeyInput, lockKeysInput } from './lock-key';
 import { decodeRow, type PhysicalRow } from './pg-row';
 import { selectStatement } from './pg-sql';
 import { postgresTransactor } from './pg-transactor';
@@ -21,11 +21,21 @@ const lockedRow = <Row>(entity: EntityCore<Row>, plan: ReturnType<typeof idPlan>
 const advisoryLock = (input: string): SqlFragment =>
   sql`select pg_advisory_xact_lock(hashtextextended(${input}::text, 0))`;
 
+/**
+ * Every input, one round trip, in the order given: a `values` list is scanned in list order and the
+ * aggregate consumes its rows in that order, so the locks are taken in `lockKeysInput`'s sorted
+ * order — the one global order that keeps two overlapping `lockKeys` calls from deadlocking.
+ */
+const advisoryLocks = (inputs: readonly string[]): SqlFragment =>
+  sql`select count(pg_advisory_xact_lock(hashtextextended(k, 0))) from (values ${join(
+    inputs.map((input) => sql`(${input}::text)`),
+  )}) as held(k)`;
+
 export const postgresLocks = <Row>(
   entity: EntityCore<Row>,
   pinned: DbClient | undefined,
   client: () => DbClient,
-): Required<Pick<Repo<Row>, 'lock' | 'lockKey'>> => ({
+): Required<Pick<Repo<Row>, 'lock' | 'lockKey' | 'lockKeys'>> => ({
   async lock(id, fn, options) {
     const plan = idPlan(entity, id, options, 'lock');
     return postgresTransactor(pinned === undefined ? {} : { client: pinned }).run(async (tx) => {
@@ -43,6 +53,16 @@ export const postgresLocks = <Row>(
     return postgresTransactor(pinned === undefined ? {} : { client: pinned }).run(async (tx) => {
       await withStatementAttribution(entity.$name, 'lockKey', () =>
         client().query(advisoryLock(input)),
+      );
+      return fn(tx);
+    });
+  },
+
+  async lockKeys(keys, fn, options) {
+    const inputs = lockKeysInput(entity, keys, options);
+    return postgresTransactor(pinned === undefined ? {} : { client: pinned }).run(async (tx) => {
+      await withStatementAttribution(entity.$name, 'lockKeys', () =>
+        client().query(advisoryLocks(inputs)),
       );
       return fn(tx);
     });

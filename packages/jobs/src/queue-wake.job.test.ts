@@ -182,15 +182,15 @@ describe('what a statement announces', () => {
     expect(await payloads(JOBS_WAKE_CHANNEL)).toEqual(['mail', 'default', 'mail']);
   });
 
-  test('a row that is not about to be claimable, or was never inserted, announces nothing', async () => {
+  test('a row due after the longest rest, or never inserted, announces nothing', async () => {
     const driver = postgresJobDriver({ executor: pg.executor });
     const handle = itemJob({ run: () => Promise.resolve() });
-    // Delayed well past what a woken worker would wait out.
-    await enqueue(driver, handle.name, 'later', { runAt: Date.now() + 60_000 });
+    // Due after the longest rest: the rest ends first, and its own pass reads the due time.
+    await enqueue(driver, handle.name, 'later', { runAt: Date.now() + WAKE_DUE_WITHIN_MS + 1_000 });
     expect(await payloads(JOBS_WAKE_CHANNEL)).toEqual([]);
 
     await pg.age(WAKE_SLOT_MS);
-    // Due a moment from now — an enqueuer whose clock runs ahead of the database's.
+    // Due inside a rest: a resting worker must re-read its horizon.
     await enqueue(driver, handle.name, 'skewed', { runAt: Date.now() + WAKE_DUE_WITHIN_MS / 2 });
     expect(await payloads(JOBS_WAKE_CHANNEL)).toEqual(['default']);
 
@@ -279,7 +279,7 @@ describe('what a statement announces', () => {
     const handle = itemJob({ run: () => Promise.resolve() });
     const waiting = await enqueue(driver, handle.name, 'waiting', {
       queue: 'mail',
-      runAt: Date.now() + 60_000,
+      runAt: Date.now() + WAKE_DUE_WITHIN_MS + 1_000,
     });
     expect(await payloads(JOBS_WAKE_CHANNEL)).toEqual([]);
 

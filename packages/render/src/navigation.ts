@@ -261,8 +261,18 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         // Owned from the moment they are appended: a navigation aborted after this point left its
         // sheets in the head for good, styling every page after it — the next swap retires an
         // owned sheet its page does not link.
-        await loadStylesheets(doc, missingStylesheets(doc, next), owned);
+        const sheetsLoaded = await loadStylesheets(doc, missingStylesheets(doc, next), owned);
         if (mine.signal.aborted) return;
+        // A sheet that did not load (a rolling deploy's other replica serves another build's
+        // assets) would swap in an unstyled page: a GET is the browser's to load whole, a refresh
+        // ends quietly, a POST (never re-sent) swaps but keeps the sheets the tab already has.
+        if (!sheetsLoaded) {
+          if (refreshFailsQuietly(options.refresh)) return;
+          if (method === 'GET') {
+            win.location.assign(url);
+            return;
+          }
+        }
         if (shown === 'modal') {
           await modal.present(next, addressOf(landed), landed, modalHistory(method, history));
           doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
@@ -283,7 +293,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           () => {
             // A newer navigation started while the sheets loaded: this answer is no longer asked for.
             if (mine.signal.aborted) return;
-            swapped = swapDocument(doc, next, owned);
+            swapped = swapDocument(doc, next, owned, sheetsLoaded);
             // Emptied here and filled after the scripts, so a page with the same title still reads out.
             if (hold === undefined) live.textContent = '';
             swapped.body.append(live);

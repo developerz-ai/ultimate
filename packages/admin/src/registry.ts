@@ -90,6 +90,11 @@ export interface AdminEntity {
   readonly $viewQuery?: { readonly materialized: boolean } | null;
   /** `entity({ readOnly })`'s reason, `null` on a table the app writes: reads alone, as a view. */
   readonly $readOnly?: string | null;
+  /**
+   * `entity({ version })`'s lock property, `null` without one. Optional only because a hand-built
+   * fixture has none: never a form input, and every update carries the version the admin read.
+   */
+  readonly $version?: string | null;
   /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
   $describe(): AdminEntityDescription;
 }

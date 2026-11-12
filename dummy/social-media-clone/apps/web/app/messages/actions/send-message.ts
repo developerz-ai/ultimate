@@ -34,6 +34,9 @@ export const sendMessage = action({
     return repo.threadRowOf(input.conversationId);
   },
   mcp: { expose: true, description: 'Send a message to a conversation the actor is already in' },
+  // The thread's composer is a native form: the browser lands back on the thread with its message
+  // in it. A refusal goes back to the thread too (the `Referer`), whose `load` reads the code.
+  native: { success: (message) => `/messages/${message.conversationId}` },
   async handle({ input, ctx }) {
     // `messageSend` refused a null actor before this ran (`can()` answers X_UNAUTHENTICATED for
     // one), so this is a real member of the thread and not the anonymous placeholder.

@@ -5,7 +5,7 @@
 
 import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan } from './check-ddl';
-import { alterColumnInPlace, retypeOverDefault, wantedDefault } from './column-alter';
+import { alterColumnInPlace, retypeOverDefault, typeClause, wantedDefault } from './column-alter';
 import { defaultExpression } from './column-default';
 import { type ConcurrentPlan, emptyConcurrentPlan } from './concurrent-plan';
 import { dropOrder } from './drop-order';
@@ -54,10 +54,7 @@ function columnClause(column: ColumnDescriptionLike): string {
   // typecheck and a name that closes its own quote produced a real `drop table` through
   // `generateMigration` once already. It is also what makes an unrendered report safe to write
   // into a `--` comment, since generation refuses the dangerous name before the comment exists.
-  const parts = [
-    identifier(column.column).text,
-    `${sqlType(column.kind)}${generatedClause(column)}`,
-  ];
+  const parts = [identifier(column.column).text, `${typeClause(column)}${generatedClause(column)}`];
   const expression = defaultExpression(column);
   if (expression !== null) parts.push(`default ${expression}`);
   if (column.notNull) parts.push('not null');
@@ -124,10 +121,7 @@ function retypeColumn(
   // are recorded on tables this diff is not looking at (`retype-keys.ts`).
   if (!retyped.has(column.column)) return 'unchanged';
   moveDependentsAside(live, column.column, plan, moved);
-  const alter = (type: string): string =>
-    `alter table ${identifier(table).text} alter column ${identifier(column.column).text} ` +
-    `type ${type} using ${identifier(column.column).text}::${type};`;
-  retypeOverDefault(table, column, recorded, plan, alter(wanted), alter(recorded.dataType));
+  retypeOverDefault(table, column, recorded, plan);
   moved.defaults.add(column.column);
   return 'altered';
 }
@@ -162,6 +156,8 @@ function diffTable(
             ? {
                 ...recorded,
                 default: wantedDefault(column, recorded),
+                // The retype's ALTER stated the collation too (`retypeColumn`).
+                collation: column.collation,
               }
             : recorded,
           plan,

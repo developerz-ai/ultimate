@@ -37,6 +37,11 @@ export interface ColumnDescription {
    */
   readonly generated?: string | undefined;
   /**
+   * The declared collation, as the SNAPSHOT records it (`collate('C')`); absent for the database
+   * default and on every catalog read — `x db gen` diffs snapshot against snapshot, as `generated`.
+   */
+  readonly collation?: string | undefined;
+  /**
    * `true` on a column an entity lists under `retired` and a migration has marked (`retired.ts`):
    * old pods may still read it, so it stays until a later migration drops it. Absent otherwise, and
    * always absent on a catalog read: the database has no such idea.

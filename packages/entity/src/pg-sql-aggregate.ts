@@ -8,8 +8,8 @@ import type { AggregateFn } from './aggregate';
 import { AVG_SCALE } from './aggregate';
 import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
-import { columnRef, conditions, type ReadShape } from './pg-sql';
-import type { QueryPlan } from './tenancy';
+import { columnRef, conditions, predicatesSql, type ReadShape } from './pg-sql';
+import type { Predicate, QueryPlan } from './tenancy';
 
 /** What a grouped count comes back as. Both names are fixed, so neither can be a column's. */
 export interface GroupRow {
@@ -33,9 +33,15 @@ export const countByStatement = <Row>(
   shape: ReadShape,
   column: string,
   limit: number,
+  where: readonly Predicate[] = [],
 ): SqlFragment => {
   const grouped = columnRef(entity, column);
-  return sql`select ${grouped} as group_value, count(*) as group_count from ${identifier(
+  // A filter narrows the COUNT, never the groups: a group none of its rows satisfy answers 0.
+  const counted =
+    where.length === 0
+      ? sql`count(*)`
+      : sql`count(*) filter (where ${predicatesSql(entity, where)})`;
+  return sql`select ${grouped} as group_value, ${counted} as group_count from ${identifier(
     entity.$table,
   )} where ${conditions(entity, plan, shape)} group by ${grouped} limit ${limit}`;
 };

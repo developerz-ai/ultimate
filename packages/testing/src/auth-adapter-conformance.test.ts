@@ -83,6 +83,15 @@ const checkThenConsume = (): AuthAdapterSubject =>
     },
   }));
 
+/** Joins the session to nobody: the actor `authenticate` built would be refused as a deleted user. */
+const joinsNobody = (): AuthAdapterSubject =>
+  overriding((real) => ({
+    getSessionWithUser: async (id: string) => {
+      const session = await real.getSession(id);
+      return session === null ? null : { session, user: null };
+    },
+  }));
+
 const check = (name: string) => {
   const found = AUTH_ADAPTER_CHECKS.find((each) => each.name.startsWith(name));
   if (found === undefined) return expect.unreachable(`no conformance check named ${name}`);
@@ -100,6 +109,15 @@ describe(testName('unit', 'an adapter that breaks the contract fails conformance
     const race = check('10 concurrent redemptions');
     await expect(race.run(checkThenConsume())).rejects.toThrow();
     await race.run(memory());
+  });
+
+  test('a joined session read that disagrees with its two reads', async () => {
+    const joined = check('getSessionWithUser answers');
+    await expect(joined.run(joinsNobody())).rejects.toThrow();
+    // Both blessed adapters carry the member, so the check above is never passed by its absence.
+    expect(typeof memory().adapter.getSessionWithUser).toBe('function');
+    expect(typeof postgresAuthAdapter().getSessionWithUser).toBe('function');
+    await joined.run(memory());
   });
 
   test('every check has a name of its own', () => {

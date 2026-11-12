@@ -19,6 +19,7 @@ describe(testName('unit', 'the memory entity driver'), () => {
     capabilities: DRIVER_CAPABILITIES,
     foreignKeys: false,
     history: true,
+    counters: true,
     lockWaiters: memoryLockWaiters,
   }));
 });

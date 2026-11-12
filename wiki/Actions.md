@@ -36,6 +36,7 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`) or a resource-shaped one (`'/orders/:id/refund'`). Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:`, else `X_ACTION_HTTP_PATH_INVALID` at registration. The URL's value joins the body before the input is parsed, so the schema, the policy, `row` and the handler read one object; a body naming the key with another value is **400** `X_HTTP_PATH_INPUT_CONFLICT`, never overridden. Under a bearer mount the pin is served at the prefix (`/v1/orders/:id/refund`) — and still at its own path, with the cookie session, as every pin is; the policy decides both. `derivePath(name)` refuses a template; `actionHttpPath(name, { id })` fills it. A `deprecated.replacedBy` naming one is `X_ACTION_DEPRECATION_INVALID`. An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
 | `http.method` | `'POST'` · `'PUT'` · `'PATCH'` · `'DELETE'` | no — `'POST'` | the verb the pin answers; needs `http.path`. `X_ACTION_PATH_DUPLICATE` keys on method and path, so `PUT /orders/:id` and `DELETE /orders/:id` are two actions. `action.client()` sends it and fills the URL from the input (each value one encoded segment, the key left out of the body); `rpc()` by name cannot see a pin. In `openapi.json`: `{id}`, an `in: path` required parameter, the key gone from the request body, the operation under the declared verb. `x.manifest.json` writes `http: { path, method }` for a pin only; moving it is breaking. `As of 2026-11` |
 | `errors` | `readonly string[]` | no — `x g action` writes `errors: []` | the refusals a caller may branch on, each a registered 4xx code listed once (`X_ACTION_ERRORS_INVALID` otherwise, at `action()`). Declared, the list is CLOSED — see [Declared refusals](#declared-refusals-errors). Absent: today's open contract, bytes unchanged. `As of 2026-11` |
+| `native` | `{ success: (output) => path; refusal?: (refusal) => path }` | no — expected on an action a `page.tsx` `<form method="post">` posts to: `X_NATIVE_FORM_UNANSWERED` is a warning on `main`, a refusal planned for `next` | the answer a browser's own form submission gets: `303` to a path, the outcome in a one-read flash. A fetch or MCP caller is answered exactly as before — see [Native forms](#native-forms-native). `As of 2026-11` |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 
 **`.sensitive()` on an input field** — `cardPan: t.string.sensitive()` — means sent in, never
@@ -115,6 +116,59 @@ An action that answers in pieces declares `stream: <chunk schema>` and writes `h
 | a browser | `clientStream({ url, body })` from `@ultimat3/core`: `fetch`, never `EventSource` |
 
 A chunk its schema refuses, or `stream:` beside a handle that is not a generator, is `X_ACTION_STREAM_INVALID`. The OpenAPI 200 lists `text/event-stream` beside `application/json` for a streaming action only. `agent()` streams this way.
+
+## Native forms: `native:`
+
+A `<form method="post" action>` with scripting off gets a page back, never `{"ok":true}`. One declaration on the action; the action, its route and its JSON answer are unchanged.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+export const createPost = action({
+  input: t.object({ title: t.string.min(3) }),
+  output: t.object({ id: t.string }),
+  policy: can('post:create'),
+  errors: [],
+  native: {
+    success: (post) => `/posts/${post.id}`,
+    refusal: () => '/posts/new', // omitted: back to the form's own page (a `Referer` on this host)
+  },
+  handle: async ({ input }) => ({ id: input.title }),
+});
+```
+
+| Caller | Answer |
+|---|---|
+| a browser form POST — `accept` names `text/html` and the body is `application/x-www-form-urlencoded` or `multipart/form-data` (the client router's submit included) | succeeded: `303` to `success(output)`; a `setRedirect()` inside `handle` still wins for that request (a sign-in's `next`). Refused with a 4xx other than `X_UNAUTHENTICATED` (a sign-in's own 401, a wrong password, included): `303` to `refusal(refusal)`, else the path and query of a `Referer` on this host (`http`/`https`, the request's own host and port). Either way a flash cookie carries the outcome |
+| the same POST refused with `X_UNAUTHENTICATED`, a 5xx, or a refusal with no `refusal` and no `Referer` on this host | the ordinary error path: the sign-in redirect, the error page |
+| `fetch` / the typed client / `rpc()` / MCP / `.job()` / a direct call | unchanged — JSON, the problem document, the output. `native` is read by the HTTP projection alone |
+
+**The flash.** `x_action_answer`: `HttpOnly`, `SameSite=Lax`, `Max-Age=60`. It holds the action's name, the outcome and, for a refusal, its `code` and each field issue's `path`, `rule` and `params` — never a submitted value or an English message. Read it once, in the next page's `load`:
+
+```ts
+import type { ActionAnswer, AnyAction } from '@ultimat3/action';
+import { useActionAnswer } from '@ultimat3/action';
+
+declare const createPost: AnyAction; // the action above
+
+// `load:` of the form page's `defineRoute({ render: 'ssr', … })`
+export const load = async (): Promise<{ readonly answer: ActionAnswer | null }> => ({
+  answer: useActionAnswer(createPost),
+});
+// answer: null | { action, outcome: 'success' } | { action, outcome: 'refusal', code, issues, truncated }
+```
+
+| Rule | Why |
+|---|---|
+| read in `load`, never in a component | the read clears the cookie, and a header after the first flush is `X_STREAM_ALREADY_FLUSHED` |
+| `useActionAnswer(createPost)` answers only that action's outcome — or by name, `useActionAnswer('createPost' satisfies keyof Api['actions'])`, from a page that may not import the action; `useActionAnswer()` any | two forms on one page |
+| a cookie that is not one this package wrote reads as `null` | it arrives from the browser: parsed, bounded, never trusted |
+| `static` / `isr` pages read `null` | a shared document is rendered as nobody, with no inbound cookie |
+| translate on `code` and `issues[].rule` with `t()` | the flash carries no prose, so no locale |
+| field values are not carried back | a password or a card number does not belong in a cookie; the form re-renders empty, or the page keeps a draft |
+
+**Enforced.** The `manifest` step of `x verify` reads every `page.tsx` for a `<form method="post">` whose `action` names an action — a literal path, `derivePath(name).path`, `actionHttpPath(name, …).path`, or a `const` in the same file holding one — and reports one with no `native` as `X_NATIVE_FORM_UNANSWERED`, the page's `file:line` and the fix. On `main` it is a **warning** — listed under the step's `warnings` in `--json`, the step stays green — because refusing it would turn an app's gate red between two minors (`X_BREAKING_ON_MAIN`); the refusal is planned for `next`. A form inside a component other than the page is not read. `As of 2026-11`.
 
 ## The fluent surface
 

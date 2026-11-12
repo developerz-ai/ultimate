@@ -7,6 +7,7 @@ import { ctxOf } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import type { IntervalScheduler } from './renewal-timer';
 import { jobWorker } from './worker';
+import { WORKER_REGISTRY_TTL_MS } from './worker-options';
 
 describe('unit · the worker renews on the scheduler it is handed', () => {
   test('the registry row is announced on the injected seam, and stop() disarms it', async () => {
@@ -27,7 +28,8 @@ describe('unit · the worker renews on the scheduler it is handed', () => {
     });
 
     worker.start();
-    expect([...armed.values()]).toEqual([7_000]);
+    // The registry's own cadence (a third of its 60 s TTL), not the lease heartbeat's 7 s.
+    expect([...armed.values()]).toEqual([WORKER_REGISTRY_TTL_MS / 3]);
     await worker.stop();
     expect(armed.size).toBe(0);
   });

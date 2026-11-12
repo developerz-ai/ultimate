@@ -5,6 +5,7 @@
 
 import { expect } from 'bun:test';
 import type { ClaimOptions, JobDriver, JobRecord, QueueStats } from '@ultimat3/jobs';
+import { CLAIM_ANSWER_CHECKS } from './job-driver-checks-claim';
 
 export interface JobDriverCheck {
   readonly name: string;
@@ -174,4 +175,5 @@ export const JOB_DRIVER_CHECKS: readonly JobDriverCheck[] = [
       expect(await statsOf(driver, lapsed.queue)).toMatchObject({ failed: 1, dead: 0 });
     },
   },
+  ...CLAIM_ANSWER_CHECKS,
 ];

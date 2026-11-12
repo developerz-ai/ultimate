@@ -31,6 +31,7 @@ import { judgedWrite } from './judged-write';
 import { assertPageBytes } from './page-bytes';
 import { postgresAggregates } from './pg-aggregates';
 import { postgresBulkWrites } from './pg-bulk-repo';
+import { postgresLatestBy } from './pg-latest-by';
 import { postgresLocks } from './pg-lock';
 import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
 import { countStatement, type ReadShape, selectStatement } from './pg-sql';
@@ -44,6 +45,7 @@ import { deletionStamp } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
+import { assertVersionedUpdate, staleOrNotFound, versionOf } from './version-lock';
 import { taggedWrite } from './write-tag';
 import { updateWherePlan, writeWherePlan } from './write-where';
 
@@ -299,6 +301,9 @@ export const postgresRepo = <Row>(
       // Here and in `memory-repo.ts`, the one door: a value `insert` refuses, a fragment included.
       const patch = entity.$parsePatch(given);
       const op = 'update';
+      // A declared version lock: the patch carries the version it read (`version-lock.ts`), and
+      // `updateStatement` conditions on it and increments it.
+      assertVersionedUpdate(entity, patch);
       const plan = idPlan(entity, id, options, op);
       // The plan bounds WHICH row is written; the patch decides what it becomes, and a patch
       // naming another tenant would hand this row away — a leak out of the actor's tenant that no
@@ -318,7 +323,13 @@ export const postgresRepo = <Row>(
       // the statement inside a transaction the refusal rolls back.
       return judged(async (send) => {
         const written = await attributed(op, () => writing(() => send.one<PhysicalRow>(statement)));
-        if (written === null) throw notFound(entity.$name, id);
+        if (written === null) {
+          // No row matched: absent, another tenant's, or (versioned) moved past the read version.
+          if (versionOf(entity) === null) throw notFound(entity.$name, id);
+          throw await staleOrNotFound(entity, id, patch, () =>
+            attributed(op, () => one(idPlan(entity, id, options, op), options ?? {})),
+          );
+        }
         const after = decodeRow(entity, written);
         entity.$assert(after);
         return after;
@@ -383,6 +394,7 @@ export const postgresRepo = <Row>(
     },
 
     ...postgresAggregates(entity, client),
+    ...postgresLatestBy(entity, client),
     ...postgresLocks(entity, config.client, client),
   };
   // The one sealing seam, shared with `memoryRepo()`: sealed on the way in, opened on the way out.

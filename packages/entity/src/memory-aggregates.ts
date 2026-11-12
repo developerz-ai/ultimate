@@ -5,9 +5,10 @@
 
 import { aggregateColumnOf, assertOneUnit, type MoneyUnit } from './aggregate';
 import { foldAggregate } from './aggregate-fold';
-import { countsFrom, groupColumnOf } from './count-by';
 import { valueAt } from './cursor';
 import type { EntityCore } from './entity';
+import type { CountByOptions, MeasureReads } from './measures';
+import { memoryCountBy, memoryMeasures } from './memory-measures';
 import type { FindManyArgs, Repo } from './repo';
 import type { QueryPlan } from './tenancy';
 import { bucketStart, type SeriesPoint, seriesFrom, seriesPlanOf } from './time-bucket';
@@ -21,7 +22,8 @@ export type MemorySelect<Row> = (
 type AggregateReads<Row> = Pick<
   Required<Repo<Row>>,
   'aggregate' | 'approximateCount' | 'countBy' | 'series'
->;
+> &
+  MeasureReads;
 
 const moneyUnitOf = (value: unknown): MoneyUnit | undefined => {
   if (typeof value !== 'object' || value === null) return undefined;
@@ -52,20 +54,11 @@ export const memoryAggregates = <Row>(
     return select(args, 'approximateCount').found.length;
   },
 
-  async countBy(column, args = {}) {
-    // Refused before a row is read, and by the same function the Postgres driver calls: a column
-    // a map cannot be keyed by is that mistake in both drivers or in neither.
-    groupColumnOf(entity, column, 'countBy');
-    const { found } = select(args, 'countBy');
-    const groups = new Map<unknown, number>();
-    for (const row of found) {
-      // `?? null`, so a property this row never carried lands in the same group Postgres puts a
-      // NULL row in — and `0`, `''` and `false` stay the values they are.
-      const value = valueAt(row, column) ?? null;
-      groups.set(value, (groups.get(value) ?? 0) + 1);
-    }
-    return countsFrom(entity, column, 'countBy', [...groups]);
-  },
+  // The filtered form is the general one: no `where` counts every row, as before.
+  countBy: (column, args = {}, options: CountByOptions = {}) =>
+    memoryCountBy(entity, select, column, args, options),
+
+  ...memoryMeasures(entity, select),
 
   async series(spec, args = {}) {
     const plan = seriesPlanOf(entity, spec);

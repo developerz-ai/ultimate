@@ -36,3 +36,13 @@ Not read in three passes: OAuth/OIDC internals, passkeys, the authorization serv
 - One statement per authenticate on the builtin adapter.
 - The demo's feed reads exactly one page of rows for any viewer ([`18`](18-tracked-apps.md)), index-served.
 - A drifting `scope` cannot pass the gate.
+
+## Outcome
+
+As of 2026-11-12, sweep 5b, for 31.10.0.
+
+| # | Verdict | What shipped, or why not |
+|---|---|---|
+| A1 | shipped | optional `AuthAdapter.getSessionWithUser(id)` (`SessionWithUser`) on both shipped adapters; `authenticate` uses it, else the two reads (`session-user.ts`, `admitSession` the one copy of the secret and clock checks). 2 → 1 statement on `postgresAuthAdapter`, counted on PGlite (`authenticate-statements.test.ts`); parity in `authAdapterConformance` |
+| P1 | partial — shape only | `scoped(policy, scope)` / `policyScope(policy, actor)` (`scope.ts`): AND-only `ScopeCondition`s in the entity predicate shape; `and`/`or`/`not` carry no child's scope. Composition into `query` reads is [`08`](08-action-query.md)'s sweep; `X_POLICY_SCOPE_MISMATCH` is [`13`](13-cli-exercise-verify.md)'s and is not registered yet |
+| ledger | shipped | `registerClient` refuses empty or whitespace-holding list values (`X_AUTH_CLIENT_INVALID`, 422); `x_auth_lockouts` is rendered from the declared `AUTH_LOCKOUTS_STORAGE`, which the framework schema's drift check now reads instead of a copy (no schema dump moved) |

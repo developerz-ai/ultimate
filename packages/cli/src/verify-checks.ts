@@ -56,6 +56,7 @@ import { nestedAppRootFindings } from './verify-drift-owner';
 import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import { mcpMountFindings } from './verify-mcp-mount';
+import { nativeFormWarnings } from './verify-native-form';
 import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
@@ -421,10 +422,14 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...agents.warnings.map((warning) => `${AGENTS_MD_FILENAME}: ${warning}`),
         ...remote.warnings,
       ];
+      // A page's `<form method="post">` to an action with no `native`: a JSON dead end. Advice on
+      // `main` — refusing it would redden an app that passed yesterday (X_BREAKING_ON_MAIN).
+      const warnings = app ? await nativeFormWarnings(ctx.root) : [];
       return {
         ok: findings.length === 0,
         findings,
         ...(output.length === 0 ? {} : { output: output.join('\n') }),
+        ...(warnings.length === 0 ? {} : { warnings }),
       };
     },
   },

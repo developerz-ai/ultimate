@@ -47,6 +47,7 @@ import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from '
 import { spendReadLimit } from './rate-limit-gate';
 import type { RowsOverride } from './rows-override';
 import { rowsOverrideOf, setRowsOverride } from './rows-override';
+import { composeScope } from './scope-compose';
 import type { SqlSource } from './source';
 import { from } from './source';
 import { parsedOrNothing, parseQueryInput } from './validate';
@@ -294,7 +295,9 @@ async function readRowsIn(
   // next org that asked for them. `actor` when the declaration named no scope, always.
   // The PARSED input, never `raw`: a key the schema strips (`?junk=N`) would otherwise be a new
   // entry and a database read per value, each evicting a hot one (`read-cache-key.test.ts`).
-  const key = cacheKeyFor(name, input, tags, readAuthority(ctx.actor, def.cache?.scope ?? 'actor'));
+  // A `scoped()` policy makes the rows the actor's whatever `cache.scope` says: keyed per actor.
+  const sharing = def.policy.scope === undefined ? (def.cache?.scope ?? 'actor') : 'actor';
+  const key = cacheKeyFor(name, input, tags, readAuthority(ctx.actor, sharing));
   // `fresh` is the caller saying no cache may answer this one — the memo included, a memo being
   // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
   // newest answer the request has, so the next plain read of the key joins it rather than the
@@ -384,7 +387,14 @@ function sourceOver(
     );
   }
   // `sql` and the source's `execute` are where `errors:` judges a throw (`declared-errors.ts`).
-  const source = judgedSql(target, queryName(target), () => defOf(target).sql(input, ctx));
+  const built = judgedSql(target, queryName(target), () => defOf(target).sql(input, ctx));
+  // A `scoped()` policy narrows the read before a page is cut (`scope-compose.ts`) — never on an
+  // unenforced build, which has no admitted subject to scope by.
+  const subject = { actor: actorOf(ctx), input, ctx, query: queryName(target) };
+  const source =
+    options.unenforced === undefined
+      ? composeScope(built, defOf(target).policy, subject, options.surface ?? 'server')
+      : built;
   // A live window is served in the order its patches are placed in. The matcher breaks a tie on
   // the declared keys with `id` (`totalOrder`) and so does the keyset re-read a reconnect resumes
   // with, so an initial window served in the declared keys alone puts tied rows where neither of

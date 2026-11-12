@@ -552,6 +552,28 @@ rebuilt by the next `x db migrate`. It is how the index is built, not what it is
 name, not recorded, and toggling it generates nothing. Every index REMOVED from `indexes` is dropped
 the same way, concurrently or not — `@ultimat3/db`'s README, "Indexes built concurrently".
 
+## Code-point collation
+
+`text().collate('C')` declares `collate "C"`: the column orders and compares by code point, the
+order the memory driver and a live window's matcher already keep. `'C'` is the only collation a
+column may declare (another is `X_INVARIANT_VIOLATED` where written). A live query ordered by a text
+column WITHOUT it is a `query.live.order_collation` warning in development and test
+(`X_LIVE_ORDER_COLLATION`): Postgres orders `apple` before `Banana`, the matcher does not.
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+export const tags = entity('tags', {
+  columns: {
+    id: uuid().primaryKey(),
+    name: text({ max: 40 }).collate('C'),   // a live list may .orderBy('name')
+  },
+});
+```
+
+Declaring or dropping it on an existing column is `x db gen`: `alter column … type text collate "C"`,
+in place, with its reverse in `down`.
+
 ## Full-text search
 
 `.searchable()` on a `text()` column puts it in the entity's **one** generated `tsvector`, with a
@@ -732,6 +754,54 @@ for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0
 | Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or `money` is `X_INVARIANT_VIOLATED` naming one of this entity's columns that is: a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
 | More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map — the statement asks for one group past the bound, exactly as a page reads one row past its limit. The `fix` spells the `andWhere('<column>', 'in', <values>)` that bounds it |
 | Statement | `select "post_id" as group_value, count(*) as group_count … group by "post_id"`. Both names are fixed aliases, so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it |
+
+## Newest per group, several measures, many locks, a version
+
+```ts
+import { database, entity, integer, money, text, timestamp, uuid } from '@ultimat3/entity';
+
+const messages = entity('messages', {
+  columns: { id: uuid().primaryKey(), conversationId: uuid(), body: text(), createdAt: timestamp() },
+});
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid(), authorId: uuid(), status: text() },
+});
+const payments = entity('payments', {
+  columns: { id: uuid().primaryKey(), orgId: uuid(), amount: money(), status: text() },
+});
+const accounts = entity('accounts', { columns: { id: uuid().primaryKey(), balance: integer() } });
+const db = database({ messages, posts, payments, accounts });
+declare const ids: string[];
+declare const orgId: string;
+declare const from: string;
+declare const to: string;
+
+// One DISTINCT ON statement: the newest message of each conversation (memory mirrors it)
+await db.messages.andWhere('conversationId', 'in', ids).latestBy('conversationId', { order: 'createdAt' });
+
+// count(*) filter (where …): a group the filter empties answers 0, never absent
+await db.posts.where({ orgId }).countBy('authorId', { where: [['status', 'eq', 'published']] });
+// Several measures, one statement
+await db.payments.where({ orgId }).aggregate({
+  total: { fn: 'count' },
+  paid: { fn: 'sum', column: 'amount', where: [['status', 'eq', 'paid']] },
+});
+
+// Every key held for fn, in ONE transaction, taken in sorted order: no deadlock between callers
+await db.accounts.lockKeys(['acct:' + from, 'acct:' + to], async (tx) => { /* … */ });
+```
+
+| | |
+|---|---|
+| `latestBy(group, { order, direction? })` | one row per group, ties to the primary key, groups ordered `null` last; past `MAX_LATEST_GROUPS` refused, never truncated; `orderBy()`/`limit()`/`after()` on the same chain refused. `Repo.latestBy?` is optional: without it (a hand-written repository, a custom store) paged `findMany` reads are folded — correct, never one statement. `preload(rel, { perParent: n })` reads n per parent in one `LATERAL` |
+| `countBy(col, { where })` · `aggregate({ name: { fn, column?, where? } })` | one statement on Postgres and memory; at most `MAX_MEASURES`; `sum`/`avg` decimal text, money a `MoneyValue`, never a float. A `defineDriver` store composes them from the capabilities it declares (`aggregate:countBy`, `aggregate:<fn>`): several store calls, the same answer |
+| `andWhere(col, 'contains', term)` on `text()`/`char()` | case-insensitive substring (`ilike`, the term bound and escaped). Served by a trigram index only — declare `indexes: [{ on: ['<col>'], using: 'gin', operatorClass: 'gin_trgm_ops' }]` (`trigramDeclaration(col)`); the plan sweep reports one without it |
+| `indexes:` key parts | four optional fields beside `on`, each absent by default so no existing index name or schema hash moves (`declared-index-keys.ts`, refused at `entity()` with `X_INVARIANT_VIOLATED`): `expression: 'lower(email)'` — the ONE key is that SQL over physical columns, `on` names the columns it reads (a concurrent `refreshView` refuses it as its unique key); `orders: ['desc', null]` — a direction per key, btree only, never beside `order`; `include: ['title']` — INCLUDE payload, btree only; `operatorClass: 'gin_trgm_ops'` — needs `using: 'gin'`. A foreign-key index another index already leads with is still emitted — dropping it would make an existing app's next `x db gen` remove an index the database holds — and is listed on `RegistryEntry.coveredIndexes` (`CoveredIndex`: the index and the one that covers it; `coveredImplicitIndexes`, `tenant-index.ts`) |
+| `lockKeys(keys, fn)` | `lockKey`'s tenancy and hashing per key, deduped, sorted, at most `MAX_LOCK_KEYS` (64), one transaction; `X_LOCK_UNSUPPORTED` for a repository without it |
+| `entity({ version: 'lockVersion' })` | an optimistic lock on an `integer().default(0)` column: `update(id, { …patch, lockVersion: row.lockVersion })` conditions on it and increments it — moved since the read is `X_ENTITY_STALE` (409), omitted is `X_ENTITY_VERSION_INVALID`. `updateMany` checks every row (one stale row refuses the batch). `updateWhere`/`updateAll`/`transition`/soft delete increment it and may not set it (compare-and-set goes in the filter: `where({ id, lockVersion: 3 })`). `upsertAll` with `onMatch: 'update'` is refused, `'nothing'` allowed. A mutator carries the version as input |
+| `.all()` | one page; when a next page existed and the chain named no `limit()`, dev and test log `ALL_TRUNCATED` (`'entity.all.truncated'`) with the fix (`inBatches()` or `.limit(n)`) |
+| a `countedIn` child write | reports each parent whose count moved as an `entity.row` `update` (read back in the write's transaction, only while subscribed; `before` = the count moved back; a filter-pinned bulk write reports `before: null`, an unpinned one `entity.bulk` for the parent) — `counter-observed.ts` |
+| a subject's history erase | a history table is append-only in both drivers; `purgingHistory(name, work)` lets a filtered delete of THAT table through — the in-process twin of `x.purge`, which the GDPR erase opens (memory parity) |
 
 ## Writing by filter
 

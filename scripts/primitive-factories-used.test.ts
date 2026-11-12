@@ -112,6 +112,13 @@ describe('unit · the use scan itself can fail', () => {
     // Explicit type arguments are still the call (`consumer<VendorPrice, number>({ … })`).
     expect(counts('export const fan = hive<In, Out>({});')).toBe(true);
     expect(counts('export const fan = hive<Map<K, V>>({});')).toBe(true);
+    // A factory that returns SEVERAL primitives (`uploadFlow()`'s pair) is exported destructured:
+    // each binding is a top-level export `defineApi` registers under its own name.
+    expect(counts('export const { request: a, confirm: b } = hive({});')).toBe(true);
+    expect(counts('export const {\n  request: a,\n  confirm: b,\n} = hive({});')).toBe(true);
+    // Destructured but never exported, or a pattern that is not the call's result: nothing served.
+    expect(counts('const { request: a } = hive({});')).toBe(false);
+    expect(counts('export const { a } = other(hive);')).toBe(false);
     // A call spelled inside a string or a template literal.
     expect(counts("const s = 'export const fan = hive({})';")).toBe(false);
     expect(counts('const s = `\nexport const fan = hive({})\n`;')).toBe(false);

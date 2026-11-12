@@ -25,7 +25,8 @@ import { testName } from './test-types';
 // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
 const PGLITE_BOOT_MS = 30_000;
 
-const client = pgliteClient();
+// `pg_trgm`: the text `contains` checks migrate a `gin_trgm_ops` index, which needs it linked at boot.
+const client = pgliteClient({ extensions: ['pg_trgm'] });
 
 beforeAll(() => {
   setDbClient(client);

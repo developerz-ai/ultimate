@@ -6,7 +6,6 @@
 // A column carries its TypeScript type in `$parse`, which is what lets the row type be derived
 // from the column set instead of being written a second time as a hand-maintained schema.
 
-import type { IndexMethod } from '@ultimat3/db';
 import type { PersonalDataKind } from './personal-data-kind';
 
 /**
@@ -140,6 +139,8 @@ export interface ColumnMeta {
    */
   readonly name?: string;
   readonly length?: number;
+  /** `text().collate('C')`: absent is the database's default collation. `'C'` is code-point order. */
+  readonly collation?: 'C';
   /** `numeric(precision, scale)` — both, or neither. A bare `numeric` is unbounded on purpose. */
   readonly precision?: number;
   readonly numericScale?: number;
@@ -306,6 +307,11 @@ export interface TextColumn<T extends string | null = string, Optional extends b
   unique(): TextColumn<T, Optional>;
   default(value: T): TextColumn<T, true>;
   column(name: string): TextColumn<T, Optional>;
+  /**
+   * Order and compare this column by code point (`collate "C"`), the order a live window's matcher
+   * keeps — so a live query may order by it. `'C'` only; changing it is `x db gen`.
+   */
+  collate(collation: 'C'): TextColumn<T, Optional>;
   /**
    * Seal this column under the app's master key: the row still reads `string`, the database holds
    * `x1.<keyId>.<iv>.<ciphertext>`, and no view, `$schema`, record or predicate carries it.
@@ -474,24 +480,5 @@ export type RowPatch<Row> = {
   readonly [K in keyof Row]?: Row[K] | InputOf<Row[K]> | undefined;
 };
 
-export interface IndexDef {
-  readonly name: string;
-  readonly columns: readonly string[];
-  readonly unique: boolean;
-  readonly order?: 'asc' | 'desc';
-  /** Partial index predicate — a soft-deleted row is excluded with this. */
-  readonly where?: string;
-  /**
-   * The access method. Absent is `btree`, which is Postgres' own default and what every index
-   * declared before this field existed is — so an entity that names none emits the statement it
-   * always emitted, byte for byte, and no app's sidecar regenerates. `@ultimat3/db` owns the
-   * closed set (`INDEX_METHODS`); redeclaring the union here would be the second declaration of
-   * one fact that this release exists to stop.
-   */
-  readonly using?: IndexMethod;
-  /**
-   * How it is built (`IndexInit`). Absent is the default: concurrently on a table that already
-   * exists. `false` is the opt-out, a plain build `x db gen` marks `-- lock-heavy: true`.
-   */
-  readonly concurrently?: boolean;
-}
+// A declared index is its own vocabulary (`index-def.ts`); re-exported so a column import stays one.
+export type { IndexDef } from './index-def';

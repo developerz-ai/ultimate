@@ -154,7 +154,7 @@ export const postgresBulkWrites = <Row>(context: PgWriteContext<Row>): PgBulkWri
       const returning = updateManyReturns(entity, plan, sink !== undefined);
       const statements = updateManyStatements(entity, plan, returning);
       const { count, rows: written } = await attributed('updateMany', () =>
-        writing(() => sendUpdateMany(entity, statements, returning, client(), pinned)),
+        writing(() => sendUpdateMany(entity, statements, returning, client(), pinned, plan)),
       );
       if (sink !== undefined && returning) sink(written);
       return count;

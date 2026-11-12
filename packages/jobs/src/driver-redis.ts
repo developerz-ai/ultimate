@@ -44,7 +44,7 @@ import {
   REDIS_NACK,
   REDIS_STATS,
 } from './driver-redis-scripts';
-import { redisStepStore } from './driver-redis-steps';
+import { redisStepStore, stepsOf } from './driver-redis-steps';
 import { JobDuplicateError } from './errors';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
 
@@ -210,6 +210,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
         claimOptions.limit,
         claimOptions.visibilityTimeoutMs,
         claimOptions.workerId,
+        claimOptions.onEmpty === undefined ? '0' : '1',
         drop.length,
         ...drop,
         ...claimOptions.queues,
@@ -217,7 +218,11 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
       const claimed: ClaimedJob[] = [];
       const buried: JobRecord[] = [];
       for (const entry of list(reply)) {
-        const [kind, flat] = list(entry);
+        const [kind, flat, steps] = list(entry);
+        if (kind === 'h') {
+          claimOptions.onEmpty?.(flat === undefined || flat === null ? null : Number(flat));
+          continue;
+        }
         const fields = fieldsOf(list(flat));
         const record = toRecord(fields);
         if (kind === 'b') {
@@ -230,6 +235,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
           claim: record.claim ?? 1,
           claimedAt: num(fields, 'claimedAt') ?? 0,
           visibleAt: record.visibleAt ?? 0,
+          steps: stepsOf(list(steps)),
         });
       }
       if (buried.length > 0) claimOptions.onExhausted?.(buried);

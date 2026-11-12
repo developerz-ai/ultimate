@@ -258,5 +258,19 @@
  * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing serving-only.
  * raised 1433 → 1445, measured 1445 (2026-11-11, sweep 5a): `MIGRATE_CEILING`'s 12, the db COPY
  * funnel and the entity set-based writes. Nothing serving-only (metafile diff against origin/main).
+ * raised 1445 → 1467, measured 1467 (2026-11-12, sweep 5b, metafile diff against HEAD bc5e346ec):
+ * `MIGRATE_CEILING`'s 19, plus three serving-only: `entity/src/driver-counters.ts` (through
+ * `define-driver.ts`), `auth/src/session-user.ts` and `auth/src/builtin-adapter-rows.ts` (split
+ * out of `auth.ts` and `builtin-adapter.ts`). Every one a new file; no existing module newly
+ * reached.
+ * raised 1467 → 1468, measured 1468 (2026-11-12, sweep 5b review fixes, the test's own walk at
+ * a1051fd3a): `entity/src/driver-versioned-write.ts` (the `defineDriver` versioned filtered write's
+ * retry, through `driver-repo-writes.ts`), serving-only; `MIGRATE_CEILING` unchanged at 934.
+ * raised 1468 → 1471, measured 1471 (2026-11-12, sweep 8 action+query, the test's own walk):
+ * `MIGRATE_CEILING`'s 2, plus one serving-only: `query/src/scope-compose.ts` (a `scoped()`
+ * predicate composed into the source before the page is cut, through `read.ts`). Every one a new
+ * file; no existing module newly reached.
+ * raised 1471 → 1472, measured 1472 (2026-11-12, sweep 9a jobs idle cost, the test's own walk):
+ * `MIGRATE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing else moved.
  */
-export const SERVING_ROLE_CEILING = 1445;
+export const SERVING_ROLE_CEILING = 1472;

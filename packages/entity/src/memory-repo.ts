@@ -18,10 +18,11 @@ import { projectRow } from './driver-rows';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { invariantViolated, notFound } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
-import { lockKeyInput } from './lock-key';
+import { holdInOrder, lockKeyInput, lockKeysInput } from './lock-key';
 import { memoryAggregates } from './memory-aggregates';
 import { undoingBatch } from './memory-batch';
 import { memoryJournal } from './memory-journal';
+import { memoryLatestBy } from './memory-latest-by';
 import { memoryLifecycle } from './memory-lifecycle';
 import { memoryLocks } from './memory-lock';
 import { compareByKind, matchesPredicate } from './memory-match';
@@ -43,6 +44,7 @@ import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 import { judgeUpdateMany, updateManyPlan } from './update-many';
+import { assertVersionedUpdate } from './version-lock';
 import { updateWherePlan, writeWherePlan } from './write-where';
 
 const field = (row: unknown, property: string): unknown =>
@@ -310,6 +312,8 @@ export const memoryRepo = <Row>(
     update: writing(async (id, given, options) => {
       // Here and in `pg-driver.ts`, the one door: a value `insert` refuses, a fragment included.
       const patch = entity.$parsePatch(given);
+      // `mergedRow` does the compare-and-set and the increment (`version-lock.ts`).
+      assertVersionedUpdate(entity, patch);
       addressed(id, options, 'update');
       return locks.turn(`row:${idStoreKey(id, 'update')}`, options?.tx, () => {
         const current = addressed(id, options, 'update');
@@ -428,6 +432,7 @@ export const memoryRepo = <Row>(
     },
 
     ...memoryAggregates(entity, select),
+    ...memoryLatestBy(entity, select),
 
     // Asked before the wait, so another tenant's id never queues behind that tenant's holder, and
     // again after it, because the row may be gone by then: Postgres re-reads a row it waited for.
@@ -438,6 +443,17 @@ export const memoryRepo = <Row>(
           fn(addressed(id, options, 'lock'), tx),
         );
       })(),
+
+    // Every key through the one-key queue, sorted, each inside the last: `lockKey`'s spelling.
+    lockKeys: (keys, fn, options) =>
+      writing(async () =>
+        holdInOrder(
+          lockKeysInput(entity, keys, options),
+          (input, outer, body) => locks.run(`key:${input}`, outer, body),
+          fn,
+          options?.tx,
+        ),
+      )(),
 
     lockKey: (key, fn, options) =>
       writing(async () =>

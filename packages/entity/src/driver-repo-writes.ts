@@ -11,6 +11,7 @@ import { copyColumns } from './copy-plan';
 import { kindOf, valueAt } from './cursor';
 import { byKeys, checkedDelete } from './driver-delete';
 import type { DriverScope } from './driver-scope';
+import { versionedWrites } from './driver-versioned-write';
 import {
   assertWrittenInScope,
   sameTenantProperties,
@@ -28,6 +29,7 @@ import { writtenRowsSink } from './search-written-rows';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 import { judgeUpdateMany, updateManyPlan } from './update-many';
+import { assertVersionedUpdate, versionOf } from './version-lock';
 import { updateWherePlan, writeWherePlan } from './write-where';
 
 export type DriverWrites<Row> = Pick<
@@ -110,7 +112,10 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$columns,
       Object.fromEntries(namedColumns(patch)),
     );
-    if (entity.$invariants.length === 0 && !movesReference) {
+    // A declared version lock is per row (`v = stored + 1`), which one store patch cannot say: the
+    // judged path below, one write per row (`driver-versioned-write.ts`).
+    const lock = versionOf(entity);
+    if (entity.$invariants.length === 0 && !movesReference && lock === null) {
       // The search mirror asked for the rows: read them first, as the judged path does. Past the
       // judged bound they are not handed over — the mirror logs the write it could not name.
       const before =
@@ -142,6 +147,22 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$assert(merged);
     }
     await references(results);
+    if (lock !== null) {
+      const written = await versionedWrites(scope, {
+        op,
+        plan,
+        patch,
+        lock,
+        found,
+        results,
+        advance,
+        narrowed,
+        tx,
+        references,
+      });
+      if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
+      return written;
+    }
     // The narrowed values the merge produced — the same for every row — so the store holds what
     // was judged rather than a money `bigint` the row type never carries. The version is the
     // patch's instant: the store advances it per row.
@@ -204,6 +225,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       refuseAbandoned();
       const op = 'update';
       const patch = entity.$parsePatch(given);
+      assertVersionedUpdate(entity, patch);
       const plan = scope.storePlan(op, idPlan(entity, id, options, op));
       assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       if (namedColumns(patch).length > 0 && (await patched(op, plan, patch, options)) === 0) {

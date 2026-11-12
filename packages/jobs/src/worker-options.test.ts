@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { JOBS_CONCURRENCY_DEFAULT } from '@ultimat3/core';
-import { resolveWorkerTimings } from './worker-options';
+import { resolveWorkerTimings, WORKER_REGISTRY_TTL_MS } from './worker-options';
 
 describe('unit · resolveWorkerTimings · slotsFor', () => {
   test('no concurrency at all is the config default on every queue', () => {
@@ -26,5 +26,21 @@ describe('unit · resolveWorkerTimings · slotsFor', () => {
 
   test('a number applies to every queue', () => {
     expect(resolveWorkerTimings({ concurrency: 3 }).slotsFor('anything')).toBe(3);
+  });
+});
+
+describe('unit · resolveWorkerTimings · the registry row', () => {
+  test('a 60s row renewed every 20s, decoupled from the 10s lease heartbeat', () => {
+    const timings = resolveWorkerTimings({});
+    expect(timings.heartbeatIntervalMs).toBe(10_000);
+    expect(timings.registryTtlMs).toBe(WORKER_REGISTRY_TTL_MS);
+    expect(WORKER_REGISTRY_TTL_MS).toBe(60_000);
+    expect(timings.registryIntervalMs).toBe(20_000);
+  });
+
+  test('a visibility longer than the TTL stretches the row: it never lapses before its jobs do', () => {
+    const timings = resolveWorkerTimings({ visibilityTimeoutMs: 300_000 });
+    expect(timings.registryTtlMs).toBe(300_000);
+    expect(timings.registryIntervalMs).toBe(100_000);
   });
 });

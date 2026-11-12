@@ -5,7 +5,6 @@
 
 import { action, t } from '@ultimat3/action';
 import { defineError } from '@ultimat3/core/page';
-import { setRedirect, useRequestHeader } from '@ultimat3/http';
 import { oauthConsent } from '../app/oauth/policy';
 import { appOrigin, callerKey, mayRedirectRefusal, mcpOAuth } from '../app/oauth/server';
 
@@ -36,11 +35,12 @@ const reread = async (query: string) => {
   throw new OAuthRequestInvalid(read.description);
 };
 
-/** A browser that posted the native form follows the redirect; JSON gets it as data. */
-const goTo = (next: string): { next: string } => {
-  if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(next);
-  return { next };
-};
+/**
+ * A browser that posted the native form follows `next` (a 303 — to the MCP client, usually on
+ * another origin); JSON gets it as data. A refused decision (`X_OAUTH_REQUEST_INVALID`) lands back
+ * on the consent page it was posted from, whose `load` reads the code.
+ */
+const followNext = { success: (output: { readonly next: string }) => output.next };
 
 export const approveConnection = action({
   input: consentInput,
@@ -49,11 +49,13 @@ export const approveConnection = action({
   // A person's decision, never an agent's: an agent approving its own connection is the escalation
   // the consent page exists to stop.
   mcp: { expose: false },
+  native: followNext,
   async handle({ input, ctx }) {
     const request = await reread(input.request);
-    if (typeof request === 'string') return goTo(request);
+    if (typeof request === 'string') return { next: request };
     // The subject is the signed-in person the request established — never a value off the form.
-    return goTo(await mcpOAuth.approve({ subject: ctx.actor.id, request, callerKey: callerKey() }));
+    const next = await mcpOAuth.approve({ subject: ctx.actor.id, request, callerKey: callerKey() });
+    return { next };
   },
 });
 
@@ -62,9 +64,10 @@ export const denyConnection = action({
   output: decisionOutput,
   policy: oauthConsent,
   mcp: { expose: false },
+  native: followNext,
   async handle({ input }) {
     const request = await reread(input.request);
-    if (typeof request === 'string') return goTo(request);
-    return goTo(await mcpOAuth.deny({ request, callerKey: callerKey() }));
+    if (typeof request === 'string') return { next: request };
+    return { next: await mcpOAuth.deny({ request, callerKey: callerKey() }) };
   },
 });

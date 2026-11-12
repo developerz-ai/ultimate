@@ -40,6 +40,7 @@ import {
   schemaRef,
   toOperationId,
 } from './naming';
+import { answerNatively, isNativeFormPost } from './native-answer';
 import { withDeclaredErrors } from './openapi-errors';
 import { assertActionRateLimit, fixedRateLimit } from './rate-limit-gate';
 import { carriesRecords, recordResponse } from './record-wire';
@@ -150,6 +151,13 @@ function projectRoute(
     // The same invocation, its chunks sent as they are yielded: one route, chosen by `accept`.
     if (streams && wantsEventStream(req.header('accept'))) {
       return streamAnswer(def, (sink) => withChunkSink(sink, call));
+    }
+    // A browser's own form, to an action that declared where it lands: a 303 and a flash, the
+    // refusal included. Everything above — the policy, the idempotency, the write — is the same.
+    if (def.native !== undefined && isNativeFormPost(req)) {
+      const answered = await answerNatively(req, name, def.native, call);
+      if (key !== null) answered.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
+      return answered;
     }
     const result = await call();
     // The one thing an action's return value cannot say. `setRedirect()` inside the handler

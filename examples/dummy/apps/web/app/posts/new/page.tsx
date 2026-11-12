@@ -6,13 +6,16 @@
 
 import { TITLE_MAX } from '@postly/domain';
 import { useT } from '@postly/i18n';
-import { derivePath } from '@ultimat3/action';
+import type { ActionAnswer } from '@ultimat3/action';
+import { derivePath, useActionAnswer } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
 import { Button, Stack, Stepper, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { Api } from '../../../api';
+import { useActor } from '../../../shared/actor';
 import { Layout, updateBannerIsland } from '../../layout';
+import { ActionRefusal } from '../ui/action-refusal';
 import styles from './page.module.scss';
 
 /**
@@ -110,11 +113,29 @@ export const config = defineRoute({
   // measured: 33294 B (2026-11-06; x build --target static, against 32,092) — why:
   // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
   // `app/` only) — raised 32kb → 33kb (plan 101, 41).
-  budget: { js: '33kb' },
+  // raised 33kb → 33.1kb. measured: 33822 B (2026-11-12; x build --target static) — why: the client
+  // router grew 29,764 → 29,884 (+120 B): a stylesheet that fails to load on navigation now forces a
+  // full load and keeps the old sheets, so a page is never left unstyled.
+  budget: { js: '33.1kb' },
+  /**
+   * The org the draft is written in, and what the last submission left: `createPost` declares
+   * `native`, so a refused draft lands back HERE (`refusal: () => '/posts/new'`) and this read —
+   * once, in `load`, where a header can still be set — is how the page hears why.
+   */
+  load: async (): Promise<EditorData> => ({
+    orgId: useActor().orgId,
+    answer: useActionAnswer(CREATE_ACTION),
+  }),
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 
-export function Page(): JSX.Element {
+/** What the editor needs before it renders. `answer` is optional: a test's `load` may omit it. */
+interface EditorData {
+  readonly orgId: string;
+  readonly answer?: ActionAnswer | null;
+}
+
+export function Page(props: { readonly data: EditorData }): JSX.Element {
   const t = useT();
 
   return (
@@ -133,6 +154,10 @@ export function Page(): JSX.Element {
             ]}
           />
           <Text tone="muted">{t('app.post.draftNotice')}</Text>
+          <ActionRefusal answer={props.data.answer} />
+          {/* `postCreate` decides on the org, so it travels in the input — the action's schema
+              requires it, and without it every scripting-off draft was a 400. */}
+          <input type="hidden" name="orgId" value={props.data.orgId} />
 
           <label class={styles.label} for="post-title">
             {t('posts.titleLabel')}

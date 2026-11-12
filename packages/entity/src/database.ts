@@ -105,8 +105,10 @@ export const database = <E extends EntitySet>(
     // Wrapped here rather than in a driver, so a committed row change is reported the same whether
     // rows live in memory or in Postgres — `entity.row` on the bus, and with no subscriber the
     // wrapper is one map read per write. `related` below stays unwrapped on purpose: a relation
-    // preload is a READ, and a change feed has nothing to say about one.
-    tables[key] = tableFor(entity, observedRepo(entity, driver.repo(entity)), related);
+    // preload is a READ, and a change feed has nothing to say about one. The driver's own
+    // repositories are how the observer reads back a parent a `countedIn` trigger moved.
+    const observed = observedRepo(entity, driver.repo(entity), (parent) => driver.repo(parent));
+    tables[key] = tableFor(entity, observed, related);
   }
   // Built key by key from `entities`, so each table is the one `Database<E>` names.
   return tables as Database<E>;

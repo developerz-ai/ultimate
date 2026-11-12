@@ -41,7 +41,11 @@ const assertRefreshable = (definition: RefreshViewDefinition): boolean => {
     });
   }
   const concurrently = definition.concurrently === true;
-  if (concurrently && !view.$indexes.some((index) => index.unique && index.where === undefined)) {
+  // Postgres takes only a unique index over plain columns, unconditioned, for a concurrent refresh.
+  const keyed = view.$indexes.some(
+    (index) => index.unique && index.where === undefined && index.expression === undefined,
+  );
+  if (concurrently && !keyed) {
     throw new RefreshViewInvalidError({
       job: name,
       problem: `refreshes ${view.$name} concurrently, and Postgres needs a unique index on the view to do that`,

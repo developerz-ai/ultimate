@@ -6,16 +6,19 @@
 //
 // The composer is a NATIVE form posting to the action's own HTTP projection. That is a real send
 // path with no client JS — `@ultimat3/http` parses `application/x-www-form-urlencoded`
-// (packages/http/src/request.ts:162) — and it is also where the missing client half shows: with
-// nothing to intercept the response, the browser lands on the action's JSON instead of a
-// re-rendered thread.
+// (packages/http/src/request.ts:162) — and `sendMessage` declares `native`, so the browser lands
+// back on this re-rendered thread rather than on the action's JSON. A refused send (an empty body)
+// lands here too, its code read once in `load`.
 
+import type { ActionAnswer } from '@ultimat3/action';
+import { useActionAnswer } from '@ultimat3/action';
 import { actorOf, useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute, type RouteParams } from '@ultimat3/render';
 import { Button, Icon } from '@ultimat3/ui';
 import { iconArrowLeft } from '@ultimat3/ui/icons/arrow-left';
 import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';
+import { ActionRefusal } from '../../../shared/ui/action-refusal';
 import { AppShell } from '../../../shared/ui/app-shell';
 import { EmptyState } from '../../../shared/ui/empty-state';
 import { type Thread, threadFor } from '../service';
@@ -31,14 +34,21 @@ export const config = defineRoute({
   // not exist. The rejection is never caught here: `routeDataFor` rethrows an `UltimateError` as
   // itself, with its code, cause and fix, and a page that turned a denial into an empty list would
   // be a page that lies about authorization.
-  load: async ({ params }): Promise<{ readonly thread: Thread }> => ({
+  load: async ({ params }): Promise<ThreadData> => ({
     thread: await threadFor(actorOf(useContext())?.id ?? null, params.id ?? ''),
+    answer: useActionAnswer('sendMessage'),
   }),
   meta: () => ({ title: t('app.messages.thread.title'), robots: { index: false } }),
 });
 
+/** The thread, and what the composer's last send left. */
+interface ThreadData {
+  readonly thread: Thread;
+  readonly answer?: ActionAnswer | null;
+}
+
 export function Page(props: {
-  readonly data: { readonly thread: Thread };
+  readonly data: ThreadData;
   readonly params: RouteParams;
   readonly url?: string | undefined;
 }) {
@@ -82,6 +92,7 @@ export function Page(props: {
       )}
 
       <form class={styles.compose} method="post" action="/api/messages/send">
+        <ActionRefusal answer={props.data.answer} />
         <input type="hidden" name="conversationId" value={conversationId} />
         <label class={styles.label} for="message-body">
           {t('app.messages.compose.label')}

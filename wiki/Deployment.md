@@ -104,7 +104,7 @@ from the values `x deploy --method helm` passes it; on Compose, `stop_grace_peri
 | `web` | let in-flight requests and streaming responses finish; a stream past the deadline gets a typed truncation, not a socket reset |
 | `sync` | send every client a `reconnect` frame **with a per-client backoff delay** (see below), then close cleanly |
 | `worker` | stop claiming at step 2 and **cancel nothing**: every held job keeps running, and one that finishes inside the budget is acked. At the cut-off — the worker's budget (`drain.workerDeadlineMs` when declared, else `drain.deadlineMs`) less a margin (2 s, or half of a budget under 4 s) — a job still running has its `ctx.signal` aborted with `X_DRAINING`; a step that completes after that is still recorded. Half a margin later every claim still held is handed back uncounted (`countsAsAttempt: false`), so the replacement worker claims it at once — not after the visibility timeout — and replays every completed step instead of re-running it. A worker started after the signal (a boot still in progress) claims nothing |
-| `scheduler` | delete the lease row immediately so the standby promotes on its next round rather than waiting out the 30s TTL |
+| `scheduler` | delete the lease row immediately so the standby promotes on its next ask (every 20s) rather than waiting out the 60s TTL |
 | `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
 
 A hook or request still running at `drain.deadlineMs` (the worker's: `drain.workerDeadlineMs` when declared) is **abandoned** — logged as `X_SHUTDOWN_TIMEOUT` naming it, never thrown, and the process exits clean; requests arriving during the drain get `X_DRAINING`.
@@ -527,7 +527,9 @@ The refusal is the ROLLED-BACK image's code, so it protects from the release aft
 
 ### Hashed assets across a deploy — `assets.retain`
 
-A web process serves only the hashed files it built: `/styles/<hash>.css`, `/islands/<island>-<hash>.js`, `/_x/assets/<script>/<hash>.js`, `/assets/<name>.<hash>.<ext>`. With no window, an open tab holding the previous build's document gets a 404 for its stylesheet, or for its island chunk on the first click, after every deploy, one replica or many. During a rolling update both directions fail: a new document that reaches an old pod also gets no stylesheet. Declare a window over a disk every web pod can read:
+A web process serves only the hashed files it built: `/styles/<hash>.css`, `/islands/<island>-<hash>.js`, `/_x/assets/<script>/<hash>.js`, `/assets/<name>.<hash>.<ext>`. With no window, an open tab holding the previous build's document gets a 404 for its stylesheet, or for its island chunk on the first click, after every deploy, one replica or many. During a rolling update with more than one web replica both directions fail on every page load, not only in old tabs: the document and its stylesheet are two requests, the load balancer may send them to pods of different builds, and the page renders with no CSS at all (the AppShell's "Skip to content" link as its first line).
+
+Without a window the framework only limits the damage (`As of 2026-11-12`): a soft navigation whose next sheet fails becomes a full load and never retires the working sheet. A full load whose sheet 404s stays unstyled: nothing reloads it for you. A web role booted outside `development` and `test` with no window logs `X_ASSET_RETAIN_UNDECLARED`. The window is the fix. Declare it over a disk every web pod can read:
 
 ```ts
 // app.config.ts — `deploys` is a disk from the app's defineStorage({ disks })

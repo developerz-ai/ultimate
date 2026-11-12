@@ -213,7 +213,8 @@ function crudResult(result: CrudResult<AdminRow>): AdminToolResult {
   if (result.kind === 'missing') {
     return { ok: false, error: 'X_ADMIN_INVALID', reason: 'no row has that id' };
   }
-  // Reached only by a caller that sent a version; the update tool sends none.
+  // The update tool sends no form version: reached when an entity's declared lock refused the
+  // write (X_ENTITY_STALE) because another write landed after this call read the row.
   if (result.kind === 'stale') {
     return { ok: false, error: 'X_ADMIN_INVALID', reason: 'the row changed since it was read' };
   }

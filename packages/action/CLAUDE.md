@@ -5,7 +5,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 
 ## Boundary
 
-- May import: `core`, `schema` (t0), `cache`, `db`, `i18n`, `time` (t1), `entity`, `policy`, `http` (t2).
+- May import: `core`, `schema` (t0), `cache`, `db`, `i18n`, `storage`, `time` (t1), `entity`, `policy`, `http` (t2).
   `entity` through `record-wire.ts`; `db` through **`tx-scope.ts` only**. Full rule: `docs/history/action.md`.
 - Never import: `query`, `jobs`, `realtime` (sideways), or any tier 4-5 package.
 - Never re-implement authz, validation or caching — call `policy`, `schema`, `cache`.
@@ -37,6 +37,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `http-stream.ts` | `accept: text/event-stream` → `event: chunk`… then ONE `done` or `error`; a refusal before the handler is the ordinary problem response |
 | `audit-subject-target.ts` | `auditSubjectTarget()`: `x_audit` as a subject-erase target — overwrites who acted and the input, never deletes the row |
 | `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
+| `upload-flow.ts` | `uploadFlow()`: an ACTION factory, `{ request, confirm }` over storage's `grantUpload` (pending only) and `promoteAttachment`. No code of its own |
+| `native-answer.ts`, `action-answer.ts` | `native:` — a form POST's 303 + one-read flash (`useActionAnswer`); HTTP projection only |
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, imported from core — `src/index.ts` re-exports only the `ClientFlight`/`ClientRetry` types. There is no local copy and must not be one |
 | `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
 | `contract-test.ts` | assertions `x g action` emits |
@@ -62,7 +64,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`installAuditSink`, `@ultimat3/core/adapter`) is core's alone |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
-| `audit-postgres.ts` | the DURABLE sink — one append-only `x_audit` table, one insert per record |
+| `audit-postgres.ts` | the DURABLE sink — append-only `x_audit`; one insert per record, or per batch (`groupCommit`) |
+| `audit-postgres-row.ts` | a record as its row — the ONE projection both inserts bind |
+| `audit-batch.ts` | `batchedAuditSink`: group commit, per-write verdict, flush on drain |
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |

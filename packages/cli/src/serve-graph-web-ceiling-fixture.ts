@@ -222,5 +222,13 @@
  * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing web-only.
  * raised 1624 → 1636, measured 1636 (2026-11-11, sweep 5a): `SERVING_ROLE_CEILING`'s 12, the
  * modules named on `MIGRATE_CEILING`. Nothing web-only.
+ * raised 1636 → 1658, measured 1658 (2026-11-12, sweep 5b): `SERVING_ROLE_CEILING`'s 22, the
+ * modules named there. Nothing web-only.
+ * raised 1658 → 1659, measured 1659 (2026-11-12, sweep 5b review fixes): `SERVING_ROLE_CEILING`'s
+ * 1, `entity/src/driver-versioned-write.ts`. Nothing web-only.
+ * raised 1659 → 1662, measured 1662 (2026-11-12, sweep 8 action+query): `SERVING_ROLE_CEILING`'s
+ * 3, the modules named there. Nothing web-only.
+ * raised 1662 → 1663, measured 1663 (2026-11-12, sweep 9a jobs idle cost):
+ * `SERVING_ROLE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1636;
+export const WEB_ROLE_CEILING = 1663;

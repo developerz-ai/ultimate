@@ -6,6 +6,7 @@
 import { expect, test } from 'bun:test';
 import type { OutboxRecord } from '@ultimat3/jobs';
 import { OUTBOX_STORE_CLAIM_CHECKS } from './outbox-store-conformance-claims';
+import { OUTBOX_STORE_HORIZON_CHECKS } from './outbox-store-conformance-horizon';
 import type { OutboxStoreCheck, OutboxStoreSubject } from './outbox-store-conformance-subject';
 import { committed, outboxRecord } from './outbox-store-conformance-subject';
 import type { SharedExamples } from './shared-examples';
@@ -58,6 +59,7 @@ const STAGE_CHECKS: readonly OutboxStoreCheck[] = [
 export const OUTBOX_STORE_CHECKS: readonly OutboxStoreCheck[] = [
   ...STAGE_CHECKS,
   ...OUTBOX_STORE_CLAIM_CHECKS,
+  ...OUTBOX_STORE_HORIZON_CHECKS,
 ];
 
 export const outboxStoreConformance: SharedExamples<

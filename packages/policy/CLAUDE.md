@@ -180,6 +180,7 @@ reappearing there is a failing test.
 | File | Job |
 |---|---|
 | `policy.ts` | `can`/`allow`/`deny`/`and`/`or`/`not` + decision recording, and `policyPermissions` |
+| `scope.ts` | `scoped(policy, scope)` / `policyScope` — the rule's SQL projection, a conjunction in entity's predicate shape restated structurally (same tier). Not tenancy; combinators carry none |
 | `policy-anonymous.ts` | `admitsAnonymous` — the one question a SURFACE asks of a built tree, apart from the file that builds them |
 | `evaluate.ts` | the single entry point; builds the trace, emits the one decision event |
 | `decisions.ts` | the `policy.decision` bus event — built only while subscribed, one call site, never PII. No slot (`X_INSTRUMENT_SLOT_FORBIDDEN`) |

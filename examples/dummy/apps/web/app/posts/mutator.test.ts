@@ -38,7 +38,7 @@ unitTest('the local twin is replayable: three applications land where one does',
 
 unitTest('a row this member already liked is left alone', () => {
   // Derived from the flag, not from the previous count: the server half converges the same way,
-  // because `insertLike` is insert-or-ignore and `recountLikes` recounts instead of adding.
+  // because `insertLike` is insert-or-ignore and the database counts the rows that exist.
   const liked = { id: POST, likeCount: 9, likedByMe: true };
   expect(applyLocal(liked, 1)).toEqual(liked);
 });

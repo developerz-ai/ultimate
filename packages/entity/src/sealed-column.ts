@@ -5,6 +5,7 @@
 
 import { isSealed } from '@ultimat3/core';
 import { makeColumn } from './column';
+import { refuseColumn } from './refuse';
 import { refuseSealed, sealedUniqueOpaque } from './sealed-errors';
 import type { Column, ColumnMeta, SealedColumn, SealedOptions, TextColumn } from './types';
 
@@ -103,6 +104,19 @@ const sealedMeta = (
   return { ...rest, sealed: { lookup, plaintext } };
 };
 
+/**
+ * `'C'` is typed, and refused at runtime too: a JavaScript caller or a cast reaches here with any
+ * string, and an unknown collation is a `42704` inside `ROLE=migrate`, far from this line.
+ */
+const declaredCollation = (collation: unknown): 'C' =>
+  collation === 'C'
+    ? collation
+    : refuseColumn(
+        'collate',
+        `"${String(collation)}" is not a collation a column may declare: only 'C' (code-point order)`,
+        "text().collate('C') — or drop .collate() for the database's default collation",
+      );
+
 export const makeTextColumn = <T extends Text, Optional extends boolean>(
   meta: ColumnMeta,
   parse: (value: unknown) => T,
@@ -117,6 +131,12 @@ export const makeTextColumn = <T extends Text, Optional extends boolean>(
     unique: () => again(base.unique()),
     default: (value) => again(base.default(value)),
     column: (name) => again(base.column(name)),
+    collate: (collation) =>
+      makeTextColumn<T, Optional>(
+        { ...meta, collation: declaredCollation(collation) },
+        parse,
+        optional,
+      ),
     sealed: (options = {}) =>
       makeSealedColumn(sealedMeta(meta, options, parse), sealedParse(parse), optional),
   };

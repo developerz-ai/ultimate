@@ -15,6 +15,14 @@ fourth instance" and at most one could have been right — the list is sorted by
 **no ordinal is derivable from it**, and any prose ordinal is wrong the moment the next factory
 lands. `As of 2026-08-22`.
 
+**`uploadFlow()` returns a pair of actions, one row — decided 2026-11** (plan 101 of 2026-11-11,
+slice 08 Q5). A direct upload is two server writes, the grant and the attach, and every upload
+slice wrote both by hand. Both are `action`s — each needs its own route, typed client and contract
+tests — so `uploadFlow()` ([`packages/action/src/upload-flow.ts`](../../packages/action/src/upload-flow.ts))
+returns `{ request, confirm }` and has ONE `PRIMITIVE_FACTORIES` row, `kind: 'action'`: the kind is
+what each member is. No single `Action<…>` names a pair, so `scripts/primitive-factories.test.ts`
+seeds its scan with the return type's own name, `UploadFlow`, as it does `DeviceSocket` for a route.
+
 **`channel()` is realtime mechanism, not a ninth primitive and not a factory — decided 2026-10-07**
 (owner decision 3, [#648](https://github.com/developerz-ai/ultimate/issues/648)). The rule it is
 held to is the one `defineFlag()` meets (`packages/flags/CLAUDE.md`): nothing for the registrar to

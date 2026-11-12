@@ -18,6 +18,7 @@ import { likeMatches } from './like';
 import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import { operatorUnknown } from './operator';
 import type { Predicate } from './tenancy';
+import { isTextContains, textContainsMatches } from './text-contains';
 import type { ColumnKind } from './types';
 
 const sign = <T extends number | bigint | string>(left: T, right: T): number =>
@@ -208,6 +209,7 @@ export const matchesPredicate = <Row>(
     // element containment, and those are two different operators that happen to share a symbol.
     // A NULL column value matches nothing, which is what the SQL answers too.
     case 'contains':
+      if (isTextContains(kind)) return textContainsMatches(actual, predicate.value);
       return !rowIsNull && containsBy(kind, actual, predicate.value);
     case 'contained-by':
       return !rowIsNull && containsBy(kind, predicate.value, actual);

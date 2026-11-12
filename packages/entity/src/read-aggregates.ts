@@ -3,6 +3,9 @@
 // Split from `query.ts` at its line ceiling; the chain's arguments arrive as `args()`, so every
 // terminal here counts exactly the rows `count()` counts.
 
+import type { CountByOptions, Measure, MeasureFn, MeasureMap, MeasureReads } from './measures';
+import { measuresUnsupported } from './measures';
+import { checkedPredicate, type Operator } from './operator';
 import type { Repo } from './repo';
 import { seriesUnsupported } from './series-unsupported';
 import type { SeriesPoint, SeriesUnit, SeriesValue } from './time-bucket';
@@ -23,6 +26,36 @@ export type SeriesValueOf<Row, V> = V extends 'count'
   : V extends { readonly sum: infer K extends keyof Row }
     ? (Row[K] extends MoneyValue | null ? MoneyValue : string) | null
     : never;
+
+/**
+ * One filter of a measure: `andWhere`'s three arguments, as a tuple. `S` is carried for the
+ * signature's sake only: excluding opaque columns inside `aggregate`'s generic constraint makes a
+ * sealed chain incomparable with an unsealed one (`tableFor`'s one cast), so a sealed column here is
+ * refused at RUNTIME, by `sealed-repo.ts`, as an `andWhere` built from a string is.
+ */
+export type MeasureFilter<Row, _S extends SealedKeySet = NoSealedKeys> = readonly [
+  column: keyof Row & string,
+  op: Operator,
+  value?: unknown,
+];
+
+/** One output of `aggregate({ name: measure })`, typed by the row. */
+export interface ChainMeasure<Row, S extends SealedKeySet = NoSealedKeys> {
+  readonly fn: MeasureFn;
+  readonly column?: Exclude<keyof Row & string, S['sealed']>;
+  readonly where?: readonly MeasureFilter<Row, S>[];
+}
+
+/** What one measure answers: a count is a number, the rest what `sum`/`avg`/`min`/`max` answer. */
+export type MeasureValueOf<Row, M> = M extends { readonly fn: 'count' }
+  ? number
+  : M extends { readonly fn: 'avg' }
+    ? string | null
+    : M extends { readonly fn: 'sum'; readonly column: infer K extends keyof Row }
+      ? (Row[K] extends MoneyValue | null ? MoneyValue : string) | null
+      : M extends { readonly fn: 'min' | 'max'; readonly column: infer K extends keyof Row }
+        ? Row[K] | null
+        : never;
 
 /** `ReadBuilder.series`'s argument. `timeZone` is required: there is no ambient zone. */
 export interface SeriesOptions<On, V> {
@@ -49,7 +82,24 @@ export interface ReadAggregates<Row, S extends SealedKeySet = NoSealedKeys> {
    */
   countBy<K extends Exclude<keyof Row & string, S['sealed']>>(
     column: K,
+    options?: { readonly where?: readonly MeasureFilter<Row, S>[] },
   ): Promise<ReadonlyMap<Row[K], number>>;
+  /**
+   * Several measures over the chain's rows in ONE statement, each with its own filter — the
+   * dashboard tile a `count()` per status is the N+1 of:
+   * `orders.where({ orgId }).aggregate({ all: { fn: 'count' }, paid: { fn: 'count', where:
+   * [['status', 'eq', 'paid']] }, revenue: { fn: 'sum', column: 'total' } })`.
+   *
+   * Each `where` is `count(*) filter (where …)`: it narrows that measure only, inside the rows
+   * `count()` would count (filters, tenancy, soft delete). A `count` answers a number (0 over no
+   * rows); every other measure answers exactly what `sum`/`avg`/`min`/`max` answer, `null` over
+   * none. Refused as they are: a kind with no aggregate, avg over money, a mixed currency.
+   * `countBy(col, { where })` is the grouped form: a group none of whose rows satisfy `where` is
+   * present with 0, which is what tells it from `andWhere(…).countBy(col)`.
+   */
+  aggregate<M extends Readonly<Record<string, ChainMeasure<Row, S>>>>(
+    measures: M,
+  ): Promise<{ readonly [N in keyof M]: MeasureValueOf<Row, M[N]> }>;
   /**
    * The four SQL aggregates, over exactly the rows `count()` counts — the chain's filters, its
    * tenancy and its soft-delete visibility, never its page. "Total spend this month" is
@@ -104,7 +154,20 @@ export interface ReadAggregates<Row, S extends SealedKeySet = NoSealedKeys> {
 }
 
 /** The members of `Repo` these read, none of which names the row — so any repository fits. */
-type AggregateRepo = Pick<Repo<unknown>, 'aggregate' | 'approximateCount' | 'countBy' | 'series'>;
+type AggregateRepo = Pick<Repo<unknown>, 'aggregate' | 'approximateCount' | 'series'> & {
+  countBy(
+    column: string,
+    args?: Parameters<Repo['count']>[0],
+    options?: CountByOptions,
+  ): Promise<ReadonlyMap<unknown, number>>;
+  readonly aggregates?: MeasureReads['aggregates'];
+};
+
+/** A chain's tuples as the repository's predicates, each refused on the line that wrote it. */
+const predicatesOf = (
+  entityName: string,
+  where: readonly (readonly [string, Operator, unknown?])[] | undefined,
+) => (where ?? []).map(([column, op, value]) => checkedPredicate(entityName, column, op, value));
 
 export const readAggregates = <Row, S extends SealedKeySet>(
   entity: { readonly $name: string },
@@ -127,8 +190,29 @@ export const readAggregates = <Row, S extends SealedKeySet>(
 
   approximateCount: () => repo.approximateCount(args()),
 
-  countBy: async <K extends keyof Row & string>(column: K) =>
-    (await repo.countBy(column, args())) as ReadonlyMap<Row[K], number>,
+  countBy: async <K extends keyof Row & string>(
+    column: K,
+    options?: { readonly where?: readonly MeasureFilter<Row, S>[] },
+  ) =>
+    (await repo.countBy(
+      column,
+      args(),
+      options?.where === undefined ? {} : { where: predicatesOf(entity.$name, options.where) },
+    )) as ReadonlyMap<Row[K], number>,
+
+  aggregate: async <M extends Readonly<Record<string, ChainMeasure<Row, S>>>>(measures: M) => {
+    if (repo.aggregates === undefined) throw measuresUnsupported(entity.$name);
+    const plain: Record<string, Measure> = {};
+    for (const [name, measure] of Object.entries(measures)) {
+      const { where, ...rest } = measure;
+      plain[name] =
+        where === undefined ? rest : { ...rest, where: predicatesOf(entity.$name, where) };
+    }
+    // The same seam `sum` has: the repository is row-agnostic, the chain knows the measures.
+    return (await repo.aggregates(plain as MeasureMap, args())) as {
+      readonly [N in keyof M]: MeasureValueOf<Row, M[N]>;
+    };
+  },
 
   series: async <On extends TimestampKeys<Row, S>, V>(spec: SeriesOptions<On, V>) => {
     if (repo.series === undefined) throw seriesUnsupported(entity.$name);

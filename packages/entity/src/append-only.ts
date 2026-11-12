@@ -4,6 +4,7 @@
 // alike — and before any statement exists, so memory and Postgres answer the same code.
 
 import { appendOnlyColumnRefused, appendOnlyRefused } from './append-only-errors';
+import { purgeNames } from './history-purge';
 import { readOnlyRefused } from './read-only';
 import type { Repo, UpsertArgs } from './repo';
 import type { AnyColumn } from './types';
@@ -17,6 +18,8 @@ export interface AppendOnlySource {
   readonly $viewQuery?: unknown;
   /** `entity({ readOnly })`'s reason: every write refused. Optional, as `$viewQuery` is. */
   readonly $readOnly?: string | null;
+  /** A history table's parent. Optional, as `$viewQuery` is: only a history table can be purged. */
+  readonly $historyOf?: string | null;
 }
 
 /**
@@ -86,7 +89,11 @@ export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySourc
     updateWhere: async () => {
       throw appendOnlyRefused(name, 'updateWhere');
     },
-    deleteWhere: async () => {
+    // The one door out of a history table: a subject's erase, inside `purgingHistory` naming it.
+    deleteWhere: async (filter, options) => {
+      const historyOf = entity.$historyOf;
+      if (typeof historyOf === 'string' && purgeNames(name))
+        return repo.deleteWhere(filter, options);
       throw appendOnlyRefused(name, 'deleteWhere');
     },
     updateMany: async () => {

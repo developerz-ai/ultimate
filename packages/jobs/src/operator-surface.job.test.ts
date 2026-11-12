@@ -24,6 +24,7 @@ import { operatorSettleScenarios } from './operator-surface-settle-fixture';
 import { jobScheduler } from './scheduler';
 import { postgresLeaseLeader, postgresSchedulerState } from './scheduler-pg';
 import { resetTasks, task } from './task';
+import { WORKER_REGISTRY_TTL_MS } from './worker-options';
 
 /** `count` rows in one statement: a thousand round trips is not what this suite is measuring. */
 const SEED = `
@@ -85,7 +86,7 @@ describe('the operator surface on the pg driver', () => {
 
     // `killed` never stops and never heartbeats again; `alive` stops cleanly. Past the TTL the
     // killed worker's row is gone with NO cleanup call, and the clean stop left none behind.
-    await harness.elapse(driver, 31_000);
+    await harness.elapse(driver, WORKER_REGISTRY_TTL_MS + 1_000);
     expect(await operator.workers()).toEqual([]);
     const rows = await (await embeddedPg()).executor.query('select id from x_job_workers', []);
     expect(rows).toEqual([]);
@@ -167,7 +168,7 @@ describe('the operator surface on the pg driver', () => {
     expect(aged.map((bucket) => [bucket.bucketMs, bucket.done])).toEqual([[five.bucketMs, 3]]);
   });
 
-  test('pg: an idle scheduler with 35 tasks sends a lease renewal every ten seconds, and nothing else', async () => {
+  test('pg: an idle scheduler with 35 tasks sends a lease renewal every twenty seconds, and nothing else', async () => {
     const driver = await harness.driver();
     const pg = (await embeddedPg()).executor;
     let statements = 0;
@@ -205,8 +206,8 @@ describe('the operator surface on the pg driver', () => {
       expect(await scheduler.tick()).toEqual([]);
     }
 
-    // Was ~72 a second. Six renewals of a 30-second lease in a minute, and not one read.
-    expect(statements).toBe(6);
+    // Was ~72 a second. Three renewals of a 60-second lease in a minute, and not one read.
+    expect(statements).toBe(3);
     await scheduler.stop();
     resetTasks();
     void driver;

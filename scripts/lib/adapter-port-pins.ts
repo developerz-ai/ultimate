@@ -81,6 +81,12 @@ export const BARREL_UNSCANNED = Object.freeze<Record<string, string>>({
  * MEMBER of a row (what a factory returns, a sub-store, the read half), never a port of its own.
  */
 export const PORT_MEMBERS = Object.freeze<Record<string, string>>({
+  // why: batchedAuditSink (sweep 8) — the writeMany sink it wraps is a member, not a new port
+  '@ultimat3/action#BatchAuditSink':
+    'why: auditSink: an AuditSink with writeMany, what batchedAuditSink wraps',
+  // why: batchedAuditSink (sweep 8) returns this, and it is installed as the auditSink port
+  '@ultimat3/action#BatchedAuditSink':
+    'why: auditSink: what batchedAuditSink returns, handed over as the auditSink',
   '@ultimat3/ai#BudgetLedger':
     'why: aiGateway: a class a Gateway hands out per call, not implemented by an adapter',
   '@ultimat3/auth#AuthLimiter':

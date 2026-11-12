@@ -133,6 +133,6 @@ as it stood, verbatim; the package file keeps a one-line rule marked `†`. Wher
 | File | Owns |
 |---|---|
 | `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, `JOB_ROW_COLUMNS`; via `driver-pg-sql.ts` |
-| `driver-pg-operator-sql.ts` / `driver-pg-settle-sql.ts` | their statements; `SQL_ACK` / `SQL_NACK` with the counter |
+| `driver-pg-operator-sql.ts` / `driver-pg-settle-sql.ts` | their statements; `SQL_ACK` / `SQL_NACK` (no counter since 31.13.0) and `SQL_COUNTER_FLUSH`, the batch `counter-batch.ts` writes |
 | `driver-pg-outbox-sql.ts` | the `x_outbox` statements |
 | `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |

@@ -119,6 +119,15 @@ They go straight to the disk, in three calls — and **the client never names th
 | 2. browser | `uploadFile({ file, grant, onProgress })` | a PUT with real progress; `storage/upload-client.ts` is the one XHR seam in the browser |
 | 3. server, at `PUT /_storage/:disk/*key` | mounted by the framework in `x dev` and `runRole`, around `acceptSignedUpload`. Answers `201 { key }` | refuses a bad or expired signature, a key outside the actor's org, more bytes or another type than was granted, or magic bytes that contradict the type |
 
+**The two server halves are one declaration: `uploadFlow()`** from `@ultimat3/action`, `As of
+31.11.0`. It returns `{ request, confirm }`, two actions — hop 1 as `request`, and `confirm` as
+`promoteAttachment` onto the row, the stored object measured against `maxBytes`, sniffed against
+`accept` (`X_STORAGE_TYPE_REJECTED`, left pending) and scanned when an `uploadScanner` is installed.
+`request` never grants onto the row's key, so the targeted-grant gap below does not apply to it. A
+doubled `confirm` answers the attached object; `attached` (write the key to the row there) runs
+once. Hop 2 is unchanged — `grant` is `request`'s typed-client method: `uploadFile({ file, grant: client.requestPostCover })`. Declaration and
+rules: [`@ultimat3/action` README, `uploadFlow()`](https://github.com/developerz-ai/ultimate/blob/main/packages/action/README.md#uploadflow--an-upload-as-one-declaration).
+
 **The mounted `PUT`** (`As of 2026-09-24`, #523) requires a signed-in actor, like the `GET`. It
 needs no permission: the grant is the authorization, and the action that minted it ran its own
 policy. The route checks the signature and the expiry, and it checks that the key is inside the
@@ -341,7 +350,7 @@ does not pass. Bytes past the window are not sniffed on any path through promoti
 | over 4,096 bytes of leading whitespace (`MAX_LEADING_WHITESPACE`), on every path | no real file opens that way, and past the window nothing is seen |
 | a disk whose `maxGetBytes` is under the window | its own `X_STORAGE_TOO_LARGE`: the ceiling bounds the range |
 
-A grant with a `target` has no promotion step: [Known gaps](Known-Gaps). With an `uploadScanner` installed it is refused outright, by `grantUpload` and `grantMultipart` alike (`X_STORAGE_TARGET_UNSCANNED`, 500): grant with no `target` and promote.
+A grant with a `target` has no promotion step: [Known gaps](Known-Gaps). With an `uploadScanner` installed it is refused outright, by `grantUpload` and `grantMultipart` alike (`X_STORAGE_TARGET_UNSCANNED`, 500): grant with no `target` and promote — `uploadFlow()` (above) is that pair, declared once.
 
 ## Scanning uploads — the `uploadScanner` port
 

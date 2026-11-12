@@ -16,6 +16,7 @@ import { conditions } from './pg-sql';
 import { VERSION_STEP_SQL } from './pg-write-sql';
 import { advancingVersionColumn } from './search-index-version';
 import type { UpdateManyPlan } from './update-many';
+import { versionOf } from './version-lock';
 
 /**
  * The source's column names. Upper case, which no physical column can be (`seekAlias` relies on
@@ -38,6 +39,12 @@ const jsonColumns = <Row>(entity: EntityCore<Row>): ReadonlySet<string> => {
 const versionColumn = <Row>(entity: EntityCore<Row>): string | undefined => {
   const property = advancingVersionColumn(entity as EntityCore<unknown>);
   return property === undefined ? undefined : physicalName(entity, property);
+};
+
+/** The declared lock's column, physical (`version-lock.ts`), or `undefined`. */
+const lockColumn = <Row>(entity: EntityCore<Row>): string | undefined => {
+  const property = versionOf(entity);
+  return property === null ? undefined : physicalName(entity, property);
 };
 
 /** Rows per statement: what the bind budget left after the scope's own binds, over one row's width. */
@@ -74,14 +81,23 @@ export const updateManyStatements = <Row>(
     sql`${identifier(keyColumn)} as ${identifier(KEY_ALIAS)}`,
     ...columns.map((column, at) => sql`${identifier(column)} as ${identifier(aliasOf(at))}`),
   ])} from ${table} where false`;
+  // A declared lock: every row names the version it read (`updateManyPlan`), so each is matched
+  // only at that version and stored one past it — a stale row is not written, and not counted.
+  const lock = lockColumn(entity);
   const set = join(
     columns.map((column, at) => {
       const next = sql`${SOURCE}.${identifier(aliasOf(at))}`;
+      if (column === lock) return sql`${identifier(column)} = ${table}.${identifier(column)} + 1`;
       return column === version
         ? sql`${identifier(column)} = greatest(${next}, ${table}.${identifier(column)} + ${VERSION_STEP_SQL})`
         : sql`${identifier(column)} = ${next}`;
     }),
   );
+  const at = lock === undefined ? -1 : columns.indexOf(lock);
+  const read =
+    at < 0 || lock === undefined
+      ? sql``
+      : sql` and ${table}.${identifier(lock)} = ${SOURCE}.${identifier(aliasOf(at))}`;
   const tail = returning ? sql` returning ${table}.*` : sql``;
   return chunked(bound, columns.length + 1, where.values.length).map((chunk) => {
     const legs = chunk.map(
@@ -98,6 +114,33 @@ export const updateManyStatements = <Row>(
     const source = join([head, ...legs], ' union all ');
     return sql`update ${table} set ${set} from (${source}) as ${SOURCE} where ${table}.${identifier(
       keyColumn,
-    )} = ${SOURCE}.${identifier(KEY_ALIAS)} and ${where}${tail}`;
+    )} = ${SOURCE}.${identifier(KEY_ALIAS)} and ${where}${read}${tail}`;
+  });
+};
+
+/**
+ * How many of a batch's rows are live and in scope, chunked as the batch is: what a versioned
+ * `updateMany` compares its written count with, inside its transaction — present but not written
+ * is a row another write moved past the version the batch read (`X_ENTITY_STALE`).
+ */
+export const updateManyPresence = <Row>(
+  entity: EntityCore<Row>,
+  plan: UpdateManyPlan<Row>,
+): readonly SqlFragment[] => {
+  const reserved = conditions(entity, plan.scope, { includeDeleted: false }).values.length;
+  return chunked(
+    plan.patches.map((each) => each.id),
+    1,
+    reserved,
+  ).map((ids) => {
+    const match = {
+      ...plan.scope,
+      where: [...plan.scope.where, { column: plan.key, op: 'in' as const, value: ids }],
+    };
+    return sql`select count(*)::int as ${identifier('n')} from ${identifier(entity.$table)} where ${conditions(
+      entity,
+      match,
+      { includeDeleted: false },
+    )}`;
   });
 };

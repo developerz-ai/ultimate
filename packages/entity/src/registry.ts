@@ -7,6 +7,7 @@ import type {
   CounterDescriptionLike,
   HistoryDescriptionLike,
   IndexMethod,
+  IndexOperatorClass,
   RetainDescriptionLike,
 } from '@ultimat3/db';
 import type { EntityCore } from './entity';
@@ -29,6 +30,11 @@ export interface ColumnDescription {
   readonly property: string;
   readonly column: string;
   readonly kind: string;
+  /**
+   * `text().collate('C')`, absent otherwise — so no description written before it moves the drift
+   * hash. Crosses to `@ultimat3/db` (tier 1) structurally, as `onDelete` does, or reaches no DDL.
+   */
+  readonly collation?: 'C';
   readonly notNull: boolean;
   readonly primaryKey: boolean;
   readonly unique: boolean;
@@ -143,6 +149,18 @@ export interface IndexDescription {
    * default (concurrently on an existing table), so an entity that never asked hashes as before.
    */
   readonly concurrently?: boolean | undefined;
+  /**
+   * The four key parts (E8), each absent unless the entity declared it, for `using`'s reason: a
+   * description written before them hashes and records as it did. `IndexDescriptionLike` in
+   * `@ultimat3/db` is the reader. `expression` is the ONE key; `columns` names what it reads.
+   */
+  readonly expression?: string | undefined;
+  /** A direction per key, in key order; `null` writes none. Never beside `order`. */
+  readonly orders?: readonly ('asc' | 'desc' | null)[] | undefined;
+  /** INCLUDE payload columns, physical. */
+  readonly include?: readonly string[] | undefined;
+  /** An operator class on every key — `gin_trgm_ops`, on a gin index. */
+  readonly operatorClass?: IndexOperatorClass | undefined;
 }
 
 export interface EntityDescription {
@@ -183,9 +201,25 @@ export interface EntityDescription {
   readonly partition?: PartitionDescription;
 }
 
+/**
+ * An index the framework adds unasked (a column's own, from `.references()` or `.index()`) that
+ * another index already leads with (`coveringIndexOf`, `tenant-index.ts`): every write pays for it
+ * twice. On `RegistryEntry` and NOT in `EntityDescription`: the description is what `x verify`
+ * hashes and what `x db gen` diffs, and removing the index there drops it from every existing app.
+ */
+export interface CoveredIndex {
+  readonly name: string;
+  /** Physical columns, in index order. */
+  readonly columns: readonly string[];
+  /** The index (or `<table>_pkey`, or the unique invariant's name) that already leads with them. */
+  readonly coveredBy: string;
+}
+
 export interface RegistryEntry {
   readonly name: string;
   readonly tableName: string;
+  /** Implicit indexes another one already serves; absent or empty when there are none. */
+  readonly coveredIndexes?: readonly CoveredIndex[];
   /** `entity(name, { persist: true })` — the client keeps this type on disk. Absent = `false`. */
   readonly persist?: boolean;
   /** The entity's client projection — what a changefeed's table maps to on the client. */

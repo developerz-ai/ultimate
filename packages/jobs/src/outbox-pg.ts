@@ -13,6 +13,7 @@ import type { Clock, PgExecutor } from '@ultimat3/core';
 import { uuidV7 } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
+import { SQL_OUTBOX_CLAIM_IDLE } from './driver-pg-outbox-sql';
 import {
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
@@ -40,6 +41,14 @@ interface OutboxRow {
   readonly enqueued_by: string | null;
   readonly claimed_by?: string | null;
 }
+
+/** A claim answer row: a claimed `OutboxRow` — or, idle and empty, nulls and the horizon. */
+type ClaimRow = Omit<OutboxRow, 'id'> & {
+  readonly id: string | null;
+  readonly due_in_ms?: number | string | null;
+};
+
+const claimedRow = (row: ClaimRow): row is ClaimRow & OutboxRow => row.id !== null;
 
 export interface PostgresOutboxStoreOptions {
   /**
@@ -174,13 +183,18 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
      * finished runs the handler a second time. `SQL_OUTBOX_CLAIM` stamps `claimed_at` in the same
      * statement that locks the row; `skip locked` still keeps two relays from serialising.
      */
-    async claim(limit) {
-      const rows = await options.executor.query<OutboxRow>(SQL_OUTBOX_CLAIM, [
-        limit,
-        claimLeaseMs,
-        relayId,
-      ]);
-      return rows.map(toRecord);
+    async claim(limit, claimOptions) {
+      const onEmpty = claimOptions?.onEmpty;
+      const rows = await options.executor.query<ClaimRow>(
+        onEmpty === undefined ? SQL_OUTBOX_CLAIM : SQL_OUTBOX_CLAIM_IDLE,
+        [limit, claimLeaseMs, relayId],
+      );
+      const claimed = rows.filter(claimedRow);
+      if (claimed.length === 0) {
+        const due = rows[0]?.due_in_ms;
+        onEmpty?.(due === null || due === undefined ? null : Number(due));
+      }
+      return claimed.map(toRecord);
     },
 
     /**

@@ -8,7 +8,7 @@
 
 import { MAX_HANDLE } from '@social-media-clone/domain';
 import { action, t } from '@ultimat3/action';
-import { NEXT_PARAM, nextAfterSignIn, setRedirect, useRequestHeader } from '@ultimat3/http';
+import { NEXT_PARAM, nextAfterSignIn, useRequestHeader } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import type { IssuedSession } from '../app/auth/service';
 import { signIn, signOut, signUp } from '../app/auth/service';
@@ -29,7 +29,7 @@ const handleInput = t.string
 
 const sessionOutput = t.object({
   ok: t.boolean,
-  /** Where the caller goes next — as DATA for an agent; a browser gets it as a 303 (`landAfter`). */
+  /** Where the caller goes next — as DATA for an agent; a browser's form gets it as a 303 (`native`). */
   next: t.string,
   handle: t.string,
 });
@@ -53,14 +53,12 @@ const nextInput = t.optional(t.string.max(2048));
 
 /**
  * A browser that posted the native form gets a 303 to where it was going; an agent that posted
- * JSON gets the output schema, unchanged. Same operation, two audiences — `setRedirect` is the
- * seam that exists for exactly this, so the action does not grow a second protocol.
+ * JSON gets the output schema, unchanged. Same operation, two audiences, one declaration: the
+ * per-request `next` is already IN the output, so `success` reads it there and the handler never
+ * sniffs a header. A refusal (a wrong password, a taken handle) lands back on the form's own page —
+ * the `Referer`, `?next=` intact — whose `load` reads the code (`useActionAnswer`).
  */
-const landAfter = (raw: string | undefined, fallback: string): string => {
-  const next = nextAfterSignIn(raw, fallback);
-  if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(next);
-  return next;
-};
+const landOnNext = { success: (output: { readonly next: string }) => output.next };
 
 export const createSession = action({
   input: t.object({
@@ -74,6 +72,7 @@ export const createSession = action({
   // permission for yet. Every refusal below is a domain error, never an authz decision.
   policy: allow('public'),
   mcp: { expose: false },
+  native: landOnNext,
   async handle({ input, ctx }) {
     const now = new Date();
     const issued = await signIn({
@@ -82,7 +81,7 @@ export const createSession = action({
       captchaToken: input[CAPTCHA_FIELD] ?? null,
     });
     attach(ctx, issued, now);
-    return { ok: true, next: landAfter(input[NEXT_PARAM], '/feed'), handle: input.handle };
+    return { ok: true, next: nextAfterSignIn(input[NEXT_PARAM], '/feed'), handle: input.handle };
   },
 });
 
@@ -98,6 +97,7 @@ export const createAccount = action({
   output: sessionOutput,
   policy: allow('public'),
   mcp: { expose: false },
+  native: landOnNext,
   async handle({ input, ctx }) {
     const now = new Date();
     const issued = await signUp({
@@ -108,7 +108,7 @@ export const createAccount = action({
       captchaToken: input[CAPTCHA_FIELD] ?? null,
     });
     attach(ctx, issued, now);
-    return { ok: true, next: landAfter(input[NEXT_PARAM], '/feed'), handle: input.handle };
+    return { ok: true, next: nextAfterSignIn(input[NEXT_PARAM], '/feed'), handle: input.handle };
   },
 });
 
@@ -133,6 +133,7 @@ export const destroySession = action({
   }),
   policy: allow('public'),
   mcp: { expose: false },
+  native: landOnNext,
   async handle({ ctx }) {
     // The inbound headers the pipeline put on the context, through the framework's own reader —
     // the same cookie `hooks.authenticate` read one stage earlier, never a second parse of a
@@ -143,10 +144,10 @@ export const destroySession = action({
     // Cleared regardless. The browser forgetting the token is the half this process controls, and
     // the row expires on its own clock — `sessions.expiresAt` is absolute for exactly this reason.
     clearSessionCookie(isSecureRequest(ctx));
-    // The same browser/agent split the other two actions make. Without it the header's sign-out
-    // form — a native POST, because nothing on these pages hydrates — leaves the reader looking
-    // at `{"ok":true,"next":"/","revoked":true}` in the viewport. The session really was revoked;
-    // the answer was just written for the wrong caller.
-    return { ok: true, next: landAfter(undefined, '/'), revoked };
+    // The same browser/agent split the other two actions make (`native`). Without it the header's
+    // sign-out form — a native POST, because nothing on these pages hydrates — leaves the reader
+    // looking at `{"ok":true,"next":"/","revoked":true}` in the viewport. The session really was
+    // revoked; the answer was just written for the wrong caller.
+    return { ok: true, next: '/', revoked };
   },
 });

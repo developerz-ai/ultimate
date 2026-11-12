@@ -2,6 +2,7 @@
 // row that was not there, a repo that threw. Each leaves its entry and answers the result the
 // caller renders — so `crud.ts` reads as the five steps of each operation and nothing else.
 
+import { isUltimateError } from '@ultimat3/core';
 import {
   type AuditDraft,
   type AuditEntry,
@@ -73,14 +74,18 @@ export type AuditedEntry = Pick<
  * say `failed` for an action that had committed, and an operator re-ran it.
  *
  * The `failed` entry is written OUTSIDE, after the rollback — inside, it would be rolled back with
- * the write it reports. Nothing about the thrown value is read or rendered (a `catch` binding holds
+ * the write it reports. Nothing about the thrown value is rendered (a `catch` binding holds
  * whatever an app threw, and `String()` of a prototype-less object throws from inside the block
- * that owes the auditor its entry); the caller gets it UNCHANGED, and an audit reason is a key.
+ * that owes the auditor its entry); the caller gets it UNCHANGED, and an audit reason is a key —
+ * one `reasons.failed` may pick by asking the TOTAL `isUltimateError` for a code, nothing more.
  */
 export async function atomicallyAudited<T>(
   audit: AuditLog,
   entry: AuditedEntry,
-  reasons: { readonly allowed: string; readonly failed: string },
+  reasons: {
+    readonly allowed: string;
+    readonly failed: string | ((error: unknown) => string);
+  },
   /** The id of the row the write addresses, for the `failed` entry: `null` for a set or a create. */
   entityId: string | null,
   write: () => Promise<T>,
@@ -89,6 +94,8 @@ export async function atomicallyAudited<T>(
     readonly entityId: string | null;
     readonly diff: readonly AuditFieldDiff[];
   },
+  /** Handed the `failed` entry before the error is rethrown — `auditedUpdate` answers with it. */
+  failedWith?: (entry: AuditEntry) => void,
 ): Promise<{ readonly value: T; readonly audit: AuditEntry }> {
   try {
     return await audit.atomic(async () => {
@@ -102,7 +109,9 @@ export async function atomicallyAudited<T>(
       return { value, audit: appended };
     });
   } catch (error) {
-    await audit.append({ ...entry, entityId, outcome: 'failed', reason: reasons.failed, diff: [] });
+    const reason = typeof reasons.failed === 'string' ? reasons.failed : reasons.failed(error);
+    const failed = await audit.append({ ...entry, entityId, outcome: 'failed', reason, diff: [] });
+    failedWith?.(failed);
     throw error;
   }
 }
@@ -137,6 +146,59 @@ export function auditedWrite<T>(
     write,
     written,
   );
+}
+
+/** The entity's version lock refused the write: the row moved between the admin's read and it. */
+const lostRace = (error: unknown): boolean =>
+  isUltimateError(error) && error.code === 'X_ENTITY_STALE';
+
+/**
+ * `auditedWrite` for an update. A write the entity's declared lock refuses (`X_ENTITY_STALE`) is
+ * the same conflict the form's `_version` check answers, only later: one `failed` entry keyed
+ * `admin.error.row-changed`, answered as `stale` rather than thrown. Anything else rethrows.
+ */
+export async function auditedUpdate<T>(
+  resource: { readonly name: string },
+  ctx: CrudCtx,
+  entityId: string,
+  decision: AdminDecision,
+  write: () => Promise<T>,
+  written: (value: T) => {
+    readonly entityId: string | null;
+    readonly diff: readonly AuditFieldDiff[];
+  },
+): Promise<
+  | { readonly stale: false; readonly value: T; readonly audit: AuditEntry }
+  | { readonly stale: true; readonly audit: AuditEntry }
+> {
+  let refused: AuditEntry | undefined;
+  try {
+    const done = await atomicallyAudited(
+      ctx.audit,
+      {
+        requestId: ctx.requestId,
+        actor: ctx.actor,
+        operation: 'update',
+        kind: 'operation',
+        entity: resource.name,
+        permission: decision.permission,
+      },
+      {
+        allowed: decision.reason,
+        failed: (error) => (lostRace(error) ? ROW_CHANGED_REASON : WRITE_FAILED_REASON),
+      },
+      entityId,
+      write,
+      written,
+      (entry) => {
+        refused = entry;
+      },
+    );
+    return { stale: false, ...done };
+  } catch (error) {
+    if (refused !== undefined && lostRace(error)) return { stale: true, audit: refused };
+    throw error;
+  }
 }
 
 /** The key a write to a row that is not there is logged with. */

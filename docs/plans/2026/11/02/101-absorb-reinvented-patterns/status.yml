@@ -481,8 +481,8 @@ slices:
     percent: 90
   - file: 41-add-entity-lifecycle.md
     tier: 1
-    sweep: "25b"
-    status: in_progress
+    sweep: "25b"           # finished by 2026/11/11/101-full-stack-efficiency-sweeps sweep 5b (E10)
+    status: superseded
     percent: 85
   - file: 41-add-agent-wire.md
     tier: 0

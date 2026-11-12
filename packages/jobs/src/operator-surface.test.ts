@@ -23,7 +23,12 @@ import {
 import { operatorScopeScenarios } from './operator-surface-scope-fixture';
 import { operatorSettleScenarios } from './operator-surface-settle-fixture';
 import { createProgressReporter } from './progress';
-import { COUNTER_ROLLUP_INTERVAL_MS, jobScheduler, PAUSE_RECHECK_MS } from './scheduler';
+import {
+  COUNTER_ROLLUP_IDLE_INTERVAL_MS,
+  COUNTER_ROLLUP_INTERVAL_MS,
+  jobScheduler,
+  PAUSE_RECHECK_MS,
+} from './scheduler';
 import { resetTasks, task } from './task';
 
 const clock = frozenClock('2026-10-01T00:00:30.000Z');
@@ -107,22 +112,24 @@ describe('counter buckets age into wider ones', () => {
     expect(counters.list({ job: 'sync', sinceMs: 0 })).toEqual([]);
   });
 
-  test('the scheduler leader folds them, at most once every ten minutes', async () => {
+  test('the scheduler leader folds them every ten minutes, and hourly when nothing was old', async () => {
     const driver = memoryJobDriver({ clock });
     const operator = operatorOf(driver);
     let folds = 0;
+    let moved = 1;
     const counting: JobDriver = {
       ...driver,
       introspect: {
         ...operator,
         rollupCounters: () => {
           folds += 1;
-          return operator.rollupCounters();
+          return Promise.resolve(moved);
         },
       },
     };
     const scheduler = jobScheduler({ driver: counting, clock, tasks: [] });
 
+    // A fold that moved buckets comes back in ten minutes: more may be aging.
     await scheduler.tick();
     await scheduler.tick();
     expect(folds).toBe(1);
@@ -130,8 +137,16 @@ describe('counter buckets age into wider ones', () => {
     await scheduler.tick();
     expect(folds).toBe(1);
     clock.advance(1_000);
+    moved = 0;
     await scheduler.tick();
     expect(folds).toBe(2);
+    // One that moved nothing backs off to the hour: an idle fleet's fold is a no-op statement.
+    clock.advance(COUNTER_ROLLUP_IDLE_INTERVAL_MS - 1_000);
+    await scheduler.tick();
+    expect(folds).toBe(2);
+    clock.advance(1_000);
+    await scheduler.tick();
+    expect(folds).toBe(3);
   });
 });
 

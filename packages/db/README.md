@@ -681,6 +681,8 @@ await subscription.unlisten();
 
 `As of 2026-11-02`: **a foreign key on a live table** is written to the deferred step (`not valid`, then `validate constraint`, an old key held until the contract phase), **a CHECK** `not valid` in the transaction with its validate deferred, **a column drop** takes two releases (`retired`, `X_MIGRATION_ROLLING_UNSAFE`), and **`migrate()` / `rollback()` send it again** (a transactional step whole, a `-- transaction: false` step per statement) when `lock_timeout` fires (`lockRetries`, default 5). The user-facing page: `wiki/Migrations-And-Backfills.md`.
 
+**A declared collation** (`As of 2026-11`, `text().collate('C')`): `collate "C"` follows the type in a `create table` or `add column`, the snapshot records `collation` only when declared, and declaring or dropping it on an existing column is `alter column … type <type> collate "C"` (or `"default"`) in place, its reverse in `down`. A retype states the collation it keeps — Postgres resets it otherwise (`generate-collation.test.ts`). Drift does not read the catalog's collation, as it reads no column type.
+
 `migrate()` takes the advisory lock by **polling** `pg_try_advisory_lock(4919202607)` every 500ms
 until `lockWaitMs` (default 60s) and then throwing `X_MIGRATE_CONCURRENT` (`As of 2026-08`).
 `pg_advisory_lock` has no timeout, and a predecessor OOM-killed on a partition keeps its backend —

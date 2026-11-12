@@ -9,6 +9,8 @@
 
 import type { Page } from '@ultimat3/core';
 import type { AggregateFn } from './aggregate';
+import type { LatestBySpec } from './latest-by';
+import type { CountByOptions, MeasureMap } from './measures';
 import type { Predicate, SortKey } from './tenancy';
 import type { SeriesPoint, SeriesSpec } from './time-bucket';
 import type { IdOf, RowPatch, RowWrite } from './types';
@@ -181,7 +183,12 @@ export interface Repo<T = unknown> {
    * `column` is a property name, spelled as `select` spells one — the typed form is
    * `ReadBuilder.countBy`, which knows the row. Ordered by count, biggest group first.
    */
-  countBy(column: string, args?: FindManyArgs): Promise<ReadonlyMap<unknown, number>>;
+  countBy(
+    column: string,
+    args?: FindManyArgs,
+    /** `where`: counted with `count(*) filter (where …)` — a group none satisfy answers `0`. */
+    options?: CountByOptions,
+  ): Promise<ReadonlyMap<unknown, number>>;
   /**
    * One aggregate over exactly the rows `count(args)` counts. Row-agnostic here and typed on the
    * chain, the same seam `countBy` has: a column name is a runtime string at this contract.
@@ -191,6 +198,21 @@ export interface Repo<T = unknown> {
    * `MoneyValue`; neither is ever a float.
    */
   aggregate(fn: AggregateFn, column: string, args?: FindManyArgs): Promise<unknown>;
+  /**
+   * Several measures over exactly the rows `count(args)` counts, each with its own optional
+   * `filter (where …)`, in ONE statement; keyed by the caller's names. Optional: the typed handle
+   * answers `X_AGGREGATE_UNSUPPORTED` for a repository without it.
+   */
+  aggregates?(
+    measures: MeasureMap,
+    args?: FindManyArgs,
+  ): Promise<Readonly<Record<string, unknown>>>;
+  /**
+   * The newest `spec.perGroup` rows of each group, in ONE statement (`DISTINCT ON`, or `LATERAL`
+   * over `spec.keys`). Optional: `latest-by.ts` folds paged `findMany` reads for a repository
+   * without it — correct, never one statement.
+   */
+  latestBy?(spec: LatestBySpec, args?: FindManyArgs): Promise<readonly T[]>;
   /**
    * One point per time bucket that holds rows, over exactly the rows `count(args)` counts with an
    * instant in `spec.on` — truncated in `spec.timeZone` as Postgres' `date_trunc(unit, col, zone)`
@@ -221,6 +243,17 @@ export interface Repo<T = unknown> {
    * On a tenant-scoped entity with no actor it is `X_TENANCY_UNSCOPED`, exactly as a read.
    */
   lockKey?<R>(key: string, fn: (tx: Tx) => Promise<R> | R, options?: RepoOptions): Promise<R>;
+  /**
+   * `lockKey` over several keys: every key held, for as long as `fn` runs, in ONE transaction —
+   * acquired in sorted order so two callers naming the same keys in any order cannot deadlock.
+   * Same hashing and tenancy as `lockKey`. Optional, like it: the typed handle answers
+   * `X_LOCK_UNSUPPORTED` for a repository without it.
+   */
+  lockKeys?<R>(
+    keys: readonly string[],
+    fn: (tx: Tx) => Promise<R> | R,
+    options?: RepoOptions,
+  ): Promise<R>;
 }
 
 /**

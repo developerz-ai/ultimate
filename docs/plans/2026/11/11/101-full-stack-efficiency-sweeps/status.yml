@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 4
-current_focus: "Sweep 0 PR open (ships as 31.5.0: new exports); next sweep 19a"
+percent: 30
+current_focus: "Sweep 9a (jobs idle and lifecycle cost, J1–J10) done, ships as 31.13.0 after a fix in 31.12.0; open: a delayed job queued by another process during an idle rest starts up to 60 s late (09-jobs.md Outcome); next sweep 9b (jobs mechanisms)"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -14,49 +14,49 @@ slices:
     percent: 100
   - file: 19-agent-tooling-dx.md
     tier: 5
-    sweep: "19a"           # FX1–FX11 right after sweep 0; Y1–Y11 in sweep 19b (last)
-    status: not_started
-    percent: 0
+    sweep: "19a"           # FX1–FX11 in 19a (done, 31.6.0); Y1–Y11 in sweep 19b (last)
+    status: in_progress
+    percent: 50
   - file: 02-schema-core.md
     tier: 0
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 04-cache-seo.md
     tier: 1
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 03-db.md
     tier: 1
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 06-http.md
     tier: 2
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 05-entity.md
     tier: 2
-    sweep: "5a"            # E1–E4, E13 in 5a; E5–E12 (E14 if OD6) in 5b
-    status: not_started
-    percent: 0
+    sweep: "5a"            # E1–E4, E13 in 5a; E5–E12, E14 in 5b (done); E9's doctor report and --drop-redundant in 18
+    status: in_progress
+    percent: 95
   - file: 07-auth-policy.md
     tier: 2
-    sweep: "5b"
-    status: not_started
-    percent: 0
+    sweep: "5b"            # A1 + P1 shape in 5b (done); P1 composition in 8 (done); X_POLICY_SCOPE_MISMATCH in 13
+    status: in_progress
+    percent: 75
   - file: 08-action-query.md
     tier: 3
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 09-jobs.md
     tier: 3
-    sweep: "9a"            # J1–J10 in 9a; J11–J19 in 9b
-    status: not_started
-    percent: 0
+    sweep: "9a"            # J1–J10 in 9a (done, 31.13.0; J2 partial, J9 cheap route); J11–J19 in 9b
+    status: in_progress
+    percent: 50
   - file: 10-realtime.md
     tier: 3
     sweep: "9b"
@@ -168,5 +168,5 @@ slices:
     status: complete
     percent: 100
 evidence: []
-notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Nothing implemented. Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
-last_updated: 2026-11-11
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8 and 9a implemented (31.5.0–31.13.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+last_updated: 2026-11-12

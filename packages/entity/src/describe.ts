@@ -298,6 +298,8 @@ const describeColumn = <Row>(
       property,
       column: physical,
       kind: sqlTypeOf(meta),
+      // Absent unless declared, like `default` below: no description written before it moves.
+      ...(meta.collation === undefined ? {} : { collation: meta.collation }),
       notNull: meta.notNull,
       primaryKey: meta.primaryKey || input.primaryKey.includes(property),
       unique: meta.unique,
@@ -366,6 +368,12 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
       // Absent stays absent for the same reason — `x verify` hashes this projection, and an index
       // that asks nothing must hash what it always did. An explicit ask, `true` or `false`, rides.
       ...(index.concurrently === undefined ? {} : { concurrently: index.concurrently }),
+      // The four key parts (E8), absent unless declared, for the same hash. `@ultimat3/db` renders
+      // them (`index-key-ddl.ts`) and records them in the snapshot (`declaredKeyParts`).
+      ...(index.expression === undefined ? {} : { expression: index.expression }),
+      ...(index.orders === undefined ? {} : { orders: index.orders }),
+      ...(index.include === undefined ? {} : { include: index.include }),
+      ...(index.operatorClass === undefined ? {} : { operatorClass: index.operatorClass }),
     })),
     tags: input.tags,
     cacheTag: input.cacheTag,

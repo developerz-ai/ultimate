@@ -10,6 +10,7 @@ import { tagKeys } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';
 import { appVersion } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { reportLiveOrderCollation } from './live-collation';
 import type { Patch } from './matcher';
 import { assertMatchable } from './matcher';
 import type { QueryPolicy, QuerySubject } from './policy-gate';
@@ -150,6 +151,9 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   assertSubscribed(name, target.subscribes, shape.entity);
   // And once more for the same moment: a window keyed on a sealed column is read and never patched.
   assertNoSealedKey(name, shape);
+  // And a window ordered by text, which the matcher orders by code point and Postgres by collation:
+  // warned in development and test until `next` refuses it.
+  reportLiveOrderCollation(target, name, shape);
 
   const epoch = options.epoch ?? liveEpoch();
   const hash = queryHash(name, parsed);

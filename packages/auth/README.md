@@ -666,7 +666,10 @@ redeem it: client, PKCE verifier, `redirect_uri` and `resource` are checked on `
 replay revocation. `pollDevice(hash, clientId, at)` stamps only the issuing client's poll. A client
 authenticates only with its registered `token_endpoint_auth_method` (the other is `invalid_client`),
 and gets refresh tokens only if its `grantTypes` list `refresh_token` (else refreshing is
-`unauthorized_client`). Full table and the rule each test holds:
+`unauthorized_client`). `registerClient` — the app's own path — refuses a redirect URI, grant,
+scope or resource that is empty or holds whitespace (`X_AUTH_CLIENT_INVALID`, naming the field):
+the Postgres store keeps each list space-joined, so such a value would read back as a different
+list. Full table and the rule each test holds:
 [wiki Auth](https://github.com/developerz-ai/ultimate/wiki/Auth#authorization-server).
 
 | File | Job |
@@ -729,8 +732,12 @@ would not. Normalisation happens once, above the seam, in `normaliseEmail` (`ema
 lowercase, nothing else. Call it before `findUserByEmail`/`createUser` in any login route of your
 own, and key any bucket of your own with it — `accountKey` does.
 
-Every member of the seam is required: an adapter missing one is a compile error, never a runtime
-refusal.
+Every member of the seam is required — an adapter missing one is a compile error, never a runtime
+refusal — except `getSessionWithUser(id)` (`As of 2026-11`): the session and its user in ONE read,
+`{ session, user | null }` or `null`. `authenticate` uses it when present and makes the two reads
+it replaces (`getSession`, then `findUserById`) when not, so an adapter written before it still
+binds. Both shipped adapters carry it; `authAdapterConformance` holds one that does to answering
+exactly what the two reads answer.
 
 `x_users` gained two columns in 1.3.0 — `scopes text[]` and `external_id text unique` — plus an
 `org_id` index.
@@ -745,10 +752,13 @@ should be deleted. They are still not `entity()` declarations, so `x db gen` doe
 
 **Read the DDL from `@ultimat3/auth/schema`, a leaf — `As of 2026-11-10`.** It exports
 `AUTH_TABLES`, `AUTH_TABLE_NAMES`, `AUTH_SERVER_TABLES`, `SQL_AUTH_SERVER_TABLES`,
-`SQL_AUTH_LIMIT_TABLES` and `SQL_TOTP_REPLAY_TABLE`, and imports no runtime: reading table names
-costs 2 modules, not the barrel's 106. `FRAMEWORK_SCHEMA` reads it there, which took `ROLE=migrate`
-from 977 modules to 873. The `.` barrel still exports the same six values, so a caller that also
-needs `postgresAuthAdapter` or a store keeps one import.
+`SQL_AUTH_LIMIT_TABLES`, `SQL_TOTP_REPLAY_TABLE` and `AUTH_LOCKOUTS_STORAGE`, and imports no auth
+runtime: 2 auth modules, not the barrel's 106, plus `@ultimat3/db`, whose `tableDdl` renders
+`x_auth_lockouts` from `AUTH_LOCKOUTS_STORAGE` — `tableStorage('x_auth_lockouts', { unlogged: false })`,
+LOGGED and stated, so every boot's `alter … set logged` converges a hand `set unlogged` and drift
+compares the same value against `pg_class` (`As of 2026-11-11`). `FRAMEWORK_SCHEMA` reads the leaf
+and already loads db, which took `ROLE=migrate` from 977 modules to 873. The `.` barrel exports the
+same seven values, so a caller that also needs `postgresAuthAdapter` or a store keeps one import.
 
 ```ts
 import { AUTH_TABLE_NAMES, AUTH_TABLES } from '@ultimat3/auth/schema';
@@ -767,8 +777,14 @@ changed IP or user agent is still written immediately, because that is the row a
 an incident review read. The trade is bounded and explicit: idle expiry is now precise to within
 one `idleSlideMs`.
 
+**One statement per authenticated request** on `postgresAuthAdapter` (`As of 2026-11-11`, was 2):
+`getSessionWithUser` joins `x_sessions` to `x_users` by the session id, and the secret half and
+both clocks are checked on the row it returns exactly as `verifySession` checks them
+(`admitSession`, one copy). A request that slides the idle window adds the one write above.
+Counted on PGlite by `authenticate-statements.test.ts`.
+
 **Revocation is unaffected, and deliberately so.** `authenticate` re-reads the *user* row on every
-request, so a revoked role takes effect on the very next one with no token-expiry lag — a better
+request — in that same join — so a revoked role takes effect on the very next one with no token-expiry lag — a better
 property than any claims-in-a-JWT design. Throttling the session write is safe; caching the user
 row would not be, and nothing does.
 

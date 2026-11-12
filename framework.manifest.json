@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "47e39645e1a4e9650bb408fbca4a26370cd680bf1bae487f6f6611077f026ae5",
+  "buildId": "f26e7c2a1e6a73ebd2e89e1d72aa6364d7c913a8a1f8eb3390b662ec6cd1b127",
   "tiers": {
     "0": [
       "core",
@@ -48,187 +48,187 @@
   "packages": [
     {
       "name": "@ultimat3/core",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/schema",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/cache",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/db",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/flags",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/i18n",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/money",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/seo",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/storage",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/time",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/auth",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/entity",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/http",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/policy",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/action",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/jobs",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/query",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/realtime",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/ai",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mail",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/manifest",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mcp",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/notify",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/pwa",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/render",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/scraping",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/ui",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/admin",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/cli",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/testing",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 5,
       "private": false
     },
     {
       "name": "create-ultimate",
-      "version": "31.9.0",
+      "version": "31.13.1",
       "tier": 6,
       "private": false
     }
@@ -595,6 +595,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ASSET_RETAIN_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ASSET_VARIANT_UNDECLARED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -613,6 +618,11 @@
       "code": "X_AUDIT_SINK_MISSING",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_AUTH_CLIENT_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_AUTH_CONSENT_INVALID",
@@ -1975,7 +1985,17 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_STALE",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_TENANT_UNDECLARED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_VERSION_INVALID",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
@@ -2905,6 +2925,11 @@
       "at": "packages/realtime/src/error-titles.ts"
     },
     {
+      "code": "X_LIVE_ORDER_COLLATION",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_LIVE_QUERY_UNKNOWN",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
@@ -3558,6 +3583,11 @@
       "code": "X_N_PLUS_ONE_WRITE",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_NATIVE_FORM_UNANSWERED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_NAVIGATION_MODAL_PATH_INVALID",
@@ -4223,6 +4253,11 @@
       "code": "X_QUERY_SCALES_WITH_ROWS",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SCOPE_UNCOMPOSABLE",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
     },
     {
       "code": "X_QUERY_SINGLE_INVALID",

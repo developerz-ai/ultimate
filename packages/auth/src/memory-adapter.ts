@@ -13,6 +13,7 @@ import type {
   CreateUserInput,
   PasskeyStore,
   SessionPatch,
+  SessionWithUser,
   StoredMfaSecret,
   UserPatch,
   UserQuery,
@@ -258,6 +259,13 @@ export class MemoryAuthAdapter implements AuthAdapter {
   }
 
   /** Joins through the user map, which is what the Postgres adapter's subselect does. */
+  async getSessionWithUser(id: string): Promise<SessionWithUser | null> {
+    const session = this.#sessions.get(id);
+    return session === undefined
+      ? null
+      : { session, user: this.#users.get(session.userId) ?? null };
+  }
+
   async deleteSessionsForOrg(orgId: string): Promise<number> {
     const members = new Set(
       [...this.#users.values()].filter((user) => user.orgId === orgId).map((user) => user.id),

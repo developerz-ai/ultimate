@@ -235,8 +235,10 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
     expect([a?.task, b?.task]).toEqual(['task-a', 'task-b']);
     expect(a?.occurrenceMs).toBe(occurrenceMs);
     expect(b?.occurrenceMs).toBe(occurrenceMs + 60_000);
-    // WHEN it was dispatched, on the store's clock — not the instant it was scheduled for.
-    expect(b?.firedAt).toBe(a?.firedAt ?? Number.NaN);
+    // WHEN it was dispatched, on the store's clock — not the instant it was scheduled for, which
+    // is a minute apart. Two statements' `now()`: the same instant on a quiet machine, a few ms
+    // apart on a loaded one.
+    expect(Math.abs((b?.firedAt ?? Number.NaN) - (a?.firedAt ?? Number.NaN))).toBeLessThan(1_000);
     expect(Number.isFinite(a?.firedAt)).toBe(true);
 
     await harness.elapse(driver, 5_000);
@@ -298,6 +300,30 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
     expect(live[0]?.inFlight).toEqual(['job-2']);
     // A clean stop hands the row back at once.
     await operator.forgetWorker('worker-alive');
+    expect(await operator.workers()).toEqual([]);
+  });
+
+  test(`${label}: a narrow renewal moves a live row's expiry only, and refuses a lapsed one`, async () => {
+    const driver = await harness.driver();
+    const operator = operatorOf(driver);
+    const worker = {
+      id: 'worker-renewed',
+      host: 'host-renewed',
+      startedAt: 1_000,
+      queues: ['default'],
+      concurrency: 2,
+      inFlight: ['job-1'],
+    };
+    expect(await operator.renewWorker?.('worker-never', TTL_MS)).toBe(false);
+    await operator.announceWorker(worker, TTL_MS);
+    // Renewed just before it would lapse, it outlives its first TTL, and nothing else moved.
+    await harness.elapse(driver, TTL_MS - 1_000);
+    expect(await operator.renewWorker?.(worker.id, TTL_MS)).toBe(true);
+    await harness.elapse(driver, 2_000);
+    expect(await operator.workers()).toMatchObject([{ id: worker.id, inFlight: ['job-1'] }]);
+    // Lapsed: `false`, and the registry answers with a full announce, never a revived row.
+    await harness.elapse(driver, TTL_MS);
+    expect(await operator.renewWorker?.(worker.id, TTL_MS)).toBe(false);
     expect(await operator.workers()).toEqual([]);
   });
 

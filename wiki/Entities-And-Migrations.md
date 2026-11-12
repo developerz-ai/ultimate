@@ -67,11 +67,66 @@ The entity name is the first argument. Everything else is the init object:
 | `shared` | `'<why its rows belong to no tenant>'` — for an entity with no tenant column whose references reach one that has a tenant (a price list every org's subscriptions point at). Without it the `exercise` step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused at `entity()` with the same code, and beside a tenant column it is `X_INVARIANT_VIOLATED`. See [Policies and authz](Policies-And-Authz#the-static-tenant-check) |
 | `scan` | `'<why it stays small>'` — a bounded table (`'a closed catalog of 8 rows'`) the `exercise` step's plan sweep may see read whole. Without it a sequential scan of it is `X_QUERY_UNINDEXED`; blank is `X_INVARIANT_VIOLATED`. See [Testing](Testing#the-plan-and-scale-sweeps) |
 | `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
-| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. On a table that already exists `x db gen` builds it with `create index concurrently` by default (`As of 2026-11`), in a migration of its own, outside a transaction; `concurrently: false` is the plain build, marked `-- lock-heavy: true` ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)) |
+| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. On a table that already exists `x db gen` builds it with `create index concurrently` by default (`As of 2026-11`), in a migration of its own, outside a transaction; `concurrently: false` is the plain build, marked `-- lock-heavy: true` ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)). Key parts — `expression`, `orders`, `include`, `operatorClass` — under [Index key parts](#index-key-parts) |
+| `version` | the optimistic-lock column, `As of 2026-11`: `update(id)` must carry it and fails `X_ENTITY_STALE` (409) when it moved. See [An optimistic lock](#an-optimistic-lock--version) |
 | `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
 | `tags` | extra cache tags this entity participates in, beyond its own `entity:<name>` |
 
 Presence of a `deletedAt` column is what makes an entity soft-deletable — not a flag.
+
+### Index key parts
+
+Four optional fields beside `on`, `As of 2026-11`. Each absent by default, so no existing index
+name, schema hash or migration moves. A bad combination is `X_INVARIANT_VIOLATED` at `entity()`
+(`declared-index-keys.ts`), never a server syntax error inside `ROLE=migrate`.
+
+```ts
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+export const users = entity('users', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    email: text(),
+    status: text(),
+    title: text(),
+    createdAt: timestamp().defaultNow(),
+  },
+  indexes: [
+    { on: ['email'], unique: true, expression: 'lower(email)' }, // unique(lower(email))
+    { on: ['orgId', 'createdAt'], orders: ['asc', 'desc'] },
+    { on: ['orgId', 'status'], include: ['title'] }, // an index-only scan reads title
+    { on: ['title'], using: 'gin', operatorClass: 'gin_trgm_ops' }, // what text `contains` needs
+  ],
+});
+```
+
+| Field | Rule |
+|---|---|
+| `expression` | the ONE key is this SQL, over **physical** column names; `on` names the columns it reads (the name and the covering rule read those). A unique expression index is no `upsertAll` conflict target (Postgres `42P10`), and no key for a concurrent `refreshView` (`X_JOB_REFRESH_VIEW_INVALID`) |
+| `orders` | one direction per key, `null` writes none. btree only; never beside `order` |
+| `include` | `INCLUDE` payload columns, the entity's own properties. btree only, never empty |
+| `operatorClass` | `'gin_trgm_ops'` on every key; needs `using: 'gin'`. `x db gen` writes `create extension if not exists pg_trgm` in the migration that first builds one |
+
+A column's own index (`.references()`, `.index()`, `.tenant()`) that the primary key, another
+total btree index or a unique invariant already leads with is **still emitted**: dropping it would
+make `x db gen` remove a live index in every existing app. It is listed on
+`RegistryEntry.coveredIndexes` (`CoveredIndex`: `name`, `columns`, `coveredBy`), outside
+`$describe()` so no schema hash moves. Nothing reads the list yet — a report and an opt-in drop are
+planned.
+
+### Substring search is `contains` on a text column
+
+`andWhere('title', 'contains', term)` on a `text()` or `char()` column is a case-insensitive
+substring match, `As of 2026-11`: `"title" ilike $1`, the term bound with `%`, `_` and `\` escaped
+— a `%` typed into a search box is a percent sign. On `jsonb` and `arrayOf()` it stays `@>`
+containment (`text-contains.ts`). Memory answers the same (both sides lower-cased; Unicode
+`toLowerCase`, so only locale-specific folds such as Turkish dotted I can differ).
+
+Served only by a trigram index: `indexes: [{ on: ['title'], using: 'gin', operatorClass:
+'gin_trgm_ops' }]`. Nothing checks it at runtime; the `exercise` step's plan sweep reports a
+sequential scan as `X_QUERY_UNINDEXED`, its fix that exact declaration (`trigramDeclaration(col)`,
+exported). Ranked full-text search stays [`.search()`](#full-text-search--the-searchindex-port).
 
 ### Which invariants reach the database
 
@@ -251,15 +306,23 @@ export async function like(postId: string): Promise<void> {
 export async function nextInvoice(year: number): Promise<number> {
   return db.invoices.lockKey(`number:${String(year)}`, async (tx) => nextNumber(year, tx));
 }
+
+// Both invoice series held for one renumbering, whichever order a caller names them in.
+export async function renumber(a: number, b: number): Promise<void> {
+  await db.invoices.lockKeys([`number:${String(a)}`, `number:${String(b)}`], async (tx) => {
+    await nextNumber(a, tx);
+    await nextNumber(b, tx);
+  });
+}
 ```
 
-| | `lock(id, (row, tx) => R, options?)` | `lockKey(key, (tx) => R, options?)` |
-|---|---|---|
-| Postgres | `select … for update`, the read path's own statement | `pg_advisory_xact_lock(hashtextextended('<table>:<tenant or ->:<key>', 0))` |
-| Scope | that row | one key, one table, one tenant: org A's key never blocks org B |
-| Absent, another tenant's, soft-deleted | `X_NOT_FOUND` | n/a |
-| No actor on a scoped entity | `X_TENANCY_UNSCOPED`, as a read | `X_TENANCY_UNSCOPED`, as a read |
-| Blank key | n/a | `X_INVARIANT` |
+| | `lock(id, (row, tx) => R, options?)` | `lockKey(key, (tx) => R, options?)` | `lockKeys(keys, (tx) => R, options?)` |
+|---|---|---|---|
+| Postgres | `select … for update`, the read path's own statement | `pg_advisory_xact_lock(hashtextextended('<table>:<tenant or ->:<key>', 0))` | the same per key, every key in ONE statement, taken in sorted order — two callers naming overlapping keys in any order never deadlock |
+| Scope | that row | one key, one table, one tenant: org A's key never blocks org B | each key as `lockKey`'s, deduplicated |
+| Absent, another tenant's, soft-deleted | `X_NOT_FOUND` | n/a | n/a |
+| No actor on a scoped entity | `X_TENANCY_UNSCOPED`, as a read | `X_TENANCY_UNSCOPED`, as a read | `X_TENANCY_UNSCOPED`, as a read |
+| Blank key | n/a | `X_INVARIANT` | `X_INVARIANT`; so are an empty list and more than `MAX_LOCK_KEYS` (64) distinct keys — the fix is one coarser key |
 
 | Rule | Detail |
 |---|---|
@@ -267,8 +330,42 @@ export async function nextInvoice(year: number): Promise<number> {
 | Writes inside `fn` | with `{ tx }`, the rule on every write. Memory undoes only what names it |
 | Bound | no wait option. The role's `statement_timeout`. A deadlock is `X_DB_SERIALIZATION_FAILURE` |
 | Memory driver | a queue per key, reentrant within one async chain; a nested lock joins the outer one's transaction; `update(id)` and `delete(id)` wait for a row's holder, the filtered writes and `upsertAll` do not; a waiter past 5 s is `X_DB_STATEMENT_TIMEOUT`, Postgres' code, usually two locks taken in opposite order |
-| A hand-written `Repo` | both are optional on the contract; the handle answers `X_LOCK_UNSUPPORTED` |
+| A hand-written `Repo` | all three are optional on the contract; the handle answers `X_LOCK_UNSUPPORTED`. Memory and `defineDriver` build `lockKeys` from their one-key lock, held in the same sorted order inside one transaction (`holdInOrder`, `lock-key.ts`) |
 | `crossTenant()` with no `orgId` | holds its own `<table>:-:<key>`, no org's. Name `orgId` to take that org's key |
+
+### An optimistic lock — `version`
+
+A form open for minutes cannot hold a row lock. `entity({ version })` makes a write that read a
+stale row fail instead of overwriting it, `As of 2026-11`:
+
+```ts
+import { database, entity, integer, text, uuid } from '@ultimat3/entity';
+
+const notes = entity('notes', {
+  columns: { id: uuid().primaryKey(), body: text(), lockVersion: integer().default(0) },
+  version: 'lockVersion',
+});
+const db = database({ notes });
+
+// `lockVersion` is the one the editor read; it travels in the mutator's input.
+export async function saveNote(id: string, body: string, lockVersion: number): Promise<void> {
+  await db.notes.update(id, { body, lockVersion });
+}
+```
+
+| Write | Rule |
+|---|---|
+| `update(id, patch)` | the patch must name the version (else `X_ENTITY_VERSION_INVALID`, 500). The statement is conditioned on it and increments it: `where "lock_version" = $n`, `set "lock_version" = "lock_version" + 1`. Moved since the read: `X_ENTITY_STALE` (409); absent: `X_NOT_FOUND` |
+| `updateMany(rows)` | every row names its version; one stale row refuses the whole batch, nothing written |
+| `updateWhere` · chain `updateAll` · `transition` · soft delete | increment it on every matched row and may not set it (`X_ENTITY_VERSION_INVALID`). Compare-and-set over a filter goes in the filter: `where({ id, lockVersion: 3 }).updateAll(patch)` |
+| `upsertAll` | `onMatch: 'update'` — the default — is refused: it would overwrite rows it never read. `onMatch: 'nothing'` is allowed |
+| `insert`, `insertAll`, `copyAll`, hard delete | untouched; an insert takes the column default |
+| Declaration | the column is an `integer()`, not nullable, with a `.default(n)`, neither key nor tenant column — else `X_ENTITY_VERSION_INVALID` at `entity()` |
+
+Memory, Postgres and `defineDriver` answer alike (`entity-conformance-version-lock.ts`); a
+`defineDriver` store gets one compare-and-set write per row. No mutator option: the version is a
+column of the row, so the input carries it and a stale submit answers 409 through any surface
+(`packages/action/src/mutator-version.test.ts`).
 
 ## The repo
 
@@ -444,6 +541,7 @@ a page later.
 | Shape | a `belongsTo` attaches the row or `null`; a `hasMany` attaches an array, empty when there are none. Always present, so "no author" and "nobody preloaded the author" cannot read the same |
 | Statements | one extra statement per named relation, resolved **concurrently** — two `preload()` calls are two statements in flight, never one after the other. Naming one relation twice is one statement |
 | Ceiling | `preload('<relation>', { max })` — the most related rows one relation may attach to one page; default 10,000 (`MAX_PRELOADED_ROWS`, the largest page a read may ask for). Past it the read is refused with `X_INVARIANT_VIOLATED`, never truncated |
+| First n per parent | `preload('<relation>', { perParent: n, order?, direction? })`, a `hasMany` only (`As of 2026-11`): at most `n` related rows per parent — "the last 3 messages of each conversation" — in ONE `cross join lateral` statement per 500 parents, each reading `n` rows off an index, not one `limit(n)` read per parent. `order` is a column of the related entity, `direction` defaults to `desc`; unnamed, the related key descending. `perParent` on a `belongsTo`, an `order` without `perParent`, or `n` outside 1–10,000 is `X_INVARIANT_VIOLATED`. A repository without `latestBy` (hand-written, `defineDriver`) answers through paged `findMany` reads: the same rows, more statements |
 | Terminals | `page()`, `all()`, `one()` resolve every named relation. `count()`, `countBy()` and `plan()` do not — a count reads no row to attach one to |
 | Projection | attached after `select()`. `select()` is widened internally with the relation's own key, so a projection can drop neither the key the preload reads nor the relation it attaches — `plan().select` reports the widened list, the one that actually ran |
 | Tenancy | the page's own tenant predicate carries onto the related read only when **both** entities are scoped by a column of that same name — a value that scopes one entity is a guess on another, and a source scoped by `workspaceId` may carry an ordinary `orgId` predicate that is a filter and not its tenancy. Carrying nothing is not silence: the related read builds its own plan, so it is refused as `X_TENANCY_UNSCOPED` rather than answered with a guess |
@@ -457,10 +555,51 @@ stated rather than inferred from a loop. The other two members of the family ask
 `findById` batches a same-microtask fan-out for itself, and a `for … of` loop over a page is
 already two statements, above.
 
+## The newest row per group is `latestBy`
+
+"The last message of each conversation" is one statement, not one `.orderBy().one()` per
+conversation, `As of 2026-11`:
+
+```ts
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const messages = entity('messages', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    conversationId: uuid(),
+    createdAt: timestamp().defaultNow(),
+  },
+});
+const db = database({ messages });
+
+// select distinct on ("conversation_id") … order by "conversation_id", "created_at" desc, "id" desc
+export const lastMessages = (orgId: string, ids: readonly string[]) =>
+  db.messages
+    .where({ orgId })
+    .andWhere('conversationId', 'in', ids)
+    .latestBy('conversationId', { order: 'createdAt' });
+```
+
+| Property | Behavior |
+|---|---|
+| Rows | one per group the chain matches; a group with no row is absent. Ordered by the group, `null` last |
+| Newest | `order` (required) in `direction` (default `desc`); ties go to the primary key in the same direction |
+| Scope | the chain's filters, tenancy and soft-delete visibility, as `page()`. Sealed columns cannot be the group or the order |
+| Bound | more than `MAX_LATEST_GROUPS` (1,000) groups is `X_INVARIANT_VIOLATED`, never truncated — the read asks for one group past the bound |
+| Refused on the chain | `orderBy()`, `limit()`, `after()`: one row per group is the whole shape, and it has no cursor (`X_INVARIANT_VIOLATED`) |
+| Cost | `DISTINCT ON` reads every row of the matched groups, then keeps one each. Bound the groups with `andWhere(group, 'in', …)`; for a few rows per parent over long histories, `preload(rel, { perParent })` reads `n` per key off an index |
+| Drivers | Postgres and memory in one pass each (`pg-latest-by.ts`, `memory-latest-by.ts`). `Repo.latestBy` is optional: a hand-written repository or a `defineDriver` store is answered by paged `findMany` reads folded in process (`latestRows`, `latest-by.ts`) — correct, never one statement |
+
 ## Reading a whole table is a loop of pages
 
 A page is bounded on purpose, so reading everything is iteration — and the iteration is a terminal
 on the same chain, not something written around `page()`, `As of 2026-08`:
+
+`.all()` is that one page too — 50 rows unless the chain says `.limit(n)`. When a next page existed
+and the chain named no limit, a development or test process logs one warning, `entity.all.truncated`
+(`ALL_TRUNCATED`), naming the entity and both ways out: `.inBatches(n)` for every row, `.limit(n)`
+for one page meant. Staging and production say nothing; refusing is a break, and waits for a major.
 
 ```ts
 // One statement per batch, one page of rows in memory at a time.
@@ -538,6 +677,45 @@ a `number | undefined` — and the `undefined` is load-bearing.
 
 There is no `groupBy()` builder and no error code of its own: `countBy` is a terminal on the chain
 that already exists, over exactly the rows `count()` counts.
+
+### A filtered count and several measures, one statement
+
+`countBy(column, { where })` counts only the rows that satisfy `where` in each group, and
+`aggregate({ name: measure })` answers several measures at once, each with its own filter —
+`count(*) filter (where …)`, `As of 2026-11`:
+
+```ts
+import { database, entity, money, text, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), authorId: uuid(), status: text() },
+});
+const orders = entity('orders', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), status: text(), total: money() },
+});
+const db = database({ posts, orders });
+
+// Every author the chain matched, with 0 for one who has published nothing.
+export const publishedPerAuthor = (orgId: string) =>
+  db.posts.where({ orgId }).countBy('authorId', { where: [['status', 'eq', 'published']] });
+
+// { all: number, paid: number, revenue: MoneyValue | null } in one statement.
+export const orderTile = (orgId: string) =>
+  db.orders.where({ orgId }).aggregate({
+    all: { fn: 'count' },
+    paid: { fn: 'count', where: [['status', 'eq', 'paid']] },
+    revenue: { fn: 'sum', column: 'total', where: [['status', 'eq', 'paid']] },
+  });
+```
+
+| Property | Behavior |
+|---|---|
+| `where` | `andWhere`'s three arguments as a tuple, per filter; narrows that measure only, inside the rows the chain matched (filters, tenancy, soft delete) |
+| `countBy` with `where` | a group the chain matched but no row satisfies is present with `0` — what tells it from `andWhere(…).countBy(col)`, where it is absent |
+| Measures | `fn` is `'count'` (no `column`: `count(*)`; with one, its non-null values), `'sum'`, `'avg'`, `'min'`, `'max'`. At most `MAX_MEASURES` (32) |
+| Answers | a `count` a number, `0` over no rows; the rest exactly what `sum()`/`avg()`/`min()`/`max()` answer — decimal text, money a `MoneyValue`, `null` over no rows. Never a float |
+| Refused | before any row is read, `X_AGGREGATE_UNSUPPORTED`: an unknown function, an undeclared column or filter column, a kind with no aggregate, `avg` over money, no measures or more than 32. Two currencies under one money `sum`: `X_AGGREGATE_MIXED_CURRENCY` |
+| Drivers | one statement on Postgres and memory. A `defineDriver` store composes both from the capabilities it already declares (`aggregate:countBy`, `aggregate:<fn>`): several store calls, the same answer. A hand-written `Repo` without `aggregates` answers `aggregate()` with `X_AGGREGATE_UNSUPPORTED` |
 
 ## A count per day is a series
 
@@ -813,7 +991,39 @@ refuses it at the wire first, as a 400. `As of 2026-09-29`.
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
 `.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)` ·
-`.sealed()` on `text()` — [Sealed columns](#sealed-columns).
+`.sealed()` on `text()` — [Sealed columns](#sealed-columns) · `.collate('C')` on `text()` — [below](#code-point-collation).
+
+### Code-point collation
+
+`text().collate('C')` declares `collate "C"`, `As of 31.11.0`: the column orders and compares by
+code point — the order the memory driver and a live window's matcher already keep. Without it
+Postgres orders by the database's collation (`en_US.utf8`: `apple` before `Banana`), which is why a
+live query ordered by such a column logs `query.live.order_collation`
+([Queries](Queries-And-Live-Queries#live-true-requires-deterministic-bounded-sql)).
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+export const tags = entity('tags', {
+  columns: {
+    id: uuid().primaryKey(),
+    name: text({ max: 40 }).collate('C'), // a live list may .orderBy('name')
+  },
+});
+```
+
+| Rule | Where |
+|---|---|
+| `'C'` is the only collation a column may declare; another is `X_INVARIANT_VIOLATED` at `entity()` | `packages/entity/src/sealed-column.ts` (`declaredCollation`) |
+| only `text()` has `.collate()`; `enumerated()`, `url()`, `tz()`, `locale()` store text and do not | `TextColumn` in `packages/entity/src/types.ts` |
+| `x db gen` writes `collate "C"` after the type on `create table` and `add column`; declaring or dropping it on an existing column is one in-place `alter column … type text collate "C"` (or `"default"`), its reverse in `down`; a retype restates it, since Postgres resets a collation on a type change | `packages/db/src/generate-collation.test.ts` |
+| the snapshot records `collation` only when declared, so no existing snapshot moves | same |
+| drift does not read a live column's collation, as it reads no column type: a hand-set collation is not reported | `packages/db/README.md`, "A declared collation" |
+
+Declaring it changes the visible order of every read of that column, not only the live one. On an
+existing table the `alter` is Postgres' `alter column … type`: an `ACCESS EXCLUSIVE` lock while every
+index on the column is rebuilt. `X_MIGRATION_LOCK_HEAVY` does not flag it — a large table wants a
+quiet window.
 
 **A date is not an instant.** `effective_on` is the date a rate applies, not a moment; stored as a
 `timestamptz` it is a different date on either side of midnight for half the planet. `PlainDate`
@@ -1068,10 +1278,11 @@ export const likes = entity('likes', {
 ```
 
 - **Retention is a promise `x verify` checks.** A `retain` no `purge()` covers is `X_ENTITY_RETAIN_UNSWEPT` in the `manifest` step. `purge({ entities: 'declared' })` covers every one, history tables included, and needs no line per entity.
-- **History is recorded by trigger**, so `updateWhere`, a cascade and raw SQL are recorded too. An update that changes nothing records nothing; a change to a counted column, or to columns `history: { ignore }` names, alone records nothing — on both drivers (`history-ignore.test.ts`). `ignore` takes the entity's own columns, typed; another name is `X_INVARIANT_VIOLATED`. Declaring it changes the trigger's arguments, so `x db gen` writes the migration that reinstalls it. `.sealed()` columns stay ciphertext in the images. `actor_id`/`request_id` are what the WRITE'S transaction set (`x.actor`, `x.request`): the repository sets them before its first write to a history entity inside a transaction; an autocommit write records `null`, never a guess. Update of a history row is refused always; delete only under `x.purge` naming that table, which the retention sweep sets (`X_ENTITY_APPEND_ONLY`, SQLSTATE `23001`). Reading it is an ordinary, tenant-scoped, cursor-paged read: `database({ posts, postsHistory: posts.$history })`.
+- **History is recorded by trigger**, so `updateWhere`, a cascade and raw SQL are recorded too. An update that changes nothing records nothing; a change to a counted column, or to columns `history: { ignore }` names, alone records nothing — on both drivers (`history-ignore.test.ts`). `ignore` takes the entity's own columns, typed; another name is `X_INVARIANT_VIOLATED`. Declaring it changes the trigger's arguments, so `x db gen` writes the migration that reinstalls it. `.sealed()` columns stay ciphertext in the images. `actor_id`/`request_id` are what the WRITE'S transaction set (`x.actor`, `x.request`): the repository sets them before its first write to a history entity inside a transaction; an autocommit write records `null`, never a guess. Update of a history row is refused always; delete only under `x.purge` naming that table, which the retention sweep and a subject erase set (`X_ENTITY_APPEND_ONLY`, SQLSTATE `23001`). Reading it is an ordinary, tenant-scoped, cursor-paged read: `database({ posts, postsHistory: posts.$history })`.
 - **One row's history is `history(db.postsHistory, id)`**: every version, oldest first, each numbered `version` from 1 — ordered by chaining each `before` onto the previous `after` across every version, `at` only breaking ties: `at` is the transaction's START, so a transaction that began first and committed last carries the earlier `at` and the later image. `history(table, id, { limit: n })` reads the `n` versions with the latest `at` (ties at the edge kept), numbered as the whole history numbers them — chosen by transaction start, so a transaction that began before that window and committed inside it can fall outside. The read is the history table's, so another tenant's row reads back `[]`; the policy is the query or action that calls it. `version` counts what is retained: after a `retain` sweep, 1 is the oldest kept. As of 31.3.
 - **A counter locks its parent row.** A hot parent serializes its writers; where that matters, `countBy` plus a cache is the alternative. A soft-deleted child is not counted. A new counter's migration recounts once, so an existing table starts true; `x db recount posts.likeCount` reports drift and `--write` repairs it.
-- **A counter's write is the trigger's, not the repository's.** The WAL replicator reports it; the in-process `entity.row` event (what `x dev` on PGlite and the memory driver feed live queries from) does not, so a live view of the counter on those does not move until the parent row is written again. A counter a page shows live stays the mutator's job until that event reports trigger writes. As of 2026-11.
+- **A counter's write is reported as the parent's change.** The WAL replicator sees the trigger's write; the in-process `entity.row` event (what `x dev` on PGlite and the memory driver feed live queries from) reports it too: after a child write, while `entity.row` has a subscriber, the parents whose count moved are read back in the write's transaction and each is an `update` at COMMIT, `before` the row with the count moved back. A filtered write (`deleteWhere`, `updateWhere`, a chain's `deleteAll`/`updateAll`) pinned to one parent by its key reports that row with `before: null`; one spanning parents is `entity.bulk` for the parent table. With no subscriber, nothing is read. So a live count needs no recount in the mutator (`counter-observed.test.ts`). As of 2026-11.
+- **An erase reaches history.** A parent `subjectErase()` deletes or anonymizes writes the person into a before image, so its `<table>_history` needs a line in `defineSubject({ tables })`: `'delete'` removes every image of those rows in the parent's own transaction — under `x.purge` on Postgres, under `purgingHistory(table, work)` in memory, the one delete each lets through — `{ retain: '<why>' }` keeps them, `anonymize` is refused. An undeclared one is `X_SUBJECT_TABLE_UNDECLARED`, an `anonymize` `X_SUBJECT_TREATMENT_INVALID`; images written before an upgrade are reached only by the next erase of that subject ([Jobs and workflows](Jobs-And-Workflows#one-persons-data--subjectexport-and-subjecterase)). As of 2026-11.
 - **Memory answers as Postgres does**: the memory driver records history and moves counters in its repository (`counter.test.ts`, `history.test.ts` are the parity tables).
 - Drift names a missing or disabled lifecycle trigger: `X_LIFECYCLE_TRIGGER_MISSING`, its fix the statements that re-create it.
 
@@ -1162,7 +1373,10 @@ A store that is not Postgres — Mongo, Cassandra, a key-value store — is a `D
 An undeclared capability (`upsert`, `matches`, `aggregate:<kind>`, `transactions`) is
 `X_DRIVER_UNSUPPORTED` with `meta.capability`; a declared one with no method behind it is
 `X_DRIVER_CAPABILITY_MISSING` when the table opens. `lock` and `series` undeclared answer the
-shipped `X_LOCK_UNSUPPORTED` / `X_ENTITY_SERIES_UNSUPPORTED`.
+shipped `X_LOCK_UNSUPPORTED` / `X_ENTITY_SERIES_UNSUPPORTED`. A child entity whose column declares
+`countedIn` is refused when `database()` builds its repository (`X_DRIVER_UNSUPPORTED`,
+`meta.capability: 'countedIn'`, `driver-counters.ts`): a custom store has no trigger and no
+repository hook, so the parent's count would never move. `As of 2026-11`.
 
 A searchable entity's version is strictly increasing per row, and a custom store advances it in
 its OWN write, atomically: `update(filter, patch, advance?)` writes `advance.property` per matched

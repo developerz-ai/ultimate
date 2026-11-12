@@ -14,6 +14,13 @@
 import { finiteOption, JOBS_CONCURRENCY_DEFAULT } from '@ultimat3/core';
 import { DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
 
+/**
+ * How long a worker's registry row outlives its last renewal, renewed every third of it. Its own
+ * clock, not the lease heartbeat's: the row is what `x jobs list`, `x deploy verify` and the
+ * scaler's demand READ, and a 10s rewrite of it bought them nothing a 20s one does not.
+ */
+export const WORKER_REGISTRY_TTL_MS = 60_000;
+
 /** The subset of `WorkerOptions` this module reads. Structural, so `WorkerOptions` satisfies it. */
 export interface WorkerNumericOptions {
   readonly concurrency?: number | Readonly<Record<string, number>> | undefined;
@@ -26,6 +33,13 @@ export interface WorkerTimings {
   readonly visibilityTimeoutMs: number;
   readonly pollIntervalMs: number;
   readonly heartbeatIntervalMs: number;
+  /**
+   * The registry row's TTL: `WORKER_REGISTRY_TTL_MS`, or the visibility timeout when longer — a
+   * killed worker's row never lapses while the jobs it held are still leased to it.
+   */
+  readonly registryTtlMs: number;
+  /** A third of `registryTtlMs`: two renewals can fail before the row lapses. */
+  readonly registryIntervalMs: number;
   /** Slots for one queue, by OWN key — see `slotsFor` below. */
   readonly slotsFor: (queue: string) => number;
 }
@@ -68,10 +82,13 @@ export function resolveWorkerTimings(options: WorkerNumericOptions): WorkerTimin
       );
     }
   }
+  const registryTtlMs = Math.max(WORKER_REGISTRY_TTL_MS, visibilityTimeoutMs);
   return {
     visibilityTimeoutMs,
     pollIntervalMs,
     heartbeatIntervalMs,
+    registryTtlMs,
+    registryIntervalMs: Math.floor(registryTtlMs / 3),
     slotsFor: slotTable(declared),
   };
 }

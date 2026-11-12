@@ -86,6 +86,7 @@ export {
   MAX_CREDENTIAL_TTL_MS,
   resetAuthenticator,
 } from './hooks';
+export { acceptsHtml } from './html-render';
 export { socketIdleTimeoutSeconds } from './idle-timeout';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
 export { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
@@ -95,6 +96,7 @@ export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { NavigationPurpose } from './navigation';
 export {
+  hostlessPath,
   locationFor,
   navigationGate,
   navigationPurpose,

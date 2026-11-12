@@ -15,10 +15,10 @@ import {
 describe('pg queue SQL', () => {
   test('the claim uses FOR UPDATE SKIP LOCKED — without it N workers serialise', () => {
     expect(SQL_CLAIM).toContain('for update skip locked');
-    expect(SQL_CLAIM).toContain("set state      = 'running'");
+    expect(SQL_CLAIM).toContain("set state            = case when not p.exhausted then 'running'");
     // Lease reclaim: a crashed worker's job becomes claimable again.
     expect(SQL_CLAIM).toContain("state = 'running' and visible_at <= now()");
-    expect(SQL_CLAIM).toContain('attempt    = j.attempt + 1');
+    expect(SQL_CLAIM).toContain('attempt          = j.attempt + (not p.exhausted)::int');
   });
 
   test('idempotency is enforced per JOB and per TENANT by a partial unique index over live states only', () => {

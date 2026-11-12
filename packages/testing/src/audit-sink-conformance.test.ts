@@ -1,9 +1,12 @@
-// The audit-sink suite over `@ultimat3/action`'s `memoryAuditSink()`, and the proof it can fail: a
-// sink that files every record as an action's, the way `x_audit` did before reads were audited, a
-// "persisting" one that stores the input verbatim, and one whose serialisation fallback does.
+// The audit-sink suite over `@ultimat3/action`'s `memoryAuditSink()`, bare and group-committed, and
+// the proof it can fail: a sink that files every record as an action's, the way `x_audit` did before
+// reads were audited, a "persisting" one that stores the input verbatim, one whose serialisation
+// fallback does, and a batch that keeps one row of many.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { auditableInput, memoryAuditSink } from '@ultimat3/action';
+import type { BatchedAuditSink } from '@ultimat3/action/adapter';
+import { batchedAuditSink } from '@ultimat3/action/adapter';
 import type { AuditRecord } from '@ultimat3/core/adapter';
 import type { AuditKept, AuditSinkSubject } from './audit-sink-conformance';
 import { AUDIT_SINK_CHECKS, auditSinkConformance } from './audit-sink-conformance';
@@ -51,6 +54,29 @@ function memorySubject(
 
 describe(testName('unit', 'the memory audit sink'), () => {
   behavesLike(auditSinkConformance, () => memorySubject());
+});
+
+/** The memory ring behind `batchedAuditSink`; `keep` decides what of a batch reaches the ring. */
+function batchedSubject(
+  keep: (records: readonly AuditRecord[]) => readonly AuditRecord[] = (records) => records,
+): AuditSinkSubject & { readonly batched: BatchedAuditSink } {
+  const ring = memorySubject();
+  const batched = batchedAuditSink(
+    {
+      write: async (record) => ring.sink.write(record),
+      writeMany: async (records) => {
+        for (const record of keep(records)) await ring.sink.write(record);
+      },
+    },
+    { maxDelayMs: 0 },
+  );
+  return { ...ring, sink: batched, batched };
+}
+
+describe(testName('unit', 'the memory audit sink, group-committed'), () => {
+  const subject = batchedSubject();
+  afterAll(() => subject.batched.close());
+  behavesLike(auditSinkConformance, () => subject);
 });
 
 const CREDENTIAL = /password|apikey|token/i;
@@ -104,6 +130,16 @@ describe(testName('unit', 'an audit sink that breaks the contract fails conforma
     await hostile.run(
       memorySubject((record) => ({ ...record, input: auditableInput(record.input) }), true),
     );
+  });
+
+  test('a group commit that keeps one row of a batch', async () => {
+    const firstOnly = batchedSubject((records) => records.slice(0, 1));
+    try {
+      const concurrent = check('concurrent writes are each their own record');
+      await expect(concurrent.run(firstOnly)).rejects.toThrow();
+    } finally {
+      await firstOnly.batched.close();
+    }
   });
 
   test('every check has a name of its own', () => {

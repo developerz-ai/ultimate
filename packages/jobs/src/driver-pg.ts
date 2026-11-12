@@ -1,19 +1,18 @@
 // The DEFAULT driver: a Postgres queue. Zero infra to start — the database you already have
 // is the queue. `SELECT ... FOR UPDATE SKIP LOCKED` lets N workers claim disjoint batches
 // without a coordinator, and the visibility timeout (`visible_at`) makes a worker crash cost
-// one lease instead of one job. The statements themselves live in `driver-pg-sql.ts`, the schema
-// they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
+// one lease instead of one job. Settles' counts are batched (`counter-batch.ts`) and written every
+// ten seconds and on `close()`. Statements: `driver-pg-sql.ts`; schema: `driver-pg-ddl.ts`.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
 import { finiteCount, liveClock, renderCauseValue, uuidV7 } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { listedRunId } from './backfill-ledger';
 import { nowMs } from './clock';
+import { counterBatch } from './counter-batch';
 import { nackOutcome } from './counters';
 import type {
   AckOptions,
-  ClaimedJob,
-  ClaimOptions,
   EnqueueRequest,
   EnqueueResult,
   HeartbeatOptions,
@@ -23,18 +22,14 @@ import type {
   QueueDemand,
   QueueStats,
 } from './driver';
-import {
-  assertClaimBounds,
-  assertClaimQueues,
-  DEFAULT_QUEUE,
-  nackState,
-  REQUEUEABLE_STATES,
-} from './driver';
+import { DEFAULT_QUEUE, nackState, REQUEUEABLE_STATES } from './driver';
+import { pgClaim } from './driver-pg-claim-sql';
 import { SQL_QUEUE_DEMAND } from './driver-pg-demand-sql';
 import { pgEnqueueMany } from './driver-pg-enqueue-many';
 import { pgOperator } from './driver-pg-operator';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
+import { SQL_COUNTER_FLUSH } from './driver-pg-settle-sql';
 import {
   SQL_ACK,
   SQL_ADVISORY_UNLOCK,
@@ -43,7 +38,6 @@ import {
   SQL_BACKFILL_PROGRESS,
   SQL_BACKFILL_START,
   SQL_CANCEL,
-  SQL_CLAIM,
   SQL_ENQUEUE,
   SQL_FIND_LIVE_BY_KEY,
   SQL_HEARTBEAT,
@@ -63,10 +57,11 @@ import {
   SQL_STEP_PUT,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
+import { JOBS_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { DriverUnavailableError, JobDuplicateError, LeaseLostError } from './errors';
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
-import { MAX_ERROR_STACK_LENGTH } from './introspection';
+import { COUNTER_BUCKET_MS, MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { HeldLease, LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
@@ -208,6 +203,11 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     executor ??= resolveExecutor(options.executor);
     return executor;
   };
+  const tally = counterBatch({
+    write: async (rows) => {
+      await exec().query(SQL_COUNTER_FLUSH, [COUNTER_BUCKET_MS, JSON.stringify(rows)]);
+    },
+  });
 
   const job = async (jobId: string): Promise<JobRecord | undefined> => {
     const rows = await exec().query<JobRow>(SQL_JOB_GET, [jobId]);
@@ -217,7 +217,7 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
 
   const introspect: JobIntrospection = {
     job,
-    ...pgOperator(exec, job),
+    ...pgOperator(exec, job, () => tally.flush()),
     async deadLetters(limit = 100) {
       const rows = await exec().query<JobRow>(SQL_JOB_DEAD_LETTERS, [
         finiteCount('the pg driver dead letters', 'limit', limit),
@@ -265,6 +265,9 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     backfills: postgresBackfillLedger(exec),
     leases: postgresLeaseStore(exec),
     introspect,
+    async wake(queue) {
+      await exec().query(SQL_WAKE, [JOBS_WAKE_CHANNEL, queue ?? '']);
+    },
 
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);
@@ -336,43 +339,17 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     // settled between that statement and the read behind it.
     enqueueMany: (requests) => pgEnqueueMany(exec, clock, requests, (one) => driver.enqueue(one)),
 
-    async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
-      assertClaimQueues('pg', claimOptions);
-      assertClaimBounds('pg', claimOptions);
-      const rows = await exec().query<JobRow>(SQL_CLAIM, [
-        claimOptions.queues,
-        claimOptions.limit,
-        claimOptions.workerId,
-        claimOptions.visibilityTimeoutMs,
-        claimOptions.dropExhausted ?? [],
-      ]);
-      const at = nowMs(clock);
-      // Both arms of the statement answer, told apart by the state each wrote: `running` is a
-      // claim, `dead` a row the claim buried — reported, never handed out as work.
-      const records = rows.map(toJobRecord);
-      const buried = records.filter((record) => record.state !== 'running');
-      if (buried.length > 0) claimOptions.onExhausted?.(buried);
-      return records
-        .filter((record) => record.state === 'running')
-        .map((record) => ({
-          ...record,
-          claimedBy: claimOptions.workerId,
-          claim: record.claim ?? 0,
-          claimedAt: at,
-          visibleAt: record.visibleAt ?? at + claimOptions.visibilityTimeoutMs,
-        }));
-    },
+    // Which statement, and its three kinds of answer row — `driver-pg-claim-sql.ts`.
+    claim: (claimOptions) => pgClaim(exec, clock, claimOptions),
 
     // Both settles answer whether they LANDED: no row back is a settle from a worker that no
     // longer owns the job (`SQL_ACK` says why both fences exist), and the caller logs it.
     async ack(jobId: string, by: AckOptions): Promise<boolean> {
-      const rows = await exec().query<{ name: string }>(SQL_ACK, [
-        jobId,
-        by.workerId,
-        Math.round(by.durationMs ?? 0),
-        by.claim,
-      ]);
-      return rows.length > 0;
+      const rows = await exec().query<{ name: string }>(SQL_ACK, [jobId, by.workerId, by.claim]);
+      const settled = rows[0];
+      if (settled === undefined) return false;
+      tally.add(settled.name, 'done', Math.round(by.durationMs ?? 0), nowMs(clock));
+      return true;
     },
 
     async nack(jobId: string, nackOptions: NackOptions): Promise<boolean> {
@@ -389,13 +366,15 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
         nackOptions.error ?? null,
         nackOptions.workerId,
         nackOptions.stack?.slice(0, MAX_ERROR_STACK_LENGTH) ?? null,
-        outcome === 'retried' ? 1 : 0,
-        outcome === 'failed' ? 1 : 0,
-        outcome === 'dead' ? 1 : 0,
-        Math.round(nackOptions.durationMs ?? 0),
         nackOptions.claim,
       ]);
-      return rows.length > 0;
+      const settled = rows[0];
+      if (settled === undefined) return false;
+      // A shed, a suspension and a drained attempt are handed back uncounted: not history.
+      if (outcome !== undefined) {
+        tally.add(settled.name, outcome, Math.round(nackOptions.durationMs ?? 0), nowMs(clock));
+      }
+      return true;
     },
 
     async heartbeat(jobId: string, heartbeatOptions: HeartbeatOptions): Promise<boolean> {
@@ -440,6 +419,9 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
         oldestReadyMs: Math.round(num(row.oldest_ready_ms)),
       }));
     },
+
+    // The executor is the boot's, and closes with it; this writes the counts still in the batch.
+    close: () => tally.stop(),
   };
   return driver;
 }

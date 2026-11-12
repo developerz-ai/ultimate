@@ -1,6 +1,7 @@
 // One `indexes: [...]` entry of `entity(name, { indexes })` turned into the `IndexDef` it declares,
 // refusing what Postgres would refuse later. Split out of `entity.ts` at the 500-line ceiling.
 
+import { declaredKeyPartsOf } from './declared-index-keys';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
 import type { IndexInit } from './index-init';
@@ -57,8 +58,9 @@ export const declaredIndexOf = <C extends ColumnMap>(
       );
     }
   }
+  const keys = declaredKeyPartsOf(name, index, resolve);
   return {
-    name: indexName(name, table, columns, unique, index.order, where, index.using),
+    name: indexName(name, table, columns, unique, index.order, where, index.using, keys),
     columns,
     unique,
     ...(index.order === undefined ? {} : { order: index.order }),
@@ -69,5 +71,8 @@ export const declaredIndexOf = <C extends ColumnMap>(
     // How it is BUILT, so not part of the name. Absent stays absent — the default every existing
     // index already projects — and only an explicit ask, either way, rides along.
     ...(index.concurrently === undefined ? {} : { concurrently: index.concurrently }),
+    // The four key parts (E8), each absent unless declared — so no name, description or snapshot
+    // of an index that declares none moves.
+    ...keys,
   };
 };

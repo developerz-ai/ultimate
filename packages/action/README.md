@@ -189,6 +189,31 @@ a stream. A chunk its schema refuses, or `stream:` beside a handle that is not a
 aborts `ctx.signal`. Every typed-client method carries `.stream`, because the name-only `rpc` proxy
 cannot see a declaration: +2,064 B per island that uses `rpc` (measured 2026-11-06).
 
+## `native:` — a browser form's answer
+
+A `<form method="post">` (scripting off, or the client router's submit) to an action declaring
+`native` is answered `303` to `success(output)`, or — refused with a 4xx other than
+`X_UNAUTHENTICATED`, which keeps the sign-in redirect — to
+`refusal(refusal)`, else a `Referer` on this host. The outcome rides in a one-read flash cookie:
+the action, and for a refusal its `code` and each issue's `path`/`rule`/`params`, never a value.
+The next page reads it once, in `load`, with `useActionAnswer(action | name?)`. A `fetch`, the typed
+client, MCP and `.job()` are answered exactly as before. A `page.tsx` form posting to an action
+with no `native` is an `X_NATIVE_FORM_UNANSWERED` warning on `main` at `x verify` (the
+`manifest` step), a refusal planned for `next`.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+export const createPost = action({
+  input: t.object({ title: t.string.min(3) }),
+  output: t.object({ id: t.string }),
+  policy: can('post:create'),
+  native: { success: (post) => `/posts/${post.id}`, refusal: () => '/posts/new' },
+  handle: async ({ input }) => ({ id: input.title }),
+});
+```
+
 ## Path derivation
 
 One rule per app, declared once — `defineApi({ http: { pathStyle } })` — plus a per-action pin.
@@ -447,6 +472,47 @@ await moveOrder({ id, from: 'pending', to: 'paid' }, { ctx });
 
 `table` is typed structurally (`TransitionTarget`), not imported — a real `Table` satisfies the
 seam as written.
+
+## `uploadFlow()` — an upload as one declaration
+
+`As of 2026-11-12`. A direct upload is two writes, and an app used to write both: the grant and the
+attach. `uploadFlow()` **returns the pair** — two `action`s, one `PRIMITIVE_FACTORIES` row — so each
+half gets its route, typed client and contract tests, and `uploadFile({ file, grant: client.<request> })`
+from `@ultimat3/storage` drives the browser half unchanged.
+
+```ts
+import { uploadFlow } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare function postAuthor(postId: string): Promise<string | null>;
+declare function setPostCover(postId: string, key: string): Promise<void>;
+
+export const { request: requestPostCover, confirm: confirmPostCover } = uploadFlow({
+  name: 'cover',                                  // the field: org/<org>/post/<id>/cover/…
+  // Both halves' `row:` loader — the policy judges what this returns, confirm lands on it.
+  target: async ({ id }) => ({
+    entity: 'post',
+    id: id ?? '',
+    authorId: id === undefined ? null : await postAuthor(id),
+  }),
+  accept: ['image/png', 'image/jpeg', 'image/webp'],
+  maxBytes: 5 * 1024 * 1024,
+  policy: can<unknown, { readonly authorId: string | null }>(
+    'post:update',
+    ({ actor, row }) => row !== null && actor !== null && row.authorId === actor.id,
+  ),
+  attached: ({ target, object }) => setPostCover(target.id, object.key), // idempotent: may re-run
+});
+```
+
+| Rule | Why |
+|---|---|
+| `request` grants under `pending/`, **never** onto the row's key | a targeted grant puts unsniffed bytes where a row reads them, and is refused outright with an `uploadScanner` (`X_STORAGE_TARGET_UNSCANNED`) |
+| `confirm` is `promoteAttachment` | the stored object is measured against `maxBytes`, its head **sniffed against `accept`** (`X_STORAGE_TYPE_REJECTED`, left pending) and scanned when a scanner is installed — the check a presigned s3 PUT cannot make |
+| the org is the **actor's** | an actor with none is `X_TENANCY_ACTOR_ORG_REQUIRED` before anything is signed |
+| `target` is both halves' `row:` loader | the `policy` judges the row the `id` names, once per call, before anything is signed or moved. A rule over the permission alone (`can('post:update')`) lets any holder attach to any post an `id` names: carry the column the rule reads (`authorId`) and check it |
+| one `policy` for both halves | whoever may not attach to this row may not upload for it either |
+| a doubled `confirm` answers the attached object | `X_STORAGE_ALREADY_PROMOTED` is caught and the object it names returned — only ever this row's key. `attached` runs on **every** successful confirm, a retry included, so a first call whose bytes moved but whose row write failed is completed by the retry: keep it idempotent |
 
 ## Determinism + idempotency
 
@@ -813,6 +879,7 @@ one would make three of them wrong.
 |---|---|---|
 | `memoryAuditSink({ maxRecords })` | the newest `DEFAULT_MAX_AUDIT_RECORDS` (1,000) records, verbatim. **It DROPS** — `dropped` counts what it discarded | `x dev`, tests |
 | `postgresAuditSink({ executor })` | one append-only `x_audit` row per attempt. Drops nothing | anything that has to keep its trail |
+| `postgresAuditSink({ executor, groupCommit: true })` | the same rows; concurrent attempts share one insert (`maxRecords` 256, `maxDelayMs` 5 by default, or pass `{ maxRecords, maxDelayMs }`) | a pod whose audited calls each wait on their own `INSERT` round trip |
 
 The memory sink is bounded because a record pins a whole `Ctx`: at 50 audited writes a second an
 unbounded array is 4.3M immortal records a day and the pod dies holding the trail it was
@@ -837,6 +904,14 @@ apply its own schema. Installing a sink stays your one line, deliberately: there
 `audit: true` with none installed keeps refusing with `X_AUDIT_SINK_MISSING` instead of recording
 into a ring. `executor` is a client that already speaks `(text, values)` — never `Bun.sql`, whose
 `.query` is `undefined`.
+
+**Group commit is opt-in, and changes no failure policy.** `groupCommit` queues each record for up
+to `maxDelayMs` (or until `maxRecords` are queued) and writes the batch as ONE
+`insert … select … from jsonb_to_recordset($1)`; each `write()` resolves or rejects with its own
+batch, so a failed statement is `X_AUDIT_SINK_FAILED` (or `X_QUERY_AUDIT_SINK_FAILED`) on every
+call it carried — none succeeds silently. The queue flushes on drain, in the `inflight` phase,
+before the pool closes. A sink of your own with a `writeMany(records)` gets the same through
+`batchedAuditSink(sink, { maxRecords, maxDelayMs })` from `@ultimat3/action/adapter`.
 
 `x_audit` carries the framework's own facts as columns — the action, the surface, the outcome,
 the actor, the correlation ids, the idempotency key — and the parsed `input` as `jsonb`, redacted
@@ -968,6 +1043,10 @@ The boot's installers live here, never on the `.` barrel: `installIdempotencySto
 `resetIdempotency()` / `resetMeterStore()`, the port types and the errors a store throws. An app
 swaps a store with `idempotencyStore:` / `meterStore:` in `apps/<app>/runtime.ts`.
 
+`batchedAuditSink(sink, { maxRecords?, maxDelayMs? })` is group commit for any `BatchAuditSink`
+(an `AuditSink` with `writeMany`): `flush()`, `close()` (flush, then drop its drain hook) and
+`pending`. `postgresAuditSink({ groupCommit })` is this over the Postgres sink.
+
 `overrideHandler(action, handle | undefined)` puts a test double where `handle` is, on every
 surface — a direct call, `.as()`, HTTP, MCP, `.job()`, `.stream()` (the drain reads it per call).
 The policy, the rate limit, the input parse, the meter, idempotency and the output parse still run
@@ -1040,7 +1119,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 ## Boundaries
 
-Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `db`, `entity`, `policy`, `http`. Never imports
+Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `db`, `storage`, `entity`, `policy`, `http`. Never imports
 `query`, `jobs`, `realtime` (same tier) or anything above it — those import *this*.
 
 ## Supporting exports

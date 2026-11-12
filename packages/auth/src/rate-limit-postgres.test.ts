@@ -16,7 +16,7 @@ import {
   SQL_AUTH_REFUND,
   SQL_AUTH_TAKE,
 } from './rate-limit-postgres';
-import { SQL_AUTH_LIMIT_TABLES } from './tables';
+import { AUTH_LOCKOUTS_STORAGE, SQL_AUTH_LIMIT_TABLES } from './tables';
 
 const NOW = new Date('2026-08-09T12:00:00.000Z');
 const clock = frozenClock(NOW);
@@ -180,13 +180,26 @@ describe('the postgres auth limiter', () => {
   // A table made by the previous release has neither column. Both arrive additively, with a
   // default, so the replica still running that release goes on reading and writing its two.
   test('a table from before the reservation is upgraded in place, additively', () => {
-    const upgrades = SQL_AUTH_LIMIT_TABLES.split(';').filter((line) => line.includes('alter '));
+    const upgrades = SQL_AUTH_LIMIT_TABLES.split(';').filter((line) => line.includes('add column'));
     expect(upgrades).toHaveLength(2);
     for (const upgrade of upgrades) {
       expect(upgrade).toContain('add column if not exists');
       expect(upgrade).toContain('not null default');
     }
     expect(SQL_AUTH_LIMIT_TABLES).not.toContain('drop ');
+  });
+
+  // One declaration, rendered by db's `tableDdl`: the same value drift compares against
+  // `pg_class`, so the table the boot creates and the storage drift expects cannot disagree. Logged,
+  // and the alter that keeps it logged runs at every boot: a crash must never forget a lockout.
+  test('the table is rendered from its declared storage: logged, and converged to logged', () => {
+    expect(AUTH_LOCKOUTS_STORAGE).toEqual({
+      table: 'x_auth_lockouts',
+      fillfactor: undefined,
+      unlogged: false,
+    });
+    expect(SQL_AUTH_LIMIT_TABLES).not.toContain('create unlogged table');
+    expect(SQL_AUTH_LIMIT_TABLES).toContain('alter table x_auth_lockouts set logged;');
   });
 
   // The instants are what make the window SLIDE. A counter column would be a fixed window, which

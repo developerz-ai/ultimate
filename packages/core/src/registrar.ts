@@ -76,6 +76,8 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       // more specific answer wins. A `kind: 'action'` here would be the one row the scan disagrees
       // with, and it would disagree silently in the direction that loses information.
       { factory: 'transition', pkg: '@ultimat3/action', kind: 'mutator' },
+      // Two actions, `request` and `confirm`, from one declaration: each is an `action`.
+      { factory: 'uploadFlow', pkg: '@ultimat3/action', kind: 'action' },
       { factory: 'agent', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'agentJob', pkg: '@ultimat3/ai', kind: 'job' },
       { factory: 'hive', pkg: '@ultimat3/ai', kind: 'action' },

@@ -21,3 +21,19 @@ export const grantDisabled = (grantType: string): AuthError =>
     cause: `a client asked for grant_type ${renderCauseValue(grantType)}, which authorizationServer({ grants }) does not enable`,
     fix: "authorizationServer({ grants: ['authorization_code', 'refresh_token', '<grant>'] })   # with its lifetime — or the client uses an enabled grant",
   });
+
+/** The lists of `RegisterClientInput` a value can be refused from. */
+export type ClientListField = 'redirectUris' | 'grantTypes' | 'scopes' | 'resources';
+
+/**
+ * 422: `registerClient` was handed a value the store cannot hold as one value. The Postgres store
+ * keeps each list as space-joined text, so whitespace inside a value reads back as two values, and
+ * an empty one reads back as none — a redirect or a scope nobody registered.
+ */
+export const clientInvalid = (field: ClientListField, value: string): AuthError =>
+  new AuthError({
+    code: 'X_AUTH_CLIENT_INVALID',
+    cause: `registerClient({ ${field} }) holds ${renderCauseValue(value)}, which is empty or has whitespace inside, and the store keeps each list as space-joined text, so it would read back as a different list`,
+    fix: `server.registerClient({ name, ${field}: ['<one value per element, no whitespace>'] })   # split a space-separated string into its values before registering`,
+    meta: { field },
+  });

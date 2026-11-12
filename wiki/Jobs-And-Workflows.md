@@ -333,8 +333,8 @@ Every operator capability is a member of `JobIntrospection` (`driver.introspect`
 | task pause | `pauseTask(t)` / `resumeTask(t)` / `pausedTasks()` | on resume the task's own `catchUp` decides what it missed |
 | a task's last fire | `taskFires()` — `{ task, occurrenceMs, firedAt }` per task, by name | the last occurrence that QUEUED its jobs: arming a task or skipping missed occurrences is not a fire. `MAX_TASK_FIRES` 1,000 rows |
 | a task's next fire | `nextTaskRun(task, from)` — the next occurrence strictly after `from`, in the task's own zone | the scheduler's own resolver, so a dashboard and the scheduler cannot disagree; no running scheduler needed |
-| who is working | `workers()` — id, host, started, queues, slots, in-flight job ids, last heartbeat | a row expires one visibility timeout after its last heartbeat: a killed worker leaves by expiry |
-| history | `counters({ job, sinceMs })`, `counterTotals(sinceMs)` — `done`, `retried`, `failed`, `dead`, `durationMs` | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d |
+| who is working | `workers()` — id, host, started, queues, slots, in-flight job ids, last heartbeat | a row expires `max(60 s, visibility timeout)` after its last renewal, renewed every third of that (20 s); a killed worker leaves by expiry, so it stays listed up to 60 s. As of 2026-11-12 |
+| history | `counters({ job, sinceMs })`, `counterTotals(sinceMs)` — `done`, `retried`, `failed`, `dead`, `durationMs` | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d. On Postgres a process batches its settles' counts and writes them every 10 s and on `close()`: a read from the same process flushes first, one from another process can lag up to 10 s, and a crash loses at most 10 s of counts — never a job row's state |
 | progress | `run({ progress })` → `progress(done, total, note?)`, on the row and in `x jobs show` | one write a second per run at most, and always the last before the run settles |
 | how a run ended | `job({ onSettled })` — `completed` (with what `run` returned), `dead-lettered`, `dropped` or `refused`; after the row is settled, under the job's tenant, three tries of its own, on a live `ctx.signal` under `onSettledTimeout` (30 s by default): its `fetch` and its writes land | at most once across a crash; a hook that keeps failing is `X_JOB_ON_SETTLED_FAILED`, logged and reported, and the row is untouched. A cancel is not a settlement: whoever cancels is the observer |
 
@@ -386,11 +386,11 @@ export const syncAccount = job({
 
 | Loop | Idle behaviour | Claims per idle minute |
 |---|---|---|
-| worker | waits `pollIntervalMs` (250 ms) while passes find work, doubling to `idlePollMaxMs` while they do not; an idle pass is one claim over every queue it serves | 12 with the wake, 30 without |
-| outbox relay | `intervalMs` (200 ms) doubling to `idlePollMaxMs` | 12 with the wake, 30 without |
-| scheduler | ticks every second and, with nothing due, reads no store: watermarks are held in memory while it leads and the lease is renewed every 10 s | 6 statements, for any number of tasks |
+| worker | waits `pollIntervalMs` (250 ms) while passes find work; idle with the wake proven, it rests until the next row is due (an empty claim says when), at most 60 s; without the wake, doubling to `idlePollMaxMs`. An idle pass is one claim over every queue it serves | ≤ 1 with the wake (was 12), 30 without |
+| outbox relay | `intervalMs` (200 ms); idle with the wake, rests until a held row's lease lapses, at most 60 s; without, doubling to `idlePollMaxMs` | ≤ 1 with the wake (was 12), 30 without |
+| scheduler | ticks every second and, with nothing due, reads no store: watermarks are held in memory while it leads and the 60 s lease is renewed every 20 s | 3 statements, for any number of tasks (was 6) |
 
-`idlePollMaxMs` defaults to 2 s, and to 5 s while the wake is proven.
+`idlePollMaxMs` defaults to 2 s, and to 5 s while the wake is proven; declared, it caps the rest too. A wake session lost mid-rest falls back to the 2 s poll within one 2 s slice. `As of 2026-11-12`.
 
 **The wake.** A `worker` pod holds one `LISTEN` session (`startQueueWake`, started by the boot). The enqueue statement and the outbox stage carry a `pg_notify` — transactional, so it is delivered when the row commits and never when it rolls back — and an idle worker or relay passes at once.
 
@@ -401,13 +401,13 @@ export const syncAccount = job({
 | another process, through the outbox, from its commit | 9 ms / 13 ms |
 | another process, with no wake | within `idlePollMaxMs` — 2 s |
 | a retry or `step.sleep` the worker itself handed back | when it falls due |
-| a delayed job another process queued | within `idlePollMaxMs` past its `runAt` |
+| a delayed job another process queued | no wake: within `idlePollMaxMs` past its `runAt`. Proven wake: at its `runAt` — an enqueue due within 60 s notifies, so a resting worker re-reads when its next row is due. `As of 2026-11-12` |
 
 | Rule | Detail |
 |---|---|
 | the payload is the queue name | never an id, an input or a tenant |
 | at most one notification per queue per 250 ms | Postgres serialises every notifying commit behind one lock. A row its slot kept silent is found by the woken worker's next pass, one `pollIntervalMs` later — never worse than a fixed 250 ms poll |
-| the poll is the guarantee | a notification is lost with the session that would have carried it; the driver re-dials and the poll covers the gap |
+| the poll is the guarantee | a notification is lost with the session that would have carried it; the driver re-dials and the poll covers the gap. With the wake proven the poll is a rest of up to 60 s, cut to the 2 s poll within one 2 s slice once the session is lost |
 | the wake has to be proven | a probe sent through the pool must come back on the session: `jobs.wake.live`. If it does not — PgBouncer in `pool_mode = transaction` delivers no notification — the log says `jobs.wake.unverified` once and the ceiling stays 2 s. Give the `worker` role a direct or session-pooled `DATABASE_URL` ([`docs/ops/04-datastores.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/04-datastores.md#pooling-and-the-trap-under-it)) |
 | a queue pause | read by the claim statement itself, so it holds from each worker's next claim; a resume announces the queue |
 
@@ -514,6 +514,8 @@ export const exportMember = subjectExport({
 | children first, the subject last; one step per page of parent keys | a killed run resumes at the page it stopped on; every write is an equality on one key, so a replay changes nothing twice |
 | a loop of deleted tables needs one nullable key | it is cleared first; none is `X_SUBJECT_CYCLE` |
 | a table with no foreign key to the person is invisible | list it: `columns: { audit_copies: 'memberId' }`, then it needs a treatment too |
+| a deleted or anonymized table's `<table>_history` is reached too (`As of 2026-11`) | the write records the person in one more before image, and `row_id` is no foreign key. `'delete'` removes every history row whose `before` or `after` image names the subject (`@>` on the parent's key column, tenant-scoped — so a row deleted, soft-deleted or inserted before the erase is reached too) in the parent's own step and transaction, after the write — the one delete the append-only guard lets through (`x.purge` on Postgres, `purgingHistory` in memory); `{ retain: '<why>' }` keeps and counts the same rows; `anonymize` is `X_SUBJECT_TREATMENT_INVALID`, undeclared `X_SUBJECT_TABLE_UNDECLARED`. |
+| a deleted table's own delete purges the images Postgres writes into a child's history (`As of 2026-11`) | `on delete set null` or `cascade` rewrites a child row, and the child's trigger records the person's key in its before image. A child history declared `'delete'` loses those images in the parent's step and transaction (`orphansOf`, `packages/jobs/src/subject-plan.ts:341`; `packages/jobs/src/subject-erase-history.ts`). Limits: the memory driver applies no `onDelete` action, so a kept child keeps the erased key there; a child history declared `{ retain }` is counted only for writes to its own table — the images a set-null or cascade write records into it are neither purged nor counted |
 | framework data is a `targets:` entry | `authSubjectTarget` (`@ultimat3/auth`), `auditSubjectTarget` (`@ultimat3/action`, rewrites who acted, keeps the row), `storageSubjectTarget(disk, keysOf)` (`@ultimat3/storage`); `{ target, retain }` keeps one |
 | the export is one object per page per table plus `index.json` | each table's count, treatment and `retain` reason; sealed columns never leave |
 | one job per tenant | crossing tenants is the app's loop; queued job inputs and logs are out of reach (`x_jobs` ages out by `jobs-retention.ts`) |
@@ -599,7 +601,7 @@ export const refreshPostTotals = refreshView({
 | `refreshView()` | |
 |---|---|
 | Each run | `refresh materialized view [concurrently]` in one step; `tenant: 'none'` — the read path scopes the rows |
-| `concurrently` | readers keep the old rows meanwhile; needs a unique index on the view (`.unique()`) |
+| `concurrently` | readers keep the old rows meanwhile; needs a unique index on the view (`.unique()`) over plain columns, with no `where` — a unique `expression` index is no key for it (`As of 2026-11`) |
 | Refused at declaration | a table, a plain view, `concurrently` with no unique index — `X_JOB_REFRESH_VIEW_INVALID` |
 
 ## Rebuilding a search index — `reindex()`
