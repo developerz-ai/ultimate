@@ -109,6 +109,22 @@ describe('an audit input is always representable, so a sink cannot throw on it',
     expect(() => JSON.stringify(auditableInput(nasty))).not.toThrow();
   });
 
+  test('a string jsonb cannot hold is named: a NUL, a lone surrogate', () => {
+    // Postgres refuses `\u0000` in jsonb (22P05) and in text (22021); a lone surrogate is not
+    // UTF-8 at all. Either one in a group-commit batch used to fail every call the batch carried.
+    expect(
+      auditableInput({ nul: 'a\u0000b', lone: 'x\uD800y', pair: '\uD83D\uDE00', fine: 'ok' }),
+    ).toEqual({ nul: UNREPRESENTABLE, lone: UNREPRESENTABLE, pair: '\uD83D\uDE00', fine: 'ok' });
+    expect(auditableInput(['\u0000'])).toEqual([UNREPRESENTABLE]);
+  });
+
+  test('a KEY jsonb cannot hold is never written: its entry is named under the marker', () => {
+    expect(auditableInput({ 'k\u0000': 1, kept: 2 })).toEqual({
+      [UNREPRESENTABLE]: UNREPRESENTABLE,
+      kept: 2,
+    });
+  });
+
   test('an absent input stays absent — a parse that failed recorded no input at all', () => {
     expect(auditableInput(undefined)).toBeUndefined();
   });

@@ -3,7 +3,7 @@
 // the same action answers `fetch`, the typed client, MCP and `.job()` exactly as it always did.
 
 import type { UltimateRequest } from '@ultimat3/http';
-import { acceptsHtml, factsOf, redirect, takeRedirect } from '@ultimat3/http';
+import { acceptsHtml, factsOf, hostlessPath, redirect, takeRedirect } from '@ultimat3/http';
 import type { AnyAction } from './action';
 import type { ActionAnswerIssue } from './action-answer';
 import { answerIssues, writeActionAnswer } from './action-answer';
@@ -50,8 +50,27 @@ export function answersNatively(target: AnyAction): boolean {
 }
 
 /**
+ * Where a 303 may go, or `undefined`. A target on this origin is its path, query and fragment,
+ * never starting `//` (`hostlessPath`). A SCHEME-LESS target that resolves to another origin —
+ * `//evil.test`, `/\evil.test`, `\\evil.test`, a leading space — is a path built from a request
+ * value that a browser reads as a host: never followed. An absolute `http(s):` URL is the app's own
+ * explicit choice (an OAuth client's callback) and kept as written; any other scheme is refused.
+ */
+function landing(to: string, here: URL): string | undefined {
+  if (!URL.canParse(to, here)) return undefined;
+  const resolved = new URL(to, here);
+  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return undefined;
+  if (resolved.origin === here.origin) {
+    return `${hostlessPath(resolved.pathname)}${resolved.search}${resolved.hash}`;
+  }
+  return URL.canParse(to) ? to : undefined;
+}
+
+/**
  * The form's own page: the `Referer`'s path and query, on THIS host only — a header the browser
- * sent is never a place to send it elsewhere. `undefined` sends the refusal down the error path.
+ * sent is never a place to send it elsewhere. A same-host Referer whose path reads as a host
+ * (`http://dev.test//evil.test`) is refused by `landing` like any other scheme-less target.
+ * `undefined` sends the refusal down the error path.
  */
 function formPage(req: UltimateRequest): string | undefined {
   const referer = req.header('referer');
@@ -60,7 +79,7 @@ function formPage(req: UltimateRequest): string | undefined {
   if (from.host !== req.url.host || (from.protocol !== 'http:' && from.protocol !== 'https:')) {
     return undefined;
   }
-  return `${from.pathname}${from.search}`;
+  return landing(`${from.pathname}${from.search}`, req.url);
 }
 
 /**
@@ -91,8 +110,8 @@ export async function answerNatively(
     takeRedirect(req.ctx);
     const issues =
       typeof error === 'object' && error !== null ? answerIssues(Reflect.get(error, 'issues')) : [];
-    const to =
-      native.refusal?.({ code: facts.code, status: facts.status, issues }) ?? formPage(req);
+    const chosen = native.refusal?.({ code: facts.code, status: facts.status, issues });
+    const to = chosen === undefined ? formPage(req) : landing(chosen, req.url);
     if (to === undefined) throw error;
     writeActionAnswer({
       action: name,
@@ -105,7 +124,7 @@ export async function answerNatively(
   }
   const asked = takeRedirect(req.ctx);
   writeActionAnswer({ action: name, outcome: 'success' });
-  return asked === undefined
-    ? redirect(native.success(output), 303)
-    : redirect(asked.location, asked.status);
+  if (asked !== undefined) return redirect(asked.location, asked.status);
+  // Committed: an unfollowable target still answers, on the form's page, else the site's root.
+  return redirect(landing(native.success(output), req.url) ?? formPage(req) ?? '/', 303);
 }

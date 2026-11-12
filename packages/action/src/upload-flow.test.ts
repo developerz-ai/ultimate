@@ -4,8 +4,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { frozenClock, isUltimateError, serviceActor, userActor } from '@ultimat3/core';
-import { allow, deny } from '@ultimat3/policy';
+import { defineError, frozenClock, isUltimateError, serviceActor, userActor } from '@ultimat3/core';
+import { allow, can, deny } from '@ultimat3/policy';
 import type { StorageDriver } from '@ultimat3/storage';
 import { memoryStorageDriver } from '@ultimat3/storage';
 import { registerActions, resetActions } from './registry';
@@ -17,6 +17,15 @@ const PNG = new Uint8Array([
 const TEXT = new TextEncoder().encode('just some words, not an image at all');
 
 const ana = userActor({ id: 'ana', orgId: 'o1' });
+
+/** The row write an `attached` hook makes, failing once — input to the flow, never a verdict. */
+const RowWriteTimedOut = defineError({
+  code: 'X_TEST_UPLOAD_ROW_WRITE_TIMED_OUT',
+  status: 503,
+  title: 'action upload-flow fixture: the row write timed out',
+  cause: 'a fixture',
+  fix: 'nothing: a fixture',
+});
 
 const codeOf = async (run: () => Promise<unknown>): Promise<string> => {
   try {
@@ -109,14 +118,90 @@ describe('unit · uploadFlow', () => {
     const first = await confirm.as(ana, { key: grant.key, id: 'p-1' });
     const second = await confirm.as(ana, { key: grant.key, id: 'p-1' });
     expect(second).toEqual(first);
-    // The hook ran once: only the call that moved the bytes writes them to the row.
-    expect(attached).toEqual([first.key]);
+    // The hook runs on each successful confirm, the same key each time: it must be idempotent.
+    expect(attached).toEqual([first.key, first.key]);
+  });
+
+  test('a retried confirm whose first call moved the bytes but failed in attached runs it again', async () => {
+    const disk: StorageDriver = memoryStorageDriver({
+      signingSecret: 'test-secret',
+      clock: frozenClock('2026-11-12T12:00:00.000Z'),
+    });
+    const written: string[] = [];
+    let failOnce = true;
+    const { request, confirm } = uploadFlow({
+      name: 'cover',
+      target: ({ id }) => ({ entity: 'post', id: id ?? 'none' }),
+      accept: ['image/png'],
+      maxBytes: 1024,
+      policy: allow(),
+      disk: () => disk,
+      attached: ({ target, object }) => {
+        if (failOnce) {
+          failOnce = false;
+          throw new RowWriteTimedOut();
+        }
+        written.push(`${target.id}:${object.key}`);
+      },
+    });
+    registerActions({ requestPostCover: request, confirmPostCover: confirm });
+    const grant = await ask(ana, request);
+    await disk.put(grant.key, PNG, { contentType: 'image/png' });
+
+    expect(await codeOf(() => confirm.as(ana, { key: grant.key, id: 'p-1' }))).toBe(
+      'X_TEST_UPLOAD_ROW_WRITE_TIMED_OUT',
+    );
+    const retried = await confirm.as(ana, { key: grant.key, id: 'p-1' });
+    // The bytes moved in the first call; the row learns of them in the retry, and only then.
+    expect(written).toEqual([`p-1:${retried.key}`]);
   });
 
   test('an actor with no org is refused before anything is signed', async () => {
     const { request } = flow();
     const orgless = serviceActor({ id: 'cron' });
     expect(await codeOf(() => ask(orgless, request))).toBe('X_TENANCY_ACTOR_ORG_REQUIRED');
+  });
+
+  test("the policy decides about the TARGET row: another user's post is refused", async () => {
+    const authors: Record<string, string> = { 'p-ana': 'ana', 'p-bo': 'bo' };
+    const disk: StorageDriver = memoryStorageDriver({
+      signingSecret: 'test-secret',
+      clock: frozenClock('2026-11-12T12:00:00.000Z'),
+    });
+    const loads: string[] = [];
+    const { request, confirm } = uploadFlow({
+      name: 'cover',
+      target: ({ id }) => {
+        loads.push(id ?? '');
+        return { entity: 'post', id: id ?? '', authorId: authors[id ?? ''] ?? '' };
+      },
+      accept: ['image/png'],
+      maxBytes: 1024,
+      policy: can<unknown, { readonly authorId: string }>(
+        'post:update',
+        ({ actor, row }) => row !== null && row.authorId === actor?.id,
+      ),
+      disk: () => disk,
+    });
+    registerActions({ requestPostCover: request, confirmPostCover: confirm });
+    const editor = { ...ana, permissions: ['post:update'] };
+    const size = PNG.byteLength;
+    const asking = (id: string) =>
+      request.as(editor, { filename: 'c.png', contentType: 'image/png', size, id });
+
+    expect(await codeOf(() => asking('p-bo'))).toBe('X_FORBIDDEN');
+    const grant = await asking('p-ana');
+    await disk.put(grant.key, PNG, { contentType: 'image/png' });
+    expect(await codeOf(() => confirm.as(editor, { key: grant.key, id: 'p-bo' }))).toBe(
+      'X_FORBIDDEN',
+    );
+    // Refused before the bytes moved: the owner's own confirm still attaches them.
+    expect(await disk.exists(grant.key)).toBe(true);
+    loads.length = 0;
+    const object = await confirm.as(editor, { key: grant.key, id: 'p-ana' });
+    expect(object.key.startsWith('org/o1/post/p-ana/cover/')).toBe(true);
+    // One load per call: the row the rule judged is the row the bytes land on.
+    expect(loads).toEqual(['p-ana']);
   });
 
   test('the one policy guards both halves', async () => {

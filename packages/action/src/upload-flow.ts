@@ -25,26 +25,45 @@ export interface UploadFlowTarget {
   readonly id: string;
 }
 
-export interface UploadFlowOptions {
+/**
+ * `TRule` is the row shape the policy reads, `TRow` what `target` returns: each inferred from its
+ * own option, and `TRow` must carry everything `TRule` names — else the `target` is the error.
+ */
+export interface UploadFlowOptions<
+  TRule = unknown,
+  TRow extends UploadFlowTarget & TRule = UploadFlowTarget & TRule,
+> {
   /** The field the file belongs to: the key is `org/<org>/<entity>/<id>/<name>/<opaque>`. */
   readonly name: string;
-  /** The row, from the context and the `id` the call named (absent when it named none). */
+  /**
+   * The row, from the context and the `id` the call named (absent when it named none). It is BOTH
+   * halves' `row:` loader: `policy` decides about what this returns — carry the columns the rule
+   * reads (an `authorId`) — and `confirm` lands the bytes on that same row. Loaded once per call.
+   */
   readonly target: (args: {
     readonly ctx: Ctx;
     readonly id: string | undefined;
-  }) => UploadFlowTarget | Promise<UploadFlowTarget>;
+  }) => TRow | Promise<TRow>;
   /** The content types the grant signs and `confirm` holds the stored bytes to. */
   readonly accept: readonly string[];
   readonly maxBytes: number;
-  /** One rule for both halves: whoever may not attach may not upload either. */
-  readonly policy: ActionPolicy;
+  /**
+   * One rule for both halves, judged against `target`'s row: whoever may not attach to THIS row
+   * may not upload for it either. A rule over the permission alone lets any holder attach to any
+   * row an `id` names.
+   */
+  readonly policy: ActionPolicy<TRule>;
   /** Absent: the app's default disk, resolved per call. */
   readonly disk?: (() => StorageDriver) | undefined;
-  /** Runs once, after the call that moved the bytes: write `object.key` to the row here. */
+  /**
+   * Write `object.key` to the row here. Runs on EVERY successful confirm — a retry of one whose
+   * bytes already moved runs it again with the same key — until one succeeds, so it must be
+   * idempotent (a plain `update … set cover = key` is).
+   */
   readonly attached?:
     | ((args: {
         readonly ctx: Ctx;
-        readonly target: UploadFlowTarget;
+        readonly target: TRow;
         readonly object: StorageObject;
       }) => void | Promise<void>)
     | undefined;
@@ -106,8 +125,9 @@ const answer = (object: StorageObject): UploadFlowAttached => ({
 
 /**
  * A retried confirm whose first call moved the bytes is told where they are
- * (`X_STORAGE_ALREADY_PROMOTED`, `meta.attachedKey`) and answers that object: the client's retry
- * succeeds, and `attached` is not run twice. Gone since (a later upload replaced it): the refusal stands.
+ * (`X_STORAGE_ALREADY_PROMOTED`, `meta.attachedKey`) and answers that object, `attached` run
+ * again: the first call may have moved the bytes and then failed to write the row. Gone since (a
+ * later upload replaced it): the refusal stands.
  */
 async function promotedBefore(
   error: unknown,
@@ -118,17 +138,36 @@ async function promotedBefore(
   return typeof attachedKey === 'string' ? disk.stat(attachedKey) : undefined;
 }
 
-export function uploadFlow(options: UploadFlowOptions): UploadFlow {
+export function uploadFlow<TRow extends UploadFlowTarget & TRule, TRule = unknown>(
+  options: UploadFlowOptions<TRule, TRow>,
+): UploadFlow {
   const policy: UploadPolicy = uploadPolicy({
     maxBytes: options.maxBytes,
     allowedContentTypes: options.accept,
   });
   const diskOf = options.disk ?? (() => defaultDisk());
+  // The row the rule judged, handed to `handle`: `invoke` passes ONE input object to `row` and
+  // `handle` by reference (#702), so it keys the load without a second one.
+  const judged = new WeakMap<object, TRow>();
+  const row = async ({
+    input,
+    ctx,
+  }: {
+    readonly input: { readonly id?: string | undefined };
+    readonly ctx: Ctx;
+  }) => {
+    const loaded = await options.target({ ctx, id: input.id });
+    judged.set(input, loaded);
+    return loaded;
+  };
+  const rowOf = (input: { readonly id?: string | undefined }, ctx: Ctx): TRow | Promise<TRow> =>
+    judged.get(input) ?? options.target({ ctx, id: input.id });
 
   const request = action({
     input: requestInput,
     output: grantOutput,
     policy: options.policy,
+    row,
     async handle({ input, ctx }) {
       const orgId = orgOf(ctx, options.name, 'request');
       const { filename, contentType, size } = input;
@@ -146,10 +185,11 @@ export function uploadFlow(options: UploadFlowOptions): UploadFlow {
     input: confirmInput,
     output: attachedOutput,
     policy: options.policy,
+    row,
     async handle({ input, ctx }) {
       const orgId = orgOf(ctx, options.name, 'confirm');
-      const row = await options.target({ ctx, id: input.id });
-      const target = { entity: row.entity, id: row.id, field: options.name };
+      const loaded = await rowOf(input, ctx);
+      const target = { entity: loaded.entity, id: loaded.id, field: options.name };
       const disk = diskOf();
       let object: StorageObject;
       try {
@@ -157,9 +197,9 @@ export function uploadFlow(options: UploadFlowOptions): UploadFlow {
       } catch (error) {
         const earlier = await promotedBefore(error, disk);
         if (earlier === undefined) throw error;
-        return answer(earlier);
+        object = earlier;
       }
-      await options.attached?.({ ctx, target: row, object });
+      await options.attached?.({ ctx, target: loaded, object });
       return answer(object);
     },
   });

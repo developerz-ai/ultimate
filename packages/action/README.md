@@ -484,15 +484,24 @@ from `@ultimat3/storage` drives the browser half unchanged.
 import { uploadFlow } from '@ultimat3/action';
 import { can } from '@ultimat3/policy';
 
+declare function postAuthor(postId: string): Promise<string | null>;
 declare function setPostCover(postId: string, key: string): Promise<void>;
 
 export const { request: requestPostCover, confirm: confirmPostCover } = uploadFlow({
   name: 'cover',                                  // the field: org/<org>/post/<id>/cover/…
-  target: ({ id, ctx }) => ({ entity: 'post', id: id ?? ctx.actor.id }),
+  // Both halves' `row:` loader — the policy judges what this returns, confirm lands on it.
+  target: async ({ id }) => ({
+    entity: 'post',
+    id: id ?? '',
+    authorId: id === undefined ? null : await postAuthor(id),
+  }),
   accept: ['image/png', 'image/jpeg', 'image/webp'],
   maxBytes: 5 * 1024 * 1024,
-  policy: can('post:update'),
-  attached: ({ target, object }) => setPostCover(target.id, object.key), // once, after the move
+  policy: can<unknown, { readonly authorId: string | null }>(
+    'post:update',
+    ({ actor, row }) => row !== null && actor !== null && row.authorId === actor.id,
+  ),
+  attached: ({ target, object }) => setPostCover(target.id, object.key), // idempotent: may re-run
 });
 ```
 
@@ -501,8 +510,9 @@ export const { request: requestPostCover, confirm: confirmPostCover } = uploadFl
 | `request` grants under `pending/`, **never** onto the row's key | a targeted grant puts unsniffed bytes where a row reads them, and is refused outright with an `uploadScanner` (`X_STORAGE_TARGET_UNSCANNED`) |
 | `confirm` is `promoteAttachment` | the stored object is measured against `maxBytes`, its head **sniffed against `accept`** (`X_STORAGE_TYPE_REJECTED`, left pending) and scanned when a scanner is installed — the check a presigned s3 PUT cannot make |
 | the org is the **actor's** | an actor with none is `X_TENANCY_ACTOR_ORG_REQUIRED` before anything is signed |
-| one `policy` for both halves | whoever may not attach may not upload either |
-| a doubled `confirm` answers the attached object | `X_STORAGE_ALREADY_PROMOTED` is caught and the object it names returned; `attached` runs once, in the call that moved the bytes |
+| `target` is both halves' `row:` loader | the `policy` judges the row the `id` names, once per call, before anything is signed or moved. A rule over the permission alone (`can('post:update')`) lets any holder attach to any post an `id` names: carry the column the rule reads (`authorId`) and check it |
+| one `policy` for both halves | whoever may not attach to this row may not upload for it either |
+| a doubled `confirm` answers the attached object | `X_STORAGE_ALREADY_PROMOTED` is caught and the object it names returned — only ever this row's key. `attached` runs on **every** successful confirm, a retry included, so a first call whose bytes moved but whose row write failed is completed by the retry: keep it idempotent |
 
 ## Determinism + idempotency
 

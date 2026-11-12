@@ -96,6 +96,7 @@ export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { NavigationPurpose } from './navigation';
 export {
+  hostlessPath,
   locationFor,
   navigationGate,
   navigationPurpose,

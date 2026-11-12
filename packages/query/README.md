@@ -243,6 +243,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `sealed-shape.ts` | a live read may not filter or order on a `.sealed()` column — refused at subscribe |
 | `live-collation.ts` | a live read ordered by a declared text column not `collate('C')` — a `query.live.order_collation` warning (`X_LIVE_ORDER_COLLATION`) in development and test, once per query; a refusal waits for `next` |
 | `scope-compose.ts` | a `scoped()` policy's predicate composed into the read before the page is cut; the rule per row |
+| `page-window.ts` | the rows one page serves and where the next resumes — from the rows the source read; a bounded refill past rows a rule dropped |
 | `download.ts` | `query({ download })` — the declaration, the in-process file, the mint and the serve |
 | `download-token.ts` | the `_token`: claims sealed with core's `seal()`, opened against one query, one input, the clock |
 | `download-http.ts` | the route's two answers — mint JSON or the file: `content-disposition`, one `Range:` window, `no-store` |
@@ -333,6 +334,11 @@ narrowed source returns; a row it refuses is dropped (`read-scope.test.ts`).
 - An `unenforced` build (`sourceFor(…, { unenforced })`, the shared live window) composes no scope.
 - A `sql` that returns anything but `from()` is `X_QUERY_SCOPE_UNCOMPOSABLE`, never served unscoped.
 - Conditions are a conjunction — no `or` group (`packages/policy/src/scope.ts` says why).
+- A rule STRICTER than its scope never ends a listing early: a page's cursor and `hasMore` come
+  from the rows the source read, not the rows the rule left. Dropped rows are refilled from up to
+  `RULE_REFILL_WINDOWS` (4) further windows; a page the bound cuts short still carries a cursor at
+  the last row read. A declared `.limit()` counts source rows, as the whole read does
+  (`page-window.ts`, `scope-page.test.ts`).
 
 ## Matcher support
 

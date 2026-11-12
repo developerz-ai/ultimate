@@ -1,7 +1,8 @@
 /**
  * Group commit for an audit sink: concurrent audited calls share one `writeMany`, so a pod doing
- * 200 audited writes a second pays a handful of round trips instead of 200. Each `write()` still
- * settles with ITS batch — the audit gate's two failure policies see exactly what they saw before.
+ * 200 audited writes a second pays a handful of round trips instead of 200. Each `write()` settles
+ * with ITS record — a refused batch is retried singly — so the audit gate's two failure policies
+ * see exactly what they saw before.
  */
 
 import { finiteCount, MAX_TIMER_MS, onShutdown } from '@ultimat3/core';
@@ -29,7 +30,7 @@ export interface BatchedAuditSinkOptions {
 }
 
 export interface BatchedAuditSink extends BatchAuditSink {
-  /** Resolves when this record's batch is stored; rejects with the sink's error when it is not. */
+  /** Resolves when this record is stored; rejects with the sink's error when it is not. */
   write(record: AuditRecord): Promise<void>;
   /** Send what is queued now and wait for every batch in flight. Never rejects: the waiters do. */
   flush(): Promise<void>;
@@ -46,20 +47,36 @@ interface Waiter {
 }
 
 /**
- * Every waiter of a batch gets the batch's verdict, the error by IDENTITY: `auditSettled` wraps it
- * into `X_AUDIT_SINK_FAILED` per call and `auditThrew` logs it per call, so one failed statement
- * fails every attempt it carried and none silently. Never rejects itself — the waiters are where
- * the failure belongs, and a rejection here would be an unhandled one on the timer.
+ * Every waiter gets ITS record's verdict. A failed `writeMany` is retried one record at a time,
+ * because one record the store refuses (a byte `jsonb` cannot hold, a value over a column's
+ * limit) fails the whole statement, and that must fail ONE call, not every call it carried. A
+ * store that is down rejects each single too, so every waiter still gets an error, by IDENTITY
+ * of what its own write threw: `auditSettled` wraps it into `X_AUDIT_SINK_FAILED` per call. Never
+ * rejects itself — the waiters are where the failure belongs, and a rejection here would be an
+ * unhandled one on the timer.
  */
 async function commit(sink: BatchAuditSink, batch: readonly Waiter[]): Promise<void> {
   try {
     await sink.writeMany(batch.map((waiter) => waiter.record));
   } catch (error) {
-    for (const waiter of batch) waiter.reject(error);
+    if (batch.length === 1) batch[0]?.reject(error);
+    else await Promise.all(batch.map(single(sink)));
     return;
   }
   for (const waiter of batch) waiter.resolve();
 }
+
+const single =
+  (sink: BatchAuditSink) =>
+  async (waiter: Waiter): Promise<void> => {
+    try {
+      await sink.write(waiter.record);
+    } catch (error) {
+      waiter.reject(error);
+      return;
+    }
+    waiter.resolve();
+  };
 
 /**
  * Wrap a `BatchAuditSink` so concurrent writes become one `writeMany`. The queue is bounded by

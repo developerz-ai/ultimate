@@ -1,6 +1,6 @@
 // The group-commit wrapper: N concurrent audited calls are one `writeMany`, each `write()` settles
-// with its own batch's flush — a rejected flush rejects every waiter, so the two failure policies in
-// `audit-gate.ts` hold unchanged — and a drain leaves nothing queued behind.
+// with its own record — a rejected flush is retried singly, so one refused record fails one call and
+// a dead store still fails every one — and a drain leaves nothing queued behind.
 
 import { afterEach, describe, expect, jest, test } from 'bun:test';
 import {
@@ -135,6 +135,29 @@ describe('batchedAuditSink groups concurrent writes into one writeMany', () => {
     await expect(batched.write(recordNamed('a'))).rejects.toThrow('once');
     await batched.write(recordNamed('b'));
     expect(batches).toEqual([['a'], ['b']]);
+  });
+
+  test('one record the store refuses fails ITS call alone: the batch is retried one by one', async () => {
+    const refusal = new RangeError('22P05: unsupported Unicode escape sequence');
+    const singles: string[] = [];
+    const sink: BatchAuditSink = {
+      async write(record) {
+        singles.push(record.name);
+        if (record.name === 'poisoned') throw refusal;
+      },
+      async writeMany(records) {
+        if (records.some((record) => record.name === 'poisoned')) throw refusal;
+      },
+    };
+    const batched = open(sink, { maxDelayMs: 0 });
+
+    const settled = await Promise.allSettled(
+      ['a', 'poisoned', 'c'].map((name) => batched.write(recordNamed(name))),
+    );
+
+    expect(settled.map((each) => each.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
+    expect(settled[1]?.status === 'rejected' ? settled[1].reason : undefined).toBe(refusal);
+    expect(singles.toSorted()).toEqual(['a', 'c', 'poisoned']);
   });
 
   test('writeMany through the wrapper splits at maxRecords and resolves when all have', async () => {

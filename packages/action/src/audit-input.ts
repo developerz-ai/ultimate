@@ -44,7 +44,8 @@ export function auditableInput(value: unknown): unknown {
 function walk(value: unknown, depth: number, ancestors: Set<object>): unknown {
   if (value === null) return null;
   const kind = typeof value;
-  if (kind === 'string' || kind === 'boolean') return value;
+  if (kind === 'string') return storable(value as string) ? value : UNREPRESENTABLE;
+  if (kind === 'boolean') return value;
   if (kind === 'number') return Number.isFinite(value) ? value : UNREPRESENTABLE;
   // `bigint`, `function`, `symbol`, and `undefined` reached through an array hole.
   if (kind !== 'object') return UNREPRESENTABLE;
@@ -68,7 +69,8 @@ function walk(value: unknown, depth: number, ancestors: Set<object>): unknown {
       // The key decides before the value does, so a credential under a redacted name is never
       // walked at all — `isRedactedKey` is core's, the same table `defineEnv({ secret: true })`
       // extends, so a value that is `[redacted]` in a log line cannot be plaintext in a table.
-      if (isRedactedKey(key)) out[key] = REDACTED;
+      if (!storable(key)) out[UNREPRESENTABLE] = UNREPRESENTABLE;
+      else if (isRedactedKey(key)) out[key] = REDACTED;
       else if (item !== undefined) out[key] = walk(item, depth + 1, ancestors);
     }
     return out;
@@ -76,3 +78,15 @@ function walk(value: unknown, depth: number, ancestors: Set<object>): unknown {
     ancestors.delete(object);
   }
 }
+
+/**
+ * Can Postgres hold this string? Not with a NUL — `jsonb` refuses `\u0000` (22P05) and `text`
+ * refuses the byte (22021) — and not with a lone surrogate, which is not UTF-8 at all. Named, not
+ * stripped: an altered string would be a row claiming the caller sent something they did not.
+ */
+function storable(value: string): boolean {
+  return !value.includes('\u0000') && !LONE_SURROGATE.test(value);
+}
+
+/** Under `u`, a surrogate PAIR is one code point, so `\p{Cs}` matches only a lone half. */
+const LONE_SURROGATE = /\p{Cs}/u;

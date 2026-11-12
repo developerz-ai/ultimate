@@ -135,6 +135,63 @@ describe('native: a form POST', () => {
   });
 });
 
+describe('native: never a 303 off this origin', () => {
+  const landsOn = (to: string) =>
+    action({
+      input: t.object({ title: t.string.min(3) }),
+      output: t.object({ to: t.string }),
+      policy: allow(),
+      native: { success: (out: { readonly to: string }) => out.to, refusal: () => to },
+      handle: ({ input }) => ({ to: input.title }),
+    }).named('createPost');
+
+  for (const referer of [
+    'http://dev.test//evil.example/x',
+    'http://dev.test/\\evil.example',
+    'http://dev.test/.//evil.example',
+  ]) {
+    test(`a same-host Referer whose path reads as a host is not followed: ${referer}`, async () => {
+      const response = await post(create({}), 'title=no', { ...FORM, referer });
+      expect(response.status).not.toBe(303);
+      expect(flashOf(response)).toBeNull();
+    });
+  }
+
+  for (const to of ['//evil.example/x', '/\\evil.example', '\\\\evil.example', ' //evil.example']) {
+    test(`a scheme-less success target that leaves this origin lands on the form: ${to}`, async () => {
+      const response = await post(landsOn('/x'), `title=${encodeURIComponent(to)}`, FORM);
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe('/posts/new');
+    });
+
+    test(`a scheme-less refusal target that leaves this origin is not followed: ${to}`, async () => {
+      const response = await post(landsOn(to), 'title=no', FORM);
+      expect(response.status).not.toBe(303);
+    });
+  }
+
+  test('a same-origin target is its path; an absolute URL the app wrote is kept', async () => {
+    const same = await post(
+      landsOn('/x'),
+      `title=${encodeURIComponent('http://dev.test/a?b=1')}`,
+      FORM,
+    );
+    expect(same.headers.get('location')).toBe('/a?b=1');
+    const away = 'https://client.example/callback?code=1';
+    const oauth = await post(landsOn('/x'), `title=${encodeURIComponent(away)}`, FORM);
+    expect(oauth.headers.get('location')).toBe(away);
+  });
+
+  test('a script scheme is never a landing', async () => {
+    const response = await post(
+      landsOn('/x'),
+      `title=${encodeURIComponent('javascript:alert(1)')}`,
+      FORM,
+    );
+    expect(response.headers.get('location')).toBe('/posts/new');
+  });
+});
+
 describe('native: every other caller is unchanged', () => {
   test('a fetch of JSON gets the output as JSON', async () => {
     const response = await post(create({ refusal: true }), JSON.stringify({ title: 'hello' }), {

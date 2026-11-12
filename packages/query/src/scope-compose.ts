@@ -1,6 +1,7 @@
 // Single responsibility: compose a `scoped()` policy's predicate into a read's source BEFORE the
 // page is cut, so a viewer whose hidden rows precede their visible ones still gets a full page —
 // and keep the JS rule the authority: it runs on every row the narrowed source returns.
+// `ruleCheckOf` hands a page the unchecked rows and the rule apart (`page-window.ts`).
 import type { ScopeCondition, ScopeOperator } from '@ultimat3/policy';
 import { policyScope } from '@ultimat3/policy';
 import { QueryScopeUncomposableError } from './errors';
@@ -49,10 +50,25 @@ export function composeScope(
 }
 
 /**
+ * A rule-checked source taken apart: the narrowed reads BEFORE the rule, and the rule itself.
+ * A page needs both — its cursor and `hasMore` come from the rows the source read, never from the
+ * rows the rule left, or a dropped probe row ended a listing that had rows left.
+ */
+export interface RuleCheck {
+  seekUnchecked(after: SeekKey | null, limit: number): SqlSource<object>;
+  admits(row: object): boolean;
+}
+
+/** The rule and its unchecked source, when `source` is a composed scope; `null` otherwise. */
+export function ruleCheckOf(source: SqlSource<object>): RuleCheck | null {
+  return source instanceof RuleChecked ? source : null;
+}
+
+/**
  * The narrowed source, with the rule run per returned row. Survives `seek()` and `total()` — the
  * page and the live window are built from those, and a check lost there is a check never run.
  */
-class RuleChecked implements SqlSource<object> {
+class RuleChecked implements SqlSource<object>, RuleCheck {
   constructor(
     private readonly inner: Builder<object>,
     private readonly policy: QueryPolicy,
@@ -78,9 +94,15 @@ class RuleChecked implements SqlSource<object> {
 
   async execute(): Promise<readonly object[]> {
     const rows = await this.inner.execute();
-    return rows.filter((row) =>
-      queryRowAdmitted(this.policy, { ...this.subject, row }, this.surface),
-    );
+    return rows.filter((row) => this.admits(row));
+  }
+
+  seekUnchecked(after: SeekKey | null, limit: number): SqlSource<object> {
+    return this.inner.seek(after, limit);
+  }
+
+  admits(row: object): boolean {
+    return queryRowAdmitted(this.policy, { ...this.subject, row }, this.surface);
   }
 
   private wrap(inner: Builder<object>): RuleChecked {
