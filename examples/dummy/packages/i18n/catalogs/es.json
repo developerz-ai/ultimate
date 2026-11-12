@@ -357,7 +357,13 @@
     "offlineQueued": "Sin conexión: se enviará cuando vuelvas a conectarte.",
     "updateAvailable": "Hay una versión nueva lista.",
     "updateAction": "Recargar",
-    "ssoUnavailable": "El inicio de sesión único no está disponible ahora."
+    "ssoUnavailable": "El inicio de sesión único no está disponible ahora.",
+    "formRefused": "No se ha podido enviar. Revisa el formulario y vuelve a intentarlo.",
+    "formInvalid": "Algunos campos necesitan otra revisión.",
+    "postNotFound": "Esa publicación ya no existe.",
+    "postSlugTaken": "Otra publicación ya usa esa dirección. Cambia el título y vuelve a intentarlo.",
+    "meterExceeded": "Ya has usado las publicaciones de hoy de tu plan. Vuelve mañana o mejora el plan.",
+    "rateLimited": "Demasiados intentos seguidos. Espera un momento y vuelve a intentarlo."
   },
   "admin": {
     "title": "Administración de Postly",

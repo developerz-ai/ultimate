@@ -1,5 +1,5 @@
-// Single responsibility: the attributes of an EXISTING column that move in place — its default and
-// its nullability. Split from `generate.ts` because `diffTable` emitted SQL for a type change only:
+// Single responsibility: the attributes of an EXISTING column that move in place — its default, its
+// collation and its nullability. Split from `generate.ts` because `diffTable` emitted SQL for a type change only:
 // a changed or removed `.default()`, or a nullability change, emitted nothing while the snapshot
 // beside it recorded the move, so `x verify` answered `X_DB_SCHEMA_UNMIGRATED` and its own fix,
 // `x db gen`, produced an empty diff. A gate red forever, with the repair being the thing that failed.
@@ -11,6 +11,7 @@ import type { Plan } from './foreign-key-plan';
 import { appendOnlyBackfillRefused } from './generate-append-only';
 import type { ColumnDescription } from './introspect';
 import { identifier } from './sql';
+import { sqlType } from './sql-type';
 import { statementsOf } from './statement-split';
 
 /**
@@ -26,6 +27,20 @@ function screened(column: string, expression: string): string {
   return expression;
 }
 
+/**
+ * ` collate "<name>"` after a type, or nothing. An ALTER … TYPE with no COLLATE resets the column to
+ * its type's default collation, so a retype states the collation it keeps — `"default"` included.
+ */
+export function collateClause(collation: string | null | undefined, always = false): string {
+  if (collation == null) return always ? ' collate "default"' : '';
+  return ` collate ${identifier(collation).text}`;
+}
+
+/** The type a column clause declares: `text`, or `text collate "C"` when one was declared. */
+export function typeClause(column: ColumnDescriptionLike): string {
+  return `${sqlType(column.kind)}${collateClause(column.collation)}`;
+}
+
 /** What the column should hold as a default: one this generator cannot render stays as it is. */
 export function wantedDefault(
   column: ColumnDescriptionLike,
@@ -39,17 +54,20 @@ export function wantedDefault(
  * the column and refuses when no assignment cast exists (`42804`), whatever the new default is, so
  * it is dropped first and set after: a type change is the one move that has to span the default.
  * `down` is reversed at assembly, so what it pushes here runs last to first: drop the new default,
- * retype back, restore the old one. With no default on either side, this is the bare ALTER.
+ * retype back, restore the old one. With no default on either side, this is the bare ALTER. Each
+ * side states its own collation, which an ALTER … TYPE would otherwise reset to the type's default.
  */
 export function retypeOverDefault(
   table: string,
   column: ColumnDescriptionLike,
   recorded: ColumnDescription,
   plan: Plan,
-  up: string,
-  down: string,
 ): void {
   const alter = `alter table ${identifier(table).text} alter column ${identifier(column.column).text}`;
+  const retype = (type: string, collation: string | undefined): string =>
+    `${alter} type ${type}${collateClause(collation)} using ${identifier(column.column).text}::${type};`;
+  const up = retype(sqlType(column.kind), column.collation);
+  const down = retype(recorded.dataType, recorded.collation);
   const drop = `${alter} drop default;`;
   const set = (expression: string): string =>
     `${alter} set default ${screened(column.column, expression)};`;
@@ -95,6 +113,12 @@ export function alterColumnInPlace(
         : `${alter} set default ${screened(column.column, expression)};`;
     plan.up.push(set(wanted));
     plan.down.push(set(held));
+  }
+  // Same type, new collation: no `using`, no rewrite — Postgres rebuilds the column's indexes.
+  if ((column.collation ?? null) !== (recorded.collation ?? null)) {
+    const type = `${alter} type ${sqlType(column.kind)}`;
+    plan.up.push(`${type}${collateClause(column.collation, true)};`);
+    plan.down.push(`${type}${collateClause(recorded.collation, true)};`);
   }
   const nullable = !column.notNull;
   if (nullable === recorded.nullable) return;

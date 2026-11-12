@@ -39,7 +39,16 @@ const directions = (value: unknown): value is readonly ('asc' | 'desc' | null)[]
 
 function column(value: unknown): ColumnDescription | undefined {
   if (!isRow(value)) return undefined;
-  const { name, dataType, nullable, default: fallback, position, generated, retired } = value;
+  const {
+    name,
+    dataType,
+    nullable,
+    default: fallback,
+    position,
+    generated,
+    retired,
+    collation,
+  } = value;
   if (!str(name) || !str(dataType) || !bool(nullable) || !nullableStr(fallback)) return undefined;
   if (typeof position !== 'number') return undefined;
   // `generated` was recorded by `snapshotOf` and dropped HERE, silently, for as long as the field
@@ -47,6 +56,8 @@ function column(value: unknown): ColumnDescription | undefined {
   // so `retypeColumn` read every generated column as newly generated and rebuilt it on every
   // `x db gen`. Absent stays absent — an ordinary column must gain no key.
   if (!(generated === undefined || str(generated))) return undefined;
+  // The same rule for a collation: dropped here, every `x db gen` would declare it again.
+  if (!(collation === undefined || str(collation))) return undefined;
   // Dropped here it would refuse the drop it exists to allow. `true` or nothing, `false` normalised
   // away: a hand-edit meaning what absence means, the rule `appendOnly` states below.
   if (!(retired === undefined || bool(retired))) return undefined;
@@ -57,6 +68,7 @@ function column(value: unknown): ColumnDescription | undefined {
     default: fallback,
     position,
     ...(generated === undefined ? {} : { generated }),
+    ...(collation === undefined ? {} : { collation }),
     ...(retired === true ? { retired: true as const } : {}),
   };
 }

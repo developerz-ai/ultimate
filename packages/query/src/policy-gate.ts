@@ -36,6 +36,20 @@ export function guardQuery(
   guard(policy, { stage: 'input', name, ...rest }, surface);
 }
 
+/**
+ * The rule over ONE row a scoped read returned — the authority the composed scope only narrows.
+ * A refusal here is answered by dropping the row, never by refusing the read: the caller was
+ * admitted, and this row is the one thing they may not see.
+ */
+export function queryRowAdmitted(
+  policy: QueryPolicy,
+  subject: QuerySubject & { readonly row: unknown },
+  surface: QuerySurface,
+): boolean {
+  const { query: name, ...rest } = subject;
+  return guardPrimitive('query', policy, { stage: 'input', name, ...rest }, surface) === undefined;
+}
+
 /** The actor-only half, BEFORE the input parse: refused is 403/401, never `X_INPUT_INVALID`. */
 export function guardQueryBeforeInput(
   policy: QueryPolicy,

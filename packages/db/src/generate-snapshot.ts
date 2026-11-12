@@ -42,6 +42,7 @@ export function snapshotOf(
           // Only when one was declared — absent stays absent, so no snapshot written before this
           // field existed gains a key and no app's sidecar regenerates over a fact already true.
           ...(column.generated === undefined ? {} : { generated: column.generated }),
+          ...(column.collation === undefined ? {} : { collation: column.collation }),
         }));
       const checks = declaredChecks(entity);
       return {

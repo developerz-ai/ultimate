@@ -380,6 +380,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_TYPESCRIPT_VERSION:
     'x doctor --json   # each X_TYPESCRIPT_VERSION finding names its manifest and the bun add that moves it',
   X_SEED_FAILED: 'bun --eval \'await (await import("./packages/db/seeds/dev.ts")).dev.run()\'',
+  X_NATIVE_FORM_UNANSWERED:
+    "native: { success: (output) => '/where-it-lands' } in the action's declaration, then x verify --only manifest",
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

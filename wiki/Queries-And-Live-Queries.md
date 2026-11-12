@@ -256,6 +256,22 @@ the `DownloadFile` and `await runRecording.url(input, { ctx })` the path.
 
 **A patched row lands where `order by` returns it** (`As of 2026-10`). The matcher, `from()`'s in-memory execution and the cursor fallback compare two values by the column's DECLARED kind, through `@ultimat3/entity`'s own comparator — `@ultimat3/query` has none. A `bigint()` or `decimal()` column orders by its digits (its row value is decimal text: `'9'` before `'10'`), a `uuid()` is a value whatever its case, a `timestamp()` is an instant. The kinds resolve from the entity declared on the table `from(name, …)` names; a relation no entity declares has none, and its digits compare as text — as a `text` column's do. A custom `SqlSource` calling `compareRows`, `matchesFilter` or `isAfterKey` passes `kindsOf(shape.entity)`; `compareValues` is gone.
 
+**A text order is warned until it is code-point order**, `As of 31.11.0`. The matcher orders a
+text value by code point; Postgres orders it by the column's collation, and on an
+`en_US.utf8` cluster that is `apple` before `Banana`. A patched row then lands where the next read
+does not put it, and a full window evicts the wrong row. So a live query ordered by a declared text
+column — `text()`, or `enumerated()`, `url()`, `tz()`, `locale()`, which store text — not declared `.collate('C')` logs `query.live.order_collation` (`X_LIVE_ORDER_COLLATION`) at
+subscribe — in development and test, once per query, never thrown; staging and production are
+silent (`packages/query/src/live-collation.ts`). A refusal at subscribe is planned for `next`.
+
+| Fix | Cost |
+|---|---|
+| `name: text().collate('C')` on a `text()` column, then `x db gen "<table> name collate C"` | an in-place `alter column … collate "C"`; every read of that column orders by code point, not only the live one ([Code-point collation](Entities-And-Migrations#code-point-collation)) |
+| order the live read by a non-text key: `.orderBy('createdAt', 'desc').orderBy('id')` | none; the text column can still be filtered on. The only fix for `enumerated()`, `url()`, `tz()`, `locale()`: they have no `.collate()` |
+
+Not warned: a relation no entity declares (it has no kinds), and a text primary key reached only as
+the automatic `id` tiebreak.
+
 A page is served `order by <declared keys>, "id" asc`, and so is a live window — `As of 2026-08`,
 the initial window, the matcher's patch positions and the keyset re-read a reconnect resumes with
 are one ordering. A row tied on every declared key lands where its id puts it, not after the tie
@@ -299,6 +315,26 @@ Policy is not a subscribe-time gate that then trusts the stream.
 | Topic guards (tier 1) | `X_TOPIC_FORBIDDEN` — cause names the actor and topic, never the topic's data |
 
 One authz system. A live query cannot become a second door into your data — that is the failure mode that killed the `allow`/`deny` generation of frameworks ([The eight primitives](The-Eight-Primitives)).
+
+
+## A scoped policy narrows the read
+
+A policy built with `scoped(rule, (actor) => conditions)` ([Policies](Policies-And-Authz#scope--a-policys-database-filter))
+hands its conditions to every read it guards, `As of 31.11.0` (`packages/query/src/scope-compose.ts`).
+Without it the rule filters after the page is cut, so a viewer whose hidden rows precede their
+visible ones gets a short page.
+
+| What happens | Where |
+|---|---|
+| each condition becomes a `.compare()` filter on the `from()` builder `sql` returned, before the page is cut | the SQL text, the live shape and the provider's `RowWindow.filters`, exactly as a `.where()` would |
+| the rule still runs on every row returned; a row it refuses is dropped, never served | a scope wider than its rule costs rows, never leaks them (`read-scope.test.ts`) |
+| the read's cache key is the actor's, whatever `cache.scope` says | the rows are that actor's |
+| a `sql` that returns a hand-written `SqlSource`, not `from()` | `X_QUERY_SCOPE_UNCOMPOSABLE` (500) on the call — never served unscoped |
+| a build with `sourceFor(…, { unenforced })`, and the shared live window a sync node reads per org | no scope: there is no admitted actor to scope by. Each subscriber's rows are still filtered by the rule, as above |
+
+Conditions are a conjunction only — no `or` group, by decision (`packages/policy/src/scope.ts`): the
+builder's filters, the live matcher's shape, `RowWindow.filters` and the entity chain are all
+conjunctive. A rule whose visibility is a disjunction stays unscoped and keeps the per-row filter.
 
 ## NULL
 
@@ -364,6 +400,7 @@ Fifty *counts* collapse neither way — one `count()` per row is fifty different
 | Not recorded | `explainQuery()`, `describeSql()`, the shared live window: built `unenforced`, no caller to attribute |
 | No sink installed | `X_QUERY_AUDIT_SINK_MISSING`, before the input parse |
 | The sink refuses | a denied/failed record: logged (`audit.sink.failed`), the caller gets the original error. An allowed record: the rows are withheld, `X_QUERY_AUDIT_SINK_FAILED` — a read commits nothing, so retry |
+| Group commit | opt-in, `As of 31.11.0`: `postgresAuditSink({ executor, groupCommit: true })` (`@ultimat3/action`) queues each record up to 5 ms or 256 records (`{ maxRecords, maxDelayMs }` to change either) and writes the batch as one `x_audit` insert. Each call waits on its own batch, so the rule above holds per call: a failed batch is `X_QUERY_AUDIT_SINK_FAILED` (an action's, `X_AUDIT_SINK_FAILED`) on every allowed call it carried. Flushed on drain, before the pool closes. Any sink with a `writeMany(records)`: `batchedAuditSink(sink, opts)` from `@ultimat3/action/adapter` |
 
 ## Every cached query carries a tag
 

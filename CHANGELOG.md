@@ -10,7 +10,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/action`: `action({ native: { success, refusal? } })` answers a browser's own `<form method="post">` (an HTML `accept` and a form body) with a `303` to `success(output)`, or, refused with a 4xx other than `X_UNAUTHENTICATED`, to `refusal(refusal)` else the same-host `Referer`. The outcome rides in a one-read flash cookie, `x_action_answer` (`HttpOnly`, `SameSite=Lax`, 60 s): the action, and for a refusal its `code` and each issue's `path`/`rule`/`params`, never a submitted value. `useActionAnswer(action | name?)` reads it once, in a route's `load`. A `setRedirect()` in `handle` still wins on success. `fetch`, the typed client, MCP and `.job()` are answered as before.
+- `@ultimat3/cli`: the `manifest` step of `x verify` warns `X_NATIVE_FORM_UNANSWERED` for a `page.tsx` `<form method="post">` posting to an action with no `native`, naming the page's `file:line`. A warning on `main` (`warnings` in `--json`, the step stays green); the refusal is planned for `next`. A form inside a component other than the page is not read.
+- `@ultimat3/action`: `uploadFlow({ name, target, accept, maxBytes, policy, attached? })` returns a direct upload's two actions, `{ request, confirm }`, from one declaration. `request` grants a presigned PUT under the actor's org and `pending/`, never onto the row's key; `confirm` is `promoteAttachment`: the stored object is measured against `maxBytes`, sniffed against `accept` (`X_STORAGE_TYPE_REJECTED`) and scanned when an `uploadScanner` is installed. A second `confirm` of the same key answers the attached object, and `attached` runs once, in the call that moved the bytes. One `PRIMITIVE_FACTORIES` row.
+- `@ultimat3/action`: `postgresAuditSink({ executor, groupCommit: true | { maxRecords, maxDelayMs } })` — concurrent audited calls share one `x_audit` insert (`jsonb_to_recordset`), 256 records / 5 ms by default. Each call resolves or rejects with its batch: a failed statement is `X_AUDIT_SINK_FAILED` (`X_QUERY_AUDIT_SINK_FAILED` for a read) on every call it carried. The queue flushes on drain, in the `inflight` phase, before the pool closes. Opt-in. `batchedAuditSink(sink, { maxRecords?, maxDelayMs? })` in `@ultimat3/action/adapter` does the same for any sink with a `writeMany`.
+- `@ultimat3/entity`: `text().collate('C')` declares code-point collation, the order the memory driver and the live matcher keep; any other collation is `X_INVARIANT_VIOLATED`. `x db gen` emits `collate "C"` on create and add column, declares or drops it on an existing column in place with its reverse in `down`, and keeps it across a retype. Drift does not read a column's collation, as it reads no column type.
+- `@ultimat3/query`: a live query ordered by a declared text column (`text()`, and `enumerated()`, `url()`, `tz()`, `locale()`, which store text) not declared `.collate('C')` logs `query.live.order_collation` (`X_LIVE_ORDER_COLLATION`) at subscribe in development and test, once per query; never thrown, and staging and production stay silent. Postgres orders such a column by its collation (`en_US.utf8`: `apple` before `Banana`), the matcher by code point, so a patched row could land where the next read does not put it. A refusal is planned for `next`.
+- `@ultimat3/http`: `acceptsHtml(request)` — whether a request's `accept` names `text/html`, the test the sign-in redirect, the error page and `native:` answer on.
+
+### Changed
+
+- `@ultimat3/query`: a read whose policy is `scoped()` composes the scope into its `from()` source before the page is cut — the SQL text, the live shape and the provider's `RowWindow.filters` — so a viewer whose hidden rows precede their visible ones gets a full page. The rule still runs on every row returned and drops one it refuses. Such a read is cached per actor whatever `cache.scope` says. A `sql` that returns a hand-written `SqlSource`, not `from()`, under a scoped policy is `X_QUERY_SCOPE_UNCOMPOSABLE` (500), never served unscoped. The shared live window composes no scope; each subscriber's rows are still filtered by the rule.
+
+### Fixed
 
 ## Releases
 

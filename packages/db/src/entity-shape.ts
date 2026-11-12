@@ -11,6 +11,11 @@ export interface ColumnDescriptionLike {
   readonly property: string;
   readonly column: string;
   readonly kind: string;
+  /**
+   * `text().collate('C')`'s collation, absent when the column takes the database default. Crosses
+   * structurally like `onDelete`, and absent emits exactly what an older description emitted.
+   */
+  readonly collation?: string | undefined;
   readonly notNull: boolean;
   readonly primaryKey: boolean;
   readonly unique: boolean;

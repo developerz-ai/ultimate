@@ -155,6 +155,20 @@ export const AUDIT_SINK_CHECKS: readonly AuditSinkCheck[] = [
     },
   },
   {
+    // A group-commit sink (`postgresAuditSink({ groupCommit: true })`) shares one statement among
+    // concurrent writes: a batch that kept one row, or one record's facts in every row, is caught.
+    name: 'concurrent writes are each their own record, none lost to a batch',
+    async run(subject) {
+      const name = nameOf();
+      const keys = ['k1', 'k2', 'k3'];
+      await Promise.all(
+        keys.map((key) => subject.sink.write(recordFor(name, { idempotencyKey: key }))),
+      );
+      const kept = await subject.kept(name);
+      expect(kept.map((each) => each.idempotencyKey).sort()).toEqual(keys);
+    },
+  },
+  {
     name: 'a bigint, a cycle, a Secret and a Date land without a throw, and without a secret',
     async run(subject) {
       const cyclic: Record<string, unknown> = { note: 'a' };

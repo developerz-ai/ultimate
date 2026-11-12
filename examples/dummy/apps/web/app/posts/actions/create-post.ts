@@ -26,6 +26,13 @@ export const createPost = action({
   // Closed: see `publishPost`. A slug is unique across every org, so a taken one is a refusal.
   errors: [PostSlugTaken.code],
   cache: { invalidates: [tag.feed] },
+  // The editor's own `<form method="post">` (`posts/new/page.tsx`): a browser lands on the new
+  // draft, or back on the editor — not the feed the modal opened over — where its `load` reads
+  // the refusal. A fetch, an agent's tool call and a job are answered exactly as before.
+  native: {
+    success: (post) => `/posts/${post.id}`,
+    refusal: () => '/posts/new',
+  },
   mcp: { expose: true, description: 'Create a draft post in the actor’s organisation' },
   // The org's plan decides both numbers, resolved per call from the acting org — the catalog is
   // Postly's (`POST_ALLOWANCES`), the counting is the framework's. The burst is per actor and

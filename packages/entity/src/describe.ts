@@ -298,6 +298,8 @@ const describeColumn = <Row>(
       property,
       column: physical,
       kind: sqlTypeOf(meta),
+      // Absent unless declared, like `default` below: no description written before it moves.
+      ...(meta.collation === undefined ? {} : { collation: meta.collation }),
       notNull: meta.notNull,
       primaryKey: meta.primaryKey || input.primaryKey.includes(property),
       unique: meta.unique,

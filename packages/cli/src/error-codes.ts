@@ -238,6 +238,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_PARTITIONS_UNMAINTAINED',
   'X_TYPESCRIPT_VERSION',
   'X_SEED_FAILED',
+  'X_NATIVE_FORM_UNANSWERED',
 ] as const;
 
 /**
@@ -462,6 +463,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_PARTITIONS_UNMAINTAINED: 'a partitioned entity with no partitions() job',
   X_TYPESCRIPT_VERSION: 'The app declares a TypeScript older than the one x new scaffolds',
   X_SEED_FAILED: 'a seed threw an uncoded error',
+  X_NATIVE_FORM_UNANSWERED: 'a page form posts to an action that declares no native answer',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

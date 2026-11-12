@@ -30,6 +30,11 @@ export interface ColumnDescription {
   readonly property: string;
   readonly column: string;
   readonly kind: string;
+  /**
+   * `text().collate('C')`, absent otherwise — so no description written before it moves the drift
+   * hash. Crosses to `@ultimat3/db` (tier 1) structurally, as `onDelete` does, or reaches no DDL.
+   */
+  readonly collation?: 'C';
   readonly notNull: boolean;
   readonly primaryKey: boolean;
   readonly unique: boolean;

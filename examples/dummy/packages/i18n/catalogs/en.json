@@ -360,7 +360,13 @@
     "offlineQueued": "You are offline — this will be sent when you reconnect.",
     "updateAvailable": "A new version is ready.",
     "updateAction": "Reload",
-    "ssoUnavailable": "Single sign-on is not available right now."
+    "ssoUnavailable": "Single sign-on is not available right now.",
+    "formRefused": "That did not go through. Check the form and try again.",
+    "formInvalid": "Some of the fields need another look.",
+    "postNotFound": "That post no longer exists.",
+    "postSlugTaken": "Another post already uses that address. Change the title and try again.",
+    "meterExceeded": "Your plan's posts for today are used up. Try again tomorrow, or upgrade.",
+    "rateLimited": "Too many tries in a row. Wait a moment, then try again."
   },
   "admin": {
     "title": "Postly admin",

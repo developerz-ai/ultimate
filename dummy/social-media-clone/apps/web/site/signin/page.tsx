@@ -2,6 +2,8 @@
 // because it needs no JavaScript: a native `<form method="post">` at the route `createSession`
 // already derives. Nothing here hydrates, so the browser's own form handling IS the client.
 
+import type { ActionAnswer } from '@ultimat3/action';
+import { useActionAnswer } from '@ultimat3/action';
 import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
@@ -11,6 +13,7 @@ import {
   captchaSiteKey,
   HCAPTCHA_SCRIPT_URL,
 } from '../../shared/auth-policy';
+import { ActionRefusal } from '../../shared/ui/action-refusal';
 import { AppShell } from '../../shared/ui/app-shell';
 import { Field } from '../../shared/ui/field';
 import styles from './page.module.scss';
@@ -23,6 +26,9 @@ export const config = defineRoute({
   // Never from a cache. A stale sign-in form is a form posting at a build that has moved on.
   offline: 'network-only',
   budget: { js: '0kb' },
+  // `createSession` declares `native`: a refused sign-in (a wrong password, a failed challenge)
+  // lands back here, `?next=` intact, and this one read in `load` is how the page hears why.
+  load: async (): Promise<SignInData> => ({ answer: useActionAnswer('createSession') }),
   meta: () => ({
     title: t('site.signin.title'),
     description: t('site.signin.description'),
@@ -32,7 +38,12 @@ export const config = defineRoute({
   }),
 });
 
+export interface SignInData {
+  readonly answer: ActionAnswer | null;
+}
+
 export interface SignInProps {
+  readonly data?: SignInData | undefined;
   readonly query: Readonly<Record<string, string>>;
   readonly url?: string | undefined;
 }
@@ -54,6 +65,7 @@ export function Page(props: SignInProps) {
 
         {/* The action is the route `createSession` derives, not a path anyone chose twice. */}
         <form class={styles.card} method="post" action="/api/sessions/create">
+          <ActionRefusal answer={props.data?.answer} />
           {/* The return trip. A native form carries it as a field because nothing here hydrates. */}
           <input type="hidden" name={NEXT_PARAM} value={next} />
 

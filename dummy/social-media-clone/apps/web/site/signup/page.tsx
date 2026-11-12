@@ -2,11 +2,14 @@
 // native form posting at the route `createAccount` derives. The only difference is that the
 // challenge here is demanded on EVERY attempt — there is no prior failure to count.
 
+import type { ActionAnswer } from '@ultimat3/action';
+import { useActionAnswer } from '@ultimat3/action';
 import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { Button } from '@ultimat3/ui';
 import { captchaSiteKey, HCAPTCHA_SCRIPT_URL, MIN_PASSWORD_LENGTH } from '../../shared/auth-policy';
+import { ActionRefusal } from '../../shared/ui/action-refusal';
 import { AppShell } from '../../shared/ui/app-shell';
 import { Field } from '../../shared/ui/field';
 import styles from './page.module.scss';
@@ -16,6 +19,9 @@ export const config = defineRoute({
   hydrate: 'never',
   offline: 'network-only',
   budget: { js: '0kb' },
+  // `createAccount` declares `native`: a refused sign-up (a taken handle, a failed challenge)
+  // lands back here, and this one read in `load` is how the page hears why.
+  load: async (): Promise<SignUpData> => ({ answer: useActionAnswer('createAccount') }),
   meta: () => ({
     title: t('site.signup.title'),
     description: t('site.signup.description'),
@@ -25,7 +31,12 @@ export const config = defineRoute({
   }),
 });
 
+export interface SignUpData {
+  readonly answer: ActionAnswer | null;
+}
+
 export interface SignUpProps {
+  readonly data?: SignUpData | undefined;
   readonly query: Readonly<Record<string, string>>;
   readonly url?: string | undefined;
 }
@@ -45,6 +56,7 @@ export function Page(props: SignUpProps) {
         </div>
 
         <form class={styles.card} method="post" action="/api/accounts/create">
+          <ActionRefusal answer={props.data?.answer} />
           <input type="hidden" name={NEXT_PARAM} value={next} />
 
           <Field

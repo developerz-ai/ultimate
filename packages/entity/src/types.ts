@@ -139,6 +139,8 @@ export interface ColumnMeta {
    */
   readonly name?: string;
   readonly length?: number;
+  /** `text().collate('C')`: absent is the database's default collation. `'C'` is code-point order. */
+  readonly collation?: 'C';
   /** `numeric(precision, scale)` — both, or neither. A bare `numeric` is unbounded on purpose. */
   readonly precision?: number;
   readonly numericScale?: number;
@@ -305,6 +307,11 @@ export interface TextColumn<T extends string | null = string, Optional extends b
   unique(): TextColumn<T, Optional>;
   default(value: T): TextColumn<T, true>;
   column(name: string): TextColumn<T, Optional>;
+  /**
+   * Order and compare this column by code point (`collate "C"`), the order a live window's matcher
+   * keeps — so a live query may order by it. `'C'` only; changing it is `x db gen`.
+   */
+  collate(collation: 'C'): TextColumn<T, Optional>;
   /**
    * Seal this column under the app's master key: the row still reads `string`, the database holds
    * `x1.<keyId>.<iv>.<ciphertext>`, and no view, `$schema`, record or predicate carries it.

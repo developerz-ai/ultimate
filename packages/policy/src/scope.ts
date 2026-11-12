@@ -43,6 +43,12 @@ export interface ScopeCondition<R = unknown> {
  * row" (an admin), which is not the same as a policy with no scope: that one hands NOTHING down and
  * its read stays the JS rule over whatever was read.
  *
+ * AND-only, decided (2026-11): no `{ or: [...] }` group. A scope lands as `@ultimat3/query`
+ * `Builder` filters, so it reaches the live matcher's shape, every provider's `RowWindow.filters`
+ * and the entity chain — four conjunctive contracts an OR would widen at once. A rule whose
+ * visibility is a disjunction over a graph (a friend OR the author OR public, minus a block set)
+ * stays unscoped: its read keeps the JS rule over what it reads.
+ *
  * Called only for an actor the policy's own gate admitted: a caller refused before the read never
  * reaches it. Pure and synchronous, like a predicate — it runs once per read, not once per row.
  */

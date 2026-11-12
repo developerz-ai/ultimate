@@ -54,6 +54,7 @@
     "@ultimat3/entity": "31.10.0",
     "@ultimat3/http": "31.10.0",
     "@ultimat3/policy": "31.10.0",
-    "@ultimat3/schema": "31.10.0"
+    "@ultimat3/schema": "31.10.0",
+    "@ultimat3/storage": "31.10.0"
   }
 }
