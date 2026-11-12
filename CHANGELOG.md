@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- Security: a `native:` form answer and `uploadFlow` are host- and row-guarded — a refused form never redirects off this host, and an upload's policy judges the row it attaches to.
+- A `scoped()` policy now narrows query reads before the page is cut, so a scoped feed returns full pages; the rule still runs on every row.
+- New in `@ultimat3/action`: `native: { success, refusal }` answers a plain HTML form with a 303 and a one-read flash; `uploadFlow()` declares an upload's request/confirm pair once; `postgresAuditSink({ groupCommit: true })` writes concurrent audit records in one insert.
+
 ### Added
 
 - `@ultimat3/action`: `action({ native: { success, refusal? } })` answers a browser's own `<form method="post">` (an HTML `accept` and a form body) with a `303` to `success(output)`, or, refused with a 4xx other than `X_UNAUTHENTICATED`, to `refusal(refusal)` else the same-host `Referer`. A same-origin target is answered as its path, never starting `//`; a scheme-less one a browser reads as another host (`//evil.test`, `/\evil.test`, a `Referer` of `http://<host>//evil.test`) is never followed — a refusal takes the error path, a success the form's page else `/` — and only an absolute `http(s):` URL the app wrote leaves the origin. The outcome rides in a one-read flash cookie, `x_action_answer` (`HttpOnly`, `SameSite=Lax`, 60 s): the action, and for a refusal its `code` and each issue's `path`/`rule`/`params`, never a submitted value. `useActionAnswer(action | name?)` reads it once, in a route's `load`. A `setRedirect()` in `handle` still wins on success. `fetch`, the typed client, MCP and `.job()` are answered as before.
