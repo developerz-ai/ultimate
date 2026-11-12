@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- An idle job queue costs a quarter of what it did: a worker on two queues, the outbox relay and the scheduler leader send 543 statements an hour, down from 2,418 — workers rest until the next due row instead of claiming every 5 s, counters are batched, and lease renewals are HOT updates.
+- `x_jobs` moves to fillfactor 80 and swaps `x_jobs_finished_idx` for the narrower `x_jobs_ended_idx` on the first boot after upgrading (a brief lock under the migration).
+- A step write and an operator step resolve lock their job row, so a new attempt never replays from steps missing an in-flight write.
+
 ### Added
 
 - `@ultimat3/jobs`: `JOBS_TABLE_STORAGE` — `x_jobs` at `fillfactor = 80`, the framework schema's storage row for it, so `x db migrate` reports a hand-reset fillfactor as `changed-table-storage`.
