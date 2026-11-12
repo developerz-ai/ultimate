@@ -44,3 +44,7 @@
 
 ## Done when
 - A 20-line toy key-value driver in a test, built with `defineDriver`, passes the read half of `repoConformance` ([`19`](19-conformance-suites.md)) and refuses the rest with `X_DRIVER_UNSUPPORTED`.
+
+## Correction, 2026-11-11
+
+E6 (`insertAll(rows, { returning: false })`, `copyAll`) and E7 (a page bounded by bytes) were marked complete with this file and never shipped: `pg-write-sql.ts` still ended every bulk insert `returning *`, and `plan.ts` bounded a page by rows only. Both shipped in 31.8.0 as E3 and E4 of [`2026/11/11/101-full-stack-efficiency-sweeps/05-entity.md`](../../11/101-full-stack-efficiency-sweeps/05-entity.md) — the measurements are in its Outcome.

@@ -40,6 +40,8 @@ export {
   isPartitionedBuildRefusal,
   NO_TRANSACTION_MARKER,
 } from './concurrent-index';
+export type { CopyInClient } from './copy-in';
+export { canCopyIn } from './copy-in';
 export { dbExecutor } from './db-executor';
 export type { DbHealthReport } from './db-health';
 export { checkDb } from './db-health';

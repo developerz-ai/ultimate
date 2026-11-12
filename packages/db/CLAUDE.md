@@ -58,7 +58,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   is the one counter. Full rule: `docs/history/db.md`.
 - **`client.ts` connects, holds the client and the ambient `db()`**, and opens no socket at import;
   `pool-profile.ts`, `connection-url.ts`, `bun-sql.ts`, `pool-reserve.ts`, `db-health.ts` (`checkDb`),
-  `statement-funnel.ts` (`sendOn`/`runOn`), `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
+  `statement-funnel.ts` (`sendOn`/`runOn`), `copy-in.ts`, `pool-gate.ts`, `pool-sweep.ts`, `pool-retire.ts`,
   `pool-listeners.ts` and `pool-timer.ts` hold the rest.
 - **`statement-cancel.ts` cancels a POOLED `select` in flight when the ambient `ctx.signal` aborts** (`57014` on the server; `X_ABORTED`, or the coded reason itself). Never a write, never a pin, never a statement sent after the abort. README.
 - **`pool-gate.ts` is the one count of `max`** (`takeSlot`/`freeSlot`), per pool; a wait past `acquireTimeoutMs` is `X_DB_POOL_EXHAUSTED`. Full rule: `docs/history/db.md`.

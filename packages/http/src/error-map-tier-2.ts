@@ -147,4 +147,6 @@ export const TIER_2_ERROR_STATUS = {
   X_SAML_METADATA_INVALID: 500,
   // @ultimat3/auth — the URL named an identity provider the sso routes were not given
   X_IDENTITY_PROVIDER_UNKNOWN: 404,
+  // @ultimat3/entity — a page weighed more than the page byte bound before it was decoded
+  X_ENTITY_PAGE_TOO_LARGE: 500,
 } satisfies Readonly<Record<string, number>>;

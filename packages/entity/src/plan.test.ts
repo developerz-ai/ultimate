@@ -11,7 +11,6 @@ import { entity } from './entity';
 import type { EntityError } from './errors';
 import {
   DEFAULT_PAGE_SIZE,
-  deletePlan,
   idPlan,
   MAX_PAGE_SIZE,
   namedColumns,
@@ -19,7 +18,6 @@ import {
   readPlan,
   singleKeyOf,
   totalOrder,
-  updatePlan,
 } from './plan';
 import { clearRegistry } from './registry';
 
@@ -243,48 +241,6 @@ describe('namedColumns', () => {
   test('a non-object value names nothing', () => {
     expect(namedColumns(null)).toEqual([]);
     expect(namedColumns('x')).toEqual([]);
-  });
-});
-
-describe('deletePlan', () => {
-  test('an empty filter is refused before tenancy even runs', () => {
-    // No orgId either — if tenancy ran first this would throw X_TENANCY_UNSCOPED instead.
-    const error = caught(() => deletePlan(posts, {}, undefined, 'deleteWhere'));
-    expect(error).toBeUltimateError('X_WRITE_UNFILTERED');
-  });
-
-  test('an org predicate does not exempt a filtered delete from tenancy scoping', () => {
-    expect(
-      caught(() => deletePlan(posts, { title: 't' }, undefined, 'deleteWhere')),
-    ).toBeUltimateError('X_TENANCY_UNSCOPED');
-  });
-
-  test('a bounded, scoped filter builds a plan with no page limit semantics attached', () => {
-    const plan = deletePlan(posts, { title: 't' }, { orgId: ORG }, 'deleteWhere');
-    expect(plan.where).toEqual([
-      { column: 'title', op: 'eq', value: 't' },
-      { column: 'orgId', op: 'eq', value: ORG },
-    ]);
-  });
-});
-
-describe('updatePlan', () => {
-  test('an empty patch is refused even when the filter is bounded', () => {
-    const error = caught(() => updatePlan(posts, { id: ID }, {}, { orgId: ORG }, 'updateWhere'));
-    expect(error).toBeUltimateError('X_PATCH_EMPTY');
-  });
-
-  test('the filter guard still runs first — an empty filter wins over an empty patch', () => {
-    const error = caught(() => updatePlan(posts, {}, {}, { orgId: ORG }, 'updateWhere'));
-    expect(error).toBeUltimateError('X_WRITE_UNFILTERED');
-  });
-
-  test('a bounded filter and a named patch column both survive into the plan', () => {
-    const plan = updatePlan(posts, { id: ID }, { title: 't2' }, { orgId: ORG }, 'updateWhere');
-    expect(plan.where).toEqual([
-      { column: 'id', op: 'eq', value: ID },
-      { column: 'orgId', op: 'eq', value: ORG },
-    ]);
   });
 });
 

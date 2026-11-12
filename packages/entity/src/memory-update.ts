@@ -49,24 +49,31 @@ export const mergedRow = <Row>(entity: EntityCore<Row>, row: Row, patch: object)
  *
  * The judgement is the whole batch's, so a refusal lands before anything is stored — the shape
  * `insertAll` already has, and the shape Postgres gives the statement it refuses.
+ *
+ * `patch` is one patch for every row (`updateWhere`) or the patch for each row (`updateMany`), where
+ * `undefined` leaves that row out of the batch. `op` is the call a refusal names.
  */
 export const judgeUpdate = <Row>(
   entity: EntityCore<Row>,
   matched: readonly Row[],
-  patch: object,
+  patch: object | ((row: Row) => object | undefined),
   untouched: readonly Row[],
   key: (row: unknown) => string,
+  op = 'updateWhere',
 ): readonly Row[] => {
+  const patchOf = typeof patch === 'function' ? patch : () => patch;
   const judged: Row[] = [];
   const judgedKeys = new Set<string>();
   const untouchedKeys = new Set(untouched.map((row) => key(row)));
   // Built once and grown by each result: rebuilt per matched row, a sweep cost matched x stored.
   const taken = uniqueIndex(entity, untouched);
   for (const row of matched) {
-    const result = mergedRow(entity, row, patch);
+    const given = patchOf(row);
+    if (given === undefined) continue;
+    const result = mergedRow(entity, row, given);
     // The same four judgements `write` makes, in the same order — on the merged row rather than
     // on the patch, and on the whole batch rather than on the row that happens to come first.
-    assertRowTenant(entity.$name, entity.$tenantColumn, 'updateWhere', result);
+    assertRowTenant(entity.$name, entity.$tenantColumn, op, result);
     entity.$assert(result);
     // The primary key: a result may not land on a key another row holds — neither one this write
     // does not touch, nor one an earlier result of this same batch took. A row's OWN old version

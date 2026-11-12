@@ -87,6 +87,9 @@ export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export { isOperator, OPERATORS } from './operator';
+// The two page bounds, beside `N_PLUS_ONE_THRESHOLD` and for the same reason: an app validating
+// its own `pageSize` input against a hardcoded 10_000 is a second declaration of one number.
+export { MAX_PAGE_BYTES } from './page-bytes';
 // `entity({ partitionBy })`, checked at declaration (`partition.ts`); the SQL is `@ultimat3/db`'s.
 export type {
   PartitionContext,
@@ -109,14 +112,13 @@ export type { PostgresDriverOptions } from './pg-driver';
 export { postgresDriver, postgresRepo } from './pg-driver';
 export { decodeRow } from './pg-row';
 export { postgresTransactor } from './pg-transactor';
-// The two page bounds, beside `N_PLUS_ONE_THRESHOLD` and for the same reason: an app validating
-// its own `pageSize` input against a hardcoded 10_000 is a second declaration of one number.
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
 export type { RelatedTable, RelatedTables } from './preload';
 export type { PreloadOptions } from './preload-ceiling';
 export { MAX_PRELOADED_ROWS } from './preload-ceiling';
 export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';
+export type { ChainWrites, Returned, TableBulkWrites, Unreturned } from './query-write';
 export type {
   ReadAggregates,
   SeriesOptions,
@@ -150,6 +152,7 @@ export {
 export type { EntityRelations, Relation, RelationKind, RelationMap } from './relations';
 export { relationMap, relationNamed, relationsFor, relationsOf } from './relations';
 export type {
+  FilteredWriteOptions,
   FindByIdOptions,
   FindManyArgs,
   MemoryRepo,
@@ -157,6 +160,7 @@ export type {
   RepoOptions,
   Transactor,
   Tx,
+  UpdateManyRow,
   UpsertArgs,
 } from './repo';
 export type { Retain, RetainInit } from './retain';

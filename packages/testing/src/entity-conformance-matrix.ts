@@ -38,7 +38,7 @@ const MOODS = ['sad', 'ok', 'happy'] as const;
  * NULL inside a row value, the one shape a driver's binary array reader has to carry a null bitmap
  * for. Every array column is nullable so one row can hold `null` for the whole column.
  */
-const matrix = remember(
+export const matrix = remember(
   entity('ec_m_rows', {
     columns: {
       id: uuid().primaryKey(),
@@ -76,9 +76,9 @@ const matrix = remember(
   }),
 );
 
-type MatrixWrite = Parameters<ReturnType<typeof matrixDb>['rows']['insert']>[0];
+export type MatrixWrite = Parameters<ReturnType<typeof matrixDb>['rows']['insert']>[0];
 
-const matrixDb = (driver: Driver) => database({ rows: matrix }, { driver });
+export const matrixDb = (driver: Driver) => database({ rows: matrix }, { driver });
 
 const A = '01a12719-28e5-735e-b5bb-000000000001';
 const B = '01a12719-28e5-735e-b5bb-000000000002';
@@ -113,7 +113,7 @@ const NASTY_TEXT = [
 ] as const;
 
 /** Named, so a failure says which row of the matrix it was. */
-const MATRIX_ROWS: Readonly<Record<string, MatrixWrite>> = Object.freeze({
+export const MATRIX_ROWS: Readonly<Record<string, MatrixWrite>> = Object.freeze({
   'every array holds two members': {
     ...SCALARS,
     label: 'full',
@@ -279,7 +279,7 @@ const matches = async (driver: Driver, id: string, column: string, member: unkno
 };
 
 /** Fixed per row so a SQL subject and the memory reference write the same key. */
-const idFor = (index: number): string =>
+export const idFor = (index: number): string =>
   `01a12719-28e5-735e-b5bb-0000000001${String(index).padStart(2, '0')}`;
 
 /** The ratchet: a kind added to `COLUMN_KINDS` with no column here is red, for every driver. */

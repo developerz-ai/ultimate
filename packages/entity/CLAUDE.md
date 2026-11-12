@@ -136,7 +136,7 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
 - **`crossTenant(reason, fn)` is the ONE way to read across tenants** — an `asyncContext` scope from
   core (`scripts/async-context-guard.ts`), `CROSS_TENANT_SCOPE` (`tenancy:cross`) proven at the call
   and at every plan (`X_TENANCY_CROSS_DENIED`), refused outside a request, blank reason `X_INVARIANT`.
-- **`deleteWhere` / `updateWhere` are the only filtered writes**: empty filter `X_WRITE_UNFILTERED`,
+- **`deleteWhere` / `updateWhere` are the only filtered writes** — a chain's `updateAll`/`deleteAll` (`query-write.ts`) IS one, its predicates in `FilteredWriteOptions.where`, one plan (`write-where.ts`). `updateMany`/`insertAllCount`/`upsertAllCount`/`copyAll` are `Repo`-optional with typed-handle fallbacks; every wrapper (sealed, append-only, view, mirror, observer, memory-observed) handles each (`query-write-wrappers.test.ts`). Empty filter `X_WRITE_UNFILTERED`,
   empty patch `X_PATCH_EMPTY` (undefined values dropped first); soft delete respected; both return a
   count; a JS-only invariant is judged
   in the statement's transaction (`judged-write.ts`), refused past `MAX_ASSERTED_ROWS`. Full rule: `docs/history/entity.md`.

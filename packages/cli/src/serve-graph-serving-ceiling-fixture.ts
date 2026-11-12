@@ -256,5 +256,7 @@
  * nothing serving-only (metafile diff against 3635eb9b5).
  * raised 1432 → 1433, measured 1433 (2026-11-11, sweep 2 CodeQL fix): `MIGRATE_CEILING`'s 1,
  * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing serving-only.
+ * raised 1433 → 1445, measured 1445 (2026-11-11, sweep 5a): `MIGRATE_CEILING`'s 12, the db COPY
+ * funnel and the entity set-based writes. Nothing serving-only (metafile diff against origin/main).
  */
-export const SERVING_ROLE_CEILING = 1433;
+export const SERVING_ROLE_CEILING = 1445;

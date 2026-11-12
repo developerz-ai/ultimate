@@ -476,3 +476,12 @@ export type _FindManyAnswersCorePage = Assert<
       : false
     : false
 >;
+
+/**
+ * `select` takes the chain's own spelling — `{ id: true }` — never a list of names. The page byte
+ * refusal's fix is rendered in this spelling (`page-bytes.ts`); a string argument would be split
+ * into its characters by `Object.keys` and select nothing.
+ */
+export type _SelectTakesAnObjectNotNames = Assert<
+  'id' extends Parameters<ReadBuilder<{ readonly id: string }>['select']>[0] ? false : true
+>;

@@ -255,8 +255,15 @@
  * raised 902 → 903, measured 903 (2026-11-11, sweep 2 CodeQL fix): `db/src/pin-statement.ts`, the
  * linear pin statement reader `pool-pins.ts` now reads statement text through (CodeQL ReDoS fix).
  * No existing module newly reached.
+ * raised 903 → 915, measured 915 (2026-11-11, sweep 5a set-based entity writes, metafile diff
+ * against origin/main): `db/src/copy-in.ts` (COPY FROM STDIN, on the db barrel) and entity's
+ * `{batch-bytes,copy-plan,page-bytes,pg-bulk-repo,pg-copy,pg-update-many-sql,pg-values-list,
+ * query-write,update-many-send,update-many,write-where}.ts` — `updateAll`/`deleteAll`,
+ * `updateMany`, `copyAll` and the page byte bound, reached through `pg-driver.ts` and
+ * `memory-repo.ts` on the entity barrel (`jobs/src/gdpr-coverage.ts` imports it). No existing
+ * module newly reached.
  */
-export const MIGRATE_CEILING = 903;
+export const MIGRATE_CEILING = 915;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

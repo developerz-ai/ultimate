@@ -6,8 +6,7 @@
 
 import { pageOf } from '@ultimat3/core';
 import type { AggregateFn } from './aggregate';
-import { namedColumns } from './plan';
-import type { FindManyArgs, Repo, UpsertArgs } from './repo';
+import type { FilteredWriteOptions, FindManyArgs, Repo, UpsertArgs } from './repo';
 import type { SealedField, SealedSource, SealKeys } from './sealed';
 import {
   lookupCandidates,
@@ -20,6 +19,7 @@ import {
 import type { SealedUse } from './sealed-errors';
 import { sealedLookupValue, sealedMissing, sealedPredicate } from './sealed-errors';
 import type { Predicate } from './tenancy';
+import { predicateColumns } from './write-where';
 
 type Loose = Readonly<Record<string, unknown>>;
 
@@ -166,8 +166,15 @@ const readArgs = async <A extends FindManyArgs>(
 export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo: R): R => {
   const fields = sealedFields(entity);
   if (fields.length === 0) return repo;
-  const filterOf = (filter: unknown): readonly string[] =>
-    namedColumns(filter).map(([property]) => property);
+
+  const filterOf = (filter: unknown): readonly string[] => predicateColumns(filter, undefined);
+  const chainArgs = async (options: FilteredWriteOptions | undefined, keys: SealKeys) =>
+    options?.where === undefined
+      ? options
+      : {
+          ...options,
+          where: await Promise.all(options.where.map((one) => rewrite(entity, fields, one, keys))),
+        };
 
   // Every method takes its own ring: one resolution per repository call, however many values.
   const sealing: Repo<Row> = {
@@ -205,16 +212,19 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
     delete: (id, options) => repo.delete(id, options),
     // A filtered write's filter is refused for every sealed column, lookup included: its shape is
     // one value per column, and during a rotation a lookup value has one stored form PER KEY.
+    // A chain's predicates (`options.where`) are a READ's, rewritten as a read rewrites them — a
+    // lookup column matched by every stored form, so a rotation in progress still finds its rows.
     async deleteWhere(filter, options) {
       refuseNamed(entity, fields, filterOf(filter), "a filtered write's filter");
-      return repo.deleteWhere(filter, options);
+      return repo.deleteWhere(filter, await chainArgs(options, sealKeysOnce()));
     },
     async updateWhere(filter, patch, options) {
       refuseNamed(entity, fields, filterOf(filter), "a filtered write's filter");
+      const keys = sealKeysOnce();
       return repo.updateWhere(
         filter,
-        await sealRow(entity, fields, patch, sealKeysOnce()),
-        options,
+        await sealRow(entity, fields, patch, keys),
+        await chainArgs(options, keys),
       );
     },
     async count(args) {
@@ -232,6 +242,37 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
       return repo.approximateCount(await readArgs(entity, fields, args, sealKeysOnce()));
     },
   };
+  // The count-only and bulk writes: sealed exactly as their counterparts above, and present only
+  // where the inner repository has them, so the typed handle's fallback still sees an absence.
+  const sealAll = <T>(rows: readonly T[], keys: SealKeys): Promise<T[]> =>
+    Promise.all(rows.map((row) => sealRow(entity, fields, row, keys, true)));
+  const { insertAllCount, upsertAllCount, copyAll, updateMany } = repo;
+  if (insertAllCount !== undefined) {
+    sealing.insertAllCount = async (rows, options) =>
+      insertAllCount.call(repo, await sealAll(rows, sealKeysOnce()), options);
+  }
+  if (upsertAllCount !== undefined) {
+    sealing.upsertAllCount = async (rows, args) => {
+      refuseNamed(entity, fields, args.onConflict, 'an upsert conflict target', true);
+      return upsertAllCount.call(repo, await sealAll(rows, sealKeysOnce()), args);
+    };
+  }
+  if (copyAll !== undefined) {
+    sealing.copyAll = async (rows, options) =>
+      copyAll.call(repo, await sealAll(rows, sealKeysOnce()), options);
+  }
+  if (updateMany !== undefined) {
+    sealing.updateMany = async (rows, options) => {
+      const keys = sealKeysOnce();
+      const sealed = await Promise.all(
+        rows.map(async ({ id, patch }) => ({
+          id,
+          patch: await sealRow(entity, fields, patch, keys),
+        })),
+      );
+      return updateMany.call(repo, sealed, options);
+    };
+  }
   // A bucket is an instant and a sum is arithmetic: neither has a meaning over ciphertext.
   const series = repo.series?.bind(repo);
   if (series !== undefined) {

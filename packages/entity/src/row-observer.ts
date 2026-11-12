@@ -16,6 +16,7 @@
 
 import { currentWriteOrigin, type EntityRowOp, instrument, subscribed } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
+import { copyColumns } from './copy-plan';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
 import { readRecorder } from './read-capture';
@@ -195,7 +196,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
   // The read half of failure capture (`read-capture.ts`): one check when no captured call is open.
   const read = readRecorder(name, sealed);
 
-  return {
+  const observed: Repo<Row> = {
     ...repo,
 
     findById: async (id, options) => {
@@ -273,4 +274,41 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
       return rows;
     },
   };
+
+  /**
+   * The count-only writes report as their counterparts do. An insert's `entity.row` carries the
+   * stored row, so with a subscriber the call runs as its returning form and answers the length;
+   * with none it is the count path untouched. `updateMany` is `entity.bulk`, as `updateWhere` is.
+   * Each is present only where the repository has it, so the typed handle's fallback still sees
+   * an absence.
+   */
+  const { insertAllCount, upsertAllCount, copyAll, updateMany } = repo;
+  if (insertAllCount !== undefined) {
+    observed.insertAllCount = async (rows, options) =>
+      subscribed(ROW)
+        ? (await observed.insertAll(rows, options)).length
+        : insertAllCount.call(repo, rows, options);
+  }
+  if (upsertAllCount !== undefined) {
+    observed.upsertAllCount = async (rows, args) =>
+      subscribed(ROW)
+        ? (await observed.upsertAll(rows, args)).length
+        : upsertAllCount.call(repo, rows, args);
+  }
+  if (copyAll !== undefined) {
+    observed.copyAll = async (rows, options) => {
+      if (!subscribed(ROW)) return copyAll.call(repo, rows, options);
+      // COPY's own refusal first, so a load is refused alike with or without a subscriber.
+      copyColumns(entity, rows as readonly RowPatch<Row>[]);
+      return (await observed.insertAll(rows, options)).length;
+    };
+  }
+  if (updateMany !== undefined) {
+    observed.updateMany = async (rows, options) => {
+      const written = await updateMany.call(repo, rows, options);
+      bulk('update', written, options);
+      return written;
+    };
+  }
+  return observed;
 }

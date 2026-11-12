@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type Clock, renderThrowable } from '@ultimat3/core';
 import { db, isReservable, setDbClient } from './client';
+import { canCopyIn } from './copy-in';
 import { driverError } from './errors';
 import { type RecordingClient, recordingClient } from './fake';
 import { reservableOver } from './fake-reservable-fixture';
@@ -347,5 +348,43 @@ describe('a position behind, while half-open', () => {
     await withReplicaReads(() => client.query(sql`select 3`));
     expect(client.stats.replica).toBe(1);
     expect(client.stats.parked).toBe(false);
+  });
+});
+
+describe('copyIn', () => {
+  /** A recording client that also takes a copy, counting the copies it was handed. */
+  const copying = (client: RecordingClient) => {
+    const copies: string[] = [];
+    return Object.assign(client, {
+      copies,
+      async copyIn(target: { readonly text: string }, rows: Iterable<readonly unknown[]>) {
+        copies.push(target.text);
+        return [...rows].length;
+      },
+    });
+  };
+
+  test('a copy is a write: the primary takes it, even inside withReplicaReads', async () => {
+    const primary = copying(recordingClient());
+    const replica = copying(recordingClient());
+    const client = replicatedClient(primary, replica);
+    expect(canCopyIn(client)).toBe(true);
+    const target = sql`copy t (a) from stdin`;
+    const count = await withReplicaReads(async () => {
+      if (!canCopyIn(client)) return expect.unreachable('the primary copies');
+      const copied = await client.copyIn(target, [[1], [2]]);
+      // Read-your-writes: the scope wrote, so the read after it is the primary's too.
+      await client.query(sql`select 1`);
+      return copied;
+    });
+    expect(count).toBe(2);
+    expect(primary.copies).toEqual(['copy t (a) from stdin']);
+    expect(replica.copies).toEqual([]);
+    expect(replica.texts).toEqual([]);
+  });
+
+  test('a primary that cannot copy makes a wrapper that cannot either', () => {
+    const client = replicatedClient(recordingClient(), copying(recordingClient()));
+    expect(canCopyIn(client)).toBe(false);
   });
 });
