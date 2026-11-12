@@ -32,11 +32,14 @@ export interface CompileExecutableOptions {
  */
 export function executableGraph(options: CompileExecutableOptions): {
   readonly entrypoints: readonly string[];
+  readonly root: string;
   readonly define: Readonly<Record<string, string>>;
 } {
   const raster = rasterWorkerBundle([options.entry]);
   return {
     entrypoints: [options.entry, raster.entrypoint],
+    // Stated, not inferred: the worker's define is a path relative to exactly this directory.
+    root: raster.root,
     define: { ...options.define, ...raster.define },
   };
 }
@@ -45,6 +48,7 @@ export async function compileExecutable(options: CompileExecutableOptions): Prom
   const graph = executableGraph(options);
   const built = await Bun.build({
     entrypoints: [...graph.entrypoints],
+    root: graph.root,
     compile: { outfile: options.outfile },
     minify: options.minify ?? false,
     sourcemap: options.sourcemap === true ? 'linked' : 'none',

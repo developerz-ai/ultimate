@@ -119,6 +119,28 @@ describe('sentryFrames', () => {
   });
 });
 
+describe('sentryFrames · a line shaped to backtrack', () => {
+  // `at ` then a long run of spaces with no `(`: what made `(.*?)\s+\(` quadratic. The stack is the
+  // thrower's text, so its message can carry exactly this.
+  const adversarial = (length: number): string => `at a${' \t'.repeat(length / 2)}x`;
+
+  test('a 50k-char line is past the line bound: no frame, the frames under it still read', () => {
+    const real = `    at loadRow (${ROOT}/src/rows.ts:10:9)`;
+    expect(sentryFrames(`Error\n${adversarial(50_000)}`)).toEqual([]);
+    expect(sentryFrames(`Error\n${adversarial(50_000)}\n${real}`).map((f) => f.function)).toEqual([
+      'loadRow',
+    ]);
+  });
+
+  test('lines just under the bound parse in one pass each: 1,000 of them, 4 MB, inside the 5 s test timeout', () => {
+    const lines = Array.from({ length: 1_000 }, () => `    ${adversarial(4_000)}`);
+    const frames = sentryFrames(`Error\n${lines.join('\n')}`);
+    // The backtracking regex measured ~7 ms a line here: 1,000 lines overran the timeout.
+    expect(frames).toHaveLength(100);
+    expect(frames[0]?.in_app).toBe(false);
+  });
+});
+
 describe('stackFrames', () => {
   test('newest first, the order V8 prints, with `new` and `async` stripped from the name', () => {
     const frames = stackFrames(

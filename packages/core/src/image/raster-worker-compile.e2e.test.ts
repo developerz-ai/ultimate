@@ -5,14 +5,17 @@
 //   bun test ./packages/core/src/image/raster-worker-compile.e2e.test.ts
 
 import { afterAll, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no recursive remove.
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
+// why: Bun has no mkdtemp and no recursive remove.
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; Bun.build takes the paths already joined.
 import { join } from 'node:path';
 import { rasterWorkerBundle } from './raster-worker-bundle';
 
-const dir = mkdtempSync(join(tmpdir(), 'ultimate-raster-worker-e2e-'));
+// Under the repository, never the OS temp: on `windows-latest` the checkout is on D: and the temp
+// on C:, and entrypoints on two drives share no directory for the build to root at.
+const scratch = join(import.meta.dir, '..', '..', '..', '..', 'node_modules', '.cache');
+mkdirSync(scratch, { recursive: true });
+const dir = mkdtempSync(join(scratch, 'ultimate-raster-worker-e2e-'));
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
@@ -51,7 +54,10 @@ try {
 } catch (error) {
   code = error.code ?? 'uncoded';
 }
-console.log(JSON.stringify({ spawned, code, same, warned: lines.some((l) => l.includes('image.raster_worker_unavailable')) }));
+// The warning's own reason, so a red run says WHY the Worker never answered.
+const warning = lines.find((l) => l.includes('image.raster_worker_unavailable'));
+const reason = warning === undefined ? null : JSON.parse(warning).reason ?? 'no reason field';
+console.log(JSON.stringify({ spawned, code, same, reason }));
 `;
 
 async function compileAndRun(name: string, withWorker: boolean): Promise<Record<string, unknown>> {
@@ -62,6 +68,8 @@ async function compileAndRun(name: string, withWorker: boolean): Promise<Record<
   const built = await Bun.build({
     entrypoints: withWorker ? [entry, bundle.entrypoint] : [entry],
     compile: { outfile },
+    // The root the define is relative to, stated: what `compileExecutable` passes too.
+    root: bundle.root,
     define: withWorker ? { ...bundle.define } : {},
     throw: false,
   });
@@ -84,7 +92,7 @@ test('compiled with rasterWorkerBundle, the Worker starts and answers the inline
     spawned: 1,
     code: 'none',
     same: true,
-    warned: false,
+    reason: null,
   });
 }, 120_000);
 
@@ -93,6 +101,6 @@ test('compiled without it, the fallback is said aloud and the web role holds its
     spawned: 0,
     code: 'X_IMAGE_RASTER_BUDGET',
     same: false,
-    warned: true,
+    reason: expect.stringContaining('compiled without the raster worker entrypoint'),
   });
 }, 120_000);

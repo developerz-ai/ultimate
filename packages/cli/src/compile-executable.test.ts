@@ -43,6 +43,7 @@ describe('compileExecutable', () => {
     const raster = rasterWorkerBundle([entry]);
     const graph = executableGraph({ entry, outfile: join(dir, 'x'), define: { FLAG: '"1"' } });
     expect(graph.entrypoints).toEqual([entry, raster.entrypoint]);
+    expect(graph.root).toBe(raster.root);
     expect(graph.define).toEqual({ FLAG: '"1"', ...raster.define });
     expect(Object.keys(graph.define)).toContain(RASTER_WORKER_DEFINE);
   });

@@ -2,8 +2,13 @@
 // `exception.stacktrace.frames` and the fingerprint's application frame both parse it here. Total:
 // it runs inside the catch of every failure path, on a string nobody validated.
 
-/** `    at fn (path:1:2)`, `    at async fn (path:1:2)`, `    at path:1:2`. */
-const FRAME = /^\s*at\s+(?:async\s+)?(?:(.*?)\s+\((.*)\)|(.*))$/;
+/** A frame line longer than this is no frame: real ones are a name and a path, well under it. */
+const MAX_LINE = 4096;
+
+/** What `.` refuses besides `\n`: a line holding one is no frame, as it was under the regex. */
+const LINE_BREAK = /[\r\u2028\u2029]/;
+
+const SPACE = /\s/;
 
 /** A line and a column, or a line alone: split off the location's end. */
 const POSITION = /:(\d+)(?::(\d+))?$/;
@@ -45,8 +50,52 @@ function workingDirectory(): string | undefined {
   }
 }
 
-function frameOf(match: RegExpExecArray, root: string | undefined): StackFrame {
-  const location = (match[2] ?? match[3] ?? '').trim();
+const isSpace = (text: string, at: number): boolean => SPACE.test(text.charAt(at));
+
+/** Past every space from `at`. */
+function skipSpaces(text: string, at: number): number {
+  let index = at;
+  while (index < text.length && isSpace(text, index)) index += 1;
+  return index;
+}
+
+interface FrameLine {
+  readonly name: string;
+  readonly location: string;
+}
+
+/**
+ * `    at fn (path:1:2)`, `    at async fn (path:1:2)`, `    at path:1:2`, read in ONE pass — never
+ * a backtracking regex: the message above the frames is the thrower's text, and a line shaped to
+ * make `(.*?)\s+\(` backtrack is quadratic on the path that reports a failure.
+ */
+function parseFrameLine(line: string): FrameLine | undefined {
+  if (line.length > MAX_LINE || LINE_BREAK.test(line)) return undefined;
+  let index = skipSpaces(line, 0);
+  if (!line.startsWith('at', index) || !isSpace(line, index + 2)) return undefined;
+  index = skipSpaces(line, index + 2);
+  if (line.startsWith('async', index) && isSpace(line, index + 5)) {
+    index = skipSpaces(line, index + 5);
+  }
+  const rest = line.slice(index);
+  // `fn (location)`: the FIRST run of spaces followed by `(`, the location up to the closing `)`.
+  if (rest.endsWith(')')) {
+    let runStart = -1;
+    for (let at = 0; at < rest.length - 1; at += 1) {
+      if (isSpace(rest, at)) {
+        if (runStart === -1) runStart = at;
+      } else if (rest.charAt(at) === '(' && runStart !== -1) {
+        return { name: rest.slice(0, runStart), location: rest.slice(at + 1, -1) };
+      } else {
+        runStart = -1;
+      }
+    }
+  }
+  return { name: '', location: rest };
+}
+
+function frameOf(frame: FrameLine, root: string | undefined): StackFrame {
+  const location = frame.location.trim();
   const position = POSITION.exec(location);
   let absPath = (position === null ? location : location.slice(0, position.index)).replaceAll(
     '\\',
@@ -56,7 +105,7 @@ function frameOf(match: RegExpExecArray, root: string | undefined): StackFrame {
   let path = absPath;
   if (root !== undefined && path.startsWith(root)) path = path.slice(root.length);
   path = path.replace(/^\.\//, '');
-  const name = (match[1] ?? '').replace(/^new\s+/, '').trim();
+  const name = frame.name.replace(/^new\s+/, '').trim();
   return {
     fn: name === '' ? undefined : name,
     absPath,
@@ -79,9 +128,9 @@ export function stackFrames(stack: string): readonly StackFrame[] {
   const frames: StackFrame[] = [];
   const lines = stack.trimEnd().split('\n');
   for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const match = FRAME.exec(lines[index] ?? '');
-    if (match === null) break;
-    frames.push(frameOf(match, root));
+    const frame = parseFrameLine(lines[index] ?? '');
+    if (frame === undefined) break;
+    frames.push(frameOf(frame, root));
   }
   // Collected oldest first; the newest MAX_FRAMES are the ones that name the throw.
   return frames.slice(-MAX_FRAMES).reverse();
