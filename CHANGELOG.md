@@ -28,6 +28,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - Priority inside a queue is decided out: a separate queue, never a field ([Jobs](https://github.com/developerz-ai/ultimate/wiki/Jobs-And-Workflows#concurrency-rate-limits-queues-retry)).
 
 ### Fixed
+- `@ultimat3/time`: `parseDuration` reads its input in one linear scan (no regex) and refuses an input over 64 characters (`MAX_DURATION_LENGTH`) with `X_DURATION_INVALID` — a long run of digits could make the old pattern backtrack (CodeQL `js/polynomial-redos`). Every duration it accepted before still parses.
 
 - `@ultimat3/jobs`: a job a `postgresJobDriver` enqueues inside a transaction open longer than one wake slot (250 ms) notifies at commit, so a resting worker starts it then — it was left for the worker's next pass, up to 60 s. The wake reads the wall clock (`clock_timestamp()`), not the transaction's `now()` (`driver-pg-wake.live.test.ts`). Still silent: a transaction that enqueues inside its first slot and commits after the woken worker's next pass. The outbox path (`NOTIFY_STAGED`) was not affected.
 

@@ -26,7 +26,14 @@ const UNITS: Readonly<Record<string, number>> = {
   w: WEEK,
 };
 
-const COMPONENT = /(\d+(?:\.\d+)?)\s*(ms|sec|min|hr|[smhdw])\s*/iy;
+/**
+ * Longest input `parseDuration` reads, after trimming. Belt and braces over the linear scan:
+ * no real duration is this long, and a 50,000-char string from a job option stops here.
+ */
+export const MAX_DURATION_LENGTH = 64;
+
+/** Tried in this order at each unit position — the order the old regex alternation used. */
+const UNIT_NAMES = ['ms', 'sec', 'min', 'hr', 's', 'm', 'h', 'd', 'w'] as const;
 const ISO_8601 = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i;
 
 /**
@@ -35,29 +42,35 @@ const ISO_8601 = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.
  */
 export function parseDuration(input: string): number {
   const value = input.trim();
-  if (value === '') throw durationInvalid(input);
+  if (value === '' || value.length > MAX_DURATION_LENGTH) throw durationInvalid(input);
 
   const negative = value.startsWith('-');
   const body = negative ? value.slice(1) : value;
 
+  if (body === '') throw durationInvalid(input);
   if (/^p/i.test(body)) return safeTotal(parseIso8601Duration(body, input), negative, input);
 
-  COMPONENT.lastIndex = 0;
   let total = 0;
-  let matched = 0;
-  let match = COMPONENT.exec(body);
-  while (match !== null) {
-    const amount = Number.parseFloat(match[1] ?? '');
-    const unit = (match[2] ?? '').toLowerCase();
-    const scale = UNITS[unit];
-    if (!Number.isFinite(amount) || scale === undefined) throw durationInvalid(input);
-    total += amount * scale;
-    matched = COMPONENT.lastIndex;
-    match = COMPONENT.exec(body);
+  let at = 0;
+  // A hand scan, not a sticky regex: CodeQL (js/polynomial-redos) read the old
+  // `(\d+(?:\.\d+)?)\s*(unit)\s*` as quadratic on runs of '0'. Every character is visited once.
+  while (at < body.length) {
+    const start = at;
+    at = digits(body, at);
+    if (at === start) throw durationInvalid(input);
+    if (body[at] === '.') {
+      const fraction = digits(body, at + 1);
+      if (fraction === at + 1) throw durationInvalid(input);
+      at = fraction;
+    }
+    const amount = Number.parseFloat(body.slice(start, at));
+    at = spaces(body, at);
+    const unit = UNIT_NAMES.find((name) => body.slice(at, at + name.length).toLowerCase() === name);
+    // A bare number names no unit: `'3'` must not mean 3 of anything.
+    if (unit === undefined || !Number.isFinite(amount)) throw durationInvalid(input);
+    total += amount * (UNITS[unit] ?? 0);
+    at = spaces(body, at + unit.length);
   }
-  // Sticky matching starts at 0, so anything short of the end is trailing junk, and a
-  // zero-length match means there was no unit at all (`'3'` must not mean 3 of anything).
-  if (matched === 0 || matched !== body.length) throw durationInvalid(input);
   return safeTotal(Math.round(total), negative, input);
 }
 
@@ -233,6 +246,18 @@ function parseIso8601Duration(body: string, original: string): number {
     number(minutes) * MINUTE +
     number(seconds) * SECOND;
   return Math.round(total);
+}
+
+function digits(text: string, from: number): number {
+  let at = from;
+  while (at < text.length && text.charCodeAt(at) >= 48 && text.charCodeAt(at) <= 57) at++;
+  return at;
+}
+
+function spaces(text: string, from: number): number {
+  let at = from;
+  while (at < text.length && /\s/.test(text.charAt(at))) at++;
+  return at;
 }
 
 function number(value: string | undefined): number {
