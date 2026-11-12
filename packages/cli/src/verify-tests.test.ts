@@ -15,6 +15,7 @@ import type { ExecOptions, ExecResult } from './exec';
 import { belongsToType } from './test-select';
 import { filesIn } from './test-shards';
 import { SERIAL_TYPES } from './test-workers';
+import { SEEDS_PROBE_MARKER } from './verify-seeds';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import {
   E2E_PATH_GLOBS,
@@ -277,6 +278,7 @@ describe('unit · an app seed its entity refuses reds the unit step, with the in
       resetTestDiscovery();
       const report = [
         {
+          stage: 'run',
           file: 'packages/db/seeds/dev.ts',
           export: 'dev',
           seed: 'dev',
@@ -293,7 +295,9 @@ describe('unit · an app seed its entity refuses reds the unit step, with the in
           command,
           ok: true,
           code: 0,
-          stdout: command.includes('--eval') ? JSON.stringify(report) : '',
+          stdout: command.some((arg) => arg.endsWith('verify-seeds-probe.ts'))
+            ? `${SEEDS_PROBE_MARKER}${JSON.stringify(report)}`
+            : '',
           stderr: '',
           durationMs: 1,
         }),
