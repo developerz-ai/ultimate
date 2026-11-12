@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/policy",
-  "version": "31.11.0",
+  "version": "31.12.0",
   "description": "The one authz rule, evaluated identically in every surface",
   "keywords": [
     "ultimate",
@@ -42,6 +42,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "31.11.0"
+    "@ultimat3/core": "31.12.0"
   }
 }

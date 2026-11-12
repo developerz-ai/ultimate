@@ -10,18 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Added
-
-- `@ultimat3/cli`: a web role booted outside `development` and `test` with no `assets.retain` logs `X_ASSET_RETAIN_UNDECLARED` once, naming the edit: `assets: { retain: { disk, builds: 3 } }` in `app.config.ts`. A build that serves no hashed file stays silent.
-
-### Fixed
-
-- `@ultimat3/render`: a soft navigation whose next page's stylesheet fails to load no longer swaps in an unstyled page and retires the working sheet. A GET becomes the browser's full load (the fallback a failed fetch already takes), a `refresh()` ends quietly, and a POST answered in place swaps but keeps the previous page's sheets. `loadStylesheets` resolves to whether every sheet loaded, and a failed `<link>` leaves the head so a later navigation asks for it again.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.12.0](docs/changelog/31.12.0.md) | 2026-11-12 | A page no longer stays unstyled after one stylesheet fails during soft navigation: the router does a full load instead of swapping in a page whose CSS did not load, and keeps the previous sheets. |
 | [31.11.0](docs/changelog/31.11.0.md) | 2026-11-12 | Security: a `native:` form answer and `uploadFlow` are host- and row-guarded — a refused form never redirects off this host, and an upload's policy judges the row it attaches to. |
 | [31.10.0](docs/changelog/31.10.0.md) | 2026-11-12 | Security: `subjectErase` now reaches `<table>_history` — every image naming the erased person is purged in the parent's transaction, including rows deleted earlier and images a `set null`/`cascade` write records. An undeclared history table is `X_SUBJECT_TABLE_UNDECLARED`. |
 | [31.9.0](docs/changelog/31.9.0.md) | 2026-11-12 | Set-based entity writes: `db.x.where(…).updateAll(patch)` / `.deleteAll()` is one statement, and `updateMany([{ id, patch }])` writes 1,000 different rows in one statement. |
