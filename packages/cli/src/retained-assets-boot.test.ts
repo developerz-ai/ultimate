@@ -56,6 +56,43 @@ describe('retainBuildAssets', () => {
     expect(disk.objects().size).toBe(0);
   });
 
+  test('undeclared outside development and test: one coded warning naming the edit', async () => {
+    const storage = defineStorage({ disks: { assets: memoryStorageDriver() } });
+    const config = defineConfig({ name: 'app' });
+    const warned = async (environment: string, built = surface) => {
+      const lines: { message: string; fields: Readonly<Record<string, unknown>> }[] = [];
+      const log = {
+        warn: (message: string, fields: Readonly<Record<string, unknown>>) =>
+          void lines.push({ message, fields }),
+        error: () => undefined,
+      };
+      await retainBuildAssets({ ...built, environment, config, storage, log });
+      return lines;
+    };
+    const [line, ...rest] = await warned('production');
+    expect(rest).toEqual([]);
+    expect(line?.fields['code']).toBe('X_ASSET_RETAIN_UNDECLARED');
+    expect(line?.message).toContain('assets: { retain: { disk: "assets", builds: 3 } }');
+    expect(await warned('staging')).toHaveLength(1);
+    // A laptop and a test boot have no rolling deploy; a build serving no hashed file has nothing
+    // a page could name.
+    expect(await warned('development')).toEqual([]);
+    expect(await warned('test')).toEqual([]);
+    const bare = mkdtempSync(join(tmpdir(), 'x-retained-bare-'));
+    try {
+      const nothing = {
+        ...surface,
+        root: bare,
+        islands: { ...islands, chunks: [], shared: [] },
+        styles: styleBundleOf([]),
+        scripts: [],
+      };
+      expect(await warned('production', nothing)).toEqual([]);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
   test('a disk the app did not declare is X_CONFIG_INVALID naming the ones it did', async () => {
     const storage = defineStorage({ disks: { uploads: memoryStorageDriver() } });
     let caught: unknown;

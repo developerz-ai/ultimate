@@ -65,19 +65,28 @@ describe('stylesheets', () => {
   test('a sheet that fails to load does not hang the navigation; each one is owned', async () => {
     const doc = new FakeDocument();
     const owned = new WeakSet<Element>();
-    await loadStylesheets(
+    const appended: FakeElement[] = [];
+    const append = doc.head.append.bind(doc.head);
+    doc.head.append = (...nodes: FakeElement[]) => {
+      appended.push(...nodes);
+      append(...nodes);
+    };
+    const loaded = await loadStylesheets(
       dom(doc),
       ['https://app.test/ok.css', 'https://app.test/fail.css'],
       owned,
     );
-    const links = doc.head.querySelectorAll('link');
-    expect(links.map((l) => l.getAttribute('href'))).toEqual([
-      'https://app.test/ok.css',
-      'https://app.test/fail.css',
-    ]);
+    // Reported, never swallowed: the controller must not swap an unstyled page in.
+    expect(loaded).toBe(false);
     // Owned as appended: a navigation aborted before its swap leaves nothing the next swap
     // cannot retire.
-    expect(links.map((l) => owned.has(l as unknown as Element))).toEqual([true, true]);
+    expect(appended.map((l) => owned.has(l as unknown as Element))).toEqual([true, true]);
+    // The failed one leaves the head, so a later navigation asks for it again.
+    expect(doc.head.querySelectorAll('link').map((l) => l.getAttribute('href'))).toEqual([
+      'https://app.test/ok.css',
+    ]);
+    expect(await loadStylesheets(dom(doc), ['https://app.test/b.css'], owned)).toBe(true);
+    expect(await loadStylesheets(dom(doc), [], owned)).toBe(true);
   });
 });
 
@@ -243,6 +252,21 @@ describe('swapDocument', () => {
     ]);
     expect(doc.head.querySelectorAll('script:not([src])').map((s) => s.textContent)).toEqual([
       'theme()',
+    ]);
+  });
+
+  test('retire: false keeps the previous page’s sheets — the next page’s did not load', () => {
+    const doc = new FakeDocument(
+      routerHead('A', [h('link', { rel: 'stylesheet', href: '/a.css' })]),
+    );
+    const owned = documentHead(dom(doc));
+    const next = new FakeDocument(
+      routerHead('B', [h('link', { rel: 'stylesheet', href: '/b.css' })]),
+    );
+    swapDocument(dom(doc), dom(next), owned, false);
+    expect(doc.title).toBe('B');
+    expect(doc.head.querySelectorAll('link').map((l) => l.getAttribute('href'))).toEqual([
+      '/a.css',
     ]);
   });
 });

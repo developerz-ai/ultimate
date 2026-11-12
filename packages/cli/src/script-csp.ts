@@ -6,6 +6,7 @@
 
 import { cspHashSource } from '@ultimat3/http';
 import { HYDRATE_RUNTIME_BODIES, STREAM_REVEAL_BODIES } from '@ultimat3/render';
+import { STYLE_HEAL_BODY } from './style-heal';
 
 /**
  * Hashes, never a nonce: a `render: 'static'` page is a file on disk, so no per-response value can
@@ -18,6 +19,7 @@ import { HYDRATE_RUNTIME_BODIES, STREAM_REVEAL_BODIES } from '@ultimat3/render';
 export function inlineScriptSources(extra: readonly string[] = []): readonly string[] {
   // The stream reveal too: a `render: 'stream'` page swaps each `<Hole>` in with a
   // constant inline `$X()` call, and unhashed it is blocked under the enforced policy.
-  const bodies = [...HYDRATE_RUNTIME_BODIES, ...STREAM_REVEAL_BODIES];
+  // The stylesheet self-heal: ahead of every surface stylesheet link (`style-heal.ts`).
+  const bodies = [...HYDRATE_RUNTIME_BODIES, ...STREAM_REVEAL_BODIES, STYLE_HEAL_BODY];
   return [...new Set([...bodies.map(cspHashSource), ...extra])].sort();
 }
