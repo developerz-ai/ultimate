@@ -84,6 +84,8 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'llm', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'backfill', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'consumer', pkg: '@ultimat3/jobs', kind: 'job' },
+      // A job and its schedule from one declaration: the handle is the job, `.schedule` its task.
+      { factory: 'cronJob', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'exportRows', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'importRows', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'ledger', pkg: '@ultimat3/jobs', kind: 'job' },

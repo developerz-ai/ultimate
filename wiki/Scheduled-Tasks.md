@@ -40,6 +40,42 @@ export const rotateApiKeys = task({
 });
 ```
 
+## A job on its own cron — `cronJob()`
+
+A job that one task fires, and nothing else enqueues, is ONE declaration: `cronJob()` returns the job handle, and its `.schedule` is the task. A factory over `job()` and `task()`, not a ninth primitive (`PRIMITIVE_FACTORIES`). `As of 2026-11`.
+
+```ts
+import { cronJob, t } from '@ultimat3/jobs';
+
+export const sendDigest = cronJob({
+  name: 'sendDigest',
+  cron: '0 3 * * *',
+  tz: 'UTC',
+  input: t.object({ runDate: t.string }),
+  // The occurrence's instant, never the wall clock — the rule `enqueue` follows above.
+  payload: (occurrenceMs) => ({ runDate: new Date(occurrenceMs).toISOString().slice(0, 10) }),
+  idempotencyKey: ({ runDate }) => `digest:${runDate}`,
+  tenant: 'none',
+  retry: { attempts: 3 },
+  async run({ input }) {
+    return input.runDate;
+  },
+});
+
+// The task, `sendDigest.schedule`: `.enqueue()`, `.describe()`, `.entries()` like any other.
+export const digestTask = sendDigest.schedule;
+```
+
+| Field | Rule |
+|---|---|
+| `name` | **required**, unlike `job()`: the task is `<name>.schedule`, and the scheduler keys a task's last fire and occurrence lock by name |
+| `cron`, `tz`, `catchUp`, `maxCatchUp` | the task's, with the task's rules: `tz` required and IANA |
+| `input` + `payload` | together or not at all. `payload(occurrenceMs)` builds one occurrence's input. Without `input` the job takes none and each occurrence enqueues `{}` |
+| `idempotencyKey` | optional: default `() => name` — one live run at a time, and a manual `.schedule.enqueue()` during one is that run. A tick's key is occurrence-scoped on top, as for every task |
+| everything else | `job()`'s fields, unchanged: `tenant`, `retry`, `queue`, `timeout`, `concurrency`, `run`, … |
+
+Hand the job's module to `defineApi({ jobs })`; the task registers with it — it needs no `tasks` entry. A task that fires several jobs, or a job other code also enqueues, stays a `task()` beside its jobs.
+
 ## The fluent surface
 
 Every projection is a method on the task — `nightlyDigest.enqueue()`, never `runTask(nightlyDigest)` — and every declared field is lifted onto it. A task has no `.def`.

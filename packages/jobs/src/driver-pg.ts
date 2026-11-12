@@ -29,6 +29,7 @@ import { pgEnqueueMany } from './driver-pg-enqueue-many';
 import { pgOperator } from './driver-pg-operator';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
+import { postgresSettleDebt } from './driver-pg-settle-debt';
 import { SQL_COUNTER_FLUSH } from './driver-pg-settle-sql';
 import {
   SQL_ACK,
@@ -37,8 +38,10 @@ import {
   SQL_BACKFILL_LIST,
   SQL_BACKFILL_PROGRESS,
   SQL_BACKFILL_START,
+  SQL_BACKLOG,
   SQL_CANCEL,
   SQL_ENQUEUE,
+  SQL_ENQUEUE_REPLACE,
   SQL_FIND_LIVE_BY_KEY,
   SQL_HEARTBEAT,
   SQL_JOB_DEAD_LETTERS,
@@ -264,9 +267,21 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     steps: postgresStepStore(exec),
     backfills: postgresBackfillLedger(exec),
     leases: postgresLeaseStore(exec),
+    settleDebt: postgresSettleDebt(exec),
     introspect,
     async wake(queue) {
       await exec().query(SQL_WAKE, [JOBS_WAKE_CHANNEL, queue ?? '']);
+    },
+
+    async backlog(queue, cap) {
+      const limit = finiteCount('the pg driver backlog', 'cap', cap);
+      const rows = await exec().query<{ n: number | string }>(SQL_BACKLOG, [queue, limit]);
+      return num(rows[0]?.n ?? 0);
+    },
+
+    // The lookup a dedupe already sends, off the live index: only a full `maxPending` asks.
+    async holds(name, key, tenantId) {
+      return (await exec().query(SQL_FIND_LIVE_BY_KEY, [name, key, tenantId ?? null])).length > 0;
     },
 
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
@@ -283,16 +298,22 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
         request.tenantId ?? null,
         request.traceparent ?? null,
         request.enqueuedBy ?? null,
+        request.expiresAt ?? null,
       ];
+      // Debounce is its own statement (`driver-pg-enqueue-sql.ts` says why): one either way.
+      const statement = request.onConflict === 'replace' ? SQL_ENQUEUE_REPLACE : SQL_ENQUEUE;
       // TWICE at most. The insert and the lookup below are two statements, and the live holder
       // of the key can settle between them: the insert met it, the lookup did not. That is a key
       // that just came free, so the insert is sent once more and lands. A second miss is not a
       // race any more — see the refusal.
       for (let attempt = 1; attempt <= ENQUEUE_ATTEMPTS; attempt += 1) {
-        const rows = await exec().query<{ id: string; run_id: string }>(SQL_ENQUEUE, params);
+        const rows = await exec().query<{ id: string; run_id: string; replaced: boolean }>(
+          statement,
+          params,
+        );
         const inserted = rows[0];
         if (inserted !== undefined) {
-          return { id: inserted.id, runId: inserted.run_id, deduped: false };
+          return { id: inserted.id, runId: inserted.run_id, deduped: inserted.replaced === true };
         }
 
         // Nothing inserted under an id the CALLER allocated: the outbox publishing one staged row
@@ -345,7 +366,13 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     // Both settles answer whether they LANDED: no row back is a settle from a worker that no
     // longer owns the job (`SQL_ACK` says why both fences exist), and the caller logs it.
     async ack(jobId: string, by: AckOptions): Promise<boolean> {
-      const rows = await exec().query<{ name: string }>(SQL_ACK, [jobId, by.workerId, by.claim]);
+      const owes = by.owesSettle === true;
+      const rows = await exec().query<{ name: string }>(SQL_ACK, [
+        jobId,
+        by.workerId,
+        by.claim,
+        owes,
+      ]);
       const settled = rows[0];
       if (settled === undefined) return false;
       tally.add(settled.name, 'done', Math.round(by.durationMs ?? 0), nowMs(clock));
@@ -367,6 +394,7 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
         nackOptions.workerId,
         nackOptions.stack?.slice(0, MAX_ERROR_STACK_LENGTH) ?? null,
         nackOptions.claim,
+        nackOptions.owesSettle === true,
       ]);
       const settled = rows[0];
       if (settled === undefined) return false;

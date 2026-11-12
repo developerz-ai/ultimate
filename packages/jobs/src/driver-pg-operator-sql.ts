@@ -44,7 +44,7 @@ with eligible as (
 ), moved as (
   update x_jobs
      set state = 'ready', attempt = 0, run_at = now(), updated_at = now(),
-         claimed_by = null, visible_at = null
+         claimed_by = null, visible_at = null, settle_owed = false, expires_at = null
    where id in (select id from candidates) and state = $1
   returning id
 )

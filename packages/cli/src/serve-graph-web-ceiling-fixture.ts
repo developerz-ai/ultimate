@@ -230,5 +230,7 @@
  * 3, the modules named there. Nothing web-only.
  * raised 1662 → 1663, measured 1663 (2026-11-12, sweep 9a jobs idle cost):
  * `SERVING_ROLE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing web-only.
+ * raised 1663 → 1674, measured 1674 (2026-11-12, sweep 9b jobs mechanisms):
+ * `SERVING_ROLE_CEILING`'s 11, the modules named there. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1663;
+export const WEB_ROLE_CEILING = 1674;

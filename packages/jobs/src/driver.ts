@@ -12,6 +12,7 @@
 import { assert, finiteCount, finiteOption } from '@ultimat3/core';
 import { adapterSlot } from '@ultimat3/core/adapter';
 import type { BackfillLedger } from './backfill-ledger';
+import type { AckOptions, NackOptions, SettleDebt } from './driver-settle';
 import { ClaimQueuesEmptyError } from './errors';
 import type { JobIntrospection, JobProgress } from './introspection';
 import type { LeaseStore } from './leases';
@@ -79,6 +80,9 @@ export const STATS_STATES: ReadonlySet<JobState> = new Set<JobState>([
  * its last, so nothing ever settled it and nothing may run it again. Fixed text, written by the
  * claim statement itself — no apostrophe, because it is spliced into SQL as a literal.
  */
+/** A row's `lastError` when the claim settled it `failed` past its `expiresAt`. */
+export const JOB_EXPIRED = 'expired';
+
 export const LEASE_LAPSED_FINAL_ATTEMPT =
   'the lease lapsed on the final attempt: the worker holding this job stopped renewing it and never settled it, and no attempts remain';
 
@@ -123,7 +127,12 @@ export interface JobRecord {
   readonly enqueuedBy?: string;
 }
 
-export type ConflictPolicy = 'dedupe' | 'error';
+/**
+ * What an enqueue does when a LIVE row holds its key. `'replace'` is debounce: a `ready`/`delayed`
+ * holder takes this request's `input` and `runAt`, in the same statement; a `running`/`suspended`
+ * one is past replacing and the answer is `deduped`, as `'dedupe'` gives.
+ */
+export type ConflictPolicy = 'dedupe' | 'error' | 'replace';
 
 export interface EnqueueRequest {
   /**
@@ -147,6 +156,12 @@ export interface EnqueueRequest {
    */
   readonly runId?: string;
   readonly onConflict?: ConflictPolicy;
+  /**
+   * Epoch ms past which this row is worthless: a claim that finds it `ready`/`delayed` after then
+   * settles it `failed` with `lastError` `JOB_EXPIRED` instead of running it (reported through
+   * `ClaimOptions.onExhausted`, as a burial is). A running or suspended run is never expired.
+   */
+  readonly expiresAt?: number;
   /** W3C `traceparent` of the enqueuing request. The facade stamps it; callers rarely set it. */
   readonly traceparent?: string;
   /**
@@ -242,67 +257,8 @@ export const claimOf = (claimed: Pick<ClaimedJob, 'claimedBy' | 'claim'>): Claim
   claim: claimed.claim,
 });
 
-/**
- * Who settles a claim, and how long the attempt ran. The identity is the FENCE: a settle from a
- * claim the row no longer carries matches nothing. The lease lapses, the row is claimed again —
- * by another worker or by this one — and the first body unwinds: its ack would mark the second
- * run `done`, its nack would hand a running job to a third. `durationMs` feeds the per-minute
- * counters the same statement writes.
- */
-export interface SettleBy extends ClaimIdentity {
-  readonly durationMs?: number;
-}
-
-/** An ack is a settle by the claimer: every ack is a completed run and adds to the counters. */
-export type AckOptions = SettleBy;
-
-export interface NackOptions extends SettleBy {
-  /** Delay before the job becomes claimable again. */
-  readonly delayMs: number;
-  readonly error?: string;
-  /** The thrown value's stack, kept beside `error` for `x jobs show`. */
-  readonly stack?: string;
-  /**
-   * The ATTEMPT COUNTER, and nothing else. False for a suspension and for a shed alike: neither is
-   * a failure, and a 3-day sleep that burned an attempt would dead-letter the job.
-   */
-  readonly countsAsAttempt?: boolean;
-  /**
-   * True for a SUSPENSION — `step.sleep`, or a name this deploy does not know — which leaves the
-   * ready bucket and is counted `suspended`. Absent for a limiter or `job.concurrency` shed, which
-   * is a job still WAITING to run.
-   *
-   * The two were one flag until 2026-08: `countsAsAttempt: false` decided the state as well as the
-   * counter, so a shed was filed beside a 3-day sleep and `stats()` excluded it from `ready` and
-   * from `oldestReadyMs` — the two numbers the worker publishes as `queue_depth` and
-   * `queue_oldest_ready_seconds`. Under sustained overload the shed fraction approaches 100%, so
-   * the HPA signal and the "oldest job older than 5 minutes" page both went quiet exactly when the
-   * queue was saturated.
-   */
-  readonly park?: boolean;
-  readonly deadLetter?: boolean;
-  /**
-   * Terminal WITHOUT the dead-letter queue: the row settles `failed` — finished, never claimed
-   * again, requeueable by `x jobs retry`, and absent from `queue_dead_jobs`. For an ending that is
-   * an answer rather than a fault: `whenBusy: 'fail'` over a busy concurrency key
-   * (`X_JOB_KEY_BUSY`). `deadLetter` wins when both are set, and `park` loses to both.
-   */
-  readonly fail?: boolean;
-}
-
-/**
- * The state a nack leaves its row in — ONE reading, for every driver. It was a three-way written
- * out in each, which is two places for a fourth branch to land in one and not the other; a
- * `fail` the pg driver filed as `ready` would re-claim a refused run forever.
- */
-export const nackState = (options: NackOptions): JobState =>
-  options.deadLetter === true
-    ? 'dead'
-    : options.fail === true
-      ? 'failed'
-      : options.park === true
-        ? 'suspended'
-        : 'ready';
+export type { AckOptions, NackOptions, SettleBy, SettleDebt, SettleDebtJob } from './driver-settle';
+export { nackState } from './driver-settle';
 
 export interface QueueStats {
   readonly queue: string;
@@ -390,7 +346,24 @@ export interface JobDriver {
    * nothing is worse than either alternative.
    */
   readonly leases?: LeaseStore;
+  /**
+   * Optional, like `leases`: the `onSettled` debt a settle records (`SettleBy.owesSettle`), what
+   * makes the hook at-least-once across a crash. A driver without one runs it at most once.
+   */
+  readonly settleDebt?: SettleDebt;
   readonly introspect?: JobIntrospection;
+  /**
+   * How many rows wait (`ready` or `delayed`) on `queue`, counted no further than `cap`: what an
+   * enqueue of a job declaring `maxPending` asks first (`enqueue-backlog.ts`). Optional for a
+   * hand-rolled driver; such a job is then refused at enqueue rather than left uncapped.
+   */
+  backlog?(queue: string, cap: number): Promise<number>;
+  /**
+   * Whether a LIVE row holds `(name, tenant, key)` — the enqueue it answers inserts nothing. Asked
+   * only by a `maxPending` enqueue the count already says is full, so a dedupe or a replace onto
+   * its holder is not refused for a row it never adds. Optional: absent, such an enqueue is refused.
+   */
+  holds?(name: string, idempotencyKey: string, tenantId?: string): Promise<boolean>;
   /**
    * Tell every worker of the fleet that rows on `queue` (any, when none is named) may be claimable
    * before its rest ends. Present ONLY on a driver whose enqueues announce themselves (Postgres's
@@ -448,15 +421,20 @@ export const assertClaimQueues = (driver: string, options: ClaimOptions): void =
  * Every driver's `enqueueMany` opens with this, so a batch is refused ONE way. `onConflict:
  * 'error'` has no batch meaning the drivers could share: Postgres inserts every other row of the
  * statement before the refusal is known, a loop only the rows before it — two different sets of
- * jobs left behind by one refused call. A request that must refuse a duplicate is a single
- * `enqueue`; `handle.enqueueMany` never sets it.
+ * jobs left behind by one refused call. `'replace'` neither: one statement cannot update a row
+ * twice (Postgres 21000). `expiresAt` is a single enqueue's too. `handle.enqueueMany` sets none.
  */
 export const assertEnqueueMany = (driver: string, requests: readonly EnqueueRequest[]): void => {
-  const at = requests.findIndex((request) => request.onConflict === 'error');
+  const at = requests.findIndex(
+    (request) =>
+      request.onConflict === 'error' ||
+      request.onConflict === 'replace' ||
+      request.expiresAt !== undefined,
+  );
   assert(
     at === -1,
-    `the ${driver} driver's enqueueMany was handed onConflict: 'error' on request ${at}, and a batch that refuses a duplicate would leave a different set of jobs behind on every driver`,
-    "drop onConflict from the batch — a duplicate is answered deduped: true — or send that request alone: driver.enqueue({ ...request, onConflict: 'error' })",
+    `the ${driver} driver's enqueueMany was handed onConflict: 'error' or 'replace', or an expiresAt, on request ${at}, and a batch that refuses, replaces or expires would leave a different set of jobs behind on every driver`,
+    'drop onConflict and expiresAt from the batch — a duplicate is answered deduped: true — or send that request alone: driver.enqueue({ ...request })',
   );
 };
 

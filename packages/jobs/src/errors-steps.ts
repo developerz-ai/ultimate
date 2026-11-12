@@ -1,5 +1,5 @@
-// The two refusals a step answer can raise: a value JSON cannot hold, and a waited event its schema
-// refuses. Both are terminal, and their codes stay declared in `error-codes.ts`.
+// The refusals a step answer can raise: a value JSON cannot hold, a value past the job's byte
+// ceiling, and a waited event its schema refuses. All terminal; codes declared in `error-codes.ts`.
 
 import { UltimateError } from '@ultimat3/core';
 
@@ -11,6 +11,24 @@ export class StepOutputUnserializableError extends UltimateError {
       cause: `job "${input.job}" step "${input.step}" answered a value JSON cannot hold (${input.reason}), so no attempt could replay it`,
       fix: `step.run('${input.step}', () => String(id))   # return plain JSON: String(id) for a bigint, the ids rather than the object graph, null rather than NaN or an invalid Date, text with no NUL and no lone surrogate`,
       meta: { job: input.job, step: input.step },
+    });
+  }
+}
+
+/**
+ * `step.run`'s body answered more JSON bytes than the job's declared `stepOutputMax`; past the
+ * undeclared default it is only logged, with this code and fix (`steps-output.ts`). Every attempt
+ * loads every output of its run (`steps.ts` hydration), so a page or a file kept in a step costs
+ * its size times the run's steps on every retry. The step's side effect has happened; nothing is
+ * recorded.
+ */
+export class StepOutputTooLargeError extends UltimateError {
+  constructor(input: { job: string; step: string; bytes: number; maxBytes: number }) {
+    super({
+      code: 'X_STEP_OUTPUT_TOO_LARGE',
+      cause: `job "${input.job}" step "${input.step}" answered ${input.bytes} bytes of JSON, past the ${input.maxBytes}-byte ceiling a step output may hold`,
+      fix: `step.run('${input.step}', async () => { await storage.put(key, bytes); return key; })   # persist the payload and return its key or cursor, as export() and backfill() do — or job({ name: '${input.job}', stepOutputMax: ${input.bytes} }) when the output really is that size`,
+      meta: { job: input.job, step: input.step, bytes: input.bytes, maxBytes: input.maxBytes },
     });
   }
 }

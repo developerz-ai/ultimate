@@ -68,7 +68,16 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - **`demand` is the seventh method, required**; a draining worker's `queue_demand` goes to 0.
 - **The claim SEEKS** (`SQL_CLAIM`); correct only because a claim autocommits. It hands each row its steps; an IDLE loop's claim (`SQL_CLAIM_IDLE`, `onEmpty`) also says when the next row is due, and the loop rests on it, ≤ 60 s, in 2 s slices that re-read the wake (`worker-idle.test.ts`).
 - Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm` (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Full rule: `docs/history/jobs.md`.
+- A `step.run` output past a DECLARED `stepOutputMax` (JSON bytes) is `X_STEP_OUTPUT_TOO_LARGE`, terminal. Undeclared, past `STEP_OUTPUT_MAX_BYTES` (256 KiB) it is logged once per job and step (`jobs.step.output-too-large`, same code) and stored — refusal by default waits for `next`. A waited event is not measured — its payload is the publisher's.
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
+- **Debounce, expiry, backlog are driver contract** (`job-driver-checks-enqueue.ts`,
+  `-debounce.ts`, all three drivers): `onConflict: 'replace'` is its own statement
+  (`SQL_ENQUEUE_REPLACE`), fenced by request order (`debounced_id`, the request's uuidV7 — a repeat
+  publish never restores old input or starts a stale run); the claim settles an expired NEVER-CLAIMED
+  row (`attempt = 0`) `failed`/`JOB_EXPIRED`; a requeue clears expiry and `settle_owed`;
+  `backlog(queue, cap)` counts no further than `cap`, `holds` probes a key once full. Refused in any
+  batch (`assertEnqueueMany`).
+- **Redis scripts go by `EVALSHA`** (`driver-redis-eval.ts`): `EVAL` only on `NOSCRIPT`.
 
 ## Rules — numbers and limits
 
@@ -159,6 +168,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
   no cross-tenant escape. †
 - **`webhookReceiver()`**: read under `maxBytes`, `verify` before any parse, the enqueue before the
   ack (503 otherwise); `webhookReceiverRoutes()` is what the boots mount. †
+- **`cronJob()`**: `job()` + `task()` from one declaration, `.schedule` named `<name>.schedule`;
+  `name` required (the scheduler keys the task by it), `input` only with `payload`.
 - **`webhook()`**: ONE event to ONE endpoint; core's wire format; tenant from the input, else
   terminal `X_JOB_TENANT_MISMATCH`. †
 
@@ -170,6 +181,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `tenant.ts` | what tenant a run acts under: `JobTenant`, the declaration's backstop, the actor `executeJob` installs |
 | `backfill.ts` | `backfill()` — a factory over `job()`: the declaration, its checksum and its input |
 | `backfill-*.ts` | one pass + cursor checkpoints, cross-tenant scope, the `x_backfills` ledger, the declared registry, the gate, pending, rate, the `inspectBackfills` projection, `X_BACKFILL_*` classes, declaration/source/reader † |
+| `cron-job.ts` | `cronJob()` — a job + its `.schedule` task from one declaration |
 | `consumer.ts` / `consumer-loop.ts` / `consumer-types.ts` | `consumer()` — a job + `.supervisor` task; one run's turns; the shapes |
 | `consumer-registry.ts` / `-guard.ts` / `-errors.ts` | the `origin` stamp + `registeredConsumers`; the self-enqueue refusal; `X_CONSUMER_*` |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements; an `action-job` projection is `X_ACTION_JOB_UNBRIDGED` |
@@ -199,7 +211,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
 | `execute.ts` (+`-result.ts`) / `run-deadline.ts` | `executeJob`: one claimed job run and settled; its deadline: cancel, then fail |
-| `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
+| `heartbeat.ts` / `job-lease.ts` | one claimed job's lease: the renewal interval and the loss it reports; `args.lease`, the body's view of it |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |
 | `worker.ts` | `worker` role, claim round, drain |
 | `worker-drain-cutoff.ts` / `-held.ts` / `-tally.ts` | drain cut-off · held claims · counters |
@@ -223,6 +235,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |
 | `progress.ts` / `settled.ts` / `redact-input.ts` | the progress throttle; the `onSettled` runner; a payload as an operator reads it |
+| `settled-types.ts` / `driver-settle.ts` / `settle-redrive.ts` / `scheduler-upkeep.ts` | what `onSettled` is handed; the settle fence and the `onSettled` debt contract; the leader's re-drive of lost debts; the leader's cadence (counter fold, re-drive) |
+| `driver-memory-settle.ts` / `driver-pg-settle-debt.ts` / `driver-redis-settle.ts` | the `onSettled` debt per driver: a map, `x_jobs.settle_owed`, the `owed` ZSET — held equal by `@ultimat3/testing`'s `SETTLE_DEBT_CHECKS` |
 | `scheduler-state.ts` | `SchedulerState`, `fire`, the memory watermark |
 | `scheduler-leader.ts` / `scheduler-occurrences.ts` | `LeaderElection` + `soleLeader`; which occurrences fall in a window |
 | `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share, and the rest (`restAfter`); the two wake signals and `wakeIsLive` |
@@ -239,12 +253,15 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `import.ts` / `import-pass.ts` | `importRows()`: the declaration; one pass, its byte-offset checkpoints, the error report |
 | `import-format.ts` / `-source.ts` / `-errors.ts` | record boundaries on bytes; the `ImportSource` seam; the `X_IMPORT_*` classes |
 | `driver-redis-refusal.ts` | `typedRefusals`: a send refused for want of a connection → `X_DRIVER_UNAVAILABLE` |
+| `driver-redis-eval.ts` | `evalCached`: a script by SHA-1, `EVAL` on `NOSCRIPT` |
+| `driver-memory-enqueue.ts` / `driver-pg-enqueue-sql.ts` | the memory driver's enqueue, expiry and backlog; `SQL_ENQUEUE`, `SQL_ENQUEUE_REPLACE`, `SQL_BACKLOG` |
+| `enqueue-backlog.ts` | `job({ maxPending })`'s refusal at enqueue, `JobBacklogFullError` (`X_JOB_BACKLOG_FULL`, 429); the per-transaction ledger of staged keys |
 | `subject*.ts` | `subjectExport`/`subjectErase`; reach only via DELETED tables (README) |
 | `gdpr-*.ts` | `.personalData()` coverage (thrown by `plannedSubject`, listed by `x exercise`); the erase's audit record |
 | `ledger*.ts` | `ledger()`: balanced per currency, ONE step; a key is one posting per tenant, re-used with other lines `X_LEDGER_POSTING_CONFLICT` |
 | `lock*.ts` | `withLock`: one `lock:<key>` slot; token = the store's `fence`; renewal as `worker-fleet-slots.ts` |
 | `reindex.ts` | `reindex()`: a `backfill()` into the `searchIndex` port via `searchDocumentOf` |
-| `partitions.ts` | `partitions()` + `.schedule`: db's `partitionMaintenance` per partitioned entity, job clock |
+| `partitions.ts` | `partitions()` + `.schedule`: db's `partitionMaintenance` per partitioned entity, job clock; `isPartitionsJob` (by identity — a `cronJob()` has the same shape) |
 | `webhook-receiver.ts` / `-route.ts` / `-types.ts` / `-errors.ts` | `webhookReceiver()` and `webhookReceiverRoutes`; the route; `ReceivedEvent`, `WebhookInbound`; its three refusals |
 
 Commands: `bun test ./packages/jobs/` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:

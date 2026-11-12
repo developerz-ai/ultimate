@@ -149,8 +149,9 @@ export interface ScrapeDefinition<I, Row> {
    * The job's own `onSettled`, with what a scrape adds: a `completed` run hands over its
    * `ScrapeReport` — rows, artifacts and `usage` — and a run that ended any other way carries the
    * `usage` of its last attempt (`undefined` for a `refused` one, whose body never ran). Same
-   * guarantees as the job's: after the row is settled, under the job's tenant, AT MOST ONCE
-   * across a crash, and a hook that throws changes nothing.
+   * guarantees as the job's: after the row is settled, under the job's tenant, and a hook that
+   * throws changes nothing. A `completed` run (its report is a value) is told AT MOST ONCE across a
+   * crash; any other ending AT LEAST ONCE — re-driven, `redriven: true`, with `usage: undefined`.
    */
   onSettled?(settled: ScrapeSettled<I, Row>): Promise<void>;
 }

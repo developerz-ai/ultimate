@@ -22,5 +22,8 @@ create table "x_jobs" (
   "progress" jsonb,
   "last_error_stack" text,
   "claims" integer default 0 not null,
+  "expires_at" timestamp with time zone,
+  "settle_owed" boolean default false not null,
+  "debounced_id" uuid,
   constraint "x_jobs_pkey" PRIMARY KEY (id)
 ) with (fillfactor=80);

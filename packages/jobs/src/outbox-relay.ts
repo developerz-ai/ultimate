@@ -6,12 +6,11 @@
 // which the idempotency key collapses — the opposite order would lose jobs.
 
 import { assert, logger, onShutdown, renderThrowable } from '@ultimat3/core';
-import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
-import { publishRequest } from './enqueue-record';
 import { onStaged, signalEnqueued, wakeIsLive } from './enqueue-signal';
 import { createIdleBackoff, REST_SLICE_MS, restAfter } from './idle-backoff';
-import type { OutboxDeps, OutboxRecord } from './outbox';
+import type { OutboxDeps } from './outbox';
+import { publishClaimed } from './outbox-relay-publish';
 
 export interface RelayOptions extends OutboxDeps {
   readonly batchSize?: number;
@@ -47,39 +46,6 @@ export interface OutboxRelay {
   pending(): Promise<number>;
   /** The gap the loop will wait before its next pass — the floor, or wherever idling has taken it. */
   pollDelayMs(): number;
-}
-
-/**
- * A claimed batch in TWO statements — `driver.enqueueMany`, then `store.markPublishedMany` — where
- * the row loop below spends two per row; `RELAY_BATCH_SIZE` holds the measured figures. Publish,
- * then mark, the row loop's order and for its reason.
- *
- * `false` hands the batch to the row loop: a store without `markPublishedMany`, or a batch that
- * failed anywhere. The loop then publishes in order up to the row that fails and releases the rest, so the order
- * guarantee and the poison row named in `jobs.outbox.publish-failed` are the loop's, unchanged.
- * A batch that published before its mark failed is published again by the loop, by the same ids,
- * which `SQL_ENQUEUE` answers `deduped` without a second row.
- */
-async function publishBatch(deps: OutboxDeps, batch: readonly OutboxRecord[]): Promise<boolean> {
-  const { driver, store } = deps;
-  if (store.markPublishedMany === undefined) return false;
-  try {
-    await driver.enqueueMany(batch.map(publishRequest));
-    // One claim stamped every row of the batch, so the first row's token is the batch's.
-    const claimant = batch[0]?.claimedBy;
-    await store.markPublishedMany(
-      batch.map((record) => record.id),
-      nowMs(deps.clock),
-      claimant,
-    );
-    return true;
-  } catch (error) {
-    logger.warn('jobs.outbox.batch-fallback', {
-      rows: batch.length,
-      error: renderThrowable(error),
-    });
-    return false;
-  }
 }
 
 /**
@@ -154,42 +120,9 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
     const listen = { onEmpty: (due: number | null) => (dueInMs = due) };
     const batch = await options.store.claim(batchSize, busy ? undefined : listen);
     busy = batch.length > 0;
-    let published = 0;
-    if (batch.length > 0 && (await publishBatch(options, batch))) published = batch.length;
-    for (const record of published > 0 ? [] : batch) {
-      try {
-        // The ids the staging enqueue ANSWERED. Published under them, a repeat of this publish
-        // — a crash before the mark below — meets the job this one made rather than adding one.
-        await options.driver.enqueue(publishRequest(record));
-        // The claim's own token goes back with the mark. Without it a relay whose lease lapsed
-        // mid-stall retires a row the relay that reclaimed it has not published yet — the row is
-        // gone and nothing publishes it.
-        await options.store.markPublished(record.id, nowMs(options.clock), record.claimedBy);
-        published += 1;
-      } catch (error) {
-        // STOP the batch. `claim()` returns rows in `staged_at` order and the loop used to log
-        // and continue, which published every LATER row past the one that failed — so an app
-        // that stages `createInvoice` then `chargeCard` in one transaction could have the charge
-        // run first. The row stays unpublished and the next tick starts again from it; a
-        // permanently poisoned row wedges its queue, which is visible in `pending()` and is the
-        // correct trade against silently reordering committed work.
-        logger.warn('jobs.outbox.publish-failed', {
-          job: record.job,
-          id: record.id,
-          published,
-          remaining: batch.length - published,
-          error: renderThrowable(error),
-        });
-        // Hand the rest of the batch back rather than sit on a claim nobody is publishing. The
-        // claim is a lease now, so without this a single pool timeout parks every committed row
-        // behind it for the whole lease window instead of for one poll interval.
-        await options.store.release?.(
-          batch.slice(published).map((row) => row.id),
-          record.claimedBy,
-        );
-        break;
-      }
-    }
+    // In staged order, runs of plain rows batched, stopping at the first failing row
+    // (`outbox-relay-publish.ts`).
+    const published = await publishClaimed(options, batch);
     // The jobs are on the queue of THIS process's driver: wake its workers rather than leave them
     // to find out on their own backed-off poll.
     if (published > 0) signalEnqueued();

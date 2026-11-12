@@ -158,9 +158,9 @@ describe('a nack that FAILS the row files it `failed`, in both', () => {
     expect(calls).toEqual([
       {
         text: SQL_NACK,
-        // id, state, counted, delay, error, the CLAIMER, stack and the CLAIM. Its `failed` count
-        // is the counter batch's (`driver-pg-counters.test.ts`), never this statement's.
-        params: ['job-1', 'failed', false, 0, 'X_JOB_KEY_BUSY', 'w1', null, 1],
+        // id, state, counted, delay, error, the CLAIMER, stack, the CLAIM and the hook's debt.
+        // Its `failed` count is the counter batch's (`driver-pg-counters.test.ts`).
+        params: ['job-1', 'failed', false, 0, 'X_JOB_KEY_BUSY', 'w1', null, 1, false],
       },
     ]);
   });

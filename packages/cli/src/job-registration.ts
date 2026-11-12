@@ -4,7 +4,12 @@
 // declaring `partitionBy` with no `partitions()` job registered (`X_PARTITIONS_UNMAINTAINED`).
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { partitionedEntities, registeredJobs, registeredTasks } from '@ultimat3/jobs';
+import {
+  isPartitionsJob,
+  partitionedEntities,
+  registeredJobs,
+  registeredTasks,
+} from '@ultimat3/jobs';
 import { loadApp } from './app-load';
 import type { AppLoader } from './app-permissions';
 import type { Finding } from './output';
@@ -48,23 +53,14 @@ export async function unregisteredJobFindings(
   ];
 }
 
-/** What a registered job has to look like for this rule: a name, and maybe a `.schedule` task. */
-interface JobShape {
-  readonly name: string;
-  readonly schedule?: { readonly name: string };
-}
-
 /**
- * Recognised by SHAPE, so a renamed `partitions({ name })` counts: the handle carries the
- * `.schedule` task the factory minted, named `<job>.schedule`. Nothing else does — `consumer()`
- * carries `.supervisor`.
+ * Pure: the partitioned tables and the registered jobs in, one finding when none maintains them.
+ * A maintainer is recognised by IDENTITY (`isPartitionsJob`), so a renamed `partitions({ name })`
+ * counts and a `cronJob()` — the same `<job>.schedule` shape — does not.
  */
-const isPartitionsJob = (job: JobShape): boolean => job.schedule?.name === `${job.name}.schedule`;
-
-/** Pure: the partitioned tables and the registered jobs in, one finding when none maintains them. */
 export function unmaintainedPartitionFindings(
   tables: readonly string[],
-  jobs: readonly JobShape[],
+  jobs: readonly unknown[],
 ): readonly Finding[] {
   if (tables.length === 0 || jobs.some(isPartitionsJob)) return [];
   return [

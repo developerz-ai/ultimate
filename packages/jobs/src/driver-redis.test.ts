@@ -21,21 +21,26 @@ import {
 } from './driver-redis-scripts';
 import { DriverUnavailableError } from './errors';
 
-const SCRIPTS = new Map<string, string>([
-  [REDIS_ENQUEUE, 'enqueue'],
-  [REDIS_ENQUEUE_MANY, 'enqueue-many'],
-  [REDIS_CLAIM, 'claim'],
-  [REDIS_ACK, 'ack'],
-  [REDIS_NACK, 'nack'],
-  [REDIS_HEARTBEAT, 'heartbeat'],
-  [REDIS_STATS, 'stats'],
-  [REDIS_DEMAND, 'demand'],
-  [REDIS_STEP_PUT_FENCED, 'step-put'],
-]);
+/** Each script by its SHA-1, as `EVALSHA` names it (`driver-redis-eval.ts`). */
+const SCRIPTS = new Map<string, string>(
+  (
+    [
+      [REDIS_ENQUEUE, 'enqueue'],
+      [REDIS_ENQUEUE_MANY, 'enqueue-many'],
+      [REDIS_CLAIM, 'claim'],
+      [REDIS_ACK, 'ack'],
+      [REDIS_NACK, 'nack'],
+      [REDIS_HEARTBEAT, 'heartbeat'],
+      [REDIS_STATS, 'stats'],
+      [REDIS_DEMAND, 'demand'],
+      [REDIS_STEP_PUT_FENCED, 'step-put'],
+    ] as const
+  ).map(([script, name]) => [new Bun.CryptoHasher('sha1').update(script).digest('hex'), name]),
+);
 
 interface Sent {
   readonly command: string;
-  /** The script's name for an `EVAL`, then its arguments after the namespace. */
+  /** The script's name for an `EVALSHA`, then its arguments after the namespace. */
   readonly args: readonly string[];
 }
 
@@ -44,7 +49,7 @@ function recording(replies: Readonly<Record<string, unknown>>) {
   const sent: Sent[] = [];
   const client: RedisSender = {
     send(command, args) {
-      if (command !== 'EVAL') {
+      if (command !== 'EVALSHA') {
         sent.push({ command, args });
         return Promise.resolve(replies[command]);
       }
@@ -119,6 +124,8 @@ describe('redisJobDriver', () => {
           'tp',
           'u1',
           '["mail.send","org-1","k"]',
+          '',
+          '',
         ],
       },
     ]);
@@ -163,7 +170,7 @@ describe('redisJobDriver', () => {
     expect(fields).toHaveLength(3 * ENQUEUE_ARITY);
     // The second request's fields start where the first's end, in `enqueue`'s order.
     expect(fields.slice(ENQUEUE_ARITY, ENQUEUE_ARITY + 3)).toEqual(['j2', 'mail.send', 'mail']);
-    expect(fields.at(-1)).toBe('["mail.send","","c"]');
+    expect(fields.at(-3)).toBe('["mail.send","","c"]');
   });
 
   test('the single enqueue binds exactly ENQUEUE_ARITY fields, the batch stride', async () => {
@@ -305,7 +312,7 @@ describe('redisJobDriver', () => {
     const { client, sent } = recording({ ack: 1, nack: 0, heartbeat: 1 });
     const driver = redisJobDriver({ client, clock: clock(), doneTtlMs: 0 });
     const by = { workerId: 'w1', claim: 2 };
-    expect(await driver.ack('j1', by)).toBe(true);
+    expect(await driver.ack('j1', { ...by, owesSettle: true })).toBe(true);
     expect(await driver.nack('j1', { ...by, delayMs: 500, error: 'boom', stack: 'at x' })).toBe(
       false,
     );
@@ -314,9 +321,22 @@ describe('redisJobDriver', () => {
     );
     expect(await driver.heartbeat('j1', { visibilityTimeoutMs: 1_000 })).toBe(true);
     expect(sent.map((each) => [each.command, ...each.args.slice(2)])).toEqual([
-      ['ack', 'j1', 'w1', '2', String(AT), '0'],
-      ['nack', 'j1', 'w1', '2', String(AT), 'ready', String(AT + 500), '1', '1', 'boom', 'at x'],
-      ['nack', 'j1', 'w1', '2', String(AT), 'suspended', String(AT), '0', '0', '', ''],
+      ['ack', 'j1', 'w1', '2', String(AT), '0', '1'],
+      [
+        'nack',
+        'j1',
+        'w1',
+        '2',
+        String(AT),
+        'ready',
+        String(AT + 500),
+        '1',
+        '1',
+        'boom',
+        'at x',
+        '0',
+      ],
+      ['nack', 'j1', 'w1', '2', String(AT), 'suspended', String(AT), '0', '0', '', '', '0'],
       ['heartbeat', 'j1', '', '', String(AT + 1_000)],
     ]);
   });

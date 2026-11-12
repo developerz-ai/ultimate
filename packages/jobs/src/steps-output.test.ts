@@ -2,12 +2,13 @@
 // JSON, so `s.run('stamp', () => new Date(0))` then `.getTime()` passed on attempt 1 and threw a
 // `TypeError` on the resume — a path no test without a replay ever walked.
 
-import { describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { isUltimateError, logger } from '@ultimat3/core';
 import { DEFAULT_RETRY } from './retry';
 import { nextRetryForError } from './retry-classification';
 import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
+import { STEP_OUTPUT_MAX_BYTES } from './steps-output';
 
 const AT = new Date('2026-11-02T09:00:00.000Z');
 
@@ -151,5 +152,83 @@ describe('one key order, the one jsonb stores', () => {
     const { first } = await twoAttempts(() => JSON.parse('{"__proto__":{"polluted":1},"a":1}'));
     expect(Object.getOwnPropertyNames(first)).toEqual(['a', '__proto__']);
     expect((first as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+});
+
+describe('a step output past its byte ceiling', () => {
+  const KIB = 1_024;
+  const ofKiB = (kib: number): string => 'x'.repeat(kib * KIB - 2); // the quotes are two bytes
+  afterEach(() => mock.restore());
+
+  test('the default 256 KiB warns once per job and step, with the code, and still stores', async () => {
+    expect(STEP_OUTPUT_MAX_BYTES).toBe(256 * KIB);
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const store = memoryStepStore();
+    const runner = stepRunner({ runId: 'r', jobName: 'warned', store });
+    expect(await runner.step.run('small', () => ofKiB(200))).toHaveLength(200 * KIB - 2);
+    expect(warn).not.toHaveBeenCalled();
+
+    expect(await runner.step.run('large', () => ofKiB(300))).toHaveLength(300 * KIB - 2);
+    expect((await store.get('r', 'large'))?.status).toBe('completed');
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [event, fields] = warn.mock.calls[0] ?? [];
+    expect(event).toBe('jobs.step.output-too-large');
+    expect(fields).toMatchObject({
+      code: 'X_STEP_OUTPUT_TOO_LARGE',
+      step: 'large',
+      bytes: 300 * KIB,
+    });
+    expect(String((fields as { fix?: unknown }).fix)).toContain('stepOutputMax');
+
+    // The same job and step on the next run: warned already, not again.
+    const next = stepRunner({ runId: 'r2', jobName: 'warned', store });
+    await next.step.run('large', () => ofKiB(300));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a declared ceiling refuses, terminally, and stores nothing', async () => {
+    const store = memoryStepStore();
+    const runner = stepRunner({ runId: 'r', jobName: 'j', store, stepOutputMaxBytes: 256 * KIB });
+    expect(await runner.step.run('small', () => ofKiB(200))).toHaveLength(200 * KIB - 2);
+
+    const thrown = await runner.step
+      .run('large', () => ofKiB(300))
+      .catch((error: unknown) => error);
+    if (!isUltimateError(thrown)) return expect.unreachable('expected a coded refusal');
+    expect(thrown.code).toBe('X_STEP_OUTPUT_TOO_LARGE');
+    expect(thrown.cause).toContain('"large"');
+    expect(thrown.cause).toContain(String(300 * KIB));
+    expect(thrown.fix).toContain('stepOutputMax');
+    expect(nextRetryForError(DEFAULT_RETRY, 1, thrown).stoppedBy).toBe('terminal');
+    expect((await store.get('r', 'large'))?.status).toBe('failed');
+  });
+
+  test('bytes, not characters: a multi-byte output is measured as UTF-8', async () => {
+    const runner = stepRunner({
+      runId: 'r',
+      jobName: 'j',
+      store: memoryStepStore(),
+      stepOutputMaxBytes: 300,
+    });
+    // 100 characters of 4 bytes each: 402 bytes stored, over a 300-byte ceiling.
+    const limited = stepRunner({
+      runId: 'r2',
+      jobName: 'j',
+      store: memoryStepStore(),
+      stepOutputMaxBytes: 300,
+    });
+    // 50 of them: 202 bytes, under the same ceiling.
+    expect(await runner.step.run('s', () => '😀'.repeat(50))).toHaveLength(100);
+    const thrown = await limited.step
+      .run('s', () => '😀'.repeat(100))
+      .catch((error: unknown) => error);
+    if (!isUltimateError(thrown)) return expect.unreachable('expected a coded refusal');
+    expect(thrown.code).toBe('X_STEP_OUTPUT_TOO_LARGE');
+  });
+
+  test('a ceiling that is not a whole number of bytes is refused where it is passed', () => {
+    expect(() =>
+      stepRunner({ runId: 'r', jobName: 'j', store: memoryStepStore(), stepOutputMaxBytes: 0.5 }),
+    ).toThrow('stepOutputMaxBytes');
   });
 });

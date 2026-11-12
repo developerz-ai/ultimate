@@ -114,6 +114,9 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // no `job()` can reach — which both of these were until 2026-08.
     ...(handle.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: handle.stepTimeoutMs }),
     ...(handle.eventPollMs === undefined ? {} : { eventPollMs: handle.eventPollMs }),
+    ...(handle.stepOutputMaxBytes === undefined
+      ? {}
+      : { stepOutputMaxBytes: handle.stepOutputMaxBytes }),
     // Compensation is the job's declaration; an attempt past the policy's last is the claim
     // re-offering a final attempt that crashed, and unwinds whatever its steps say.
     compensates: handle.compensates,
@@ -127,7 +130,9 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   const by = (): SettleBy => ({
     ...claimOf(claimed),
     durationMs: nowMs(options.clock) - startedAt,
+    owesSettle: handle.declaresOnSettled, // recorded only by a settle that ENDS the run (J11)
   });
+  const owed = { debt: driver.settleDebt, claim: claimed.claim };
   const introspect = driver.introspect;
   const progress = createProgressReporter({
     job: handle.name,
@@ -419,6 +424,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         claimed,
         ctx,
         run: { scope: inRunScope, input: parsed },
+        owed,
         settlement: {
           outcome: dropped ? 'dropped' : 'dead-lettered',
           error: recorded,
@@ -457,8 +463,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // lapses and the queue re-delivers, which is the honest outcome for "we could not say it ended".
   await progress.flush();
   let acked = false;
+  // A result is never stored: only an `undefined` one can be re-driven truthfully (J11).
+  const owesSettle = handle.declaresOnSettled && result === undefined;
   try {
-    acked = landed(await driver.ack(claimed.id, by()), 'completed');
+    acked = landed(await driver.ack(claimed.id, { ...by(), owesSettle }), 'completed');
   } finally {
     // Unacked, the row is another worker's (or re-delivered once the lease lapses): cancelled.
     if (!acked) release();
@@ -474,6 +482,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       claimed,
       ctx,
       run: { scope: inRunScope, input: parsed },
+      ...(owesSettle ? { owed } : {}),
       settlement: { outcome: 'completed', result },
     });
   }

@@ -38,12 +38,30 @@ nightlyDigest.describe();                         // { kind: 'task', cron, tz, j
 | Member | On | Behaviour |
 |---|---|---|
 | `enqueue(input, options?)` | `JobHandle` | queues through `jobsFacade()`; joins the caller's `tx` when the outbox is installed. Answers `{ id, runId, deduped }` — the job's own ids on every path, staged or direct. `options.runId` names the run instead of having one minted |
-| `enqueueMany(inputs, options?)` | `JobHandle` | many of one job: one round trip per 1,000 inputs (a statement on Postgres, a script on Redis) on the same path `enqueue` takes, answered in input order. At most `MAX_ENQUEUE_BATCH` (10,000, else `X_JOB_ENQUEUE_BATCH_TOO_LARGE`); `EnqueueManyOptions` is `EnqueueOptions` without `runId`. A loop of `enqueue` is `X_N_PLUS_ONE_WRITE`, whose fix names this call. `JobDriver.enqueueMany` is required of every driver (it opens with `assertEnqueueMany`: `onConflict: 'error'` is refused in a batch); `OutboxStore.stageMany` / `markPublishedMany` are optional: absent, the facade and the relay loop |
+| `enqueueMany(inputs, options?)` | `JobHandle` | many of one job: one round trip per 1,000 inputs (a statement on Postgres, a script on Redis) on the same path `enqueue` takes, answered in input order. At most `MAX_ENQUEUE_BATCH` (10,000, else `X_JOB_ENQUEUE_BATCH_TOO_LARGE`); `EnqueueManyOptions` is `EnqueueOptions` without `runId`, `onConflict` or `expiresAt`. A loop of `enqueue` is `X_N_PLUS_ONE_WRITE`, whose fix names this call. `JobDriver.enqueueMany` is required of every driver (it opens with `assertEnqueueMany`: `onConflict: 'error'` or `'replace'` and `expiresAt` are refused in a batch); `OutboxStore.stageMany` / `markPublishedMany` are optional: absent, the facade and the relay loop |
 | `as(actor, input, options?)` | `JobHandle` | enqueue on behalf of an actor — fills `tenantId` from `actor.orgId` so per-tenant limits apply |
 | `describe()` | `JobHandle` | the `JobDescriptor` the manifest, `/_x` and MCP read |
 | `entries()` | `TaskHandle` | the declared `[job, input]` pairs |
 | `enqueue(options?)` | `TaskHandle` | fires every declared entry now, one result per entry |
 | `describe()` | `TaskHandle` | `TaskDescriptor` — cron, tz, catch-up, jobs in declaration order |
+
+## Debounce, expiry, back-pressure and the body's lease
+
+Four mechanisms an app used to rebuild around the queue, each one field `As of 2026-11`:
+
+| Ask | Spelling | What happens |
+|---|---|---|
+| debounce | `enqueue(input, { onConflict: 'replace', runAt })` | a row of the job still WAITING (`ready`/`delayed`) under the same idempotency key takes the new `input` and `runAt` in one statement per driver (`SQL_ENQUEUE_REPLACE`); a running or suspended holder is past replacing. Answered `deduped: true` with the holder's ids either way. The holder takes the newer request's `expiresAt` too, or loses its own when the newer names none. Fenced by request order (`x_jobs.debounced_id`, the request's uuidV7): a replace no newer than the input a row of the key holds — live or finished — moves nothing and starts no run, so an outbox row published again after a relay crash never puts old input back |
+| expiry | `enqueue(input, { expiresAt })` | epoch ms past which the work is worthless: the claim that finds the row waiting after then settles it `failed`, `lastError` `JOB_EXPIRED` (`'expired'`), and reports it beside the burials (`ClaimOptions.onExhausted`), so its `onSettled` hears `dropped` — at most once, as the claim records no debt. Only a row never claimed (`attempt` 0) expires: a started run — a retry waiting out its backoff included — is never expired. `x jobs retry` clears it. Lazy: no index, no sweep |
+| back-pressure | `job({ maxPending })` | an enqueue onto a queue already holding that many `ready`/`delayed` rows is `X_JOB_BACKLOG_FULL`, a 429 (`JobBacklogFullError`); a batch that would cross it is refused whole. One capped count first (`JobDriver.backlog`), plus the rows the caller's own transaction already staged for that queue (a key staged twice counts once). An enqueue that adds no row — a dedupe, or a replace onto the key's live holder (`JobDriver.holds`, asked only once full) — is never refused. Soft across producers: concurrent ones can overshoot by their number, and committed rows the relay has not published yet are not counted. A driver without `backlog` refuses a job declaring it at enqueue (`X_INVARIANT`) |
+| a long body | `run({ lease })` | `lease.renew()` renews now and answers whether the attempt still holds the row — `false` once the lease is lost or the attempt's settle is sent; `lease.lost()`; `lease.signal` aborts on either. Call `renew()` between the chunks of a section longer than the visibility timeout — the renewal timer cannot fire inside it. A lock that outlives one job is `withLock()` |
+
+`onConflict: 'replace'` and `expiresAt` hold inside a transaction too: the staged row carries both
+(`x_outbox.on_conflict`, `x_outbox.expires_at`) and the relay publishes it alone through
+`driver.enqueue`, in staged order, while the plain rows around it keep batching. Neither is an
+`enqueueMany` option (`assertEnqueueMany`
+refuses both in a driver batch). `lease` is optional on `JobRunArgs` so a test that drives a body by
+hand need not build one; the worker always supplies it.
 
 ## Fan-out per row is a job, not a task
 
@@ -213,6 +231,8 @@ input. The tenant is a fact about the work, so the job declares it.
 | `undefined`, a function or a symbol at the top, or in an array | `null`: compare `=== null` |
 | `undefined` or a function on a member | absent |
 | a `bigint`, a cycle | `X_STEP_OUTPUT_UNSERIALIZABLE`, terminal: `String(id)`, the ids rather than the object graph |
+| more than a declared `job({ stepOutputMax })` bytes of JSON | `X_STEP_OUTPUT_TOO_LARGE`, terminal, nothing stored: every attempt loads every output of its run, so persist the payload and return its key or cursor |
+| more than `STEP_OUTPUT_MAX_BYTES` (256 KiB), no `stepOutputMax` declared | stored, and logged once per job and step: `jobs.step.output-too-large`, `code: 'X_STEP_OUTPUT_TOO_LARGE'`, with the fix. Refused by default from the next major |
 | a stored event the wait's `schema` refuses | `X_JOB_EVENT_INVALID`, terminal, on a hit or a replay. The error carries the issues, never the payload |
 
 A boot's bus runs on the open transaction's connection (`currentTx() ?? client`, as the outbox):
@@ -526,7 +546,9 @@ dropping those `retain` expired. It is a job plus a `.schedule` `task()` (`<name
 default `DEFAULT_PARTITIONS_CRON`, 03:17 UTC daily), the shape `consumer()`'s `.supervisor` has.
 `now` is the job's clock, never the server's, so a test moves it; a second run at one instant
 changes nothing (`create … if not exists`). Entities are read per run, so one declared later is
-maintained from its first tick.
+maintained from its first tick. `isPartitionsJob(handle)` answers whether `partitions()` minted a
+handle — by identity, so a `cronJob()` (the same `<name>.schedule` shape) is not one; `x verify`
+reads it for `X_PARTITIONS_UNMAINTAINED`.
 
 ```ts
 import { partitions } from '@ultimat3/jobs';
@@ -538,6 +560,30 @@ Before a `backfill()` copies rows older than the first partition, enqueue it onc
 '<oldest row ISO>' }`: that run creates every partition back to that row's period and drops
 nothing. Every DDL statement runs under a `lock_timeout`, failing fast with `X_DB_LOCK_TIMEOUT`
 (retryable — the job's retry absorbs it) rather than queueing behind a long transaction.
+
+## A job on its own cron: `cronJob()`
+
+`cronJob({ name, cron, tz, input?, payload?, catchUp?, maxCatchUp?, …job })` declares a job and the
+task that fires it at once: the handle is the job, `.schedule` the `task()` (`<name>.schedule`).
+`name` and `tz` are required; `input` comes with `payload(occurrenceMs)`, which builds one
+occurrence's input from its instant, or neither (each occurrence enqueues `{}`); `idempotencyKey`
+defaults to `() => name`. Listing the job in `defineApi({ jobs })` is enough — the task registers
+with it.
+
+```ts
+import { cronJob } from '@ultimat3/jobs';
+
+export const sweepSessions = cronJob({
+  name: 'sweepSessions',
+  cron: '15 * * * *',
+  tz: 'UTC',
+  tenant: 'none',
+  retry: { attempts: 3 },
+  async run({ step }) {
+    return step.run('sweep', () => 0);
+  },
+});
+```
 
 ## Consumers are jobs too
 
@@ -1189,7 +1235,7 @@ barrel, which carries no installer (`adapter.test.ts`).
 | Driver | Status | Backing | Use |
 |---|---|---|---|
 | `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, coalesce(tenant_id, ''), idempotency_key)` over live rows (`x_jobs_name_tenant_idempotency_live_idx`), lease-based leader, `x_job_leases` | zero-infra start, most apps |
-| `redis` | complete, `As of 2026-10` | core's `redisClient()` (`@ultimat3/core/redis`); one Lua script per operation, every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
+| `redis` | complete, `As of 2026-10` | core's `redisClient()` (`@ultimat3/core/redis`); one Lua script per operation, sent as `EVALSHA` (40 bytes, not the claim's 2.5 KB) with an `EVAL` fallback on `NOSCRIPT` (`driver-redis-eval.ts`), every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
 | `memory` | complete | in-process maps | `x dev`, tests |
 
 **`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
@@ -1736,11 +1782,11 @@ export const syncAccountWatched = job({
     return { rows: 2 };
   },
   async onSettled(settled) {
-    if (settled.outcome === 'completed') {
-      await markSynced(settled.input.accountId, settled.result.rows);
-    } else if (settled.input !== undefined) {
-      await markBroken(settled.input.accountId, settled.code);
-    }
+    if (settled.input === undefined) return;
+    // `redriven: true` on a failure: its worker died before the hook returned, so it may be the
+    // second telling — `markBroken` is written to be repeated.
+    if (settled.outcome !== 'completed') await markBroken(settled.input.accountId, settled.code);
+    else await markSynced(settled.input.accountId, settled.result.rows);
   },
 });
 ```
@@ -1748,8 +1794,10 @@ export const syncAccountWatched = job({
 | The run ended | `outcome` | Carries | Row state when the hook runs |
 |---|---|---|---|
 | the body returned and the ack landed | `completed` | `input`, `result` — what `run` returned, typed from it | `done` |
+| the same, the body returned `undefined`, and the worker died before its hook returned — re-driven by the scheduler leader | `completed` | `redriven: true`, `reason: 'lost'`, `input`, `result: undefined` — the value it returned | `done` |
+| any ending below, its worker dead before the hook returned — re-driven | the same `outcome` | the same fields read off the row, plus `redriven: true`, `reason: 'lost'` | the same |
 | failed for good, parked in the dead-letter queue | `dead-lettered` | `input` (or `undefined`: the stored payload no longer parses), `error`, `code` | `dead` |
-| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown | `dead` |
+| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker, at most once: the claim records no debt | `dead` |
 | failed for good on `retry.deadLetter: false` | `dropped` | the same | `failed` |
 | `whenBusy: 'fail'` over a busy key — the body never ran | `refused` | the same, `code: 'X_JOB_KEY_BUSY'` | `failed` |
 
@@ -1757,17 +1805,17 @@ export const syncAccountWatched = job({
 |---|---|
 | a retry, a `step.sleep` / `waitForEvent`, a drain | nobody: the run has not ended |
 | `cancelJob()` / `x jobs cancel` on a queued or running row | the caller of the cancel — the worker's own settle then matches nothing |
-| `x jobs retry`, `delete`, `promote`, `drain` | the operator; a retried run settles again, and is told again |
+| `x jobs retry`, `delete`, `promote`, `drain` | the operator; a retried run settles again, and is told again — the retry clears the old run's debt (`settle_owed`) and its `expiresAt` |
 | a settle that did not land — the lease lapsed and the queue re-delivered | the claim that holds the row now |
 
 | Guarantee | Stated plainly |
 |---|---|
 | when | AFTER the row is settled, by the worker whose settle landed, under the job's declared tenant; `settled.ctx` is that context |
-| how often | **at most once** per ending across a crash: a worker killed between the settle and the hook never runs it. Not at-least-once — nothing re-drives a hook |
+| how often | **at least once** per ending a worker settles, across a crash — but at most once for a completion whose body **returned a value**, since a result is never stored and a re-drive could not hand it over (at least once for those too is planned for `next`), and for a row the claim settles itself (a final-attempt burial, an expiry: `claim-exhausted.ts` records no debt). The settle records the debt in its own write (`x_jobs.settle_owed`); the hook's return pays it, its last failed try too. A debt older than `onSettledTimeout` × 3 (`SETTLE_GRACE_FACTOR`) is a dead worker's: the scheduler leader re-drives it, ≤ 50 a pass, every minute after a find and every 5 min after none, with `redriven: true, reason: 'lost'`. A pass starts no hook it could not finish inside the grace its take bought (`onSettledTimeout` × 2 into the pass) and stops between rows once its node stops leading or drains — a drain hands the lock back first; the rest stay owed for the next pass. Every driver records it; a custom driver without `settleDebt` runs the hook at most once |
 | inside one process | `ON_SETTLED_ATTEMPTS` (3) tries, back to back. A hook that threw halfway is run again from the top, so write it idempotent |
 | a hook that keeps throwing | logged `jobs.on-settled.failed` and reported as `X_JOB_ON_SETTLED_FAILED`. The row, the outcome, the counters and `JobExecution` are untouched |
 | `result` | the value itself, in the worker's process — never stored, never serialised. `JobExecution.result` carries the same value to a caller driving a run by hand |
-| what must be recorded for certain | written by the BODY, inside a `step.run` — that is at-least-once, replayed from storage. The hook is for a notification, a status column, a usage line |
+| what must be recorded for certain | the BODY's, inside a `step.run`, when it needs the body's own values: a completion with a `result` is not re-driven. The hook is for a notification, a status column, a usage line |
 
 ## Introspection
 
@@ -1820,6 +1868,7 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_IDEMPOTENCY_REQUIRED` | job defined without an idempotency key (JS callers) |
 | `X_STEP_DUPLICATE` | two steps share a name in one run |
 | `X_STEP_OUTPUT_UNSERIALIZABLE` | a step returned a value JSON cannot hold |
+| `X_STEP_OUTPUT_TOO_LARGE` | a step returned more JSON bytes than its job's `stepOutputMax` (default 256 KiB). Terminal |
 | `X_JOB_EVENT_INVALID` | a waited event failed its schema |
 | `X_JOB_DUPLICATE` | enqueue collided with a live key under `onConflict: 'error'`; or two different job/task handles registered under one name |
 | `X_JOB_TIMEOUT` | job or required `waitForEvent` exceeded its timeout |
@@ -1877,3 +1926,6 @@ Tier 3. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/entity`,
 | Name | What |
 |---|---|
 | `ON_SETTLED_TIMEOUT_MS` | 30,000: the `onSettled` ceiling across every try unless the job declares `onSettledTimeout` |
+| `SETTLE_GRACE_FACTOR` | 3: an `onSettled` debt older than this many `onSettledTimeout`s is a dead worker's, re-driven by the scheduler leader |
+| `SETTLE_REDRIVE_INTERVAL_MS` / `SETTLE_REDRIVE_IDLE_INTERVAL_MS` | 60,000 / 300,000: how often the leader asks for lost debts after a pass that found some / none |
+| `SettleDebt`, `SettleDebtJob` (types) | the `onSettled` debt a driver records (`JobDriver.settleDebt`) and the job a take reads |
