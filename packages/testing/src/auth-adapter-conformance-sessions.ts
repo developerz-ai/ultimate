@@ -41,6 +41,25 @@ export const AUTH_ADAPTER_SESSION_CHECKS: readonly AuthAdapterCheck[] = [
     },
   },
   {
+    // The one-round-trip read `authenticate` prefers. Optional on the seam, so an adapter without
+    // it passes here and `authenticate` falls back to the two reads this compares against.
+    name: 'getSessionWithUser answers exactly what getSession then findUserById answer',
+    async run({ adapter }) {
+      if (adapter.getSessionWithUser === undefined) return;
+      const owner = await seedUser(adapter, { orgId: crypto.randomUUID(), roles: ['editor'] });
+      await adapter.updateUser(owner, { disabledAt: at(5), scopes: ['tenancy:cross'] });
+      const row = session(owner);
+      await adapter.createSession(row);
+      const separately: unknown = {
+        session: await adapter.getSession(row.id),
+        user: await adapter.findUserById(owner),
+      };
+      expect<unknown>(await adapter.getSessionWithUser(row.id)).toEqual(separately);
+      expect((await adapter.getSessionWithUser(row.id))?.session).toEqual(row);
+      expect(await adapter.getSessionWithUser(idOf('nobody'))).toBeNull();
+    },
+  },
+  {
     name: `${DELETERS} concurrent deletes of one session: exactly one answers true`,
     async run({ adapter }) {
       const row = session(await seedUser(adapter));

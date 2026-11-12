@@ -39,14 +39,14 @@ slices:
     percent: 0
   - file: 05-entity.md
     tier: 2
-    sweep: "5a"            # E1–E4, E13 in 5a; E5–E12 (E14 if OD6) in 5b
-    status: not_started
-    percent: 0
+    sweep: "5a"            # E1–E4, E13 in 5a; E5–E12, E14 in 5b (done); E9's doctor report and --drop-redundant in 18
+    status: in_progress
+    percent: 95
   - file: 07-auth-policy.md
     tier: 2
-    sweep: "5b"
-    status: not_started
-    percent: 0
+    sweep: "5b"            # A1 + P1 shape in 5b (done); P1 composition in 8, X_POLICY_SCOPE_MISMATCH in 13
+    status: in_progress
+    percent: 50
   - file: 08-action-query.md
     tier: 3
     sweep: "8"

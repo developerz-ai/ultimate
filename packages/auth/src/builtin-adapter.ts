@@ -1,7 +1,7 @@
 // Single responsibility: the one blessed `AuthAdapter`, backed by Postgres through
 // `@ultimat3/db`. The `DbClient` is injected (defaulting to `db()`) so tests and the CLI can
 // drive it without a database. Rows arrive as `unknown` and are read through the small typed
-// readers below — no `any`, and a column rename fails loudly instead of producing `undefined`.
+// readers in `builtin-adapter-rows.ts` — no `any`, and a renamed column fails a round trip.
 
 import { type Clock, systemClock } from '@ultimat3/core';
 import { type DbClient, db, sql } from '@ultimat3/db';
@@ -15,104 +15,24 @@ import type {
   CreateUserInput,
   PasskeyStore,
   SessionPatch,
+  SessionWithUser,
   StoredMfaSecret,
   UserPatch,
   UserQuery,
 } from './adapter';
+import {
+  type Row,
+  text,
+  toAccount,
+  toApiKey,
+  toSession,
+  toUser,
+  toVerification,
+  unprefixed,
+} from './builtin-adapter-rows';
 import { usersUniqueViolation } from './builtin-adapter-violation';
 import { authWriteFailed } from './errors';
 import { postgresPasskeyStore } from './passkey-postgres';
-
-type Row = Readonly<Record<string, unknown>>;
-
-const textOrNull = (row: Row, key: string): string | null => {
-  const value = row[key];
-  return typeof value === 'string' ? value : null;
-};
-
-const text = (row: Row, key: string): string => textOrNull(row, key) ?? '';
-
-const flag = (row: Row, key: string): boolean => row[key] === true;
-
-const list = (row: Row, key: string): readonly string[] => {
-  const value = row[key];
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
-};
-
-const dateOrNull = (row: Row, key: string): Date | null => {
-  const value = row[key];
-  if (value instanceof Date) return value;
-  if (typeof value === 'string' || typeof value === 'number') {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  return null;
-};
-
-const date = (row: Row, key: string): Date => dateOrNull(row, key) ?? new Date(0);
-
-const toUser = (row: Row): AuthUser => ({
-  id: text(row, 'id'),
-  email: text(row, 'email'),
-  emailVerifiedAt: dateOrNull(row, 'email_verified_at'),
-  passwordHash: textOrNull(row, 'password_hash'),
-  orgId: textOrNull(row, 'org_id'),
-  roles: list(row, 'roles'),
-  permissions: list(row, 'permissions'),
-  scopes: list(row, 'scopes'),
-  mfaSecret: textOrNull(row, 'mfa_secret'),
-  recoveryCodeHashes: list(row, 'recovery_code_hashes'),
-  externalId: textOrNull(row, 'external_id'),
-  disabledAt: dateOrNull(row, 'disabled_at'),
-  createdAt: date(row, 'created_at'),
-});
-
-const toSession = (row: Row): AuthSession => ({
-  id: text(row, 'id'),
-  userId: text(row, 'user_id'),
-  tokenHash: text(row, 'token_hash'),
-  createdAt: date(row, 'created_at'),
-  absoluteExpiresAt: date(row, 'absolute_expires_at'),
-  lastSeenAt: date(row, 'last_seen_at'),
-  ip: textOrNull(row, 'ip'),
-  userAgent: textOrNull(row, 'user_agent'),
-  mfaSatisfied: flag(row, 'mfa_satisfied'),
-});
-
-const toAccount = (row: Row): AuthAccount => ({
-  id: text(row, 'id'),
-  userId: text(row, 'user_id'),
-  provider: text(row, 'provider'),
-  providerAccountId: text(row, 'provider_account_id'),
-  accessToken: textOrNull(row, 'access_token'),
-  refreshToken: textOrNull(row, 'refresh_token'),
-  expiresAt: dateOrNull(row, 'expires_at'),
-  createdAt: date(row, 'created_at'),
-});
-
-const toVerification = (row: Row): AuthVerification => ({
-  id: text(row, 'id'),
-  purpose: text(row, 'purpose'),
-  identifier: text(row, 'identifier'),
-  tokenHash: text(row, 'token_hash'),
-  expiresAt: date(row, 'expires_at'),
-  consumedAt: dateOrNull(row, 'consumed_at'),
-  createdAt: date(row, 'created_at'),
-});
-
-const toApiKey = (row: Row): AuthApiKeyRecord => ({
-  id: text(row, 'id'),
-  prefix: text(row, 'prefix'),
-  keyHash: text(row, 'key_hash'),
-  userId: textOrNull(row, 'user_id'),
-  orgId: textOrNull(row, 'org_id'),
-  scopes: list(row, 'scopes'),
-  lastUsedAt: dateOrNull(row, 'last_used_at'),
-  expiresAt: dateOrNull(row, 'expires_at'),
-  revokedAt: dateOrNull(row, 'revoked_at'),
-  createdAt: date(row, 'created_at'),
-});
 
 /**
  * A patch column is written as `case when <set> then <value> else <column> end` rather than
@@ -331,6 +251,26 @@ export class PostgresAuthAdapter implements AuthAdapter {
     return await this.#db.execute(sql`
       delete from x_sessions
       where user_id in (select id from x_users where org_id = ${orgId})`);
+  }
+
+  /**
+   * The session's columns aliased `s_*`, because both tables have an `id` and a `created_at`; the
+   * user's arrive under their own names. A left join, so a session that outlived its user still
+   * comes back — `authenticate` deletes it, exactly as it does after the two-read path.
+   */
+  async getSessionWithUser(id: string): Promise<SessionWithUser | null> {
+    const row = await this.#db.one<Row>(sql`
+      select s.id as s_id, s.user_id as s_user_id, s.token_hash as s_token_hash,
+             s.created_at as s_created_at, s.absolute_expires_at as s_absolute_expires_at,
+             s.last_seen_at as s_last_seen_at, s.ip as s_ip, s.user_agent as s_user_agent,
+             s.mfa_satisfied as s_mfa_satisfied, u.*
+        from x_sessions s left join x_users u on u.id = s.user_id
+       where s.id = ${id}`);
+    if (row === null) return null;
+    return {
+      session: toSession(unprefixed(row, 's_')),
+      user: row['id'] === null || row['id'] === undefined ? null : toUser(row),
+    };
   }
 
   async deleteSessionsCreatedBefore(before: Date): Promise<number> {

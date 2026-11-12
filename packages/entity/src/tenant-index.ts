@@ -1,9 +1,10 @@
-// The one index every tenant table needs and nobody declares: `(tenant, primary key)`, the exact
-// shape of every scoped read — `where org_id = $1 order by id` — whether the tenant column was
-// marked `.tenant()`, named by `tenant:` or inferred from `orgId`.
+// The indexes nobody declares, and the ONE rule for when one is already served: `(tenant, primary
+// key)` — the shape of every scoped read, `where org_id = $1 order by id` — and each column's own
+// index (`.references()`, `.index()`), which another index leading with that column makes a second
+// copy every write pays for (`coveringIndexOf`, E9).
 
 import { indexName } from './index-name';
-import type { ReferenceDescription, RegistryEntry } from './registry';
+import type { CoveredIndex, ReferenceDescription, RegistryEntry } from './registry';
 import { registeredEntities, registryGeneration } from './registry';
 import type { IndexDef } from './types';
 
@@ -17,14 +18,88 @@ export interface TenantIndexInput {
   /** A plain (non-materialized) view holds no index at all. */
   readonly plainView: boolean;
   /**
-   * The column lists of every non-partial btree index and unique constraint the table already
-   * declares. One that STARTS with `(tenant, pk…)` serves the scoped read already.
+   * Every index the table already has that can serve a prefix (`coverersOf`). One that STARTS
+   * with `(tenant, pk…)` serves the scoped read already.
    */
-  readonly covering: readonly (readonly string[])[];
+  readonly covering: readonly IndexCoverer[];
+}
+
+/** An index whose leading key columns can serve a lookup: a name to report, physical columns. */
+export interface IndexCoverer {
+  readonly name: string;
+  readonly columns: readonly string[];
+}
+
+/** What `coverersOf` reads off a declared index — structural, so every index shape fits. */
+interface PrefixCandidate {
+  readonly name: string;
+  readonly columns: readonly string[];
+  readonly where?: string | undefined;
+  readonly using?: string | undefined;
+  readonly expression?: string | undefined;
+  readonly operatorClass?: string | undefined;
 }
 
 const startsWith = (list: readonly string[], prefix: readonly string[]): boolean =>
-  prefix.length <= list.length && prefix.every((column, at) => list[at] === column);
+  prefix.length > 0 &&
+  prefix.length <= list.length &&
+  prefix.every((column, at) => list[at] === column);
+
+/**
+ * THE covering rule, the one every implicit index is judged by: the first coverer whose key
+ * columns START with `columns`. A btree serves an equality on any leading prefix of its keys, so
+ * `(a)` beside `(a, b)` is the same lookup kept twice. Direction is irrelevant to that equality.
+ */
+export const coveringIndexOf = (
+  columns: readonly string[],
+  coverers: readonly IndexCoverer[],
+): IndexCoverer | undefined => coverers.find((coverer) => startsWith(coverer.columns, columns));
+
+/**
+ * The indexes that can serve a prefix: the primary key (Postgres names it `<table>_pkey`), every
+ * total btree keyed on plain columns, and every total unique invariant. A partial index misses
+ * the rows its predicate excludes; a gin, an expression key or an operator class answers other
+ * questions than `col = $1`.
+ */
+export const coverersOf = (
+  table: string,
+  primaryKey: readonly string[],
+  indexes: readonly PrefixCandidate[],
+  uniques: readonly {
+    readonly name: string;
+    readonly columns: readonly string[];
+    readonly where?: string | undefined;
+  }[],
+): readonly IndexCoverer[] => [
+  { name: `${table}_pkey`, columns: primaryKey },
+  ...indexes.filter(
+    (index) =>
+      index.where == null &&
+      (index.using === undefined || index.using === 'btree') &&
+      index.expression === undefined &&
+      index.operatorClass === undefined,
+  ),
+  ...uniques.filter((unique) => unique.where == null),
+];
+
+/**
+ * Each implicit index another index already leads with, and which one. LISTED, never removed: on
+ * `main` an existing app's description must keep it, or its next `x db gen` drops an index the
+ * database holds (`index-plan.ts` `removeUndeclared`). The consumers report and drop on request.
+ */
+export const coveredImplicitIndexes = (
+  implicit: readonly IndexCoverer[],
+  coverers: readonly IndexCoverer[],
+): readonly CoveredIndex[] =>
+  implicit.flatMap((index) => {
+    const by = coveringIndexOf(
+      index.columns,
+      coverers.filter((coverer) => coverer.name !== index.name),
+    );
+    return by === undefined
+      ? []
+      : [{ name: index.name, columns: index.columns, coveredBy: by.name }];
+  });
 
 /**
  * Zero or one index. Measured at 500k rows / 1,000 tenants: a tenant page took 43.7 ms with no
@@ -42,7 +117,7 @@ export const tenantIndexOf = (input: TenantIndexInput): readonly IndexDef[] => {
   const [leadingColumn] = primaryKey;
   if (tenant === null || input.plainView || leadingColumn === tenant) return [];
   const columns = [tenant, ...primaryKey.filter((column) => column !== tenant)];
-  if (input.covering.some((list) => startsWith(list, columns))) return [];
+  if (coveringIndexOf(columns, input.covering) !== undefined) return [];
   return [
     {
       name: indexName(input.entityName, input.table, columns, false),

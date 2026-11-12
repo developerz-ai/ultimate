@@ -28,6 +28,8 @@ import { writtenRowsSink } from './search-written-rows';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 import { judgeUpdateMany, updateManyPlan } from './update-many';
+import { assertVersionedUpdate, versionOf } from './version-lock';
+import { entityStale } from './version-lock-errors';
 import { updateWherePlan, writeWherePlan } from './write-where';
 
 export type DriverWrites<Row> = Pick<
@@ -110,7 +112,10 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       entity.$columns,
       Object.fromEntries(namedColumns(patch)),
     );
-    if (entity.$invariants.length === 0 && !movesReference) {
+    // A declared version lock is per row (`v = stored + 1`), which one store patch cannot say: the
+    // judged path below, one compare-and-set write per row.
+    const lock = versionOf(entity);
+    if (entity.$invariants.length === 0 && !movesReference && lock === null) {
       // The search mirror asked for the rows: read them first, as the judged path does. Past the
       // judged bound they are not handed over — the mirror logs the write it could not name.
       const before =
@@ -145,6 +150,35 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     // The narrowed values the merge produced — the same for every row — so the store holds what
     // was judged rather than a money `bigint` the row type never carries. The version is the
     // patch's instant: the store advances it per row.
+    if (lock !== null) {
+      let written = 0;
+      for (const [at, row] of found.entries()) {
+        const result = results[at] as Readonly<Record<string, unknown>>;
+        const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, result[key]]));
+        values[lock] = result[lock];
+        if (advance !== undefined) values[advance.property] = narrowed[advance.property];
+        // Conditioned on the version the row was READ at: a writer in between matches nothing.
+        const keyed = {
+          ...plan,
+          where: [
+            ...plan.where,
+            ...entity.$primaryKey.map((key) => ({
+              column: key,
+              op: 'eq' as const,
+              value: valueAt(row, key),
+            })),
+            { column: lock, op: 'eq' as const, value: valueAt(row, lock) },
+          ],
+        };
+        const count = await raw.update({ plan: keyed, tx }, values, advance);
+        if (count === 0) {
+          throw entityStale(entity.$name, lock, rowKey(entity, row), valueAt(row, lock), undefined);
+        }
+        written += count;
+      }
+      if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
+      return written;
+    }
     const merged = mergedRow(entity, first, patch) as Record<string, unknown>;
     const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, merged[key]]));
     if (advance !== undefined) values[advance.property] = narrowed[advance.property];
@@ -204,6 +238,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       refuseAbandoned();
       const op = 'update';
       const patch = entity.$parsePatch(given);
+      assertVersionedUpdate(entity, patch);
       const plan = scope.storePlan(op, idPlan(entity, id, options, op));
       assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       if (namedColumns(patch).length > 0 && (await patched(op, plan, patch, options)) === 0) {

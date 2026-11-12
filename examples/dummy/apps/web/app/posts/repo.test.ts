@@ -9,6 +9,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { db, driver } from '@postly/db';
 import { type MemberId, memberId, type OrgId, orgId, type PostId, postId } from '@postly/domain';
+import { subscribe } from '@ultimat3/core';
 import * as repo from './repo';
 
 /** Distinct per call, so one test's rows never answer another's read — the store is process-wide. */
@@ -120,14 +121,38 @@ test('markPublished stamps the instant and keeps the view whole', async () => {
   expect(published.authorName).toBe(AUTHOR);
 });
 
-test('a replayed like writes nothing, and the recount stays at one', async () => {
+test('a replayed like writes nothing, and the count the database keeps stays at one', async () => {
   const at = await anOrg();
   const id = await aPost(at, { slug: 'likeable' });
 
   expect(await repo.insertLike(at.orgId, id, at.authorId)).toEqual({ inserted: true });
   expect(await repo.insertLike(at.orgId, id, at.authorId)).toEqual({ inserted: false });
 
-  expect((await repo.recountLikes(at.orgId, id)).likeCount).toBe(1);
+  expect((await repo.byId(at.orgId, id))?.likeCount).toBe(1);
+});
+
+test('a like is a change to its post, as the live feed hears it', async () => {
+  // The count is the database's write, not the app's: the row observer reports it as the post's.
+  const at = await anOrg();
+  const id = await aPost(at, { slug: 'heard' });
+  const heard: (readonly [string, unknown, unknown])[] = [];
+  const off = subscribe('entity.row', ({ payload }) => {
+    if (payload.entity === 'posts') {
+      heard.push([payload.op, payload.before?.likeCount, payload.after?.likeCount]);
+    }
+  });
+  try {
+    await repo.insertLike(at.orgId, id, at.authorId);
+    await repo.deleteLike(at.orgId, id, at.authorId);
+  } finally {
+    off();
+  }
+
+  // The unlike names its row by filter, so the post's `before` is not known: `null`, never a guess.
+  expect(heard).toEqual([
+    ['update', 0, 1],
+    ['update', undefined, 0],
+  ]);
 });
 
 test('recordById carries whether THIS member likes the post, and only this one', async () => {
@@ -141,7 +166,7 @@ test('recordById carries whether THIS member likes the post, and only this one',
   const [mine] = await repo.recordById(at.orgId, id, at.authorId);
   const [theirs] = await repo.recordById(at.orgId, id, other);
 
-  expect(mine).toMatchObject({ id, likeCount: 0, likedByMe: true });
+  expect(mine).toMatchObject({ id, likeCount: 1, likedByMe: true });
   expect(theirs).toMatchObject({ id, likedByMe: false });
   expect(await repo.recordById(orgId(nextId()), id, at.authorId)).toEqual([]);
 });
@@ -153,7 +178,7 @@ test('deleteLike removes the composite-key row and reports whether it was there'
 
   expect(await repo.deleteLike(at.orgId, id, at.authorId)).toEqual({ deleted: true });
   expect(await repo.deleteLike(at.orgId, id, at.authorId)).toEqual({ deleted: false });
-  expect((await repo.recountLikes(at.orgId, id)).likeCount).toBe(0);
+  expect((await repo.byId(at.orgId, id))?.likeCount).toBe(0);
 });
 
 test('withComments is the aggregate, ordered, and empty for a post that is not there', async () => {

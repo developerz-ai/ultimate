@@ -116,6 +116,42 @@ arguments, so no predicate is ever consulted and the tree alone decides. `true` 
 "unguarded" — it says only that a 401 before the handler is wrong; the surface still calls
 `enforce()`. `@ultimat3/action` and `@ultimat3/query` derive `RouteMeta.auth` from it.
 
+## Scope — the rule's SQL projection
+
+`scoped(policy, scope)` (`As of 2026-11`) attaches `scope(actor) → where` to a policy: the
+conjunction a read hands the database, in the entity chain's predicate shape (`{ column, op,
+value }`), so the visible rows arrive as one page an index can serve — not a JS filter over an
+over-fetch that leaves a viewer with many hidden rows a short page. One definition, two
+projections. The policy decides exactly as before; the JS rule stays the authority.
+
+```ts
+import type { Actor } from '@ultimat3/core';
+import { can, policyScope, scoped } from '@ultimat3/policy';
+
+declare const actor: Actor | null;
+const postRule = can('post:read');
+
+export const seePost = scoped(postRule, (actor) =>
+  actor === null
+    ? [{ column: 'audience', op: 'eq', value: 'public' }, { column: 'deletedAt', op: 'is-null' }]
+    : [{ column: 'orgId', op: 'eq', value: actor.orgId }],
+);
+policyScope(seePost, actor); // the frozen where, or `undefined` for a policy nobody scoped
+```
+
+| Answer | Means |
+|---|---|
+| `undefined` | no scope declared: nothing is handed down |
+| `[]` | every row (an admin) — an empty conjunction |
+| `[…]` | every condition must hold. `op` is one of `eq neq in gt gte lt lte is-null is-not-null` |
+
+- **A scope belongs to the clause it is declared on.** `and`/`or`/`not` over a scoped policy carry
+  none: the conjunction of children's scopes is not the scope of `or`. Scope the outermost policy.
+- **Not tenancy.** Tenant isolation is the entity layer's (`where({ orgId })`, the tenancy guard);
+  a scope narrows what one actor sees inside it and never replaces it.
+- Composing it into a read is `@ultimat3/query`'s; a scope that disagrees with its rule on the
+  exercise seed is to be a finding (`X_POLICY_SCOPE_MISMATCH`, registered with its raiser).
+
 ## Four surfaces, four adapters, one rule
 
 `surfaces.ts` is the proof. Each adapter evaluates and maps a denial to that surface's

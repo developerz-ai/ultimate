@@ -10,7 +10,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/entity`: `.latestBy(group, { order, direction? })` ends a read chain with the newest row of every group in one `DISTINCT ON` statement — ties to the primary key, more than `MAX_LATEST_GROUPS` (1,000) groups `X_INVARIANT_VIOLATED`, never truncated. `preload(rel, { perParent: n, order?, direction? })` attaches at most `n` rows of a `hasMany` per parent in one `LATERAL` statement per 500 parents. A repository without `latestBy` answers both through paged `findMany` reads.
+- `@ultimat3/entity`: `countBy(column, { where })` counts only the rows each group has that satisfy `where` (a group with none is present at `0`), and `.aggregate({ name: { fn, column?, where? } })` answers up to `MAX_MEASURES` (32) filtered measures in one `count(*) filter (where …)` statement. A `defineDriver` store composes both from the capabilities it already declares.
+- `@ultimat3/entity`: `indexes:` entries take `expression` (`unique(lower(email))`), `orders` (a direction per key), `include` (btree `INCLUDE`) and `operatorClass: 'gin_trgm_ops'`; each absent by default, so no index name or schema hash moves. `x db gen` creates `pg_trgm` in the migration that first needs it.
+- `@ultimat3/entity`: `entity({ version: 'lockVersion' })` — an optimistic lock. `update(id)` must carry the version, is conditioned on it and increments it; moved since the read is `X_ENTITY_STALE` (409), omitted `X_ENTITY_VERSION_INVALID`. `updateMany` checks every row (one stale row refuses the batch); `updateWhere`/`updateAll`/`transition`/soft delete increment it and may not set it; `upsertAll` with `onMatch: 'update'` is refused on a versioned entity.
+- `@ultimat3/entity`: `db.<table>.lockKeys(keys, fn)` holds up to `MAX_LOCK_KEYS` (64) advisory keys for one transaction, taken in sorted order, so two callers naming the same keys in different orders never deadlock.
+- `@ultimat3/entity`: `.all()` logs `entity.all.truncated` (`ALL_TRUNCATED`) in development and test when it dropped a next page and the chain named no `.limit(n)`; staging and production stay silent.
+- `@ultimat3/entity`: `RegistryEntry.coveredIndexes` lists each implicit column index another index already leads with (`CoveredIndex`). Listed only — every one is still emitted.
+- `@ultimat3/auth`: `AuthAdapter.getSessionWithUser?(id)` (type `SessionWithUser`) — `authenticate` reads the session and its user in one statement on `postgresAuthAdapter` (was two). Optional: an adapter without it makes the two reads.
+- `@ultimat3/auth`: `AUTH_LOCKOUTS_STORAGE`, from `@ultimat3/auth/schema` and the barrel — `x_auth_lockouts` is created from this declared, logged storage setting, the one the framework schema's drift check compares.
+- `@ultimat3/policy`: `scoped(policy, scope)` and `policyScope(policy, actor)` attach a rule's database filter — an AND-only list of `{ column, op, value }` — to a policy. Composing it into query reads is planned.
+
+### Changed
+
+- `@ultimat3/entity`: `contains` on a `text()`/`char()` column is a case-insensitive substring match — a bound, escaped `ilike` (`%` and `_` literal), served by a `gin_trgm_ops` index — on Postgres and memory alike. Before, Postgres refused the statement and memory compared for equality. `jsonb` and arrays keep `@>`. The plan sweep's `X_QUERY_UNINDEXED` names the trigram declaration (`trigramDeclaration(col)`).
+- `@ultimat3/entity`: a `countedIn` counter's trigger write is reported as an `entity.row` `update` of the parent on memory and Postgres (PGlite in `x dev` included), so a live count moves without a recount.
+- `@ultimat3/entity`: `defineDriver` refuses a child entity whose column declares `countedIn` when `database()` builds it (`X_DRIVER_UNSUPPORTED`, `meta.capability: 'countedIn'`) — a custom store has no hook to move the parent's count, which used to stay unmoved silently.
+- `@ultimat3/auth`: `registerClient` refuses a redirect URI, grant type, scope or resource that is empty or contains whitespace (`X_AUTH_CLIENT_INVALID`, 422): the store keeps each list space-joined, so such a value read back as a different list.
+- `@ultimat3/jobs`: a concurrent `refreshView` no longer accepts a unique `expression` index as its key — Postgres refuses one (`X_JOB_REFRESH_VIEW_INVALID`).
+
+### Fixed
+
+- `@ultimat3/jobs` (security): `subjectErase` reaches a deleted or anonymized table's `<table>_history`, which must now be declared — `'delete'` removes every image of those rows in the parent's transaction (`x.purge` on Postgres, `purgingHistory` in memory), `{ retain }` keeps them; undeclared is `X_SUBJECT_TABLE_UNDECLARED`. Before, an erased person's data survived in history before and after images.
 
 ## Releases
 

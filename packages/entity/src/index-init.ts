@@ -1,7 +1,7 @@
 // What one `indexes: [...]` entry of `entity(name, { indexes })` may say. Its own file so the
 // declaration's shape is readable apart from `entity.ts`, which turns it into an `IndexDef`.
 
-import type { IndexMethod } from '@ultimat3/db';
+import type { IndexMethod, IndexOperatorClass } from '@ultimat3/db';
 import type { Expr, InvariantColumns } from './expr';
 import type { ColumnMap } from './types';
 
@@ -41,4 +41,16 @@ export interface IndexInit<C extends ColumnMap> {
    * `x db gen` marks `-- lock-heavy: true`.
    */
   readonly concurrently?: boolean;
+  /**
+   * The ONE key is this SQL expression — `lower(email)`, `(payload->>'kind')` — written over
+   * PHYSICAL column names, as Postgres reads it; `on` names the columns it reads, which is what the
+   * covering rule and the name look at. `unique: true` with it is `unique(lower(email))`.
+   */
+  readonly expression?: string;
+  /** A direction per key, in key order (`null` writes none). Replaces `order`, never beside it. */
+  readonly orders?: readonly ('asc' | 'desc' | null)[];
+  /** Columns stored in the index but never keyed — an index-only scan reads them. btree only. */
+  readonly include?: readonly (keyof C & string)[];
+  /** An operator class on every key: `gin_trgm_ops` (with `using: 'gin'`), what `contains` needs. */
+  readonly operatorClass?: IndexOperatorClass;
 }

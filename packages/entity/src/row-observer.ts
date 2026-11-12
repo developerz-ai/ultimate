@@ -17,10 +17,11 @@
 import { currentWriteOrigin, type EntityRowOp, instrument, subscribed } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { copyColumns } from './copy-plan';
+import { counterEcho, type RepoOf } from './counter-observed';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
 import { readRecorder } from './read-capture';
-import type { Repo, RepoOptions, UpsertArgs } from './repo';
+import type { FilteredWriteOptions, Repo, RepoOptions, UpsertArgs } from './repo';
 import { sealedFields } from './sealed';
 import { searchMirroredRepo } from './search-mirrored-repo';
 import type { IdOf, RowPatch } from './types';
@@ -140,9 +141,17 @@ const beforeAllOf = async <Row>(
  * so an app opts in by subscribing to `entity.row` and never by choosing a different repository — the
  * rows under test are the rows the app reads, which is the whole reason `defaultDriver()` is
  * exported at all.
+ *
+ * `repoOf` reaches the parents a `countedIn` counter moves (`counter-observed.ts`): without it a
+ * trigger's parent write stays unreported, as before.
  */
-export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): Repo<Row> {
+export function observedRepo<Row>(
+  entity: EntityCore<Row>,
+  driven: Repo<Row>,
+  repoOf?: RepoOf,
+): Repo<Row> {
   const name = entity.$name;
+  const counted = counterEcho(entity as EntityCore, repoOf);
   // Beneath the observer, so a searchable entity's writes reach an external index whether or not
   // anything hears `entity.row` (`search-mirrored-repo.ts`).
   const repo = searchMirroredRepo(entity, driven);
@@ -214,12 +223,17 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
     insert: async (values: Row, options?: RepoOptions): Promise<Row> => {
       const stored = await repo.insert(values, options);
       emit('insert', null, stored, options);
+      await counted?.rows([[null, stored]], options);
       return stored;
     },
 
     insertAll: async (rows: readonly Row[], options?: RepoOptions): Promise<readonly Row[]> => {
       const stored = await repo.insertAll(rows, options);
       for (const row of stored) emit('insert', null, row, options);
+      await counted?.rows(
+        stored.map((row) => [null, row] as const),
+        options,
+      );
       return stored;
     },
 
@@ -235,11 +249,14 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
       const ids = [...new Set(rows.flatMap((row) => idOf(row) ?? []))];
       const before = await beforeAllOf(entity, repo, ids);
       const stored = await repo.upsertAll(rows, args);
+      const changes: (readonly [unknown, unknown])[] = [];
       for (const row of stored) {
         const id = idOf(row);
         const previous = id === undefined ? null : (before.get(id) ?? null);
         emit(previous === null ? 'insert' : 'update', previous, row, args);
+        changes.push([previous, row]);
       }
+      await counted?.rows(changes, args);
       return stored;
     },
 
@@ -248,6 +265,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
       const before = await beforeOf(entity, repo, id);
       const after = await repo.update(id, patch, options);
       emit('update', before, after, options);
+      await counted?.rows([[before, after]], options);
       return after;
     },
 
@@ -256,21 +274,24 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
       const before = await beforeOf(entity, repo, id);
       await repo.delete(id, options);
       emit('delete', before, null, options);
+      await counted?.rows([[before, null]], options);
     },
 
-    deleteWhere: async (filter: RowPatch<Row>, options?: RepoOptions): Promise<number> => {
+    deleteWhere: async (filter: RowPatch<Row>, options?: FilteredWriteOptions): Promise<number> => {
       const rows = await repo.deleteWhere(filter, options);
       bulk('delete', rows, options);
+      await counted?.filtered(asRecord(filter), null, rows, options);
       return rows;
     },
 
     updateWhere: async (
       filter: RowPatch<Row>,
       patch: RowPatch<Row>,
-      options?: RepoOptions,
+      options?: FilteredWriteOptions,
     ): Promise<number> => {
       const rows = await repo.updateWhere(filter, patch, options);
       bulk('update', rows, options);
+      await counted?.filtered(asRecord(filter), asRecord(patch) ?? {}, rows, options);
       return rows;
     },
   };
@@ -307,6 +328,10 @@ export function observedRepo<Row>(entity: EntityCore<Row>, driven: Repo<Row>): R
     observed.updateMany = async (rows, options) => {
       const written = await updateMany.call(repo, rows, options);
       bulk('update', written, options);
+      // Each patch names the same columns, so the first says whether a counter moved; which
+      // parents it moved, no filter says — a count.
+      const patch = asRecord(rows[0]?.patch);
+      if (patch !== null) await counted?.filtered(null, patch, written, options);
       return written;
     };
   }

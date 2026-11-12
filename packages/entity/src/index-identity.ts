@@ -16,6 +16,11 @@ const identity = (index: IndexDef): string =>
     index.order ?? '',
     index.where ?? '',
     index.using ?? '',
+    // The key parts (E8): `lower(email)` and `upper(email)` on one column are two indexes.
+    index.expression ?? '',
+    JSON.stringify(index.orders ?? null),
+    (index.include ?? []).join(','),
+    index.operatorClass ?? '',
   ].join('|');
 
 /**

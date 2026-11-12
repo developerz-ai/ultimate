@@ -12,6 +12,7 @@ export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type { AggregateFn } from './aggregate';
 export { AVG_SCALE } from './aggregate';
+export { ALL_TRUNCATED } from './all-truncated';
 // Append-only entities: the same kind of seam, wrapped OUTSIDE `sealedRepo` by both drivers — a
 // driver written outside this package returns through `appendOnlyRepo(entity, sealedRepo(…))`.
 export type { AppendOnlySource } from './append-only';
@@ -74,10 +75,17 @@ export { iff } from './expr';
 /** The two DECLARED capabilities' refusals — a third-party driver raises the same ones. */
 export type { HistoryColumns, HistoryEntity, HistoryInit } from './history';
 export type { HistoryRecord, HistoryVersion } from './history-order';
+export { purgingHistory } from './history-purge';
 export { history } from './history-read';
 export type { IndexInit } from './index-init';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
+export type { LatestByOptions, LatestBySpec, ReadLatest } from './latest-by';
+export { MAX_LATEST_GROUPS } from './latest-by';
+// The lockKeys ceiling, exported for the same reason the page bounds are: one number, one place.
+export { MAX_LOCK_KEYS } from './lock-key';
+export type { CountByOptions, Measure, MeasureFn, MeasureMap } from './measures';
+export { MAX_MEASURES } from './measures';
 export { memoryJournal } from './memory-journal';
 // How Postgres compares two values of one column, decided by the column's declared KIND. Exported
 // because `@ultimat3/query`'s matcher and in-memory source ask the same question — and a second
@@ -120,6 +128,9 @@ export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';
 export type { ChainWrites, Returned, TableBulkWrites, Unreturned } from './query-write';
 export type {
+  ChainMeasure,
+  MeasureFilter,
+  MeasureValueOf,
   ReadAggregates,
   SeriesOptions,
   SeriesValueOf,
@@ -133,6 +144,7 @@ export { ENTITY_BRAND, recordProjection } from './record-projection';
 export { recordProjectionForTable, recordTypeForTable } from './record-table';
 export type {
   ColumnDescription,
+  CoveredIndex,
   EntityDescription,
   IndexDescription,
   InvariantDescription,
@@ -230,6 +242,7 @@ export {
 } from './tenancy';
 // The scaffolded handle's driver under test: memory until `setDbClient` installs a client.
 export { testDriver } from './test-driver';
+export { trigramDeclaration } from './text-contains';
 export type { SeriesPoint, SeriesSpec, SeriesUnit, SeriesValue } from './time-bucket';
 export { bucketStart, SERIES_UNITS } from './time-bucket';
 export type { Move } from './transition';

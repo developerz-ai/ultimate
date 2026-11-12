@@ -58,8 +58,8 @@ export interface LikeLocalInput {
  * read the clock would produce a different row every time and the rebase would never converge.
  *
  * The server half converges the same way and always did: `insertLike` is insert-or-ignore on the
- * likes composite key, and `recountLikes` recounts from that table rather than adding to a counter
- * — so replaying the mutation server-side is a no-op too, and the two halves agree.
+ * likes composite key, and the count moves only when a like row is written (`likes.postId`'s
+ * `countedIn`) — so replaying the mutation server-side is a no-op too, and the two halves agree.
  */
 export function likePostLocally(tx: LocalTx, { postId }: LikeLocalInput): void {
   // Keyed explicitly: the browser holds no entity schema, so the twin names the record's key — the

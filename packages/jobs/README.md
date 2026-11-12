@@ -777,9 +777,21 @@ keys, continued only through tables the erase deletes; the first refusal of the 
 throws before a row is touched (`X_SUBJECT_TABLE_UNDECLARED`, `X_SUBJECT_TREATMENT_INVALID`,
 `X_SUBJECT_CYCLE`, all terminal).
 
+A parent's `<table>_history` (`entity({ history })`) names its row by `row_id`, no foreign key, so
+the walk alone never finds it. It is reached when its parent is deleted or anonymized — both write
+the person's data into a before image — and needs a line like any table:
+
+| `tables: { posts_history: … }` | Does |
+|---|---|
+| `'delete'` | in the parent's own step and transaction, after the write: the rows' ids read, the write made, every history row of them deleted — the image that write just recorded included — under `x.purge` naming the table, the one delete its guard lets through. The memory driver deletes the same rows through the history repository, inside `purgingHistory(<history table>, …)` — its in-process twin of `x.purge` (`@ultimat3/entity`'s `history-purge.ts`) |
+| `{ retain: '<why>' }` | a step of its own before the parent's, counted by `row_id` |
+| `{ anonymize }` | refused, `X_SUBJECT_TREATMENT_INVALID`: history is never rewritten |
+
 | Piece | Does |
 |---|---|
 | `subject-plan.ts` | reach, children-first order, loop-closing keys to clear first, every refusal |
+| `subject-plan-history.ts` | which history tables a written parent reaches, and how each is treated |
+| `subject-erase-history.ts` | a parent's page and its history's rows, one transaction under `x.purge` |
 | `subject-select.ts` | a table's rows of the subject a page of parent keys at a time, through `database()` over the app's driver |
 | `subject-erase-pass.ts` | targets (fresh subject row each step), cleared keys, then each table; one step per page, each write `deleteWhere`/`updateWhere` on one key |
 | `subject-export-pass.ts` | one object per page per table and target, `index.json` last; sealed columns left out, instants as ISO UTC |

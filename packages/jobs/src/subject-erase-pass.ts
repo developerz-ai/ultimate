@@ -6,6 +6,7 @@
 import type { StepApi } from './steps-api';
 import type { SubjectRef, SubjectTarget, SubjectTargetEntry } from './subject';
 import { isRetainedTarget } from './subject';
+import { type HistoryPage, treatPageWithHistory } from './subject-erase-history';
 import type { SubjectStep } from './subject-plan';
 import type { SubjectReader } from './subject-select';
 import { rowIdentity } from './subject-select';
@@ -74,31 +75,64 @@ async function countRows(reader: SubjectReader, entity: string): Promise<number>
   return seen.size;
 }
 
+/** One table's tally, and its history's when the step deletes that with it. */
+interface TableErased {
+  readonly own: SubjectTally;
+  readonly history?: { readonly table: string; readonly tally: SubjectTally };
+}
+
+/** One page of parent keys: the table's own write, and with a history, that history's rows. */
+const treat = async (
+  reader: SubjectReader,
+  step: SubjectStep,
+  property: string,
+  values: readonly unknown[],
+): Promise<HistoryPage> => {
+  const { history } = step;
+  if (history === undefined) {
+    return { treated: await treatPage(reader, step, property, values), history: 0 };
+  }
+  return treatPageWithHistory(reader, { ...step, history }, property, values);
+};
+
 async function eraseTable(
   stepApi: StepApi,
   reader: SubjectReader,
   step: SubjectStep,
-): Promise<SubjectTally> {
+): Promise<TableErased> {
   const { entity, treatment } = step;
   if (typeof treatment === 'object' && 'retain' in treatment) {
-    return tally(0, 0, await stepApi.run(`retain:${entity}`, () => countRows(reader, entity)));
+    const kept = await stepApi.run(`retain:${entity}`, () => countRows(reader, entity));
+    return { own: tally(0, 0, kept) };
   }
   let count = 0;
+  let history = 0;
+  const add = (page: HistoryPage): void => {
+    count += page.treated;
+    history += page.history;
+  };
   if (entity === reader.plan.subject) {
-    count = await stepApi.run(`${entity}:subject`, () =>
-      treatPage(reader, step, reader.plan.key, [reader.key]),
+    add(
+      await stepApi.run(`${entity}:subject`, () =>
+        treat(reader, step, reader.plan.key, [reader.key]),
+      ),
     );
   }
   for (const via of step.via) {
     let n = 0;
     for await (const values of reader.parentKeys(via)) {
-      count += await stepApi.run(`${entity}.${via.property}:${n}`, () =>
-        treatPage(reader, step, via.property, values),
+      add(
+        await stepApi.run(`${entity}.${via.property}:${n}`, () =>
+          treat(reader, step, via.property, values),
+        ),
       );
       n += 1;
     }
   }
-  return treatment === 'delete' ? tally(count, 0, 0) : tally(0, count, 0);
+  const own = treatment === 'delete' ? tally(count, 0, 0) : tally(0, count, 0);
+  return step.history === undefined
+    ? { own }
+    : { own, history: { table: step.history, tally: tally(history, 0, 0) } };
 }
 
 export async function subjectErasePass(
@@ -128,7 +162,9 @@ export async function subjectErasePass(
     }
   }
   for (const step of reader.plan.steps) {
-    tables.set(step.entity, await eraseTable(stepApi, reader, step));
+    const erased = await eraseTable(stepApi, reader, step);
+    tables.set(step.entity, erased.own);
+    if (erased.history !== undefined) tables.set(erased.history.table, erased.history.tally);
   }
   return { tables: Object.fromEntries(tables) };
 }

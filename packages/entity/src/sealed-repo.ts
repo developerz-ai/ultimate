@@ -230,9 +230,12 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
     async count(args) {
       return repo.count(await readArgs(entity, fields, args, sealKeysOnce()));
     },
-    async countBy(column, args) {
+    async countBy(column, args, options) {
       refuseNamed(entity, fields, [column], 'a grouped count');
-      return repo.countBy(column, await readArgs(entity, fields, args, sealKeysOnce()));
+      // A filter inside the aggregate is evaluated by the database too: no sealed column in it.
+      const filtered = (options?.where ?? []).map((one) => one.column);
+      refuseNamed(entity, fields, filtered, 'a grouped count');
+      return repo.countBy(column, await readArgs(entity, fields, args, sealKeysOnce()), options);
     },
     async aggregate(fn: AggregateFn, column, args) {
       refuseNamed(entity, fields, [column], 'an aggregate');
@@ -271,6 +274,31 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
         })),
       );
       return updateMany.call(repo, sealed, options);
+    };
+  }
+  // Every measure's column and every column its filter names is evaluated over ciphertext.
+  const aggregates = repo.aggregates?.bind(repo);
+  if (aggregates !== undefined) {
+    sealing.aggregates = async (measures, args) => {
+      const named = Object.values(measures).flatMap((measure) => [
+        ...(measure.column === undefined ? [] : [measure.column]),
+        ...(measure.where ?? []).map((one) => one.column),
+      ]);
+      refuseNamed(entity, fields, named, 'an aggregate');
+      return aggregates(measures, await readArgs(entity, fields, args, sealKeysOnce()));
+    };
+  }
+  // A read: its rows open exactly as `findMany`'s, and a group or an order is never sealed.
+  const latestBy = repo.latestBy?.bind(repo);
+  if (latestBy !== undefined) {
+    sealing.latestBy = async (spec, args) => {
+      refuseNamed(entity, fields, [spec.group, ...spec.order.map((key) => key.column)], 'an order');
+      const keys = sealKeysOnce();
+      return openRows(
+        fields,
+        await latestBy(spec, await readArgs(entity, fields, args, keys)),
+        keys,
+      );
     };
   }
   // A bucket is an instant and a sum is arithmetic: neither has a meaning over ciphertext.

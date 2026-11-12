@@ -258,5 +258,10 @@
  * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing serving-only.
  * raised 1433 → 1445, measured 1445 (2026-11-11, sweep 5a): `MIGRATE_CEILING`'s 12, the db COPY
  * funnel and the entity set-based writes. Nothing serving-only (metafile diff against origin/main).
+ * raised 1445 → 1467, measured 1467 (2026-11-12, sweep 5b, metafile diff against HEAD bc5e346ec):
+ * `MIGRATE_CEILING`'s 19, plus three serving-only: `entity/src/driver-counters.ts` (through
+ * `define-driver.ts`), `auth/src/session-user.ts` and `auth/src/builtin-adapter-rows.ts` (split
+ * out of `auth.ts` and `builtin-adapter.ts`). Every one a new file; no existing module newly
+ * reached.
  */
-export const SERVING_ROLE_CEILING = 1445;
+export const SERVING_ROLE_CEILING = 1467;

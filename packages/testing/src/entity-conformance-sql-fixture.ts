@@ -48,5 +48,6 @@ export const sqlSubject = (
   capabilities: DRIVER_CAPABILITIES,
   foreignKeys: true,
   history: true,
+  counters: true,
   ...(options.lockWaiters === undefined ? {} : { lockWaiters: options.lockWaiters }),
 });

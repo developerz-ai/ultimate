@@ -13,6 +13,7 @@ import { microsToIso, seekAlias } from './instant';
 import { operatorUnknown } from './operator';
 import { allColumns, arrayLiteral, columnsOf, physicalName } from './pg-row';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
+import { isTextContains, textContainsSql } from './text-contains';
 import type { ColumnKind } from './types';
 
 /** Nothing matches. `in ()` is a syntax error in Postgres, so an empty set needs a constant. */
@@ -122,8 +123,12 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
     // seam refuses a plain object as a parameter), an array operand as the array literal
     // `bindValues` already builds. What is written into the statement is the operator, and the
     // operator is chosen here from a closed set of four.
+    // On a `text()`/`char()` column `contains` is a case-insensitive substring (`text-contains.ts`),
+    // the one meaning `@>` cannot have there; on `jsonb` and arrays it stays containment.
     case 'contains':
-      return containmentSql(entity, predicate, 'contains');
+      return isTextContains(kindOf(entity, predicate.column))
+        ? textContainsSql(column, value)
+        : containmentSql(entity, predicate, 'contains');
     case 'contained-by':
       return containmentSql(entity, predicate, 'contained-by');
     case 'overlaps':
@@ -306,6 +311,22 @@ const seekSql = <Row>(
   return terms.length === 0 ? NEVER : sql`(${join(terms, ' or ')})`;
 };
 
+/**
+ * A list of predicates as one conjunction, `true` when there are none — a measure's own filter
+ * (`count(*) filter (where …)`) compiled by the very `predicateSql` the chain's `where` is, so a
+ * filtered aggregate and a filtered read cannot mean two things.
+ */
+export const predicatesSql = <Row>(
+  entity: EntityCore<Row>,
+  where: readonly Predicate[],
+): SqlFragment =>
+  where.length === 0
+    ? sql`true`
+    : join(
+        where.map((predicate) => predicateSql(entity, predicate)),
+        ' and ',
+      );
+
 export const conditions = <Row>(
   entity: EntityCore<Row>,
   plan: QueryPlan,
@@ -333,12 +354,22 @@ export const conditions = <Row>(
 const NULLS_LAST = raw('asc nulls last');
 const NULLS_FIRST = raw('desc nulls first');
 
-const orderSql = <Row>(entity: EntityCore<Row>, orderBy: readonly SortKey[]): SqlFragment =>
+/**
+ * Exported so every statement that orders rows (`latest-by-sql.ts`) writes NULL's place with these
+ * words and no copy of them. `qualifier` prefixes each column (`"L$LB"."at"`) for a statement
+ * ordering the output of a subquery.
+ */
+export const orderSql = <Row>(
+  entity: EntityCore<Row>,
+  orderBy: readonly SortKey[],
+  qualifier?: SqlFragment,
+): SqlFragment =>
   join(
-    orderBy.map(
-      (entry) =>
-        sql`${columnRef(entity, entry.column)} ${entry.direction === 'desc' ? NULLS_FIRST : NULLS_LAST}`,
-    ),
+    orderBy.map((entry) => {
+      const column = columnRef(entity, entry.column);
+      const ref = qualifier === undefined ? column : sql`${qualifier}.${column}`;
+      return sql`${ref} ${entry.direction === 'desc' ? NULLS_FIRST : NULLS_LAST}`;
+    }),
   );
 
 /**

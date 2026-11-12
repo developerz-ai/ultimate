@@ -6,6 +6,7 @@
 import { logger, stringField, timingSafeEqual } from '@ultimat3/core';
 import { outbound } from '@ultimat3/core/outbound';
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
+import { type ClientListField, clientInvalid } from './authorization-server-errors';
 import type {
   AuthServerClient,
   AuthServerGrant,
@@ -153,11 +154,30 @@ export interface RegisteredClient {
   readonly clientSecret: string | null;
 }
 
-/** Screening is the caller's: the route answers RFC 7591 errors, the app's task trusts itself. */
+/**
+ * What every registration must pass, whoever registers: each list value is ONE non-empty,
+ * whitespace-free string, or the space-joined store reads it back as a different list. The route
+ * screens the wire first and answers RFC 7591 errors; an app's `registerClient` meets this one.
+ */
+function screenLists(input: RegisterClientInput): void {
+  const lists: readonly (readonly [ClientListField, readonly string[] | undefined])[] = [
+    ['redirectUris', input.redirectUris],
+    ['grantTypes', input.grantTypes],
+    ['scopes', input.scopes],
+    ['resources', input.resources],
+  ];
+  for (const [field, values] of lists) {
+    const bad = values?.find((value) => value === '' || /\s/.test(value));
+    if (bad !== undefined) throw clientInvalid(field, bad);
+  }
+}
+
+/** Screened here, before the secret is minted or the row written, for every caller alike. */
 export async function storeClient(
   config: ResolvedAuthServerConfig,
   input: RegisterClientInput,
 ): Promise<RegisteredClient> {
+  screenLists(input);
   const method = input.authMethod ?? 'none';
   const clientSecret = method === 'none' ? null : randomToken(32);
   const client: AuthServerClient = {

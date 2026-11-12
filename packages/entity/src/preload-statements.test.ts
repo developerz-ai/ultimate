@@ -151,6 +151,19 @@ describe('what the preload statement carries', () => {
     expect(preloadStatement()).toContain('"author_id" in');
   });
 
+  test('perParent: still one statement for the page, n rows per key off a LATERAL read', async () => {
+    client.on('preload_stmt_members', { rows: [memberRow(ANA), memberRow(BEN)] });
+    await db()
+      .members.where({ orgId: ORG })
+      .preload('preload_stmt_postsByAuthor', { perParent: 2, order: 'title' })
+      .all();
+
+    expect(client.texts).toHaveLength(2);
+    expect(preloadStatement()).toContain('cross join lateral (');
+    expect(preloadStatement()).toContain('order by "title" desc nulls first, "id" desc');
+    expect(preloadStatement()).toContain('"org_id" =');
+  });
+
   test('count() reads no row, so it attaches nothing and sends nothing extra', async () => {
     client.on('count(', { rows: [{ count: '3' }] });
 

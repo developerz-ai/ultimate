@@ -3,11 +3,9 @@
 // (the typed db handle, migrations, cache tags, the admin UI, the manifest) is projected from
 // this one call.
 
-import type { IndexMethod } from '@ultimat3/db';
 import type { Schema } from '@ultimat3/schema';
 import { assertAppendOnlyColumns } from './append-only';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
-import { declaredIndexOf } from './declared-index';
 import {
   assertNotRetired,
   assertScan,
@@ -15,15 +13,14 @@ import {
   describeEntity,
   describeReferences,
 } from './describe';
+import { entityIndexesOf } from './entity-indexes';
 import { rowParsers } from './entity-parse';
 import { parseEntityPatch } from './entity-patch';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
 import type { HistoryEntity, HistoryInit } from './history';
-import { distinctIndexes } from './index-identity';
 import type { IndexInit } from './index-init';
-import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant } from './invariants';
 import { describeLifecycle, lifecycleHistory } from './lifecycle';
@@ -40,8 +37,9 @@ import { sealedInView } from './sealed-errors';
 import type { SearchInit, SearchSource, SearchVector } from './search';
 import { searchVectorOf } from './search';
 import { resolveTenantColumn } from './tenancy';
-import { coveredByTenantIndex, tenantIndexOf, withoutDerivedDuplicate } from './tenant-index';
+import { withoutDerivedDuplicate } from './tenant-index';
 import type { AnyColumn, ColumnMap, IndexDef, RowOf, WireRow } from './types';
+import { versionColumnOf } from './version-lock';
 import type { EntityView } from './view';
 import { viewFor } from './view';
 import { type ViewInit, type ViewQuery, viewQueryOf } from './view-entity';
@@ -65,6 +63,11 @@ export interface EntityInit<C extends ColumnMap> {
    * `orgId`, so silence never means unscoped.
    */
   readonly tenant?: keyof C & string;
+  /**
+   * The optimistic lock: an `integer().default(0)` column every update increments, and that
+   * `update(id, patch)` must name at the value it read — a row moved since is `X_ENTITY_STALE`.
+   */
+  readonly version?: keyof C & string;
   /**
    * Why an entity with no tenant column, referencing a tenant-owned one, belongs to no tenant.
    * Without it `x verify`'s exercise step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused.
@@ -168,6 +171,8 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   readonly $readOnly: string | null;
   /** Property key of the tenant column, or `null`. Presence is what turns tenancy on. */
   readonly $tenantColumn: string | null;
+  /** The declared optimistic-lock property (`version-lock.ts`), or `null`. */
+  readonly $version: string | null;
   /**
    * The generated `tsvector` this entity's `.searchable()` columns derive, or `null` when none is.
    * Presence is what makes `.search(text)` legal — both drivers read it, and neither invents one.
@@ -309,56 +314,20 @@ export const entity = <const C extends ColumnMap>(
     bindInvariant<Row>(def, resolve, partialWhere),
   );
 
-  const declared: readonly IndexDef[] = [
-    ...entries.flatMap(([property, column]) => {
-      const meta = column.$meta;
-      if (!meta.unique && !meta.index) return [];
-      const physical = [
-        meta.kind === 'money' ? moneyColumns(property, meta).minor : columnName(property, meta),
-      ];
-      if (coveredByTenantIndex(physical[0] ?? '', tenant, meta.unique)) return [];
-      return [
-        {
-          name: indexName(name, table, physical, meta.unique),
-          columns: physical,
-          unique: meta.unique,
-        },
-      ];
-    }),
-    ...(init.indexes ?? []).map((index) =>
-      declaredIndexOf(index, { name, table, resolve, columns: columnsExpr }),
-    ),
-    // The one index nobody declared and every search needs. Through the SAME `IndexInit` path a
-    // hand-written `using: 'gin'` takes — `indexName` gives it the method discriminator, so it can
-    // never collide with a btree an author declares on the same column.
-    ...(search === null
-      ? []
-      : [
-          {
-            name: indexName(name, table, [search.column], false, undefined, null, 'gin'),
-            columns: [search.column],
-            unique: false,
-            using: 'gin' as IndexMethod,
-          },
-        ]),
-  ];
-  // After every other index, so one that already starts with `(tenant, pk)` is seen (`tenant-index.ts`).
   const physicalKey = primaryKey.map((property) => resolve([property]));
-  const [tenantIndex] = tenantIndexOf({
-    entityName: name,
+  const { indexes, tenantIndex, covered } = entityIndexesOf({
+    name,
     table,
+    entries,
+    declared: init.indexes,
+    resolve,
+    columns: columnsExpr,
+    search,
     tenant,
     primaryKey: physicalKey,
     plainView: init.view != null && init.view.materialized !== true,
-    covering: [
-      ...declared.filter((index) => index.where == null && index.using === undefined),
-      ...invariants.filter((inv) => inv.kind === 'unique' && inv.where == null),
-    ].map((each) => each.columns),
+    invariants,
   });
-  // A foreign key's own index named again in `indexes` is one index, not two (`index-identity.ts`).
-  const indexes = distinctIndexes(
-    tenantIndex === undefined ? declared : [...declared, tenantIndex],
-  );
 
   const retain = retainOf(name, init.retain, entries, indexes, appendOnly);
   const partition = partitionOf(name, init.partitionBy, {
@@ -436,6 +405,7 @@ export const entity = <const C extends ColumnMap>(
     $viewQuery: viewQuery,
     $readOnly: readOnly,
     $tenantColumn: tenantColumn,
+    $version: versionColumnOf(name, init.columns, init.version),
     $search: search,
     $schema: schema,
     get $row(): Row {
@@ -469,6 +439,7 @@ export const entity = <const C extends ColumnMap>(
     core: core as EntityCore<unknown>,
     describe,
     references,
+    ...(covered.length === 0 ? {} : { coveredIndexes: covered }),
   });
   const { history, historyOf } = init;
   const lifecycle = { name, table, columns: init.columns, primaryKey, tenantColumn, appendOnly };

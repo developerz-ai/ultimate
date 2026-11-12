@@ -3,9 +3,12 @@
 
 import { EntityError } from './entity-error';
 
-export const lockUnsupported = (entityName: string, method: 'lock' | 'lockKey'): EntityError =>
+export const lockUnsupported = (
+  entityName: string,
+  method: 'lock' | 'lockKey' | 'lockKeys',
+): EntityError =>
   new EntityError({
     code: 'X_LOCK_UNSUPPORTED',
     cause: `${entityName}.${method}() reached a repository that does not implement it: a hand-written driver, which the contract lets omit both`,
-    fix: 'database(entities, { driver: postgresDriver() })   # the shipped driver has both; a hand-written Repo implements lock and lockKey',
+    fix: 'database(entities, { driver: postgresDriver() })   # the shipped driver has both; a hand-written Repo implements lock, lockKey and lockKeys',
   });

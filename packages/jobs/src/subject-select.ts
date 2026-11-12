@@ -3,8 +3,9 @@
 // rows are those whose key is in a page of its parent's rows — never a statement unbounded by a page.
 
 import { assert } from '@ultimat3/core';
+import { currentTx, type DbTx, PURGE_SETTING, setLocal } from '@ultimat3/db';
 import type { EntityCore, Table } from '@ultimat3/entity';
-import { database, getEntity } from '@ultimat3/entity';
+import { database, getEntity, purgingHistory } from '@ultimat3/entity';
 import type { Subject } from './subject';
 import type { SubjectPlan, SubjectVia } from './subject-plan';
 
@@ -23,6 +24,12 @@ export interface SubjectReader {
   pages(entity: string): AsyncGenerator<readonly SubjectRow[]>;
   /** The values `via` matches on, a page of the parent's rows at a time. */
   parentKeys(via: SubjectVia): AsyncGenerator<readonly unknown[]>;
+  /**
+   * `work` in one transaction of the subject's driver, where `x.purge` names `history`'s table —
+   * the one delete its guard trigger lets through. `tx` is that Postgres transaction; `undefined`
+   * on a driver with none (memory), which keeps no history guard and no SQL to send.
+   */
+  purging<R>(history: string, work: (tx: DbTx | undefined) => Promise<R>): Promise<R>;
 }
 
 /** The primary key of one row as one string: what tells two pages' copies of a row apart. */
@@ -35,7 +42,10 @@ export function subjectReader<I>(
   key: string,
 ): SubjectReader {
   const cores = new Map<string, EntityCore>();
-  for (const name of [plan.subject, ...plan.steps.map((step) => step.entity)]) {
+  const reached = plan.steps.flatMap((step) =>
+    step.history === undefined ? [step.entity] : [step.entity, step.history],
+  );
+  for (const name of [plan.subject, ...reached]) {
     const core = getEntity(name)?.core;
     assert(
       core !== undefined,
@@ -93,10 +103,20 @@ export function subjectReader<I>(
     }
   }
 
+  const purging = <R>(history: string, work: (tx: DbTx | undefined) => Promise<R>): Promise<R> =>
+    subject.init.driver.transactor().run(async () => {
+      const tx = currentTx();
+      const table = cores.get(history)?.$table ?? history;
+      if (tx !== undefined) await setLocal(tx, { [PURGE_SETTING]: table });
+      // The in-process twin of `x.purge`: the history repository lets this one delete through.
+      return purgingHistory(history, () => work(tx));
+    });
+
   return {
     plan,
     key,
     size,
+    purging,
     table,
     core: (entity) => cores.get(entity) as EntityCore,
     rootRow,

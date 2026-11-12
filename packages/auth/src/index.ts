@@ -19,6 +19,7 @@ export type {
   PasskeyStore,
   SessionPatch,
   SessionStore,
+  SessionWithUser,
   StoredMfaSecret,
   UserPatch,
   UserStore,
@@ -417,6 +418,7 @@ export { authSubjectTarget } from './subject-target';
 
 /** Also `@ultimat3/auth/schema`, the leaf a schema reader imports instead of this barrel. */
 export {
+  AUTH_LOCKOUTS_STORAGE,
   AUTH_SERVER_TABLES,
   AUTH_TABLE_NAMES,
   AUTH_TABLES,

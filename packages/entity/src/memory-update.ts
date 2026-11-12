@@ -10,8 +10,10 @@
 import { narrowRow } from './columns';
 import type { EntityCore } from './entity';
 import { uniqueIndex, uniqueViolation } from './memory-unique';
+import { rowKey } from './row-key';
 import { advanceVersion } from './search-index-version';
 import { assertRowTenant } from './tenancy';
+import { versionedMerge } from './version-lock';
 
 /**
  * The patch with every `undefined` property dropped — `bindValues` skips them in Postgres, so a
@@ -34,7 +36,11 @@ export const mergedRow = <Row>(entity: EntityCore<Row>, row: Row, patch: object)
   const given = defined(patch);
   const merged = narrowRow<Row>(entity.$columns, Object.assign({}, row, given));
   // A searchable entity's version moves past the stored one even inside one millisecond.
-  return advanceVersion(entity, row, merged, (property) => Object.hasOwn(given, property));
+  const advanced = advanceVersion(entity, row, merged, (property) =>
+    Object.hasOwn(given, property),
+  );
+  // A declared lock: a patch naming a version the row has left is stale, and every merge counts.
+  return versionedMerge(entity, row, given, advanced, (stored) => rowKey(entity, stored));
 };
 
 /**

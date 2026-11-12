@@ -514,6 +514,7 @@ export const exportMember = subjectExport({
 | children first, the subject last; one step per page of parent keys | a killed run resumes at the page it stopped on; every write is an equality on one key, so a replay changes nothing twice |
 | a loop of deleted tables needs one nullable key | it is cleared first; none is `X_SUBJECT_CYCLE` |
 | a table with no foreign key to the person is invisible | list it: `columns: { audit_copies: 'memberId' }`, then it needs a treatment too |
+| a deleted or anonymized table's `<table>_history` is reached too (`As of 2026-11`) | the write records the person in one more before image, and `row_id` is no foreign key. `'delete'` removes every image of those rows in the parent's own step and transaction, after the write — the one delete the append-only guard lets through (`x.purge` on Postgres, `purgingHistory` in memory); `{ retain: '<why>' }` keeps them; `anonymize` is `X_SUBJECT_TREATMENT_INVALID`, undeclared `X_SUBJECT_TABLE_UNDECLARED`. |
 | framework data is a `targets:` entry | `authSubjectTarget` (`@ultimat3/auth`), `auditSubjectTarget` (`@ultimat3/action`, rewrites who acted, keeps the row), `storageSubjectTarget(disk, keysOf)` (`@ultimat3/storage`); `{ target, retain }` keeps one |
 | the export is one object per page per table plus `index.json` | each table's count, treatment and `retain` reason; sealed columns never leave |
 | one job per tenant | crossing tenants is the app's loop; queued job inputs and logs are out of reach (`x_jobs` ages out by `jobs-retention.ts`) |
@@ -599,7 +600,7 @@ export const refreshPostTotals = refreshView({
 | `refreshView()` | |
 |---|---|
 | Each run | `refresh materialized view [concurrently]` in one step; `tenant: 'none'` — the read path scopes the rows |
-| `concurrently` | readers keep the old rows meanwhile; needs a unique index on the view (`.unique()`) |
+| `concurrently` | readers keep the old rows meanwhile; needs a unique index on the view (`.unique()`) over plain columns, with no `where` — a unique `expression` index is no key for it (`As of 2026-11`) |
 | Refused at declaration | a table, a plain view, `concurrently` with no unique index — `X_JOB_REFRESH_VIEW_INVALID` |
 
 ## Rebuilding a search index — `reindex()`

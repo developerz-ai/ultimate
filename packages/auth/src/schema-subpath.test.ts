@@ -26,6 +26,7 @@ async function reached(entry: string): Promise<readonly string[]> {
 }
 
 const NAMES = [
+  'AUTH_LOCKOUTS_STORAGE',
   'AUTH_SERVER_TABLES',
   'AUTH_TABLES',
   'AUTH_TABLE_NAMES',
@@ -44,10 +45,13 @@ describe('@ultimat3/auth/schema', () => {
     expect(Object.keys(leaf).sort()).toEqual(NAMES);
   });
 
-  test('imports nothing but its sibling DDL — no runtime, no other package', async () => {
+  // `@ultimat3/db` and nothing else: `tableDdl` renders the lockout table from its declared
+  // storage, and the one reader of this leaf (`FRAMEWORK_SCHEMA`) loads db's barrel already.
+  test('imports its sibling DDL and db, the renderer — no auth runtime, no other package', async () => {
     expect(await reached('./tables.ts')).toEqual([
       './authorization-server-schema.ts',
       './tables.ts',
+      '@ultimat3/db',
     ]);
   });
 

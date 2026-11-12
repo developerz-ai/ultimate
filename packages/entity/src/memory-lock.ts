@@ -4,6 +4,7 @@
 
 import { asyncContext } from '@ultimat3/core';
 import { driverError } from '@ultimat3/db';
+import { holdInOrder } from './lock-key';
 import { undoingBatch } from './memory-batch';
 import { memoryJournal, memoryRoot, refuseIfMemoryTxClosed } from './memory-journal';
 import { memoryTransactor } from './memory-transactor';
@@ -24,6 +25,15 @@ export interface MemoryLocks {
    * holder, runs `work`, holds nothing after it. No wait when this chain or `outer` holds the key.
    */
   turn<R>(key: string, outer: Tx | undefined, work: () => R): Promise<R>;
+  /**
+   * `work` under every key, in the order given (`lockKeysInput` sorts them), in ONE transaction:
+   * the first key's `run` opens it and each later one joins it, so all are held to its end.
+   */
+  runAll<R>(
+    keys: readonly string[],
+    outer: Tx | undefined,
+    work: (tx: Tx) => Promise<R> | R,
+  ): Promise<R>;
 }
 
 /** What this async chain holds, and the transaction its innermost lock runs in. */
@@ -100,7 +110,7 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
     chain?.names.has(name) === true ||
     (outer !== undefined && heldByTx.get(memoryRoot(outer))?.has(name)) === true;
 
-  return {
+  const locks: MemoryLocks = {
     async run(key, given, work) {
       const name = `${instance}:${key}`;
       const chain = heldByChain.get();
@@ -152,5 +162,9 @@ export const memoryLocks = (waitMs: number = MEMORY_LOCK_WAIT_MS): MemoryLocks =
         release();
       }
     },
+
+    runAll: (keys, outer, work) =>
+      holdInOrder(keys, (key, tx, body) => locks.run(key, tx, body), work, outer),
   };
+  return locks;
 };

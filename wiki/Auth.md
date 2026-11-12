@@ -43,6 +43,7 @@ login on an app that declared no `handles` is `X_CONFIG_INVALID`. The deployed d
 | two expiries, independent | absolute and idle; activity never moves the absolute ceiling (`X_SESSION_EXPIRED` names which) |
 | not a write per request | `lastSeenAt` moves at most once per `idleSlideMs` (default `idleTtlMs / 20`); a changed IP or user agent is written at once |
 | revocation is immediate | the user row is re-read on every request, so a revoked role takes effect on the next one |
+| one statement per request | `authenticate` reads the session and its user in one join on `postgresAuthAdapter` (was two; `As of 2026-11`, `authenticate-statements.test.ts`), through the adapter's optional `getSessionWithUser(id)` → `{ session, user \| null } \| null`. An adapter without it gets `getSession` then `findUserById`, the same answer; `authAdapterConformance` holds one that has it to exactly that answer. A slid idle window adds its one write |
 | the cookie | `__Host-x_session`, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age` |
 | brute force | per-IP, per-account and per-org buckets (`X_ACCOUNT_LOCKED`); every login failure is one indistinguishable `X_UNAUTHENTICATED`. `rateLimit: { scope: 'shared' }` makes the count one for the fleet. The org bucket (`orgMaxAttempts`, default 100 per window) can be exhausted by someone who knows about 20 of an org's addresses, locking its password sign-in — kept by decision ([`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md#known-gaps)) |
 
@@ -247,7 +248,7 @@ const resolveToken = oauthBearerResolver(oauth, { actor: (grant) => actorFor(gra
 | `routes` | `GET /.well-known/oauth-authorization-server` (RFC 8414), `POST /oauth/token`, `/oauth/revoke` (RFC 7009), `/oauth/introspect` (RFC 7662), plus `/oauth/register` (RFC 7591, `registration: 'dynamic'`) and `/oauth/device` (RFC 8628). Plain `Route`s for `runtime.routes`, public, no cookie authenticates them. Every answer is `no-store` RFC 6749 JSON |
 | consent | the page calls `readRequest(url)` → `{ client, scopes, resource, redirectUri }` or a refusal; an unknown client or unregistered redirect has `redirectTo: null` — render it, never redirect. Its action calls `approve({ subject, request, scopes? })` / `deny({ request })` for the redirect URL (`code`, `state`, `iss`). A forged request is `X_AUTH_CONSENT_INVALID` (422) |
 | device | the verification page calls `readDevice({ userCode, key })`, `approveDevice` / `denyDevice`; `key` is the caller's bucket — 10 misses lock it (`X_ACCOUNT_LOCKED`) |
-| `registerClient(...)` | a client the app creates itself — a partner's `client_credentials` client; the secret is shown once and stored hashed |
+| `registerClient(...)` | a client the app creates itself — a partner's `client_credentials` client; the secret is shown once and stored hashed. A redirect URI, grant, scope or resource that is empty or holds whitespace is `X_AUTH_CLIENT_INVALID` (422, `meta.field`): the store keeps each list space-joined, so it would read back as a different list |
 | `resolve(token)` | `{ subject, scopes, clientId, resource } \| null`. `oauthBearerResolver(server, { actor, resource? })` is the `resolveToken` a bearer mount and `defineAppMcp` take; `actor` runs per call, so a removed member loses access at once |
 | `revoke({ subject, clientId? })` · `purge({ before })` | immediate; `purge` is the app's `task` to schedule, nothing here runs on a timer |
 
@@ -260,6 +261,7 @@ const resolveToken = oauthBearerResolver(oauth, { actor: (grant) => actorFor(gra
 | refresh tokens only for a client whose `grantTypes` list `refresh_token`; otherwise none is issued and refreshing is `unauthorized_client` (device grant too) | `authorization-server.test.ts`, `authorization-server-postgres.test.ts` |
 | a confidential client authenticates only with its registered `token_endpoint_auth_method`; the other is `invalid_client` | `authorization-server-clients.test.ts` |
 | a redirect URI containing whitespace is refused at registration | `authorization-server-clients.test.ts` |
+| `registerClient` refuses an empty or whitespace-holding list value, before a secret is minted (`X_AUTH_CLIENT_INVALID`) | `authorization-server-register-client.test.ts` |
 | `resource` (RFC 8707) binds the grant; one not in `resources` is `invalid_target` | `authorization-server-request.test.ts`, `oauth-bearer-resolver.test.ts` |
 | tokens are opaque and stored hashed, never a JWT, so `revoke` holds on the next lookup | `token-endpoints.test.ts` |
 | an `https://` `client_id` is a metadata document, fetched through `outbound({ dial: 'public' })`, 5 KiB, cached 5 minutes, public clients only | `authorization-server-clients.test.ts` |

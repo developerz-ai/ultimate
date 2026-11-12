@@ -142,7 +142,6 @@ export const dev = defineSeed('dev', async ({ insert, upsert, id }) => {
       orgId: id('org:acme'),
       authorId: id('member:ada'),
       coverUrl: 'https://cdn.postly.example/covers/tenancy.jpg',
-      likeCount: 2,
       ...published('Tenancy is a column, not a convention', '2026-03-02T13:00:00Z'),
     },
     {
@@ -150,7 +149,6 @@ export const dev = defineSeed('dev', async ({ insert, upsert, id }) => {
       orgId: id('org:acme'),
       authorId: id('member:bruno'),
       coverUrl: null,
-      likeCount: 1,
       ...published('Nadie formatea una fecha sin zona', '2026-03-09T07:30:00Z'),
     },
     {
@@ -164,7 +162,6 @@ export const dev = defineSeed('dev', async ({ insert, upsert, id }) => {
       body: ARTICLE,
       coverUrl: null,
       status: 'draft',
-      likeCount: 0,
       publishedAt: null,
       createdAt: new Date('2026-03-15T16:00:00Z'),
       updatedAt: new Date('2026-03-15T16:00:00Z'),
@@ -174,11 +171,11 @@ export const dev = defineSeed('dev', async ({ insert, upsert, id }) => {
       orgId: id('org:tinta'),
       authorId: id('member:mara'),
       coverUrl: null,
-      likeCount: 0,
       ...published('El feed funciona sin conexión', '2026-03-20T21:15:00Z'),
     },
   ]);
 
+  // No `likeCount` above: each like below moves its post's count (`likes.postId`'s `countedIn`).
   await insert(likes, [
     {
       orgId: id('org:acme'),

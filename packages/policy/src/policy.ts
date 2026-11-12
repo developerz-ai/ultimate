@@ -7,6 +7,7 @@ import { actorHas } from './grant-index';
 import { assertPermission, type KnownPermission, type Permission } from './permissions';
 import { markPreInput, type PreInputRun, preInputRun } from './pre-input-brand';
 import type { Actor } from './roles';
+import type { PolicyScope } from './scope';
 
 export type PolicyDecision =
   | { readonly allowed: true }
@@ -65,6 +66,13 @@ export interface Policy<I = unknown, R = unknown> {
   readonly permissions: readonly Permission[];
   readonly children: readonly Policy<I, R>[];
   run(args: PolicyArgs<I, R>, record?: Recorder, depth?: number): PolicyDecision;
+  /**
+   * The rule's SQL projection, attached by `scoped()` (`scope.ts`) and read through `policyScope`.
+   * Absent on everything else, combinators included: a read without one hands nothing down. Typed
+   * over the row where it is WRITTEN (`scoped`), stored untyped here: a field typed by `R` would
+   * make `Policy<I, Post>` unassignable to `Policy<I, Post | null>`, which every surface relies on.
+   */
+  readonly scope?: PolicyScope | undefined;
 }
 
 const record = (

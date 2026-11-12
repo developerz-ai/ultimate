@@ -1,6 +1,6 @@
 # Policies and authz
 
-One authz system. Authentication is Better Auth, wrapped ([Configuration](Configuration)); **authorization is ours**, because it must be identical in HTTP, WebSocket, jobs, and MCP.
+One authz system. Authentication is `@ultimat3/auth` ([Auth](Auth)); **authorization is this page**, because it must be identical in HTTP, WebSocket, jobs, and MCP.
 
 ```ts
 policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
@@ -115,6 +115,48 @@ The matrix runs **outside a request**: no input, no row. A rule that reads eithe
 | unprotected surfaces | `x verify --json` (the `boundaries` step) | `manifest.read` (there is no budgets tool) |
 
 `x policy list` also names the permissions **no** action or query enforces. A grant nothing checks is a grant that does nothing, and it is invisible from any single declaration.
+
+## Scope — a policy's database filter
+
+`scoped(policy, scope)` attaches `scope(actor) → where` to a policy, `As of 2026-11`: the
+conjunction a read hands the database, so the visible rows arrive as one index-served page rather
+than a JS filter over an over-fetch that leaves a viewer a short page. The policy decides exactly as
+before; the JS rule stays the authority.
+
+```ts
+import type { Actor, Policy } from '@ultimat3/policy';
+import { policyScope, scoped } from '@ultimat3/policy';
+
+interface Post {
+  readonly orgId: string;
+  readonly audience: 'public' | 'members';
+}
+declare const postRule: Policy<unknown, Post>;
+declare const actor: Actor | null;
+
+export const seePost = scoped(postRule, (who) =>
+  who === null
+    ? [{ column: 'audience', op: 'eq', value: 'public' }]
+    : [{ column: 'orgId', op: 'eq', value: who.orgId }],
+);
+policyScope(seePost, actor); // the frozen conditions, or undefined for an unscoped policy
+```
+
+| `policyScope(policy, actor)` answers | Means |
+|---|---|
+| `undefined` | no scope declared: nothing is handed down |
+| `[]` | every row (an admin): the empty conjunction |
+| `[{ column, op, value? }, …]` | every condition must hold — AND only, there is no `or`. `column` is typed by the policy's row; `op` is one of `eq` `neq` `in` `gt` `gte` `lt` `lte` `is-null` `is-not-null`; `value` is always bound |
+
+- **The scope belongs to the clause it is declared on.** `and`/`or`/`not` over a scoped policy
+  carry none: the conjunction of children's scopes is not the scope of `or`. Scope the outermost
+  policy.
+- **Tenant scoping is not scope.** Tenancy stays the entity layer's (the tenant predicate every
+  repository applies, [below](#tenancy)); a scope narrows what one actor sees inside a tenant and
+  never replaces it.
+- **Planned, not shipped:** composing a scope into `@ultimat3/query` reads, and a finding for a
+  scope that admits other rows than its rule on the exercise seed. Until then `policyScope` is the
+  read an app composes itself, e.g. `db.posts.where({ orgId })` plus each condition as `andWhere`.
 
 ## Tenancy
 

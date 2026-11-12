@@ -6,10 +6,12 @@
 
 import type { Page } from '@ultimat3/core';
 import { pageOf } from '@ultimat3/core';
+import { reportTruncatedAll } from './all-truncated';
 import { assertBatchable, type BatchIterator, batchIterator } from './batch';
 import { shrinkingPages } from './batch-bytes';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
+import { latestByRows, type ReadLatest } from './latest-by';
 import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
 import { preloaded, type RelatedTables } from './preload';
@@ -53,6 +55,7 @@ export type Preloaded<Name extends string> = { readonly [K in Name]: unknown };
  */
 export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys>
   extends ReadAggregates<Row, S>,
+    ReadLatest<Row, S>,
     ChainWrites<Row> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
   where(filter: RowPatch<Filterable<Row, S>>): ReadBuilder<Row, S>;
@@ -345,7 +348,13 @@ const builder = <Source, Row>(
       return pageOf(await attach(result.rows), result.nextCursor);
     },
 
-    all: async () => attach((await repo.findMany(args())).rows),
+    // A page, never the table: when a next one existed and no `limit()` said so, dev and test hear
+    // about it (`all-truncated.ts`) — the refusal is a break and waits on `next`.
+    all: async () => {
+      const page = await repo.findMany(args());
+      reportTruncatedAll(entity.$name, page.nextCursor, state.limit !== undefined);
+      return attach(page.rows);
+    },
 
     one: async () => {
       const { rows } = await repo.findMany({ ...args(), limit: 1 });
@@ -354,6 +363,10 @@ const builder = <Source, Row>(
     },
 
     count: () => repo.count(args()),
+
+    // The projection and every preload apply after the per-group pick, as a page's do.
+    latestBy: async (group, options) =>
+      attach(await latestByRows(entity, repo, group, options, args())),
 
     ...chainWrites<Source, Row>(entity, repo, state),
 
