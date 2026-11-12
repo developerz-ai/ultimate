@@ -4,7 +4,7 @@
 
 import type { SeedEntity } from './seed-graph-shape';
 
-const escaped = (name: string): string => name.replace(/[$]/g, '\\$');
+const escaped = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** `"title" ilike $1`, `title ~~* $1`, `p.title ILIKE …`: the column, then the operator. */
 const searches = (statement: string, column: string): boolean =>
