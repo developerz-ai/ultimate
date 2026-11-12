@@ -30,6 +30,7 @@ await withTransaction(async (tx) => {
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
 | `keyset({ scope, keys, after, limit })` | keyset paging for a raw join: `{ select, where, orderBy, limit, page(rows) }`, [below](#paging-a-raw-join-keyset) |
 | `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
+| `client.copyIn(target, rows)` / `canCopyIn(client)` | `As of 2026-11-11`: `COPY … FROM STDIN` on `postgresClient()`, its pins, a `DbTx` on one and the replica router (to the primary) → [Bulk load: `copyIn`](#bulk-load-copyin) |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `dbClientInstalled()` | `As of 30.0`: whether `setDbClient` installed a client that is still in place. Never builds the lazy default. `@ultimat3/entity`'s `testDriver()` asks it on every repository call |
 | `dbExecutor(client = db)` | the client as `@ultimat3/core`'s `PgExecutor` (`query(text, values)`) — what a jobs, idempotency, notify or MCP confirmation store takes. The client is resolved per statement: the default reaches the boot's client even when declared at module scope, and joins an open `withTransaction`; `() => pool` pins one pool whatever transaction is open |
@@ -538,6 +539,24 @@ transaction left to undo.
 The last row is the one divergence a second connection would remove and PGlite cannot: a statement
 issued *inside* an open transaction's scope runs immediately rather than waiting for a turn that
 scope is already holding, because waiting would be a deadlock with no error to explain it.
+
+## Bulk load: `copyIn`
+
+`As of 2026-11-11`. `postgresClient().copyIn(target, rows)`, `target` a parameterless
+`copy <table> (<columns>) from stdin` built with `identifier()`/`join()`, streams `rows` (each the
+column list's values, in order) through `Bun.SQL`'s `writable()` in the text format and resolves with the server's count. One statement: all or nothing. `copy-in.ts`;
+`copy-in.live.test.ts`. 100k rows × 4 columns: ~0.5 s against ~1.9 s for the same rows as
+chunked `insert`s (loopback, Postgres 17, a loaded box).
+
+| Case | |
+|---|---|
+| a cell | encoded as the bound parameter would be: `\N` for null, ISO instant for a `Date`, bytea hex, an array literal; a plain object is `X_SQL_UNSAFE` and the stream aborts — nothing stored |
+| the target | exactly `copy <ident>[.<ident>] (<ident>, …) from stdin`, no `;`, no value — anything else (`to program`, a file path, a second statement) is `X_SQL_UNSAFE` before any send |
+| the caller's `rows` iterator throws | `X_INVARIANT` naming the throw; the stream aborts, nothing stored, a pin stays usable (never `X_DB_UNAVAILABLE`) |
+| a server refusal (`23505`, `22P02`, …) | typed by SQLSTATE like any statement; the connection stays usable |
+| a pin (`reserve()`), a `DbTx` | the copy is that transaction's, under the pin's deadline, rolled back with it |
+| the replica router | forwarded to the primary, and the `withReplicaReads` scope is marked written |
+| `canCopyIn(client)` | `false` for PGlite and a fake, and whenever a row-security settings provider is INSTALLED, tenant in scope or not: Postgres refuses `COPY FROM` under RLS (`0A000`). Callers fall back to `insert` |
 
 ## A pooled read stops when its caller does
 

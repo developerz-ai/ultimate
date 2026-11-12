@@ -22,3 +22,12 @@ export function setTransactionSettings(next: SettingsProvider | undefined): void
 export function transactionSettings(): LocalSettings | undefined {
   return provider?.();
 }
+
+/**
+ * Whether a provider is installed at all, whatever it answers now. `copy-in.ts` asks: Postgres
+ * refuses `COPY FROM` on a table under row-level security (`0A000`) with or without a tenant in
+ * scope, so the question is "is row security armed", never "is there a tenant right now".
+ */
+export function transactionSettingsInstalled(): boolean {
+  return provider !== undefined;
+}

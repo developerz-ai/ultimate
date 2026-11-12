@@ -75,7 +75,7 @@ export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySourc
   const name = entity.$name;
   const refusing: Pick<
     Repo<Row>,
-    'update' | 'delete' | 'updateWhere' | 'deleteWhere' | 'upsertAll'
+    'update' | 'delete' | 'updateWhere' | 'deleteWhere' | 'upsertAll' | 'updateMany'
   > = {
     update: async () => {
       throw appendOnlyRefused(name, 'update');
@@ -89,10 +89,25 @@ export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySourc
     deleteWhere: async () => {
       throw appendOnlyRefused(name, 'deleteWhere');
     },
+    updateMany: async () => {
+      throw appendOnlyRefused(name, 'updateMany');
+    },
     async upsertAll(rows, args: UpsertArgs<Row>) {
       if (args.onMatch !== 'nothing') throw appendOnlyRefused(name, 'upsertAll');
       return repo.upsertAll(rows, args);
     },
   };
+  // The count-only upsert is the same append, or the same refusal; absent stays absent.
+  const upsertAllCount = repo.upsertAllCount;
+  if (upsertAllCount !== undefined) {
+    return {
+      ...repo,
+      ...refusing,
+      async upsertAllCount(rows: Parameters<typeof upsertAllCount>[0], args: UpsertArgs<Row>) {
+        if (args.onMatch !== 'nothing') throw appendOnlyRefused(name, 'upsertAll');
+        return upsertAllCount.call(repo, rows, args);
+      },
+    };
+  }
   return { ...repo, ...refusing };
 };

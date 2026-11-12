@@ -12,6 +12,7 @@ import { appendOnlyRepo } from './append-only';
 import { keyOf } from './batch-read';
 import { entityNow } from './clock';
 import { narrowRow } from './columns';
+import { copyColumns } from './copy-plan';
 import { cursorFor, kindOf, valueAt } from './cursor';
 import { projectRow } from './driver-rows';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -30,7 +31,8 @@ import { afterCursor } from './memory-seek';
 import { StoredRows, uniqueIndex, uniqueViolation } from './memory-unique';
 import { judgeUpdate, mergedRow } from './memory-update';
 import { memoryUpsertAll } from './memory-upsert';
-import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
+import { assertPageBytes } from './page-bytes';
+import { idPlan, readPlan, singleKeyOf } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions } from './repo';
 import { rowKey } from './row-key';
 import { sealedFields } from './sealed';
@@ -39,7 +41,9 @@ import { deletionStamp } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
-import type { RowWrite } from './types';
+import type { RowPatch, RowWrite } from './types';
+import { judgeUpdateMany, updateManyPlan } from './update-many';
+import { updateWherePlan, writeWherePlan } from './write-where';
 
 const field = (row: unknown, property: string): unknown =>
   typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[property] : undefined;
@@ -252,8 +256,15 @@ export const memoryRepo = <Row>(
       const more = start + page.length < found.length;
       // Projected as `pg-sql.ts` projects (`driver-rows.ts`): the asked columns, the key and the
       // sort keys — the cursor is minted from the stored row, which holds all of them anyway.
+      // The PROJECTED page is weighed, as Postgres weighs the columns it was asked for.
+      const projected = page.map((row) => projectRow(entity, plan, row));
+      assertPageBytes(
+        entity,
+        'findMany',
+        projected as readonly Readonly<Record<string, unknown>>[],
+      );
       return pageOf(
-        page.map((row) => projectRow(entity, plan, row)),
+        projected,
         more && last !== undefined ? cursorFor(entity, plan, last, storeKey(last)) : null,
       );
     },
@@ -329,7 +340,7 @@ export const memoryRepo = <Row>(
       // soft-delete visibility. A row already stamped is not matched, so a second call cannot
       // move `deletedAt` forward — which is what the Postgres driver's `deleted_at is null`
       // clause says there.
-      const doomed = rowsOf(deletePlan(entity, filter, options, 'deleteWhere'), {});
+      const doomed = rowsOf(writeWherePlan(entity, filter, options, 'deleteWhere'), {});
       // A soft delete is an update, so an app-only rule judges it: bounded as `updateWhere` is, and
       // one row refused takes the rows before it with it, as the statement does in Postgres.
       if (entity.$softDelete && hasJsOnlyInvariant(entity.$invariants)) {
@@ -354,7 +365,7 @@ export const memoryRepo = <Row>(
 
     updateWhere: writing(async (filter, given, options) => {
       const patch = entity.$parsePatch(given);
-      const plan = updatePlan(entity, filter, patch, options, 'updateWhere');
+      const plan = updateWherePlan(entity, filter, patch, options, 'updateWhere');
       // The PATCH, judged whole and before the rows are read — the same call `postgresRepo` makes
       // before its statement exists. Inside the loop below it is judged only where a row was
       // matched, so a patch handing rows to another tenant was refused or accepted depending on
@@ -383,6 +394,33 @@ export const memoryRepo = <Row>(
       );
       if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
       return found.length;
+    }),
+
+    // Nothing is decoded in memory, so a count is the rows' length: the same judging, one answer.
+    insertAllCount: async (given, options) => (await repo.insertAll(given, options)).length,
+    upsertAllCount: async (given, args) => (await repo.upsertAll(given, args)).length,
+    copyAll: async (given, options) => {
+      copyColumns(entity, given as readonly RowPatch<Row>[]);
+      return (await repo.insertAll(given, options)).length;
+    },
+
+    // `updateWhere`'s path with a patch per row: matched by the read path, judged whole first.
+    updateMany: writing(async (given, options) => {
+      const plan = updateManyPlan(entity, given, options);
+      if (plan.patches.length === 0) return 0;
+      // By key, never `rowsOf(plan.match)`: an `in` of n ids over n stored rows is n² comparisons,
+      // and 40,000 of each never returned. Each row then passes the scope as a read would judge it.
+      const found = plan.patches.flatMap(({ id }) => {
+        const row = rows.get(idStoreKey(id, 'updateMany'));
+        return row !== undefined && visibleTo({})(row) && matchesPlan(plan.scope, row) ? [row] : [];
+      });
+      const merged = judgeUpdateMany(entity, plan, found, untouched(found), storeKey);
+      for (const row of merged) judgeReferences(row);
+      const written = merged.map((row, at) =>
+        write(row, options, 'updateMany', storeKey(found[at])),
+      );
+      if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
+      return written.length;
     }),
 
     async count(args = {}) {

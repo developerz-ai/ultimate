@@ -17,11 +17,8 @@ import {
   withStatementAttribution,
 } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
-import { conflictKeys, insertColumns, statementColumns, upsertPlan } from './bulk-write';
-import { writeChunks } from './bulk-write-send';
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
-import { narrowRow } from './columns';
 import { cursorFor, seekFrom } from './cursor';
 import type { Driver } from './database';
 import { noteDriverStore } from './driver-registry';
@@ -31,22 +28,24 @@ import { stampHistoryActor } from './history-actor';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { judgedWrite } from './judged-write';
+import { assertPageBytes } from './page-bytes';
 import { postgresAggregates } from './pg-aggregates';
+import { postgresBulkWrites } from './pg-bulk-repo';
 import { postgresLocks } from './pg-lock';
 import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
 import { countStatement, type ReadShape, selectStatement } from './pg-sql';
 import { postgresTransactor } from './pg-transactor';
-import { type ConflictTarget, deleteStatement, updateStatement } from './pg-write-sql';
-import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
-import type { FindManyArgs, Repo, UpsertArgs } from './repo';
+import { deleteStatement, updateStatement } from './pg-write-sql';
+import { idPlan, readPlan } from './plan';
+import type { FindManyArgs, Repo } from './repo';
 import { rowKey } from './row-key';
 import { sealedRepo } from './sealed-repo';
 import { deletionStamp } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
-import type { RowWrite } from './types';
 import { taggedWrite } from './write-tag';
+import { updateWherePlan, writeWherePlan } from './write-where';
 
 export interface PostgresDriverOptions {
   /**
@@ -111,11 +110,6 @@ export const postgresRepo = <Row>(
 
   /** The cursor's id — `row-key.ts`, the spelling the memory driver stores a row under. */
   const idOf = (row: Row): string => rowKey(entity, row);
-
-  /** Where a batch stops being wide — before `writeRows` or `upsertPlan` read a row. `narrowRow`
-   *  says why the position matters, and `memoryRepo` narrows at the same one. */
-  const narrowed = (batch: readonly RowWrite<Row>[]): readonly Row[] =>
-    batch.map((row) => narrowRow<Row>(entity.$columns, row));
 
   /**
    * A soft delete's SET list: the stamp, plus a searchable entity's version — advanced past the
@@ -238,39 +232,6 @@ export const postgresRepo = <Row>(
       ? judgedRows(op, plan, softDeletion(), shapeOf({}))
       : counted(op, plan, removalShape(), (returning) => removal(plan, returning));
 
-  /**
-   * The one insert path, for one row or ten thousand: the batch's own column list, split into as
-   * many statements as Postgres's bind count allows, and the rows the server stored. `insert(row)`
-   * comes through here too, so there is no second builder for the two to drift apart in. All or
-   * nothing however many statements it takes (`bulk-write-send.ts`).
-   */
-  const writeRows = async (
-    op: string,
-    batch: readonly Row[],
-    conflict: ConflictTarget | undefined,
-  ): Promise<readonly Row[]> => {
-    if (batch.length === 0) return [];
-    // The whole batch is judged before any statement exists, tenant and invariants together, in
-    // the same loop and for the same reason: Postgres refuses one statement as one, so a row this
-    // actor may not write must stop the rows beside it too. `memoryRepo`'s `write` runs the same
-    // pair — an insert builds no read plan, so this is the only place the tenant is checked.
-    for (const row of batch) {
-      assertRowTenant(entity.$name, entity.$tenantColumn, op, row);
-      entity.$assert(row);
-    }
-    const bound = batch.map((row) => bindValues(entity, row));
-    const shape = {
-      columns: statementColumns(entity, batch),
-      ...(conflict === undefined ? {} : { conflict }),
-    };
-    // Attributed here rather than in each of the three callers: a batch wide enough to split is
-    // several statements sent inside this call, and every one of them belongs to the call that
-    // asked for it — `insert`, `insertAll` or `upsertAll`, which is why the op is a parameter.
-    return attributed(op, () =>
-      writing(() => writeChunks(entity, bound, shape, client(), config.client)),
-    );
-  };
-
   const repo: Repo<Row> = {
     async findById(id, options) {
       const op = 'findById';
@@ -299,7 +260,10 @@ export const postgresRepo = <Row>(
           selectStatement(entity, plan, shapeOf(args, seekFrom(entity, plan)), plan.limit + 1),
         ),
       );
+      // Weighed raw, before a row is decoded — the PAGE, not the look-ahead row past it, or the
+      // `limit(n)` the refusal names would itself be refused.
       const page = found.slice(0, plan.limit);
+      assertPageBytes(entity, op, page);
       const rows = page.map((row) => decodeRow(entity, row));
       // What the page leaves behind: its foreign key values, so the first `findById` for any one
       // of them resolves the key for the whole page. A `for … of` loop over these rows costs one
@@ -323,30 +287,13 @@ export const postgresRepo = <Row>(
       );
     },
 
-    async insert(values) {
-      const row = narrowRow<Row>(entity.$columns, values);
-      const [written] = await writeRows('insert', [row], undefined);
-      // `returning *` is the row Postgres actually stored, defaults included. The fallback is the
-      // NARROWED row: handing the caller's back would answer with a `bigint` minor unit.
-      return written ?? row;
-    },
-
-    async insertAll(batch) {
-      return writeRows('insertAll', narrowed(batch), undefined);
-    },
-
-    async upsertAll(batch, args: UpsertArgs<Row>) {
-      const rows = narrowed(batch);
-      const { onConflict, onMatch = 'update', overwrites } = args;
-      const plan = upsertPlan(entity, rows, onConflict, onMatch, overwrites);
-      // Refused here, not by the server: a batch that repeats a conflict target is `21000` in
-      // Postgres and a silent overwrite in memory, and the two drivers have to mean one thing.
-      conflictKeys(entity, plan, rows);
-      return writeRows('upsertAll', rows, {
-        columns: insertColumns(entity, plan.on),
-        set: insertColumns(entity, plan.set),
-      });
-    },
+    ...postgresBulkWrites({
+      entity,
+      client,
+      pinned: config.client,
+      attributed,
+      writing,
+    }),
 
     async update(id, given, options) {
       // Here and in `memory-repo.ts`, the one door: a value `insert` refuses, a fragment included.
@@ -397,14 +344,14 @@ export const postgresRepo = <Row>(
     async deleteWhere(filter, options) {
       const op = 'deleteWhere';
       // The plan is built before the write is announced: a refused filter never happened.
-      const plan = deletePlan(entity, filter, options, op);
+      const plan = writeWherePlan(entity, filter, options, op);
       return removed(op, plan);
     },
 
     async updateWhere(filter, given, options) {
       const patch = entity.$parsePatch(given);
       const op = 'updateWhere';
-      const plan = updatePlan(entity, filter, patch, options, op);
+      const plan = updateWherePlan(entity, filter, patch, options, op);
       // The same move, filtered: one statement can hand away every row it matches.
       assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       const values = bindValues(entity, patch);

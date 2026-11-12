@@ -37,12 +37,14 @@ const hexOf = (bytes: Uint8Array): string =>
  * "cannot reach the database". `position` names the parameter when the caller knows it.
  */
 export function instantText(value: Date, position?: number): string {
+  // Inside the `if`, never as `assert`'s condition: the refusal's text is a template, and as an
+  // argument it was built for every valid Date too — every bound timestamp of every statement.
+  if (!Number.isNaN(value.getTime())) return value.toISOString();
   assert(
-    !Number.isNaN(value.getTime()),
+    false,
     `${position === undefined ? 'an array element' : `parameter $${position}`} is an Invalid Date, which names no instant Postgres could store`,
     'new Date(input) answers Invalid Date for text it cannot parse — parse it with t.date first, or bind null: Number.isNaN(value.getTime()) ? null : value',
   );
-  return value.toISOString();
 }
 
 function element(value: unknown): string {

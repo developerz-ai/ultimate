@@ -3,7 +3,7 @@
 // file asserts what the string looks like, and only Postgres can say whether it PARSES.
 
 import { describe, expect, test } from 'bun:test';
-import { pgArrayLiteral } from './array-parameter';
+import { instantText, pgArrayLiteral } from './array-parameter';
 
 describe('unit · pgArrayLiteral', () => {
   test('renders braces, not the comma join Bun sends', () => {
@@ -112,5 +112,35 @@ describe('unit · pgArrayLiteral', () => {
   test('empty inner arrays of one shape are rendered; an empty beside a filled one is ragged', () => {
     expect(pgArrayLiteral([[], []])).toBe('{{},{}}');
     expect(() => pgArrayLiteral([[], ['a']])).toThrow(/ragged/);
+  });
+});
+
+describe('instantText', () => {
+  /** A position whose rendering is counted: the refusal's text is the only thing that renders it. */
+  const counted = () => {
+    const seen = { renders: 0 };
+    const position = {
+      toString() {
+        seen.renders += 1;
+        return '1';
+      },
+    } as unknown as number;
+    return { seen, position };
+  };
+
+  test('a valid Date builds no refusal text — it is on every bound timestamp', () => {
+    const { seen, position } = counted();
+    expect(instantText(new Date('2026-11-11T00:00:00.000Z'), position)).toBe(
+      '2026-11-11T00:00:00.000Z',
+    );
+    expect(seen.renders).toBe(0);
+  });
+
+  test('an Invalid Date is refused X_INVARIANT, naming the parameter', () => {
+    const { seen, position } = counted();
+    expect(() => instantText(new Date('nope'), position)).toThrow(
+      /parameter \$1 is an Invalid Date/,
+    );
+    expect(seen.renders).toBe(1);
   });
 });

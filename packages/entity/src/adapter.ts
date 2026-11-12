@@ -34,13 +34,11 @@ export { compareByKind, matchesPredicate, sameValueOfKind } from './memory-match
 export type { PostgresDriverOptions } from './pg-driver';
 export {
   DEFAULT_PAGE_SIZE,
-  deletePlan,
   idPlan,
   MAX_PAGE_SIZE,
   planFor,
   readPlan,
   singleKeyOf,
-  updatePlan,
 } from './plan';
 export { rowKey } from './row-key';
 // The searchIndex port: what an app's Meilisearch/Typesense index implements, and its installer.
@@ -64,3 +62,5 @@ export type { Predicate, QueryPlan, SortKey } from './tenancy';
 export { assertRowTenant, scopedPlan } from './tenancy';
 export type { UniqueConstraint } from './unique-constraints';
 export { uniqueConstraints } from './unique-constraints';
+// The shipped names of the one filtered-write plan (`write-where.ts`), kept for the kit's callers.
+export { updateWherePlan as updatePlan, writeWherePlan as deletePlan } from './write-where';

@@ -3,11 +3,13 @@
 // (`returning *`) — for a composite or non-`id` key too. Not searchable, or the built-in index
 // installed: the repository is handed back, or the write delegates with no extra statement.
 
+import { copyColumns } from './copy-plan';
 import type { EntityCore } from './entity';
 import type { Repo, RepoOptions } from './repo';
 import type { SearchMirror } from './search-index-sync';
 import { mirrorFor, mirrors } from './search-index-sync';
 import { collectWrittenRows } from './search-written-rows';
+import type { RowPatch } from './types';
 
 type Told = (mirror: SearchMirror, rows: readonly unknown[]) => void;
 
@@ -58,8 +60,59 @@ export function searchMirroredRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>
     (mirror, rows) =>
       mirror.deleted(op, rows);
 
+  /**
+   * A count-only write names no rows, and the mirror needs them: while an external index is
+   * installed it runs as its returning counterpart — the same judging, the rows mirrored, their
+   * length answered. With none installed it is the count path, untouched.
+   */
+  const { insertAllCount, upsertAllCount, copyAll, updateMany } = repo;
+  const counts: Partial<Repo<Row>> = {
+    ...(insertAllCount === undefined
+      ? {}
+      : {
+          insertAllCount: async (rows, options) =>
+            mirrors(core)
+              ? (await stored(core, 'insertAll', options, () => repo.insertAll(rows, options)))
+                  .length
+              : insertAllCount.call(repo, rows, options),
+        }),
+    ...(upsertAllCount === undefined
+      ? {}
+      : {
+          upsertAllCount: async (rows, args) =>
+            mirrors(core)
+              ? (await stored(core, 'upsertAll', args, () => repo.upsertAll(rows, args))).length
+              : upsertAllCount.call(repo, rows, args),
+        }),
+    ...(copyAll === undefined
+      ? {}
+      : {
+          copyAll: async (rows, options) => {
+            if (!mirrors(core)) return copyAll.call(repo, rows, options);
+            // COPY's own refusal first, so a load is refused alike with or without an index.
+            copyColumns(entity, rows as readonly RowPatch<Row>[]);
+            return (await stored(core, 'copyAll', options, () => repo.insertAll(rows, options)))
+              .length;
+          },
+        }),
+    ...(updateMany === undefined
+      ? {}
+      : {
+          updateMany: (rows, options) =>
+            collected(
+              core,
+              'updateMany',
+              options,
+              () => updateMany.call(repo, rows, options),
+              changed('updateMany'),
+              (count) => count,
+            ),
+        }),
+  };
+
   return {
     ...repo,
+    ...counts,
     insert: async (values, options) =>
       (await stored(core, 'insert', options, () => single(repo.insert(values, options))))[0],
     insertAll: (rows, options) =>

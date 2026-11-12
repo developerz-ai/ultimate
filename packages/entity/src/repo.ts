@@ -60,6 +60,22 @@ export interface UpsertArgs<T = unknown> extends RepoOptions {
 }
 
 /**
+ * A filtered write's options: `RepoOptions`, plus the predicates a CHAIN carries
+ * (`db.x.where(…).andWhere(…).update(patch)`). They AND with the equality filter, every guard
+ * applies to the union, and an empty union is `X_WRITE_UNFILTERED` — so a repository that ignores
+ * `where` refuses the chain's empty filter rather than reading it as every row.
+ */
+export interface FilteredWriteOptions extends RepoOptions {
+  readonly where?: readonly Predicate[];
+}
+
+/** One row of `updateMany`: the row's id and what it becomes. */
+export interface UpdateManyRow<T = unknown> {
+  readonly id: IdOf<T>;
+  readonly patch: RowPatch<T>;
+}
+
+/**
  * `findById`'s options: `RepoOptions`, plus the one knob a point READ has and a write must not.
  *
  * `includeDeleted` lives here and deliberately NOT on `RepoOptions`. It has always been honoured
@@ -125,14 +141,36 @@ export interface Repo<T = unknown> {
    * to be able to tell "nothing matched" from "it worked", and an empty filter is
    * `X_WRITE_UNFILTERED` rather than every row.
    */
-  deleteWhere(filter: RowPatch<T>, options?: RepoOptions): Promise<number>;
+  deleteWhere(filter: RowPatch<T>, options?: FilteredWriteOptions): Promise<number>;
   /**
    * Update by filter, returning how many rows were written. The `update(id, patch)` a composite
    * primary key cannot express — `participants.lastReadAt` is the reference case. Same two guards
    * as `deleteWhere`, plus `X_PATCH_EMPTY` for a patch that names no columns, and soft-deleted
    * rows are not reachable, exactly as they are not by `update(id, patch)`.
    */
-  updateWhere(filter: RowPatch<T>, patch: RowPatch<T>, options?: RepoOptions): Promise<number>;
+  updateWhere(
+    filter: RowPatch<T>,
+    patch: RowPatch<T>,
+    options?: FilteredWriteOptions,
+  ): Promise<number>;
+  /**
+   * A different patch per row, by id, resolving with how many rows were written — the bulk form of a
+   * loop of `update(id, patch)`. Every patch names the same columns. Optional: the typed handle
+   * runs a `updateWhere` per row for a repository without it.
+   */
+  updateMany?(rows: readonly UpdateManyRow<T>[], options?: RepoOptions): Promise<number>;
+  /**
+   * `insertAll` answering a count: no `returning *`, nothing decoded. Optional: the typed handle
+   * counts `insertAll`'s rows for a repository without it.
+   */
+  insertAllCount?(rows: readonly RowWrite<T>[], options?: RepoOptions): Promise<number>;
+  /** `upsertAll` answering how many rows it wrote, as `insertAllCount` is to `insertAll`. */
+  upsertAllCount?(rows: readonly RowWrite<T>[], args: UpsertArgs<T>): Promise<number>;
+  /**
+   * The bulk load: Postgres `COPY … FROM STDIN`, judged exactly as `insertAll` judges its rows.
+   * Optional: `insertAllCount` (else `insertAll`) for a repository without it.
+   */
+  copyAll?(rows: readonly RowWrite<T>[], options?: RepoOptions): Promise<number>;
   count(args?: FindManyArgs): Promise<number>;
   /**
    * The grouped count: one statement, one entry per distinct value of `column`, over exactly the

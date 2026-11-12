@@ -53,6 +53,7 @@ export const ENTITY_ERROR_CODES = [
   'X_DRIVER_CAPABILITY_MISSING',
   'X_DRIVER_ROW_OUT_OF_SCOPE',
   'X_ENTITY_PARTITION_INVALID',
+  'X_ENTITY_PAGE_TOO_LARGE',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -103,6 +104,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_DRIVER_ROW_OUT_OF_SCOPE: 'a custom driver returned a row outside the plan it was given',
   X_ENTITY_PARTITION_INVALID:
     'entity({ partitionBy }) declares a partitioning Postgres cannot build',
+  X_ENTITY_PAGE_TOO_LARGE: 'a page weighed more than the page byte bound before it was decoded',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

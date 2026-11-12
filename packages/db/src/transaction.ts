@@ -5,6 +5,7 @@
 
 import { assert, finiteCount, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
+import type { CopyInClient } from './copy-in';
 import { DbError, serializationExhausted } from './errors';
 import { setLocal } from './local-settings';
 import { createTurnQueue, type TurnQueue } from './pglite-turns';
@@ -145,7 +146,7 @@ function makeTx(
     refuseAbandoned(completing);
     return watched(abort, send());
   };
-  return {
+  const tx: DbTx = {
     id,
     origin,
     query: <T>(fragment: SqlFragment) => guarded(() => connection.query<T>(fragment)),
@@ -161,6 +162,15 @@ function makeTx(
       else if (outcome.value === 'open' || outcome.value === 'ending') commits.push(effect);
     },
   };
+  // Only when the connection copies (`postgresClient`'s pin): a COPY on it is this transaction's,
+  // guarded like every statement. Absent, `canCopyIn(tx)` answers false and callers insert.
+  const pin = connection as DbClient & Partial<CopyInClient>;
+  if (typeof pin.copyIn !== 'function') return tx;
+  const copyIn = pin.copyIn.bind(pin);
+  return Object.assign(tx, {
+    copyIn: (target: SqlFragment, rows: Iterable<readonly unknown[]>) =>
+      guarded(() => copyIn(target, rows)),
+  });
 }
 
 const isAborted = (error: unknown): boolean =>

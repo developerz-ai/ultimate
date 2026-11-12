@@ -14,6 +14,10 @@ const WRITES = [
   'delete',
   'deleteWhere',
   'updateWhere',
+  'insertAllCount',
+  'upsertAllCount',
+  'copyAll',
+  'updateMany',
   'lock',
 ] as const;
 
