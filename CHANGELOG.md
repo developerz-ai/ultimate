@@ -10,42 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- Security: `subjectErase` now reaches `<table>_history` — every image naming the erased person is purged in the parent's transaction, including rows deleted earlier and images a `set null`/`cascade` write records. An undeclared history table is `X_SUBJECT_TABLE_UNDECLARED`.
-- New entity reads and locks: `.latestBy(group)` (newest row per group, one statement), `preload(rel, { perParent: n })`, filtered `countBy` and `.aggregate()` (32 measures, one statement), case-insensitive `contains` served by a trigram index, `entity({ version })` optimistic locking (`X_ENTITY_STALE`, 409) and `lockKeys()` deadlock-free multi-key locks.
-- `authenticate` reads the session and its user in one statement (was two).
-
-### Added
-
-- `@ultimat3/entity`: `.latestBy(group, { order, direction? })` ends a read chain with the newest row of every group in one `DISTINCT ON` statement — ties to the primary key, more than `MAX_LATEST_GROUPS` (1,000) groups `X_INVARIANT_VIOLATED`, never truncated. `preload(rel, { perParent: n, order?, direction? })` attaches at most `n` rows of a `hasMany` per parent in one `LATERAL` statement per 500 parents. A repository without `latestBy` answers both through paged `findMany` reads.
-- `@ultimat3/entity`: `countBy(column, { where })` counts only the rows each group has that satisfy `where` (a group with none is present at `0`), and `.aggregate({ name: { fn, column?, where? } })` answers up to `MAX_MEASURES` (32) filtered measures in one `count(*) filter (where …)` statement. A `defineDriver` store composes both from the capabilities it already declares.
-- `@ultimat3/entity`: `indexes:` entries take `expression` (`unique(lower(email))`), `orders` (a direction per key), `include` (btree `INCLUDE`) and `operatorClass: 'gin_trgm_ops'`; each absent by default, so no index name or schema hash moves. `x db gen` creates `pg_trgm` in the migration that first needs it.
-- `@ultimat3/entity`: `entity({ version: 'lockVersion' })` — an optimistic lock. `update(id)` must carry the version, is conditioned on it and increments it; moved since the read is `X_ENTITY_STALE` (409), omitted `X_ENTITY_VERSION_INVALID`. `updateMany` checks every row (one stale row refuses the batch); `updateWhere`/`updateAll`/`transition`/soft delete increment it and may not set it; `upsertAll` with `onMatch: 'update'` is refused on a versioned entity. On a `defineDriver` store a filtered write re-reads and retries a row another writer moved, so it increments without throwing stale.
-- `@ultimat3/entity`: `db.<table>.lockKeys(keys, fn)` holds up to `MAX_LOCK_KEYS` (64) advisory keys for one transaction, taken in sorted order, so two callers naming the same keys in different orders never deadlock.
-- `@ultimat3/entity`: `.all()` logs `entity.all.truncated` (`ALL_TRUNCATED`) in development and test when it dropped a next page and the chain named no `.limit(n)`; staging and production stay silent.
-- `@ultimat3/entity`: `RegistryEntry.coveredIndexes` lists each implicit column index another index already leads with (`CoveredIndex`). Listed only — every one is still emitted.
-- `@ultimat3/auth`: `AuthAdapter.getSessionWithUser?(id)` (type `SessionWithUser`) — `authenticate` reads the session and its user in one statement on `postgresAuthAdapter` (was two). Optional: an adapter without it makes the two reads.
-- `@ultimat3/auth`: `AUTH_LOCKOUTS_STORAGE`, from `@ultimat3/auth/schema` and the barrel — `x_auth_lockouts` is created from this declared, logged storage setting, the one the framework schema's drift check compares.
-- `@ultimat3/policy`: `scoped(policy, scope)` and `policyScope(policy, actor)` attach a rule's database filter — an AND-only list of `{ column, op, value }` — to a policy. Composing it into query reads is planned.
-
-### Changed
-
-- `@ultimat3/entity`: `contains` on a `text()`/`char()` column is a case-insensitive substring match — a bound, escaped `ilike` (`%` and `_` literal), served by a `gin_trgm_ops` index — on Postgres and memory alike. Before, Postgres refused the statement and memory compared for equality. `jsonb` and arrays keep `@>`. The plan sweep's `X_QUERY_UNINDEXED` names the trigram declaration (`trigramDeclaration(col)`).
-- `@ultimat3/entity`: a `countedIn` counter's trigger write is reported as an `entity.row` `update` of the parent on memory and Postgres (PGlite in `x dev` included), so a live count moves without a recount.
-- `@ultimat3/entity`: `defineDriver` refuses a child entity whose column declares `countedIn` when `database()` builds it (`X_DRIVER_UNSUPPORTED`, `meta.capability: 'countedIn'`) — a custom store has no hook to move the parent's count, which used to stay unmoved silently.
-- `@ultimat3/auth`: `registerClient` refuses a redirect URI, grant type, scope or resource that is empty or contains whitespace (`X_AUTH_CLIENT_INVALID`, 422): the store keeps each list space-joined, so such a value read back as a different list.
-- `@ultimat3/jobs`: a concurrent `refreshView` no longer accepts a unique `expression` index as its key — Postgres refuses one (`X_JOB_REFRESH_VIEW_INVALID`).
-
-### Fixed
-
-- `@ultimat3/jobs` (security): `subjectErase` reaches a deleted or anonymized table's `<table>_history`, which must now be declared — `'delete'` removes every history row whose `before` or `after` image names the subject — rows deleted, soft-deleted or inserted before the erase included — in the parent's transaction (`x.purge` on Postgres, `purgingHistory` in memory), `{ retain }` keeps and counts the same rows; undeclared is `X_SUBJECT_TABLE_UNDECLARED`. A deleted table's step also purges, in its transaction, the image its delete's `on delete set null`/`cascade` records in a child's `'delete'`-declared history. Before, an erased person's data survived in history before and after images.
-- `@ultimat3/admin`: an entity declaring `version:` can be updated from the admin and its MCP tool — the version column is read-only, an update carries the version it read, and a write that lost the race answers `stale` (409). Before, every such update was `X_ENTITY_VERSION_INVALID`.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.10.0](docs/changelog/31.10.0.md) | 2026-11-12 | Security: `subjectErase` now reaches `<table>_history` — every image naming the erased person is purged in the parent's transaction, including rows deleted earlier and images a `set null`/`cascade` write records. An undeclared history table is `X_SUBJECT_TABLE_UNDECLARED`. |
 | [31.9.0](docs/changelog/31.9.0.md) | 2026-11-12 | Set-based entity writes: `db.x.where(…).updateAll(patch)` / `.deleteAll()` is one statement, and `updateMany([{ id, patch }])` writes 1,000 different rows in one statement. |
 | [31.8.0](docs/changelog/31.8.0.md) | 2026-11-12 | A rate-limit check writes no WAL: `x_rate_limit` is unlogged at fillfactor 70 (2 WAL records per take → 0). |
 | [31.7.0](docs/changelog/31.7.0.md) | 2026-11-12 | Security: a sealed column no longer enters a history image (its lookup ciphertext was an equality oracle), and the authorization server enforces each client's registered grants and auth method. |
