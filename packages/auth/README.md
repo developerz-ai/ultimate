@@ -663,7 +663,10 @@ the `resolveToken`. Stores: `memoryAuthServerStore()`, `postgresAuthServerStore(
 over `SQL_AUTH_SERVER_TABLES`, which the boot applies. A code is spent only by a request that could
 redeem it: client, PKCE verifier, `redirect_uri` and `resource` are checked on `getCode` before
 `takeCode` marks it used, so a request without the verifier neither burns a login nor trips the
-replay revocation. `pollDevice(hash, clientId, at)` stamps only the issuing client's poll. Full table and the rule each test holds:
+replay revocation. `pollDevice(hash, clientId, at)` stamps only the issuing client's poll. A client
+authenticates only with its registered `token_endpoint_auth_method` (the other is `invalid_client`),
+and gets refresh tokens only if its `grantTypes` list `refresh_token` (else refreshing is
+`unauthorized_client`). Full table and the rule each test holds:
 [wiki Auth](https://github.com/developerz-ai/ultimate/wiki/Auth#authorization-server).
 
 | File | Job |

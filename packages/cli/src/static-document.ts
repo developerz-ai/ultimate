@@ -99,14 +99,14 @@ export function staticMemoKey(
 
 /**
  * The document, or a bodiless 304 when `If-None-Match` names its ETag. The 304 repeats the
- * validators and the cache posture (RFC 9110 §15.4.5) and drops `content-type`: it has no content.
- * Only a 200 revalidates — a 404 rendered under `static` is sent whole.
+ * validators and the cache posture (RFC 9110 §15.4.5), and keeps `content-type`: the `compress`
+ * stage reads it to give the 304 the validator form it gave the 200 (`@ultimat3/http`'s
+ * `etag-form.ts`). Only a 200 revalidates — a 404 rendered under `static` is sent whole.
  */
 export function staticResponse(request: UltimateRequest, result: StaticResult): Response {
   const etag = result.headers['etag'];
   if (result.status === 200 && etag !== undefined) {
-    const { 'content-type': _dropped, ...headers } = result.headers;
-    const fresh = notModified(request, etag, headers);
+    const fresh = notModified(request, etag, result.headers);
     if (fresh !== undefined) return fresh;
   }
   return html(result.body, { status: result.status, headers: result.headers });

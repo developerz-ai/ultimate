@@ -2,6 +2,7 @@
 // give, what each one opens, and the two options a caller owns.
 
 import { describe, expect, test } from 'bun:test';
+import { compressResponse } from './compress';
 import type { ObjectRequest, ObjectSource } from './object-response';
 import { etagMatches, notModified, objectResponse } from './object-response';
 
@@ -199,5 +200,31 @@ describe('etagMatches', () => {
     expect(etagMatches('*', '"abc"')).toBe(true);
     expect(etagMatches('"other"', '"abc"')).toBe(false);
     expect(etagMatches(null, '"abc"')).toBe(false);
+  });
+});
+
+describe('through the compress stage', () => {
+  const CSS = new TextEncoder().encode('a { color: var(--text); }\n'.repeat(200));
+  const css: ObjectSource = {
+    object: { contentType: 'text/css', size: CSS.byteLength, etag: 'css-1' },
+    open: () => CSS.slice(),
+  };
+  const through = async (headers: Readonly<Record<string, string>>) => {
+    const request = new Request('http://app.test/a.css', { headers });
+    const response = await objectResponse(requestWith(headers), css, {
+      cache: { mode: 'public', maxAgeSeconds: 60 },
+    });
+    return compressResponse(request, response, { anonymous: true });
+  };
+
+  // RFC 9110 §15.4.5: a cache that updates its stored headers from the 304 must not come away
+  // holding a strong validator for gzip bytes.
+  test("the 304's validator equals the 200's, byte for byte", async () => {
+    const full = await through({ 'accept-encoding': 'gzip' });
+    expect(full.headers.get('content-encoding')).toBe('gzip');
+    const tag = full.headers.get('etag') as string;
+    const revalidated = await through({ 'accept-encoding': 'gzip', 'if-none-match': tag });
+    expect(revalidated.status).toBe(304);
+    expect(revalidated.headers.get('etag')).toBe(tag);
   });
 });

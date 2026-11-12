@@ -126,10 +126,12 @@ export function readClientCredentials(
     const named = form.get('client_id');
     if (named !== undefined && named !== clientId)
       return { refused: 'client_id disagrees with Basic' };
-    return { clientId, secret: secret === '' ? null : secret };
+    return { clientId, secret: secret === '' ? null : secret, method: 'client_secret_basic' };
   }
   const clientId = form.get('client_id');
   if (clientId === undefined || clientId === '') return { refused: 'client_id is required' };
   const secret = form.get('client_secret');
-  return { clientId, secret: secret === undefined || secret === '' ? null : secret };
+  return secret === undefined || secret === ''
+    ? { clientId, secret: null, method: 'none' }
+    : { clientId, secret, method: 'client_secret_post' };
 }

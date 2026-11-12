@@ -17,6 +17,7 @@ import type {
 import type { CtxPatch } from './context';
 import type { Page } from './cursor-page';
 import type { ErrorReporter, ErrorReportingOptions } from './error-reporter';
+import type { SentryReporterHooks, SentryReporterOptions } from './error-reporter-sentry-hooks';
 import type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -272,3 +273,12 @@ export type _LastPageHasNoCursor = Assert<
 type _NoReporterOption = Assert<
   { readonly reporter: ErrorReporter } extends ErrorReportingOptions ? false : true
 >;
+
+/**
+ * `SentryReporterHooks` is the name the hooks shipped under (31.0): a typed hooks object must still
+ * spread into the options beside the wiring, or an app that kept its hooks apart stops compiling.
+ */
+export const _HooksSpreadIntoOptions = (hooks: SentryReporterHooks): SentryReporterOptions => ({
+  dsn: 'https://public@o0.ingest.sentry.io/0',
+  ...hooks,
+});

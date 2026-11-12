@@ -147,6 +147,24 @@ describe('cache tiers name rungs the ladder can actually build', () => {
     expect(caught.fix.endsWith('x verify')).toBe(true);
   });
 
+  // A config file nothing typechecked can put anything in the list. `${tier}` threw a bare
+  // `TypeError` for a Symbol and for a null-prototype object, so the operator got a stack trace
+  // where the coded refusal belonged — the cause renders through `renderCauseValue` instead.
+  test.each([
+    ['a symbol', Symbol('edge')],
+    ['a null-prototype object', Object.create(null)],
+  ])('refuses %s as a tier with X_CONFIG_INVALID, not a TypeError', (_label, tier) => {
+    let caught: unknown;
+    try {
+      legacy([tier as string])();
+    } catch (thrown) {
+      caught = thrown;
+    }
+    if (!isUltimateError(caught)) return expect.unreachable('defineConfig threw an uncoded error');
+    expect(caught.code).toBe('X_CONFIG_INVALID');
+    expect(caught.cause).toContain('cache.tiers contains ');
+  });
+
   // `driver` and `urlEnv` were the SECOND way to ask for Redis, and the losing one: the ladder is
   // built from `tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` — the shape
   // `examples/dummy/app.config.ts` shipped — asked for a rung that was never built. Deleted

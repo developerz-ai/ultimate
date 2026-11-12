@@ -30,6 +30,7 @@ await withTransaction(async (tx) => {
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
 | `keyset({ scope, keys, after, limit })` | keyset paging for a raw join: `{ select, where, orderBy, limit, page(rows) }`, [below](#paging-a-raw-join-keyset) |
 | `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
+| `client.copyIn(target, rows)` / `canCopyIn(client)` | `As of 2026-11-11`: `COPY … FROM STDIN` on `postgresClient()`, its pins, a `DbTx` on one and the replica router (to the primary) → [Bulk load: `copyIn`](#bulk-load-copyin) |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `dbClientInstalled()` | `As of 30.0`: whether `setDbClient` installed a client that is still in place. Never builds the lazy default. `@ultimat3/entity`'s `testDriver()` asks it on every repository call |
 | `dbExecutor(client = db)` | the client as `@ultimat3/core`'s `PgExecutor` (`query(text, values)`) — what a jobs, idempotency, notify or MCP confirmation store takes. The client is resolved per statement: the default reaches the boot's client even when declared at module scope, and joins an open `withTransaction`; `() => pool` pins one pool whatever transaction is open |
@@ -44,6 +45,10 @@ await withTransaction(async (tx) => {
 | `poolerFromEnv()` / `POOLER_ENV` / `PoolerMode` / `POOLER_WAIT_MS` / `statementBound()` / `lostStatementBound()` / `StatementBound` / `poolerSessionRequired()` | `As of 2026-11-03`: a connection pooler in the path (`pooler.ts`), and the two bounds as the session reads them. [Pool sizing by role](#pool-sizing-by-role) |
 | `replicatedClient()` / `ReplicaStats` / `REPLICA_URL_ENV` | `As of 2026-08-24`: one `DbClient` over a primary and a standby. `baseClient()` builds one when `DATABASE_REPLICA_URL` is set and the single-pool client when it is not |
 | `INDEX_METHODS` / `IndexMethod` / `indexMethodOf()` / `indexMethodSql()` / `declaredMethod()` | `As of 2026-08-24`: an index's access method — `btree` or `gin`, closed. Absent is `btree`, the live side is read open (whatever `pg_am` said), and the DDL literal is re-derived from the set rather than spliced from the input |
+| `IndexDescriptionLike.expression` / `.orders` / `.include` / `.operatorClass` · `INDEX_OPERATOR_CLASSES` / `requiredExtension()` | `As of 2026-11-12`: the index parts past a plain column list — one expression key (`unique (lower(email))`), a direction per key, INCLUDE payload columns (btree), `gin_trgm_ops` (gin; `requiredExtension()` answers `pg_trgm`). Each optional, absent hashes and renders as before; drift compares each, an expression by presence only |
+| `tableStorage(table, { fillfactor?, unlogged? })` / `tableDdl()` / `storageAlters()` / `tableStorageDrift()` / `readTableStorageDrift()` | `As of 2026-11-12`: a **framework-owned** table's storage parameters as one value. `tableDdl(storage, columns)` renders `create [unlogged] table if not exists … with (fillfactor = n)` plus the idempotent `alter`s that bring an existing table to it at framework-schema apply; drift reads `relpersistence`/`reloptions`, each difference with its `alter` as `fix`. A bad name or fillfactor is `X_SQL_UNSAFE` at import |
+| `slowStatementLog({ thresholdMs })` | one `warn` `db.statement.slow` line per slow statement shape per 10 s, with request/trace ids and no bind values; returns the unsubscribe |
+| `lockHeavyStatements()` / `migrationLockHeavy()` / `LOCK_HEAVY_MARKER` / `LOCK_HEAVY_SINCE` | `X_MIGRATION_LOCK_HEAVY`: `set not null` with no prior validate, non-concurrent `create index` on an existing table; `-- lock-heavy: true` to admit; judges ids > `LOCK_HEAVY_SINCE` |
 | `isPlainRead()` | `As of 2026-08-24`: whether a statement may leave the primary. An allow-list — everything it cannot vouch for is the primary's |
 | `checkDrift()` / `diffSchema()` / `assertNoSchemaDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes (access method `As of 2026-08-24`, columns, uniqueness, direction, and whether a predicate is there at all — never its text), declared CHECK constraints by NAME (`missing-check`, `As of 2026-08-25` — never a predicate, which the catalog answers rewritten) and declared foreign keys, matched on where the key points and not on its constraint name, with the `on delete` rule compared through one normalisation `As of 2026-08-19` |
 | `declaredSchema()` / `expectedSchema()` | `As of 2026-08`: the schema the migrations write down, or `undefined` when the newest one carries no snapshot — never an older snapshot standing in for it |
@@ -534,6 +539,24 @@ transaction left to undo.
 The last row is the one divergence a second connection would remove and PGlite cannot: a statement
 issued *inside* an open transaction's scope runs immediately rather than waiting for a turn that
 scope is already holding, because waiting would be a deadlock with no error to explain it.
+
+## Bulk load: `copyIn`
+
+`As of 2026-11-11`. `postgresClient().copyIn(target, rows)`, `target` a parameterless
+`copy <table> (<columns>) from stdin` built with `identifier()`/`join()`, streams `rows` (each the
+column list's values, in order) through `Bun.SQL`'s `writable()` in the text format and resolves with the server's count. One statement: all or nothing. `copy-in.ts`;
+`copy-in.live.test.ts`. 100k rows × 4 columns: ~0.5 s against ~1.9 s for the same rows as
+chunked `insert`s (loopback, Postgres 17, a loaded box).
+
+| Case | |
+|---|---|
+| a cell | encoded as the bound parameter would be: `\N` for null, ISO instant for a `Date`, bytea hex, an array literal; a plain object is `X_SQL_UNSAFE` and the stream aborts — nothing stored |
+| the target | exactly `copy <ident>[.<ident>] (<ident>, …) from stdin`, no `;`, no value — anything else (`to program`, a file path, a second statement) is `X_SQL_UNSAFE` before any send |
+| the caller's `rows` iterator throws | `X_INVARIANT` naming the throw; the stream aborts, nothing stored, a pin stays usable (never `X_DB_UNAVAILABLE`) |
+| a server refusal (`23505`, `22P02`, …) | typed by SQLSTATE like any statement; the connection stays usable |
+| a pin (`reserve()`), a `DbTx` | the copy is that transaction's, under the pin's deadline, rolled back with it |
+| the replica router | forwarded to the primary, and the `withReplicaReads` scope is marked written |
+| `canCopyIn(client)` | `false` for PGlite and a fake, and whenever a row-security settings provider is INSTALLED, tenant in scope or not: Postgres refuses `COPY FROM` under RLS (`0A000`). Callers fall back to `insert` |
 
 ## A pooled read stops when its caller does
 

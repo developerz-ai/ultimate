@@ -156,14 +156,18 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
   };
 }
 
-/** Keys the catalog does not define, or defines with a placeholder. Labels are never plurals. */
-const unanswered = (catalog: Catalog, keys: readonly string[]): readonly string[] =>
+/**
+ * Keys the catalog does not define, or defines with a placeholder. Labels are never plurals.
+ * Exported because `x i18n sync` writes exactly this set and `x i18n check` counts it: one rule.
+ */
+export const unanswered = (catalog: Catalog, keys: readonly string[]): readonly string[] =>
   keys.filter((key) => !Object.hasOwn(catalog, key) || isLoudMiss(catalog[key]));
 
 /**
  * `X_CATALOG_MISSING_KEYS` — the same fact, a catalog without keys it is asked for — with the
- * cause naming who asks and a fix that is an EDIT: `x i18n sync`, the code's own fix, seeds the
- * keys SOURCE uses and cannot know these.
+ * cause naming who asks. The fix stays the code's own, `x i18n sync <locale>`: it writes these keys
+ * too (`cmd-i18n.ts`), nested. The hand edit this used to name was a dotted key, which
+ * `loadCatalog` refuses as `X_CATALOG_INVALID`.
  */
 function adminKeysFinding(locale: Locale, missing: readonly string[]): Finding {
   const path = catalogPath(locale);
@@ -172,7 +176,6 @@ function adminKeysFinding(locale: Locale, missing: readonly string[]): Finding {
   return {
     ...findingFrom(catalogMissingKeys(locale, missing)),
     cause: `${path} is missing ${missing.length} key(s) the mounted admin renders (defineAdmin derives them, so no source file names one): ${shown.join(', ')}${more}`,
-    fix: `add to ${path}, each with its real label: ${shown.join(', ')}${more} — then x i18n check --json`,
     at: path,
   };
 }

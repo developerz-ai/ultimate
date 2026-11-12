@@ -33,6 +33,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | which HTTP statuses are worth repeating | `retryable-status.ts` |
 | N callers on one key are ONE run | `single-flight.ts` |
 | how many may run at once, and how many may wait | `flight-gate.ts` |
+| a concurrent map with a stated width — input order kept, the first rejection aborts the rest | `map-bounded.ts` |
 | whether an answer still applies — `X_SUPERSEDED` | `generation-fence.ts` |
 | the five composed into one typed-client call — dedup, fence, retry, deadline, ceiling | `client-flight.ts` |
 | what a typed client puts on the wire and reads back off it | `client-wire.ts` |
@@ -72,6 +73,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
 | structured JSON logging + redaction; `installLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams until the release it returns runs (a stack: releases in any order; `undefined` is the streams) (a test preload drops them; a test asserting on the process logger collects them). The tee is the bus: every such line, redacted, is the `log.record` event — `subscribe('log.record', handler)` | `logger.ts` |
+| `teeLogLines(tee)` → its release: a COPY of every process-logger line (redacted, as written) handed to `tee(line, level)` beside the streams, never instead of them. A set: each release removes only its own tee; a tee that throws loses only its copy. `x dev`'s `dev.log` is the caller | `logger.ts` |
 | the ONE instrumentation bus: `subscribe(pattern, handler)` → unsubscribe (exact name, dot-segment prefix, `'*'`), `subscribed(name)`, `instrument(name, payload)`; synchronous, registration order, fired before sampling, a throwing handler reaches the emitter. `subscriberCount()` / `resetInstrumentation()` for tests | `instrument.ts` |
 | the event vocabulary: `INSTRUMENT_EVENTS`, every payload type, `InstrumentEventMap` (augmentable — an app's own names ride the same bus) | `instrument-events.ts` |
 | semconv names: `SEMCONV` (span attribute keys), `SEMCONV_VALUES`, `SEMCONV_METRICS` | `instrument-semconv.ts` |
@@ -87,7 +89,8 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | may a caller read this 5xx code's `cause`? `hasPublicCause(code)` — one predicate for the HTTP problem document, MCP error data and an agent `tool_result` | `public-cause.ts` |
 | `reportError` + the `ErrorReporter` seam, no-op by default | `error-reporter.ts` |
 | that seam on the wire, Sentry's envelope and DSN | `error-reporter-sentry.ts` |
-| which reports are one fault (`errorFingerprint`) | `error-fingerprint.ts` |
+| which reports are one fault (`errorFingerprint`), and the monitor's grouping (`monitorFingerprint`) | `error-fingerprint.ts` |
+| a V8 stack as frames, for the monitor and the fingerprint | `sentry-frames.ts` |
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
@@ -272,6 +275,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `EnvMissingError` | `X_ENV_MISSING` | `src/errors.ts` |
 | `ErrorReporterDsnInvalidError` | `X_ERROR_REPORTER_DSN_INVALID` | `src/error-reporter-sentry.ts` |
 | `ImageDecodeFailedError` | `X_IMAGE_DECODE_FAILED` | `src/image/errors.ts` |
+| `ImageRasterBudgetError` | `X_IMAGE_RASTER_BUDGET` | `src/image/errors.ts` |
 | `ImageTooLargeError` | `X_IMAGE_TOO_LARGE` | `src/image/errors.ts` |
 | `ImageUnsupportedError` | `X_IMAGE_UNSUPPORTED` | `src/image/errors.ts` |
 | `InternalError` | `X_INTERNAL` | `src/errors.ts` |
@@ -694,7 +698,8 @@ release();
 | Several at once | `chainErrorReporters(...reporters)` — one reporter handing each report to every member in order; a member that throws is logged and costs only itself; chains flatten, a member listed twice reports once, none is the no-op. `errorReportersOf(reporter)` reads the members back; `installedErrorReporter()` the one installed now. The container chains its `SENTRY_DSN` transport after what the app installed (`As of 2026-11`) |
 | Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEvent(report, { dsn, eventId, fingerprint? })` → the event, `sentryEnvelope(report, { dsn, eventId, fingerprint? })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
 | `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
-| `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total; the Sentry envelope sends it as `fingerprint` |
+| `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total. The LOCAL group (failure capture keys on it), never the monitor's |
+| `monitorFingerprint(report)` | the monitor's grouping, sent as the Sentry envelope's `fingerprint`: `[code]`; `X_INTERNAL` adds the top app frame, `X_CLIENT_ERROR` the operation. A `fingerprint` hook on `sentryErrorReporter` replaces it |
 | `withFailureCapture(primitive, name, statusOf, run)` / `recordFailureFact(fact)` | the 5xx bundle `x repro` replays (`failureCapture` in `app.config.ts`). No store, no buffer. The store is the `failureStore` port: `runtime.ts`'s `failureStore`, installed by the boot through `installFailureStore` on `@ultimat3/core/adapter` (never the barrel). A 5xx is held on the thrown value and stored at `reportError` under its `errorFingerprint`; masked input listed in `masked` |
 
 `As of 2026-08` four packages call `reportError`, seven call sites in all: `@ultimat3/http`'s
@@ -837,6 +842,7 @@ nothing consulted it before deciding to try again. `As of 2026-08-23`.
 | `backoffDelay({ attempt, base, max, factor?, curve?, jitter?, random? })` | one curve — `exponential \| linear \| fixed`, `full \| equal \| none` — 1-based `attempt`, clamped to `max` **before** jitter, rounded, and `0` rather than `NaN` | how long to wait. `random` is injectable, so a schedule is a unit test rather than a range |
 | `singleFlight({ deadlineMs?, schedule?, signal?, released? })` → `run(key, work, join?)`, `size`, `keys()`, `evict(key)` | N callers on one key are ONE run | who pays for a miss. With `signal`, a live joiner re-leads when its leader was aborted, rather than sharing that rejection. `released(key)` fires each time a key stops being held. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner. `evict(key)` does the same on demand, for a caller that learns the load in flight began before a write its result must reflect |
 | `flightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired. Both limits are screened at construction (`finiteCount`, 0 allowed); a width of 0 refuses every caller rather than queueing for a slot that never frees. `run(work, signal?)`: an abort while QUEUED removes the waiter and rejects with the abort's reason |
+| `mapBounded(items, fn, { width, signal? })` | `Promise.all(items.map(fn))` with at most `width` in flight | a fan-out with a bound. Results in INPUT order. `width` is required with no default — the caller knows the vendor's limit — and screened by `finiteCount` (≥ 1, else `X_INVARIANT`). `fn(item, index, signal)`: the signal aborts on the first rejection (its reason IS that rejection) or when `signal` aborts; nothing new starts after either. Rejects at once with the first failure, as `Promise.all` does; the caller's abort is `X_ABORTED` naming how many finished |
 | `generationFence(subject)` → `generation()`, `bump()`, `guard(issued)` | whether an answer still applies | `X_SUPERSEDED` (499) and `isSuperseded(error)` — the piece nothing in the tree had. `guard` compares `!==`, never `<` |
 | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `>= 500`, plus 408, 409, 425, 429 | which HTTP answers are worth repeating |
 | `jitterStatedDelay(waitMs, capMs, random?)` | the ONE rule for a delay a responder named | the stated wait as a FLOOR plus a spread in `[0, min(wait / 2, cap))`, so a burst told `Retry-After: 1` does not replay in lockstep. `retryDecision`'s `retry-after` path (floor clamped to `max`; `jitter: 'none'` gets the bare floor) and `@ultimat3/jobs`' rate-limit deferral and webhook throttle all take it |
@@ -869,6 +875,7 @@ Server-only, on its own subpath: `import { outbound, screenDial } from '@ultimat
 | `screenDial(url, { resolve?, allowPrivate? })` → `{ pin } \| { refused } \| { unresolved }` | where a dial may land | every resolved address classified by `classifyAddress`, the connection pinned with `tls.serverName`. The framework's one `Bun.dns.lookup` (`resolveDialHost`); `@ultimat3/jobs`' webhook target and `@ultimat3/scraping` call it and keep their own codes |
 | `deadlineSignal(ms, outer?, timer?)` | one attempt's signal | a deadline plus the caller's signal, undone on dispose (no listener left on `outer`, no timer armed) |
 | `breaker({ name, failures, cooldownMs, classify?, clock? })` → `admit`, `succeeded`, `failed`, `released`, `state`, `failures`, `judge`, `refusal`, `run` | is a dependency down | one state machine, the trigger stays the caller's. One probe in `half-open`, lapsing after `cooldownMs`; `X_BREAKER_OPEN` names `retryAfterSeconds`; `breaker_transitions_total{name,to}`. Per process |
+| `retryBudgetOf(breaker)` → `called()`, `spend()` | retries as a share of calls, per breaker key | whether one more retry may go out during a partial outage the breaker cannot see: a call earns 1 token, a retry costs 5 (retries ≤ 20% of calls), a quiet key starts with a burst of 10 retries. Keyed by breaker identity, per process; `outbound` consults it, and a refused retry answers the last error |
 
 ## One Redis client
 
@@ -959,6 +966,25 @@ box it is one `Bun.Image` call, source bytes to encoded bytes. When it is not �
 `X_IMAGE_UNSUPPORTED` naming `transformImageBytes`. Its bounded inflate is `node:zlib`, resolved at the call
 (`process.getBuiltinModule`), never imported: a static import made every browser build of the
 barrel warn.
+
+**`transformImageBytes` runs in a Worker** (`raster-worker.ts`, one per process, started at the
+first transform, `unref`'d while idle) — its inflate and deflate are synchronous, and inline on a
+4096² source they blocked the event loop 98-1,945 ms (measured 2026-11-11); through the Worker the
+worst gap is 1-41 ms, the 41 being the copy of a 42 MB source. The Worker runs `transformInline`
+(`transform-inline.ts`), so the bytes are the inline bytes (`raster-pool.test.ts`, byte for byte);
+a coded refusal crosses as its own class (`raster-wire.ts`). Where no Worker can start — a compiled
+executable compiled without the worker, or a worker file that never loads — the transform runs
+inline, says so once at warn (`image.raster_worker_unavailable`, with the reason), and on the web role
+(`ROLE`) a crop or composite whose hops would inflate plus deflate more than `RASTER_SYNC_PIXELS`
+(409,600) is `X_IMAGE_RASTER_BUDGET` (503): warm the variants in a job instead
+(`warmVariants`, `@ultimat3/storage`'s `image-warm.ts`). A plain resize is never budgeted —
+`Bun.Image` already resamples off the loop.
+
+A compile that BUNDLES core adds the worker itself: Bun detects no `new Worker(…)` target. Pass
+`rasterWorkerBundle([entry])`'s `entrypoint` beside the entry and merge its `define`
+(`RASTER_WORKER_DEFINE`, the worker's path under `/$bunfs/root/`); `raster-worker-compile.e2e.test.ts`
+compiles and runs both shapes. An app's `x build --target binary` needs neither: it keeps
+`@ultimat3/*` external, so core — and its worker file — load from `node_modules`.
 
 Adding a format is an entry in `DECODABLE_FORMATS` / `ENCODABLE_FORMATS` and a branch in
 `withFormat` — never a second dispatch. An unencodable `format` is refused from the spec alone,

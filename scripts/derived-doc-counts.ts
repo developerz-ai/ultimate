@@ -13,6 +13,7 @@ import type { MarkdownFile } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { lineOf } from './lib/source-scan';
 
 export interface DerivedDocCounts {
   readonly components: number;
@@ -20,11 +21,24 @@ export interface DerivedDocCounts {
   readonly pipelineStages: number;
 }
 
-export interface DerivedDocCountGap {
-  readonly kind: keyof DerivedDocCounts;
-  readonly at: string;
-  readonly claimed?: number;
-}
+/**
+ * A stale claim names the line it is written on, so a fix can open the page there; a page that
+ * states no claim has no line to open, and its fix names the page alone.
+ */
+export type DerivedDocCountGap =
+  | {
+      readonly kind: keyof DerivedDocCounts;
+      readonly at: string;
+      readonly claimed: number;
+      /** 1-based line of the claim in the page. */
+      readonly line: number;
+    }
+  | {
+      readonly kind: keyof DerivedDocCounts;
+      readonly at: string;
+      readonly claimed?: undefined;
+      readonly line?: undefined;
+    };
 
 const CLAIMS: Readonly<Record<keyof DerivedDocCounts, readonly [string, RegExp][]>> = {
   components: [
@@ -91,7 +105,10 @@ export function checkDerivedDocCounts(
       for (const match of text.matchAll(expression)) {
         claims += 1;
         const claimed = Number.parseInt(match[1] ?? '', 10);
-        if (claimed !== counts[kind]) gaps.push({ kind, at: path, claimed });
+        // The line of the claim, so a fix can open the page where the stale number is written.
+        if (claimed !== counts[kind]) {
+          gaps.push({ kind, at: path, claimed, line: lineOf(text, match.index) });
+        }
       }
       if (claims === 0) gaps.push({ kind, at: path });
     }
@@ -108,14 +125,18 @@ export const derivedDocCountFindingFor = (
     return {
       code: 'X_DERIVED_DOC_COUNT_UNSCANNED',
       cause: `no current-prose claim for ${gap.kind} matched the derived documentation-count scan`,
-      fix: `bun run scripts/derived-doc-counts.ts --json   # restate the derived ${gap.kind} count at ${gap.at} in the phrasing its CLAIMS entry matches`,
+      // No claim, so no line to open: the fix names the page, then the edit, then the re-run. A
+      // line that opened with the re-run pastes a command that convicts the same tree again.
+      fix: `${gap.at} — state the derived ${gap.kind} count (${String(expected)}) in the phrasing its CLAIMS entry matches; then bun run scripts/derived-doc-counts.ts --json`,
       at: gap.at,
     };
   }
   return {
     code: 'X_DERIVED_DOC_COUNT_STALE',
     cause: `${gap.at} states ${String(gap.claimed)} ${gap.kind}, but the source-derived inventory is ${String(expected)}`,
-    fix: `bun run scripts/derived-doc-counts.ts --json   # after editing ${gap.at}: write ${String(expected)} where it states ${String(gap.claimed)} for ${gap.kind}, or correct the source inventory`,
+    // The edit leads and the re-run follows: a pasted fix that ran the check first would convict
+    // the same page again.
+    fix: `edit ${gap.at}:${String(gap.line)} — write ${String(expected)} where it states ${String(gap.claimed)} for ${gap.kind}, or correct the source inventory; then bun run scripts/derived-doc-counts.ts --json`,
     at: gap.at,
   };
 };

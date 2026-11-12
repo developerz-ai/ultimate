@@ -63,8 +63,8 @@ and renaming one is a major.
 | `errors.explain` | `dev:read` | `X_*` → cause, exact fix command, docs URL |
 | `db.query` | `db:read` | **one read-only** SQL statement, row and byte caps, `EXPLAIN` on request |
 | `db.migrate` | `db:migrate` | apply pending migrations, **branch DB only** |
-| `tests.run` | `dev:test` | run the suite or a substring filter, structured results |
-| `verify.run` | `dev:test` | the whole gate; `fix: true` applies safe autofixes |
+| `tests.run` | `dev:test` | `x test [--filter]` itself (same runner and environment as the shell), structured results |
+| `verify.run` | `dev:test` | `x verify` itself; `only: [steps]` is `--only`; `fix: true` applies safe autofixes |
 | `logs.tail` | `dev:logs` | last N structured log lines, filterable by runtime role |
 
 `read()` stamps `scope: dev:read` and `destructive: false` on the first eight; `tests.run` and

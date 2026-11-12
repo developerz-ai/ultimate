@@ -91,6 +91,14 @@ const chain = (indent: string, head: string, calls: readonly string[]): string =
   return `${indent}${head}\n${calls.map((call) => `${indent}  ${call}`).join('\n')};`;
 };
 
+/** The insert shape's alias, broken inside \`Insertable<…>\` the way Biome breaks one that is long. */
+const newRowType = (row: string, camel: string): string => {
+  const flat = `export type New${row} = Insertable<typeof ${camel}.$columns>;`;
+  return flat.length <= LINE_WIDTH
+    ? flat
+    : `export type New${row} = Insertable<\n  typeof ${camel}.$columns\n>;`;
+};
+
 const repoSource = (name: NameSet, dbModule: string, stems: EntityStems): string => {
   const row = name.pascal;
   const table = `db.${name.plural}`;
@@ -110,7 +118,7 @@ const repoSource = (name: NameSet, dbModule: string, stems: EntityStems): string
   const insertSignature = wrapList(
     '',
     'export async function insert(',
-    [`row: Omit<${row}, 'id' | 'createdAt'>`],
+    [`row: New${row}`],
     `): Promise<${row}> {`,
   );
   const listChain = chain('  ', `return ${table}`, [
@@ -130,8 +138,15 @@ const repoSource = (name: NameSet, dbModule: string, stems: EntityStems): string
 // Raw SQL has two homes and neither is this file: a \`query\`'s source and a migration. Reach for
 // it here only for a statement the handle cannot express — a join, a window, a CTE.
 
-import { db } from '${dbModule}';
-import type { ${row} } from './${stems.entity}';
+${sortedImports(["import type { Insertable } from '@ultimat3/entity';", `import { db } from '${dbModule}';`])}
+${wrapImport([row, name.camel], `./${stems.entity}`).replace(/^import \{/, 'import type {')}
+
+/**
+ * What an insert supplies: the declaration's own write shape. A column with a default or a
+ * nullable one is optional here, so a counter or an optional relation added to the entity never
+ * breaks a caller that omits it; a required column is still a compile error at every insert.
+ */
+${newRowType(row, name.camel)}
 
 ${byIdSignature}
 ${byIdBody}

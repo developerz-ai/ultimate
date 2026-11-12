@@ -3,7 +3,7 @@
 // to it. A raise names the modules, often by pointing at the other two ledgers' entries.
 
 /**
- * measured: 888 — the 796 `SERVING_ROLE_CEILING` measured (`serve-graph-ceilings-fixture.ts`)
+ * measured: 888 — the 796 `SERVING_ROLE_CEILING` measured (`serve-graph-serving-ceiling-fixture.ts`)
  * plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
  * raised 975 → 980, measured 980 (2026-10-05, plan 101 sweep 1c): the same five modules named on
  * `SERVING_ROLE_CEILING`, which every role carries.
@@ -213,5 +213,14 @@
  * `default` (429 from one address after 120). No existing module newly reached.
  * raised 1593 → 1594, measured 1594 (2026-11-11, plan 101 sweep 0): `SERVING_ROLE_CEILING`'s 1,
  * `query/src/parsed-input.ts` — the one capped parse path live window ids hash through.
+ * raised 1594 → 1608, measured 1608 (2026-11-11, sweep 1 schema+core): `SERVING_ROLE_CEILING`'s
+ * 14 (bounded memos, retry budget, log redaction, Sentry frames, the off-loop raster). Nothing
+ * web-only.
+ * raised 1608 → 1623, measured 1623 (2026-11-11, sweep 2 db+http): `SERVING_ROLE_CEILING`'s 15,
+ * the db and http modules named on `MIGRATE_CEILING`. Nothing web-only.
+ * raised 1623 → 1624, measured 1624 (2026-11-11, sweep 2 CodeQL fix): `SERVING_ROLE_CEILING`'s 1,
+ * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing web-only.
+ * raised 1624 → 1636, measured 1636 (2026-11-11, sweep 5a): `SERVING_ROLE_CEILING`'s 12, the
+ * modules named on `MIGRATE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1594;
+export const WEB_ROLE_CEILING = 1636;

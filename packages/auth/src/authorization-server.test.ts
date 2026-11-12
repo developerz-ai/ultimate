@@ -10,6 +10,7 @@ import {
   post,
   REDIRECT,
   RESOURCE,
+  refreshAfterNarrowing,
   serverFixture,
   tokensFor,
 } from './authorization-server-fixture';
@@ -113,6 +114,16 @@ describe('authorizationServer · the code flow', () => {
     expect((await refresh(fixture, rotated.body['refresh_token'])).body['error']).toBe(
       'invalid_grant',
     );
+  });
+
+  test('a client not registered for refresh_token gets no refresh token and cannot refresh', async () => {
+    const { before, code, device, refreshed } = await refreshAfterNarrowing(await serverFixture());
+    expect(typeof before.body['refresh_token']).toBe('string');
+    expect(code.status).toBe(200);
+    expect(code.body['refresh_token']).toBeUndefined();
+    expect(device.status).toBe(200);
+    expect(device.body['refresh_token']).toBeUndefined();
+    expect(refreshed.body['error']).toBe('unauthorized_client');
   });
 
   test('a grant idle past refreshIdleDays cannot refresh; a used one keeps sliding', async () => {

@@ -27,7 +27,8 @@ import { hasPathSegment } from './path-segments';
 export const ISLAND_CACHE_DIR = '.x/cache/islands';
 
 /** Bumped when an entry's shape or meaning changes: an older entry is a miss, never a misread. */
-const FORMAT = 2;
+// 3: URLs name the bytes (#1075); a 2 entry holds source-addressed URLs a 3 build never mints.
+const FORMAT = 3;
 
 /** An entry or a partial nobody read or wrote for this long is swept. */
 const SWEEP_AFTER_MS = 14 * 86_400_000;

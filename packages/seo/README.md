@@ -92,6 +92,7 @@ derived. One opt-in, declared by the route:
 ## Sitemap: pages, sections, caps
 
 ```ts
+import { frozenClock } from '@ultimat3/core';
 import { buildSitemap, type RouteRecord } from '@ultimat3/seo';
 
 declare const routes: readonly RouteRecord[];
@@ -103,6 +104,7 @@ await buildSitemap(routes, {
   maxUrls: 1000,                                      // page size; default 50,000
   sections: [{ name: 'blog', match: '/blog/**' }],    // omitted: one urlset
   disallow: ['/panel'],                               // robots.txt rules: never listed
+  clock: frozenClock('2026-10-11T00:00:00Z'),         // "now", read once; default systemClock
 });
 // → index /sitemap.xml · files /sitemaps/pages-1.xml, /sitemaps/blog-1.xml, /sitemaps/blog-2.xml …
 ```
@@ -110,7 +112,7 @@ await buildSitemap(routes, {
 | Rule | |
 |---|---|
 | a page | `RouteRecord.prerender()` answers `'/blog/a'` or a `SitemapPage` — `{ path, lastmod?, locales? }`. `expandRoutePages()` reads both; `expandRoute()` still answers paths |
-| `lastmod` | a `Date` or ISO 8601 with a zone, written in UTC. No zone, or no date: `X_SITEMAP_ENTRY_INVALID`. After `now`: clamped to `now` — one row from a clock a second ahead must not fail every page, and a future date is one a crawler stops believing |
+| `lastmod` | a `Date` or ISO 8601 with a zone, written in UTC. No zone, or no date: `X_SITEMAP_ENTRY_INVALID`. After `clock.now()` (read once per build, `systemClock` by default — the feed's seam; `now: Date` is a deprecated alias): clamped to it — one row from a clock a second ahead must not fail every page, and a future date is one a crawler stops believing |
 | `locales` | per page, else `RouteRecord.locales`, else all. One `<url>` per listed locale, hreflang among those only; `x-default` only when the default is listed; a page left in one locale of several carries no alternates; `[]` lists it nowhere. An unknown name is `X_SITEMAP_ENTRY_INVALID` |
 | sections | matched on the unprefixed path, so a page and its locale copies share a file. `pages` (reserved) first, then declaration order; inside one, sorted by path. Numbered from 1; an empty one writes nothing; the index `<lastmod>` of a child is the newest inside it (`SitemapFile.lastmod`) |
 | no sections | byte-for-byte the output before sections existed — `sitemap-sections.test.ts` pins the hash |

@@ -4,8 +4,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Boundary
 
-- May import: `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`, `@ultimat3/time` — tiers 0 and
-  1. Locale and zone negotiation are i18n's and time's, never re-implemented here.
+- May import: `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`, `@ultimat3/time`, `@ultimat3/db`
+  (`tableStorage` only) — tiers 0 and 1. Locale and zone negotiation are i18n's and time's, never re-implemented here.
 - May NOT import `@ultimat3/policy` or `@ultimat3/entity` — same tier. Authz and auth come in via
   `ServerHooks` (`hooks.ts`), declared structurally. `@ultimat3/action` (tier 3) wires policy into
   `hooks.authorize`.
@@ -135,7 +135,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
-- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`). A signed-in answer is coded only when `immutable` (`{ anonymous }`, declared, never defaulted). 1–256 KiB declared is `gzipSync`ed; past 256 KiB, or undeclared once 1 KiB is read, `CompressionStream` with no length. An undeclared NDJSON feed never is. A refused response is the SAME object. `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions. A counted read that overruns, fails or passes `ctx.signal`, or a `gzipSync` throw, logs `http.compress_failed`: identity, whole.
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by RFC 9110 weight; a 304's validator form is its 200's (`etag-form.ts`); a public strong-ETag body is coded once per process (`compress-cache.ts`, LRU 512 / 16 MiB). Signed-in: coded only when `immutable`. ≤256 KiB declared is coded whole; past it, or undeclared once 1 KiB is read, streamed with no length. An undeclared NDJSON feed never is. A refused response is the SAME object. `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions. A counted read that overruns, fails or passes `ctx.signal`, or a `gzipSync` throw, logs `http.compress_failed`: identity, whole.
 
 ## Rules — errors and the problem document
 
@@ -184,7 +184,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
   `apps/<app>/runtime.ts`. `httpServer` takes no store (v31).
 - **A bucket a route names must be registered** (`withRouteBuckets`, `X_RATE_LIMIT_BUCKET_CONFLICT`)
   and held by the limiter (`assertRouteBuckets`, `X_RATE_LIMIT_BUCKET_UNBOUND`).
-- Shared stores: `postgresRateLimitStore({ executor })`, `redisRateLimitStore({ client })`.
+- Shared stores: `postgresRateLimitStore({ executor })` (`x_rate_limit` unlogged: a crash refills every bucket), `redisRateLimitStore({ client })`.
 
 ## Rules — webhooks and tests
 
@@ -211,7 +211,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `error-map.ts` | the code → status table, closed: COMPOSES the slices and holds no row of its own |
 | `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier. `bun run new-error-code` appends to its `--package`'s slice; a code in two is refused by `error-map.test.ts` |
 | `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
-| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (asked ONLY on a `not-found` match, synchronously, with the request line alone; its error replaces `X_ROUTE_NOT_FOUND`) + the app's `configureAuthenticator(fn, { credentialTtlMs })` |
+| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (a `not-found` match only, sync; its error replaces `X_ROUTE_NOT_FOUND`) + `configureAuthenticator(fn, { credentialTtlMs })` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
 | `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |
@@ -222,7 +222,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `stored-object-headers.ts` | inline only for raster images, audio, video; else `attachment` + `sandbox` (private) |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
-| `error-log-level.ts` | the `error-map` line's level: `error` 5xx, `warn` 401/403/429, `info` the rest and a `routineRefusal` (`unauthenticated()`) |
+| `error-log-level.ts` | the `error-map` line's level: `error` 5xx, `warn` 401/403/429, `info` the rest and a `routineRefusal` |
 | `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver |
 | `adapter.ts` | `@ultimat3/http/adapter`: the store port's interface, the shipped stores' types (also on `.`, beside their factories), the driver error (adapter only), and the boot's installer |
@@ -237,7 +237,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
-| `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
+| `webhook-verify.ts` | the INBOUND webhook: canonical string, constant-time mac, replay window. Outbound is `@ultimat3/jobs`' `webhook()` |
 | `webhook-hmac.ts` | `verifyBodyHmac`: a vendor's HMAC-SHA256 over named bytes, UTF-8 secret, rotation list, constant-time; answers `{ bytes, text }` |
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by core's `readCookie`, imported, never re-exported |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
@@ -246,7 +246,10 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `request-facts.ts` | `RequestFacts`, any token resolver's frozen 2nd arg; address = `ctx.ip` |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
-| `compress.ts` | the `compress` stage's rule: which answers leave gzipped |
+| `compress.ts` | the `compress` stage's rule: which answers leave coded |
+| `admit-stage.ts`, `lag-shed.ts` | `admit`'s refusals; lag p99 shed (`shedLagMs`, OFF in 31.x: no sampler) |
+| `request-timings.ts`, `slow-request-log.ts` | a request's stage split: `Server-Timing` (dev), `http.request.slow` |
+| `refusal-log.ts` | `http_refusals_total{code}`; routine refusal `info` once/route/min, then `debug` |
 | `compress-read.ts` | the one body read that rule does: counted, deadline-bound, replayable |
 | `request-as.ts` | `withRequestAs`: an exercise entry's `request` (cookies, headers) as an inbound request, for `x exercise` and the contract step |
 

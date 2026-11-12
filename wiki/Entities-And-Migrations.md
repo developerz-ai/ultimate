@@ -67,7 +67,7 @@ The entity name is the first argument. Everything else is the init object:
 | `shared` | `'<why its rows belong to no tenant>'` — for an entity with no tenant column whose references reach one that has a tenant (a price list every org's subscriptions point at). Without it the `exercise` step reports `X_ENTITY_TENANT_UNDECLARED`; blank is refused at `entity()` with the same code, and beside a tenant column it is `X_INVARIANT_VIOLATED`. See [Policies and authz](Policies-And-Authz#the-static-tenant-check) |
 | `scan` | `'<why it stays small>'` — a bounded table (`'a closed catalog of 8 rows'`) the `exercise` step's plan sweep may see read whole. Without it a sequential scan of it is `X_QUERY_UNINDEXED`; blank is `X_INVARIANT_VIOLATED`. See [Testing](Testing#the-plan-and-scale-sweeps) |
 | `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
-| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. `concurrently: true` on an entry builds it with `create index concurrently` in a migration of its own, outside a transaction — for a big, hot table ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)) |
+| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. On a table that already exists `x db gen` builds it with `create index concurrently` by default (`As of 2026-11`), in a migration of its own, outside a transaction; `concurrently: false` is the plain build, marked `-- lock-heavy: true` ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)) |
 | `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
 | `tags` | extra cache tags this entity participates in, beyond its own `entity:<name>` |
 
@@ -310,7 +310,7 @@ export const db = database(entities, { driver });
 | paging — `.limit(n)`, then `.after(cursor).page()`; a raw join pages with `keyset()` from `@ultimat3/db` ([below](#paging-a-raw-join)) | an offset, or a paging module |
 | the transaction — inside `withTransaction` the handle is the transaction, and a statement on it after the scope ended is `X_DB_TRANSACTION_CLOSED`: `await` it, or `outsideTransaction(fn)` for work that must outlive the scope | a client argument |
 | locks — `db.posts.lock(id, fn)` for a row, `db.posts.lockKey(key, fn)` for a key, both under the tenant | `for update` by hand, or an advisory lock |
-| abandonment — once `ctx.signal` is aborted with a coded reason (`X_TIMEOUT`, a job's cancellation) a write rethrows that reason: a transaction rolls back and neither driver writes. A client hang-up is not a refusal. `runToCompletion(fn)` for work that must land | a check of the signal before each write |
+| abandonment — once `ctx.signal` is aborted with a coded reason (`X_TIMEOUT`, a job's cancellation) a write rethrows that reason: a transaction rolls back and neither driver writes. A client hang-up is not a refusal. `runToCompletion(fn)` for work that must land. A pooled Postgres read in flight when `ctx.signal` aborts is cancelled on the server and throws `X_ABORTED` (`packages/db/src/statement-cancel.ts`, pinned by `pg-read-cancel.live.test.ts`); a read sent after the abort, or inside a transaction, runs — cleanup in a `finally` still reads. `As of 2026-11` | a check of the signal before each write |
 
 | Raw `sql` | Where |
 |---|---|
@@ -494,6 +494,21 @@ await db.checkpoints.update(id, { cursor: batches.cursor });   // resume with .a
 | Unsortable kinds | `orderBy` on a `json`, `bytes` or array column is refused at plan time, at any row count (`X_INVARIANT_VIOLATED`). It paged wrongly or threw past page 1. Order by a scalar |
 | Patches | `update`, `updateWhere` validate named columns, with `insert`'s issues, before the statement, on both drivers. Absent stays absent, `null` clears a nullable column |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
+| Heavy rows | a batch past the [page byte bound](#a-page-is-bounded-in-bytes) is re-read from the same cursor at half the rows, down to one, and the smaller size is kept for the batches after it (`batch-bytes.ts`): a sweep over heavy rows finishes. At most `⌈log2(size)⌉` refused statements per batch; one row over the bound on its own is still `X_ENTITY_PAGE_TOO_LARGE`. `As of 2026-11` |
+
+### A page is bounded in bytes
+
+`MAX_PAGE_SIZE` bounds rows; `MAX_PAGE_BYTES` (64 MiB, exported) bounds what they weigh, measured on
+the raw rows before one is decoded. Past it the read is `X_ENTITY_PAGE_TOO_LARGE` (500), never a
+truncated page. `As of 2026-11`:
+
+| Property | Behavior |
+|---|---|
+| Where | every `findMany`: `page()`, `all()`, `one()`, a batch. Postgres weighs the page it answered (`pg-driver.ts`), memory and a `defineDriver` store the projected page — so a test against memory refuses the page production would |
+| Weight | a string by its length, binary by `byteLength`, 8 per scalar or `Date`, a parsed `jsonb` walked; counting stops at the bound |
+| The `fix:` | names the heaviest column and pastes onto the read: `.select({ id: true, title: true }).limit(n)` — every column but that one, and the row count that fits |
+| A constant | no per-call or per-driver option. As of 2026-11 the heaviest page in both tracked apps' suites is 16,560 B (120 `users` rows), about 4,000× under the bound |
+| Cost | as of 2026-11, Bun 1.4.4: 3–4 µs per 51-row page of flat columns, 11–12 µs with a small `jsonb` per row |
 
 ## A count per row is one grouped count
 
@@ -594,8 +609,122 @@ already stored is skipped and absent, which is how a caller counts what it actua
 | Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
 | Size | past 65535 bind parameters the batch is several statements inside one transaction (a savepoint inside an open `withTransaction`), never one the server refuses. A failure in any chunk leaves no row of the batch, in both drivers; one chunk stays one autocommit statement, no `BEGIN`. Partial progress is yours to ask for: split the batch and call once per part |
 
-There is no `updateAll`: `updateWhere(filter, patch)` and `deleteWhere(filter)` are already the
-bulk forms of `update` and `delete`, and a second spelling of one of them would be a second path.
+### A count instead of the rows
+
+`{ returning: false }` on `insertAll` or `upsertAll` resolves with how many rows were written: no
+`returning *`, nothing decoded. The same chunks, judging and atomicity as the returning form.
+`As of 2026-11`:
+
+```ts
+import { database, entity, integer, text, uuid } from '@ultimat3/entity';
+
+const events = entity('events', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), name: text({ max: 80 }) },
+});
+const counters = entity('counters', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    day: text({ max: 10 }),
+    total: integer(),
+  },
+  indexes: [{ on: ['orgId', 'day'], unique: true }],
+});
+const db = database({ events, counters });
+
+export const record = async (orgId: string, names: readonly string[]): Promise<number> =>
+  db.events.insertAll(
+    names.map((name) => ({ orgId, name })),
+    { returning: false },
+  );
+
+export const tally = async (orgId: string, days: readonly string[]): Promise<number> =>
+  db.counters.upsertAll(
+    days.map((day) => ({ orgId, day, total: 1 })),
+    { onConflict: ['orgId', 'day'], returning: false },
+  );
+```
+
+While an external search index or an `entity.row` subscriber needs the rows, the count form runs as
+its returning counterpart and still resolves with the count.
+
+### A bulk load is `copyAll`
+
+`db.<table>.copyAll(rows)` sends one `COPY … FROM STDIN`: all or nothing, resolves with the count.
+Rows are parsed, sealed, tenant-checked and judged exactly as `insertAll` judges them. `As of 2026-11`:
+
+| Property | Behavior |
+|---|---|
+| Columns | every row names the same columns, else `X_INVARIANT_VIOLATED`: COPY has one column list and no per-row `default` cell. Refused on every driver |
+| Collisions | none handled: a duplicate refuses the whole load. `upsertAll` is the call that tolerates one |
+| Where it is COPY | `postgresDriver()`, on a client with `copyIn` (`canCopyIn`, `@ultimat3/db`). Inside `withTransaction` it is that transaction's; under the replica router, the primary's |
+| Where it is `insertAll` | memory, a `defineDriver` store, row-security settings installed (a copy would skip the tenant `BEGIN`), a client with no `copyIn` — insert statements, no `returning`. While a search index or an `entity.row` subscriber listens: `insert … returning *` |
+| Measured | as of 2026-11, 100k rows × 4 columns through the typed handle, Postgres 17 on loopback, Bun 1.4.4, median of 5 at load 13–15: `copyAll` 1,073 ms, `insertAll({ returning: false })` 2,778 ms, `insertAll` 2,880 ms |
+
+### A filtered write is a chain terminal
+
+`.updateAll(patch)` and `.deleteAll()` end any read chain: one statement over exactly the rows the
+same chain's `.all()` would read, every operator included. `As of 2026-11`:
+
+```ts
+import { database, entity, enumerated, timestamp, uuid } from '@ultimat3/entity';
+
+const likes = entity('likes', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), postId: uuid(), userId: uuid() },
+});
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    authorId: uuid(),
+    status: enumerated(['draft', 'live']),
+    publishedAt: timestamp().nullable(),
+  },
+});
+const db = database({ likes, posts });
+
+// One statement each; resolves with how many rows it reached.
+export const unlike = (postId: string, userIds: readonly string[]): Promise<number> =>
+  db.likes.where({ postId }).andWhere('userId', 'in', userIds).deleteAll();
+
+export const parkUnpublished = (authorId: string): Promise<number> =>
+  db.posts.where({ authorId }).andWhere('publishedAt', 'is-null').updateAll({ status: 'draft' });
+```
+
+| Property | Behavior |
+|---|---|
+| One plan | `updateWhere(filter, patch)` / `deleteWhere(filter)` and the chain build the same plan (`write-where.ts`): tenancy, soft-delete reach, invariant judging, `onUpdateNow()`, sealing, the search mirror and the `entity.bulk` report cannot differ. The filter is the chain's equalities |
+| Unbounded | no predicate is `X_WRITE_UNFILTERED`. So is a chain predicate whose value is `undefined` — dropped, it would widen the write to everything the rest of the chain matches; `.andWhere('<col>', 'is-null')` is SQL NULL. In `updateWhere`'s filter an `undefined` is dropped, as it always was |
+| No page | `limit()`, `after()` and `search()` on a write chain are `X_INVARIANT_VIOLATED`: a write reaches every match, and a search index answers a bounded sample of ids. `orderBy`, `select` and `preload` are ignored |
+| Sealed columns | a lookup column matched as a read matches it; a null test passes; any other predicate on a sealed column is refused |
+
+### A different value per row is `updateMany`
+
+`db.<table>.updateMany([{ id, patch }])` writes each row its own patch: one tenant-scoped
+`update … from (select …)` per bind-count chunk, resolving with how many rows were written.
+A chunk is ⌊(65,535 − the scope's binds) / (columns + 1)⌋ rows, so 1,000 one-column patches are one statement (`pg-update-many-sql.test.ts`). `As of 2026-11`:
+
+```ts
+import { database, entity, integer, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), rank: integer() },
+});
+const db = database({ posts });
+
+// Each row its own rank, one statement: resolves with how many rows were written.
+export const rerank = (ranked: readonly { id: string; rank: number }[]): Promise<number> =>
+  db.posts.updateMany(ranked.map(({ id, rank }) => ({ id, patch: { rank } })));
+```
+
+| Property | Behavior |
+|---|---|
+| Shape | every patch names the same columns, each id appears once, a single-column primary key: else `X_INVARIANT_VIOLATED`. An empty patch is `X_PATCH_EMPTY` |
+| Missing rows | an absent, soft-deleted or other tenant's id is neither written nor counted, never `X_NOT_FOUND` — `updateWhere`'s semantics |
+| Atomicity | on Postgres one chunk is one autocommit statement; several chunks, or a JS-only invariant, run in one transaction. Memory and a `defineDriver` store judge the batch whole (tenant, invariants, uniques) before a row lands; a `defineDriver` store gets one `update` per row, and a store refusal part way writes the moved rows back |
+| Typing | the source rows are typed from the table (`select … where false union all select $…`): `values (…)` binds as text and Postgres refuses `uuid = text` |
+| Reports | `entity.bulk`, as `updateWhere` |
+| A hand-written `Repo` | `updateMany`, `copyAll`, `insertAllCount` and `upsertAllCount` are optional on it. Absent, the typed handle sends one `updateWhere` per row, and `insertAll(…)` / `upsertAll(…)` counted |
 
 The composite unique index the tenancy rule requires is emitted correctly since 2.0.0 — declare it
 on the entity and generate. Through 1.2.0 `indexes: [{ on: ['orgId','createdAt'] }]` emitted one
@@ -889,7 +1018,7 @@ Rule: `.search(term)` on a chain asks the INSTALLED `SearchIndex` — one search
 |---|---|
 | the version | every `SearchDocument` carries `version`, the row's `onUpdateNow()` instant in epoch ms — STRICTLY increasing per row: a write (a soft delete included) stores it no earlier than the stored one + 1 ms (Postgres `greatest($now, updated_at + interval '1 millisecond')`; the memory driver and a `defineDriver` store through `advanceVersion` / `DriverRepo.update`'s `advance`), so two writes inside one millisecond are two versions and the column may run a millisecond ahead of the clock per same-ms write. A searchable entity declares `updatedAt: timestamp().defaultNow().onUpdateNow()`; without one `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
 | keep only newer | an adapter applies a document only when its version is newer than the document or tombstone it holds for that id; `remove(scope, ids, version)` leaves a tombstone (a delete's: past the row's last version and no earlier than its instant); an equal version is a replay. EXCEPT a `committed` document — the write path's, `index(docs, { committed: true })` — which replaces a tombstone whatever its version, so a key deleted and written again is live at once; `reindex()`'s reads are not `committed`, so a stale read never brings a deleted row back. `searchIndexConformance` (`@ultimat3/testing/conformance`) checks each case |
-| the write path | with an external index installed, every committed write of a searchable entity reaches it: insert, upsert, update, transition and `updateWhere` index the rows written; `delete` and `deleteWhere` (soft or hard) remove them — whatever the primary key (`id`, another column, composite; an instant in a key is spelled ISO 8601 UTC). Taken when the write runs, merged per key per transaction, sent at commit on one chain per index (`search-mirror-batch.ts`), so a rolled-back write indexes nothing. The driver hands a delete's or filtered write's rows over (`returning *` on Postgres) only for a searchable entity under an external index; under the built-in index every write is the statement it always was |
+| the write path | with an external index installed, every committed write of a searchable entity reaches it: insert, upsert, `copyAll`, update, transition, `updateWhere`/`updateAll` and `updateMany` index the rows written; `delete` and `deleteWhere`/`deleteAll` (soft or hard) remove them — whatever the primary key (`id`, another column, composite; an instant in a key is spelled ISO 8601 UTC). Taken when the write runs, merged per key per transaction, sent at commit on one chain per index (`search-mirror-batch.ts`), so a rolled-back write indexes nothing. The driver hands a delete's or filtered write's rows over (`returning *` on Postgres) only for a searchable entity under an external index; under the built-in index every write is the statement it always was |
 | a failed index write | never fails the business write: one `entity.search-index.write-failed` log line; repair with `reindex()` ([Jobs](Jobs-And-Workflows#rebuilding-a-search-index--reindex)), whose sweep also removes what the table lost |
 | not mirrored | a delete or filtered write past `MAX_ASSERTED_ROWS` rows: Postgres counts first and sends no `returning *` past it (memory and `defineDriver` stores the same) — logged the same way; `reindex()` repairs it |
 
@@ -998,7 +1127,7 @@ of 2026-11:
 
 | Rule | |
 |---|---|
-| Writes | `insert`, `insertAll`, `upsertAll`, `update`, `delete`, `updateWhere`, `deleteWhere`, `lock`: `X_ENTITY_READ_ONLY`, in both drivers, before a statement exists, the reason in the cause |
+| Writes | `insert`, `insertAll`, `upsertAll`, `copyAll`, `update`, `delete`, `updateWhere`, `deleteWhere`, `updateMany`, a chain's `updateAll`/`deleteAll`, `lock`: `X_ENTITY_READ_ONLY`, in both drivers, before a statement exists, the reason in the cause |
 | Refused at declaration | a blank reason, `view` (already read-only), `appendOnly` (it admits the inserts this refuses): `X_INVARIANT_VIOLATED` |
 | Seeds | `x db seed --generate` and `x exercise` seed no row of it. A nullable reference into it is seeded null; a NOT NULL one is `X_SEED_GRAPH_UNSATISFIED` naming the table, its reason, and the fix: `readOnly` on the referencing table too, or `.nullable()` then `x db gen` |
 | Subjects | `defineSubject`'s `'delete'` or `anonymize` on it is `X_SUBJECT_TREATMENT_INVALID`; `retain` is the one treatment that holds |

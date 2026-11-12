@@ -6,11 +6,12 @@
 import { nonAppRelations } from './app-relation';
 import { type DbClient, db } from './client';
 import type { PartitionInterval } from './entity-shape';
+import type { IndexKeyParts } from './index-key-ddl';
+import { type IndexKeyRow, indexesOf, indexRows } from './introspect-index';
 import {
   type CheckRow,
   type ColumnRow,
   type ForeignKeyRow,
-  type IndexRow,
   notValidOf,
   onDeleteOf,
   type TriggerNameRow,
@@ -43,7 +44,12 @@ export interface ColumnDescription {
   readonly retired?: true | undefined;
 }
 
-export interface IndexDescription {
+/**
+ * An index, as a snapshot records it and the catalog reads it. The four key parts past a plain
+ * column list (`IndexKeyParts`: expression, per-key directions, INCLUDE, operator class) are
+ * optional and absent on every index that has none, so no recorded snapshot changes shape.
+ */
+export interface IndexDescription extends IndexKeyParts {
   readonly name: string;
   /**
    * Key columns in **index key order** — the order the planner sorts by, never `attnum`. An
@@ -278,41 +284,7 @@ export async function introspectSchema(
     order by c.table_name, c.ordinal_position
   `);
 
-  // Ordered by the index's own key position, never by `attnum`: `indkey` IS the order the planner
-  // sorts by, and a composite index on `(created_at, org_id)` whose columns were declared the
-  // other way round came back reversed — a description that reads correct and compares wrong.
-  // `indnkeyatts` drops INCLUDE payload columns, which are stored, not keyed.
-  //
-  // A LEFT join on `pg_attribute`: an expression key has `attnum = 0` and no attribute row, so an
-  // inner join dropped it and `(id, lower(title))` read back as `(id)` — an index rebuilt by hand
-  // with an extra expression key compared equal to the declared one. It is kept in its position
-  // and MARKED by its parentheses, which no declared column name carries.
-  const indexes = client.query<IndexRow>(sql`
-    select
-      t.relname as table_name,
-      i.relname as index_name,
-      ix.indisunique as is_unique,
-      ix.indisprimary as is_primary,
-      pg_get_expr(ix.indpred, ix.indrelid) as predicate,
-      am.amname as method,
-      array_agg(
-        coalesce(a.attname::text, '(' || pg_get_indexdef(ix.indexrelid, k.ord::int, false) || ')')
-        order by k.ord
-      ) as columns,
-      bool_and((ix.indoption[k.ord - 1] & 1) = 1) as descending
-    from pg_class t
-    join pg_namespace n on n.oid = t.relnamespace
-    join pg_index ix on ix.indrelid = t.oid
-    join pg_class i on i.oid = ix.indexrelid
-    join pg_am am on am.oid = i.relam
-    cross join lateral unnest(ix.indkey::smallint[]) with ordinality as k(attnum, ord)
-    left join pg_attribute a on a.attrelid = t.oid and a.attnum = k.attnum and k.attnum > 0
-    where n.nspname = ${schema} and t.relkind in ('r', 'p') and k.ord <= ix.indnkeyatts
-    group by
-      t.relname, i.relname, ix.indisunique, ix.indisprimary, ix.indpred, ix.indrelid,
-      ix.indexrelid, am.amname
-    order by t.relname, i.relname
-  `);
+  const indexes = indexRows(client, schema);
 
   // `conkey` and `confkey` are unnested TOGETHER, by shared ordinality: they are two halves of one
   // ordered pairing, and matching each independently with `= any(...)` is a cross product — a
@@ -390,7 +362,7 @@ export function buildSchema(
   schema: string,
   excluded: readonly string[],
   columns: readonly ColumnRow[],
-  indexes: readonly IndexRow[],
+  indexes: readonly IndexKeyRow[],
   foreignKeys: readonly ForeignKeyRow[],
   checks: readonly CheckRow[] = [],
   /** Absent leaves `triggerNames` off every table: nobody asked the catalog. */
@@ -404,20 +376,7 @@ export function buildSchema(
     .sort();
 
   const tables = names.map((name): TableDescription => {
-    const tableIndexes = indexes
-      .filter((row) => row.table_name === name)
-      .map((row) => ({
-        name: row.index_name,
-        columns: [...row.columns],
-        unique: row.is_unique,
-        primary: row.is_primary,
-        where: row.predicate,
-        order: row.descending ? ('desc' as const) : null,
-        // `exactOptionalPropertyTypes`: a row with no method is a stub's, and absent must stay
-        // absent rather than becoming an explicit `undefined` a strict comparison can see.
-        ...(row.method === undefined ? {} : { using: row.method }),
-      }))
-      .sort(byName);
+    const tableIndexes = indexesOf(indexes, name);
     return {
       schema,
       name,

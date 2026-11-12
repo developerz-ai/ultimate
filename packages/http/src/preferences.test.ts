@@ -60,3 +60,38 @@ describe('the detected zone', () => {
     );
   });
 });
+
+// The `locale` stage's short-circuit: a route that takes its locale from the path reads no locale
+// source — `requestLocale` would discard every one — while the zone's sources are still read.
+describe('a route whose locale is its path', () => {
+  test('reads only ?tz= off the query, and still answers the default locale', async () => {
+    const real = URLSearchParams.prototype.get;
+    const asked: string[] = [];
+    URLSearchParams.prototype.get = function counted(name: string): string | null {
+      asked.push(name);
+      return real.call(this, name);
+    };
+    try {
+      const response = await httpPipeline({
+        table: httpRouter([
+          {
+            method: 'GET',
+            path: '/page',
+            meta: { name: 'page', auth: 'public', localeSource: 'path' },
+            handler: (_request, ctx) => jsonResponse({ locale: ctx.locale, tz: ctx.tz }),
+          },
+        ]),
+        config,
+      }).handle(
+        new Request('http://localhost/page?locale=es&tz=Asia/Tokyo', {
+          headers: { 'accept-language': 'es', cookie: 'x_locale=es' },
+        }),
+        { role: 'web' },
+      );
+      expect(await response.json()).toEqual({ locale: 'en', tz: 'Asia/Tokyo' });
+    } finally {
+      URLSearchParams.prototype.get = real;
+    }
+    expect(asked).toEqual(['tz']);
+  });
+});

@@ -58,12 +58,18 @@ describe('client_credentials', () => {
     expect(both.body['error']).toBe('invalid_request');
   });
 
-  test('client_secret_post is read too', async () => {
-    const { fixture, client, secret } = await machine();
+  test('a client_secret_post client is read from the body', async () => {
+    const fixture = await serverFixture();
+    const { client, clientSecret } = await fixture.server.registerClient({
+      name: 'Post sync',
+      authMethod: 'client_secret_post',
+      grantTypes: ['client_credentials'],
+      scopes: ['read'],
+    });
     const answer = await post(fixture.server, '/oauth/token', {
       grant_type: 'client_credentials',
       client_id: client.clientId,
-      client_secret: secret,
+      client_secret: clientSecret ?? '',
     });
     expect(answer.status).toBe(200);
   });

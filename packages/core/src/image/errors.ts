@@ -30,6 +30,25 @@ export class ImageTooLargeError extends UltimateError {
   }
 }
 
+export class ImageRasterBudgetError extends UltimateError {
+  static readonly code = 'X_IMAGE_RASTER_BUDGET';
+  override readonly name = 'ImageRasterBudgetError';
+  constructor(cause: string, fix: string, meta?: Readonly<Record<string, unknown>>) {
+    super({ code: ImageRasterBudgetError.code, cause, fix, meta });
+  }
+}
+
+/**
+ * The web role, with no raster Worker, asked to run a raster hop that blocks its event loop past
+ * the budget. The fix is the job that makes the request path never decode: `warmVariants`.
+ */
+export const imageRasterBudget = (pixels: number, budget: number): ImageRasterBudgetError =>
+  new ImageRasterBudgetError(
+    `the transform's raster hops touch ${pixels} pixels on the web role's event loop, over its ${budget}-pixel budget, because no raster Worker could start here`,
+    'warmVariants({ disk, key, widths, formats })   # from @ultimat3/storage (packages/storage/src/image-warm.ts), in a job on the worker role, so the media route answers from storage; or run the role from source so transformImageBytes reaches its Worker',
+    { pixels, budget },
+  );
+
 /** A format or a coding feature the built-in pipeline does not implement. */
 export const imageUnsupported = (
   cause: string,

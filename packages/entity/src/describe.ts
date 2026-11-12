@@ -363,8 +363,9 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
       // Spread, never `?? null`: absent is what `@ultimat3/db` reads as the btree it always was,
       // and a written-out `null` would be a field no existing snapshot carries.
       ...(index.using === undefined ? {} : { using: index.using }),
-      // `true` or absent, never `false`, for the same reason: `x verify` hashes this projection.
-      ...(index.concurrently === true ? { concurrently: true as const } : {}),
+      // Absent stays absent for the same reason — `x verify` hashes this projection, and an index
+      // that asks nothing must hash what it always did. An explicit ask, `true` or `false`, rides.
+      ...(index.concurrently === undefined ? {} : { concurrently: index.concurrently }),
     })),
     tags: input.tags,
     cacheTag: input.cacheTag,

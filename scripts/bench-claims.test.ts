@@ -196,8 +196,9 @@ describe('unit · this repo', () => {
 
   test('checks every committed run, so none can drift unwatched', () => {
     // The two realtime runs, the first hour, http-hello's two targets, the big-page render, the
-    // span overhead, and the scale ladder's four (workers, fan-out, boot, the production image).
-    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(12);
+    // span overhead, the in-process request floor, and the scale ladder's four (workers, fan-out,
+    // boot, the production image).
+    expect(new Set(CLAIMS.map((one) => one.file)).size).toBe(13);
     expect(CLAIMS.length).toBeGreaterThan(9);
   });
 });

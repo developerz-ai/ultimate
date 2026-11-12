@@ -112,25 +112,52 @@ export interface ErrorFixReport {
    * relative specifiers only, and that gap is 3 call sites across this repo, measured 2026-08.
    */
   readonly unreadable: number;
+  /** File → fix lines `fix-sequence.ts` refused there, allowed or not: what the baseline must equal. */
+  readonly sequenceRefused: ReadonlyMap<string, number>;
+}
+
+/**
+ * `fix-sequence.ts`'s rule, ratcheted per file: a file at or under its recorded count passes, and
+ * past it every refused line is reported — a text scan cannot tell which of them is the new one.
+ */
+function sequenceRefusals(
+  sites: readonly FixSite[],
+  fixSequenceProblem: (fix: string) => string | undefined,
+): readonly Finding[] {
+  return sites.flatMap((site) => {
+    const problem = fixSequenceProblem(staticFix(site.fix));
+    return problem === undefined ? [] : [fixFinding(site, problem)];
+  });
 }
 
 export async function checkErrorFixReport(root: string): Promise<ErrorFixReport> {
   const findings: Finding[] = [];
   const catalog = await loadCommandCatalog();
+  // At its point of use, like the catalog: `app-load.ts` imports this module for
+  // `collectDeclaredCodes`, and a gate-only rule must not ride into every serving role's graph
+  // (`serve-graph.test.ts`'s `SERVING_ROLE_CEILING`).
+  const { FIX_SEQUENCE_BASELINE, fixSequenceProblem, generatorForceProblem } = await import(
+    './fix-sequence'
+  );
   const imports = createHelperResolver(root);
   let checked = 0;
   let unreadable = 0;
+  const sequenceRefused = new Map<string, number>();
   for await (const path of eachSourceFile(root)) {
     if (isTest(path) || isGenerated(path)) continue;
     const source = await Bun.file(join(root, path)).text();
     const scan = scanFixSites(source, path, await imports(path, source));
     checked += scan.sites.length;
     unreadable += scan.unreadable;
+    const refused = sequenceRefusals(scan.sites, fixSequenceProblem);
+    if (refused.length > 0) sequenceRefused.set(path, refused.length);
+    if (refused.length > (FIX_SEQUENCE_BASELINE.get(path) ?? 0)) findings.push(...refused);
     for (const site of scan.sites) {
       // The interpolation-blanked form for both rules: `x ${name}` names no command this can
       // resolve, and reading `<value>` as one would be a finding nobody can act on.
       const fix = staticFix(site.fix);
-      const problem = fixProblem(site.fix) ?? citedCommandProblem(fix, catalog);
+      const problem =
+        fixProblem(site.fix) ?? generatorForceProblem(fix) ?? citedCommandProblem(fix, catalog);
       if (problem !== undefined) {
         findings.push(fixFinding(site, problem));
         continue;
@@ -141,7 +168,7 @@ export async function checkErrorFixReport(root: string): Promise<ErrorFixReport>
       if (missing !== undefined) findings.push(pathFinding(site, missing));
     }
   }
-  return { findings, checked, unreadable };
+  return { findings, checked, unreadable, sequenceRefused };
 }
 
 /** The findings alone, for every caller that reports no coverage line. */

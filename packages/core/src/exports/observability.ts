@@ -3,7 +3,7 @@
 // subject — a process's own account of what it did — and `index.ts` re-exports every name below
 // explicitly, so this file changes what a reader looks at and never what the package exports.
 
-export { errorFingerprint } from '../error-fingerprint';
+export { errorFingerprint, monitorFingerprint } from '../error-fingerprint';
 export type {
   ErrorReport,
   ErrorReporter,

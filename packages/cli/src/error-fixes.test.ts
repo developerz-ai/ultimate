@@ -105,6 +105,42 @@ describe('unit · scanCodeFixSites', () => {
     ]);
   });
 
+  // `@ultimat3/db` raises every SQLSTATE-classified code through ONE `new DbError({ code, fix:
+  // SQLSTATE_FIXES[code] })`: no `code:` literal anywhere, so `x errors explain X_DB_SCHEMA_STALE`
+  // answered "nothing raises it" while the dev page showed it. The table entry IS the raise site.
+  test('a code-keyed fix table names each code it holds as a raise site, with its fix', () => {
+    const source = [
+      'const SQLSTATE_FIXES = Object.freeze<Record<DbSqlStateCode, string>>({',
+      '  X_DB_SCHEMA_STALE:',
+      '    \'x db gen "<what changed>" && x db migrate   # the entity is ahead of the schema; \' +',
+      "    'only the migrate half when it exists',",
+      "  X_DB_LOCK_TIMEOUT: 'x db diagnostics --json',",
+      '});',
+      'export const DB_TITLES = {',
+      "  X_DB_SCHEMA_STALE: 'the statement names a table or column the database does not have',",
+      '};',
+    ].join('\n');
+    const sites = scanCodeFixSites(source, 'db/src/errors.ts');
+    expect(sites.map((site) => [site.code, site.line])).toEqual([
+      ['X_DB_SCHEMA_STALE', 2],
+      ['X_DB_LOCK_TIMEOUT', 5],
+    ]);
+    // Literals joined by `+` are one fix line written over two source lines.
+    expect(sites[0]?.fix).toBe(
+      'x db gen "<what changed>" && x db migrate   # the entity is ahead of the schema; only the migrate half when it exists',
+    );
+    expect(sites[1]?.fix).toBe('x db diagnostics --json');
+  });
+
+  test(
+    'the shipped db package: X_DB_SCHEMA_STALE has a raise site',
+    async () => {
+      const index = await scanScopeFixes(join(import.meta.dir, '../..'));
+      expect(index.get('X_DB_SCHEMA_STALE')?.[0]?.at).toBe('@ultimat3/db/src/errors.ts');
+    },
+    REPO_SCAN_MS,
+  );
+
   test('a top-level assignment is not an object literal, so it pairs with nothing', () => {
     const source = [
       "const code = 'X_ONE';",
@@ -262,7 +298,10 @@ describe('unit · the three honest fallbacks', () => {
       expect(codeFixes().get(code)).toBeUndefined();
       expect(codeFixScan()).toBe('read');
       const fix = explainErrorCode(code)?.fix ?? '';
-      expect(fix).toContain(`nothing in the installed framework raises ${code}`);
+      // Never "nothing raises it": a code raised from a computed value has no site a text scan
+      // can read, and the claim told the reader of a live X_DB_SCHEMA_STALE it did not exist.
+      expect(fix).toContain(`no throw site in the installed framework spells ${code}`);
+      expect(fix).not.toContain('nothing in the installed framework raises');
       expect(fixProblem(fix)).toBeUndefined();
     },
     REPO_SCAN_MS,
@@ -279,7 +318,7 @@ describe('unit · the three honest fallbacks', () => {
       expect(codeFixScan()).toBe('unread');
       const fix = explainErrorCode(code)?.fix ?? '';
       expect(fix).toContain('could not be read');
-      expect(fix).not.toContain('nothing in the installed framework raises');
+      expect(fix).not.toContain('no throw site in the installed framework spells');
       expect(fixProblem(fix)).toBeUndefined();
     },
     REPO_SCAN_MS,

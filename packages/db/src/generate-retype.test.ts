@@ -70,10 +70,13 @@ const upOf = (entity: EntityDescriptionLike, current: EntityDescriptionLike): re
 describe('a retype whose column a predicate reads', () => {
   test('drops the dependent index and constraint BEFORE the ALTER, and recreates the index after', () => {
     const up = upOf(posts('text'), posts('post_status'));
+    // The recreate is plain, inside the transaction the ALTER already holds ACCESS EXCLUSIVE in,
+    // so the line above it says so: `X_MIGRATION_LOCK_HEAVY` admits that statement by it.
     expect(up).toEqual([
       'drop index "posts_feed_idx";',
       'alter table "posts" drop constraint "posts_publish_coherent_check";',
       'alter table "posts" alter column "status" type text using "status"::text;',
+      '-- lock-heavy: true',
       `create index "posts_feed_idx" on "posts" ("org_id") where (status = 'published');`,
       'alter table "posts" add constraint "posts_publish_coherent_check" ' +
         `check (status <> 'published' or org_id is not null);`,
@@ -107,6 +110,7 @@ describe('a retype whose column a predicate reads', () => {
       'drop index "posts_feed_idx";',
       'alter table "posts" drop constraint "posts_publish_coherent_check";',
       'alter table "posts" alter column "status" type text using "status"::text;',
+      '-- lock-heavy: true',
       `create index "posts_feed_idx" on "posts" ("org_id") where (status = 'published');`,
     ]);
   });

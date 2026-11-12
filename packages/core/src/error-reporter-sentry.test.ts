@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
-import { errorFingerprint } from './error-fingerprint';
+import { monitorFingerprint } from './error-fingerprint';
 import {
   configureErrorReporting,
   errorReport,
@@ -118,24 +118,26 @@ describe('sentryEnvelope', () => {
     expect((payload['extra'] as Record<string, unknown>)['fix']).toBe('x db gen "add publish_at"');
     expect((payload['extra'] as Record<string, unknown>)['requestId']).toBe('req-1');
     expect(payload['contexts']).toEqual({ trace: { trace_id: 'a'.repeat(32) } });
-    expect(payload['exception']).toEqual({
+    expect(payload['exception']).toMatchObject({
       values: [
         {
           type: 'X_ENVELOPE_FIXTURE',
           value: 'envelope fixture — table "posts" has an undeclared column',
+          stacktrace: { frames: expect.any(Array) },
         },
       ],
     });
   });
 
-  test('the envelope names its group: the fingerprint is errorFingerprint(report)', () => {
+  test('the envelope names its group: the fingerprint is monitorFingerprint(report), [code]', () => {
     const built = report();
     const envelope = sentryEnvelope(built, {
       dsn: 'https://abc123@errors.example.com/42',
       eventId: 'f'.repeat(32),
     });
     const payload = JSON.parse(envelope.split('\n')[2] as string) as Record<string, unknown>;
-    expect(payload['fingerprint']).toEqual([errorFingerprint(built)]);
+    expect(payload['fingerprint']).toEqual(monitorFingerprint(built));
+    expect(payload['fingerprint']).toEqual(['X_ENVELOPE_FIXTURE']);
   });
 });
 

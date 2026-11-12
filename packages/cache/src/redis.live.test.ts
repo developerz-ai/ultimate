@@ -20,6 +20,8 @@ import { tag } from './tags';
 import type { CacheTier } from './tiers';
 import { cacheStack, nowMs } from './tiers';
 
+/** How many seed writes are in flight at once: the seed, not the bust, is what this bounds. */
+const SEED_BATCH = 100;
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
 
@@ -115,11 +117,19 @@ describe.skipIf(!hasRedis)(
       const client = raw();
       const tier = tierOn(client);
       const total = BUST_PAGE_SIZE * 2 + 3;
-      await Promise.all(
-        Array.from({ length: total }, (_, i) =>
-          tier.set(`paged-${String(i)}`, i, { ttlMs: 60_000, tags: [tag('paged')] }),
-        ),
-      );
+      // Seeded SEED_BATCH at a time: 2,003 concurrent sets queued past the default 150 ms command
+      // deadline on a loaded runner (measured, 3 of 3 under 12 busy cores), and the seed is not
+      // the subject — the bust is, still on the tier's default settings.
+      for (let start = 0; start < total; start += SEED_BATCH) {
+        await Promise.all(
+          Array.from({ length: Math.min(SEED_BATCH, total - start) }, (_, offset) =>
+            tier.set(`paged-${String(start + offset)}`, start + offset, {
+              ttlMs: 60_000,
+              tags: [tag('paged')],
+            }),
+          ),
+        );
+      }
 
       expect((await tier.invalidateTags([tag('paged')])).keys).toHaveLength(total);
       expect(await count(client, 'EXISTS', `${PREFIX}:e2:{paged}`)).toBe(0);

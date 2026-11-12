@@ -13,6 +13,7 @@ import {
   systemClock,
 } from '@ultimat3/core';
 import { type DbClient, type DbConnection, isReservable, type ReservableClient } from './client';
+import type { CopyInClient } from './copy-in';
 import { POSITION_CACHE_MS, primaryPosition, replayReader } from './replica-position';
 import { isPlainRead } from './replica-route';
 import { markScopeWrote, replicaScope } from './replica-scope';
@@ -196,6 +197,20 @@ export function replicatedClient(
     one: <T>(fragment: SqlFragment) => send(fragment, (client) => client.one<T>(fragment)),
     execute: (fragment: SqlFragment) => send(fragment, (client) => client.execute(fragment)),
   };
+
+  // A COPY is a write: the primary's, always, and it marks the scope written as any write does so
+  // the reads after it are the primary's too. Present only when the primary copies.
+  const copying = primary as DbClient & Partial<CopyInClient>;
+  if (typeof copying.copyIn === 'function') {
+    const copyIn = copying.copyIn.bind(copying);
+    Object.assign(base, {
+      copyIn: (target: SqlFragment, rows: Iterable<readonly unknown[]>) => {
+        markScopeWrote();
+        primaryCount += 1;
+        return copyIn(target, rows);
+      },
+    });
+  }
 
   if (!isReservable(primary)) return base;
   const reservable: ReplicatedClient & ReservableClient = {

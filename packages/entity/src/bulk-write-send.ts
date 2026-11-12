@@ -23,6 +23,12 @@ import { type InsertShape, insertStatement } from './pg-write-sql';
  * stored is the incoming row merged into the stored one, and only `returning *` shows that row. The
  * memory driver judges the same merge in `write`, so without this the rule held only there.
  */
+/** An updating upsert whose stored rows only the app can judge — the one write that must read back. */
+const judgesMerge = <Row>(entity: EntityCore<Row>, shape: InsertShape): boolean =>
+  shape.conflict !== undefined &&
+  shape.conflict.set.length > 0 &&
+  hasJsOnlyInvariant(entity.$invariants);
+
 export const writeChunks = async <Row>(
   entity: EntityCore<Row>,
   bound: readonly ReadonlyMap<string, unknown>[],
@@ -31,19 +37,46 @@ export const writeChunks = async <Row>(
   pinned: DbClient | undefined,
 ): Promise<readonly Row[]> => {
   const chunks = insertChunks(bound, shape.columns.length);
-  const judges =
-    shape.conflict !== undefined &&
-    shape.conflict.set.length > 0 &&
-    hasJsOnlyInvariant(entity.$invariants);
+  const judges = judgesMerge(entity, shape);
   const send = async (on: DbClient): Promise<readonly Row[]> => {
     const written: Row[] = [];
     for (const chunk of chunks) {
-      const stored = await on.query<PhysicalRow>(insertStatement(entity, chunk, shape));
+      const stored = await on.query<PhysicalRow>(
+        insertStatement(entity, chunk, { ...shape, returning: true }),
+      );
       for (const row of stored) written.push(decodeRow(entity, row));
     }
     if (judges) for (const row of written) entity.$assert(row);
     return written;
   };
   if (chunks.length === 1 && !judges) return send(direct);
+  return withTransaction(send, pinned === undefined ? {} : { client: pinned });
+};
+
+/**
+ * `writeChunks` answering a count: the same chunks under the same one-transaction rule, each sent
+ * with no `returning`, so nothing stored crosses back. The exception is the one write that must
+ * read back to be judged — an updating upsert under an app-only rule — which takes `writeChunks`
+ * whole and counts what it judged, so `returning: false` never skips a rule.
+ */
+export const countChunks = async <Row>(
+  entity: EntityCore<Row>,
+  bound: readonly ReadonlyMap<string, unknown>[],
+  shape: InsertShape,
+  direct: DbClient,
+  pinned: DbClient | undefined,
+): Promise<number> => {
+  if (judgesMerge(entity, shape)) {
+    return (await writeChunks(entity, bound, shape, direct, pinned)).length;
+  }
+  const chunks = insertChunks(bound, shape.columns.length);
+  const send = async (on: DbClient): Promise<number> => {
+    let count = 0;
+    for (const chunk of chunks) {
+      count += await on.execute(insertStatement(entity, chunk, { ...shape, returning: false }));
+    }
+    return count;
+  };
+  if (chunks.length <= 1) return send(direct);
   return withTransaction(send, pinned === undefined ? {} : { client: pinned });
 };

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { type Clock, isUltimateError, type UltimateError } from '@ultimat3/core';
 import { CacheTooLargeError } from './errors';
 import { estimateBytes, LruCache } from './lru';
@@ -300,5 +300,21 @@ describe('estimateBytes walks a Map and a Set', () => {
   test('a plain value still measures what it always did', () => {
     expect(estimateBytes({ a: 1 })).toBe(7);
     expect(estimateBytes(undefined)).toBe(0);
+  });
+});
+
+describe('estimateBytes counts without encoding', () => {
+  // Every `set` used to copy its whole payload through `TextEncoder.encode` only to read the
+  // length off the copy. The count is the code units; the copy is waste.
+  test('a string, a JSON value and an LRU write allocate no encoded copy', () => {
+    const encode = spyOn(TextEncoder.prototype, 'encode');
+    try {
+      expect(estimateBytes('héllo 😀')).toBe(11);
+      expect(estimateBytes({ a: 'é' })).toBe(10);
+      new LruCache().set('ké', 'x'.repeat(100));
+      expect(encode).toHaveBeenCalledTimes(0);
+    } finally {
+      encode.mockRestore();
+    }
   });
 });

@@ -5,14 +5,14 @@
 //
 // The same rule holds on both sides of the split and it is the reason either file exists: nothing
 // is interpolated. `sql` binds every scalar and every identifier is resolved through the entity,
-// so a column name can only ever be one the entity declared. `raw()` appears once here, for the
-// `default` cell of a many-row `values` list — a closed set of one word, written in this file and
-// never derived from a value.
+// so a column name can only ever be one the entity declared. A many-row `values` list, with its
+// `default` cells, is `pg-values-list.ts`'s, compiled in one `sql` call.
 
 import { identifier, join, raw, type SqlFragment, sql } from '@ultimat3/db';
 import { columnName } from './column';
 import type { EntityCore } from './entity';
 import { conditions, type ReadShape } from './pg-sql';
+import { valuesList } from './pg-values-list';
 import { advancingVersionColumn } from './search-index-version';
 import type { QueryPlan } from './tenancy';
 
@@ -29,16 +29,12 @@ export interface InsertShape {
   readonly columns: readonly string[];
   /** How a collision resolves. Absent, it is the caller's error, exactly as it is for one row. */
   readonly conflict?: ConflictTarget | undefined;
+  /**
+   * `false` sends no `returning *`: the command tag's count is the whole answer, and nothing
+   * stored crosses back to be decoded. Absent is `returning *`, what `insertAll` resolves with.
+   */
+  readonly returning?: boolean | undefined;
 }
-
-/**
- * The cell of a row that did not name this column. `default` is the second and last `raw()` in
- * this file and, like `asc|desc` above it, a closed set of one word: it is what makes a row inside
- * a many-row `insert` mean what the same row means on its own, where an unnamed column is simply
- * left out. The seek operator used to be a third — it is chosen in TypeScript now
- * (`seekAfter`/`seekEqual`), because a timestamp seek is not one operator.
- */
-const DEFAULT_CELL = raw('default');
 
 /**
  * A searchable entity's version column, physical — the one a write must ADVANCE past the stored
@@ -117,19 +113,11 @@ export const insertStatement = <Row>(
   rows: readonly ReadonlyMap<string, unknown>[],
   shape: InsertShape,
 ): SqlFragment => {
-  const json = jsonColumns(entity);
-  const tuples = rows.map(
-    (row) =>
-      sql`(${join(
-        shape.columns.map((column) =>
-          row.has(column) ? cell(json, column, row.get(column)) : DEFAULT_CELL,
-        ),
-      )})`,
-  );
+  const tuples = valuesList(jsonColumns(entity), shape.columns, rows);
   const conflict = shape.conflict === undefined ? sql`` : conflictSql(entity, shape.conflict);
   return sql`insert into ${identifier(entity.$table)} (${join(
     shape.columns.map(identifier),
-  )}) values ${join(tuples)}${conflict} returning *`;
+  )}) values ${tuples}${conflict}${shape.returning === false ? sql`` : sql` returning *`}`;
 };
 
 /**

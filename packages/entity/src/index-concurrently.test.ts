@@ -4,10 +4,17 @@
 // is still one index — built concurrently.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { generateMigration, snapshotOf } from '@ultimat3/db';
+import {
+  generateMigration,
+  LOCK_HEAVY_MARKER,
+  lockHeavyStatements,
+  snapshotOf,
+} from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { entity } from './entity';
+import { distinctIndexes } from './index-identity';
 import { clearRegistry } from './registry';
+import type { IndexDef } from './types';
 
 afterAll(() => {
   clearRegistry();
@@ -68,5 +75,74 @@ describe('unit · an index declared `concurrently: true`', () => {
     const indexes = members.$describe().indexes.filter((each) => each.columns[0] === 'team_id');
     expect(indexes).toHaveLength(1);
     expect(indexes[0]?.concurrently).toBe(true);
+  });
+});
+
+describe('unit · an index declared `concurrently: false`', () => {
+  const runs = entity('entity_test_plain_runs', {
+    columns: { id: uuid().primaryKey(), status: text({ max: 20 }), rank: integer().default(0) },
+    indexes: [{ on: ['status'], concurrently: false }, { on: ['rank'] }],
+  });
+  const at = new Date('2026-12-01T00:00:00.000Z');
+  const withoutStatus = () =>
+    snapshotOf([{ ...runs.$describe(), indexes: runs.$describe().indexes.slice(1) }]);
+
+  test('reaches the description as `false`, named as the same index declared plainly', () => {
+    const [status, rank] = runs.$describe().indexes;
+    expect(status?.name).toBe('entity_test_plain_runs_status_idx');
+    expect(status?.concurrently).toBe(false);
+    // Absent stays absent: every index an existing app declares projects what it did before.
+    expect(rank !== undefined && 'concurrently' in rank).toBe(false);
+  });
+
+  test('on an existing table it is a plain build, with the marker the gate reads', () => {
+    const migration = generateMigration({
+      entities: [runs.$describe()],
+      current: withoutStatus(),
+      name: 'index status',
+      now: at,
+    });
+    expect(migration.transactional).toBe(true);
+    expect(migration.followUp).toBeUndefined();
+    expect(migration.up).toContain(
+      'create index "entity_test_plain_runs_status_idx" on "entity_test_plain_runs" ("status");',
+    );
+    const lines = migration.up.split('\n');
+    // Directly above the build: the one statement the marker admits, so the gate reports nothing.
+    expect(lines[lines.indexOf(LOCK_HEAVY_MARKER) + 1]).toContain('create index');
+    expect(lockHeavyStatements(migration.up)).toEqual([]);
+  });
+
+  test('false, absent and true over a recorded index rebuild nothing', () => {
+    const recorded = snapshotOf([runs.$describe()]);
+    for (const concurrently of [false, undefined, true]) {
+      const [status, ...rest] = runs.$describe().indexes;
+      if (status === undefined) return expect.unreachable('the status index was not described');
+      const { concurrently: _, ...plain } = status;
+      const declared = concurrently === undefined ? plain : { ...plain, concurrently };
+      const again = generateMigration({
+        entities: [{ ...runs.$describe(), indexes: [declared, ...rest] }],
+        current: recorded,
+        name: 'again',
+        now: at,
+      });
+      expect(again.up).toBe('');
+      expect(again.followUp).toBeUndefined();
+    }
+  });
+});
+
+describe('unit · duplicates that disagree on how to build', () => {
+  const base: IndexDef = { name: 'i', columns: ['a'], unique: false };
+  const kept = (...asks: readonly (boolean | undefined)[]) =>
+    distinctIndexes(
+      asks.map((concurrently) => (concurrently === undefined ? base : { ...base, concurrently })),
+    ).map((index) => index.concurrently);
+
+  test('true wins, then an explicit false over absent; one index either way', () => {
+    expect(kept(undefined, true)).toEqual([true]);
+    expect(kept(false, true)).toEqual([true]);
+    expect(kept(undefined, false)).toEqual([false]);
+    expect(kept(undefined, undefined)).toEqual([undefined]);
   });
 });

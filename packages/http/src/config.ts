@@ -92,6 +92,17 @@ export interface HttpConfig {
    * retries multiply the load.
    */
   readonly maxInflight: number;
+  /**
+   * Shed with `X_OVERLOADED` (503) while the event loop's lag p99 over the last two seconds is
+   * above this many milliseconds — the CPU-bound overload `maxInflight` cannot see. `0`, the
+   * default in 31.x, never sheds and starts no sampler (`lag-shed.ts`).
+   */
+  readonly shedLagMs: number;
+  /**
+   * A request that took at least this long writes one `http.request.slow` line at `warn`, its
+   * stage timings beside it (`slow-request-log.ts`). `0` writes none. Default 1,000.
+   */
+  readonly slowRequestMs: number;
   readonly locale: LocaleConfig;
   readonly tz: TimeZoneConfig;
   readonly cors: CorsConfig;
@@ -115,6 +126,8 @@ export interface HttpConfigInput {
   readonly maxRequestBodyBytes?: number;
   readonly requestTimeoutMs?: number;
   readonly maxInflight?: number;
+  readonly shedLagMs?: number;
+  readonly slowRequestMs?: number;
   readonly locale?: Partial<LocaleConfig>;
   readonly tz?: Partial<TimeZoneConfig>;
   readonly cors?: Partial<CorsConfig>;
@@ -327,6 +340,20 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
       Number.MAX_SAFE_INTEGER,
       'a whole number of requests, where 0 means never shed',
       'maxInflight: 1_000',
+    ),
+    shedLagMs: assertFiniteCount(
+      'shedLagMs',
+      input.shedLagMs ?? 0,
+      MAX_TIMER_MS,
+      'a whole number of milliseconds of event-loop lag, where 0 means never shed on lag',
+      'shedLagMs: 250',
+    ),
+    slowRequestMs: assertFiniteCount(
+      'slowRequestMs',
+      input.slowRequestMs ?? 1_000,
+      MAX_TIMER_MS,
+      'a whole number of milliseconds, where 0 means no slow-request line',
+      'slowRequestMs: 1_000',
     ),
     locale: { ...DEFAULT_LOCALE_CONFIG, ...input.locale },
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },

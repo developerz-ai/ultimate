@@ -40,6 +40,8 @@ export {
   isPartitionedBuildRefusal,
   NO_TRANSACTION_MARKER,
 } from './concurrent-index';
+export type { CopyInClient } from './copy-in';
+export { canCopyIn } from './copy-in';
 export { dbExecutor } from './db-executor';
 export type { DbHealthReport } from './db-health';
 export { checkDb } from './db-health';
@@ -113,6 +115,8 @@ export { partitionMaintenance } from './generate-partition';
 export type { PartitionRun, PartitionRunOptions } from './generate-partition-run';
 export { maintainPartitions, PARTITION_LOCK_TIMEOUT_MS } from './generate-partition-run';
 export type { RowSecurityOption, TenantColumnLike } from './generate-row-security';
+export type { IndexKeyParts, IndexOperatorClass } from './index-key-ddl';
+export { INDEX_OPERATOR_CLASSES, requiredExtension } from './index-key-ddl';
 export type { IndexMethod } from './index-method';
 export { declaredMethod, INDEX_METHODS, indexMethodOf, indexMethodSql } from './index-method';
 export type {
@@ -172,6 +176,14 @@ export {
   migrationSnapshotMissing,
   rollbackStepsInvalid,
 } from './migration-errors';
+export type { LockHeavyKind, LockHeavyStatement } from './migration-lock-lint';
+export {
+  LOCK_HEAVY_MARKER,
+  LOCK_HEAVY_SINCE,
+  lockHeavyJudged,
+  lockHeavyStatements,
+  migrationLockHeavy,
+} from './migration-lock-lint';
 export type {
   PgliteClient,
   PgliteDriver,
@@ -243,6 +255,12 @@ export { assertRowSecurityBinds } from './row-security-role';
 export { APP_ROLE, MIGRATOR_ROLE, rowSecurityRolesSql, serveAsAppRole } from './row-security-roles';
 export { sameTenantKeyName } from './same-tenant';
 export { SIBLING_SCOPE_WAIT_MS } from './sibling-turn';
+export type { SlowStatementLogOptions } from './slow-statement-log';
+export {
+  SLOW_STATEMENT_THRESHOLD_MS,
+  SLOW_STATEMENT_WINDOW_MS,
+  slowStatementLog,
+} from './slow-statement-log';
 export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
@@ -255,6 +273,19 @@ export type { StatementBoundOptions } from './statement-bound';
 export { withStatementTimeout } from './statement-bound';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { statementsOf } from './statement-split';
+export type {
+  LiveTableStorage,
+  TableStorage,
+  TableStorageDifference,
+  TableStorageOptions,
+} from './table-storage';
+export {
+  readTableStorageDrift,
+  storageAlters,
+  tableDdl,
+  tableStorage,
+  tableStorageDrift,
+} from './table-storage';
 export {
   completeTransaction,
   currentTx,

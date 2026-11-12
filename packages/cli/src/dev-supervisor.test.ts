@@ -148,8 +148,8 @@ describe('unit · childRestart', () => {
     });
     const worker = { stats: () => Promise.reject(), stop: () => Promise.resolve() };
     restart.adopt(worker);
-    restart.options.onRestart?.([]);
-    restart.options.onRestart?.([]);
+    restart.options.onRestart?.([], 'restarting: a test save');
+    restart.options.onRestart?.([], 'restarting: a test save');
     expect(retired).toEqual([worker]);
   });
 });
@@ -189,7 +189,7 @@ describe('unit · childRestart · a stop is never turned into a restart', () => 
       },
     );
     if (signalled) gone?.('signal');
-    restart.options.onRestart?.([]);
+    restart.options.onRestart?.([], 'restarting: a test save');
     return { exits: exitsOf(() => restart.exit(143)), retired };
   };
 

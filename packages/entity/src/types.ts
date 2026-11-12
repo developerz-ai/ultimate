@@ -489,6 +489,9 @@ export interface IndexDef {
    * one fact that this release exists to stop.
    */
   readonly using?: IndexMethod;
-  /** `indexes: [{ concurrently: true }]` — `true` or absent, never `false` (`IndexInit`). */
-  readonly concurrently?: true;
+  /**
+   * How it is built (`IndexInit`). Absent is the default: concurrently on a table that already
+   * exists. `false` is the opt-out, a plain build `x db gen` marks `-- lock-heavy: true`.
+   */
+  readonly concurrently?: boolean;
 }

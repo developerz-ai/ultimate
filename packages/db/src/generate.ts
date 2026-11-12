@@ -21,6 +21,7 @@ import { splitViews, viewPlan } from './generate-view';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
 import { createIndex, impliedByColumnClause } from './index-ddl';
+import { extensionStatements } from './index-extension';
 import { indexPlan } from './index-plan';
 import {
   type ColumnDescription,
@@ -446,7 +447,14 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
   return assembleSteps({
     id,
     name: options.name,
-    up: [...viewed.before.up, ...preAlters.up, ...plan.up, ...viewed.after.up],
+    // An index's extension first (`index-extension.ts`): `gin_trgm_ops` does not exist before it.
+    up: [
+      ...extensionStatements(options.entities, current),
+      ...viewed.before.up,
+      ...preAlters.up,
+      ...plan.up,
+      ...viewed.after.up,
+    ],
     // Reverse order: the last thing created is the first thing dropped. `preAlters` goes in at the
     // FRONT here precisely so reversal puts it last — a key is added back only once both of its
     // ends have been retyped back, which is every other statement in the script.

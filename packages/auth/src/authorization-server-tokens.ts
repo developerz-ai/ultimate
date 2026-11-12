@@ -4,7 +4,12 @@
 
 import { timingSafeEqual } from '@ultimat3/core';
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
-import type { AuthGrantRecord, AuthTokenRecord, ResolvedGrant } from './authorization-server-types';
+import type {
+  AuthGrantRecord,
+  AuthServerClient,
+  AuthTokenRecord,
+  ResolvedGrant,
+} from './authorization-server-types';
 import { base64Url, randomToken, sha256Hex } from './tokens';
 
 /** Prefixes a secret scanner can match. Carry nothing; the token is 32 random bytes after them. */
@@ -86,12 +91,18 @@ export async function tokenAnswer(
   };
 }
 
-/** A new refresh token, stored, for a grant that has none yet. */
+/**
+ * A new refresh token, stored, for a grant that has none yet — only when the server enables the
+ * grant AND the client is registered for it, the same rule `exchangeRefresh` holds it to.
+ */
 export async function firstRefresh(
   config: ResolvedAuthServerConfig,
+  client: AuthServerClient,
   grantId: string,
 ): Promise<string | null> {
-  if (!config.grants.has('refresh_token')) return null;
+  if (!config.grants.has('refresh_token') || !client.grantTypes.includes('refresh_token')) {
+    return null;
+  }
   const refresh = refreshRecord(config, grantId);
   await config.store.putToken(refresh.record);
   return refresh.token;

@@ -3,9 +3,12 @@
 // tenant, before the store is called — and the store is handed only scoped plans and judged rows.
 
 import { refuseAbandoned } from '@ultimat3/db';
+import { keyOf } from './batch-read';
 import { conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
 import { narrowRow } from './columns';
+import { copyColumns } from './copy-plan';
+import { kindOf, valueAt } from './cursor';
 import { byKeys, checkedDelete } from './driver-delete';
 import type { DriverScope } from './driver-scope';
 import {
@@ -17,16 +20,29 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
 import { assertedRowsTooMany, MAX_ASSERTED_ROWS } from './invariants';
 import { mergedRow } from './memory-update';
-import { deletePlan, idPlan, namedColumns, singleKeyOf, updatePlan } from './plan';
+import { idPlan, namedColumns, singleKeyOf } from './plan';
 import type { Repo, RepoOptions, Tx } from './repo';
+import { rowKey } from './row-key';
 import { advancingVersionColumn, deletionStamp, VERSION_STEP_MS } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
+import { judgeUpdateMany, updateManyPlan } from './update-many';
+import { updateWherePlan, writeWherePlan } from './write-where';
 
 export type DriverWrites<Row> = Pick<
   Repo<Row>,
-  'insert' | 'insertAll' | 'upsertAll' | 'update' | 'delete' | 'deleteWhere' | 'updateWhere'
+  | 'insert'
+  | 'insertAll'
+  | 'upsertAll'
+  | 'update'
+  | 'delete'
+  | 'deleteWhere'
+  | 'updateWhere'
+  | 'insertAllCount'
+  | 'upsertAllCount'
+  | 'copyAll'
+  | 'updateMany'
 >;
 
 export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> => {
@@ -148,7 +164,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
         )
       : checkedDelete(scope, op, plan, options);
 
-  return {
+  const writes: DriverWrites<Row> = {
     async insert(values, options) {
       refuseAbandoned();
       const [row] = judged('insert', [values]);
@@ -221,16 +237,76 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     async deleteWhere(filter, options) {
       refuseAbandoned();
       const op = 'deleteWhere';
-      return removed(op, scope.storePlan(op, deletePlan(entity, filter, options, op)), options);
+      return removed(op, scope.storePlan(op, writeWherePlan(entity, filter, options, op)), options);
     },
 
     async updateWhere(filter, given, options) {
       refuseAbandoned();
       const op = 'updateWhere';
       const patch = entity.$parsePatch(given) as RowPatch<Row>;
-      const plan = scope.storePlan(op, updatePlan(entity, filter, patch, options, op));
+      const plan = scope.storePlan(op, updateWherePlan(entity, filter, patch, options, op));
       assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       return patched(op, plan, patch, options);
     },
+
+    // A store answers rows from every insert, so the count is their length: one judging path.
+    insertAllCount: async (given, options) => (await writes.insertAll(given, options)).length,
+    upsertAllCount: async (given, args) => (await writes.upsertAll(given, args)).length,
+    copyAll: async (given, options) => {
+      copyColumns(entity, given as readonly RowPatch<Row>[]);
+      return (await writes.insertAll(given, options)).length;
+    },
+
+    /**
+     * Judged as ONE batch first — tenant, invariants, keys, same-tenant references, the shape
+     * `memoryRepo` judges — then one `patched` write per row, since a store's `update` sets one
+     * patch on every row it matches. That is n store calls, so a refusal part way (a unique the
+     * store judges against a row outside the batch) writes the rows already moved BACK before it
+     * rethrows: all or nothing, as `updateWhere`'s single call is. Missing, soft-deleted and other
+     * tenants' ids are not counted.
+     */
+    async updateMany(given, options) {
+      refuseAbandoned();
+      const op = 'updateMany';
+      const plan = updateManyPlan(entity, given, options);
+      if (plan.patches.length === 0) return 0;
+      const tx = scope.txOf(op, options);
+      const match = scope.storePlan(op, plan.match);
+      const found = scope.checked(
+        op,
+        match,
+        await raw.select({ plan: match, after: undefined, limit: plan.patches.length, tx }),
+      );
+      const merged = judgeUpdateMany(entity, plan, found, [], (row) => rowKey(entity, row));
+      await references(merged);
+      const kind = kindOf(entity, plan.key) ?? '';
+      const cell = (row: unknown) => keyOf(kind, valueAt(row, plan.key));
+      const before = new Map(found.map((row) => [cell(row), row]));
+      const after = new Map(merged.map((row, at) => [cell(found[at]), row]));
+      const moved: (readonly [Row, Row])[] = [];
+      let written = 0;
+      try {
+        for (const { id, patch } of plan.patches) {
+          const stored = before.get(keyOf(kind, id));
+          const result = after.get(keyOf(kind, id));
+          if (stored === undefined || result === undefined) continue;
+          const one = scope.storePlan(op, idPlan(entity, id, options, op));
+          const count = await patched(op, one, patch, options);
+          if (count > 0) moved.push([stored, result]);
+          written += count;
+        }
+      } catch (error) {
+        for (const [stored, result] of moved.reverse()) {
+          const where = idPlan(entity, String(valueAt(result, plan.key)), options, op);
+          const values = Object.fromEntries(
+            [...plan.properties, plan.key].map((property) => [property, valueAt(stored, property)]),
+          );
+          await raw.update({ plan: scope.storePlan(op, where, true), tx }, values);
+        }
+        throw error;
+      }
+      return written;
+    },
   };
+  return writes;
 };

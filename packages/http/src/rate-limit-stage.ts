@@ -45,8 +45,11 @@ const spendAll = async (
   }
   if (answer === undefined) return;
   ctx.rateLimit = answer;
-  for (const [name, value] of Object.entries(limiter.headers(answer))) {
-    ctx.headers.set(name, value);
+  // `for…in`, not `Object.entries`: no array of pairs on every request that spends a bucket.
+  const headers = limiter.headers(answer);
+  for (const name in headers) {
+    const value = headers[name];
+    if (value !== undefined) ctx.headers.set(name, value);
   }
   if (refusedKey !== undefined) throw rateLimited(refusedKey, answer.retryAfterSeconds);
 };

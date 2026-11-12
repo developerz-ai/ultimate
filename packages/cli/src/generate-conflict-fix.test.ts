@@ -15,6 +15,7 @@ import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+import { rolesFiles } from './templates/scaffold-roles';
 
 let root = '';
 
@@ -51,16 +52,16 @@ afterEach(async () => {
 });
 
 describe("unit · a conflict on the author's slice module hands back a line that runs", () => {
-  test('a slice with no entity: the caller own name, and x g entity, never x g query', async () => {
-    // The author's own policy, exporting what an action imports: the shape `x g policy` wrote.
-    for (const file of generate({ kind: 'policy', name: 'ship' })) {
+  test('x g policy on its own set again: a second set that appends, never another kind', async () => {
+    // The author's own policy and the scaffold's role map, so the fix's run can grant and be `ok`.
+    for (const file of [...rolesFiles(), ...generate({ kind: 'policy', name: 'ship' })]) {
       if (typeof file.contents === 'string') await Bun.write(join(root, file.path), file.contents);
     }
     const fix = await conflictOf(['g', 'policy', 'ship']);
     expect(fix.split('#')[0]).not.toMatch(/<[a-z]/i);
     expect(fix).not.toContain('x g query');
-    expect(fix).toStartWith('x g action ship --feature ship');
-    expect(fix).toContain('x g entity ship');
+    expect(fix).not.toContain('--force');
+    expect(fix).toStartWith('x g policy ship-admin --feature ship');
     const ran = await generateCommand.run(contextFor(argvOf(fix)));
     expect(ran.ok, JSON.stringify(ran.findings)).toBe(true);
   });

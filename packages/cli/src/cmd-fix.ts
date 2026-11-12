@@ -6,8 +6,10 @@
 import { ERROR_DOCS_URL, nearestName } from '@ultimat3/core';
 import { appImportGraph, readAppSources } from './app-boundaries';
 import { requireAppRoot } from './app-root';
+import { appTransportFindings } from './app-transport';
 import type { BoundaryCut } from './boundary-cuts';
 import { planBoundaryCuts } from './boundary-cuts';
+import { browserCutJson, involvesTarget } from './browser-barrel-cut';
 import { fixSpec } from './cmd-fix-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, FixTargetUnknownError, MissingPositionalError } from './errors';
@@ -110,8 +112,12 @@ export const fixCommand: CliCommand = {
       files.map((source) => source.path),
     );
     const cuts = planBoundaryCuts(target, appImportGraph(files));
+    // The browser graph too: an island's server barrel is a boundary its author has to cut.
+    const browser = (await appTransportFindings(root, files)).filter((finding) =>
+      involvesTarget(finding, target),
+    );
 
-    if (cuts.length === 0) {
+    if (cuts.length === 0 && browser.length === 0) {
       return {
         ok: true,
         command: 'fix',
@@ -123,9 +129,13 @@ export const fixCommand: CliCommand = {
     return {
       ok: false,
       command: 'fix',
-      summary: msg('cli.fix.plan', { count: cuts.length, file: target, edits: editCount(cuts) }),
-      findings: cuts.map(findingForCut),
-      data: { file: target, cuts: cuts.map(cutJson) },
+      summary: msg('cli.fix.plan', {
+        count: cuts.length + browser.length,
+        file: target,
+        edits: editCount(cuts) + new Set(browser.map((one) => one.fix)).size,
+      }),
+      findings: [...cuts.map(findingForCut), ...browser],
+      data: { file: target, cuts: [...cuts.map(cutJson), ...browser.map(browserCutJson)] },
     };
   },
 };

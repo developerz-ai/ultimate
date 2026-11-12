@@ -257,6 +257,9 @@ const resolveToken = oauthBearerResolver(oauth, { actor: (grant) => actorFor(gra
 | S256 only; an absent method is `plain` and refused | same |
 | a code lives 2 minutes, is stored hashed, is single use; a replay revokes what it minted | `authorization-server.test.ts`, `authServerStoreConformance` from `@ultimat3/testing/conformance` (racing redemptions, run on memory and on Postgres by `auth-server-store-conformance-postgres.live.test.ts`) |
 | refresh rotates; a retired one's replay revokes the grant; idle past `refreshIdleDays` is dead | `authorization-server.test.ts` |
+| refresh tokens only for a client whose `grantTypes` list `refresh_token`; otherwise none is issued and refreshing is `unauthorized_client` (device grant too) | `authorization-server.test.ts`, `authorization-server-postgres.test.ts` |
+| a confidential client authenticates only with its registered `token_endpoint_auth_method`; the other is `invalid_client` | `authorization-server-clients.test.ts` |
+| a redirect URI containing whitespace is refused at registration | `authorization-server-clients.test.ts` |
 | `resource` (RFC 8707) binds the grant; one not in `resources` is `invalid_target` | `authorization-server-request.test.ts`, `oauth-bearer-resolver.test.ts` |
 | tokens are opaque and stored hashed, never a JWT, so `revoke` holds on the next lookup | `token-endpoints.test.ts` |
 | an `https://` `client_id` is a metadata document, fetched through `outbound({ dial: 'public' })`, 5 KiB, cached 5 minutes, public clients only | `authorization-server-clients.test.ts` |

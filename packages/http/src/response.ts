@@ -1,15 +1,19 @@
-// Response constructors. Every response in the framework is built here so that
-// content types, charsets and cache semantics are decided once instead of per route.
+// Response constructors, and the headers every response is stamped with. Every response in the
+// framework is built here so that content types, charsets, cache semantics and the security
+// headers are decided once instead of per route.
 import { logger } from '@ultimat3/core';
 import { TIMEZONE_HEADER } from '@ultimat3/time';
 import { toProblem } from './error-facts';
+import { responseSecurityHeaders, type SecurityConfig } from './security-headers';
 
 type HeaderSource = { readonly headers?: HeadersInit | undefined } | undefined;
 
 const withDefaults = (init: HeaderSource, defaults: Record<string, string>): Headers => {
   const headers = new Headers(init?.headers);
-  for (const [name, value] of Object.entries(defaults)) {
-    if (!headers.has(name)) headers.set(name, value);
+  // `for…in` over an own-keys literal: `Object.entries` allocated an array of pairs per response.
+  for (const name in defaults) {
+    const value = defaults[name];
+    if (value !== undefined && !headers.has(name)) headers.set(name, value);
   }
   return headers;
 };
@@ -204,6 +208,8 @@ export const cacheControl = (hint: CacheHint): string => {
   return parts.join(', ');
 };
 
+const VARY_SEPARATOR = /,\s*/;
+
 /**
  * Adds to the cache key without ever replacing it. `Vary` is a set, and two stages contribute to
  * it — the cache stage names the request properties a body depends on, the CORS stage names the
@@ -213,8 +219,17 @@ export const cacheControl = (hint: CacheHint): string => {
 export const addVary = (response: Response, values: readonly string[]): Response => {
   if (values.length === 0) return response;
   const existing = response.headers.get('vary');
-  const merged = new Set([...(existing === null ? [] : existing.split(/,\s*/)), ...values]);
-  response.headers.set('vary', [...merged].join(', '));
+  // A list scan, not a `Set`: `Vary` names a handful of dimensions, and this runs twice on every
+  // response — the Set and its two spreads were 7% of a trivial GET. Written only when it changed.
+  const merged: string[] = [];
+  if (existing !== null) {
+    for (const value of existing.split(VARY_SEPARATOR)) {
+      if (value !== '' && !merged.includes(value)) merged.push(value);
+    }
+  }
+  for (const value of values) if (!merged.includes(value)) merged.push(value);
+  const joined = merged.join(', ');
+  if (joined !== existing) response.headers.set('vary', joined);
   return response;
 };
 
@@ -258,5 +273,52 @@ export const applyCacheHeaders = (response: Response, hint: CacheHint): Response
 
 export const withHeaders = (response: Response, headers: Record<string, string>): Response => {
   for (const [name, value] of Object.entries(headers)) response.headers.set(name, value);
+  return response;
+};
+
+/** The two names a policy travels under — the enforced one and `reportOnly`'s. */
+const isCspHeader = (name: string): boolean =>
+  name === 'content-security-policy' || name === 'content-security-policy-report-only';
+
+type HeaderEntries = readonly (readonly [string, string])[];
+
+/** One entries array per config object and scheme, beside `responseSecurityHeaders`' own memo. */
+const securityEntries = new WeakMap<
+  SecurityConfig,
+  { https?: HeaderEntries; plain?: HeaderEntries }
+>();
+
+const securityEntriesOf = (config: SecurityConfig, https: boolean): HeaderEntries => {
+  let entry = securityEntries.get(config);
+  if (entry === undefined) {
+    entry = {};
+    securityEntries.set(config, entry);
+  }
+  const slot = https ? 'https' : 'plain';
+  const cached = entry[slot];
+  if (cached !== undefined) return cached;
+  const built = Object.freeze(Object.entries(responseSecurityHeaders(config, https)));
+  entry[slot] = built;
+  return built;
+};
+
+/**
+ * The `response` stage's security headers, from an entries array built once per `(config, https)`:
+ * `Object.entries` over the memoised record allocated a fresh array of pairs on every response.
+ * A policy the handler set is KEPT and the app's is added beside it — comma-joined, two policies,
+ * both enforced — so a handler can only narrow (a `sandbox` on an uploaded file), never widen.
+ * The strictest referrer policy a handler set is kept for the same reason: a file served at a
+ * bearer URL (a query's download) must name that URL to nobody.
+ */
+export const applySecurityHeaders = (
+  response: Response,
+  config: SecurityConfig,
+  https: boolean,
+): Response => {
+  for (const [name, value] of securityEntriesOf(config, https)) {
+    if (isCspHeader(name) && response.headers.has(name)) response.headers.append(name, value);
+    else if (name === 'referrer-policy' && response.headers.get(name) === 'no-referrer') continue;
+    else response.headers.set(name, value);
+  }
   return response;
 };

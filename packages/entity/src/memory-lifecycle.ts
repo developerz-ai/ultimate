@@ -11,6 +11,7 @@ import { SOFT_DELETE_COLUMN } from './entity';
 import { historyIgnored } from './history';
 import type { MemoryTables } from './memory-same-tenant';
 import type { Tx } from './repo';
+import { sealedFields } from './sealed';
 
 const field = (row: unknown, property: string): unknown =>
   typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[property] : undefined;
@@ -18,10 +19,15 @@ const field = (row: unknown, property: string): unknown =>
 const jsonValue = (value: unknown): unknown =>
   value instanceof Date ? value.toISOString() : value === undefined ? null : value;
 
-/** The stored row as `to_jsonb` spells it: physical names, money as its columns. */
+/**
+ * The stored row as the trigger spells it: physical names, money as its columns, and no sealed
+ * column — its stored string is ciphertext, and a lookup one is deterministic: an equality oracle.
+ */
 export function imageOf(entity: EntityCore, row: unknown): Record<string, unknown> {
   const image = new Map<string, unknown>();
+  const sealed = new Set(sealedFields(entity).map((each) => each.property));
   for (const [property, column] of Object.entries(entity.$columns)) {
+    if (sealed.has(property)) continue;
     const value = field(row, property);
     if (column.$meta.kind !== 'money') {
       image.set(columnName(property, column.$meta), jsonValue(value));

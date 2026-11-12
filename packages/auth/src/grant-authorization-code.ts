@@ -59,7 +59,7 @@ export async function exchangeCode(
   if (record.expiresAt.getTime() <= now.getTime()) return invalidGrant('the code expired');
   const grant = await config.store.getGrant(record.grantId);
   if (grant === null || grant.revokedAt !== null) return invalidGrant('the grant is revoked');
-  const refresh = await firstRefresh(config, grant.id);
+  const refresh = await firstRefresh(config, client, grant.id);
   return tokenAnswer(config, grant, config.accessSeconds, refresh);
 }
 
@@ -68,6 +68,10 @@ export async function exchangeRefresh(
   form: Form,
   client: AuthServerClient,
 ): Promise<TokenOutcome> {
+  // A registration narrowed after the token was minted takes effect now, not at the grant's end.
+  if (!client.grantTypes.includes('refresh_token')) {
+    return refused('unauthorized_client', 'this client may not use refresh_token');
+  }
   const presented = form.get('refresh_token');
   if (presented === undefined) return refused('invalid_request', 'refresh_token is required');
   const now = config.clock.now();

@@ -34,7 +34,7 @@ export interface PageSync {
 
 /**
  * Built at boot and never on the watcher tick: the worker is framework code, not the app's, and a
- * worker that changes under tabs already running it is exactly what a source-addressed URL exists
+ * worker that changes under tabs already running it is exactly what a byte-addressed URL exists
  * to keep from happening mid-session.
  */
 export async function pageSync(

@@ -14,8 +14,11 @@ import type { ${feature.pascal} } from './entity';
 import { ${feature.pascal}NotFoundError } from './errors';
 import * as repo from './repo';
 
-/** Derived from the row, never restated: a new column reaches this input without an edit here. */
-export type Create${feature.pascal}Input = Omit<${feature.pascal}, 'id' | 'createdAt'>;
+/**
+ * The repo's insert shape, never restated: a new column reaches this input without an edit here,
+ * and one with a default or a nullable one stays optional (\`Insertable\`, not \`Omit<Row, …>\`).
+ */
+export type Create${feature.pascal}Input = repo.New${feature.pascal};
 
 /** The row, aliased once, so every signature below reads at one width whatever the feature is
  * called — a generated file the app's own formatter rewrites is a red \`lint\` over code nobody

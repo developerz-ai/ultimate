@@ -30,6 +30,7 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | `toBeUltimateError` reads THREE fields | an `X_` code plus a `cause` plus a `fix`, all through core's `stringField`. `typeof value.code === 'string'` alone passed a Node `ENOENT` |
 | One matcher WAITS, and it is `toBeVisible` | `await expect(locator).toBeVisible()` retries `isVisible()` to a budget — 5000ms every 100ms, Playwright's own default, narrowable per call. |
 | The budget is counted in LOOKS, at a FIXED interval | `attemptsFor(budget)` is `1 + floor(timeout / interval)`; never a clock deadline, never a curve. Full rule: `docs/history/testing.md` |
+| A Worker-backed promise is settled by hand, never `expect(p).rejects`/`.resolves` | Bun 1.4.4: once a test has awaited one Worker reply, those matchers wait for the next one without ever delivering it, and the file hangs until killed (an image transform runs on core's raster Worker). `expect(await p.then(() => 'passed', () => 'refused')).toBe('refused')`; repro and fix: `image-transform-conformance.test.ts` |
 | A matcher that may throw a coded error MUST NOT be `async` | bun REPLACES an `async` matcher's thrown error with `returned a promise that rejected`, so code, cause and fix are gone. Full rule: `docs/history/testing.md` |
 | Wrong receiver throws, wrong value returns | a wrong-shaped receiver is a coded throw, never `pass: false` |
 | A matcher MESSAGE is a thunk, and never `JSON.stringify` | `result(pass, () => …)`. Full rule: `docs/history/testing.md` |

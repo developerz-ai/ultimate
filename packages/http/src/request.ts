@@ -6,6 +6,7 @@ import type { Actor } from '@ultimat3/core';
 import { readCookie, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
+import { BODY_CHARSETS, textDecoderFor } from './request-charset';
 import type { Schema } from './validate';
 import { validateBody, validateSync } from './validate';
 
@@ -248,13 +249,22 @@ export class UltimateRequest {
       }
     }
 
-    const body = new TextDecoder().decode(bytes);
+    // A `text/*` body is text in the charset it declares; JSON and forms are UTF-8 by their specs.
+    const text = type.startsWith('text/');
+    const decoder = text ? textDecoderFor(this.header('content-type') ?? type) : new TextDecoder();
+    if (decoder === undefined) {
+      const charsets = BODY_CHARSETS.join(', ');
+      throw bodyInvalid(this.pathname, [`the declared charset is not one of ${charsets}`], {
+        contentType: this.header('content-type') ?? type,
+      });
+    }
+    const body = decoder.decode(bytes);
     try {
       if (type === 'application/json' || type.endsWith('+json')) return JSON.parse(body);
       if (type === 'application/x-www-form-urlencoded') {
         return collectFields(new URLSearchParams(body));
       }
-      if (type.startsWith('text/')) return body;
+      if (text) return body;
     } catch (error) {
       // `JSON.parse` is the only thing above that throws — `new URLSearchParams(s)` and the
       // `text/` branch accept any string — so the caller-facing half can name the format without

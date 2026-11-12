@@ -100,6 +100,31 @@ describe('derived documentation counts', () => {
     }
   });
 
+  test('names the line a stale claim is written on', () => {
+    const gaps = checkDerivedDocCounts(
+      validPages.map((page) =>
+        page.path === 'wiki/Home.md' ? { ...page, text: page.text.replace('99', '98') } : page,
+      ),
+      COUNTS,
+    );
+    const gap = gaps.find((entry) => entry.kind === 'components' && entry.at === 'wiki/Home.md');
+    expect(gap?.line).toBe(2);
+  });
+
+  test('leads every fix with the edit, then the re-run', () => {
+    // The order rule of the `errors` step: a pasted fix that ran the check first would convict
+    // the same page again, so the edit leads and the command follows.
+    const stale = derivedDocCountFindingFor(
+      { kind: 'components', at: 'docs/idea/16-app-targets.md', claimed: 98, line: 12 },
+      COUNTS,
+    );
+    expect(stale.fix).toStartWith('edit docs/idea/16-app-targets.md:12 — ');
+    expect(stale.fix).toEndWith('bun run scripts/derived-doc-counts.ts --json');
+    const unscanned = derivedDocCountFindingFor({ kind: 'components', at: 'wiki/Home.md' }, COUNTS);
+    expect(unscanned.fix).toStartWith('wiki/Home.md — ');
+    expect(unscanned.fix).toEndWith('bun run scripts/derived-doc-counts.ts --json');
+  });
+
   test('derives the repository inventories from their executable sources', async () => {
     const root = `${import.meta.dir}/..`;
     const counts = await deriveDocCounts(root);

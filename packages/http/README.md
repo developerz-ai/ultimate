@@ -121,22 +121,28 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | a request past `requestTimeoutMs` (30s) | `ctx.signal` aborts and the socket is answered `X_TIMEOUT` (504); a caller may shorten the deadline with `x-request-timeout-ms`, never lengthen it. A handler still running after the 504 stays in core's in-flight count until it settles, so a drain waits for it instead of closing the pool under it |
 | a handler silent for longer than Bun's 10 s idle default | ANSWERED: `start()` hands `Bun.serve` an `idleTimeout` of `socketIdleTimeoutSeconds(requestTimeoutMs)` — `ceil(ms / 1000) + 2` s, `0` (off) for no deadline or one past Bun's 255 s ceiling — so the socket outlives the deadline. `As of 27.16.0`: Bun's default cut every such request at ~10–12 s, a 502 behind a proxy, whatever `requestTimeoutMs` said |
 | a budget above `2_147_483_647` ms | no timer holds it: `requestTimeoutMs` past it is `X_CONFIG_INVALID`, and an `x-request-timeout-ms` past it is ignored — it used to arm a ~1 ms timer |
-| the caller going away mid-request | `ctx.signal` aborts on the inbound `Request.signal` too, so a closed tab unwinds cooperative work instead of holding its pool slot for the rest of the budget. Both halves are one signal (`AbortSignal.any`), and `requestTimeoutMs: 0` still delivers the caller's |
+| the caller going away mid-request | `ctx.signal` aborts on the inbound `Request.signal` too, so a closed tab unwinds cooperative work instead of holding its pool slot for the rest of the budget. Both halves are one signal — the caller's abort is forwarded into the deadline's controller, first abort wins with its own reason — and `requestTimeoutMs: 0` still delivers the caller's |
 | a request while the process is draining | SERVED, with `connection: close` so the client's next request lands on another pod, `As of 2026-09-23` — refusing it failed 598 of 7,690 requests across one helm upgrade on kind, every one on a kept-alive connection inside the readiness grace. Only a STOPPED process (resources closed) answers `X_DRAINING` (503) + `retry-after` |
 | SIGTERM | `/readyz` answers 503 at once, the listener stays open for `drain.readinessGraceMs` (core; 5000 ms outside development/test, 0 inside), then closes and the drain runs. Pass `httpServer({ …, drain: appConfig.drain })` so `app.config.ts`'s value is the one applied; omitted, core's default holds and a `configureLifecycle({ readinessGraceMs })` stands |
 | `?locale=es` | the locale source that outranks the cookie and the header (`resolveLocale`'s order), `As of 2026-09-23` — documented in `wiki/I18n.md` and never read before |
-| a 4xx | logged at `warn` (401, 403, 429) or `info` (every other 4xx); only a 5xx is an `error` line |
+| a 4xx | logged at `warn` (401, 403, 429) or `info` (every other 4xx); only a 5xx is an `error` line. A routine refusal is `info` once per route per minute, `debug` after |
 | `x-forwarded-client-cert` without `trustClientCertHeader: true` | `ctx.peer` is `null`. **Breaking**: `trustProxy` alone used to read it, and an ingress that appends to `x-forwarded-for` need not strip a certificate header the client sent |
 | `/healthz`, `/readyz` from a peer `healthDetailPeers` does not list | `{ state, ready, role }` and the same status code; `buildId`, `inflight`, `uptimeMs`, `checks` and `registered` go to a listed peer only (default `['loopback']`), and behind a declared proxy the forwarded caller must be listed too |
 | a `/<default-locale>/…` URL | `301`/`308` to the unprefixed path, normalised as the router matches it — `//host/x` after the prefix is `/host/x`, never a scheme-relative `Location` |
 | a 3xx to a client-router request whose target is not `http:`/`https:` | `x-ultimate-location` names the REQUESTED url as a path; the target is never handed over, and one that will not parse is treated the same |
 | a handler's `cache-control` carrying `max-age`, `must-revalidate` or `proxy-revalidate` with no `private`/`no-store` | an offer to a shared cache (RFC 9111 §3): `private, max-age=0` for a request carrying an identity, `vary`-keyed for an anonymous one. `immutable` stays exempt |
+| a `text/*` body | decoded by its `charset` parameter (UTF-8 when none), `As of 2026-11`: `utf-8`, `utf-16le`, `utf-16be`, `windows-1252` (`latin1`/`iso-8859-1` resolve to it); any other label, known or not, is `X_BODY_INVALID`. JSON and forms stay UTF-8 by their own specs (`request-charset.ts`) |
 | a body with no `content-type` | `X_BODY_INVALID` from `bodyRaw()` / the `body` stage — it used to read as "no body", so an all-optional schema validated a request nobody parsed. `bodyBytes()` still reads it |
 | two cookies set in one request | two `Set-Cookie` lines: the `response` stage appends them, where `headers.set` in a loop kept the last and dropped any on the handler's own Response |
 | a 5xx whose cause is withheld | its `fix` is the error's `callerFix`, else `x errors explain <CODE> --json` — never the developer's `fix:`, which is written from the same statement, row or path the cause was |
 | `buildId: null` | skew detection off, whatever `BUILD_ID` says; `hostname` never defaults from `HOSTNAME` (the container id under Docker) |
 | an `x-forwarded-client-cert` value in quotes | unescaped ONCE, after the pairs are split — `Subject="O=Acme; Inc,CN=svc-one"` is that whole subject, not `O=Acme` |
 | a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
+| `shedLagMs: 250` and an event loop whose lag p99 (two seconds, sampled every 20 ms) is past it | `X_OVERLOADED` (503) + `retry-after: 1` from `admit`: the CPU-bound overload `maxInflight` cannot see. **Off by default in 31.x** (`0`): no sampler runs, nothing is shed on lag, `As of 2026-11` |
+| a request slower than `slowRequestMs` (1000; `0` off) | one `http.request.slow` line at `warn` (`SLOW_REQUEST_MESSAGE`): `http.request.method`, `http.route` (the pattern), `http.response.status_code`, `durationMs`, `gateMs` (the stages before the handler), `handlerMs`, `dbStatements`, `dbMs`, `renderMs`, `cacheHits`, `cacheMisses`, and the request and trace ids. No per-request access log: the request metric and the trace are that record |
+| `Server-Timing` | `total;dur=…` always; under `x dev` also `gate`, `handler`, `db` (with the statement count), `render` and `cache` — never in production, where a statement's duration is a timing oracle. The statement, render and cache figures are heard on the bus by `subscribeRequestTimings()`, which the boot installs once beside `subscribeSemconvMetrics()`; `requestTimings(ctx)` reads them |
+| an anonymous hit on an `auth: 'required'` route (`X_UNAUTHENTICATED`, routine) | counted in `http_refusals_total{code}` (every 4xx is), logged at `info` once per route per minute and at `debug` after. A credential checker's own `X_UNAUTHENTICATED` stays `warn` |
+| `accept-encoding` on a compressible public answer | `compress` negotiates `zstd` then `gzip` (RFC 9110 weights; brotli is build-time, slice 11), gives a 304 the same validator form as its 200 (`etag-form.ts`), and codes a public strong-ETag body once per process (`compress-cache.ts`, LRU 512 entries / 16 MiB) |
 | a public text answer of at least 1 KiB, or with no declared length | gzip on the wire, from the last stage (`compress`), `vary: accept-encoding` and a weak `etag`. Up to 256 KiB with a declared length it is coded whole (`gzipSync`, with its `content-length`); past that, or a stream with no declared length once its first 1 KiB has arrived — CSV, a large JSON export — it is coded as the client pulls (`CompressionStream`, no `content-length`), `As of 2026-11`; an undeclared body that ends under 1 KiB leaves identity with its length, and an undeclared NDJSON feed is never coded (the coder emits nothing until its source closes). A HEAD answered with no body has nothing to measure and stays identity. A private answer, a signed-in one that is not `immutable`, `no-store`, `no-transform` or a range stays identity and unread. HEAD carries GET's coded headers. Exported: `isCompressibleType(contentType)`, `COMPRESS_MIN_BYTES`, `COMPRESS_MAX_BYTES` |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
@@ -216,6 +222,15 @@ const executor: PgExecutor = dbExecutor(baseClient);
 
 export const runtime = { rateLimitStore: postgresRateLimitStore({ executor }) };
 ```
+
+**The table is UNLOGGED, `As of 2026-11`** — `x_rate_limit` is declared `RATE_LIMIT_STORAGE`
+(`unlogged`, `fillfactor = 70`), so a take writes no WAL record (2 before, measured with
+`explain (analyze, wal)`) and stays a HOT update (0.949 over 2,000 live buckets, 0.315 at the
+default fillfactor), and a take no longer writes `updated_at`. The boot converges a table an
+earlier version created: `alter table x_rate_limit set unlogged` rewrites it under `ACCESS
+EXCLUSIVE`, bounded by the migrate role's `lock_timeout`. **After a crash** Postgres truncates an
+unlogged table, so every bucket comes back FULL — one free burst per key, never a lockout; a clean
+restart keeps it, a promoted standby starts empty. `x_auth_lockouts` stays logged.
 
 **A Redis store ships too, `As of 2026-11`** — `redisRateLimitStore({ client })`, one Lua token
 bucket per take (`EVALSHA`, falling back to `EVAL` on `NOSCRIPT`), a peek one `HMGET`. A hot key —
@@ -614,8 +629,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 ## Boundaries
 
-Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n` and `@ultimat3/time` —
-tiers 0 and 1, which is the whole rule. Authentication and policy evaluation arrive through
+Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`, `@ultimat3/time` and
+`@ultimat3/db` — tiers 0 and 1, which is the whole rule. `db` for one value: `RATE_LIMIT_STORAGE`,
+the `x_rate_limit` table's storage declaration (`tableStorage`), rendered into its DDL and compared
+by drift. Authentication and policy evaluation arrive through
 `ServerHooks`, declared structurally, because `@ultimat3/policy` is a sibling tier. There is no
 plugin API: `Middleware` wraps a handler, the pipeline is everything else.
 

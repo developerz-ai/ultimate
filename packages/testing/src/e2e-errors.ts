@@ -115,23 +115,52 @@ export class E2eServiceWorkerAbsentError extends UltimateError {
   }
 }
 
+/** One coded finding a framework process printed, in core's 3-line contract format. */
+export interface InnerFinding {
+  readonly code: string;
+  readonly cause: string;
+  readonly fix: string;
+}
+
+const CONTRACT_FINDING = /^\s*(X_[A-Z0-9_]+)\b[^\n]*\n\s+cause: ([^\n]*)\n\s+fix:\s+([^\n]*)/m;
+
+/** The FIRST coded finding in a process's output: the one the run stopped on. */
+function innerFinding(output: string): InnerFinding | undefined {
+  const match = CONTRACT_FINDING.exec(output);
+  if (match === null) return undefined;
+  const [, code = '', cause = '', fix = ''] = match;
+  return { code, cause: cause.trim(), fix: fix.trim() };
+}
+
 /**
  * The app an e2e run spawns (`e2e-app.ts`) did not come up: its reset, its seed, or its boot. The
  * cause carries that process's own output, rendered, because it is the only place the reason is.
+ * When that output holds a coded finding — a seed row its entity refuses is `X_INVARIANT_VIOLATED`
+ * — its code leads the cause and its fix is this error's: the code stays `X_E2E_APP_FAILED`
+ * (shipped codes never change), and `inner` carries the lifted one for a reader that branches.
  */
 export class E2eAppFailedError extends UltimateError {
+  readonly inner: InnerFinding | undefined;
+
   constructor(input: {
     readonly step: string;
     readonly output: string;
     /** A literal, for the one step `x dev` cannot diagnose: there being no `x` to run. */
     readonly fix?: string | undefined;
   }) {
+    const inner = innerFinding(input.output);
+    const lifted =
+      inner === undefined
+        ? ''
+        : ` with ${inner.code}: ${renderCauseValue(inner.cause)}; its output`;
     super({
       code: 'X_E2E_APP_FAILED',
-      cause: `${renderCauseValue(input.step)} failed for the e2e app: ${renderCauseValue(input.output)}`,
+      cause: `${renderCauseValue(input.step)} failed for the e2e app${lifted}: ${renderCauseValue(input.output)}`,
       fix:
         input.fix ??
+        inner?.fix ??
         'x dev --json   # boot the same app by hand and read why it would not start; the e2e run used a throwaway ULTIMATE_STATE_DIR, so your own .x is untouched',
     });
+    this.inner = inner;
   }
 }

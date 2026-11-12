@@ -3,6 +3,7 @@
  * are built from. Local means the *recipient's* local, and it survives DST.
  */
 
+import { finiteCount } from '@ultimat3/core';
 import { scheduleInvalid, timezoneInvalid } from './errors';
 import type { Instant } from './instant';
 import { fromZoned, toZoned } from './zoned';
@@ -62,11 +63,15 @@ export function nextLocalSlot(slot: LocalSlot, after: Instant): Instant {
   throw timezoneInvalid(slot.zone);
 }
 
-/** The next `count` daily slots — a preview for the schedule screen. */
+/**
+ * The next `count` daily slots — a preview for the schedule screen. `count` bounds the loop, so it
+ * is screened: `NaN` and `-1` answered `[]`, `2.5` ran three times, `Infinity` never stopped.
+ */
 export function nextLocalSlots(slot: LocalSlot, after: Instant, count: number): Instant[] {
+  const total = finiteCount('nextLocalSlots', 'count', count, 0);
   const slots: Instant[] = [];
   let cursor = after;
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < total; index += 1) {
     cursor = nextLocalSlot(slot, cursor);
     slots.push(cursor);
   }

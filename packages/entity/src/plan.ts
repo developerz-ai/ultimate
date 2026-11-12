@@ -5,18 +5,11 @@
 
 import { assertSeekable } from './cursor';
 import type { EntityCore } from './entity';
-import {
-  describeCommand,
-  EntityError,
-  invariantViolated,
-  patchEmpty,
-  writeUnfiltered,
-} from './errors';
+import { describeCommand, EntityError, invariantViolated } from './errors';
 import { screenPredicates } from './predicate-screen';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { scopedPlan } from './tenancy';
-import type { RowPatch } from './types';
 
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
 export const DEFAULT_PAGE_SIZE = 50;
@@ -214,51 +207,3 @@ export const namedColumns = (values: unknown): readonly (readonly [string, unkno
   Object.entries(
     typeof values === 'object' && values !== null ? (values as Record<string, unknown>) : {},
   ).filter(([, value]) => value !== undefined);
-
-/** The filter a filtered write is allowed to run with: never the empty one. */
-const boundedWhere = <Row>(
-  entity: EntityCore<Row>,
-  filter: RowPatch<Row>,
-  operation: string,
-): Predicate[] => {
-  const where = namedColumns(filter).map(
-    ([column, value]): Predicate => ({ column, op: 'eq', value }),
-  );
-  if (where.length === 0) throw writeUnfiltered(entity.$name, operation, entity.$primaryKey);
-  return where;
-};
-
-/**
- * The plan for a filtered delete. The guard order is the point: an empty filter is refused before
- * tenancy runs, so `deleteWhere({}, { orgId })` cannot pass by virtue of the org predicate the
- * framework added — that predicate bounds the blast radius to one tenant, which is still every
- * row that tenant has.
- *
- * `limit` is the read default and is not a bound on the delete: neither driver pages a delete.
- */
-export const deletePlan = <Row>(
-  entity: EntityCore<Row>,
-  filter: RowPatch<Row>,
-  options: RepoOptions | undefined,
-  operation: string,
-): QueryPlan =>
-  readPlan(entity, { ...options, where: boundedWhere(entity, filter, operation) }, operation);
-
-/**
- * The plan for a filtered update. Same filter guard as the delete, from the same function, plus
- * the patch: a write that names no columns is refused rather than counted, because "4 rows
- * updated" for a statement that set nothing is the answer nobody can act on.
- */
-export const updatePlan = <Row>(
-  entity: EntityCore<Row>,
-  filter: RowPatch<Row>,
-  patch: RowPatch<Row>,
-  options: RepoOptions | undefined,
-  operation: string,
-): QueryPlan => {
-  const where = boundedWhere(entity, filter, operation);
-  if (namedColumns(patch).length === 0) {
-    throw patchEmpty(entity.$name, operation, Object.keys(entity.$columns));
-  }
-  return readPlan(entity, { ...options, where }, operation);
-};

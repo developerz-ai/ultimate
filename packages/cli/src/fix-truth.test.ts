@@ -81,7 +81,62 @@ interface Row {
   readonly perform?: (fix: string) => Promise<void>;
 }
 
+const ISLAND = `${POST}/post-form.island.tsx`;
+/** FX1's mistake: an island reading the slice's repository, by value, as an agent writes it. */
+const REPO_IN_ISLAND = "import { list } from './repo';\nexport const listed = list;\n";
+
+/**
+ * A barrel fix, made the way its line says, until `boundaries` stops reporting one. The two shapes
+ * a printed fix has taken: swap a specifier at `file:line`, or delete the import at `file:line`
+ * (and the one use this row planted — "every use of what it binds").
+ */
+const followBarrelFixes = async (first: string): Promise<void> => {
+  let fix: string | undefined = first;
+  for (let round = 0; fix !== undefined && round < 6; round += 1) {
+    const swap = /(?:import at|edit) (\S+):(\d+)\b.*?from '([^']+)' to '([^']+)'/.exec(fix);
+    const cut = /^edit (\S+):(\d+) — delete the import of '([^']+)'/.exec(fix);
+    const [, file = '', at = '0'] = swap ?? cut ?? expect.unreachable(`no edit in: ${fix}`);
+    const path = join(app.root, file);
+    const lines = (await Bun.file(path).text()).split('\n');
+    const index = Number(at) - 1;
+    if (swap !== null) {
+      lines[index] = (lines[index] ?? '').replace(`'${swap[3]}'`, `'${swap[4]}'`);
+    } else {
+      expect(lines[index]).toContain(`'${cut?.[3]}'`);
+      lines.splice(index, 1);
+    }
+    await Bun.write(
+      path,
+      lines.filter((line) => line !== 'export const listed = list;').join('\n'),
+    );
+    const left = await verifyStep('boundaries');
+    fix = left.find((one) => one.code === 'X_BROWSER_SERVER_BARREL')?.fix;
+  }
+};
+
 const ROWS: readonly Row[] = [
+  {
+    name: 'FX1 an island importing a repository is cut at the island, and the tree still builds',
+    code: 'X_BROWSER_SERVER_BARREL',
+    refuse: async () => {
+      const source = await Bun.file(join(app.root, ISLAND)).text();
+      await write(
+        ISLAND,
+        source.replace(/^import styles .*$/m, (line) => `${line}\n${REPO_IN_ISLAND}`),
+      );
+      expect(await app.typeErrors()).toEqual([]);
+      const found = await verifyStep('boundaries');
+      const barrels = found.filter((one) => one.code === 'X_BROWSER_SERVER_BARREL');
+      // One edge, one finding — and it is the island's, never a generated file it reached.
+      expect(barrels.map((one) => one.at?.split(':')[0])).toEqual([ISLAND]);
+      return barrels[0];
+    },
+    perform: followBarrelFixes,
+    holds: async () => {
+      expect(await verifyStep('boundaries')).toEqual([]);
+      expect(await app.typeErrors()).toEqual([]);
+    },
+  },
   {
     name: 'D1b a format miss is told --write on the file',
     code: 'X_LINT_FAILED',

@@ -206,6 +206,7 @@ const writeTenancy: readonly EntityDriverCheck[] = [
 
 const VIOLATION = 'X_DB_FOREIGN_KEY_VIOLATION';
 const [THREAD_A, THREAD_B, MISSING] = [idAt('1a'), idAt('1b'), idAt('ff')];
+const THREAD_C = idAt('1c');
 const SET = { orgs, threads, comments };
 const comment = (suffix: string, over: Record<string, unknown> = {}) =>
   ({ id: idAt(suffix), orgId: ORG, threadId: THREAD_A, ...over }) as never;
@@ -293,4 +294,48 @@ const sameTenant: readonly EntityDriverCheck[] = [
   ),
 ];
 
-export const TENANCY_CHECKS: readonly EntityDriverCheck[] = [...writeTenancy, ...sameTenant];
+/** The many-row writes (`copyAll`, the count-only insert, `updateMany`, a chain write) refuse alike. */
+const sameTenantBulk: readonly EntityDriverCheck[] = [
+  checkOver(
+    SET,
+    'copyAll and insertAll({ returning: false }) refuse a reference into another tenant whole',
+    async (db) => {
+      await seedThreads(db);
+      const batch = [comment('81'), comment('82', { threadId: THREAD_B })];
+      expect(await codeOf(() => db.comments.copyAll(batch))).toBe(VIOLATION);
+      expect(await codeOf(() => db.comments.insertAll(batch, { returning: false }))).toBe(
+        VIOLATION,
+      );
+      expect(await db.comments.where({ orgId: ORG }).count()).toBe(0);
+      expect(await db.comments.copyAll([comment('83')])).toBe(1);
+    },
+  ),
+  checkOver(
+    SET,
+    'updateMany and a chain updateAll refuse moving a row onto another tenant’s parent',
+    async (db) => {
+      await seedThreads(db);
+      await db.threads.insert({ id: THREAD_C, orgId: ORG, title: 'c' });
+      await db.comments.insertAll([comment('91'), comment('92')]);
+      // The first patch is legal: a batch that wrote row by row would move it before refusing.
+      const many = () =>
+        db.comments.updateMany([
+          { id: idAt('91'), patch: { threadId: THREAD_C } },
+          { id: idAt('92'), patch: { threadId: THREAD_B } },
+        ]);
+      // In the actor's own org: unscoped, these are `X_TENANCY_UNSCOPED` before any reference.
+      expect(await inOrg(ORG, () => codeOf(many))).toBe(VIOLATION);
+      const chain = () =>
+        db.comments.where({ orgId: ORG }).updateAll({ threadId: THREAD_B } as never);
+      expect(await inOrg(ORG, () => codeOf(chain))).toBe(VIOLATION);
+      const kept = await db.comments.where({ orgId: ORG }).orderBy('id').all();
+      expect(kept.map((row) => row.threadId)).toEqual([THREAD_A, THREAD_A]);
+    },
+  ),
+];
+
+export const TENANCY_CHECKS: readonly EntityDriverCheck[] = [
+  ...writeTenancy,
+  ...sameTenant,
+  ...sameTenantBulk,
+];

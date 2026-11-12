@@ -609,8 +609,14 @@ round trip. A rejection is evicted — a failed read is not the request's answer
 
 | Layer | Applies to | Lifetime |
 |---|---|---|
-| request memo (`readOnce`) | **every** query, `cache:` or not | the request — a `Ctx`'s identity is the key |
+| request memo (`readOnce`) | **every** query, `cache:` or not | the request — a `Ctx`'s identity is the key; at most `MEMO_MAX_BYTES` (8 MiB) per ctx, oldest evicted (a job attempt reading page after page) |
 | tag-keyed tier (`readThrough`) | a query that declares `cache:` | `ttlMs`, or until an `invalidates` fan-out drops the tag |
+
+**`requestMemo(ctx)` returns `MemoFlights`** (`@ultimat3/cache`), not a `Map` — `get`, `has`,
+`publish`, `bytes` over `memoFlights(ctx, 'query')`, the one per-ctx memo store. A caller that wrote
+`requestMemo(ctx).set(…)`/`.delete(…)` no longer compiles: publish with `readFresh(ctx, key, run)`,
+and let a rejection evict itself. A held read is charged by `approxBytes` — a bounded sample of
+the rows (≈2 µs for 50 or 500 rows), never a `JSON.stringify` (≈155 µs / 1.5 ms).
 
 `cache:` buys the tier, never the memo: an uncached lookup called once per row of a list would
 otherwise cost one round trip per row. Parsing, the policy and `sql()` still run on every call —

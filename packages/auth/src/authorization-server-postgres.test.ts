@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
+import { refreshAfterNarrowing, serverFixture } from './authorization-server-fixture';
 import { postgresAuthServerStore } from './authorization-server-postgres';
 import { SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';
 import type { AuthServerStore } from './authorization-server-store';
@@ -171,5 +172,15 @@ describe('postgresAuthServerStore on PGlite', () => {
     expect(await store.getGrant('g2')).toBeNull();
     expect(await store.getToken('r2')).toBeNull();
     expect(await store.purge(at(100_000), at(100_000))).toBe(0);
+  });
+
+  test('a client not registered for refresh_token gets no refresh token and cannot refresh', async () => {
+    const { before, code, device, refreshed } = await refreshAfterNarrowing(
+      await serverFixture({ store }),
+    );
+    expect(typeof before.body['refresh_token']).toBe('string');
+    expect(code.body['refresh_token']).toBeUndefined();
+    expect(device.body['refresh_token']).toBeUndefined();
+    expect(refreshed.body['error']).toBe('unauthorized_client');
   });
 });

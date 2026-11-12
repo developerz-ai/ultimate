@@ -7,21 +7,27 @@
 import type { Page } from '@ultimat3/core';
 import { pageOf } from '@ultimat3/core';
 import { assertBatchable, type BatchIterator, batchIterator } from './batch';
-import { overwrittenBy } from './bulk-write';
+import { shrinkingPages } from './batch-bytes';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
 import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
 import { preloaded, type RelatedTables } from './preload';
 import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
+import {
+  type ChainWrites,
+  chainWrites,
+  type TableBulkWrites,
+  tableBulkWrites,
+} from './query-write';
 import { type ReadAggregates, readAggregates } from './read-aggregates';
-import type { Repo, RepoOptions, UpsertArgs } from './repo';
+import type { Repo, RepoOptions } from './repo';
 import { pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
 import { searchedRepo } from './search-repo';
 import { type TableLocks, tableLocks } from './table-locks';
 import type { Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
-import { stampedColumns, touch } from './touch';
+import { touch } from './touch';
 import { type Move, transitionRow } from './transition';
 import type {
   ColumnMap,
@@ -46,7 +52,8 @@ export type Preloaded<Name extends string> = { readonly [K in Name]: unknown };
  * and not only `X_ENTITY_SEALED_PREDICATE` at runtime. It defaults to none.
  */
 export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys>
-  extends ReadAggregates<Row, S> {
+  extends ReadAggregates<Row, S>,
+    ChainWrites<Row> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
   where(filter: RowPatch<Filterable<Row, S>>): ReadBuilder<Row, S>;
   // NULL is never sealed, so its tests take ANY column. First: `Parameters<…>` reads the last.
@@ -135,9 +142,14 @@ export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys>
   plan(): QueryPlan;
 }
 
+/**
+ * `update` and `delete` address one row by id; a chain's `updateAll(patch)`/`deleteAll()` write
+ * every row its predicates match (`query-write.ts`).
+ */
 export interface Table<Row, C extends ColumnMap = ColumnMap>
   extends ReadBuilder<Row, SealedKeysOf<C>>,
-    TableLocks<Row> {
+    TableLocks<Row>,
+    TableBulkWrites<Row, C> {
   /**
    * Move one row through the state machine `column` declares, in ONE statement.
    *
@@ -165,22 +177,6 @@ export interface Table<Row, C extends ColumnMap = ColumnMap>
     options?: RepoOptions,
   ): Promise<Row>;
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;
-  /**
-   * Many rows, one statement — the bulk write a per-row `insert` loop is the N+1 of, and the line
-   * an N+1 warning on a write loop names. Every row is parsed and asserted exactly as `insert`
-   * parses one, so declared defaults are filled here and not by the caller. Resolves with the rows
-   * as stored, in order; `insertAll([])` writes nothing. A collision is an error — `upsertAll` is
-   * the call that tolerates one.
-   */
-  insertAll(rows: readonly Insertable<C>[], options?: RepoOptions): Promise<readonly Row[]>;
-  /**
-   * `insertAll` that resolves a collision instead of failing on it: `on conflict (…) do update`,
-   * or `do nothing` with `onMatch: 'nothing'`. Resolves with the rows this call actually wrote, so
-   * a row left alone is absent from the result — which is how a caller counts what it inserted.
-   * The conflict target and the primary key are never overwritten: they are how the stored row was
-   * found and where it lives.
-   */
-  upsertAll(rows: readonly Insertable<C>[], args: UpsertArgs<Row>): Promise<readonly Row[]>;
   /** `IdOf<Row>`: an entity that declared `uuid<PostId>()` is addressed by a `PostId` only. */
   update(id: IdOf<Row>, patch: RowPatch<Row>, options?: RepoOptions): Promise<Row>;
   delete(id: IdOf<Row>, options?: RepoOptions): Promise<void>;
@@ -336,10 +332,11 @@ const builder = <Source, Row>(
         from: state.cursor,
         // The chain's own arguments with the batch as the page size and the iteration's position
         // in place of the chain's: one statement per batch, and the same one `page()` sends.
-        page: async (cursor) => {
-          const result = await repo.findMany({ ...args(), limit: size, cursor });
+        // Past the page byte bound a batch re-reads its own cursor at half the size (`batch-bytes.ts`).
+        page: shrinkingPages(size, async (limit, cursor) => {
+          const result = await repo.findMany({ ...args(), limit, cursor });
           return pageOf(await attach(result.rows), result.nextCursor);
-        },
+        }),
       });
     },
 
@@ -357,6 +354,8 @@ const builder = <Source, Row>(
     },
 
     count: () => repo.count(args()),
+
+    ...chainWrites<Source, Row>(entity, repo, state),
 
     ...readAggregates(entity, repo, args),
 
@@ -393,29 +392,7 @@ export const tableFor = <Row, C extends ColumnMap>(
     related,
   ) as ReadBuilder<Row, SealedKeysOf<C>>),
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
-  insertAll: async (rows, options) =>
-    repo.insertAll(
-      rows.map((row) => entity.$parse(row)),
-      options,
-    ),
-  // `touch` and not `$parse` alone: an upsert that lands on a stored row IS an update, so an
-  // `onUpdateNow()` column has to move exactly as `update(id, patch)` moves it — and stamping it
-  // in a second place is how one of the two ends up writing a stale `updatedAt`.
-  // Asked of the caller's rows, BEFORE `$parse` makes every row name every column: otherwise a
-  // collision resets each column nobody mentioned to its default.
-  upsertAll: async (rows, args) => {
-    const overwrites =
-      args.onMatch === 'nothing'
-        ? undefined
-        : ([
-            ...overwrittenBy(entity, rows as readonly RowPatch<Row>[]),
-            ...stampedColumns(entity),
-          ] as (keyof Row & string)[]);
-    return repo.upsertAll(
-      rows.map((row) => touch(entity, entity.$parse(row))),
-      overwrites === undefined ? args : { ...args, overwrites },
-    );
-  },
+  ...tableBulkWrites(entity, repo),
   update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
   delete: async (id, options) => repo.delete(id, options),
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),

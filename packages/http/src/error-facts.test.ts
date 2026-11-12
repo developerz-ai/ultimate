@@ -70,6 +70,29 @@ describe('factsOf', () => {
     expect(factsOf({ name: 'TypeError', message: 'x', stack: '' }).stack).toBeUndefined();
   });
 
+  // A stack render is the costliest read on a throwable, and production never shows a 4xx one: the
+  // facts and the problem document of a refusal must not touch it. A 500's facts still carry it.
+  test('a 404 never reads .stack; a 500 carries it, read once', () => {
+    let reads = 0;
+    const watched = <T extends object>(error: T): T =>
+      Object.defineProperty(error, 'stack', {
+        get() {
+          reads += 1;
+          return 'Error\n    at f (a.ts:1:2)';
+        },
+      });
+    const miss = watched(routeNotFound('GET', '/missing'));
+    expect(factsOf(miss).status).toBe(404);
+    expect(toProblem(miss, { requestId: 'r' }).status).toBe(404);
+    expect(renderErrorLines(miss)).toContain('X_ROUTE_NOT_FOUND');
+    expect(reads).toBe(0);
+    const facts = factsOf(watched(new TypeError('x')));
+    expect(facts.status).toBe(500);
+    expect(facts.stack).toBe('TypeError: x\n    at f (a.ts:1:2)');
+    expect(facts.stack).toBe('TypeError: x\n    at f (a.ts:1:2)');
+    expect(reads).toBe(1);
+  });
+
   test('renders the same three lines the terminal prints', () => {
     const lines = renderErrorLines(rateLimited('actor:1', 30)).split('\n');
     expect(lines[0]).toStartWith('X_RATE_LIMITED:');

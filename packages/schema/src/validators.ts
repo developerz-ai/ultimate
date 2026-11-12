@@ -7,6 +7,7 @@ import { type ArrayBounds, arraySchema } from './array-schema';
 import {
   type AnySchema,
   type Check,
+  checkAt,
   checkOf,
   failWith,
   isPlainObject,
@@ -224,7 +225,7 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
       // its `.default()` could never fire, and the HTTP path and this one disagreed about what
       // the caller sent.
       const raw = Object.hasOwn(value, key) ? value[key] : undefined;
-      const result = memberCheck(raw, [...path, key]);
+      const result = checkAt(memberCheck, raw, path, key);
       if (result.ok) {
         // Unknown keys are dropped, never forwarded — no mass assignment through an action.
         if (result.value !== undefined) out[key] = result.value;

@@ -23,6 +23,7 @@ import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer } from './mcp-host';
 import { processRoot } from './process-root-fixture';
 import { routeRows } from './route-table';
+import { filesIn } from './test-shards';
 
 // Dot-prefixed and under `packages/cli/`, exactly as `cmd-mcp.test.ts`'s fixture: out of every
 // workspace glob, and resolving `@ultimat3/*` through the same tsconfig paths.
@@ -99,6 +100,9 @@ beforeAll(async () => {
     JSON.stringify({ name: 'mcp-host-fixture', version: '1.0.0' }),
   );
   await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
+  // Two files for `x test` to discover: `tests.run` is that command, never a bare `bun test`.
+  await Bun.write(join(ROOT, 'probe.test.ts'), '');
+  await Bun.write(join(ROOT, 'packages/seo/src/seo.test.ts'), '');
   resetAppLoad();
   // The fixture app has no prompt: one an earlier file on this worker registered would make the
   // eval step red for a reason this file never introduced.
@@ -118,17 +122,22 @@ afterAll(async () => {
   resetAppLoad();
 });
 
-describe('tests.run shells out to bun test in the app root', () => {
-  test('no filter runs the whole suite, and the parsed counts come back', async () => {
+describe('tests.run is x test, in the app root', () => {
+  const bunTests = (): readonly RunnerCall[] =>
+    calls.filter((entry) => entry.command[0] === 'bun' && entry.command[1] === 'test');
+
+  test('no filter runs every discovered file, and the parsed counts come back', async () => {
     calls.length = 0;
     const { json, isError } = resultOf(await call('tests.run'));
-    expect(calls).toEqual([{ command: ['bun', 'test'], cwd: ROOT }]);
+    expect(bunTests().map((entry) => [entry.cwd, ...filesIn(entry.command)])).toEqual([
+      [ROOT, 'packages/seo/src/seo.test.ts', 'probe.test.ts'],
+    ]);
     expect(isError).toBe(false);
     expect(json).toEqual({
       passed: 4,
       failed: 0,
       skipped: 0,
-      durationMs: 7,
+      durationMs: expect.any(Number),
       failures: [],
     });
   });
@@ -148,10 +157,12 @@ describe('tests.run shells out to bun test in the app root', () => {
     }
   });
 
-  test('a filter is appended as bun test’s own path argument', async () => {
+  test('a filter narrows discovery as x test --filter does: bun test gets file paths only', async () => {
     calls.length = 0;
     await call('tests.run', { filter: 'packages/seo' });
-    expect(calls).toEqual([{ command: ['bun', 'test', 'packages/seo'], cwd: ROOT }]);
+    expect(bunTests().map((entry) => filesIn(entry.command))).toEqual([
+      ['packages/seo/src/seo.test.ts'],
+    ]);
   });
 });
 
@@ -161,7 +172,8 @@ describe('logs.tail reads the dev log off disk', () => {
     const { text, isError } = resultOf(await call('logs.tail'));
     expect(isError).toBe(true);
     expect(text).toContain('X_NOT_IMPLEMENTED');
-    expect(text).toContain(`x dev > ${join(STATE, 'dev.log')} 2>&1`);
+    // `x dev` writes `dev.log` itself now (`dev-log.ts`): a redirect would race its own tee.
+    expect(text).toMatch(/fix:\s+x dev$/m);
   });
 
   test('a per-role tail names the role’s own file and its own fix', async () => {
@@ -226,8 +238,12 @@ describe('verify.run is the gate, run through the injected runner', () => {
   // Removed here rather than left to whichever test ran last: a fixture with no committed
   // manifest fails exactly the `manifest` step, which is what makes `ok: false` a fact of this
   // describe and not of the file's ordering.
+  // The test files `tests.run` discovers go too: a unit step with tests to run asks for a coverage
+  // floor this fixture does not state, and that red would belong to the fixture, not the step.
   beforeAll(async () => {
     await rm(join(ROOT, MANIFEST_FILENAME), { force: true });
+    await rm(join(ROOT, 'probe.test.ts'), { force: true });
+    await rm(join(ROOT, 'packages'), { recursive: true, force: true });
   });
 
   test('a failing step makes the whole answer an error, and carries its cause as detail', async () => {

@@ -2,15 +2,19 @@
 // row through one of these — an `output` parse (`$schema`), a view, the record envelope and the
 // browser store (`rowsOf` / `recordProjection`), a change feed (the row observer, `decodeRow`) —
 // so a sealed column absent from each of them is absent from HTTP, the typed client, MCP and a
-// persisted record without any of those packages knowing what sealed means.
+// persisted record without any of those packages knowing what sealed means. A history image is
+// one more: the memory driver's `imageOf` and the Postgres trigger's `to_jsonb`, PGlite-migrated.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { EntityRowEvent } from '@ultimat3/core';
 import { isSealed, subscribe } from '@ultimat3/core';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import { text, uuid } from './columns';
-import { database, memoryDriver } from './database';
+import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
+import { history } from './history-read';
+import { postgresDriver } from './pg-driver';
 import { decodeRow } from './pg-row';
 import { recordProjection } from './record-projection';
 import { clearRegistry } from './registry';
@@ -112,5 +116,64 @@ describe('unit · a sealed column leaves the server through no path', () => {
 
   test('a view cannot name it at all', () => {
     expect(() => accounts.$view(['id', 'secret'])).toThrow(/X_ENTITY_SEALED_IN_VIEW/);
+  });
+});
+
+const people = entity('se_people', {
+  columns: {
+    id: uuid().primaryKey(),
+    name: text(),
+    ssn: text().sealed({ lookup: true }),
+    note: text().sealed(),
+  },
+  history: true,
+});
+const peopleHistory = people.$history ?? expect.unreachable('history: true declares one');
+const PEOPLE = { people, peopleHistory };
+const client = pgliteClient();
+const PGLITE_BOOT_MS = 30_000;
+
+beforeAll(async () => {
+  setDbClient(client);
+  const migration = generateMigration({
+    entities: [people.$describe(), peopleHistory.$describe()],
+    name: 'sealed history',
+    now: new Date('2026-11-11T00:00:00.000Z'),
+  });
+  for (const statement of statementsOf(migration.up)) await client.execute(raw(statement));
+}, PGLITE_BOOT_MS);
+
+afterAll(async () => {
+  setDbClient(undefined);
+  await client.close();
+});
+
+const HISTORY_DRIVERS: readonly (readonly [string, () => Driver])[] = [
+  ['memory', memoryDriver],
+  ['postgres (PGlite)', () => postgresDriver()],
+];
+
+describe.each(HISTORY_DRIVERS)('unit · history images · %s', (_name, makeDriver) => {
+  test('a history image carries no sealed column', async () => {
+    const db = database(PEOPLE, { driver: makeDriver() });
+    const ada = await db.people.insert({ name: 'Ada', ssn: '078-05-1120', note: 'hunter2' });
+    const bob = await db.people.insert({ name: 'Bob', ssn: '078-05-1120', note: 'hunter2' });
+    await db.people.update(ada.id, { name: 'Ada L.', note: 'rotated' });
+    // A change to a sealed column alone records nothing: its image is the one before it.
+    await db.people.update(bob.id, { note: 'rotated' });
+    await db.people.delete(ada.id);
+    const versions = [
+      ...(await history(db.peopleHistory, ada.id)),
+      ...(await history(db.peopleHistory, bob.id)),
+    ];
+    expect(versions.map((version) => version.op)).toEqual(['insert', 'update', 'delete', 'insert']);
+    for (const version of versions) {
+      for (const image of [version.before, version.after]) {
+        if (image !== null) expect(Object.keys(image).sort()).toEqual(['id', 'name']);
+      }
+    }
+    // Neither the plaintext nor the stored string: a lookup column's ciphertext is deterministic,
+    // so two rows sharing one would be an equality oracle in the history table.
+    expect(JSON.stringify(versions)).not.toMatch(/078-05-1120|hunter2|rotated|x1\./);
   });
 });

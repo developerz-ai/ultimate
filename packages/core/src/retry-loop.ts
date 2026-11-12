@@ -121,6 +121,12 @@ export interface RetryLoopDeps {
   random?: Random | undefined;
   /** The caller's lifetime. Nothing is tried, and nothing is waited for, once it has aborted. */
   signal?: AbortSignal | undefined;
+  /**
+   * Asked once per retry the policy WOULD run, before its wait; `false` stops the loop with the
+   * last error, unchanged. A share of retries across calls (`breaker-retry-budget.ts`) that no
+   * per-call policy can see.
+   */
+  admitRetry?: (() => boolean) | undefined;
 }
 
 /** The wait, ended at once by an abort whatever `sleep` was injected. A rejected sleep propagates. */
@@ -190,6 +196,8 @@ export async function retryLoop<T>(
       // Decided BEFORE the wait, never after: a loop that sleeps and then discovers it is out of
       // budget has already spent the caller's deadline on a wait nobody could use.
       if (budget !== undefined && now() - startedAt + decision.delayMs > budget) throw error;
+      // Last, so a token is spent only on a retry that will actually be sent.
+      if (deps.admitRetry !== undefined && !deps.admitRetry()) throw error;
       failed = { error };
       await waitOut(deps, decision.delayMs);
     }

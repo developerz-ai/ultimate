@@ -282,20 +282,21 @@ describe('generateMigration · a recorded index the entities no longer declare',
       now: at,
     });
 
-    // Expand → contract: the new index is built in the transaction, the old one — constraint
-    // and index — is dropped in the step after it, so for a moment both exist and never neither.
+    // Expand → contract, in the one step outside a transaction: the new index is built
+    // concurrently first, the old one — constraint and index — dropped after it, so for a moment
+    // both exist and never neither. Nothing else moved, so the step is the whole migration.
+    expect(migration.transactional).toBe(false);
+    expect(migration.followUp).toBeUndefined();
     expect(migration.up).toBe(
-      'create unique index "posts_post_slug_unique_key" on "posts" ("org_id", "slug");',
-    );
-    expect(migration.down).toBe('drop index "posts_post_slug_unique_key";');
-    expect(migration.followUp?.up).toBe(
       '-- transaction: false\n' +
+        'create unique index concurrently if not exists "posts_post_slug_unique_key" on "posts" ("org_id", "slug");\n' +
         'alter table "posts" drop constraint if exists "post_slug_unique_per_org";\n' +
         'drop index concurrently if exists "post_slug_unique_per_org";',
     );
-    expect(migration.followUp?.down).toBe(
+    expect(migration.down).toBe(
       'create unique index concurrently if not exists "post_slug_unique_per_org" ' +
-        'on "posts" ("org_id", "slug");',
+        'on "posts" ("org_id", "slug");\n' +
+        'drop index concurrently if exists "posts_post_slug_unique_key";',
     );
   });
 

@@ -33,13 +33,27 @@ export const SIGNED_URL_PARAMS = {
   signature: 'x-sig',
   uploadId: 'x-upload',
   partNumber: 'x-part',
+  partLength: 'x-len',
 } as const;
 
 /** The session and part a part URL writes into — inside the signature, so neither can be edited. */
 export interface SignedPart {
   readonly uploadId: string;
   readonly partNumber: number;
+  /**
+   * The part's exact byte count. Required by `buildSignedUrl` — a local disk refuses any other
+   * length, as s3 refuses a body that is not its signed `content-length`. Optional in the type
+   * only because s3 binds the length through its presign instead and never reads this field.
+   */
+  readonly length?: number | undefined;
 }
+
+/**
+ * A part signs under its own version line, so no single-PUT string can ever read as a part's.
+ * `v3` since the line carries the exact length: a `v2-part` URL bound only a ceiling, so a local
+ * disk took a short part s3 refuses, and it is refused now as `malformed` (no `x-len`).
+ */
+const SIGNED_PART_VERSION = 'v3-part';
 
 /** `MAX_PARTS` restated as the parse's bound: `multipart.ts` imports this module's types. */
 const MAX_SIGNED_PART = 10_000;
@@ -109,11 +123,11 @@ export function signedUrlBasePath(baseUrl: string): string {
  */
 export function canonicalRequest(constraints: SignedUrlConstraints, basePath: string): string {
   const part = constraints.part;
-  // A part signs under its own version line, so no single-PUT string can ever read as a part's:
-  // the two domains share no canonical form, and a single URL's bytes are what they always were.
-  const tail = part === undefined ? [] : [part.uploadId, String(part.partNumber)];
+  // The two domains share no canonical form, and a single URL's bytes are what they always were.
+  const tail =
+    part === undefined ? [] : [part.uploadId, String(part.partNumber), String(part.length)];
   return [
-    part === undefined ? SIGNED_URL_VERSION : `${SIGNED_URL_VERSION}-part`,
+    part === undefined ? SIGNED_URL_VERSION : SIGNED_PART_VERSION,
     basePath,
     constraints.method,
     constraints.key,
@@ -198,6 +212,7 @@ export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
   if (constraints.part !== undefined) {
     params.set(SIGNED_URL_PARAMS.uploadId, constraints.part.uploadId);
     params.set(SIGNED_URL_PARAMS.partNumber, String(constraints.part.partNumber));
+    params.set(SIGNED_URL_PARAMS.partLength, String(constraints.part.length));
   }
   const base = trimBase(input.baseUrl ?? DEFAULT_SIGNED_URL_BASE);
   params.set(
@@ -274,27 +289,39 @@ const isSignedPart = (part: SignedPart): boolean =>
   SIGNED_UPLOAD_ID.test(part.uploadId) &&
   Number.isSafeInteger(part.partNumber) &&
   part.partNumber >= 1 &&
-  part.partNumber <= MAX_SIGNED_PART;
+  part.partNumber <= MAX_SIGNED_PART &&
+  Number.isSafeInteger(part.length) &&
+  (part.length ?? -1) >= 0;
 
 /** The mint's screen: a part this module could not parse back is a URL dead on arrival. */
 function assertSignedPart(part: SignedPart): SignedPart {
   assert(
     isSignedPart(part),
-    `buildSignedUrl was handed a part that is not an upload id and a part number 1..${MAX_SIGNED_PART}`,
-    "buildSignedUrl({ secret, key, method: 'PUT', part: { uploadId: crypto.randomUUID(), partNumber: 1 } })",
+    `buildSignedUrl was handed a part that is not an upload id, a part number 1..${MAX_SIGNED_PART} and a whole byte length`,
+    "buildSignedUrl({ secret, key, method: 'PUT', part: { uploadId: crypto.randomUUID(), partNumber: 1, length: chunk.byteLength } })",
   );
-  return { uploadId: part.uploadId, partNumber: part.partNumber };
+  return { uploadId: part.uploadId, partNumber: part.partNumber, length: part.length };
 }
 
-/** Both parameters or neither; one alone is a URL this module never minted. */
+/**
+ * All three parameters or none; fewer is a URL this module never minted — or one minted before
+ * the length was signed (`v2-part`), which bound only a ceiling and is refused rather than honoured.
+ */
 function parsePart(url: URL): SignedPart | 'malformed' | undefined {
   const uploadId = url.searchParams.get(SIGNED_URL_PARAMS.uploadId);
   const rawNumber = url.searchParams.get(SIGNED_URL_PARAMS.partNumber);
-  if (uploadId === null && rawNumber === null) return undefined;
-  if (uploadId === null || rawNumber === null || !/^[1-9][0-9]{0,4}$/.test(rawNumber)) {
+  const rawLength = url.searchParams.get(SIGNED_URL_PARAMS.partLength);
+  if (uploadId === null && rawNumber === null && rawLength === null) return undefined;
+  if (
+    uploadId === null ||
+    rawNumber === null ||
+    rawLength === null ||
+    !/^[1-9][0-9]{0,4}$/.test(rawNumber) ||
+    !/^(0|[1-9][0-9]{0,15})$/.test(rawLength)
+  ) {
     return 'malformed';
   }
-  const part = { uploadId, partNumber: Number(rawNumber) };
+  const part = { uploadId, partNumber: Number(rawNumber), length: Number(rawLength) };
   return isSignedPart(part) ? part : 'malformed';
 }
 

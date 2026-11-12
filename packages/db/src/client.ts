@@ -13,6 +13,7 @@ import {
   releaseReserved,
 } from './bun-sql';
 import { connectionUrl } from './connection-url';
+import { type CopyInClient, copyOn } from './copy-in';
 // Deliberate cycle, the same shape as `client.ts ⇄ transaction.ts`: nothing here is referenced at
 // module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
 import { defaultClient } from './default-client';
@@ -79,7 +80,9 @@ export interface PostgresClientOptions {
   readonly schedule?: Scheduler | undefined;
 }
 
-export interface PostgresClient extends ReservableClient, ListeningClient {
+export interface PostgresClient extends ReservableClient, ListeningClient, CopyInClient {
+  /** A pin copies too: a `COPY` inside a transaction is that transaction's (`copy-in.ts`). */
+  reserve(): Promise<DbConnection & CopyInClient>;
   readonly profile: PoolProfile;
   readonly pooler: PoolerMode | undefined;
   ping(): Promise<void>;
@@ -153,7 +156,7 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {
-    const slot = takeSlot(connect, profile.acquireTimeoutMs);
+    const slot = takeSlot(connect, profile.acquireTimeoutMs, fragment.text);
     const live = slot instanceof Promise ? await slot : slot;
     // Pooled only: a pin's statement belongs to a transaction, and cancelling it is not ours to do.
     const watch = watchAbort(fragment.text);
@@ -168,9 +171,26 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
     }
   }
 
+  /** A copy on the pool: one gate slot and the sweep's deadline, as `run` gives a statement. */
+  async function copyPooled(
+    target: SqlFragment,
+    rows: Iterable<readonly unknown[]>,
+  ): Promise<number> {
+    const slot = takeSlot(connect, profile.acquireTimeoutMs, target.text);
+    const live = slot instanceof Promise ? await slot : slot;
+    // No `watchAbort`: a copy is a write, and a write is never cancelled by a hang-up.
+    try {
+      const sending = copyOn(live.pool, target, rows);
+      return await (sweep === undefined ? sending : sweep.track(live, target.text, sending));
+    } finally {
+      freeSlot(live);
+    }
+  }
+
   const client: PostgresClient = {
     profile,
     pooler,
+    copyIn: copyPooled,
     async query<T>(fragment: SqlFragment): Promise<readonly T[]> {
       return rowsOf<T>(await run(fragment));
     },
@@ -181,7 +201,7 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
     async execute(fragment: SqlFragment): Promise<number> {
       return affectedBy(await run(fragment));
     },
-    async reserve(): Promise<DbConnection> {
+    async reserve(): Promise<DbConnection & CopyInClient> {
       // A real pin, not a seam: `Bun.SQL` refuses a bare BEGIN on a pooled handle
       // (`ERR_POSTGRES_UNSAFE_TRANSACTION`), and a BEGIN that landed on a different connection
       // than the statement after it would not be a transaction at all — which is exactly what
@@ -189,7 +209,7 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
       // One gate slot for the life of the pin, so one number counts statements and pins alike.
       const budget = profile.acquireTimeoutMs;
       const started = performance.now();
-      const live = await takeSlot(connect, budget);
+      const live = await takeSlot(connect, budget, undefined);
       let reserved: BunSqlReserved;
       try {
         // `reserveWithin` keeps its own timer for `Bun.SQL`'s queue, on what the gate left of ONE
@@ -219,9 +239,12 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
         held ? onPinned(fragment) : run(fragment);
       // A miss retired the pool; this connection is never written to again, so the transaction's
       // ROLLBACK is refused here rather than waiting out a second bound on the same dead path.
-      const onPinned = async (fragment: SqlFragment): Promise<unknown> => {
+      const onPinned = async (
+        fragment: SqlFragment,
+        send: () => Promise<unknown> = () => runOn(reserved, fragment),
+      ): Promise<unknown> => {
         if (pin.dead) throw dbUnavailable(PIN_RETIRED);
-        const sending = runOn(reserved, fragment);
+        const sending = send();
         const deadlineMs = pinDeadlineMs(pin, beyondBoundMs);
         try {
           const answer = await (sweep === undefined
@@ -248,6 +271,11 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
         query: async <T>(fragment: SqlFragment) => rowsOf<T>(await on(fragment)),
         one: async <T>(fragment: SqlFragment) => rowsOf<T>(await on(fragment))[0] ?? null,
         execute: async (fragment: SqlFragment) => affectedBy(await on(fragment)),
+        // The pin's deadline and dead-pin refusal, as every pinned statement; released, the pool's.
+        copyIn: async (target: SqlFragment, rows: Iterable<readonly unknown[]>) =>
+          held
+            ? ((await onPinned(target, () => copyOn(reserved, target, rows))) as number)
+            : copyPooled(target, rows),
         release,
         [Symbol.dispose]: release,
       };

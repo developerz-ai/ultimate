@@ -1,11 +1,16 @@
 // The requests, answers and bodies the `compress` stage's tests share: a cacheable stylesheet, a
 // gzip-asking GET, and a body that fails the test if anything pulls it.
 import { compressResponse } from './compress';
+import { createCompressCache } from './compress-cache';
 
-/** An anonymous caller's answer: `compress-exposure.test.ts` holds the signed-in half. */
+/**
+ * An anonymous caller's answer: `compress-exposure.test.ts` holds the signed-in half. A fresh
+ * coded-body cache per call, so no test is answered from another's coding.
+ */
 export const compressAnonymous = (request: Request, response: Response, signal?: AbortSignal) =>
   compressResponse(request, response, {
     anonymous: true,
+    cache: createCompressCache(),
     ...(signal === undefined ? {} : { signal }),
   });
 

@@ -1167,8 +1167,8 @@ whatever its bearer token was issued.
 | `errors.explain` | `X_*` → cause, fix, docs | `dev:read` |
 | `db.query` | ONE read-only SQL statement; `limit` defaults to 100 rows, maximum 1000 | `db:read` |
 | `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
-| `tests.run` | run the suite, structured results — an error outside any test (`1 error` beside `0 fail`) or a non-zero exit is a failure, never `failed: 0` | `dev:test` |
-| `verify.run` | run `x verify`, structured per-step result | `dev:test` |
+| `tests.run` | `x test [--filter]` itself — the shell's files, batches and environment, so it agrees with `x test`; structured results — an error outside any test (`1 error` beside `0 fail`) or a non-zero exit is a failure, never `failed: 0` | `dev:test` |
+| `verify.run` | `x verify` itself, so it agrees with the shell; `only: [steps]` is `--only` (not a gate run); structured per-step result | `dev:test` |
 | `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
 | `graph.query` | `{ node }`: what a change to a file or primitive reaches (`x impact`); `{ from, to }`: the edges linking two nodes (`x graph --from --to`) | `dev:read` |
 | `ui.shot` | photograph one route at a named viewport, light or dark; PNG path plus verdict. Launches a browser | `dev:test` |

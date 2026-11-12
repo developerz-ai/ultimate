@@ -5,6 +5,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
+import { utf8ByteLength } from './byte-length';
 import { CacheTooLargeError } from './errors';
 import type { CacheTag } from './tags';
 import { serializeTag } from './tags';
@@ -47,8 +48,6 @@ interface LruNode {
   next: LruNode | undefined;
 }
 
-const encoder = new TextEncoder();
-
 /**
  * `JSON.stringify` renders a `Map` or a `Set` as `{}` — two bytes for a collection of any size, so
  * a tier budgeted at 64 MiB held gigabytes of them without evicting once. Walked as their entries
@@ -60,14 +59,17 @@ const widenCollections = (_key: string, value: unknown): unknown => {
   return value;
 };
 
-/** Cheap, deterministic size estimate. Exact heap cost is unknowable; consistency matters. */
+/**
+ * Cheap, deterministic size estimate. Exact heap cost is unknowable; consistency matters. Counted,
+ * never encoded: `utf8ByteLength` allocates nothing.
+ */
 export function estimateBytes(value: unknown): number {
   if (value === undefined) return 0;
-  if (typeof value === 'string') return encoder.encode(value).byteLength;
+  if (typeof value === 'string') return utf8ByteLength(value);
   if (value instanceof ArrayBuffer) return value.byteLength;
   if (ArrayBuffer.isView(value)) return value.byteLength;
   try {
-    return encoder.encode(JSON.stringify(value, widenCollections) ?? '').byteLength;
+    return utf8ByteLength(JSON.stringify(value, widenCollections) ?? '');
   } catch {
     return 1024;
   }
@@ -155,7 +157,7 @@ export class LruCache {
     // Encoded first: the budget is then the exact bytes held, and an unencodable value is refused
     // before anything is evicted for it.
     const text = encodeCacheValue({ v: value }, { key, tier: 'lru' });
-    const bytes = estimateBytes(text) + encoder.encode(key).byteLength;
+    const bytes = utf8ByteLength(text) + utf8ByteLength(key);
     if (bytes > this.maxBytes) {
       throw new CacheTooLargeError({ key, bytes, maxBytes: this.maxBytes, tier: 'lru' });
     }

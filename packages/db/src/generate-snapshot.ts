@@ -7,6 +7,7 @@ import { defaultExpression } from './column-default';
 import type { EntityDescriptionLike } from './entity-shape';
 import { foreignKeysOf } from './foreign-key-plan';
 import { splitViews, viewDescriptionOf } from './generate-view';
+import { declaredKeyParts } from './index-key-ddl';
 import type { ColumnDescription, SchemaDescription, TableDescription } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { withSameTenantIndexes } from './same-tenant';
@@ -65,6 +66,8 @@ export function snapshotOf(
           // every sidecar in every app on the next `x db gen` — a diff on every file for a fact
           // that was already true, which `indexMethodOf` reads out of the absence anyway.
           ...(index.using === undefined ? {} : { using: index.using }),
+          // The four key parts, the same rule: each only when declared (`declaredKeyParts`).
+          ...declaredKeyParts(index.name, index),
         })),
         foreignKeys: foreignKeysOf(entity),
         // Absent, never `[]`, on a table declaring none: a sidecar that predates this field must

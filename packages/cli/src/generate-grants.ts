@@ -39,6 +39,55 @@ export function grantsForWritten(written: readonly string[]): readonly RoleGrant
   });
 }
 
+/** `member` reads, `admin` does everything else — `grantsForWritten`'s rule, per permission. */
+const grantFor = (permission: string): RoleGrant => ({
+  role: permission.endsWith(':read') ? 'member' : 'admin',
+  permission,
+});
+
+/** The string literals of the `definePermissions([...])` list opening at `open`. */
+const literalsAt = (source: string, masked: string, open: number): readonly string[] =>
+  (readList(source, masked, open)?.entries ?? []).flatMap((entry) => {
+    const literal = /^'([^']+)'$/.exec(entry.text.trim())?.[1];
+    return literal === undefined ? [] : [literal];
+  });
+
+/** Every permission a policy's `definePermissions([...])` calls declare, comments masked. */
+export function declaredPermissions(source: string): readonly string[] {
+  const masked = maskOf(source);
+  return declarationLists(masked).flatMap((open) => literalsAt(source, masked, open));
+}
+
+/**
+ * The set a generator run WROTE into a policy: its LAST `definePermissions([...])` call. A fresh
+ * file holds one call, the template's; an append (`policy-append.ts`) puts its set after
+ * everything the author had. Never every declared permission: a hand-placed admin-only
+ * `payroll:read` earlier in the file would be granted to `member` by the next `x g policy`.
+ */
+export function introducedPermissions(source: string): readonly string[] {
+  const masked = maskOf(source);
+  const last = declarationLists(masked).at(-1);
+  return last === undefined ? [] : literalsAt(source, masked, last);
+}
+
+/**
+ * The grants the written policies imply: the set each run introduced, read off the file as it now
+ * stands — or, a file this cannot read a declaration from, the slice-path rule of
+ * `grantsForWritten`.
+ */
+export async function policyGrantsFor(
+  root: string,
+  written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
+): Promise<readonly RoleGrant[]> {
+  const grants: RoleGrant[] = [];
+  for (const path of written.filter((each) => POLICY_PATH.test(each))) {
+    const introduced = introducedPermissions((await disk.read(path)) ?? '');
+    grants.push(...(introduced.length > 0 ? introduced.map(grantFor) : grantsForWritten([path])));
+  }
+  return grants;
+}
+
 /** `entity('widgets', {` — the name the admin's permissions are spelled with. */
 const ENTITY_NAME = /\bentity\(\s*'([^']+)'/;
 
@@ -166,7 +215,7 @@ export async function grantGeneratedPermissions(
   disk: GenerateDisk = appDisk(root),
 ): Promise<readonly string[]> {
   const admin = (await writtenTables(root, written, disk)).flatMap(adminGrantsFor);
-  const grants = [...grantsForWritten(written), ...admin];
+  const grants = [...(await policyGrantsFor(root, written, disk)), ...admin];
   const before = grants.length === 0 ? undefined : await disk.read(ROLES_FILE);
   if (before === undefined) return [];
   const unplaced = insertGrants(before, grants).skipped;

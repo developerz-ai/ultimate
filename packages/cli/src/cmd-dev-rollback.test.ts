@@ -38,11 +38,16 @@ describe('unit · a failed x dev boot gives back what it acquired', () => {
       );
       expect(failed).toBe('refused');
       expect(subscribed('db.statement')).toBe(false);
+      // The request timings' other two events: nothing else in this file subscribes them.
+      expect(subscribed('render.page')).toBe(false);
 
       // Removed rather than rewritten: a module whose evaluation threw stays thrown in this process.
       await rm(join(root, 'apps/web/runtime.ts'));
       const retried = await startDev({ ...options, roles: [...options.roles] });
       await retried.stop();
+      // A boot that came up gives its subscribers back on stop, as the refused one did.
+      expect(subscribed('db.statement')).toBe(false);
+      expect(subscribed('render.page')).toBe(false);
     },
     BOOT_TIMEOUT_MS,
   );

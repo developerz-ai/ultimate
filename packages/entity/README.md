@@ -397,7 +397,11 @@ and again inside the plan both drivers build, so `findMany({ limit })` straight 
 cannot route around it. `inBatches(size)` is the call that means "every row" — one page per
 statement, never a table in memory.
 
-`DEFAULT_PAGE_SIZE`, `MAX_PAGE_SIZE` and `MAX_ASSERTED_ROWS` are exported, beside
+A page is bounded in bytes too: `MAX_PAGE_BYTES` (64 MiB), weighed on the raw rows before decode
+(the projected page in memory and on a custom store) — past it `X_ENTITY_PAGE_TOO_LARGE`, naming a
+`select(…)` and a `limit(n)` that fits.
+
+`DEFAULT_PAGE_SIZE`, `MAX_PAGE_SIZE`, `MAX_PAGE_BYTES` and `MAX_ASSERTED_ROWS` are exported, beside
 `N_PLUS_ONE_THRESHOLD` and for the same reason: an action validating its own `pageSize` input
 against a hardcoded `10_000` is a second declaration of one number, and the second one goes stale.
 
@@ -619,7 +623,7 @@ export const find = async (orgId: string, q: string) => {
 
 | Rule | Detail |
 |---|---|
-| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first (at most `MAX_PAGE_SIZE`), then the chain reads those rows with its own tenancy, soft delete, order and cursor |
+| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first — 10,000 (`MAX_PAGE_SIZE`) or more hits are refused with `X_INVARIANT_VIOLATED`, never truncated — then the chain reads those rows with its own tenancy, soft delete, order and cursor |
 | a document has a **version** | the row's `onUpdateNow()` instant, epoch ms. A searchable entity indexed by anything declares one — `updatedAt: timestamp().defaultNow().onUpdateNow()` — or `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
 | the version is STRICTLY increasing per row | a write of a searchable entity — a soft delete included — stores its version no earlier than the stored one + 1 ms: Postgres `greatest($now, updated_at + interval '1 millisecond')` in the `update` and the upsert's `on conflict` set; the memory driver in its merge (`advanceVersion`); a `defineDriver` store in ITS write, atomically per row — `DriverRepo.update`'s `advance` argument, and `advanceVersion(entity, stored, merged, (p) => plan.set.includes(p))` in its own `upsert` (`entityDriverConformance` refuses a store that skips either). So two writes inside one millisecond are two versions, and the index keeps the second. The column may run ahead of the clock by a millisecond per same-ms write. Other entities' `onUpdateNow()` columns are the clock's reading, unchanged |
 | keep only newer | an index applies a document only when its version is newer than what it holds for that id: a document, or the tombstone `remove(scope, ids, version)` leaves (a delete's: past the row's last version and no earlier than its instant). Equal = replay. EXCEPT a `committed` document — the write path's, `index(docs, { committed: true })` — which replaces a tombstone whatever its version: a key deleted and written again is live at once, inside one millisecond too. `reindex`'s reads are not `committed`, so a stale read never brings a deleted row back |
@@ -746,7 +750,32 @@ db.participants.updateWhere({ conversationId, userId }, { lastReadAt });   // ->
 
 db.likes.deleteWhere({});                                   // X_WRITE_UNFILTERED, never every row
 db.participants.updateWhere({ conversationId }, {});        // X_PATCH_EMPTY, never a silent no-op
+
+// A chain's predicates, any operator: the same write, `updateWhere`'s guards and reports
+db.likes.where({ postId }).andWhere('userId', 'in', ids).deleteAll();      // -> n
+db.posts.where({ authorId }).andWhere('publishedAt', 'is-null').updateAll({ status: 'draft' });
+db.posts.where({ authorId }).limit(10).deleteAll();         // X_INVARIANT_VIOLATED: a write has no page
+
+// A different patch per row, one statement per bind-count chunk; the same columns in every patch
+db.posts.updateMany(rows.map(({ id, rank }) => ({ id, patch: { rank } })));   // -> rows written
 ```
+
+`updateAll(patch)`/`deleteAll()` end any chain and run as `updateWhere`/`deleteWhere` with the
+chain's predicates (`FilteredWriteOptions.where`): one plan builder (`write-where.ts`), so tenancy,
+soft delete, invariant judging, `onUpdateNow()`, sealing (a lookup column matched as a read matches
+it), the search mirror and the `entity.bulk` report cannot differ. No predicate is
+`X_WRITE_UNFILTERED`; `limit()`, `after()` and `search()` are refused. `updateMany` is `Repo`-optional:
+a hand-written repository without it gets one `updateWhere` per row from the typed handle.
+
+| Bulk insert | Resolves | Statement |
+|---|---|---|
+| `insertAll(rows)` · `upsertAll(rows, args)` | the rows as stored | `insert … returning *` |
+| `insertAll(rows, { returning: false })` · `upsertAll(rows, { …, returning: false })` | a count | no `returning`, nothing decoded |
+| `copyAll(rows)` | a count | Postgres `COPY … FROM STDIN`, at most 50,000 rows per COPY (`MAX_ROWS_PER_COPY`) — a larger load is several COPYs in one transaction, all or nothing; every row names the same columns; elsewhere `insertAll`. With row security installed it is `insertAll`, since Postgres refuses COPY on a row-secured table. While an external search index or an `entity.row` subscriber listens it is a multi-row `INSERT … returning *` (same judging, same refusals), so the rows can be mirrored and reported |
+
+All three judge rows identically (seal, tenant, invariants, defaults). The count forms still hand an
+installed search index and an `entity.row` subscriber the rows: while either listens they run as
+their returning counterpart.
 
 `delete(id)` and `update(id, patch)` both need a single-column primary key. A composite one —
 `likes`, `blocks`, `participants`, any join table — has no single id, so the filtered pair is the

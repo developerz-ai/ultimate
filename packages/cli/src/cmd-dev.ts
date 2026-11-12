@@ -11,6 +11,7 @@ import { devSpec } from './cmd-dev-spec';
 import type { CliCommand, CommandContext } from './command';
 import { startDev } from './dev-boot';
 import { clearLock, preflight, writeLock } from './dev-lock';
+import { teeDevLog } from './dev-log';
 import { devPortFor } from './dev-port';
 import { childRestart } from './dev-supervisor';
 import { holdUntilShutdown } from './hold';
@@ -53,6 +54,9 @@ export const devCommand: CliCommand = {
     // The directory is CLAIMED from here down, so a boot that throws has to give it back — the
     // `releaseBoot` shape, with one acquisition. Without it the first failed `x dev` in a shell
     // refuses every later one with a pid that is no longer running.
+    // Before the boot, so its own lines are in it: `logs.tail` reads this file, and a dev server
+    // that never wrote it answered every agent with X_NOT_IMPLEMENTED.
+    const untee = teeDevLog(services.stateDir);
     const restart = childRestart(root, ctx.env);
     const server = await startDev({
       root,
@@ -66,6 +70,7 @@ export const devCommand: CliCommand = {
       ...restart.options,
     }).catch((error: unknown) => {
       release();
+      untee();
       throw error;
     });
     // A restart retires this worker before it drains, so a save never cancels a running job.
@@ -136,7 +141,11 @@ export const devCommand: CliCommand = {
     });
     if (ctx.args.flags.get('once') === true) {
       clearLock(services.stateDir);
-      await server.stop();
+      try {
+        await server.stop();
+      } finally {
+        untee();
+      }
       return result;
     }
     // Long-running: `dispatch` awaits this instead of exiting, so the watcher keeps reloading and
@@ -151,7 +160,11 @@ export const devCommand: CliCommand = {
           // The lock first: a stop() that throws must not leave a file claiming this pid still owns
           // the directory, because the next boot would then refuse for a process that is gone.
           clearLock(services.stateDir);
-          await server.stop();
+          try {
+            await server.stop();
+          } finally {
+            untee();
+          }
         },
         // Released — the port, the lock and the embedded database are free for the next child.
         { exit: restart.exit },

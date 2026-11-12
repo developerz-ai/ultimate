@@ -17,7 +17,6 @@ import {
   localCaller,
   migrateFailed,
   readOnlyRows,
-  testRunArgv,
 } from './mcp-host';
 import type { DevServices } from './runtime-bindings';
 
@@ -432,23 +431,6 @@ describe('unit · the lazily booted services', () => {
     await lazy.close();
     await lazy.close();
     expect(lazy.services.db.url).toContain('pglite://');
-  });
-});
-
-// Row v: `bun test <filter>` reads a leading `-` as ITS OWN flag, so `test.run` with
-// `--preload ./evil.ts` loaded an arbitrary module into the test process.
-describe('unit · test.run never hands bun test a flag', () => {
-  test('a path filter is the argv, and no filter is the whole suite', () => {
-    expect(testRunArgv(undefined)).toEqual(['bun', 'test']);
-    expect(testRunArgv('packages/cli')).toEqual(['bun', 'test', 'packages/cli']);
-  });
-
-  test('a filter starting with - is refused, never forwarded', () => {
-    for (const filter of ['--preload', '-t', ' --coverage']) {
-      expect(() => testRunArgv(filter)).toThrow(
-        expect.objectContaining({ code: 'X_CLI_BAD_FLAG' }),
-      );
-    }
   });
 });
 

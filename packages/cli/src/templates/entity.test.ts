@@ -28,7 +28,11 @@ describe('unit · x g entity · the repo reads through the typed handle', () => 
     expect(repo).not.toContain('decodeRow');
     expect(repo).not.toContain('org_id');
     expect(repo).not.toContain('@ultimat3/db');
-    expect(repo).not.toContain('@ultimat3/entity');
+    // A TYPE from the entity package — the insert shape — and nothing that runs.
+    expect(repo).not.toMatch(/^import \{[^}]*\} from '@ultimat3\/entity';$/m);
+    expect(repo).toContain("import type { Insertable } from '@ultimat3/entity';");
+    expect(repo).toContain('export type NewWidget = Insertable<typeof widget.$columns>;');
+    expect(repo).toContain('export async function insert(row: NewWidget): Promise<Widget> {');
   });
 
   test('its three functions are handle calls', () => {

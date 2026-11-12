@@ -12,6 +12,7 @@ export type AppendOnlyRefusedCall =
   | 'delete'
   | 'updateWhere'
   | 'deleteWhere'
+  | 'updateMany'
   | 'upsertAll';
 
 /** How to lift the rule, said once: the trigger goes with the flag, in a migration. */
@@ -22,7 +23,7 @@ const fixFor = (entityName: string, call: AppendOnlyRefusedCall): string => {
   if (call === 'upsertAll') {
     return `${entityName}.upsertAll(rows, { onConflict, onMatch: 'nothing' })   # a row already stored is skipped, never overwritten — ${LIFT}`;
   }
-  const what = call === 'update' || call === 'updateWhere' ? 'the correction' : 'the reversal';
+  const what = call.startsWith('update') ? 'the correction' : 'the reversal';
   return `${entityName}.insert({ … })   # append ${what} as a new row that names the one it supersedes — ${LIFT}`;
 };
 

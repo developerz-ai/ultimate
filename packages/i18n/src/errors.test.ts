@@ -4,7 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
-import { I18N_ERROR_CODES, I18N_ERROR_TITLES } from './errors';
+import { loadCatalog } from './catalog';
+import { catalogInvalid, I18N_ERROR_CODES, I18N_ERROR_TITLES } from './errors';
 
 describe('I18N_ERROR_TITLES', () => {
   test('has exactly one title per declared code, and no extras', () => {
@@ -37,5 +38,28 @@ describe('docs', () => {
       expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
       expect(describeErrorCode(code).docs).not.toContain(code);
     }
+  });
+});
+
+// `"admin.posts.title": "Posts"` is the key `X_CATALOG_MISSING_KEYS` names, written the way it was
+// named — and the fix this refusal printed was `x i18n check --json`, the command that refused it.
+describe('X_CATALOG_INVALID for a dotted key', () => {
+  test('the fix is the nested shape, and pasting it loads', () => {
+    let fix = '';
+    try {
+      loadCatalog({ 'admin.posts.title': 'Posts' });
+    } catch (error) {
+      expect((error as { code?: unknown }).code).toBe('X_CATALOG_INVALID');
+      fix = (error as { fix: string }).fix;
+    }
+    const pasted: unknown = JSON.parse(fix.split('#')[0] ?? '');
+    expect(Object.keys(loadCatalog(pasted))).toEqual(['admin.posts.title']);
+    expect(fix).toContain('x i18n sync');
+  });
+
+  test('a segment nesting cannot repair keeps the check', () => {
+    expect(catalogInvalid('a b', 'key segments must match /^[A-Za-z0-9_-]+$/').fix).toBe(
+      'x i18n check --json',
+    );
   });
 });

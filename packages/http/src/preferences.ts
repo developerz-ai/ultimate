@@ -6,14 +6,21 @@ import { readCookie } from '@ultimat3/core';
 import { resolveTimeZone } from '@ultimat3/time';
 import type { HttpConfig } from './config';
 import type { RequestContext } from './context';
-import { requestLocale } from './locale-prefix';
+import { localeFromPath, requestLocale } from './locale-prefix';
 import type { UltimateRequest } from './request';
+
+/** A route whose locale is its URL reads no other source: `requestLocale` never consults one. */
+const NO_LOCALE_SOURCES = {};
 
 /**
  * `ctx.locale`, `ctx.tz` and `content-language` from every source the request carries — the
  * cookie, the header and, once `auth` has run, the actor's saved preference. One function for both
  * stages, so the order is always the owners' (`resolveLocale`, `resolveTimeZone`) and never this
  * file's.
+ *
+ * SHORT-CIRCUITED where a source cannot matter: no query string means `URLSearchParams` is never
+ * built, and a route that takes its locale from the path reads no locale source at all — neither
+ * `?locale=`, the cookie nor `Accept-Language` — because `requestLocale` would discard them.
  */
 export function resolvePreferences(
   request: UltimateRequest,
@@ -21,18 +28,21 @@ export function resolvePreferences(
   config: HttpConfig,
 ): void {
   const cookies = request.header('cookie');
-  ctx.locale = requestLocale(ctx, {
-    // Documented as a source and never read until 2026-09: an email preview link's `?locale=es`
-    // rendered in the visitor's cookie locale. The ORDER stays `resolveLocale`'s.
-    query: ctx.url.searchParams.get('locale'),
-    header: request.header('accept-language'),
-    cookie: readCookie(cookies, config.locale.cookie),
-    user: ctx.actor.locale,
-  });
+  const params = ctx.url.search === '' ? undefined : ctx.url.searchParams;
+  ctx.locale = localeFromPath(ctx)
+    ? requestLocale(ctx, NO_LOCALE_SOURCES)
+    : requestLocale(ctx, {
+        // Documented as a source and never read until 2026-09: an email preview link's `?locale=es`
+        // rendered in the visitor's cookie locale. The ORDER stays `resolveLocale`'s.
+        query: params?.get('locale') ?? null,
+        header: request.header('accept-language'),
+        cookie: readCookie(cookies, config.locale.cookie),
+        user: ctx.actor.locale,
+      });
   ctx.tz = resolveTimeZone({
     cookie: readCookie(cookies, config.tz.cookie),
     // Documented as a source (`?tz=` for share links) and never read until 2026-11, as `?locale=`.
-    query: ctx.url.searchParams.get('tz'),
+    query: params?.get('tz') ?? null,
     header: request.header(config.tz.header),
     // A document navigation sends no header: this is the browser's zone on a first `app/` page.
     detected: readCookie(cookies, config.tz.detectedCookie),

@@ -7,7 +7,7 @@ import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { subscribe, subscribeSemconvMetrics } from '@ultimat3/core';
 import type { OverlayNotice, RequestContext } from '@ultimat3/http';
-import { asCtx } from '@ultimat3/http';
+import { asCtx, subscribeRequestTimings } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
 import { loadAppConfig } from './app-config-load';
 import type { StalePin } from './app-reload-graph';
@@ -73,11 +73,13 @@ export interface StartDevOptions {
   readonly roles?: readonly Role[];
   readonly onReload?: (file: string, durationMs: number) => void;
   /**
-   * A save reached a module that defines a primitive, so this process cannot serve it
-   * (`takeStalePins`). Given, it is called INSTEAD of `onReload` — `x dev`'s child drains and exits
-   * for its supervisor to boot a fresh one. Absent, the save is `X_DEV_RESTART_REQUIRED` on `/_x`.
+   * A save this process cannot serve: it reached a module that defines a primitive
+   * (`takeStalePins`), or changed what the boot mounted (`dev-rebuild-remount.ts`). Given, it is
+   * called INSTEAD of `onReload` — `x dev`'s child prints `line`, the restart's own reason, then
+   * drains and exits for its supervisor to boot a fresh one. Absent, the save is
+   * `X_DEV_RESTART_REQUIRED` on `/_x`.
    */
-  readonly onRestart?: (pins: readonly StalePin[]) => void;
+  readonly onRestart?: (pins: readonly StalePin[], line: string) => void;
 }
 
 /**
@@ -166,6 +168,9 @@ async function bootDev(
   // The semconv histograms (`db_client_operation_duration_seconds`, …) on `x dev`'s `/metrics` too,
   // so a dashboard built against dev reads the series production exports.
   const unsubscribeMetrics = subscribeSemconvMetrics();
+  // What `Server-Timing`'s breakdown (dev only) and `http.request.slow` read per request — the same
+  // subscriber `startOtlpExport` installs on a production boot.
+  const unsubscribeTimings = subscribeRequestTimings();
   // The `/_x` cache panel's history: the cache keeps no log of its own, the panel subscribes one.
   const invalidations = createInvalidationLog();
   const unsubscribeInvalidations = subscribe('cache.invalidate', (event) =>
@@ -174,6 +179,7 @@ async function bootDev(
   acquired.push(() => {
     unsubscribeInvalidations();
     invalidations.reset();
+    unsubscribeTimings();
     unsubscribeMetrics();
     unsubscribeStatements();
     statements.reset();

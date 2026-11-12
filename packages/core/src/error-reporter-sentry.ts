@@ -3,7 +3,7 @@
 // is documented and several self-hostable monitors ingest it. Nothing here names a host, a project
 // or an organisation — the DSN is the app's own typed env, passed in at wiring time.
 
-import { errorFingerprint } from './error-fingerprint';
+import { monitorFingerprint } from './error-fingerprint';
 import { renderThrowable } from './error-render';
 import type { ErrorReport, ErrorReporter, ErrorSeverity } from './error-reporter';
 import {
@@ -11,12 +11,15 @@ import {
   customFingerprint,
   finalEvent,
   type SentryEvent,
-  type SentryReporterHooks,
+  type SentryReporterOptions,
   screenSampleRate,
 } from './error-reporter-sentry-hooks';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { traceId } from './ids';
 import { logger, redactFields } from './logger';
+import { sentryFrames } from './sentry-frames';
+
+export type { SentryReporterOptions } from './error-reporter-sentry-hooks';
 
 export class ErrorReporterDsnInvalidError extends UltimateError {
   static readonly code = 'X_ERROR_REPORTER_DSN_INVALID';
@@ -83,7 +86,7 @@ export interface SentryEnvelopeOptions {
   readonly dsn: string;
   /** 32 lowercase hex, no dashes. `traceId()` already produces exactly that shape. */
   readonly eventId: string;
-  /** The monitor's grouping. Default: `[errorFingerprint(report)]`. */
+  /** The monitor's grouping. Default: `monitorFingerprint(report)`. */
   readonly fingerprint?: readonly string[] | undefined;
 }
 
@@ -109,9 +112,9 @@ function payloadOf(
     server_name: report.resource.serviceName,
     ...(report.release === null ? {} : { release: report.release }),
     ...(report.scope.operation === undefined ? {} : { transaction: report.scope.operation }),
-    // The group. Without it the monitor groups on its own reading of the exception, which is the
-    // code, so every unclassified throw in the app was one issue (`errorFingerprint`).
-    fingerprint: fingerprint ?? [errorFingerprint(report)],
+    // The group: the code, so one fault raised from five operations is one issue — never the
+    // monitor's own reading of the frames, which splits it per call site (`monitorFingerprint`).
+    fingerprint: fingerprint ?? monitorFingerprint(report),
     // Tags are the monitor's facets, so only bounded values go here — the same rule metric labels
     // follow. `requestId` and `actorId` are unbounded and live in `extra`.
     tags: {
@@ -145,7 +148,19 @@ function payloadOf(
       // Under its own key, so no name an error author picks can collide with one above.
       ...(report.meta === undefined ? {} : { meta: redactFields(report.meta) }),
     },
-    exception: { values: [{ type: report.code, value: `${report.title} — ${report.cause}` }] },
+    exception: { values: [exceptionOf(report)] },
+  };
+}
+
+/** The one exception value: the contract as type and value, the throw's frames when there are any. */
+function exceptionOf(report: ErrorReport): Record<string, unknown> {
+  const frames = sentryFrames(report.stack);
+  return {
+    type: report.code,
+    value: `${report.title} — ${report.cause}`,
+    // `extra.stack` keeps the raw string for one release beside these (31.6.0); a monitor rule
+    // reading it has that long to move.
+    ...(frames.length === 0 ? {} : { stacktrace: { frames } }),
   };
 }
 
@@ -168,14 +183,6 @@ function envelopeOf(event: SentryEvent, options: SentryEnvelopeOptions, at: numb
     length: new TextEncoder().encode(payload).length,
   });
   return `${header}\n${item}\n${payload}\n`;
-}
-
-export interface SentryReporterOptions extends SentryReporterHooks {
-  /** From the app's typed env. The framework declares no default and ships no constant. */
-  readonly dsn: string;
-  /** Injected by tests; the preload seals the real one. */
-  readonly fetch?: typeof globalThis.fetch | undefined;
-  readonly clientName?: string | undefined;
 }
 
 /**

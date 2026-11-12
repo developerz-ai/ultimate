@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { planNewApp } from './cmd-new';
 import { FIXTURE_APP } from './scaffold-fixture';
-import { DIR_LINK, workspaceRoot } from './scaffold-typecheck-fixture';
+import { DIR_LINK, workspaceRoot, workspaceTsc } from './scaffold-typecheck-fixture';
 
 export interface ShellResult {
   readonly code: number;
@@ -21,6 +21,11 @@ export interface FixtureApp {
   readonly root: string;
   /** A line through a real shell, in the app: quoting, `#` and `&&` as a reader gets them. */
   sh(line: string): Promise<ShellResult>;
+  /**
+   * The compiler's errors in the app's OWN files, one line each. A diagnostic in a framework source
+   * the app's tsconfig reaches through a link is not the row's: it is the checkout's.
+   */
+  typeErrors(): Promise<readonly string[]>;
   /** Back to the commit: what a row broke, and what its fix wrote, are gone. */
   reset(): Promise<void>;
   remove(): void;
@@ -99,9 +104,14 @@ export async function fixtureApp(): Promise<FixtureApp> {
   await sh(`chmod +x .shims/x`);
   await Bun.write(join(root, '.gitignore'), 'node_modules\n.shims\n.x\n');
   await sh(`git init -q && ${GIT} add -A && ${GIT} commit -qm scaffold`);
+  const tsc = workspaceTsc(workspaceRoot());
   return {
     root,
     sh,
+    typeErrors: async () => {
+      const { stdout } = await sh(`${JSON.stringify(tsc)} -p . --noEmit --pretty false`);
+      return stdout.split('\n').filter((line) => /^(?:apps|packages)\/.*error TS\d+/.test(line));
+    },
     reset: async () => {
       await sh(`${GIT} checkout -q -- . && git clean -fdq`);
     },

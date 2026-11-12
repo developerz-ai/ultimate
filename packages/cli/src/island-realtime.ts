@@ -82,9 +82,7 @@ const entrySource = (file: string, follows: boolean): string =>
 /**
  * The install names `@ultimat3/realtime` BARE, and `islandRealtimePlugin` resolves it from the
  * ISLAND's own directory — the resolution the island itself gets — so the bundle holds one copy
- * and the signal lands where the hooks read it. Never the resolved absolute path spliced in: this
- * source is part of the chunk's `sourcesContent`, which is what `graphHash` names the URL from, so
- * a path in it gave the same island a different URL in every checkout and every image build.
+ * and the signal lands where the hooks read it.
  * `solid-js` goes through `island-solid-dedupe.ts` like every other import in the graph.
  *
  * The await comes first: no hook may run before the page runtime is installed, and the module

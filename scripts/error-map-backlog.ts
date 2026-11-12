@@ -76,6 +76,7 @@ export const OFF_SOCKET: Pins = {
     'X_ENTITY_RETAIN_INVALID',
     'X_LIFECYCLE_TRIGGER_MISSING',
     'X_MIGRATION_PARTITION_CHANGE',
+    'X_MIGRATION_LOCK_HEAVY',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],

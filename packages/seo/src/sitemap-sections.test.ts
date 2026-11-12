@@ -3,6 +3,7 @@
 // every release before this one wrote.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { SEO_ERROR_CODES } from './errors';
 import type { RouteRecord } from './routes';
 import { buildSitemap, SITEMAP_MAX_BYTES } from './sitemap';
@@ -216,7 +217,7 @@ describe('sections', () => {
           ],
         }),
       ],
-      { ...BASE, sections: SECTIONS, now: new Date('2026-10-11T00:00:00Z') },
+      { ...BASE, sections: SECTIONS, clock: frozenClock('2026-10-11T00:00:00Z') },
     );
     expect(result.index?.xml).toContain('<lastmod>2026-10-05T13:30:00.000Z</lastmod>');
     expect(result.index?.xml.match(/<lastmod>/g)).toHaveLength(1);

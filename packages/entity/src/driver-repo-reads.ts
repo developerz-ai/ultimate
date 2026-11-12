@@ -8,6 +8,7 @@ import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, seekFrom } from './cursor';
 import { projectRow } from './driver-rows';
 import type { DriverScope } from './driver-scope';
+import { assertPageBytes } from './page-bytes';
 import { idPlan, readPlan, singleKeyOf } from './plan';
 import type { Repo } from './repo';
 import { rowKey } from './row-key';
@@ -50,10 +51,10 @@ export const driverReads = <Row>(scope: DriverScope<Row>): DriverReads<Row> => {
         found.length > plan.limit && last !== undefined
           ? cursorFor(entity, plan, last, rowKey(entity, last))
           : null;
-      return pageOf(
-        page.map((row) => projectRow(entity, plan, row)),
-        next,
-      );
+      // Weighed projected, as memory weighs it: a store's page is bounded like the other two.
+      const projected = page.map((row) => projectRow(entity, plan, row));
+      assertPageBytes(entity, op, projected as readonly Readonly<Record<string, unknown>>[]);
+      return pageOf(projected, next);
     },
 
     async count(args = {}) {
