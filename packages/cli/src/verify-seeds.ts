@@ -1,13 +1,16 @@
 // The seed run on the `unit` step: every seed the app declares (`SEED_GLOBS`) runs once, in file
-// order, on one in-memory driver. A row its entity refuses — `{ minor: 19.99 }` typechecks — is
-// reported with the entity's OWN code and fix, here, instead of 13 s later inside the e2e step's
-// X_E2E_APP_FAILED. No seed file is no seeds: nothing is spawned.
+// order, on one migrated scratch database. A row its entity refuses — `{ minor: 19.99 }`
+// typechecks — is reported with the entity's OWN code and fix, here, instead of 13 s later inside
+// the e2e step's X_E2E_APP_FAILED. No seed file is no seeds: nothing is spawned.
 
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
 import { ERROR_DOCS_URL, UltimateError } from '@ultimat3/core';
 import type { Infer } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
 import { SEED_GLOBS } from './db-seed';
 import type { Runner } from './exec';
+import { MIGRATIONS_DIR } from './migrations';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
@@ -15,8 +18,13 @@ import { posixRelative } from './posix-path';
 import { quoteArg } from './shell-quote';
 import { isTest, sortedPosix } from './source-files';
 
+/** Where a failure happened: the seed run's database, a seed module's import, or a seed's run. */
+const SEED_STAGES = ['database', 'import', 'run'] as const;
+export type SeedStage = (typeof SEED_STAGES)[number];
+
 const reportSchema = t.array(
   t.object({
+    stage: t.enum(SEED_STAGES),
     file: t.string,
     /** The export that declared the seed; `*` when the module would not import. */
     export: t.string,
@@ -27,7 +35,7 @@ const reportSchema = t.array(
     message: t.string,
   }),
 );
-type SeedFailure = Infer<typeof reportSchema>[number];
+export type SeedFailure = Infer<typeof reportSchema>[number];
 
 /** The seed files `x db seed` would import, app-root-relative and sorted: the run's order. */
 async function seedFiles(root: string): Promise<readonly string[]> {
@@ -42,35 +50,21 @@ async function seedFiles(root: string): Promise<readonly string[]> {
   return sortedPosix([...files]);
 }
 
+/** The line the probe prints its answer on; everything else it writes is a seed's own output. */
+export const SEEDS_PROBE_MARKER = 'x-seeds-probe:';
+
 /**
- * Run in a CHILD, from the app's root, for `verify-factories.ts`'s reason: the seeds, `isSeed` and
- * `memoryDriver` must be the app's own `@ultimat3/entity`, and the app's entities must not register
- * into this process. One driver for the whole run, so a later seed reads what an earlier one wrote,
- * as `x db seed` does. The last stdout line is the report: the failures only.
+ * Run in a CHILD, from the app's root (`verify-seeds-probe.ts`): the app's entities must not
+ * register into this process, and the scratch database the probe installs as `db()` must not be
+ * this process's either. One database for the whole run, so a later seed reads what an earlier one
+ * wrote, as `x db seed` does.
  */
-const script = (files: readonly string[]): string => `const files = ${JSON.stringify(files)};
-const { isSeed, memoryDriver } = await import('@ultimat3/entity');
-const driver = memoryDriver();
-const str = (value, key) => { try { const v = value?.[key]; return typeof v === 'string' ? v : null; } catch { return null; } };
-const failure = (file, name, seed, error) => ({ file, export: name, seed,
-  code: str(error, 'code'), cause: str(error, 'cause'), fix: str(error, 'fix'),
-  message: str(error, 'message') ?? (() => { try { return String(error); } catch { return 'a value that will not render'; } })() });
-const failures = [];
-for (const file of files) {
-  let mod;
-  try { mod = await import(\`\${process.cwd()}/\${file}\`); }
-  catch (error) { failures.push(failure(file, '*', '*', error)); continue; }
-  for (const [name, value] of Object.entries(mod)) {
-    if (!isSeed(value)) continue;
-    try { await value.run({ driver }); } catch (error) { failures.push(failure(file, name, value.name, error)); }
-  }
-}
-console.log(JSON.stringify(failures));`;
+const PROBE = join(import.meta.dir, 'verify-seeds-probe.ts');
 
 /**
  * A seed threw something with no code of its own (a `TypeError` in its body, a module that would
- * not import). The fix is the one line that reproduces it with a full stack, on the same in-memory
- * driver the unit step used — the seed's own file, its own export.
+ * not import, a scratch database that would not open). The fix is the one line that reproduces it with a full stack — the seed's own file,
+ * its own export.
  */
 export class SeedFailedError extends UltimateError {
   constructor(input: { failure: SeedFailure; where: string }) {
@@ -81,8 +75,9 @@ export class SeedFailedError extends UltimateError {
         : `await (await import('./${failure.file}'))[${JSON.stringify(failure.export)}].run()`;
     super({
       code: 'X_SEED_FAILED',
-      cause: `${input.where} threw an uncoded value on the in-memory driver: ${failure.message}`,
-      fix: `bun --eval ${quoteArg(call)}`,
+      cause: `${input.where} threw an uncoded value: ${failure.message}`,
+      // The database is `x exercise`'s own, opened the same way: that command reproduces it.
+      fix: failure.stage === 'database' ? 'x exercise --json' : `bun --eval ${quoteArg(call)}`,
     });
   }
 }
@@ -94,13 +89,15 @@ export class SeedFailedError extends UltimateError {
  */
 export const seedFinding = (failure: SeedFailure): Finding => {
   const where =
-    failure.export === '*'
-      ? `${failure.file} did not import`
-      : `seed "${failure.seed}" (${failure.file})`;
+    failure.stage === 'database'
+      ? `the seed run's scratch database (the framework schema, then ${MIGRATIONS_DIR}) did not open`
+      : failure.stage === 'import'
+        ? `${failure.file} did not import`
+        : `seed "${failure.seed}" (${failure.file}) on the seed run's scratch database`;
   if (failure.code?.startsWith('X_') === true && failure.cause !== null && failure.fix !== null) {
     return {
       code: failure.code,
-      cause: `${where} on the in-memory driver: ${failure.cause}`,
+      cause: `${where}: ${failure.cause}`,
       fix: failure.fix,
       docs: ERROR_DOCS_URL,
       at: failure.file,
@@ -109,15 +106,27 @@ export const seedFinding = (failure: SeedFailure): Finding => {
   return { ...findingFrom(new SeedFailedError({ failure, where })), at: failure.file };
 };
 
-/** The child's last stdout line, parsed — or one finding saying the run printed no report. */
+/** The probe's marker line, parsed — or one finding saying the run printed no report. */
 function readReport(stdout: string, stderr: string, first: string): readonly SeedFailure[] {
-  const last = stdout.trim().split('\n').at(-1) ?? '';
+  const line = stdout
+    .split('\n')
+    .reverse()
+    .find((one) => one.startsWith(SEEDS_PROBE_MARKER));
   try {
-    return parse(reportSchema, JSON.parse(last));
+    return parse(reportSchema, JSON.parse(line?.slice(SEEDS_PROBE_MARKER.length) ?? ''));
   } catch {
     const reason = stderr.trim().split('\n').slice(-3).join(' ') || 'no report was printed';
     return [
-      { file: first, export: '*', seed: '*', code: null, cause: null, fix: null, message: reason },
+      {
+        stage: 'import',
+        file: first,
+        export: '*',
+        seed: '*',
+        code: null,
+        cause: null,
+        fix: null,
+        message: reason,
+      },
     ];
   }
 }
@@ -127,6 +136,6 @@ export async function seedFindings(root: string, runner: Runner): Promise<readon
   const files = await seedFiles(root);
   const first = files[0];
   if (first === undefined) return [];
-  const result = await runner(['bun', '--eval', script(files)], { cwd: root });
+  const result = await runner(['bun', PROBE, root, JSON.stringify(files)], { cwd: root });
   return readReport(result.stdout, result.stderr, first).map(seedFinding);
 }

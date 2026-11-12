@@ -39,6 +39,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/http`: a 304 carries the same validator form as the 200 it revalidates (RFC 9110 §15.4.5).
 - `@ultimat3/db`: on a pinned connection, `ROLLBACK TO SAVEPOINT`, `RESET statement_timeout` / `RESET ALL` and `SET statement_timeout TO DEFAULT` restore the statement bound the unanswered-statement sweep checks, so it no longer misfires or retires the pool on a stale bound.
 - `@ultimat3/cli`: a boot refused by its OTLP exporter no longer leaves the metric and statement subscribers installed; production and `x dev` boots install the request timings `http.request.slow` and dev `Server-Timing` read.
+- `@ultimat3/cli`: `x verify`'s `unit` seed run gets a real database — `x exercise`'s embedded PGlite with the framework schema and the app's migrations, one per run, shared by every seed and discarded after (a server from `TEST_DATABASE_URL` when a migration needs an extension PGlite cannot link) — so a seed that calls `register()` from `@ultimat3/auth` no longer fails `X_DB_UNAVAILABLE`; a refused seed row still reports the entity's own code.
 
 ## Releases
 
