@@ -210,7 +210,11 @@ export const config = defineRoute({
   // so a forgotten `onCleanup` no longer holds a subscription, and `useMutation`'s per-mutator lane
   // that sends a like and an unlike in call order; the page boot +40 B (84,526 B), the install
   // fixes naming `cleanup`. Raised 209.2kb → 209.4kb.
-  budget: { js: '209.4kb' },
+  // measured: 214687 B (2026-11-12, plan 101 sweep 9b realtime review; x build --target static,
+  // against 214,415) — why: the feed island +272 B (95,922 B): `useMutation` sending an offline
+  // write straight to the outbox instead of queueing it behind the lane, and bounding the lane
+  // wait at 10 s so one stalled mutation cannot hold every later one. Raised 209.4kb → 209.7kb.
+  budget: { js: '209.7kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "d8a82e6edd178be8",
+  "buildId": "e26e698fc2ef6f6e",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "209.4kb"
+        "js": "209.7kb"
       }
     },
     {
@@ -9027,19 +9027,19 @@
       ]
     },
     {
-      "name": "nightlyDigest",
-      "cron": "0 3 * * *",
-      "tz": "UTC",
-      "enqueues": [
-        "sendDigest"
-      ]
-    },
-    {
       "name": "partitions.schedule",
       "cron": "17 3 * * *",
       "tz": "UTC",
       "enqueues": [
         "partitions"
+      ]
+    },
+    {
+      "name": "sendDigest.schedule",
+      "cron": "0 3 * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "sendDigest"
       ]
     }
   ],
