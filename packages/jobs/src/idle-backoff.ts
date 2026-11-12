@@ -124,11 +124,16 @@ export function restAfter(pass: {
   readonly announced: boolean;
 }): RestPlan {
   const { dueInMs, backoffMs, floorMs } = pass;
+  // Screened here as well as in `createIdleBackoff`: the callers hand the raw option in again.
+  const declared =
+    pass.declaredCeilingMs === undefined
+      ? undefined
+      : finiteOption('restAfter', 'idlePollMaxMs', pass.declaredCeilingMs);
   const keep = { delayMs: backoffMs, resting: false };
   if (pass.found || dueInMs === undefined || (dueInMs !== null && dueInMs <= 0)) return keep;
   const due = dueInMs === null ? Number.POSITIVE_INFINITY : dueInMs + DUE_MARGIN_MS;
   if (!wakeIsLive() || !pass.settled || !pass.announced)
     return { delayMs: Math.max(floorMs, Math.min(backoffMs, due)), resting: false };
-  const delayMs = Math.max(floorMs, Math.min(due, pass.declaredCeilingMs ?? IDLE_REST_MAX_MS));
-  return { delayMs, resting: pass.declaredCeilingMs === undefined && delayMs > REST_SLICE_MS };
+  const delayMs = Math.max(floorMs, Math.min(due, declared ?? IDLE_REST_MAX_MS));
+  return { delayMs, resting: declared === undefined && delayMs > REST_SLICE_MS };
 }

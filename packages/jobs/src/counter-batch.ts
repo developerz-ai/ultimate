@@ -1,8 +1,10 @@
 // The per-process counter batch: settles add to a Map keyed (job, one-minute bucket), and one
 // multi-row upsert writes it every `COUNTER_FLUSH_INTERVAL_MS` and on close. A per-settle upsert
-// was the framework's largest WAL writer at idle-ish load. A crash loses at most one interval of
-// COUNTS, a write whose commit is ambiguous (the connection died after it) counts twice, and a
-// database down long enough drops the oldest buckets; the rows' `state` stays the truth.
+// was the framework's largest WAL writer at idle-ish load.
+//
+// A crash loses at most one interval of COUNTS, a write whose commit is ambiguous (the connection
+// died after it) counts twice, and a database down long enough drops the oldest buckets; the rows'
+// `state` stays the truth.
 
 import { logger, renderThrowable } from '@ultimat3/core';
 import { counterBucketStart } from './counters';
