@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8cab4b452aefd02d822415419b10a2c4bac05c70f73acfa1cfd6e974018a6adf",
+  "buildId": "1a87dbd917245ac04f309f5fbcc788e960354f134d8cc1d9abba5f899aa6b0fe",
   "tiers": {
     "0": [
       "core",
@@ -3461,6 +3461,11 @@
     },
     {
       "code": "X_MIGRATION_IRREVERSIBLE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_LOCK_HEAVY",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
