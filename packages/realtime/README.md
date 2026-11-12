@@ -225,7 +225,7 @@ the socket stack, the query client and core's transport — installed ONCE per p
 an island: the page boot carries it, and where no boot is rendered the island loads
 `/islands/page-runtime.<id>.js`, the one chunk `x build` builds from `@ultimat3/realtime/page-runtime`.
 The island bootstrap `x build` prepends awaits that runtime, then installs realtime for its bundle —
-`installRealtime({ signal: createSignal })` — so a hook is a thin reader and an island never
+`installRealtime({ signal: createSignal, cleanup: onCleanup })` — so a hook is a thin reader and an island never
 constructs a client or a socket. The socket opens on the first live hook.
 
 ```ts
@@ -301,7 +301,8 @@ same type `@ultimat3/ui` renders.
 | Every member is a **getter**, every result an **accessor** | a value snapshotted at hook time never re-renders |
 | `input` is read **once** | nothing here re-runs it; a changed input is a new `useQuery` |
 | A timed re-read is `useQuery(ref, input, { poll: pollEvery(ms) })` | non-live refs only (a live ref refuses it by type: `LiveQueryOptions`); `refetch` through core's `visibleInterval`, so a hidden tab, a lost session and `release()` all stop it. A value, not a number: `useQuery` never references the timer, so only an island importing `pollEvery` carries it (the reference like control rose 39,210 → 41,477 B across wave 5a, nearly all of it this, 2026-11-05) |
-| The caller owns `release()` / `using` | this layer does not know what a mount is |
+| A component's hooks release themselves | `x build`'s island bootstrap installs Solid's `onCleanup` as `RealtimeInstall.cleanup`, and every `use*` hook registers its own release there: an island that forgets `onCleanup(() => h.release())` no longer holds a socket subscription and a cap slot across every client navigation until `X_SUBSCRIPTION_LIMIT`. `release()` / `using` stay, for a hook held outside a component (no owner, nothing registered) or let go sooner; every release runs once however many of them fire |
+| One mutator's online writes are sent in call order | one lane per mutator NAME, page-wide (`PageWrites.lanes`): the next write's POST starts when the previous one settled — answered, refused or queued. A like then an unlike POSTed together could commit in either order and leave the row contradicting the last overlay. Overlays still paint at once; another mutator's writes do not wait |
 
 **A server render** (no install, no DOM) answers `pending`, reports online and creates no page
 state; a `useMutation` call refuses with `X_LIVE_SERVER_RENDER`. With a DOM and no install, every
@@ -621,7 +622,16 @@ made it — a key already queued collapses as always, and nothing queued is ever
   24.0.0, #681). A bus that reconnected is the same repair, with no later message needed. Both
   fields are optional on the bus, so a publisher that does not sequence simply detects nothing.
   A `recordPublisher`'s changes are sequenced too (`source: 'publisher'`): a hole in one is a
-  gap; a new publisher is not, because publishers run side by side. Durable replay (JetStream) is a separate decision — retention,
+  gap; a new publisher is not, because publishers run side by side. **A replicator restart
+  chains — a deploy too** (envelope v2): a run's first envelope carries `from`, where its feed
+  says it resumed (`ChangeFeedStartOptions.onResume`: the resume position, or the slot's
+  `confirmed_flush_lsn`), and a clean `stop()` publishes a handover on `x.change.-handover` — its
+  last `seq` and `through`, how far the slot was confirmed (`ChangeFeed.position()`). A node that
+  read up to `from` (changes, or a handover) takes the new run as a continuation: a stop + start,
+  or a new replicator process after a clean stop, re-snapshots nobody. A crash (no handover) whose
+  slot was confirmed past what the node read, a lost tail, a new slot, a resync, a feed that does
+  not implement `position`/`onResume`, and every older replicator or node still gap — either roll
+  order is safe; sync nodes first is what lets the replicator's own roll chain. Durable replay (JetStream) is a separate decision — retention,
   storage and replay window — and is deliberately not this mechanism.
 - **A bulk write re-reads only the windows over its entity.** `updateWhere`/`deleteWhere` name a
   filter, not rows, so the in-process replicator calls `registry.invalidate(entity)`: windows whose

@@ -8,7 +8,7 @@ import type { LiveHandle } from './client-contract';
 import type { JsonValue } from './json';
 import { installedPage, type PageServices } from './page-store';
 import type { QueryPoll } from './query-poll';
-import { isServerRender, signalFor } from './reactivity';
+import { isServerRender, ownedRelease, signalFor } from './reactivity';
 import { keptAnswer } from './record-answer';
 import { type RecordStore, recordKey } from './record-store';
 
@@ -148,11 +148,11 @@ function liveAccessor<R extends object>(
     waiting.length > 0 || (handle.state() === 'failed' && handle.retry())
       ? new Promise((resolve) => waiting.push(resolve))
       : settled();
-  const release = (): void => {
+  const release = ownedRelease(() => {
     off();
     settle();
     handle.unsubscribe();
-  };
+  });
   return Object.assign(read, {
     refetch,
     more: nothing,
@@ -301,14 +301,13 @@ function readAccessor<R extends object>(
       if (state.status === 'failed') throw state.error;
     }),
   );
-  const release = (): void => {
-    if (released) return;
+  const release = ownedRelease(() => {
     released = true;
     stopPoll?.();
     off();
     hold([]);
     keys = [];
-  };
+  });
   return Object.assign(read, {
     refetch,
     more: () => {

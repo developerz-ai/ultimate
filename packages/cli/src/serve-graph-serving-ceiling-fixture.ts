@@ -274,5 +274,11 @@
  * `MIGRATE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing else moved.
  * raised 1472 → 1483, measured 1483 (2026-11-12, sweep 9b jobs mechanisms, the test's own walk):
  * `MIGRATE_CEILING`'s 11, the modules named there. Nothing else moved.
+ * raised 1483 → 1487, measured 1487 (2026-11-12, sweep 9b realtime, the test's own walk):
+ * realtime's `{replicator-handover,replicator-publish,unref-scheduler,pg-replication-goodbye}.ts` —
+ * the replicator's clean-stop handover, its publish retry split out of `replicator.ts`, the shared
+ * unref'd timer, and the stream stop's bounded goodbye read, through `@ultimat3/realtime/server`.
+ * Every one a new file, serving-only (`MIGRATE_CEILING` unchanged at 937); no existing module
+ * newly reached.
  */
-export const SERVING_ROLE_CEILING = 1483;
+export const SERVING_ROLE_CEILING = 1487;

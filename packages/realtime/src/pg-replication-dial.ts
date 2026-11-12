@@ -8,8 +8,8 @@ import { ReplicationSlotRecreatedError } from './errors';
 import { printLsn } from './pg-bytes';
 import { PgConnection } from './pg-connection';
 import { paramsChannelTables } from './pg-identity-tables';
-import { preflight } from './pg-preflight';
-import { commitPositionOf } from './pg-replication-position';
+import { preflight, slotConfirmed } from './pg-preflight';
+import { changeLsn, commitPositionOf } from './pg-replication-position';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
 /** The identifiers the stream already put through `assertIdentifier`. */
@@ -36,6 +36,12 @@ export interface DialedStream {
   readonly from: string | undefined;
   /** Why every reader must re-read now, or `null` when the stream is continuous. */
   readonly resync: string | null;
+  /**
+   * The stream delivers every change above this (`ChangeFeedStartOptions.onResume`): the resume
+   * filter, or the slot's confirmed position as a change lsn. `null` for a new slot — it begins at
+   * the server's current WAL, and what came before it was never streamed.
+   */
+  readonly resumed: string | null;
 }
 
 /**
@@ -76,7 +82,16 @@ export async function dialReplication(
       // FIELDS, never interpolation; the message is the CODE alone (`pg-preflight.ts`).
       logger.warn(said.code, { cause: said.cause, fix: said.fix, slot: names.slot, from: under });
     }
-    const confirmed = resumeFrom === undefined ? 0n : commitPositionOf(resumeFrom);
+    // No resume position on an existing slot: it restarts at its confirmed position, read so the
+    // run can say so. Asked for explicitly, which Postgres treats exactly as `0/0`.
+    const fromSlot =
+      resumeFrom === undefined && slot === 'existing'
+        ? await slotConfirmed(connection, names.slot)
+        : null;
+    const confirmed = resumeFrom === undefined ? (fromSlot ?? 0n) : commitPositionOf(resumeFrom);
+    // `<commit>00000000`: no row has sequence 0, so every change of a transaction committing at or
+    // after the slot's position is above it — and those are the ones the server sends.
+    const resumed = resumeFrom ?? (fromSlot === null ? null : changeLsn(fromSlot, 0));
     await connection.startCopyBoth(
       `START_REPLICATION SLOT ${names.slot} LOGICAL ${printLsn(confirmed)} ` +
         `(proto_version '1', publication_names '${names.publication}', messages 'true')`,
@@ -87,7 +102,7 @@ export async function dialReplication(
       ? `replication slot "${names.slot}" was recreated under resume position ${under}: ` +
         'the changes in between were never streamed'
       : null;
-    return { connection, confirmed, from: resumeFrom, resync };
+    return { connection, confirmed, from: resumeFrom, resync, resumed };
   } catch (failure) {
     await connection.close().catch(() => undefined);
     throw failure;

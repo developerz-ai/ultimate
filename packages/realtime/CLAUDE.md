@@ -101,6 +101,14 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
 - **A change the window already holds is refused** (`change.lsn <= entry.lsn`, counted as
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
+  Unless the new run's first envelope says `from` (v2) at or below the highest lsn the node read:
+  that run republishes everything above it, so it chains (`SeqGapDetector.#chain`). A clean
+  `stop()` hands over (`replicator-handover.ts`): the chain rises to the slot's confirmed position,
+  which is the `from` a NEW process's run claims (`slotConfirmed`, read after the slot is released).
+  A claim a feed cannot keep is a silent loss: `onResume` only when it KNOWS.
+- **`stop()` reads the walsender's goodbye before `Terminate`** (`pg-replication-goodbye.ts`):
+  CopyDone → its CopyDone, CommandComplete, ReadyForQuery, bounded at `COPY_DRAIN_MS`. Closed
+  unread, the socket was reset — `Connection reset by peer` in the server log on every deploy.
 - **A bulk write stales only its entity's readers**: windows + channel topics, `invalidate(entity)`
   on both from `onBulk` (channels: not a `recordPublisher` table). **A stale window's re-read
   re-snapshots EVERY subscriber**, before the lsn guard, even on a non-match (`live-replicator-bulk`,
@@ -224,7 +232,13 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
 - **Page state lives on `globalThis[Symbol.for('ultimate.realtime')]` (`page-store.ts`)**, never module
   scope — every island is its own bundle (`page-client.test.ts` builds two islands). Never
   `instanceof` across copies.
-- **The signal factory is per BUNDLE**: `installRealtime({ signal, sync })` (`reactivity.ts`). No
+- **Every `use*` hook wraps its release in `ownedRelease` (`reactivity.ts`)**: run once, and
+  registered with the installed `cleanup` (Solid's `onCleanup`, passed by `island-realtime.ts`), so a
+  disposed component lets go with no `onCleanup` in the island. `use-hooks-cleanup.test.ts` holds it.
+- **One mutator's online writes go one at a time** (`enterLane`, `page-store.ts`): a write's network
+  leg waits on the previous one of that name; an idle lane sends in the same tick (tests read the
+  POST synchronously). `use-mutation-lane.test.ts`.
+- **The signal factory is per BUNDLE**: `installRealtime({ signal, sync, cleanup })` (`reactivity.ts`). No
   install and a DOM is `X_REALTIME_UNINSTALLED`; no DOM is a server render — hooks answer
   `pending`/online and create no page state. `useRecord` and `useQuery` return `AsyncState` accessors.
 - **The page runtime (`page-runtime.ts`) is installed once per page, never in an island**;

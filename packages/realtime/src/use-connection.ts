@@ -3,10 +3,10 @@
 // the socket — this hook IS a question about it — and the socket is the page runtime's.
 
 import { installedPage } from './page-store';
-import { isServerRender, signalFor } from './reactivity';
+import { isServerRender, ownedRelease, signalFor } from './reactivity';
 
 export interface Connection extends Disposable {
-  /** Stop listening to the socket (Solid: `onCleanup`). The socket itself stays up. */
+  /** Stop listening to the socket — the component's cleanup does it too. The socket stays up. */
   release(): void;
   readonly offline: boolean;
   readonly online: boolean;
@@ -35,7 +35,7 @@ export function useConnection(): Connection {
   if (isServerRender()) return SERVER_RENDER;
   const client = installedPage('useConnection').services.socket('useConnection');
   const [version, setVersion] = signal(0);
-  const release = client.onStatus(() => setVersion(version() + 1));
+  const release = ownedRelease(client.onStatus(() => setVersion(version() + 1)));
   return {
     release,
     [Symbol.dispose]: release,

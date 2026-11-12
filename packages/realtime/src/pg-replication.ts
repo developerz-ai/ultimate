@@ -10,17 +10,20 @@ import { ByteReader } from './pg-bytes';
 import type { PgConnection } from './pg-connection';
 import { assertIdentifier } from './pg-identifier';
 import { dialReplication, type SlotGap } from './pg-replication-dial';
+import { drainGoodbye } from './pg-replication-goodbye';
 import {
   type ConfirmAttempt,
   StreamLiveness,
   silenceReason,
   unsettledReason,
 } from './pg-replication-liveness';
-import { changeLsn, standbyStatus } from './pg-replication-position';
+import { changeLsn, laterLsn, standbyStatus } from './pg-replication-position';
 import { replicatedImages, tenantOf } from './pg-replication-row';
 import type { ReplicationStreamStats } from './pg-replication-stats';
 import type { PhysicalRow } from './pg-values';
 import { keyedWrite, PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
+import type { Scheduler } from './thundering-herd';
+import { unrefScheduler } from './unref-scheduler';
 
 // Moved next door; their importers (`server.ts`, `changefeed.ts`, the tests) keep this path.
 export { changeLsn, commitPositionOf } from './pg-replication-position';
@@ -55,6 +58,8 @@ export interface ReplicationStreamHandlers {
   readonly onEnd?: ((reason: string) => void) | undefined;
   /** The stream is continuous no more — its slot was recreated under `from` — so re-read all. */
   readonly onResync?: ((reason: string) => void) | undefined;
+  /** Where the stream resumed — every change above it is delivered (`DialedStream.resumed`). */
+  readonly onResume?: ((at: string) => void) | undefined;
 }
 
 /**
@@ -74,6 +79,8 @@ export class PgReplicationStream {
   #transaction: Transaction | null = null;
   #confirmed = 0n;
   #lastLsn: string | null = null;
+  /** Where this run resumed, when known — the floor of `position()`. */
+  #resumed: string | null = null;
   #running = false;
   #pump: Promise<void> | null = null;
   #delivered = 0;
@@ -87,9 +94,12 @@ export class PgReplicationStream {
   readonly #slotGap: SlotGap = { createdUnder: null };
   #intervalMs = DEFAULT_STATUS_INTERVAL_MS;
   #onEnd: ((reason: string) => void) | undefined;
+  /** The goodbye's deadline timer (`drainGoodbye`); a test fires it. */
+  readonly #schedule: Scheduler;
 
-  constructor(options: PostgresChangeFeedOptions) {
+  constructor(options: PostgresChangeFeedOptions, schedule: Scheduler = unrefScheduler) {
     this.#options = options;
+    this.#schedule = schedule;
     this.#clock = options.clock ?? systemClock;
     this.#entities = new Set(options.entities.map((name) => assertIdentifier('entity', name)));
     // All three names are checked here rather than in `start()`: a mistyped REPLICATION_SLOT is a
@@ -101,6 +111,12 @@ export class PgReplicationStream {
 
   lastLsn(): string | null {
     return this.#lastLsn;
+  }
+
+  /** `ChangeFeed.position`: everything below the confirmed commit, the resume point, or delivered. */
+  position(): string | null {
+    const confirmed = this.#confirmed > 0n ? changeLsn(this.#confirmed, 0) : null;
+    return laterLsn(laterLsn(this.#resumed, confirmed), this.#lastLsn);
   }
 
   stats(): ReplicationStreamStats {
@@ -128,6 +144,7 @@ export class PgReplicationStream {
     const connection = dialed.connection;
     this.#connection = connection;
     this.#confirmed = dialed.confirmed;
+    this.#resumed = dialed.resumed;
     this.#running = true;
     // A restart that kept the last death in `stats()` would report a live stream as failed.
     this.#failure = null;
@@ -149,6 +166,7 @@ export class PgReplicationStream {
     // Before the first change of the new slot can reach anyone: every reader re-reads NOW, rather
     // than a quiet table staying stale until its next write.
     if (dialed.resync !== null) handlers.onResync?.(dialed.resync);
+    else if (dialed.resumed !== null) handlers.onResume?.(dialed.resumed);
   }
 
   /**
@@ -164,15 +182,18 @@ export class PgReplicationStream {
     const connection = this.#connection;
     this.#connection = null;
     const failures: unknown[] = [];
+    let ended = false;
     try {
       // Confirming before the goodbye is what stops a restart from replaying the whole window.
       if (connection?.inCopyBoth === true) {
         await this.#confirm(connection);
         await connection.endCopy();
+        ended = true;
       }
     } catch (failure) {
       failures.push(failure);
     }
+    if (ended && connection !== null) await drainGoodbye(connection, this.#pump, this.#schedule);
     try {
       await connection?.close();
     } catch (failure) {

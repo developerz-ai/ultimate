@@ -25,6 +25,11 @@ describe('unit · shipped guard · raw-interval', () => {
       ['X_RAW_INTERVAL', `${ISLAND}:4`],
     ]);
     expect(findings[0]?.fix).toContain("import { visibleInterval } from '@ultimat3/core/page'");
+    // A query's safety re-read is `pollEvery`, already built: four adopters hand-rolled one because
+    // the refusal named only the lower-level timer.
+    expect(findings[0]?.fix).toContain(
+      'useQuery(ref, input, { poll: pollEvery(ms) }) (pollEvery is exported by @ultimat3/realtime)',
+    );
   });
 
   test('a why:, visibleInterval, a server file and a test are silent', async () => {

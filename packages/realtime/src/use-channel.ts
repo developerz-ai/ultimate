@@ -5,10 +5,13 @@
 
 import type { ChannelHandlers, ChannelRef, ChannelState } from './client-channels';
 import { installedPage } from './page-store';
-import { isServerRender, signalFor } from './reactivity';
+import { isServerRender, ownedRelease, signalFor } from './reactivity';
 import type { PresenceMember } from './sync-protocol';
 
-/** The membership's state, callable, plus its refusal and its release (Solid: `onCleanup`). */
+/**
+ * The membership's state, callable, plus its refusal and its release — run by the component's
+ * cleanup on its own (`RealtimeInstall.cleanup`); call it to let go sooner, or outside a component.
+ */
 export type ChannelAccessor = (() => ChannelState) & {
   /** What the node answered when it refused the membership (`failed`); `undefined` otherwise. */
   error(): unknown;
@@ -50,10 +53,10 @@ export function useChannel<K extends string>(
     version();
     return membership.error();
   };
-  const release = (): void => {
+  const release = ownedRelease(() => {
     off();
     membership.release();
-  };
+  });
   return Object.assign(read, { error, release, [Symbol.dispose]: release });
 }
 
@@ -97,5 +100,6 @@ export function usePresence<K extends string>(
     version();
     return [...members.values()];
   };
-  return Object.assign(read, { release: membership.release, [Symbol.dispose]: membership.release });
+  const release = ownedRelease(membership.release);
+  return Object.assign(read, { release, [Symbol.dispose]: release });
 }

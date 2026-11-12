@@ -88,6 +88,11 @@ describe('what reaching the barrel costs an island that only follows a channel',
     // measured: 8,397 B (2026-11-10, Bun 1.4.4), 9,027 without this change. why: −630 B, the nine
     // server-only titles (replication, topology, producer conflict) moved to
     // `error-titles-server.ts`, which no island chunk reaches. The ceiling moves down by the saving.
-    expect(bytes).toBeLessThan(8_458);
+    // measured: 8,495 B (2026-11-12, Bun 1.4.4), 8,397 without this change. why: +98 B, every hook
+    // releasing itself through the installed cleanup (`ownedRelease`, `reactivity.ts`; plan 101
+    // sweep 9b R7; +78 B) — a forgotten `onCleanup` no longer holds a subscription — and the two
+    // install fixes in `page-errors.ts` naming `cleanup: onCleanup` (+20 B), so a hand-built island
+    // that follows them keeps it. The ceiling moves by it.
+    expect(bytes).toBeLessThan(8_556);
   }, 60_000);
 });

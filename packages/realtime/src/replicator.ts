@@ -11,14 +11,16 @@
 // its feed and reports `/readyz` false. A stream that ENDS — or a lock that is LOST — is this file's
 // to answer: `running` goes false, everything is let go, and the process asks again on a backoff.
 
-import { isUltimateError, logger, renderThrowable, uuidV7, withSpan } from '@ultimat3/core';
+import { logger, renderThrowable, uuidV7, withSpan } from '@ultimat3/core';
 import type { AdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { ReplicationFailedError } from './errors';
 import type { Transport } from './fanout';
 import { encodeResync, RESYNC_SUBJECT } from './replication-resync';
-import { withinStopDeadline } from './replicator-deadline';
+import { type DeadlineOutcome, withinStopDeadline } from './replicator-deadline';
 import { encodeEnvelope } from './replicator-envelope';
+import { handOver } from './replicator-handover';
+import { busAway, fencedOut, PUBLISH_RETRY_DELAYS_MS } from './replicator-publish';
 import { connectionLost, RedialCurve } from './replicator-reconnect';
 import { ResyncDebt } from './replicator-resync';
 import { changeSubject, normalize } from './replicator-subject';
@@ -29,6 +31,7 @@ import {
   type Rng,
   type Scheduler,
 } from './thundering-herd';
+import { unrefScheduler } from './unref-scheduler';
 
 // The subjects and the normalize step live next door; their importers keep this path.
 export {
@@ -86,6 +89,10 @@ export interface Replicator {
 interface Run {
   /** Why this run is over — the stream ended, the lock was lost, or it was stopped. */
   over: string | null;
+  /** Where the feed says it resumed (`onResume`), for its first envelope and its handover. */
+  from?: string | undefined;
+  /** The last `seq` it got onto the bus. */
+  sent: number;
 }
 
 /** The change a run could not publish, kept until one goes out. */
@@ -98,24 +105,7 @@ interface Refusal {
 
 export { STOP_DEADLINE_MS } from './replicator-deadline';
 
-/**
- * How long a publish refused because the bus is AWAY is waited out, in the handler, before the run
- * ends: three more attempts over two seconds. A NATS restart is a second or two, and ending the
- * run for it costs a stream stop, an unlock, a backoff and a re-read from `lastLsn` — with
- * `/readyz` false throughout. Longer than this is an outage, and the takeover loop's to handle.
- */
-export const PUBLISH_RETRY_DELAYS_MS: readonly number[] = [100, 400, 1_500];
-
-/** The bus is unreachable — as opposed to a change it will never take (a payload over the limit). */
-const busAway = (thrown: unknown): boolean =>
-  isUltimateError(thrown) && thrown.code === 'X_TRANSPORT_UNAVAILABLE';
-
-const fencedOut = (reason: string): ReplicationFailedError =>
-  new ReplicationFailedError({
-    stage: 'stream',
-    detail: `a change arrived for a run that is over (${reason}), and was not published`,
-    fix: 'x doctor --json',
-  });
+export { PUBLISH_RETRY_DELAYS_MS } from './replicator-publish';
 
 export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   const subjectOf = options.subjectOf ?? changeSubject;
@@ -174,10 +164,10 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   };
 
   /** The orderly stream stop, bounded the same way. A refusal is handed back for the caller. */
-  const quiet = async (): Promise<unknown> => {
+  const quiet = async (): Promise<DeadlineOutcome> => {
     const outcome = await bounded(options.feed.stop());
     if (outcome.how !== 'done') options.feed.abandon();
-    return outcome.how === 'failed' ? outcome.error : undefined;
+    return outcome;
   };
 
   /**
@@ -240,7 +230,9 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       await withSpan('realtime.replicate', async () => {
         seq += 1;
         try {
-          await publishThroughBlip(run, subjectOf(change), encodeEnvelope(change, seq, producer));
+          const from = seq === 1 ? run.from : undefined;
+          const envelope = encodeEnvelope(change, seq, producer, undefined, from);
+          await publishThroughBlip(run, subjectOf(change), envelope);
         } catch (thrown) {
           const error = renderThrowable(thrown);
           const same = refusal !== null && refusal.lsn === change.lsn;
@@ -253,6 +245,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
           throw thrown;
         }
         lastLsn = change.lsn;
+        run.sent = seq;
         published += 1;
         // Progress: the next death waits the base delay again, and nothing is owed any more.
         curve.progress();
@@ -284,7 +277,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     }
     producer = uuidV7();
     seq = 0;
-    const run: Run = { over: null };
+    const run: Run = { over: null, sent: 0 };
     current = run;
     const end = (reason: string): void => {
       if (run.over !== null) return;
@@ -308,10 +301,14 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       resync.owe(reason);
       lastLsn = null;
       resumeFrom = undefined;
+      run.from = undefined;
     };
     let fed = false;
     try {
-      const handlers = { onChange, onEnd: end, onResync };
+      const onResume = (at: string): void => {
+        run.from = at;
+      };
+      const handlers = { onChange, onEnd: end, onResync, onResume };
       await options.feed.start(from === undefined ? handlers : { from, ...handlers });
       fed = true;
       if (run.over !== null) {
@@ -459,6 +456,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       refusal = null;
       if (!pumping) return;
       pumping = false;
+      const run = current;
       if (current !== undefined) current.over ??= 'the replicator was stopped';
       current = undefined;
       // After the run is marked over, so the wait it ends lands in the fence and publishes nothing.
@@ -466,9 +464,14 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       unwatch();
       // Whatever the feed said: a lock kept because the stream would not close politely is a
       // slot no standby can take. Its refusal is still the one the caller is owed.
-      const refused = await quiet();
+      const quieted = await quiet();
+      // Still holding the lock, so it lands before a successor can publish anything.
+      if (quieted.how === 'done' && run !== undefined) {
+        const { transport, feed } = options;
+        await handOver({ feed, transport, producer, published: run.sent, from: run.from, bounded });
+      }
       await release();
-      if (refused !== undefined) throw refused;
+      if (quieted.how === 'failed') throw quieted.error;
     },
 
     get running(): boolean {
@@ -488,12 +491,3 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     retryDelayMs,
   };
 }
-
-/** The production timer: a pending restart must never be what keeps a draining process alive. */
-const unrefScheduler: Scheduler = (fn, ms) => {
-  const handle = setTimeout(fn, ms);
-  handle.unref?.();
-  return () => {
-    clearTimeout(handle);
-  };
-};

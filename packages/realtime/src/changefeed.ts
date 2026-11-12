@@ -7,6 +7,7 @@ import { finiteOption } from '@ultimat3/core';
 import { ReplicationFailedError } from './errors';
 import type { LiveRow } from './json';
 import { PgReplicationStream, type ReplicationStreamStats } from './pg-replication';
+import { laterLsn } from './pg-replication-position';
 import type { PgTarget } from './pg-socket';
 import type { PgStream } from './pg-wire';
 import type { Rng } from './thundering-herd';
@@ -72,6 +73,13 @@ export interface ChangeFeedStartOptions {
    * now. Called at most once per `start()`, before its first change.
    */
   readonly onResync?: (reason: string) => void;
+  /**
+   * Where this stream resumed: it delivers every change above `at`. Called at most once per
+   * `start()`, before its first change, and only when the feed KNOWS — a stream "from now", a new
+   * slot and a resync say nothing. A sync node reads it as the run's place in the chain
+   * (`ChangeEnvelope.from`), so a claim it cannot keep is a lost change no node notices.
+   */
+  readonly onResume?: (at: string) => void;
 }
 
 export interface ChangeFeed {
@@ -86,6 +94,13 @@ export interface ChangeFeed {
   abandon(): void;
   /** Highest lsn delivered to the handler; the replicator persists this to survive a restart. */
   lastLsn(): string | null;
+  /**
+   * Every change at or below this position has been delivered — by this run, or before it began.
+   * Read after a clean `stop()` it is how far the stream got (a slot's confirmed position), which
+   * a replicator hands over so its successor in another process chains on. `null` or absent: the
+   * feed cannot say, and the next run reads as a gap.
+   */
+  position?(): string | null;
 }
 
 /** 16-hex zero-padded so string comparison equals numeric comparison. */
@@ -117,6 +132,10 @@ export class MemoryChangeFeed implements ChangeFeed {
   #tail: Promise<void> = Promise.resolve();
   #position = 0n;
   #lastLsn: string | null = null;
+  /** Where the current run resumed, when it said (`onResume`). */
+  #from: string | null = null;
+  /** The highest lsn retention let go of: a resume at or above it replays complete. */
+  #evicted: string | null = null;
 
   constructor(options: MemoryChangeFeedOptions = {}) {
     this.#retain = finiteOption('the change feed', 'retain', options.retain ?? 1024);
@@ -125,7 +144,13 @@ export class MemoryChangeFeed implements ChangeFeed {
   async start(options: ChangeFeedStartOptions): Promise<void> {
     this.#handler = options.onChange;
     const from = options.from;
+    this.#from = null;
     if (from === undefined) return;
+    // A claim only the retained window can keep: below what it let go of, changes are skipped.
+    if (this.#evicted === null || this.#evicted <= from) {
+      this.#from = from;
+      options.onResume?.(from);
+    }
     for (const event of this.#retained) {
       if (event.lsn > from) await this.#deliver(event);
     }
@@ -144,11 +169,20 @@ export class MemoryChangeFeed implements ChangeFeed {
     return this.#lastLsn;
   }
 
+  position(): string | null {
+    return laterLsn(this.#from, this.#lastLsn);
+  }
+
   /** Append a fully-formed event. Used by tests that need an exact lsn or txid. */
   async emit(event: ChangeEvent): Promise<void> {
     if (this.#retain > 0) {
       this.#retained.push(event);
-      while (this.#retained.length > this.#retain) this.#retained.shift();
+      while (this.#retained.length > this.#retain) {
+        const evicted = this.#retained.shift();
+        if (evicted !== undefined) this.#evicted = laterLsn(this.#evicted, evicted.lsn);
+      }
+    } else {
+      this.#evicted = laterLsn(this.#evicted, event.lsn);
     }
     await this.#deliver(event);
   }
@@ -259,6 +293,7 @@ export class PostgresChangeFeed implements ChangeFeed {
       onChange: options.onChange,
       onEnd: options.onEnd,
       onResync: options.onResync,
+      onResume: options.onResume,
     });
   }
 
@@ -272,6 +307,10 @@ export class PostgresChangeFeed implements ChangeFeed {
 
   lastLsn(): string | null {
     return this.#stream.lastLsn();
+  }
+
+  position(): string | null {
+    return this.#stream.position();
   }
 
   /** Delivered / skipped / replayed counts, for `/readyz` and the `x dev` dashboard. */

@@ -111,6 +111,7 @@ Opt-in per entity, and shipped in 21.0.0 (`CHANGELOG.md`). The 20.x shape (`stor
 | boot | the rows are restored **before** the socket connects, as provisional records; the first server row for a key wins outright |
 | an answer that did not carry every row the overlay wrote | the overlay stays for those rows until a server row for them arrives, capped at 10 s (`DEFAULT_AWAIT_SERVER_MS`), after which server truth stands |
 | a write with no response | only `X_CLIENT_TRANSPORT_FAILED` with `meta.failure: 'network'`: `useMutation` queues it in the page's one outbox under its idempotency key, keeps its overlay on screen, and resolves `undefined`. `'status'` rejects and drops the overlay; `'body'` (a 2xx that was not JSON, which may have landed) rejects and keeps the overlay until the next server row |
+| two online calls of one mutator | sent in call order (**31.14.0**): one lane per mutator **name**, page-wide, so the next POST starts when the previous one settled — answered, queued or refused. Each overlay still paints at once; only the network leg waits. Before, a like then an unlike were POSTed together and could commit in either order. Different mutators never wait on each other |
 | replay | in order, over HTTP, each write with its original idempotency key: whenever the page socket (re)connects, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE` ([PWA and offline](PWA-And-Offline)). A retryable failure stops the pass; a refusal is final and rolls back its overlay. **At least once**: an entry leaves the disk when its ack is written, so a 2xx that reached a document already being replaced is sent again by the next one, under the same key — answered from the action's idempotency store (a `mutator()` is `idempotent: true` or it does not declare), never applied twice. A `409 X_IDEMPOTENCY_CONFLICT` for a first attempt still running stays queued and is asked again |
 | a write queued offline | flushes the persisted records it touched first, so a reload inside the 250 ms persist debounce keeps the row the write changed. No replay runs while `navigator.onLine` is `false` (`page-outbox.ts`) |
 | a principal change | **within one page** (`rescope()`): the previous principal's rows and queue are wiped, and writes still queued are lost, deliberately. A replay on the wire at that moment is abandoned before its next write: nothing queued by one principal is sent under the next one's session. A write being queued at that moment is refused — `mutate` rejects with `X_OFFLINE_QUEUE_ABANDONED` and its optimistic twin is taken back. **A sign-out that navigates** to a new document (the reference app's idiom: the `endSession` action at `POST /api/sessions/end`, posted by a native form) clears the browser first: its response carries `signOutHeaders()` from `@ultimat3/auth`, whose `Clear-Site-Data: "cache", "storage"` drops IndexedDB, local storage, the service worker and its cache, in a secure context. The next boot is the second line: it wipes every stored scope except the current principal's before restoring anything (`packages/realtime/src/boot.ts`, `wipeOthers`). An unscoped page wipes nothing |
@@ -135,7 +136,7 @@ adapter, its sync URL and its `LiveClient`: the page's one socket is the framewo
 | 1. the dependency | root `package.json` | `bun add @ultimat3/realtime`. `x new` installs `@ultimat3/query` and **not** `@ultimat3/realtime` |
 | 2. the query | `app/<feature>/live.ts` | `query({ …, live: true, subscribes: ['posts'] })`, bounded and ordered; `x g query <name> --feature <slice> --live` writes it |
 | 3. the ref | the island | `{ name: 'liveFeed', live: true }`, the query's registered **name**, never the query value: importing that drags its whole read path into the island. `live` is stated beside the name, not derived (see below) |
-| 4. the install | nothing to write | `x build` builds every island whose own import graph reaches `@ultimat3/realtime` from an entry that calls `installRealtime({ signal: createSignal })` first, for about 100 B. An island not reaching realtime pays nothing. The sync target is read from the document's `<meta name="ultimate-sync">` ([Configuration](Configuration), `SYNC_URL`) |
+| 4. the install | nothing to write | `x build` builds every island whose own import graph reaches `@ultimat3/realtime` from an entry that calls `installRealtime({ signal: createSignal, cleanup: onCleanup })` first, for about 100 B — `cleanup` releases every hook with the component that called it (31.14.0), so an island writes no `onCleanup(() => h.release())`. An island not reaching realtime pays nothing. The sync target is read from the document's `<meta name="ultimate-sync">` ([Configuration](Configuration), `SYNC_URL`) |
 | 5. the hook | the component | `useQuery(ref, input)` returns an `AsyncState` accessor. **In an island, never a page body**: a page component never runs in a browser, so the hook answers `pending` there forever |
 
 ```tsx
@@ -176,7 +177,8 @@ name its entity (`{ name, entity: 'post' }`) so its rows are store records too.
 
 **Two limits, `As of 2026-09-22`.** `x build` sees realtime only in the island's **own** graph. An
 island that reaches it through a package, rather than importing it, calls
-`installRealtime({ signal: createSignal })` in `mount` itself, or throws `X_REALTIME_UNINSTALLED`.
+`installRealtime({ signal: createSignal, cleanup: onCleanup })` in `mount` itself, or throws
+`X_REALTIME_UNINSTALLED`; without `cleanup`, every hook's `release()` stays the island's to call.
 And `live` and `entity` on the ref are stated by hand, not derived from the query declaration. Both
 are in the plan-101 DX ledger.
 
@@ -620,6 +622,24 @@ So the drain is **server-directed**:
 
 Full drain sequence per role: [Deployment](Deployment).
 
+## What a rollout costs
+
+A deploy restarts both realtime roles; what each restart costs a subscriber, `As of 31.14.0`:
+
+| Restart | Cost |
+|---|---|
+| a `sync` node | its sockets reconnect, spread over `drainSpreadMs` ([`sync` drain](#sync-drain)); each live query resumes from its cursor — the change buffer when the cursor is inside it, one bounded snapshot when not |
+| the `replicator`, after a clean stop — `stop()`, SIGTERM, a deploy | **free**: no window re-read, no snapshot frame. The stopping run publishes a handover on `x.change.-handover` (its last `seq`, and how far its slot was confirmed), and the next run's first envelope says where it resumed (`from`, envelope v2); a node that read up to there takes it as a continuation. Held by `replicator.live.test.ts` against Postgres: stop + start, and a second process after a clean stop, both 0 invalidations |
+| the `replicator`, after a crash (killed, OOM, lost lock) | **one re-read per live window** on every node: with no handover, the new run resumes at the slot's confirmed position, above what any node read, and the node cannot tell a lost tail from none. Each window is re-snapshotted on its next change |
+| a lost tail, a new or recreated slot, a resync | one re-read per window, as a crash |
+| a mixed fleet mid-roll (one side before 31.14.0) | one re-read per window: an older node drops the handover and ignores `from`, an older replicator sends neither. Roll `sync` nodes first, so the replicator's own roll lands on nodes that chain |
+
+The stop itself is quiet in the database log too: the stream reads the walsender's goodbye (CopyDone, CommandComplete, ReadyForQuery, at most 1 s) before `Terminate`, where it used to close unread and leave `Connection reset by peer` behind on every deploy.
+
+## Out of scope: a duplex byte stream
+
+No channel kind carries an ordered, two-way byte stream to a browser — a terminal, a file transfer, a media relay. Decided, not pending ([plan 101 OD4](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/11/11/101-full-stack-efficiency-sweeps/90-owner-decisions.md)): one app asked, and the transport is business-shaped. A channel is at-most-once events and presence; a live query is rows. An app that needs one builds it on an action — a long-poll read of what arrived since a cursor, a write per input — and keeps the page socket for rows and events. Not planned; a second app asking reopens it.
+
 ## Wire protocol version
 
 `PROTOCOL_VERSION` is **3** `As of 2026-09-22` (21.0.0; it was 2 from 2026-08-24) ([`packages/realtime/src/sync-protocol.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/sync-protocol.ts)). A mismatch is `X_PROTOCOL_VERSION` on the frame, with one instruction, rather than a per-field decode error nobody can act on.
@@ -714,8 +734,8 @@ the listener's websocket paths are fixed when it binds. A container scans once, 
 | `X_LIVE_QUERY_UNKNOWN` | a `subscribe` frame named a live query this node does not have | `x queries list --json` |
 | `X_CURSOR_STALE` | resume cursor cannot be honoured and no snapshot path was supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
 | `X_REBASE_CONFLICT` | a `custom(merge)` returned something other than a row with a string `id` | `set conflict: 'server-wins' on the mutator, or return a row from custom(merge)` |
-| `X_REALTIME_UNINSTALLED` | a hook ran in a browser island whose bundle never called `installRealtime()` | `x build`, which installs it on every island whose own graph imports realtime. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal })` in `mount` |
-| `X_SYNC_UNCONFIGURED` | a live hook needed the page socket, and neither `installRealtime({ sync })` nor `<meta name="ultimate-sync">` named a target. The meta is not rendered at all when `app.config.ts` says `realtime: { enabled: false }`: no node is started, so there is nothing to dial (22.2.2) | serve the page through `x dev` or the container, which render the meta, or pass `installRealtime({ signal, sync: { url, buildId } })` |
+| `X_REALTIME_UNINSTALLED` | a hook ran in a browser island whose bundle never called `installRealtime()` | `x build`, which installs it on every island whose own graph imports realtime. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal, cleanup: onCleanup })` in `mount` |
+| `X_SYNC_UNCONFIGURED` | a live hook needed the page socket, and neither `installRealtime({ sync })` nor `<meta name="ultimate-sync">` named a target. The meta is not rendered at all when `app.config.ts` says `realtime: { enabled: false }`: no node is started, so there is nothing to dial (22.2.2) | serve the page through `x dev` or the container, which render the meta, or pass `installRealtime({ signal, cleanup, sync: { url, buildId } })` |
 | `X_RECORD_REJECTED` | a row reached the record store with no key, or not as an object | `x entities show <entity> --json`, then return whole rows |
 | `X_MUTATOR_CLOCK_MISSING` | `conflict: 'last-write-wins'` with no number `updatedAt` on the entity | add the clock, or declare `conflict: 'server-wins'` |
 | `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down. At boot only for `sync` and the replicator, after a bounded wait; on `web`, `worker` and `scheduler` it is what a publish rejects with while the bus is away ([what each role needs](#what-each-role-needs-from-the-bus)); on a socket it is the one refusal a client treats as transient ([a bus outage, seen from an open page](#a-bus-outage-seen-from-an-open-page)) | `x doctor — then check NATS_URL points at a reachable nats-server` |

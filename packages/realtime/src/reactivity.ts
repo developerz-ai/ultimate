@@ -11,9 +11,17 @@ export interface RealtimeInstall {
   readonly signal: SignalFactory;
   /** Where the page's socket dials. Omitted by an island that holds no live hook. */
   readonly sync?: SyncTarget;
+  /**
+   * Registers a release with the component being rendered — Solid's `onCleanup`, behind its
+   * `getOwner()` guard, as the island bootstrap passes it. Every hook hands its own release here,
+   * so a component that goes takes its subscriptions with it; `release()` stays for code that
+   * holds a hook outside a component. Omitted: the caller owns every release.
+   */
+  readonly cleanup?: (release: () => void) => void;
 }
 
 let installed: SignalFactory | undefined;
+let cleanup: ((release: () => void) => void) | undefined;
 
 /**
  * Called by the island bootstrap `x build` prepends — never by an island's own code. Per bundle
@@ -22,6 +30,7 @@ let installed: SignalFactory | undefined;
  */
 export function installRealtime(install: RealtimeInstall): void {
   installed = install.signal;
+  cleanup = install.cleanup;
   const page = pageRealtime();
   if (install.sync !== undefined && page.sync === undefined) page.sync = install.sync;
 }
@@ -57,6 +66,22 @@ export function signalFor(hook: string): SignalFactory {
 }
 
 /**
+ * `release`, run at most once however many of its callers fire — the component's cleanup, an
+ * explicit `release()`, a `using` block — and registered with the installed cleanup. A double
+ * release would drop a hold another reader of the same record or topic still has.
+ */
+export function ownedRelease(release: () => void): () => void {
+  let held = true;
+  const once = (): void => {
+    if (!held) return;
+    held = false;
+    release();
+  };
+  cleanup?.(once);
+  return once;
+}
+
+/**
  * A server render: nothing installed and no DOM. A hook answers the honest server state and never
  * touches the page state — on a server that would be ONE store shared by every request.
  */
@@ -67,4 +92,5 @@ export function isServerRender(): boolean {
 /** For tests: forget this bundle's install so cases stay independent. */
 export function uninstallRealtime(): void {
   installed = undefined;
+  cleanup = undefined;
 }

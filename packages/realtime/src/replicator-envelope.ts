@@ -5,6 +5,7 @@
 
 import { isWriteDigest } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
+import type { Handover } from './replicator-handover';
 import { busRow, reviveBusRow } from './replicator-row';
 
 /**
@@ -31,7 +32,16 @@ export interface ChangeEnvelope {
    * declared channels and never a live window, and several publishers run side by side.
    */
   readonly source?: EnvelopeSource;
+  /**
+   * On a replicator run's FIRST envelope only: the position it resumed from — it publishes every
+   * change above it. Envelope version 2 (`v: 2` beside it on the wire); any other version, and
+   * every older replicator, sends none, and the node falls back to "a new run is a gap".
+   */
+  readonly from?: string;
 }
+
+/** The envelope version `from` is trusted under. A later one that changes its meaning bumps it. */
+const CHAIN_VERSION = 2;
 
 /** The two producers of the change bus: the one WAL replicator, and an app's record publishers. */
 export type EnvelopeSource = 'replicator' | 'publisher';
@@ -46,6 +56,7 @@ export function encodeEnvelope(
   seq: number,
   producer: string,
   source?: EnvelopeSource,
+  from?: string,
 ): string {
   return JSON.stringify({
     ...change,
@@ -54,6 +65,7 @@ export function encodeEnvelope(
     seq,
     producer,
     ...(source === 'publisher' ? { source } : {}),
+    ...(from === undefined ? {} : { from, v: CHAIN_VERSION }),
   });
 }
 
@@ -72,6 +84,8 @@ export function parseEnvelope(payload: string): ChangeEnvelope | null {
       producer?: unknown;
       source?: unknown;
       entity?: unknown;
+      from?: unknown;
+      v?: unknown;
     };
     // `entity` is the field a 24.x replicator wrote the table under. Read, never written: across a
     // rolling deploy to 25.0.0 the replicator and the sync nodes run different builds for minutes,
@@ -104,6 +118,7 @@ export function parseEnvelope(payload: string): ChangeEnvelope | null {
       seq: typeof shape.seq === 'number' && Number.isFinite(shape.seq) ? shape.seq : null,
       producer: typeof shape.producer === 'string' ? shape.producer : null,
       ...(shape.source === 'publisher' ? { source: 'publisher' as const } : {}),
+      ...(shape.v === CHAIN_VERSION && typeof shape.from === 'string' ? { from: shape.from } : {}),
     };
   } catch {
     return null;
@@ -125,9 +140,13 @@ const isNames = (value: unknown): value is readonly string[] =>
  * the first message this node ever reads: a node that joined late has missed everything by
  * definition, and every subscription it holds started after it did.
  *
- * A NEW producer after a known one IS a gap. The run before it died — that is why there is a new
- * one — and nothing says its last messages reached this node: the tail of a dead stream has no
- * later sequence number to be missed against. One re-read per replicator restart is the price.
+ * A NEW producer after a known one IS a gap — unless it says where it resumed `from` and this node
+ * has already seen a change at or above it (`#chain`): the new run publishes every change above
+ * `from`, so nothing the old run's tail held can be missing. A clean restart chains; a run that
+ * resumed above what this node saw (its old tail never arrived) still gaps, and so does every run
+ * that says nothing — an older replicator mid-roll, or a start "from now". A run's clean goodbye
+ * (`handOver`) raises the chain to how far its slot was confirmed: what a successor in ANOTHER
+ * process resumes at, so a deploy chains too, while a crash — no goodbye — still gaps.
  *
  * Only a REPLICATOR run succeeds another. Record publishers (`source: 'publisher'`) run side by
  * side, one per app process, so a new one says nothing about the others; and a replicator run
@@ -137,6 +156,8 @@ export class SeqGapDetector {
   readonly #next = new Map<string, number>();
   /** Replicator runs read — the producers a NEW replicator run succeeds. */
   readonly #runs = new Set<string>();
+  /** The highest replicator lsn this node has read: every change at or below it has been seen. */
+  #chain: string | null = null;
 
   /** `true` when at least one message between the last one and this one was never delivered. */
   observe(envelope: ChangeEnvelope): boolean {
@@ -144,17 +165,52 @@ export class SeqGapDetector {
     if (producer === null || seq === null) return false;
     const expected = this.#next.get(producer);
     const replicator = envelope.source !== 'publisher';
-    const succeeds = replicator && expected === undefined && this.#runs.size > 0;
-    if (replicator) this.#runs.add(producer);
+    const succeeds =
+      replicator &&
+      expected === undefined &&
+      this.#runs.size > 0 &&
+      !this.#chains(envelope.from, seq);
+    if (replicator) {
+      this.#runs.add(producer);
+      this.#raise(envelope.change.lsn);
+    }
     // Never backwards: a redelivery must not lower the bar and turn the next legitimate message
     // into a gap of its own.
     this.#next.set(producer, Math.max(expected ?? 0, seq + 1));
     return succeeds || (expected !== undefined && seq > expected);
   }
 
+  /**
+   * A replicator run's clean goodbye. `true` when its tail never reached this node (a hole before
+   * the handover's `seq`), or it is a run this node never saw start that cannot chain. Either way
+   * the chain rises to `through`: everything below it was published, and a gap is re-read now.
+   */
+  handOver(handover: Handover): boolean {
+    const { producer, seq } = handover;
+    const expected = this.#next.get(producer);
+    const gap =
+      expected === undefined
+        ? this.#runs.size > 0 && !this.#chains(handover.from, seq)
+        : seq > expected;
+    this.#runs.add(producer);
+    this.#next.set(producer, Math.max(expected ?? 0, seq + 1));
+    this.#raise(handover.through);
+    return gap;
+  }
+
+  /** A run's first word resuming at or below what this node has already seen. */
+  #chains(from: string | undefined, seq: number): boolean {
+    return from !== undefined && seq === 1 && this.#chain !== null && from <= this.#chain;
+  }
+
+  #raise(lsn: string): void {
+    if (this.#chain === null || lsn > this.#chain) this.#chain = lsn;
+  }
+
   /** Producers this node has read. Bounded by replicator restarts, so it is swept on a drain. */
   forget(): void {
     this.#next.clear();
     this.#runs.clear();
+    this.#chain = null;
   }
 }

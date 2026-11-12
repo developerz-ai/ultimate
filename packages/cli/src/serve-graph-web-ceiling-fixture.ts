@@ -232,5 +232,7 @@
  * `SERVING_ROLE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing web-only.
  * raised 1663 → 1674, measured 1674 (2026-11-12, sweep 9b jobs mechanisms):
  * `SERVING_ROLE_CEILING`'s 11, the modules named there. Nothing web-only.
+ * raised 1674 → 1678, measured 1678 (2026-11-12, sweep 9b realtime): `SERVING_ROLE_CEILING`'s 4,
+ * the realtime modules named there. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1674;
+export const WEB_ROLE_CEILING = 1678;

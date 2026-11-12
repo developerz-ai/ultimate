@@ -20,6 +20,10 @@ const STANDBY_STATUS = 0x72;
 export const changeLsn = (commitLsn: bigint, sequence: number): string =>
   commitLsn.toString(16).padStart(16, '0') + sequence.toString(16).padStart(8, '0');
 
+/** The higher of two positions, either possibly unknown. */
+export const laterLsn = (a: string | null, b: string | null): string | null =>
+  a === null ? b : b === null || a >= b ? a : b;
+
 /** The commit position inside a change lsn — where a resume asks the server to restart. */
 export const commitPositionOf = (lsn: string): bigint => BigInt(`0x${lsn.slice(0, 16) || '0'}`);
 

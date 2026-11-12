@@ -71,6 +71,40 @@ export interface PageWrites {
   readonly pending: Map<string, number>;
   failed: number;
   readonly listeners: Set<() => void>;
+  /**
+   * Per mutator name, the settling of its latest write: the next one's network leg waits on it
+   * (`enterLane`). Optional, so a page object another bundle's copy built still takes a write.
+   */
+  lanes?: Map<string, Promise<void>>;
+}
+
+/** A write's place in its mutator's lane: wait on `ready` (when busy), `leave` once settled. */
+export interface WriteLane {
+  /** The previous write's settling; `undefined` when the lane was idle — send in this tick. */
+  readonly ready: Promise<void> | undefined;
+  leave(): void;
+}
+
+/**
+ * Joins the lane of `name`, page-wide — every hook and island of one mutator share it, because
+ * the order that matters is the server's commit order of that mutator's writes.
+ */
+export function enterLane(writes: PageWrites, name: string): WriteLane {
+  if (writes.lanes === undefined) writes.lanes = new Map();
+  const lanes = writes.lanes;
+  const ready = lanes.get(name);
+  let open: () => void = () => undefined;
+  const mine = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  lanes.set(name, mine);
+  return {
+    ready,
+    leave: () => {
+      open();
+      if (lanes.get(name) === mine) lanes.delete(name);
+    },
+  };
 }
 
 export const PAGE_KEY: unique symbol = Symbol.for('ultimate.realtime');
