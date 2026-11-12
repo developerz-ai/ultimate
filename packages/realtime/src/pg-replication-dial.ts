@@ -9,7 +9,7 @@ import { printLsn } from './pg-bytes';
 import { PgConnection } from './pg-connection';
 import { paramsChannelTables } from './pg-identity-tables';
 import { preflight, slotConfirmed } from './pg-preflight';
-import { changeLsn, commitPositionOf } from './pg-replication-position';
+import { changeLsn, commitPositionOf, laterLsn } from './pg-replication-position';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
 /** The identifiers the stream already put through `assertIdentifier`. */
@@ -30,19 +30,22 @@ export interface SlotGap {
 
 export interface DialedStream {
   readonly connection: PgConnection;
-  /** Where START_REPLICATION began — what the stream confirms until its first commit. */
+  /** Where START_REPLICATION began — never below the slot's — and confirmed until a commit. */
   readonly confirmed: bigint;
   /** The resume filter for this run: `undefined` once the slot it pointed into is gone. */
   readonly from: string | undefined;
   /** Why every reader must re-read now, or `null` when the stream is continuous. */
   readonly resync: string | null;
   /**
-   * The stream delivers every change above this (`ChangeFeedStartOptions.onResume`): the resume
-   * filter, or the slot's confirmed position as a change lsn. `null` for a new slot — it begins at
-   * the server's current WAL, and what came before it was never streamed.
+   * The stream delivers every change above this (`ChangeFeedStartOptions.onResume`): the later of
+   * the resume filter and the slot's confirmed position as a change lsn — the server starts at
+   * neither below the slot's. `null` for a new slot — it begins at the server's current WAL, and
+   * what came before it was never streamed.
    */
   readonly resumed: string | null;
 }
+
+const maxPosition = (a: bigint, b: bigint): bigint => (a >= b ? a : b);
 
 /**
  * Open, preflight, START_REPLICATION. On any failure after the socket opened, the session is closed
@@ -82,16 +85,18 @@ export async function dialReplication(
       // FIELDS, never interpolation; the message is the CODE alone (`pg-preflight.ts`).
       logger.warn(said.code, { cause: said.cause, fix: said.fix, slot: names.slot, from: under });
     }
-    // No resume position on an existing slot: it restarts at its confirmed position, read so the
-    // run can say so. Asked for explicitly, which Postgres treats exactly as `0/0`.
-    const fromSlot =
-      resumeFrom === undefined && slot === 'existing'
-        ? await slotConfirmed(connection, names.slot)
-        : null;
-    const confirmed = resumeFrom === undefined ? (fromSlot ?? 0n) : commitPositionOf(resumeFrom);
+    // An existing slot is always asked where it stands. With no resume position it restarts there
+    // (asked for explicitly, which Postgres treats exactly as `0/0`). With one, Postgres forwards a
+    // start below it to it: another process confirmed past this one's last delivery, and claiming
+    // the older position would let a sync node chain over changes nobody will send again.
+    const fromSlot = slot === 'existing' ? await slotConfirmed(connection, names.slot) : null;
+    const confirmed =
+      resumeFrom === undefined
+        ? (fromSlot ?? 0n)
+        : maxPosition(commitPositionOf(resumeFrom), fromSlot ?? 0n);
     // `<commit>00000000`: no row has sequence 0, so every change of a transaction committing at or
     // after the slot's position is above it — and those are the ones the server sends.
-    const resumed = resumeFrom ?? (fromSlot === null ? null : changeLsn(fromSlot, 0));
+    const resumed = laterLsn(resumeFrom ?? null, fromSlot === null ? null : changeLsn(fromSlot, 0));
     await connection.startCopyBoth(
       `START_REPLICATION SLOT ${names.slot} LOGICAL ${printLsn(confirmed)} ` +
         `(proto_version '1', publication_names '${names.publication}', messages 'true')`,

@@ -113,6 +113,27 @@ function restoreOverlays(mutator: MutatorLike): void {
   });
 }
 
+/**
+ * How long a write waits for the previous write of its mutator before the outbox takes it over.
+ * Writes carry no client deadline (`clientFlight` never aborts one), so a POST on a half-open
+ * socket can hang for minutes; ten seconds is past any answer a live server gives, and short of
+ * the point a user gives up on the tap.
+ */
+export const LANE_WAIT_MS = 10_000;
+
+/** The lane's `ready`, or `'late'` once `LANE_WAIT_MS` passed first. The timer goes either way. */
+async function laneTurn(ready: Promise<void>): Promise<'turn' | 'late'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), LANE_WAIT_MS);
+  });
+  try {
+    return await Promise.race([ready.then(() => 'turn' as const), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The page's outbox once the boot has finished opening it; `undefined` on a page with no boot. */
 async function bootedOutbox(page: {
   readonly booted: Promise<void>;
@@ -153,15 +174,67 @@ export function useMutation(mutator: MutatorLike): Mutate {
     const offline = queued !== undefined && knownOffline();
     if (!offline) paint();
     count(writes, mutator.name, 1);
+    // The outbox may REFUSE: its queue's principal left mid-write (`X_OFFLINE_QUEUE_ABANDONED`),
+    // or the disk would not take it. Nothing will ever send this write then, so its twin comes
+    // off the screen and the caller is told — a rejected `mutate`, by code.
+    //
+    // And the hook has an await of its own — the POST — so WHOSE write this is was decided at the
+    // call (`issued`): asked for after a principal change, the outbox is the next principal's, and
+    // a write handed to it then would be queued, and sent, as them.
+    const enqueue = async (outbox: OutboxHandle): Promise<void> => {
+      try {
+        if (pageClient().scope.epoch !== issued) {
+          throw new OfflineQueueAbandonedError({ name: mutator.name });
+        }
+        await outbox.enqueue({
+          key,
+          name: mutator.name,
+          input,
+          ...(http === undefined ? {} : { http }),
+        });
+      } catch (error) {
+        page.store.drop(key);
+        // A principal change is nobody's failure to report; a disk that refused the write is.
+        if (!isUltimateError(error) || error.code !== 'X_OFFLINE_QUEUE_ABANDONED') {
+          writes.failed += 1;
+        }
+        throw error;
+      }
+    };
+    /** The write is the outbox's: queued under its key, behind what is already there, replayed. */
+    const viaOutbox = async (outbox: OutboxHandle): Promise<undefined> => {
+      try {
+        await enqueue(outbox);
+        if (offline) {
+          // Queued under the principal that made it; one that left since takes its page with it.
+          if (pageClient().scope.epoch !== issued) {
+            throw new OfflineQueueAbandonedError({ name: mutator.name });
+          }
+          paint();
+        }
+        void outbox.replay().catch(() => undefined);
+        return undefined;
+      } finally {
+        count(writes, mutator.name, -1);
+      }
+    };
+    // Offline, nothing is sent, so the lane below has nothing to order: the outbox's replay orders
+    // the queue. Joining it held the write off the disk behind a POST that may never answer (a
+    // half-open socket) — and a reload in that wait lost a write the user saw made (#777).
+    if (offline) return viaOutbox(queued);
     // One lane per mutator NAME, page-wide: this write's network leg starts when the previous
     // one of the same mutator settled — sent, queued or refused. Two online calls (like, then
     // unlike) POSTed together could commit in either order, and the final row would contradict
     // the last overlay the user saw. The overlay above is never held back: the screen is at once.
     const lane = enterLane(writes, mutator.name);
     try {
+      /** The lane's wait ran out: the write goes to the outbox, which orders whatever follows. */
+      let late = false;
       // Only a write that found the lane busy awaits: an idle lane sends in this same tick.
       if (lane.ready !== undefined) {
-        await lane.ready;
+        // Bounded only where a durable queue can take the write over; with none it waits its turn.
+        if (queued === undefined) await lane.ready;
+        else late = (await laneTurn(lane.ready)) === 'late';
         // Waiting is an await: a principal that left meanwhile does not get this write sent as
         // the next one — refused by the code the outbox path uses for the same departure.
         if (pageClient().scope.epoch !== issued) {
@@ -170,37 +243,9 @@ export function useMutation(mutator: MutatorLike): Mutate {
           throw new OfflineQueueAbandonedError({ name: mutator.name });
         }
       }
-      // The outbox may REFUSE: its queue's principal left mid-write (`X_OFFLINE_QUEUE_ABANDONED`),
-      // or the disk would not take it. Nothing will ever send this write then, so its twin comes
-      // off the screen and the caller is told — a rejected `mutate`, by code.
-      //
-      // And the hook has an await of its own — the POST — so WHOSE write this is was decided at the
-      // call (`issued`): asked for after a principal change, the outbox is the next principal's, and
-      // a write handed to it then would be queued, and sent, as them.
-      const enqueue = async (outbox: OutboxHandle): Promise<void> => {
-        try {
-          if (pageClient().scope.epoch !== issued) {
-            throw new OfflineQueueAbandonedError({ name: mutator.name });
-          }
-          await outbox.enqueue({
-            key,
-            name: mutator.name,
-            input,
-            ...(http === undefined ? {} : { http }),
-          });
-        } catch (error) {
-          page.store.drop(key);
-          // A principal change is nobody's failure to report; a disk that refused the write is.
-          if (!isUltimateError(error) || error.code !== 'X_OFFLINE_QUEUE_ABANDONED') {
-            writes.failed += 1;
-          }
-          throw error;
-        }
-      };
       // Asked of the DURABLE queue, re-read now: another tab of this user may have queued writes this
-      // tab's copy has not heard of yet, and sending past them reorders the user's intent. Offline,
-      // nothing is sent, so the question is moot and its read would only delay the disk write.
-      if (queued !== undefined && !offline) {
+      // tab's copy has not heard of yet, and sending past them reorders the user's intent.
+      if (queued !== undefined && !late) {
         await queued.refresh().catch(() => undefined);
         // That read is an await: a principal that left meanwhile must not have this write POSTed, or
         // queued, as the next one. Refused by the code `enqueue` uses for the same departure.
@@ -210,21 +255,9 @@ export function useMutation(mutator: MutatorLike): Mutate {
           throw new OfflineQueueAbandonedError({ name: mutator.name });
         }
       }
-      if (queued !== undefined && (offline || queued.pending().length > 0)) {
-        try {
-          await enqueue(queued);
-          if (offline) {
-            // Queued under the principal that made it; one that left since takes its page with it.
-            if (pageClient().scope.epoch !== issued) {
-              throw new OfflineQueueAbandonedError({ name: mutator.name });
-            }
-            paint();
-          }
-          void queued.replay().catch(() => undefined);
-          return undefined;
-        } finally {
-          count(writes, mutator.name, -1);
-        }
+      // Awaited, not returned: the lane opens for the next write only once this one is on disk.
+      if (queued !== undefined && (late || queued.pending().length > 0)) {
+        return await viaOutbox(queued);
       }
       let output: unknown;
       /** The records the answer carried, `type:key` — what the overlay may be settled against. */

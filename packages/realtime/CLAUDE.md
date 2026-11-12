@@ -98,21 +98,10 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
 - **`desynced` is a mark with a reader**: the next delivery re-snapshots out of the shared window,
   then clears it; `result.refill` is checked BEFORE the mark. A quiet query's three other readers
   (drain, a landed read, `repairMarked`): `docs/history/realtime.md` (2026-11-09).
-- **A change the window already holds is refused** (`change.lsn <= entry.lsn`, counted as
-  `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
-  sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
-  Unless the new run's first envelope says `from` (v2) at or below the highest lsn the node read:
-  that run republishes everything above it, so it chains (`SeqGapDetector.#chain`). A clean
-  `stop()` hands over (`replicator-handover.ts`): the chain rises to the slot's confirmed position,
-  which is the `from` a NEW process's run claims (`slotConfirmed`, read after the slot is released).
-  A claim a feed cannot keep is a silent loss: `onResume` only when it KNOWS.
-- **`stop()` reads the walsender's goodbye before `Terminate`** (`pg-replication-goodbye.ts`):
-  CopyDone → its CopyDone, CommandComplete, ReadyForQuery, bounded at `COPY_DRAIN_MS`. Closed
-  unread, the socket was reset — `Connection reset by peer` in the server log on every deploy.
-- **A bulk write stales only its entity's readers**: windows + channel topics, `invalidate(entity)`
-  on both from `onBulk` (channels: not a `recordPublisher` table). **A stale window's re-read
-  re-snapshots EVERY subscriber**, before the lsn guard, even on a non-match (`live-replicator-bulk`,
-  `live-fanout` tests).
+- **A change the window already holds is refused** (`change.lsn <= entry.lsn`, `staleChanges`).
+  **A gap is detected** (`producer` + `seq`; `SeqGapDetector.#chain`, `replicator-handover.ts`). †
+- **`stop()` reads the walsender's goodbye before `Terminate`** (`pg-replication-goodbye.ts`). †
+- **A bulk write stales only its entity's readers** (`onBulk`); a stale re-read re-snapshots all. †
 - **`startLiveReplicator` SUBSCRIBES to `entity.row`/`entity.bulk`**, never a slot: `stop()`
   releases its own; two both hear a write (`live-replicator.test.ts`). Its handlers never throw.
 - **A window is keyed by the PARSED input** (`LiveQueryDefinition.queryId`): a stripped junk key
@@ -162,10 +151,7 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   `server.upgrade`. `null` = 401 `X_SOCKET_UNAUTHENTICATED`; a throw = 503
   `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the
   `GrantBook`.
-- **The grant is recorded BEFORE `server.upgrade`** (Bun runs `open` synchronously inside it) and
-  released on every path that never opens — `onUngranted` is REQUIRED on `UpgradeDeps`, and a
-  `server.upgrade` that THROWS releases too. `sync-node-auth.test.ts`'s harness opens inside
-  `upgrade()`, as Bun does.
+- **The grant is recorded BEFORE `server.upgrade`**; `onUngranted` is REQUIRED on `UpgradeDeps`. †
 - **A grant expires; a socket does not**: expired grants are re-decided on an interval
   (`hub.onActorChange`, `registry.reauthorize`). No `refresh` = close `1008`; one that raises retries.
 - **Inbound frames run in a lane, never the socket**: `subscribe` is `sub:<sid>` or `topic:<name>`,
@@ -194,18 +180,10 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
 - Exactly one `replicator` per DB, by a session-level advisory lock. **`start()` and
   `PostgresAdvisoryLock.tryAcquire` are MEMOISED**; `stop()`/`release()` await the in-flight one. A start
   that FAILS hands the lock back; `running` is set once the feed pumps.
-- **The pump has one way out, `#die`**: failure, timer, connection, then `onEnd`. **A walsender
-  that stops answering is dead** — 3 intervals read-silent, or a confirm unsettled
-  (`pg-replication-liveness.ts`): destroyed, no goodbye. A run is fenced by its connection.
-- **A stream that ENDS, or a LOST lock, is restarted** from `lastLsn` on `retryDelayMs`; a lost
-  connection (`connectionLost`) redials at once, then ≤ 2 s (`replicator-reconnect.ts`); feed then
-  lock ABANDONED; `running` = pumping and no refused change owed (history, 2026-11-09).
-- **A slot is asked its `wal_status`**: `lost` is `X_REPLICATION_SLOT_INVALIDATED`; one created under
-  a resume is `X_REPLICATION_SLOT_RECREATED`, drops `from`, and owes `x.change.-resync` (a node
-  answers it as a reconnect) till published.
-- **A slot still held is waited for before START_REPLICATION** (`pg-slot-release.ts`): a walsender
-  frees it AFTER the goodbye, so preflight reads `active_pid` and polls on the server's clock, ~5 s
-  bound, then lets 55006 refuse (`pg-slot-release.test.ts`, the held-slot live test).
+- **The pump has one way out, `#die`**; a silent walsender is dead (`pg-replication-liveness.ts`). †
+- **A stream that ENDS, or a LOST lock, is restarted** (`replicator-reconnect.ts`). †
+- **A slot is asked its `wal_status`** (`X_REPLICATION_SLOT_INVALIDATED` / `_RECREATED`). †
+- **A slot still held is waited for before START_REPLICATION** (`pg-slot-release.ts`). †
 - **A row crosses the bus through its entity's columns** (`replicator-row.ts`): `parseEnvelope`
   revives by `entityForTable` + `$parse`, bytes as base64 — by declared kind, never by shape.
 - **Cleartext/md5 auth is answered only under `sslmode` `require`, `verify-*` or `disable`**.

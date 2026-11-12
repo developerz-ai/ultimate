@@ -1,18 +1,20 @@
 // A replicator restart against a real Postgres slot, read by a sync node's gap detector (and the
 // handover the node reads beside it): a stop and a start of one replicator, and a NEW process after
-// a clean stop — a deploy — both chain, so no subscriber is re-snapshotted; a crash costs one.
+// a clean stop — a deploy — both chain, so no subscriber is re-snapshotted; a crash costs one, and
+// so does a run that comes back after another process confirmed the slot past it.
 // Skips unless TEST_REPLICATION_URL names a server with `wal_level = logical`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { entity, entityForTable, text } from '@ultimat3/entity';
-import { memoryAdvisoryLock } from './advisory-lock';
+import { type AdvisoryLock, memoryAdvisoryLock } from './advisory-lock';
 import { postgresChangeFeed } from './changefeed';
-import { InProcessTransport } from './fanout';
+import { InProcessTransport, type Transport } from './fanout';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 import { CHANGE_SUBJECT_PREFIX, changeFeedReplicator, type Replicator } from './replicator';
 import { parseEnvelope, SeqGapDetector } from './replicator-envelope';
 import { parseHandover } from './replicator-handover';
+import type { Scheduler } from './thundering-herd';
 
 const url = Bun.env['TEST_REPLICATION_URL'] ?? '';
 const TABLE = 'x_live_chain_posts';
@@ -53,6 +55,37 @@ const logicalWal = async (): Promise<boolean> => {
 };
 
 const ready = await logicalWal();
+
+/** A lock whose session the test kills: `lose()` lets go and says so, as a dead session would. */
+const losableLock = (key: string): AdvisoryLock & { lose(reason: string): void } => {
+  const inner = memoryAdvisoryLock(key);
+  const listeners = new Set<(reason: string) => void>();
+  return {
+    key,
+    tryAcquire: () => inner.tryAcquire(),
+    release: () => inner.release(),
+    abandon: () => inner.abandon(),
+    onLost: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    lose: (reason) => {
+      inner.abandon();
+      for (const listener of [...listeners]) listener(reason);
+    },
+  };
+};
+
+/** The bus as one process sees it, losing every payload `drops` names — published, never heard. */
+const lossy = (bus: Transport, drops: (payload: string) => boolean): Transport => ({
+  name: bus.name,
+  shared: bus.shared,
+  publish: (subject, payload) =>
+    drops(payload) ? Promise.resolve() : bus.publish(subject, payload),
+  subscribe: (subject, handler) => bus.subscribe(subject, handler),
+  onReconnect: (listener) => bus.onReconnect(listener),
+  close: () => bus.close(),
+});
 
 describe.skipIf(!ready)('live · a replicator restart and the sync node that reads it', () => {
   let sql: PgConnection;
@@ -162,5 +195,81 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
     await write();
     await next.stop();
     expect(invalidations - before).toBe(1);
+  }, 60_000);
+
+  test('a run that lost its lock, after its successor confirmed past what the node read: one', async () => {
+    const bus = new InProcessTransport();
+    const node = new SeqGapDetector();
+    const seen: string[] = [];
+    let missed = 0;
+    await bus.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
+      const handover = parseHandover(payload);
+      if (handover !== null) {
+        if (node.handOver(handover)) missed += 1;
+        return;
+      }
+      const envelope = parseEnvelope(payload);
+      if (envelope === null) return;
+      seen.push(String(envelope.change.after?.['id']));
+      if (node.observe(envelope)) missed += 1;
+    });
+    const insert = (id: string) =>
+      sql.query(`INSERT INTO ${TABLE} (id, org_id) VALUES ('${id}', 'org-1')`);
+    /** Until the slot is confirmed through everything written so far — a commit, then its keepalive. */
+    const confirmedThroughNow = async (): Promise<void> => {
+      const [row] = await sql.query('SELECT pg_current_wal_lsn()::text');
+      const target = row?.[0] ?? '';
+      const through = `SELECT confirmed_flush_lsn >= '${target}'::pg_lsn FROM pg_replication_slots WHERE slot_name = '${SLOT}'`;
+      for (let poll = 0; poll < 400; poll += 1) {
+        const [answer] = await sql.query(through);
+        if (answer?.[0] === 't') return;
+        // real-clock: the slot is confirmed on the walsender's time, by a status update it reads.
+        await Bun.sleep(50);
+      }
+    };
+    const key = `x:replicator:live-cut-${crypto.randomUUID()}`;
+    // P1's takeover loop waits on this: the test says when it asks again.
+    const retries: (() => void)[] = [];
+    const held: Scheduler = (fn) => {
+      retries.push(fn);
+      return () => undefined;
+    };
+    const p1Lock = losableLock(key);
+    const p1 = changeFeedReplicator({ feed: feed(), transport: bus, lock: p1Lock, schedule: held });
+    expect(await p1.start()).toBe(true);
+    await insert('cut-a');
+    await waitFor(() => seen.includes('cut-a'));
+    await confirmedThroughNow();
+    p1Lock.lose('the session was terminated');
+    expect(p1.running).toBe(false);
+    // P2 takes over; the node never hears `cut-c`, and P2 dies with nothing said.
+    const p2Feed = feed();
+    const p2Lock = memoryAdvisoryLock(key);
+    const p2Bus = lossy(bus, (payload) => payload.includes('"cut-c"'));
+    const p2 = changeFeedReplicator({
+      feed: p2Feed,
+      transport: p2Bus,
+      lock: p2Lock,
+      schedule: held,
+    });
+    expect(await p2.start()).toBe(true);
+    await insert('cut-b');
+    await waitFor(() => seen.includes('cut-b'));
+    await insert('cut-c');
+    await waitFor(() => p2.stats().published === 2);
+    await confirmedThroughNow();
+    p2Feed.abandon();
+    p2Lock.abandon();
+    // A takeover with no handover is a crash to the node: that one is paid already.
+    const before = missed;
+    // P1 asks again, resuming from ITS last lsn — below where the slot now stands.
+    for (const fn of retries.splice(0)) fn();
+    await waitFor(() => p1.running);
+    await insert('cut-d');
+    await waitFor(() => seen.includes('cut-d'));
+    await p1.stop();
+    expect(seen).not.toContain('cut-c');
+    expect(missed - before).toBe(1);
+    await bus.close();
   }, 60_000);
 });
