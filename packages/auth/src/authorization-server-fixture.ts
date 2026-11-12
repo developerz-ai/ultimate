@@ -124,3 +124,38 @@ export async function tokensFor(fixture: ServerFixture) {
     client_id: fixture.client.clientId,
   });
 }
+
+/**
+ * A client whose registration drops `refresh_token` after it was handed one (an app narrowing a
+ * stored row): what the code and device paths issue next, and what its old refresh token buys.
+ * One walk, so the memory and Postgres stores answer the same questions.
+ */
+export async function refreshAfterNarrowing(fixture: ServerFixture) {
+  const before = await tokensFor(fixture);
+  await fixture.store.putClient({
+    ...fixture.client,
+    grantTypes: fixture.client.grantTypes.filter((grant) => grant !== 'refresh_token'),
+  });
+  const code = await tokensFor(fixture);
+  const started = await post(fixture.server, '/oauth/device', {
+    client_id: fixture.client.clientId,
+    scope: 'read',
+  });
+  await fixture.server.approveDevice({
+    subject: 'user-1',
+    userCode: String(started.body['user_code']),
+    key: 'ip:1',
+    scopes: ['read'],
+  });
+  const device = await post(fixture.server, '/oauth/token', {
+    grant_type: DEVICE_GRANT,
+    device_code: String(started.body['device_code']),
+    client_id: fixture.client.clientId,
+  });
+  const refreshed = await post(fixture.server, '/oauth/token', {
+    grant_type: 'refresh_token',
+    refresh_token: String(before.body['refresh_token']),
+    client_id: fixture.client.clientId,
+  });
+  return { before, code, device, refreshed };
+}

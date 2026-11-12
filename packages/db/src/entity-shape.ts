@@ -193,6 +193,11 @@ export interface HistoryDescriptionLike {
   readonly text?: readonly string[] | undefined;
   /** `timestamptz` columns the image stores as a UTC ISO string, whatever the session zone. */
   readonly instants?: readonly string[] | undefined;
+  /**
+   * Sealed columns, left out of both images: their stored string is ciphertext, and a lookup
+   * one is deterministic — two rows' equal values would be equal in history. Absent is none.
+   */
+  readonly sealed?: readonly string[] | undefined;
 }
 
 /** One counter, physical names: `<this table>.<column>` counts `<table>` rows by `<references>`. */

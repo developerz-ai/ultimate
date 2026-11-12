@@ -227,3 +227,49 @@ describe('dynamic registration', () => {
     expect(statuses).toContain(429);
   });
 });
+
+describe('client screening', () => {
+  test('a redirect URI containing whitespace is refused', async () => {
+    const { server } = await serverFixture({ registration: 'dynamic' });
+    for (const uri of [
+      'https://app.test/call back',
+      'https://app.test/cb\tx',
+      ' https://app.test/cb',
+      'https://app.test/cb\n',
+    ]) {
+      expect((await register(server, { redirect_uris: [uri] })).status).toBe(400);
+    }
+    expect(
+      (await register(server, { redirect_uris: ['https://app.test/call%20back'] })).status,
+    ).toBe(201);
+  });
+
+  test('a client_secret_basic client presenting its secret in the body is invalid_client', async () => {
+    const { server } = await serverFixture();
+    const basic = await server.registerClient({
+      name: 'Basic sync',
+      authMethod: 'client_secret_basic',
+      grantTypes: ['client_credentials'],
+      scopes: ['read'],
+    });
+    const inBody = await post(server, '/oauth/token', {
+      grant_type: 'client_credentials',
+      client_id: basic.client.clientId,
+      client_secret: basic.clientSecret ?? '',
+    });
+    expect(inBody).toMatchObject({ status: 401, body: { error: 'invalid_client' } });
+    const bodied = await server.registerClient({
+      name: 'Post sync',
+      authMethod: 'client_secret_post',
+      grantTypes: ['client_credentials'],
+      scopes: ['read'],
+    });
+    const inHeader = await post(
+      server,
+      '/oauth/token',
+      { grant_type: 'client_credentials' },
+      { authorization: `Basic ${btoa(`${bodied.client.clientId}:${bodied.clientSecret ?? ''}`)}` },
+    );
+    expect(inHeader).toMatchObject({ status: 401, body: { error: 'invalid_client' } });
+  });
+});

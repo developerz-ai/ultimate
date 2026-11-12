@@ -25,8 +25,13 @@ const CLIENT_METADATA_CACHE_MAX = 1_000;
 const ONE_ATTEMPT = Object.freeze({ attempts: 1, base: 0, max: 0, jitter: 'none' as const });
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-/** https anywhere, http only on loopback (RFC 8252 §7.3), never a fragment (RFC 6749 §3.1.2). */
+/**
+ * https anywhere, http only on loopback (RFC 8252 §7.3), never a fragment (RFC 6749 §3.1.2), never
+ * whitespace: the URL parser would strip or encode it, so the byte-for-byte match could not hold,
+ * and the Postgres store space-joins the list — a space would split one URI into two.
+ */
 export function isRedirectUri(value: string): boolean {
+  if (/\s/.test(value)) return false;
   const url = URL.parse(value);
   if (url === null || url.hash !== '' || value.includes('#')) return false;
   return url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.has(url.hostname));
@@ -170,18 +175,23 @@ export async function storeClient(
   return { client, clientSecret };
 }
 
-/** What a token request presented about the client. */
+/** What a token request presented about the client, and how. */
 export interface ClientCredentials {
   readonly clientId: string;
   readonly secret: string | null;
+  /** The RFC 6749 §2.3.1 method the request used: the header, the body, or no secret at all. */
+  readonly method: ClientAuthMethod;
 }
 
-/** A public client presents no secret; a confidential one must, and it must match. */
+/**
+ * A public client presents no secret; a confidential one must, by the method it registered
+ * (RFC 7591 `token_endpoint_auth_method`), and it must match.
+ */
 export function clientAuthenticates(
   client: AuthServerClient,
   presented: ClientCredentials,
 ): boolean {
   if (client.secretHash === null) return presented.secret === null;
-  if (presented.secret === null) return false;
+  if (presented.secret === null || presented.method !== client.authMethod) return false;
   return timingSafeEqual(sha256Hex(presented.secret), client.secretHash);
 }

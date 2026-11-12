@@ -184,5 +184,10 @@ export async function pollDevice(
     revokedAt: null,
   };
   await config.store.putGrant(grant);
-  return tokenAnswer(config, grant, config.accessSeconds, await firstRefresh(config, grant.id));
+  return tokenAnswer(
+    config,
+    grant,
+    config.accessSeconds,
+    await firstRefresh(config, client, grant.id),
+  );
 }

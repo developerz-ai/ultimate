@@ -13,6 +13,7 @@ import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import { type HistoryEntity, type HistoryInit, historyEntity, historyIgnored } from './history';
 import type { Retain } from './retain';
+import { sealedFields } from './sealed';
 import type { ColumnMap } from './types';
 
 /** What `$describe()` gains, each absent unless declared so no other entity's hash moves. */
@@ -68,6 +69,12 @@ function exactColumns(core: EntityCore): Pick<HistoryDescriptionLike, 'text' | '
   };
 }
 
+/** Sealed columns never enter an image (`HistoryDescriptionLike.sealed`). Absent when none. */
+function sealedColumns(core: EntityCore): Pick<HistoryDescriptionLike, 'sealed'> {
+  const sealed = sealedFields(core).map((field) => field.column);
+  return sealed.length === 0 ? {} : { sealed };
+}
+
 const physical = (core: EntityCore, property: string): string => {
   const column = core.$columns[property];
   return column === undefined ? property : columnName(property, column.$meta);
@@ -96,6 +103,7 @@ export function describeLifecycle(
               ]),
             ],
             ...exactColumns(core),
+            ...sealedColumns(core),
           },
         }),
     ...(counters.length === 0 ? {} : { counts: counters.map(describeCounter) }),

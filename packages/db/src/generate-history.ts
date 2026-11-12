@@ -37,7 +37,10 @@ const exact = (image: string, how: { readonly type: string; readonly text: strin
  * column, the columns whose change alone records nothing (the counters the database keeps), and the
  * columns `to_jsonb` spells otherwise than the row: an `int8`/`numeric` stored as its digits (a JSON
  * number is a float to every reader past 2^53 and drops a scale's zeros), a `timestamptz` as UTC ISO
- * to the millisecond (`to_jsonb` writes the SESSION zone's offset) — what the memory driver keeps.
+ * to the millisecond (`to_jsonb` writes the SESSION zone's offset) — what the memory driver keeps —
+ * and the sealed columns, removed from both images before anything else reads them: ciphertext, and
+ * a lookup column's is deterministic, so history would compare rows the app cannot. Their change
+ * alone records nothing, exactly as an ignored column's.
  * An argument a trigger installed before it existed reads NULL, and NULL is the empty list.
  *
  * `jsonb_populate_record` builds the history row, so every value lands in its column's own type —
@@ -53,8 +56,10 @@ export const HISTORY_FUNCTION_SQL =
   'ignored text[] := tg_argv[3]::text[]; ' +
   "digits text[] := coalesce(tg_argv[4], '{}')::text[]; " +
   "instants text[] := coalesce(tg_argv[5], '{}')::text[]; " +
+  "sealed text[] := coalesce(tg_argv[6], '{}')::text[]; " +
   'k text; ' +
-  "begin if tg_op = 'UPDATE' and (prior - ignored) = (source - ignored) then return null; end if; " +
+  'begin source := source - sealed; prior := prior - sealed; ' +
+  "if tg_op = 'UPDATE' and (prior - ignored) = (source - ignored) then return null; end if; " +
   'foreach k in array digits loop ' +
   `${exact('source', DIGITS)} ${exact('prior', DIGITS)} end loop; ` +
   'foreach k in array instants loop ' +
@@ -116,6 +121,7 @@ export function historyTriggers(
     nameArray(history.ignore),
     nameArray(history.text ?? []),
     nameArray(history.instants ?? []),
+    nameArray(history.sealed ?? []),
   ].join(', ');
   return [
     [
