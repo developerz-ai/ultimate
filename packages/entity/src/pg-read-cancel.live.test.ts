@@ -80,11 +80,12 @@ describe.skipIf(!hasPostgres)('live · postgres · an entity read cancelled on a
     expect.unreachable('the entity read never reached the server');
   };
 
-  const reads = {
+  // Typed as the one shape the loop runs, so each read is a thunk `runWithContext` takes alike.
+  const reads: Readonly<Record<string, () => Promise<unknown>>> = {
     findMany: () => postgresRepo(notes).findMany({}),
     findById: () => postgresRepo(notes).findById(NOTE),
     count: () => postgresRepo(notes).count({}),
-  } as const;
+  };
 
   for (const [name, read] of Object.entries(reads)) {
     test(`${name}: abort behind a lock → X_ABORTED within 200 ms, the pool answering`, async () => {

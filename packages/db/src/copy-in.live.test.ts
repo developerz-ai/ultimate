@@ -19,7 +19,7 @@ interface Stored {
   readonly doc: unknown;
   readonly at: Date | null;
   readonly bytes: Uint8Array | null;
-  readonly tags: readonly string[] | null;
+  readonly tags: readonly (string | null)[] | null;
   readonly flag: boolean | null;
 }
 
@@ -92,13 +92,15 @@ describe.skipIf(!hasPostgres)('live · postgres · copyIn', () => {
 
   test("a throw from the caller's rows leaves the pin alive: coded X_INVARIANT, the next statement runs", async () => {
     const pin = await client.reserve();
+    const failure = new RangeError('the source failed');
     try {
       function* rows(): Generator<readonly unknown[]> {
         yield [30, 'first', null, null, null, null, null];
-        throw new RangeError('the source failed');
+        throw failure;
       }
       const failed = await pin.copyIn(target, rows()).catch((error: unknown) => error);
       expect(isUltimateError(failed) && failed.code).toBe('X_INVARIANT');
+      expect((failed as { sourceError?: unknown }).sourceError).toBe(failure);
       const after = await pin.query<{ n: number }>(
         sql`select count(*)::int as n from ${identifier(TABLE)} where id = ${30}`,
       );

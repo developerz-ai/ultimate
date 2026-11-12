@@ -103,7 +103,12 @@ describe('updateManyPlan', () => {
 
   test('a present undefined is absent: it makes the batch uneven, never a NULL', () => {
     const call = () =>
-      updateManyPlan(posts, rows([1, { excerpt: 'a' }], [2, { excerpt: undefined }]), undefined);
+      // Outside the type on purpose: a JS caller, or a spread of an optional, hands exactly this.
+      updateManyPlan(
+        posts,
+        rows([1, { excerpt: 'a' }], [2, { excerpt: undefined } as unknown as Partial<Post>]),
+        undefined,
+      );
     expect(codeOf(call)).toBe('X_INVARIANT_VIOLATED');
   });
 

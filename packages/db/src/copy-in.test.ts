@@ -26,7 +26,7 @@ const copyDouble = (count: number, failOnClose?: unknown) => {
   });
   const query = Object.assign(answer, {
     writable() {
-      if (started) throw new TypeError('writable() after the query started');
+      if (started) expect.unreachable('writable() after the query started');
       started = true;
       return new WritableStream<string>({
         write(chunk) {
@@ -169,9 +169,10 @@ describe('copyOn', () => {
 
   test("a throw from the caller's rows is a coded refusal, never X_DB_UNAVAILABLE; the stream aborts", async () => {
     const copy = copyDouble(0);
+    const failure = new RangeError('the source failed');
     function* rows(): Generator<readonly unknown[]> {
       yield [1];
-      throw new RangeError('the source failed');
+      throw failure;
     }
     try {
       await copyOn(copy.driver, target, rows());
@@ -179,6 +180,7 @@ describe('copyOn', () => {
     } catch (error) {
       expect(isUltimateError(error) && error.code).toBe('X_INVARIANT');
       expect(String((error as Error).message)).toContain('the source failed');
+      expect((error as { sourceError?: unknown }).sourceError).toBe(failure);
     }
     expect(copy.order).toEqual(['abort']);
   });

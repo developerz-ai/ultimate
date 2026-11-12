@@ -67,7 +67,7 @@ describe('writeWherePlan', () => {
     }
     expect(chained).toBeUltimateError('X_WRITE_UNFILTERED');
     expect(String((chained as { fix: string }).fix)).toContain(
-      'db.ww_likes.where({ postId, userId }).deleteAll()',
+      'ww_likes.where({ postId, userId }).deleteAll()',
     );
   });
 
@@ -91,7 +91,7 @@ describe('writeWherePlan', () => {
     expect(refused).toBeUltimateError('X_WRITE_UNFILTERED');
     expect(String((refused as { cause: string }).cause)).toContain('userId');
     expect(String((refused as { fix: string }).fix)).toContain(
-      'db.ww_likes.where({ userId }).deleteAll()',
+      'ww_likes.where({ userId }).deleteAll()',
     );
     // An `in` with no list is the same bug.
     expect(() =>

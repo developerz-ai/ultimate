@@ -1,7 +1,8 @@
 // Single responsibility: `COPY … FROM STDIN` on a `Bun.SQL` handle — the text-format line each row
-// becomes, the stream that carries them, and the one test for whether a client can take a copy at
-// all. Its own funnel beside `statement-funnel.ts` because a copy cannot go through `unsafe()`:
-// Bun refuses an awaited COPY (`ERR_POSTGRES_COPY_NOT_SUPPORTED`), and `writable()` must be called
+// becomes, the stream that carries them, and the one test for whether a client can take a copy.
+//
+// Its own funnel beside `statement-funnel.ts` because a copy cannot go through `unsafe()`: Bun
+// refuses an awaited COPY (`ERR_POSTGRES_COPY_NOT_SUPPORTED`), and `writable()` must be called
 // before anything awaits the query.
 
 import {
@@ -44,13 +45,16 @@ export function canCopyIn(client: DbClient): client is DbClient & CopyInClient {
   );
 }
 
-/** The four characters the text format reads as structure, and how each is spelled inside a cell. */
-const ESCAPES: Readonly<Record<string, string>> = {
+/**
+ * The four characters the text format reads as structure, and how each is spelled inside a cell.
+ * Null-prototype: the key is a cell's own character, and no character may answer a prototype member.
+ */
+const ESCAPES: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
   '\\': '\\\\',
   '\t': '\\t',
   '\n': '\\n',
   '\r': '\\r',
-};
+});
 // Two regexes, not one: `test()` on a global regex advances `lastIndex`, and the next cell would be
 // scanned from wherever the last one stopped.
 const HAS_STRUCTURAL = /[\\\t\n\r]/;
@@ -66,7 +70,7 @@ const cellUnsendable = (value: unknown): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',
     cause: `a COPY cell is ${describeValue(value)}, which has no text-format spelling`,
-    fix: 'bind a scalar, a Date, a Uint8Array or an array — a jsonb value as its JSON.stringify() text',
+    fix: 'JSON.stringify(value)   # a jsonb cell, as its text; a scalar, a Date, a Uint8Array or an array binds as itself',
     meta: { received: describeValue(value) },
   });
 
@@ -130,7 +134,7 @@ const rowsFailed = (target: SqlFragment, error: unknown): DbError =>
   new DbError({
     code: 'X_INVARIANT',
     cause: `copyIn()'s rows threw before the stream ended, so nothing was stored: ${renderThrowable(error)}`,
-    fix: `fix the row source handed to copyIn(${statementExcerpt(target.text)}, rows) — the throw above is its own`,
+    fix: `copyIn(${statementExcerpt(target.text)}, rows)   # the row source threw: fix the throw above, which is its own, then call again`,
     sourceError: error,
   });
 

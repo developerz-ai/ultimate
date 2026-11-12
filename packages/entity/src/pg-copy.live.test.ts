@@ -150,11 +150,9 @@ describe.skipIf(!hasPostgres)('live · postgres · count-only writes and copyAll
   });
 
   test('the facade parses every row whole, so a column one row omits is filled, not refused', async () => {
+    const { label: _omitted, ...omits } = row('filled', 2);
     const [count, texts] = await sent(() =>
-      db().loads.copyAll([
-        { ...row('filled', 1), label: 'x' },
-        { ...row('filled', 2), label: undefined },
-      ]),
+      db().loads.copyAll([{ ...row('filled', 1), label: 'x' }, omits]),
     );
     expect(count).toBe(2);
     expect(texts).toHaveLength(1);
@@ -163,9 +161,11 @@ describe.skipIf(!hasPostgres)('live · postgres · count-only writes and copyAll
   test('a repository handed rows naming different columns refuses before a statement', async () => {
     const repo = postgresRepo(loads);
     const whole = { ...row('uneven', 1), id: newId(), flag: true, stampedAt: new Date() };
-    const short = { ...whole, id: newId(), seq: 2, label: undefined };
+    const { label: _omitted, ...short } = { ...whole, id: newId(), seq: 2 };
     const [outcome, texts] = await sent(() =>
-      (repo.copyAll?.([whole, short]) ?? Promise.resolve(-1)).then(
+      // Outside the type on purpose: the facade's parse fills an omitted column, and this is the
+      // repository's own guard for a caller that skipped it.
+      (repo.copyAll?.([whole, short as unknown as typeof whole]) ?? Promise.resolve(-1)).then(
         () => 'stored',
         (error: unknown) => (isUltimateError(error) ? error.code : 'uncoded'),
       ),
@@ -175,15 +175,16 @@ describe.skipIf(!hasPostgres)('live · postgres · count-only writes and copyAll
   });
 
   test('inside a transaction: one COPY on its connection, rolled back with it', async () => {
+    const rollBack = new RangeError('roll it back');
     const rollback = await withTransaction(async () => {
       const [count, texts] = await sent(() => db().loads.copyAll([row('tx', 1), row('tx', 2)]));
       expect(count).toBe(2);
       expect(texts).toHaveLength(1);
       expect(texts[0]).toStartWith('copy "pg_copy_live_loads"');
       expect(await stored('tx')).toHaveLength(2);
-      throw new RangeError('roll it back');
+      throw rollBack;
     }).catch((error: unknown) => error);
-    expect(rollback).toBeInstanceOf(RangeError);
+    expect(rollback).toBe(rollBack);
     expect(await stored('tx')).toHaveLength(0);
   });
 

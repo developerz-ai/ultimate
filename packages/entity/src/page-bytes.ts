@@ -122,6 +122,6 @@ export const assertPageBytes = <Row>(
   throw new EntityError({
     code: 'X_ENTITY_PAGE_TOO_LARGE',
     cause: `${entity.$name}.${operation}() answered ${rows.length} rows, and the first ${counted} of them already weigh ${mib(bytes)} MiB before decoding — past the ${mib(bound)} MiB page bound, and every row would be decoded and held at once${heaviest === undefined ? '' : `. '${heaviest}' is the heaviest column`}`,
-    fix: `.select(${select}).limit(${fits})   # on that ${entity.$name} read: only the columns the page renders, and a page that fits — or .inBatches(${fits}) to visit every row`,
+    fix: `${entity.$name}.where(…).select(${select}).limit(${fits})   # on that read: only the columns the page renders, and a page that fits — or .inBatches(${fits}) to visit every row`,
   });
 };

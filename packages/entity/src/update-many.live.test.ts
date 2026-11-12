@@ -88,6 +88,8 @@ describe.skipIf(!hasPostgres)('live · postgres · updateMany', () => {
           id: idAt(from + at),
           orgId: org,
           excerpt: null,
+          rank: 0,
+          done: false,
           meta: null,
           price: null,
           seenAt: null,

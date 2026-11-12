@@ -41,7 +41,7 @@ const unaddressed = (entityName: string, position: number): EntityError =>
   new EntityError({
     code: 'X_WRITE_UNFILTERED',
     cause: `${entityName}.updateMany() row ${position + 1} names no id — a nullish id addresses no row, and is never written as the text "undefined" or "null"`,
-    fix: `db.${entityName}.updateMany(rows.filter((row) => row.id != null))   # or patch by filter: db.${entityName}.where({ … }).updateAll(patch)`,
+    fix: `${entityName}.updateMany(rows.filter((row) => row.id != null))   # or patch by filter: ${entityName}.where({ … }).updateAll(patch)`,
   });
 
 /** Present and not `undefined`: `bindValues` binds nothing for an `undefined`, nor does memory. */

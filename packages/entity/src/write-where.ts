@@ -55,7 +55,7 @@ const chainUndefined = <Row>(
   return new EntityError({
     code: 'X_WRITE_UNFILTERED',
     cause: `${entity.$name}.where(…).${verb}() — the predicate on ${missing.column} has an undefined value, and dropping it would widen the write to every row the rest of the chain matches`,
-    fix: `db.${entity.$name}.where({ ${missing.column} }).${verb}(${verb === 'updateAll' ? '…' : ''})   # guard ${missing.column} so it is defined before the write; for SQL NULL write .andWhere('${missing.column}', 'is-null')`,
+    fix: `${entity.$name}.where({ ${missing.column} }).${verb}(${verb === 'updateAll' ? '…' : ''})   # guard ${missing.column} so it is defined before the write; for SQL NULL write .andWhere('${missing.column}', 'is-null')`,
   });
 };
 
@@ -69,7 +69,7 @@ const unfiltered = <Row>(entity: EntityCore<Row>, op: string, chained: boolean):
   return new EntityError({
     code: 'X_WRITE_UNFILTERED',
     cause: `${entity.$name}.where(…).${verb}() named no filter — an empty chain would reach every row`,
-    fix: `db.${entity.$name}.where({ ${entity.$primaryKey.join(', ')} }).${verb}(${verb === 'updateAll' ? '…' : ''})   # name the columns that bound it. A deliberate whole-table write is a migration: x db gen "<name>"`,
+    fix: `${entity.$name}.where({ ${entity.$primaryKey.join(', ')} }).${verb}(${verb === 'updateAll' ? '…' : ''})   # name the columns that bound it. A deliberate whole-table write is a migration: x db gen "<name>"`,
   });
 };
 
@@ -112,7 +112,7 @@ export const updateWherePlan = <Row>(
   throw new EntityError({
     code: 'X_PATCH_EMPTY',
     cause: `${entity.$name}.where(…).updateAll() named no columns to write`,
-    fix: `db.${entity.$name}.where(filter).updateAll({ <column>: <value> })   # pick a column from: ${columns.join(', ')}`,
+    fix: `${entity.$name}.where(filter).updateAll({ <column>: <value> })   # pick a column from: ${columns.join(', ')}`,
   });
 };
 
