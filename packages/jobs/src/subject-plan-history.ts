@@ -1,8 +1,10 @@
-// Single responsibility: which `<table>_history` tables a subject's erase reaches, and how. A
-// history row names its parent by `row_id`, which is no foreign key — so the walk never finds it —
-// and every write the erase makes to the parent records the person's data in a before image. Reached
+// Single responsibility: which `<table>_history` tables a subject's erase reaches, and how. Reached
 // exactly when its parent is deleted or anonymized; `'delete'` rides the parent's step, after it.
 // Its ROWS are found by image, never by `row_id` (`imagesNaming`, `subject-select.ts`).
+//
+// Why a table of its own: a history row names its parent by `row_id`, which is no foreign key — so
+// the walk never finds it — and every write the erase makes to the parent records the person's data
+// in a before image.
 
 import type { UltimateError } from '@ultimat3/core';
 import type { RegistryEntry } from '@ultimat3/entity';

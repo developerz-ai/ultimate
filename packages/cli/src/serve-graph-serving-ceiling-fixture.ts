@@ -263,5 +263,8 @@
  * `define-driver.ts`), `auth/src/session-user.ts` and `auth/src/builtin-adapter-rows.ts` (split
  * out of `auth.ts` and `builtin-adapter.ts`). Every one a new file; no existing module newly
  * reached.
+ * raised 1467 → 1468, measured 1468 (2026-11-12, sweep 5b review fixes, the test's own walk at
+ * a1051fd3a): `entity/src/driver-versioned-write.ts` (the `defineDriver` versioned filtered write's
+ * retry, through `driver-repo-writes.ts`), serving-only; `MIGRATE_CEILING` unchanged at 934.
  */
-export const SERVING_ROLE_CEILING = 1467;
+export const SERVING_ROLE_CEILING = 1468;

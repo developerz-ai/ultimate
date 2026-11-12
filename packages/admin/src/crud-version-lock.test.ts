@@ -15,7 +15,7 @@ import {
 import { memoryAuditLog } from './audit';
 import { staticAuthz } from './authz';
 import { adminUpdate, type CrudCtx } from './crud';
-import type { AdminRepo } from './registry';
+import type { AdminRepo, AdminRow } from './registry';
 import { adminRepoFor } from './repo-entity';
 import { adminResource } from './resource';
 import { ROW_CHANGED_REASON, rowVersion } from './row-version';
@@ -32,7 +32,7 @@ const db = database({ notes }, { driver: memoryDriver() });
 
 afterAll(clearRegistry);
 
-const bound = (over: Partial<AdminRepo> = {}) =>
+const bound = (over: Partial<AdminRepo<AdminRow>> = {}) =>
   adminResource(notes, { repo: { ...adminRepoFor(notes, db.notes), ...over } });
 
 const ctxOf = (): CrudCtx => ({

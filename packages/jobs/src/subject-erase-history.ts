@@ -1,8 +1,10 @@
 // Single responsibility: one parent key's write, for a table whose `<table>_history` the subject
 // deletes, or whose delete the database carries into a child that keeps one. The write is made,
-// then every history row whose before or after image names that key removed — in ONE transaction
-// under `x.purge`, because the write's own trigger (and an `on delete set null | cascade` child's)
-// has just recorded the person's data in one more image, and a replay must find all of it or none.
+// then every history row whose before or after image names that key removed — in ONE transaction.
+//
+// One transaction, under `x.purge`: the write's own trigger (and an `on delete set null | cascade`
+// child's) has just recorded the person's data in one more image, and a replay must find all of it
+// or none.
 //
 // Matched by the IMAGE, never by the live rows' ids: a row deleted or soft-deleted before the
 // erase, or inserted after an id read, left images naming the subject all the same. Cost: the
@@ -65,12 +67,13 @@ export async function treatPageWithHistory(
       : undefined;
   const orphans: readonly SubjectOrphan[] = step.orphans ?? [];
   const first = step.history ?? orphans[0]?.history;
-  const history: Record<string, number> = {};
+  // A Map, never a `Record` read by a table name: `history['constructor']` answers a function.
+  const history = new Map<string, number>();
   const add = (name: string, n: number): void => {
-    history[name] = (history[name] ?? 0) + n;
+    history.set(name, (history.get(name) ?? 0) + n);
   };
   let treated = 0;
-  if (first === undefined) return { treated, history };
+  if (first === undefined) return { treated, history: {} };
   for (const value of values) {
     const filter = { [property]: value };
     // Postgres: `purging` set `x.purge` in this transaction, which the guard trigger reads; memory:
@@ -108,5 +111,5 @@ export async function treatPageWithHistory(
       return written;
     });
   }
-  return { treated, history };
+  return { treated, history: Object.fromEntries(history) };
 }

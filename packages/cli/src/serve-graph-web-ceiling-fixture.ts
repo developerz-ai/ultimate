@@ -224,5 +224,7 @@
  * modules named on `MIGRATE_CEILING`. Nothing web-only.
  * raised 1636 → 1658, measured 1658 (2026-11-12, sweep 5b): `SERVING_ROLE_CEILING`'s 22, the
  * modules named there. Nothing web-only.
+ * raised 1658 → 1659, measured 1659 (2026-11-12, sweep 5b review fixes): `SERVING_ROLE_CEILING`'s
+ * 1, `entity/src/driver-versioned-write.ts`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1658;
+export const WEB_ROLE_CEILING = 1659;

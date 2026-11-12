@@ -32,7 +32,9 @@ const mapStore = (afterWrite: { hook: Hook | undefined }) =>
         select: async (read) => selectRows(table, all(), read),
         count: async ({ plan }) => matched(plan).length,
         insert: async (batch) => {
-          for (const row of batch) rows.set(keyOf(row as Record<string, unknown>), { ...row });
+          for (const row of batch as readonly Record<string, unknown>[]) {
+            rows.set(keyOf(row), { ...row });
+          }
           return batch;
         },
         update: async ({ plan }, patch) => {
@@ -44,7 +46,9 @@ const mapStore = (afterWrite: { hook: Hook | undefined }) =>
         // The lock admits only `onMatch: 'nothing'` (`set` empty): a stored row is kept as it is.
         upsert: async (batch) => {
           const fresh = batch.filter((row) => !rows.has(keyOf(row as Record<string, unknown>)));
-          for (const row of fresh) rows.set(keyOf(row as Record<string, unknown>), { ...row });
+          for (const row of fresh as readonly Record<string, unknown>[]) {
+            rows.set(keyOf(row), { ...row });
+          }
           return fresh;
         },
         delete: async ({ plan }) => {
