@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "94c9ec06e311fcf6fd269e1ef74ae0cbd172b19fa44dd869d151614924834963",
+  "buildId": "14f6c90f15b6d8a6ba5eb06dc17a9f393edcde3ad1ba10e63ad0edcdd28a6f7f",
   "tiers": {
     "0": [
       "core",
@@ -1911,6 +1911,11 @@
     },
     {
       "code": "X_ENTITY_OPERATOR_UNKNOWN",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_PAGE_TOO_LARGE",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
