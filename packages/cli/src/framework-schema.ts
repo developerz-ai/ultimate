@@ -14,6 +14,7 @@ import {
   SQL_ERROR_GROUPS_TABLE,
 } from '@ultimat3/admin/schema';
 import {
+  AUTH_LOCKOUTS_STORAGE,
   AUTH_SERVER_TABLES,
   AUTH_TABLE_NAMES,
   AUTH_TABLES,
@@ -21,7 +22,7 @@ import {
   SQL_AUTH_SERVER_TABLES,
   SQL_TOTP_REPLAY_TABLE,
 } from '@ultimat3/auth/schema';
-import { FAILURES_TABLE, SQL_FAILURES_TABLE, type TableStorage, tableStorage } from '@ultimat3/db';
+import { FAILURES_TABLE, SQL_FAILURES_TABLE, type TableStorage } from '@ultimat3/db';
 import { RATE_LIMIT_STORAGE, SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
@@ -114,7 +115,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     ddl: Object.freeze([SQL_AUTH_LIMIT_TABLES]),
     // Stays LOGGED, stated so drift catches a hand `set unlogged`: a crash must never forget a
     // lockout (`x_rate_limit` may, a refilled bucket is a brief free burst, never a bypass).
-    storage: Object.freeze([tableStorage('x_auth_lockouts', { unlogged: false })]),
+    storage: Object.freeze([AUTH_LOCKOUTS_STORAGE]),
   }),
   // Spent TOTP steps, so a code is single-use across the fleet rather than per replica.
   Object.freeze({

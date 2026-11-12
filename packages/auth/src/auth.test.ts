@@ -12,13 +12,30 @@ import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
 import { memoryAuthAdapter } from './memory-adapter';
 import { hashPassword } from './password';
 
-/** Same adapter, except `findUserById` answers "gone" — simulates a user row disappearing
+/** Same adapter, except both user reads answer "gone" — simulates a user row disappearing
  *  (hard delete, another process) without its session being cleaned up alongside it. Bound to
  *  `base` explicitly so `MemoryAuthAdapter`'s private fields resolve against the real instance. */
 function withUserGone(base: AuthAdapter): AuthAdapter {
   return new Proxy(base, {
     get(target, prop) {
       if (prop === 'findUserById') return () => Promise.resolve(null);
+      if (prop === 'getSessionWithUser') {
+        return async (id: string) => {
+          const session = await target.getSession(id);
+          return session === null ? null : { session, user: null };
+        };
+      }
+      const value = Reflect.get(target, prop);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+/** Same adapter without the optional joined read: an adapter written before it existed. */
+function withoutJoin(base: AuthAdapter): AuthAdapter {
+  return new Proxy(base, {
+    get(target, prop) {
+      if (prop === 'getSessionWithUser') return undefined;
       const value = Reflect.get(target, prop);
       return typeof value === 'function' ? value.bind(target) : value;
     },
@@ -180,17 +197,32 @@ describe('authenticate', () => {
     expect(await auth.adapter.getSession(logged.session.id)).toBeNull();
   });
 
-  test('a session for a since-deleted user is deleted and rejected', async () => {
-    const adapter = memoryAuthAdapter();
-    const auth = newAuth(adapter);
-    await register(auth, { email: EMAIL, password: PASSWORD });
-    const logged = await login(auth, { email: EMAIL, password: PASSWORD });
+  for (const [path, wrap] of [
+    ['the joined read', (adapter: AuthAdapter) => adapter],
+    ['the two reads', withoutJoin],
+  ] as const) {
+    test(`a session for a since-deleted user is deleted and rejected, through ${path}`, async () => {
+      const adapter = memoryAuthAdapter();
+      const auth = newAuth(adapter);
+      await register(auth, { email: EMAIL, password: PASSWORD });
+      const logged = await login(auth, { email: EMAIL, password: PASSWORD });
 
-    const gone = newAuth(withUserGone(adapter));
-    const error = await caught(() => authenticate(gone, logged.token));
-    expect(error?.code).toBe('X_UNAUTHENTICATED');
-    expect(await adapter.getSession(logged.session.id)).toBeNull();
-  });
+      const gone = newAuth(withUserGone(wrap(adapter)));
+      const error = await caught(() => authenticate(gone, logged.token));
+      expect(error?.code).toBe('X_UNAUTHENTICATED');
+      expect(await adapter.getSession(logged.session.id)).toBeNull();
+    });
+
+    test(`${path}: the actor login returned, and a wrong secret is refused`, async () => {
+      const auth = newAuth(wrap(memoryAuthAdapter()));
+      await register(auth, { email: EMAIL, password: PASSWORD });
+      const logged = await login(auth, { email: EMAIL, password: PASSWORD });
+      expect(await authenticate(auth, logged.token)).toEqual(logged.actor);
+      const forged = `${logged.session.id}.not-the-secret`;
+      expect((await caught(() => authenticate(auth, forged)))?.code).toBe('X_UNAUTHENTICATED');
+      expect(await auth.adapter.getSession(logged.session.id)).not.toBeNull();
+    });
+  }
 });
 
 describe('logout', () => {

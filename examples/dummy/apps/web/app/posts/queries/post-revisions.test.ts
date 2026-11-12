@@ -66,7 +66,9 @@ test('a like moves the count and records no revision', async ({ seed, actorFor }
 
   const liked = await likePost.as(actorFor(ada), { postId: post.id, orgId: post.orgId });
 
-  expect(liked.likeCount).toBe(post.likeCount + 1);
+  // Bruno's and Kenji's seeded likes, counted by the database as they were written, and this one.
+  // Not `post.likeCount + 1`: the seed's row is as inserted, before any like counted into it.
+  expect(liked.likeCount).toBe(3);
   // `history: { ignore: ['likeCount', 'updatedAt'] }`: the write that changed only those is no version.
   expect(await revisions()).toEqual(before);
 });

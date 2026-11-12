@@ -1,6 +1,6 @@
 // What an index is CALLED. Split out of `entity.ts` at the 500-line ceiling, and it is one job:
-// two indexes that differ only in their predicate, their direction or their access method must not
-// share a name, and no name may cross the 63 bytes Postgres silently truncates at.
+// two indexes that differ only in their predicate, their direction, their access method or a key
+// part must not share a name, and no name may cross the 63 bytes Postgres silently truncates at.
 
 import type { IndexMethod } from '@ultimat3/db';
 import { invariantViolated } from './errors';
@@ -21,14 +21,31 @@ const indexDiscriminator = (
   order: string | undefined,
   where: string | null,
   using: string | undefined,
+  keys: string,
 ): string =>
   new Bun.CryptoHasher('sha256')
     // The method is APPENDED only when one was declared, never as an empty field: every name this
     // function has ever minted for a partial or ordered index is therefore unchanged by the method
-    // existing, and an index that declares no method is byte-identical to the one it was.
-    .update(`${order ?? ''}|${where ?? ''}${using === undefined ? '' : `|${using}`}`)
+    // existing, and an index that declares no method is byte-identical to the one it was. The key
+    // parts follow the same rule (`keyPartsText`).
+    .update(`${order ?? ''}|${where ?? ''}${using === undefined ? '' : `|${using}`}${keys}`)
     .digest('hex')
     .slice(0, 8);
+
+/** The four key parts past a column list (`IndexKeyParts` in `@ultimat3/db`), as named. */
+export interface IndexNameKeys {
+  readonly expression?: string | undefined;
+  readonly orders?: readonly ('asc' | 'desc' | null)[] | undefined;
+  readonly include?: readonly string[] | undefined;
+  readonly operatorClass?: string | undefined;
+}
+
+/** `''` when none is declared — so every name minted before they existed is unchanged. */
+const keyPartsText = (keys: IndexNameKeys): string => {
+  const { expression, orders, include, operatorClass } = keys;
+  if ([expression, orders, include, operatorClass].every((part) => part === undefined)) return '';
+  return `|${JSON.stringify([expression ?? null, orders ?? null, include ?? null, operatorClass ?? null])}`;
+};
 
 /**
  * `<table>_<columns>_idx`, plus a discriminator when — and only when — the index carries a
@@ -65,13 +82,15 @@ export const indexName = (
   order?: string | undefined,
   where: string | null = null,
   using?: IndexMethod | undefined,
+  keys: IndexNameKeys = {},
 ): string => {
   const suffix = unique ? 'key' : 'idx';
   const base = `${table}_${columns.join('_')}`;
-  const plain = order === undefined && where === null && using === undefined;
+  const parts = keyPartsText(keys);
+  const plain = order === undefined && where === null && using === undefined && parts === '';
   const name = plain
     ? `${base}_${suffix}`
-    : `${base}_${indexDiscriminator(order, where, using)}_${suffix}`;
+    : `${base}_${indexDiscriminator(order, where, using, parts)}_${suffix}`;
   const bytes = identifierBytes(name);
   if (bytes <= MAX_IDENTIFIER_BYTES) return name;
   throw invariantViolated(

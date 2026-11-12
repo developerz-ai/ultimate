@@ -12,6 +12,7 @@ import { EntityError, invariantViolated } from './errors';
 import { allColumns, columnsOf } from './pg-row';
 import type { RowPatch } from './types';
 import { uniqueConstraints } from './unique-constraints';
+import { assertVersionedUpsert } from './version-lock';
 
 /**
  * Postgres binds at most 65535 parameters in one statement and a multi-row insert spends
@@ -235,6 +236,8 @@ export const upsertPlan = <Row>(
     );
   }
   if (onMatch === 'nothing') return { on: onConflict, set: [] };
+  // A collision overwrite never read the stored row, so it cannot honour a declared lock.
+  assertVersionedUpsert(entity, onMatch);
   const tenant = entity.$tenantColumn;
   if (tenant !== null && !onConflict.includes(tenant)) {
     throw crossTenantUpsert(entity.$name, tenant, onConflict);

@@ -50,6 +50,23 @@ describe('unit · planSweepFindings', () => {
     expect(finding?.fix).toContain("scan: '<why it stays small>'");
   });
 
+  test('an ilike finding prints its whole declaration: the trigram line, not a bare on', () => {
+    const declaration = "indexes: [{ on: ['title'], using: 'gin', operatorClass: 'gin_trgm_ops' }]";
+    const [finding] = planSweepFindings([
+      record('searchPosts', {
+        plans: planned([
+          {
+            ...unindexed,
+            statement: 'select "id" from "posts" where "title" ilike $1',
+            index: ['title'],
+            declaration,
+          },
+        ]),
+      }),
+    ]);
+    expect(finding?.fix).toContain(`after ${declaration} in entity("posts")`);
+  });
+
   test('a sort finding names the order and offers no scan escape', () => {
     const [finding] = planSweepFindings([
       record('feed', {

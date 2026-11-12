@@ -10,6 +10,7 @@ import type { FilteredWriteOptions } from './repo';
 import { SEARCH_PROPERTY } from './search';
 import type { Predicate, QueryPlan } from './tenancy';
 import type { RowPatch } from './types';
+import { assertUnversionedPatch } from './version-lock';
 
 /** What a chain carries into a write terminal. */
 export interface WriteChain {
@@ -106,6 +107,8 @@ export const updateWherePlan = <Row>(
   op: string,
 ): QueryPlan => {
   const plan = writeWherePlan(entity, filter, options, op);
+  // The statement increments a declared version itself; a patch setting it is refused.
+  assertUnversionedPatch(entity, patch, op);
   if (namedColumns(patch).length > 0) return plan;
   const columns = Object.keys(entity.$columns);
   if (options?.where === undefined) throw patchEmpty(entity.$name, op, columns);

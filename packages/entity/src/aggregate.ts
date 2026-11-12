@@ -99,7 +99,7 @@ export const mixedCurrency = (
     return new EntityError({
       code: 'X_AGGREGATE_MIXED_CURRENCY',
       cause: `${entityName}.${fn}('${property}') covers ${scales.length} scales of ${only} (${scales.join(', ')}) — one minor unit is a different amount at each, so they have no common unit`,
-      fix: `for await (const rows of ${entityName}.inBatches(1000)) { … }   # fold row.${property} at ONE scale in the app: the scale is not a part a predicate can name`,
+      fix: `${entityName}.inBatches(1000)   # for await (const rows of …): fold row.${property} at ONE scale in the app — the scale is not a part a predicate can name`,
     });
   }
   return new EntityError({

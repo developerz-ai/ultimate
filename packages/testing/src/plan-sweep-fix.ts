@@ -3,9 +3,11 @@
 // lookup that pins a unique key reads one row whatever the planner walked to find it, and a whole
 // read a keyed join side could probe by a declared index is one the planner declined on cost.
 
+import { trigramDeclaration } from '@ultimat3/entity';
 import type { PlanVerdict, PlanVerdictCode } from './plan-oracle';
 import type { PlanUnservable } from './plan-sort-key';
 import { sortKeyPart } from './plan-sort-key';
+import { trigramColumns, trigramServed } from './plan-trigram';
 import type { SeedEntity } from './seed-graph-shape';
 
 export interface PlanFinding {
@@ -24,6 +26,11 @@ export interface PlanFinding {
    * empty with it.
    */
   readonly unserved?: PlanUnservable | 'declared';
+  /**
+   * The whole `indexes:` entry when a bare `on:` would not serve the statement: an `ilike` (a text
+   * `contains`) is served by a `gin_trgm_ops` index only (`plan-trigram.ts`).
+   */
+  readonly declaration?: string;
 }
 
 /** Every column set the table holds unique: the primary key, unique columns, total unique rules. */
@@ -225,6 +232,17 @@ export function planFindings(
     }
     const description = entity.$describe();
     const byColumn = new Map(description.columns.map((c) => [c.column, c.property]));
+    // BEFORE the btree rules: no btree serves an `ilike`, so a declared one argues nothing away.
+    const searched =
+      verdict.code === 'X_QUERY_UNINDEXED' ? trigramColumns(statement, verdict.range) : [];
+    if (searched.length > 0) {
+      return searched
+        .filter((column) => !trigramServed(entity, column))
+        .map((column) => {
+          const property = byColumn.get(column) ?? column;
+          return { ...finding, index: [property], declaration: trigramDeclaration(property) };
+        });
+    }
     const walked = verdict.code === 'X_QUERY_UNINDEXED' && verdict.node !== 'Seq Scan';
     // A walk filtered by a range already has its order: what it lacks is the bound. A btree serves
     // no order after a range column, so the index is the equality columns, then the range.

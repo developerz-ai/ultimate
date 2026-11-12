@@ -25,7 +25,9 @@ export interface UniqueConstraint {
  */
 export const uniqueConstraints = <Row>(entity: EntityCore<Row>): readonly UniqueConstraint[] => [
   ...entity.$indexes
-    .filter((index) => index.unique && index.where === undefined)
+    // An expression key is excluded too: `on conflict (email)` cannot infer `unique(lower(email))`
+    // (42P10), and the memory driver cannot evaluate the expression — the partial index's reason.
+    .filter((index) => index.unique && index.where === undefined && index.expression === undefined)
     .map((index) => ({ columns: index.columns, name: () => index.name })),
   ...entity.$invariants
     .filter((rule) => rule.kind === 'unique' && rule.where === undefined)

@@ -275,6 +275,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A test fixture filtering listed rows by the idempotency key a scheduled fire derives from its occurrence (`nightly:<ms>`) — a dedupe name the fixture built itself. Visible from sweep 11, when an interpolating template stopped reading as a constant.',
   },
+  'packages/jobs/src/subject-erase-history.ts: property === parentKey': {
+    // why: plan 101 sweep 5b, history erase by image reach for `set null`/`cascade` orphans.
+    count: 1,
+    reason:
+      'A `parentKey` is a COLUMN NAME — the property an orphan child names its parent by — compared to the property the erase filters on, both from the declared subject plan.',
+  },
   'packages/notify/src/push-register.ts: device.token !== kept.token': {
     // why: issue #997's per-actor device cap; a push token is a routing address, not a credential.
     count: 1,

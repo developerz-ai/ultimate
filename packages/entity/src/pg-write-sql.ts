@@ -15,6 +15,7 @@ import { conditions, type ReadShape } from './pg-sql';
 import { valuesList } from './pg-values-list';
 import { advancingVersionColumn } from './search-index-version';
 import type { QueryPlan } from './tenancy';
+import { versionOf } from './version-lock';
 
 /** `on conflict (…) do update set …`, or `do nothing` when there is nothing to overwrite. */
 export interface ConflictTarget {
@@ -136,13 +137,40 @@ export const updateStatement = <Row>(
 ): SqlFragment => {
   const json = jsonColumns(entity);
   const version = advancingColumn(entity);
-  return sql`update ${identifier(entity.$table)} set ${join(
-    [...values].map(([column, value]) =>
+  const lock = lockOf(entity, plan, values);
+  const set = [...values]
+    .filter(([column]) => column !== lock?.column)
+    .map(([column, value]) =>
       column === version
         ? advanced(column, cell(json, column, value), identifier(column))
         : sql`${identifier(column)} = ${cell(json, column, value)}`,
-    ),
-  )} where ${conditions(entity, plan, shape)}${returning ? sql` returning *` : sql``}`;
+    );
+  if (lock !== undefined) set.push(lock.increment);
+  return sql`update ${identifier(entity.$table)} set ${join(set)} where ${conditions(
+    entity,
+    lock?.plan ?? plan,
+    shape,
+  )}${returning ? sql` returning *` : sql``}`;
+};
+
+/**
+ * A declared lock (`version-lock.ts`) in SQL: every UPDATE sets `"v" = "v" + 1`, and one whose
+ * values named the version is conditioned on it — `"v" = $read`, as one more predicate of the
+ * plan, so a row another write moved is simply not matched. `undefined` for an unversioned entity.
+ */
+const lockOf = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  values: ReadonlyMap<string, unknown>,
+): { column: string; increment: SqlFragment; plan: QueryPlan } | undefined => {
+  const property = versionOf(entity);
+  const meta = property === null ? undefined : entity.$columns[property]?.$meta;
+  if (property === null || meta === undefined) return undefined;
+  const column = columnName(property, meta);
+  const increment = sql`${identifier(column)} = ${identifier(column)} + 1`;
+  if (!values.has(column)) return { column, increment, plan };
+  const read = { column: property, op: 'eq' as const, value: values.get(column) };
+  return { column, increment, plan: { ...plan, where: [...plan.where, read] } };
 };
 
 /** Only reached when the entity has no soft-delete column, so there is no filter to apply. */

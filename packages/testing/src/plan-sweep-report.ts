@@ -21,9 +21,12 @@ const STATEMENT_CHARS = 160;
 const excerpt = (statement: string): string =>
   statement.length <= STATEMENT_CHARS ? statement : `${statement.slice(0, STATEMENT_CHARS)}…`;
 
-/** `indexes: [{ on: ['orgId', 'authorId'] }]` — the line to paste into the entity. */
+/**
+ * `indexes: [{ on: ['orgId', 'authorId'] }]` — the line to paste into the entity; the finding's
+ * own `declaration` when a bare `on:` would not serve it (an `ilike` needs `gin_trgm_ops`).
+ */
 const indexLine = (finding: PlanFinding): string =>
-  `indexes: [{ on: [${finding.index.map((p) => `'${p}'`).join(', ')}] }]`;
+  finding.declaration ?? `indexes: [{ on: [${finding.index.map((p) => `'${p}'`).join(', ')}] }]`;
 
 /**
  * A read that compares no column of the table — a whole-table count, an unfiltered export — is

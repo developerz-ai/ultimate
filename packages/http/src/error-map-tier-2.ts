@@ -149,4 +149,10 @@ export const TIER_2_ERROR_STATUS = {
   X_IDENTITY_PROVIDER_UNKNOWN: 404,
   // @ultimat3/entity — a page weighed more than the page byte bound before it was decoded
   X_ENTITY_PAGE_TOO_LARGE: 500,
+  // @ultimat3/auth — an oauth client was registered with a list value the store cannot hold as one value
+  X_AUTH_CLIENT_INVALID: 422,
+  // @ultimat3/entity — the row's version moved since this write read it
+  X_ENTITY_STALE: 409,
+  // @ultimat3/entity — a write or declaration breaks the declared version lock
+  X_ENTITY_VERSION_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

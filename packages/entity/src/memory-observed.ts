@@ -27,6 +27,8 @@ const OPERATIONS = {
   count: { verb: 'select', rows: one },
   countBy: { verb: 'select', rows: none },
   aggregate: { verb: 'select', rows: one },
+  aggregates: { verb: 'select', rows: one },
+  latestBy: { verb: 'select', rows: listed },
   series: { verb: 'select', rows: listed },
   approximateCount: { verb: 'select', rows: one },
   insert: { verb: 'insert', rows: one },
@@ -45,7 +47,7 @@ const OPERATIONS = {
 type Operation = keyof typeof OPERATIONS;
 
 /** Taken before the body runs, as Postgres answers the lock before the body it guards. */
-const LOCKS = ['lock', 'lockKey'] as const;
+const LOCKS = ['lock', 'lockKey', 'lockKeys'] as const;
 
 const report = (
   entity: string,

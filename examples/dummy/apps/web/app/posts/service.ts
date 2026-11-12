@@ -31,7 +31,6 @@ import {
   markPublished,
   markWithdrawn,
   publishedSince,
-  recountLikes,
   reviewOf,
   reviewRunOf,
   startReviewRun,
@@ -159,24 +158,25 @@ export const postsService = defineService('posts', (ctx) => {
 
     /**
      * The server half of `likePost`. Returns the authoritative row, which is what the client
-     * rebases its optimistic count onto.
+     * rebases its optimistic count onto: read after the write, whose trigger moved `likeCount` in
+     * the same statement (`likes.postId`'s `countedIn`) — no recount, no lock.
      *
      * The `byId` first is the tenancy check, and it is load-bearing: `insertLike` trusts the three
      * ids it is handed, so a caller pairing its own authorised `orgId` with another org's `postId`
-     * used to write a `likes` row pointing across tenants — and `recountLikes`, scoped properly,
-     * then matched no post and updated nothing. A write that silently does nothing is a worse bug
+     * used to write a `likes` row pointing across tenants — counted into a post the caller's org
+     * cannot see. A write that silently does nothing is a worse bug
      * than a denial, so a foreign post id has to be `X_POST_NOT_FOUND` before anything is written.
      */
     async like(postId: PostId): Promise<PostView> {
       const post = await this.byId(postId);
       await insertLike(tenantId(), post.id as PostId, authorId());
-      return recountLikes(tenantId(), post.id as PostId);
+      return this.byId(postId);
     },
 
     async unlike(postId: PostId): Promise<PostView> {
       const post = await this.byId(postId); // same tenancy check, same reason
       await deleteLike(tenantId(), post.id as PostId, authorId());
-      return recountLikes(tenantId(), post.id as PostId);
+      return this.byId(postId);
     },
 
     /** Comments are part of the post aggregate, so they live in this service, not a fourth feature. */

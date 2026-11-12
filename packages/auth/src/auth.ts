@@ -42,8 +42,8 @@ import {
   type SessionPolicy,
   type SessionRuntime,
   sessionCookie,
-  verifySession,
 } from './session';
+import { verifySessionWithUser } from './session-user';
 import { sha256Hex } from './tokens';
 
 // The projections safe to hand to a client or an MCP tool: no password hash, no TOTP secret,
@@ -396,8 +396,7 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
  */
 export async function authenticate(auth: Auth, token: string | null): Promise<PolicyActor> {
   if (token === null || token.length === 0) return resolveActor({ kind: 'anonymous' });
-  const session = await verifySession(auth.sessions, token);
-  const user = await auth.adapter.findUserById(session.userId);
+  const { session, user } = await verifySessionWithUser(auth.sessions, auth.adapter, token);
   if (user === null || user.disabledAt !== null) {
     await auth.adapter.deleteSession(session.id);
     throw sessionUnknown();

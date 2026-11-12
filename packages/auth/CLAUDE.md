@@ -66,6 +66,9 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
   `OAuthGrantContext`; never a second userinfo reader. Full rule: `docs/history/auth.md`.
 - **`verifySession` writes at most once per `idleSlideMs`** (default `idleTtlMs / 20`). Never cache
   the USER row — `authenticate` re-reads it every request so a revoked role bites on the next one.
+  It reads it in ONE statement with the session (`getSessionWithUser`, optional on the seam,
+  `session-user.ts`); the checks are `admitSession`, one copy for both paths. Pinned at 1 by
+  `authenticate-statements.test.ts`.
   In `observed`, `null` is an ANSWER (clears the stored value) and `undefined` is silence.
 - A user's `scopes` column reaches `Actor.scopes`.
 - Every revocation takes a `reason` and logs `auth.revocation` before it runs.
@@ -153,6 +156,9 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 - **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee.** Full rule: `docs/history/auth.md`.
 - **Passkeys are verified by hand** (`passkey-*.ts`, `cbor.ts`, `cose-key.ts`): UV required, exact
   origin, compare-and-set counter, single-use challenges. †
+- **Every client registration is screened in `storeClient`**, the route's and `registerClient`'s
+  alike: a list value that is empty or holds whitespace is `X_AUTH_CLIENT_INVALID` (the Postgres
+  store space-joins each list). The route answers RFC 7591 JSON first.
 - **SAML = `samlIdentityProvider`**, no dependency: assertion signature required, one assertion,
   metadata keys only, replay via `auth.totpReplay`, `trustEmail: true` needs `emailDomains`.
 
@@ -163,8 +169,9 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout`. Suites: `auth.test.ts` (credential flow), `auth-config.test.ts` (defaults, refusals), `auth-lockout.test.ts` (tenant and address buckets) |
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
-| `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
-| `tables.ts` (`./schema`) | every auth table the boot applies — `AUTH_TABLES`, the limiter and TOTP DDL, and `authorization-server-schema.ts` re-exported. A LEAF: it imports nothing else (`schema-subpath.test.ts`), so `FRAMEWORK_SCHEMA` keeps the barrel off `ROLE=migrate` (`MIGRATE_CEILING`). The per-table constants stay module-private (removed from the API in 22.0.0). Also on `.` |
+| `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres, its row readers in `builtin-adapter-rows.ts`) + `memory-adapter.ts` |
+| `session-user.ts` | token → admitted session + its user: one join when the adapter has `getSessionWithUser`, else two reads |
+| `tables.ts` (`./schema`) | every auth table the boot applies — `AUTH_TABLES`, the limiter and TOTP DDL, and `authorization-server-schema.ts` re-exported. `x_auth_lockouts` renders through db's `tableDdl` from `AUTH_LOCKOUTS_STORAGE` (logged, stated). A LEAF: it imports nothing else but `@ultimat3/db` (`schema-subpath.test.ts`), so `FRAMEWORK_SCHEMA` keeps the barrel off `ROLE=migrate` (`MIGRATE_CEILING`). The per-table constants stay module-private (removed from the API in 22.0.0). Also on `.` |
 | `adapter-subpath.ts` | `@ultimat3/auth/adapter`: the `authLimiter`/`totpReplay`/`authServerStore` port types, their installers and resets, and `installKdfGate` |
 | `authorization-server-installed.ts` | the `authServerStore` slot: `authorizationServer()` with no `store` reads it per CALL (never captured: `runtime.ts` may build the server first); empty, Postgres over the ambient pool |
 | `builtin-adapter-violation.ts` | a Postgres unique violation on an auth table → `authUniqueViolation` |

@@ -8,15 +8,24 @@ import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, seekFrom } from './cursor';
 import { projectRow } from './driver-rows';
 import type { DriverScope } from './driver-scope';
+import { planMeasures, screenMeasureFilter } from './measures';
 import { assertPageBytes } from './page-bytes';
 import { idPlan, readPlan, singleKeyOf } from './plan';
 import type { Repo } from './repo';
 import { rowKey } from './row-key';
+import type { Predicate } from './tenancy';
 import { seriesPlanOf } from './time-bucket';
 
 export type DriverReads<Row> = Pick<
   Repo<Row>,
-  'findById' | 'findMany' | 'count' | 'countBy' | 'aggregate' | 'approximateCount' | 'series'
+  | 'findById'
+  | 'findMany'
+  | 'count'
+  | 'countBy'
+  | 'aggregate'
+  | 'aggregates'
+  | 'approximateCount'
+  | 'series'
 >;
 
 export const driverReads = <Row>(scope: DriverScope<Row>): DriverReads<Row> => {
@@ -63,13 +72,70 @@ export const driverReads = <Row>(scope: DriverScope<Row>): DriverReads<Row> => {
       return raw.count({ plan, tx: scope.txOf(op, args) });
     },
 
-    async countBy(column, args = {}) {
+    /**
+     * With `where`, two store calls over the one capability a store already declares: every group
+     * the chain matches, then the groups' counts with the filter ANDed in — a group the filter
+     * empties answers `0`, as `count(*) filter (where …)` does. No new store contract to forget.
+     */
+    async countBy(column, args = {}, options) {
       const op = 'countBy';
       groupColumnOf(entity, column, op);
       scope.need(op, 'aggregate:countBy');
-      const plan = scope.storePlan(op, readPlan(entity, args, op), args.includeDeleted);
-      const groups = await raw.countBy?.(column, { plan, tx: scope.txOf(op, args) });
-      return countsFrom(entity, column, op, groups ?? []);
+      const tx = scope.txOf(op, args);
+      const planOf = (where: readonly Predicate[]) =>
+        scope.storePlan(op, readPlan(entity, { ...args, where }, op), args.includeDeleted);
+      const groups = await raw.countBy?.(column, { plan: planOf(args.where ?? []), tx });
+      const all = countsFrom(entity, column, op, groups ?? []);
+      const filter = options?.where;
+      if (filter === undefined || filter.length === 0) return all;
+      const where = [...(args.where ?? []), ...screenMeasureFilter(entity, filter)];
+      const hit = countsFrom(
+        entity,
+        column,
+        op,
+        (await raw.countBy?.(column, { plan: planOf(where), tx })) ?? [],
+      );
+      // Re-ordered by the FILTERED count, as memory's `countsFrom` pass orders its pairs.
+      return countsFrom(
+        entity,
+        column,
+        op,
+        [...all.keys()].map((key) => [key, hit.get(key) ?? 0] as const),
+      );
+    },
+
+    /**
+     * Every measure as the store call its function already is — `count` through `count`, the rest
+     * through `aggregate` under its own `aggregate:<fn>` capability — each with its filter ANDed
+     * into the plan. Several store calls, never one statement: a store has no select list.
+     */
+    async aggregates(measures, args = {}) {
+      const op = 'aggregates';
+      const planned = planMeasures(entity, measures);
+      const tx = scope.txOf(op, args);
+      const answer: Record<string, unknown> = {};
+      for (const measure of planned) {
+        const where = [
+          ...(args.where ?? []),
+          ...measure.where,
+          ...(measure.fn === 'count' && measure.property !== undefined
+            ? [{ column: measure.property, op: 'is-not-null' as const }]
+            : []),
+        ];
+        const plan = scope.storePlan(
+          op,
+          readPlan(entity, { ...args, where }, op),
+          args.includeDeleted,
+        );
+        if (measure.fn === 'count') {
+          answer[measure.name] = await raw.count({ plan, tx });
+          continue;
+        }
+        scope.need(measure.fn, `aggregate:${measure.fn}`);
+        answer[measure.name] =
+          (await raw.aggregate?.(measure.fn, measure.property ?? '', { plan, tx })) ?? null;
+      }
+      return answer;
     },
 
     async aggregate(fn, column, args = {}) {

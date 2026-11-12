@@ -9,6 +9,8 @@ import { decodeAggregate } from './aggregate-decode';
 import { moneyColumns } from './column';
 import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import type { EntityCore } from './entity';
+import { type CountByOptions, type MeasureReads, screenMeasureFilter } from './measures';
+import { postgresMeasures } from './pg-measures';
 import type { ReadShape } from './pg-sql';
 import {
   type AggregateRow,
@@ -30,7 +32,8 @@ import type { MoneyValue } from './types';
 type AggregateReads<Row> = Pick<
   Required<Repo<Row>>,
   'aggregate' | 'approximateCount' | 'countBy' | 'series'
->;
+> &
+  MeasureReads;
 
 const shapeOf = (args: FindManyArgs): ReadShape => ({
   includeDeleted: args.includeDeleted === true,
@@ -90,16 +93,19 @@ export const postgresAggregates = <Row>(
   };
 
   return {
-    async countBy(column, args = {}) {
+    ...postgresMeasures(entity, client),
+
+    async countBy(column, args = {}, options: CountByOptions = {}) {
       const op = 'countBy';
       const grouped = groupColumnOf(entity, column, op);
+      const where = screenMeasureFilter(entity, options.where ?? []);
       const plan = readPlan(entity, args, op);
       // One group past the bound, for the same reason a page reads one row past its limit: the
       // presence of that group is what says the answer was never going to fit, and `countsFrom`
       // refuses it rather than hand back a breakdown missing its tail.
       const rows = await attributed(op, () =>
         client().query<GroupRow>(
-          countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1),
+          countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1, where),
         ),
       );
       return countsFrom(

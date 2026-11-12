@@ -7,7 +7,10 @@ import { type DbClient, withTransaction } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { decodeRow, type PhysicalRow } from './pg-row';
+import { updateManyPresence } from './pg-update-many-sql';
 import type { UpdateManyPlan } from './update-many';
+import { versionOf } from './version-lock';
+import { entityStaleBatch } from './version-lock-errors';
 
 /** What the batch did: how many rows it updated, and those rows when `returning` asked for them. */
 export interface UpdateManyResult<Row> {
@@ -44,8 +47,11 @@ export const sendUpdateMany = async <Row>(
   returning: boolean,
   direct: DbClient,
   pinned: DbClient | undefined,
+  /** The batch, for a declared lock's stale check (`version-lock.ts`). Unversioned: unused. */
+  plan?: UpdateManyPlan<Row>,
 ): Promise<UpdateManyResult<Row>> => {
   const judges = hasJsOnlyInvariant(entity.$invariants);
+  const lock = plan === undefined ? null : versionOf(entity);
   const send = async (on: DbClient): Promise<UpdateManyResult<Row>> => {
     let count = 0;
     const rows: Row[] = [];
@@ -59,8 +65,33 @@ export const sendUpdateMany = async <Row>(
       count += stored.length;
     }
     if (judges) for (const row of rows) entity.$assert(row);
+    if (lock !== null && plan !== undefined && count < plan.patches.length) {
+      await refuseStale(entity, plan, lock, count, on);
+    }
     return { count, rows };
   };
-  if (statements.length <= 1 && !judges) return send(direct);
+  if (statements.length <= 1 && !judges && lock === null) return send(direct);
   return withTransaction(send, pinned === undefined ? {} : { client: pinned });
+};
+
+/**
+ * Fewer rows written than the batch named: either rows that are gone or out of scope — not written
+ * and not counted, as without a lock — or rows present at another version. The second refuses the
+ * batch, and the transaction it runs in takes back the rows already written.
+ */
+const refuseStale = async <Row>(
+  entity: EntityCore<Row>,
+  plan: UpdateManyPlan<Row>,
+  lock: string,
+  written: number,
+  on: DbClient,
+): Promise<void> => {
+  let present = 0;
+  for (const statement of updateManyPresence(entity, plan)) {
+    const [row] = await on.query<{ readonly n: number }>(statement);
+    present += Number(row?.n ?? 0);
+  }
+  if (present > written) {
+    throw entityStaleBatch(entity.$name, lock, present - written, plan.patches.length);
+  }
 };

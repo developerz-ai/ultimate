@@ -15,6 +15,7 @@ import { readPlan, singleKeyOf } from './plan';
 import type { RepoOptions, UpdateManyRow } from './repo';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch } from './types';
+import { assertVersionedUpdate } from './version-lock';
 
 /** A batch, judged and resolved. Property names, so every driver reads one answer. */
 export interface UpdateManyPlan<Row> {
@@ -102,7 +103,11 @@ export const updateManyPlan = <Row>(
     if (row.id === undefined || row.id === null) throw unaddressed(entity.$name, position);
   }
   const patches = rows.map((row) => ({ id: String(row.id), patch: entity.$parsePatch(row.patch) }));
-  for (const { patch } of patches) assertRowTenant(entity.$name, entity.$tenantColumn, OP, patch);
+  for (const { patch } of patches) {
+    assertRowTenant(entity.$name, entity.$tenantColumn, OP, patch);
+    // A declared lock: every row names the version it was read at, as `update(id, patch)` does.
+    assertVersionedUpdate(entity, patch, OP);
+  }
   const properties = sharedProperties(
     entity,
     patches.map((each) => each.patch),

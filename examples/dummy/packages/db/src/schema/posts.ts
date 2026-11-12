@@ -1,8 +1,8 @@
 /**
  * The thing the app is about. `likeCount` is denormalised so the feed's live query stays
- * bounded and deterministic; the `likePost` mutator owns keeping it true — a write the live feed
- * sees, where a `countedIn` trigger's write reaches no in-process row observer. Every change to a
- * post is recorded into `posts_history` (`history`), kept for a year.
+ * bounded and deterministic; the database keeps it true (`likes.postId`'s `countedIn`), and the row
+ * observer reports the trigger's write as a change to the post, so the live feed hears every like.
+ * Every change to a post is recorded into `posts_history` (`history`), kept for a year.
  */
 
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, SLUG_PATTERN, TITLE_MAX } from '@postly/domain';

@@ -86,17 +86,35 @@ const searching = (args: FindManyArgs | undefined): boolean => args?.where?.some
 export const searchedRepo = <Row>(entity: EntityCore<Row>, repo: Repo<Row>): Repo<Row> => {
   const core = entity as EntityCore<unknown>;
   const series = repo.series;
+  const aggregates = repo.aggregates;
+  const latestBy = repo.latestBy;
   return {
     ...repo,
     findMany: async (args) =>
       repo.findMany(searching(args) ? await resolved(core, args ?? {}) : args),
     count: async (args) => repo.count(searching(args) ? await resolved(core, args ?? {}) : args),
-    countBy: async (column, args) =>
-      repo.countBy(column, searching(args) ? await resolved(core, args ?? {}) : args),
+    countBy: async (column, args, options) =>
+      repo.countBy(column, searching(args) ? await resolved(core, args ?? {}) : args, options),
     aggregate: async (fn, column, args) =>
       repo.aggregate(fn, column, searching(args) ? await resolved(core, args ?? {}) : args),
     approximateCount: async (args) =>
       repo.approximateCount(searching(args) ? await resolved(core, args ?? {}) : args),
+    ...(aggregates === undefined
+      ? {}
+      : {
+          aggregates: async (measures, args) =>
+            aggregates.call(
+              repo,
+              measures,
+              searching(args) ? await resolved(core, args ?? {}) : args,
+            ),
+        }),
+    ...(latestBy === undefined
+      ? {}
+      : {
+          latestBy: async (spec, args) =>
+            latestBy.call(repo, spec, searching(args) ? await resolved(core, args ?? {}) : args),
+        }),
     ...(series === undefined
       ? {}
       : {

@@ -1,4 +1,4 @@
-// Single responsibility: `lock` and `lockKey` on the typed handle. The refusal lives here because
+// Single responsibility: `lock`, `lockKey` and `lockKeys` on the typed handle. The refusal lives here because
 // the repository contract lets a hand-written driver omit both, so only this layer can say so.
 
 import { lockUnsupported } from './lock-unsupported';
@@ -23,6 +23,17 @@ export interface TableLocks<Row> {
    * A's key never blocks org B. On a tenant-scoped entity with no actor it is `X_TENANCY_UNSCOPED`.
    */
   lockKey<R>(key: string, fn: (tx: Tx) => Promise<R> | R, options?: RepoOptions): Promise<R>;
+  /**
+   * `lockKey` over several keys, for work that spans them — a transfer between two accounts:
+   * `db.accounts.lockKeys(['acct:' + from, 'acct:' + to], (tx) => …)`. Every key held for `fn`, in
+   * ONE transaction, taken in sorted order so two callers naming them in any order never deadlock.
+   * Same table, tenant and hashing as `lockKey`; an empty list and more than 64 keys are refused.
+   */
+  lockKeys<R>(
+    keys: readonly string[],
+    fn: (tx: Tx) => Promise<R> | R,
+    options?: RepoOptions,
+  ): Promise<R>;
 }
 
 /** Called as methods and refused in an `async` body, so a class-shaped driver keeps its `this`. */
@@ -37,5 +48,9 @@ export const tableLocks = <Row>(
   lockKey: async (key, fn, options) => {
     if (repo.lockKey === undefined) throw lockUnsupported(entity.$name, 'lockKey');
     return repo.lockKey(key, fn, options);
+  },
+  lockKeys: async (keys, fn, options) => {
+    if (repo.lockKeys === undefined) throw lockUnsupported(entity.$name, 'lockKeys');
+    return repo.lockKeys(keys, fn, options);
   },
 });

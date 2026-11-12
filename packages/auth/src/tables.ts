@@ -1,7 +1,7 @@
 // Single responsibility: every auth table the boot applies, and nothing else — shipped as the LEAF
 // `@ultimat3/auth/schema`, so `@ultimat3/cli`'s `FRAMEWORK_SCHEMA` reads the DDL in every role
-// (`ROLE=migrate` first) without the barrel. Imports only its sibling leaf; `schema-subpath.test.ts`
-// refuses anything more. Plain strings: what auth stores is verifiable by reading, never by trusting.
+// (`ROLE=migrate` first) without the barrel. Imports its sibling leaf and db's `tableDdl`, nothing
+// more (`schema-subpath.test.ts`). Strings: what auth stores is verifiable by reading, never trusting.
 //
 // `AUTH_TABLES` is the DDL `PostgresAuthAdapter` expects, upgrades of an older table included.
 // There is nothing to paste into a migration: the per-table exports and `X_USERS_MIGRATION_1_3`
@@ -28,6 +28,8 @@
 // (`oauth-login.ts`'s `accountFor`). The columns stay so an app that deliberately stores tokens
 // through its own `linkAccount` has somewhere to put them, and so an existing deployment needs
 // no migration to stop.
+
+import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
 
 const X_USERS_TABLE = `create table if not exists x_users (
   id                    uuid primary key,
@@ -181,6 +183,17 @@ export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * How `x_auth_lockouts` is STORED: LOGGED, stated rather than left to the default, so drift
+ * catches a hand `set unlogged` and every boot's `alter … set logged` converges one. A crash must
+ * never forget a lockout — that forgetting IS the spray it exists to stop (`x_rate_limit` may be
+ * unlogged: a refilled bucket is one free burst, never a bypass). `@ultimat3/cli`'s framework
+ * schema compares this same value against `pg_class`.
+ */
+export const AUTH_LOCKOUTS_STORAGE: TableStorage = tableStorage('x_auth_lockouts', {
+  unlogged: false,
+});
+
+/**
  * `postgresAuthLimiter`'s table (`rate-limit-postgres.ts`).
  *
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, so
@@ -198,12 +211,14 @@ export const AUTH_TABLE_NAMES: readonly string[] = Object.freeze([
  * and writes this table as it always did, so a lockout holds on both sides of a rolling deploy.
  */
 export const SQL_AUTH_LIMIT_TABLES = `
-create table if not exists x_auth_lockouts (
+${tableDdl(
+  AUTH_LOCKOUTS_STORAGE,
+  `
   key             text     primary key,
   locked_until_ms bigint   not null,
   attempts_ms     bigint[] not null default '{}',
-  admitted        boolean  not null default true
-);
+  admitted        boolean  not null default true`,
+)}
 
 alter table x_auth_lockouts add column if not exists attempts_ms bigint[] not null default '{}';
 alter table x_auth_lockouts add column if not exists admitted boolean not null default true;

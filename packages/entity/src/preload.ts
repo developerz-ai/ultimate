@@ -11,6 +11,7 @@ import { keyOf, MAX_IDS_PER_STATEMENT, statementChunks } from './batch-read';
 import { valueAt } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
+import { latestRows } from './latest-by';
 import { type PreloadRelation, preloadTooMany } from './preload-ceiling';
 import type { Relation } from './relations';
 import type { Repo } from './repo';
@@ -76,7 +77,8 @@ const tenantScope = (
  * The page loop is what keeps a `hasMany` honest: a relation with more rows than one page holds
  * costs another statement rather than silently returning the first page of them. And the ceiling
  * is what keeps the loop finite: it asks for at most ONE row past `relation.max`, which is the
- * row that proves the refusal, and reads nothing after it.
+ * row that proves the refusal, and reads nothing after it. A `perParent` bound is the one exception
+ * to the page loop: its rows are already bounded by keys × n, in one statement per chunk.
  */
 const relatedRows = async (
   source: string,
@@ -86,7 +88,21 @@ const relatedRows = async (
   scope: readonly Predicate[],
 ): Promise<readonly unknown[]> => {
   const rows: unknown[] = [];
+  const perParent = relation.perParent;
   for (const chunk of statementChunks(values)) {
+    // n per parent: ONE statement per chunk however many rows each parent has (`LATERAL` on
+    // Postgres), grouped by key in the order asked — never a page loop over every child.
+    if (perParent !== undefined) {
+      const spec = {
+        group: relation.remoteKey,
+        order: perParent.order,
+        perGroup: perParent.rows,
+        keys: chunk,
+      };
+      rows.push(...(await latestRows(target.entity, target.repo, spec, { where: scope })));
+      if (rows.length > relation.max) throw preloadTooMany(source, relation);
+      continue;
+    }
     let cursor: string | null = null;
     do {
       const page = await target.repo.findMany({

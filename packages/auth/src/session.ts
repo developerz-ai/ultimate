@@ -182,9 +182,27 @@ export async function verifySession(
 ): Promise<AuthSession> {
   const parsed = parseSessionToken(token);
   if (parsed === null) throw sessionUnknown();
-  const session = await runtime.store.getSession(parsed.id);
+  return await admitSession(
+    runtime,
+    parsed.secret,
+    await runtime.store.getSession(parsed.id),
+    observed,
+  );
+}
+
+/**
+ * `verifySession` on a row already read — by `getSession`, or by the join `authenticate` prefers
+ * (`session-user.ts`). One copy of the checks, so the two reads cannot admit different sessions:
+ * the secret half, both clocks, then the slide.
+ */
+export async function admitSession(
+  runtime: SessionRuntime,
+  secret: string,
+  session: AuthSession | null,
+  observed?: { readonly ip?: string | null | undefined; readonly userAgent?: string | null },
+): Promise<AuthSession> {
   if (session === null) throw sessionUnknown();
-  if (!timingSafeEqual(sha256Hex(parsed.secret), session.tokenHash)) throw sessionUnknown();
+  if (!timingSafeEqual(sha256Hex(secret), session.tokenHash)) throw sessionUnknown();
 
   const now = runtime.clock.now();
   const expiry = sessionExpiry(session, runtime.policy, now);

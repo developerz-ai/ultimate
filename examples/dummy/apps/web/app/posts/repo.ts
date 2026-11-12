@@ -249,7 +249,8 @@ export const markWithdrawn = async (orgId: OrgId, id: PostId): Promise<PostView>
 
 /**
  * Insert-or-ignore: the composite primary key on `likes` makes a replayed offline like a no-op at
- * the storage layer, so the counter cannot drift on reconnect. `upsertAll` resolves with the rows
+ * the storage layer, so the counter cannot drift on reconnect — `posts.likeCount` moves only when a
+ * row is written, by the database (`likes.postId`'s `countedIn`). `upsertAll` resolves with the rows
  * it actually wrote, so an empty result IS "that like was already there" — and `onMatch: 'nothing'`
  * needs no tenant column in the conflict target, because it writes nothing to a row it does not own.
  */
@@ -273,21 +274,6 @@ export const deleteLike = async (
 ): Promise<{ deleted: boolean }> => ({
   deleted: (await db.likes.deleteWhere({ orgId, postId, memberId })) > 0,
 });
-
-/**
- * The count is the statement, never a value the caller passed in: a like is counted, not tracked.
- * Under the row's lock, because the count and the write are two statements: without it, two likes
- * landing together each count what they saw and the slower write stores the smaller number.
- */
-export const recountLikes = (orgId: OrgId, postId: PostId): Promise<PostView> =>
-  db.posts.lock(
-    postId,
-    async (_post, tx) => {
-      const likeCount = await db.likes.where({ orgId, postId }).count();
-      return writeView(await db.posts.update(postId, { likeCount }, { orgId, tx }));
-    },
-    { orgId },
-  );
 
 export const publishedSince = async (orgId: OrgId, since: Date): Promise<PostSummary[]> =>
   (

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "625638387865d5190e4e6d588a1f2ab026040c3d3b130c9e585c8c734034dc3c",
+  "buildId": "3e313212624bb0341f9840d211b53b683d73cebf6c0e615d56d7aa322905cefd",
   "tiers": {
     "0": [
       "core",
@@ -613,6 +613,11 @@
       "code": "X_AUDIT_SINK_MISSING",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_AUTH_CLIENT_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
     },
     {
       "code": "X_AUTH_CONSENT_INVALID",
@@ -1965,7 +1970,17 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_STALE",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_TENANT_UNDECLARED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_VERSION_INVALID",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },

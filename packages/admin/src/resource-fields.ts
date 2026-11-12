@@ -62,6 +62,9 @@ export function deriveField(
   // The handle scopes every read and write by this column, so the acting actor's tenant is the
   // only value it can hold: it is not an input, not a list column, and not a filter.
   const tenant = entity.$tenantColumn === name;
+  // The declared lock counts writes: the update carries the version it read (`crud.ts`), so an
+  // operator never types one — a form or MCP input for it would be a way round the lock.
+  const version = entity.$version === name;
   const filterKind = tenant ? undefined : filterKindFor(type, column);
 
   return {
@@ -71,7 +74,7 @@ export function deriveField(
     widget,
     labelKey: override?.labelKey ?? `admin.${entity.$name}.field.${name}`,
     required: override?.required ?? (!column.nullable && !generated && !tenant),
-    readOnly: override?.readOnly ?? (generated || tenant),
+    readOnly: override?.readOnly ?? (generated || tenant || version),
     sensitive,
     inList: override?.inList ?? (listable(type) && !sensitive && !tenant),
     filterable: filterKind !== undefined && (override?.filterable ?? filterable(type, column)),

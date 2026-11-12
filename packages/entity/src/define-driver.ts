@@ -6,6 +6,7 @@
 import { refuseAbandoned } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
 import type { Driver } from './database';
+import { refuseCounters } from './driver-counters';
 import { driverCapabilityMissing, driverUnsupported } from './driver-errors';
 import type { DriverCapability, DriverDefinition, DriverRepo } from './driver-kit-types';
 import { noteDriverStore } from './driver-registry';
@@ -15,7 +16,7 @@ import { driverScope } from './driver-scope';
 import type { RawFor } from './driver-write-scope';
 import type { EntityCore } from './entity';
 import { notFound } from './errors';
-import { lockKeyInput } from './lock-key';
+import { holdInOrder, lockKeyInput, lockKeysInput } from './lock-key';
 import { idPlan } from './plan';
 import type { Repo, RepoOptions, Tx } from './repo';
 import { sealedRepo } from './sealed-repo';
@@ -71,11 +72,12 @@ const driverRepo = <Row>(
   entity: EntityCore<Row>,
   rawFor: RawFor,
 ): Repo<Row> => {
+  refuseCounters(definition.name, entity as EntityCore);
   const scope = driverScope(definition, entity, rawFor);
   assertImplemented(definition, scope.raw as DriverRepo<unknown>);
   const { raw } = scope;
   // Absent unless declared, so the typed handle answers the shipped `X_LOCK_UNSUPPORTED`.
-  const locks = (): Pick<Repo<Row>, 'lock' | 'lockKey'> => {
+  const locks = (): Pick<Repo<Row>, 'lock' | 'lockKey' | 'lockKeys'> => {
     const { lock, lockKey } = raw;
     if (lock === undefined || lockKey === undefined) return {};
     if (!definition.capabilities.includes('lock')) return {};
@@ -103,6 +105,26 @@ const driverRepo = <Row>(
         return lockKey.call<DriverRepo<Row>, Parameters<typeof lockKey<R>>, Promise<R>>(
           raw,
           lockKeyInput(entity, key, options),
+          fn,
+          options?.tx,
+        );
+      },
+      // The store's one-key lock, sorted and nested: each key taken inside the last one's tx.
+      async lockKeys<R>(
+        keys: readonly string[],
+        fn: (tx: Tx) => Promise<R> | R,
+        options?: RepoOptions,
+      ) {
+        refuseAbandoned();
+        return holdInOrder<R, Tx>(
+          lockKeysInput(entity, keys, options),
+          (input, outer, body) =>
+            lockKey.call<DriverRepo<Row>, Parameters<typeof lockKey<R>>, Promise<R>>(
+              raw,
+              input,
+              body,
+              outer,
+            ),
           fn,
           options?.tx,
         );

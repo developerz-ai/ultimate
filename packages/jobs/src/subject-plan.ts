@@ -10,6 +10,7 @@ import {
   SubjectTableUndeclaredError,
   SubjectTreatmentInvalidError,
 } from './subject-errors';
+import { historyReach } from './subject-plan-history';
 
 /** How one table's rows of the subject are found: `<table>.<property>` equal to `<parent>.<key>`. */
 export interface SubjectVia {
@@ -23,6 +24,27 @@ export interface SubjectStep {
   readonly treatment: SubjectTreatment;
   /** Empty for the subject itself, which is found by its key. */
   readonly via: readonly SubjectVia[];
+  /**
+   * This table's `<table>_history`, declared `'delete'`: its rows of each row this step writes go
+   * in the same transaction, after the write — whose own trigger has just recorded one more image.
+   */
+  readonly history?: string;
+  /**
+   * A deleted table's children whose key into it the DATABASE rewrites on this step's delete
+   * (`on delete set null | cascade`), each with its history declared `'delete'`. The
+   * referential action fires the child's trigger after the child's own step purged, recording one
+   * more image naming this row — so it is purged here, in the same transaction, after the delete.
+   */
+  readonly orphans?: readonly SubjectOrphan[];
+}
+
+/** A child history the delete of its parent writes into: images whose `property` names its key. */
+export interface SubjectOrphan {
+  readonly history: string;
+  /** The child's key column into the deleted table, as its images spell it by property. */
+  readonly property: string;
+  /** The deleted table's column that key names. */
+  readonly parentKey: string;
 }
 
 /** A key closing a loop: set to null on the rows naming a parent the erase deletes, before any. */
@@ -125,6 +147,14 @@ function treatmentProblems(
   if (d.readOnly !== undefined && (treatment === 'delete' || isAnonymize(treatment))) {
     const field = treatment === 'delete' ? "'delete'" : 'anonymize';
     return [invalid(field, `is refused: the entity is readOnly (${d.readOnly})`)];
+  }
+  if (d.historyOf !== undefined && isAnonymize(treatment)) {
+    return [
+      invalid(
+        'anonymize',
+        `is refused: ${table} is the history of ${d.historyOf}, and history is never rewritten — 'delete' it, or { retain: '<why it is kept>' }`,
+      ),
+    ];
   }
   if (treatment === 'delete') {
     if (d.appendOnly === true) {
@@ -264,6 +294,16 @@ export function planSubject(input: SubjectPlanInput): {
   };
   if (root !== undefined) walk(subject, [subject]);
 
+  const history = historyReach({ subject, byName, reached: (e) => state.has(e), treatmentOf });
+  problems.push(...history.problems);
+  for (const [table, kept] of history.retained) {
+    // Counted before the parent's step writes: a deleted parent's rows find nothing after it.
+    state.set(table, 'done');
+    via.set(table, [kept.via]);
+    order.splice(order.indexOf(kept.parent), 0, table);
+  }
+  for (const table of history.reached) if (!state.has(table)) state.set(table, 'done');
+
   for (const table of Object.keys(input.tables)) {
     if (byName.has(table) && !state.has(table)) {
       problems.push(
@@ -278,13 +318,36 @@ export function planSubject(input: SubjectPlanInput): {
   }
   const steps = order
     .filter((entity) => treatmentOf(entity) !== undefined)
-    .map((entity) => ({
-      entity,
-      treatment: treatmentOf(entity) as SubjectTreatment,
-      via: via.get(entity) ?? [],
-    }));
+    .map((entity) => {
+      const kept = history.deletedWith.get(entity);
+      const orphans = isDelete(treatmentOf(entity))
+        ? orphansOf(inbound.get(entity) ?? [], history.deletedWith)
+        : [];
+      return {
+        entity,
+        treatment: treatmentOf(entity) as SubjectTreatment,
+        via: via.get(entity) ?? [],
+        ...(kept === undefined ? {} : { history: kept }),
+        ...(orphans.length === 0 ? {} : { orphans }),
+      };
+    });
   return { plan: { subject, key, unlink, steps }, problems };
 }
+
+/** Actions by which the database itself writes a child row when its parent row is deleted. */
+const REWRITES: ReadonlySet<string> = new Set(['cascade', 'set null']);
+
+/** Every child history the delete of one table writes an image into, by a referential action. */
+const orphansOf = (
+  edges: readonly Edge[],
+  deletedWith: ReadonlyMap<string, string>,
+): SubjectOrphan[] =>
+  edges.flatMap((edge) => {
+    const history = deletedWith.get(edge.from);
+    return history === undefined || edge.onDelete === null || !REWRITES.has(edge.onDelete)
+      ? []
+      : [{ history, property: edge.property, parentKey: edge.parentKey }];
+  });
 
 const edgeVia = (edge: Edge): SubjectVia => ({
   property: edge.property,

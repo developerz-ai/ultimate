@@ -336,4 +336,22 @@ export interface AuthAdapter
    * the full adapter rather than on `SessionStore`.
    */
   deleteSessionsForOrg(orgId: string): Promise<number>;
+  /**
+   * One session and the user it belongs to, in ONE read — what `authenticate` runs on every
+   * request, where `getSession` then `findUserById` is two sequential round trips. `null` when
+   * the session is unknown; `user: null` when the session outlived its user. The user row is read
+   * fresh by every call, never cached: a disable must refuse the very next request.
+   *
+   * Optional, unlike the rest of the seam: absent, `authenticate` makes the two reads it replaces,
+   * so an adapter written before it still binds. `authAdapterConformance` holds one that has it to
+   * answering exactly what those two reads answer. Spans two tables, so it sits here, beside the
+   * org sweep, rather than on `SessionStore`.
+   */
+  getSessionWithUser?(id: string): Promise<SessionWithUser | null>;
+}
+
+/** What `getSessionWithUser` answers for a session that exists. */
+export interface SessionWithUser {
+  readonly session: AuthSession;
+  readonly user: AuthUser | null;
 }
