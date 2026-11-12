@@ -40,6 +40,40 @@ function prepack(root: string, copyRoot: string, scripts: unknown): void {
   if (ran.exitCode !== 0) process.exit(1);
 }
 
+/**
+ * The tarball `bun pm pack` left behind, or the end of the fixture: a pack that failed says which
+ * package and why.
+ *
+ * The path is read off the command's last line of stdout, so a pack that died leaves no path at
+ * all — and reading `Bun.file('')` then dies on an empty path, naming neither the package nor the
+ * command. A box under load kills that subprocess (a signal leaves no exit code), so one retry
+ * follows: the pack is deterministic, and a second failure is the answer, not a flake to hide.
+ */
+function packTarball(copy: string, out: string, name: string): string {
+  const command = [
+    process.execPath,
+    'pm',
+    'pack',
+    '--destination',
+    out,
+    '--quiet',
+    '--ignore-scripts',
+  ];
+  let proc = Bun.spawnSync(command, { cwd: copy, timeout: 60_000 });
+  let tarball = proc.stdout.toString().trim().split('\n').at(-1) ?? '';
+  if (proc.exitCode !== 0 || tarball === '') {
+    proc = Bun.spawnSync(command, { cwd: copy, timeout: 60_000 });
+    tarball = proc.stdout.toString().trim().split('\n').at(-1) ?? '';
+  }
+  if (proc.exitCode !== 0 || tarball === '') {
+    process.stderr.write(
+      `pack failed for ${name}: bun pm pack exited ${String(proc.exitCode)} in ${copy}\n${proc.stderr.toString()}\n`,
+    );
+    process.exit(1);
+  }
+  return tarball;
+}
+
 /** One workspace as `bun pm pack` ships it, under the stamped version. */
 async function pack(
   root: string,
@@ -64,11 +98,7 @@ async function pack(
   const out = join(work, 'tarballs');
   mkdirSync(out, { recursive: true });
   prepack(root, copyRoot, scripts);
-  const proc = Bun.spawnSync(
-    [process.execPath, 'pm', 'pack', '--destination', out, '--quiet', '--ignore-scripts'],
-    { cwd: copy, timeout: 60_000 },
-  );
-  const tarball = proc.stdout.toString().trim().split('\n').at(-1) ?? '';
+  const tarball = packTarball(copy, out, name);
   const bytes = await Bun.file(tarball).bytes();
   const integrity = `sha512-${new Bun.CryptoHasher('sha512').update(bytes).digest('base64')}`;
   return {

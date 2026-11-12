@@ -117,7 +117,16 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
     );
     const reader = (registry.stdout as ReadableStream<Uint8Array>).getReader();
     const { value } = await reader.read();
-    const { url } = JSON.parse(new TextDecoder().decode(value)) as { readonly url: string };
+    const line = new TextDecoder().decode(value);
+    // The fixture prints one line and serves; a blank one means it died before it served, and its
+    // stderr (inherited) says why. A parse error here would name neither the fixture nor the
+    // package it was packing.
+    if (line.trim() === '') {
+      expect.unreachable(
+        `the registry fixture exited ${String(await registry.exited)} before it served`,
+      );
+    }
+    const { url } = JSON.parse(line) as { readonly url: string };
     // A cache of its own: a stamped 30.0.0 from an earlier run must never stand in for this checkout.
     env = {
       NPM_CONFIG_REGISTRY: url,

@@ -10,7 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- Security: `source-map-js` 1.2.1 carries GHSA-68fv-2mgg-jv7q / CVE-2026-93749 (event-loop DoS, CVSS v4 8.7). `@ultimat3/render` declares `source-map-js` at `^1.2.2` — the patched release — so the resolved tree carries no affected copy.
+
+### Changed
+
+- `@ultimat3/render`: `source-map-js` added to `dependencies` (`^1.2.2`) — the Sass compiler's own dependency, declared at a range whose floor 1.2.2 excludes the affected 1.2.1 (GHSA-68fv-2mgg-jv7q), imported by no `@ultimat3/*` package. `sass` 1.106.1's range (`>=0.6.2 <2.0.0`) admits 1.2.2, so one hoisted copy resolves.
 
 ## Releases
 

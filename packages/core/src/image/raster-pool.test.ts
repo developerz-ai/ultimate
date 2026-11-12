@@ -51,17 +51,38 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
   return expect.unreachable('the transform resolved where it had to refuse');
 }
 
-/** The worst gap a 1 ms timer saw while `work` ran: how long the event loop was blocked. */
-async function worstGap(work: () => Promise<unknown>): Promise<number> {
+/** This thread's CPU time in milliseconds; the Worker's own CPU is not in it. */
+function threadCpuMs(): number {
+  const usage = process.threadCpuUsage();
+  return (usage.user + usage.system) / 1000;
+}
+
+/**
+ * The longest stretch the event loop was BLOCKED while `work` ran: the gap in which THIS thread
+ * was burning the CPU.
+ *
+ * A wall-clock gap is not that measurement — it carries the machine's own lateness. On the gate's
+ * unit step (six workers on eight cores, e2e and live beside them) an IDLE window showed a 48 ms
+ * gap and the Worker's window 99 ms, so a fixed wall-clock ratchet measures the box, not the code.
+ * This thread's CPU time is the difference: a loop held by our own work advanced it, a loop merely
+ * waiting for the Worker's answer did not.
+ */
+async function worstBlock(work: () => Promise<unknown>): Promise<number> {
   let last = performance.now();
+  let lastCpu = threadCpuMs();
   let worst = 0;
   // real-clock: a probe, not a wait — it measures this loop while the Worker's thread works.
   const timer = setInterval(() => {
     const now = performance.now();
-    worst = Math.max(worst, now - last);
+    const cpu = threadCpuMs();
+    // The part of the gap this thread ran for: the work that held the loop, not the machine's
+    // lateness in handing the CPU back.
+    worst = Math.max(worst, Math.min(now - last, cpu - lastCpu));
     last = now;
+    lastCpu = cpu;
   }, 1);
   last = performance.now();
+  lastCpu = threadCpuMs();
   await work();
   clearInterval(timer);
   return worst;
@@ -120,12 +141,19 @@ describe('the raster Worker', () => {
     const spec: ImageTransformSpec = { width: 4096, height: 2048, fit: 'contain' };
     // The PUBLIC function, so a `transformImageBytes` that stopped reaching the Worker fails here.
     await transformImageBytes(source, { width: 8 }); // the Worker's start-up is not the transform
-    // Worker first: the inline run leaves hundreds of MB of rasters behind, and their collection
-    // landing in the Worker's window measured the collector, not the Worker (50.1 ms, once).
-    const workerGap = await worstGap(() => transformImageBytes(big, spec));
-    const inlineGap = await worstGap(() => transformInline(big, spec));
-    expect(workerGap).toBeLessThan(50);
-    expect(inlineGap).toBeGreaterThan(workerGap * 2);
+    // The collector's pause is not the Worker's, and it lands wherever it lands: collect before
+    // each window so it cannot land inside one (the reason isolated-plugins.test.ts collects
+    // too). Worker first: the inline run leaves hundreds of MB of rasters behind.
+    Bun.gc(true);
+    const workerBlock = await worstBlock(() => transformImageBytes(big, spec));
+    Bun.gc(true);
+    const inlineBlock = await worstBlock(() => transformInline(big, spec));
+    // The Worker path costs this thread the copy of the source and the post: measured 5-22 ms of
+    // its own CPU for a 4.6 MB source, idle and under a loaded runner. The inline hop costs it the
+    // whole transform: 841-1,654 ms. So the budget is 150 ms — 7x the loaded measurement, and
+    // under a fifth of what the inline hop costs — and the contrast is an order of magnitude.
+    expect(workerBlock).toBeLessThan(150);
+    expect(inlineBlock).toBeGreaterThan(workerBlock * 10);
   }, 30_000);
 });
 

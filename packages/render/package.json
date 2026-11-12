@@ -58,6 +58,7 @@
     "@ultimat3/i18n": "31.11.0",
     "@ultimat3/schema": "31.11.0",
     "@ultimat3/seo": "31.11.0",
-    "sass": "1.106.1"
+    "sass": "1.106.1",
+    "source-map-js": "^1.2.2"
   }
 }

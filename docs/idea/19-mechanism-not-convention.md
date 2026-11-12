@@ -129,11 +129,14 @@ approximately nothing. Verified `As of 2026-08`:
 | `@ultimat3/schema` | 0 | **none** |
 | `@ultimat3/money` | 1 | `@ultimat3/core`, `@ultimat3/schema` — both `@ultimat3/*` |
 
-Across all 31 published packages the only third-party runtime dependencies are **`nats`**
-(`@ultimat3/realtime`) and **`sass`** (`@ultimat3/render`), both at a driver/transport seam, and
+Across all 31 published packages the third-party runtime dependencies are **`nats`**
+(`@ultimat3/realtime`) and **`sass`** (`@ultimat3/render`), both at a driver/transport seam,
 **`@babel/core`** + **`babel-preset-solid`** (`@ultimat3/cli`, the tier-5 build tool: Solid's
 reactivity is a compile-time contract the island bundler runs) — all under
-[`18-build-vs-wrap.md`](./18-build-vs-wrap.md)'s criterion. Verified `As of 2026-10`:
+[`18-build-vs-wrap.md`](./18-build-vs-wrap.md)'s criterion. One more name appears in the
+manifests: **`source-map-js`**, declared by `@ultimat3/render` at `^1.2.2` on the Sass
+compiler's own dependency and imported by no `@ultimat3/*` package. 1.2.2 is the range's floor, so
+the affected 1.2.1 (GHSA-68fv-2mgg-jv7q) is excluded. Verified `As of 2026-11`:
 
 ```sh
 jq -r '(.dependencies // {}) | keys[]' packages/*/package.json | grep -v '^@ultimat3/' | sort -u
@@ -141,6 +144,7 @@ jq -r '(.dependencies // {}) | keys[]' packages/*/package.json | grep -v '^@ulti
 # babel-preset-solid
 # nats
 # sass
+# source-map-js
 ```
 
 So `bun add @ultimat3/money` is a reasonable thing to do in a project that is not an Ultimate app at
