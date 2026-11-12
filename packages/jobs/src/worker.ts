@@ -306,6 +306,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
     queues,
     round,
+    wake: options.driver.wake?.bind(options.driver), // a hand-back this loop stopped before
     onError: (error) => {
       logger.error('jobs.worker.tick-failed', { workerId, error: renderThrowable(error) });
     },

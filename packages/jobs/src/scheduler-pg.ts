@@ -104,7 +104,8 @@ export interface PostgresLeaseLeaderOptions {
 
 /**
  * 60s, renewed every 20s: three writes a minute from an idle leader where 30s cost six. The price
- * is failover — a KILLED leader's standby takes over up to 60s later; a drained one releases at once.
+ * is failover. A standby asks every 20s, so a KILLED leader's standby takes over up to ~80s later
+ * (the lease's 60s, then its next ask); a drained one releases at once, and is replaced within 20s.
  */
 export const DEFAULT_LEADER_TTL_MS = 60_000;
 

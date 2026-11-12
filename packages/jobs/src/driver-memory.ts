@@ -222,6 +222,10 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     backfills,
     leases,
     introspect,
+    wake(queue) {
+      signalEnqueued(queue);
+      return Promise.resolve();
+    },
 
     // `async` for the reason `claim`, `list` and `deadLetters` are: `onConflict: 'error'` REJECTS
     // here exactly as the pg driver's does, and a synchronous throw out of a method typed

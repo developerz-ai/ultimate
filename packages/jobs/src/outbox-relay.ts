@@ -202,6 +202,9 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
       backoffMs: backoff.next(batch.length > 0),
       floorMs: intervalMs,
       declaredCeilingMs: options.idlePollMaxMs,
+      settled: backoff.settled(),
+      // Every store announces a commit: `NOTIFY_STAGED` on Postgres, `signalStaged` in memory.
+      announced: true,
     }));
     // A FULL batch, all of it published, says there is more behind it: the next pass now, as the
     // worker's `again`. At the floor a 500-row batch every 200 ms capped the relay at 2,500 rows a

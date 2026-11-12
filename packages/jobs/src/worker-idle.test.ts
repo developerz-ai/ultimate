@@ -148,7 +148,7 @@ describe('an idle worker with a live wake', () => {
     }
   });
 
-  test('a row due by the clock is claimed when it falls due: exactly two claims', async () => {
+  test('a row due by the clock is claimed when it falls due: exactly three claims', async () => {
     setWakeLive(true);
     const h = harness();
     h.worker.start();
@@ -156,11 +156,13 @@ describe('an idle worker with a live wake', () => {
       await advance(FLOOR_MS + 50); // the first pass: empty
       const before = h.claims.length;
       await enqueue(h, 'later', nowMs() + 30_000);
-      signalEnqueued('default'); // its NOTIFY: one more pass, empty, that learns the due time
+      // Its NOTIFY: Postgres announces a row due within a rest (`WAKE_DUE_WITHIN_MS`).
+      signalEnqueued('default');
       await advance(30_000 + FLOOR_MS, 10);
       expect(h.started).toHaveLength(1);
-      // The wake's pass, then the one at the due time. A 5 s poll made six; a 60 s rest, one late.
-      expect(h.claims.length - before).toBe(2);
+      // The wake's pass and the one a floor behind it (the slot's promise), both empty, then the
+      // one at the due time. A 5 s poll made seven; a 60 s rest, one, late.
+      expect(h.claims.length - before).toBe(3);
       const at = h.started[0] ?? Number.POSITIVE_INFINITY;
       expect(at).toBeLessThanOrEqual(FLOOR_MS + 50 + 30_000 + FLOOR_MS);
     } finally {

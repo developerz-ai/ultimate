@@ -106,21 +106,31 @@ with open as (          -- one `not exists` per queue, never per row
     ) lapsed
   ) candidates
    order by run_at limit $2
-), buried as (          -- a lease that lapsed on the row's FINAL attempt
+), taken as (           -- both outcomes of one pick, in ONE update
   update x_jobs j
-     set state = case when j.name = any($5::text[]) then 'failed' else 'dead' end,
-         visible_at = null, claimed_by = null, last_error = '<lease lapsed on the final attempt>'
-    from picked p where j.id = p.id and p.exhausted
+     set state      = case when not p.exhausted then 'running'               -- claimed
+                           when j.name = any($5::text[]) then 'failed' else 'dead' end,  -- buried
+         attempt    = j.attempt + (not p.exhausted)::int,
+         claims     = j.claims + (not p.exhausted)::int,
+         claimed_by = case when p.exhausted then null else $3 end,
+         visible_at = case when p.exhausted then null
+                           else now() + ($4::bigint * interval '1 millisecond') end, …
+    from picked p where j.id = p.id
   returning …
-), claimed as (
-  update x_jobs j
-     set state = 'running', attempt = j.attempt + 1, claims = j.claims + 1,
-         claimed_by = $3, visible_at = now() + ($4::bigint * interval '1 millisecond')
-    from picked p where j.id = p.id and not p.exhausted
-  returning …
+), counted as (         -- the burials, into the minute's counter bucket
+  insert into x_job_counters … select … from taken where state <> 'running' group by name …
 )
-select … from claimed union all select … from buried
+select …, st.steps from taken t
+  left join lateral (   -- the run's steps, so the attempt never lists them
+    select json_agg(…) as steps from x_job_steps s where s.run_id = t.run_id and t.state = 'running'
+  ) st on true
 ```
+
+`SQL_CLAIM_IDLE` is the same statement plus one arm: when nothing was taken, a row of nulls carrying
+`due_in_ms` — how long until a row of the open queues can next be taken (`min(run_at)` over waiting
+rows, one seek of `x_jobs_claim_idx` per queue; `min(greatest(visible_at, run_at))` over running
+ones), `null` when none waits or is held. Sent only when the caller passes `ClaimOptions.onEmpty`:
+the arm is planned on every call (~0.5 ms), so a busy loop sends the plain claim. As of 2026-11-12.
 
 | Element | Why |
 |---|---|
@@ -130,12 +140,13 @@ select … from claimed union all select … from buried
 | `run_at <= now()` | backoff, `step.sleep` and a shed all express as a future `run_at`. One mechanism |
 | `attempt` incremented at claim | a worker that dies mid-run has still burned an attempt |
 | `claims` incremented at claim, never reset | with `claimed_by` it is the identity every settle, heartbeat, progress write and **step write** is fenced on (`claimOf(claimed)`) |
-| the `buried` arm | a `running` row is picked only with a lapsed lease; one already at `attempt >= max_attempts` is settled in the claim and never handed out, so a job that kills its worker ends after `retry.attempts` claims. `dead`, or `failed` when the caller named the job in `dropExhausted` (`retry.deadLetter: false` — the row carries no policy, the worker holds the registry). Counted in the same statement, reported through `ClaimOptions.onExhausted`; the claim round logs `jobs.claim.exhausted` and runs `onSettled` (`announceExhausted`) |
+| the burial | a `running` row is picked only with a lapsed lease; one already at `attempt >= max_attempts` is settled in the claim's one update (`taken`, not a second update per outcome: each statement over `x_jobs` is planned against every index it has, on every claim) and never handed out, so a job that kills its worker ends after `retry.attempts` claims. `dead`, or `failed` when the caller named the job in `dropExhausted` (`retry.deadLetter: false` — the row carries no policy, the worker holds the registry). Counted in the same statement, reported through `ClaimOptions.onExhausted`; the claim round logs `jobs.claim.exhausted` and runs `onSettled` (`announceExhausted`) |
 | `x_job_pauses` | a pause is a row the claim reads, never a column on `x_jobs` |
 | One lateral per queue, per kind of row | a claim SEEKS: an `or` over the states under `queue = any(...)` reads and sorts every due row, so its cost grew with the backlog. `driver-pg-claim.live.test.ts` refuses a sort under the lock |
 | Index | `x_jobs_claim_idx` serves the due scan, its predicate spelled word for word; `x_jobs_depth_idx` the lapsed one — see `SQL_JOBS_TABLE` in `driver-pg-ddl.ts` |
 | Locks the outer `limit` dropped | held to the end of the TRANSACTION. A claim autocommits (`exec()` is the pool), so that is the statement; another claimer may skip them for one poll |
-| Wakeup | `LISTEN x_jobs_wake` / `x_outbox_wake` on one session per worker pod (`startQueueWake`); the enqueue and the outbox stage carry the `pg_notify`. Polling is the guarantee underneath — see [Idle cost](#idle-cost) |
+| steps with the claim | each claimed row carries its run's step records (`ClaimedJob.steps`, `[]` on a first attempt), so an attempt neither lists them before it runs nor after it settles. A buried row carries none |
+| Wakeup | `LISTEN x_jobs_wake` / `x_outbox_wake` on one session per worker pod (`startQueueWake`); the enqueue and the outbox stage carry the `pg_notify`. With the wake proven, an idle loop rests on `SQL_CLAIM_IDLE`'s horizon, ≤ 60 s; without it, polling is the guarantee — see [Idle cost](#idle-cost) |
 
 ## Visibility timeout
 
@@ -146,7 +157,7 @@ a lapsed row, or buries it on its final attempt.
 | Rule | Detail |
 |---|---|
 | Default lease | `jobs.visibilityTimeoutMs`, 30s |
-| Heartbeat | the worker calls `driver.heartbeat` on its heartbeat interval, pushing `visible_at` out; fenced on the claim |
+| Heartbeat | the worker calls `driver.heartbeat` on its heartbeat interval, pushing `visible_at` out; fenced on the claim. `SQL_HEARTBEAT` sets `visible_at` alone — no `updated_at`, which indexes cover — and `x_jobs` is at `fillfactor = 80` (`JOBS_TABLE_STORAGE`), so a renewal is a HOT update that writes no index (`driver-pg-heartbeat.job.test.ts`: > 0.9 of renewals HOT; production before it: 247,180 updates, 8 HOT). Never add `visible_at` to an index: every renewal would leave HOT. As of 2026-11-12 |
 | Failed renewal | one failure is not a lost lease — `jobs.heartbeat.failed` (warn) and the next try inside the same window |
 | Lost lease | a whole window with no renewal landing: `jobs.lease.lost` (error) + `job_leases_lost_total{queue}`, and this worker stops renewing. Decided on the WORKER's clock from the last renewal that landed, because a hung `heartbeat` never rejects and a rejection-only check would never fire |
 | Fleet slot | the same two losses, on `x_job_leases`: `jobs.worker.slot-renewal-failed` (warn) per failure, `jobs.worker.slot-lost` + `X_JOB_SLOT_LOST` at an explicit "not yours" or a whole TTL with no renewal landing |
@@ -249,27 +260,41 @@ A limited job is **deferred, never dropped** — `whenBusy: 'fail'` is the one d
 | Capability | Mechanism | Statement |
 |---|---|---|
 | paged listing | keyset on `(created_at, id)`, newest first, over `x_jobs_created_idx`. The cursor is `<createdAt ms>:<id>`; the seek reads the cursor row's own `created_at`, because the ms is rounded | `SQL_JOB_LIST` |
-| settle + history | `ack` / `nack` are fenced on `state = 'running'`, `claimed_by` AND the claim's ordinal (`x_jobs.claims`, moved by `SQL_CLAIM`, never reset) — a worker that takes back its own lapsed job has the same id as the body still unwinding. The same statement upserts the job's one-minute bucket in `x_job_counters` | `SQL_ACK`, `SQL_NACK` |
-| renewal + progress | fenced the same way, so the superseded body's heartbeat answers `false` and its run is cancelled | `SQL_HEARTBEAT`, `SQL_JOB_PROGRESS` |
+| settle + history | `ack` / `nack` are fenced on `state = 'running'`, `claimed_by` AND the claim's ordinal (`x_jobs.claims`, moved by `SQL_CLAIM`, never reset) — a worker that takes back its own lapsed job has the same id as the body still unwinding. `returning name` says the settle landed; the pg driver then adds it to a per-process batch (`counter-batch.ts`), written as one multi-row upsert every `COUNTER_FLUSH_INTERVAL_MS` (10 s) and on `close()`. A counter read flushes this process's batch first; a crash loses at most 10 s of counts, never a row's `state`. The burial a claim settles is still counted in the claim. The memory driver counts in process at each settle | `SQL_ACK`, `SQL_NACK`, `SQL_COUNTER_FLUSH` |
+| renewal + progress | fenced the same way, so the superseded body's heartbeat answers `false` and its run is cancelled. Neither writes `updated_at`: nothing reads it on a `running` row | `SQL_HEARTBEAT`, `SQL_JOB_PROGRESS` |
 | last fire | `x_scheduler_state.fired_occurrence_at` / `fired_at`, written by the firing statement. The watermark beside them also moves on an arming and a skipped catch-up, which are not fires | `SQL_SCHEDULER_FIRE`, `SQL_TASK_FIRES` |
-| counter tiers | 1-minute for 24 h → 5-minute for 7 d → 1-hour for 30 d. The scheduler leader folds once a minute; delete-and-insert in one statement, so two nodes folding move each bucket once | `SQL_COUNTER_FOLD`, `SQL_COUNTER_DROP` |
+| counter tiers | 1-minute for 24 h → 5-minute for 7 d → 1-hour for 30 d. The scheduler leader folds every `COUNTER_ROLLUP_INTERVAL_MS` (10 min), and after a fold that moved nothing waits `COUNTER_ROLLUP_IDLE_INTERVAL_MS` (1 h) — late costs extra rows, never a wrong count, since reads span tiers; delete-and-insert in one statement, so two nodes folding move each bucket once | `SQL_COUNTER_FOLD`, `SQL_COUNTER_DROP` |
 | queue / task pause | one row in `x_job_pauses (kind, name)`. The claim excludes a paused queue with `not exists`; the scheduler skips a paused task and leaves its watermark | `SQL_PAUSE`, `SQL_CLAIM` |
 | bulk | one CTE each: select up to 1,000, act, and count what matched before the act | `SQL_JOB_REQUEUE_MANY`, `SQL_JOB_REMOVE_MANY` |
 | worker registry | `x_job_workers`, TTL `max(60s, visibility)` renewed every third: rewritten in full only when held ids or the drain flag moved, otherwise only `expires_at`; expired by `expires_at` | `SQL_WORKER_ANNOUNCE`, `SQL_WORKER_RENEW`, `SQL_WORKERS` |
 | progress | `x_jobs.progress` (jsonb), throttled in the runner to one write a second, fenced on the claimer | `SQL_JOB_PROGRESS` |
 | atomic fire | the watermark upsert is the fence; the occurrence's jobs insert `where exists (select 1 from moved)` | `SQL_SCHEDULER_FIRE` |
 
-Measured on the embedded Postgres, `As of 2026-10-01` (3,000 settles, median of three runs on a loaded machine): `ack` 0.72 ms → 1.39 ms, a counted `nack` 1.01 ms → 1.39 ms, an uncounted one (a shed) 1.20 ms. One round trip before and after.
+Measured on the embedded Postgres, `As of 2026-10-01` (3,000 settles, median of three runs on a loaded machine), when each settle carried its own counter upsert: `ack` 0.72 ms → 1.39 ms, a counted `nack` 1.01 ms → 1.39 ms, an uncounted one (a shed) 1.20 ms. From 31.13.0 a settle carries none (`counter-batch.ts`); not re-measured.
 
 ## Idle cost
 
-Measured on a production app `As of 2026-10-01`: an idle scheduler with ~35 tasks sent ~70 statements a second and an idle worker pod 9–13. Counted per idle minute by `packages/jobs/src/idle-cost.test.ts` and `queue-wake.test.ts`:
+Measured on a production app `As of 2026-10-01`: an idle scheduler with ~35 tasks sent ~70 statements a second and an idle worker pod 9–13. Counted per idle minute by `packages/jobs/src/idle-cost.test.ts`, `queue-wake.test.ts`, `worker-idle.test.ts` and `outbox-relay-idle.test.ts`:
 
-| Loop | Fixed poll | Backoff, no wake | Backoff, proven wake | How |
+| Loop | Fixed poll | Backoff, no wake | Proven wake | How |
 |---|---|---|---|---|
-| scheduler, 35 tasks | 4,321 | 6 | 6 | watermarks and each task's next occurrence held in memory while leading; the lease trusted for `renewEveryMs` (TTL / 3); the pause table read only when a task is due; the counter fold every ten minutes |
-| worker, 2 queues | 480 | 30 | 12 | `idle-backoff.ts`: 250 ms doubling to 2 s, or to 5 s while `wakeIsLive()`; an idle pass is one `SQL_CLAIM` over every queue with a free slot, `limit` = the fewest free |
-| outbox relay | 300 | 30 | 12 | the same backoff from 200 ms |
+| scheduler, 35 tasks | 4,321 | 3 | 3 | watermarks and each task's next occurrence held in memory while leading; the lease trusted for `renewEveryMs` (TTL / 3: 20 s of the 60 s `DEFAULT_LEADER_TTL_MS`; `idle-cost.test.ts` pins 6 at a 10 s window); the pause table read only when a task is due; the counter fold every ten minutes, hourly once a fold moves nothing |
+| worker, 2 queues | 480 | 30 | ≤ 1 | `idle-backoff.ts`: 250 ms doubling to 2 s without the wake. With it, an idle pass sends `SQL_CLAIM_IDLE` and RESTS until the due time it answers, at most `IDLE_REST_MAX_MS` (60 s), in `REST_SLICE_MS` (2 s) slices that re-read `wakeIsLive()` (`restAfter`). One claim over every queue with a free slot, `limit` = the fewest free |
+| outbox relay | 300 | 30 | ≤ 1 | the same, from 200 ms; its horizon is `min(claimed_at) + lease` over held unpublished rows (`SQL_OUTBOX_CLAIM_IDLE`) |
+
+Beside the loops, `As of 2026-11-12`: the worker's registry row is renewed every 20 s (TTL `max(60 s, visibility)`, `WORKER_REGISTRY_TTL_MS`), narrowly (`SQL_WORKER_RENEW`, the expiry only) unless its held ids or drain flag moved; its depth read (`SQL_STATS`) runs at most once per rest; the retention pass's orphan-step scan runs at most once a day per process (`PURGE_UPKEEP_EVERY_MS`). One idle hour of a worker on two queues, a relay and a scheduler leader with three daily tasks, wake live, on the embedded Postgres under fake timers, every statement counted at the executor: **543** statements (claims 60, depth 60, registry 180, relay 60, leader 180, fold 3); the same probe over the 31.12.0 sources: 2,418. The probe is not a committed test.
+
+What the rest gives up, and what still catches each:
+
+| What the old 5 s poll caught | Now caught by |
+|---|---|
+| a row due by the clock (`runAt`, a retry's backoff) that the claim saw waiting | the rest ends at its due time, plus `DUE_MARGIN_MS` (10 ms) |
+| a row another process queued during the rest, due inside it | its enqueue notifies: `notifyJobReady` (`driver-pg-wake-sql.ts`) announces a row due within `WAKE_DUE_WITHIN_MS` (= `IDLE_REST_MAX_MS`), and the woken pass re-reads the horizon (`worker-rest-wake.job.test.ts`) |
+| a retry or `step.sleep` handed back by a worker that stopped before it was due | the stopping loop calls `JobDriver.wake` (`worker-loop.ts`, `handOff`) |
+| a crashed worker's lapsed lease; a dead relay's batch | the rest ends when that lease lapses |
+| a notification lost with its session | the 2 s slices: a lost session falls back to the 2 s poll at once |
+| a notification lost while the session stayed up | the 60 s bound |
+| a resumed queue | `resumeQueue` announces the queue; a paused queue's rows are never a due time |
 
 The lease is not what makes a trusted window safe: `SQL_SCHEDULER_FIRE` moves the watermark and queues the occurrence's jobs in one statement, so two nodes that both believe they lead queue it once.
 
@@ -280,7 +305,7 @@ The lease is not what makes a trusted window safe: `SQL_SCHEDULER_FIRE` moves th
 | session | `@ultimat3/db`'s `client.listen(channel, onNotify, onListening)`: one connection beside the pool (`Bun.SQL.listen`; PGlite's own under `x dev`). The driver re-dials a session that died and `onListening` fires again |
 | listener | `startQueueWake({ listener, executor })`, started by the boot for the `worker` role. A notification becomes `signalEnqueued(queue)` or `signalStaged(true)` — the signals a local enqueue already raises |
 | proof | after every (re-)listen a probe is sent through the POOL; the wake is live once it has come back on both channels. Not proven within 5 s: `jobs.wake.unverified`, once |
-| enqueue | `SQL_ENQUEUE` notifies the queue name unless another row of that queue was created in the same 250 ms slot, or the row is due more than 1 s out |
+| enqueue | `SQL_ENQUEUE` notifies the queue name unless another row of that queue was created in the same 250 ms slot, or the row is due more than 60 s out (`WAKE_DUE_WITHIN_MS`) |
 | stage | `SQL_OUTBOX_STAGE` notifies — at COMMIT, never on rollback — unless a committed row is already waiting unclaimed |
 | woken loop | passes now, then at its floor again: that second pass finds the row a slot kept silent |
 

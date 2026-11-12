@@ -204,7 +204,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `worker.ts` | `worker` role, claim round, drain |
 | `worker-drain-cutoff.ts` / `-held.ts` / `-tally.ts` | drain cut-off · held claims · counters |
 | `worker-admit.ts` | may this claimed job start: the limiter, the fleet slot, and the shed / refusal |
-| `worker-registry.ts` | one worker's registry row: announce, heartbeat, forget |
+| `worker-registry.ts` | one worker's registry row: announce, renew (narrow unless held ids or drain moved), forget |
 | `worker-types.ts` | the worker's contract: `WorkerOptions`, `WorkerStats`, `Worker` |
 | `drain-wait.ts` | the drain's wait, shared by both roles |
 | `worker-run.ts` | one claimed job: heartbeat, slot renewal, run signal, consumer span, `job.perform` |
@@ -220,7 +220,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
-| `counters.ts` | bucket arithmetic, `nackOutcome`, the memory counters |
+| `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |
 | `progress.ts` / `settled.ts` / `redact-input.ts` | the progress throttle; the `onSettled` runner; a payload as an operator reads it |
 | `scheduler-state.ts` | `SchedulerState`, `fire`, the memory watermark |

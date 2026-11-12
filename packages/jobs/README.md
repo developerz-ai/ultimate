@@ -1363,17 +1363,20 @@ A queue with nothing to do costs almost nothing, and a job starts when it is com
 
 | Loop | While there is work | While idle | Claims per idle minute |
 |---|---|---|---|
-| `worker` | a claim per queue every `pollIntervalMs` (250 ms) | with a proven wake, RESTS until the next row is due — at most `IDLE_REST_MAX_MS` (60 s); without one the wait doubles to `idlePollMaxMs`. Each pass is ONE claim over every queue with a free slot | ≤ 1 with a proven wake (was 12), 30 without (was 240 per queue) |
+| `worker` | a claim per queue every `pollIntervalMs` (250 ms) | with a proven wake and a driver that announces its enqueues (`JobDriver.wake`: Postgres, memory — not Redis), RESTS until the next row is due — at most `IDLE_REST_MAX_MS` (60 s) — from the second empty pass after work or a wake; otherwise the wait doubles to `idlePollMaxMs`. Each pass is ONE claim over every queue with a free slot | ≤ 1 with a proven wake (was 12), 30 without (was 240 per queue) |
 | outbox relay | a claim every `intervalMs` (200 ms) | the same: rests until a held row's lease lapses, at most 60 s, with a proven wake; doubles to `idlePollMaxMs` without | ≤ 1 with a proven wake (was 12), 30 without (was 300) |
 | `scheduler` | one round every `tickIntervalMs` (1 s) | a round reads no store and resolves no cron: watermarks are held in memory while it leads, the lease is renewed every `renewEveryMs` (a third of its 60 s TTL — 20 s) | 3 statements, for any number of tasks (was 2T+1 a second: 4,321 a minute at 35 tasks) |
 
 `idlePollMaxMs` defaults to `IDLE_POLL_CEILING_MS` (2 s), and to `WOKEN_IDLE_POLL_CEILING_MS` (5 s) while `wakeIsLive()`. Declared, it is the ceiling either way, the rest included.
 
-The rest. An idle loop's claim (`SQL_CLAIM_IDLE`, `SQL_OUTBOX_CLAIM_IDLE`) answers, when it took nothing, when the next row can be taken — `ClaimOptions.onEmpty` / `OutboxStore.claim(limit, { onEmpty })`. Measured with fake timers, `As of 2026-11-12`: an idle worker on two queues plus a relay, wake live, issue 181 statements an hour (121 claims, 60 depth reads) where they issued 1,689.
+The rest. An idle loop's claim (`SQL_CLAIM_IDLE`, `SQL_OUTBOX_CLAIM_IDLE`) answers, when it took nothing, when the next row can be taken — `ClaimOptions.onEmpty` / `OutboxStore.claim(limit, { onEmpty })`. Measured `As of 2026-11-12` on the embedded Postgres under fake timers, every statement counted at the executor, and held there by `idle-hour.job.test.ts`: an idle worker on two queues plus a relay, wake live, issue 180 statements an hour (120 claims, 60 depth reads) where the 31.12.0 sources issued 1,680 (1,440 claims, 240 depth reads). With the registry renewal (180), a scheduler leader's lease (180) and the counter fold (3): 543 an hour, from 2,418.
 
 | What the old 5 s poll caught | Now caught by |
 |---|---|
-| a row due by the clock (`runAt`, a retry's backoff) | the rest ends at its due time: `min(run_at)` over ready, delayed and suspended rows, one seek of `x_jobs_claim_idx` per open queue |
+| a row due by the clock (`runAt`, a retry's backoff) that the claim saw waiting | the rest ends at its due time: `min(run_at)` over ready, delayed and suspended rows, one seek of `x_jobs_claim_idx` per open queue |
+| a row ANOTHER process queued during the rest, due inside it | its enqueue notifies (`notifyJobReady` announces a row due within `WAKE_DUE_WITHIN_MS` = `IDLE_REST_MAX_MS`, 60 s); the woken pass re-reads the horizon and the worker rests until the row is due. Due further out, the rest ends first |
+| a retry or `step.sleep` handed back by a worker that then stops | the stopping worker announces it (`JobDriver.wake`), so the workers resting on an older horizon re-read theirs |
+| a second enqueue in the slot a woken worker's notification already used | the woken worker's first empty pass keeps the floor; only the second rests (`IdleBackoff.settled`) |
 | a crashed worker's lapsed lease; a dead relay's batch | the rest ends when the lease lapses: `min(visible_at)` over running rows; `min(claimed_at) + lease` over held outbox rows |
 | a notification lost with its session | the rest is armed in 2 s slices that re-read `wakeIsLive()`: a lost session falls back to the 2 s poll at once |
 | a notification lost while the session stayed up | the 60 s bound |
@@ -1400,7 +1403,7 @@ export const wake = startQueueWake({ listener: client, executor });
 
 | Statement | Announces | Stays silent when |
 |---|---|---|
-| `SQL_ENQUEUE` | `pg_notify('x_jobs_wake', <queue>)` | another row of that queue was created in the same `WAKE_SLOT_MS` (250 ms) slot; the row is due more than `WAKE_DUE_WITHIN_MS` (1 s) out; the idempotency key deduped |
+| `SQL_ENQUEUE` | `pg_notify('x_jobs_wake', <queue>)` | another row of that queue was created in the same `WAKE_SLOT_MS` (250 ms) slot; the row is due more than `WAKE_DUE_WITHIN_MS` (60 s, the longest rest) out; the idempotency key deduped |
 | `SQL_OUTBOX_STAGE` | `pg_notify('x_outbox_wake', '')`, delivered on COMMIT | a committed row is already waiting unclaimed |
 | `SQL_SCHEDULER_FIRE` | each queue the occurrence filled, once | the watermark refused the fire |
 | `SQL_JOB_REQUEUE`, `SQL_JOB_PROMOTE`, `requeueMany`, `resumeQueue` | the queue | — |
@@ -1421,8 +1424,8 @@ export const wake = startQueueWake({ listener: client, executor });
 | another process, direct | median 8 ms, max 18 ms (was median 1,033 ms, max 1,785 ms: the 2 s poll) |
 | another process, through the outbox — from its COMMIT | median 9 ms, max 13 ms (was median 1,275 ms, max 2,008 ms) |
 | another process, no wake (proxy, lost session) | within `idlePollMaxMs` — 2 s |
-| nobody — a retry or a `step.sleep` this worker handed back | when it falls due: the worker keeps a timer for a row due inside a minute (`JobExecution.resumeAt`) |
-| nobody — a delayed job another process queued | at its `runAt` with a proven wake (the rest ends there); within `idlePollMaxMs` past it without |
+| nobody — a retry or a `step.sleep` this worker handed back | when it falls due: the worker keeps a timer for a row due inside a minute (`JobExecution.resumeAt`), and announces the row (`JobDriver.wake`) if it stops first |
+| nobody — a delayed job another process queued | without a proven wake, within `idlePollMaxMs` past its `runAt`. With one: at its `runAt` — its enqueue woke the resting worker if it was due inside the rest |
 
 | Rule | Detail |
 |---|---|

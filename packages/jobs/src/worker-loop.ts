@@ -21,6 +21,12 @@ export interface ClaimLoopOptions {
   /** One pass. It reports what it found through `passed()`, so a manual `tick()` counts too. */
   readonly round: () => Promise<unknown>;
   readonly onError: (error: unknown) => void;
+  /**
+   * The driver's fleet-wide announcement (`JobDriver.wake`). Without one no other process hears of
+   * an enqueue, so the loop never rests past its poll; with one, a row this loop handed back
+   * with a due time it can no longer keep — it stopped first — is announced to the loops that can.
+   */
+  readonly wake?: ((queue?: string) => Promise<void>) | undefined;
   /** What every wait is armed on. Default: real, unrefed timeouts; a test hands in its own. */
   readonly timers?: LoopTimers;
 }
@@ -107,6 +113,8 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
   /** The last pass found work. A wake does not clear it: only a pass decides. */
   let busy = false;
   let active = false;
+  /** Started, then stopped: a hand-back now is one this loop cannot keep (`handOff`). */
+  let ended = false;
   let timer: unknown;
   /** The timer's own pass is in flight. A wake landing now asks for ONE more, never a second chain. */
   let passing = false;
@@ -190,21 +198,33 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     if (delayMs > floor || backlog) now();
   };
 
+  /**
+   * A due time this loop will not be here to keep: a peer resting on a horizon read before the
+   * row was handed back would sleep past it, up to `IDLE_REST_MAX_MS`. One announcement makes
+   * every resting loop re-read its horizon. Failure is the poll's to cover: logged, not thrown.
+   */
+  const handOff = (): void => {
+    options.wake?.().catch(options.onError);
+  };
+
   return {
     start() {
       if (active) return;
       active = true;
+      ended = false;
       delayMs = floor;
       unsubscribe = onEnqueued(wake);
       arm();
     },
     stop() {
+      ended = ended || active;
       active = false;
       again = false;
       backlog = false;
       if (timer !== undefined) timers.clear(timer);
       timer = undefined;
       for (const hint of due.values()) timers.clear(hint);
+      if (due.size > 0) handOff();
       due.clear();
       unsubscribe?.();
       unsubscribe = undefined;
@@ -226,12 +246,19 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
         backoffMs: backoff.next(found),
         floorMs: floor,
         declaredCeilingMs: options.ceilingMs,
+        settled: backoff.settled(),
+        announced: options.wake !== undefined,
       }));
     },
     delayMs: () => delayMs,
     kick,
     dueIn(ms) {
-      if (!active || !Number.isFinite(ms) || ms > DUE_HINT_MAX_MS) return;
+      if (!Number.isFinite(ms) || ms > DUE_HINT_MAX_MS) return;
+      // Handed back by a run the drain outlived: this loop is stopped, a peer's is not.
+      if (!active) {
+        if (ended) handOff();
+        return;
+      }
       const wait = Math.max(0, ms) + DUE_MARGIN_MS;
       const step = Math.max(floor, DUE_MARGIN_MS);
       const bucket = Math.ceil((performance.now() + wait) / step);

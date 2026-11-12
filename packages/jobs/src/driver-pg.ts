@@ -57,6 +57,7 @@ import {
   SQL_STEP_PUT,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
+import { JOBS_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { DriverUnavailableError, JobDuplicateError, LeaseLostError } from './errors';
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
@@ -264,6 +265,9 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     backfills: postgresBackfillLedger(exec),
     leases: postgresLeaseStore(exec),
     introspect,
+    async wake(queue) {
+      await exec().query(SQL_WAKE, [JOBS_WAKE_CHANNEL, queue ?? '']);
+    },
 
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);

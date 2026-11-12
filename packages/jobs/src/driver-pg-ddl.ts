@@ -264,9 +264,10 @@ drop index if exists x_jobs_finished_idx;
 -- so the sweep seeks to its cutoff and every row it reads is a row it deletes.
 create index if not exists x_jobs_done_idx on x_jobs (updated_at) where state = 'done';
 
--- What the queue depth read (SQL_STATS) reads, every 15 seconds from every worker. Partial over
--- the six states it counts, so the read is a range over the counted rows and never a pass over the
--- finished ones the retention window keeps. Its predicate is the same list SQL_STATS filters on,
+-- What the queue depth read (SQL_STATS) reads, once per claim pass and at most every 15 seconds,
+-- from every worker: once a rest, when it idles. Partial over the six states it counts, so the
+-- read is a range over the counted rows and never a pass over the finished ones the retention
+-- window keeps. Its predicate is the same list SQL_STATS filters on,
 -- which is what lets the planner prove the index applies. Queue, state and run_at are every column
 -- the read uses, so it can be answered from the index alone.
 create index if not exists x_jobs_depth_idx

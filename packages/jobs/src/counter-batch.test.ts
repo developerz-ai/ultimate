@@ -1,9 +1,10 @@
 // The per-process counter batch: many settles, one write per (job, minute) per flush; a failed
 // write keeps its deltas for the next one; the timer exists only while something is pending.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import { logger } from '@ultimat3/core';
 import type { CounterFlushRow } from './counter-batch';
-import { COUNTER_FLUSH_INTERVAL_MS, counterBatch } from './counter-batch';
+import { COUNTER_FLUSH_INTERVAL_MS, COUNTER_PENDING_MAX_ROWS, counterBatch } from './counter-batch';
 
 const MINUTE = 60_000;
 const T0 = Date.UTC(2026, 10, 12, 9, 0, 0);
@@ -99,5 +100,28 @@ describe('counterBatch', () => {
     await batch.stop();
     expect(writes).toHaveLength(1);
     expect(armed()).toHaveLength(0);
+  });
+
+  test('writes failing for ever hold a bounded batch: the oldest buckets go, named in one warn', async () => {
+    let failing = true;
+    const { batch, writes } = harness(() => failing);
+    const warns = spyOn(logger, 'warn');
+    try {
+      // One more bucket than the bound, two counts in the oldest.
+      batch.add('mail', 'done', 1, T0);
+      for (let i = 0; i <= COUNTER_PENDING_MAX_ROWS; i += 1) {
+        batch.add('mail', 'done', 1, T0 + i * MINUTE);
+      }
+      await expect(batch.flush()).rejects.toThrow('pool closed');
+      const dropped = warns.mock.calls.filter(([event]) => event === 'jobs.counters.dropped');
+      expect(dropped).toHaveLength(1);
+      expect(dropped[0]?.[1]).toMatchObject({ rows: 1, counts: 2 });
+      failing = false;
+      await batch.flush();
+      expect(writes[0]).toHaveLength(COUNTER_PENDING_MAX_ROWS);
+      expect(writes[0]?.[0]?.startMs).toBe(T0 + MINUTE);
+    } finally {
+      warns.mockRestore();
+    }
   });
 });

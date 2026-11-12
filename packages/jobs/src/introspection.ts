@@ -302,7 +302,10 @@ export interface JobIntrospection {
    * One job's buckets from `sinceMs` on, oldest first, at whatever tier each still lives in.
    * HISTORY, not the ledger: a process batches its settles' counts (`counter-batch.ts`) and writes
    * them every `COUNTER_FLUSH_INTERVAL_MS` and on close, so a crash loses at most that much of the
-   * COUNTS. A job's own row (`job()`, `list()`) is the truth of what ran; read that to reconcile.
+   * COUNTS. A failed write is retried as deltas, so one that committed before its connection died
+   * counts twice (at least once, not exactly once), and past `COUNTER_PENDING_MAX_ROWS` held the
+   * oldest buckets are dropped with a `jobs.counters.dropped` warn. A job's own row (`job()`,
+   * `list()`) is the truth of what ran; read that to reconcile.
    */
   counters(query: {
     readonly job: string;

@@ -391,6 +391,13 @@ export interface JobDriver {
    */
   readonly leases?: LeaseStore;
   readonly introspect?: JobIntrospection;
+  /**
+   * Tell every worker of the fleet that rows on `queue` (any, when none is named) may be claimable
+   * before its rest ends. Present ONLY on a driver whose enqueues announce themselves (Postgres's
+   * NOTIFY, the memory driver's in-process signal): an idle worker rests on a due time only over
+   * such a driver (`worker-loop.ts`). Redis has no such channel and omits it.
+   */
+  wake?(queue?: string): Promise<void>;
   close?(): Promise<void>;
 }
 

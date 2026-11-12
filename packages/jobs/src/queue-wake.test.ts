@@ -362,7 +362,7 @@ describe('the idle ceiling follows the wake', () => {
 describe('an idle minute with a proven wake', () => {
   const MINUTE = 60_000;
 
-  test('a worker on empty queues rests a minute: 2 statements, was 17 at the 5 s ceiling and 33 before', async () => {
+  test('a worker on empty queues rests a minute: 3 statements, was 17 at the 5 s ceiling and 33 before', async () => {
     setWakeLive(true);
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
     const driver = memoryJobDriver({ clock });
@@ -387,10 +387,12 @@ describe('an idle minute with a proven wake', () => {
       delays.push(pollDelayMs);
       elapsed += pollDelayMs;
     }
-    // The first pass asks each queue once, and each says nothing is waiting or held (`onEmpty`):
-    // no ramp, a rest of IDLE_REST_MAX_MS (`worker-idle.test.ts` holds what the rest still catches).
-    expect(delays).toEqual([IDLE_REST_MAX_MS]);
-    expect(claims).toBe(2);
+    // The first pass asks each queue once, the second — idle — one ask over both
+    // (`worker-claim-sweep.ts`), and each says nothing is waiting or held (`onEmpty`). The first
+    // empty pass keeps the floor — the throttled wake's promise (`IdleBackoff.settled`) — and the
+    // second rests IDLE_REST_MAX_MS, no ramp (`worker-idle.test.ts` holds what it still catches).
+    expect(delays).toEqual([250, IDLE_REST_MAX_MS]);
+    expect(claims).toBe(3);
   });
 
   test('a relay converges to one claim every five seconds: 16 a minute, was 33', async () => {

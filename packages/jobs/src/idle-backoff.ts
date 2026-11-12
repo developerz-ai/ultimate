@@ -39,6 +39,12 @@ export interface IdleBackoff {
   reset(): void;
   /** True once a pass has come back empty — the loop is idling. */
   idle(): boolean;
+  /**
+   * True from the SECOND empty pass since work or a wake (`reset`): the first one keeps the floor,
+   * because a wake is throttled (`WAKE_SLOT_MS`) and the row its slot left silent is found by the
+   * pass one floor behind it. Only a settled loop may rest (`restAfter`).
+   */
+  settled(): boolean;
 }
 
 export function createIdleBackoff(options: {
@@ -79,6 +85,7 @@ export function createIdleBackoff(options: {
       empty = 0;
     },
     idle: () => empty > 0,
+    settled: () => empty >= 2,
   };
 }
 
@@ -102,8 +109,10 @@ export interface RestPlan {
  * The wait after a pass, for the worker and the relay alike. `dueInMs` is what the pass's empty
  * claims said of the next due row (`null`: none; `undefined`: not asked or not answered). A pass
  * that found work, or a due time already past — a row a peer holds locked — keeps `backoffMs`.
- * With the wake live the loop RESTS until the due time, at most `IDLE_REST_MAX_MS` (or the
- * declared ceiling, the app's own bound); without it the due time only shortens the poll.
+ * With the wake live and the loop `settled` (`IdleBackoff.settled`), and its work announced
+ * (`announced`: a driver without `JobDriver.wake` tells no other process of an enqueue), the loop
+ * RESTS until the due time, at most `IDLE_REST_MAX_MS` (or the declared ceiling, the app's own
+ * bound); otherwise the due time only shortens the poll.
  */
 export function restAfter(pass: {
   readonly found: boolean;
@@ -111,12 +120,14 @@ export function restAfter(pass: {
   readonly backoffMs: number;
   readonly floorMs: number;
   readonly declaredCeilingMs?: number | undefined;
+  readonly settled: boolean;
+  readonly announced: boolean;
 }): RestPlan {
   const { dueInMs, backoffMs, floorMs } = pass;
   const keep = { delayMs: backoffMs, resting: false };
   if (pass.found || dueInMs === undefined || (dueInMs !== null && dueInMs <= 0)) return keep;
   const due = dueInMs === null ? Number.POSITIVE_INFINITY : dueInMs + DUE_MARGIN_MS;
-  if (!wakeIsLive())
+  if (!wakeIsLive() || !pass.settled || !pass.announced)
     return { delayMs: Math.max(floorMs, Math.min(backoffMs, due)), resting: false };
   const delayMs = Math.max(floorMs, Math.min(due, pass.declaredCeilingMs ?? IDLE_REST_MAX_MS));
   return { delayMs, resting: pass.declaredCeilingMs === undefined && delayMs > REST_SLICE_MS };

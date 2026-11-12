@@ -346,13 +346,14 @@ select (select count(*) from moved)::int as fired, q.id, q.run_id, q.idempotency
 /**
  * `resolveStep`, ONE write: the step becomes `completed` with `$4` (ran) or `cleared` (did not),
  * only while its job is held by no worker and the step started or failed without completing. The
- * job is read in the same statement, so a claim that lands first wins and nothing is written.
+ * job is read in the same statement and LOCKED (`for share`), so a claim that lands first wins and
+ * nothing is written, and one that comes second skips the row until the step is written.
  *
  * $1 job id, $2 step name, $3 'completed' or 'cleared', $4 the output (jsonb text).
  */
 export const SQL_STEP_RESOLVE = `
 with job as (
-  select run_id from x_jobs where id = $1::uuid and state <> 'running'
+  select run_id from x_jobs where id = $1::uuid and state <> 'running' for share
 )
 update x_job_steps s
    set status       = $3,

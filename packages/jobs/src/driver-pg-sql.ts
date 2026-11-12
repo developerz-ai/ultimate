@@ -128,8 +128,8 @@ returning id
  * production — off the same rows.
  *
  * The `where` is the six states a bucket counts (`STATS_STATES`), spelled as `x_jobs_depth_idx`'s
- * predicate so the planner reads that index and never a `done` row: every worker runs this every
- * 15 s, and unfiltered it scanned a fortnight of finished jobs to count a handful (prod,
+ * predicate so the planner reads that index and never a `done` row: every worker runs this once a
+ * claim pass, at most every 15 s, and unfiltered it scanned a fortnight of finished jobs to count a handful (prod,
  * 2026-10-24: 29 ms mean over 48k rows, 22 counted). A queue holding only `done` or `cancelled`
  * rows is therefore not listed, and the depth publisher zeroes a queue that drops out.
  */
@@ -398,6 +398,11 @@ select run_id, name, status, output, attempts, error,
  * `$12` is an unfenced write: a transfer between drivers, with no row on this one to hold yet.
  * Answers one row when the write landed, none when the fence refused it.
  *
+ * The fence LOCKS the row it reads (`for share`): a plain read let a claim commit between the
+ * fence and the write, so a step landed under a claim already lost. The claim's
+ * `for update skip locked` passes the row over until this statement ends, and a claim already
+ * holding it makes the fence wait and re-read the claimant, refusing the write.
+ *
  * $12 the job id or null, $13 the worker, $14 the claim.
  */
 export const SQL_STEP_PUT = `
@@ -412,6 +417,7 @@ select $1::uuid, $2, $3, $4::jsonb, to_timestamp($5::bigint / 1000.0),
     or exists (
       select 1 from x_jobs
        where id = $12::uuid and state = 'running' and claimed_by = $13 and claims = $14::int
+         for share
     )
 on conflict (run_id, name) do update
    set status = excluded.status, output = excluded.output,
