@@ -65,6 +65,7 @@ import * as keepDraftReview from '../app/posts/actions/keep-draft-review';
 import * as likePost from '../app/posts/actions/like-post';
 import * as listPostsImportParts from '../app/posts/actions/list-posts-import-parts';
 import * as movePostStatus from '../app/posts/actions/move-post-status';
+import * as postAttachment from '../app/posts/actions/post-attachment';
 import * as printPost from '../app/posts/actions/print-post';
 import * as publishPost from '../app/posts/actions/publish-post';
 import * as requestDraftReview from '../app/posts/actions/request-draft-review';
@@ -157,6 +158,7 @@ export const api = defineApi({
     publishPost,
     printPost,
     withdrawPost,
+    postAttachment,
     createComment,
     requestPostsExport,
     // An export file coming back in parts: the five calls `uploadFile({ multipart })` makes.

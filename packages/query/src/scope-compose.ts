@@ -11,18 +11,25 @@ import type { FilterOp, QueryShape, SeekKey } from './shape';
 import type { SqlSource, SqlText } from './source';
 import { Builder } from './source';
 
-/** Each scope operator as the `Builder` filter that means it — NULL is `= null` / `!= null`. */
-const AS_FILTER: Readonly<Record<ScopeOperator, FilterOp>> = {
-  eq: '=',
-  neq: '!=',
-  in: 'in',
-  gt: '>',
-  gte: '>=',
-  lt: '<',
-  lte: '<=',
-  'is-null': '=',
-  'is-not-null': '!=',
-};
+/**
+ * Each scope operator as the `Builder` filter that means it — NULL is `= null` / `!= null`.
+ * Null-prototype: `condition.op` comes from an app's policy at runtime, and a `{}` literal read
+ * with it answers an `Object.prototype` member for `'constructor'` (`scripts/proto-index.ts`).
+ */
+const AS_FILTER: Readonly<Record<ScopeOperator, FilterOp>> = Object.assign(
+  Object.create(null) as Record<ScopeOperator, FilterOp>,
+  {
+    eq: '=',
+    neq: '!=',
+    in: 'in',
+    gt: '>',
+    gte: '>=',
+    lt: '<',
+    lte: '<=',
+    'is-null': '=',
+    'is-not-null': '!=',
+  },
+);
 
 const operand = (condition: ScopeCondition): unknown =>
   condition.op === 'is-null' || condition.op === 'is-not-null' ? null : condition.value;

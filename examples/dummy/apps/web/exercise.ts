@@ -3,7 +3,7 @@
 // Each entry is the value a `.contract({ exercise })` takes, so a test and the pass share a shape.
 
 import { memberOf } from '@postly/core';
-import { members } from '@postly/db';
+import { db, members } from '@postly/db';
 import { type SoftAuthenticator, softAuthenticator } from '@ultimat3/auth/soft-authenticator';
 import {
   assert,
@@ -71,6 +71,21 @@ async function enrolled(userId: string): Promise<SoftAuthenticator> {
   const options = await passkeys.login.registerOptions({ userId });
   await passkeys.login.register({ userId, response: await device.create(options) });
   return device;
+}
+
+/**
+ * A post of the acting member's org, for the attachment pair: the draw leaves its optional `id`
+ * out, and a bare `id` is bound only when drawn. The actor is `owner`, who may edit any of them.
+ */
+async function orgPostId(): Promise<string> {
+  const orgId = memberOf(useContext().actor)?.orgId ?? 'no-member';
+  const [post] = await db.posts.where({ orgId }).limit(1).all();
+  assert(
+    post !== undefined,
+    `the exercise seed wrote no post in org ${orgId}`,
+    "edit apps/web/exercise.ts — bind requestPostAttachment and confirmPostAttachment { off: '<why>' }",
+  );
+  return post.id;
 }
 
 /** The one file `posts.import` reads, as `posts.export` writes its first line. */
@@ -223,6 +238,26 @@ export const exercise = defineExercise(
         const key = pendingKey(orgId, `${crypto.randomUUID()}.png`);
         await disk().put(key, encodeImage(blankRaster(8, 8)), { contentType: 'image/png' });
         return { ...drawn, key };
+      },
+    },
+    requestPostAttachment: {
+      actor: owner,
+      input: async (drawn) => ({
+        ...drawn,
+        filename: 'chart.png',
+        contentType: 'image/png',
+        size: 1024,
+        id: await orgPostId(),
+      }),
+    },
+    // What the grant's URL would have received, as `attachAvatar`'s: a real PNG under `pending/`.
+    confirmPostAttachment: {
+      actor: owner,
+      input: async (drawn) => {
+        const orgId = memberOf(useContext().actor)?.orgId ?? 'no-member';
+        const key = pendingKey(orgId, `${crypto.randomUUID()}.png`);
+        await disk().put(key, encodeImage(blankRaster(8, 8)), { contentType: 'image/png' });
+        return { ...drawn, key, id: await orgPostId() };
       },
     },
     // A key the job checks is inside the org it runs for, holding a real image to decode.

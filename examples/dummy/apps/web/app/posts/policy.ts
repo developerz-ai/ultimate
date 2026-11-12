@@ -102,6 +102,23 @@ export const postSchedule = can<unknown, PostRow>('post:publish', ({ actor, row 
   return member !== null && row !== null && ownsPost(member, row);
 });
 
+/** What an attachment upload decides about: the post the call named, `null` outside the org. */
+export interface PostAttachmentRow {
+  readonly post: PostRow | null;
+}
+
+/**
+ * Uploading a file onto a post, and attaching it — both halves of `postAttachment`'s
+ * `uploadFlow()`. Editing the post, so `postSchedule`'s right: owns-or-org-admin on the loaded row.
+ * The row is read inside the ACTING member's org (`ctx.posts.authorship`), so another org's post,
+ * a missing one and a call naming none all load `post: null` — a denial, never an existence oracle.
+ */
+export const postAttach = can<unknown, PostAttachmentRow>('post:publish', ({ actor, row }) => {
+  const member = memberOf(actor);
+  const post = row?.post ?? null;
+  return member !== null && post !== null && ownsPost(member, post);
+});
+
 /**
  * Exporting every post of an org — the whole org's writing in one object, so an admin's right, and
  * only inside the admin's own org.
