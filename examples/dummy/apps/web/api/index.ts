@@ -43,7 +43,6 @@ import * as contactSales from '../app/contact/actions/contact-sales';
 import * as sendSalesReceipt from '../app/contact/jobs/send-sales-receipt';
 import * as deliverDigest from '../app/digest/jobs/deliver-digest';
 import * as sendDigest from '../app/digest/jobs/send-digest';
-import * as nightlyDigest from '../app/digest/tasks/nightly-digest';
 import * as openErrorIssue from '../app/errors/jobs/open-error-issue';
 import * as purgeMcpConfirmations from '../app/mcp/jobs/purge-mcp-confirmations';
 import * as hourlyPurge from '../app/mcp/tasks/hourly-purge';
@@ -246,7 +245,7 @@ export const api = defineApi({
     exportMember,
     eraseMember,
   ],
-  tasks: [nightlyDigest, hourlyPurge, hourlyLikes, hourlyRetention],
+  tasks: [hourlyPurge, hourlyLikes, hourlyRetention],
   // A second door for machine callers, onto actions a browser already calls: same handler, same
   // policy, an org's bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`, and
   // publishPost's pinned `/api/posts/:postId/publish` is `/v1/posts/:postId/publish`.

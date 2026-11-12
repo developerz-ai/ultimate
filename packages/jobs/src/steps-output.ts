@@ -1,10 +1,18 @@
 // What `step.run` answers: the JSON form of what the body returned, on the first run as on a
 // replay. The type states it and `jsonForm` produces it, so a body reading a `Date` off a step
-// result fails at compile time, and if forced, on attempt 1 rather than on the first resume.
+// result fails at compile time, and if forced, on attempt 1 rather than on the first resume. It
+// also holds the byte ceiling a stored output may reach.
 
-import { isJsonObject, isUltimateError, jsonbRefusal, renderThrowable } from '@ultimat3/core';
+import {
+  finiteCount,
+  isJsonObject,
+  isUltimateError,
+  jsonbRefusal,
+  logger,
+  renderThrowable,
+} from '@ultimat3/core';
 import type { JsonValue } from '@ultimat3/schema';
-import { StepOutputUnserializableError } from './errors-steps';
+import { StepOutputTooLargeError, StepOutputUnserializableError } from './errors-steps';
 
 type Callable = ((...args: never[]) => unknown) | (abstract new (...args: never[]) => unknown);
 
@@ -87,6 +95,31 @@ export type StepOutput<T> = unknown extends T
     : JsonOf<T>;
 
 /**
+ * The most JSON bytes one `step.run` output should hold unless its job declares `stepOutputMax`.
+ * Every attempt hydrates EVERY output of its run (`steps.ts`): 1,000 steps of 1 MB is a gigabyte
+ * read on each retry. A step keeps a key or a cursor; the payload lives in storage (`export`,
+ * `backfill`). Past it a job that declared nothing is WARNED and the output stored — refusing by
+ * default would break a shipped job on a minor; a job that declares `stepOutputMax` is refused.
+ */
+export const STEP_OUTPUT_MAX_BYTES = 256 * 1_024;
+
+/** The byte ceiling a runner holds a `step.run` output to, and what passing it does. */
+export interface StepOutputCeiling {
+  readonly maxBytes: number;
+  /** Declared by the job (`stepOutputMax`): past it, refused. The default only warns. */
+  readonly refuses: boolean;
+}
+
+/** The ceiling a runner enforces: the declared one, screened as a whole count of bytes, or the default. */
+export const stepOutputCeiling = (declared: number | undefined): StepOutputCeiling => ({
+  maxBytes: finiteCount('step.run', 'stepOutputMaxBytes', declared ?? STEP_OUTPUT_MAX_BYTES, 1),
+  refuses: declared !== undefined,
+});
+
+/** A UTF-8 character is at most 3 bytes per UTF-16 unit (a pair is 4 bytes for 2 units). */
+const MAX_UTF8_BYTES_PER_UNIT = 3;
+
+/**
  * The value both attempts see. One stringify and one parse per EXECUTED step, none on a replay; a
  * step persists a cursor, not a page, which is what keeps that cheap (`backfill()`'s rule).
  *
@@ -96,8 +129,16 @@ export type StepOutput<T> = unknown extends T
  * A number `JSON.stringify` would write as `null` is refused here rather than typed `number` and
  * answered `null`. Text `jsonb` refuses is refused on every store: Postgres alone raised it, from
  * `put`, with nothing recorded, so the body ran again on each attempt where memory ran it once.
+ *
+ * `ceiling` — a `step.run`'s, never a waited event's, which is the publisher's payload — measures
+ * the UTF-8 bytes of JSON before anything is stored: past it, `X_STEP_OUTPUT_TOO_LARGE`, thrown
+ * when declared, logged once per job and step when the default.
  */
-export function jsonForm<T>(value: T, at: { job: string; step: string }): StepOutput<T> {
+export function jsonForm<T>(
+  value: T,
+  at: { job: string; step: string },
+  ceiling?: StepOutputCeiling,
+): StepOutput<T> {
   const refused = (reason: string) => new StepOutputUnserializableError({ ...at, reason });
   let text: string | undefined;
   try {
@@ -118,10 +159,42 @@ export function jsonForm<T>(value: T, at: { job: string; step: string }): StepOu
   if (text === undefined) return null as StepOutput<T>;
   const refusal = jsonbRefusal(text);
   if (refusal !== undefined) throw refused(refusal);
+  if (ceiling !== undefined) holdToCeiling(text, ceiling, at);
   return JSON.parse(text, inStoredOrder) as StepOutput<T>;
 }
 
 const UTF8 = new TextEncoder();
+
+/** Job+step pairs already warned in this process. Bounded: emptied when full, so it re-warns. */
+const warned = new Set<string>();
+const WARNED_MAX = 1_024;
+
+/** Encodes only when the text COULD be over: the common small output pays one length read. */
+function holdToCeiling(
+  text: string,
+  ceiling: StepOutputCeiling,
+  at: { job: string; step: string },
+): void {
+  const { maxBytes } = ceiling;
+  if (text.length * MAX_UTF8_BYTES_PER_UNIT <= maxBytes) return;
+  const bytes = UTF8.encode(text).byteLength;
+  if (bytes <= maxBytes) return;
+  const error = new StepOutputTooLargeError({ ...at, bytes, maxBytes });
+  if (ceiling.refuses) throw error;
+  const key = `${at.job}\u0000${at.step}`;
+  if (warned.has(key)) return;
+  if (warned.size >= WARNED_MAX) warned.clear();
+  warned.add(key);
+  logger.warn('jobs.step.output-too-large', {
+    code: error.code,
+    job: at.job,
+    step: at.step,
+    bytes,
+    maxBytes,
+    cause: error.cause,
+    fix: error.fix,
+  });
+}
 
 /** `jsonb`'s own key order: shorter first by bytes, then bytewise. */
 function storedKeyOrder(a: Uint8Array, b: Uint8Array): number {

@@ -1,14 +1,15 @@
 // The `OutboxStore` contract of `@ultimat3/jobs` as shared examples: `behavesLike(
 // outboxStoreConformance, () => subject)`. A staged row lives or dies with its transaction; a claim
 // is a LEASE fenced on its claimant, so two relays never publish one row and a lapsed one cannot
-// touch a newer claimant's batch. The subject is called once per test and holds no rows.
+// touch a newer claimant's batch; a debounced or expiring row keeps both through the claim. The
+// subject is called once per test and holds no rows.
 
 import { expect, test } from 'bun:test';
 import type { OutboxRecord } from '@ultimat3/jobs';
 import { OUTBOX_STORE_CLAIM_CHECKS } from './outbox-store-conformance-claims';
 import { OUTBOX_STORE_HORIZON_CHECKS } from './outbox-store-conformance-horizon';
 import type { OutboxStoreCheck, OutboxStoreSubject } from './outbox-store-conformance-subject';
-import { committed, outboxRecord } from './outbox-store-conformance-subject';
+import { committed, outboxRecord, STAGED_AT } from './outbox-store-conformance-subject';
 import type { SharedExamples } from './shared-examples';
 import { sharedExamples } from './shared-examples';
 
@@ -52,6 +53,31 @@ const STAGE_CHECKS: readonly OutboxStoreCheck[] = [
       const tx = await subject.transaction('commit', (open) => stageMany(open, records));
       expect(ids(await store.commit(tx))).toEqual(ids(records));
       expect(await store.pendingCount()).toBe(3);
+    },
+  },
+  {
+    // Debounce and expiry enqueued inside a transaction: a store that drops either hands the relay
+    // a plain row, and the job runs with a stale input, or after its work stopped being worth it.
+    name: "a staged row keeps onConflict: 'replace' and expiresAt, through stage and stageMany",
+    async run(subject) {
+      const store = subject.relay();
+      const debounced = { onConflict: 'replace', expiresAt: STAGED_AT + 60_000 } as const;
+      const one = outboxRecord(crypto.randomUUID(), debounced);
+      const plain = outboxRecord(crypto.randomUUID());
+      await committed(subject, store, [one, plain]);
+      const many = [outboxRecord(crypto.randomUUID(), { ...debounced, stagedAt: STAGED_AT + 1 })];
+      const stageMany = store.stageMany?.bind(store);
+      if (stageMany !== undefined) {
+        await store.commit(await subject.transaction('commit', (open) => stageMany(open, many)));
+      }
+      const claims = await store.claim(10);
+      const expected = [one, plain, ...(stageMany === undefined ? [] : many)];
+      const byId = (id: string) => claims.find((each) => each.id === id);
+      for (const record of expected) {
+        expect(byId(record.id)).toEqual({ ...record, claimedBy: expect.any(String) });
+      }
+      expect(Object.keys(byId(plain.id) ?? {})).not.toContain('onConflict');
+      expect(Object.keys(byId(plain.id) ?? {})).not.toContain('expiresAt');
     },
   },
 ];

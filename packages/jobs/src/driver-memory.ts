@@ -3,7 +3,7 @@
 // real claim/ack/nack paths rather than a mock that always succeeds.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, liveClock, uuidV7 } from '@ultimat3/core';
+import { finiteCount, liveClock } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { memoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -27,16 +27,18 @@ import {
   assertClaimQueues,
   assertEnqueueMany,
   claimDueIn,
-  DEFAULT_QUEUE,
+  JOB_EXPIRED,
   LEASE_LAPSED_FINAL_ATTEMPT,
   LIVE_STATES,
   nackState,
   REQUEUEABLE_STATES,
   STATS_STATES,
 } from './driver';
+import { memoryEnqueue } from './driver-memory-enqueue';
 import { memoryOperator } from './driver-memory-operator';
+import { memorySettleDebt } from './driver-memory-settle';
 import { signalEnqueued } from './enqueue-signal';
-import { JobDuplicateError, LeaseLostError } from './errors';
+import { LeaseLostError } from './errors';
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { JobIntrospection } from './introspection';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
@@ -86,6 +88,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
   const backfills = options.backfills ?? memoryBackfillLedger(clock);
   const leases = options.leases ?? memoryLeaseStore(options.clock === undefined ? {} : { clock });
   const jobs = new Map<string, JobRecord>();
+  const settleDebt = memorySettleDebt(jobs, clock);
 
   // Keyed by NAME, TENANT and key, exactly as `x_jobs_name_tenant_idempotency_live_idx` is. A
   // global key namespace let two unrelated jobs that derived the same natural key dedupe against
@@ -130,6 +133,8 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       updatedAt: nowMs(clock),
     });
   };
+
+  const enqueuing = memoryEnqueue({ jobs, clock, liveByKey });
 
   const operator = memoryOperator({
     jobs,
@@ -221,60 +226,16 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     steps,
     backfills,
     leases,
+    settleDebt,
     introspect,
     wake(queue) {
       signalEnqueued(queue);
       return Promise.resolve();
     },
 
-    // `async` for the reason `claim`, `list` and `deadLetters` are: `onConflict: 'error'` REJECTS
-    // here exactly as the pg driver's does, and a synchronous throw out of a method typed
-    // `Promise<…>` is a second answer to one question — caught by different code, and an
-    // unhandled exception rather than a settled promise wherever the caller holds the promise.
-    async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
-      // A caller-allocated id that already names a row is that row's publish, repeated: the same
-      // job, whatever state it has reached — `SQL_ENQUEUE`'s `not exists` is the pg half.
-      const published = request.id === undefined ? undefined : jobs.get(request.id);
-      if (published !== undefined) {
-        return { id: published.id, runId: published.runId, deduped: true };
-      }
-      const existing = liveByKey(request.name, request.idempotencyKey, request.tenantId);
-      if (existing !== undefined) {
-        if (request.onConflict === 'error') {
-          throw new JobDuplicateError({
-            job: request.name,
-            idempotencyKey: request.idempotencyKey,
-            existingId: existing.id,
-          });
-        }
-        return { id: existing.id, runId: existing.runId, deduped: true };
-      }
-
-      const at = nowMs(clock);
-      const runAt = request.runAt ?? at;
-      const record: JobRecord = {
-        id: request.id ?? uuidV7(),
-        name: request.name,
-        queue: request.queue || DEFAULT_QUEUE,
-        // Through JSON, exactly as the pg driver binds it (`JSON.stringify(request.input ?? null)`):
-        // a live reference kept a `Date`, an `undefined` member and a non-enumerable property the
-        // queue in production never stores, so a job that read one passed here and failed there.
-        input: JSON.parse(JSON.stringify(request.input ?? null)) as unknown,
-        idempotencyKey: request.idempotencyKey,
-        runId: request.runId ?? uuidV7(),
-        attempt: 0,
-        maxAttempts: request.maxAttempts,
-        state: runAt > at ? 'delayed' : 'ready',
-        runAt,
-        createdAt: at,
-        updatedAt: at,
-        ...(request.tenantId === undefined ? {} : { tenantId: request.tenantId }),
-        ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
-        ...(request.enqueuedBy === undefined ? {} : { enqueuedBy: request.enqueuedBy }),
-      };
-      jobs.set(record.id, record);
-      return { id: record.id, runId: record.runId, deduped: false };
-    },
+    // `driver-memory-enqueue.ts`: insert, dedupe, `'error'`, `'replace'` and each row's expiry.
+    enqueue: enqueuing.enqueue,
+    backlog: enqueuing.backlog,
 
     // A loop of this driver's own `enqueue`, which IS its semantics: in order, so a second request
     // under a key the first just took is `deduped`, as one `SQL_ENQUEUE_MANY` statement answers.
@@ -311,6 +272,15 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       const out: ClaimedJob[] = [];
       const buried: JobRecord[] = [];
       for (const record of claimable) {
+        // Past its `expiresAt`, a waiting row is worthless: settled `failed` and reported, never
+        // run — `SQL_CLAIM`'s expiry arm, buried beside the exhausted rows below.
+        if (enqueuing.expired(record, at)) {
+          settle(record.id, { state: 'failed', lastError: JOB_EXPIRED }, 'stack');
+          operator.counters.add(record.name, 'failed', 0, at);
+          const failed = jobs.get(record.id);
+          if (failed !== undefined) buried.push(failed);
+          continue;
+        }
         // `SQL_CLAIM`'s second arm. A `running` row reaches this loop only with a lapsed lease, and
         // one that lapsed on its FINAL attempt has nothing left to be re-delivered for: handing
         // it out was an attempt past `maxAttempts`, every lease, forever — a job that kills its
@@ -357,6 +327,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       const record = heldBy(jobId, by);
       if (record === undefined) return Promise.resolve(false);
       settle(jobId, { state: 'done' });
+      settleDebt.settled(jobId, by, 'done');
       operator.counters.add(record.name, 'done', by.durationMs ?? 0, nowMs(clock));
       return Promise.resolve(true);
     },
@@ -383,6 +354,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
           : { lastErrorStack: nackOptions.stack.slice(0, MAX_ERROR_STACK_LENGTH) }),
       };
       settle(jobId, patch, nackOptions.error === undefined ? undefined : 'stack');
+      settleDebt.settled(jobId, nackOptions, nackState(nackOptions));
       const outcome = nackOutcome(nackOptions);
       if (outcome !== undefined) {
         operator.counters.add(record.name, outcome, nackOptions.durationMs ?? 0, at);

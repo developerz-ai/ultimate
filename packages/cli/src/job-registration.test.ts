@@ -1,7 +1,8 @@
 // The `manifest` step's job half: a positional `anonymous-job-N` is a job nothing handed to
 // `defineApi`, and the name it carries is the one the queue and every trace will show.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { cronJob, partitions, resetJobs, resetTasks } from '@ultimat3/jobs';
 import {
   positionalNames,
   unmaintainedPartitionFindings,
@@ -39,6 +40,11 @@ const job = (name: string, schedule?: string) => ({
 });
 
 describe('unit · a partitioned entity needs its maintenance job', () => {
+  afterEach(() => {
+    resetJobs();
+    resetTasks();
+  });
+
   test('a partitioned table and no partitions() job is X_PARTITIONS_UNMAINTAINED', () => {
     const findings = unmaintainedPartitionFindings(['events'], [job('reindexPost')]);
     expect(findings.map((finding) => finding.code)).toEqual(['X_PARTITIONS_UNMAINTAINED']);
@@ -48,17 +54,28 @@ describe('unit · a partitioned entity needs its maintenance job', () => {
   });
 
   test('a registered partitions() job — under any name — clears it', () => {
+    expect(unmaintainedPartitionFindings(['events'], [partitions()])).toEqual([]);
     expect(
-      unmaintainedPartitionFindings(['events'], [job('partitions', 'partitions.schedule')]),
-    ).toEqual([]);
-    expect(
-      unmaintainedPartitionFindings(['events'], [job('ledgerParts', 'ledgerParts.schedule')]),
+      unmaintainedPartitionFindings(['events'], [partitions({ name: 'ledgerParts' })]),
     ).toEqual([]);
   });
 
-  test('a job carrying some other schedule is not one', () => {
+  test('a cronJob() carries the same <job>.schedule shape and maintains nothing', () => {
+    const nightly = cronJob({
+      name: 'nightlyReport',
+      cron: '0 3 * * *',
+      tz: 'UTC',
+      tenant: 'none',
+      retry: { attempts: 1 },
+      run: async () => {},
+    });
+    expect(nightly.schedule.name).toBe('nightlyReport.schedule');
+    expect(unmaintainedPartitionFindings(['events'], [nightly])).toHaveLength(1);
+  });
+
+  test('a look-alike shape is not one either: only what partitions() minted counts', () => {
     expect(
-      unmaintainedPartitionFindings(['events'], [job('partitions', 'other.cron')]),
+      unmaintainedPartitionFindings(['events'], [job('partitions', 'partitions.schedule')]),
     ).toHaveLength(1);
   });
 

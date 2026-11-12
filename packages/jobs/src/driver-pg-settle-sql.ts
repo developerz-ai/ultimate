@@ -1,7 +1,9 @@
-// The two statements that SETTLE a claimed row, and `SQL_COUNTER_FLUSH`, which writes a process's
-// batched counts (`counter-batch.ts`): a per-settle counter upsert was the largest WAL writer at
-// idle-ish load, so a settle no longer carries one. Split off `driver-pg-sql.ts` at its size
-// ceiling; the settles are re-exported from it.
+// The two statements that SETTLE a claimed row, the `onSettled` debt they record (J11), and
+// `SQL_COUNTER_FLUSH`, which writes a process's batched counts (`counter-batch.ts`): a per-settle
+// counter upsert was the largest WAL writer at idle-ish load, so a settle no longer carries one.
+// Split off `driver-pg-sql.ts` at its size ceiling; the settles are re-exported from it.
+
+import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
 
 /**
  * `and state = 'running'`, `and claimed_by = $2` and `and claims = $3` are all FENCES, not
@@ -12,11 +14,15 @@
  * that claimed it again is the SAME one: its id did not change, only the claim's ordinal did.
  * `returning name` is how the caller learns whether its settle landed, and what to count.
  *
- * $1 id, $2 worker, $3 the claim.
+ * `settle_owed` is the hook's debt, recorded in the same write: there is no instant at which the
+ * row is `done` and nothing says its `onSettled` is still owed.
+ *
+ * $1 id, $2 worker, $3 the claim, $4 the job declares `onSettled`.
  */
 export const SQL_ACK = `
 update x_jobs
-   set state = 'done', visible_at = null, claimed_by = null, updated_at = now()
+   set state = 'done', visible_at = null, claimed_by = null, updated_at = now(),
+       settle_owed = $4::boolean
  where id = $1 and state = 'running' and claimed_by = $2 and claims = $3::int
 returning name
 `.trim();
@@ -25,7 +31,10 @@ returning name
  * The same three fences. The caller counts only a settle `nackOutcome` names: a shed, a
  * suspension and a drained attempt are handed back UNCOUNTED and are not history.
  *
- * $1 id, $2 state, $3 counts-as-attempt, $4 delay ms, $5 error, $6 worker, $7 stack, $8 the claim.
+ * The hook is owed only by a nack that ENDS the run: a retry, a suspension and a shed owe nothing.
+ *
+ * $1 id, $2 state, $3 counts-as-attempt, $4 delay ms, $5 error, $6 worker, $7 stack, $8 the claim,
+ * $9 the job declares `onSettled`.
  */
 export const SQL_NACK = `
 update x_jobs
@@ -36,9 +45,49 @@ update x_jobs
        claimed_by = null,
        last_error = coalesce($5::text, last_error),
        last_error_stack = case when $5::text is null then last_error_stack else $7::text end,
-       updated_at = now()
+       updated_at = now(),
+       settle_owed = $9::boolean and $2::text in ('dead', 'failed')
  where id = $1 and state = 'running' and claimed_by = $6 and claims = $8::int
 returning name
+`.trim();
+
+/**
+ * The hook of one settlement returned: its debt is paid. Fenced on the claim the settle was made
+ * under, so a row requeued and settled again since is that NEW settlement's debt, left standing.
+ * `updated_at` is not touched: it is the row's end, which retention reads.
+ *
+ * $1 id, $2 the claim.
+ */
+export const SQL_SETTLE_CLEAR = `
+update x_jobs set settle_owed = false
+ where id = $1 and settle_owed and claims = $2::int
+returning id
+`.trim();
+
+/**
+ * The debts a crash left: ended rows of a hooked job owed longer than that job's grace, oldest
+ * first, `skip locked` so two leaders never take one. TAKEN by restarting `updated_at`, the clock
+ * the grace is read from: a pass inside the grace finds them owed and too young. A row requeued
+ * since is live again and owes nothing until it ends — the state list is the fence.
+ *
+ * $1 `[{ name, graceMs }]` as JSON, $2 the limit.
+ */
+export const SQL_SETTLE_TAKE_LOST = `
+with lost as (
+  select j.id as lost_id
+    from x_jobs j
+    join jsonb_to_recordset($1::jsonb) as r(name text, "graceMs" bigint) on r.name = j.name
+   where j.settle_owed
+     and j.state in ('done', 'dead', 'failed')
+     and j.updated_at <= now() - (r."graceMs" * interval '1 millisecond')
+   order by j.updated_at
+   limit $2::int
+   for update of j skip locked
+)
+update x_jobs set updated_at = now()
+  from lost
+ where x_jobs.id = lost.lost_id
+returning ${JOB_ROW_COLUMNS}
 `.trim();
 
 /**

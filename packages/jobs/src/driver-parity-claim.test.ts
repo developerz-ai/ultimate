@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobRecord } from './driver';
-import { LEASE_LAPSED_FINAL_ATTEMPT, LIVE_STATES } from './driver';
+import { JOB_EXPIRED, LEASE_LAPSED_FINAL_ATTEMPT, LIVE_STATES } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { postgresJobDriver } from './driver-pg';
 import { SQL_CANCEL, SQL_CLAIM, SQL_FIND_LIVE_BY_KEY, SQL_NACK, SQL_STATS } from './driver-pg-sql';
@@ -56,9 +56,9 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
   });
 
   test('the row says why, in the one text both drivers write, and holds no claim', () => {
-    expect(SQL_CLAIM).toContain(
-      `last_error       = case when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'`,
-    );
+    // An expired waiting row is buried as well, and says so first (`JOB_EXPIRED`).
+    expect(SQL_CLAIM).toContain(`last_error       = case when p.expired then '${JOB_EXPIRED}'`);
+    expect(SQL_CLAIM).toContain(`when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'`);
     expect(SQL_CLAIM).toContain('claimed_by       = case when p.exhausted then null else $3 end');
     expect(SQL_CLAIM).toContain('last_error_stack = case when p.exhausted then null');
     // Spliced into SQL as a literal, and into a file `dev-queue.ts` splits on `;`.

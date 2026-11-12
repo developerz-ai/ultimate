@@ -6,6 +6,8 @@
 import { expect } from 'bun:test';
 import type { ClaimOptions, JobDriver, JobRecord, QueueStats } from '@ultimat3/jobs';
 import { CLAIM_ANSWER_CHECKS } from './job-driver-checks-claim';
+import { ENQUEUE_CHECKS } from './job-driver-checks-enqueue';
+import { SETTLE_DEBT_CHECKS } from './job-driver-checks-settle';
 
 export interface JobDriverCheck {
   readonly name: string;
@@ -176,4 +178,6 @@ export const JOB_DRIVER_CHECKS: readonly JobDriverCheck[] = [
     },
   },
   ...CLAIM_ANSWER_CHECKS,
+  ...ENQUEUE_CHECKS,
+  ...SETTLE_DEBT_CHECKS,
 ];

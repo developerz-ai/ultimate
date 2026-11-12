@@ -20,8 +20,8 @@
 // round it just finished, and any other caller joins that round rather than opening a second one
 // over the same `lastFiredAt`.
 
-import type { Clock } from '@ultimat3/core';
-import { finiteOption, isUltimateError, logger, onShutdown, renderThrowable } from '@ultimat3/core';
+import type { Clock, Ctx } from '@ultimat3/core';
+import { ctxOf, finiteOption, logger, onShutdown } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
@@ -34,28 +34,19 @@ import { soleLeader } from './scheduler-leader';
 import { defaultCronResolver, latestOccurrence, occurrencesIn } from './scheduler-occurrences';
 import type { SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
+import { failureFields, leaderUpkeep } from './scheduler-upkeep';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
-
-/**
- * A round that failed, as log fields. `message` alone throws away the half of an `UltimateError`
- * that makes it actionable — the operator reading `jobs.scheduler.tick-failed` at 3am needs the
- * stable code to search on and the `fix:` to run, not a sentence.
- */
-function failureFields(error: unknown): Record<string, unknown> {
-  const message = renderThrowable(error);
-  return isUltimateError(error)
-    ? { error: message, code: error.code, cause: error.cause, fix: error.fix }
-    : { error: message };
-}
 
 /** Resolves the next fire time. Injected so scheduling logic is testable without a cron impl. */
 export type CronResolver = (cron: string, options: { tz: string; from: Date }) => Date;
 
-/** How often the leader folds old counter buckets. Only buckets a day old ever move. */
-export const COUNTER_ROLLUP_INTERVAL_MS = 600_000;
-/** After a fold that moved nothing. Late costs extra rows, never a wrong count: reads span tiers. */
-export const COUNTER_ROLLUP_IDLE_INTERVAL_MS = 3_600_000;
+export {
+  COUNTER_ROLLUP_IDLE_INTERVAL_MS,
+  COUNTER_ROLLUP_INTERVAL_MS,
+  SETTLE_REDRIVE_IDLE_INTERVAL_MS,
+  SETTLE_REDRIVE_INTERVAL_MS,
+} from './scheduler-upkeep';
 
 /** How long a task found paused is left alone before the pause is read again. */
 export const PAUSE_RECHECK_MS = 5_000;
@@ -72,6 +63,8 @@ export interface SchedulerOptions {
   readonly tasks?: readonly TaskHandle[];
   /** Default true. Registers a SIGTERM drain via `onShutdown`, exactly as the worker does. */
   readonly drainOnShutdown?: boolean;
+  /** What a re-driven `onSettled` is scoped from (`settle-redrive.ts`). Default `ctxOf()`. */
+  readonly context?: () => Ctx;
 }
 
 export interface DispatchedOccurrence {
@@ -104,8 +97,10 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
   const leader = options.leader ?? soleLeader();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let isLeader = false;
-  /** When the leader may fold the counters next (`COUNTER_ROLLUP_IDLE_INTERVAL_MS`). */
-  let nextRollupAt = Number.NEGATIVE_INFINITY;
+  const upkeep = leaderUpkeep({
+    driver: options.driver,
+    context: options.context ?? (() => ctxOf()),
+  });
   let trustedUntil = Number.NEGATIVE_INFINITY;
   let standbyUntil = Number.NEGATIVE_INFINITY;
   const renewEveryMs = Number.isFinite(leader.renewEveryMs) ? Math.max(0, leader.renewEveryMs) : 0;
@@ -258,16 +253,8 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       });
     };
     const operator = options.driver.introspect;
-    // The counters' fold is the leader's (`COUNTER_TIERS`). Only buckets a day old move: every ten
-    // minutes is often enough, and hourly once a fold found nothing old — an idle queue's case.
-    if (operator !== undefined && at >= nextRollupAt) {
-      nextRollupAt = at + COUNTER_ROLLUP_INTERVAL_MS;
-      const moved = await operator.rollupCounters().catch((error: unknown) => {
-        logger.warn('jobs.scheduler.rollup-failed', failureFields(error));
-        return undefined;
-      });
-      if (moved === 0) nextRollupAt = at + COUNTER_ROLLUP_IDLE_INTERVAL_MS;
-    }
+    // The counters' fold and the `onSettled` re-drive are the leader's (`scheduler-upkeep.ts`).
+    await upkeep.run(at);
     /** The paused set, read at most once a round and only when a task is actually DUE. */
     let paused: ReadonlySet<string> | undefined;
     const isPaused = async (name: string): Promise<boolean> => {
@@ -421,6 +408,8 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       // teardown that never ends — hooks never handed back, `state` never past 'draining', and the
       // memoised `stopping` every later `stop()` joins never settling.
       const dispatched = await settleAllBy(round === undefined ? [] : [round], budget);
+      // A re-drive cut short leaves its debts owed: the next leader runs those hooks again.
+      await settleAllBy(upkeep.inFlight(), budget);
       // A round we ABANDONED is a round still enqueueing, so the lock is deliberately NOT handed
       // back: promoting a standby onto an occurrence this process is mid-dispatch for is the
       // double-fire above, delivered by the shutdown. A lease row expires on its own, which is

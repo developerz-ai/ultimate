@@ -4,15 +4,17 @@
 // and never able to change what the queue recorded: a hook that keeps throwing is logged and
 // reported under `X_JOB_ON_SETTLED_FAILED`, and the row stays where it was put.
 //
-// AT MOST ONCE per settlement across a crash — a worker killed between the settle and the hook
-// never runs it — so it is the place for a notification, a status column, a usage line. What must
-// be recorded for certain is written by the BODY, inside a `step.run`, where it is at-least-once.
+// AT LEAST ONCE per settlement across a crash (J11): the settle records the debt in its own write
+// (`SettleBy.owesSettle`), the hook's return clears it, and the scheduler leader re-drives a debt
+// a dead worker left (`settle-redrive.ts`, `redriven: true`) — a completion only when its body
+// returned `undefined`, since a result is never stored. Write the hook to be repeated.
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import {
   anonymousActor,
   isUltimateError,
   logger,
+  renderThrowable,
   reportError,
   runToCompletion,
   runWithContext,
@@ -20,9 +22,11 @@ import {
   withChildContext,
 } from '@ultimat3/core';
 import type { ClaimedJob } from './driver';
+import type { SettleDebt } from './driver-settle';
 import { JobTimeoutError } from './errors';
 import { JobOnSettledFailedError } from './errors-operator';
 import type { AnyJobHandle } from './job';
+import type { JobCompleted, JobFailed, Settlement } from './settled-types';
 import { withStepTimeout } from './steps-timeout';
 import { jobRunActor } from './tenant';
 
@@ -35,48 +39,7 @@ export const ON_SETTLED_ATTEMPTS = 3;
  */
 export const ON_SETTLED_TIMEOUT_MS = 30_000;
 
-interface JobSettledBase {
-  /** The attempt that was the last. A refused run reports the attempts its body had had: 0. */
-  readonly attempt: number;
-  readonly jobId: string;
-  readonly runId: string;
-  /** The context the hook runs under: the job's declared tenant on its actor. */
-  readonly ctx: Ctx;
-}
-
-/** The body returned and the ack landed. `result` is what it returned, on THIS attempt. */
-export interface JobCompleted<I, R> extends JobSettledBase {
-  readonly outcome: 'completed';
-  readonly input: I;
-  /** Never stored and never serialised: the value itself, handed over in the worker's process. */
-  readonly result: R;
-}
-
-/**
- * The run ended without completing, for good. `dead-lettered`: parked in the dead-letter queue.
- * `dropped`: failed for good on a job declaring `retry.deadLetter: false`. `refused`:
- * `whenBusy: 'fail'` over a busy concurrency key — the body never ran.
- */
-export interface JobFailed<I> extends JobSettledBase {
-  readonly outcome: 'dead-lettered' | 'dropped' | 'refused';
-  /** The payload — `undefined` when the stored one no longer parses, which is why it died. */
-  readonly input: I | undefined;
-  /** The failure the row records as `lastError`, fix included. */
-  readonly error: string;
-  /** Its `X_*` code, when what was thrown carried one. Never invented for a throw that had none. */
-  readonly code: string | undefined;
-}
-
-export type JobSettled<I, R = unknown> = JobCompleted<I, R> | JobFailed<I>;
-
-/** What the caller knows about the ending; the run's identity and scope are added here. */
-export type Settlement =
-  | { readonly outcome: 'completed'; readonly result: unknown }
-  | {
-      readonly outcome: JobFailed<unknown>['outcome'];
-      readonly error: string;
-      readonly code: string | undefined;
-    };
+export type { JobCompleted, JobFailed, JobSettled, Settlement } from './settled-types';
 
 /** The `X_*` code a thrown value carries, for `JobFailed.code`. */
 export const settledCode = (thrown: unknown): string | undefined =>
@@ -96,6 +59,20 @@ export interface AnnounceOptions {
     readonly scope: RunScope;
     readonly input: { readonly value: unknown } | undefined;
   };
+  /**
+   * The debt the settle recorded (`SettleBy.owesSettle`): paid once the hook has returned or used
+   * every try, under the claim the row was settled with. Absent, nothing was recorded to pay.
+   */
+  readonly owed?: { readonly debt: SettleDebt | undefined; readonly claim: number };
+}
+
+type Identity = 'attempt' | 'jobId' | 'runId' | 'ctx';
+type Ending = Omit<JobCompleted<unknown, unknown>, Identity> | Omit<JobFailed<unknown>, Identity>;
+
+/** What the hook is handed, apart from the run's identity and context. */
+function endingOf(settlement: Settlement, input: unknown): Ending {
+  const { redriven, ...ending } = settlement;
+  return { ...ending, input, ...(redriven === true ? { redriven, reason: 'lost' } : {}) };
 }
 
 /**
@@ -120,12 +97,29 @@ function unstartedRun(options: AnnounceOptions): NonNullable<AnnounceOptions['ru
 }
 
 /**
- * Tell the job how its run ended. Never rejects: the caller has already settled the row and has
- * nothing to do with a hook's failure. A job that declared no hook costs one property read.
+ * Tell the job how its run ended, then pay the debt the settle recorded. Never rejects: the caller
+ * has already settled the row and has nothing to do with a hook's failure. A job that declared no
+ * hook costs one property read.
  */
 export async function announceSettled(options: AnnounceOptions): Promise<void> {
+  if (!options.handle.declaresOnSettled) return;
+  await tell(options);
+  const owed = options.owed;
+  if (owed?.debt === undefined) return;
+  // A hook that used every try is paid too: the debt is for a crash, and a hook that keeps
+  // throwing is `X_JOB_ON_SETTLED_FAILED`'s, re-driven forever otherwise. A clear that fails
+  // leaves it owed, and the leader runs the hook once more: at least once, never at most.
+  await owed.debt.clear(options.claimed.id, owed.claim).catch((error: unknown) => {
+    logger.warn('jobs.on-settled.unpaid', {
+      job: options.handle.name,
+      jobId: options.claimed.id,
+      error: renderThrowable(error),
+    });
+  });
+}
+
+async function tell(options: AnnounceOptions): Promise<void> {
   const { handle, claimed, settlement } = options;
-  if (!handle.declaresOnSettled) return;
   const run = options.run ?? unstartedRun(options);
   const identity = { attempt: claimed.attempt, jobId: claimed.id, runId: claimed.runId };
   const timeoutMs = handle.onSettledTimeoutMs;
@@ -138,11 +132,7 @@ export async function announceSettled(options: AnnounceOptions): Promise<void> {
       runToCompletion(
         () => {
           const base = { ...identity, ctx: useContext() };
-          return handle.onSettled(
-            settlement.outcome === 'completed'
-              ? { ...base, ...settlement, input: run.input?.value }
-              : { ...base, ...settlement, input: run.input?.value },
-          );
+          return handle.onSettled({ ...base, ...endingOf(settlement, run.input?.value) });
         },
         { signal: ceiling.signal, deadlineAt: useContext().now().getTime() + timeoutMs },
       ),

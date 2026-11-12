@@ -26,7 +26,7 @@ import type { EventLookup, StepApi, StepRunOptions } from './steps-api';
 import { DEFAULT_EVENT_POLL_MS, WAKING_EVENT_POLL_MS } from './steps-api';
 import type { RunnerCore } from './steps-core';
 import type { StepOutput } from './steps-output';
-import { jsonForm } from './steps-output';
+import { jsonForm, stepOutputCeiling } from './steps-output';
 import type { StepFence, StepRecord, StepStore } from './steps-store';
 import { isStepSuspension, StepSuspension, UnwindReached } from './steps-suspension';
 import { withStepTimeout } from './steps-timeout';
@@ -76,6 +76,8 @@ export interface StepRunnerOptions {
   readonly unwind?: boolean;
   /** Per-step ceiling; the job-level timeout is enforced by the worker. */
   readonly stepTimeoutMs?: number;
+  /** Most JSON bytes a `step.run` output may hold (`job({ stepOutputMax })`): refused past it. */
+  readonly stepOutputMaxBytes?: number;
   /**
    * The run's cancellation — `executeJob` aborts it at the job's deadline. Once aborted this
    * runner writes nothing: the nack that follows a deadline makes the job claimable, so the
@@ -152,6 +154,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     options.stepTimeoutMs === undefined
       ? undefined
       : finiteOption('step.run', 'stepTimeoutMs', options.stepTimeoutMs);
+  const outputCeiling = stepOutputCeiling(options.stepOutputMaxBytes);
   const runSignal = options.signal ?? NEVER_ABORTED;
 
   /**
@@ -327,7 +330,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
           }),
       );
       // What goes in the store is what comes back, so both attempts see one value.
-      const stored = jsonForm(output as T, { job: jobName, step: name });
+      const stored = jsonForm(output as T, { job: jobName, step: name }, outputCeiling);
       // Persist BEFORE returning: a crash one line later must not re-run this step.
       await put({
         runId,

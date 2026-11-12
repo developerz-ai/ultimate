@@ -25,10 +25,11 @@ export const MAX_ENQUEUE_BATCH = 10_000;
 export const ENQUEUE_CHUNK = 1_000;
 
 /**
- * One set of options for the whole batch, and no `runId`: one id names one run. A batch whose
- * inputs need options of their own is a loop of `enqueue`.
+ * One set of options for the whole batch, and no `runId`: one id names one run. No `onConflict`
+ * or `expiresAt` either — a single enqueue's (`assertEnqueueMany`). A batch whose inputs need
+ * options of their own is a loop of `enqueue`.
  */
-export type EnqueueManyOptions = Omit<EnqueueOptions, 'runId'>;
+export type EnqueueManyOptions = Omit<EnqueueOptions, 'runId' | 'onConflict' | 'expiresAt'>;
 
 function chunked<T>(rows: readonly T[]): readonly (readonly T[])[] {
   const out: T[][] = [];

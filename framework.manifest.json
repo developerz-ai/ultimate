@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "00dead367e14fed01107a9283efc562986c9b0b8b3ad260d90d187c8fff8857a",
+  "buildId": "331796c66363f3dfefedf66f8fe71899ac910908fbba2252a8b6b3b277b89f86",
   "tiers": {
     "0": [
       "core",
@@ -2678,6 +2678,11 @@
       "code": "X_ISLAND_PROPS_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_BACKLOG_FULL",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
     },
     {
       "code": "X_JOB_CLAIM_QUEUES_EMPTY",
@@ -5436,6 +5441,11 @@
     },
     {
       "code": "X_STEP_OUTCOME_UNKNOWN",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_STEP_OUTPUT_TOO_LARGE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
     },

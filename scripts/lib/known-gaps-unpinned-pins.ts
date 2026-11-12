@@ -17,7 +17,6 @@ export const KNOWN_GAPS_UNPINNED: readonly string[] = [
   'A replicated table with **no** replica identity is warned about, never refused',
   'A `stream` page with a realtime island keeps every island on the page inert until its slowest hole closes',
   "A job's `runAt` is stamped from the enqueuer's clock",
-  '`onSettled` runs at most once across a crash',
   '`ScrapeReport.usage.bytesIn` counts the HTTP leg only',
   'Retry-from-step on the jobs dashboard is a free-text field',
   'The admin MCP batch tool takes `ids` only',

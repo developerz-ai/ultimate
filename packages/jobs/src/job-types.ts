@@ -8,6 +8,7 @@ import type { JobConcurrency, WhenBusy } from './concurrency';
 import type { JobDescriptor } from './describe';
 import type { EnqueueResult } from './driver';
 import type { EnqueueManyOptions } from './job-enqueue-many';
+import type { JobLease } from './job-lease';
 import type { EnqueueOptions } from './outbox';
 import type { ProgressFn } from './progress';
 import type { RetryPolicy } from './retry';
@@ -45,6 +46,12 @@ export interface JobRunArgs<I> {
    * second, and the last call before the run settles is always written.
    */
   readonly progress: ProgressFn;
+  /**
+   * This attempt's lease: `renew()` between the chunks of a section longer than the visibility
+   * timeout (a timer cannot fire inside it), `lost()`, `signal`. The worker always supplies it.
+   * Optional so a test that drives a body by hand need not build one: read it as `lease?.renew()`.
+   */
+  readonly lease?: JobLease;
   readonly jobId: string;
   readonly runId: string;
 }
@@ -91,6 +98,13 @@ export interface JobDefinition<I, R = unknown> {
   readonly concurrency?: JobConcurrency<I>;
   readonly timeout?: DurationInput;
   /**
+   * Back-pressure: an enqueue of this job onto a queue already holding this many rows waiting to
+   * run (`ready` or `delayed`) is refused with `X_JOB_BACKLOG_FULL`, a 429 — the producer backs off
+   * instead of drowning the queue. Counted before the write, so concurrent producers can overshoot
+   * it by their number: a ceiling for pressure, not an exact count. Omit for no ceiling.
+   */
+  readonly maxPending?: number;
+  /**
    * Ceiling for ONE `step.run`, where `timeout` is the ceiling for the whole attempt. Folded into
    * the signal the step body is handed, so a body reads one signal and sees whichever deadline
    * lands first — and it ABORTS before it rejects, because the attempt that replaces this one is
@@ -114,6 +128,13 @@ export interface JobDefinition<I, R = unknown> {
    */
   readonly eventPoll?: DurationInput;
   /**
+   * Most UTF-8 bytes of JSON one `step.run` output may hold: every attempt loads every output of
+   * its run, so a step returns a key or a cursor and the payload lives in storage. Declared, a step
+   * past it fails `X_STEP_OUTPUT_TOO_LARGE`, terminally. Omitted, `STEP_OUTPUT_MAX_BYTES` (256 KiB)
+   * only WARNS (logged once per job and step, same code) and stores the output.
+   */
+  readonly stepOutputMax?: number;
+  /**
    * This job undoes its steps when it fails FOR GOOD: `step.run(name, fn, { compensate })` is
    * legal, and the row is enqueued with `UNWIND_MARGIN` attempts past `retry.attempts`, so a
    * crash on the final attempt still unwinds. Default false: no path of the job changes.
@@ -126,10 +147,12 @@ export interface JobDefinition<I, R = unknown> {
    * ran). Called after the row is settled, by the worker whose settle landed, under the job's
    * tenant. Not called for a retry, a suspension, a drain, or a row an operator cancelled.
    *
-   * AT MOST ONCE across a crash: a worker killed between the settle and this call never makes it.
-   * In one process it gets `ON_SETTLED_ATTEMPTS` tries; if all throw, the failure is logged and
-   * reported (`X_JOB_ON_SETTLED_FAILED`) and the row is untouched. What must be recorded for
-   * certain belongs in the body, inside a `step.run`.
+   * AT LEAST ONCE across a crash: the settle records the debt in its own write and this call's
+   * return pays it; a worker killed between the two leaves it for the scheduler leader, which
+   * calls again past `onSettledTimeout` × 3 with `redriven: true, reason: 'lost'`. Write it to be
+   * repeated. A result is never stored, so a completion is owed only when `run` returned
+   * `undefined`: one that returned a value is told AT MOST ONCE. In one process it gets `ON_SETTLED_ATTEMPTS` tries; if all throw, the failure is
+   * logged and reported (`X_JOB_ON_SETTLED_FAILED`), the debt is paid, and the row is untouched.
    */
   onSettled?(settled: JobSettled<I, R>): Promise<void>;
 }
@@ -172,11 +195,15 @@ export interface JobHandle<I = unknown> {
    */
   readonly whenBusy: WhenBusy | undefined;
   readonly timeoutMs: number | undefined;
+  /** The declared `maxPending`, counted against at enqueue (`enqueue-backlog.ts`). */
+  readonly maxPending: number | undefined;
   /** The declared per-step ceiling in ms; `executeJob` hands it to the step runner. */
   readonly stepTimeoutMs: number | undefined;
   readonly onSettledTimeoutMs: number;
   /** The declared event-poll interval in ms; `undefined` leaves the runner's default. */
   readonly eventPollMs: number | undefined;
+  /** The declared `stepOutputMax`; `undefined` leaves the runner's default. */
+  readonly stepOutputMaxBytes: number | undefined;
   /** `compensates: true` was declared. `executeJob` unwinds a run that failed for good. */
   readonly compensates: boolean;
   readonly input: StandardSchemaV1<unknown, I>;

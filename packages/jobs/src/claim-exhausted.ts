@@ -1,7 +1,7 @@
 // The claim round's half of a burial: a row the claim settled `dead` (`ClaimOptions.onExhausted`)
-// has no body to end it and no settle to announce it, so the pass that buried it says so — one log
-// line an operator can alert on, its `jobs_total` count, and the job's `onSettled`, exactly as a
-// dead letter a worker settled itself would get.
+// has no body to end it, so the pass that buried it says so — a log line, its `jobs_total` count
+// and the job's `onSettled`. AT MOST ONCE: the claim records no settle debt (it does not know which
+// jobs declare a hook), so a worker that dies right after the burial loses that telling.
 
 import type { Ctx } from '@ultimat3/core';
 import { logger, recordJob, renderThrowable } from '@ultimat3/core';

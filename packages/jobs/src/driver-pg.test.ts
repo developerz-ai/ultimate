@@ -197,7 +197,8 @@ describe('pg enqueue, ack and nack', () => {
       JSON.stringify({ orgId: 'org-1' }),
       'onboard:org-1',
     ]);
-    expect(executor.calls[0]?.params.slice(8)).toEqual(['org-1', '00-abc-def-01', 'user-7']);
+    // `$12`, `expiresAt`: none asked, so null — never an instant the row would expire at.
+    expect(executor.calls[0]?.params.slice(8)).toEqual(['org-1', '00-abc-def-01', 'user-7', null]);
   });
 
   test('a caller-allocated id and run id are the row’s, and a repeat of that publish is deduped', async () => {
@@ -385,7 +386,7 @@ describe('pg enqueue, ack and nack', () => {
     expect(executor.calls[0]?.sql).toBe(SQL_ACK);
     // The id, the claimer and the CLAIM the settle is fenced on. The duration is the counter
     // batch's, never a parameter (`driver-pg-counters.test.ts`).
-    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 1]);
+    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 1, false]);
   });
 
   test('nack maps deadLetter, park and neither onto three states, and park burns no attempt', async () => {
@@ -408,11 +409,11 @@ describe('pg enqueue, ack and nack', () => {
     });
 
     expect(executor.calls.map((call) => call.params)).toEqual([
-      // …, error, claimer, stack, and the CLAIM.
-      ['job-1', 'ready', true, 1_000, 'smtp timeout', 'w1', null, 1],
-      ['job-2', 'suspended', false, 0, null, 'w1', null, 2],
+      // …, error, claimer, stack, the CLAIM, and whether the job owes `onSettled`.
+      ['job-1', 'ready', true, 1_000, 'smtp timeout', 'w1', null, 1, false],
+      ['job-2', 'suspended', false, 0, null, 'w1', null, 2, false],
       // deadLetter wins over park: a job that exhausted its retries is not merely shed.
-      ['job-3', 'dead', true, 0, null, 'w1', null, 7],
+      ['job-3', 'dead', true, 0, null, 'w1', null, 7, false],
     ]);
     expect(executor.calls[0]?.sql).toBe(SQL_NACK);
   });

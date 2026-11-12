@@ -33,7 +33,7 @@ export interface LeaseHeartbeatOptions {
 export const CLASSIFY_READ_MAX_MS = 5_000;
 
 export interface LeaseHeartbeat {
-  /** One renewal. The interval drives it; tests drive it instead of the timer. */
+  /** One renewal. The interval drives it; `args.lease` (`job-lease.ts`) and tests drive it too. */
   renew(): Promise<void>;
   /** True once the lease lapsed: the queue may already have delivered this job again. */
   lost(): boolean;

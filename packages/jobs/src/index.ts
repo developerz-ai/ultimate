@@ -82,6 +82,14 @@ export type {
   ConsumerHandle,
   ConsumerInput,
 } from './consumer-types';
+export type {
+  CronJob,
+  CronJobDefinition,
+  CronJobInputDefinition,
+  CronJobNoInput,
+  CronJobPlainDefinition,
+} from './cron-job';
+export { cronJob } from './cron-job';
 export type { JobConcurrencyDescriptor, JobDescriptor } from './describe';
 export type {
   ClaimedJob,
@@ -96,6 +104,8 @@ export type {
   NackOptions,
   QueueDemand,
   QueueStats,
+  SettleDebt,
+  SettleDebtJob,
 } from './driver';
 export {
   assertClaimBounds,
@@ -104,6 +114,7 @@ export {
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,
   isJobState,
+  JOB_EXPIRED,
   JOB_STATES,
   jobDriver,
   LEASE_LAPSED_FINAL_ATTEMPT,
@@ -120,6 +131,7 @@ export { postgresJobDriver, postgresLeader } from './driver-pg';
 // proofs are `driver-pg-array.live.test.ts` (25.0.0).
 export { JOBS_TABLE_STORAGE } from './driver-pg-ddl';
 export { SQL_JOBS_TABLE } from './driver-pg-sql';
+export { JobBacklogFullError } from './enqueue-backlog';
 export { signalEnqueued, signalStaged } from './enqueue-signal';
 export type { JobErrorCode } from './error-codes';
 export { JOB_ERROR_CODES, JOB_ERROR_TITLES } from './error-codes';
@@ -225,6 +237,7 @@ export {
 } from './job';
 export type { EnqueueManyOptions } from './job-enqueue-many';
 export { MAX_ENQUEUE_BATCH } from './job-enqueue-many';
+export type { JobLease } from './job-lease';
 export type { JobsRetentionOptions } from './jobs-retention';
 export { jobsPurgeTarget } from './jobs-retention';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
@@ -264,7 +277,7 @@ export { outboxRelay } from './outbox-relay';
 export type { OutboxRetentionOptions } from './outbox-retention';
 export { outboxPurgeTarget } from './outbox-retention';
 export type { PartitionsDefinition, PartitionsJob } from './partitions';
-export { partitionedEntities, partitions } from './partitions';
+export { isPartitionsJob, partitionedEntities, partitions } from './partitions';
 export type { ProgressFn } from './progress';
 export type {
   PurgeDefinition,
@@ -300,7 +313,12 @@ export { nextRetryForError } from './retry-classification';
 export type { RollupBucket, RollupDefinition, RollupInput, RollupTarget } from './rollup';
 export { rollup } from './rollup';
 export type { CronResolver, Scheduler, SchedulerOptions } from './scheduler';
-export { COUNTER_ROLLUP_INTERVAL_MS, jobScheduler } from './scheduler';
+export {
+  COUNTER_ROLLUP_INTERVAL_MS,
+  jobScheduler,
+  SETTLE_REDRIVE_IDLE_INTERVAL_MS,
+  SETTLE_REDRIVE_INTERVAL_MS,
+} from './scheduler';
 export type { LeaderElection } from './scheduler-leader';
 export { soleLeader } from './scheduler-leader';
 export { nextTaskRun } from './scheduler-occurrences';
@@ -308,6 +326,7 @@ export type { PostgresLeaseLeaderOptions } from './scheduler-pg';
 export { DEFAULT_LEADER_TTL_MS, postgresLeaseLeader, postgresSchedulerState } from './scheduler-pg';
 export type { ScheduledFire, SchedulerState } from './scheduler-state';
 export { memorySchedulerState } from './scheduler-state';
+export { SETTLE_GRACE_FACTOR } from './settle-redrive';
 export type { JobCompleted, JobFailed, JobSettled } from './settled';
 export { ON_SETTLED_ATTEMPTS, ON_SETTLED_TIMEOUT_MS } from './settled';
 export { currentStep } from './step-scope';
@@ -334,6 +353,7 @@ export {
 } from './steps';
 export { memoryStepStore } from './steps-memory';
 export type { StepOutput } from './steps-output';
+export { STEP_OUTPUT_MAX_BYTES } from './steps-output';
 export type {
   RetainedTarget,
   Subject,
