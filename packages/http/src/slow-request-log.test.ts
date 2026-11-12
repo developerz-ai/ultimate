@@ -12,9 +12,7 @@ import { httpRouter } from './router';
 import { SLOW_REQUEST_MESSAGE } from './slow-request-log';
 import { stageRunners } from './stages';
 
-const never = (): never => {
-  throw new TypeError('the limiter is not consulted by these stages');
-};
+const never = (): never => expect.unreachable('the limiter is not consulted by these stages');
 
 const limiter = {
   scope: 'process' as const,

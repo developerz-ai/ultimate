@@ -84,8 +84,9 @@ describe('x db gen · index key parts round-trip', () => {
     expect(up).toContain('("email", "name" desc)');
     expect(up).toContain('include ("name")');
     expect(up).toContain('("name" gin_trgm_ops)');
-    expect(up.indexOf('create extension if not exists "pg_trgm";')).toBeGreaterThanOrEqual(0);
-    expect(up.indexOf('create extension')).toBeLessThan(up.indexOf('gin_trgm_ops'));
+    const extension = 'create extension if not exists "pg_trgm";';
+    expect(up).toContain(extension);
+    expect(up.indexOf(extension)).toBeLessThan(up.indexOf('gin_trgm_ops'));
   });
 
   test('the sidecar records every part, and the second generation over it is empty', () => {

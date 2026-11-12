@@ -5,10 +5,10 @@
 //
 // The API, as a framework package uses it (`@ultimat3/http`'s `x_rate_limit`, `@ultimat3/jobs`):
 //
-//   import { createTableDdl, tableStorage } from '@ultimat3/db';
+//   import { tableDdl, tableStorage } from '@ultimat3/db';
 //   const RATE_LIMIT_STORAGE = tableStorage('x_rate_limit', { fillfactor: 70, unlogged: true });
 //   export const SQL_RATE_LIMIT_TABLE = `
-//   ${createTableDdl(RATE_LIMIT_STORAGE, `
+//   ${tableDdl(RATE_LIMIT_STORAGE, `
 //     key    text primary key,
 //     tokens double precision not null`)}
 //   drop index if exists x_rate_limit_updated_at_idx;
@@ -94,7 +94,7 @@ export function storageAlters(storage: TableStorage): readonly string[] {
  * alters, each `;`-terminated so the boot's split on `;` sees one statement apiece. `columns` is the
  * body between the parentheses, a fixed constant with no `;` in it, as every framework DDL is.
  */
-export function createTableDdl(storage: TableStorage, columns: string): string {
+export function tableDdl(storage: TableStorage, columns: string): string {
   const head = storage.unlogged === true ? 'create unlogged table' : 'create table';
   const options =
     storage.fillfactor === undefined ? '' : ` with (fillfactor = ${String(storage.fillfactor)})`;

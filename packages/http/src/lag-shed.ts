@@ -65,6 +65,12 @@ export const processLagSampler = (): LagSampler => {
   return shared;
 };
 
+/** TEST SEAM: make `sampler` the process's one, so a pipeline test scripts the loop's lag. */
+export const replaceProcessLagSampler = (sampler: LagSampler): void => {
+  shared?.stop();
+  shared = sampler;
+};
+
 /** TEST SEAM: stop the process sampler so a suite leaves no timer behind. */
 export const stopProcessLagSampler = (): void => {
   shared?.stop();
@@ -76,5 +82,5 @@ export const overloadedByLag = (lagMs: number, ceilingMs: number): HttpError =>
   new HttpError({
     code: 'X_OVERLOADED',
     cause: `the event loop's lag p99 is ${String(Math.round(lagMs))}ms and http.shedLagMs is ${String(ceilingMs)}: this process is CPU-bound, and a request admitted now waits behind every one already running`,
-    fix: 'retry after the Retry-After header; to shed later call configureHttp({ shedLagMs: 500 }) at module scope in a file under apps/*/, or add replicas so each one renders less',
+    fix: 'configureHttp({ shedLagMs: 500 }) at module scope in a file under apps/*/ sheds later — or add replicas so each one renders less; a caller retries after the Retry-After header',
   });

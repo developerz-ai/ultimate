@@ -26,14 +26,16 @@ export function textDecoderFor(contentType: string): TextDecoder | undefined {
   return allowed.has(decoder.encoding) ? decoder : undefined;
 }
 
+/**
+ * `; charset = value` or `; charset="value"`, any case. One match over the parameters, never a
+ * `name=value` walk of its own: that walk is the cookie reader's shape (`readCookie`, in core).
+ * Linear: each quantifier is bounded by a class the next token cannot start with.
+ */
+const CHARSET_PARAM = /;\s*charset\s*=\s*(?:"([^"]*)"|([^;\s]*))/i;
+
 /** The `charset` parameter, unquoted; `undefined` when the header names none. */
 export function charsetOf(contentType: string): string | undefined {
-  for (const param of contentType.split(';').slice(1)) {
-    const at = param.indexOf('=');
-    if (at === -1 || param.slice(0, at).trim().toLowerCase() !== 'charset') continue;
-    const value = param.slice(at + 1).trim();
-    const unquoted = value.length >= 2 && value.startsWith('"') && value.endsWith('"');
-    return unquoted ? value.slice(1, -1) : value;
-  }
-  return undefined;
+  const match = CHARSET_PARAM.exec(contentType);
+  if (match === null) return undefined;
+  return match[1] ?? match[2];
 }

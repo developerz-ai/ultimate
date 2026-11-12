@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import { requestContext } from './context';
 import { UltimateRequest } from './request';
+import { charsetOf } from './request-charset';
 
 const posted = (body: Uint8Array<ArrayBuffer>, contentType: string): UltimateRequest => {
   const url = new URL('https://example.com/x');
@@ -69,5 +70,19 @@ describe('bodyRaw() — only the stateless charsets are honoured', () => {
         expect(error).toMatchObject({ code: 'X_BODY_INVALID' });
       }
     }
+  });
+});
+
+describe('charsetOf — the parameter, read off the header', () => {
+  test('any case, any spacing around the `=`, quoted or bare, in any parameter position', () => {
+    expect(charsetOf('text/plain; charset=iso-8859-1')).toBe('iso-8859-1');
+    expect(charsetOf('text/csv;CHARSET="ISO-8859-1"')).toBe('ISO-8859-1');
+    expect(charsetOf('text/plain; format=flowed; Charset = latin1 ; delsp=yes')).toBe('latin1');
+  });
+
+  test('a header naming no charset, or one only inside another name, is undefined', () => {
+    expect(charsetOf('text/plain')).toBeUndefined();
+    expect(charsetOf('text/plain; xcharset=latin1')).toBeUndefined();
+    expect(charsetOf('text/charset=latin1')).toBeUndefined();
   });
 });

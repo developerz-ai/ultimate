@@ -278,9 +278,9 @@ export type {
   TableStorageOptions,
 } from './table-storage';
 export {
-  createTableDdl,
   readTableStorageDrift,
   storageAlters,
+  tableDdl,
   tableStorage,
   tableStorageDrift,
 } from './table-storage';

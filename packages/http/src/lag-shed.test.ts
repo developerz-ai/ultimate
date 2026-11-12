@@ -1,6 +1,6 @@
 // H10: the `admit` stage sheds 503 + Retry-After while the event loop's lag p99 is over
 // `http.shedLagMs` — and ships OFF (owner decision OD1): an app that never opts in sheds nothing
-// and runs no sampler. Lag is simulated twice: a scripted clock, and a real blocked loop.
+// and runs no sampler. Lag is scripted — a hand-driven tick on a hand-moved clock — never slept.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { resetLifecycle } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfigInput } from './config';
@@ -10,6 +10,7 @@ import {
   LAG_WINDOW,
   type LagSampler,
   lagSampler,
+  replaceProcessLagSampler,
   stopProcessLagSampler,
 } from './lag-shed';
 import { httpPipeline } from './pipeline';
@@ -49,9 +50,8 @@ const admit = async (input: HttpConfigInput, lag: LagSampler | undefined) => {
   const config = defineHttpConfig({ rateLimit: { scope: 'process' }, buildId: null, ...input });
   const url = new URL('http://app.test/');
   const ctx = requestContext({ url, method: 'GET', role: 'web', config });
-  const never = async (): Promise<never> => {
-    throw new TypeError('the limiter is not consulted by admit');
-  };
+  const never = async (): Promise<never> =>
+    expect.unreachable('the limiter is not consulted by admit');
   const run = stageRunners({
     table: httpRouter([]),
     config,
@@ -110,7 +110,9 @@ describe('the admit stage under lag', () => {
     expect((await admit({}, lag.sampler)).refused).toBeUndefined();
   });
 
-  test('a real blocked loop is shed through the pipeline', async () => {
+  test('the process sampler a late loop reports is what the pipeline sheds on', async () => {
+    const lag = scripted();
+    replaceProcessLagSampler(lag.sampler);
     const pipeline = httpPipeline({
       table: httpRouter([
         {
@@ -124,14 +126,8 @@ describe('the admit stage under lag', () => {
     });
     const call = () => pipeline.handle(new Request('http://app.test/'), { role: 'web' });
     expect((await call()).status).toBe(200);
-    // Three CPU-bound stalls, each followed by a breath so the sampler's late tick lands.
-    for (let stall = 0; stall < 3; stall += 1) {
-      const until = performance.now() + 150;
-      while (performance.now() < until) {
-        // A render that never yields.
-      }
-      await Bun.sleep(LAG_SAMPLE_MS * 2);
-    }
+    // Three CPU-bound stalls of 150 ms: each tick fires that late, on the scripted clock.
+    lag.late(150, 3);
     const shed = await call();
     expect(shed.status).toBe(503);
     expect(shed.headers.get('retry-after')).toBe('1');

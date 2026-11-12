@@ -5,6 +5,7 @@
 
 import {
   type DbStatementEvent,
+  finiteOption,
   isUltimateError,
   logger,
   SEMCONV,
@@ -72,7 +73,11 @@ function lineOf(
 export function slowStatementLog(options: SlowStatementLogOptions): () => void {
   const { thresholdMs } = options;
   if (!(thresholdMs > 0)) return () => undefined;
-  const windowMs = options.windowMs ?? SLOW_STATEMENT_WINDOW_MS;
+  const windowMs = finiteOption(
+    'slowStatementLog',
+    'windowMs',
+    options.windowMs ?? SLOW_STATEMENT_WINDOW_MS,
+  );
   const now = options.now ?? (() => performance.now());
   // Insertion order is last-logged order: a re-log deletes and re-inserts, so the first key is
   // always the shape that logged longest ago — the one eviction drops.

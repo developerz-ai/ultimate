@@ -195,7 +195,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `missing-check`'s are one `psql -c` too — `repair()`, schema-scoped off `public`).
 - `introspectSchema()` reads index keys in `indkey` order and a key's two column lists together
   (`unnest(a, b) with ordinality`); `introspect-embedded.test.ts`.
-- **`table-storage.ts`**: a framework table's `fillfactor`/`unlogged`, one value — `createTableDdl`
+- **`table-storage.ts`**: a framework table's `fillfactor`/`unlogged`, one value — `tableDdl`
   renders the create plus idempotent alters (re-applied every framework apply), drift reads `pg_class`.
 - **`appTables()`** excludes all of `x_` for drift; `introspectSchema()` only `x_migrations`.
   `nonAppRelations` (`app-relation.ts`): extension-owned, views, matviews, foreign tables,

@@ -1,8 +1,10 @@
-// Single responsibility: the unanswered-statement bound of ONE pinned connection. A pin's statements
-// are swept like any other, against the `statement_timeout` in force on that connection: the role's,
-// until a `set_config('statement_timeout', …)` or `SET [LOCAL] statement_timeout` it answered moves
-// it, back to the role's at the transaction's end or a RESET, and back to what a SAVEPOINT saw on a
-// ROLLBACK TO it. A miss leaves the pin dead, never reused.
+// Single responsibility: the unanswered-statement bound of ONE pinned connection — the
+// `statement_timeout` in force on it, which its statements are swept against like any other's. A
+// miss leaves the pin dead, never reused.
+//
+// The bound is the role's until a `set_config('statement_timeout', …)` or `SET [LOCAL]
+// statement_timeout` it answered moves it; back to the role's at the transaction's end or a RESET,
+// and back to what a SAVEPOINT saw on a ROLLBACK TO it.
 
 import type { SqlFragment } from './sql';
 

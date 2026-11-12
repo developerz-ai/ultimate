@@ -22,7 +22,7 @@ beforeEach(() => {
   nowMs = 0;
   releaseSink = installLogSink((line) => {
     const parsed = JSON.parse(line) as Record<string, unknown>;
-    if (parsed.msg === 'db.statement.slow') logged.push(parsed);
+    if (parsed['msg'] === 'db.statement.slow') logged.push(parsed);
   });
 });
 
@@ -54,12 +54,12 @@ describe('slowStatementLog', () => {
 
     expect(logged).toHaveLength(1);
     const line = logged[0] ?? {};
-    expect(line.level).toBe('warn');
-    expect(line.requestId).toBe('req-slow-1');
+    expect(line['level']).toBe('warn');
+    expect(line['requestId']).toBe('req-slow-1');
     expect(line['db.query.text']).toBe('select * from members where email = $1');
     expect(line['db.operation.name']).toBe('SELECT');
     expect(line['db.response.returned_rows']).toBe(3);
-    expect(line.durationMs).toBe(600);
+    expect(line['durationMs']).toBe(600);
     expect(JSON.stringify(line)).not.toContain('secret@example.com');
   });
 
@@ -81,7 +81,7 @@ describe('slowStatementLog', () => {
     nowMs = 10_000;
     instrument('db.statement', statement());
     expect(logged).toHaveLength(2);
-    expect(logged[1]?.suppressed).toBe(50);
+    expect(logged[1]?.['suppressed']).toBe(50);
   });
 
   test('two shapes in one window each get their line', () => {
@@ -107,6 +107,12 @@ describe('slowStatementLog', () => {
     instrument('db.statement', statement({ text: 'select 0' }));
     instrument('db.statement', statement({ text: `select ${SLOW_STATEMENT_SHAPES_MAX}` }));
     expect(logged).toHaveLength(SLOW_STATEMENT_SHAPES_MAX + 2);
+  });
+
+  // `windowMs: NaN` (an unset env var through `Number()`) walked past `??`, and every comparison
+  // against it read false: no line was ever held back, so a burst logged every statement.
+  test('a windowMs that is not a number is refused, not a window that never holds anything back', () => {
+    expect(() => slowStatementLog({ thresholdMs: 500, windowMs: Number.NaN })).toThrow(/windowMs/);
   });
 
   test('a threshold of 0 is off: nothing subscribes', () => {

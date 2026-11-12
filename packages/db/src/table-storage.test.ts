@@ -1,15 +1,15 @@
-// The storage declaration as text: what `createTableDdl` renders for the boot's `;` split, which
+// The storage declaration as text: what `tableDdl` renders for the boot's `;` split, which
 // declarations are refused before they reach DDL, and what drift says against a catalog row.
 
 import { describe, expect, test } from 'bun:test';
 import { DbError } from './errors';
-import { createTableDdl, storageAlters, tableStorage, tableStorageDrift } from './table-storage';
+import { storageAlters, tableDdl, tableStorage, tableStorageDrift } from './table-storage';
 
 const HOT = tableStorage('x_rate_limit', { fillfactor: 70, unlogged: true });
 
-describe('createTableDdl', () => {
+describe('tableDdl', () => {
   test('an unlogged fillfactor table is created that way and re-applied to an existing one', () => {
-    const ddl = createTableDdl(HOT, '\n  key text primary key,\n  n int not null\n');
+    const ddl = tableDdl(HOT, '\n  key text primary key,\n  n int not null\n');
     expect(ddl).toBe(
       [
         'create unlogged table if not exists x_rate_limit (',
@@ -23,7 +23,7 @@ describe('createTableDdl', () => {
   });
 
   test('every statement survives the boot split on `;` as exactly one statement', () => {
-    const statements = createTableDdl(HOT, 'key text primary key')
+    const statements = tableDdl(HOT, 'key text primary key')
       .split(';')
       .filter((part) => part.trim().length > 0);
     expect(statements).toHaveLength(3);
@@ -31,9 +31,7 @@ describe('createTableDdl', () => {
 
   test('a declaration stating nothing renders the plain create and no alter', () => {
     const plain = tableStorage('x_plain', {});
-    expect(createTableDdl(plain, 'id int')).toBe(
-      'create table if not exists x_plain (\nid int\n);',
-    );
+    expect(tableDdl(plain, 'id int')).toBe('create table if not exists x_plain (\nid int\n);');
     expect(storageAlters(plain)).toEqual([]);
   });
 

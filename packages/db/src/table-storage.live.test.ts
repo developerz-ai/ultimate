@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { raw } from './sql';
-import { createTableDdl, readTableStorageDrift, tableStorage } from './table-storage';
+import { readTableStorageDrift, tableDdl, tableStorage } from './table-storage';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -21,7 +21,7 @@ describe.skipIf(!hasPostgres)('tableStorage on Postgres', () => {
       await client.execute(raw(statement));
     }
   };
-  const ddl = createTableDdl(STORAGE, 'key text primary key, n int not null');
+  const ddl = tableDdl(STORAGE, 'key text primary key, n int not null');
 
   beforeAll(async () => {
     client = postgresClient({ url: url as string });

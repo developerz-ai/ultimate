@@ -1,8 +1,7 @@
-// `x db migrate`'s second look at the database it just migrated: does it hold a trigger, function,
-// view, type or sequence that replaying the migrations does not create? `runMigrations` compares
-// tables against the snapshot and closes its connection; a snapshot records only what entities
-// declare, so everything else is asked here, against the catalog the schema dump was rendered from —
-// and so are the framework tables' storage parameters, which no migration declares either.
+// `x db migrate`'s second look at the database it just migrated: a trigger, function, view, type or
+// sequence replaying the migrations does not create, and a framework table's storage parameters
+// moved by hand. A snapshot records only what entities declare, so both are asked here, against the
+// catalog the schema dump was rendered from; `runMigrations` has closed its connection by then.
 
 import type { DbClient, DriftDifference, TableStorageDifference } from '@ultimat3/db';
 import { readTableStorageDrift } from '@ultimat3/db';

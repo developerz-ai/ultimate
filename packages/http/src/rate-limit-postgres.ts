@@ -4,7 +4,7 @@
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
 import type { PgExecutor, Scheduler } from '@ultimat3/core';
-import { createTableDdl, type TableStorage, tableStorage } from '@ultimat3/db';
+import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';
 import { degradedFallback, isRateLimitStoreUnreachable } from './rate-limit-degrade';
@@ -46,7 +46,7 @@ export const RATE_LIMIT_STORAGE: TableStorage = tableStorage('x_rate_limit', {
  * made and one this boot makes are the same shape.
  */
 export const SQL_RATE_LIMIT_TABLE = `
-${createTableDdl(
+${tableDdl(
   RATE_LIMIT_STORAGE,
   `
   key               text             primary key,

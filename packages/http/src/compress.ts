@@ -26,14 +26,17 @@ export const COMPRESS_MIN_BYTES = 1_024;
  */
 export const COMPRESS_MAX_BYTES = 262_144;
 
+type Coder = (bytes: Uint8Array<ArrayBuffer>) => Uint8Array;
+
 /**
  * The coder per offered coding: keyed by `etag-form.ts`'s `ContentCoding`, so offering a coding
  * with no coder here is a type error. Past the ceiling the same name is a `CompressionStream`.
+ * Null-prototype: a key that reached here unvalidated answers `undefined`, never `Object.prototype`.
  */
-const CODERS: Readonly<Record<ContentCoding, (bytes: Uint8Array<ArrayBuffer>) => Uint8Array>> = {
+const CODERS: Readonly<Record<ContentCoding, Coder>> = Object.assign(Object.create(null), {
   zstd: (bytes) => Bun.zstdCompressSync(bytes, { level: 3 }),
   gzip: (bytes) => Bun.gzipSync(bytes, { level: 6 }),
-};
+} satisfies Record<ContentCoding, Coder>);
 
 /**
  * Bun's `CompressionStream` codes `zstd` too (`Bun.CompressionFormat`); the DOM lib's constructor

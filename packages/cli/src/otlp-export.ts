@@ -1,9 +1,10 @@
-// OTLP export, switched on by the variable the shipped Helm chart already sets. Until this file
-// `OTEL_EXPORTER_OTLP_ENDPOINT` was in `docker/helm/values.yaml` and **no code read it**: a
+// OTLP export, switched on by `OTEL_EXPORTER_OTLP_ENDPOINT` — the variable the shipped Helm chart
+// already sets — plus the bus subscribers every production boot records with or without a
+// collector: the semconv histograms, the slow-statement line and the per-request timings.
+//
+// Until this file the variable was in `docker/helm/values.yaml` and **no code read it**: a
 // deployment configured a collector, the collector received nothing, and the only signal that
-// anything was wrong was an empty dashboard. Also the bus subscribers every production boot
-// records whether or not a collector is set: the semconv histograms, the slow-statement line and
-// the per-request timings the slow-request line reads.
+// anything was wrong was an empty dashboard.
 
 import type { OtlpSignal, ShutdownReason } from '@ultimat3/core';
 import {

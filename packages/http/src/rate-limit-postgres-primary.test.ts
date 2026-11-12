@@ -47,7 +47,7 @@ describe('the rate-limit store never reaches a replica', () => {
     const refused = new UltimateError({
       code: 'X_DB_STATEMENT_FAILED',
       cause: 'cannot access temporary or unlogged relations during recovery',
-      fix: 'x db status',
+      fix: 'x db diagnostics --json',
       meta: { sqlState: '0A000' },
     });
     expect(isRateLimitStoreUnreachable(refused)).toBe(true);
