@@ -140,8 +140,9 @@ policy allows them; `audio/x-m4a` and `video/x-m4v` are read as `audio/mp4` and 
 required: a grant with no whole byte count of at least 1 is `X_STORAGE_UPLOAD_SIZE_UNDECLARED`, and
 `uploadFile` sends the file's own. An s3 disk signs it as the exact `Content-Length`, so the provider
 answers any other length, a chunked body included, with 403 `SignatureDoesNotMatch` and stores
-nothing. The local disks sign it as the ceiling `acceptSignedUpload` counts against, so a shorter body
-passes there and not on s3. `grant.maxBytes` is that declared size. A bare
+nothing. For a single upload the local disks sign it as the ceiling `acceptSignedUpload` counts
+against, so a shorter body passes there and not on s3; a part is held exact on every disk (below).
+`grant.maxBytes` is that declared size. A bare
 `disk.signedUrl(key, { method: 'PUT' })` on s3 still binds nothing; with a `maxBytes` and no
 `contentLength` it is refused rather than ignored. Proven on the test stack's gateway. A provider
 that skips SigV4's signed-header check is the one thing that would unbind it, so
@@ -162,7 +163,7 @@ every one held to the actor's org:
 | Call | Answers |
 |---|---|
 | `grantMultipart({ disk, orgId, request, policy, partBytes? })` | `{ key, uploadId, partBytes, maxParts, contentType, size, expiresAt }`: `grantUpload`'s refusals, then a session. `partBytes` is what 10,000 parts need for `size`, never under 5 MiB |
-| `signPart({ disk, orgId, key, uploadId, partNumber, size, policy })` | a PUT URL whose length is signed. s3: S3's own `UploadPart`, presigned by core's signer. Local: `/_storage/<disk>/<key>?x-upload=…&x-part=…`, both inside the HMAC. A part no object under `policy.maxBytes` holds — past `max((partNumber − 1) × 5 MiB + size, partNumber × size)` — is `X_STORAGE_TOO_LARGE` |
+| `signPart({ disk, orgId, key, uploadId, partNumber, size, policy })` | a PUT URL whose length is signed. s3: S3's own `UploadPart`, presigned by core's signer. Local and memory: `/_storage/<disk>/<key>?x-upload=…&x-part=…&x-len=…`, all three inside the HMAC (`v3-part`, `As of 2026-11`); a part of any other length is `X_STORAGE_URL_INVALID`, as s3 refuses it. A part no object under `policy.maxBytes` holds — past `max((partNumber − 1) × 5 MiB + size, partNumber × size)` — is `X_STORAGE_TOO_LARGE` |
 | `listParts({ disk, orgId, key, uploadId })` | `{ partNumber, etag, size }[]`, the resume |
 | `completeUpload({ disk, orgId, key, uploadId, parts, policy })` | the object. Each named part must have landed, ascending, every one but the last at least 5 MiB (`X_STORAGE_PARTS_INVALID`); the etags are the disk's own, so no bucket CORS has to expose `ETag`. A total past `policy.maxBytes` aborts and is `X_STORAGE_TOO_LARGE` |
 | `abortUpload({ disk, orgId, key, uploadId })` | nothing left: no session, no part |

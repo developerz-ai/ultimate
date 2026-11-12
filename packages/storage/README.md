@@ -453,9 +453,9 @@ the process's one registry, which is the app's `defineStorage` when it declared 
 (`decideGrant`, one function), every call held to the actor's org. `StorageDriver.multipart` is
 optional (`MultipartCapability`, `multipart.ts`); every shipped disk has one: s3 over its signed
 wire (`driver-s3-multipart*.ts`), local and memory over a part store (`multipart-staged.ts`), whose
-part URLs carry `x-upload`/`x-part` inside the HMAC and land through `acceptSignedPart`. In the
-browser, `uploadFile({ file, grant, multipart })` switches at `partThresholdBytes` (64 MiB): four
-parts in flight, each retried with core's `retry`, `resume: grant` sends only what `listParts`
+part URLs carry `x-upload`/`x-part`/`x-len` inside the HMAC — a part is held to its exact signed
+length, as s3 holds it — and land through `acceptSignedPart`. In the browser,
+`uploadFile({ file, grant, multipart })` switches at `partThresholdBytes` (64 MiB): four parts in flight, each retried with core's `retry`, `resume: grant` sends only what `listParts`
 lacks. `completeUpload` reads the etags on the server, so no bucket CORS exposes `ETag`.
 `signPart` and `completeUpload` REQUIRE the grant's `policy`: a part no object under `maxBytes`
 holds, or an assembled total past it, is `X_STORAGE_TOO_LARGE`. The declared `size` is the

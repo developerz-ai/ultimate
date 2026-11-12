@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { bodyInvalid } from './errors';
 import {
+  addVary,
   applyCacheHeaders,
+  applySecurityHeaders,
   cacheControl,
   html,
   jsonResponse,
@@ -12,6 +14,7 @@ import {
   stream,
   textResponse,
 } from './response';
+import { DEFAULT_SECURITY, responseSecurityHeaders } from './security-headers';
 
 describe('constructors', () => {
   test('html, text and json declare their BYTES, not their characters', () => {
@@ -237,5 +240,57 @@ describe('cacheControl never emits a directive a cache cannot parse', () => {
       maxAgeSeconds: Number.NaN,
     });
     expect(response.headers.get('cache-control')).toMatch(AGE);
+  });
+});
+
+describe('addVary', () => {
+  test('adds each dimension once, keeps the order it found, and drops empty members', () => {
+    const response = new Response('x', { headers: { vary: 'origin, cookie, ' } });
+    addVary(response, ['cookie', 'accept-language', 'accept-language']);
+    expect(response.headers.get('vary')).toBe('origin, cookie, accept-language');
+  });
+
+  test('a Vary that already names every dimension is left exactly as it was', () => {
+    const response = new Response('x', { headers: { vary: 'origin, cookie' } });
+    addVary(response, ['cookie']);
+    expect(response.headers.get('vary')).toBe('origin, cookie');
+    const fresh = addVary(new Response('x'), ['origin']);
+    expect(fresh.headers.get('vary')).toBe('origin');
+  });
+});
+
+describe('applySecurityHeaders', () => {
+  test('stamps every header, keeps a handler CSP beside the app one and its no-referrer', () => {
+    const response = new Response('x', {
+      headers: { 'content-security-policy': 'sandbox', 'referrer-policy': 'no-referrer' },
+    });
+    applySecurityHeaders(response, DEFAULT_SECURITY, true);
+    const expected = responseSecurityHeaders(DEFAULT_SECURITY, true);
+    expect(response.headers.get('content-security-policy')).toBe(
+      `sandbox, ${expected['content-security-policy']}`,
+    );
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe(
+      expected['x-content-type-options'] ?? null,
+    );
+  });
+
+  test('builds its entries once per config and scheme, never per response', () => {
+    const config = { ...DEFAULT_SECURITY };
+    applySecurityHeaders(new Response('x'), config, false);
+    const real = Object.entries;
+    let calls = 0;
+    Object.entries = ((value: object) => {
+      calls += 1;
+      return real(value);
+    }) as typeof Object.entries;
+    try {
+      for (let index = 0; index < 5; index += 1) {
+        applySecurityHeaders(new Response('x'), config, false);
+      }
+    } finally {
+      Object.entries = real;
+    }
+    expect(calls).toBe(0);
   });
 });

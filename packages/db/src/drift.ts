@@ -16,6 +16,7 @@ import {
   unexpectedTable,
   unknownSchema,
 } from './drift-findings';
+import { keyPartsChange, ownsDirection, ownsKeys } from './drift-index-keys';
 import {
   changedIndex,
   missingColumn,
@@ -101,7 +102,15 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
       );
       continue;
     }
-    if (counterpart.columns.join(',') !== index.columns.join(',')) {
+    // The key parts past a plain column list (`drift-index-keys.ts`): an expression key, per-key
+    // directions, INCLUDE, the operator class. Asked before the column list, which an expression
+    // key's catalog spelling could never equal.
+    const keyChange = keyPartsChange(counterpart, index);
+    if (keyChange !== null) {
+      differences.push(changedIndex(live.schema, live.name, index, counterpart, keyChange));
+      continue;
+    }
+    if (!ownsKeys(index) && counterpart.columns.join(',') !== index.columns.join(',')) {
       differences.push(
         changedIndex(
           live.schema,
@@ -125,7 +134,10 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
       );
       continue;
     }
-    if ((counterpart.order ?? 'asc') !== (index.order ?? 'asc')) {
+    if (
+      !ownsDirection(counterpart, index) &&
+      (counterpart.order ?? 'asc') !== (index.order ?? 'asc')
+    ) {
       differences.push(
         changedIndex(
           live.schema,

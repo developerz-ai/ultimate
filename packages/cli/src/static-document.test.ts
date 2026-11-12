@@ -77,6 +77,20 @@ describe('a static page, revalidated', () => {
     );
   });
 
+  // RFC 9110 §15.4.5: a cache updating its stored headers from the 304 must not come away with a
+  // strong validator for the coded bytes it holds.
+  test("under a coding, the 304's validator equals the 200's, byte for byte", async () => {
+    page('apps/web/site/precios/page.tsx', 'static');
+    const server = serverFor(false);
+    const coding = { 'accept-encoding': 'gzip' };
+    const first = await get(server, '/precios', coding);
+    const etag = first.headers.get('etag') as string;
+    expect(etag).toMatch(/^W\/"[^"]+"$/);
+    const again = await get(server, '/precios', { ...coding, 'if-none-match': etag });
+    expect(again.status).toBe(304);
+    expect(again.headers.get('etag')).toBe(etag);
+  });
+
   test('a validator that does not match gets the whole document', async () => {
     page('apps/web/site/precios/page.tsx', 'static');
     const answer = await get(serverFor(false), '/precios', { 'if-none-match': '"stale"' });

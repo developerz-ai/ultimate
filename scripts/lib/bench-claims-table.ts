@@ -12,6 +12,7 @@ export const RESULTS_HTTP_HOME = 'scripts/bench/results/http-hello.json';
 export const RESULTS_HTTP_QUERY = 'scripts/bench/results/http-hello-query.json';
 export const RESULTS_RENDER = 'scripts/bench/results/render-html.json';
 export const RESULTS_SPAN = 'scripts/bench/results/span-overhead.json';
+export const RESULTS_HTTP_PIPELINE = 'scripts/bench/results/http-pipeline.json';
 export const COMPARED = 'wiki/Compared.md';
 
 /** How a measured number is spelled in prose. */
@@ -253,6 +254,24 @@ const SPAN_CLAIMS: readonly BenchClaim[] = [
   },
 ];
 
+/** The request floor in-process: `http-pipeline.bench.ts`, hello first, the 404 second. */
+const PIPELINE_CLAIMS: readonly BenchClaim[] = [
+  {
+    label: "a public GET answering 'ok', in-process",
+    file: RESULTS_HTTP_PIPELINE,
+    path: 'results.0.usPerRequest',
+    format: 'plain',
+    pattern: /A public `GET` answering `'ok'` costs \*\*([\d.]+) µs\*\*/,
+  },
+  {
+    label: 'a 404, in-process',
+    file: RESULTS_HTTP_PIPELINE,
+    path: 'results.1.usPerRequest',
+    format: 'plain',
+    pattern: /a 404 \*\*([\d.]+) µs\*\*/,
+  },
+];
+
 /**
  * Anchored patterns, never a bare search for the digits: `50,000` appears four times in this file,
  * and "the number is somewhere on the page" would pass over a sentence that had been rewritten to
@@ -347,5 +366,6 @@ export const CLAIMS: readonly BenchClaim[] = [
   ...HTTP_CLAIMS,
   ...RENDER_CLAIMS,
   ...SPAN_CLAIMS,
+  ...PIPELINE_CLAIMS,
   ...SCALE_CLAIMS,
 ];

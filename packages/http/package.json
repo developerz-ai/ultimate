@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@ultimat3/core": "31.7.0",
+    "@ultimat3/db": "31.7.0",
     "@ultimat3/i18n": "31.7.0",
     "@ultimat3/schema": "31.7.0",
     "@ultimat3/time": "31.7.0"

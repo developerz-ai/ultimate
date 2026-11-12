@@ -153,7 +153,7 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {
-    const slot = takeSlot(connect, profile.acquireTimeoutMs);
+    const slot = takeSlot(connect, profile.acquireTimeoutMs, fragment.text);
     const live = slot instanceof Promise ? await slot : slot;
     // Pooled only: a pin's statement belongs to a transaction, and cancelling it is not ours to do.
     const watch = watchAbort(fragment.text);
@@ -189,7 +189,7 @@ export function postgresClient(options: PostgresClientOptions = {}): PostgresCli
       // One gate slot for the life of the pin, so one number counts statements and pins alike.
       const budget = profile.acquireTimeoutMs;
       const started = performance.now();
-      const live = await takeSlot(connect, budget);
+      const live = await takeSlot(connect, budget, undefined);
       let reserved: BunSqlReserved;
       try {
         // `reserveWithin` keeps its own timer for `Bun.SQL`'s queue, on what the gate left of ONE

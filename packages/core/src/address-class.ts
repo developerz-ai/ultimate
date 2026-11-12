@@ -196,7 +196,7 @@ export function isPublicAddress(address: string): boolean {
  * the full IPv6 string gave one host ~2^64 budgets. Anything that is not an address literal is
  * returned unchanged — the caller's key stays whatever it was, never a guessed network.
  */
-export function addressNetwork(address: string): string {
+function parseNetwork(address: string): string {
   const text = literalOf(address);
   if (!text.includes(':')) {
     const v4 = parseV4(text);
@@ -218,3 +218,40 @@ export function addressNetwork(address: string): string {
     .map((group) => group.toString(16))
     .join(':')}::/64`;
 }
+
+/** How many addresses `addressNetwork` remembers. Past it the least recently asked is forgotten. */
+export const ADDRESS_NETWORK_MEMO_SIZE = 4096;
+
+/**
+ * `parse`, memoised in a bounded LRU. Exported so a test can count the parses behind it; the one
+ * production instance is `addressNetwork`. A `Map`'s insertion order is its recency: a hit moves to
+ * the end, the first key is the coldest. Bounded because the caller set is attacker-chosen.
+ */
+export function networkMemo(
+  parse: (address: string) => string,
+  size: number = ADDRESS_NETWORK_MEMO_SIZE,
+): (address: string) => string {
+  const known = new Map<string, string>();
+  return (address) => {
+    const hit = known.get(address);
+    if (hit !== undefined) {
+      known.delete(address);
+      known.set(address, hit);
+      return hit;
+    }
+    const network = parse(address);
+    if (known.size >= size) {
+      const coldest = known.keys().next();
+      if (coldest.done !== true) known.delete(coldest.value);
+    }
+    known.set(address, network);
+    return network;
+  };
+}
+
+/**
+ * The NETWORK a caller's address names (`parseNetwork` above), memoised: every rate-limited
+ * request, auth's ip key and realtime's subscription book ask it, and parsing an IPv6 literal is
+ * ~2 µs a time for an answer that never changes. One memo, so every caller gets it.
+ */
+export const addressNetwork: (address: string) => string = networkMemo(parseNetwork);

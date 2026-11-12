@@ -33,7 +33,10 @@ export interface ErrorFacts {
   readonly callerFix: string | undefined;
   readonly docs: string;
   readonly status: number;
-  /** Present only when the process is in dev mode; never sent to a client in prod. */
+  /**
+   * Rendered on FIRST READ, never at construction: only the dev overlay prints it, so a refusal
+   * that nothing debugs never pays the runtime's stack render. Never sent to a client in prod.
+   */
   readonly stack: string | undefined;
 }
 
@@ -74,6 +77,11 @@ export const factsOf = (error: unknown): ErrorFacts => {
   // request produces reaches it. `String()` runs the value's own `toString`, so the value that
   // took the request down took the 500 renderer with it and the server had nothing left to send.
   const cause = str(error, 'cause') ?? str(error, 'message') ?? renderCauseValue(error);
+  // LAZY, read once on first ask: rendering a stack is the runtime's most expensive read on a
+  // throwable (~3.5 µs, 8.8% of a 404), and only the dev overlay ever prints one — an expected
+  // 404/401/403/429 paid it twice per request for a field nothing read. A getter on the facts,
+  // so every reader still sees a plain `string | undefined`.
+  let stack: { readonly value: string | undefined } | undefined;
   return {
     code,
     title,
@@ -107,7 +115,10 @@ export const factsOf = (error: unknown): ErrorFacts => {
     docs: str(error, 'docs') ?? ERROR_DOCS_URL,
     status: statusFor(code),
     // Its header restored when Bun dropped it (#773); an empty one is dropped, as `str` does.
-    stack: failureStack(error) || undefined,
+    get stack(): string | undefined {
+      stack ??= { value: failureStack(error) || undefined };
+      return stack.value;
+    },
   };
 };
 

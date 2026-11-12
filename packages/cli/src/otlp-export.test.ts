@@ -6,17 +6,20 @@ import {
   drain,
   exportMetrics,
   installLogSink,
+  instrument,
   logger,
   onShutdown,
   resetLifecycle,
   resetMetrics,
   resetTelemetry,
+  runWithContext,
   shutdownHookCount,
   subscribed,
   subscriberCount,
   systemClock,
   withSpan,
 } from '@ultimat3/core';
+import { asCtx, defineHttpConfig, requestContext, requestTimings } from '@ultimat3/http';
 import { flushWithin, startOtlpExport } from './otlp-export';
 
 let release: (() => void) | undefined;
@@ -353,3 +356,72 @@ describe('the drain flush is bounded by the drain deadline', () => {
 async function settleMicrotasks(): Promise<void> {
   for (let hop = 0; hop < 10; hop += 1) await Promise.resolve();
 }
+
+describe("the slow-statement line is a production boot's", () => {
+  /**
+   * One 60 s statement on the bus; answers how many `db.statement.slow` lines it wrote. Each call
+   * names its own shape, so the line's one-per-shape window cannot pass for an uninstall.
+   */
+  function slowLines(text: string): number {
+    const lines: string[] = [];
+    const releaseSink = installLogSink((line) => {
+      if (line.includes('"db.statement.slow"')) lines.push(line);
+    });
+    try {
+      instrument('db.statement', { text, values: [], durationMs: 60_000, rows: 1 });
+    } finally {
+      releaseSink();
+    }
+    return lines.length;
+  }
+
+  test('production installs it, and the release takes it out', () => {
+    release = startOtlpExport({ ULTIMATE_ENV: 'production' });
+    expect(slowLines('select 1')).toBe(1);
+    release();
+    release = undefined;
+    expect(slowLines('select 2')).toBe(0);
+  });
+
+  test.each(['test', 'development', 'staging'])('%s does not', (environment) => {
+    release = startOtlpExport({ ULTIMATE_ENV: environment });
+    expect(slowLines('select 1')).toBe(0);
+  });
+});
+
+describe('the request timings are a boot subscriber', () => {
+  /** One statement on a request's stack; answers how many that request was charged. */
+  function charged(): number {
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' }, buildId: null });
+    const ctx = requestContext({
+      url: new URL('http://app.test/'),
+      method: 'GET',
+      role: 'web',
+      config,
+    });
+    runWithContext(asCtx(ctx), () => {
+      instrument('db.statement', { text: 'select 1', values: [], durationMs: 3, rows: 1 });
+    });
+    return requestTimings(ctx)?.dbStatements ?? 0;
+  }
+
+  test('a production boot installs it, and the release takes it out', () => {
+    expect(charged()).toBe(0);
+    release = startOtlpExport({ ULTIMATE_ENV: 'production' });
+    expect(subscribed('render.page')).toBe(true);
+    expect(charged()).toBe(1);
+    release();
+    release = undefined;
+    expect(subscribed('render.page')).toBe(false);
+    expect(charged()).toBe(0);
+  });
+
+  test('a boot an exporter refuses leaves no subscriber behind', () => {
+    expect(() => startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4317' })).toThrow(
+      /X_OTLP_PROTOCOL_UNSUPPORTED/,
+    );
+    expect(subscribed('render.page')).toBe(false);
+    expect(subscribed('db.statement')).toBe(false);
+    expect(charged()).toBe(0);
+  });
+});

@@ -21,8 +21,8 @@ import {
   SQL_AUTH_SERVER_TABLES,
   SQL_TOTP_REPLAY_TABLE,
 } from '@ultimat3/auth/schema';
-import { FAILURES_TABLE, SQL_FAILURES_TABLE } from '@ultimat3/db';
-import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
+import { FAILURES_TABLE, SQL_FAILURES_TABLE, type TableStorage, tableStorage } from '@ultimat3/db';
+import { RATE_LIMIT_STORAGE, SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
 import {
@@ -46,6 +46,11 @@ export interface FrameworkSchema {
   readonly tables: readonly string[];
   /** One or more statements each; `;` separates. */
   readonly ddl: readonly string[];
+  /**
+   * The storage parameters its DDL renders (`tableStorage()`, `@ultimat3/db`) — the same values,
+   * so the drift `x db migrate` reports (`frameworkStorageDrift`) judges what the apply wrote.
+   */
+  readonly storage?: readonly TableStorage[];
 }
 
 /**
@@ -101,11 +106,15 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/http',
     tables: Object.freeze(['x_rate_limit']),
     ddl: Object.freeze([SQL_RATE_LIMIT_TABLE]),
+    storage: Object.freeze([RATE_LIMIT_STORAGE]),
   }),
   Object.freeze({
     pkg: '@ultimat3/auth',
     tables: Object.freeze(['x_auth_lockouts']),
     ddl: Object.freeze([SQL_AUTH_LIMIT_TABLES]),
+    // Stays LOGGED, stated so drift catches a hand `set unlogged`: a crash must never forget a
+    // lockout (`x_rate_limit` may, a refilled bucket is a brief free burst, never a bypass).
+    storage: Object.freeze([tableStorage('x_auth_lockouts', { unlogged: false })]),
   }),
   // Spent TOTP steps, so a code is single-use across the fleet rather than per replica.
   Object.freeze({
@@ -228,6 +237,10 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     ddl: Object.freeze([SQL_PUSH_SUBSCRIPTIONS_TABLE]),
   }),
 ]);
+
+/** Every storage declaration, flattened — what framework drift compares to `pg_class`. */
+export const frameworkTableStorage = (): readonly TableStorage[] =>
+  FRAMEWORK_SCHEMA.flatMap((entry) => [...(entry.storage ?? [])]);
 
 /** Every relation this boot creates, flattened. */
 export const frameworkTableNames = (): readonly string[] =>

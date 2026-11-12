@@ -33,6 +33,10 @@ const interval = (value: unknown): value is PartitionInterval => INTERVALS.inclu
 const order = (value: unknown): value is 'asc' | 'desc' | null =>
   value === null || value === 'asc' || value === 'desc';
 
+/** One direction per key, each of the closed set. */
+const directions = (value: unknown): value is readonly ('asc' | 'desc' | null)[] =>
+  Array.isArray(value) && value.every(order);
+
 function column(value: unknown): ColumnDescription | undefined {
   if (!isRow(value)) return undefined;
   const { name, dataType, nullable, default: fallback, position, generated, retired } = value;
@@ -68,6 +72,7 @@ function check(value: unknown): CheckDescription | undefined {
 function index(value: unknown): IndexDescription | undefined {
   if (!isRow(value)) return undefined;
   const { name, columns, unique, primary, where, order: direction, using } = value;
+  const { expression, orders, include, operatorClass } = value;
   if (!str(name) || !strings(columns) || !bool(unique) || !bool(primary)) return undefined;
   // Written by 1.2.0 onwards. A sidecar from before it carries neither, and the total, ascending
   // reading is what that generation actually emitted — so an older file stays readable rather
@@ -80,6 +85,12 @@ function index(value: unknown): IndexDescription | undefined {
   // method and the fix, not here, where it would discard the whole snapshot without saying which
   // field was wrong. Absent stays absent: `indexMethodOf` reads it as the btree it always was.
   if (!(using === undefined || str(using))) return undefined;
+  // The four key parts: each absent or well-formed, never dropped. Dropped here, `indexShape` read
+  // the recorded index as the plain one and every `x db gen` rebuilt it — `generated`'s old hole.
+  if (!(expression === undefined || str(expression))) return undefined;
+  if (!(orders === undefined || directions(orders))) return undefined;
+  if (!(include === undefined || strings(include))) return undefined;
+  if (!(operatorClass === undefined || str(operatorClass))) return undefined;
   return {
     name,
     columns,
@@ -88,6 +99,10 @@ function index(value: unknown): IndexDescription | undefined {
     where: where === undefined ? null : where,
     order: direction === undefined ? null : direction,
     ...(using === undefined ? {} : { using }),
+    ...(expression === undefined ? {} : { expression }),
+    ...(orders === undefined ? {} : { orders }),
+    ...(include === undefined ? {} : { include }),
+    ...(operatorClass === undefined ? {} : { operatorClass }),
   };
 }
 

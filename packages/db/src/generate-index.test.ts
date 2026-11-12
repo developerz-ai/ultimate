@@ -1,5 +1,6 @@
 // Indexes through the generator: every part of a declaration reaching the statement, the snapshot
-// carrying all of it, and a definition that moved dropped and recreated rather than skipped.
+// carrying all of it, and a definition that moved dropped and recreated rather than skipped. Every
+// table here already exists, so each build is the default concurrent one (`index-plan.ts`).
 
 import { describe, expect, test } from 'bun:test';
 import type {
@@ -195,9 +196,10 @@ describe('generateMigration · indexes', () => {
     });
 
     expect(migration.up).toBe(
-      'create index "posts_org_id_created_at_idx" on "posts" ("org_id", "created_at");',
+      '-- transaction: false\n' +
+        'create index concurrently if not exists "posts_org_id_created_at_idx" on "posts" ("org_id", "created_at");',
     );
-    expect(migration.down).toBe('drop index "posts_org_id_created_at_idx";');
+    expect(migration.down).toBe('drop index concurrently if exists "posts_org_id_created_at_idx";');
   });
 
   test('the snapshot records the whole index, not a name to parse later', () => {
@@ -243,11 +245,13 @@ describe('generateMigration · indexes', () => {
 
     // Postgres has no `alter index` for a predicate: same name, different index.
     expect(migration.up).toBe(
-      'drop index "posts_org_id_idx";\n' +
-        'create index "posts_org_id_idx" on "posts" ("org_id") where ("deleted_at" is null);',
+      '-- transaction: false\n' +
+        'drop index concurrently if exists "posts_org_id_idx";\n' +
+        'create index concurrently if not exists "posts_org_id_idx" on "posts" ("org_id") where ("deleted_at" is null);',
     );
     expect(migration.down).toBe(
-      'drop index "posts_org_id_idx";\ncreate index "posts_org_id_idx" on "posts" ("org_id");',
+      'drop index concurrently if exists "posts_org_id_idx";\n' +
+        'create index concurrently if not exists "posts_org_id_idx" on "posts" ("org_id");',
     );
   });
 
@@ -263,7 +267,9 @@ describe('generateMigration · indexes', () => {
       now: at,
     });
 
-    expect(migration.up).toContain('create index "posts_org_id_idx" on "posts" ("org_id" desc);');
+    expect(migration.up).toContain(
+      'create index concurrently if not exists "posts_org_id_idx" on "posts" ("org_id" desc);',
+    );
   });
 
   test('an unchanged index generates nothing', () => {

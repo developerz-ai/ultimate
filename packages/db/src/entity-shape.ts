@@ -3,6 +3,7 @@
 // part of it — a column's `on delete` rule included — crosses the seam by shape or not at all.
 
 import type { ColumnDefaultLike } from './column-default';
+import type { IndexOperatorClass } from './index-key-ddl';
 import type { IndexMethod } from './index-method';
 
 /** Structurally assignment-compatible with `@ultimat3/entity`'s `ColumnDescription`. */
@@ -108,13 +109,29 @@ export interface IndexDescriptionLike {
    */
   readonly using?: IndexMethod | undefined;
   /**
-   * `indexes: [{ on, concurrently: true }]`: build it with `create index concurrently` in a
-   * migration of its own that runs OUTSIDE a transaction (`concurrent-index.ts`), so a hot table
-   * keeps taking writes while it builds. HOW the index is built, never WHAT it is — so it is not
-   * part of the name, not recorded in a snapshot and never a reason to rebuild one. Absent is the
-   * plain, transactional `create index` every index was before it existed.
+   * HOW the index is built, never WHAT it is — not part of the name, not recorded in a snapshot
+   * and never a reason to rebuild one. Absent or `true`: on a table that already exists, `create
+   * index concurrently` in a migration of its own OUTSIDE a transaction (`concurrent-index.ts`), so
+   * a hot table keeps taking writes. `false`: the plain, transactional build, which `index-plan.ts`
+   * marks `-- lock-heavy: true` for `X_MIGRATION_LOCK_HEAVY`. A table the same migration creates,
+   * and a partitioned parent (`0A000`), are always built plainly.
    */
   readonly concurrently?: boolean | undefined;
+  /**
+   * The four parts past a plain column list (`index-key-ddl.ts` renders them). Each is optional
+   * and absent by default, for `using`'s reason: a description written before them emits, records
+   * and compares exactly as it did.
+   *
+   * `expression`: the ONE key is this SQL expression (`lower(email)`, `(payload->>'kind')`), and
+   * `columns` names the columns it reads — what a foreign key's covering rule looks at.
+   */
+  readonly expression?: string | undefined;
+  /** A direction per key, in key order; `null` writes none. Replaces `order`, never beside it. */
+  readonly orders?: readonly ('asc' | 'desc' | null)[] | undefined;
+  /** INCLUDE payload columns — stored in the index, never keyed (btree only). */
+  readonly include?: readonly string[] | undefined;
+  /** An operator class on every key. One member: `gin_trgm_ops`, which `contains` needs (gin only). */
+  readonly operatorClass?: IndexOperatorClass | undefined;
 }
 
 /** Structurally assignment-compatible with `@ultimat3/entity`'s `EntityDescription`. */

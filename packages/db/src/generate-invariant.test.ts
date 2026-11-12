@@ -137,8 +137,10 @@ describe('generateMigration · invariants', () => {
     expect(migration.followUp?.up).toContain(
       'alter table "members" validate constraint "members_member_email_shape_check";',
     );
-    expect(migration.up).toContain(
-      'create unique index "members_member_unique_per_org_key" on "members" ("org_id", "user_id");',
+    // The table already exists, so the unique is built concurrently, in the step outside the
+    // transaction, beside the check's validate.
+    expect(migration.followUp?.up).toContain(
+      'create unique index concurrently if not exists "members_member_unique_per_org_key" on "members" ("org_id", "user_id");',
     );
     expect(migration.down).toContain(
       'alter table "members" drop constraint "members_member_email_shape_check";',

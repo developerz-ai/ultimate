@@ -37,7 +37,10 @@ export type DriftKind =
   | 'unexpected-row-security'
   // Constructed in `object-drift.ts`: a trigger, function, view, type or sequence in the live
   // database that replaying the migrations does not create.
-  | 'unexpected-object';
+  | 'unexpected-object'
+  // Constructed in `@ultimat3/cli`'s `db-object-drift.ts` from `tableStorageDrift`: a framework
+  // table whose persistence or fillfactor is not what its `tableStorage()` declares.
+  | 'changed-table-storage';
 
 export interface DriftDifference {
   readonly kind: DriftKind;

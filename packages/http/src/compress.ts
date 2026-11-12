@@ -1,92 +1,58 @@
-// The `compress` stage's one rule: which answers leave the container gzipped, and the read that
-// gets their bytes. Bun's own coder and no option: a handler that must not be coded says
-// `no-transform`. Every other answer is handed back as the same object, its body never touched.
+// The `compress` stage: which answers leave the container coded (`etag-form.ts` decides the offer),
+// the read that gets their bytes, and the coder. Bun's own coders and no option: a handler that
+// must not be coded says `no-transform`. Every other answer is handed back as the same object.
 import { logger } from '@ultimat3/core';
+import { type CompressCache, compressCacheKey, createCompressCache } from './compress-cache';
 import { concatChunks, drainCounted, replayDrained } from './compress-read';
+import {
+  applyEtagForm,
+  type ContentCoding,
+  codingOffered,
+  compressibleKind,
+  isCompressibleType,
+} from './etag-form';
 import { addVary } from './response';
 
-/** Below this the gzip header and trailer eat what the coding saves. */
+export { isCompressibleType };
+
+/** Below this a coding's header and trailer eat what it saves. */
 export const COMPRESS_MIN_BYTES = 1_024;
 
 /**
  * The most one request may make `gzipSync` hold the event loop for. Measured 2026-11-03, level 6,
  * high-entropy text, median of 15: 2.35 ms at 256 KiB against 9.58 ms at 1 MiB (about 29 ms at
  * 1 MiB on slower hardware, where 1 MiB let ~34 anonymous req/s pin a core). Stylesheets code
- * about 15x faster than that worst case.
+ * about 15x faster than that worst case. zstd at level 3 is about 4x cheaper again.
  */
 export const COMPRESS_MAX_BYTES = 262_144;
 
-const GZIP_LEVEL = 6;
-
-/** Text only: images and fonts are coded already, and `text/event-stream` must never be held. */
-const COMPRESSIBLE_TYPES: ReadonlySet<string> = new Set([
-  'text/html',
-  'text/css',
-  'text/javascript',
-  'application/javascript',
-  'application/json',
-  'application/manifest+json',
-  'image/svg+xml',
-  'application/xml',
-  'text/xml',
-  'application/rss+xml',
-  'application/atom+xml',
-  'text/vtt',
-  // Exports and feeds: usually streamed with no declared length, so coded by `codedStream`.
-  'application/x-ndjson',
-  'text/csv',
-]);
+type Coder = (bytes: Uint8Array<ArrayBuffer>) => Uint8Array;
 
 /**
- * BREACH: a private document reflects a secret beside attacker input, and a coded length measures
- * how well the two match. `no-cache` is here because it is the one spelling that passes the
- * `cache-headers` review on a signed-in answer without becoming `private`.
+ * The coder per offered coding: keyed by `etag-form.ts`'s `ContentCoding`, so offering a coding
+ * with no coder here is a type error. Past the ceiling the same name is a `CompressionStream`.
+ * Null-prototype: a key that reached here unvalidated answers `undefined`, never `Object.prototype`.
  */
-const WITHHOLDS_CODING = /(?:^|[\s,])(?:private|no-store|no-cache|no-transform)(?=$|[\s,=])/i;
+const CODERS: Readonly<Record<ContentCoding, Coder>> = Object.assign(Object.create(null), {
+  zstd: (bytes) => Bun.zstdCompressSync(bytes, { level: 3 }),
+  gzip: (bytes) => Bun.gzipSync(bytes, { level: 6 }),
+} satisfies Record<ContentCoding, Coder>);
+
+/**
+ * Bun's `CompressionStream` codes `zstd` too (`Bun.CompressionFormat`); the DOM lib's constructor
+ * type, which wins in this workspace, predates it. The probe in `etag-form.ts` is the proof.
+ */
+const CodingStream = CompressionStream as unknown as new (
+  format: Bun.CompressionFormat,
+) => CompressionStream;
+
+/** A shared answer: the one kind whose coded bytes may serve the next visitor too. */
+const SHARED = /(?:^|[\s,])(?:public|s-maxage)(?=$|[\s,=])/i;
+
+/** The process's coded bodies, used when the caller hands none (`compress-cache.ts`). */
+const processCache = createCompressCache();
 
 const DECLARED_LENGTH = /^\d+$/;
-
-const IMMUTABLE = /(?:^|[\s,])immutable(?=$|[\s,=])/i;
-
-/**
- * Whether a `content-type` is one this stage codes. Exported for the one reader that must agree
- * with it: `@ultimat3/cli`'s test holding every public framework route to a declared length.
- */
-export const isCompressibleType = (contentType: string | null): boolean => {
-  const type = contentType?.split(';')[0]?.trim().toLowerCase();
-  return type !== undefined && COMPRESSIBLE_TYPES.has(type);
-};
-
-/**
- * A signed-in answer is coded only when `immutable`: a header like `stale-while-revalidate=60`
- * withholds nothing and offers nothing, so the `cache-headers` review leaves it as written, and
- * the body beside it is still the visitor's. The ACTOR is what makes it personal, never the header.
- */
-const compressibleKind = (headers: Headers, anonymous: boolean): boolean => {
-  const cacheControl = headers.get('cache-control') ?? '';
-  return (
-    isCompressibleType(headers.get('content-type')) &&
-    !WITHHOLDS_CODING.test(cacheControl) &&
-    (anonymous || IMMUTABLE.test(cacheControl))
-  );
-};
-
-/**
- * HEAD is GET's headers with no body (RFC 9110 §9.3.2): coded as GET is when the handler hands it
- * GET's body to measure. A HEAD answered with no body has nothing to measure and stays identity.
- */
-const CODED_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
-
-/** RFC 9110 §12.5.3, `gzip` by name. A `*` is not read as consent to a coding it never named. */
-const acceptsGzip = (header: string | null): boolean => {
-  for (const member of header?.split(',') ?? []) {
-    const [coding, ...params] = member.split(';').map((part) => part.trim().toLowerCase());
-    if (coding !== 'gzip') continue;
-    const weight = params.find((param) => param.startsWith('q='));
-    return weight === undefined || Number(weight.slice(2)) > 0;
-  }
-  return false;
-};
 
 const inBounds = (length: string | null): length is string =>
   length !== null &&
@@ -110,31 +76,34 @@ const isFeed = (contentType: string | null): boolean =>
 const pastCeiling = (length: string): boolean =>
   DECLARED_LENGTH.test(length) && Number(length) > COMPRESS_MAX_BYTES;
 
-/** The headers of a gzip answer: everything that described the identity bytes, corrected. */
-const codedHeaders = (response: Response, length: number | null): Headers => {
+/** The headers of a coded answer: everything that described the identity bytes, corrected. */
+const codedHeaders = (response: Response, coding: ContentCoding, length: number | null) => {
   const headers = new Headers(response.headers);
-  headers.set('content-encoding', 'gzip');
+  headers.set('content-encoding', coding);
   if (length === null) headers.delete('content-length');
   else headers.set('content-length', String(length));
   // A byte offset into the identity bytes means nothing in these.
   headers.delete('accept-ranges');
   headers.delete('transfer-encoding');
-  const etag = headers.get('etag');
-  // A strong validator promises these exact bytes, and the identity answer has other ones.
-  if (etag !== null && !etag.startsWith('W/')) headers.set('etag', `W/${etag}`);
   return headers;
 };
 
-const coded = (response: Response, bytes: Uint8Array<ArrayBuffer>, head: boolean): Response => {
-  const gzipped = Bun.gzipSync(bytes, { level: GZIP_LEVEL });
-  return rebuilt(response, head ? null : gzipped, codedHeaders(response, gzipped.byteLength));
-};
+const coded = (
+  response: Response,
+  coding: ContentCoding,
+  body: Uint8Array<ArrayBuffer>,
+  head: boolean,
+) => rebuilt(response, head ? null : body, codedHeaders(response, coding, body.byteLength));
 
 /** Bytes over a plain `ArrayBuffer`, the only kind the coder's `BufferSource` side accepts. */
 const ownsPlainBuffer = (chunk: Uint8Array): chunk is Uint8Array<ArrayBuffer> =>
   chunk.buffer instanceof ArrayBuffer;
 
-const codedStream = (response: Response, body: ReadableStream<Uint8Array>): Response => {
+const codedStream = (
+  response: Response,
+  coding: ContentCoding,
+  body: ReadableStream<Uint8Array>,
+): Response => {
   // A chunk over shared memory is copied; every other one passes through untouched.
   const plain = body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array<ArrayBuffer>>({
@@ -145,8 +114,8 @@ const codedStream = (response: Response, body: ReadableStream<Uint8Array>): Resp
   );
   return rebuilt(
     response,
-    plain.pipeThrough(new CompressionStream('gzip')),
-    codedHeaders(response, null),
+    plain.pipeThrough(new CodingStream(coding)),
+    codedHeaders(response, coding, null),
   );
 };
 
@@ -168,6 +137,7 @@ const identity = (
  */
 const codeUndeclared = async (
   response: Response,
+  coding: ContentCoding,
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined,
 ): Promise<Response> => {
@@ -176,7 +146,7 @@ const codeUndeclared = async (
   const drained = await drainCounted(reader, COMPRESS_MIN_BYTES - 1, signal);
   if (drained.complete) return identity(response, concatChunks(drained.chunks));
   const rest = replayDrained(drained.chunks, reader, drained.pending);
-  if (drained.reason === 'longer-than-declared') return codedStream(response, rest);
+  if (drained.reason === 'longer-than-declared') return codedStream(response, coding, rest);
   logger.warn('http.compress_failed', {
     reason: drained.reason,
     declaredBytes: null,
@@ -185,11 +155,31 @@ const codeUndeclared = async (
   return identity(response, rest);
 };
 
+/**
+ * The key a coded body is kept under, or `undefined` when it must be coded afresh: only a strong
+ * validator promises the same bytes next time, and only an anonymous, shared answer is the next
+ * visitor's too. Read BEFORE `applyEtagForm` weakens the tag.
+ */
+const keptKey = (
+  request: Request,
+  response: Response,
+  coding: ContentCoding,
+  length: string,
+  anonymous: boolean,
+): string | undefined => {
+  const etag = response.headers.get('etag');
+  if (!anonymous || etag === null || etag.startsWith('W/')) return undefined;
+  if (!SHARED.test(response.headers.get('cache-control') ?? '')) return undefined;
+  return compressCacheKey(request.url, etag, coding, length);
+};
+
 export interface CompressContext {
   /** `isAnonymous(ctx.actor)`. Declared, never defaulted: a forgotten actor must not code. */
   readonly anonymous: boolean;
   /** The request's: past it, a body still being read goes out as identity. */
   readonly signal?: AbortSignal;
+  /** Where coded public bodies are kept. Omitted: the process's own, bounded. */
+  readonly cache?: CompressCache;
 }
 
 /**
@@ -199,27 +189,40 @@ export interface CompressContext {
 export const compressResponse = async (
   request: Request,
   response: Response,
-  { anonymous, signal }: CompressContext,
+  { anonymous, signal, cache = processCache }: CompressContext,
 ): Promise<Response> => {
   if (!compressibleKind(response.headers, anonymous)) return response;
   // On coded and identity alike, before any other refusal: a shared cache must not hand this
   // client's copy to one that refused the coding, whichever of the two this client got.
   addVary(response, ['accept-encoding']);
-  const length = response.headers.get('content-length');
+  const coding = codingOffered(request.method, request.headers.get('accept-encoding'));
   if (
-    !CODED_METHODS.has(request.method) ||
-    response.status !== 200 ||
-    !acceptsGzip(request.headers.get('accept-encoding')) ||
+    coding === undefined ||
     response.headers.has('content-encoding') ||
-    response.headers.has('content-range') ||
-    response.body === null ||
-    response.bodyUsed
+    response.headers.has('content-range')
   ) {
     return response;
   }
-  if (length === null) return codeUndeclared(response, response.body, signal);
-  if (pastCeiling(length)) return codedStream(response, response.body);
+  // The 304 names the validator the 200 named (RFC 9110 §15.4.5): one offer, one form.
+  if (response.status === 304) {
+    applyEtagForm(response.headers, coding);
+    return response;
+  }
+  if (response.status !== 200) return response;
+  const length = response.headers.get('content-length');
+  const key = inBounds(length) ? keptKey(request, response, coding, length, anonymous) : undefined;
+  applyEtagForm(response.headers, coding);
+  if (response.body === null || response.bodyUsed) return response;
+  if (length === null) return codeUndeclared(response, coding, response.body, signal);
+  if (pastCeiling(length)) return codedStream(response, coding, response.body);
   if (!inBounds(length)) return response;
+  const head = request.method === 'HEAD';
+  const kept = key === undefined ? undefined : cache.get(key);
+  if (kept !== undefined) {
+    // These bytes were coded from a body under this very validator: this one is never read.
+    response.body.cancel().catch(() => {});
+    return coded(response, coding, kept, head);
+  }
   const reader = response.body.getReader();
   const drained = await drainCounted(reader, Number(length), signal);
   if (!drained.complete) {
@@ -232,10 +235,13 @@ export const compressResponse = async (
   }
   const bytes = concatChunks(drained.chunks);
   try {
-    return coded(response, bytes, request.method === 'HEAD');
+    const out = CODERS[coding](bytes);
+    const body = ownsPlainBuffer(out) ? out : new Uint8Array(out);
+    if (key !== undefined) cache.set(key, body);
+    return coded(response, coding, body, head);
   } catch (failure) {
     logger.warn('http.compress_failed', {
-      reason: 'gzip-failed',
+      reason: `${coding}-failed`,
       declaredBytes: Number(length),
       error: failure,
     });

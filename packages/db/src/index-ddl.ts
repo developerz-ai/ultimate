@@ -8,6 +8,13 @@ import { assert } from '@ultimat3/core';
 import { indexOrderInvalid, indexPredicateUnsafe } from './ddl-errors';
 import type { EntityDescriptionLike, IndexDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
+import {
+  declaredKeyParts,
+  hasKeyParts,
+  indexIncludeSql,
+  indexKeyShape,
+  indexKeysSql,
+} from './index-key-ddl';
 import { declaredMethod, indexMethodOf, indexMethodSql } from './index-method';
 import type { IndexDescription } from './introspect';
 import { identifier } from './sql';
@@ -118,17 +125,17 @@ export function createIndex(
   const kind =
     (index.unique ? 'create unique index' : 'create index') +
     (concurrently ? ' concurrently if not exists' : '');
-  const direction = indexOrderSql(index);
-  const columns = index.columns
-    .map((column) => `${identifier(column).text}${direction}`)
-    .join(', ');
+  // Keys, then INCLUDE, then the predicate — Postgres' clause order. Both helpers answer the plain
+  // column list and `''` for an index declaring none of the newer parts: the same bytes as before.
+  const columns = indexKeysSql(index, indexOrderSql(index));
+  const include = indexIncludeSql(index);
   const predicate = indexPredicateSql(index);
   // Re-derived from the closed set, never spliced: `indexMethodSql` answers `''` for a btree, so
   // an index that declared no method emits the statement this generator always emitted, byte for
   // byte, and one that declared a method Postgres does not have is refused instead of built.
   return (
     `${kind} ${identifier(index.name).text} on ${identifier(table).text}` +
-    `${indexMethodSql(method)} (${columns})${predicate};`
+    `${indexMethodSql(method)} (${columns})${include}${predicate};`
   );
 }
 
@@ -159,7 +166,8 @@ export function mayBeConstraintBacked(index: IndexDescription): boolean {
     !index.primary &&
     index.where === null &&
     index.order === null &&
-    indexMethodOf(index) === 'btree'
+    indexMethodOf(index) === 'btree' &&
+    !hasKeyParts(index)
   );
 }
 
@@ -177,6 +185,7 @@ export function asDeclared(index: IndexDescription): IndexDescriptionLike {
     where: index.where,
     order: index.order,
     ...(index.using === undefined ? {} : { using: declaredMethod(index.using) }),
+    ...declaredKeyParts(index.name, index),
   };
 }
 
@@ -188,6 +197,8 @@ export function indexShape(index: IndexDescriptionLike | IndexDescription): stri
     index.where,
     index.order ?? null,
     indexMethodOf(index),
+    // Spread, so an index declaring none of the four parts hashes exactly as it always did.
+    ...indexKeyShape(index),
   ]);
 }
 

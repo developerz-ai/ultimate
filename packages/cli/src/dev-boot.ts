@@ -7,7 +7,7 @@ import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { subscribe, subscribeSemconvMetrics } from '@ultimat3/core';
 import type { OverlayNotice, RequestContext } from '@ultimat3/http';
-import { asCtx } from '@ultimat3/http';
+import { asCtx, subscribeRequestTimings } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
 import { loadAppConfig } from './app-config-load';
 import type { StalePin } from './app-reload-graph';
@@ -168,6 +168,9 @@ async function bootDev(
   // The semconv histograms (`db_client_operation_duration_seconds`, …) on `x dev`'s `/metrics` too,
   // so a dashboard built against dev reads the series production exports.
   const unsubscribeMetrics = subscribeSemconvMetrics();
+  // What `Server-Timing`'s breakdown (dev only) and `http.request.slow` read per request — the same
+  // subscriber `startOtlpExport` installs on a production boot.
+  const unsubscribeTimings = subscribeRequestTimings();
   // The `/_x` cache panel's history: the cache keeps no log of its own, the panel subscribes one.
   const invalidations = createInvalidationLog();
   const unsubscribeInvalidations = subscribe('cache.invalidate', (event) =>
@@ -176,6 +179,7 @@ async function bootDev(
   acquired.push(() => {
     unsubscribeInvalidations();
     invalidations.reset();
+    unsubscribeTimings();
     unsubscribeMetrics();
     unsubscribeStatements();
     statements.reset();

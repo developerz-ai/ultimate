@@ -95,19 +95,27 @@ export const startDeadline = (input: {
   // first slow request is worse than the slow request. `Promise.race` attaches its own handler;
   // this one is for the caller that reads `signal` and never the promise.
   void expired.catch(() => undefined);
+  // One timer per request, not a shared wheel: arming and clearing one measured ~0.3 µs of a
+  // ~150 µs request (`scripts/bench/http-pipeline.bench.ts`), so a wheel would buy nothing.
   const timer = setTimeout(() => {
     controller.abort(requestTimedOut(input.method, input.pathname, timeoutMs));
     fire?.();
   }, timeoutMs);
+  // Both halves, or the doc on `ctx.signal` is half true — which it was: nothing in this package
+  // read the inbound signal, so a browser closing the tab left the request holding its pool slot
+  // and its vendor connection for the whole budget, for a caller that is gone. `expired` stays
+  // the TIMER's alone: it is what answers the socket, and a socket the caller already closed has
+  // nothing to answer. The caller's abort is FORWARDED into the one controller rather than joined
+  // with `AbortSignal.any`, which built a third signal per request (~3 µs, the deadline's largest
+  // cost) for the same answer: the first abort wins, with its own reason.
+  if (client !== undefined) {
+    if (client.aborted) controller.abort(client.reason);
+    else client.addEventListener('abort', () => controller.abort(client.reason), { once: true });
+  }
 
   return {
     deadlineAt,
-    // Both halves, or the doc on `ctx.signal` is half true — which it was: nothing in this package
-    // read the inbound signal, so a browser closing the tab left the request holding its pool slot
-    // and its vendor connection for the whole budget, for a caller that is gone. `expired` stays
-    // the TIMER's alone: it is what answers the socket, and a socket the caller already closed has
-    // nothing to answer.
-    signal: client === undefined ? controller.signal : AbortSignal.any([client, controller.signal]),
+    signal: controller.signal,
     expired,
     timeoutMs,
     clear: () => clearTimeout(timer),

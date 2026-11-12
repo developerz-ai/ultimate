@@ -2,7 +2,13 @@
 // script) and `runtime-assets.test.ts` (the icon matrix).
 
 import { describe, expect, test } from 'bun:test';
-import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
+import {
+  defineHttpConfig,
+  httpPipeline,
+  httpRouter,
+  requestContext,
+  UltimateRequest,
+} from '@ultimat3/http';
 import { contentHash } from '@ultimat3/render/server';
 import { REVALIDATE_CACHE_CONTROL, revalidatedResponse } from './revalidated-response';
 
@@ -52,5 +58,32 @@ describe('revalidatedResponse', () => {
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('new');
+  });
+
+  // RFC 9110 §15.4.5, through the real lifecycle so the `compress` stage has its say on both.
+  test("under a coding, the 304's validator equals the 200's, byte for byte", async () => {
+    const pipeline = httpPipeline({
+      table: httpRouter([
+        {
+          method: 'GET',
+          path: '/x-sw-register.js',
+          meta: { name: 'register', auth: 'public' },
+          handler: (request) =>
+            revalidatedResponse(request, 'self.x = 1;\n'.repeat(200), 'text/javascript'),
+        },
+      ]),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null }),
+      hooks: { authenticate: () => null },
+    });
+    const get = (headers: Record<string, string>) =>
+      pipeline.handle(new Request('http://dev.test/x-sw-register.js', { headers }), {
+        role: 'web',
+      });
+    const full = await get({ 'accept-encoding': 'gzip' });
+    expect(full.headers.get('content-encoding')).toBe('gzip');
+    const tag = full.headers.get('etag') as string;
+    const again = await get({ 'accept-encoding': 'gzip', 'if-none-match': tag });
+    expect(again.status).toBe(304);
+    expect(again.headers.get('etag')).toBe(tag);
   });
 });

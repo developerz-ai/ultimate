@@ -138,10 +138,11 @@ export interface IndexDescription {
    */
   readonly using?: IndexMethod | undefined;
   /**
-   * `true` when the index is built with `create index concurrently`, outside a transaction; absent
-   * otherwise, so an entity that never asked hashes exactly what it hashed before.
+   * How the index is built, when the entity asked: `true` for `create index concurrently` outside a
+   * transaction, `false` for the plain build `x db gen` marks `-- lock-heavy: true`. Absent is the
+   * default (concurrently on an existing table), so an entity that never asked hashes as before.
    */
-  readonly concurrently?: true | undefined;
+  readonly concurrently?: boolean | undefined;
 }
 
 export interface EntityDescription {

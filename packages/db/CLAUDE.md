@@ -77,25 +77,21 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 ## Observation
 
-- **No observer slot** (v31): every statement is a `db.statement` event on core's bus
-  (`instrument()`), emitted by `traceStatement` (`statement-span.ts`) — the ONE shell both funnels,
-  `runOn` (`statement-funnel.ts`) and `statement()` (`pglite.ts`), call. Guarded by
-  `subscribed('db.statement')`; emitted on success and failure, outside the statement's own `try`;
-  a subscriber's throw is contained by the bus, never the caller's. A subscriber must not issue SQL.
-  `bun run scripts/instrument-slots.ts` (`X_INSTRUMENT_SLOT_FORBIDDEN`) refuses a `set*Observer`.
-  Each funnel reads core's `callerStack()` at its ENTRY (before the pool/turn-queue `await`) and
-  hands it to `traceStatement` as `DbStatementEvent.callerStack` — `undefined`, nothing built,
-  unless `captureStatementStacks()` is held (the `statements` fixture; never production).
+- **No observer slot** (v31): every statement is a `db.statement` event on core's bus, emitted by
+  `traceStatement` (`statement-span.ts`), the ONE shell both funnels (`statement-funnel.ts`,
+  `pglite.ts`) call; guarded by `subscribed('db.statement')`, on success and failure, a
+  subscriber's throw contained by the bus. A subscriber issues no SQL. A `set*Observer` is
+  `X_INSTRUMENT_SLOT_FORBIDDEN`. `callerStack` is read at funnel ENTRY, built only under
+  `captureStatementStacks()` (the `statements` fixture).
 - **`attribution.ts`**: `withStatementAttribution(entity, op, fn)` — guard first (two strings, no
   allocation; the guard is `subscribed('db.statement')`), a scope not a parameter, innermost pair wins; the funnels stamp it on both settle paths.
   `@ultimat3/entity`'s `postgresRepo` is the one producer.
 - **`statement-shape.ts`**: `statementFingerprint(event)` (`entity.op` when attributed, else collapsed
   text) and `statementKind(text)` off `statementVerb(text)`. Read by `x dev`'s ledger and
   `@ultimat3/testing`'s `statements` fixture. It counts nothing.
-- **`statement-span.ts`**: `withStatementSpan` wraps the send alone — `db.<verb>`, OTel kind
-  `client`, attributes from core's `SEMCONV` only (`db.system.name`, `db.query.text`,
-  `db.operation.name`; never the old `db.statement`). **Opened for every statement**, production
-  included, subscriber or not.
+- **`statement-span.ts`**: `withStatementSpan` wraps the send alone — `db.<verb>`, kind `client`,
+  core's `SEMCONV` attributes only. **Opened for every statement**, subscriber or not.
+- **`slow-statement-log.ts`** — `db.statement` subscriber; the runtime installs it.
 - **`expected-loop.ts` is the ONLY suppression**: `expectedQueryLoop(reason, fn)`, innermost reason,
   blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement.
   The framework's own loops declare themselves (`migrate()`, `rollback()`, admin's `search.ts`).
@@ -103,8 +99,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`failure-store-pg.ts` writes `x_failures` through `outsideTransaction`** — the 5xx rolled the
   request's transaction back. Table applied by the boot (`FRAMEWORK_SCHEMA`) whether capture is on
   or not; bundles only (counts are `x_error_groups`'). `failurePurgeTarget` has no default window.
-- `@ultimat3/jobs` never imports this package; its statements reach the bus through
-  `dbExecutor` (`db-executor.ts`, the ONE `PgExecutor` builder; the CLI binds it), unattributed.
+- `@ultimat3/jobs` never imports this package; its statements reach the bus via `dbExecutor`
+  (`db-executor.ts`, the ONE `PgExecutor` builder), unattributed.
 
 ## Migrations
 
@@ -121,18 +117,19 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   on it.** `lock: false` reserves nothing and takes no lock; no shipped path passes it
   (`migrate-pin.test.ts`). `migrate.live.test.ts` pins concurrent and failed-midway runs.
 - **One send is one statement**: `applyScript` sends `statementsOf(script)` one at a time. Full rule: `docs/history/db.md`.
-- **`destructive.ts` decides WHAT is destructive**: only `up`, a closed list of four (`drop table`,
-  `drop column`, `truncate`, `alter column … type`), decided on blanked text and reported on the
-  original; a marker is a top-level line comment (`marker-line.ts`). `X_MIGRATION_DESTRUCTIVE` (ship) and `X_MIGRATION_IRREVERSIBLE` (generate) are
-  two questions.
-- **The ledger audit asks one question** — `auditLedger`'s `foreign` filter is `!known.has(row.id)`;
-  the app version lives in the cause.
+- **`destructive.ts` decides WHAT is destructive**: `up` only, four forms (`drop table`, `drop
+  column`, `truncate`, `alter column … type`) on blanked text; a marker is a top-level line comment
+  (`marker-line.ts`). `X_MIGRATION_DESTRUCTIVE` (ship) ≠ `X_MIGRATION_IRREVERSIBLE` (generate).
+- **`migration-lock-lint.ts`** — `X_MIGRATION_LOCK_HEAVY`: `set not null` with no prior validate,
+  non-concurrent `create index` on an existing table; `-- lock-heavy: true` admits; ids > `LOCK_HEAVY_SINCE`.
+- **The ledger audit asks one question**: `auditLedger`'s `foreign` is `!known.has(row.id)`.
 - **`refuseDependentViews(tx, script)`** (`dependent-view.ts`) runs before each migration's first statement. Full rule: `docs/history/db.md`.
 
 ## Generation (`x db gen`)
 
 - **`generate.ts` reads an index, never re-derives one** — `IndexDescriptionLike` carries columns,
-  unique, `where`, `order`, `using`; an index naming no column is `X_INVARIANT`.
+  unique, `where`, `order`, `using`, and (`index-key-ddl.ts`) `expression`, `orders`, `include`,
+  `operatorClass`; each absent hashes as before. No column is `X_INVARIANT`.
 - **An index's ACCESS METHOD is carried end to end**. Full rule: `docs/history/db.md`.
 - **`index-plan.ts` walks both directions**; a removal and a `concurrently: true` build on a live table go to the non-transactional step (`concurrent-plan.ts`). Full rule: `docs/history/db.md`.
 - **An entity's INVARIANTS reach the DDL** (`invariant-ddl.ts`): `check` a named constraint, `unique` a unique index, `assert` nothing. Full rule: `docs/history/db.md`.
@@ -189,22 +186,26 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   expression) vs `TableDescription.checkNames` (catalog: `conname` for `contype = 'c'`, always written
   by `introspectSchema()`, `[]` included). Only the declared side is judged; never a `changed-check`.
   `drift-check.live.test.ts`.
-- `compareTable` judges declared indexes (`missing-index`, `changed-index` over method, column list,
-  uniqueness, predicate presence and direction; `asc` normalises to `null`); never the predicate text.
+- `compareTable` judges declared indexes (`missing-index`, `changed-index` over method, key parts
+  — `drift-index-keys.ts`: expression presence, per-key directions, INCLUDE, operator class —
+  column list, uniqueness, predicate presence, direction; `asc` is `null`); never expression or
+  predicate text. `introspect-index.ts` reads them, each part only when present.
 - `compareForeignKeys` matches on where a key points (`foreignKeyTarget`, the one copy) and compares
   `onDelete` through `onDeleteRule` (`changed-foreign-key`; its fix, `changed-column`'s and
   `missing-check`'s are one `psql -c` too — `repair()`, schema-scoped off `public`).
-- `introspectSchema()` reads index columns in key order (`indkey`) and a foreign key's two column lists
-  together (`unnest(a, b) with ordinality`), pinned by `introspect-embedded.test.ts`.
-- **`appTables()`** excludes all of `x_` for drift; `introspectSchema()` alone excludes
-  `x_migrations` by default. **`app-relation.ts`**: `nonAppRelations(client, schema)` — extension
-  ownership (`pg_depend`, `deptype = 'e'`), views, materialised views, foreign tables, partitions —
-  merged into `excluded` unconditionally.
+- `introspectSchema()` reads index keys in `indkey` order and a key's two column lists together
+  (`unnest(a, b) with ordinality`); `introspect-embedded.test.ts`.
+- **`table-storage.ts`**: a framework table's `fillfactor`/`unlogged`, one value — `tableDdl`
+  renders the create plus idempotent alters (re-applied every framework apply), drift reads `pg_class`.
+- **`appTables()`** excludes all of `x_` for drift; `introspectSchema()` only `x_migrations`.
+  `nonAppRelations` (`app-relation.ts`): extension-owned, views, matviews, foreign tables,
+  partitions — always excluded.
 - **A partitioned parent is a table, a partition is not**; a concurrent build on one is
   `X_MIGRATION_CONCURRENT_PARTITIONED`. `docs/history/db.md` (2026-11-06).
 - **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`), the only one.
   `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
-- **`not-valid-constraint`** (`compareValidated`): `notValidNames` is catalog-only (`convalidated`, absent when none), judged on the declared side, foreign keys by where they point; the fix is the validate statement (`repair`).
+- **`not-valid-constraint`** (`compareValidated`): `notValidNames` is catalog-only (`convalidated`),
+  declared side judged, keys by target; fix = the validate statement.
 - `drift-findings.ts` holds the `DriftDifference` constructors and `DriftKind`; `drift-missing.ts` the
   missing/rebuilt ones (table, column, index, foreign key); `drift.ts` keeps the comparisons. **No
   drift fix is `x db migrate`**: the ledger holds the migration, so it applies nothing — every fix is a

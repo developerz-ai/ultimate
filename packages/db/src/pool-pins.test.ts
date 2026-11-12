@@ -8,6 +8,7 @@ import { postgresClient } from './client';
 import type { DbError } from './errors';
 import { recordingClient } from './fake';
 import { setLocal } from './local-settings';
+import { PIN_WORDS_MAX, pinWords } from './pin-statement';
 import { boundSetBy, noteAnswered, pinBound, pinDeadlineMs } from './pool-pins';
 import { SWEEP_INTERVAL_MS, UNANSWERED_GRACE_MS } from './pool-sweep';
 import { sql } from './sql';
@@ -115,6 +116,152 @@ describe('the bound a pin is judged by', () => {
     expect(pin.boundMs).toBe(1_000);
     expect(pinDeadlineMs(pin, 5_000)).toBe(6_000);
     expect(pinDeadlineMs(pinBound(0), 5_000)).toBe(0);
+  });
+});
+
+describe('a savepoint and a reset, on the bound a pin is judged by', () => {
+  const note = (pin: ReturnType<typeof pinBound>, text: string): void =>
+    noteAnswered(pin, { text, values: [] }, 1_000);
+
+  test('a rollback to savepoint restores the bound the savepoint saw', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'set local statement_timeout = 9000');
+    note(pin, 'SAVEPOINT x_sp_1');
+    note(pin, "select set_config('statement_timeout', '30000', true)");
+    note(pin, 'SAVEPOINT x_sp_2');
+    note(pin, 'set local statement_timeout = 60000');
+    expect(pin.boundMs).toBe(60_000);
+
+    // Back past both: the server undid both SETs, and `x_sp_1` itself is still open.
+    note(pin, 'ROLLBACK TO SAVEPOINT x_sp_1');
+    expect(pin.boundMs).toBe(9_000);
+    note(pin, 'set local statement_timeout = 45000');
+    note(pin, 'rollback to x_sp_1;');
+    expect(pin.boundMs).toBe(9_000);
+  });
+
+  test('a released savepoint keeps what was set inside it, and a later rollback skips it', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT x_sp_1');
+    note(pin, 'SAVEPOINT x_sp_2');
+    note(pin, 'set local statement_timeout = 7000');
+    note(pin, 'RELEASE SAVEPOINT x_sp_2');
+    expect(pin.boundMs).toBe(7_000);
+    note(pin, 'ROLLBACK TO SAVEPOINT x_sp_1');
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a savepoint a rollback or a release destroyed restores nothing', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT a');
+    note(pin, 'set local statement_timeout = 2000');
+    note(pin, 'SAVEPOINT b');
+    note(pin, 'ROLLBACK TO SAVEPOINT a');
+    note(pin, 'set local statement_timeout = 5000');
+    note(pin, 'ROLLBACK TO SAVEPOINT b');
+    expect(pin.boundMs).toBe(5_000);
+
+    note(pin, 'SAVEPOINT c');
+    note(pin, 'RELEASE SAVEPOINT c');
+    note(pin, 'set local statement_timeout = 6000');
+    note(pin, 'ROLLBACK TO SAVEPOINT c');
+    expect(pin.boundMs).toBe(6_000);
+  });
+
+  test('a repeated name means the newest savepoint, as the server reads it', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT s');
+    note(pin, 'set local statement_timeout = 2000');
+    note(pin, 'savepoint S');
+    note(pin, 'set local statement_timeout = 3000');
+    note(pin, 'ROLLBACK TO s');
+    expect(pin.boundMs).toBe(2_000);
+  });
+
+  test('the transaction end forgets every savepoint', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'SAVEPOINT x_sp_1');
+    note(pin, 'set local statement_timeout = 7000');
+    note(pin, 'COMMIT');
+    note(pin, 'set local statement_timeout = 8000');
+    // A name from the finished transaction restores nothing.
+    note(pin, 'ROLLBACK TO SAVEPOINT x_sp_1');
+    expect(pin.boundMs).toBe(8_000);
+  });
+
+  test.each([
+    'RESET statement_timeout',
+    'reset all;',
+    'set local statement_timeout to default',
+    'SET statement_timeout = DEFAULT',
+  ])('%s puts the role bound back', (text) => {
+    const pin = pinBound(1_000);
+    note(pin, 'set local statement_timeout = 9000');
+    note(pin, text);
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a reset of another setting leaves the bound alone', () => {
+    const pin = pinBound(1_000);
+    note(pin, 'set local statement_timeout = 9000');
+    note(pin, 'RESET lock_timeout');
+    expect(pin.boundMs).toBe(9_000);
+  });
+});
+
+describe('statement text is library input: the recognisers read it in one pass', () => {
+  // Each is a recognised statement's head, then 100k spaces, then a character that makes it no
+  // statement at all — the shape that sends a backtracking `\s+…\s*$` pattern quadratic. Sized,
+  // not timed: a quadratic read of these is ~10^10 steps and never finishes inside the test.
+  const SPACES = ' '.repeat(100_000);
+  test.each([
+    'reset all',
+    'reset statement_timeout',
+    'savepoint a',
+    'release savepoint a',
+    'rollback to savepoint a',
+    'commit',
+    'set local statement_timeout = default',
+    'set local statement_timeout = 5000',
+    "select set_config('statement_timeout', '5000', true)",
+  ])('%s, then 100k spaces and a stray word, moves nothing', (head) => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'set local statement_timeout = 9000', values: [] }, 1_000);
+    noteAnswered(pin, { text: `${head}${SPACES}x`, values: [] }, 1_000);
+    noteAnswered(pin, { text: `${head}${SPACES};${SPACES}x`, values: [] }, 1_000);
+    expect(pin.boundMs).toBe(9_000);
+    expect(pin.savepoints).toHaveLength(0);
+  });
+
+  test('padding alone is still the statement: whitespace is read, never backtracked', () => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'set local statement_timeout = 9000', values: [] }, 1_000);
+    noteAnswered(pin, { text: `reset${SPACES}all${SPACES};${SPACES}`, values: [] }, 1_000);
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a tab or a newline separates words as a space does', () => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'SAVEPOINT\tx_sp_1', values: [] }, 1_000);
+    expect(pin.savepoints).toHaveLength(1);
+    noteAnswered(pin, { text: 'set local\n  statement_timeout = 9000', values: [] }, 1_000);
+    expect(pin.boundMs).toBe(9_000);
+    noteAnswered(pin, { text: 'ROLLBACK TO\r\nSAVEPOINT x_sp_1', values: [] }, 1_000);
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a long statement stops being read after a dozen words', () => {
+    const insert = `insert into t (a) values ${Array.from({ length: 10_000 }, () => '(1)').join(', ')}`;
+    expect(pinWords(insert)).toBeUndefined();
+    expect(pinWords('rollback work to savepoint "a b" ;')).toEqual([
+      'rollback',
+      'work',
+      'to',
+      'savepoint',
+      '"a b"',
+    ]);
+    expect(pinWords(`${'w '.repeat(PIN_WORDS_MAX)}`)).toHaveLength(PIN_WORDS_MAX);
+    expect(pinWords(`${'w '.repeat(PIN_WORDS_MAX + 1)}`)).toBeUndefined();
   });
 });
 

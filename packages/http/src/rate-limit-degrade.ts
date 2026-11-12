@@ -37,10 +37,13 @@ const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
 /**
  * SQLSTATEs that mean "this connection, right now", carried on `meta.sqlState` of an
  * `X_DB_STATEMENT_FAILED`: class 08 (connection exception), `57P01`–`57P03` (the server is
- * shutting down, crashed, or not yet accepting — a failover), `53300` (too many connections).
+ * shutting down, crashed, or not yet accepting — a failover), `53300` (too many connections), and
+ * `0A000` — a hot standby refusing the UNLOGGED `x_rate_limit`. The store's statements never go to
+ * one (`rate-limit-postgres.ts`), so this is the belt: an executor pointed at a standby is a store
+ * that cannot be reached, and degrades rather than answering 500.
  */
 const isConnectionSqlState = (state: string): boolean =>
-  state.startsWith('08') || ['57P01', '57P02', '57P03', '53300'].includes(state);
+  state.startsWith('08') || ['57P01', '57P02', '57P03', '53300', '0A000'].includes(state);
 
 /** Read by the store's `catch`: true only for a failure that says the database is unreachable. */
 export function isRateLimitStoreUnreachable(error: unknown): boolean {

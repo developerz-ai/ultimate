@@ -56,3 +56,22 @@ Not read in three passes: `request.ts` body parsing, `bearer-mount.ts`, the webs
 - The demo answers `Accept-Encoding: br` (or zstd) with that encoding if the runtime has it; otherwise the probe's verdict is written in `compress.ts`'s header.
 - A rate-limit take writes no WAL (live test) and behaves identically.
 - A slow request in production is one line with its stages.
+
+## Outcome
+
+As of 2026-11-11, for 31.8.0. Bun 1.4.4.
+
+| # | Verdict | What shipped, or why not |
+|---|---|---|
+| H1 | shipped; 20% target not shown | `scripts/bench/http-pipeline.bench.ts` → `scripts/bench/results/http-pipeline.json`: in-process through `pipeline.handle`, 30,000 requests, linux-x64, 12-core Haswell, a loaded machine (noisy): hello 91.8 µs, 404 132.3 µs. Shipped: security headers from one precomputed list, `addressNetwork` LRU (4,096), the locale stage reads no source on a path-locale route and builds no `URLSearchParams` without a query, `vary` without a `Set`, the caller's abort forwarded instead of `AbortSignal.any`. Timer wheel not built: arming and clearing a timer measured ~0.3 µs of ~150 µs (`deadline.ts`). Remaining hotspots: core context and logger set-up (~11%), request id (~5%), async context + span (~10%) |
+| H2 | shipped | `ErrorFacts.stack` is a lazy getter (`error-facts.ts`): a refusal no longer renders a stack |
+| H3a | shipped: zstd + gzip | probe, 256 KiB: `Bun.zstdCompressSync` level 3 2.9 ms, `Bun.gzipSync` level 6 11.9 ms, sizes within 2%; brotli only through `CompressionStream('brotli')` at quality 11, 854 ms. Runtime list `CONTENT_CODINGS = ['zstd', 'gzip']` (`etag-form.ts`), negotiated by RFC 9110 weights |
+| H3b | shipped | `compress-cache.ts`: a strong-ETag public answer coded once per process, LRU 512 entries / 16 MiB |
+| H3c | moved to [`11`](11-render-islands.md) | brotli is build-time precompression of hashed assets; not shipped here |
+| H4 | shipped | `etagForm` / `applyEtagForm` (`etag-form.ts`): the 304 carries the 200's validator form. An anonymous compressible public answer is `W/"…"` whenever a coding is offered |
+| H5 | shipped | `x_rate_limit` unlogged, `fillfactor = 70`, no `updated_at` write: 2 WAL records per take → 0, HOT share 0.849 → 1.000 over 5,000 takes. `x_auth_lockouts` stays logged |
+| H6 | shipped | `slowRequestMs` (default 1,000; `0` off): one `http.request.slow` warn line with the gate/handler/db/render/cache split |
+| H7 | shipped | `http_refusals_total{code}`; routine 401/403/429 `info` once per route per minute, then `debug` (`refusal-log.ts`) |
+| H8 | checked, nothing to do | as recorded in Findings |
+| H9 | shipped | `Server-Timing` breakdown under `x dev`; production sends `total` only |
+| H10 | shipped, default off (OD1) | `shedLagMs` (default `0`): `admit` sheds `X_OVERLOADED` + `retry-after: 1` while lag p99 exceeds it (`lag-shed.ts`). The `x drill` proof the plan asked for is not written: unit tests only |

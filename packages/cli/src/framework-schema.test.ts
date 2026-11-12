@@ -9,12 +9,13 @@ import {
   applyFrameworkSchema,
   FRAMEWORK_SCHEMA,
   frameworkTableNames,
+  frameworkTableStorage,
   schemaStatements,
 } from './framework-schema';
 
-/** `create table if not exists x_jobs (` -> `x_jobs`. The only shape any framework DDL uses. */
+/** `create [unlogged] table if not exists x_jobs (` -> `x_jobs`: the shapes framework DDL uses. */
 const created = (ddl: readonly string[]): readonly string[] =>
-  [...ddl.join(';').matchAll(/create table (?:if not exists )?([a-z_0-9]+)/g)].map(
+  [...ddl.join(';').matchAll(/create (?:unlogged )?table (?:if not exists )?([a-z_0-9]+)/g)].map(
     (match) => match[1] as string,
   );
 
@@ -69,6 +70,25 @@ describe('unit · framework schema', () => {
         [`@ultimat3/${pkg}/schema`],
       ]);
     }
+  });
+
+  test('a row declares storage only for a table it claims, and its DDL renders that storage', () => {
+    for (const entry of FRAMEWORK_SCHEMA) {
+      for (const storage of entry.storage ?? []) {
+        expect(entry.tables, `${entry.pkg} row`).toContain(storage.table);
+        const head = storage.unlogged === true ? 'create unlogged table' : 'create table';
+        expect(entry.ddl.join(';')).toContain(`${head} if not exists ${storage.table} (`);
+      }
+    }
+  });
+
+  test('x_rate_limit is declared unlogged at fillfactor 70, and x_auth_lockouts is declared logged', () => {
+    const storage = frameworkTableStorage();
+    expect(storage.find((each) => each.table === 'x_rate_limit')).toMatchObject({
+      unlogged: true,
+      fillfactor: 70,
+    });
+    expect(storage.find((each) => each.table === 'x_auth_lockouts')?.unlogged).toBe(false);
   });
 
   test('no table is created by two rows, so no row can be deleted as a duplicate', () => {

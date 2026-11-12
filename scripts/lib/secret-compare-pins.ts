@@ -234,11 +234,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       'A Postgres SQLSTATE `state` against `XX000`, reading a concurrent `GRANT` as the race it lost — a five-character code the server prints in its own error text.',
   },
   // why: new 2026-10-17 (a DB blip degrades the limiter) — the rate-limit store reads the same
-  // SQLSTATE the retry above does, to tell an unreachable database from a wrong answer.
-  "packages/http/src/rate-limit-degrade.ts: [' ', ' ', ' ', ' '].includes(state)": {
+  // SQLSTATE the retry above does, to tell an unreachable database from a wrong answer. Re-keyed
+  // 2026-11-11 (sweep 2): the same site, one code longer — `0A000`, a standby refusing UNLOGGED.
+  "packages/http/src/rate-limit-degrade.ts: [' ', ' ', ' ', ' ', ' '].includes(state)": {
     count: 1,
     reason:
-      'A Postgres SQLSTATE `state` against `57P01`–`57P03` and `53300`, deciding whether the database is unreachable — five-character codes the server prints in its own error text.',
+      'A Postgres SQLSTATE `state` against `57P01`–`57P03`, `53300` and `0A000`, deciding whether the database is unreachable — five-character codes the server prints in its own error text.',
   },
   'packages/i18n/src/context.ts: translatorKey(registered) === key': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `i18n` package row.
