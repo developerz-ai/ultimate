@@ -10,6 +10,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- A page no longer stays unstyled after one stylesheet fails during soft navigation: the router does a full load instead of swapping in a page whose CSS did not load, and keeps the previous sheets.
+- A production boot with no `assets.retain` warns `X_ASSET_RETAIN_UNDECLARED`, naming the config that lets every web pod serve the previous builds' stylesheets during a rolling deploy.
+
 ### Added
 
 - `@ultimat3/cli`: a web role booted outside `development` and `test` with no `assets.retain` logs `X_ASSET_RETAIN_UNDECLARED` once, naming the edit: `assets: { retain: { disk, builds: 3 } }` in `app.config.ts`. A build that serves no hashed file stays silent.
