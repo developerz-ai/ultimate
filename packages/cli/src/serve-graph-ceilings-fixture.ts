@@ -252,8 +252,11 @@
  * refusal-log,request-charset,request-timings,slow-request-log}.ts`. No existing module newly
  * reached. The http ones ride `action/src/invoke.ts`'s edge to the http barrel, which every role,
  * migrate included, evaluates; cutting that edge would take the whole pipeline off this path.
+ * raised 902 → 903, measured 903 (2026-11-11, sweep 2 CodeQL fix): `db/src/pin-statement.ts`, the
+ * linear pin statement reader `pool-pins.ts` now reads statement text through (CodeQL ReDoS fix).
+ * No existing module newly reached.
  */
-export const MIGRATE_CEILING = 902;
+export const MIGRATE_CEILING = 903;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

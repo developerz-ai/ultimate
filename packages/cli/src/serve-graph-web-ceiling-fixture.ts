@@ -218,5 +218,7 @@
  * web-only.
  * raised 1608 → 1623, measured 1623 (2026-11-11, sweep 2 db+http): `SERVING_ROLE_CEILING`'s 15,
  * the db and http modules named on `MIGRATE_CEILING`. Nothing web-only.
+ * raised 1623 → 1624, measured 1624 (2026-11-11, sweep 2 CodeQL fix): `SERVING_ROLE_CEILING`'s 1,
+ * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1623;
+export const WEB_ROLE_CEILING = 1624;

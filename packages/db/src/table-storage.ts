@@ -90,6 +90,16 @@ export function storageAlters(storage: TableStorage): readonly string[] {
 }
 
 /**
+ * Leading newlines and trailing whitespace off, in one linear pass each: `trimEnd()` and an index
+ * walk, never `/\s+$/g`, which retries at every space of an inner run (js/polynomial-redos).
+ */
+function columnBody(columns: string): string {
+  let start = 0;
+  while (columns.charCodeAt(start) === 10) start += 1;
+  return columns.slice(start).trimEnd();
+}
+
+/**
  * `create [unlogged] table if not exists <name> (<columns>) [with (fillfactor = n)];` then the
  * alters, each `;`-terminated so the boot's split on `;` sees one statement apiece. `columns` is the
  * body between the parentheses, a fixed constant with no `;` in it, as every framework DDL is.
@@ -98,7 +108,7 @@ export function tableDdl(storage: TableStorage, columns: string): string {
   const head = storage.unlogged === true ? 'create unlogged table' : 'create table';
   const options =
     storage.fillfactor === undefined ? '' : ` with (fillfactor = ${String(storage.fillfactor)})`;
-  const create = `${head} if not exists ${storage.table} (\n${columns.replace(/^\n+|\s+$/g, '')}\n)${options};`;
+  const create = `${head} if not exists ${storage.table} (\n${columnBody(columns)}\n)${options};`;
   return [create, ...storageAlters(storage).map((alter) => `${alter};`)].join('\n');
 }
 

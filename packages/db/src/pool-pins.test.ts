@@ -8,6 +8,7 @@ import { postgresClient } from './client';
 import type { DbError } from './errors';
 import { recordingClient } from './fake';
 import { setLocal } from './local-settings';
+import { PIN_WORDS_MAX, pinWords } from './pin-statement';
 import { boundSetBy, noteAnswered, pinBound, pinDeadlineMs } from './pool-pins';
 import { SWEEP_INTERVAL_MS, UNANSWERED_GRACE_MS } from './pool-sweep';
 import { sql } from './sql';
@@ -205,6 +206,62 @@ describe('a savepoint and a reset, on the bound a pin is judged by', () => {
     note(pin, 'set local statement_timeout = 9000');
     note(pin, 'RESET lock_timeout');
     expect(pin.boundMs).toBe(9_000);
+  });
+});
+
+describe('statement text is library input: the recognisers read it in one pass', () => {
+  // Each is a recognised statement's head, then 100k spaces, then a character that makes it no
+  // statement at all — the shape that sends a backtracking `\s+…\s*$` pattern quadratic. Sized,
+  // not timed: a quadratic read of these is ~10^10 steps and never finishes inside the test.
+  const SPACES = ' '.repeat(100_000);
+  test.each([
+    'reset all',
+    'reset statement_timeout',
+    'savepoint a',
+    'release savepoint a',
+    'rollback to savepoint a',
+    'commit',
+    'set local statement_timeout = default',
+    'set local statement_timeout = 5000',
+    "select set_config('statement_timeout', '5000', true)",
+  ])('%s, then 100k spaces and a stray word, moves nothing', (head) => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'set local statement_timeout = 9000', values: [] }, 1_000);
+    noteAnswered(pin, { text: `${head}${SPACES}x`, values: [] }, 1_000);
+    noteAnswered(pin, { text: `${head}${SPACES};${SPACES}x`, values: [] }, 1_000);
+    expect(pin.boundMs).toBe(9_000);
+    expect(pin.savepoints).toHaveLength(0);
+  });
+
+  test('padding alone is still the statement: whitespace is read, never backtracked', () => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'set local statement_timeout = 9000', values: [] }, 1_000);
+    noteAnswered(pin, { text: `reset${SPACES}all${SPACES};${SPACES}`, values: [] }, 1_000);
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a tab or a newline separates words as a space does', () => {
+    const pin = pinBound(1_000);
+    noteAnswered(pin, { text: 'SAVEPOINT\tx_sp_1', values: [] }, 1_000);
+    expect(pin.savepoints).toHaveLength(1);
+    noteAnswered(pin, { text: 'set local\n  statement_timeout = 9000', values: [] }, 1_000);
+    expect(pin.boundMs).toBe(9_000);
+    noteAnswered(pin, { text: 'ROLLBACK TO\r\nSAVEPOINT x_sp_1', values: [] }, 1_000);
+    expect(pin.boundMs).toBe(1_000);
+  });
+
+  test('a long statement stops being read after a dozen words', () => {
+    const insert = `insert into t (a) values ${Array.from({ length: 10_000 }, () => '(1)').join(', ')}`;
+    expect(pinWords(insert)).toBeUndefined();
+    expect(pinWords('rollback work to savepoint "a b" ;')).toEqual([
+      'rollback',
+      'work',
+      'to',
+      'savepoint',
+      '"a b"',
+    ]);
+    expect(pinWords(`${'w '.repeat(PIN_WORDS_MAX)}`)).toHaveLength(PIN_WORDS_MAX);
+    expect(pinWords(`${'w '.repeat(PIN_WORDS_MAX + 1)}`)).toBeUndefined();
   });
 });
 

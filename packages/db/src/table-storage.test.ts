@@ -42,6 +42,25 @@ describe('tableDdl', () => {
   });
 });
 
+describe('tableDdl trims its column body in one linear pass', () => {
+  // `/\s+$/g` retried at every space of a run that ends before a non-space: n²/2 steps for one
+  // run of n. CodeQL js/polynomial-redos. 50,000 spaces is 1.25 billion steps that way, and
+  // 100,000 characters here: the input size is the bound, so a quadratic trim times the test out.
+  const RUN = ' '.repeat(50_000);
+
+  test('a long inner run of spaces is kept whole, and only the edges are trimmed', () => {
+    const body = `\n\nkey text${RUN}primary key${RUN}`;
+    const ddl = tableDdl(tableStorage('x_t', {}), body);
+    expect(ddl).toBe(`create table if not exists x_t (\nkey text${RUN}primary key\n);`);
+  });
+
+  test('a body of nothing but whitespace trims to empty', () => {
+    expect(tableDdl(tableStorage('x_t', {}), `\n${RUN}\t\n`)).toBe(
+      'create table if not exists x_t (\n\n);',
+    );
+  });
+});
+
 describe('tableStorage refuses what would be spliced into DDL unchecked', () => {
   test.each([
     ['a fractional fillfactor', 'x_t', 70.5],

@@ -254,5 +254,7 @@
  * nothing serving-only (metafile diff against origin/main b74acc672).
  * raised 1417 → 1432, measured 1432 (2026-11-11, sweep 2 db+http): `MIGRATE_CEILING`'s 15,
  * nothing serving-only (metafile diff against 3635eb9b5).
+ * raised 1432 → 1433, measured 1433 (2026-11-11, sweep 2 CodeQL fix): `MIGRATE_CEILING`'s 1,
+ * `db/src/pin-statement.ts` (linear pin statement reader, CodeQL ReDoS fix). Nothing serving-only.
  */
-export const SERVING_ROLE_CEILING = 1432;
+export const SERVING_ROLE_CEILING = 1433;
