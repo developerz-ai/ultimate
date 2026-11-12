@@ -26,7 +26,6 @@ import {
 } from '@ultimat3/policy';
 import { describePages, routeEntries } from '@ultimat3/render';
 import { ADMIN_MOUNT_FILE, adminMountRoutes } from './runtime-admin';
-import { STYLE_HEAL_TAG } from './style-heal';
 
 // After `@ultimat3/render/server` installed its `.tsx` loader, exactly as `loadApp` orders it for
 // an app: the admin's screens are `.tsx`, and a plugin only transforms modules loaded after it.
@@ -177,10 +176,8 @@ describe('unit · the admin mount', () => {
     expect(body).toContain(`href="/admin/cli_admin_parts/${rowId}"`);
     // Per-actor rows: never something a shared cache may hold.
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    // No script of its own: every control is a link or a native form. The stylesheet self-heal
-    // ahead of the `<link>` is the document's, not the admin's (`style-heal.ts`).
-    expect(body).toContain(STYLE_HEAL_TAG);
-    expect(body.replace(STYLE_HEAL_TAG, '')).not.toContain('<script');
+    // No script at all: every control is a link or a native form.
+    expect(body).not.toContain('<script');
     expect(ADMIN_MOUNT_FILE).toBe('@ultimat3/admin');
   });
 

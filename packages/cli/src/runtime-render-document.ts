@@ -30,7 +30,6 @@ import { bootScript, collectorFor } from './route-islands';
 import { preloadTags } from './route-islands-preload';
 import { siteAssetTable } from './site-assets';
 import { styleBundle } from './style-bundle';
-import { STYLE_HEAL_TAG } from './style-heal';
 
 /**
  * The app-wide favicon head, from `site.favicon`: the content-hashed URL `asset('assets/….svg')`
@@ -136,13 +135,10 @@ export const headFor = async (
  * derives from is process-global (importing the app IS what fills it), so a caller that forgot to
  * thread a resolver would serve a document with no CSS at all. One reader, and it is the same one
  * `styleRoutes` serves from.
- *
- * Preceded by the self-heal (`style-heal.ts`): a sheet the answering replica does not serve — a
- * rolling deploy's other build — 404s, and the page reloads once instead of staying unstyled.
  */
 const styleTag = (entry: RouteEntry): string => {
   const href = styleBundle().hrefFor(entry.surface);
-  return href === undefined ? '' : `${STYLE_HEAL_TAG}<link rel="stylesheet" href="${href}">`;
+  return href === undefined ? '' : `<link rel="stylesheet" href="${href}">`;
 };
 
 /** The surface stylesheet, then the app's brand — the order that lets the brand win the cascade. */

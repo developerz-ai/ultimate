@@ -17,7 +17,6 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ### Fixed
 
 - `@ultimat3/render`: a soft navigation whose next page's stylesheet fails to load no longer swaps in an unstyled page and retires the working sheet. A GET becomes the browser's full load (the fallback a failed fetch already takes), a `refresh()` ends quietly, and a POST answered in place swaps but keeps the previous page's sheets. `loadStylesheets` resolves to whether every sheet loaded, and a failed `<link>` leaves the head so a later navigation asks for it again.
-- `@ultimat3/cli`: a document whose surface stylesheet 404s on load — a rolling deploy's other replica serves another build — reloads once instead of staying unstyled. An inline script ahead of the `<link>` listens until `load`, guarded per URL in `sessionStorage`, and admitted by hash under the enforced `script-src`. It is exempt from route budgets like the theme script, so `BUILD_STATS_RULES` is 7 and a stats file from rule 6 is rebuilt by `x build --target static`.
 
 ## Releases
 

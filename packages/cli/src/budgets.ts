@@ -26,7 +26,6 @@ import {
 import { builtUnmeasuredFinding } from './budgets-unmeasured';
 import type { Finding } from './output';
 import type { UnmeasuredRoute } from './static-report';
-import { STYLE_HEAL_BODY } from './style-heal';
 import { SW_REGISTER_PATH } from './sw-artifacts';
 
 export const BUILD_STATS_FILE = join('.x', 'build-stats.json');
@@ -83,9 +82,8 @@ export interface BuildStats {
  * origin), so two spellings of one fetch are charged once; and an app/ page is weighed as SERVED
  * — its page boot charged, the runtime chunk that boot makes unfetched not (plan 101 sweep 9).
  * `6`: a `<link rel="modulepreload">` is a fetch and is charged, deduped with every other (B4).
- * `7`: the stylesheet self-heal (`style-heal.ts`) is exempt, as every document carries it.
  */
-export const BUILD_STATS_RULES = 7;
+export const BUILD_STATS_RULES = 6;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');
@@ -324,14 +322,12 @@ export const FRAMEWORK_SCRIPTS: ReadonlySet<string> = new Set([SW_REGISTER_PATH]
  * `FRAMEWORK_SCRIPTS`: the author cannot edit, delete or move them, so charging one against a
  * `0kb` budget is a finding nobody can act on. Today that is the no-flash theme script, in each
  * of its three fallbacks (`theme-boot.ts` uses `themeScript`'s defaults for everything else, so
- * these are the exact strings a document carries), and the stylesheet self-heal ahead of every
- * surface stylesheet link (`style-heal.ts`, 525 B). The hydration runtime is NOT here — it exists
+ * these are the exact strings a document carries). The hydration runtime is NOT here — it exists
  * only when the page ships an island, and is the cost of the app's own interactivity.
  */
-export const FRAMEWORK_INLINE_SCRIPTS: ReadonlySet<string> = new Set([
-  ...(['light', 'dark', 'system'] as const).map((fallback) => themeScriptBody({ fallback })),
-  STYLE_HEAL_BODY,
-]);
+export const FRAMEWORK_INLINE_SCRIPTS: ReadonlySet<string> = new Set(
+  (['light', 'dark', 'system'] as const).map((fallback) => themeScriptBody({ fallback })),
+);
 
 /**
  * What a rendered document actually makes the browser execute: the bytes of every inline script

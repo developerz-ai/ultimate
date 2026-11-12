@@ -228,7 +228,5 @@
  * 1, `entity/src/driver-versioned-write.ts`. Nothing web-only.
  * raised 1659 → 1662, measured 1662 (2026-11-12, sweep 8 action+query): `SERVING_ROLE_CEILING`'s
  * 3, the modules named there. Nothing web-only.
- * raised 1662 → 1663, measured 1663 (2026-11-12, stylesheet skew hotfix): `SERVING_ROLE_CEILING`'s
- * 1, `cli/src/style-heal.ts`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1663;
+export const WEB_ROLE_CEILING = 1662;

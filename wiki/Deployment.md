@@ -529,7 +529,7 @@ The refusal is the ROLLED-BACK image's code, so it protects from the release aft
 
 A web process serves only the hashed files it built: `/styles/<hash>.css`, `/islands/<island>-<hash>.js`, `/_x/assets/<script>/<hash>.js`, `/assets/<name>.<hash>.<ext>`. With no window, an open tab holding the previous build's document gets a 404 for its stylesheet, or for its island chunk on the first click, after every deploy, one replica or many. During a rolling update with more than one web replica both directions fail on every page load, not only in old tabs: the document and its stylesheet are two requests, the load balancer may send them to pods of different builds, and the page renders with no CSS at all (the AppShell's "Skip to content" link as its first line).
 
-Without a window the framework only limits the damage (`As of 2026-11-12`): a soft navigation whose next sheet fails becomes a full load and never retires the working sheet, and a full load whose sheet 404s reloads once per URL — which helps only when the reload reaches a pod of the matching build. A web role booted outside `development` and `test` with no window logs `X_ASSET_RETAIN_UNDECLARED`. The window is the fix. Declare it over a disk every web pod can read:
+Without a window the framework only limits the damage (`As of 2026-11-12`): a soft navigation whose next sheet fails becomes a full load and never retires the working sheet. A full load whose sheet 404s stays unstyled: nothing reloads it for you. A web role booted outside `development` and `test` with no window logs `X_ASSET_RETAIN_UNDECLARED`. The window is the fix. Declare it over a disk every web pod can read:
 
 ```ts
 // app.config.ts — `deploys` is a disk from the app's defineStorage({ disks })

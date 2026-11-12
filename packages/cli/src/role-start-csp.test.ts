@@ -21,7 +21,6 @@ import { selectRoles, startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
 import { appRoutes } from './runtime-render';
 import { styleBundle } from './style-bundle';
-import { STYLE_HEAL_TAG } from './style-heal';
 import { styleRoutes } from './style-routes';
 
 const ROOT = `${import.meta.dir}/../.roles-csp-fixture`;
@@ -89,11 +88,6 @@ describe('the CSP the web role sends admits the styles it serves', () => {
     expect(csp).toContain("style-src 'self'");
     const href = styleBundle().hrefFor('site') ?? '';
     expect(body).toContain(`href="${href}"`);
-    // The self-heal sits AHEAD of the link it watches, and the same enforced policy admits it: an
-    // inline script the policy refuses heals nothing.
-    expect(body).toContain(`${STYLE_HEAL_TAG}<link rel="stylesheet" href="${href}">`);
-    const scripts = [...body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1] ?? '');
-    expect(scripts.filter((js) => !csp.includes(cspHashSource(js)))).toEqual([]);
 
     // Same origin, same process: the URL the policy admits has to be one this server answers, or
     // `'self'` is admitting a 404.
