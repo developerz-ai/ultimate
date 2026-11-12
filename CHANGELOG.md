@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- A deploy no longer reloads every live query: a replicator that stops cleanly hands over to its successor (change envelope v2), so sync nodes keep their windows; a crash still re-reads, once. Roll sync nodes before the replicator to get it on the first roll.
+- `onSettled` survives a crash: a hook a dead worker never ran is re-run by the scheduler leader with `redriven: true`. Plus debounce (`onConflict: 'replace'`) and expiry (`expiresAt`) on `enqueue`, `cronJob()`, `run({ lease })`, a `maxPending` backlog cap (429) and a step output ceiling.
+- Realtime hooks release themselves with their component, and one mutator's writes reach the server in call order. The first boot adds `x_jobs` columns and indexes (`expires_at`, `settle_owed`, `debounced_id`); regenerate schema dumps with `x db gen`.
+
 ### Added
 
 - `@ultimat3/jobs`: `cronJob({ name, cron, tz, input?, payload?, catchUp?, maxCatchUp?, …job })` — a job and the task that fires it, one declaration. The handle is the job; `.schedule` is the `task()`, named `<name>.schedule`. `name` and `tz` required; `input` comes with `payload(occurrenceMs)` or not at all (each occurrence enqueues `{}`); `idempotencyKey` defaults to `() => name`. A factory over `job()` and `task()`, one `PRIMITIVE_FACTORIES` row, no ninth primitive. `defineApi({ jobs })` registers the task with the job. The reference app's nightly digest is one (`examples/dummy/apps/web/app/digest/jobs/send-digest.ts`).
