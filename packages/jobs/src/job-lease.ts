@@ -10,26 +10,31 @@ export interface JobLease {
    * Renew now, and answer whether this attempt still holds the row. Call it between the chunks of
    * a section that outlasts the visibility timeout. With a renewal already on the wire it sends no
    * second one and answers `true` (the window has not lapsed) — never a body hung on a dead
-   * connection. `false` is final: the row was cancelled or re-claimed, `signal` has aborted, and
-   * every `step.run` past it is refused. A lease meant to outlive ONE job is not this: that is
+   * connection. `false` is final: the row was cancelled or re-claimed — or the attempt already
+   * settled — `signal` has aborted, and every `step.run` past a loss is refused. A lease meant to outlive ONE job is not this: that is
    * `withLock()`.
    */
   renew(): Promise<boolean>;
   /** True once the lease is gone: the queue may already have delivered this job again. */
   lost(): boolean;
-  /** Aborts when the lease is gone — the lease's own source of `ctx.signal`. */
+  /** Aborts when the lease is gone or the attempt settled: this attempt holds the row no longer. */
   readonly signal: AbortSignal;
 }
 
 /** The body's view of a running heartbeat. Never `stop()`: the worker owns the heartbeat's end. */
-export function jobLease(heartbeat: Pick<LeaseHeartbeat, 'renew' | 'lost' | 'signal'>): JobLease {
+export function jobLease(
+  heartbeat: Pick<LeaseHeartbeat, 'renew' | 'lost' | 'ended' | 'stopped'>,
+): JobLease {
   return {
     async renew() {
+      // Stopped is final whatever the reason: a settle already sent, or a loss. A renewal asked
+      // past the settle would answer for a row this attempt no longer holds.
+      if (heartbeat.stopped()) return false;
       await heartbeat.renew();
-      return !heartbeat.lost();
+      return !heartbeat.lost() && !heartbeat.stopped();
     },
     lost: () => heartbeat.lost(),
-    signal: heartbeat.signal,
+    signal: heartbeat.ended,
   };
 }
 

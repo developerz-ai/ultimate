@@ -1,7 +1,7 @@
 // What every `JobDriver`'s enqueue does past "insert or dedupe": debounce (`onConflict: 'replace'`),
-// expiry (`expiresAt`, settled by the claim) and the backlog count `maxPending` reads. A driver that
-// ignored any of them compiled, and ran a stale input, a worthless job, or an unbounded queue.
-// Type-only imports: the barrel never loads `@ultimat3/jobs`.
+// expiry (`expiresAt`, settled by the claim), the backlog count `maxPending` reads and the key probe
+// (`holds`) it asks once full. A driver that ignored any of them compiled, and ran a stale input, a
+// worthless job, or an unbounded queue. Type-only imports: the barrel never loads `@ultimat3/jobs`.
 
 import { expect } from 'bun:test';
 import type { JobDriver, JobRecord } from '@ultimat3/jobs';
@@ -114,6 +114,25 @@ export const ENQUEUE_CHECKS: readonly JobDriverCheck[] = [
       expect(await driver.backlog(at.queue, 10)).toBe(2);
       expect(await driver.backlog(at.queue, 1)).toBe(1);
       expect(await driver.backlog(scope().queue, 10)).toBe(0);
+    },
+  },
+  {
+    name: 'holds answers whether a live row of that name and tenant holds the key',
+    async run(driver) {
+      if (driver.holds === undefined) return expect.unreachable('the driver answers no holds');
+      const at = scope();
+      const base = { name: at.name, queue: at.queue, input: {}, maxAttempts: 3 };
+      await driver.enqueue({ ...base, idempotencyKey: 'held', tenantId: 'org-1' });
+      expect(await driver.holds(at.name, 'held', 'org-1')).toBe(true);
+      // Another tenant's, another job's and an unheld key are not held.
+      expect(await driver.holds(at.name, 'held')).toBe(false);
+      expect(await driver.holds(scope().name, 'held', 'org-1')).toBe(false);
+      expect(await driver.holds(at.name, 'free', 'org-1')).toBe(false);
+      // A finished row holds nothing.
+      const [row] = await claimOne(driver, at.queue);
+      if (row === undefined) return expect.unreachable('the row was claimable');
+      await driver.ack(row.id, { workerId: 'w-enqueue', claim: row.claim });
+      expect(await driver.holds(at.name, 'held', 'org-1')).toBe(false);
     },
   },
 ];

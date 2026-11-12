@@ -1,9 +1,11 @@
 // The re-drive half of `onSettled`'s at-least-once (J11): the scheduler leader takes the debts a
 // dead worker left — settled rows whose hook never returned — and runs each hook again, told
-// `redriven: true, reason: 'lost'`, then pays the debt. One pass, at most `SETTLE_REDRIVE_LIMIT`.
+// `redriven: true, reason: 'lost'`, then pays the debt. One pass, at most `SETTLE_REDRIVE_LIMIT`,
+// none started past the grace its take bought, and none once its leader has stopped.
 
-import type { Ctx } from '@ultimat3/core';
+import type { Clock, Ctx } from '@ultimat3/core';
 import { logger, renderThrowable } from '@ultimat3/core';
+import { nowMs } from './clock';
 import type { JobDriver, JobRecord } from './driver';
 import type { AnyJobHandle } from './job';
 import { registeredJobs } from './job';
@@ -25,6 +27,10 @@ export interface RedriveOptions {
   readonly context: () => Ctx;
   /** Defaults to every registered job. */
   readonly jobs?: readonly AnyJobHandle[];
+  /** What the pass measures its own time on — the scheduler's clock. */
+  readonly clock?: Clock;
+  /** Asked before each row: `true` — leadership lost, the scheduler stopping — ends the pass. */
+  readonly stopped?: () => boolean;
 }
 
 /** The leading `X_*` code of a recorded failure — read from the row, never invented. */
@@ -61,9 +67,17 @@ export async function redriveLostSettles(options: RedriveOptions): Promise<numbe
     })),
     SETTLE_REDRIVE_LIMIT,
   );
+  // The take reset every debt's clock to now: each is held for ONE grace from here, and another
+  // leader may take it again after that. A pass drives serially, so a row is started only while
+  // its hook — bounded by `onSettledTimeout`, every try included — still ends inside that grace.
+  // The rest stay owed for the next pass; none is ever told twice at once.
+  const takenAt = nowMs(options.clock);
   for (const row of lost) {
+    if (options.stopped?.() === true) break;
     const handle = byName.get(row.name);
     if (handle === undefined) continue;
+    const ceiling = handle.onSettledTimeoutMs;
+    if (nowMs(options.clock) - takenAt + ceiling > ceiling * SETTLE_GRACE_FACTOR) continue;
     let ctx: Ctx;
     try {
       ctx = options.context();

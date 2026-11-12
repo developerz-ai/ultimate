@@ -30,7 +30,7 @@ import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
 import { jobDriver } from './driver';
-import { refuseBacklog } from './enqueue-backlog';
+import { backlogLedger, gateBacklog } from './enqueue-backlog';
 import { ambientTraceparent, directRequest, namedRunId, stagedRecord } from './enqueue-record';
 import { signalEnqueued, signalStaged } from './enqueue-signal';
 import { DriverUnavailableError, OutboxNoTxError } from './errors';
@@ -340,6 +340,8 @@ export interface JobsFacade {
 }
 
 export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefined): JobsFacade {
+  // What each open transaction staged under a `maxPending` job, by queue (`enqueue-backlog.ts`).
+  const ledger = backlogLedger();
   return {
     async enqueue<I>(
       handle: JobHandle<I>,
@@ -356,7 +358,7 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       // A payload naming one org, enqueued for — or by an actor of — another (`tenant.ts`).
       refuseEnqueueTenant(handle.name, handle.tenantFor(input), options.tenantId);
       const tx = options.outbox === false ? undefined : currentTx();
-      await refuseBacklog(deps.driver, handle, options.queue ?? handle.queue, 1);
+      await gateBacklog(deps.driver, ledger, handle, [input], options, tx);
 
       if (tx === undefined) {
         if (deps.mode === 'required' && options.outbox !== false) {
@@ -390,9 +392,7 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       options: EnqueueManyOptions = {},
     ) {
       const tx = options.outbox === false ? undefined : currentTx();
-      if (inputs.length > 0) {
-        await refuseBacklog(deps.driver, handle, options.queue ?? handle.queue, inputs.length);
-      }
+      await gateBacklog(deps.driver, ledger, handle, inputs, options, tx);
       return enqueueMany(deps, tx, handle, inputs, options);
     },
   };

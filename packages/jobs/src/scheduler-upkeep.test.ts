@@ -124,4 +124,58 @@ describe('the scheduler leader re-drives lost onSettled debts', () => {
     await scheduler.stop();
     expect(asked).toEqual([start, start + SETTLE_REDRIVE_IDLE_INTERVAL_MS]);
   });
+
+  test('a drain hands leadership back first, and the pass stops at its next row', async () => {
+    spyOn(logger, 'warn').mockImplementation(() => undefined);
+    spyOn(logger, 'info').mockImplementation(() => undefined);
+    const clock = fakeClock();
+    const hook = heldHook();
+    const driver = memoryJobDriver({ clock });
+    for (const key of ['r1', 'r2']) {
+      await driver.enqueue({
+        name: 'receipt',
+        queue: 'default',
+        input: {},
+        idempotencyKey: key,
+        maxAttempts: 1,
+      });
+    }
+    const claimed = await driver.claim({
+      queues: ['default'],
+      limit: 2,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'w-dead',
+    });
+    for (const row of claimed) {
+      await driver.ack(row.id, { workerId: 'w-dead', claim: row.claim, owesSettle: true });
+    }
+    clock.advance(ON_SETTLED_TIMEOUT_MS * SETTLE_GRACE_FACTOR);
+    let released = false;
+    const scheduler = jobScheduler({
+      driver,
+      clock,
+      tasks: [],
+      drainOnShutdown: false,
+      leader: {
+        acquire: () => Promise.resolve(true),
+        release: () => {
+          released = true;
+          return Promise.resolve();
+        },
+        renewEveryMs: 0,
+      },
+      context: () => ctxOf({ role: 'scheduler', buildId: 'test' }),
+    });
+    await scheduler.tick();
+    expect(hook.told).toHaveLength(1);
+    const stopping = scheduler.stop();
+    // The first hook still holds; the lock is back with the fleet regardless.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(released).toBe(true);
+    hook.release();
+    await stopping;
+    // The second debt was never started by a scheduler that had stopped leading.
+    expect(hook.told).toHaveLength(1);
+  });
 });

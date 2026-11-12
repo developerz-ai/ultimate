@@ -359,6 +359,12 @@ export interface JobDriver {
    */
   backlog?(queue: string, cap: number): Promise<number>;
   /**
+   * Whether a LIVE row holds `(name, tenant, key)` — the enqueue it answers inserts nothing. Asked
+   * only by a `maxPending` enqueue the count already says is full, so a dedupe or a replace onto
+   * its holder is not refused for a row it never adds. Optional: absent, such an enqueue is refused.
+   */
+  holds?(name: string, idempotencyKey: string, tenantId?: string): Promise<boolean>;
+  /**
    * Tell every worker of the fleet that rows on `queue` (any, when none is named) may be claimable
    * before its rest ends. Present ONLY on a driver whose enqueues announce themselves (Postgres's
    * NOTIFY, the memory driver's in-process signal): an idle worker rests on a due time only over

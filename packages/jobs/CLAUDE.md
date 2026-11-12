@@ -70,10 +70,13 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm` (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Full rule: `docs/history/jobs.md`.
 - A `step.run` output past a DECLARED `stepOutputMax` (JSON bytes) is `X_STEP_OUTPUT_TOO_LARGE`, terminal. Undeclared, past `STEP_OUTPUT_MAX_BYTES` (256 KiB) it is logged once per job and step (`jobs.step.output-too-large`, same code) and stored — refusal by default waits for `next`. A waited event is not measured — its payload is the publisher's.
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
-- **Debounce, expiry, backlog are driver contract** (`job-driver-checks-enqueue.ts`, all three
-  drivers): `onConflict: 'replace'` is its own statement (`SQL_ENQUEUE_REPLACE`), the claim settles
-  an expired WAITING row `failed`/`JOB_EXPIRED` beside its burials, `backlog(queue, cap)` counts no
-  further than `cap`. Refused inside a transaction and in any batch (`assertEnqueueMany`).
+- **Debounce, expiry, backlog are driver contract** (`job-driver-checks-enqueue.ts`,
+  `-debounce.ts`, all three drivers): `onConflict: 'replace'` is its own statement
+  (`SQL_ENQUEUE_REPLACE`), fenced by request order (`debounced_id`, the request's uuidV7 — a repeat
+  publish never restores old input or starts a stale run); the claim settles an expired NEVER-CLAIMED
+  row (`attempt = 0`) `failed`/`JOB_EXPIRED`; a requeue clears expiry and `settle_owed`;
+  `backlog(queue, cap)` counts no further than `cap`, `holds` probes a key once full. Refused in any
+  batch (`assertEnqueueMany`).
 - **Redis scripts go by `EVALSHA`** (`driver-redis-eval.ts`): `EVAL` only on `NOSCRIPT`.
 
 ## Rules — numbers and limits
@@ -252,7 +255,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver-redis-refusal.ts` | `typedRefusals`: a send refused for want of a connection → `X_DRIVER_UNAVAILABLE` |
 | `driver-redis-eval.ts` | `evalCached`: a script by SHA-1, `EVAL` on `NOSCRIPT` |
 | `driver-memory-enqueue.ts` / `driver-pg-enqueue-sql.ts` | the memory driver's enqueue, expiry and backlog; `SQL_ENQUEUE`, `SQL_ENQUEUE_REPLACE`, `SQL_BACKLOG` |
-| `enqueue-backlog.ts` | `job({ maxPending })`'s refusal at enqueue, `JobBacklogFullError` (`X_JOB_BACKLOG_FULL`, 429) |
+| `enqueue-backlog.ts` | `job({ maxPending })`'s refusal at enqueue, `JobBacklogFullError` (`X_JOB_BACKLOG_FULL`, 429); the per-transaction ledger of staged keys |
 | `subject*.ts` | `subjectExport`/`subjectErase`; reach only via DELETED tables (README) |
 | `gdpr-*.ts` | `.personalData()` coverage (thrown by `plannedSubject`, listed by `x exercise`); the erase's audit record |
 | `ledger*.ts` | `ledger()`: balanced per currency, ONE step; a key is one posting per tenant, re-used with other lines `X_LEDGER_POSTING_CONFLICT` |

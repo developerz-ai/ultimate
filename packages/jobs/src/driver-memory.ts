@@ -110,6 +110,8 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     return undefined;
   };
 
+  const enqueuing = memoryEnqueue({ jobs, clock, liveByKey });
+
   /**
    * Patch a row and stamp `updatedAt`, clearing the lease columns `SQL_ACK`/`SQL_NACK` set to `null`.
    *
@@ -132,15 +134,22 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       ...patch,
       updatedAt: nowMs(clock),
     });
+    // An ended row is never claimed again, so its expiry has nothing left to decide.
+    if (patch.state !== undefined && !LIVE_STATES.has(patch.state)) enqueuing.forget(id);
   };
 
-  const enqueuing = memoryEnqueue({ jobs, clock, liveByKey });
+  /** `SQL_JOB_REQUEUE`'s write: due now, attempts over, the old run's debt and expiry forgotten. */
+  const requeueRow = (id: string): void => {
+    settle(id, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
+    enqueuing.forget(id);
+    settleDebt.forget(id);
+  };
 
   const operator = memoryOperator({
     jobs,
     steps,
     clock,
-    settle,
+    requeue: requeueRow,
     liveHolder: (record) => {
       const holder = liveByKey(record.name, record.idempotencyKey, record.tenantId);
       return holder === undefined || holder.id === record.id ? undefined : holder;
@@ -195,8 +204,8 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
           }
         }
       }
-      // `settle` releases the claim — `SQL_JOB_REQUEUE` writes `claimed_by = null` too.
-      settle(jobId, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
+      // Releases the claim — `SQL_JOB_REQUEUE` writes `claimed_by = null` too.
+      requeueRow(jobId);
       signalEnqueued(record.queue);
       const next = jobs.get(jobId);
       return next ?? record;
@@ -236,6 +245,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     // `driver-memory-enqueue.ts`: insert, dedupe, `'error'`, `'replace'` and each row's expiry.
     enqueue: enqueuing.enqueue,
     backlog: enqueuing.backlog,
+    holds: (name, key, tenantId) => Promise.resolve(liveByKey(name, key, tenantId) !== undefined),
 
     // A loop of this driver's own `enqueue`, which IS its semantics: in order, so a second request
     // under a key the first just took is `deduped`, as one `SQL_ENQUEUE_MANY` statement answers.

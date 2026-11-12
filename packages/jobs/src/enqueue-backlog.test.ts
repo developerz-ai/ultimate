@@ -83,6 +83,33 @@ describe('job({ maxPending })', () => {
     expect(await codeOf(ping.enqueue({ n: 2 }))).toBe('X_JOB_BACKLOG_FULL');
   });
 
+  test('an enqueue that adds no row is not refused at the ceiling: a dedupe, a replace', async () => {
+    const ping = declare({ maxPending: 2 });
+    await ping.enqueue({ n: 1 }, { runAt: Date.UTC(9999, 0, 1) });
+    await ping.enqueue({ n: 2 });
+    // Full, and both keys are held by waiting rows: neither call adds one.
+    expect((await ping.enqueue({ n: 1 }, { onConflict: 'replace', runAt: 1 })).deduped).toBe(true);
+    expect((await ping.enqueue({ n: 2 })).deduped).toBe(true);
+    expect(await driver.backlog?.('pings', 10)).toBe(2);
+    // A new key still would, and is refused.
+    expect(await codeOf(ping.enqueue({ n: 3 }))).toBe('X_JOB_BACKLOG_FULL');
+  });
+
+  test("a transaction's own staged rows count toward it, and a key staged twice once", async () => {
+    const ping = declare({ maxPending: 2 });
+    tx = { id: 'tx-staged' } as unknown as Tx;
+    await ping.enqueue({ n: 1 });
+    await ping.enqueue({ n: 1 }, { onConflict: 'replace' });
+    await ping.enqueue({ n: 2 });
+    // Nothing is committed, so the driver counts none of the three — the ledger counts two rows.
+    expect(await driver.backlog?.('pings', 10)).toBe(0);
+    expect(await codeOf(ping.enqueue({ n: 3 }))).toBe('X_JOB_BACKLOG_FULL');
+    expect(await codeOf(ping.enqueueMany([{ n: 3 }]))).toBe('X_JOB_BACKLOG_FULL');
+    // Another transaction has staged nothing.
+    tx = { id: 'tx-other' } as unknown as Tx;
+    expect(await codeOf(ping.enqueue({ n: 3 }))).toBeUndefined();
+  });
+
   test('a maxPending that is no count is refused where it is declared', () => {
     expect(() => declare({ maxPending: 0 })).toThrow();
     resetJobs();

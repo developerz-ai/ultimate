@@ -279,6 +279,11 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
       return num(rows[0]?.n ?? 0);
     },
 
+    // The lookup a dedupe already sends, off the live index: only a full `maxPending` asks.
+    async holds(name, key, tenantId) {
+      return (await exec().query(SQL_FIND_LIVE_BY_KEY, [name, key, tenantId ?? null])).length > 0;
+    },
+
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);
       const params = [

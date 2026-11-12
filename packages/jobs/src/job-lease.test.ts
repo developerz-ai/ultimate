@@ -155,4 +155,33 @@ describe('args.lease', () => {
     expect(await jobLease(heartbeat).renew()).toBe(true);
     expect(sent).toBe(1);
   });
+
+  test('after the settle stops the heartbeat, renew() answers false and the signal aborts', async () => {
+    let sent = 0;
+    const heartbeat = startLeaseHeartbeat({
+      driver: {
+        heartbeat: () => {
+          sent += 1;
+          return Promise.resolve(true);
+        },
+      },
+      claimed: claimedRow(),
+      visibilityTimeoutMs: VISIBILITY_MS,
+      intervalMs: 100,
+      workerId: 'worker-1',
+      clock: frozenClock(0),
+      schedule: starved,
+    });
+    const lease = jobLease(heartbeat);
+    expect(await lease.renew()).toBe(true);
+    expect(lease.signal.aborted).toBe(false);
+    // `settlingStops`: the ack is on the wire, the row is no longer this attempt's.
+    heartbeat.stop();
+    expect(await lease.renew()).toBe(false);
+    expect(lease.signal.aborted).toBe(true);
+    expect(sent).toBe(1);
+    // The body's view only: a stop is not a loss, so nothing reports one.
+    expect(lease.lost()).toBe(false);
+    expect(heartbeat.signal.aborted).toBe(false);
+  });
 });

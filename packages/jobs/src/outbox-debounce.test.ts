@@ -144,3 +144,34 @@ describe('the relay publishes a debounced or expiring row through the single enq
     expect(await store.pendingCount()).toBe(0);
   });
 });
+
+describe('a debounced row the relay publishes twice', () => {
+  test('a replace whose mark failed, published again after its holder ran, starts no stale run', async () => {
+    const later = clock.now().getTime() + 5_000;
+    setJobsFacade(outboxJobsFacade({ store, driver, clock }, () => undefined));
+    const holder = await ping.enqueue({ n: 1, v: 0 }, { runAt: later });
+    await inTx(() => ping.enqueue({ n: 1, v: 1 }, { runAt: later, onConflict: 'replace' }));
+    let marks = 0;
+    // The relay's process dies between the publish and the mark: the replace has landed, the row
+    // is still unpublished as far as the outbox knows.
+    const crashing: MemoryOutboxStore = {
+      ...store,
+      markPublished: (id, at, claimant) => {
+        marks += 1;
+        return marks === 1
+          ? Promise.reject(new TypeError('connection reset'))
+          : store.markPublished(id, at, claimant);
+      },
+    };
+    const relay = outboxRelay({ store: crashing, driver, clock, drainOnShutdown: false });
+    expect(await relay.tick()).toBe(0);
+    clock.advance(5_000);
+    const [ran] = await claim();
+    expect([ran?.id, ran?.input]).toEqual([holder.id, { n: 1, v: 1 }]);
+    if (ran === undefined) return expect.unreachable('the debounced holder was claimable');
+    expect(await driver.ack(ran.id, { workerId: 'w', claim: ran.claim })).toBe(true);
+    // The repeat: the input it carries already ran.
+    expect(await relay.tick()).toBe(1);
+    expect(await claim()).toEqual([]);
+  });
+});

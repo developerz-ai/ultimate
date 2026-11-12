@@ -85,6 +85,8 @@ select ${CLAIM_ROW_NAMES.replace(/[a-z_]+/g, 'null')}, null, (${HORIZON})
  * A waiting row past its `expires_at` (`EnqueueRequest.expiresAt`) is buried too — `exhausted`,
  * and `expired` says why: settled `failed` with `JOB_EXPIRED` and reported with the others. Lazy
  * on purpose: decided only for a row the claim already picked, so it costs no index and no sweep.
+ * Only a row never claimed (`attempt = 0`): a retry waiting out its backoff is a run that STARTED,
+ * and burying it would drop work its first attempt may already have half done.
  *
  * `picked` SEEKS, so a claim costs the same at any backlog. One `state in (...) or running` test
  * over `queue = any(...)` cannot be served in `run_at` order by any index, so it read and sorted
@@ -122,7 +124,8 @@ with open as (
         from open
        cross join lateral (
          select id, run_at,
-                coalesce(state <> 'suspended' and expires_at <= now(), false) as expired
+                coalesce(state <> 'suspended' and attempt = 0 and expires_at <= now(), false)
+                  as expired
            from x_jobs
           where queue = open.queue
             and state in ('ready', 'delayed', 'suspended')

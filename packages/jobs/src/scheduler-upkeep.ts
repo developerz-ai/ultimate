@@ -3,7 +3,7 @@
 // `scheduler.ts` at its size ceiling. The re-drive runs beside the round, never inside it: 50
 // hooks of up to `onSettledTimeout` each must not hold every task's dispatch behind them.
 
-import type { Ctx } from '@ultimat3/core';
+import type { Clock, Ctx } from '@ultimat3/core';
 import { isUltimateError, logger, renderThrowable } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { redriveLostSettles } from './settle-redrive';
@@ -43,6 +43,9 @@ export interface LeaderUpkeep {
 export interface LeaderUpkeepOptions {
   readonly driver: JobDriver;
   readonly context: () => Ctx;
+  readonly clock?: Clock;
+  /** Still the leader, and not draining: asked by the re-drive between rows. */
+  readonly leading: () => boolean;
 }
 
 export function leaderUpkeep(options: LeaderUpkeepOptions): LeaderUpkeep {
@@ -62,7 +65,12 @@ export function leaderUpkeep(options: LeaderUpkeepOptions): LeaderUpkeep {
       }
       if (redrive !== undefined || at < nextRedriveAt) return;
       nextRedriveAt = at + SETTLE_REDRIVE_INTERVAL_MS;
-      redrive = redriveLostSettles({ driver: options.driver, context: options.context })
+      redrive = redriveLostSettles({
+        driver: options.driver,
+        context: options.context,
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        stopped: () => !options.leading(),
+      })
         .then((taken) => {
           if (taken === 0) nextRedriveAt = at + SETTLE_REDRIVE_IDLE_INTERVAL_MS;
           else logger.info('jobs.scheduler.settles-redriven', { taken });

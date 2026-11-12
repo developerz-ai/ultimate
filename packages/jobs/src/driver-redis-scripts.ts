@@ -37,9 +37,17 @@ redis.call('ZREM', P .. ':run:' .. queue, id)
  * when the caller-allocated id already names a row (`SQL_ENQUEUE`'s `not exists`), `replaced` when
  * a waiting holder took this input and runAt (`SQL_ENQUEUE_REPLACE`), `deduped` when a live row
  * holds the key otherwise, `created` otherwise.
+ *
+ * The debounce fence is `SQL_ENQUEUE_REPLACE`'s: a job hash's `debounced` field is the id of the
+ * request whose input it holds, and `:debounce` maps a key to the last row a replace wrote — kept
+ * past the run, so a replace published again after its holder finished meets it. An entry whose row
+ * expired (`doneTtlMs`) is dropped where it is found, as `newer` stops matching a pruned pg row.
  */
 const ENQUEUE_ONE = `
 ${LIVE}
+local function stamp_of(job, id)
+  return redis.call('HGET', job, 'debounced') or id
+end
 local function enqueue_one(P, a, o)
   local id = a[o]
   local job = P .. ':job:' .. id
@@ -47,6 +55,15 @@ local function enqueue_one(P, a, o)
     return { 'published', id, redis.call('HGET', job, 'runId') }
   end
   local nk = a[o + 12]
+  local replace = a[o + 14] == '1'
+  if replace then
+    local last = redis.call('HGET', P .. ':debounce', nk)
+    if last then
+      local row = redis.call('HMGET', P .. ':job:' .. last, 'debounced', 'runId')
+      if not row[1] then redis.call('HDEL', P .. ':debounce', nk)
+      elseif row[1] >= id then return { 'deduped', last, row[2] } end
+    end
+  end
   local now = tonumber(a[o + 8])
   local runAt = tonumber(a[o + 7])
   local state = 'ready'
@@ -56,10 +73,13 @@ local function enqueue_one(P, a, o)
     local held = P .. ':job:' .. holder
     local row = redis.call('HMGET', held, 'state', 'runId', 'queue')
     if row[1] and LIVE[row[1]] then
-      if a[o + 14] == '1' and (row[1] == 'ready' or row[1] == 'delayed') then
+      if replace and (row[1] == 'ready' or row[1] == 'delayed') and stamp_of(held, holder) < id then
         redis.call('HSET', held, 'input', a[o + 3], 'runAt', a[o + 7], 'state', state,
-          'updatedAt', a[o + 8])
+          'updatedAt', a[o + 8], 'debounced', id)
+        if a[o + 13] ~= '' then redis.call('HSET', held, 'expiresAt', a[o + 13])
+        else redis.call('HDEL', held, 'expiresAt') end
         redis.call('ZADD', P .. ':wait:' .. row[3], runAt, holder)
+        redis.call('HSET', P .. ':debounce', nk, holder)
         return { 'replaced', holder, row[2] }
       end
       return { 'deduped', holder, row[2] }
@@ -74,12 +94,30 @@ local function enqueue_one(P, a, o)
   if a[o + 10] ~= '' then redis.call('HSET', job, 'traceparent', a[o + 10]) end
   if a[o + 11] ~= '' then redis.call('HSET', job, 'enqueuedBy', a[o + 11]) end
   if a[o + 13] ~= '' then redis.call('HSET', job, 'expiresAt', a[o + 13]) end
+  if replace then
+    redis.call('HSET', job, 'debounced', id)
+    redis.call('HSET', P .. ':debounce', nk, id)
+  end
   redis.call('ZADD', P .. ':wait:' .. queue, runAt, id)
   redis.call('SADD', P .. ':queues', queue)
   redis.call('HSET', P .. ':idem', nk, id)
   return { 'created', id, a[o + 5] }
 end
 `;
+
+/**
+ * Whether a LIVE row holds a key — `SQL_FIND_LIVE_BY_KEY`. `ARGV`: namespace, the namespace field.
+ * `:idem` is cleared by every ending settle, so its entry is checked against the row's state only
+ * for the row that expired out from under it.
+ */
+export const REDIS_HOLDS = `
+${LIVE}
+local holder = redis.call('HGET', ARGV[1] .. ':idem', ARGV[2])
+if not holder then return 0 end
+local state = redis.call('HGET', ARGV[1] .. ':job:' .. holder, 'state')
+if state and LIVE[state] then return 1 end
+return 0
+`.trim();
 
 /** Fields one request binds, after the namespace — what `ENQUEUE_ONE` reads from `a[o]` on. */
 export const ENQUEUE_ARITY = 15;
@@ -114,7 +152,8 @@ return out
  * Candidates are every due row of each queue — ready, delayed, suspended, or running past its
  * lease — at most `limit` from each source, ordered by `runAt` and cut at `limit`. A running row
  * on its final attempt is BURIED (`dead`, or `failed` for a dropped name) and never handed out;
- * a waiting row past its `expiresAt` is settled `failed` with `JOB_EXPIRED` and answered the same.
+ * a waiting row never claimed (`attempt` 0) past its `expiresAt` is settled `failed` with
+ * `JOB_EXPIRED` and answered the same.
  * Answers `{ 'c', HGETALL…, HVALS steps… }` per claimed row, `{ 'b', HGETALL… }` per buried one;
  * with nothing taken and the horizon asked, ONE `{ 'h', ms until the first waiting row's runAt or
  * held lease's visibleAt }`, `{ 'h' }` when no row waits or is held.
@@ -160,7 +199,7 @@ for i = 1, math.min(limit, #candidates) do
     'runId', 'expiresAt')
   local state, attempt, maxAttempts, name, queue = row[1], tonumber(row[2]), tonumber(row[3]), row[4], row[5]
   local expiresAt = tonumber(row[9])
-  if (state == 'ready' or state == 'delayed') and expiresAt and expiresAt <= now then
+  if (state == 'ready' or state == 'delayed') and attempt == 0 and expiresAt and expiresAt <= now then
     redis.call('ZREM', P .. ':wait:' .. queue, id)
     redis.call('HDEL', job, 'lastErrorStack')
     redis.call('HSET', job, 'state', 'failed', 'lastError', '${JOB_EXPIRED}', 'updatedAt', ARGV[2])

@@ -100,6 +100,9 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
   const upkeep = leaderUpkeep({
     driver: options.driver,
     context: options.context ?? (() => ctxOf()),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
+    // A re-drive pass stops between rows once this node stops leading or starts draining.
+    leading: () => isLeader && dispatching(),
   });
   let trustedUntil = Number.NEGATIVE_INFINITY;
   let standbyUntil = Number.NEGATIVE_INFINITY;
@@ -408,8 +411,6 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       // teardown that never ends — hooks never handed back, `state` never past 'draining', and the
       // memoised `stopping` every later `stop()` joins never settling.
       const dispatched = await settleAllBy(round === undefined ? [] : [round], budget);
-      // A re-drive cut short leaves its debts owed: the next leader runs those hooks again.
-      await settleAllBy(upkeep.inFlight(), budget);
       // A round we ABANDONED is a round still enqueueing, so the lock is deliberately NOT handed
       // back: promoting a standby onto an occurrence this process is mid-dispatch for is the
       // double-fire above, delivered by the shutdown. A lease row expires on its own, which is
@@ -422,6 +423,10 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       } else if (isLeader) {
         await leader.release();
       }
+      // AFTER the release: the re-drive pass reads `draining` between rows and stops, and the hook
+      // it is in holds no lock — its taken debts are fenced by their grace, not by leadership. A
+      // pass cut short leaves the rest owed for the next leader.
+      await settleAllBy(upkeep.inFlight(), budget);
     } finally {
       // Whatever the release did, this scheduler is done. `isLeader` false because a lock this
       // process no longer holds — or failed to hand back — must never be re-used as if it did,

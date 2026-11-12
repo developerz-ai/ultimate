@@ -284,6 +284,18 @@ alter table x_jobs add column if not exists settle_owed boolean not null default
 
 create index if not exists x_jobs_settle_owed_idx on x_jobs (updated_at) where settle_owed;
 
+-- The debounce fence (EnqueueOptions.onConflict 'replace'): the id of the request whose input the
+-- row holds, a uuidV7 minted when that request was staged or sent, so a later one is a greater one.
+-- A replace moves a waiting holder only for a newer request, and a request no newer than a row of
+-- its key — live or finished — inserts nothing: a relay publishing a staged replace again after a
+-- crash can neither put old input back nor start a stale run. Null on every row a plain enqueue
+-- wrote, so the partial index holds the debounced rows alone. Added by alter, as above.
+alter table x_jobs add column if not exists debounced_id uuid;
+
+create index if not exists x_jobs_debounced_idx
+  on x_jobs (name, (coalesce(tenant_id, '')), idempotency_key, debounced_id)
+  where debounced_id is not null;
+
 -- What the queue depth read (SQL_STATS) reads, once per claim pass and at most every 15 seconds,
 -- from every worker: once a rest, when it idles. Partial over the six states it counts, so the
 -- read is a range over the counted rows and never a pass over the finished ones the retention

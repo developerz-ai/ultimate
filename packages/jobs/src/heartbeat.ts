@@ -44,6 +44,14 @@ export interface LeaseHeartbeat {
    * `steps.ts` refuses every write past it, which is what unwinds a body that ignores the signal.
    */
   readonly signal: AbortSignal;
+  /**
+   * Aborts when the lease is gone OR renewal stopped — the settle is on the wire, the row is no
+   * longer this attempt's to hold. `args.lease.signal`, and never folded into `ctx.signal`: the
+   * `onSettled` hook runs past the stop under that one.
+   */
+  readonly ended: AbortSignal;
+  /** True once renewal stopped, by `stop()` or by a loss. */
+  stopped(): boolean;
   /** Stop renewing. Idempotent. */
   stop(): void;
 }
@@ -63,6 +71,13 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
   let renewing = false;
   let lost = false;
   const gone = new AbortController();
+  const ended = new AbortController();
+  /** The loss's reason, on both signals: the run's and the body's lease. */
+  const abandon = (): void => {
+    const reason = new LeaseLostError({ job: claimed.name, jobId: claimed.id });
+    gone.abort(reason);
+    ended.abort(reason);
+  };
 
   const lapsed = (): boolean => now() - renewedAt >= visibilityTimeoutMs;
 
@@ -82,7 +97,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     timer.stop();
     logLost(error, reason);
     // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
-    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+    abandon();
   };
 
   /** `jobs.lease.lost` at error, counted: this job may now run twice. */
@@ -115,7 +130,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     if (lost || timer.stopped()) return;
     lost = true;
     timer.stop();
-    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+    abandon();
     const row = await boundedRead();
     if (row?.state !== 'cancelled') {
       logLost(undefined, 'not-ours');
@@ -213,5 +228,18 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
 
   const timer = startRenewalTimer(options.intervalMs, renew, options.schedule);
 
-  return { renew, lost: () => lost, signal: gone.signal, stop: () => timer.stop() };
+  return {
+    renew,
+    lost: () => lost,
+    signal: gone.signal,
+    ended: ended.signal,
+    stopped: () => timer.stopped(),
+    stop() {
+      timer.stop();
+      // The same reason a loss gives: this attempt holds the row no longer, whoever let it go.
+      if (!ended.signal.aborted) {
+        ended.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+      }
+    },
+  };
 }

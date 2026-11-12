@@ -42,6 +42,7 @@ import {
   REDIS_ENQUEUE,
   REDIS_ENQUEUE_MANY,
   REDIS_HEARTBEAT,
+  REDIS_HOLDS,
   REDIS_NACK,
   REDIS_STATS,
 } from './driver-redis-scripts';
@@ -130,8 +131,9 @@ function toRecord(fields: ReadonlyMap<string, string>): JobRecord {
  * The idempotency namespace field: name, tenant (`''` for none, as the index's `coalesce`) and
  * key, JSON-joined so no separator inside a value can make two triples one field.
  */
-const namespaceField = (request: EnqueueRequest): string =>
-  JSON.stringify([request.name, request.tenantId ?? '', request.idempotencyKey]);
+const namespaceField = (
+  request: Pick<EnqueueRequest, 'name' | 'tenantId' | 'idempotencyKey'>,
+): string => JSON.stringify([request.name, request.tenantId ?? '', request.idempotencyKey]);
 
 /** One request as `ENQUEUE_ONE` reads it: `ENQUEUE_ARITY` fields, in its order. */
 function enqueueArgs(request: EnqueueRequest, runId: string, at: number): (string | number)[] {
@@ -182,6 +184,16 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
     async backlog(queue, cap): Promise<number> {
       const limit = finiteCount('the redis driver backlog', 'cap', cap);
       return Math.min(Number(await client.send('ZCARD', [`${ns}:wait:${queue}`])), limit);
+    },
+
+    // Only a full `maxPending` asks: a live holder means the enqueue adds no row.
+    async holds(name, idempotencyKey, tenantId): Promise<boolean> {
+      const field = namespaceField({
+        name,
+        idempotencyKey,
+        ...(tenantId === undefined ? {} : { tenantId }),
+      });
+      return Number(await run(REDIS_HOLDS, [field])) === 1;
     },
 
     async enqueue(request): Promise<EnqueueResult> {

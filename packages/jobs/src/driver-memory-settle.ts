@@ -14,6 +14,8 @@ export const SETTLED_STATES: ReadonlySet<JobState> = new Set<JobState>(['done', 
 export interface MemorySettleDebt extends SettleDebt {
   /** A settle under `by` just left `jobId` in `state`: record the debt when one is owed. */
   settled(jobId: string, by: SettleBy, state: JobState): void;
+  /** `SQL_JOB_REQUEUE`'s `settle_owed = false`: a retried row owes nothing for its old run. */
+  forget(jobId: string): void;
 }
 
 export function memorySettleDebt(
@@ -27,6 +29,9 @@ export function memorySettleDebt(
       // Every settle writes the flag, as `SQL_ACK`/`SQL_NACK` do: one that owes nothing clears it.
       if (by.owesSettle === true && SETTLED_STATES.has(state)) owed.set(jobId, nowMs(clock));
       else owed.delete(jobId);
+    },
+    forget(jobId) {
+      owed.delete(jobId);
     },
     clear(jobId, claim) {
       if (!owed.has(jobId) || jobs.get(jobId)?.claim !== claim) return Promise.resolve(false);
