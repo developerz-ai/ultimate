@@ -26,6 +26,14 @@ export interface LaunchedBrowser {
   /** The browser's own CDP connection, over its debugging pipe or port. Already answering. */
   readonly connection: CdpConnection;
   /**
+   * The temp root the browser was actually launched with (`socketSafeEnv`-clamped) — the profile's
+   * own root unless that root could not carry the singleton socket. A caller asserting the
+   * browser's TMPDIR asserts against this, never a path re-derived from the profile directory.
+   * Optional: a fake `LaunchedBrowser` built outside `launchAttempt` (a driver fixture that never
+   * asserts TMPDIR) carries no root to be honest about.
+   */
+  readonly tempRoot?: string;
+  /**
    * THE close, idempotent, and awaited by every caller: the connection closed, SIGTERM, SIGKILL
    * after `CLOSE_GRACE_MS`, then the browser's whole process group killed and, only then, the
    * profile removed — bounded at `LAUNCHED_CLOSE_MS`. On Windows, which has no SIGTERM to grant grace to, the process TREE
@@ -119,6 +127,10 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
   const platform = options.platform ?? process.platform;
   const profile = throwawayProfile();
   const profileDir = profile.path;
+  // What the child's own env actually carries as TMPDIR: `socketSafeEnv` inside `spawnBrowser` may
+  // clamp `profile.tempRoot` further still, so this — not the profile's own root — is the value a
+  // caller asserting the browser's TMPDIR must be given.
+  const tempRoot = socketSafeEnv({ TMPDIR: profile.tempRoot })['TMPDIR'] ?? profile.tempRoot;
   const began = performance.now();
   let child: ReturnType<typeof spawnBrowser>;
   try {
@@ -186,7 +198,7 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
     });
     const left = Math.max(1, options.launchTimeoutMs - (performance.now() - began));
     await connection.send('Browser.getVersion', {}, undefined, left);
-    return { ok: true, browser: { connection, close } };
+    return { ok: true, browser: { connection, tempRoot, close } };
   } catch (error) {
     const why = error instanceof CdpTimeoutError ? 'deadline' : 'closed';
     // The deadline itself when that is what ended it: the number the reader can raise.

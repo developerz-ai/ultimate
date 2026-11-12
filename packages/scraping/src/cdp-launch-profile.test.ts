@@ -10,9 +10,14 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 // why: the scratch directory lives under the OS temp dir, which Bun does not expose.
 import { tmpdir } from 'node:os';
 // why: joining the script and its profile-log paths, and taking the root a profile was made under.
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { launchChrome } from './cdp-launch';
-import { MAX_BROWSER_TMPDIR_CHARS, socketSafeEnv, throwawayProfile } from './cdp-launch-profile';
+import {
+  MAX_BROWSER_TMPDIR_CHARS,
+  POSIX_TEMP_ROOT,
+  socketSafeEnv,
+  throwawayProfile,
+} from './cdp-launch-profile';
 
 /** Record `--user-data-dir`, answer the first call, then run `rest`. */
 const script = (rest: string): string => `#!/bin/bash
@@ -132,8 +137,8 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
     const hostile = `${prefix}${'a'.repeat(Math.max(0, 82 - prefix.length))}`;
     const profile = throwawayProfile(hostile);
     try {
-      expect(profile.tempRoot).toBe('/tmp');
-      expect(profile.path.startsWith('/tmp/')).toBe(true);
+      expect(profile.tempRoot).toBe(POSIX_TEMP_ROOT);
+      expect(profile.path.startsWith(`${POSIX_TEMP_ROOT}/`)).toBe(true);
       // The bound itself, at the profile path: what Chrome FATALs on is the socket address length.
       expect(profile.path.length + '/SingletonSocket'.length).toBeLessThan(108);
     } finally {
@@ -141,13 +146,20 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
     }
   });
 
-  test('a temp root that fits is kept — profile and browser TMPDIR alike', () => {
-    const profile = throwawayProfile();
+  test('a temp root that fits is kept — profile and browser TMPDIR alike', async () => {
+    // An explicit short root, built to fit by construction: the ambient `tmpdir()` is not trusted
+    // to be short enough — the sandbox TMPDIR this module's own comment cites is 83 bytes.
+    const root = await mkdtemp(join(POSIX_TEMP_ROOT, 'x-e2e-fits-'));
     try {
-      expect(profile.tempRoot).toBe(tmpdir());
-      expect(profile.path.startsWith(tmpdir())).toBe(true);
+      const profile = throwawayProfile(root);
+      try {
+        expect(profile.tempRoot).toBe(root);
+        expect(profile.path.startsWith(root)).toBe(true);
+      } finally {
+        rmSync(profile.path, { recursive: true, force: true });
+      }
     } finally {
-      rmSync(profile.path, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   });
 
@@ -169,8 +181,8 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
       const seen = (await Bun.file(join(fake, '..', 'tmpdir')).text()).trim();
       const profilePath = (await Bun.file(join(fake, '..', 'profile')).text()).trim();
-      expect(seen).toBe('/tmp');
-      expect(profilePath.startsWith('/tmp/')).toBe(true);
+      expect(seen).toBe(POSIX_TEMP_ROOT);
+      expect(profilePath.startsWith(`${POSIX_TEMP_ROOT}/`)).toBe(true);
       expect(profilePath.length + '/SingletonSocket'.length).toBeLessThan(108);
       await launched.close();
     } finally {
@@ -181,17 +193,21 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
   });
 
   test('the browser TMPDIR is the profile root, not the inherited one', async () => {
-    // The window that tells the two apart: an inherited root of 60 bytes FITS socketSafeEnv's
-    // byte bound, so a launcher that handed the inherited env on would pass it through unchanged
-    // — but it does NOT fit the singleton socket, so the profile moves to the short root. Chrome
-    // makes its ProcessSingleton socket under the CHILD's TMPDIR, so a child left on the
-    // inherited root FATALs at start ("Socket path too long") before any CDP call.
-    const base = '/tmp/x-e2e-inherited-root-';
-    const inherited = `${base}${'a'.repeat(60 - base.length)}`;
-    expect(new TextEncoder().encode(inherited).byteLength).toBe(60);
-    // The precondition, stated: the inherited root survives socketSafeEnv, so the two expressions
-    // really do differ on it. A tighter bound would make this case toothless, and says so.
-    expect(socketSafeEnv({ TMPDIR: inherited })['TMPDIR']).toBe(inherited);
+    // socketPathFits and socketSafeEnv's MAX_BROWSER_TMPDIR_CHARS now agree exactly (both count
+    // the vendor dir's own "XXXXXX" once), so there is no root left that fits one bound and not
+    // the other: an inherited root over the shared bound fails both, and a launcher must still
+    // move it — proven here against the result `launchChrome` actually hands back, not a
+    // re-derived path. Chrome makes its ProcessSingleton socket under the CHILD's TMPDIR, so a
+    // child left on the inherited root FATALs at start ("Socket path too long") before any CDP call.
+    const base = `${POSIX_TEMP_ROOT}/x-e2e-inherited-root-`;
+    const inherited = `${base}${'a'.repeat(MAX_BROWSER_TMPDIR_CHARS + 8 - base.length)}`;
+    expect(new TextEncoder().encode(inherited).byteLength).toBeGreaterThan(
+      MAX_BROWSER_TMPDIR_CHARS,
+    );
+    // The precondition, stated: socketSafeEnv itself already clamps this root, so a launcher that
+    // only consulted the env bound would already have moved it — the assertions below hold
+    // whichever bound the launcher actually consults.
+    expect(socketSafeEnv({ TMPDIR: inherited })['TMPDIR']).toBe(POSIX_TEMP_ROOT);
     const dir = await mkdtemp(join(tmpdir(), 'x-profile-fake-'));
     const fake = join(dir, 'chrome');
     await writeFile(fake, script(''), 'utf8');
@@ -204,8 +220,11 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
       const seen = (await Bun.file(join(fake, '..', 'tmpdir')).text()).trim();
       const profilePath = (await Bun.file(join(fake, '..', 'profile')).text()).trim();
-      // The browser's TMPDIR is the root the PROFILE was made under — the one that fits.
-      expect(seen).toBe(dirname(profilePath));
+      // The browser's TMPDIR is what the launcher actually handed the child — asserted against
+      // the launch result itself, not re-derived from the profile path: `dirname(profilePath)`
+      // agrees only when the profile sits directly under its root, which is incidental here.
+      expect(launched.tempRoot).toBeDefined();
+      expect(seen).toBe(launched.tempRoot as string);
       expect(seen).not.toBe(inherited);
       expect(profilePath.startsWith(`${inherited}/`)).toBe(false);
       await launched.close();
@@ -251,10 +270,10 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
     );
 
     const env = { TMPDIR: multibyteAtCharacterBound, KEEP: 'kept' };
-    expect(socketSafeEnv(env)).toEqual({ TMPDIR: '/tmp', KEEP: 'kept' });
+    expect(socketSafeEnv(env)).toEqual({ TMPDIR: POSIX_TEMP_ROOT, KEEP: 'kept' });
     expect(env).toEqual({ TMPDIR: multibyteAtCharacterBound, KEEP: 'kept' });
     expect(socketSafeEnv({ TMPDIR: byteBound })).toEqual({ TMPDIR: byteBound });
-    expect(socketSafeEnv({}, multibyteAtCharacterBound)).toEqual({ TMPDIR: '/tmp' });
+    expect(socketSafeEnv({}, multibyteAtCharacterBound)).toEqual({ TMPDIR: POSIX_TEMP_ROOT });
     expect(socketSafeEnv({}, byteBound)).toEqual({});
   });
 
@@ -278,7 +297,7 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       // "Socket path too long" fatal, before any DevTools endpoint existed.
       await withFake('echo "$TMPDIR" >"$0.tmpdir"', async (fake) => {
         const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
-        expect((await readFile(fake + '.tmpdir', 'utf8')).trim()).toBe('/tmp');
+        expect((await readFile(`${fake}.tmpdir`, 'utf8')).trim()).toBe(POSIX_TEMP_ROOT);
         await launched.close();
       });
     } finally {

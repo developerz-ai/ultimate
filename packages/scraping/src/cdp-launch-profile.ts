@@ -58,7 +58,7 @@ export function socketSafeEnv(
   if (process.platform === 'win32') return env;
   const tmp = env['TMPDIR'] ?? fallbackTmpdir;
   if (new TextEncoder().encode(tmp).byteLength <= MAX_BROWSER_TMPDIR_CHARS) return env;
-  return { ...env, TMPDIR: '/tmp' };
+  return { ...env, TMPDIR: POSIX_TEMP_ROOT };
 }
 
 export interface ThrowawayProfile {
@@ -122,14 +122,22 @@ const MKDTEMP_SUFFIX = 6;
 const SINGLETON_SOCKET = '/SingletonSocket';
 /** The longest singleton temp dir, across Chrome (`com.google.Chrome.XXXXXX`) and Chromium. */
 const CHROMIUM_SINGLETON_DIR = 'org.chromium.Chromium.XXXXXX';
-/** The one short temp root POSIX itself guarantees: the sticky `/tmp`. */
-const POSIX_TEMP_ROOT = '/tmp';
+/** The one short temp root POSIX itself guarantees: the sticky `/tmp`. Exported so the fallback a
+ * test asserts against is this module's own constant, never a repeated `/tmp` literal. */
+export const POSIX_TEMP_ROOT = '/tmp';
 
-const socketPathFits = (root: string): boolean =>
-  Math.max(join(root, 'x-e2e-chrome-').length, join(root, CHROMIUM_SINGLETON_DIR).length) +
-    MKDTEMP_SUFFIX +
-    SINGLETON_SOCKET.length <
-  SUN_PATH_LIMIT;
+// Chrome's socket address is bytes, not characters, so a root under the character bound can
+// still overflow it in UTF-8 (`socketSafeEnv` and `MAX_BROWSER_TMPDIR_CHARS` already measure
+// bytes; this must agree with them). `CHROMIUM_SINGLETON_DIR`'s literal `XXXXXX` IS the vendor
+// branch's random suffix — counting `MKDTEMP_SUFFIX` again there double-counts it, so only the
+// profile branch (whose own prefix carries no suffix yet) adds it.
+const byteLength = (path: string): number => new TextEncoder().encode(path).byteLength;
+
+const socketPathFits = (root: string): boolean => {
+  const profile = byteLength(join(root, 'x-e2e-chrome-')) + MKDTEMP_SUFFIX;
+  const vendor = byteLength(join(root, CHROMIUM_SINGLETON_DIR));
+  return Math.max(profile, vendor) + SINGLETON_SOCKET.length < SUN_PATH_LIMIT;
+};
 
 /** A fresh profile directory under the temp root, named so a leak is recognisable as ours. */
 export function throwawayProfile(root: string = tmpdir()): ThrowawayProfile {

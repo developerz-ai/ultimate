@@ -17,7 +17,10 @@ import { lineOf } from './lib/source-scan';
 
 export interface DerivedDocCounts {
   readonly components: number;
+  /** Rows in the seam table marked `shipped`. */
   readonly seamRows: number;
+  /** Every row in the seam table, shipped or not — the total a "24 of the 26" claim restates. */
+  readonly seamRowsTotal: number;
   readonly pipelineStages: number;
 }
 
@@ -40,20 +43,45 @@ export type DerivedDocCountGap =
       readonly line?: undefined;
     };
 
-const CLAIMS: Readonly<Record<keyof DerivedDocCounts, readonly [string, RegExp][]>> = {
+/**
+ * "N of the M seam rows are shipped" names TWO counts in one sentence — the shipped rows (N) and
+ * the row total (M). The naive single-capture read grabbed only the number adjacent to "seam
+ * rows" (M) and let the other (N) go unchecked, so a stale shipped count passed as long as the
+ * total still matched. One regex, two groups: the optional "N of the" prefix is the shipped
+ * count; the trailing number — present whether or not the prefix is — is always the total. Bare
+ * "M seam rows are shipped" (no "of the") claims M for both: all M rows, and all of them shipped.
+ */
+const SEAM_ROWS_PATTERN = /\b(?:(\d+)\s+of\s+the\s+)?(\d+)\s+seam rows\b[^\n]*\bshipped\b/gi;
+const pickSeamRowsShipped = (m: RegExpMatchArray): number =>
+  Number.parseInt(m[1] ?? m[2] ?? '', 10);
+const pickSeamRowsTotal = (m: RegExpMatchArray): number => Number.parseInt(m[2] ?? '', 10);
+const pickGroup1 = (m: RegExpMatchArray): number => Number.parseInt(m[1] ?? '', 10);
+
+const CLAIMS: Readonly<
+  Record<keyof DerivedDocCounts, readonly [string, RegExp, (m: RegExpMatchArray) => number][]>
+> = {
   components: [
-    ['docs/idea/16-app-targets.md', /\b(\d+)\s+(?:source-derived\s+)?UI components\b/gi],
-    ['wiki/Home.md', /\b(\d+)\s+(?:source-derived\s+)?UI components\b/gi],
-    ['llms.txt', /\b(\d+)\s+(?:source-derived\s+)?UI components\b/gi],
+    [
+      'docs/idea/16-app-targets.md',
+      /\b(\d+)\s+(?:source-derived\s+)?UI components\b/gi,
+      pickGroup1,
+    ],
+    ['wiki/Home.md', /\b(\d+)\s+(?:source-derived\s+)?UI components\b/gi, pickGroup1],
+    ['llms.txt', /\b(\d+)\s+(?:source-derived\s+)?UI components\b/gi, pickGroup1],
   ],
   seamRows: [
-    ['wiki/Home.md', /\b(\d+)\s+seam rows\b[^\n]*\bshipped\b/gi],
-    ['llms.txt', /\b(\d+)\s+seam rows\b[^\n]*\bshipped\b/gi],
-    ['docs/idea/README.md', /\b(\d+)\s+seam rows\b[^\n]*\bshipped\b/gi],
+    ['wiki/Home.md', SEAM_ROWS_PATTERN, pickSeamRowsShipped],
+    ['llms.txt', SEAM_ROWS_PATTERN, pickSeamRowsShipped],
+    ['docs/idea/README.md', SEAM_ROWS_PATTERN, pickSeamRowsShipped],
+  ],
+  seamRowsTotal: [
+    ['wiki/Home.md', SEAM_ROWS_PATTERN, pickSeamRowsTotal],
+    ['llms.txt', SEAM_ROWS_PATTERN, pickSeamRowsTotal],
+    ['docs/idea/README.md', SEAM_ROWS_PATTERN, pickSeamRowsTotal],
   ],
   pipelineStages: [
-    ['docs/architecture/README.md', /\b(\d+)\s+ordered stages\b/gi],
-    ['llms.txt', /\b(\d+)\s+ordered stages\b/gi],
+    ['docs/architecture/README.md', /\b(\d+)\s+ordered stages\b/gi, pickGroup1],
+    ['llms.txt', /\b(\d+)\s+ordered stages\b/gi, pickGroup1],
   ],
 };
 
@@ -76,15 +104,23 @@ export async function deriveDocCounts(root: string): Promise<DerivedDocCounts> {
   }
   const ladderFile = Bun.file(`${root}/docs/idea/17-scale-ladder.md`);
   const ladder = (await ladderFile.exists()) ? await ladderFile.text() : '';
-  const seamRows = ladder
+  // The doc has several `|` tables; only "## The seam table" is the seam inventory — scope to its
+  // section (up to the next `## ` heading) before counting rows, or an unrelated table's rows
+  // would inflate the total.
+  const seamSectionMatch = ladder.match(/## The seam table\n([\s\S]*?)(?:\n## |\n?$)/);
+  const seamSection = seamSectionMatch?.[1] ?? '';
+  // The seam table's body rows: a `| Concern | ... |` row, never its header or its `|---|` rule.
+  const seamTableRows = seamSection
     .split('\n')
     .filter((line) => /^\|/.test(line))
-    .filter((line) => /\|\s*shipped(?:\s|,|\|)/i.test(line)).length;
+    .filter((line) => !/^\|\s*-+\s*\|/.test(line) && !/^\|\s*Concern\b/i.test(line));
+  const seamRowsTotal = seamTableRows.length;
+  const seamRows = seamTableRows.filter((line) => /\|\s*shipped(?:\s|,|\|)/i.test(line)).length;
   const pipelineFile = Bun.file(`${root}/packages/http/src/pipeline.ts`);
   const pipeline = (await pipelineFile.exists()) ? await pipelineFile.text() : '';
   const pipelineBlock = pipeline.match(/PIPELINE_STAGES[^=]*=\s*\[([\s\S]*?)\n\];/);
   const pipelineStages = [...(pipelineBlock?.[1]?.matchAll(/\bname:\s*'/g) ?? [])].length;
-  return { components: componentCount, seamRows, pipelineStages };
+  return { components: componentCount, seamRows, seamRowsTotal, pipelineStages };
 }
 
 export function checkDerivedDocCounts(
@@ -95,16 +131,16 @@ export function checkDerivedDocCounts(
   const gaps: DerivedDocCountGap[] = [];
   for (const [kind, checks] of Object.entries(CLAIMS) as readonly [
     keyof DerivedDocCounts,
-    readonly [string, RegExp][],
+    readonly [string, RegExp, (m: RegExpMatchArray) => number][],
   ][]) {
     // Per declared (kind, path) pair: a path whose prose no longer matches is a silent hole —
     // nothing in it is scanned, so a rephrased claim there can never go stale. Name the path.
-    for (const [path, expression] of checks) {
+    for (const [path, expression, pick] of checks) {
       const text = byPath.get(path) ?? '';
       let claims = 0;
       for (const match of text.matchAll(expression)) {
         claims += 1;
-        const claimed = Number.parseInt(match[1] ?? '', 10);
+        const claimed = pick(match);
         // The line of the claim, so a fix can open the page where the stale number is written.
         if (claimed !== counts[kind]) {
           gaps.push({ kind, at: path, claimed, line: lineOf(text, match.index) });
@@ -157,7 +193,7 @@ if (import.meta.main) {
       script: 'derived-doc-counts',
       summary:
         gaps.length === 0
-          ? `derived documentation counts match (${String(counts.components)} components, ${String(counts.seamRows)} seam rows, ${String(counts.pipelineStages)} pipeline stages)`
+          ? `derived documentation counts match (${String(counts.components)} components, ${String(counts.seamRows)} of ${String(counts.seamRowsTotal)} seam rows shipped, ${String(counts.pipelineStages)} pipeline stages)`
           : `${String(gaps.length)} derived documentation count claim(s) are stale or unscanned`,
       findings: gaps.map((gap) => derivedDocCountFindingFor(gap, counts)),
     },

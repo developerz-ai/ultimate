@@ -134,7 +134,9 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
       line += decoder.decode(value, { stream: true });
       if (line.includes('\n')) break;
     }
-    const { url } = JSON.parse(line) as { readonly url: string };
+    // A second line, or a trailing partial line after the first newline, must not reach the
+    // parse: only the first line is the fixture's one JSON object.
+    const { url } = JSON.parse(line.slice(0, line.indexOf('\n'))) as { readonly url: string };
     // A cache of its own: a stamped 30.0.0 from an earlier run must never stand in for this checkout.
     env = {
       NPM_CONFIG_REGISTRY: url,

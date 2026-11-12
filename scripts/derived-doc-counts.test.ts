@@ -18,7 +18,12 @@ import {
 } from './derived-doc-counts';
 import { readDocPages } from './doc-commands';
 
-const COUNTS: DerivedDocCounts = { components: 99, seamRows: 26, pipelineStages: 15 };
+const COUNTS: DerivedDocCounts = {
+  components: 99,
+  seamRows: 26,
+  seamRowsTotal: 26,
+  pipelineStages: 15,
+};
 
 /** The components `packages/ui/CATALOG.md` prints — the inventory the guard has to derive. */
 const catalogComponents = async (root: string): Promise<number> => {
@@ -36,7 +41,10 @@ const validPages = [
     text: '15 ordered stages\n26 seam rows are shipped\n99 source-derived UI components',
   },
   { path: 'docs/architecture/README.md', text: '15 ordered stages' },
-  { path: 'docs/idea/README.md', text: '24 of the 26 seam rows are shipped' },
+  // "N of the M" states two counts in one sentence: the shipped rows (26) and the row total (26).
+  // Both must be live — never the stale "24 of the 26" this phrasing replaced, which stayed green
+  // on the row total alone while the shipped count went unchecked.
+  { path: 'docs/idea/README.md', text: '26 of the 26 seam rows are shipped' },
 ];
 
 describe('derived documentation counts', () => {
@@ -58,6 +66,9 @@ describe('derived documentation counts', () => {
       'seamRows',
       'seamRows',
       'seamRows',
+      'seamRowsTotal',
+      'seamRowsTotal',
+      'seamRowsTotal',
     ]);
     for (const gap of gaps) {
       expect(derivedDocCountFindingFor(gap, COUNTS).code).toBe('X_DERIVED_DOC_COUNT_STALE');
@@ -75,6 +86,9 @@ describe('derived documentation counts', () => {
       ['seamRows', 'docs/idea/README.md'],
       ['seamRows', 'llms.txt'],
       ['seamRows', 'wiki/Home.md'],
+      ['seamRowsTotal', 'docs/idea/README.md'],
+      ['seamRowsTotal', 'llms.txt'],
+      ['seamRowsTotal', 'wiki/Home.md'],
     ]);
     for (const gap of gaps) {
       expect(derivedDocCountFindingFor(gap, COUNTS).code).toBe('X_DERIVED_DOC_COUNT_UNSCANNED');
@@ -125,6 +139,36 @@ describe('derived documentation counts', () => {
     expect(unscanned.fix).toEndWith('bun run scripts/derived-doc-counts.ts --json');
   });
 
+  test('rejects a shipped-count claim that drifted while the row total stayed true', () => {
+    // The exact stale sentence this derivation replaced: "24 of the 26 seam rows are shipped"
+    // matches the row TOTAL (26) but understates the shipped count (24 vs the true 26) — a naive
+    // single-capture read that only validated the total would pass this unchanged.
+    const stale = validPages.map((page) =>
+      page.path === 'docs/idea/README.md'
+        ? { ...page, text: '24 of the 26 seam rows are shipped' }
+        : page,
+    );
+    const gaps = checkDerivedDocCounts(stale, COUNTS);
+    expect(gaps).toEqual([{ kind: 'seamRows', at: 'docs/idea/README.md', claimed: 24, line: 1 }]);
+    const gap = gaps[0] ?? expect.unreachable('expected exactly one gap');
+    expect(derivedDocCountFindingFor(gap, COUNTS).code).toBe('X_DERIVED_DOC_COUNT_STALE');
+  });
+
+  test('rejects a row total understated by an unshipped row the prose never counted', () => {
+    // "all 26 seam rows are shipped" names only the total; if a 27th row were added and left
+    // unshipped, this sentence would still read 26 and go unnoticed without a total check.
+    const stale = validPages.map((page) =>
+      page.path === 'docs/idea/README.md'
+        ? { ...page, text: 'all 27 seam rows are shipped' }
+        : page,
+    );
+    const gaps = checkDerivedDocCounts(stale, COUNTS);
+    expect(gaps).toEqual([
+      { kind: 'seamRows', at: 'docs/idea/README.md', claimed: 27, line: 1 },
+      { kind: 'seamRowsTotal', at: 'docs/idea/README.md', claimed: 27, line: 1 },
+    ]);
+  });
+
   test('derives the repository inventories from their executable sources', async () => {
     const root = `${import.meta.dir}/..`;
     const counts = await deriveDocCounts(root);
@@ -173,11 +217,12 @@ describe('derived documentation counts', () => {
       expect(await deriveDocCounts(dir)).toEqual({
         components: 0,
         seamRows: 0,
+        seamRowsTotal: 0,
         pipelineStages: 0,
       });
       const findings = await derivedDocCountFindings(dir);
       expect(findings.map((finding) => finding.code)).toEqual(
-        Array.from({ length: 8 }, () => 'X_DERIVED_DOC_COUNT_UNSCANNED'),
+        Array.from({ length: 11 }, () => 'X_DERIVED_DOC_COUNT_UNSCANNED'),
       );
     } finally {
       await rm(dir, { recursive: true, force: true });
