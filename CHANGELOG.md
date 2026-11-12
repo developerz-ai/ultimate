@@ -10,53 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- Security: a sealed column no longer enters a history image (its lookup ciphertext was an equality oracle), and the authorization server enforces each client's registered grants and auth method.
-- Per-request floor: schema parses ~2.8× faster on valid objects, logger + request line 21 → 13 µs, the request memo bounded at 8 MiB.
-- Sentry groups by error code with real stack frames; raster work leaves the event loop (worst stall 775 ms → 1–41 ms).
-
-### Added
-
-- `@ultimat3/core`: `mapBounded(items, fn, { width, signal })` — bounded concurrent map in input order; the first rejection aborts the rest, a missing `width` is `X_INVARIANT`, a caller abort is `X_ABORTED`.
-- `@ultimat3/core`: `teeLogLines(tee)` copies every process-logger line beside the streams; `x dev`'s `.x/dev.log` uses it.
-- `@ultimat3/core`: `outbound({ breaker })` caps retries at 20% of calls per breaker (burst 10) via `retryBudgetOf`; a refused retry returns the last attempt's error.
-- `@ultimat3/core`: `X_IMAGE_RASTER_BUDGET` (503) — where no raster Worker can start, the web role refuses an inline crop or composite above `RASTER_SYNC_PIXELS`; fix: `warmVariants`.
-- `@ultimat3/cache`: `memoPerRequest(fn, key)` — the request memo for a plain function.
-
-### Changed
-
-- `@ultimat3/schema`: composite schemas (object, array, record) check builtin members directly, and build an issue path only on failure. A valid 5-field object parses 1.69 → 0.60 µs; issue order and cap unchanged. `checkOf(builtin)` called standalone no longer trims to 100 issues (the collecting loops still bound results).
-- `@ultimat3/core`: Sentry events carry `exception.stacktrace.frames`, oldest first, `in_app: false` for `node_modules`, `@ultimat3/` and runtime frames; `extra.stack` stays through 31.x.
-- `@ultimat3/core`: the Sentry default fingerprint is the error code (`monitorFingerprint`) — one code from many operations is one issue; `X_INTERNAL` groups on its application frame, `X_CLIENT_ERROR` on code + `<pattern>#<island>`. Local admin grouping (`errorFingerprint`) unchanged.
-- `@ultimat3/core`: `SentryReporterOptions` is the one declaration of `sentryErrorReporter`'s options (`beforeSend`, `ignore`, `fingerprint`); `SentryReporterHooks` is an alias.
-- `@ultimat3/core` logger: `child()` no longer re-validates its level or re-redacts its parent's fields; the credential-key verdict is memoised per key (bounded at 4,096); bound fields are redacted once, when bound. `ctxOf` + one request log line 21 → 13 µs.
-- `@ultimat3/core`: `recordRequest` builds its series key once per label set, not twice per request; a series no longer aliases the caller's mutable label object.
-- `@ultimat3/core`: `visibleInterval` / `pollEvery` back off on failure by default — `maxMs` defaults to 8 × `ms` with equal jitter, a success resets to `ms`. `maxMs: ms` keeps the fixed rate.
-- `@ultimat3/core`: `transformImageBytes` runs raster work in a Worker, compiled binaries included; worst event-loop stall on a 4096² source 775 ms → 1–41 ms, output byte-identical.
-- `@ultimat3/cache`: the request memo is bounded at `MEMO_MAX_BYTES` (8 MiB) per ctx, oldest dropped silently (a job attempt reading a `cache:` query per batch: 198 MiB → 8.4 MiB over 2,000 batches). Held reads are charged by a bounded sample (~2 µs), never by serialising.
-- `@ultimat3/cache`: `estimateBytes` and the LRU's `set` count UTF-8 bytes without a `TextEncoder` copy.
-- `@ultimat3/query`: the request memo uses `@ultimat3/cache`'s per-ctx store and its 8 MiB bound; `requestMemo(ctx)` returns `MemoFlights`, not a `Map`.
-
-### Deprecated
-
-- `@ultimat3/seo`: `buildSitemap` / `sitemapUrls` take `clock?: Clock` (default `systemClock`, read once per build), like `buildFeed`; `now: Date` is deprecated → `clock: frozenClock(now)`. Removal on `next`.
-
-### Fixed
-
-- `@ultimat3/core`: a `cache.tiers` entry that is a Symbol or a null-prototype object is `X_CONFIG_INVALID`, not a bare `TypeError`.
-- `@ultimat3/i18n`: `extractKeys` no longer reports a `t('…')` written inside string or template text, and no longer loses a real call right after one.
-- `@ultimat3/time`: `nextLocalSlots` refuses a `count` that is NaN, negative, fractional or Infinity with `X_INVARIANT`.
-- `@ultimat3/entity`, `@ultimat3/db` (security): a sealed column no longer enters a history image (memory `imageOf`, Postgres `ultimate_record_history`); a change to a sealed column alone records no version. A lookup column's deterministic ciphertext was an equality oracle across rows. Apps with `history: true` regenerate a migration and scrub old rows — [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading).
-- `@ultimat3/auth` (security): the authorization server issues and honours refresh tokens only for clients registered with `refresh_token`; others get none, and refreshing answers `unauthorized_client` (the device grant too).
-- `@ultimat3/auth` (security): a confidential client must authenticate with its registered `token_endpoint_auth_method`; the other method is `invalid_client`.
-- `@ultimat3/auth`: a redirect URI containing whitespace is refused at registration, so the memory and Postgres stores agree.
-- `@ultimat3/entity`: `.search()` through an external search index refuses 10,000 or more matches with `X_INVARIANT_VIOLATED` instead of counting, grouping and paging only the first 10,000.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.7.0](docs/changelog/31.7.0.md) | 2026-11-12 | Security: a sealed column no longer enters a history image (its lookup ciphertext was an equality oracle), and the authorization server enforces each client's registered grants and auth method. |
 | [31.6.1](docs/changelog/31.6.1.md) | 2026-11-11 | After a deploy, a CDN can no longer hand a page an island chunk from the previous build: every island and `/_x/assets` script is named by a hash of its final bytes (#1075). |
 | [31.6.0](docs/changelog/31.6.0.md) | 2026-11-11 | `contract-diff` compares against the manifest as committed, so `x manifest` or `x g` can no longer rebaseline a breaking change away before the gate sees it. |
 | [31.5.0](docs/changelog/31.5.0.md) | 2026-11-11 | One address no longer meets 429 on a cold page load: built, content-hashed assets spend a new `assets` rate-limit bucket (2,000 burst, 200/s) instead of `default`. Measured: 180 of 300 island-chunk GETs from one address answered 429 before, 0 after. |
