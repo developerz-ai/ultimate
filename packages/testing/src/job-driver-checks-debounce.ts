@@ -4,7 +4,7 @@
 // input. Type-only imports from `@ultimat3/jobs`: the barrel never loads it.
 
 import { expect } from 'bun:test';
-import { uuidV7 } from '@ultimat3/core';
+import { finiteCount, uuidV7 } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from '@ultimat3/jobs';
 import type { JobDriverCheck } from './job-driver-checks';
 
@@ -29,7 +29,11 @@ const claimAll = (
   driver.claim({
     queues: [queue],
     limit: 10,
-    visibilityTimeoutMs: extra.visibilityTimeoutMs ?? 30_000,
+    visibilityTimeoutMs: finiteCount(
+      'claimAll',
+      'visibilityTimeoutMs',
+      extra.visibilityTimeoutMs ?? 30_000,
+    ),
     workerId: 'w-debounce',
     ...(extra.onExhausted === undefined ? {} : { onExhausted: extra.onExhausted }),
   });

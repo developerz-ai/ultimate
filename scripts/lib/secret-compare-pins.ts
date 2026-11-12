@@ -264,6 +264,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'An `idempotencyKey` used to deduplicate an enqueue — a caller-chosen dedupe name, not a credential.',
   },
+  'packages/jobs/src/driver-memory-enqueue.ts: row.idempotencyKey === request.idempotencyKey': {
+    // why: plan 101 sweep 9b, the memory driver's enqueue split out for debounce and expiry.
+    count: 1,
+    reason:
+      'The memory driver matching a live row to an enqueue by its `idempotencyKey` — the caller-chosen dedupe name `x_jobs_name_tenant_idempotency_live_idx` keys, not a credential.',
+  },
   'packages/jobs/src/events.ts: event.correlationKey !== correlationKey': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `jobs` package row.
     count: 1,

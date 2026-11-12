@@ -129,6 +129,22 @@ describe('job({ maxPending })', () => {
     await declare().enqueue({ n: 1 });
     expect(counted).toBe(0);
   });
+
+  test('without it, the driver is not even read: a staged enqueue needs none installed', async () => {
+    // The fallback facade's driver is a getter that throws X_DRIVER_UNAVAILABLE when none is
+    // installed; a transaction stages into the outbox and must never reach for it.
+    const deps = {
+      store: memoryOutboxStore(),
+      get driver(): JobDriver {
+        return expect.unreachable('the driver was read for a job that declared no maxPending');
+      },
+    };
+    tx = { id: 'tx-no-driver' } as unknown as Tx;
+    setJobsFacade(outboxJobsFacade(deps, () => tx));
+    const ping = declare();
+    expect((await ping.enqueue({ n: 1 })).deduped).toBe(false);
+    expect(await ping.enqueueMany([{ n: 2 }])).toHaveLength(1);
+  });
 });
 
 describe("enqueue({ onConflict: 'replace', expiresAt })", () => {

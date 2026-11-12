@@ -358,7 +358,7 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       // A payload naming one org, enqueued for — or by an actor of — another (`tenant.ts`).
       refuseEnqueueTenant(handle.name, handle.tenantFor(input), options.tenantId);
       const tx = options.outbox === false ? undefined : currentTx();
-      await gateBacklog(deps.driver, ledger, handle, [input], options, tx);
+      await gateBacklog(() => deps.driver, ledger, handle, [input], options, tx);
 
       if (tx === undefined) {
         if (deps.mode === 'required' && options.outbox !== false) {
@@ -392,7 +392,7 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       options: EnqueueManyOptions = {},
     ) {
       const tx = options.outbox === false ? undefined : currentTx();
-      await gateBacklog(deps.driver, ledger, handle, inputs, options, tx);
+      await gateBacklog(() => deps.driver, ledger, handle, inputs, options, tx);
       return enqueueMany(deps, tx, handle, inputs, options);
     },
   };

@@ -95,10 +95,11 @@ export function backlogLedger(): BacklogLedger {
 /**
  * Refuse the call when the rows it adds would cross `handle.maxPending` (`X_JOB_BACKLOG_FULL`);
  * otherwise record its keys against `tx`, so the next enqueue in the same transaction counts
- * them. Free for a job that declared no ceiling: not a key is derived.
+ * them. Free for a job that declared no ceiling: not a key is derived, and `driver` is never
+ * called — the fallback facade's throws when none is installed, which a staged enqueue never needs.
  */
 export async function gateBacklog<I>(
-  driver: Pick<JobDriver, 'name' | 'backlog' | 'holds'>,
+  driver: () => Pick<JobDriver, 'name' | 'backlog' | 'holds'>,
   ledger: BacklogLedger,
   handle: JobHandle<I>,
   inputs: readonly I[],
@@ -123,7 +124,7 @@ export async function gateBacklog<I>(
   if (adding.size === 0) return;
   // A single enqueue names its key, so a live holder of it can say the call adds no row at all.
   const [only] = adding.values();
-  await refuseBacklog(driver, handle, queue, adding.size, {
+  await refuseBacklog(driver(), handle, queue, adding.size, {
     staged: staged?.size ?? 0,
     ...(inputs.length === 1 && only !== undefined ? { key: only } : {}),
   });

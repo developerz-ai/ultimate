@@ -1,8 +1,7 @@
-// The `OutboxStore` contract of `@ultimat3/jobs` as shared examples: `behavesLike(
-// outboxStoreConformance, () => subject)`. A staged row lives or dies with its transaction; a claim
-// is a LEASE fenced on its claimant, so two relays never publish one row and a lapsed one cannot
-// touch a newer claimant's batch; a debounced or expiring row keeps both through the claim. The
-// subject is called once per test and holds no rows.
+// `OutboxStore` contract of `@ultimat3/jobs` as shared examples (`behavesLike(outboxStoreConformance,
+// () => subject)`; one fresh, empty subject per test). A staged row lives or dies with its
+// transaction; a claim is a LEASE fenced on its claimant, so two relays never publish one row nor a
+// lapsed one touch a newer batch; a debounced or expiring row keeps both through the claim.
 
 import { expect, test } from 'bun:test';
 import type { OutboxRecord } from '@ultimat3/jobs';

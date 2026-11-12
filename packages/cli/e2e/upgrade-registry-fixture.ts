@@ -9,7 +9,9 @@ import { cpSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 const UPSTREAM = 'https://registry.npmjs.org';
-const SKIP_COPY = new Set(['node_modules', 'dist', 'coverage']);
+// `.serve-fixture`: `serve.live.test.ts`'s gitignored run dirs, whose Postgres data a test still
+// tearing down deletes under `cpSync` (ENOENT mid-copy). `bun pm pack` ships none of these.
+const SKIP_COPY = new Set(['node_modules', 'dist', 'coverage', '.serve-fixture']);
 
 interface Stamped {
   readonly manifest: Record<string, unknown>;
