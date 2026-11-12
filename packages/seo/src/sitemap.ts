@@ -2,7 +2,7 @@
 // enumerates, so the sitemap can never drift from what the build actually produced. One urlset —
 // split into an index past a protocol cap — or, with `sections`, an index of named, paginated parts.
 
-import { assert, SITEMAP_DEFAULT_SECTION } from '@ultimat3/core';
+import { assert, type Clock, SITEMAP_DEFAULT_SECTION, systemClock } from '@ultimat3/core';
 import { sitemapEntryInvalid, sitemapTooLarge } from './errors';
 import { hreflangTag } from './locale-tags';
 import { disallowMatcher } from './robots';
@@ -76,7 +76,16 @@ export interface BuildSitemapOptions {
    * hreflang cluster: a crawler told to stay out of a URL must not be handed it to fetch.
    */
   disallow?: readonly string[];
-  /** The moment a page's `lastmod` may not be later than. Omitted: when the sitemap is built. */
+  /**
+   * Where "now" comes from — the moment a page's `lastmod` may not be later than. Read once per
+   * build. Defaults to `systemClock`; pass `frozenClock(at)` for a reproducible sitemap. The same
+   * seam as `BuildFeedOptions.clock`.
+   */
+  clock?: Clock;
+  /**
+   * @deprecated Pass `clock: frozenClock(now)`. A second clock seam beside `clock`, kept as an
+   * alias until the next major; `clock` wins when both are given.
+   */
   now?: Date;
 }
 
@@ -158,7 +167,8 @@ async function sitemapClusters(
   const clusters: Cluster[] = [];
   const locales = options.locales ?? [];
   const disallowed = disallowMatcher(options.disallow ?? []);
-  const now = options.now ?? new Date();
+  // Read ONCE: every page of one build is clamped to the same instant.
+  const now = options.clock?.now() ?? options.now ?? systemClock.now();
 
   for (const route of indexableRoutes(routes)) {
     for (const page of await expandRoutePages(route)) {

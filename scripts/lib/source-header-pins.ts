@@ -36,7 +36,6 @@ export const SOURCE_HEADER_PINS: Readonly<Record<string, SourceHeaderPin>> = {
   'packages/cache/src/graph.ts': { count: 1, reason: TOO_LONG },
   'packages/cache/src/partial-log.ts': { count: 1, reason: TOO_LONG },
   'packages/cache/src/invalidate.ts': { count: 1, reason: TOO_LONG },
-  'packages/cache/src/memo.ts': { count: 1, reason: TOO_LONG },
   'packages/cache/src/semantic.ts': { count: 1, reason: TOO_LONG },
   'packages/db/src/replica-identity.ts': { count: 1, reason: TOO_LONG },
   'packages/db/src/migration-errors.ts': { count: 1, reason: TOO_LONG },

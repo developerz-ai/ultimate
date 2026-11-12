@@ -261,7 +261,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 ## Invariants — caching
 
 - **The request memo holds the read, not the rows**: `readOnce` publishes the in-flight promise
-  before its first await; a rejection is evicted. `requestMemo(ctx)` is `Map<string, Promise<unknown>>`.
+  before its first await; a rejection is evicted. `requestMemo(ctx)` is `memoFlights(ctx,
+  'query')` (`@ultimat3/cache`): one store, 8 MiB per ctx. Never a second `WeakMap` here.
 - **Every read is memoized; only a `cache:` read goes through the tier** (`readThrough`). One key
   function, `cacheKeyFor`, over the PARSED input `admitAndBuild` returns — never `raw`, or a
   stripped `?junk=N` is an entry and a read per N (`read-cache-key.test.ts`). Outside, a key

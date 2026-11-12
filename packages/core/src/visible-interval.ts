@@ -12,7 +12,7 @@ export interface VisibleIntervalOptions {
   /**
    * Back off on failure: each failed run (a throw or a rejection) doubles the wait from `ms` up to
    * `maxMs`, with equal jitter so a fleet of tabs does not ask in lockstep; a success resets it to
-   * `ms`. Without it every wait is `ms`, failed or not.
+   * `ms`. Default `8 × ms`; `maxMs: ms` opts out, and every wait is `ms`, failed or not.
    */
   readonly maxMs?: number | undefined;
 }
@@ -30,11 +30,18 @@ export interface IntervalHost {
 const SUBJECT = 'visibleInterval';
 
 /**
+ * The default failure ceiling, as a multiple of `ms`. A default of `ms` itself (no back-off unless
+ * asked) meant every open tab polled a failing endpoint at its full healthy rate, which is the
+ * load a partial outage least needs; 8 is three doublings, so a recovery is seen within `8 × ms`.
+ */
+const FAILURE_BACKOFF_FACTOR = 8;
+
+/**
  * Call `run` every `ms` while the tab is shown. Hidden: no call; one make-up call when shown. An
  * async `run` is never overlapped — the next wait starts when it settles; a throw or rejection is
- * re-raised for the page's error hook. With `maxMs`, failures back off and a success resets.
- * Stops on a session loss; starts afresh when a principal next signs in. Returns an idempotent
- * disposer.
+ * re-raised for the page's error hook. Failures back off to `maxMs` (default `8 × ms`); a
+ * success resets. Stops on a session loss; starts afresh when a principal next signs in. Returns
+ * an idempotent disposer.
  */
 export function visibleInterval(
   run: () => unknown,
@@ -52,8 +59,11 @@ export function visibleIntervalOn(
   options: VisibleIntervalOptions = {},
 ): () => void {
   const base = clampTimer(finiteOption(SUBJECT, 'ms', ms));
-  const max =
-    options.maxMs === undefined ? base : clampTimer(finiteOption(SUBJECT, 'maxMs', options.maxMs));
+  const max = clampTimer(
+    options.maxMs === undefined
+      ? base * FAILURE_BACKOFF_FACTOR
+      : finiteOption(SUBJECT, 'maxMs', options.maxMs),
+  );
   // Stopped by a session loss, started afresh — attempt 1 — by the next signed-in principal.
   return whileSessionHeld(() => runLoop(host, run, base, max));
 }

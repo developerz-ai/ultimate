@@ -3,7 +3,7 @@
 // scales on, this says which series carries it, and `docker/helm` reads the same three words.
 
 import type { Counter, Gauge } from './metrics';
-import { counter, gauge, type Histogram, histogram } from './metrics';
+import { counter, DEFAULT_MAX_SERIES, gauge, type Histogram, histogram } from './metrics';
 import type { ScalingSignal } from './roles';
 
 /**
@@ -69,13 +69,40 @@ export interface RequestSample {
  * return, and no autoscaler asks the difference between 201 and 204.
  */
 export function recordRequest(sample: RequestSample): void {
-  const attributes = {
-    method: sample.method,
-    route: sample.route,
-    status: `${Math.floor(sample.status / 100)}xx`,
-  };
+  const attributes = requestAttributes(
+    sample.method,
+    sample.route,
+    Math.floor(sample.status / 100),
+  );
   requests.add(1, attributes);
   requestDuration.record(sample.durationMs / 1000, attributes);
+}
+
+type RequestAttributes = Readonly<{ method: string; route: string; status: string }>;
+
+/**
+ * One FROZEN label set per (method, route, class), so the series key behind it is built once for
+ * the process (`metric-series.ts` keys a frozen set by identity) instead of twice per request.
+ * Nested maps, never a joined string key: a delimiter is spellable by a value. Bounded at the
+ * instrument's own ceiling; past it a fresh frozen set still shares its one key across both
+ * instruments, and the series store's overflow handles the cardinality.
+ */
+const requestLabels = new Map<string, Map<string, Map<number, RequestAttributes>>>();
+let requestLabelCount = 0;
+
+function requestAttributes(method: string, route: string, statusClass: number): RequestAttributes {
+  const byRoute = requestLabels.get(method);
+  const cached = byRoute?.get(route)?.get(statusClass);
+  if (cached !== undefined) return cached;
+  const built = Object.freeze({ method, route, status: `${statusClass}xx` });
+  if (requestLabelCount >= DEFAULT_MAX_SERIES) return built;
+  const routes = byRoute ?? new Map<string, Map<number, RequestAttributes>>();
+  requestLabels.set(method, routes);
+  const classes = routes.get(route) ?? new Map<number, RequestAttributes>();
+  routes.set(route, classes);
+  classes.set(statusClass, built);
+  requestLabelCount += 1;
+  return built;
 }
 
 /** `+1` on connect, `-1` on close, from the realtime transport. */

@@ -15,9 +15,7 @@ import {
 } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import type { LogLevel } from '@ultimat3/core';
-import { installLogSink } from '@ultimat3/core';
-import { writeErrorLine, writeLine } from './write-line';
+import { teeLogLines } from '@ultimat3/core';
 
 export const DEV_LOG_FILENAME = 'dev.log';
 /** The size at which `dev.log` becomes `dev.log.1` and starts over. */
@@ -62,29 +60,14 @@ export function openDevLog(stateDir: string, maxBytes: number = DEV_LOG_MAX_BYTE
   };
 }
 
-/** Where a terminal line goes: the CLI's own synchronous fd writers, by default. */
-export type TerminalWrite = (line: string, stream: 'stdout' | 'stderr') => void;
-
-const toTerminal: TerminalWrite = (line, stream) =>
-  stream === 'stderr' ? writeErrorLine(line) : writeLine(line);
-
-const ERROR_LEVELS: ReadonlySet<LogLevel> = new Set(['error', 'fatal']);
-
 /**
- * Tee the process logger into `dev.log` until the returned release runs. The terminal keeps the
- * lanes core's own writer uses: `--json` (`dispatch.ts`'s `setLogStream('stderr')`) and every
- * `error`/`fatal` line on stderr, the rest on stdout — stdout under `--json` is the document.
+ * Tee the process logger into `dev.log` until the returned release runs. A TEE, never a redirect:
+ * the terminal keeps every line on core's own lanes (`--json` and `error`/`fatal` on stderr), and
+ * which lane a level takes stays core's rule alone — this file only adds the copy on disk.
  */
-export function teeDevLog(
-  stateDir: string,
-  options: { readonly json: boolean; readonly write?: TerminalWrite },
-): () => void {
+export function teeDevLog(stateDir: string): () => void {
   const log = openDevLog(stateDir);
-  const terminal = options.write ?? toTerminal;
-  const release = installLogSink((line, level) => {
-    log.write(line);
-    terminal(line, options.json || ERROR_LEVELS.has(level) ? 'stderr' : 'stdout');
-  });
+  const release = teeLogLines((line) => log.write(line));
   let released = false;
   return () => {
     if (released) return;

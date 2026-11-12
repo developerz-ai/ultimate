@@ -85,4 +85,6 @@ export const TIER_0_ERROR_STATUS = {
   // raises it inside a request. The handler broke its own contract, so it is a 500 and never the
   // 4xx it replaced; production answers the original and this row is not read.
   X_ERROR_UNDECLARED: 500,
+  // @ultimat3/core — a synchronous raster transform is over the web role pixel budget
+  X_IMAGE_RASTER_BUDGET: 503,
 } satisfies Readonly<Record<string, number>>;

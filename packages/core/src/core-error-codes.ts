@@ -91,6 +91,7 @@ const CORE_CODE_TITLES = {
   X_ACTION_ERRORS_INVALID: 'an errors: list names a code that cannot be declared there',
   X_CONTRACT_EXERCISE_ENVIRONMENT: 'a contract exercise was asked to run in a deployed environment',
   X_CONTRACT_EXERCISE_UNSCOPED: 'a contract exercise could not roll back its writes',
+  X_IMAGE_RASTER_BUDGET: 'a synchronous raster transform is over the web role pixel budget',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

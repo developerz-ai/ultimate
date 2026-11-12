@@ -6,17 +6,16 @@ import { adapterSlot } from './adapter-slot';
 import { assert } from './assert';
 import { type Clock, liveClock } from './clock';
 import { renderCauseValue } from './error-render';
-import { isUltimateError } from './errors';
 import { subscribed } from './instrument';
 import { publishRecord } from './logger-record';
-import { isSecret, REDACTED } from './secret';
+import { INVALID_DATE, type LogFields, redactFields, redactionGeneration } from './logger-redact';
 
+// The redaction half lives in `logger-redact.ts`; every caller keeps importing it from here.
+export type { LogFields } from './logger-redact';
+export { isRedactedKey, redactFields, redactKeys } from './logger-redact';
 // Re-exported, not redefined: `secret.ts` owns the placeholder because a `Secret` has to render
 // it without importing the logger, and two constants spelled the same is one rename from a leak.
 export { REDACTED } from './secret';
-
-/** What a `Date` this file cannot render says instead — the line survives, the value is named. */
-const INVALID_DATE = 'an invalid Date';
 
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
 
@@ -31,10 +30,6 @@ const LEVEL_WEIGHT = Object.freeze<Record<LogLevel, number>>({
   fatal: 60,
   silent: 100,
 });
-
-export interface LogFields {
-  readonly [key: string]: unknown;
-}
 
 export interface Logger {
   readonly level: LogLevel;
@@ -55,107 +50,6 @@ export interface LoggerOptions {
   readonly clock?: Clock | undefined;
   /** Receives one complete JSON line (no trailing newline). Defaults to stdout/stderr. */
   readonly writer?: ((line: string, level: LogLevel) => void) | undefined;
-}
-
-/**
- * The exact-key FAST PATH. LOWERCASE, always: `isRedactedKey` lowercases its lookup, so
- * `apiKey`/`accessToken`/`refreshToken` sat here for three releases matching nothing — and those
- * are the exact field names on `@ultimat3/auth`'s `OAuthTokens`. Add through `redactKeys()` (which
- * lowercases) rather than here. A name this set misses still meets `CREDENTIAL_NAME` below.
- */
-const redactedKeys = new Set<string>([
-  'password',
-  'token',
-  'secret',
-  'authorization',
-  'cookie',
-  'set-cookie',
-  'apikey',
-  'api_key',
-  'accesstoken',
-  'access_token',
-  'refreshtoken',
-  'refresh_token',
-  'idtoken',
-  'id_token',
-  'sessiontoken',
-  'session_token',
-  'clientsecret',
-  'client_secret',
-  'privatekey',
-  'private_key',
-  // The framework's own columns (`@ultimat3/auth`): a hash is what an offline guess runs against.
-  'passwordhash',
-  'tokenhash',
-  'keyhash',
-]);
-
-/**
- * The second half, for the names no list can enumerate. Exact-key matching alone let every
- * COMPOUND credential through — `currentPassword`, `mfaSecret`, `resetToken`, `recoveryCode` — and
- * `@ultimat3/action`'s audit walk asks this same predicate, so each was persisted in clear.
- *
- * Tested against the key lowercased with `_` and `-` removed, so one pattern covers the camel, the
- * snake and the header spelling. It names what BEARS a credential and nothing wider, because a
- * redacted field is one an operator cannot correlate on:
- *
- * - `password` / `passphrase` anywhere — no ordinary field carries the word.
- * - `secret` as the LAST word (`mfaSecret`, `webhookSecret`, `appSecrets`, `secretAccessKey`), so
- *   `clientSecretEnv` and `secretsPath` — a variable name and a path — stay readable.
- * - a `token` is a bearer UNLESS its qualifier says it is not: fail closed, with the exceptions
- *   named. `idempotencyToken`, `pageToken`, `continuationToken`, `cursorToken`, `syncToken` are
- *   dedupe and paging keys an operator greps for; everything else ending in `token` — `resetToken`,
- *   `githubToken`, `NPM_TOKEN` — is redacted without a provider list to keep current. The PLURAL
- *   is the reverse: `maxTokens` / `inputTokens` are counts on every `@ultimat3/ai` usage line, so
- *   `tokens` is redacted only behind a bearer qualifier (`accessTokens`).
- * - key MATERIAL by its qualifier (`apiKey`, `privateKey`, `signingKey`, `encryptionKey`,
- *   `masterKey`, `hmacKey`, `secretsKey`, `accessKey`, `retiredKeys`) and the id half of a key
- *   pair (`accessKeyId`). A LOOKUP key — `cacheKey`, `primaryKey`, `idempotencyKey` — and a key's
- *   own id (`signingKeyId`) carry no qualifier on this list and stay readable.
- * - a value that EMBEDS a credential: `connectionString`, `dsn`, a registry `authConfig`, and the
- *   service URLs that carry `user:password@` (`databaseUrl`, `REDIS_URL`). A bare `url` does not.
- * - the one-time codes by name. Never a `code` suffix: that is the error contract's own field.
- * - a stored hash of any of them: it is what an offline guess runs against.
- * - a bearer by its kind as the LAST word: `credentials`, `jwt`, `bearer`, `cookies`, a session's
- *   id or key (`sessionId` IS the session), and key material by encoding (`privateKeyPem`).
- *   `credentialId`, `jwtIssuer`, `cookieName`, `privateKeyId` name a credential, not hold one.
- * - card verification codes (`cvv`, `cvc2`) as a suffix, and a `pin` only as the WHOLE word
- *   behind an owner qualifier — three letters inside `spinner`, `shipping` or `pinned` are not one.
- *
- * Built from constant alternatives with no nested quantifier, so there is no input it backtracks on.
- */
-const CREDENTIAL_NAME = new RegExp(
-  [
-    'passw(?:or)?d|passphrase',
-    'secrets?$',
-    '(?:api|private|signing|encryption|master|hmac|secrets?|access|retired)keys?$|accesskeyid$',
-    '(?:token|key)hash(?:es)?$',
-    '(?<!idempotency|page|continuation|cursor|sync)token$',
-    '(?:access|refresh|id|session|reset|bearer|auth|api|csrf|xsrf|captcha|card|verification|invite|magic|magiclink|device|push|workload|oauth)tokens$',
-    'authconfig$|connectionstring$|dsn$',
-    '(?:database|db|redis|replication|nats|smtp|amqp|mongo)ur[li]s?$',
-    '^totp$|totpcode$|otp$|otpcode$',
-    '(?:recovery|backup|mfa)codes?(?:hash(?:es)?)?$',
-    'credentials?$|jwts?$|bearer$|cookies?$|session(?:id|key)s?$',
-    'privatekey(?:pem|der|jwk)$',
-    'cv[vc]2?$',
-    '^(?:card|atm|security|account|user|wallet)?pin(?:code|number)?(?:hash(?:es)?)?$',
-  ].join('|'),
-);
-
-/** Mark keys as secret everywhere. `defineEnv()` calls this for every `secret: true` var. */
-export function redactKeys(keys: Iterable<string>): void {
-  for (const key of keys) redactedKeys.add(key.toLowerCase());
-}
-
-/**
- * The framework's ONE answer to "is this field a credential?" — the log line, the error monitor's
- * envelope and `@ultimat3/action`'s audit row all ask it, so a value that is `[redacted]` in one
- * cannot be plaintext in another.
- */
-export function isRedactedKey(key: string): boolean {
-  const lower = key.toLowerCase();
-  return redactedKeys.has(lower) || CREDENTIAL_NAME.test(lower.replace(/[_-]/g, ''));
 }
 
 /**
@@ -225,6 +119,33 @@ export function installLogSink(sink: LogSink | undefined): () => void {
  */
 function defaultWriter(line: string, level: LogLevel): void {
   streamWriter(line, level);
+  for (const tee of logTees) {
+    try {
+      tee(line, level);
+    } catch {
+      // A log call is TOTAL: a tee that cannot write (a full disk under `dev.log`) costs its own
+      // copy of the line, never the caller's `log.error` nor the streams' copy, already written.
+    }
+  }
+}
+
+/** Every installed tee, in install order. A set and never a slot: a second tee joins the first. */
+const logTees = new Set<LogSink>();
+
+/**
+ * Hand every process-logger line to `tee` AS WELL AS the streams, until the returned release runs.
+ * The streams (or an `installLogSink` frame) still get each line, on core's own lanes — a tee adds
+ * a copy and decides nothing about where the original goes. `x dev`'s `dev.log` is the caller: a
+ * file beside the terminal, without restating which lane a level writes to. A logger given its
+ * own `writer` never reaches it, as with `installLogSink`. A tee that throws loses its own copy.
+ */
+export function teeLogLines(tee: LogSink): () => void {
+  // A fresh wrapper per install, so the same function teed twice is two copies and two releases.
+  const entry: LogSink = (line, level) => tee(line, level);
+  logTees.add(entry);
+  return () => {
+    logTees.delete(entry);
+  };
 }
 
 /** The process's streams, or the `installLogSink` seam standing in for them. */
@@ -242,83 +163,6 @@ function streamWriter(line: string, level: LogLevel): void {
   }
   const stream = toStderr ? process.stderr : process.stdout;
   stream.write(`${line}\n`);
-}
-
-/**
- * TOTAL, on purpose. `lifecycle.ts` logs the value a shutdown hook threw and the value a
- * readiness check threw — both caught, both arbitrary — so a renderer that throws here escapes
- * `runPhase`'s catch, rejects the drain promise, and `installSignalHandlers` never reaches
- * `process.exit(0)`: SIGTERM hangs, and `/readyz` dies with the check it was reporting on. A log
- * line must never replace the event it describes.
- *
- * Degradation is per KEY, the same shape `renderMetaRecord` uses: one hostile getter must not
- * cost a reader the fields beside it.
- */
-function serialiseValue(value: unknown, depth: number): unknown {
-  try {
-    return serialise(value, depth);
-  } catch {
-    // `instanceof`, `Object.keys` and `toJSON` are all property reads on a value the framework
-    // did not build; `renderCauseValue` is the one renderer that cannot itself throw.
-    return renderCauseValue(value);
-  }
-}
-
-function serialise(value: unknown, depth: number): unknown {
-  // `JSON.stringify` raises a `TypeError` on a bigint, so the whole line died for one field.
-  if (typeof value === 'bigint') return renderCauseValue(value);
-  if (value === null || typeof value !== 'object') return value;
-  // Before every other branch: a `Secret` is redacted by VALUE, so it stays redacted under a key
-  // nobody listed — `{ dsn: secret(url) }` is the leak key-name redaction cannot see.
-  if (isSecret(value)) return REDACTED;
-  // `toISOString()` THROWS on an invalid Date, and an invalid Date is exactly the value worth
-  // logging when a schedule went wrong.
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? INVALID_DATE : value.toISOString();
-  }
-  if (isUltimateError(value)) return value.toJSON();
-  if (value instanceof Error) return { name: value.name, message: value.message };
-  if (depth >= 6) return '[depth-limit]';
-  if (Array.isArray(value)) return value.map((item) => serialiseValue(item, depth + 1));
-  const source = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(source)) {
-    out[key] = isRedactedKey(key) ? REDACTED : entryValue(source, key, depth);
-  }
-  return out;
-}
-
-/** One field. The `try` covers the property READ — `serialiseValue` above is already total. */
-function entryValue(source: Record<string, unknown>, key: string, depth: number): unknown {
-  try {
-    return serialiseValue(source[key], depth + 1);
-  } catch {
-    return 'a value that cannot be read';
-  }
-}
-
-/**
- * A caller's record made safe to SERIALISE and safe to SHIP: credentials replaced by key and by
- * value, a bigint / cycle / hostile getter degraded per field. Exported for the one other sink
- * that sends a caller's record off the box — `error-reporter-sentry.ts`.
- */
-export function redactFields(fields: LogFields): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  const source = fields as Record<string, unknown>;
-  // `Object.keys` before the values, so the read of each value is its own guarded step: a field
-  // record is the caller's object, and enumerating it eagerly threw on the first hostile getter.
-  for (const key of ownKeys(source)) {
-    out[key] = isRedactedKey(key) ? REDACTED : entryValue(source, key, 0);
-  }
-  return out;
-}
-
-function ownKeys(source: Record<string, unknown>): readonly string[] {
-  try {
-    return Object.keys(source);
-  } catch {
-    return [];
-  }
 }
 
 /**
@@ -388,12 +232,11 @@ function envLevel(): LogLevel {
   // to `info` in silence, so `LOG_LEVEL=verbose` — or `DEBUG`, the spelling half the ecosystem
   // uses — gave an operator who asked for MORE lines fewer, and nothing said the variable was the
   // reason. This runs at module init, so the refusal is the first thing the process prints.
-  assert(
-    (LOG_LEVELS as readonly string[]).includes(raw),
+  if (isLogLevel(raw)) return raw;
+  return refuse(
     `LOG_LEVEL=${renderCauseValue(raw)} is not a log level`,
     `set LOG_LEVEL=info (one of ${LOG_LEVELS.join(', ')}, lowercase), or unset LOG_LEVEL`,
   );
-  return raw as LogLevel;
 }
 
 /**
@@ -406,15 +249,24 @@ function envLevel(): LogLevel {
  * is typed here and arrives untyped: an `app.config.ts` value, a JSON file, a CLI flag.
  */
 function resolveLevel(declared: LogLevel): LogLevel {
-  assert(
-    (LOG_LEVELS as readonly unknown[]).includes(declared),
-    // `renderCauseValue`, never `JSON.stringify`: it raises on a bigint and on a cycle, and a
-    // level that arrived from a config file can be either — the refusal must not be replaced by
-    // a `TypeError` from building its own message.
+  if (isLogLevel(declared)) return declared;
+  // `renderCauseValue`, never `JSON.stringify`: it raises on a bigint and on a cycle, and a level
+  // that arrived from a config file can be either — the refusal must not be replaced by a
+  // `TypeError` from building its own message. Built only HERE, on the refusal: `ctxOf` derives a
+  // logger per request, and rendering a message nobody throws was most of what that cost.
+  return refuse(
     `${renderCauseValue(declared)} is not a log level`,
     `pass one of ${LOG_LEVELS.join(', ')} to structuredLogger({ level })`,
   );
-  return declared;
+}
+
+function isLogLevel(value: unknown): value is LogLevel {
+  return (LOG_LEVELS as readonly unknown[]).includes(value);
+}
+
+/** `X_INVARIANT`, as `assert` throws it — called only once the refusal is certain. */
+function refuse(cause: string, fix: string): never {
+  assert(false, cause, fix);
 }
 
 /** The keys a line owns. A caller field spelled like one is renamed, never allowed to replace it. */
@@ -435,17 +287,51 @@ function unreserved(fields: Record<string, unknown>): Record<string, unknown> {
 
 export function structuredLogger(options?: LoggerOptions): Logger {
   const level = options?.level === undefined ? envLevel() : resolveLevel(options.level);
-  const bound = options?.fields ?? {};
-  const clock = options?.clock ?? liveClock;
-  const writer = options?.writer ?? defaultWriter;
+  const bound = bind(options?.fields ?? {});
+  return derive(level, bound, options?.clock ?? liveClock, options?.writer ?? defaultWriter);
+}
+
+/**
+ * A logger's bound fields: the caller's own, kept, and their redaction at `generation`. Redacted
+ * once when bound, and again only when `redactKeys()` has declared a new secret since — `defineEnv`
+ * runs it at boot, after a module-scope `logger.child()` may already have bound that very key.
+ */
+interface Bound {
+  readonly raw: LogFields;
+  redacted: Readonly<Record<string, unknown>>;
+  generation: number;
+}
+
+function bind(raw: LogFields): Bound {
+  return { raw, redacted: redactFields(raw), generation: redactionGeneration() };
+}
+
+/** The redacted snapshot, re-walked from `raw` only if a key was declared secret since. */
+function current(bound: Bound): Readonly<Record<string, unknown>> {
+  const now = redactionGeneration();
+  if (bound.generation !== now) {
+    bound.redacted = redactFields(bound.raw);
+    bound.generation = now;
+  }
+  return bound.redacted;
+}
+
+/**
+ * The logger itself, past every screen: `level` is already one of `LOG_LEVELS` and `bound` is
+ * already redacted. `child()` comes back through here and never through `structuredLogger`, so a
+ * per-request child (`ctxOf`) neither re-validates a level it inherited nor re-walks the fields its
+ * parent bound — only its own, once, when it binds them.
+ */
+function derive(level: LogLevel, bound: Bound, clock: Clock, writer: LogSink): Logger {
   const threshold = LEVEL_WEIGHT[level];
 
   function emit(lineLevel: LogLevel, message: string, fields?: LogFields): void {
     if (LEVEL_WEIGHT[lineLevel] < threshold) return;
+    const context = contextFields();
     const caller = {
-      ...redactFields(bound),
-      ...redactFields(contextFields() ?? {}),
-      ...redactFields(fields ?? {}),
+      ...current(bound),
+      ...(context === undefined ? undefined : redactFields(context)),
+      ...(fields === undefined ? undefined : redactFields(fields)),
     };
     const line = {
       ts: timestamp(clock),
@@ -469,8 +355,17 @@ export function structuredLogger(options?: LoggerOptions): Logger {
     warn: (message, fields) => emit('warn', message, fields),
     error: (message, fields) => emit('error', message, fields),
     fatal: (message, fields) => emit('fatal', message, fields),
-    child: (fields) => structuredLogger({ level, clock, writer, fields: { ...bound, ...fields } }),
-    withLevel: (next) => structuredLogger({ level: next, clock, writer, fields: bound }),
+    child: (fields) => {
+      const parent = current(bound);
+      const child: Bound = {
+        raw: { ...bound.raw, ...fields },
+        redacted: { ...parent, ...redactFields(fields) },
+        generation: bound.generation,
+      };
+      return derive(level, child, clock, writer);
+    },
+    // A public door, so the level is screened again: a child cannot widen what the parent refused.
+    withLevel: (next) => derive(resolveLevel(next), bound, clock, writer),
   };
 }
 

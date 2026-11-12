@@ -23,6 +23,11 @@ loop: **a loop that collects issues asks `stopCollecting(count, hasMore)` after 
 union that discards member issues restores `issuesStopped()`. `standard.large.test.ts` pins 10k bad
 items → 100 issues, `issuesTruncated`, ≤ 100 item checks (a work count, never wall time). The cap is ambient module state because builtin
 validation is synchronous; `withIssueCap` is re-entrant and only the outermost run reports.
+**A composite reads a builtin member's `Check` directly** (`checkOf` answers it from a `WeakMap`
+keyed by the member's `'~standard'` object, filled in `makeSchema`; only a foreign Standard Schema
+member goes through `validate`), and calls it through `checkAt(check, value, path, key)`: the
+member runs at a shared empty path and its issues are re-rooted only on failure.
+`standard.perf.test.ts` pins both as work counts (0 public validates, 1 path for 10k valid rows).
 `schema-rules.ts` is a leaf (`SCHEMA_RULES`, `issueRuleFacts`), imported by `standard.ts`,
 `errors.ts` (type only) and `builder.ts`. `sensitive.ts` reads `provider.ts` and is not in `t`'s graph.
 

@@ -4,6 +4,7 @@
 
 import {
   type AnySchema,
+  checkAt,
   checkOf,
   failWith,
   isPlainObject,
@@ -49,14 +50,13 @@ export function recordSchema<S extends AnySchema>(
         // the same segment `arraySchema` already uses, so `formatPath` renders `meta[3]` with no
         // new spelling to learn. It is `Object.entries` order — integer-like keys sort ahead of
         // string ones — so it names an entry that exists rather than a byte offset in the body.
-        const at = [...path, index];
         // A record is stored as `jsonb` far more often than not, and jsonb refuses an unstorable
         // KEY exactly as it does a value — so the key is refused here, by position, not quoted.
         const unfitKey = unstorable(key);
         if (unfitKey !== undefined) {
           issues.push({
             message: `expected a record key, received one ${unfitKey}`,
-            path: at,
+            path: [...path, index],
             rule: 'record.key',
           });
           continue;
@@ -66,12 +66,12 @@ export function recordSchema<S extends AnySchema>(
             // The refused NAMES are a closed set declared right here, so the message may state
             // them: that is the one part of this line the caller did not choose.
             message: expected(`a record key that is not ${PROTOTYPE_KEYS.join(' | ')}`, key),
-            path: at,
+            path: [...path, index],
             rule: 'record.key',
           });
           continue;
         }
-        const result = valueCheck(entry, at);
+        const result = checkAt(valueCheck, entry, path, index);
         if (result.ok) out[key] = result.value;
         else issues.push(...result.issues);
       }

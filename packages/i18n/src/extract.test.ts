@@ -56,6 +56,42 @@ describe('extractKeys', () => {
     expect(extraction.usages[1]?.line).toBe(4);
     expect(extraction.dynamic).toHaveLength(0);
   });
+
+  // The same phantom one level over: a fix line or a docs string quoting a call is text, and read as
+  // code it reported a key no component renders — and `"t('a' + b)"` reported a dynamic usage.
+  test('a call written inside a string is text, not a usage', () => {
+    const source = [
+      `const hint = "use t('phantom.double') here";`,
+      'const fix = \'call t("phantom.single") instead\';',
+      // Concatenated so the `${` is the fixture's own placeholder, not this file's.
+      "const tpl = `t('phantom.template') $" + "{t('kept.interpolated')} t(name)`;",
+      `const mixed = "t('phantom.left')" + t('kept.after');`,
+      "const real = t('kept.code', { hint: \"t('phantom.option')\" });",
+      `const shown = "t(" + t('kept.adjacent');`,
+    ].join('\n');
+    const extraction = extractKeys(source, 'strings.ts');
+    expect(extraction.usages.map((usage) => usage.key)).toEqual([
+      'kept.interpolated',
+      'kept.after',
+      'kept.code',
+      'kept.adjacent',
+    ]);
+    expect(extraction.dynamic).toHaveLength(0);
+    // The key is still read off the original text, at the call's own position.
+    expect(extraction.usages[0]).toMatchObject({ line: 3, column: 38 });
+    expect(extraction.usages[3]).toMatchObject({ line: 6, column: 22 });
+  });
+
+  // JSX text is not a string, and its apostrophe opens nothing: read as an opener, `Don't` ran to
+  // the quote of the `t('` after it, blanked the call and lost a key HEAD found.
+  test('an apostrophe in JSX text does not hide the call after it', () => {
+    const source = [
+      "const a = <p>Don't {t('a.one')}</p>;",
+      "const b = <p>It's {t('b.one')} and it's {t(\"b.two\")}</p>;",
+    ].join('\n');
+    const extraction = extractKeys(source, 'apostrophe.tsx');
+    expect(extraction.usages.map((usage) => usage.key)).toEqual(['a.one', 'b.one', 'b.two']);
+  });
 });
 
 describe('auditCatalogs', () => {

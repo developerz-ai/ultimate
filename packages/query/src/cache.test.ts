@@ -85,12 +85,13 @@ afterAll(() => {
 });
 
 describe('requestMemo', () => {
-  test('is one map per ctx, the same one on every call', () => {
+  test('is one memo per ctx, the same one on every call', async () => {
     const a = ctxOf({});
     const b = ctxOf({});
 
-    expect(requestMemo(a)).toBe(requestMemo(a));
-    expect(requestMemo(a)).not.toBe(requestMemo(b));
+    await readOnce(a, 'k', async () => 'rows');
+    expect(requestMemo(a).has('k')).toBe(true);
+    expect(requestMemo(b).has('k')).toBe(false);
   });
 });
 

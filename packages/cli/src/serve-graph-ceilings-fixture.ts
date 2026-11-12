@@ -240,8 +240,13 @@
  * (`auth/src/tables.ts`, which re-exports `authorization-server-schema.ts`) instead of the barrel,
  * so 104 auth modules left (106 reached before, these 2 stay) and nothing else moved. A new auth
  * runtime module no longer raises this pin.
+ * raised 873 → 887, measured 887 (2026-11-11, sweep 1, metafile diff against b74acc672): cache's
+ * `{approx-bytes,byte-length,memo-flights,memo-per-request,memo-store}.ts` (bounded memos); core's
+ * `{breaker-retry-budget,config-cache,logger-redact,sentry-frames,bunfs}.ts` and the off-loop
+ * raster `image/{raster-pool,raster-wire,raster-worker-bundle,transform-inline}.ts` — the image
+ * ones ride the core barrel; an `@ultimat3/core/image` subpath would take them off this path.
  */
-export const MIGRATE_CEILING = 873;
+export const MIGRATE_CEILING = 887;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -489,5 +494,7 @@ export const MIGRATE_CEILING = 873;
  * raised 1402 → 1403, measured 1403 (2026-11-11, plan 101 sweep 0, H3/H4): `query/src/parsed-input.ts`
  * — realtime's live window id now hashes the input through query's one capped parse path
  * (`parsedQueryInput`) instead of a raw schema call, so a junk key cannot mint a second window.
+ * raised 1403 → 1417, measured 1417 (2026-11-11, sweep 1 schema+core): `MIGRATE_CEILING`'s 14,
+ * nothing serving-only (metafile diff against origin/main b74acc672).
  */
-export const SERVING_ROLE_CEILING = 1403;
+export const SERVING_ROLE_CEILING = 1417;

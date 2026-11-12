@@ -5,8 +5,8 @@
  * read gets the memo; the ladder is the half a query opts into.
  */
 
-import type { CacheStack, CacheTag, CacheTier } from '@ultimat3/cache';
-import { cacheStack, registeredTiers, tagKeys } from '@ultimat3/cache';
+import type { CacheStack, CacheTag, CacheTier, MemoFlights } from '@ultimat3/cache';
+import { cacheStack, memoFlights, registeredTiers, tagKeys } from '@ultimat3/cache';
 import type { Actor, Clock, Ctx } from '@ultimat3/core';
 import { assertNever, fingerprint } from '@ultimat3/core';
 
@@ -18,22 +18,18 @@ import { assertNever, fingerprint } from '@ultimat3/core';
 export const DEFAULT_READ_CACHE_TTL_MS = 60_000;
 
 /**
- * Request-scoped memo. Keyed by ctx identity so it dies with the request.
+ * Request-scoped memo: `@ultimat3/cache`'s per-ctx memo store, under its `MEMO_MAX_BYTES` bound —
+ * never a second store. Keyed by ctx identity so it dies with the request; bounded because a job's
+ * ctx is the whole attempt, and an unbounded memo held every page a backfill read until it ended.
  *
  * An entry is the read *in flight*, not its value: unsettled it is the answer a caller is
  * already waiting for, settled it is the answer. That is what makes two concurrent identical
  * reads one round trip — and it is why no sentinel is needed for a legitimately `undefined`
  * value, which a value-keyed memo cannot tell apart from a miss. A promise is never `undefined`.
+ * An evicted entry is one more read of the source, never a wrong answer.
  */
-const memos = new WeakMap<object, Map<string, Promise<unknown>>>();
-
-export function requestMemo(ctx: Ctx): Map<string, Promise<unknown>> {
-  const key: object = ctx;
-  const existing = memos.get(key);
-  if (existing !== undefined) return existing;
-  const created = new Map<string, Promise<unknown>>();
-  memos.set(key, created);
-  return created;
+export function requestMemo(ctx: Ctx): MemoFlights {
+  return memoFlights(ctx, 'query');
 }
 
 /**
@@ -153,28 +149,21 @@ export async function readOnce<T>(ctx: Ctx, key: string, run: () => Promise<T>):
  * the same request the answer this one just proved stale — so the guarantee would end at the one
  * call that asked for it.
  */
-export function readFresh<T>(ctx: Ctx, key: string, run: () => Promise<T>): Promise<T> {
-  return publish(requestMemo(ctx), key, run);
+export async function readFresh<T>(ctx: Ctx, key: string, run: () => Promise<T>): Promise<T> {
+  // `async`, so a `run` that throws synchronously rejects like every other failed read.
+  return await publish(requestMemo(ctx), key, run);
 }
 
-/** The read in flight: published before its first await, evicted if it rejects. */
-async function publish<T>(
-  memo: Map<string, Promise<unknown>>,
-  key: string,
-  run: () => Promise<T>,
-): Promise<T> {
+/**
+ * The read in flight: published before its first await. A rejection is not an answer, so the store
+ * drops it and a later read in the same request retries — only ours: a fresh read may have
+ * replaced this entry already, and evicting that one would discard a live answer (`holdValue`).
+ */
+function publish<T>(memo: MemoFlights, key: string, run: () => Promise<T>): Promise<T> {
   // Published before the first await, so a reader arriving in the same tick finds this read.
   const flight = run();
-  memo.set(key, flight);
-  try {
-    return await flight;
-  } catch (error) {
-    // A rejection is not an answer. Drop it so a later read in the same request retries
-    // instead of replaying one failure until the request ends. Only ours: a fresh read may have
-    // replaced this entry already, and evicting that one would discard a live answer.
-    if (memo.get(key) === flight) memo.delete(key);
-    throw error;
-  }
+  memo.publish(key, flight);
+  return flight;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { type Clock, frozenClock } from '@ultimat3/core';
 import { SEO_ERROR_CODES } from './errors';
 import type { RouteRecord } from './routes';
 import {
@@ -226,5 +227,53 @@ describe('the sitemap index cap', () => {
     const result = await buildSitemap(routes, { ...BASE, maxUrls: 1 });
     expect(result.files).toHaveLength(SITEMAP_INDEX_MAX_FILES);
     expect(result.index?.path).toBe('/sitemap.xml');
+  });
+});
+
+describe('the sitemap reads time the way the feed does', () => {
+  // `now` was a second clock seam beside rss.ts's `clock`: one site, two spellings of "now".
+  const future = (path: string) => ({ path, lastmod: '2031-01-01T00:00:00Z' });
+  const blog = route({
+    path: '/blog/:slug',
+    file: 'site/blog/[slug]/page.tsx',
+    prerender: () => [future('/blog/a'), future('/blog/b'), future('/blog/c')],
+  });
+
+  test('a frozen clock is the bound a future lastmod is clamped to', async () => {
+    const urls = await sitemapUrls([blog], {
+      ...BASE,
+      clock: frozenClock(new Date('2026-10-11T12:00:00Z')),
+    });
+    expect(urls.map((url) => url.lastmod)).toEqual([
+      '2026-10-11T12:00:00.000Z',
+      '2026-10-11T12:00:00.000Z',
+      '2026-10-11T12:00:00.000Z',
+    ]);
+  });
+
+  test('the clock is read once per build, not once per page', async () => {
+    const at = new Date('2026-10-11T12:00:00Z');
+    let reads = 0;
+    const clock: Clock = {
+      now: () => {
+        reads += 1;
+        return at;
+      },
+      monotonic: () => 0,
+    };
+    await buildSitemap([blog], { ...BASE, clock });
+    expect(reads).toBe(1);
+  });
+
+  test('`now`, deprecated, still clamps; `clock` wins when both are given', async () => {
+    const now = new Date('2026-01-01T00:00:00Z');
+    const viaNow = await sitemapUrls([blog], { ...BASE, now });
+    expect(viaNow[0]?.lastmod).toBe('2026-01-01T00:00:00.000Z');
+    const both = await sitemapUrls([blog], {
+      ...BASE,
+      now,
+      clock: frozenClock(new Date('2026-10-11T12:00:00Z')),
+    });
+    expect(both[0]?.lastmod).toBe('2026-10-11T12:00:00.000Z');
   });
 });

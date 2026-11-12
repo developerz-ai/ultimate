@@ -13,7 +13,7 @@ afterEach(() => {
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /** An injected tab: a timer queue run by hand and a visibility flag with its one event. */
-function fakeHost(): IntervalHost & {
+function fakeHost(random: () => number = (): number => 1): IntervalHost & {
   hidden: boolean;
   waits: number[];
   fire(): void;
@@ -44,7 +44,7 @@ function fakeHost(): IntervalHost & {
         handlers.delete(fn);
       };
     },
-    random: (): number => 1,
+    random,
     fire(): void {
       const due = [...timers];
       timers.clear();
@@ -62,6 +62,23 @@ function fakeHost(): IntervalHost & {
     listeners: (): number => handlers.size,
   };
   return host;
+}
+
+/** Keeps a failing run's re-raise off the runner's error hook; the `maxMs` test pins the raise. */
+function muteReraise(): () => void {
+  const original = globalThis.queueMicrotask;
+  const raised: unknown[] = [];
+  globalThis.queueMicrotask = (task: () => void): void =>
+    original(() => {
+      try {
+        task();
+      } catch (error) {
+        raised.push(error);
+      }
+    });
+  return (): void => {
+    globalThis.queueMicrotask = original;
+  };
 }
 
 describe('visibleInterval', () => {
@@ -144,6 +161,68 @@ describe('visibleInterval', () => {
       expect(raised).toEqual(['async', 'sync', 'async', 'async']);
     } finally {
       globalThis.queueMicrotask = original;
+    }
+  });
+
+  test('default: three failures stretch the waits toward 8 × ms, and a success resets them', async () => {
+    const host = fakeHost();
+    const outcomes = ['reject', 'reject', 'reject', 'reject', 'ok', 'ok'];
+    const restore = muteReraise();
+    try {
+      visibleIntervalOn(
+        host,
+        () => (outcomes.shift() === 'reject' ? Promise.reject('down') : Promise.resolve()),
+        1000,
+      );
+      for (let i = 0; i < 6; i += 1) {
+        host.fire();
+        await flush();
+      }
+      // No `maxMs` passed: a failing endpoint is no longer asked at the full rate by every tab.
+      expect(host.waits).toEqual([1000, 2000, 4000, 8000, 8000, 1000, 1000]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('default: a failure wait is jittered through the injected rng, a healthy one never', async () => {
+    const rolls: number[] = [];
+    const host = fakeHost((): number => {
+      rolls.push(0);
+      return 0;
+    });
+    const outcomes = ['reject', 'reject', 'ok'];
+    const restore = muteReraise();
+    try {
+      visibleIntervalOn(
+        host,
+        () => (outcomes.shift() === 'reject' ? Promise.reject('down') : Promise.resolve()),
+        1000,
+      );
+      for (let i = 0; i < 3; i += 1) {
+        host.fire();
+        await flush();
+      }
+      // Equal jitter at a roll of 0 is half the stretched wait; the reset is exact, unrolled.
+      expect(host.waits).toEqual([1000, 1000, 2000, 1000]);
+      expect(rolls).toHaveLength(2);
+    } finally {
+      restore();
+    }
+  });
+
+  test('maxMs: ms opts out of the back-off — every wait is ms, failed or not', async () => {
+    const host = fakeHost();
+    const restore = muteReraise();
+    try {
+      visibleIntervalOn(host, () => Promise.reject('down'), 1000, { maxMs: 1000 });
+      for (let i = 0; i < 3; i += 1) {
+        host.fire();
+        await flush();
+      }
+      expect(host.waits).toEqual([1000, 1000, 1000, 1000]);
+    } finally {
+      restore();
     }
   });
 

@@ -1,59 +1,28 @@
-// Tier 0: per-request memoization. Keyed off the ALS context object itself via a WeakMap,
-// so the store dies with the request — there is no `clear()` to forget, no cross-request
-// leak, and no lifecycle for an agent to get wrong. Outside a request (worker boot, a
-// script) the tier degrades to a no-op rather than throwing: memoization is never required
-// for correctness.
+// Tier 0: per-request memoization over `memo-store.ts` — keyed off the ALS ctx, so it dies with
+// the request, and bounded at `MEMO_MAX_BYTES` per ctx. Outside a request (worker boot, a script)
+// the tier degrades to a no-op rather than throwing: memoization is never required for correctness.
 
-import type { Ctx } from '@ultimat3/core';
-import { useContext } from '@ultimat3/core';
+import { dropStore, putEntry, removeEntry, storeFor } from './memo-store';
 import type { CacheTag } from './tags';
 import { tagsIntersect } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
 import { assertTtl } from './tiers';
 import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
-/**
- * Codec text, as in every other tier: two callers in one request reading one key must not share
- * one mutable object, and a hit here must be the shape the LRU or Redis would have answered.
- */
-interface MemoEntry {
-  readonly text: string;
-  readonly tags: readonly CacheTag[];
-}
-
-type MemoStore = Map<string, MemoEntry>;
-
-const stores = new WeakMap<object, MemoStore>();
-
-function currentCtx(): object | undefined {
-  try {
-    const ctx: Ctx = useContext();
-    return typeof ctx === 'object' && ctx !== null ? (ctx as object) : undefined;
-  } catch {
-    // No ambient context: not a request. Nothing to memoize against.
-    return undefined;
-  }
-}
-
-function storeFor(create: boolean): MemoStore | undefined {
-  const ctx = currentCtx();
-  if (ctx === undefined) return undefined;
-  const existing = stores.get(ctx);
-  if (existing !== undefined) return existing;
-  if (!create) return undefined;
-  const fresh: MemoStore = new Map();
-  stores.set(ctx, fresh);
-  return fresh;
-}
+export { MEMO_MAX_BYTES } from './memo-store';
 
 /** Escape hatch for `x dev`'s long-lived contexts; a normal request never calls this. */
 export function clearMemo(): void {
-  const ctx = currentCtx();
-  if (ctx !== undefined) stores.delete(ctx);
+  dropStore();
 }
 
 export function memoSize(): number {
-  return storeFor(false)?.size ?? 0;
+  return storeFor(false)?.entries.size ?? 0;
+}
+
+/** Bytes the current ctx's memo holds, against `MEMO_MAX_BYTES`. 0 outside a ctx. */
+export function memoBytes(): number {
+  return storeFor(false)?.bytes ?? 0;
 }
 
 export function memoTier(): CacheTier {
@@ -61,9 +30,10 @@ export function memoTier(): CacheTier {
     name: 'request-memo',
 
     get<T>(key: string): Promise<CacheEntry<T> | undefined> {
-      const entry = storeFor(false)?.get(key);
-      // No TTL check: a request is shorter than any meaningful TTL.
-      if (entry === undefined) return Promise.resolve(undefined);
+      const entry = storeFor(false)?.entries.get(key);
+      // No TTL check: a request is shorter than any meaningful TTL. A `memoPerRequest` entry is
+      // never under a tier key (its keys are namespaced), so `kind` is a type guard, not a branch.
+      if (entry?.kind !== 'text') return Promise.resolve(undefined);
       const { v } = decodeCacheValue(entry.text) as { readonly v: T };
       return Promise.resolve({ value: v, tags: entry.tags });
     },
@@ -88,11 +58,15 @@ export function memoTier(): CacheTier {
         assertTtl(key, options.ttlMs, 'request-memo', { jitterFraction: 0 });
       }
       const text = encodeCacheValue({ v: value }, { key, tier: 'request-memo' });
-      storeFor(true)?.set(key, { text, tags: options?.tags ?? [] });
+      const store = storeFor(true);
+      if (store !== undefined) {
+        putEntry(store, key, { kind: 'text', text, tags: options?.tags ?? [], bytes: 0 });
+      }
     },
 
     del(key: string): Promise<void> {
-      storeFor(false)?.delete(key);
+      const store = storeFor(false);
+      if (store !== undefined) removeEntry(store, key);
       return Promise.resolve();
     },
 
@@ -102,9 +76,9 @@ export function memoTier(): CacheTier {
         return Promise.resolve({ tier: 'request-memo', keys: [], skipped: 'no request context' });
       }
       const keys: string[] = [];
-      for (const [key, entry] of store) {
-        if (tagsIntersect(tags, entry.tags)) {
-          store.delete(key);
+      for (const [key, entry] of store.entries) {
+        if (entry.kind === 'text' && tagsIntersect(tags, entry.tags)) {
+          removeEntry(store, key);
           keys.push(key);
         }
       }

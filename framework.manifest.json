@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "34d870d9db02b04ba97fe9a840e11f7844544676b3832552c7f86eec91faf30b",
+  "buildId": "1be32c85e6f049f5a7534bafd22174f418e56f3668d3465238802b0aa9f76a7f",
   "tiers": {
     "0": [
       "core",
@@ -2533,6 +2533,11 @@
       "code": "X_IMAGE_QUERY_INVALID",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
+    },
+    {
+      "code": "X_IMAGE_RASTER_BUDGET",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_IMAGE_SECRET_UNIGNORED",

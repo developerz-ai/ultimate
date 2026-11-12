@@ -55,7 +55,10 @@ export {
 } from './invalidate';
 export type { LruOptions } from './lru';
 export { estimateBytes, LruCache, lruTier } from './lru';
-export { memoTier } from './memo';
+export { MEMO_MAX_BYTES, memoTier } from './memo';
+export type { MemoFlights } from './memo-flights';
+export { memoFlights } from './memo-flights';
+export { memoPerRequest } from './memo-per-request';
 export type { CloudflarePurgeOptions } from './purge-cloudflare';
 export { CLOUDFLARE_API_URL, cloudflarePurgeDriver } from './purge-cloudflare';
 export type { PurgeEnvironment, PurgeSelection } from './purge-env';

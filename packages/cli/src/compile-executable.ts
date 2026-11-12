@@ -2,6 +2,7 @@
 // (`docker/Dockerfile`, through `scripts/compile-x.ts`) and the boot e2e that proves it. One
 // `Bun.build`, because the CLI's `bun build --compile` takes no plugin and this graph needs one.
 
+import { rasterWorkerBundle } from '@ultimat3/core';
 import { serverTsxBuildPlugin } from '@ultimat3/render/server';
 import { COMPILE_EXTERNALS } from './compile-externals';
 import { ExecutableCompileFailedError } from './errors';
@@ -23,13 +24,35 @@ export interface CompileExecutableOptions {
  * nobody defines. `serverTsxBuildPlugin` compiles them to the server factory, as the runtime
  * loader does for the same files off disk.
  */
+/**
+ * What the graph is built from: the entry, plus core's raster Worker — this graph BUNDLES core, and
+ * Bun neither finds a `new Worker(…)` target on its own nor resolves one off disk inside the
+ * executable. Without it `transformImageBytes` runs inline and the web role (`ROLE` unset) refuses
+ * every static OG card as `X_IMAGE_RASTER_BUDGET`. The caller's defines win no key of the worker's.
+ */
+export function executableGraph(options: CompileExecutableOptions): {
+  readonly entrypoints: readonly string[];
+  readonly root: string;
+  readonly define: Readonly<Record<string, string>>;
+} {
+  const raster = rasterWorkerBundle([options.entry]);
+  return {
+    entrypoints: [options.entry, raster.entrypoint],
+    // Stated, not inferred: the worker's define is a path relative to exactly this directory.
+    root: raster.root,
+    define: { ...options.define, ...raster.define },
+  };
+}
+
 export async function compileExecutable(options: CompileExecutableOptions): Promise<void> {
+  const graph = executableGraph(options);
   const built = await Bun.build({
-    entrypoints: [options.entry],
+    entrypoints: [...graph.entrypoints],
+    root: graph.root,
     compile: { outfile: options.outfile },
     minify: options.minify ?? false,
     sourcemap: options.sourcemap === true ? 'linked' : 'none',
-    define: { ...options.define },
+    define: { ...graph.define },
     external: [...COMPILE_EXTERNALS],
     plugins: [serverTsxBuildPlugin],
     throw: false,

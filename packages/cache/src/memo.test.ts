@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ctxOf, runWithContext } from '@ultimat3/core';
-import { clearMemo, memoSize, memoTier } from './memo';
+import { clearMemo, MEMO_MAX_BYTES, memoBytes, memoSize, memoTier } from './memo';
 import { tag } from './tags';
 
 describe('request-memo tier outside a request context', () => {
@@ -139,6 +139,54 @@ describe('memoSize', () => {
 
     await runWithContext(ctxOf(), async () => {
       expect(memoSize()).toBe(0);
+    });
+  });
+});
+
+describe('the per-ctx byte bound', () => {
+  // A job's ctx is the whole attempt: a backfill reading one `cache:` query per batch held every
+  // page it ever read until the attempt ended — 198 MiB after 2,000 batches of 100 rows, measured.
+  const mib = (n: number): string => 'x'.repeat(n * 1024 * 1024);
+
+  test('32 MiB written under one ctx holds at most the bound, oldest evicted first', async () => {
+    const tier = memoTier();
+    const chunk = 'x'.repeat(512 * 1024);
+
+    await runWithContext(ctxOf(), async () => {
+      for (let i = 0; i < 64; i += 1) await tier.set(`k${i}`, chunk);
+
+      expect(memoBytes()).toBeLessThanOrEqual(MEMO_MAX_BYTES);
+      expect(memoBytes()).toBeGreaterThan(MEMO_MAX_BYTES - 1024 * 1024);
+      await expect(tier.get('k63')).resolves.toBeDefined();
+      await expect(tier.get('k0')).resolves.toBeUndefined();
+    });
+  });
+
+  test('a single entry over the bound is not memoized and evicts nothing', async () => {
+    const tier = memoTier();
+
+    await runWithContext(ctxOf(), async () => {
+      await tier.set('small', 'v');
+      await tier.set('huge', mib(9));
+
+      await expect(tier.get('huge')).resolves.toBeUndefined();
+      await expect(tier.get('small')).resolves.toEqual({ value: 'v', tags: [] });
+    });
+  });
+
+  test('overwriting, deleting and invalidating a key release its bytes', async () => {
+    const tier = memoTier();
+
+    await runWithContext(ctxOf(), async () => {
+      await tier.set('k', 'x'.repeat(1000), { tags: [tag('post')] });
+      const one = memoBytes();
+      await tier.set('k', 'x'.repeat(1000), { tags: [tag('post')] });
+      expect(memoBytes()).toBe(one);
+      await tier.invalidateTags([tag('post')]);
+      expect(memoBytes()).toBe(0);
+      await tier.set('k', 'v');
+      await tier.del('k');
+      expect(memoBytes()).toBe(0);
     });
   });
 });

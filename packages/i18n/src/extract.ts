@@ -83,7 +83,7 @@ export function extractKeys(
   const callees = options.callees ?? DEFAULT_CALLEES;
   const pattern = new RegExp(
     // not preceded by an identifier char or `.`, so `ctx.t(` and `format(` don't match
-    String.raw`(?<![\w$.])(?:${callees.map(escapeRegExp).join('|')})(?:\.has)?\s*\(\s*([^,)]*)`,
+    String.raw`(?<![\w$.])(?:${callees.map(escapeRegExp).join('|')})(?:\.has)?\s*\(`,
     'g',
   );
 
@@ -102,17 +102,24 @@ export function extractKeys(
     usages.push({ key, file, ...position });
   };
 
-  // Over the COMMENT-STRIPPED text, never the raw file: a `// … t('…', { … })` in a comment matched
-  // the shape above and produced a phantom key that `x i18n sync` would have written into every
-  // catalog as `"…": "⟦…⟧"` (measured 2026-09-05). The mask keeps every newline and every string
-  // literal in place, so an index into it is an index into `source` and the positions below hold.
+  // Calls are found in `stripped` and KEPT only where `code` — string bodies blanked too — left the
+  // call's own index as code; the argument is read off `stripped`.
+  // A `// … t('…')` comment produced a phantom key `x i18n sync` would have written into every
+  // catalog as `"…": "⟦…⟧"` (measured 2026-09-05), and `"use t('x.y') here"` in a fix line or a
+  // docs string did the same. Both masks keep length and every newline, so an index into either is
+  // an index into `source`; a template's `${…}` stays code, so a key written there is still found.
   const stripped = stripComments(source);
-  const properties = options.properties ?? [];
-  for (const match of stripped.matchAll(pattern)) record(match[1], match.index ?? 0);
+  const code = blankStrings(stripped);
+  const argument = /\s*([^,)]*)/y;
+  for (const match of stripped.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (code[index] !== stripped[index]) continue;
+    argument.lastIndex = index + match[0].length;
+    record(argument.exec(stripped)?.[1], index);
+  }
 
-  // Properties are read in CODE only: `stripComments` keeps strings, and a fix line or a docs
-  // example quoting `{ titleKey: 'x' }` is text. The value is still read off `stripped`.
-  const code = properties.length === 0 ? stripped : blankStrings(stripped);
+  // Properties are read in CODE only too: a docs example quoting `{ titleKey: 'x' }` is text.
+  const properties = options.properties ?? [];
   for (const property of properties) {
     const marker = property.whenFileContains;
     if (marker !== undefined && !code.includes(marker)) continue;
@@ -263,6 +270,7 @@ function isIgnored(key: string, patterns: readonly string[]): boolean {
 }
 
 const BLANK = '\u0000';
+const WORD_CHAR = /[\w$]/;
 
 /**
  * `text` with every string literal's contents replaced by `BLANK`, same length, so an index into it is
@@ -296,7 +304,9 @@ function blankStrings(text: string): string {
       }
       continue;
     }
-    if (char === "'" || char === '"') quote = char;
+    // A quote right after an identifier char opens nothing — `foo'x'` is no JS — so it is JSX
+    // text's apostrophe: `<p>Don't {t('a')}</p>` read as an opener blanked the call after it.
+    if ((char === "'" || char === '"') && !WORD_CHAR.test(text[i - 1] ?? '')) quote = char;
     else if (char === '`') templates.push(-1);
     else if (top >= 0 && char === '{') templates[top] = (templates[top] ?? 0) + 1;
     else if (top >= 0 && char === '}') {

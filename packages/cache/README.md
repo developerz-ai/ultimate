@@ -48,6 +48,32 @@ const feed = await stack.read('feed:org-1', () => db.posts.recent(), {
 });
 ```
 
+**The request memo is bounded: `MEMO_MAX_BYTES` (8 MiB) per ctx, oldest evicted silently.** A
+job's ctx is the whole attempt, so an unbounded memo held every page a backfill read until it
+ended — 198 MiB after 2,000 batches of 100 rows through a `cache:` query, measured; 8.4 MiB
+bounded. An evicted entry costs one more read, never a wrong one. A held value is charged from a bounded
+sample (`approxBytes`, ≈2 µs for a 50- or 500-row page, within 2× of the exact figure), never
+serialised: the memo charges every query read. One entry over the bound on its
+own is not memoized and evicts nothing.
+
+`@ultimat3/query`'s request memo (`readOnce`) is this store too, through
+`memoFlights(ctx, 'query')`: one store, one bound, whichever entry point filled it.
+
+**`memoPerRequest(fn, key)` — the same memo for a plain function.** Once per ctx and key; outside a
+ctx it calls straight through. An async `fn` hands every concurrent caller one promise, and a
+rejection is dropped so the next call retries. Each wrapper owns its key space, and its entries
+count against the same 8 MiB. The value is held by reference (it never leaves the request), not
+through the codec below.
+
+```ts
+import { memoPerRequest } from '@ultimat3/cache';
+
+interface Org { readonly id: string; readonly name: string }
+declare const db: { readonly orgs: { find(id: string): Promise<Org> } };
+
+export const loadOrg = memoPerRequest((id: string) => db.orgs.find(id), (id) => id);
+```
+
 **Cached values: JSON + `Date` + `bigint` + `Map` + `Set` — the same shape from every tier.**
 Every tier (the memo and the LRU included) stores the value as text through one codec
 (`value-codec.ts`) and decodes a fresh copy on each hit, so:

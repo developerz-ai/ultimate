@@ -4,6 +4,7 @@
 
 import {
   type AnySchema,
+  checkAt,
   checkOf,
   failWith,
   makeSchema,
@@ -83,7 +84,7 @@ export function arraySchema<S extends AnySchema>(
     const issues: StandardIssue[] = [];
     const out: unknown[] = [];
     for (const [index, member] of value.entries()) {
-      const result = itemCheck(member, [...path, index]);
+      const result = checkAt(itemCheck, member, path, index);
       if (result.ok) out.push(result.value);
       else {
         issues.push(...result.issues);

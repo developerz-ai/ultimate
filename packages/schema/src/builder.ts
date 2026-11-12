@@ -253,13 +253,23 @@ function capped<Out>(check: Check<Out>, value: unknown): StandardResult<Out> {
     : cappedFailure(run.value.issues, run.cap, run.stopped);
 }
 
+/**
+ * A builtin schema's check, keyed by its `'~standard'` object — the one part every spread
+ * (`{ ...base, min }`) keeps by reference. A composite reads a builtin member through this, never
+ * through the public `validate`: that door costs a cap closure, a run record, a result and a
+ * re-wrap per member even when the member passes (`standard.perf.test.ts`).
+ */
+const BUILTIN_CHECKS = new WeakMap<object, Check<unknown>>();
+
 export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema<In, Out> {
+  const props: Schema<In, Out>['~standard'] = {
+    version: 1,
+    vendor: VENDOR,
+    validate: (value: unknown): StandardResult<Out> => capped(check, value),
+  };
+  BUILTIN_CHECKS.set(props, check as Check<unknown>);
   const schema: Schema<In, Out> = {
-    '~standard': {
-      version: 1,
-      vendor: VENDOR,
-      validate: (value: unknown): StandardResult<Out> => capped(check, value),
-    },
+    '~standard': props,
     node,
     parse(value: unknown, root = 'value'): Out {
       const result = capped(check, value);
@@ -329,8 +339,14 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
   return schema;
 }
 
-/** Read the check back off a builtin schema so composites can reuse it. */
+/**
+ * Read the check back off a schema so composites can reuse it. A builtin schema answers its own
+ * check, joining the caller's issue cap directly; a foreign Standard Schema member keeps the
+ * public route, its issues re-rooted under the caller's path.
+ */
 export function checkOf<In, Out>(schema: Schema<In, Out>): Check<Out> {
+  const builtin = BUILTIN_CHECKS.get(schema['~standard']);
+  if (builtin !== undefined) return builtin as Check<Out>;
   return (value, path) => {
     const result = schema['~standard'].validate(value);
     if (isThenable(result)) {
@@ -347,4 +363,25 @@ export function checkOf<In, Out>(schema: Schema<In, Out>): Check<Out> {
       })),
     );
   };
+}
+
+/** The path a composite hands a member: shared, never written to, so a pass allocates none. */
+const MEMBER_ROOT: Path = Object.freeze([]);
+
+/**
+ * A composite's member at `key` under `path`. The member runs at a shared empty path and its
+ * issues are re-rooted only when it fails, so a passing member costs no path array; order and
+ * count are the member's own, so the issue cap and issue order are untouched.
+ */
+export function checkAt<Out>(
+  check: Check<Out>,
+  value: unknown,
+  path: Path,
+  key: PropertyKey,
+): CheckResult<Out> {
+  const result = check(value, MEMBER_ROOT);
+  if (result.ok) return result;
+  return failWith(
+    result.issues.map((issue) => ({ ...issue, path: [...path, key, ...(issue.path ?? [])] })),
+  );
 }

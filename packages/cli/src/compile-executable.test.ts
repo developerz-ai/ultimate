@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { compileExecutable } from './compile-executable';
+import { RASTER_WORKER_DEFINE, rasterWorkerBundle } from '@ultimat3/core';
+import { compileExecutable, executableGraph } from './compile-executable';
 import { ExecutableCompileFailedError } from './errors';
 
 const dir = mkdtempSync(join(tmpdir(), 'x-compile-executable-'));
@@ -35,5 +36,15 @@ describe('compileExecutable', () => {
     // Bun's own resolution message, not a paraphrase: the log is what the reader acts on.
     expect(thrown.cause).toContain('no-such-module');
     expect(await Bun.file(outfile).exists()).toBe(false);
+  });
+
+  test("bundles core's raster Worker beside the entry, and keeps the caller's defines", () => {
+    const entry = join(dir, 'bin.ts');
+    const raster = rasterWorkerBundle([entry]);
+    const graph = executableGraph({ entry, outfile: join(dir, 'x'), define: { FLAG: '"1"' } });
+    expect(graph.entrypoints).toEqual([entry, raster.entrypoint]);
+    expect(graph.root).toBe(raster.root);
+    expect(graph.define).toEqual({ FLAG: '"1"', ...raster.define });
+    expect(Object.keys(graph.define)).toContain(RASTER_WORKER_DEFINE);
   });
 });
