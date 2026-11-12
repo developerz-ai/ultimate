@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- Security: `subjectErase` now reaches `<table>_history` — every image naming the erased person is purged in the parent's transaction, including rows deleted earlier and images a `set null`/`cascade` write records. An undeclared history table is `X_SUBJECT_TABLE_UNDECLARED`.
+- New entity reads and locks: `.latestBy(group)` (newest row per group, one statement), `preload(rel, { perParent: n })`, filtered `countBy` and `.aggregate()` (32 measures, one statement), case-insensitive `contains` served by a trigram index, `entity({ version })` optimistic locking (`X_ENTITY_STALE`, 409) and `lockKeys()` deadlock-free multi-key locks.
+- `authenticate` reads the session and its user in one statement (was two).
+
 ### Added
 
 - `@ultimat3/entity`: `.latestBy(group, { order, direction? })` ends a read chain with the newest row of every group in one `DISTINCT ON` statement — ties to the primary key, more than `MAX_LATEST_GROUPS` (1,000) groups `X_INVARIANT_VIOLATED`, never truncated. `preload(rel, { perParent: n, order?, direction? })` attaches at most `n` rows of a `hasMany` per parent in one `LATERAL` statement per 500 parents. A repository without `latestBy` answers both through paged `findMany` reads.
