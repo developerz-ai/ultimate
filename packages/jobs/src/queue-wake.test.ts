@@ -12,6 +12,7 @@ import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './e
 import {
   createIdleBackoff,
   IDLE_POLL_CEILING_MS,
+  IDLE_REST_MAX_MS,
   WOKEN_IDLE_POLL_CEILING_MS,
 } from './idle-backoff';
 import { memoryOutboxStore } from './outbox';
@@ -361,7 +362,7 @@ describe('the idle ceiling follows the wake', () => {
 describe('an idle minute with a proven wake', () => {
   const MINUTE = 60_000;
 
-  test('a worker converges to one claim every five seconds: 15 statements a minute, was 33', async () => {
+  test('a worker on empty queues rests a minute: 2 statements, was 17 at the 5 s ceiling and 33 before', async () => {
     setWakeLive(true);
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
     const driver = memoryJobDriver({ clock });
@@ -386,12 +387,10 @@ describe('an idle minute with a proven wake', () => {
       delays.push(pollDelayMs);
       elapsed += pollDelayMs;
     }
-    expect(delays.slice(0, 7)).toEqual([250, 500, 1_000, 2_000, 4_000, 5_000, 5_000]);
-    // The first pass asks each queue once; every one after it is a single statement.
-    expect(claims).toBe(2 + (delays.length - 1));
-    expect(claims).toBe(17);
-    // Steady state, once the ramp is behind it: twelve a minute.
-    expect(MINUTE / WOKEN_IDLE_POLL_CEILING_MS).toBe(12);
+    // The first pass asks each queue once, and each says nothing is waiting or held (`onEmpty`):
+    // no ramp, a rest of IDLE_REST_MAX_MS (`worker-idle.test.ts` holds what the rest still catches).
+    expect(delays).toEqual([IDLE_REST_MAX_MS]);
+    expect(claims).toBe(2);
   });
 
   test('a relay converges to one claim every five seconds: 16 a minute, was 33', async () => {

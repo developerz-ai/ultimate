@@ -383,9 +383,9 @@ describe('pg enqueue, ack and nack', () => {
       durationMs: 412.6,
     });
     expect(executor.calls[0]?.sql).toBe(SQL_ACK);
-    // The id, the claimer, the duration its counter bucket adds and the CLAIM the settle is
-    // fenced on (last).
-    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 413, 1]);
+    // The id, the claimer and the CLAIM the settle is fenced on. The duration is the counter
+    // batch's, never a parameter (`driver-pg-counters.test.ts`).
+    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 1]);
   });
 
   test('nack maps deadLetter, park and neither onto three states, and park burns no attempt', async () => {
@@ -408,11 +408,11 @@ describe('pg enqueue, ack and nack', () => {
     });
 
     expect(executor.calls.map((call) => call.params)).toEqual([
-      // …, error, claimer, stack, then retried / failed / dead, the duration, and the CLAIM.
-      ['job-1', 'ready', true, 1_000, 'smtp timeout', 'w1', null, 1, 0, 0, 0, 1],
-      ['job-2', 'suspended', false, 0, null, 'w1', null, 0, 0, 0, 0, 2],
+      // …, error, claimer, stack, and the CLAIM.
+      ['job-1', 'ready', true, 1_000, 'smtp timeout', 'w1', null, 1],
+      ['job-2', 'suspended', false, 0, null, 'w1', null, 2],
       // deadLetter wins over park: a job that exhausted its retries is not merely shed.
-      ['job-3', 'dead', true, 0, null, 'w1', null, 0, 0, 1, 0, 7],
+      ['job-3', 'dead', true, 0, null, 'w1', null, 7],
     ]);
     expect(executor.calls[0]?.sql).toBe(SQL_NACK);
   });

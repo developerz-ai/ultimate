@@ -95,14 +95,18 @@ export interface PostgresLeaseLeaderOptions {
   readonly holder?: string;
   /**
    * How long a grant survives without a renewal. Must be comfortably longer than the scheduler's
-   * tick interval, or a slow round loses the lock to a standby mid-dispatch. Default 30s against
+   * tick interval, or a slow round loses the lock to a standby mid-dispatch. Default 60s against
    * a 1s tick.
    */
   readonly ttlMs?: number;
   readonly clock?: Clock;
 }
 
-export const DEFAULT_LEADER_TTL_MS = 30_000;
+/**
+ * 60s, renewed every 20s: three writes a minute from an idle leader where 30s cost six. The price
+ * is failover — a KILLED leader's standby takes over up to 60s later; a drained one releases at once.
+ */
+export const DEFAULT_LEADER_TTL_MS = 60_000;
 
 /** Renewals a lease gets inside one TTL. Three: two may fail before leadership is at risk. */
 export const LEASE_RENEWALS_PER_TTL = 3;

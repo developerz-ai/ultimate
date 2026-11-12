@@ -106,10 +106,15 @@ returning ${JOB_ROW_COLUMNS}
  * heartbeat that updates nothing means this worker no longer owns the job — cancelled from
  * outside, or re-claimed after the lease lapsed — and continuing to run it is the double-execution
  * the lease exists to prevent.
+ *
+ * `visible_at` and nothing else: no index covers it, so on a page with room (`JOBS_TABLE_STORAGE`)
+ * the renewal is a HOT update. It stamped `updated_at` too, which two indexes cover, so every
+ * renewal of every running job rewrote both — and nothing reads `updated_at` on a running row:
+ * retention and the dead-letter list read it for terminal states, which a settle stamps.
  */
 export const SQL_HEARTBEAT = `
 update x_jobs
-   set visible_at = now() + ($2::bigint * interval '1 millisecond'), updated_at = now()
+   set visible_at = now() + ($2::bigint * interval '1 millisecond')
  where id = $1 and state = 'running' and ($3::text is null or claimed_by = $3)
    and ($4::int is null or claims = $4)
 returning id

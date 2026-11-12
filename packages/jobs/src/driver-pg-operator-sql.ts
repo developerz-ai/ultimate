@@ -168,6 +168,20 @@ on conflict (id) do update
                           then coalesce(x_job_workers.draining_at, excluded.draining_at) end
 `.trim();
 
+/**
+ * The NARROW heartbeat (`renewWorker`): a live row's expiry moves out and nothing else is written
+ * — the held ids and the drain flag are as the last full announce left them. `expires_at > now()`
+ * is the recheck: a lapsed row answers nothing and the registry announces in full.
+ *
+ * $1 id, $2 ttl (ms).
+ */
+export const SQL_WORKER_RENEW = `
+update x_job_workers
+   set heartbeat_at = now(), expires_at = now() + ($2::bigint * interval '1 millisecond')
+ where id = $1 and expires_at > now()
+returning 1
+`.trim();
+
 export const SQL_WORKER_FORGET = `
 delete from x_job_workers where id = $1
 `.trim();

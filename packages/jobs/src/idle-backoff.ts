@@ -20,6 +20,15 @@ export const IDLE_POLL_CEILING_MS = 2_000;
  */
 export const WOKEN_IDLE_POLL_CEILING_MS = 5_000;
 
+/**
+ * The longest an idle loop RESTS once a pass has told it when the next row falls due (a claim's
+ * `onEmpty`) and the wake is live: until that row is due, never past this. It bounds the two
+ * things nothing announces — a notification lost while the session stayed up, a row whose due
+ * time moved under a skewed clock. Measured 2026-11: an idle worker at the 5 s ceiling was 87% of
+ * a near-idle app's claims; this is the same backstop at a twelfth of the cost.
+ */
+export const IDLE_REST_MAX_MS = 60_000;
+
 /** The first step when the floor is 0 (a loop that re-arms at once while there is work). */
 const MIN_STEP_MS = 25;
 
@@ -71,4 +80,44 @@ export function createIdleBackoff(options: {
     },
     idle: () => empty > 0,
   };
+}
+
+/**
+ * A rest is armed in slices of the short ceiling, each re-reading `wakeIsLive()`: a session lost
+ * mid-rest stops announcing work, and the loop falls back to the poll the ceiling promises rather
+ * than sleeping out the minute. A slice costs a timer, never a statement.
+ */
+export const REST_SLICE_MS = IDLE_POLL_CEILING_MS;
+
+/** After the due time, never on it: the row's due time is the database's clock, not this one. */
+export const DUE_MARGIN_MS = 10;
+
+/** The wait a pass ends on, and whether it is a REST — armed in `REST_SLICE_MS` slices. */
+export interface RestPlan {
+  readonly delayMs: number;
+  readonly resting: boolean;
+}
+
+/**
+ * The wait after a pass, for the worker and the relay alike. `dueInMs` is what the pass's empty
+ * claims said of the next due row (`null`: none; `undefined`: not asked or not answered). A pass
+ * that found work, or a due time already past — a row a peer holds locked — keeps `backoffMs`.
+ * With the wake live the loop RESTS until the due time, at most `IDLE_REST_MAX_MS` (or the
+ * declared ceiling, the app's own bound); without it the due time only shortens the poll.
+ */
+export function restAfter(pass: {
+  readonly found: boolean;
+  readonly dueInMs: number | null | undefined;
+  readonly backoffMs: number;
+  readonly floorMs: number;
+  readonly declaredCeilingMs?: number | undefined;
+}): RestPlan {
+  const { dueInMs, backoffMs, floorMs } = pass;
+  const keep = { delayMs: backoffMs, resting: false };
+  if (pass.found || dueInMs === undefined || (dueInMs !== null && dueInMs <= 0)) return keep;
+  const due = dueInMs === null ? Number.POSITIVE_INFINITY : dueInMs + DUE_MARGIN_MS;
+  if (!wakeIsLive())
+    return { delayMs: Math.max(floorMs, Math.min(backoffMs, due)), resting: false };
+  const delayMs = Math.max(floorMs, Math.min(due, pass.declaredCeilingMs ?? IDLE_REST_MAX_MS));
+  return { delayMs, resting: pass.declaredCeilingMs === undefined && delayMs > REST_SLICE_MS };
 }

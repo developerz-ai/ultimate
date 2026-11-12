@@ -285,13 +285,25 @@ export interface JobIntrospection {
   taskFires(): Promise<readonly TaskFire[]>;
   /** A worker's heartbeat. The row expires `ttlMs` after the last one — never by cleanup. */
   announceWorker(worker: WorkerAnnouncement, ttlMs: number): Promise<void>;
+  /**
+   * The NARROW heartbeat: push a still-live row's expiry out `ttlMs`, touching nothing else — what
+   * the registry sends when the held jobs and the drain flag are as last announced. `false` when
+   * there is no live row (lapsed, swept, never written): the caller announces in full. Optional:
+   * without it every heartbeat is an `announceWorker`.
+   */
+  renewWorker?(workerId: string, ttlMs: number): Promise<boolean>;
   /** A clean stop hands the row back at once rather than leaving it to expire. */
   forgetWorker(workerId: string): Promise<void>;
   /** Every worker whose row has not expired, oldest start first. */
   workers(): Promise<readonly WorkerRecord[]>;
   /** Fenced on the CLAIM, as a settle is: progress from one the row no longer carries is dropped. */
   recordProgress(jobId: string, by: ClaimIdentity, progress: JobProgress): Promise<void>;
-  /** One job's buckets from `sinceMs` on, oldest first, at whatever tier each still lives in. */
+  /**
+   * One job's buckets from `sinceMs` on, oldest first, at whatever tier each still lives in.
+   * HISTORY, not the ledger: a process batches its settles' counts (`counter-batch.ts`) and writes
+   * them every `COUNTER_FLUSH_INTERVAL_MS` and on close, so a crash loses at most that much of the
+   * COUNTS. A job's own row (`job()`, `list()`) is the truth of what ran; read that to reconcile.
+   */
   counters(query: {
     readonly job: string;
     readonly sinceMs: number;

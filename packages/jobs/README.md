@@ -1216,7 +1216,9 @@ has the request's. A `client` handed in keeps its own behaviour and still gets t
 
 The pg SQL lives verbatim in `src/driver-pg-*sql.ts` (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …)
 so an agent debugging a stuck queue can read and run the exact statement. The barrel exports
-only the statement another package runs: `SQL_JOBS_TABLE` (the install) — 25.0.0 took the rest
+only what another package runs: `SQL_JOBS_TABLE` (the install) and `JOBS_TABLE_STORAGE` (`x_jobs`
+at fillfactor 80, the room a lease renewal's HOT update needs — `x db migrate` reports drift off
+it) — 25.0.0 took the rest
 off, `SQL_CLAIM` and `SQL_OUTBOX_RELEASE` included (their array-parameter proofs are this package's
 `driver-pg-array.live.test.ts`).
 
@@ -1233,6 +1235,14 @@ the job's `onSettled`, and the worker's claim round does exactly that. The row c
 (`ClaimOptions.dropExhausted` — the worker reads them off its registry): those rows are buried
 `failed` and announced `dropped`, every other one `dead` / `dead-lettered`. A caller that names
 none buries every such row `dead`.
+
+**A claim answers two more things, and every driver's conformance holds both**
+(`job-driver-checks-claim.ts`). Each claimed row carries its run's step records
+(`ClaimedJob.steps`, oldest first — `[]` on a first attempt), so an attempt replays without a
+`steps.list` round trip, and its settle reports the runner's view instead of listing again. A claim
+that took NOTHING, asked with `ClaimOptions.onEmpty`, says how long until a row of those queues can
+next be taken — `null` when none waits or is held — which is what an idle worker rests on (see
+*Idle cost and pickup latency*). A hand-built `ClaimedJob` may omit `steps`: the runner then lists.
 
 A driver you write reads a nack's target state through `nackState(options)` — `dead`
 (`deadLetter`), `failed` (`fail`, terminal and out of the dead-letter queue), `suspended` (`park`)
@@ -1353,11 +1363,23 @@ A queue with nothing to do costs almost nothing, and a job starts when it is com
 
 | Loop | While there is work | While idle | Claims per idle minute |
 |---|---|---|---|
-| `worker` | a claim per queue every `pollIntervalMs` (250 ms) | the wait doubles to `idlePollMaxMs`; each pass is ONE claim over every queue with a free slot | 12 with a proven wake, 30 without (was 240 per queue) |
-| outbox relay | a claim every `intervalMs` (200 ms) | the wait doubles to `idlePollMaxMs` | 12 with a proven wake, 30 without (was 300) |
-| `scheduler` | one round every `tickIntervalMs` (1 s) | a round reads no store and resolves no cron: watermarks are held in memory while it leads, the lease is renewed every `renewEveryMs` (a third of its TTL — 10 s) | 6 statements, for any number of tasks (was 2T+1 a second: 4,321 a minute at 35 tasks) |
+| `worker` | a claim per queue every `pollIntervalMs` (250 ms) | with a proven wake, RESTS until the next row is due — at most `IDLE_REST_MAX_MS` (60 s); without one the wait doubles to `idlePollMaxMs`. Each pass is ONE claim over every queue with a free slot | ≤ 1 with a proven wake (was 12), 30 without (was 240 per queue) |
+| outbox relay | a claim every `intervalMs` (200 ms) | the same: rests until a held row's lease lapses, at most 60 s, with a proven wake; doubles to `idlePollMaxMs` without | ≤ 1 with a proven wake (was 12), 30 without (was 300) |
+| `scheduler` | one round every `tickIntervalMs` (1 s) | a round reads no store and resolves no cron: watermarks are held in memory while it leads, the lease is renewed every `renewEveryMs` (a third of its 60 s TTL — 20 s) | 3 statements, for any number of tasks (was 2T+1 a second: 4,321 a minute at 35 tasks) |
 
-`idlePollMaxMs` defaults to `IDLE_POLL_CEILING_MS` (2 s), and to `WOKEN_IDLE_POLL_CEILING_MS` (5 s) while `wakeIsLive()`. Declared, it is the ceiling either way.
+`idlePollMaxMs` defaults to `IDLE_POLL_CEILING_MS` (2 s), and to `WOKEN_IDLE_POLL_CEILING_MS` (5 s) while `wakeIsLive()`. Declared, it is the ceiling either way, the rest included.
+
+The rest. An idle loop's claim (`SQL_CLAIM_IDLE`, `SQL_OUTBOX_CLAIM_IDLE`) answers, when it took nothing, when the next row can be taken — `ClaimOptions.onEmpty` / `OutboxStore.claim(limit, { onEmpty })`. Measured with fake timers, `As of 2026-11-12`: an idle worker on two queues plus a relay, wake live, issue 181 statements an hour (121 claims, 60 depth reads) where they issued 1,689.
+
+| What the old 5 s poll caught | Now caught by |
+|---|---|
+| a row due by the clock (`runAt`, a retry's backoff) | the rest ends at its due time: `min(run_at)` over ready, delayed and suspended rows, one seek of `x_jobs_claim_idx` per open queue |
+| a crashed worker's lapsed lease; a dead relay's batch | the rest ends when the lease lapses: `min(visible_at)` over running rows; `min(claimed_at) + lease` over held outbox rows |
+| a notification lost with its session | the rest is armed in 2 s slices that re-read `wakeIsLive()`: a lost session falls back to the 2 s poll at once |
+| a notification lost while the session stayed up | the 60 s bound |
+| a resumed queue | `resumeQueue` announces the queue; a paused queue's rows are never a due time |
+
+A busy loop sends the plain claim: the horizon arm is planned on every call (~0.5 ms), so it is asked for only once a pass has come back empty.
 
 ### The wake
 
@@ -1400,7 +1422,7 @@ export const wake = startQueueWake({ listener: client, executor });
 | another process, through the outbox — from its COMMIT | median 9 ms, max 13 ms (was median 1,275 ms, max 2,008 ms) |
 | another process, no wake (proxy, lost session) | within `idlePollMaxMs` — 2 s |
 | nobody — a retry or a `step.sleep` this worker handed back | when it falls due: the worker keeps a timer for a row due inside a minute (`JobExecution.resumeAt`) |
-| nobody — a delayed job another process queued | within `idlePollMaxMs` past its `runAt` |
+| nobody — a delayed job another process queued | at its `runAt` with a proven wake (the rest ends there); within `idlePollMaxMs` past it without |
 
 | Rule | Detail |
 |---|---|
@@ -1506,16 +1528,18 @@ claimable ones — minus the jobs a **draining** worker still holds. A worker th
 retire, a SIGTERM, `stop()`) announces at once with `draining`, and its registry row keeps
 `draining_at` from that first announce (`workers()` → `drainingAt`). Those jobs are finished by
 the worker holding them; counted, a deploy scaled the new pods up for the old pods' runs for as
-long as the longest of them took. A claimer whose row lapsed is counted again — the queue hands the
-job back. `As of 2026-10-30`.
+long as the longest of them took. A claimer whose row lapsed, or whose lease on the job lapsed
+(`visible_at`; the registry row lives 60 s, a visibility window 30 s), is counted again — the queue
+hands the job back. `As of 2026-11-12`.
 
 ```sql
 select count(*)::int as depth
   from x_jobs j
  where j.queue = any('{banks,banks-long}'::text[])
    and ((j.state = 'running'
-         and not exists (select 1 from x_job_workers w where w.id = j.claimed_by
-                            and w.draining_at is not null and w.expires_at > now()))
+         and not (coalesce(j.visible_at > now(), false)
+                  and exists (select 1 from x_job_workers w where w.id = j.claimed_by
+                              and w.draining_at is not null and w.expires_at > now())))
      or (j.state in ('ready', 'delayed', 'suspended') and j.run_at <= now()
          and not exists (select 1 from x_job_pauses p where p.kind = 'queue' and p.name = j.queue)))
 ```
@@ -1667,9 +1691,9 @@ the pg and the memory driver alike. `x jobs`, `/_x` and a dashboard read nothing
 | `promote(id)` | a job waiting on its `runAt` — delayed, or backing off — is due now | — |
 | `pauseQueue(q)` / `resumeQueue(q)` / `pausedQueues()` | a paused queue is claimed by no worker; enqueues still land | effective at every worker's next claim |
 | `pauseTask(t)` / `resumeTask(t)` / `pausedTasks()` | a paused task is not dispatched; on resume its own `catchUp` decides what it missed | — |
-| `workers()` | every live worker: id, host, `build` when `jobWorker({ build })` named one, started, queues, slots, in-flight job ids, last heartbeat, `drainingAt` once it drains | rows expire one visibility timeout after the last heartbeat; `MAX_WORKER_IN_FLIGHT` = 100 ids |
-| `counters({ job, sinceMs })` / `counterTotals(sinceMs)` | per-job history: `done`, `retried`, `failed`, `dead`, `durationMs` per bucket | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d — 4,176 rows per job name at most |
-| `rollupCounters()` | fold buckets past their tier into the next; the scheduler leader calls it once a minute | idempotent |
+| `workers()` | every live worker: id, host, `build` when `jobWorker({ build })` named one, started, queues, slots, in-flight job ids, last heartbeat, `drainingAt` once it drains | rows expire `max(60 s, visibility timeout)` after the last heartbeat, renewed every third of that — narrowly (`renewWorker`: the expiry only) unless the held ids or the drain moved; `MAX_WORKER_IN_FLIGHT` = 100 ids |
+| `counters({ job, sinceMs })` / `counterTotals(sinceMs)` | per-job history: `done`, `retried`, `failed`, `dead`, `durationMs` per bucket. A process batches its settles' counts and writes them every 10 s and on `close()`; a read flushes this process's batch first, a crash loses at most 10 s of counts | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d — 4,176 rows per job name at most |
+| `rollupCounters()` | fold buckets past their tier into the next; the scheduler leader calls it every ten minutes (`COUNTER_ROLLUP_INTERVAL_MS`), hourly after a fold that moved nothing | idempotent |
 | `recordProgress(id, { workerId, claim }, progress)` | what `run({ progress })` writes | at most one write per `PROGRESS_INTERVAL_MS` (1 s) per run, plus the last before the settle |
 | `taskFires()` | per task, the last occurrence that DISPATCHED: `{ task, occurrenceMs, firedAt }`, by task name. Arming a task or skipping missed occurrences moves the watermark and is not a fire. The NEXT fire is `nextTaskRun(task, from)` — the scheduler's own resolver, no scheduler needed | `MAX_TASK_FIRES` = 1,000 rows |
 | `recordTaskFire({ task, occurrenceMs })` | the scheduler's record of a fire that went through `driver.enqueue`; the pg fire writes it in `SQL_SCHEDULER_FIRE` | — |

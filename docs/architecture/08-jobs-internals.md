@@ -175,8 +175,8 @@ owning its connection, and this package holds no wire protocol, so it solves it 
 
 | Property | Detail |
 |---|---|
-| Held for | `ttlMs`, default `DEFAULT_LEADER_TTL_MS` = 30s, against a 1s tick. Comfortably longer than the tick, or a slow round loses the lock mid-dispatch |
-| Renewal | the scheduler's per-round `acquire()`. It both extends the lease and answers the round the node stops being leader |
+| Held for | `ttlMs`, default `DEFAULT_LEADER_TTL_MS` = 60s, against a 1s tick. Comfortably longer than the tick, or a slow round loses the lock mid-dispatch |
+| Renewal | the scheduler's `acquire()`, sent every `ttlMs / 3` (`LEASE_RENEWALS_PER_TTL`; 20s) and answered from memory between. It both extends the lease and answers the round the node stops being leader. As of 2026-11-12 |
 | Holder identity | a per-process uuid, never a hostname a pod reuses |
 | A non-leader | stays a warm standby and never dispatches. It reports **no** readiness — the `scheduler` role opens no HTTP socket at all, only the metrics listener on `DEFAULT_METRICS_PORT` (`packages/cli/src/metrics-endpoint.ts:22-26`) |
 | Crash | the lease is reclaimed by expiry, with nothing to clean up — the one property the advisory lock had, and one a plain `insert … on conflict do nothing` would not |
@@ -255,7 +255,7 @@ A limited job is **deferred, never dropped** — `whenBusy: 'fail'` is the one d
 | counter tiers | 1-minute for 24 h → 5-minute for 7 d → 1-hour for 30 d. The scheduler leader folds once a minute; delete-and-insert in one statement, so two nodes folding move each bucket once | `SQL_COUNTER_FOLD`, `SQL_COUNTER_DROP` |
 | queue / task pause | one row in `x_job_pauses (kind, name)`. The claim excludes a paused queue with `not exists`; the scheduler skips a paused task and leaves its watermark | `SQL_PAUSE`, `SQL_CLAIM` |
 | bulk | one CTE each: select up to 1,000, act, and count what matched before the act | `SQL_JOB_REQUEUE_MANY`, `SQL_JOB_REMOVE_MANY` |
-| worker registry | `x_job_workers`, rewritten on the heartbeat interval, expired by `expires_at` | `SQL_WORKER_ANNOUNCE`, `SQL_WORKERS` |
+| worker registry | `x_job_workers`, TTL `max(60s, visibility)` renewed every third: rewritten in full only when held ids or the drain flag moved, otherwise only `expires_at`; expired by `expires_at` | `SQL_WORKER_ANNOUNCE`, `SQL_WORKER_RENEW`, `SQL_WORKERS` |
 | progress | `x_jobs.progress` (jsonb), throttled in the runner to one write a second, fenced on the claimer | `SQL_JOB_PROGRESS` |
 | atomic fire | the watermark upsert is the fence; the occurrence's jobs insert `where exists (select 1 from moved)` | `SQL_SCHEDULER_FIRE` |
 

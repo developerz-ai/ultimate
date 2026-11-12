@@ -54,6 +54,8 @@ export type CronResolver = (cron: string, options: { tz: string; from: Date }) =
 
 /** How often the leader folds old counter buckets. Only buckets a day old ever move. */
 export const COUNTER_ROLLUP_INTERVAL_MS = 600_000;
+/** After a fold that moved nothing. Late costs extra rows, never a wrong count: reads span tiers. */
+export const COUNTER_ROLLUP_IDLE_INTERVAL_MS = 3_600_000;
 
 /** How long a task found paused is left alone before the pause is read again. */
 export const PAUSE_RECHECK_MS = 5_000;
@@ -102,7 +104,8 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
   const leader = options.leader ?? soleLeader();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let isLeader = false;
-  let lastRollupAt = Number.NEGATIVE_INFINITY;
+  /** When the leader may fold the counters next (`COUNTER_ROLLUP_IDLE_INTERVAL_MS`). */
+  let nextRollupAt = Number.NEGATIVE_INFINITY;
   let trustedUntil = Number.NEGATIVE_INFINITY;
   let standbyUntil = Number.NEGATIVE_INFINITY;
   const renewEveryMs = Number.isFinite(leader.renewEveryMs) ? Math.max(0, leader.renewEveryMs) : 0;
@@ -188,13 +191,12 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       job: request.name,
       result: results[index] ?? { id: '', runId: '', deduped: true },
     }));
-    logger.info('jobs.scheduler.dispatched', {
-      task: handle.name,
-      occurrence: new Date(occurrenceMs).toISOString(),
-      tz: handle.tz,
-      catchUp,
-      jobs: jobs.length,
-    });
+    // An on-time fire is routine, one line per task per occurrence (88% of a scheduler pod's
+    // lines in production): `debug`, as the sibling per-unit events are. A catch-up is news.
+    const occurrence = new Date(occurrenceMs).toISOString();
+    const fields = { task: handle.name, occurrence, tz: handle.tz, catchUp, jobs: jobs.length };
+    if (catchUp) logger.info('jobs.scheduler.dispatched', fields);
+    else logger.debug('jobs.scheduler.dispatched', fields);
     return { task: handle.name, occurrenceMs, jobs, catchUp };
   };
 
@@ -256,13 +258,15 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       });
     };
     const operator = options.driver.introspect;
-    // The counters' fold is the leader's: old one-minute buckets into five-minute ones, and so on
-    // (`COUNTER_TIERS`). Only buckets a day old move, so once every ten minutes is often enough.
-    if (operator !== undefined && at - lastRollupAt >= COUNTER_ROLLUP_INTERVAL_MS) {
-      lastRollupAt = at;
-      await operator.rollupCounters().catch((error: unknown) => {
+    // The counters' fold is the leader's (`COUNTER_TIERS`). Only buckets a day old move: every ten
+    // minutes is often enough, and hourly once a fold found nothing old — an idle queue's case.
+    if (operator !== undefined && at >= nextRollupAt) {
+      nextRollupAt = at + COUNTER_ROLLUP_INTERVAL_MS;
+      const moved = await operator.rollupCounters().catch((error: unknown) => {
         logger.warn('jobs.scheduler.rollup-failed', failureFields(error));
+        return undefined;
       });
+      if (moved === 0) nextRollupAt = at + COUNTER_ROLLUP_IDLE_INTERVAL_MS;
     }
     /** The paused set, read at most once a round and only when a task is actually DUE. */
     let paused: ReadonlySet<string> | undefined;

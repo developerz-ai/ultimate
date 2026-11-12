@@ -12,8 +12,21 @@
 // and an odd quote count means a `;` sits inside an open literal. `driver-pg-sql.test.ts` pins
 // both, plus the shape of every chunk the split yields.
 
+import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
+
+/**
+ * `fillfactor = 80`: room on each page for a row's next version, so a lease renewal (`SQL_HEARTBEAT`)
+ * is a HOT update and writes no index. It sets `visible_at` alone, which no index covers. The claim
+ * and the settles change `state`, every partial index's predicate, and stay non-HOT whatever the
+ * page holds. Only new pages are written at it: a table an earlier boot made reaches it as rows
+ * churn, which on a queue is days.
+ */
+export const JOBS_TABLE_STORAGE: TableStorage = tableStorage('x_jobs', { fillfactor: 80 });
+
 export const SQL_JOBS_TABLE = `
-create table if not exists x_jobs (
+${tableDdl(
+  JOBS_TABLE_STORAGE,
+  `
   id              uuid primary key,
   name            text        not null,
   queue           text        not null default 'default',
@@ -29,8 +42,8 @@ create table if not exists x_jobs (
   last_error      text,
   tenant_id       text,
   created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
-);
+  updated_at      timestamptz not null default now()`,
+)}
 
 -- The enqueuing requests trace and actor, carried onto the row so the job span is a CHILD of
 -- the request that queued it and an audit trail can say who asked. Added by alter because
@@ -226,19 +239,29 @@ alter table x_jobs add column if not exists last_error_stack text;
 alter table x_jobs add column if not exists claims int not null default 0;
 
 -- The keyset a paged listing seeks by. Newest first, id as the tiebreak, so a page is an index
--- range and never a sort of the whole table.
+-- range and never a sort of the whole table. Not a copy of the primary key order to drop: every
+-- immediate enqueue asks it which rows its queue created in the current wake slot (notifyJobReady
+-- in driver-pg-wake-sql.ts), and without it that question is a scan of x_jobs per enqueue.
 create index if not exists x_jobs_created_idx on x_jobs (created_at desc, id desc);
 
--- What the retention sweep reads. Partial over the four terminal states, so a live row never pays
--- for it and the oldest finished rows are an index range rather than a scan of the whole queue.
-create index if not exists x_jobs_finished_idx
+-- The ended half of the retention sweep, and the dead-letter list. Partial over the three terminal
+-- states that are not done, so a live row never pays for it and the oldest ended rows are an index
+-- range rather than a scan of the whole queue. It replaces x_jobs_finished_idx, which also held
+-- every done row a second time beside x_jobs_done_idx: the drop is the one write that index took.
+--
+-- NOT concurrently: the boot applies this constant inside the one transaction that holds the
+-- migration lock and stamps the build, and Postgres refuses a concurrent build in a transaction.
+-- The build reads x_jobs once, under that apply and its lock_timeout, once per database.
+create index if not exists x_jobs_ended_idx
   on x_jobs (updated_at)
-  where state in ('done', 'failed', 'dead', 'cancelled');
+  where state in ('failed', 'dead', 'cancelled');
+
+drop index if exists x_jobs_finished_idx;
 
 -- The done half of the retention sweep, on its own. Done rows are kept a shorter window than
--- failed, dead and cancelled ones, so a walk of the index above in updated_at order stepped over
--- every younger dead row between the old done ones on every batch. Partial over the one state, so
--- the sweep seeks to its cutoff and every row it reads is a row it deletes.
+-- failed, dead and cancelled ones, so a walk of one index over all four in updated_at order stepped
+-- over every younger dead row between the old done ones on every batch. Partial over the one state,
+-- so the sweep seeks to its cutoff and every row it reads is a row it deletes.
 create index if not exists x_jobs_done_idx on x_jobs (updated_at) where state = 'done';
 
 -- What the queue depth read (SQL_STATS) reads, every 15 seconds from every worker. Partial over

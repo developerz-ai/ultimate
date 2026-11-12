@@ -302,6 +302,15 @@ export function memoryOperator(state: MemoryQueueState): MemoryOperator {
       });
       return Promise.resolve();
     },
+    renewWorker(workerId, ttlMs) {
+      const at = nowMs(clock);
+      const worker = workers.get(workerId);
+      // `SQL_WORKER_RENEW`'s `expires_at > now()`: a lapsed row is not revived by a narrow beat.
+      if (worker === undefined || worker.expiresAt <= at) return Promise.resolve(false);
+      const expiresAt = at + finiteOption('the memory worker registry', 'ttlMs', ttlMs);
+      workers.set(workerId, { ...worker, heartbeatAt: at, expiresAt });
+      return Promise.resolve(true);
+    },
     forgetWorker(workerId) {
       workers.delete(workerId);
       return Promise.resolve();

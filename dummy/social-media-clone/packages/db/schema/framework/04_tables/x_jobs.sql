@@ -23,4 +23,4 @@ create table "x_jobs" (
   "last_error_stack" text,
   "claims" integer default 0 not null,
   constraint "x_jobs_pkey" PRIMARY KEY (id)
-);
+) with (fillfactor=80);

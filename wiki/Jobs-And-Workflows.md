@@ -386,11 +386,11 @@ export const syncAccount = job({
 
 | Loop | Idle behaviour | Claims per idle minute |
 |---|---|---|
-| worker | waits `pollIntervalMs` (250 ms) while passes find work, doubling to `idlePollMaxMs` while they do not; an idle pass is one claim over every queue it serves | 12 with the wake, 30 without |
-| outbox relay | `intervalMs` (200 ms) doubling to `idlePollMaxMs` | 12 with the wake, 30 without |
-| scheduler | ticks every second and, with nothing due, reads no store: watermarks are held in memory while it leads and the lease is renewed every 10 s | 6 statements, for any number of tasks |
+| worker | waits `pollIntervalMs` (250 ms) while passes find work; idle with the wake proven, it rests until the next row is due (an empty claim says when), at most 60 s; without the wake, doubling to `idlePollMaxMs`. An idle pass is one claim over every queue it serves | ≤ 1 with the wake (was 12), 30 without |
+| outbox relay | `intervalMs` (200 ms); idle with the wake, rests until a held row's lease lapses, at most 60 s; without, doubling to `idlePollMaxMs` | ≤ 1 with the wake (was 12), 30 without |
+| scheduler | ticks every second and, with nothing due, reads no store: watermarks are held in memory while it leads and the 60 s lease is renewed every 20 s | 3 statements, for any number of tasks (was 6) |
 
-`idlePollMaxMs` defaults to 2 s, and to 5 s while the wake is proven.
+`idlePollMaxMs` defaults to 2 s, and to 5 s while the wake is proven; declared, it caps the rest too. A wake session lost mid-rest falls back to the 2 s poll within one 2 s slice. `As of 2026-11-12`.
 
 **The wake.** A `worker` pod holds one `LISTEN` session (`startQueueWake`, started by the boot). The enqueue statement and the outbox stage carry a `pg_notify` — transactional, so it is delivered when the row commits and never when it rolls back — and an idle worker or relay passes at once.
 

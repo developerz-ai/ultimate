@@ -62,3 +62,19 @@ Production, a near-idle deployed app, 26.4 h (2026-11-10 → 11): 183,019 statem
 - HOT ratio on `x_jobs` above 0.5 under a heartbeat-heavy fixture.
 - `wiki/Known-Gaps.md` rows for `onSettled`, the companion job and debounce/expiry closed.
 - All three drivers pass conformance.
+
+## Outcome (9a, local)
+
+`As of 2026-11-12`, measured before release: an idle hour of one worker on two queues + an outbox relay + a scheduler leader with three daily tasks, the `LISTEN` wake live, on the embedded Postgres under fake timers, every statement counted at the executor. Step 5's production probe is still owed.
+
+| Statement | Per idle hour |
+|---|---|
+| worker claim (`SQL_CLAIM_IDLE`; rests until the next due row, ≤ 60 s) | 60 |
+| worker depth read (`SQL_STATS`, at most once per rest) | 60 |
+| worker registry renewal (`SQL_WORKER_RENEW`, every 20 s) | 180 |
+| relay claim (`SQL_OUTBOX_CLAIM_IDLE`, ≤ 60 s) | 60 |
+| scheduler leader lease (every 20 s) | 180 |
+| counter fold (hourly once a fold moves nothing; 3 statements) | 3 |
+| **total** | **543** (was ~2,430: 1,689 for the worker and relay as measured by the same probe, 360 registry rewrites, 360 leader renewals, 18 fold statements) |
+
+The 150 target is not reachable with the decided cadences: the leader and registry renewals alone are 360 an hour (TTL 60 s, renewed every 20 s, so two renewals may fail before a row lapses). The depth read stays once per rest: it is the only publisher of `queue_depth` for a queue no running pod serves (scale from zero), so dropping it while idle trades an autoscaler's view for 60 statements.

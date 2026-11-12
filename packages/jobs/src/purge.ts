@@ -105,6 +105,27 @@ export interface PurgeDefinition {
 /** The cron a framework-shipped sweep runs on when its host has no opinion. */
 export const DEFAULT_PURGE_CRON = '23 * * * *';
 
+/**
+ * How often a target's UPKEEP runs inside the hourly pass: a scan that only repairs what a dead
+ * sweep stranded (`jobsPurgeTarget`'s orphan steps) and reads no index, so hourly it was a full
+ * table scan 24 times a day for a failure that is rare.
+ */
+export const PURGE_UPKEEP_EVERY_MS = 86_400_000;
+
+/**
+ * `true` the first time it is asked, then once `everyMs` of the JOB's clock has passed since the
+ * last `true`. Per process: N workers may each run it once a day, which the upkeep tolerates — it
+ * is idempotent, and the bound it keeps is "not every pass", not "exactly once".
+ */
+export function upkeepCadence(everyMs: number = PURGE_UPKEEP_EVERY_MS): (nowMs: number) => boolean {
+  let last: number | undefined;
+  return (nowMs) => {
+    if (last !== undefined && nowMs - last < everyMs) return false;
+    last = nowMs;
+    return true;
+  };
+}
+
 export function purge(definition: PurgeDefinition): JobHandle<PurgeInput> {
   const clock = definition.clock;
   recordPurgeCoverage(definition.entities);

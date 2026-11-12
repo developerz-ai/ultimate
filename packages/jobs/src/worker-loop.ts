@@ -1,10 +1,16 @@
 // The claim loop's TIMER: when the next pass runs. The floor while passes find work, backing off
-// while they do not (`idle-backoff.ts`), and three things that cut a wait short — work arriving
-// (`enqueue-signal.ts`), a slot coming free, and a row this worker handed back becoming due.
-// Split off `worker.ts` at its size ceiling: that file is what a pass DOES.
+// while they do not (`idle-backoff.ts`) — or resting until the next row is due, when a pass said
+// when that is and the wake is live — and three things that cut a wait short: work arriving
+// (`enqueue-signal.ts`), a slot coming free, a row this worker handed back becoming due.
 
-import { onEnqueued } from './enqueue-signal';
-import { createIdleBackoff } from './idle-backoff';
+import { onEnqueued, wakeIsLive } from './enqueue-signal';
+import {
+  createIdleBackoff,
+  DUE_MARGIN_MS,
+  IDLE_REST_MAX_MS,
+  REST_SLICE_MS,
+  restAfter,
+} from './idle-backoff';
 
 export interface ClaimLoopOptions {
   readonly subject: string;
@@ -45,8 +51,20 @@ export interface ClaimLoop {
   /**
    * A pass ended: `found` decides the next wait. `full` — some ask came back with every row it
    * asked for — means a backlog is likely, so a slot freeing before the next pass claims at once.
+   * An empty pass that heard `nextDue` RESTS until then (wake live), skipping the ramp.
    */
   passed(found: boolean, full?: boolean): void;
+  /**
+   * An empty ask of the pass in flight said when its next row falls due (`ClaimOptions.onEmpty`):
+   * `null` for none. The pass's earliest is what `passed()` rests on, then forgotten. A queue no
+   * ask covered is held by this worker's own runs, and a run's end `kick()`s.
+   */
+  nextDue(dueInMs: number | null): void;
+  /**
+   * Whether a claim should say when its next row is due: once a pass has found nothing. A busy
+   * worker's claims would pay to plan an arm that never runs (`SQL_CLAIM_IDLE`).
+   */
+  wantsDue(): boolean;
   /** The wait the loop will arm, or has armed. */
   delayMs(): number;
   /**
@@ -71,9 +89,7 @@ export function fillsAsk(admitted: ReadonlyMap<string, number>, limit: number): 
 }
 
 /** A due time further out than this is the poll's to find: no timer is held for a 3-day sleep. */
-const DUE_HINT_MAX_MS = 60_000;
-/** After the due time, never on it: the row's `run_at` is the database's clock, not this one. */
-const DUE_MARGIN_MS = 10;
+const DUE_HINT_MAX_MS = IDLE_REST_MAX_MS;
 
 export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
   const floor = options.floorMs;
@@ -84,6 +100,12 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
   });
   const timers = options.timers ?? REAL_TIMERS;
   let delayMs = floor;
+  /** The wait in hand is a REST (`passed`'s due time, wake live): armed in slices. */
+  let resting = false;
+  /** What this pass's empty asks said (`nextDue`): `undefined` until one did. */
+  let horizon: number | null | undefined;
+  /** The last pass found work. A wake does not clear it: only a pass decides. */
+  let busy = false;
   let active = false;
   let timer: unknown;
   /** The timer's own pass is in flight. A wake landing now asks for ONE more, never a second chain. */
@@ -100,26 +122,43 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
   const due = new Map<number, unknown>();
 
   const arm = (): void => {
-    timer = timers.set(() => {
-      timer = undefined;
-      passing = true;
-      void options
-        .round()
-        .catch((error: unknown) => {
-          // A failed pass never reached `passed()`, so the wait in hand is whatever cut the last
-          // one short — 0 after a wake — and re-arming on it is a loop that spins for as long as
-          // the database is down. Not an idle pass either: try again at the floor.
-          delayMs = backoff.next(true);
-          options.onError(error);
-        })
-        .finally(() => {
-          passing = false;
-          if (!active) return;
-          if (again) delayMs = 0;
-          again = false;
-          arm();
-        });
-    }, delayMs);
+    armIn(delayMs);
+  };
+
+  const armIn = (ms: number): void => {
+    const slice = resting && ms > REST_SLICE_MS;
+    timer = timers.set(
+      () => {
+        timer = undefined;
+        if (slice && wakeIsLive()) {
+          armIn(ms - REST_SLICE_MS);
+          return;
+        }
+        pass();
+      },
+      slice ? REST_SLICE_MS : ms,
+    );
+  };
+
+  const pass = (): void => {
+    passing = true;
+    void options
+      .round()
+      .catch((error: unknown) => {
+        // A failed pass never reached `passed()`, so the wait in hand is whatever cut the last
+        // one short — 0 after a wake — and re-arming on it is a loop that spins for as long as
+        // the database is down. Not an idle pass either: try again at the floor.
+        delayMs = backoff.next(true);
+        resting = false;
+        options.onError(error);
+      })
+      .finally(() => {
+        passing = false;
+        if (!active) return;
+        if (again) delayMs = 0;
+        again = false;
+        arm();
+      });
   };
 
   /** The next pass, now — or right behind the one in flight, whose snapshot may predate the news. */
@@ -132,6 +171,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     if (timer === undefined) return;
     timers.clear(timer);
     delayMs = 0;
+    resting = false;
     arm();
   };
 
@@ -170,9 +210,23 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       unsubscribe = undefined;
     },
     idle: () => backoff.idle(),
+    nextDue(dueInMs) {
+      if (horizon === undefined || horizon === null) horizon = dueInMs;
+      else if (dueInMs !== null) horizon = Math.min(horizon, dueInMs);
+    },
+    wantsDue: () => !busy,
     passed(found, full = false) {
+      const dueInMs = horizon;
+      horizon = undefined;
+      busy = found;
       backlog = full;
-      delayMs = backoff.next(found);
+      ({ delayMs, resting } = restAfter({
+        found,
+        dueInMs,
+        backoffMs: backoff.next(found),
+        floorMs: floor,
+        declaredCeilingMs: options.ceilingMs,
+      }));
     },
     delayMs: () => delayMs,
     kick,

@@ -26,6 +26,7 @@ import {
   assertClaimBounds,
   assertClaimQueues,
   assertEnqueueMany,
+  claimDueIn,
   DEFAULT_QUEUE,
   LEASE_LAPSED_FINAL_ATTEMPT,
   LIVE_STATES,
@@ -106,14 +107,8 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     return undefined;
   };
 
-  const update = (id: string, patch: Partial<JobRecord>): void => {
-    const existing = jobs.get(id);
-    if (existing === undefined) return;
-    jobs.set(id, { ...existing, ...patch, updatedAt: nowMs(clock) });
-  };
-
   /**
-   * `update`, plus the lease columns `SQL_ACK`/`SQL_NACK` set to `null`.
+   * Patch a row and stamp `updatedAt`, clearing the lease columns `SQL_ACK`/`SQL_NACK` set to `null`.
    *
    * A settlement RELEASES the claim, and a `Partial<JobRecord>` cannot say so: both fields are
    * optional, so `visibleAt: undefined` would keep the key and `{ ...existing }` keeps the value.
@@ -294,10 +289,11 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       assertClaimBounds('memory', claimOptions);
       const at = nowMs(clock);
       const wanted = new Set(claimOptions.queues);
-      const claimable = [...jobs.values()]
+      const open = [...jobs.values()]
         .filter((record) => wanted.has(record.queue))
         // A paused queue is never claimed — `SQL_CLAIM`'s `not exists` over `x_job_pauses`.
-        .filter((record) => !operator.isQueuePaused(record.queue))
+        .filter((record) => !operator.isQueuePaused(record.queue));
+      const claimable = open
         .filter((record) => {
           if (record.runAt > at) return false;
           if (record.state === 'ready' || record.state === 'delayed') return true;
@@ -341,7 +337,12 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
         out.push(claimed);
       }
       if (buried.length > 0) claimOptions.onExhausted?.(buried);
-      return out;
+      if (out.length + buried.length === 0) claimOptions.onEmpty?.(claimDueIn(open, at));
+      // The run's steps ride the claim, as `SQL_CLAIM`'s lateral hands them over — read only once
+      // every row above is taken: an await inside that loop let a concurrent claim take them too.
+      return Promise.all(
+        out.map(async (claimed) => ({ ...claimed, steps: await steps.list(claimed.runId) })),
+      );
     },
 
     // Both settlements are FENCED on `running` AND on the claimer, as `SQL_ACK`/`SQL_NACK` are: an
@@ -398,7 +399,12 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       ) {
         return Promise.resolve(false);
       }
-      update(jobId, { visibleAt: nowMs(clock) + heartbeatOptions.visibilityTimeoutMs });
+      // The lease moves and nothing else: `SQL_HEARTBEAT` leaves `updated_at` alone (a renewal is
+      // not a change, and the column write cost pg its HOT update), so `update` is not used here.
+      jobs.set(jobId, {
+        ...record,
+        visibleAt: nowMs(clock) + heartbeatOptions.visibilityTimeoutMs,
+      });
       return Promise.resolve(true);
     },
 
@@ -447,8 +453,10 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       const at = nowMs(clock);
       const byQueue = new Map<string, number>();
       for (const record of jobs.values()) {
+        // Out only while the draining claimer still holds the lease: one lapsed is handed back.
         const held =
-          record.state === 'running' && !operator.isWorkerDraining(record.claimedBy ?? '');
+          record.state === 'running' &&
+          !(operator.isWorkerDraining(record.claimedBy ?? '') && (record.visibleAt ?? 0) > at);
         const due =
           (record.state === 'ready' ||
             record.state === 'delayed' ||

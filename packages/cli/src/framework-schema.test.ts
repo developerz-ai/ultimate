@@ -91,6 +91,12 @@ describe('unit · framework schema', () => {
     expect(storage.find((each) => each.table === 'x_auth_lockouts')?.unlogged).toBe(false);
   });
 
+  test('x_jobs is declared at fillfactor 80, so x db migrate reports a table that drifted off it', () => {
+    // The room a lease renewal's HOT update needs (`JOBS_TABLE_STORAGE`, `@ultimat3/jobs`).
+    const jobs = frameworkTableStorage().find((each) => each.table === 'x_jobs');
+    expect(jobs).toMatchObject({ fillfactor: 80 });
+  });
+
   test('no table is created by two rows, so no row can be deleted as a duplicate', () => {
     const names = frameworkTableNames();
     expect([...new Set(names)].length).toBe(names.length);

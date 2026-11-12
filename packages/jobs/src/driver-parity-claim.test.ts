@@ -48,16 +48,19 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
     expect(isFinalAttempt({ attempts: 3 }, 3)).toBe(true);
     expect(isFinalAttempt({ attempts: 3 }, 2)).toBe(false);
     expect(SQL_CLAIM).toContain('attempt >= max_attempts as exhausted');
-    // Only a row the pick LOCKED is buried, and only one it did not bury is claimed.
-    expect(SQL_CLAIM).toContain('where j.id = p.id and p.exhausted');
-    expect(SQL_CLAIM).toContain('where j.id = p.id and not p.exhausted');
+    // Only a row the pick LOCKED is touched, and its `exhausted` alone decides buried or claimed.
+    expect(SQL_CLAIM).toContain('where j.id = p.id\n');
+    expect(SQL_CLAIM).toContain("set state            = case when not p.exhausted then 'running'");
+    expect(SQL_CLAIM).toContain('attempt          = j.attempt + (not p.exhausted)::int');
     expect(SQL_CLAIM).toContain('for update skip locked');
   });
 
   test('the row says why, in the one text both drivers write, and holds no claim', () => {
-    expect(SQL_CLAIM).toContain(`last_error       = '${LEASE_LAPSED_FINAL_ATTEMPT}'`);
-    expect(SQL_CLAIM).toContain('claimed_by       = null');
-    expect(SQL_CLAIM).toContain('last_error_stack = null');
+    expect(SQL_CLAIM).toContain(
+      `last_error       = case when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'`,
+    );
+    expect(SQL_CLAIM).toContain('claimed_by       = case when p.exhausted then null else $3 end');
+    expect(SQL_CLAIM).toContain('last_error_stack = case when p.exhausted then null');
     // Spliced into SQL as a literal, and into a file `dev-queue.ts` splits on `;`.
     expect(LEASE_LAPSED_FINAL_ATTEMPT).not.toMatch(/['";\\]/);
     expect(LEASE_LAPSED_FINAL_ATTEMPT).toContain('lease lapsed');
@@ -68,7 +71,9 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
     // One counter row per job NAME: two buried rows of one job in one pass are one upsert.
     expect(SQL_CLAIM).toContain('group by name');
     // `retry.deadLetter: false` is the CALLER's knowledge ($5): those rows are buried `failed`.
-    expect(SQL_CLAIM).toContain("case when j.name = any($5::text[]) then 'failed' else 'dead' end");
+    expect(SQL_CLAIM).toContain("when j.name = any($5::text[]) then 'failed' else 'dead' end");
+    // A claimed row is never counted as a burial.
+    expect(SQL_CLAIM).toContain("where state <> 'running'\n   group by name");
     expect(SQL_CLAIM).toContain("(count(*) filter (where state = 'failed'))::int");
   });
 
@@ -139,8 +144,8 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
     expect((await memory.introspect?.job(id))?.state).toBe('running');
     // The pause is read by the pick, above both arms.
     expect(SQL_CLAIM).toContain('x_job_pauses');
-    expect(SQL_CLAIM).toContain('buried as');
-    expect(SQL_CLAIM.indexOf('x_job_pauses')).toBeLessThan(SQL_CLAIM.indexOf('buried as'));
+    expect(SQL_CLAIM).toContain('taken as');
+    expect(SQL_CLAIM.indexOf('x_job_pauses')).toBeLessThan(SQL_CLAIM.indexOf('taken as'));
   });
 });
 

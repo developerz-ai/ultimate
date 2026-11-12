@@ -270,5 +270,7 @@
  * `MIGRATE_CEILING`'s 2, plus one serving-only: `query/src/scope-compose.ts` (a `scoped()`
  * predicate composed into the source before the page is cut, through `read.ts`). Every one a new
  * file; no existing module newly reached.
+ * raised 1471 → 1472, measured 1472 (2026-11-12, sweep 9a jobs idle cost, the test's own walk):
+ * `MIGRATE_CEILING`'s 1, `jobs/src/counter-batch.ts`. Nothing else moved.
  */
-export const SERVING_ROLE_CEILING = 1471;
+export const SERVING_ROLE_CEILING = 1472;

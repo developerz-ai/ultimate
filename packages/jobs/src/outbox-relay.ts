@@ -9,8 +9,8 @@ import { assert, logger, onShutdown, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import { publishRequest } from './enqueue-record';
-import { onStaged, signalEnqueued } from './enqueue-signal';
-import { createIdleBackoff } from './idle-backoff';
+import { onStaged, signalEnqueued, wakeIsLive } from './enqueue-signal';
+import { createIdleBackoff, REST_SLICE_MS, restAfter } from './idle-backoff';
 import type { OutboxDeps, OutboxRecord } from './outbox';
 
 export interface RelayOptions extends OutboxDeps {
@@ -124,6 +124,10 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
   });
   /** What the next `arm()` waits. */
   let delayMs = intervalMs;
+  /** The wait is a REST on a due time (`restAfter`): armed in slices that re-read the wake. */
+  let resting = false;
+  /** The last pass claimed rows: the next claim skips the horizon, which would never run. */
+  let busy = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribe: (() => void) | undefined;
   let running = false;
@@ -145,7 +149,11 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
   let budget = createDrainBudget();
 
   const tick = async (): Promise<number> => {
-    const batch = await options.store.claim(batchSize);
+    // Idle, the claim also says when a held row's lease lapses (`SQL_OUTBOX_CLAIM_IDLE`).
+    let dueInMs: number | null | undefined;
+    const listen = { onEmpty: (due: number | null) => (dueInMs = due) };
+    const batch = await options.store.claim(batchSize, busy ? undefined : listen);
+    busy = batch.length > 0;
     let published = 0;
     if (batch.length > 0 && (await publishBatch(options, batch))) published = batch.length;
     for (const record of published > 0 ? [] : batch) {
@@ -186,8 +194,15 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
     // to find out on their own backed-off poll.
     if (published > 0) signalEnqueued();
     // The loop's next wait, decided by the pass itself so `tick()` and the timer agree: the floor
-    // while rows are moving, doubling to the ceiling while there are none.
-    delayMs = backoff.next(batch.length > 0);
+    // while rows are moving, doubling to the ceiling while there are none — or, the wake live and
+    // the claim empty, resting until a held lease lapses (`restAfter`).
+    ({ delayMs, resting } = restAfter({
+      found: batch.length > 0,
+      dueInMs,
+      backoffMs: backoff.next(batch.length > 0),
+      floorMs: intervalMs,
+      declaredCeilingMs: options.idlePollMaxMs,
+    }));
     // A FULL batch, all of it published, says there is more behind it: the next pass now, as the
     // worker's `again`. At the floor a 500-row batch every 200 ms capped the relay at 2,500 rows a
     // second, a 100k backlog at 40 s. A batch that stopped at a failing row keeps the floor.
@@ -277,42 +292,55 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
       // One pass, then re-armed by ITS result: the floor while rows are moving, doubling to the
       // ceiling while there are none. It was a `setInterval` at 200 ms — five claims a second
       // against an outbox with nothing in it, from every pod, for as long as the pod lived.
-      const arm = (): void => {
-        timer = setTimeout(() => {
-          // Re-read on every pass: "stop claiming" means this timer too, and a callback already on
-          // the event loop when the timer was cleared must not open a claim behind the drain.
-          if (running || state !== 'running') return;
-          running = true;
-          // `.catch` before `.finally`, the shape every other loop in this package uses. `tick()`
-          // guards each publish but not `store.claim()` — one pool timeout during a failover
-          // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
-          // process, taking every staged, unpublished row with it.
-          //
-          // Kept rather than discarded, because `stop()` awaits exactly this chain: the publish
-          // and the `markPublished` behind it are one pass, and a teardown that returned between
-          // them closed the database under the row it was about to mark.
-          pass = tick()
-            .then((): void => undefined)
-            .catch((error: unknown) => {
-              // A failed pass is not an idle one: try again at the floor.
-              delayMs = backoff.next(true);
-              logger.error('jobs.outbox.tick-failed', {
-                error: renderThrowable(error),
-              });
-            })
-            .finally(() => {
-              running = false;
-              pass = undefined;
-              if (state !== 'running') return;
-              if (again) delayMs = 0;
-              again = false;
-              arm();
-            });
-        }, delayMs);
+      const arm = (ms = delayMs): void => {
+        const slice = resting && ms > REST_SLICE_MS;
+        timer = setTimeout(
+          () => {
+            // A rest re-reads the wake per slice: a session lost mid-rest polls again.
+            if (slice && wakeIsLive()) {
+              arm(ms - REST_SLICE_MS);
+              return;
+            }
+            relayPass();
+          },
+          slice ? REST_SLICE_MS : ms,
+        );
         // Never the thing keeping a drained process alive — the rule `renewal-timer.ts` and
         // `lifecycle-deadline.ts` both state for their own timers. The hooks above are what stop
         // this loop, not the process refusing to end.
         timer.unref?.();
+      };
+      const relayPass = (): void => {
+        // Re-read on every pass: "stop claiming" means this timer too, and a callback already on
+        // the event loop when the timer was cleared must not open a claim behind the drain.
+        if (running || state !== 'running') return;
+        running = true;
+        // `.catch` before `.finally`, the shape every other loop in this package uses. `tick()`
+        // guards each publish but not `store.claim()` — one pool timeout during a failover
+        // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
+        // process, taking every staged, unpublished row with it.
+        //
+        // Kept rather than discarded, because `stop()` awaits exactly this chain: the publish
+        // and the `markPublished` behind it are one pass, and a teardown that returned between
+        // them closed the database under the row it was about to mark.
+        pass = tick()
+          .then((): void => undefined)
+          .catch((error: unknown) => {
+            // A failed pass is not an idle one: try again at the floor.
+            delayMs = backoff.next(true);
+            resting = false;
+            logger.error('jobs.outbox.tick-failed', {
+              error: renderThrowable(error),
+            });
+          })
+          .finally(() => {
+            running = false;
+            pass = undefined;
+            if (state !== 'running') return;
+            if (again) delayMs = 0;
+            again = false;
+            arm();
+          });
       };
       // A staged row. Either way the passes after this one run at the floor again. One staged
       // by THIS process is not committed yet, so the wait in hand is cut to the floor and the
@@ -328,6 +356,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
         if (delayMs <= wait || timer === undefined) return;
         clearTimeout(timer);
         delayMs = wait;
+        resting = false;
         arm();
       });
       arm();

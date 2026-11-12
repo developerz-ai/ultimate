@@ -68,7 +68,8 @@ select count(*)::bigint as staged,${NOTIFY_STAGED}::text as woke
  * relays and between two runs of one relay. No column was added for it: `id` is a UUIDv7 minted by
  * `uuid()`, monotonic and already the primary key, so the tiebreak IS stage order.
  */
-export const SQL_OUTBOX_CLAIM = `
+const outboxClaimSql = (horizon: boolean): string =>
+  `
 with claimable as (
   select id
     from x_outbox
@@ -89,10 +90,35 @@ with claimable as (
 select id, run_id, job, queue, input, idempotency_key, max_attempts, tenant_id,
        traceparent, enqueued_by, claimed_by,
        (extract(epoch from run_at) * 1000)::bigint    as run_at,
-       (extract(epoch from staged_at) * 1000)::bigint as staged_at
-  from claimed
+       (extract(epoch from staged_at) * 1000)::bigint as staged_at${horizon ? HORIZON_COLUMN : ''}
+  from claimed${horizon ? OUTBOX_HORIZON_ARM : ''}
  order by staged_at, id
 `.trim();
+
+const HORIZON_COLUMN = `,
+       null::bigint as due_in_ms`;
+
+/**
+ * With nothing claimed, ONE row of nulls carrying `due_in_ms`: when the first row a relay holds
+ * has its lease lapse — the only outbox row no `NOTIFY_STAGED` announces, because its relay died
+ * holding it. Unclaimed rows are absent by construction: one the claim skipped is locked by a
+ * peer's claim in flight. Read over `x_outbox_unpublished_idx`, which an idle outbox keeps empty.
+ */
+const OUTBOX_HORIZON_ARM = `
+union all
+select null, null, null, null, null, null, null, null, null, null, null, null, null,
+       (select (extract(epoch from (min(o.claimed_at) - now())) * 1000)::bigint + $2::bigint
+          from x_outbox o
+         where o.published_at is null and o.claimed_at is not null)
+ where not exists (select 1 from claimed)`;
+
+export const SQL_OUTBOX_CLAIM = outboxClaimSql(false);
+
+/**
+ * `SQL_OUTBOX_CLAIM` plus its horizon (`OUTBOX_HORIZON_ARM`), sent only to a relay that listens
+ * (`OutboxStore.claim`'s `onEmpty`): an idle one, which rests on it instead of polling.
+ */
+export const SQL_OUTBOX_CLAIM_IDLE = outboxClaimSql(true);
 
 /**
  * Hand a claim back early. The relay stops its batch on the first publish that fails, and without

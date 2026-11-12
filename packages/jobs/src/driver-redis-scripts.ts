@@ -97,11 +97,14 @@ return out
 `.trim();
 
 /**
- * `SQL_CLAIM`. `ARGV`: namespace, now, limit, visibility ms, worker, the count of `dropExhausted`
- * names, those names, then the queues. Candidates are every due row of each queue — ready,
- * delayed, suspended, or running past its lease — at most `limit` from each source, ordered by
- * `runAt` and cut at `limit`. A running row on its final attempt is BURIED (`dead`, or `failed`
- * for a dropped name) and never handed out. Answers one `{ 'c' | 'b', HGETALL… }` per row.
+ * `SQL_CLAIM`. `ARGV`: namespace, now, limit, visibility ms, worker, `'1'` to answer the horizon
+ * (`SQL_CLAIM_IDLE`), the count of `dropExhausted` names, those names, then the queues.
+ * Candidates are every due row of each queue — ready, delayed, suspended, or running past its
+ * lease — at most `limit` from each source, ordered by `runAt` and cut at `limit`. A running row
+ * on its final attempt is BURIED (`dead`, or `failed` for a dropped name) and never handed out.
+ * Answers `{ 'c', HGETALL…, HVALS steps… }` per claimed row, `{ 'b', HGETALL… }` per buried one;
+ * with nothing taken and the horizon asked, ONE `{ 'h', ms until the first waiting row's runAt or
+ * held lease's visibleAt }`, `{ 'h' }` when no row waits or is held.
  */
 export const REDIS_CLAIM = `
 local P = ARGV[1]
@@ -109,12 +112,14 @@ local now = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
 local visibility = tonumber(ARGV[4])
 local worker = ARGV[5]
-local dropCount = tonumber(ARGV[6])
+local horizon = ARGV[6] == '1'
+local dropCount = tonumber(ARGV[7])
 local drop = {}
-for i = 1, dropCount do drop[ARGV[6 + i]] = true end
+for i = 1, dropCount do drop[ARGV[7 + i]] = true end
+local first = 8 + dropCount
 local candidates = {}
 if limit > 0 then
-  for i = 7 + dropCount, #ARGV do
+  for i = first, #ARGV do
     local queue = ARGV[i]
     for _, source in ipairs({ 'wait', 'park' }) do
       local found = redis.call('ZRANGEBYSCORE', P .. ':' .. source .. ':' .. queue, '-inf', now,
@@ -138,7 +143,8 @@ local out = {}
 for i = 1, math.min(limit, #candidates) do
   local id = candidates[i].id
   local job = P .. ':job:' .. id
-  local row = redis.call('HMGET', job, 'state', 'attempt', 'maxAttempts', 'name', 'queue', 'claim', 'nk')
+  local row = redis.call('HMGET', job, 'state', 'attempt', 'maxAttempts', 'name', 'queue', 'claim', 'nk',
+    'runId')
   local state, attempt, maxAttempts, name, queue = row[1], tonumber(row[2]), tonumber(row[3]), row[4], row[5]
   if state == 'running' and attempt >= maxAttempts then
     local final = 'dead'
@@ -158,8 +164,20 @@ for i = 1, math.min(limit, #candidates) do
       'claim', tonumber(row[6]) + 1, 'claimedBy', worker, 'claimedAt', ARGV[2],
       'visibleAt', visibleAt, 'updatedAt', ARGV[2])
     redis.call('ZADD', P .. ':run:' .. queue, visibleAt, id)
-    table.insert(out, { 'c', redis.call('HGETALL', job) })
+    table.insert(out, { 'c', redis.call('HGETALL', job), redis.call('HVALS', P .. ':steps:' .. row[8]) })
   end
+end
+if #out == 0 and horizon then
+  local soonest = nil
+  for i = first, #ARGV do
+    for _, source in ipairs({ 'wait', 'park', 'run' }) do
+      local head = redis.call('ZRANGE', P .. ':' .. source .. ':' .. ARGV[i], 0, 0, 'WITHSCORES')
+      local at = tonumber(head[2])
+      if at and (soonest == nil or at < soonest) then soonest = at end
+    end
+  end
+  if soonest == nil then return { { 'h' } } end
+  return { { 'h', soonest - now } }
 end
 return out
 `.trim();

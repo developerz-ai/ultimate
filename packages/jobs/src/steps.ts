@@ -53,6 +53,12 @@ export interface StepRunnerOptions {
   readonly store: StepStore;
   /** The claim this attempt runs under — every write is fenced on it. `executeJob` passes it. */
   readonly fence?: StepFence;
+  /**
+   * The run's steps as the claim read them (`ClaimedJob.steps`): the hydrated view starts from
+   * these and `store.list` is never asked. Sound for the reason the memo is — only the attempt
+   * holding the claim writes to the run. Omitted, the first step lists the store.
+   */
+  readonly steps?: readonly StepRecord[];
   readonly clock?: Clock;
   readonly events?: EventLookup;
   /**
@@ -102,6 +108,12 @@ export interface StepRunner {
    * the failure the run unwinds from — the one already recorded, else `failure`.
    */
   unwind(failure: string): Promise<string>;
+  /**
+   * The run's steps as this attempt holds them — what the claim handed over or the first list
+   * read, plus every write since — oldest first; `undefined` until it has read them. What a
+   * settle reports, without listing the store again.
+   */
+  known(): readonly StepRecord[] | undefined;
 }
 
 /** Stands in for an absent run signal, so the fence has one shape and no `undefined` branch. */
@@ -159,8 +171,12 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
    * steps re-ran one on replay and answered a value the store did not hold. A rejected list clears
    * the memo, so the next call asks again rather than this attempt failing on one blip for good.
    */
-  let hydrated: Map<string, StepRecord> | undefined;
-  let hydrating: Promise<Map<string, StepRecord>> | undefined;
+  let hydrated: Map<string, StepRecord> | undefined =
+    options.steps === undefined
+      ? undefined
+      : new Map(options.steps.map((record) => [record.name, record]));
+  let hydrating: Promise<Map<string, StepRecord>> | undefined =
+    hydrated === undefined ? undefined : Promise.resolve(hydrated);
 
   const hydrate = (): Promise<Map<string, StepRecord>> => {
     if (hydrating !== undefined) return hydrating;
@@ -464,6 +480,10 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     step,
     usedNames: () => [...used],
     replayedNames: () => [...replayed],
+    known: () =>
+      hydrated === undefined
+        ? undefined
+        : [...hydrated.values()].sort((a, b) => a.startedAt - b.startedAt),
     unwinding,
     unwind: (failure) => compensations.unwind(failure),
   };

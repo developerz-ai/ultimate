@@ -24,6 +24,15 @@ function parseStep(text: unknown): StepRecord | undefined {
   return isStepStatus(record.status) ? record : undefined;
 }
 
+/** A run's stored steps, oldest first — what `list` answers, and what a claim hands over. */
+export function stepsOf(values: readonly unknown[]): StepRecord[] {
+  const records = values.flatMap((text: unknown) => {
+    const record = parseStep(text);
+    return record === undefined ? [] : [record];
+  });
+  return records.sort((a, b) => a.startedAt - b.startedAt);
+}
+
 export function redisStepStore({ ns, run, client }: StepStoreSeams): StepStore {
   const key = (runId: string) => `${ns}:steps:${runId}`;
   return {
@@ -48,11 +57,7 @@ export function redisStepStore({ ns, run, client }: StepStoreSeams): StepStore {
     },
     async list(runId) {
       const values = await client.send('HVALS', [key(runId)]);
-      const records = (Array.isArray(values) ? values : []).flatMap((text: unknown) => {
-        const record = parseStep(text);
-        return record === undefined ? [] : [record];
-      });
-      return records.sort((a, b) => a.startedAt - b.startedAt);
+      return stepsOf(Array.isArray(values) ? values : []);
     },
     async del(runId, name) {
       await client.send('HDEL', [key(runId), name]);

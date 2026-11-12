@@ -15,7 +15,7 @@ import type { BackfillLedger } from './backfill-ledger';
 import { ClaimQueuesEmptyError } from './errors';
 import type { JobIntrospection, JobProgress } from './introspection';
 import type { LeaseStore } from './leases';
-import type { StepStore } from './steps';
+import type { StepRecord, StepStore } from './steps';
 
 /**
  * `cancelled` is terminal and is NOT `dead`: a dead letter is work that failed and can be retried,
@@ -197,6 +197,15 @@ export interface ClaimOptions {
    * that holds the registry says which rows a burial DROPS; a name not listed is dead-lettered.
    */
   readonly dropExhausted?: readonly string[];
+  /**
+   * Told, when the pass claimed and buried NOTHING, how long until a row of these queues can next
+   * become claimable — the earliest `runAt` of a waiting row and `visibleAt` of a held lease, over
+   * the queues not paused — in ms from the driver's own clock (never an instant: the database's
+   * `now()` is not this process's). `null` when nothing is waiting or held: only an enqueue can
+   * make work, and that announces itself. At most once per pass, from the same statement; the
+   * idle loop rests on it (`worker-loop.ts`). Omit it and nothing else changes.
+   */
+  readonly onEmpty?: (dueInMs: number | null) => void;
 }
 
 export interface ClaimedJob extends JobRecord {
@@ -210,6 +219,12 @@ export interface ClaimedJob extends JobRecord {
    * claim is fenced on — `claimOf(claimed)` is how a caller carries the pair.
    */
   readonly claim: number;
+  /**
+   * The run's step records as the claim read them, oldest first — so the attempt replays its
+   * steps without one more round trip to list them (`stepRunner`'s `steps`). Every driver fills
+   * it; a hand-built claim may omit it, and the runner then lists the store itself.
+   */
+  readonly steps?: readonly StepRecord[];
 }
 
 /**
@@ -454,3 +469,21 @@ export const assertClaimBounds = (driver: string, options: ClaimOptions): void =
   finiteCount(`the ${driver} driver claim`, 'limit', options.limit);
   finiteOption(`the ${driver} driver claim`, 'visibilityTimeoutMs', options.visibilityTimeoutMs);
 };
+
+/**
+ * ms from `at` until the first of `rows` can be claimed; `null` when none is waiting or held — a
+ * claim's `onEmpty` answer over rows the caller already filtered to its open queues: the memory
+ * driver's half of `SQL_CLAIM_IDLE`'s horizon arm.
+ */
+export function claimDueIn(rows: Iterable<JobRecord>, at: number): number | null {
+  let next = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    if (row.state === 'ready' || row.state === 'delayed' || row.state === 'suspended') {
+      next = Math.min(next, row.runAt);
+    } else if (row.state === 'running') {
+      // `SQL_CLAIM`'s lapsed arm wants BOTH: the lease gone and the row due.
+      next = Math.min(next, Math.max(row.visibleAt ?? at, row.runAt));
+    }
+  }
+  return next === Number.POSITIVE_INFINITY ? null : next - at;
+}
