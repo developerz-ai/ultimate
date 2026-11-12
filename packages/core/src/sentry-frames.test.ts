@@ -6,6 +6,10 @@ import { UltimateError } from './errors';
 import { sentryFrames, stackFrames } from './sentry-frames';
 
 const ROOT = process.cwd();
+/** `abs_path` is `/`-separated on every OS: the cwd as the frame will REPORT it. */
+const ROOT_SLASHED = ROOT.replaceAll('\\', '/');
+/** The separator this OS's runtime prints in a stack, so a frame looks like a real one here. */
+const SEP = ROOT.includes('\\') ? '\\' : '/';
 
 const stack = [
   'Error: row missing',
@@ -33,7 +37,7 @@ describe('sentryFrames', () => {
     expect(top).toEqual({
       function: 'loadRow',
       filename: 'src/rows.ts',
-      abs_path: `${ROOT}/src/rows.ts`,
+      abs_path: `${ROOT_SLASHED}/src/rows.ts`,
       lineno: 10,
       colno: 9,
       in_app: true,
@@ -41,7 +45,7 @@ describe('sentryFrames', () => {
     expect(sentryFrames(stack).at(-2)).toMatchObject({
       function: 'handle',
       filename: 'src/handler.ts',
-      abs_path: `${ROOT}/src/handler.ts`,
+      abs_path: `${ROOT_SLASHED}/src/handler.ts`,
     });
   });
 
@@ -71,11 +75,29 @@ describe('sentryFrames', () => {
     const [frame] = sentryFrames(`Error\n    at ${ROOT}/src/rows.ts:10:9`);
     expect(frame).toEqual({
       filename: 'src/rows.ts',
-      abs_path: `${ROOT}/src/rows.ts`,
+      abs_path: `${ROOT_SLASHED}/src/rows.ts`,
       lineno: 10,
       colno: 9,
       in_app: true,
     });
+  });
+
+  test("a frame spelled with this OS's own separator is root-relative and `/`-separated", () => {
+    const native = `${ROOT}${SEP}src${SEP}rows.ts`;
+    const [frame] = sentryFrames(`Error\n    at loadRow (${native}:10:9)\n    at ${native}:11:2`);
+    expect(frame).toEqual({
+      filename: 'src/rows.ts',
+      abs_path: `${ROOT_SLASHED}/src/rows.ts`,
+      lineno: 11,
+      colno: 2,
+      in_app: true,
+    });
+  });
+
+  test('CRLF reads as the regex before it did: a line holding `\\r` ends the run', () => {
+    const crlf = `Error\r\n    at a (${ROOT}/src/a.ts:1:1)\r\n    at b (${ROOT}/src/b.ts:2:2)\r\n`;
+    // `trimEnd` frees the LAST line of its `\r`; the one above keeps it and is no frame.
+    expect(sentryFrames(crlf).map((frame) => frame.function)).toEqual(['b']);
   });
 
   test('a Windows path keeps its drive and splits off the position', () => {

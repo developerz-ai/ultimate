@@ -5,7 +5,10 @@
 /** A frame line longer than this is no frame: real ones are a name and a path, well under it. */
 const MAX_LINE = 4096;
 
-/** What `.` refuses besides `\n`: a line holding one is no frame, as it was under the regex. */
+/**
+ * What the regex's `.` refused besides `\n`. Its `\s` ADMITTED them, so only the name and the
+ * location may not hold one; a space run may (`at\r\tfn (a:1:1)` is a frame).
+ */
 const LINE_BREAK = /[\r\u2028\u2029]/;
 
 const SPACE = /\s/;
@@ -59,6 +62,14 @@ function skipSpaces(text: string, at: number): number {
   return index;
 }
 
+/** The index of the last line break in `text`, or -1. */
+function lastBreakIn(text: string): number {
+  for (let index = text.length - 1; index >= 0; index -= 1) {
+    if (LINE_BREAK.test(text.charAt(index))) return index;
+  }
+  return -1;
+}
+
 interface FrameLine {
   readonly name: string;
   readonly location: string;
@@ -70,7 +81,7 @@ interface FrameLine {
  * make `(.*?)\s+\(` backtrack is quadratic on the path that reports a failure.
  */
 function parseFrameLine(line: string): FrameLine | undefined {
-  if (line.length > MAX_LINE || LINE_BREAK.test(line)) return undefined;
+  if (line.length > MAX_LINE) return undefined;
   let index = skipSpaces(line, 0);
   if (!line.startsWith('at', index) || !isSpace(line, index + 2)) return undefined;
   index = skipSpaces(line, index + 2);
@@ -78,20 +89,28 @@ function parseFrameLine(line: string): FrameLine | undefined {
     index = skipSpaces(line, index + 5);
   }
   const rest = line.slice(index);
-  // `fn (location)`: the FIRST run of spaces followed by `(`, the location up to the closing `)`.
+  // `fn (location)`: the FIRST run of spaces followed by `(` whose name and location hold no line
+  // break — the regex's lazy `(.*?)` — with the location up to the closing `)`. The first and last
+  // break are found once, so each candidate is checked in constant time: one pass, as promised.
   if (rest.endsWith(')')) {
+    const firstBreak = rest.search(LINE_BREAK);
+    const lastBreak = firstBreak === -1 ? -1 : lastBreakIn(rest);
     let runStart = -1;
     for (let at = 0; at < rest.length - 1; at += 1) {
       if (isSpace(rest, at)) {
         if (runStart === -1) runStart = at;
       } else if (rest.charAt(at) === '(' && runStart !== -1) {
-        return { name: rest.slice(0, runStart), location: rest.slice(at + 1, -1) };
+        // A break in the name is in every later name too: no candidate after this one can match.
+        if (firstBreak !== -1 && firstBreak < runStart) break;
+        if (lastBreak < at)
+          return { name: rest.slice(0, runStart), location: rest.slice(at + 1, -1) };
+        runStart = -1;
       } else {
         runStart = -1;
       }
     }
   }
-  return { name: '', location: rest };
+  return LINE_BREAK.test(rest) ? undefined : { name: '', location: rest };
 }
 
 function frameOf(frame: FrameLine, root: string | undefined): StackFrame {

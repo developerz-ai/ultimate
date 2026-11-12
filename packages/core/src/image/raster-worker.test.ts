@@ -17,13 +17,17 @@ function stand(failFirstPost = false): {
   readonly scope: RasterWorkerScope;
   readonly posted: Posted[];
   readonly deliver: (data: unknown) => void;
+  /** Settles at the next post — the answer a delivered request owes, with no timer. */
+  readonly nextPost: () => Promise<void>;
 } {
   const posted: Posted[] = [];
+  const waiting: (() => void)[] = [];
   let listener: ((event: MessageEvent<unknown>) => void) | undefined;
   let fail = failFirstPost;
   return {
     posted,
     deliver: (data) => listener?.(new MessageEvent('message', { data })),
+    nextPost: () => new Promise<void>((resolve) => waiting.push(resolve)),
     scope: {
       postMessage(message, options) {
         if (fail) {
@@ -31,6 +35,7 @@ function stand(failFirstPost = false): {
           throw new DOMException('meta could not be cloned', 'DataCloneError');
         }
         posted.push({ message, transfer: options?.transfer ?? [] });
+        for (const resolve of waiting.splice(0)) resolve();
       },
       addEventListener(_type, handler) {
         listener = handler;
@@ -75,12 +80,13 @@ describe('the raster Worker entry', () => {
   });
 
   test('a message that is not a request is dropped, and a started scope routes requests', async () => {
-    const { scope, posted, deliver } = stand();
+    const { scope, posted, deliver, nextPost } = stand();
     await handleRasterMessage(scope, { hello: true });
     expect(posted).toEqual([]);
     startRasterWorker(scope);
+    const answered = nextPost();
     deliver({ id: 9, bytes: SOURCE, spec: { width: 5 } });
-    await Bun.sleep(50);
+    await answered;
     expect(posted.map((one) => (one.message as { id?: number }).id)).toEqual([undefined, 9]);
   });
 });
