@@ -23,7 +23,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
-- `@ultimat3/query`: a read whose policy is `scoped()` composes the scope into its `from()` source before the page is cut — the SQL text, the live shape and the provider's `RowWindow.filters` — so a viewer whose hidden rows precede their visible ones gets a full page. The rule still runs on every row returned and drops one it refuses. Such a read is cached per actor whatever `cache.scope` says. A `sql` that returns a hand-written `SqlSource`, not `from()`, under a scoped policy is `X_QUERY_SCOPE_UNCOMPOSABLE` (500), never served unscoped. The shared live window composes no scope; each subscriber's rows are still filtered by the rule.
+- `@ultimat3/query`: a read whose policy is `scoped()` composes the scope into its `from()` source before the page is cut — the SQL text, the live shape and the provider's `RowWindow.filters` — so a viewer whose hidden rows precede their visible ones gets a full page. The rule still runs on every row returned and drops one it refuses. Such a read is cached per actor whatever `cache.scope` says. A `sql` that returns a hand-written `SqlSource`, not `from()`, under a scoped policy is `X_QUERY_SCOPE_UNCOMPOSABLE` (500), never served unscoped. The shared live window composes no scope; each subscriber's rows are still filtered by the rule. A rule stricter than its scope never ends a listing early: `hasMore` and the cursor come from the rows the source read, dropped rows are refilled from up to 4 further windows, and a page that bound cuts short still carries a cursor; on a limited read the limit counts source rows, as `runQuery` does.
 
 ### Fixed
 
