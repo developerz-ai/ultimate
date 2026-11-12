@@ -12,10 +12,11 @@ import { SQL_SCALER_DEMAND } from './scaler-depth-fixture';
 const SEED = `
 insert into x_jobs
   (id, name, queue, input, idempotency_key, run_id, attempt, max_attempts, state, run_at,
-   claimed_by)
+   claimed_by, visible_at)
 values
   (gen_random_uuid(), 'scrape', $1, '{}'::jsonb, gen_random_uuid()::text, gen_random_uuid(), 1, 3,
-   $2, now() + ($3::int * interval '1 second'), $4)
+   $2, now() + ($3::int * interval '1 second'), $4,
+   case when $2 = 'running' then now() + interval '30 seconds' end)
 `;
 
 describe('the scaler depth on the pg driver', () => {
@@ -36,7 +37,7 @@ describe('the scaler depth on the pg driver', () => {
           inFlight: [],
           draining,
         },
-        30_000,
+        60_000,
       );
     await worker('worker-new', false);
     await worker('worker-old', true);
@@ -69,8 +70,8 @@ describe('the scaler depth on the pg driver', () => {
       { queue: 'other', demand: 1 },
     ]);
 
-    // The draining worker's row lapses (killed, or its pod gone): its rows count again until the
-    // queue takes them back — they are work somebody must pick up.
+    // The draining worker's LEASES lapse (killed, or its pod gone) while its 60 s registry row is
+    // still live: its rows count again — the queue hands them back, and somebody must pick them up.
     await pg.age(31_000);
     await worker('worker-new', false);
     expect(await depth()).toBe(5);

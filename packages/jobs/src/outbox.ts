@@ -79,8 +79,15 @@ export interface OutboxStore {
    * CLAIM unpublished, committed rows — the relay's work queue, and a lease rather than a read.
    * A store that hands the same rows to two relays hands the same job to two workers, and the
    * idempotency key only collapses that while the first job is still live.
+   *
+   * `onEmpty`: told, when the claim took NOTHING, how long until a held row's lease lapses (ms on
+   * the store's clock), `null` when no row is held — what an idle relay rests on. Optional for a
+   * store, which then leaves the relay polling at its ceiling.
    */
-  claim(limit: number): Promise<readonly OutboxRecord[]>;
+  claim(
+    limit: number,
+    options?: { readonly onEmpty?: (dueInMs: number | null) => void },
+  ): Promise<readonly OutboxRecord[]>;
   /**
    * Hand a claim back before its lease runs out, for the batch a failed publish stopped. OPTIONAL
    * so a store written before the claim became a lease still compiles: without it those rows wait
@@ -184,14 +191,23 @@ export function memoryOutboxStore(options: MemoryOutboxStoreOptions = {}): Memor
      * store hands back is CLAIMED for `leaseMs`, so a second relay polling the same store gets
      * nothing, and a claim whose holder died is reclaimable once the window passes.
      */
-    claim(limit) {
+    claim(limit, claimOptions) {
       const at = nowMs(options.clock);
       claimSeq += 1;
       const by = `claim-${claimSeq}`;
-      const ready = [...committed.values()]
-        .filter((record) => record.publishedAt === undefined && free(record.id, at))
+      const unpublished = [...committed.values()].filter((row) => row.publishedAt === undefined);
+      const ready = unpublished
+        .filter((record) => free(record.id, at))
         .sort(byClaimOrder)
         .slice(0, limit);
+      if (ready.length === 0 && claimOptions?.onEmpty !== undefined) {
+        // `SQL_OUTBOX_CLAIM_IDLE`'s horizon: the first held lease to lapse.
+        const first = unpublished.reduce(
+          (soonest, row) => Math.min(soonest, claims.get(row.id)?.at ?? soonest),
+          Number.POSITIVE_INFINITY,
+        );
+        claimOptions.onEmpty(Number.isFinite(first) ? first + leaseMs - at : null);
+      }
       for (const record of ready) claims.set(record.id, { at, by });
       return Promise.resolve(ready.map((record) => ({ ...record, claimedBy: by })));
     },

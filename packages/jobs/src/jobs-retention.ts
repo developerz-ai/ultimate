@@ -6,6 +6,7 @@
 import type { PgExecutor } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
 import type { PurgeTarget } from './purge';
+import { upkeepCadence } from './purge';
 import {
   type PurgeBatch,
   type PurgeBatching,
@@ -109,6 +110,10 @@ delete from x_job_steps s
  * `held` is one: as `not exists` the planner hashes the whole of `x_jobs` for a few thousand
  * candidates (EXPLAIN, 2026-10-17), a cost that grows with the queue rather than with the old step
  * records. The delete is the `x_job_steps` primary key. `skip locked` for the reason the batch gives.
+ *
+ * Once a DAY (`PURGE_UPKEEP_EVERY_MS`), not once a pass: `started_at` has no index, so this is a scan
+ * of every step record (66,769 in production, growing), and what it repairs is rare. No index for
+ * it either: `x_job_steps` takes a write per step, and a btree would tax each for a daily read.
  */
 export const SQL_JOBS_RETENTION_ORPHANS = `
 with orphaned as (
@@ -148,15 +153,18 @@ export function jobsPurgeTarget(options: JobsRetentionOptions): PurgeTarget {
   const done = finiteCount(SUBJECT, 'doneRetentionMs', options.doneRetentionMs, 1);
   const dead = finiteCount(SUBJECT, 'deadRetentionMs', options.deadRetentionMs, 1);
   const bounds = purgeBatching(SUBJECT, options);
+  const orphansDue = upkeepCadence();
   return {
     name: 'x_jobs',
     // The count is `x_jobs` rows, the target's name; orphaned step records are its upkeep.
-    purgeExpired: async (): Promise<number> => {
+    purgeExpired: async (nowMs): Promise<number> => {
       const removed = await purgeInBatches(jobsBatch(options.executor, done, dead), bounds);
-      await options.executor.query(SQL_JOBS_RETENTION_ORPHANS, [
-        Math.min(done, dead),
-        bounds.batch,
-      ]);
+      if (orphansDue(nowMs)) {
+        await options.executor.query(SQL_JOBS_RETENTION_ORPHANS, [
+          Math.min(done, dead),
+          bounds.batch,
+        ]);
+      }
       return removed;
     },
   };

@@ -6,13 +6,15 @@
  * A `running` row whose claimer's live registry row says `draining_at` is out: that worker claims
  * nothing more and finishes the job itself, so no pod a scaler adds could take it. One adopter
  * counted them and averaged 1.84 pods where one carried the load. A claimer with no live row
- * (killed, lapsed) stays in: the queue hands that job back and somebody must pick it up.
+ * (killed, lapsed) stays in: the queue hands that job back and somebody must pick it up. So does a
+ * row whose LEASE lapsed (`visible_at`): the registry row outlives a visibility window (60 s).
  */
 export const QUEUE_DEMAND_ROWS = `((j.state = 'running'
-         and not exists (select 1 from x_job_workers w
-                          where w.id = j.claimed_by
-                            and w.draining_at is not null
-                            and w.expires_at > now()))
+         and not (coalesce(j.visible_at > now(), false)
+                  and exists (select 1 from x_job_workers w
+                              where w.id = j.claimed_by
+                                and w.draining_at is not null
+                                and w.expires_at > now())))
      or (j.state in ('ready', 'delayed', 'suspended') and j.run_at <= now()
          and not exists (select 1 from x_job_pauses p
                           where p.kind = 'queue' and p.name = j.queue)))`;

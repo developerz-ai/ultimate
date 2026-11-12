@@ -9,6 +9,8 @@
 // enqueue would cap an app's enqueuing commits at one flush at a time. So each statement asks
 // first whether the loops it would wake are already awake.
 
+import { IDLE_REST_MAX_MS } from './idle-backoff';
+
 /** A job became claimable on the queue the payload names. An empty payload means any queue. */
 export const JOBS_WAKE_CHANNEL = 'x_jobs_wake';
 /** A row was committed to `x_outbox`. The payload is always empty: a relay serves every queue. */
@@ -24,11 +26,13 @@ export const OUTBOX_WAKE_CHANNEL = 'x_outbox_wake';
 export const WAKE_SLOT_MS = 250;
 
 /**
- * A row due this soon still notifies. `run_at` is stamped from the ENQUEUER's clock, so a pod
- * running a few hundred ms ahead of the database writes "immediate" jobs that are due a moment
- * from now — and the passes a woken worker makes (0, 250, 750 ms) are what pick those up.
+ * A row due this soon still notifies: as far out as an idle worker RESTS (`IDLE_REST_MAX_MS`). A
+ * resting worker sleeps on the due time its last empty claim read, so a row queued during the rest
+ * and due before it ends must wake it to re-read that horizon — the pass it wakes for is empty,
+ * and it then rests until the new row is due. Further out, the rest ends first and its own pass
+ * learns the time. The slot still bounds the notifications, whatever the due times.
  */
-export const WAKE_DUE_WITHIN_MS = 1_000;
+export const WAKE_DUE_WITHIN_MS = IDLE_REST_MAX_MS;
 
 const SLOTS_PER_SECOND = 1_000 / WAKE_SLOT_MS;
 
@@ -37,7 +41,7 @@ const dueSoon = (alias: string): string =>
   `${alias}.run_at <= now() + interval '${WAKE_DUE_WITHIN_MS} milliseconds'`;
 
 /**
- * `pg_notify` for the row `alias` names, or nothing: the row must be (about to be) due, and no
+ * `pg_notify` for the row `alias` names, or nothing: the row must be due within a rest, and no
  * OTHER row of its queue that was itself due soon may have been created in the current slot. Only
  * such a row sent a wake — a far-future one sent none, so it silences nothing. The statement's own
  * insert is invisible to this read — a CTE's writes are not in its statement's snapshot — so the

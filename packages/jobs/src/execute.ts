@@ -104,6 +104,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     jobName: handle.name,
     store: driver.steps,
     fence: { job: handle.name, jobId: claimed.id, ...claimOf(claimed) },
+    ...(claimed.steps === undefined ? {} : { steps: claimed.steps }), // read by the claim (J7)
     signal,
     // This attempt's OWN end — the deadline, the `finally` below — apart from the run's signal,
     // whose first reason may be the drain's: a drained step still records, an ended attempt never.
@@ -169,7 +170,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   let inRunScope = <T>(fn: () => T): T => outsideTransaction(() => runWithContext(ctx, fn));
 
   const settle = async (outcome: JobExecution): Promise<JobExecution> => {
-    const steps = await driver.steps.list(claimed.runId);
+    const steps = runner.known() ?? (await driver.steps.list(claimed.runId));
     return { ...outcome, steps, replayed: runner.replayedNames() };
   };
 

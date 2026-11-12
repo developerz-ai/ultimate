@@ -9,6 +9,7 @@ import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { WorkerAnnouncement } from './introspection';
 import { jobWorker } from './worker';
+import { WORKER_REGISTRY_TTL_MS } from './worker-options';
 import { startWorkerRegistry } from './worker-registry';
 
 /** A registry whose announce is on the wire until the test lets it land. */
@@ -122,5 +123,42 @@ describe('a worker names its build', () => {
     const rows = await driver.introspect?.workers();
     await worker.stop();
     expect(rows?.map((row) => 'build' in row)).toEqual([false]);
+  });
+});
+
+describe('the registry row outlives a visibility window', () => {
+  test('jobWorker announces WORKER_REGISTRY_TTL_MS and renews it every third of that', async () => {
+    const base = memoryJobDriver();
+    const ttls: number[] = [];
+    const operator = base.introspect;
+    if (operator === undefined) return expect.unreachable('the memory driver has no operator');
+    const driver: JobDriver = {
+      ...base,
+      introspect: {
+        ...operator,
+        announceWorker(worker, ttlMs) {
+          ttls.push(ttlMs);
+          return operator.announceWorker(worker, ttlMs);
+        },
+      },
+    };
+    const armed: number[] = [];
+    const worker = jobWorker({
+      driver,
+      queues: ['default'],
+      workerId: 'w-ttl',
+      drainOnShutdown: false,
+      context: () => ctxOf({ role: 'worker' }),
+      schedule: (_tick, everyMs) => {
+        armed.push(everyMs);
+        return () => undefined;
+      },
+    });
+    worker.start();
+    await worker.stop();
+    // Was the 30 s visibility timeout renewed every 10 s: 360 registry writes an idle hour.
+    expect([...new Set(ttls)]).toEqual([WORKER_REGISTRY_TTL_MS]);
+    expect(armed).toContain(WORKER_REGISTRY_TTL_MS / 3);
+    expect(armed).not.toContain(10_000);
   });
 });

@@ -62,3 +62,36 @@ Production, a near-idle deployed app, 26.4 h (2026-11-10 → 11): 183,019 statem
 - HOT ratio on `x_jobs` above 0.5 under a heartbeat-heavy fixture.
 - `wiki/Known-Gaps.md` rows for `onSettled`, the companion job and debounce/expiry closed.
 - All three drivers pass conformance.
+
+## Outcome (9a, local)
+
+Ships as 31.13.0. `As of 2026-11-12`, measured before release; step 5's production probe (calls/hour, WAL share) is still owed.
+
+| ID | Outcome |
+|---|---|
+| J1 | shipped. `SQL_HEARTBEAT` and `SQL_JOB_PROGRESS` write no `updated_at`; `x_jobs` at `fillfactor = 80` (`JOBS_TABLE_STORAGE`, in the framework schema's storage rows, so drift reports a hand reset). `driver-pg-heartbeat.job.test.ts`: > 0.9 of renewals HOT over packed pages |
+| J2 | partial. `x_jobs_finished_idx` → `x_jobs_ended_idx` (`failed`, `dead`, `cancelled`). `x_jobs_created_idx` KEPT: `notifyJobReady` (`driver-pg-wake-sql.ts`) reads it on every immediate enqueue; dropping it waits on a wake rewrite over the UUIDv7 primary key (later sweep). Built NOT `concurrently`: the framework schema applies in one transaction (Postgres 25001); a non-transactional phase is sweep 16's |
+| J3 | shipped, Postgres driver. `counter-batch.ts`, `SQL_COUNTER_FLUSH` every 10 s and on `close()`; reads flush their own process first; fold every 10 min, hourly after one that moved nothing. Memory counts in process; Redis keeps no counters |
+| J4 | shipped; its one regression fixed in review (below). `SQL_CLAIM_IDLE` + `ClaimOptions.onEmpty`; `restAfter` rests ≤ `IDLE_REST_MAX_MS` (60 s) in 2 s slices. `pg_notify` on resume was already there (`driver-pg-operator.ts`, `wake`); pause needs none |
+| J5 | shipped. `SQL_OUTBOX_CLAIM_IDLE`, `OutboxStore.claim(limit, { onEmpty })`; conformance in `outbox-store-conformance-horizon.ts` |
+| J6 | shipped. `WORKER_REGISTRY_TTL_MS` 60 s (or the visibility timeout when longer), renewed every 20 s, `SQL_WORKER_RENEW` unless held ids or drain moved. Demand recheck found a defect and fixed it: a draining worker's job is counted again once its lease lapses |
+| J7 | shipped. `ClaimedJob.steps` in all three drivers; parity in `job-driver-checks-claim.ts` |
+| J8 | shipped. `upkeepCadence` (`PURGE_UPKEEP_EVERY_MS`, a day), per process |
+| J9 | cheap route only: burial and claim in one update. Reported by the sweep's EXPLAIN probe (60 runs, 200,000 `done` rows, not re-derived here): planning per idle hour 612 → 85 ms — fewer claims, each planned slightly longer for the horizon arm. The prepared pool (D3) is not used |
+| J10 | shipped. On-time `jobs.scheduler.dispatched` at `debug`; `DEFAULT_LEADER_TTL_MS` 60 s, renewed every 20 s |
+
+An idle hour of one worker on two queues + an outbox relay + a scheduler leader with three daily tasks, the `LISTEN` wake live, on the embedded Postgres under fake timers, every statement counted at the executor. The probe is not committed (it lived in the sweep's scratch space); re-run against both trees for this table:
+
+| Statement | 31.12.0 sources | 31.13.0 |
+|---|---|---|
+| worker claim (`SQL_CLAIM` → `SQL_CLAIM_IDLE`) | 720 | 60 |
+| worker depth read (`SQL_STATS`) | 240 | 60 |
+| worker registry (`SQL_WORKER_ANNOUNCE` → `SQL_WORKER_RENEW`) | 360 | 180 |
+| relay claim | 720 | 60 |
+| scheduler leader lease | 360 | 180 |
+| counter fold | 18 | 3 |
+| **total** | **2,418** | **543** |
+
+The "under 150 an hour" done-when is not reachable at the decided cadences: the leader and registry renewals alone are 360 an hour (TTL 60 s, renewed every 20 s, so two renewals may fail before a row lapses). The depth read stays once per rest: it is the only publisher of `queue_depth` for a queue no running pod serves (scale from zero).
+
+**Regression, fixed in review.** A job due more than 1 s out that ANOTHER process queued while a worker rested sent no notification, so it started when the rest ended — up to 60 s past its `runAt`. Now `WAKE_DUE_WITHIN_MS` = `IDLE_REST_MAX_MS` (60 s): such an enqueue notifies, slot-throttled as before, and the woken worker re-reads its horizon (`worker-rest-wake.job.test.ts`, on Postgres, no in-process signal). A retry or `step.sleep` handed back by a worker that then stops is announced by it (`JobDriver.wake`); a woken loop's first empty pass keeps the floor, so the slot-silent row is found a floor later (`idle-wake-slot.test.ts`); a driver without `wake` (Redis) never rests. The idle hour stays 543 statements (`idle-hour.job.test.ts`).

@@ -128,7 +128,12 @@ describe('the watermark write and the lease release', () => {
     const { executor, calls } = recorder(() => []);
     await postgresLeaseLeader({ executor, holder: 'pod-a' }).acquire();
     expect(calls[0]?.params).toEqual(['scheduler', 'pod-a', DEFAULT_LEADER_TTL_MS]);
-    expect(DEFAULT_LEADER_TTL_MS).toBe(30_000);
+    expect(DEFAULT_LEADER_TTL_MS).toBe(60_000);
+  });
+
+  test('the default lease is renewed every 20s: a third of a 60s TTL', () => {
+    const { executor } = recorder(() => []);
+    expect(postgresLeaseLeader({ executor, holder: 'pod-a' }).renewEveryMs).toBe(20_000);
   });
 
   test('a holder defaulted per PROCESS is unique, never a hostname a pod reuses', async () => {

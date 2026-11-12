@@ -21,7 +21,7 @@ ROLE=replicator myapp
 | `web` | env → DB pool → cache clients → route table → `Bun.serve` | HTTP on `PORT` | ISR regen consumer (optional), metric flush | SIGTERM drain |
 | `sync` | env → DB pool (read) → NATS subscribe → `Bun.serve` upgrade handler | WS on `PORT` | policy-memo sweep, heartbeat/ping, buffer trim | SIGTERM drain |
 | `worker` | env → DB pool → one pool per served queue: exactly the `WORKER_QUEUES` entries when set, else `jobs.queues` plus every registered job's queue (`workerQueuesFor`, `packages/cli/src/runtime-jobs.ts`) | `/metrics` only, on `METRICS_PORT` | claim loop per queue, lease reaper, outbox relay | SIGTERM drain; or SIGUSR2 — the retire: claim nothing, finish every held job, abort nothing, drain, exit 0 (`packages/cli/src/serve-retire.ts`; none on Windows) |
-| `scheduler` | env → DB pool → lease `acquire()` on `x_scheduler_leader` | `/metrics` only | tick loop (1s); `acquire()` per round is both the renewal and the standby retry | SIGTERM, or a round where the lease is not this holder's |
+| `scheduler` | env → DB pool → lease `acquire()` on `x_scheduler_leader` | `/metrics` only | tick loop (1s); `acquire()` every `renewEveryMs` (20s, a third of the TTL) is both the renewal and the standby retry, answered from memory between | SIGTERM, or a round where the lease is not this holder's |
 | `migrate` | env → DB → advisory lock → apply → post-migrate drift check | none | none | after apply — **exit 0 or non-zero, run-once** |
 | `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM — a lock held elsewhere is a standby (`/readyz` 503, re-asking on a backoff), never an exit |
 
@@ -217,7 +217,7 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 
 | Consumer | Mechanism | Held for | On loss |
 |---|---|---|---|
-| `scheduler` | a **row**: `SQL_LEADER_ACQUIRE` on `x_scheduler_leader`, key `scheduler`, holder a per-process uuid | `ttlMs`, default 30s; the per-round `acquire()` renews it | stop ticking; the next round's `acquire()` is the retry |
+| `scheduler` | a **row**: `SQL_LEADER_ACQUIRE` on `x_scheduler_leader`, key `scheduler`, holder a per-process uuid | `ttlMs`, default 60s (`DEFAULT_LEADER_TTL_MS`, as of 2026-11-12); `acquire()` every `renewEveryMs` (20s) renews it | stop ticking; the next `acquire()`, up to 20s later, is the retry |
 | `replicator` | `postgresAdvisoryLock()` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | stand by, unready: a container stays up with `/readyz` 503 and re-asks on the replicator's jittered backoff (the chart's `strategy: Recreate` lets the holder go first on a rollout); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. A second replicator would double-deliver |
 | `migrate` | `pg_try_advisory_lock(4919202607)`, polled 500ms apart for up to 60s, on a reserved connection from a pool pinned to `max: 1` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero — bounded on purpose, because blocking `pg_advisory_lock` has no timeout and hangs the deploy instead of failing it |
 | ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |

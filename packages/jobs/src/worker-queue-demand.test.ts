@@ -118,6 +118,38 @@ describe('queue_demand', () => {
     expect(await driver.demand?.()).toEqual([{ queue: 'banks', demand: 3 }]);
   });
 
+  test('a draining worker’s lapsed lease is demand, while its registry row is still live', async () => {
+    const clock = frozenClock(NOW);
+    const driver = memoryJobDriver({ clock });
+    await enqueue(driver, 'banks', 2);
+    await driver.claim({
+      queues: ['banks'],
+      limit: 2,
+      workerId: 'old',
+      visibilityTimeoutMs: 30_000,
+    });
+    await driver.introspect?.announceWorker(
+      { id: 'old', host: 'old', startedAt: NOW, queues: ['banks'], concurrency: 4, inFlight: [] },
+      60_000,
+    );
+    await driver.introspect?.announceWorker(
+      {
+        id: 'old',
+        host: 'old',
+        startedAt: NOW,
+        queues: ['banks'],
+        concurrency: 4,
+        inFlight: [],
+        draining: true,
+      },
+      60_000,
+    );
+    expect(await driver.demand?.()).toEqual([]);
+    // Killed mid-drain: the queue takes the rows back at 30 s, the registry row lapses at 60 s.
+    clock.advance(31_000);
+    expect(await driver.demand?.()).toEqual([{ queue: 'banks', demand: 2 }]);
+  });
+
   test('a queue leaving the answer is zeroed once, like its siblings', async () => {
     const clock = frozenClock(NOW);
     const rounds = [[{ queue: 'banks', demand: 4 }], [], []];

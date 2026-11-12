@@ -45,8 +45,8 @@ export function jobWorker(options: WorkerOptions): Worker {
   const queues = options.queues ?? [DEFAULT_QUEUE];
   // Every numeric knob, read and refused in one place — `worker-options.ts` says why a non-finite
   // one is a refusal rather than a clamp, and carries the slot table's own-key read with it.
-  const { visibilityTimeoutMs, pollIntervalMs, heartbeatIntervalMs, slotsFor } =
-    resolveWorkerTimings(options);
+  const timings = resolveWorkerTimings(options);
+  const { visibilityTimeoutMs, pollIntervalMs, heartbeatIntervalMs, slotsFor } = timings;
   const limiter = options.limiter ?? concurrencyLimiter({});
   const slots = queues.reduce((total, queue) => total + slotsFor(queue), 0);
   const cap = createProcessCap(options.maxInFlight, slots); // read before each claim
@@ -160,9 +160,8 @@ export function jobWorker(options: WorkerOptions): Worker {
         dropExhausted: registeredJobs()
           .filter((handle) => handle.retry.deadLetter === false)
           .map((handle) => handle.name),
-        onExhausted: (dead) => {
-          buried.push(...dead);
-        },
+        onExhausted: (dead) => buried.push(...dead),
+        ...(loop.wantsDue() ? { onEmpty: loop.nextDue } : {}), // idle: rest until the next is due
       });
       if (claimed.length > 0) found = true;
       if (buried.length > 0) {
@@ -307,6 +306,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
     queues,
     round,
+    wake: options.driver.wake?.bind(options.driver), // a hand-back this loop stopped before
     onError: (error) => {
       logger.error('jobs.worker.tick-failed', { workerId, error: renderThrowable(error) });
     },
@@ -453,10 +453,10 @@ export function jobWorker(options: WorkerOptions): Worker {
         queues,
         concurrency: Math.min(slots, cap.max ?? slots),
         inFlight: () => inFlight.ids(),
-        // The visibility timeout, renewed on the heartbeat interval: a killed worker leaves the
-        // registry on exactly the schedule the queue takes its jobs back.
-        ttlMs: visibilityTimeoutMs,
-        intervalMs: heartbeatIntervalMs,
+        // At least the visibility timeout (`worker-options.ts`): a killed worker's row never
+        // lapses while the jobs it held are still leased to it, and an idle one renews 3 a minute.
+        ttlMs: timings.registryTtlMs,
+        intervalMs: timings.registryIntervalMs,
         ...(options.clock === undefined ? {} : { clock: options.clock }),
         ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
       });

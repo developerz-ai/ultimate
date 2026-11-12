@@ -7,6 +7,7 @@ import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { postgresJobDriver } from './driver-pg';
+import { SQL_HEARTBEAT } from './driver-pg-sql';
 
 /**
  * The pg driver compiles its SQL against this seam, so the statement it issues is readable — and
@@ -135,5 +136,34 @@ describe('a row limit is a count of rows, in both', () => {
     const executor = recordingExecutor();
     await postgresJobDriver({ executor }).introspect?.list({ limit: 25 });
     expect(executor.params[0]?.[3]).toBe(25);
+  });
+});
+
+describe('a lease renewal writes no updated_at, in both', () => {
+  // `updated_at` is what a listing sorts and an operator reads as "last changed"; a renewal every
+  // few seconds is not a change, and in pg the column write cost the HOT update (`SQL_HEARTBEAT`).
+  test('the memory heartbeat moves visibleAt and leaves updatedAt where the claim put it', async () => {
+    const clock = frozenClock(Date.UTC(2026, 10, 12, 9, 0, 0));
+    const driver = memoryJobDriver({ clock });
+    const { id } = await driver.enqueue({
+      name: 'renewed',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'renewed:1',
+      maxAttempts: 3,
+    });
+    await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'w1',
+    });
+    const claimed = await driver.introspect?.job(id);
+    clock.advance(10_000);
+    expect(await driver.heartbeat(id, { visibilityTimeoutMs: 30_000, workerId: 'w1' })).toBe(true);
+    const renewed = await driver.introspect?.job(id);
+    expect(renewed?.updatedAt).toBe(claimed?.updatedAt ?? -1);
+    expect(renewed?.visibleAt).toBe(Date.UTC(2026, 10, 12, 9, 0, 40));
+    expect(SQL_HEARTBEAT).not.toContain('updated_at');
   });
 });

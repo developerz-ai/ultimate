@@ -1,8 +1,13 @@
-// The claim: the one statement every worker loop runs, and the only one whose cost is a question of
-// how far behind the queue is. Apart from `driver-pg-sql.ts`, which re-exports it, because the plan
+// The claim: the one statement every worker loop runs — and its idle twin — and how the pg driver
+// reads its answer (`pgClaim`). Apart from `driver-pg-sql.ts`, which re-exports it, because the plan
 // it depends on takes a page to explain. `driver-pg-claim.live.test.ts` holds that plan to account.
 
-import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
+import type { Clock, PgExecutor } from '@ultimat3/core';
+import { nowMs } from './clock';
+import type { ClaimedJob, ClaimOptions, JobRecord } from './driver';
+import { assertClaimBounds, assertClaimQueues, LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
+import type { JobRow, StepRow } from './driver-pg-rows';
+import { toJobRecord, toStepRecord } from './driver-pg-rows';
 import { COUNTER_BUCKET_MS } from './introspection';
 
 /** What both arms of the claim return: a `JobRow`, read off the updated row `j`. */
@@ -19,15 +24,55 @@ const CLAIM_ROW_NAMES = `id, name, queue, input, idempotency_key, run_id, attemp
        visible_at, created_at, updated_at`;
 
 /**
+ * A claimed row's steps, as `SQL_STEP_LIST` answers each (`toStepRecord` reads both): the attempt
+ * replays from these instead of listing them in a second round trip. A seek on the steps' primary
+ * key per claimed row — an empty one on a first attempt.
+ */
+const STEP_FIELDS = `'run_id', s.run_id, 'name', s.name, 'status', s.status, 'output', s.output,
+           'attempts', s.attempts, 'error', s.error, 'event', s.event,
+           'correlation_key', s.correlation_key,
+           'started_at',   (extract(epoch from s.started_at)   * 1000)::bigint,
+           'completed_at', (extract(epoch from s.completed_at) * 1000)::bigint,
+           'wake_at',      (extract(epoch from s.wake_at)      * 1000)::bigint`;
+
+/**
+ * When a claim that took NOTHING can next take something (`ClaimOptions.onEmpty`), in ms from the
+ * database's own `now()`: the earliest waiting row by `run_at` — one seek of `x_jobs_claim_idx`
+ * per open queue — and the earliest lease to lapse over the queue's running rows, which are only
+ * as many as the fleet holds. Null when neither exists. A paused queue is not `open`: its rows
+ * are no due time, and its resume announces itself.
+ */
+const HORIZON = `select (extract(epoch from (min(n.at) - now())) * 1000)::bigint
+     from open
+    cross join lateral (
+      (select j.run_at as at
+         from x_jobs j
+        where j.queue = open.queue and j.state in ('ready', 'delayed', 'suspended')
+        order by j.run_at
+        limit 1)
+      union all
+      select min(greatest(j.visible_at, j.run_at))
+        from x_jobs j
+       where j.queue = open.queue and j.state = 'running'
+    ) n`;
+
+/** The row `SQL_CLAIM_IDLE` adds when nothing was taken: every claim column null, then the horizon. */
+const HORIZON_ARM = `
+union all
+select ${CLAIM_ROW_NAMES.replace(/[a-z_]+/g, 'null')}, null, (${HORIZON})
+ where not exists (select 1 from taken)`;
+
+/**
  * The claim. SKIP LOCKED is the whole design: without it, worker 2 blocks on worker 1's row
  * lock and throughput collapses to one worker. `visible_at` in the predicate reclaims leases
  * abandoned by a crashed worker. `cancelled` is absent from every branch by construction — a
  * cancelled row is terminal, so it is never handed to a worker again.
  *
- * TWO arms over one pick. A `running` row is picked only with a lapsed lease, and one that lapsed
- * on its FINAL attempt (`attempt >= max_attempts` — `isFinalAttempt`, `retry.ts`) is `buried`:
- * settled `dead` here, counted, and answered with its new state so the driver reports it instead
- * of handing it out. Re-claimed, it was an attempt past `max_attempts` every lease, forever — a
+ * TWO outcomes of one pick, in ONE update (`taken`). A `running` row is picked only with a lapsed
+ * lease, and one that lapsed on its FINAL attempt (`attempt >= max_attempts` — `isFinalAttempt`,
+ * `retry.ts`) is BURIED: settled `dead` here, counted, and answered with its new state so the
+ * driver reports it instead of handing it out. One update, not one per outcome: each statement
+ * over `x_jobs` is planned against every index the table has, on every claim (`prepare: false`). Re-claimed, it was an attempt past `max_attempts` every lease, forever — a
  * job that kills its worker took one per visibility timeout and never reached the dead letters.
  * `claimed_by` is cleared with the lease, so the body that stalled rather than died cannot settle
  * the row it lost. A buried row spends a slot of `$2`: the pass after it claims what it displaced.
@@ -50,8 +95,12 @@ const CLAIM_ROW_NAMES = `id, name, queue, input, idempotency_key, run_id, attemp
  *
  * `distinct` because a queue named twice is two laterals over one queue, and a row this statement
  * already locked is not skipped: the repeat would spend `limit` on rows it had already picked.
+ *
+ * A claimed row carries its run's steps (`STEP_FIELDS`, `ClaimedJob.steps`), so an attempt replays
+ * without a second round trip to list them; a buried row carries none.
  */
-export const SQL_CLAIM = `
+const claimSql = (horizon: boolean): string =>
+  `
 with open as (
   select distinct q.queue
     from unnest($1::text[]) as q(queue)
@@ -89,40 +138,106 @@ with open as (
     ) candidates
    order by run_at
    limit $2
-), buried as (
+), taken as (
   update x_jobs j
-     set state            = case when j.name = any($5::text[]) then 'failed' else 'dead' end,
-         visible_at       = null,
-         claimed_by       = null,
-         last_error       = '${LEASE_LAPSED_FINAL_ATTEMPT}',
-         last_error_stack = null,
+     set state            = case when not p.exhausted then 'running'
+                                 when j.name = any($5::text[]) then 'failed' else 'dead' end,
+         attempt          = j.attempt + (not p.exhausted)::int,
+         claims           = j.claims + (not p.exhausted)::int,
+         claimed_by       = case when p.exhausted then null else $3 end,
+         visible_at       = case when p.exhausted then null
+                                 else now() + ($4::bigint * interval '1 millisecond') end,
+         last_error       = case when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'
+                                 else j.last_error end,
+         last_error_stack = case when p.exhausted then null else j.last_error_stack end,
          updated_at       = now()
     from picked p
-   where j.id = p.id and p.exhausted
+   where j.id = p.id
   returning ${CLAIM_ROW_COLUMNS}
 ), counted as (
   insert into x_job_counters (job, bucket_ms, bucket_start, dead, failed, duration_ms)
   select name, ${COUNTER_BUCKET_MS}, date_trunc('minute', now()),
          (count(*) filter (where state = 'dead'))::int,
          (count(*) filter (where state = 'failed'))::int, 0
-    from buried
+    from taken
+   where state <> 'running'
    group by name
   on conflict (job, bucket_ms, bucket_start) do update
      set dead   = x_job_counters.dead + excluded.dead,
          failed = x_job_counters.failed + excluded.failed
-), claimed as (
-  update x_jobs j
-     set state      = 'running',
-         attempt    = j.attempt + 1,
-         claims     = j.claims + 1,
-         claimed_by = $3,
-         visible_at = now() + ($4::bigint * interval '1 millisecond'),
-         updated_at = now()
-    from picked p
-   where j.id = p.id and not p.exhausted
-  returning ${CLAIM_ROW_COLUMNS}
 )
-select ${CLAIM_ROW_NAMES} from claimed
-union all
-select ${CLAIM_ROW_NAMES} from buried
+select ${CLAIM_ROW_NAMES}, st.steps${horizon ? ', null::bigint as due_in_ms' : ''}
+  from taken t
+  left join lateral (
+    select json_agg(json_build_object(${STEP_FIELDS}) order by s.started_at) as steps
+      from x_job_steps s
+     where s.run_id = t.run_id and t.state = 'running'
+  ) st on true${horizon ? HORIZON_ARM : ''}
 `.trim();
+
+export const SQL_CLAIM = claimSql(false);
+
+/**
+ * `SQL_CLAIM` plus, when it took nothing, ONE row of nulls carrying `due_in_ms` (`HORIZON`): what
+ * an idle worker rests on. Its own statement because the arm is planned on every call whether it
+ * runs or not — ~0.5 ms of planning a busy worker's claims would pay for nothing — so the driver
+ * sends it only when the caller listens (`ClaimOptions.onEmpty`), which an idling loop does.
+ */
+export const SQL_CLAIM_IDLE = claimSql(true);
+
+/** A claim answer row: a `JobRow` and its steps — or, idle and empty, nulls and the horizon. */
+type ClaimRow = Omit<JobRow, 'id'> & {
+  readonly id: string | null;
+  readonly steps?: readonly StepRow[] | null;
+  readonly due_in_ms?: number | string | null;
+};
+
+const taken = (row: ClaimRow): row is ClaimRow & JobRow => row.id !== null;
+
+export async function pgClaim(
+  exec: () => PgExecutor,
+  clock: Clock | undefined,
+  claimOptions: ClaimOptions,
+): Promise<readonly ClaimedJob[]> {
+  assertClaimQueues('pg', claimOptions);
+  assertClaimBounds('pg', claimOptions);
+  // The horizon arm is planned on every call: sent only to a caller listening for it.
+  const rows = await exec().query<ClaimRow>(
+    claimOptions.onEmpty === undefined ? SQL_CLAIM : SQL_CLAIM_IDLE,
+    [
+      claimOptions.queues,
+      claimOptions.limit,
+      claimOptions.workerId,
+      claimOptions.visibilityTimeoutMs,
+      claimOptions.dropExhausted ?? [],
+    ],
+  );
+  const at = nowMs(clock);
+  const answered = rows.filter(taken);
+  if (answered.length === 0) {
+    const due = rows[0]?.due_in_ms;
+    claimOptions.onEmpty?.(due === null || due === undefined ? null : Number(due));
+    return [];
+  }
+  // Both outcomes of the statement answer, told apart by the state each wrote: `running` is a
+  // claim, `dead`/`failed` a row the claim buried — reported, never handed out as work.
+  const buried: JobRecord[] = [];
+  const claimed: ClaimedJob[] = [];
+  for (const row of answered) {
+    const record = toJobRecord(row);
+    if (record.state !== 'running') {
+      buried.push(record);
+      continue;
+    }
+    claimed.push({
+      ...record,
+      claimedBy: claimOptions.workerId,
+      claim: record.claim ?? 0,
+      claimedAt: at,
+      visibleAt: record.visibleAt ?? at + claimOptions.visibilityTimeoutMs,
+      steps: (row.steps ?? []).map(toStepRecord),
+    });
+  }
+  if (buried.length > 0) claimOptions.onExhausted?.(buried);
+  return claimed;
+}

@@ -274,8 +274,11 @@
  * listed against origin/main 7ae8b31f7): `action/src/{native-answer,action-answer}.ts` — the 303
  * and one-read flash a browser form gets from an action declaring `native`, reached through
  * `action.ts` and `http.ts` on the action barrel. No existing module newly reached.
+ * raised 936 → 937, measured 937 (2026-11-12, sweep 9a jobs idle cost, the test's own walk):
+ * `jobs/src/counter-batch.ts` — the per-process counter batch every pg driver settles into,
+ * reached through `driver-pg.ts` on the jobs barrel. A new file; no existing module newly reached.
  */
-export const MIGRATE_CEILING = 936;
+export const MIGRATE_CEILING = 937;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

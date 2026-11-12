@@ -1,7 +1,7 @@
-// One worker's row in the registry: announced when it starts, re-announced on its heartbeat
-// interval with the jobs it holds, and forgotten when it stops. A worker that is KILLED announces
-// nothing, and its row expires `ttlMs` after its last heartbeat — the lease rule (`leases.ts`),
-// applied to "who is working".
+// One worker's row in the registry: announced when it starts, renewed on its own interval —
+// in full when the jobs it holds or its drain changed, narrowly otherwise — and forgotten when it
+// stops. A KILLED worker's row expires `ttlMs` after its last heartbeat: the lease rule
+// (`leases.ts`), applied to "who is working".
 
 import type { Clock } from '@ultimat3/core';
 import { logger, renderThrowable } from '@ultimat3/core';
@@ -60,29 +60,50 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
    */
   const announcing = new Set<Promise<void>>();
 
-  const send = (): Promise<void> =>
-    registry
-      .announceWorker(
-        {
-          id: options.workerId,
-          host,
-          startedAt,
-          queues: options.queues,
-          concurrency: options.concurrency,
-          inFlight: options.inFlight().slice(0, MAX_WORKER_IN_FLIGHT),
-          ...(draining ? { draining: true } : {}),
-          ...(options.build === undefined ? {} : { build: options.build }),
-        },
-        options.ttlMs,
-      )
+  /**
+   * What the last full announce that LANDED said — the held ids and the drain flag, the only
+   * columns that move. `undefined` makes the next heartbeat a full one: at the start, after a
+   * failure, and while a full one is on the wire.
+   */
+  let announced: string | undefined;
+
+  const full = async (inFlight: readonly string[], snapshot: string): Promise<void> => {
+    announced = undefined;
+    await registry.announceWorker(
+      {
+        id: options.workerId,
+        host,
+        startedAt,
+        queues: options.queues,
+        concurrency: options.concurrency,
+        inFlight,
+        ...(draining ? { draining: true } : {}),
+        ...(options.build === undefined ? {} : { build: options.build }),
+      },
+      options.ttlMs,
+    );
+    announced = snapshot;
+  };
+
+  const send = async (): Promise<void> => {
+    const inFlight = options.inFlight().slice(0, MAX_WORKER_IN_FLIGHT);
+    const snapshot = `${draining ? 'draining' : 'serving'}\u0000${inFlight.join('\u0000')}`;
+    try {
+      // Nothing a reader uses moved: push the expiry and nothing else (`renewWorker`). A row that
+      // is gone answers `false`, and the full announce below recreates it.
+      const narrow = snapshot === announced && registry.renewWorker !== undefined;
+      if (narrow && (await registry.renewWorker?.(options.workerId, options.ttlMs))) return;
+      await full(inFlight, snapshot);
+    } catch (error) {
       // The registry is what an operator READS; a failed heartbeat must not stop a worker working.
       // Enough of them in a row and the row lapses, which is the honest thing for it to say.
-      .catch((error: unknown) => {
-        logger.warn('jobs.worker.announce-failed', {
-          workerId: options.workerId,
-          error: renderThrowable(error),
-        });
+      announced = undefined;
+      logger.warn('jobs.worker.announce-failed', {
+        workerId: options.workerId,
+        error: renderThrowable(error),
       });
+    }
+  };
 
   const announce = (): Promise<void> => {
     const sent = send().finally(() => announcing.delete(sent));

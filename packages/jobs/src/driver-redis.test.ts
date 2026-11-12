@@ -241,6 +241,7 @@ describe('redisJobDriver', () => {
         claim: 1,
         claimedAt: AT,
         visibleAt: AT + 30_000,
+        steps: [],
       },
     ]);
     expect(reported).toEqual([['j2:dead']]);
@@ -249,11 +250,29 @@ describe('redisJobDriver', () => {
       '5',
       '30000',
       'w1',
+      '0', // no `onEmpty`: the script computes no horizon
       '1',
       'quiet.job',
       'default',
       'other',
     ]);
+  });
+
+  test('an idle claim asks the script for the horizon, and tells it — or that there is none', async () => {
+    const told: (number | null)[] = [];
+    const ask = {
+      queues: ['default'],
+      limit: 5,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'w1',
+      onEmpty: (dueInMs: number | null) => told.push(dueInMs),
+    };
+    const due = recording({ claim: [['h', 12_000]] });
+    expect(await redisJobDriver({ client: due.client, clock: clock() }).claim(ask)).toEqual([]);
+    expect(due.sent[0]?.args[6]).toBe('1');
+    const none = recording({ claim: [['h']] });
+    expect(await redisJobDriver({ client: none.client, clock: clock() }).claim(ask)).toEqual([]);
+    expect(told).toEqual([12_000, null]);
   });
 
   test('claim refuses an empty queue list and a bound that is not a count', async () => {

@@ -10,8 +10,27 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
 
+- `@ultimat3/jobs`: `JOBS_TABLE_STORAGE` — `x_jobs` at `fillfactor = 80`, the framework schema's storage row for it, so `x db migrate` reports a hand-reset fillfactor as `changed-table-storage`.
+- `@ultimat3/jobs`: a claim answers two more things. `ClaimOptions.onEmpty(dueInMs)` — a claim that took nothing says how long until a row of those queues can next be taken (`null`: none waits or is held); `OutboxStore.claim(limit, { onEmpty })` the same for a held outbox row's lease. `ClaimedJob.steps` carries the run's step records (`[]` on a first attempt). All optional: a driver or store without them keeps the poll and the step list. `JobIntrospection.renewWorker(id, ttlMs)`, optional, pushes a registry row's expiry alone.
+- `@ultimat3/testing`: `jobDriverConformance` checks `onEmpty` (none, a delayed row, a held lease) and `ClaimedJob.steps`; `outboxStoreConformance` checks the outbox `onEmpty`.
+
+### Changed
+
+- `@ultimat3/jobs`: an idle worker with a proven `LISTEN` wake rests until the next row is due — `min(run_at)` over waiting rows, a running row's lapsed lease — at most 60 s, where it claimed every 5 s; the idle claim is `SQL_CLAIM_IDLE`, the plain `SQL_CLAIM` while busy. The rest is armed in 2 s slices that re-read the wake, so a lost wake session falls back to the 2 s poll within one slice. Without a proven wake nothing changes (≤ 2 s). An enqueue due within the 60 s rest notifies (was within 1 s), so a delayed job another process queues starts at its `runAt`; a worker stopping with a retry or `step.sleep` due soon announces it through the new optional `JobDriver.wake`; a woken loop's first empty pass keeps the floor, so the throttled wake's slot-silent row is found a floor later. A driver without `wake` (Redis) never rests. The outbox relay does the same, resting until a held row's lease lapses.
+- `@ultimat3/jobs`: a lease renewal and a progress write no longer set `x_jobs.updated_at`, and `x_jobs` is at `fillfactor = 80`, so a renewal is a HOT update that writes no index (> 0.9 of 100 renewals HOT in `driver-pg-heartbeat.job.test.ts`; production before: 247,180 updates, 8 HOT). Existing pages reach the fillfactor as rows churn.
+- `@ultimat3/jobs`: the boot drops `x_jobs_finished_idx` and builds `x_jobs_ended_idx` (`failed`, `dead`, `cancelled`; `done` is `x_jobs_done_idx`'s) once per database, inside the locked framework-schema apply. `x_jobs_created_idx` stays: the immediate-enqueue wake reads it.
+- `@ultimat3/jobs`: the Postgres driver batches settle counts per process and writes them in one statement every 10 s and on `close()` (`SQL_COUNTER_FLUSH`); `SQL_ACK` and `SQL_NACK` carry no counter upsert. A counter read flushes its own process's batch first; one from another process can lag up to 10 s, and a crash loses at most 10 s of counts, never a row's state. The scheduler leader's counter fold runs every 10 min, hourly after a fold that moved nothing.
+- `@ultimat3/jobs`: a worker's registry row lives `max(60 s, visibility timeout)`, renewed every third of that (20 s by default, was the 10 s heartbeat), and is rewritten in full only when its held job ids or drain flag changed; otherwise only its expiry moves.
+- `@ultimat3/jobs`: a claimed row carries its run's steps, so an attempt lists none before it runs or after it settles. A lapsed lease on a final attempt is buried in the claim's one update, not a second update in the same statement.
+- `@ultimat3/jobs`: the retention pass's orphan-step scan (`SQL_JOBS_RETENTION_ORPHANS`, unindexed) runs at most once a day per process, not every hourly pass.
+- `@ultimat3/jobs`: an on-time `jobs.scheduler.dispatched` logs at `debug`; a catch-up fire and `jobs.scheduler.already-fired` stay `info`. `DEFAULT_LEADER_TTL_MS` is 60 s, renewed every 20 s (was 30 s / 10 s). Measured `As of 2026-11-12`, one idle hour of a worker on two queues, a relay and a scheduler leader with three daily tasks, wake live, on the embedded Postgres under fake timers: 2,418 statements → 543 (claims 60, depth reads 60, registry 180, relay 60, leader 180, fold 3).
+
+### Fixed
+
+- `@ultimat3/jobs`: a step write and an operator step resolve lock their job row (`for share`) before writing, so a claim that takes the job over waits for them — a new attempt never replays from steps missing a write that was in flight. Counter batches are capped at 10,000 pending rows while flushes fail (oldest dropped, one `jobs.counters.dropped` warn); a flush whose commit outcome is unknown may count twice.
+- `@ultimat3/jobs`: `demand()` (`queue_demand`) counts a draining worker's job again once that job's lease lapses: a draining worker killed mid-job no longer hides the job from the autoscaler for as long as its registry row lives.
 ## Releases
 
 | Version | Date | Summary |

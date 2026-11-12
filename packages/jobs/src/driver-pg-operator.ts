@@ -26,6 +26,7 @@ import {
   SQL_TASK_FIRES,
   SQL_WORKER_ANNOUNCE,
   SQL_WORKER_FORGET,
+  SQL_WORKER_RENEW,
   SQL_WORKERS,
 } from './driver-pg-operator-sql';
 import type { JobRow, StepRow } from './driver-pg-rows';
@@ -93,9 +94,14 @@ function stringList(raw: unknown): readonly string[] {
   return Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : [];
 }
 
+/**
+ * `flushCounters` writes the driver's pending counter batch (`counter-batch.ts`): a counter read
+ * that did not flush first would miss this process's last `COUNTER_FLUSH_INTERVAL_MS` of settles.
+ */
 export function pgOperator(
   exec: () => PgExecutor,
   job: JobIntrospection['job'],
+  flushCounters: () => Promise<void> = () => Promise.resolve(),
 ): PgOperatorMembers {
   const bulk = async (sql: string, filter: BulkFilter): Promise<BulkResult> => {
     const rows = await exec().query<{ affected: Count; matching: Count }>(sql, [
@@ -286,6 +292,13 @@ export function pgOperator(
         worker.build ?? null,
       ]);
     },
+    async renewWorker(workerId, ttlMs) {
+      const rows = await exec().query(SQL_WORKER_RENEW, [
+        workerId,
+        finiteOption('the pg worker registry', 'ttlMs', ttlMs),
+      ]);
+      return rows.length > 0;
+    },
     async forgetWorker(workerId) {
       await exec().query(SQL_WORKER_FORGET, [workerId]);
     },
@@ -324,6 +337,7 @@ export function pgOperator(
     },
 
     async counters(query) {
+      await flushCounters();
       const rows = await exec().query<CounterRow>(SQL_COUNTERS, [query.job, query.sinceMs]);
       return rows.map((row) => ({
         ...counts(row),
@@ -332,6 +346,7 @@ export function pgOperator(
       }));
     },
     async counterTotals(sinceMs) {
+      await flushCounters();
       const rows = await exec().query<CounterRow>(SQL_COUNTER_TOTALS, [sinceMs]);
       return rows.map(counts);
     },

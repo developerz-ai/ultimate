@@ -66,7 +66,7 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - Drivers: `JobDriver` + optional `introspect`/`backfills`/`leases`; `redisJobDriver`
   (`@ultimat3/jobs/redis`) is one Lua script per operation — a change lands in memory, pg AND Lua. †
 - **`demand` is the seventh method, required**; a draining worker's `queue_demand` goes to 0.
-- **The claim SEEKS** (`SQL_CLAIM`); correct only because a claim autocommits.
+- **The claim SEEKS** (`SQL_CLAIM`); correct only because a claim autocommits. It hands each row its steps; an IDLE loop's claim (`SQL_CLAIM_IDLE`, `onEmpty`) also says when the next row is due, and the loop rests on it, ≤ 60 s, in 2 s slices that re-read the wake (`worker-idle.test.ts`).
 - Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm` (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Full rule: `docs/history/jobs.md`.
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 
@@ -191,7 +191,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
-| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point. Its comments carry no `;` and no `'` |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — and `JOBS_TABLE_STORAGE` (fillfactor 80, exported for the framework schema's drift check). Its comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled` |
 | `retry.ts` | the dead-letter decision; this package's option names over core's `backoffDelay`, no curve |
@@ -204,7 +204,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `worker.ts` | `worker` role, claim round, drain |
 | `worker-drain-cutoff.ts` / `-held.ts` / `-tally.ts` | drain cut-off · held claims · counters |
 | `worker-admit.ts` | may this claimed job start: the limiter, the fleet slot, and the shed / refusal |
-| `worker-registry.ts` | one worker's registry row: announce, heartbeat, forget |
+| `worker-registry.ts` | one worker's registry row: announce, renew (narrow unless held ids or drain moved), forget |
 | `worker-types.ts` | the worker's contract: `WorkerOptions`, `WorkerStats`, `Worker` |
 | `drain-wait.ts` | the drain's wait, shared by both roles |
 | `worker-run.ts` | one claimed job: heartbeat, slot renewal, run signal, consumer span, `job.perform` |
@@ -220,12 +220,12 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
-| `counters.ts` | bucket arithmetic, `nackOutcome`, the memory counters |
+| `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |
 | `progress.ts` / `settled.ts` / `redact-input.ts` | the progress throttle; the `onSettled` runner; a payload as an operator reads it |
 | `scheduler-state.ts` | `SchedulerState`, `fire`, the memory watermark |
 | `scheduler-leader.ts` / `scheduler-occurrences.ts` | `LeaderElection` + `soleLeader`; which occurrences fall in a window |
-| `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share; the two wake signals and `wakeIsLive` |
+| `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share, and the rest (`restAfter`); the two wake signals and `wakeIsLive` |
 | `queue-wake.ts` / `driver-pg-wake-sql.ts` | the `LISTEN` session and its proof; which statement notifies |
 | `worker-loop.ts` | the claim loop's timer: wake, `again`, the kicks |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
@@ -233,7 +233,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `errors-steps.ts` / `errors-saga.ts` / `step-resolve.ts` | step, saga + `once` refusals; `resolveStep` |
 | `worker-queue-demand.ts` | the `queue_demand` gauge: `driver.demand()`, skipped on no work, 0 at the drain |
 | `driver-pg-*-sql.ts` | one file per statement family: jobs rows (`JOB_ROW_COLUMNS`), operator, settle (`SQL_ACK`/`SQL_NACK`), outbox, demand (`SQL_QUEUE_DEMAND`) † |
-| `driver-pg-claim-sql.ts` | `SQL_CLAIM` and why it seeks; re-exported from `driver-pg-sql.ts` |
+| `driver-pg-claim-sql.ts` | `SQL_CLAIM` and why it seeks, `SQL_CLAIM_IDLE`, `pgClaim` (which one, its three kinds of answer row); `SQL_CLAIM` re-exported from `driver-pg-sql.ts` |
 | `error-codes.ts` / `errors.ts` | codes, titles, their registration (`new-error-code` writes here) / the classes |
 | `job-enqueue-many.ts` / `enqueue-record.ts` / `driver-pg-enqueue-many.ts` | `enqueueMany`, `MAX_ENQUEUE_BATCH`, `ENQUEUE_CHUNK`; one enqueue's row, every path; `SQL_ENQUEUE_MANY` + resolve |
 | `import.ts` / `import-pass.ts` | `importRows()`: the declaration; one pass, its byte-offset checkpoints, the error report |
