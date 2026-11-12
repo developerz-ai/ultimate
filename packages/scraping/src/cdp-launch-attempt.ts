@@ -26,6 +26,14 @@ export interface LaunchedBrowser {
   /** The browser's own CDP connection, over its debugging pipe or port. Already answering. */
   readonly connection: CdpConnection;
   /**
+   * The temp root the browser was actually launched with (`socketSafeEnv`-clamped) — the profile's
+   * own root unless that root could not carry the singleton socket. A caller asserting the
+   * browser's TMPDIR asserts against this, never a path re-derived from the profile directory.
+   * Optional: a fake `LaunchedBrowser` built outside `launchAttempt` (a driver fixture that never
+   * asserts TMPDIR) carries no root to be honest about.
+   */
+  readonly tempRoot?: string;
+  /**
    * THE close, idempotent, and awaited by every caller: the connection closed, SIGTERM, SIGKILL
    * after `CLOSE_GRACE_MS`, then the browser's whole process group killed and, only then, the
    * profile removed — bounded at `LAUNCHED_CLOSE_MS`. On Windows, which has no SIGTERM to grant grace to, the process TREE
@@ -119,10 +127,14 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
   const platform = options.platform ?? process.platform;
   const profile = throwawayProfile();
   const profileDir = profile.path;
+  // What the child's own env actually carries as TMPDIR: `socketSafeEnv` inside `spawnBrowser` may
+  // clamp `profile.tempRoot` further still, so this — not the profile's own root — is the value a
+  // caller asserting the browser's TMPDIR must be given.
+  const tempRoot = socketSafeEnv({ TMPDIR: profile.tempRoot })['TMPDIR'] ?? profile.tempRoot;
   const began = performance.now();
   let child: ReturnType<typeof spawnBrowser>;
   try {
-    child = spawnBrowser(options, profileDir, platform);
+    child = spawnBrowser(options, profileDir, profile.tempRoot, platform);
   } catch (error) {
     // A binary that cannot be started at all — not there, not executable, not an executable FORMAT
     // this OS runs (a `#!` script on Windows). Bun throws from `spawn`, synchronously, and that
@@ -186,7 +198,7 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
     });
     const left = Math.max(1, options.launchTimeoutMs - (performance.now() - began));
     await connection.send('Browser.getVersion', {}, undefined, left);
-    return { ok: true, browser: { connection, close } };
+    return { ok: true, browser: { connection, tempRoot, close } };
   } catch (error) {
     const why = error instanceof CdpTimeoutError ? 'deadline' : 'closed';
     // The deadline itself when that is what ended it: the number the reader can raise.
@@ -220,14 +232,21 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
  * reaped with it (`killTree`). It still ends with this process on the pipe wire: Chrome exits when
  * its fd 3 closes. Windows has no group to make — `detached` there is a console flag — so not.
  */
-function spawnBrowser(options: LaunchAttemptOptions, profileDir: string, platform: string) {
+function spawnBrowser(
+  options: LaunchAttemptOptions,
+  profileDir: string,
+  tempRoot: string,
+  platform: string,
+) {
   // Spread into a fresh tuple: Bun's `stdio` type takes a mutable tuple, never a readonly one.
   const [stdin, stdout, stderr, ...extra] = wireStdio(options.wire);
   return Bun.spawn([options.executable, ...options.flags(profileDir)], {
     stdio: [stdin, stdout, stderr, ...extra],
-    // Chrome's ProcessSingleton socket is below the child's TMPDIR, never the profile's parent. Its
-    // Unix socket address is byte-bounded, so socketSafeEnv clamps an unsafe inherited temp root.
-    env: socketSafeEnv(),
+    // The browser's TMPDIR is the profile's own socket-safe root: Chrome's ProcessSingleton
+    // socket is made under the CHILD's TMPDIR, never the profile's parent, and the profile was
+    // chosen so that path fits the unix-socket bound. socketSafeEnv clamps an unsafe inherited
+    // temp root, so an unsafe root can never reach the ProcessSingleton socket.
+    env: socketSafeEnv({ ...process.env, TMPDIR: tempRoot }),
     detached: platform !== 'win32',
     // A backstop, never the close: `close()` ends a browser its caller is done with. This ends one
     // whose caller vanished, so no Chrome outlives every reason it was started for.

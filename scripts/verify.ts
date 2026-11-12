@@ -62,6 +62,7 @@ import {
 import { boundaryRuleDocFindings } from './boundary-rule-docs';
 import { chartVersionFindings } from './chart-version';
 import { cliOutboundFindings } from './cli-outbound';
+import { derivedDocCountFindings } from './derived-doc-counts';
 import { docCommandFindings } from './doc-commands';
 import { docFixAgreementFindings } from './doc-fix-agreement';
 import { docFixFindings } from './doc-fixes';
@@ -329,6 +330,7 @@ export const errorContract: HostCheck = async (root) => [
  * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
  * | `testDiscoveryFindings` | a test file the gate's discovery never yields, or one outside the one convention — *.spec.*, *_spec.*, *_test.* and *.test.{js,jsx} are invisible to the glob, while a __tests__/ path whose basename the glob matches IS yielded by it and run by the gate, so it is refused for the convention it breaks; a colliding basename names no test file at all | `TEST_GLOB` in packages/cli/src/test-select.ts, and the ignore policy in packages/cli/src/test-ignores.ts |
  * | `generatorCountFindings` | a documented `N files` for `x new` / `x g resource` is what the generator still emits — five had gone stale and were corrected by hand | `planNewApp()` / `generate()`, the planners `--dry-run` calls |
+ * | `derivedDocCountFindings` | the component, seam-row and stage counts a page states are the derived ones | the ui component files, the shipped ladder rows, PIPELINE_STAGES |
  * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
  * | `setupCommandFindings` | a page stating what a scaffolded app's `bun run setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-bin.ts` |
  * | `llmsTxtFindings` | `llms.txt`'s package and wiki lists are generated — they were not, and `@ultimat3/notify` was missing | `listWorkspaces()`, `wiki/_Sidebar.md`, `wiki/Home.md` |
@@ -371,6 +373,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await testDiscoveryFindings(root)),
   ...(await testTypecheckFindings(root)),
   ...(await generatorCountFindings(root)),
+  ...(await derivedDocCountFindings(root)),
   ...(await releaseFactFindings(root)),
   ...(await setupCommandFindings(root)),
   ...(await llmsTxtFindings(root)),

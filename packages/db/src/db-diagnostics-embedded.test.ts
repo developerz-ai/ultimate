@@ -8,8 +8,11 @@ import { pgliteClient } from './pglite';
 import { sql } from './sql';
 
 describe('dbDiagnostics · the real embedded database', () => {
-  // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
-  const PGLITE_BOOT_MS = 30_000;
+  // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget,
+  // and one that must sit above the boot it guards: this box measures that boot alone at 32-42s
+  // (2026-10), the figure `queue-wake.job.test.ts` and `schema-load.contract.test.ts` pin the
+  // same 120_000 against for this exact shape.
+  const PGLITE_BOOT_MS = 120_000;
   const client = pgliteClient();
 
   afterAll(async () => {

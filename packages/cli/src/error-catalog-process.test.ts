@@ -9,9 +9,13 @@ import { join } from 'node:path';
 const BIN = join(import.meta.dir, 'bin.ts');
 
 // A cold `bun bin.ts` loads the whole catalog — every `@ultimat3/*` package — and that is time, not
-// correctness: 15.8s and 16.1s measured on this box idle, so 30s left under 2x headroom and the unit
-// step's six workers tipped both past it. Kill before the test's deadline: a wedged child must not
-// survive a timed-out test worker.
+// correctness. Measured quiet (no CI contention), the two bare-CLI children import every package
+// in 6.7 s and 8.0 s. That quiet figure is not the budget this protects: the gate's six unit
+// workers previously reached their 30 s deadline under CI contention alone, with the children
+// nowhere near wedged — contention, not import time, is what these two numbers budget for. 110 s
+// kills a contended or genuinely wedged child well ahead of the test's own 120 s deadline, leaving
+// 10 s for `run()` to report the exit and for the test worker to clean up: a wedged child must
+// not survive a timed-out test worker.
 const PROCESS_TIMEOUT_MS = 110_000;
 const TEST_TIMEOUT_MS = 120_000;
 
