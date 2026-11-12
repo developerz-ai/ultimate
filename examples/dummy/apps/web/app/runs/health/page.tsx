@@ -54,7 +54,10 @@ export const config = defineRoute({
   // charts, the strip and the window picker are server markup, 0 B — so only what every `app/`
   // document carries: the client router 29,570, `/x-client-vitals.js` 1,202, the update banner
   // 710 and the inline runtime 1,965. The first budget this route has declared.
-  budget: { js: '33kb' },
+  // raised 33kb → 33.1kb. measured: 33822 B (2026-11-12; x build --target static) — why: the client
+  // router grew 29,764 → 29,884 (+120 B): a stylesheet that fails to load on navigation now forces a
+  // full load and keeps the old sheets, so a page is never left unstyled.
+  budget: { js: '33.1kb' },
   load: async ({ url }): Promise<RunHealthData> => {
     const actor = useActor();
     const now = new Date();

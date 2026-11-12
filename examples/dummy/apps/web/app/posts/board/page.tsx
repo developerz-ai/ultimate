@@ -71,7 +71,10 @@ export const config = defineRoute({
    * `X_IMAGE_RASTER_BUDGET`, so a client decoding that refusal knows its title. Raised 108.4kb →
    * 108.5kb.
    */
-  budget: { js: '108.5kb' },
+  // raised 108.5kb → 108.6kb. measured: 111181 B (2026-11-12; x build --target static) — why: the
+  // client router grew 29,764 → 29,884 (+120 B): a stylesheet that fails to load on navigation now forces a
+  // full load and keeps the old sheets, so a page is never left unstyled.
+  budget: { js: '108.6kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });
