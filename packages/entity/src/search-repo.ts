@@ -38,6 +38,21 @@ const keyOf = (entity: EntityCore<unknown>): string => {
   return key;
 };
 
+/**
+ * A full answer is refused, never read: the index stops at `MAX_PAGE_SIZE` hits, so a full list
+ * cannot say whether more matched, and an `in` over it would count, group and page a sample as
+ * if it were every match — where the built-in index counts them all. Not `MAX_PAGE_SIZE + 1`: that
+ * is past the limit every adapter accepts (`searchLimitOf`), so it would break the ones that check
+ * it. The cost is exactly `MAX_PAGE_SIZE` matches being refused too. The index is asked by term and
+ * tenant alone, so the chain's other filters cannot narrow what it answers: the term must.
+ */
+const tooManyHits = (entity: EntityCore<unknown>, indexName: string): EntityError =>
+  new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${entity.$name}.search(<term>) matched ${MAX_PAGE_SIZE} or more rows in the '${indexName}' search index — it answers at most ${MAX_PAGE_SIZE} ids, so a count, a breakdown or a page over them would be a sample, not every match`,
+    fix: `${entity.$name}.search('<a more specific term>')   # every word must match, so each one added narrows the hits; or installSearchIndex(postgresSearchIndex()) to match inside the statement, unbounded`,
+  });
+
 /** `args` with every `matches` predicate replaced by the ids the installed index answers. */
 const resolved = async (entity: EntityCore<unknown>, args: FindManyArgs): Promise<FindManyArgs> => {
   const where = args.where ?? [];
@@ -56,6 +71,7 @@ const resolved = async (entity: EntityCore<unknown>, args: FindManyArgs): Promis
       term: String(predicate.value ?? ''),
       limit: MAX_PAGE_SIZE,
     });
+    if (hits.length >= MAX_PAGE_SIZE) throw tooManyHits(entity, index.name);
     swapped.push({ column: keyOf(entity), op: 'in', value: hits.map((hit) => hit.id) });
   }
   return { ...args, where: swapped };

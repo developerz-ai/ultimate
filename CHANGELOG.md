@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- Security: a sealed column no longer enters a history image (its lookup ciphertext was an equality oracle), and the authorization server enforces each client's registered grants and auth method.
+- Per-request floor: schema parses ~2.8× faster on valid objects, logger + request line 21 → 13 µs, the request memo bounded at 8 MiB.
+- Sentry groups by error code with real stack frames; raster work leaves the event loop (worst stall 775 ms → 1–41 ms).
+
 ### Added
 
 - `@ultimat3/core`: `mapBounded(items, fn, { width, signal })` — bounded concurrent map in input order; the first rejection aborts the rest, a missing `width` is `X_INVARIANT`, a caller abort is `X_ABORTED`.
@@ -41,6 +47,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/core`: a `cache.tiers` entry that is a Symbol or a null-prototype object is `X_CONFIG_INVALID`, not a bare `TypeError`.
 - `@ultimat3/i18n`: `extractKeys` no longer reports a `t('…')` written inside string or template text, and no longer loses a real call right after one.
 - `@ultimat3/time`: `nextLocalSlots` refuses a `count` that is NaN, negative, fractional or Infinity with `X_INVARIANT`.
+- `@ultimat3/entity`, `@ultimat3/db` (security): a sealed column no longer enters a history image (memory `imageOf`, Postgres `ultimate_record_history`); a change to a sealed column alone records no version. A lookup column's deterministic ciphertext was an equality oracle across rows. Apps with `history: true` regenerate a migration and scrub old rows — [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading).
+- `@ultimat3/auth` (security): the authorization server issues and honours refresh tokens only for clients registered with `refresh_token`; others get none, and refreshing answers `unauthorized_client` (the device grant too).
+- `@ultimat3/auth` (security): a confidential client must authenticate with its registered `token_endpoint_auth_method`; the other method is `invalid_client`.
+- `@ultimat3/auth`: a redirect URI containing whitespace is refused at registration, so the memory and Postgres stores agree.
+- `@ultimat3/entity`: `.search()` through an external search index refuses 10,000 or more matches with `X_INVARIANT_VIOLATED` instead of counting, grouping and paging only the first 10,000.
 
 ## Releases
 
