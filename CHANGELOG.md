@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- Set-based entity writes: `db.x.where(…).updateAll(patch)` / `.deleteAll()` is one statement, and `updateMany([{ id, patch }])` writes 1,000 different rows in one statement.
+- `copyAll` loads rows over `COPY FROM STDIN` (100k rows ~1.1 s vs ~2.9 s), and `insertAll`/`upsertAll` take `{ returning: false }`.
+- A page is bounded at 64 MiB before decoding (`X_ENTITY_PAGE_TOO_LARGE`), and `inBatches` halves its page on that refusal.
+
 ### Added
 
 - `@ultimat3/entity`: `.updateAll(patch)` / `.deleteAll()` end any read chain — a filtered write on every operator the chain has (`'in'`, `'is-null'`, ranges), one statement, under the chain's tenancy and soft-delete reach. No predicate, or a chain predicate whose value is `undefined`, is `X_WRITE_UNFILTERED`; `limit()`, `after()` or `search()` on the chain is `X_INVARIANT_VIOLATED`. `updateWhere`/`deleteWhere` build the same plan (`write-where.ts`).
