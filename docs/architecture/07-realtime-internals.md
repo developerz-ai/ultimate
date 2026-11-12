@@ -357,11 +357,13 @@ Every island is its own bundle, so a module singleton is one per island. Page st
 | Key | Owner | Holds |
 |---|---|---|
 | `ultimate.client` | `@ultimat3/core` (`record-sink.ts`, `pageClient()`) | the `RecordSink` slot, the socket slot, the principal scope cell, the pending-records buffer, the outbound-header slot |
-| `ultimate.realtime` | `@ultimat3/realtime` (`page-store.ts`, `pageRealtime()`) | the `RecordStore`, the sync target, the socket client, the page's write counts |
+| `ultimate.realtime` | `@ultimat3/realtime` (`page-store.ts`, `pageRealtime()`) | the `RecordStore`, the sync target, the socket client, the page's write counts and one write lane per mutator name (`enterLane`) |
 
-`installRealtime({ signal: createSignal })` gives the hooks this bundle's Solid signal factory; `x build`
-prepends it to every island whose own graph imports `@ultimat3/realtime`
-(`packages/cli/src/island-realtime.ts`). The sync target comes from the document's
+`installRealtime({ signal: createSignal, cleanup: onCleanup })` gives the hooks this bundle's Solid
+signal factory and its cleanup registration; `x build` prepends it to every island whose own graph
+imports `@ultimat3/realtime` (`packages/cli/src/island-realtime.ts`). Each `use*` hook wraps its
+release in `ownedRelease` (`reactivity.ts`): registered with `cleanup`, run at most once whether the
+component's disposal, an explicit `release()` or a `using` block fires it. The sync target comes from the document's
 `<meta name="ultimate-sync">` (`sync-meta.ts`).
 
 ### `RecordStore`

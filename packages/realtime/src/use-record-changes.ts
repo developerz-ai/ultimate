@@ -4,12 +4,12 @@
 // a server page, flash a counter — pays nothing here: it holds no row and no type.
 
 import { pageStore } from './page-store';
-import { isServerRender } from './reactivity';
+import { isServerRender, ownedRelease } from './reactivity';
 
 /** Per type, the keys of its records that one store update moved (written, removed or evicted). */
 export type RecordChanges = ReadonlyMap<string, readonly string[]>;
 
-/** The listener's undo — call it, `release()` it or `using` it (Solid: `onCleanup`). */
+/** The listener's undo — call it, `release()` it or `using` it; the component's cleanup does too. */
 export type RecordChangesHandle = (() => void) & { release(): void; [Symbol.dispose](): void };
 
 const nothing = (): void => undefined;
@@ -37,11 +37,6 @@ export function useRecordChanges(
     }
     if (moved.size > 0) listener(moved);
   });
-  let held = true;
-  const release = (): void => {
-    if (!held) return;
-    held = false;
-    unsubscribe();
-  };
+  const release = ownedRelease(unsubscribe);
   return Object.assign(release, { release, [Symbol.dispose]: release });
 }

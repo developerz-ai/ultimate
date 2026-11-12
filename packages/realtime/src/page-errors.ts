@@ -47,7 +47,7 @@ export class RealtimeUninstalledError extends RealtimeError {
     super({
       code: 'X_REALTIME_UNINSTALLED',
       cause: `${args.hook}() ran in a browser island whose bundle never called installRealtime(), or on a page whose runtime (@ultimat3/realtime/boot) never loaded`,
-      fix: "x build   # the island bootstrap installs it; a hand-built island imports '@ultimat3/realtime/boot' (the page runtime) and calls installRealtime({ signal: createSignal }) from '@ultimat3/realtime' before its first render",
+      fix: "x build   # the island bootstrap installs it; a hand-built island imports '@ultimat3/realtime/boot' (the page runtime) and calls installRealtime({ signal: createSignal, cleanup: onCleanup }) from '@ultimat3/realtime' before its first render",
     });
   }
 }
@@ -58,7 +58,7 @@ export class SyncUnconfiguredError extends RealtimeError {
     super({
       code: 'X_SYNC_UNCONFIGURED',
       cause: `${args.hook}() needs the page socket, and installRealtime() was given no sync target`,
-      fix: "x build   # the island bootstrap passes it; a hand-built island calls installRealtime({ signal: createSignal, sync: { url, buildId } }) from '@ultimat3/realtime'",
+      fix: "x build   # the island bootstrap passes it; a hand-built island calls installRealtime({ signal: createSignal, cleanup: onCleanup, sync: { url, buildId } }) from '@ultimat3/realtime'",
     });
   }
 }

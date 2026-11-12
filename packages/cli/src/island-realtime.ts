@@ -1,6 +1,6 @@
 // Realtime installed for the author, on exactly the islands that use it: an island whose own import
 // graph reaches `@ultimat3/realtime` is built from a virtual entry that first awaits the page
-// runtime (`island-runtime.ts`), then calls `installRealtime({ signal: createSignal })` with THIS
+// runtime (`island-runtime.ts`), then calls `installRealtime({ signal, cleanup })` with THIS
 // bundle's solid-js, then re-exports the island whole. Every other island pays nothing. An island
 // that reads the record store or the outbox also waits for the page's restore before it mounts
 // (#506); one that only follows the socket does not (`island-realtime-state.ts`).
@@ -90,13 +90,19 @@ const entrySource = (file: string, follows: boolean): string =>
  * on a document rendered for a principal; anywhere else the island loads the runtime chunk, by a
  * path relative to its own URL, so it resolves under `/islands/` and beside it in `mountIsland`.
  * The chunk's URL is in this source, so a new runtime is a new URL for every island loading it.
+ *
+ * `cleanup` is Solid's `onCleanup`, so every hook a component holds is released with it — the
+ * island author writes no `onCleanup(() => h.release())`. A hook held outside a component (module
+ * scope, an event handler) has no owner, so Solid registers nothing and it stays the caller's: an
+ * island is built against solid's production build (`island-solid-dedupe.ts`), which is silent
+ * there.
  */
 const installSource = (runtimeUrl: string): string =>
   `import { installRealtime } from '${REALTIME}';\n` +
   `import { awaitPageRuntime } from '${WAIT}';\n` +
-  `import { createSignal } from 'solid-js';\n` +
+  `import { createSignal, onCleanup } from 'solid-js';\n` +
   `await awaitPageRuntime({ boot: '${PAGE_BOOT_BASE_PATH}/', load: () => import('./${basename(runtimeUrl)}') });\n` +
-  `installRealtime({ signal: createSignal });\n`;
+  `installRealtime({ signal: createSignal, cleanup: onCleanup });\n`;
 
 /**
  * The first-paint hold (#506), for an island that reads the record store or the outbox: `mount`

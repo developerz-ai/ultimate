@@ -51,3 +51,20 @@ Unread after four passes is listed in [`overview.md`](overview.md) *Risks*; the 
 - A rollout of the replicator after a clean stop causes zero window invalidations (live test), and a crash causes exactly one per window.
 - No `Connection reset by peer` from the replicator's own shutdown in the database log.
 - The 50k-entry bench row is flat.
+
+## Outcome (9b realtime, local)
+
+Ships as 31.14.0. `As of 2026-11-12`, measured before release; step 4's production count (slot restarts and `Connection reset by peer` over a day of rollouts) is still owed.
+
+| ID | Outcome |
+|---|---|
+| R1 | shipped. Envelope v2: a run's first envelope carries `from` (`ChangeFeedStartOptions.onResume`: the configured resume position or the slot's `confirmed_flush_lsn`; a new slot, a resync or a from-now start claims nothing), and a clean `stop()` publishes a handover on `x.change.-handover` (`replicator-handover.ts`: the run's last `seq` and `through`, `ChangeFeed.position()`). `SeqGapDetector` keeps `#chain`, the highest replicator lsn read; a new run chains when `from <= #chain`. No per-envelope `prev`: inside a run `seq` already finds a hole, so only the run's first word and its goodbye carry a position — and the goodbye is what lets a run in another process chain. Mixed fleet both ways reads "gap" (`replicator-envelope.test.ts`). `replicator.live.test.ts` on Postgres: stop + start 0 invalidations, a new process after a clean stop 0, a crash after the slot confirmed past what the node read exactly 1 |
+| R2 | shipped. `stop()` → CopyDone → `drainGoodbye` (`pg-replication-goodbye.ts`) reads through ReadyForQuery, bounded at `COPY_DRAIN_MS` (1 s) shared with the pump's hand-off, then `Terminate` (`pg-connection-drain.test.ts`, `pg-replication-goodbye.test.ts`, fake clock) |
+| R3 | shipped. `#owing` in `live-entries.ts`, fed by a `stale` accessor on `queryEntry` (`watchStale`); a hand-built entry literal is still read per change. Property test against the walked set (`live-entries.test.ts`). Bench `scripts/bench/live-entries-targets.bench.ts`, 50,000 windows, 8 stale: 0.41–0.63 ms → 0.001 ms a change (the plan's ~1.2 ms was on a busier box); 1k / 10k / 50k all ~0.0007 ms. Its test counts `Map.prototype.values` calls (0), never time |
+| R4 | shipped. The `raw-interval` guard's `fix:` names `useQuery(ref, input, { poll: pollEvery(ms) })`; the three tracked apps' copies refreshed; the scaffolded `CLAUDE.md` *Polling* row names it. Back-off default: [`02`](02-schema-core.md) C7 (31.7.0) |
+| R5 | out of scope (OD4). Documented in `wiki/Realtime.md` *Out of scope: a duplex byte stream* |
+| R6 | moved to [`17`](17-test-determinism.md) |
+| R7 | shipped. `RealtimeInstall.cleanup`; `island-realtime.ts` passes Solid's `onCleanup`; every `use*` hook wraps its release in `ownedRelease` (`reactivity.ts`), run once whichever of cleanup, `release()` or `using` fires (`use-hooks-cleanup.test.ts`). A `useChannel`-only island +98 B (8,397 → 8,495 B, `page-errors-bundle.test.ts`: +78 `ownedRelease`, +20 the install fixes naming `cleanup: onCleanup`); with R9, the reference app's `/feed` +556 B (213,859 → 214,415 B, budget 209.2kb → 209.4kb). The reference app's hand-written `onCleanup(release)` lines are [`18`](18-tracked-apps.md)'s to delete; they are harmless meanwhile |
+| R8 | not planned, as recorded in Findings |
+| R9 | reproduced, then shipped. `enterLane` (`page-store.ts`): one lane per mutator name, page-wide; an idle lane sends in the same tick, a busy one waits on the previous write's settling; the overlay is never held (`use-mutation-lane.test.ts`) |
+| R10 | already shipped in #651 (sweep 1c, S7): `maxSocketsPerActor` on the sync node, default 16 (`principal-sockets.ts`), `X_SOCKET_LIMIT` |

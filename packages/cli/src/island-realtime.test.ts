@@ -35,6 +35,26 @@ export function mount(): unknown {
 }
 `;
 
+/**
+ * A component that holds a hook and never writes `onCleanup`: its owner's dispose must still let
+ * go, through the cleanup the install passed (Solid's own, from this bundle's solid-js).
+ */
+const OWNED = `import { createRoot } from 'solid-js';
+import { useRecordChanges } from '@ultimat3/realtime';
+export function mount(): { moved: () => number; dispose: () => void } {
+  let moved = 0;
+  const dispose = createRoot((dispose) => {
+    useRecordChanges(['posts'], () => {
+      moved += 1;
+    });
+    return dispose;
+  });
+  // Outside any owner: the caller's to release — Solid registers nothing, and nothing throws.
+  useRecordChanges(['posts'], () => undefined);
+  return { moved: () => moved, dispose };
+}
+`;
+
 /** A string only realtime's `record-store.ts` holds: in a file exactly when the store's code is. */
 const STORE_CODE = 'it arrived under an empty key';
 
@@ -91,6 +111,26 @@ describe('the realtime install the island bundle writes', () => {
     // A DOM, so a hook that found nothing installed would throw rather than render the server state.
     Object.assign(globalThis, { document: {}, window: {} });
     expect(island.mount()).not.toBe('X_REALTIME_UNINSTALLED');
+  });
+
+  test('a hook in a disposed component lets go with no onCleanup written by the island', async () => {
+    await write('apps/web/app/owned.island.tsx', OWNED);
+    const bundle = await buildIslands(ROOT);
+    const [chunk] = bundle.chunks;
+    await serve(bundle, join(ROOT, 'out'));
+    Object.assign(globalThis, { document: {}, window: {} });
+    const island = (await import(join(ROOT, 'out', chunk?.url.slice(1) ?? ''))) as {
+      mount: () => { moved: () => number; dispose: () => void };
+    };
+    const mounted = island.mount();
+    const page = Reflect.get(globalThis, Symbol.for('ultimate.realtime')) as {
+      store: { adopt(type: string, rows: object): void };
+    };
+    page.store.adopt('posts', { p1: { id: 'p1', likes: 1 } });
+    expect(mounted.moved()).toBe(1);
+    mounted.dispose();
+    page.store.adopt('posts', { p1: { id: 'p1', likes: 2 } });
+    expect(mounted.moved()).toBe(1);
   });
 
   test('a plain island is built from its own file and carries no realtime at all', async () => {

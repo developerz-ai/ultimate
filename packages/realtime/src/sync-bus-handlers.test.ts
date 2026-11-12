@@ -15,6 +15,7 @@ import { LiveQueryRegistry } from './live-query';
 import { OPEN_POLICY } from './policy-fake-fixture';
 import { encodeResync } from './replication-resync';
 import { SeqGapDetector } from './replicator-envelope';
+import { encodeHandover } from './replicator-handover';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { changeHandler, ProducerKinds, reconnectHandler, type SyncBus } from './sync-bus-handlers';
 
@@ -231,6 +232,31 @@ describe('two kinds of producer on one table', () => {
       'X_REALTIME_PRODUCER_CONFLICT',
       expect.objectContaining({ table: 'bus_gap_posts', kept: 'publisher', dropped: 'replicator' }),
     ]);
+    warn.mockRestore();
+  });
+});
+
+describe('a replicator handover on the bus', () => {
+  test('a clean goodbye is no gap, is no change, and the next run chains on from it', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const handle = changeHandler(bus);
+    handle(envelope('p1', 1, 'run-1'));
+    handle(encodeHandover({ producer: 'run-1', seq: 2, through: '9'.repeat(16) }));
+    expect(registry.delivered).toHaveLength(1);
+    const next = JSON.parse(envelope('p2', 1, 'run-2')) as Record<string, unknown>;
+    handle(JSON.stringify({ ...next, lsn: 'a'.repeat(16), from: '9'.repeat(16), v: 2 }));
+    expect(registry.invalidated).toBe(0);
+    expect(ws.of('replay-gap')).toEqual([]);
+    warn.mockRestore();
+  });
+
+  test('a goodbye after a tail this node never got re-reads everything', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const handle = changeHandler(bus);
+    handle(envelope('p1', 1, 'run-1'));
+    handle(encodeHandover({ producer: 'run-1', seq: 3, through: '9'.repeat(16) }));
+    expect(registry.invalidated).toBe(1);
+    expect(ws.of('replay-gap')).toHaveLength(1);
     warn.mockRestore();
   });
 });

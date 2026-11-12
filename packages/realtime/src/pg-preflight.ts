@@ -74,6 +74,26 @@ export async function preflight(
 }
 
 /**
+ * How far the slot was confirmed — read AFTER `awaitSlotReleased`, so a predecessor's last confirm
+ * (its clean `stop()`) has landed. Where a stream started with no resume position begins, and so
+ * the place in the chain a new replicator process says it resumed at. `null`: never confirmed, or
+ * a text this reader does not know (`0/16B3748` is the only spelling Postgres has).
+ */
+export async function slotConfirmed(
+  connection: PgConnection,
+  slot: string,
+): Promise<bigint | null> {
+  assertIdentifier('slot', slot);
+  const [row] = await connection.query(
+    `SELECT confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '${slot}'`,
+  );
+  const text = row?.[0];
+  if (typeof text !== 'string' || !/^[0-9A-Fa-f]{1,8}\/[0-9A-Fa-f]{1,8}$/.test(text)) return null;
+  const [high = '0', low = '0'] = text.split('/');
+  return (BigInt(`0x${high}`) << 32n) | BigInt(`0x${low}`);
+}
+
+/**
  * The fourth preflight question, and the one that does NOT refuse: which entity tables have NO
  * replica identity. Once such a table is in the publication, Postgres refuses its UPDATE and
  * DELETE outright, and a change could not be keyed if it did not. A table with a primary key is

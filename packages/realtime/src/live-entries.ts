@@ -8,7 +8,7 @@ import { SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, PreparedWindow } from './live-contract';
 import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
-import { type QueryEntry, queryEntry } from './query-window';
+import { type QueryEntry, queryEntry, watchStale } from './query-window';
 
 /** What the entry table reads off the registry's options. */
 export type LiveEntriesOptions = Pick<
@@ -20,6 +20,14 @@ export class LiveEntries {
   readonly #byQid = new Map<string, QueryEntry>();
   /** `shape.entities` → the entries reading it. A shape is fixed at birth, so this never moves. */
   readonly #byTable = new Map<string, Set<QueryEntry>>();
+  /** The entries whose `stale` is set, kept as it moves (`watchStale`) — what `targets` adds. */
+  readonly #owing = new Set<QueryEntry>();
+  /** Entries `queryEntry` did not build: no accessor reports them, so `targets` reads each one. */
+  readonly #unwatched = new Set<QueryEntry>();
+  readonly #onStale = (entry: QueryEntry, stale: boolean): void => {
+    if (stale) this.#owing.add(entry);
+    else this.#owing.delete(entry);
+  };
   readonly #options: LiveEntriesOptions;
   readonly #maxEntries: number;
 
@@ -117,12 +125,17 @@ export class LiveEntries {
       }
       readers.add(entry);
     }
+    if (!watchStale(entry, this.#onStale)) this.#unwatched.add(entry);
+    else if (entry.stale) this.#owing.add(entry);
   }
 
   delete(qid: string): void {
     const entry = this.#byQid.get(qid);
     if (entry === undefined) return;
     this.#byQid.delete(qid);
+    watchStale(entry, null, this.#onStale);
+    this.#owing.delete(entry);
+    this.#unwatched.delete(entry);
     for (const table of entry.shape.entities) {
       const readers = this.#byTable.get(table);
       if (readers === undefined) continue;
@@ -144,12 +157,15 @@ export class LiveEntries {
    * one): a change to a table it does not read is no hole in that read. `stale` is a boolean per
    * entry, read without a lane; the expensive part — a lane entered, a closure queued, a fanout
    * awaited — is paid by these entries only.
-   * Measured: 10k windows on other tables, 34.6 ms → 0.23 ms per change (29 → 4,430/s).
+   * Measured: 10k windows on other tables, 34.6 ms → 0.23 ms per change (29 → 4,430/s). The stale
+   * ones are a set kept as `stale` moves, never a walk of the table: the walk was ~0.86 ms a change
+   * at 50k entries with none of them stale (`scripts/bench/live-entries-targets.bench.ts`).
    */
   targets(table: string): QueryEntry[] {
     const readers = this.readersOf(table);
     const out = [...readers];
-    for (const entry of this.#byQid.values()) {
+    for (const entry of this.#owing) if (!readers.has(entry)) out.push(entry);
+    for (const entry of this.#unwatched) {
       if (entry.stale && !readers.has(entry)) out.push(entry);
     }
     return out;

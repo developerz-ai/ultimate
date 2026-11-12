@@ -26,8 +26,10 @@ describe('PostgresChangeFeed', () => {
     expect(server.queries[2]).toContain('pg_publication_tables');
     expect(server.queries[3]).toContain('relreplident');
     expect(server.queries[4]).toContain('pg_replication_slots');
-    expect(server.queries[5]).toStartWith('START_REPLICATION SLOT ultimate_slot LOGICAL 0/0');
-    expect(server.queries[5]).toContain("publication_names 'ultimate_pub'");
+    // An existing slot: how far it was confirmed, read after any predecessor let it go.
+    expect(server.queries[5]).toContain('confirmed_flush_lsn');
+    expect(server.queries[6]).toStartWith('START_REPLICATION SLOT ultimate_slot LOGICAL 0/0');
+    expect(server.queries[6]).toContain("publication_names 'ultimate_pub'");
     await feed.stop();
   });
 
