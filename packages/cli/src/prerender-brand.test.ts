@@ -1,5 +1,6 @@
-// The static export carries the app's brand exactly as the served process does: the exported file
-// is the document a static host hands a browser, with no process behind it to add one later.
+// The static export carries the app's brand exactly as the served process does — as the tail of the
+// stylesheet the exported document links, with no inline `<style>` — and every immutable file it
+// writes has the `.br`/`.gz` siblings a static host serves with no coder of its own.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
@@ -7,9 +8,10 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { clearStylesheets } from '@ultimat3/render/server';
-import { brandStyleTag, defineTheme } from '@ultimat3/ui';
+import { defineTheme } from '@ultimat3/ui';
 import { prerenderSite } from './prerender';
 import { processRoot } from './process-root-fixture';
+import { setBrandStyles } from './style-bundle';
 import { APP_THEME_MODULE } from './theme-brand';
 
 const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-brand-fixture'));
@@ -37,23 +39,48 @@ beforeEach(async () => {
 afterEach(async () => {
   clearRoutes();
   clearStylesheets();
+  setBrandStyles('');
   await rm(ROOT, { recursive: true, force: true });
 });
 
+const OUT = join(ROOT, 'static');
+
 const exported = async (): Promise<string> => {
-  const out = join(ROOT, 'static');
-  await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
-  return Bun.file(join(out, 'index.html')).text();
+  await prerenderSite({ root: ROOT, out: OUT, origin: 'https://example.test' });
+  return Bun.file(join(OUT, 'index.html')).text();
+};
+
+/** The file the exported document's `<link rel="stylesheet">` names, read from the export. */
+const linkedSheet = async (html: string): Promise<string> => {
+  const href = /<link rel="stylesheet" href="([^"]+)">/.exec(html)?.[1];
+  if (href === undefined) return expect.unreachable('the exported document links no stylesheet');
+  return Bun.file(join(OUT, href.slice(1))).text();
 };
 
 describe('x build --target static · the app brand', () => {
-  test('the exported document carries the brand <style> in its head', async () => {
+  test('the exported document links a sheet whose tail is the brand, and inlines none', async () => {
     await Bun.write(
       join(ROOT, APP_THEME_MODULE),
       `import { defineTheme } from '${UI}';\nexport const brand = defineTheme({ preset: 'scifi' });\n`,
     );
-    const head = (await exported()).split('</head>')[0] ?? '';
-    expect(head).toContain(brandStyleTag(defineTheme({ preset: 'scifi' })));
+    const html = await exported();
+    expect(html).not.toContain('<style');
+    const sheet = await linkedSheet(html);
+    expect(sheet.endsWith(defineTheme({ preset: 'scifi' }).css)).toBe(true);
+  });
+
+  test('the linked sheet has .br and .gz siblings that decode to it', async () => {
+    await Bun.write(
+      join(ROOT, APP_THEME_MODULE),
+      `import { defineTheme } from '${UI}';\nexport const brand = defineTheme({ preset: 'scifi' });\n`,
+    );
+    const html = await exported();
+    const href = /<link rel="stylesheet" href="([^"]+)">/.exec(html)?.[1] ?? '';
+    const sheet = await linkedSheet(html);
+    const path = join(OUT, href.slice(1));
+    const gz = await Bun.file(`${path}.gz`).bytes();
+    expect(new TextDecoder().decode(Bun.gunzipSync(gz))).toBe(sheet);
+    expect(await Bun.file(`${path}.br`).exists()).toBe(true);
   });
 
   test('an app with no theme module exports no <style>', async () => {

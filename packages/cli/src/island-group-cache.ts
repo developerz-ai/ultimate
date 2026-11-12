@@ -77,6 +77,8 @@ export function groupKey(parts: {
   readonly splitting: boolean;
   readonly environment: string;
   readonly persists: boolean | undefined;
+  /** Solid as one shared output (`island-vendor.ts`): other bytes, so another entry. */
+  readonly vendor?: boolean;
 }): string {
   return contentHash(
     JSON.stringify([
@@ -87,6 +89,8 @@ export function groupKey(parts: {
       parts.group,
       parts.splitting,
       parts.persists ?? null,
+      // Appended only when on, so every entry written before the vendor existed keeps its key.
+      ...(parts.vendor === true ? ['vendor-solid'] : []),
     ]),
   );
 }

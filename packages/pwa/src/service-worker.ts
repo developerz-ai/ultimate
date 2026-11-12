@@ -24,6 +24,7 @@ import {
 } from './pages-cache-source';
 import type { PrecacheAsset, PrecacheManifest } from './precache';
 import { buildPrecacheManifest, serializePrecacheManifest } from './precache';
+import { precachedAssetSource } from './precached-asset-source';
 import type { VapidConfig } from './push';
 import { pushSource } from './push';
 import type { RouteRule } from './route-rules';
@@ -150,6 +151,7 @@ export function generateServiceWorker(
     header(buildId),
     constants(buildId, scope, retained, fallback.neverCache),
     `const PRECACHE_MANIFEST=${serializePrecacheManifest(precache)};`,
+    precachedAssetSource(precache),
     `const ROUTE_RULES=${serializeRules(rules)};`,
     [NETWORK_SOURCE, ...usedStrategies.map((strategy) => STRATEGY_SOURCE[strategy])].join('\n'),
     offlineFallbackSource(fallback, config.localePrefixes ?? []),
@@ -370,6 +372,9 @@ self.addEventListener('fetch',(event)=>{
   const url=new URL(req.url);
   if(url.origin!==self.location.origin)return;
   if(NEVER_CACHE.some((p)=>url.pathname.startsWith(p)))return passThrough(event);
+  // Ahead of every rule: the install block filled the precache for exactly these requests.
+  const asset=PRECACHED_ASSETS.get(url.href);
+  if(asset!==undefined)return event.respondWith(precachedAsset(req,asset));
   const rule=ruleFor(url);
   if(!rule)return passThrough(event);
   const fn=STRATEGIES[rule.s];

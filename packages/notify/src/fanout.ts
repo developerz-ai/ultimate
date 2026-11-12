@@ -6,14 +6,16 @@
 // recipient 40 and replays the other 39 from the step store in microseconds — the same guarantee a
 // job-per-recipient buys, without N queue rows, N idempotency keys and N manifest entries.
 
+import { classifyThrown } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
 import { attemptDelivery } from './attempt';
 import type { NotifyChannel } from './channel';
 import { isBulkChannel } from './channel';
 import { NotifyFanoutTooWideError } from './errors';
 import { flushDigest } from './fanout-digest';
+import { settledPool } from './fanout-pool';
 import type { Tally, Walk } from './fanout-walk';
-import { chunksOf, countSend } from './fanout-walk';
+import { chunksOf, countSend, NOTIFY_DELIVERY_WIDTH } from './fanout-walk';
 import type { NotifyEvent, Recipient } from './notification';
 import type { NotifyPayload, NotifyPlan, NotifyReport, ResolvedDelivery } from './plan';
 import { notifyStores } from './stores';
@@ -148,10 +150,33 @@ async function deliverOne<Params>(
     index += 1;
     const allowed = await allowedBy(walk, channel.name, chunk);
     if (allowed.length === 0) continue;
-    const counts = await walk.step.run(name, async (signal) => {
-      const answer = { delivered: 0, replayed: 0 };
-      for (const recipient of allowed) {
-        const sent = await attemptDelivery(
+    const counts = await walk.step.run(name, (signal) => deliverChunk(walk, one, allowed, signal));
+    tally.delivered += counts.delivered;
+    tally.replayed += counts.replayed;
+  }
+}
+
+/**
+ * One chunk's recipients, `NOTIFY_DELIVERY_WIDTH` at a time, each with its own ledger claim. A
+ * recipient's failure is held, never thrown at once: its neighbours still go out (and settle
+ * `sent`), so the retry re-sends the failed one alone. Then the step fails with the first
+ * RETRYABLE failure in audience order when there is one — a terminal one first would end the job
+ * with a recipient a retry could still have reached — else the first.
+ */
+async function deliverChunk<Params>(
+  walk: Walk<Params>,
+  channel: NotifyChannel<Params>,
+  allowed: readonly Recipient[],
+  signal: AbortSignal,
+): Promise<{ delivered: number; replayed: number }> {
+  const { event, ctx } = walk;
+  const outcomes = await settledPool(
+    allowed,
+    NOTIFY_DELIVERY_WIDTH,
+    signal,
+    async (recipient, abort): Promise<{ readonly failed: unknown } | boolean> => {
+      try {
+        return await attemptDelivery(
           {
             ledger: notifyStores().ledger,
             claim: {
@@ -164,18 +189,30 @@ async function deliverOne<Params>(
             channel: channel.name,
             recipients: 1,
             ctx,
-            send: (abort) => one.deliver({ ctx, recipient, event, batch: [event], signal: abort }),
+            send: (stop) =>
+              channel.deliver({ ctx, recipient, event, batch: [event], signal: stop }),
           },
-          signal,
+          abort,
         );
-        if (sent) answer.delivered += 1;
-        else answer.replayed += 1;
+      } catch (error) {
+        return { failed: error };
       }
-      return answer;
-    });
-    tally.delivered += counts.delivered;
-    tally.replayed += counts.replayed;
+    },
+  );
+  // A drain: every claimed send has settled; the rest were never claimed. The retry re-runs the
+  // chunk, and the ledger answers `sent` for every recipient already reached.
+  if (signal.aborted) throw signal.reason;
+  const answer = { delivered: 0, replayed: 0 };
+  const failures: unknown[] = [];
+  for (const outcome of outcomes) {
+    if (outcome === true) answer.delivered += 1;
+    else if (outcome === false) answer.replayed += 1;
+    else failures.push(outcome.failed);
   }
+  if (failures.length > 0) {
+    throw failures.find((error) => classifyThrown(error) !== 'terminal') ?? failures[0];
+  }
+  return answer;
 }
 
 /**

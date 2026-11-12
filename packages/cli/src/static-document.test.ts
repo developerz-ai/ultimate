@@ -98,14 +98,13 @@ describe('a static page, revalidated', () => {
     expect(await answer.text()).toContain('<!doctype html>');
   });
 
-  test('an ssr page and a no-store page never answer 304', async () => {
+  test('a no-store page never answers 304; a cacheable ssr page revalidates by its ETag', async () => {
     page('apps/web/app/panel/page.tsx', 'ssr');
     page('apps/web/app/privado/page.tsx', 'ssr', { cache: 'no-store' });
     const server = serverFor(true);
-    for (const path of ['/panel', '/privado']) {
-      const answer = await get(server, path, { 'if-none-match': '*' });
-      expect(answer.status).toBe(200);
-    }
+    expect((await get(server, '/privado', { 'if-none-match': '*' })).status).toBe(200);
+    // A document someone may keep carries the hash of its bytes (`render-ssr.ts`).
+    expect((await get(server, '/panel', { 'if-none-match': '*' })).status).toBe(304);
   });
 
   test('a 404 rendered under static is sent whole, even to `If-None-Match: *`', async () => {

@@ -49,13 +49,14 @@ async function findingsWith(files: Readonly<Record<string, string>>): Promise<re
 
 const codes = (findings: readonly Finding[]): readonly string[] => findings.map((f) => f.code);
 
-/** Every guard `x new` writes, spelled out: a twenty-second arriving unannounced fails here. */
-const TWENTY_ONE: readonly string[] = [
+/** Every guard `x new` writes, spelled out: a twenty-third arriving unannounced fails here. */
+const TWENTY_TWO: readonly string[] = [
   'guards/animated-layout-property.ts',
   'guards/bare-error.ts',
   'guards/error-declared.ts',
   'guards/focus-visible.ts',
   'guards/image-dimensions.ts',
+  'guards/island-mount-clears.ts',
   'guards/island-without-states.ts',
   'guards/native-confirm.ts',
   'guards/raw-breakpoint.ts',
@@ -77,7 +78,7 @@ const TWENTY_ONE: readonly string[] = [
 describe('unit · x new · the guards it ships', () => {
   test('every guard is a file the gate discovers, and each has its own test', () => {
     const paths = scaffoldGuardFiles().map((file) => file.path);
-    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([...TWENTY_ONE]);
+    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([...TWENTY_TWO]);
     for (const rule of paths.filter((path) => !path.endsWith('.test.ts'))) {
       expect(paths).toContain(rule.replace(/\.ts$/, '.test.ts'));
     }
@@ -89,7 +90,7 @@ describe('unit · x new · the guards it ships', () => {
     const dir = mkdtempSync(join(tmpdir(), 'x-guards-'));
     try {
       await scaffoldInto(dir);
-      expect(await guardPaths(dir)).toEqual([...TWENTY_ONE]);
+      expect(await guardPaths(dir)).toEqual([...TWENTY_TWO]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

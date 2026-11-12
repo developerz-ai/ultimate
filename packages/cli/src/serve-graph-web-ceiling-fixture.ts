@@ -234,5 +234,11 @@
  * `SERVING_ROLE_CEILING`'s 11, the modules named there. Nothing web-only.
  * raised 1674 → 1678, measured 1678 (2026-11-12, sweep 9b realtime): `SERVING_ROLE_CEILING`'s 4,
  * the realtime modules named there. Nothing web-only.
+ * raised 1678 → 1684, measured 1684 (2026-11-12, sweep 11 render/islands/mcp/pwa):
+ * `SERVING_ROLE_CEILING`'s 1 (`http/src/compress-precode.ts`) and five new web-only files —
+ * cli `island-link-check.ts` (the post-build link smoke) and `island-vendor.ts` (`vendorSolid`),
+ * mcp `query-page.ts` (the bounded list page) and `stdio-lines.ts` (the byte-counted line
+ * splitter), pwa `precached-asset-source.ts` (assets served from the precache). Every one a new
+ * file; no existing module newly reached.
  */
-export const WEB_ROLE_CEILING = 1678;
+export const WEB_ROLE_CEILING = 1684;

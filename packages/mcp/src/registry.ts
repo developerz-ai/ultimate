@@ -169,7 +169,9 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
    */
   admit?(caller: McpCaller): void;
   // Method syntax (not a property) so a tool declared with narrower args stays assignable.
-  handle(args: A, caller: McpCaller): Promise<McpToolResult>;
+  // `signal` aborts when the caller cancels the call (`notifications/cancelled` on stdio); absent
+  // where no transport can cancel. A projected primitive reads it as `ctx.signal`.
+  handle(args: A, caller: McpCaller, signal?: AbortSignal): Promise<McpToolResult>;
 }
 
 export type AnyMcpTool = McpTool<ToolArgs>;

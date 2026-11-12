@@ -5,7 +5,7 @@
 // carry those — there is no `ctx`, often no primitive, and nothing ran.
 
 import type { Clock, Logger } from '@ultimat3/core';
-import { logger, stringField, systemClock } from '@ultimat3/core';
+import { addressNetwork, logger, stringField, systemClock } from '@ultimat3/core';
 import type { RequestFacts as McpRequestFacts } from '@ultimat3/http';
 import type { McpAuditEntry, McpResourceAuditEntry } from './audit';
 import { auditResourceRead, auditToolCall } from './audit';
@@ -69,15 +69,20 @@ export function mcpAuditor(input: McpAuditorInput = {}): McpAuditor {
     },
     authRefused(reason, status, facts) {
       // `warn`, the level of every refusal a prober can drive: a token walk is the same shape as a
-      // tool-name walk one step earlier. The address and path carry the decision; the user agent
-      // and origin stay in the event only — caller-controlled text an alert rule has no use for.
-      log.warn(`mcp.auth.${reason}`, {
+      // tool-name walk one step earlier. Except `missing-token`, at `info`: MCP's own OAuth
+      // discovery opens unauthenticated, so EVERY legitimate client's first connect lands there.
+      // The address is its NETWORK (core's `addressNetwork`, an IPv6 /64 — the failure meter's key),
+      // never the full address; the hook's `facts` keep the host's answer. The user agent and origin
+      // stay in the event only — caller-controlled text an alert rule has no use for.
+      const line = {
         surface: 'mcp',
         reason,
         status,
         path: facts.path,
-        ...(facts.address === null ? {} : { address: facts.address }),
-      });
+        ...(facts.address === null ? {} : { address: addressNetwork(facts.address) }),
+      };
+      if (reason === 'missing-token') log.info(`mcp.auth.${reason}`, line);
+      else log.warn(`mcp.auth.${reason}`, line);
       if (hook !== undefined) {
         deliver(hook, { kind: 'auth-refused', at: clock.now(), reason, status, facts }, log);
       }

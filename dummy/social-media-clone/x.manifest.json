@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "6dda46293b25dde7",
+  "buildId": "6d6e9239f559deff",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -3049,6 +3049,10 @@
     {
       "code": "X_IMAGE_DIMENSIONS",
       "package": "guards/image-dimensions.ts"
+    },
+    {
+      "code": "X_ISLAND_MOUNT_CLEARS",
+      "package": "guards/island-mount-clears.ts"
     },
     {
       "code": "X_ISLAND_WITHOUT_STATES",

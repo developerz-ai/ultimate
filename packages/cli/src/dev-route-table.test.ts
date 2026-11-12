@@ -22,7 +22,7 @@ import { islandBundle } from './island-bundle';
 import { MEDIA_BASE_PATH } from './runtime-assets';
 import { STORAGE_READ_PERMISSION } from './runtime-storage';
 import { siteAssetTable } from './site-assets';
-import { inlineStyleSources } from './style-csp';
+import { setBrandStyles, styleBundle } from './style-bundle';
 import { APP_THEME_MODULE } from './theme-brand';
 
 const SOURCE_KEY = 'covers/hero.png';
@@ -146,17 +146,24 @@ describe("unit · x dev carries the app's brand", () => {
     });
   });
 
-  test('the theme module: the tag in the document, and its body for style-src', async () => {
+  afterEach(() => {
+    setBrandStyles('');
+  });
+
+  test('the theme module: the tail of the sheet the document links, and nothing for style-src', async () => {
     const ui = join(import.meta.dir, '../../ui/src/index.ts');
     await Bun.write(
       join(root, APP_THEME_MODULE),
       `import { defineTheme } from '${ui}';\nexport const brand = defineTheme({ preset: 'scifi' });\n`,
     );
-    const { brandStyleCspSource, brandStyleTag, defineTheme } = await import('@ultimat3/ui');
+    const { defineTheme } = await import('@ultimat3/ui');
     const brand = defineTheme({ preset: 'scifi' });
     const table = await pageTable();
-    expect((await pageOf(table.routes)).split('</head>')[0]).toContain(brandStyleTag(brand));
-    expect(inlineStyleSources(table.inlineStyles)).toEqual([brandStyleCspSource(brand)]);
+    const head = (await pageOf(table.routes)).split('</head>')[0] ?? '';
+    expect(head).not.toContain('<style');
+    const href = /<link rel="stylesheet" href="([^"]+)">/.exec(head)?.[1] ?? '';
+    expect(styleBundle().chunkAt(href)?.css.endsWith(brand.css)).toBe(true);
+    expect(table.inlineStyles).toEqual([]);
   });
 
   test('no theme module: no <style>, and nothing for style-src', async () => {

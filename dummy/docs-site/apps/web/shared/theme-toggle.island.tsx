@@ -6,6 +6,7 @@
 // reads the browser on its own: the theme the boot stamped on `<html>`, then `theme.defaultMode`
 // (stamped beside it), then the OS.
 
+import { mountOver } from '@ultimat3/render/client';
 import { setSolidRuntime, ThemeToggle, UiProvider } from '@ultimat3/ui';
 import {
   createContext,
@@ -27,8 +28,8 @@ export interface ThemeToggleIslandProps {
  * The one export the hydration runtime calls. `setSolidRuntime` comes FIRST and is not optional:
  * `@ultimat3/ui` imports types from solid-js and never a runtime, so the reactive graph a
  * component reaches is the one an entry registers. Seven NAMED imports, never a namespace: a
- * namespace object keeps every export of solid-js alive in the chunk. The shell is cleared before
- * `render`, which APPENDS — the server's copy would otherwise stay on screen beside the live one.
+ * namespace object keeps every export of solid-js alive in the chunk. `mountOver` clears the shell
+ * before `render`, which APPENDS, and puts it back if the render throws.
  */
 export function mount(el: HTMLElement, props: ThemeToggleIslandProps): () => void {
   setSolidRuntime({
@@ -40,13 +41,14 @@ export function mount(el: HTMLElement, props: ThemeToggleIslandProps): () => voi
     onCleanup,
     createRoot,
   });
-  el.textContent = '';
-  return render(
-    () => (
-      <UiProvider locale={props.locale}>
-        <ThemeToggle mode="toggle" />
-      </UiProvider>
+  return mountOver(el, (root) =>
+    render(
+      () => (
+        <UiProvider locale={props.locale}>
+          <ThemeToggle mode="toggle" />
+        </UiProvider>
+      ),
+      root,
     ),
-    el,
   );
 }

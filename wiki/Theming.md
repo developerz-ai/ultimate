@@ -194,11 +194,11 @@ export const brand = defineTheme({ preset: 'scifi' });
 | Who | Does |
 |---|---|
 | the app | exports `brand` from `apps/web/shared/theme.ts`. Nothing else: no `<style>` in a layout, no CSP edit |
-| `x dev`, the container (`ROLE=web`), `x build`'s static export | inline `brandStyleTag(brand)` in the `<head>` of every document — `ssr`, `stream`, `static`, `isr`, and every `/admin` screen — **after** the surface stylesheet `<link>`, so the brand wins the cascade at equal specificity |
-| the served processes | admit the same body to `style-src` as a `sha256` source (`brandStyleCspSource(brand)`), so the enforced policy a container sends never blocks it |
-| an app with no `shared/theme.ts`, or one whose brand renders no CSS | nothing: no tag, no hash, no bytes |
+| `x dev`, the container (`ROLE=web`), `x build`'s static export | append `brand.css` to the END of every surface stylesheet (`/styles/<hash>.css`), so every document — `ssr`, `stream`, `static`, `isr`, and every `/admin` screen — gets it from the `<link>` it already has, last in the cascade, and the brand wins at equal specificity. No inline `<style>` (`As of 2026-11`; before, a 6,130-byte `<style>` rode every document) |
+| the served processes | nothing for `style-src`: the stylesheet is a same-origin file `'self'` admits, so no `sha256` source is added |
+| an app with no `shared/theme.ts`, or one whose brand renders no CSS | nothing: the sheets are unchanged |
 
-One file, one reader: `packages/cli/src/theme-brand.ts`. The `/_x` dev dashboard is framework chrome, not an app document, and keeps the shipped palette. No JavaScript is added: the brand is CSS, and the theme toggle and dark mode work as before — the brand answers `html[data-theme]` and `prefers-color-scheme` at every level `theme.scss` does, so the boot script and `ThemeToggle` flip between the brand's two palettes. A save to `theme.ts` is applied on the next `x dev`.
+One file, one reader: `packages/cli/src/theme-brand.ts`; the append is `packages/cli/src/style-bundle.ts`. Every page that links the `app/` sheet gets the brand, including the `/_x` dev dashboard and `x shot`'s harness. A change to the brand is a new sheet hash, so a cached old sheet is never served under it. No JavaScript is added: the brand is CSS, and the theme toggle and dark mode work as before — the brand answers `html[data-theme]` and `prefers-color-scheme` at every level `theme.scss` does, so the boot script and `ThemeToggle` flip between the brand's two palettes. A save to `theme.ts` is applied on the next `x dev`.
 
 | Failure | Code | When |
 |---|---|---|
@@ -218,7 +218,7 @@ const brand = defineTheme({
 });
 
 brand.css;                  // the four CSS blocks, as a string
-brandStyleTag(brand);       // '<style>…</style>' — exactly what the framework inlines
+brandStyleTag(brand);       // '<style>…</style>' — for a page you render yourself; the framework links it in the sheet
 ```
 
 | Field | Shape | Notes |
@@ -233,7 +233,7 @@ Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`
 
 ### Values are validated, never escaped
 
-The output lands in a `<style>` element, so a value that could close it is refused rather than sanitised.
+The output can land in a `<style>` element (`brandStyleTag`), so a value that could close it is refused rather than sanitised.
 
 | Slot | Accepted | Refused |
 |---|---|---|

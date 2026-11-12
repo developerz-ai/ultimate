@@ -64,6 +64,17 @@ export const config = defineRoute({
 | Fonts, icons, and `priority` images they reference | asset graph |
 | The offline fallback route | required (see below) |
 
+**The worker answers a precached asset from the precache**, ahead of every route rule
+(`packages/pwa/src/precached-asset-source.ts`): a content-addressed URL (an island chunk, a
+`/styles/<hash>.css`) from the cache, the network only on a miss; any other precached asset from the
+network, the precache answering offline. Before `31.15.0` nothing read them: an offline document
+rendered unstyled beside its own stylesheet, and a precached chunk was downloaded twice.
+
+**Each build's pages cache keeps at most 50 documents** (`PAGES_CACHE_MAX`), the oldest WRITTEN out
+first — a page visited again is written again and outlives pages visited once since. One write at a
+time, so a trim never deletes the page a refresh just stored. Unbounded, `x-pages-<id>` grew until
+the next deploy or the browser's quota, and a quota eviction takes the origin's whole storage.
+
 Excluded always: `api/` responses and every personal route (a policy, a `stream`, a `no-store`/`private` cache) — even with `offline: 'precache'`, `As of 22.3.3`.
 
 Total precache size is a **warning, not a budget, `As of 2026-08`**: `buildPrecacheManifest` puts `DEFAULT_PRECACHE_WARN_BYTES` overruns on `PrecacheManifest.warnings`, and **nothing reads that field** — no `x verify` step loads a precache manifest, because nothing builds one. Designed as a budget; not one today.

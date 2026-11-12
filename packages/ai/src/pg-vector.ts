@@ -6,6 +6,7 @@
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import { type DbClient, db, type SqlFragment } from '@ultimat3/db';
 import { VectorDimMismatchError } from './errors';
+import { withHnswRecall } from './pg-vector-recall';
 import {
   ddlSql,
   deleteSql,
@@ -116,8 +117,10 @@ export class PostgresVectorStore implements VectorStore {
     // `k` is the statement's `limit` and reaches Postgres as a bound parameter, so a `NaN` is the
     // database's error to report rather than this store's — and a fractional one is an error there
     // too. Refused here instead, before a connection is taken, naming the argument the caller wrote.
-    return this.run(
-      searchSql(this.target, vector, { scope: this.scope, filter, k: finiteCount(HYBRID, 'k', k) }),
+    const wanted = finiteCount(HYBRID, 'k', k);
+    return this.recall(
+      wanted,
+      searchSql(this.target, vector, { scope: this.scope, filter, k: wanted }),
     );
   }
 
@@ -147,7 +150,7 @@ export class PostgresVectorStore implements VectorStore {
       candidates: finiteCount(HYBRID, 'candidates', input.candidates ?? Math.max(k * 4, 20)),
       rrfK: finiteOption(HYBRID, 'rrfK', input.rrfK ?? 60),
     };
-    return this.run(hybridSql(this.target, input.query, input.vector, args));
+    return this.recall(args.candidates, hybridSql(this.target, input.query, input.vector, args));
   }
 
   async prune(filter: MetadataFilter, keep: readonly string[]): Promise<void> {
@@ -165,6 +168,14 @@ export class PostgresVectorStore implements VectorStore {
 
   private async run(statement: SqlFragment): Promise<readonly SearchHit[]> {
     const rows = await this.client().query<HitRow>(statement);
+    return rows.map(toHit);
+  }
+
+  /** An hnsw read: `wanted` rows that pass the scope, not the scan's first 40 filtered down. */
+  private async recall(wanted: number, statement: SqlFragment): Promise<readonly SearchHit[]> {
+    const rows = await withHnswRecall(this.input.client, wanted, (on) =>
+      on.query<HitRow>(statement),
+    );
     return rows.map(toHit);
   }
 

@@ -221,7 +221,7 @@ the worker retire, `stop()` claiming and aborting nothing: SIGUSR2 under `runRol
 
 ## `theme-brand.ts`
 
-the ONE reader of an app's theme: `export const brand` in `apps/web/shared/theme.ts` (ui's `defineTheme`), inlined after the surface stylesheet with its hash in `style-src`; none → nothing emitted
+the ONE reader of an app's theme: `export const brand` in `apps/web/shared/theme.ts` (ui's `defineTheme`), appended to every surface stylesheet by `style-bundle.ts` (no inline `<style>`, no `style-src` hash, since 2026-11); none → sheets unchanged
 
 ## `job-budget.ts`
 

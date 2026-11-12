@@ -73,7 +73,7 @@ export class IslandMountMissingError extends UltimateError {
       fix:
         component === undefined
           ? `${file} exports nothing a mount could render — x g island <name> --at apps/web/site writes an island whose mount() is already there, and its shape is the one to copy`
-          : `in ${file} add: import { render } from 'solid-js/web'; export function mount(el: HTMLElement, props: Parameters<typeof ${component}>[0]): () => void { el.textContent = ''; return render(() => <${component} {...props} />, el); }`,
+          : `in ${file} add: import { mountOver } from '@ultimat3/render/client'; import { render } from 'solid-js/web'; export function mount(el: HTMLElement, props: Parameters<typeof ${component}>[0]): () => void { return mountOver(el, (root) => render(() => <${component} {...props} />, root)); }`,
     });
   }
 }

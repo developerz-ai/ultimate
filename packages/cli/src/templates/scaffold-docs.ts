@@ -64,6 +64,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 | Images | every image carries width + height or an aspect-ratio, and the priority one is never \`loading="lazy"\` | \`guards/image-dimensions.ts\` |
 | Motion | animate \`transform\` and \`opacity\` — never a layout property, never \`transition: all\` | \`guards/animated-layout-property.ts\` |
 | Islands | every \`*.island.tsx\` has a sibling \`*.island.states.ts\`, so \`bunx x shot --island\` can photograph its failures | \`guards/island-without-states.ts\` |
+| Island mounts | a \`mount\` replaces its server markup through \`mountOver\`, so a render that throws shows the server's HTML, not a blank box | \`guards/island-mount-clears.ts\` |
 | Size | one file, one job — ${LINE_CEILING} lines of reviewable logic, and split past it | \`X_FILE_TOO_LONG\` |
 
 \`guards/\` is yours: each file is one rule, discovered by \`bunx x verify\` and run inside its

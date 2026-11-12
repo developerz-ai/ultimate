@@ -18,6 +18,13 @@ function harness(): Harness {
   return { client, store: postgresVectorStore({ name: 'docs', dimension: 4, client }) };
 }
 
+/** What a store sent, minus the transaction around an hnsw read and its recall setting. */
+const FRAME = /^(begin|commit|rollback)\b|pg_extension/i;
+const reads = (client: RecordingClient): RecordingClient['statements'] =>
+  client.statements.filter((statement) => !FRAME.test(statement.text.trim()));
+const readTexts = (client: RecordingClient): readonly string[] =>
+  client.texts.filter((text) => !FRAME.test(text));
+
 const codeOf = (error: unknown): string =>
   (error as { code?: string } | undefined)?.code ?? String(error);
 
@@ -38,7 +45,7 @@ describe('PostgresVectorStore ddl', () => {
     const store = postgresVectorStore({ name: 'docs', dimension: 4, client, language: 'simple' });
     expect(store.ddl()).toContain("to_tsvector('simple', content)");
     await store.searchText('x_db_drift', 5);
-    expect(client.statements[0]?.values).toContain('simple');
+    expect(reads(client)[0]?.values).toContain('simple');
   });
 });
 
@@ -49,9 +56,9 @@ describe('PostgresVectorStore writes', () => {
       { id: 'a', vector: vec(1, 0, 0, 0), text: 'alpha', metadata: { kind: 'guide' } },
       { id: 'b', vector: vec(0, 1, 0, 0), text: 'beta' },
     ]);
-    expect(client.statements).toHaveLength(1);
-    const [statement] = client.statements;
-    expect(client.texts[0]).toContain('on conflict ("tenant", "id") do update set');
+    expect(reads(client)).toHaveLength(1);
+    const [statement] = reads(client);
+    expect(readTexts(client)[0]).toContain('on conflict ("tenant", "id") do update set');
     expect(statement?.values.filter((value) => value === 'acme')).toHaveLength(2);
     expect(statement?.values).toContain(vectorLiteral(vec(1, 0, 0, 0)));
     expect(statement?.values).toContain('{"kind":"guide"}');
@@ -63,15 +70,15 @@ describe('PostgresVectorStore writes', () => {
     await store.upsert([{ id: 'a', vector: vec(1, 0, 0, 0), text: 'alpha', metadata: { k: 'v' } }]);
     // A bound string cast straight to jsonb is JSON-encoded twice: it reads back correctly and
     // every `metadata ->> key` filter then matches nothing. Silent, and only visible live.
-    expect(client.texts[0]).toContain('::text::jsonb');
-    expect(client.texts[0]).not.toMatch(/[^t]::jsonb/);
+    expect(readTexts(client)[0]).toContain('::text::jsonb');
+    expect(readTexts(client)[0]).not.toMatch(/[^t]::jsonb/);
   });
 
   test('an empty upsert and an empty delete emit no statement at all', async () => {
     const { client, store } = harness();
     await store.upsert([]);
     await store.delete([]);
-    expect(client.statements).toHaveLength(0);
+    expect(reads(client)).toHaveLength(0);
   });
 
   test('a vector of the wrong length is refused before any statement runs', async () => {
@@ -82,16 +89,16 @@ describe('PostgresVectorStore writes', () => {
     expect(codeOf(await store.search(vec(1, 0, 0), 3).catch((e) => e))).toBe(
       'X_VECTOR_DIM_MISMATCH',
     );
-    expect(client.statements).toHaveLength(0);
+    expect(reads(client)).toHaveLength(0);
   });
 
   test('delete carries the scope, so a tenant cannot delete another tenant’s id', async () => {
     const { client, store } = harness();
     await store.scoped({ tenant: 'acme' }).delete(['a', 'b']);
-    expect(client.texts[0]).toContain(
+    expect(readTexts(client)[0]).toContain(
       'delete from "docs" where "id" in ($1, $2) and "tenant" = $3',
     );
-    expect(client.statements[0]?.values).toEqual(['a', 'b', 'acme']);
+    expect(reads(client)[0]?.values).toEqual(['a', 'b', 'acme']);
   });
 });
 
@@ -99,21 +106,21 @@ describe('PostgresVectorStore reads', () => {
   test('search orders by raw cosine distance ascending, so hnsw can answer it', async () => {
     const { client, store } = harness();
     await store.search(vec(1, 0, 0, 0), 5);
-    const text = client.texts[0] ?? '';
+    const text = readTexts(client)[0] ?? '';
     expect(text).toContain('"embedding" <=> $1::vector as distance');
     expect(text).toContain('order by distance limit $2');
     expect(text).toContain('1 - distance as score');
-    expect(client.statements[0]?.values[1]).toBe(5);
+    expect(reads(client)[0]?.values[1]).toBe(5);
   });
 
   test('searchText is Postgres FTS, matched and ranked by the same tsquery', async () => {
     const { client, store } = harness();
     await store.searchText('x_db_drift schema', 3);
-    const text = client.texts[0] ?? '';
+    const text = readTexts(client)[0] ?? '';
     expect(text).toContain('websearch_to_tsquery($1::regconfig, $2) q');
     expect(text).toContain('where "tsv" @@ q');
     expect(text).toContain('ts_rank_cd("tsv", q) as score');
-    expect(client.statements[0]?.values).toEqual(['english', 'x_db_drift schema', 3]);
+    expect(reads(client)[0]?.values).toEqual(['english', 'x_db_drift schema', 3]);
   });
 
   test('tied scores come back in id order, as the memory store breaks them', async () => {
@@ -123,7 +130,7 @@ describe('PostgresVectorStore reads', () => {
     await store.search(vec(1, 0, 0, 0), 5);
     await store.searchText('drift', 5);
     await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
-    const [search, text, hybrid] = client.texts;
+    const [search, text, hybrid] = readTexts(client);
     // The INNER order stays bare distance — the only shape hnsw answers. Only the outer sort,
     // over at most `k` rows, carries the tie-break.
     expect(search).toContain('order by distance limit $2');
@@ -138,14 +145,14 @@ describe('PostgresVectorStore reads', () => {
   test('hybrid fuses both rankings in SQL with the same 1/(k+rank) the memory store uses', async () => {
     const { client, store } = harness();
     await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
-    const text = client.texts[0] ?? '';
+    const text = readTexts(client)[0] ?? '';
     expect(text).toContain('with dense as (');
     expect(text).toContain('), lexical as (');
     expect(text).toContain('union all');
     expect(text).toContain('sum(1.0 / ($6 + rank))::double precision as score');
     expect(text).toContain('join "docs" d on d."tenant" = f."tenant" and d."id" = f."id"');
     // Defaults: rrfK 60, candidate width max(k * 4, 20), final limit k.
-    expect(client.statements[0]?.values).toEqual([
+    expect(reads(client)[0]?.values).toEqual([
       vectorLiteral(vec(1, 0, 0, 0)),
       20,
       'english',
@@ -165,7 +172,7 @@ describe('PostgresVectorStore reads', () => {
       candidates: 50,
       rrfK: 10,
     });
-    expect(client.statements[0]?.values).toEqual([
+    expect(reads(client)[0]?.values).toEqual([
       vectorLiteral(vec(1, 0, 0, 0)),
       50,
       'english',
@@ -196,7 +203,7 @@ describe('PostgresVectorStore reads', () => {
     setDbClient(client);
     try {
       await postgresVectorStore({ name: 'docs', dimension: 4 }).searchText('drift', 1);
-      expect(client.statements).toHaveLength(1);
+      expect(reads(client)).toHaveLength(1);
     } finally {
       setDbClient(undefined);
     }
@@ -211,12 +218,12 @@ describe('PostgresVectorStore scope', () => {
       allow: { kind: ['guide'] },
     });
     await scoped.search(vec(1, 0, 0, 0), 5, { locale: 'en' });
-    const text = client.texts[0] ?? '';
+    const text = readTexts(client)[0] ?? '';
     expect(text).toContain(
       '"tenant" = $2 and "metadata" ->> $3 in ($4) and "metadata" ->> $5 = $6',
     );
     expect(text).not.toContain('drop table');
-    expect(client.statements[0]?.values).toEqual([
+    expect(reads(client)[0]?.values).toEqual([
       vectorLiteral(vec(1, 0, 0, 0)),
       "acme'; drop table docs; --",
       'kind',
@@ -232,9 +239,9 @@ describe('PostgresVectorStore scope', () => {
     await store
       .scoped({ tenant: 'acme' })
       .hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
-    const text = client.texts[0] ?? '';
+    const text = readTexts(client)[0] ?? '';
     expect(text.split('"tenant" = $').length - 1).toBe(2);
-    expect(client.statements[0]?.values.filter((value) => value === 'acme')).toHaveLength(2);
+    expect(reads(client)[0]?.values.filter((value) => value === 'acme')).toHaveLength(2);
   });
 
   test('an empty allow-list matches nothing rather than everything', () => {
@@ -289,14 +296,14 @@ describe('PostgresVectorStore refuses a bound before it opens a connection', () 
     );
     expect((await asyncRefusal(() => store.searchText('drift', 2.5))).cause).toContain('k');
     // The point of screening here rather than letting the driver answer: nothing was sent.
-    expect(client.statements).toHaveLength(0);
+    expect(reads(client)).toHaveLength(0);
   });
 
   test('an honest hybrid read still builds its statement — the non-vacuity half', async () => {
     const { client, store } = harness();
     await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
-    expect(client.statements).toHaveLength(1);
-    expect(client.statements[0]?.values).toContain(60);
+    expect(reads(client)).toHaveLength(1);
+    expect(reads(client)[0]?.values).toContain(60);
   });
 });
 
@@ -330,12 +337,12 @@ describe('PostgresVectorStore.prune', () => {
   test('deletes what the filter matches except the kept ids, inside the scope', async () => {
     const { client, store } = harness();
     await store.scoped({ tenant: 'acme' }).prune?.({ source: 'doc' }, ['doc#0']);
-    const text = client.texts[0] ?? '';
+    const text = readTexts(client)[0] ?? '';
     expect(text).toContain('delete from');
     expect(text).toContain('"id" not in ($1)');
     expect(text).toContain('"tenant" = $2');
     expect(text).toContain('"metadata" ->> $3 = $4');
-    expect(client.statements[0]?.values).toEqual(['doc#0', 'acme', 'source', 'doc']);
+    expect(reads(client)[0]?.values).toEqual(['doc#0', 'acme', 'source', 'doc']);
   });
 });
 
@@ -349,7 +356,7 @@ describe('PostgresVectorStore.upsert with a repeated id', () => {
       { id: 'b', vector: vec(0, 1, 0, 0), text: 'other' },
       { id: 'a', vector: vec(0, 0, 1, 0), text: 'last' },
     ]);
-    const values = client.statements[0]?.values ?? [];
+    const values = reads(client)[0]?.values ?? [];
     expect(values.filter((value) => value === 'a')).toHaveLength(1);
     expect(values).toContain('last');
     expect(values).not.toContain('first');
@@ -393,5 +400,28 @@ describe('ddlSql index names', () => {
       expect(new TextEncoder().encode(name.slice(1, -1)).length).toBeLessThanOrEqual(63);
     }
     expect(namesOf(table)).toEqual(names);
+  });
+});
+
+describe('PostgresVectorStore hnsw recall', () => {
+  test('search and hybrid run in a read-only transaction whose first statement widens the scan', async () => {
+    const { client, store } = harness();
+    await store.search(vec(1, 0, 0, 0), 5);
+    expect(client.texts[0]).toMatch(/^begin\b.*read only/i);
+    expect(client.texts[1]).toContain("'hnsw.iterative_scan'");
+    expect(client.texts[1]).toContain("'relaxed_order'");
+    // The pre-0.8 fallback: ef_search = max(40, k × 10), bound — never spliced.
+    expect(client.statements[1]?.values).toContain('50');
+    expect(client.texts.at(-1)).toMatch(/^commit/i);
+    client.reset();
+    await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 50 });
+    // Widened for the dense CANDIDATES (200 here), capped at pgvector's 1,000.
+    expect(client.statements[1]?.values).toContain('1000');
+  });
+
+  test('searchText reads no index of hnsw, so it opens no transaction', async () => {
+    const { client, store } = harness();
+    await store.searchText('drift', 5);
+    expect(client.statements).toHaveLength(1);
   });
 });

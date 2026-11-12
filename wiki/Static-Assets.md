@@ -98,6 +98,30 @@ unsatisfiable range gets a `416`. Safari will not play a `<video>` without this.
 `favicon.ico` stays at `apps/web/site/favicon.ico` and the install icon at `apps/web/site/icon.png`.
 Browsers ask for those at fixed URLs, so they are not hashed.
 
+## Precompressed siblings in a static export
+
+`x build --target static` writes `<file>.br` (brotli 11) and `<file>.gz` (gzip 9) beside every
+island chunk (`/islands/*.js`) and surface stylesheet (`/styles/*.css`). Each sibling decodes to its
+file byte for byte. A file under 1 KiB, or one a coding would not shrink, gets none. The coders
+are `@ultimat3/http`'s `PRECODERS`, the same ones the container uses to precode its immutable
+answers. `packages/cli/src/static-precompress.ts`. `As of 2026-11`.
+
+A host serves the siblings only if it is configured to. The rules, for any host:
+
+| Rule | Why |
+|---|---|
+| answer `<file>.br` when `Accept-Encoding` names `br`, else `<file>.gz` for `gzip`, else `<file>` | a client that refused a coding must never be handed it |
+| `Content-Encoding: br` / `gzip` on the sibling, and the ORIGINAL's `Content-Type` (`text/css`, `text/javascript`) | `application/x-brotli` is a download, not a stylesheet |
+| `Vary: Accept-Encoding` on all three answers | otherwise a shared cache hands one client's coding to the next |
+| `Cache-Control: public, max-age=31536000, immutable` on `/islands/*` and `/styles/*` | the name is the content hash, so the bytes never change under it |
+| never serve a `.br`/`.gz` URL directly as its own resource | it exists to be negotiated, not linked |
+
+| Host | Setting |
+|---|---|
+| nginx | `gzip_static on;` and, with the brotli module, `brotli_static on;` |
+| Caddy | `file_server { precompressed br gzip }` |
+| a host or CDN that compresses on its own | ignores the siblings. They are extra bytes in the artifact and change nothing |
+
 ## `<Image>`
 
 | Prop | Meaning |
@@ -116,7 +140,7 @@ Everything else is `loading="lazy"`, `fetchpriority="auto"` and `decoding="async
 
 `responsiveImage()` from `@ultimat3/seo` mints `?w=&f=` URLs, which only `/media` answers — a dumb
 file server ignores the query and hands back the full original under `<source type="image/webp">`.
-So under `x build --target static` every candidate is a FILE instead: `/_img/<source hash>-<width>.<ext>`,
+So under `x build --target static` every candidate is a FILE instead: `/_img/<variant hash>-<width>.<ext>`,
 written through core's pipeline after the documents render, one per width in every offered format.
 `As of 2026-11`.
 
@@ -128,8 +152,11 @@ written through core's pipeline after the documents render, one per width in eve
 | what is written | only the candidates an EXPORTED document names: a page rendered just to be weighed writes nothing |
 | a served page | keeps the `?w=&f=` URLs, which `/assets` answers itself — [below](#responsive-images-on-a-served-page). The seam is installed by the export alone |
 
-The name is the source's content hash, so a changed image is a new URL and every file can be served
-`immutable`. `examples/dummy`'s landing page (`apps/web/site/page.tsx`) is the worked example.
+The name hashes everything the variant's bytes are a function of: the source's bytes, the width,
+the format and the encoder (the framework version and Bun's, `imageEncoderIdentity()` in
+`packages/cli/src/static-images.ts`). A changed image is a new URL, and so is an upgrade that may
+re-encode it, so every file can be served `immutable` and one URL is always one byte string — the
+#1075 rule islands follow. `As of 31.15.0` every `/_img/` URL changed once. `examples/dummy`'s landing page (`apps/web/site/page.tsx`) is the worked example.
 
 ## Responsive images on a served page
 

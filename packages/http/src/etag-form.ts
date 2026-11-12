@@ -69,26 +69,30 @@ export const compressibleKind = (headers: Headers, anonymous: boolean): boolean 
   );
 };
 
-const isContentCoding = (name: string): name is ContentCoding =>
-  (CONTENT_CODINGS as readonly string[]).includes(name);
-
 /**
- * RFC 9110 §12.5.3: the named coding of highest weight, the server's order breaking a tie. A `*`
- * is not read as consent to a coding it never named; an unreadable weight is a refusal.
+ * RFC 9110 §12.5.3 over `order`, the server's preference: the named coding of highest weight, the
+ * order breaking a tie, skipping any `kept` refuses. A `*` is not read as consent to a coding it
+ * never named; an unreadable weight is a refusal. The one weight parser: the per-request offer
+ * below and the precoded pick (`compress-precode.ts`) differ only in `order` and `kept`.
  */
-export const negotiateCoding = (header: string | null): ContentCoding | undefined => {
-  let best: ContentCoding | undefined;
+export const negotiateFrom = <C extends string>(
+  header: string | null,
+  order: readonly C[],
+  kept: (coding: C) => boolean = () => true,
+): C | undefined => {
+  let best: C | undefined;
   let bestWeight = 0;
   for (const member of header?.split(',') ?? []) {
-    const [coding = '', ...params] = member.split(';').map((part) => part.trim().toLowerCase());
-    if (!isContentCoding(coding)) continue;
+    const [name = '', ...params] = member.split(';').map((part) => part.trim().toLowerCase());
+    const coding = order.find((candidate) => candidate === name);
+    if (coding === undefined || !kept(coding)) continue;
     const q = params.find((param) => param.startsWith('q='));
     const weight = q === undefined ? 1 : Number(q.slice(2));
     if (!(weight > 0)) continue;
     const ahead =
       best === undefined ||
       weight > bestWeight ||
-      (weight === bestWeight && CONTENT_CODINGS.indexOf(coding) < CONTENT_CODINGS.indexOf(best));
+      (weight === bestWeight && order.indexOf(coding) < order.indexOf(best));
     if (ahead) {
       best = coding;
       bestWeight = weight;
@@ -96,6 +100,10 @@ export const negotiateCoding = (header: string | null): ContentCoding | undefine
   }
   return best;
 };
+
+/** The coding a request may be answered in, per request: `negotiateFrom` over `CONTENT_CODINGS`. */
+export const negotiateCoding = (header: string | null): ContentCoding | undefined =>
+  negotiateFrom(header, CONTENT_CODINGS);
 
 /**
  * The coding this exchange is offered, or `undefined`. Read before the status is: the 200 and the

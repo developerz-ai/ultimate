@@ -36,13 +36,13 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
   },
   {
     path: 'packages/pwa/src/service-worker-harness-fixture.ts',
-    line: 86,
+    line: 94,
     reason:
       'the service-worker harness is all-or-nothing like the browser: a non-ok response refuses the whole install',
   },
   {
     path: 'packages/pwa/src/service-worker-harness-fixture.ts',
-    line: 131,
+    line: 139,
     reason: 'the harness offline fetch, so a suite can drive the worker with no network at all',
   },
   {

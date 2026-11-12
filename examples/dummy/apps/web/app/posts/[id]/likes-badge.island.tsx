@@ -9,6 +9,7 @@
  */
 
 import { useRecord } from '@ultimat3/realtime';
+import { mountOver } from '@ultimat3/render/client';
 import type { JSX } from 'solid-js';
 import { onCleanup } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -39,8 +40,7 @@ function LikesBadge(props: LikesBadgeProps): JSX.Element {
 }
 
 export function mount(el: HTMLElement, props: LikesBadgeProps): () => void {
-  el.textContent = '';
   // Returned: the router calls it when it swaps this page out, so every effect this island
   // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
-  return render(() => <LikesBadge {...props} />, el);
+  return mountOver(el, (root) => render(() => <LikesBadge {...props} />, root));
 }

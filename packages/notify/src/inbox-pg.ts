@@ -54,6 +54,12 @@ where recipient = $2 and notifier = $3 and key = $4
   and not exists (select 1 from inserted)
 `;
 
+/** `add`'s second look, in its own statement — see `postgresInboxStore().add`. */
+export const SQL_NOTIFY_INBOX_FIND = `
+select ${COLUMNS} from x_notify_inbox
+where recipient = $1 and notifier = $2 and key = $3
+`;
+
 /**
  * Newest first, `(created_at desc, notifier, key)` — unique within a recipient by the table's own
  * `unique (recipient, notifier, key)`, so the order is total and a bounded page cannot drop or
@@ -174,10 +180,23 @@ export function postgresInboxStore(options: PostgresInboxStoreOptions): Postgres
         write.createdAt,
       ]);
       const row = rows[0];
-      // The statement's `union all` always answers exactly one row — the inserted one, or the
-      // existing one it conflicted with. Nothing back means the row was deleted between the two
-      // halves, which is a race no caller can repair, so it reads as the write that just happened.
-      return row === undefined ? { id: newId(), ...write, seenAt: null, readAt: null } : toRow(row);
+      if (row !== undefined) return toRow(row);
+      // Nothing back is NOT a deleted row. Under READ COMMITTED a concurrent writer of the same
+      // (recipient, notifier, key) that commits while this insert waits on its lock makes the
+      // insert do nothing — and the `union all`'s select runs on the snapshot taken BEFORE that
+      // commit, so it cannot see the row either. A fresh statement has a fresh snapshot; an id
+      // made up here was a row that was never written (`inbox-pg.live.test.ts`).
+      const existing = await executor.query<InboxDbRow>(SQL_NOTIFY_INBOX_FIND, [
+        write.recipient,
+        write.notifier,
+        write.key,
+      ]);
+      const found = existing[0];
+      // Still nothing: the conflicting row was deleted in between (a purge), which no caller can
+      // repair — the write reads as having happened, as the notification itself did.
+      return found === undefined
+        ? { id: newId(), ...write, seenAt: null, readAt: null }
+        : toRow(found);
     },
     async list(query) {
       // Screened here and not left to Postgres: this number is bound straight into `limit $3`, and

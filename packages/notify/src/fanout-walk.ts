@@ -47,3 +47,11 @@ export function* chunksOf<T>(items: readonly T[]): Generator<readonly T[]> {
     yield items.slice(start, start + NOTIFY_CHUNK_SIZE);
   }
 }
+
+/**
+ * Recipients of ONE chunk in flight at once — ledger claim, provider call, settle. Serial, a 10k
+ * audience was 20k database round trips and 10k provider calls back to back (a 50 ms provider:
+ * 100 recipients took 5 s). 16 stays under a default connection pool and a provider's burst limit;
+ * the chunk is still ONE step, so at-least-once is what it was.
+ */
+export const NOTIFY_DELIVERY_WIDTH = 16;

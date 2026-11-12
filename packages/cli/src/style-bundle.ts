@@ -67,15 +67,37 @@ const surfaceKey = (surface: Surface | null): Surface => surface ?? 'shared';
  * Memoised on that revision rather than recomputed per request, because the derivation is a filter
  * over every registered sheet plus a hash of the ~150 kB it joins.
  */
-let memo: { readonly revision: number; readonly bundle: StyleBundle } | undefined;
+let memo:
+  | { readonly revision: number; readonly brand: string; readonly bundle: StyleBundle }
+  | undefined;
+
+/**
+ * The app's brand (`theme-brand.ts`), LAST in every surface sheet. It was an inline `<style>` right
+ * after the `<link>`, so the cascade saw the sheet's rules then the brand's; appended to the same
+ * file, it sees exactly that sequence — and the 6,130 bytes are fetched once and cached
+ * `immutable`, not re-sent in every document (the demo's exported `/`, 2026-11-12: 18,389 →
+ * 12,244 B; each sheet +6,131 B). Process-global for the registry's reason: loading the theme
+ * module is what fills it.
+ */
+let brand = '';
+
+/** Called by `loadThemeBrand` alone; `''` clears it, so a second app in one process has none. */
+export function setBrandStyles(css: string): void {
+  brand = css;
+}
+
+/** A surface's sheets, then the brand. The newline keeps a sheet's last token off the brand's. */
+export const withBrand = (css: string, brandCss: string): string =>
+  brandCss.length === 0 ? css : css.length === 0 ? brandCss : `${css}\n${brandCss}`;
 
 export function styleBundle(): StyleBundle {
   const revision = stylesheetsRevision();
-  if (memo !== undefined && memo.revision === revision) return memo.bundle;
+  if (memo !== undefined && memo.revision === revision && memo.brand === brand) return memo.bundle;
   const current = styleBundleOf(
-    STYLED_SURFACES.map((surface) => ({ surface, css: stylesFor(surface) })).filter(
-      (sheet) => sheet.css.length > 0,
-    ),
+    STYLED_SURFACES.map((surface) => ({
+      surface,
+      css: withBrand(stylesFor(surface), brand),
+    })).filter((sheet) => sheet.css.length > 0),
   );
   for (const chunk of current.chunks) {
     minted.delete(chunk.url);
@@ -90,7 +112,7 @@ export function styleBundle(): StyleBundle {
     ...current,
     chunkAt: (url: string): StyleChunk | undefined => current.chunkAt(url) ?? minted.get(url),
   };
-  memo = { revision, bundle };
+  memo = { revision, brand, bundle };
   return bundle;
 }
 

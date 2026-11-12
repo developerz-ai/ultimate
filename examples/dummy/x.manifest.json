@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "e26e698fc2ef6f6e",
+  "buildId": "579a0f7b6a8865cb",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "209.7kb"
+        "js": "209.8kb"
       }
     },
     {
@@ -539,7 +539,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "108.6kb"
+        "js": "108.8kb"
       }
     },
     {
@@ -9473,6 +9473,10 @@
     {
       "code": "X_IMAGE_DIMENSIONS",
       "package": "guards/image-dimensions.ts"
+    },
+    {
+      "code": "X_ISLAND_MOUNT_CLEARS",
+      "package": "guards/island-mount-clears.ts"
     },
     {
       "code": "X_ISLAND_WITHOUT_STATES",

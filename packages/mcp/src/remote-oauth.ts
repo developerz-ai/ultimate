@@ -144,22 +144,42 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
     }),
 
     async begin(serverUrl) {
-      const resource = new URL(serverUrl);
-      resource.hash = '';
+      const resource = urlOf(serverUrl);
+      if (resource === null) throw refused(serverUrl, 'is not an absolute URL');
       const prm = await firstOf(serverUrl, wellKnown(resource, 'oauth-protected-resource'));
+      // RFC 9728 §3.3: metadata naming another resource is not this server's — a document copied
+      // from elsewhere would send the person's consent, and `resource`, to that server's issuer.
+      // Absent is tolerated (a lax server), present must be this URL, compared parsed.
+      const named = prm['resource'];
+      if (named !== undefined && urlOf(named)?.toString() !== resource.toString()) {
+        throw refused(serverUrl, 'published resource metadata for another resource');
+      }
       const issuer = Array.isArray(prm['authorization_servers'])
         ? prm['authorization_servers'].find((entry) => typeof entry === 'string')
         : undefined;
       if (typeof issuer !== 'string') {
         throw refused(serverUrl, 'names no authorization server in its resource metadata');
       }
-      const as = await firstOf(issuer, authServerCandidates(new URL(issuer)));
+      const issuerUrl = urlOf(issuer);
+      if (issuerUrl === null)
+        throw refused(serverUrl, 'names an authorization server that is no URL');
+      const as = await firstOf(issuer, authServerCandidates(issuerUrl));
       // RFC 8414 §3.3: a document answering for another issuer is not this issuer's.
       if (as['issuer'] !== issuer) throw refused(issuer, 'published metadata for another issuer');
       const authorize = as['authorization_endpoint'];
       const tokenEndpoint = as['token_endpoint'];
-      if (typeof authorize !== 'string' || typeof tokenEndpoint !== 'string') {
-        throw refused(issuer, 'names no authorization_endpoint or token_endpoint');
+      const url = urlOf(authorize);
+      const tokenUrl = urlOf(tokenEndpoint);
+      if (url === null || tokenUrl === null || typeof tokenEndpoint !== 'string') {
+        throw refused(issuer, 'names no authorization_endpoint or token_endpoint URL');
+      }
+      // The authorize URL is handed to a person as a link: `javascript:`/`data:` would run in the
+      // app's origin, and plain `http:` would carry the code over the wire in the clear.
+      if (!secureEndpoint(url) || !secureEndpoint(tokenUrl)) {
+        throw refused(
+          issuer,
+          'names an authorization_endpoint or token_endpoint that is not https:',
+        );
       }
       const methods = as['code_challenge_methods_supported'];
       if (!Array.isArray(methods) || !methods.includes('S256')) {
@@ -173,7 +193,6 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
       }
       const pkce = pkcePair();
       const state = randomToken(16);
-      const url = new URL(authorize);
       const scopes = options.scopes ?? stringList(prm['scopes_supported']);
       url.searchParams.set('response_type', 'code');
       url.searchParams.set('client_id', options.clientId);
@@ -224,6 +243,22 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
         }),
       ),
   };
+}
+
+/** A remote's metadata is input: `URL.parse`, never `new URL`, whose TypeError escapes uncoded. */
+function urlOf(value: unknown): URL | null {
+  if (typeof value !== 'string') return null;
+  const url = URL.parse(value);
+  if (url !== null) url.hash = '';
+  return url;
+}
+
+/** Loopback, the only host OAuth 2.1 (and RFC 8252 §8.3) lets an endpoint use plain `http:` on. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** `https:`, or `http:` to this machine — never `javascript:`, `data:`, `file:` or a cleartext hop. */
+function secureEndpoint(url: URL): boolean {
+  return url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.has(url.hostname));
 }
 
 /** RFC 9728 §3.1: the suffix goes between host and path, then the root as a fallback. */

@@ -2,6 +2,8 @@
 // the one `fetch` it sends, and `parseMessage` for a non-streamed answer. The shared shapes are
 // ./provider's; ./models owns the per-model rules and ./wire the streamed response half.
 
+import { readAnswerBody } from './answer-body';
+import { billedCall } from './billed';
 import { assertMediaContent } from './content-blocks';
 import { providerFailure } from './context-overflow';
 import { costOf, exactCostOf } from './cost';
@@ -18,6 +20,7 @@ import { screenCacheRows } from './prompt-cache-rows';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 import { samplingBody } from './sampling';
 import { readSse } from './sse';
+import { trackSent, trackStreamBill } from './stream-bill';
 import { assertToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
 import {
@@ -123,8 +126,7 @@ export class AnthropicProvider implements Provider {
     const model = this.modelOf(request);
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
     const response = await this.send(model, request, false);
-    const raw = (await response.json()) as Record<string, unknown>;
-    return parseMessage(model, raw);
+    return parseMessage(model, await readAnswerBody(response, this.name));
   }
 
   /** Drive `stream()` to its `done` chunk. It throws on a cut stream, so a partial never lands. */
@@ -154,6 +156,11 @@ export class AnthropicProvider implements Provider {
       });
     }
     const message = new MessageStream();
+    // A stream that stops before `done` is billed what `message_start` and the deltas said.
+    trackStreamBill(request, () => {
+      const usage = message.partialUsage();
+      return usage === undefined ? undefined : billedCall(usage, exactCostOf(model, usage));
+    });
     for await (const frame of readSse(response.body, this.name)) {
       for (const chunk of message.push(frame)) yield chunk;
     }
@@ -218,6 +225,8 @@ export class AnthropicProvider implements Provider {
     }
     const doFetch: AiFetch = this.config.fetch ?? fetch;
     const url = `${this.config.baseUrl ?? 'https://api.anthropic.com'}/v1/messages`;
+    // From here an abort costs the prompt (`stream-bill.ts`): the request is on its way.
+    trackSent(request, model);
     const response = await doFetch(url, {
       method: 'POST',
       headers: {
@@ -249,7 +258,16 @@ export class AnthropicProvider implements Provider {
 }
 
 /** Map a Messages API response onto `GenerateResult`. Exported so tests can drive it. */
-export function parseMessage(model: ModelId, raw: Record<string, unknown>): GenerateResult {
+export function parseMessage(model: ModelId, input: unknown): GenerateResult {
+  // `null`, an array or a string is no message: read as one it threw a bare TypeError, or
+  // resolved as an empty answer — `openai-wire.ts`'s `parseChatCompletion` refuses the same.
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new AiTransportError({
+      provider: 'anthropic',
+      detail: 'the response body is not a JSON object',
+    });
+  }
+  const raw = input as Record<string, unknown>;
   // A 200 carrying an `error` object instead of an answer — how a gateway in front of a model
   // reports a fault it noticed after the headers were sent. Read as a message it is an empty,
   // successful answer, which is the one outcome nothing downstream can detect; the STREAMED half

@@ -251,6 +251,16 @@ describe('cdpConnect', () => {
     expect(await connection.once('Page.loadEventFired', undefined, 600_000)).toBe(false);
   });
 
+  test('a close answers a once still waiting false at once, not at its deadline', async () => {
+    install();
+    const connection = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 1000 });
+
+    const waiting = connection.once('Page.loadEventFired', undefined, 600_000);
+    connection.close();
+
+    expect(await waiting).toBe(false);
+  }, 1_000);
+
   test('a refused handshake carries the socket’s own reason, not only that it was refused', async () => {
     (globalThis as { WebSocket: unknown }).WebSocket = RefusingSocket;
 

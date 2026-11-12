@@ -40,6 +40,7 @@ const formIslandSource = (
 
 import { clientTransport } from '@ultimat3/core';
 import { fromDecimal } from '@ultimat3/money';
+import { mountOver } from '@ultimat3/render/client';
 import { Button, Form, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
@@ -151,8 +152,9 @@ function ${feature.pascal}FormBody(props: ${feature.pascal}FormProps): JSX.Eleme
  * keeps every export of solid-js alive, and the bundler cannot shake what it cannot see unused —
  * measured at 14.8 kB minified per island chunk (5.6 kB gzipped) for the namespace form.
  *
- * The shell is cleared first: Solid's \`render\` APPENDS when the container already has children,
- * so without it the server's markup stays on screen above a second, live copy of the same thing.
+ * \`mountOver\` clears the shell (Solid's \`render\` APPENDS, so the server's markup would stay above
+ * a second, live copy) and puts it back if the render throws — a broken form shows what the server
+ * sent, not a blank box, and the throw still reaches the runtime's \`data-x-failed\` marker.
  */
 export function mount(el: HTMLElement, props: ${feature.pascal}FormProps): () => void {
   setSolidRuntime({
@@ -164,16 +166,17 @@ export function mount(el: HTMLElement, props: ${feature.pascal}FormProps): () =>
     onCleanup,
     createRoot,
   });
-  el.textContent = '';
   // Solid's disposer, returned: the client router calls it when it navigates away, and a mount
   // that returns nothing is X_ISLAND_DISPOSER_MISSING.
-  return render(
-    () => (
-      <UiProvider locale={props.locale}>
-        <${feature.pascal}FormBody {...props} />
-      </UiProvider>
+  return mountOver(el, (root) =>
+    render(
+      () => (
+        <UiProvider locale={props.locale}>
+          <${feature.pascal}FormBody {...props} />
+        </UiProvider>
+      ),
+      root,
     ),
-    el,
   );
 }
 `;

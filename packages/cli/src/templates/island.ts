@@ -34,6 +34,7 @@ const islandSource = (name: string): string => {
 // A string has no import edge, so nothing follows one into this file and the page's bundle graph
 // stays the page's (axiom 6). WHEN it wakes is the route's \`hydrate\`, never a declaration here.
 
+import { mountOver } from '@ultimat3/render/client';
 import type { JSX } from 'solid-js';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -67,15 +68,15 @@ function ${Name}(props: ${Name}Props): JSX.Element {
  * The one export the hydration runtime calls — \`import(entry).then((m) => m.mount(el, props))\`.
  * \`el\` is the wrapper the page rendered, with the server's own markup already inside it.
  *
- * The shell is cleared first, and that line is load-bearing: Solid's \`render\` APPENDS when the
- * container already has children, so without it the server's markup stays on screen above a
- * second, live copy of the same thing.
+ * \`mountOver\` clears that markup for the live render (Solid's \`render\` APPENDS, so it would
+ * otherwise stay on screen above a second copy) and puts it BACK if the render throws: a broken
+ * island shows what the server sent, not a blank box, and the throw still reaches the runtime,
+ * which marks the root \`data-x-failed\` for the error reporter.
  */
 export function mount(el: HTMLElement, props: ${Name}Props): () => void {
-  el.textContent = '';
-  // Solid's \`render\` answers its disposer; returning it is what lets \`@ultimat3/testing\`
-  // stop this island — its timers included — when a test is done with it.
-  return render(() => <${Name} {...props} />, el);
+  // Solid's \`render\` answers its disposer; returning it is what lets the client router and
+  // \`@ultimat3/testing\` stop this island — its timers included — when they are done with it.
+  return mountOver(el, (root) => render(() => <${Name} {...props} />, root));
 }
 `;
 };

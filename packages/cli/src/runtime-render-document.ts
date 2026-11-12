@@ -27,7 +27,7 @@ import { routeQuery } from './isr-query-guard';
 import { navigationTagsOf } from './page-navigation';
 import { servedPins } from './page-pins';
 import { bootScript, collectorFor } from './route-islands';
-import { preloadTags } from './route-islands-preload';
+import { linkHeader, preloadTagsOf, preloadUrls } from './route-islands-preload';
 import { siteAssetTable } from './site-assets';
 import { styleBundle } from './style-bundle';
 
@@ -137,13 +137,16 @@ export const headFor = async (
  * `styleRoutes` serves from.
  */
 const styleTag = (entry: RouteEntry): string => {
-  const href = styleBundle().hrefFor(entry.surface);
+  const href = stylesheetOf(entry);
   return href === undefined ? '' : `<link rel="stylesheet" href="${href}">`;
 };
 
-/** The surface stylesheet, then the app's brand — the order that lets the brand win the cascade. */
-export const stylesFor = (entry: RouteEntry, options: DocumentOptions): string =>
-  styleTag(entry) + (options.brandHead ?? '');
+/** The surface stylesheet's URL: what `styleTag` links and what the `Link` header preloads. */
+export const stylesheetOf = (entry: RouteEntry): string | undefined =>
+  styleBundle().hrefFor(entry.surface);
+
+/** The surface stylesheet — whose tail is the app's brand (`style-bundle.ts`), so it wins ties. */
+export const stylesFor = (entry: RouteEntry): string => styleTag(entry);
 
 /**
  * The route's rendered body, inside the hydration root. Every mode goes through here — an empty
@@ -177,6 +180,12 @@ export async function routeBody(
   return `<div id="${ROOT_ELEMENT_ID}">${html}</div>`;
 }
 
+/** A buffered document, and the `Link` header naming what its tags fetch early. */
+export interface RenderedDocument {
+  readonly html: string;
+  readonly link: string | undefined;
+}
+
 /**
  * The document from data ALREADY resolved. Split from `routeDocument` so one request resolves
  * `load` exactly once: `stream` renders head and body separately, and resolving in each would let
@@ -184,8 +193,30 @@ export async function routeBody(
  *
  * The hydration runtime is appended after the body and only after it: what strategies a page needs
  * is a fact about the islands the walk just recorded, so emitting it earlier would guess or ship
- * the whole runtime to a page with no island.
+ * the whole runtime to a page with no island. The `Link` header is read off the same two values
+ * the tags are written from — the stylesheet's href and the preload set — never off the markup.
  */
+export async function renderedDocument(
+  entry: RouteEntry,
+  ctx: DevRouteData,
+  data: RouteData,
+  options: RenderOptions,
+  scope?: string,
+): Promise<RenderedDocument> {
+  const islands = collectorFor(entry, options, scope);
+  const [head, body] = await Promise.all([
+    headFor(entry, ctx, data, options, scope),
+    routeBody(entry, ctx, data, islands),
+  ]);
+  const boot = bootScript(entry, islands, options, scope);
+  const preloads = preloadUrls(entry, islands, options, boot !== '');
+  const html =
+    `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry)}</head>` +
+    `<body>${body}${boot}${preloadTagsOf(preloads)}${hydrateRuntime(islands.directives)}</body></html>`;
+  return { html, link: linkHeader(stylesheetOf(entry), preloads) };
+}
+
+/** `renderedDocument`'s markup alone: the prerender and the budgets weigh this. */
 export async function documentFrom(
   entry: RouteEntry,
   ctx: DevRouteData,
@@ -193,15 +224,5 @@ export async function documentFrom(
   options: RenderOptions,
   scope?: string,
 ): Promise<string> {
-  const islands = collectorFor(entry, options, scope);
-  const [head, body] = await Promise.all([
-    headFor(entry, ctx, data, options, scope),
-    routeBody(entry, ctx, data, islands),
-  ]);
-  const boot = bootScript(entry, islands, options, scope);
-  const preloads = preloadTags(entry, islands, options, boot !== '');
-  return (
-    `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head>` +
-    `<body>${body}${boot}${preloads}${hydrateRuntime(islands.directives)}</body></html>`
-  );
+  return (await renderedDocument(entry, ctx, data, options, scope)).html;
 }

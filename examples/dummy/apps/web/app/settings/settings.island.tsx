@@ -19,6 +19,7 @@
 import type { CatalogSubset } from '@ultimat3/i18n/subset';
 import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { subscribeToPush } from '@ultimat3/pwa/client';
+import { mountOver } from '@ultimat3/render/client';
 import type { SearchableOption } from '@ultimat3/ui';
 import { Radio, SearchableSelect, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
@@ -252,11 +253,11 @@ function Preferences(props: SettingsProps): JSX.Element {
 /**
  * The one export the hydration runtime calls — `import(entry).then((m) => m.mount(el, props))`.
  *
- * The shell goes first, and that line is load-bearing: Solid's `render` APPENDS when the container
- * already has children (`insert(el, code(), el.firstChild ? null : undefined)`), so without it the
- * server's saved-state summary stays on screen above a second copy of the same values that can be
- * edited. An island is compiled with `hydratable: false`, so there is no takeover to resume — the
- * shell is what the server knows, and this is what replaces it once a browser can do more.
+ * `mountOver` clears the shell, and the clear is load-bearing: Solid's `render` APPENDS when the
+ * container already has children (`insert(el, code(), el.firstChild ? null : undefined)`), so
+ * without it the server's saved-state summary stays on screen above a second, editable copy. A
+ * render that throws gets the shell back instead of a blank box. An island is compiled with
+ * `hydratable: false`, so there is no takeover to resume — the shell is what the server knows.
  */
 export function mount(el: HTMLElement, props: SettingsProps): () => void {
   // The design system's reactive seam, from THIS bundle's solid-js — named, never `import *`.
@@ -269,15 +270,16 @@ export function mount(el: HTMLElement, props: SettingsProps): () => void {
     onCleanup,
     createRoot,
   });
-  el.textContent = '';
   // Returned: the router calls it when it swaps this page out, so every effect this island
   // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
-  return render(
-    () => (
-      <UiProvider locale={props.locale} timeZone={props.timezone} t={subsetTranslator(props.ui)}>
-        <Preferences {...props} />
-      </UiProvider>
+  return mountOver(el, (root) =>
+    render(
+      () => (
+        <UiProvider locale={props.locale} timeZone={props.timezone} t={subsetTranslator(props.ui)}>
+          <Preferences {...props} />
+        </UiProvider>
+      ),
+      root,
     ),
-    el,
   );
 }

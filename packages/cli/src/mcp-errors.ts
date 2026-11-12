@@ -357,7 +357,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_NEW_SHAPE_GENERATE_FAILED:
     'bunx x g sign-in --password --json   # in the app x new wrote, reproduces it; then bun test ./packages/cli/src/templates/shapes',
   X_ISLAND_DISPOSER_MISSING:
-    'x verify --only boundaries --json   # names the file; end its mount() with return render(() => <Island {...props} />, el)',
+    'x verify --only boundaries --json   # names the file; end its mount() with return mountOver(el, (root) => render(() => <Island {...props} />, root))',
   X_SOCKET_HAND_ROLLED:
     'x verify --only boundaries --json — names the file and line; delete the upgrade and declare the socket with deviceSocket({ path, resolveToken, onFrame }) from @ultimat3/realtime/server',
   X_EXERCISE_FILE_UNEDITABLE:

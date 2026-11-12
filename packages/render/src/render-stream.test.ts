@@ -127,6 +127,29 @@ describe('out-of-order streaming', () => {
     expect(html.endsWith('</body></html>')).toBe(true);
   });
 
+  test('an errorFallback that throws still closes the document with the default markup', async () => {
+    const plan: StreamPlan = {
+      head: '<body>',
+      shell: holeMarker('feed', 'skeleton'),
+      holes: [
+        { id: 'feed', fallback: 'skeleton', resolve: () => Promise.reject(THREW_BEFORE_PROMISE) },
+      ],
+    };
+
+    const html = await collectStream(
+      renderStreamHtml(plan, {
+        buildId: 'b1',
+        holeTimeoutMs: null,
+        // App-shaped code: nothing stops a fallback from throwing.
+        errorFallback: () => {
+          throw THREW_BEFORE_PROMISE;
+        },
+      }),
+    );
+    expect(html).toContain('<div data-x-hole-error="feed" hidden></div>');
+    expect(html.endsWith('</body></html>')).toBe(true);
+  }, 1_000);
+
   test('a plan with no holes still closes the document', async () => {
     const html = await collectStream(
       renderStreamHtml({ head: '<body>', shell: '<p>static</p>', holes: [] }, { buildId: 'b1' }),

@@ -81,7 +81,8 @@ weigh measures the page a holder of that role is served. Any other refusal (a mi
 
 While the export renders, `@ultimat3/seo`'s static seam is installed (`static-capture.ts`). Every
 `responsiveImage()` candidate an exported document names is written to `/_img/<hash>-<w>.<ext>`
-(`static-images.ts`) — a `src` the export lacks is `X_IMAGE_SOURCE_UNREADABLE`, an `avif` is
+(`static-images.ts`; the hash is of the source bytes, width, format and encoder — framework and Bun
+version — so an upgrade that may re-encode renames the file rather than reuse an `immutable` URL) — a `src` the export lacks is `X_IMAGE_SOURCE_UNREADABLE`, an `avif` is
 `X_IMAGE_UNSUPPORTED`. Every `og.capture` card is photographed from its exported page at 1200 x 630
 into `/_og/<path>.png` over the CLI's own CDP driver (`static-cards.ts`); no such page is
 `X_SEO_CARD_ROUTE_UNKNOWN`, no browser `X_SEO_CARD_BROWSER_MISSING`. `--no-capture` stamps the same

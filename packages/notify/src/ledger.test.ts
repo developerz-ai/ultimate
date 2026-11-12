@@ -107,6 +107,28 @@ describe('unit · delivery ledger', () => {
     expect(ledger.dropped).toBe(1);
   });
 
+  test('a re-claimed row is the NEWEST at the cap: evicting it handed a concurrent second send', async () => {
+    // `Map.set` on an existing key keeps its old position, so the row just re-claimed `sending`
+    // was the first evicted, and the next attempt found no claim at all and sent too.
+    const ledger = memoryDeliveryLedger({ max: 2 });
+    const ana = { ...claim, recipient: 'ana' };
+    await ledger.settle(ana, 'failed', AT, owned(await ledger.claim(ana, AT)));
+    await ledger.claim({ ...claim, recipient: 'ben' }, AT);
+    owned(await ledger.claim(ana, AT));
+    await ledger.claim({ ...claim, recipient: 'cyd' }, AT);
+    expect((await ledger.claim(ana, AT)).outcome).toBe('held');
+  });
+
+  test('a settled row is the newest too: evicting a fresh `sent` stopped deduping it first', async () => {
+    const ledger = memoryDeliveryLedger({ max: 2 });
+    const ana = { ...claim, recipient: 'ana' };
+    const ownedAna = owned(await ledger.claim(ana, AT));
+    await ledger.claim({ ...claim, recipient: 'ben' }, AT);
+    await ledger.settle(ana, 'sent', AT, ownedAna);
+    await ledger.claim({ ...claim, recipient: 'cyd' }, AT);
+    expect(await ledger.claim(ana, AT)).toEqual(SENT);
+  });
+
   test('clear() empties the ledger AND its drop count, so one suite cannot pin the next', async () => {
     const ledger = memoryDeliveryLedger({ max: 1 });
     await ledger.claim(claim, AT);

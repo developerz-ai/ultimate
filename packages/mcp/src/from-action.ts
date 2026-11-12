@@ -20,10 +20,18 @@
 // import this one to return it. `cross-surface.test.ts` pins `toolFrom` to the served entry.
 
 import type { Actor, McpExposureDeclaration } from '@ultimat3/core';
-import { isMcpExposed, toolDescription } from '@ultimat3/core';
+import {
+  ctxOf,
+  hasContext,
+  isMcpExposed,
+  runWithContext,
+  toolDescription,
+  withChildContext,
+} from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
+import { pageFactsOf, truncatedResult } from './query-page';
 import type {
   AnyMcpTool,
   McpCaller,
@@ -117,14 +125,29 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
       ? {}
       : { admit: (caller: McpCaller) => primitive.admit?.(caller.actor) }),
     // No `scope` from here: see the header. `defineAppMcp`'s `scopes:` map may add one.
-    async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
+    async handle(args: ToolArgs, caller: McpCaller, signal?: AbortSignal): Promise<McpToolResult> {
       // ONE authz system, TWO surfaces. This `run` IS `invoke`; the HTTP route reaches the
       // same `invoke` with an actor of kind 'user', MCP arrives with kind 'agent'. Same
       // policy, same decision.
-      const output = await primitive.run({ input: args, actor: caller.actor });
-      return outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);
+      const output = await withSignal(signal, () =>
+        primitive.run({ input: args, actor: caller.actor }),
+      );
+      const result =
+        outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);
+      // A list query's page that was cut says so, and where the next one starts (`query-page.ts`).
+      const page = pageFactsOf(output);
+      return page === undefined ? result : truncatedResult(result, page);
     },
   };
+}
+
+/**
+ * A cancelled call's signal as `ctx.signal` — what an action's handler, a query's driver and a
+ * `defineTool` body already read — composed with a request's own by core's child scope.
+ */
+function withSignal<T>(signal: AbortSignal | undefined, fn: () => T): T {
+  if (signal === undefined) return fn();
+  return hasContext() ? withChildContext({ signal }, fn) : runWithContext(ctxOf({ signal }), fn);
 }
 
 /**

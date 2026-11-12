@@ -385,7 +385,7 @@ describe('meta-split — the catalog', () => {
     expect(lines[0]).toContain('read_resource');
     expect(lines).toContain('  archivePost (delete) {postId: string} — Archive a post');
     expect(lines).toContain('  renamePost (write) {postId: string, title: string} — Rename a post');
-    expect(lines).toContain('  listPosts {} — Posts');
+    expect(lines).toContain('  listPosts {_after?: string} — Posts');
   });
 });
 

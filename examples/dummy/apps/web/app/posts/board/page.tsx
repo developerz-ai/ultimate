@@ -74,7 +74,10 @@ export const config = defineRoute({
   // raised 108.5kb → 108.6kb. measured: 111181 B (2026-11-12; x build --target static) — why: the
   // client router grew 29,764 → 29,884 (+120 B): a stylesheet that fails to load on navigation now forces a
   // full load and keeps the old sheets, so a page is never left unstyled.
-  budget: { js: '108.6kb' },
+  // raised 108.6kb → 108.8kb. measured: 111323 B (2026-11-12, plan 101 sweep 11; x build --target
+  // static, against 111,181) — why: the board island 77,359 → 77,501 (+142 B), `mountOver` from
+  // `@ultimat3/render/client`: a render that throws puts the server's board back, not a blank box.
+  budget: { js: '108.8kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

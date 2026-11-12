@@ -402,7 +402,7 @@ invocation is an ordinary one, marked so the model half streams. Two consequence
 |---|---|
 | the `done` chunk carries the validated value; text increments are **unvalidated** | a schema cannot be checked until the last token has landed |
 | **no repair turn** — a bad shape is `X_LLM_STREAM_INVALID` | the consumer has already read the tokens; a second answer over the top is two answers to one question. The fix names the non-streaming call |
-| the budget is reserved **before the first token** and reconciled at `done` | unchanged from `generate()`; a stream that throws or is abandoned releases in a `finally` |
+| the budget is reserved **before the first token** and reconciled at `done` | unchanged from `generate()`; a stream that throws or is abandoned after the provider's first byte records the usage the wire reported, one aborted after its request was sent records the prompt's estimate, and only one never sent (or refused by the provider) releases (31.15.0) |
 | no `respond` tool is offered | a tool call is emitted whole, so forcing one leaves nothing to stream — the answer is prose, and its JSON parse is what a non-string `output` validates |
 | lazy | nothing is authorised, budgeted or sent until the first pull |
 
@@ -447,7 +447,7 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | Rule | Why |
 |---|---|
 | the actor is **`ctx.actor`**, read once, never from the model | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
-| an aborted `ctx` unwinds the run — at the top of every turn, before every tool batch, and on the socket | the transcript IS the request, so a loop that keeps going after the caller disconnects re-sends it once per remaining turn, runs every remaining side effect and discards the answer. `ctx.signal` rides on `GenerateRequest` too, so a call already in flight is cut rather than paid for |
+| an aborted `ctx` unwinds the run — at the top of every turn, before every tool batch, and on the socket | the transcript IS the request, so a loop that keeps going after the caller disconnects re-sends it once per remaining turn, runs every remaining side effect and discards the answer. `ctx.signal` rides on `GenerateRequest` too, so a call already in flight is cut — and billed only the prompt the provider already read |
 | the tools of **one turn** run concurrently, at most `maxToolConcurrency` at once (default 8), results paired by `tool_use` id | a turn asking for five tools cost 5x wall clock and nothing said so; a turn asking for fifty — a confused or injected model — was fifty concurrent invocations and pool checkouts. Order is positional, never by completion; a call waiting for a slot never starts after an abort or the deadline. `maxToolConcurrency: 1` runs a turn serially |
 | `onTurn` reports each completed turn as it happens (and an `agent.turn` span event, always) | a 90-second run emitted nothing until it returned. Observation only — it cannot steer the loop, see the transcript or reach the actor — and a throw from it fails the run rather than being swallowed |
 | a tool is an `mcp: { expose: true }` action or an `inProcessTool()`; anything else is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate for ACTIONS, so an in-app agent and an external MCP client see the same catalogue of them — and a tool no MCP client may see is declared as one that is this process's alone |

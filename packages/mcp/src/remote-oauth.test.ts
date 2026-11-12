@@ -19,7 +19,10 @@ interface Sent {
   readonly body: string;
 }
 
-function vendor(asOverrides: Record<string, unknown> = {}) {
+function vendor(
+  asOverrides: Record<string, unknown> = {},
+  prmOverrides: Record<string, unknown> = {},
+) {
   const sent: Sent[] = [];
   const fetch = async (url: string, init: RequestInit) => {
     sent.push({ url, body: init.body === undefined ? '' : String(init.body) });
@@ -28,6 +31,7 @@ function vendor(asOverrides: Record<string, unknown> = {}) {
         resource: MCP,
         authorization_servers: [ISSUER],
         scopes_supported: ['docs:read'],
+        ...prmOverrides,
       });
     }
     if (url === `${ISSUER}/.well-known/oauth-authorization-server`) {
@@ -110,5 +114,61 @@ describe('mcpOAuthClient', () => {
       redirect_uris: ['https://app.test/oauth/mcp/callback'],
       token_endpoint_auth_method: 'none',
     });
+  });
+
+  /** Metadata a remote server controls is input: a value that is no URL is a coded refusal. */
+  const refusedCode = { code: 'X_MCP_REMOTE_REFUSED' };
+
+  test('an authorization server that is no URL is refused, never a bare TypeError', async () => {
+    await expect(
+      vendor({}, { authorization_servers: ['not a url'] }).oauth.begin(MCP),
+    ).rejects.toMatchObject(refusedCode);
+  });
+
+  for (const field of ['authorization_endpoint', 'token_endpoint']) {
+    test(`a ${field} that is no URL is refused`, async () => {
+      await expect(vendor({ [field]: 'not a url' }).oauth.begin(MCP)).rejects.toMatchObject(
+        refusedCode,
+      );
+    });
+  }
+
+  for (const [field, value] of [
+    ['authorization_endpoint', 'javascript:alert(document.domain)//'],
+    ['authorization_endpoint', 'data:text/html,<script>alert(1)</script>'],
+    ['authorization_endpoint', 'http://auth.vendor.test/authorize'],
+    ['token_endpoint', 'file:///etc/passwd'],
+  ] as const) {
+    test(`a ${field} that is not https: (${value.slice(0, 11)}) is refused`, async () => {
+      // An authorizeUrl is rendered as a link: a `javascript:` one runs in the app's origin.
+      await expect(vendor({ [field]: value }).oauth.begin(MCP)).rejects.toMatchObject(refusedCode);
+    });
+  }
+
+  test('a loopback http: authorization server still works, as RFC 8252 allows', async () => {
+    const start = await vendor({
+      authorization_endpoint: 'http://127.0.0.1:9999/authorize',
+    }).oauth.begin(MCP);
+    expect(start.authorizeUrl).toStartWith('http://127.0.0.1:9999/authorize?');
+  });
+
+  test('a server URL that is no URL is refused before anything is fetched', async () => {
+    const { oauth, sent } = vendor();
+    await expect(oauth.begin('mcp.vendor.test/mcp')).rejects.toMatchObject(refusedCode);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('resource metadata naming ANOTHER resource is refused (RFC 9728 §3.3)', async () => {
+    await expect(
+      vendor({}, { resource: 'https://evil.test/mcp' }).oauth.begin(MCP),
+    ).rejects.toMatchObject(refusedCode);
+    await expect(vendor({}, { resource: 42 }).oauth.begin(MCP)).rejects.toMatchObject(refusedCode);
+  });
+
+  test('the comparison is on the URL, not its spelling', async () => {
+    const start = await vendor({}, { resource: 'HTTPS://MCP.vendor.test:443/mcp' }).oauth.begin(
+      MCP,
+    );
+    expect(new URL(start.authorizeUrl).searchParams.get('resource')).toBe(MCP);
   });
 });

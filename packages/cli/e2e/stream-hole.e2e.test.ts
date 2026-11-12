@@ -22,6 +22,8 @@ import {
 } from '@ultimat3/testing';
 import { appRoutes } from '../src/runtime-render';
 import { inlineScriptSources } from '../src/script-csp';
+import { styleBundle } from '../src/style-bundle';
+import { styleRoutes } from '../src/style-routes';
 import { buildNavigationScript } from '../src/worker-bundle';
 
 const BUILD = 'stream-hole-build';
@@ -119,6 +121,9 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
         asset(router.url, router.code),
         asset('/islands/press.js', PRESS_ISLAND),
         asset('/islands/late.js', LATE_ISLAND),
+        // The sheet the document links, served as `serve-web.ts` serves it: without it every
+        // `/styles/*` the page asks for is a 404 the browser logs against the run.
+        ...styleRoutes(() => styleBundle()),
         ...appRoutes({
           buildId: BUILD,
           navigation: {

@@ -78,8 +78,8 @@ export interface DevRouteTable {
   /** The zone script (`time.detect`), admitted the same way — `undefined` when the app left it off. */
   readonly zone: ZoneBoot | undefined;
   /**
-   * Every inline `<style>` body these routes put in a document: the app's error pages' and its
-   * brand's (`theme-brand.ts`) — what `startRoles({ inlineStyles })` hashes into `style-src`.
+   * Every inline `<style>` body these routes put in a document: the app's error pages' — what
+   * `startRoles({ inlineStyles })` hashes into `style-src`. The brand rides the stylesheet.
    */
   readonly inlineStyles: readonly string[];
   /** Where the app's default MCP endpoint was mounted, or `null`. */
@@ -94,7 +94,8 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   const pwa = await loadPwaArtifacts(input.root);
   const theme = themeBoot(await loadThemeMode(input.root));
   // Read at boot, like the theme mode: a save to the theme module is applied on the next `x dev`.
-  const brand = await loadThemeBrand(input.root);
+  // Onto every surface stylesheet, before the first `styleBundle()` below.
+  await loadThemeBrand(input.root);
   // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
   const site = await loadSiteSettings(input.root);
   const origin = publicOrigin(input.env, site);
@@ -114,10 +115,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     client: declared.surfaces,
     localeSegments: otherLocaleSegments(await appLocaleSet(input.root)),
   });
-  const inlineStyles = [
-    ...(await errorPageStyleBodies(input.root)),
-    ...(brand === undefined ? [] : [brand.style]),
-  ];
+  const inlineStyles = await errorPageStyleBodies(input.root);
   // Built once at boot and NOT rebuilt with the islands on a watcher tick: a service worker that
   // changes under a page it controls is the update path, and one per keystroke exercises it per save.
   const serviceWorker =
@@ -200,7 +198,6 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...adminMountRoutes({
       buildId: input.buildId,
       themeHead: theme.head,
-      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(origin === undefined ? {} : { origin }),
     }),
     ...appRoutes({
@@ -214,7 +211,6 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
-      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
       ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined

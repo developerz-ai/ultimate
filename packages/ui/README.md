@@ -625,8 +625,9 @@ export const brand = defineTheme({
 });
 ```
 
-`brandStyleTag(brand)` and `brandStyleCspSource(brand)` are what the framework emits — exported
-for a host that renders documents itself.
+The framework appends `brand.css` to the end of every surface stylesheet it links (no inline
+`<style>`, no CSP hash). `brandStyleTag(brand)` and `brandStyleCspSource(brand)` are for a host
+that renders documents itself.
 
 | Slot | Accepts | Refused with |
 |---|---|---|

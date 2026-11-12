@@ -16,6 +16,7 @@ import {
 } from './openai-wire';
 import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
+import { streamedTokens } from './stream-bill';
 
 interface PendingCall {
   /** Where the call sorts among its turn's: the wire's `index`, else its order of arrival. */
@@ -48,6 +49,10 @@ export class ChatCompletionStream {
   private readonly byIndex = new Map<number, PendingCall>();
   private readonly read: ReadCalls = { calls: [], malformed: [] };
   private readonly provider: string;
+  /** A completion frame arrived: the provider has billed the prompt from here on. */
+  private received = false;
+  /** Characters of content, reasoning and arguments streamed — output no `usage` has counted. */
+  private streamedChars = 0;
 
   constructor(provider: string) {
     this.provider = provider;
@@ -62,6 +67,7 @@ export class ChatCompletionStream {
     }
     const payload = this.payloadOf(frame);
     throwInBandError(payload, this.provider);
+    this.received = true;
     const usage = parseOpenAiUsage(payload['usage']);
     if (usage !== undefined) this.usage = usage;
     const choice = asRecord(Array.isArray(payload['choices']) ? payload['choices'][0] : undefined);
@@ -115,6 +121,26 @@ export class ChatCompletionStream {
     return this.finished || (this.done && this.pending.length === 0);
   }
 
+  /**
+   * What the provider has billed so far, for a stream that stops before it is complete — or
+   * `undefined` before the first completion frame, when nothing was. This format states usage once,
+   * in a trailing chunk; until it lands the prompt is `promptTokens` (the caller's estimate) and
+   * the output is estimated from the characters streamed.
+   */
+  partialUsage(promptTokens: number): TokenUsage | undefined {
+    if (!this.received) return undefined;
+    const streamed = streamedTokens(this.streamedChars);
+    if (this.usage !== undefined) {
+      return { ...this.usage, outputTokens: Math.max(this.usage.outputTokens, streamed) };
+    }
+    return {
+      inputTokens: promptTokens,
+      outputTokens: streamed,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    };
+  }
+
   /** What the stream accumulated. `cost` is applied by the provider, which owns prices. */
   state(): ChatAnswer {
     // Idempotent, so a reader that never called `end()` still sees a finished turn's calls.
@@ -152,6 +178,7 @@ export class ChatCompletionStream {
     const content = delta['content'];
     if (typeof content === 'string' && content !== '') {
       this.text += content;
+      this.streamedChars += content.length;
       chunks.push({ type: 'text', text: content });
     }
     // `reasoning_content` is vLLM's and DeepSeek's; `reasoning` is the OpenRouter spelling. Neither
@@ -159,6 +186,7 @@ export class ChatCompletionStream {
     // every chunk must not end up shipping the reasoning to the user.
     const thinking = delta['reasoning_content'] ?? delta['reasoning'];
     if (typeof thinking === 'string' && thinking !== '') {
+      this.streamedChars += thinking.length;
       chunks.push({ type: 'thinking', text: thinking });
     }
     const refusal = delta['refusal'];
@@ -211,7 +239,10 @@ export class ChatCompletionStream {
       // legal, and assigning would keep only the tail.
       if (typeof name === 'string') call.name += name;
       const args = fn?.['arguments'];
-      if (typeof args === 'string') call.args += args;
+      if (typeof args === 'string') {
+        call.args += args;
+        this.streamedChars += args.length;
+      }
     }
   }
 

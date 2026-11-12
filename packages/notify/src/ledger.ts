@@ -143,6 +143,14 @@ export function memoryDeliveryLedger(
     }
   };
 
+  // Delete, then set: `Map.set` on a key it holds keeps the key's OLD place, so the row just
+  // re-claimed `sending` (or just settled `sent`) stayed first in line for `evict` — and a row
+  // evicted mid-flight is a claim the next attempt never sees: a concurrent second send.
+  const put = (id: string, row: { readonly record: DeliveryRecord; readonly claimId: string }) => {
+    rows.delete(id);
+    rows.set(id, row);
+  };
+
   return {
     get size(): number {
       return rows.size;
@@ -166,7 +174,7 @@ export function memoryDeliveryLedger(
         attempts: (existing?.attempts ?? 0) + 1,
         at,
       };
-      rows.set(id, { record, claimId });
+      put(id, { record, claimId });
       evict();
       return Promise.resolve({ outcome: 'owned', claimId });
     },
@@ -178,7 +186,7 @@ export function memoryDeliveryLedger(
       if (existing?.claimId !== claimId || existing.record.status !== 'sending') {
         return Promise.resolve(false);
       }
-      rows.set(id, { claimId, record: { ...existing.record, status, at } });
+      put(id, { claimId, record: { ...existing.record, status, at } });
       return Promise.resolve(true);
     },
     find(claim) {

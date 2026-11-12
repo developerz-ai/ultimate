@@ -93,6 +93,7 @@ describe('unit · routeStatsRow records the breakdown the finding reads', () => 
         { url: '/small.js', bytes: 1 },
       ],
       inlineJsBytes: 'let a=1'.length,
+      requests: { documents: 1, scripts: 2, styles: 0, total: 3 },
     });
   });
 });

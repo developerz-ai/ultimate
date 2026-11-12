@@ -9,6 +9,7 @@ import { memoryInboxStore } from './inbox';
 import {
   postgresInboxStore,
   SQL_NOTIFY_INBOX_ADD,
+  SQL_NOTIFY_INBOX_FIND,
   SQL_NOTIFY_INBOX_MARK_READ,
   SQL_NOTIFY_INBOX_MARK_SEEN,
   SQL_NOTIFY_INBOX_PAGE,
@@ -67,6 +68,43 @@ describe('unit · postgres inbox', () => {
     expect(calls[0]?.sql).toBe(SQL_NOTIFY_INBOX_ADD);
     expect(SQL_NOTIFY_INBOX_ADD).toContain('on conflict (recipient, notifier, key) do nothing');
     expect(SQL_NOTIFY_INBOX_TABLE).toContain('unique (recipient, notifier, key)');
+  });
+
+  test('an add that answers no row looks again in a fresh statement, and returns the stored row', async () => {
+    // Under READ COMMITTED a concurrent writer that commits while the insert waits leaves the
+    // statement answering nothing (`inbox-pg.live.test.ts` races it on a real server).
+    const calls: Call[] = [];
+    const stored = {
+      id: 'stored-id',
+      recipient: 'ana',
+      notifier: 'post.liked',
+      key: 'like:p1',
+      params: {},
+      created_at: AT,
+      seen_at: null,
+      read_at: null,
+    };
+    const store = postgresInboxStore({
+      executor: {
+        query: <R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> => {
+          calls.push({ sql, params });
+          return Promise.resolve(
+            (sql === SQL_NOTIFY_INBOX_FIND ? [stored] : []) as unknown as readonly R[],
+          );
+        },
+      },
+      newId: () => 'made-up-id',
+    });
+    const row = await store.add({
+      recipient: 'ana',
+      notifier: 'post.liked',
+      key: 'like:p1',
+      params: {},
+      createdAt: AT,
+    });
+    expect(row.id).toBe('stored-id');
+    expect(calls.map((call) => call.sql)).toEqual([SQL_NOTIFY_INBOX_ADD, SQL_NOTIFY_INBOX_FIND]);
+    expect(calls[1]?.params).toEqual(['ana', 'post.liked', 'like:p1']);
   });
 
   test('list maps the row shape back, and an unread-only page says so in a parameter', async () => {

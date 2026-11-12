@@ -1192,3 +1192,7 @@ Re-registering REPLACES
 
 One `remoteEmbedder()` for every vendor; vectors L2-normalised; a wrong width is
   `X_VECTOR_DIM_MISMATCH`.
+
+## Provider prompt caching, as it stood (moved 2026-11-12, sweep 11)
+
+One switch (`GenerateRequest.promptCache`), `promptCacheRule`: provider rows, then `PROMPT_CACHE_RULES`, then nothing. An app's own endpoint is a row ON ITS PROVIDER (`promptCache: { rules }`, `ProviderCacheRow`, first match wins), screened at construction against the wire (`prompt-cache-rows.ts`, `X_AI_REQUEST_INVALID`); `agent()` defaults `'auto'`, `llm()` `'off'`.

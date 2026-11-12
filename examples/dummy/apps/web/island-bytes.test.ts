@@ -139,6 +139,13 @@ const OWN_TITLES_ONLY = '@ultimat3/realtime';
  */
 const LEAN_ACTION_CLIENT = '@ultimat3/action';
 
+/**
+ * `@ultimat3/render/client` — `mountOver`, `navigate` — reaches core through `@ultimat3/core/page`
+ * only (`packages/render/src/client-bundle.test.ts` holds its graph), so an island mounting over its
+ * server markup carries neither of core's anchored tables (31.15.0).
+ */
+const LEAN_RENDER_CLIENT = '@ultimat3/render/client';
+
 /** Whether realtime's anchored titles module reached this chunk: every title, as for core's. */
 const carriesRealtimeTitles = (code: string): boolean =>
   Object.values(REALTIME_PAGE_ERROR_TITLES).every((title) => code.includes(title));
@@ -249,7 +256,11 @@ test('every island in the app is measured, and each is classified by its own gra
     '@ultimat3/time',
     '@ultimat3/ui',
   ]);
-  expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual(['@ultimat3/realtime']);
+  // `@ultimat3/render/client` for `mountOver` in every Solid island below (31.15.0).
+  expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual([
+    '@ultimat3/realtime',
+    '@ultimat3/render/client',
+  ]);
   // The run console: the live read, the design system's region and controls, the typed action
   // client for its four writes, and core's page entry for `isSuperseded`. The runs page's "created
   // between" filter (`DateRangePicker`'s calendar) is drawn inside it, so it adds no package.
@@ -258,10 +269,12 @@ test('every island in the app is measured, and each is classified by its own gra
     CONSTANTS_ONLY,
     '@ultimat3/i18n/subset',
     '@ultimat3/realtime',
+    '@ultimat3/render/client',
     '@ultimat3/ui',
   ]);
   expect(reachable.get('apps/web/app/posts/[id]/likes-badge.island.tsx')).toEqual([
     '@ultimat3/realtime',
+    '@ultimat3/render/client',
   ]);
   // Both reach the typed action client through `shared/browser-client.ts` (plan 101, slice 16).
   // Settings also subscribes this browser to Web Push: `@ultimat3/pwa/client`, which imports nothing.
@@ -271,6 +284,7 @@ test('every island in the app is measured, and each is classified by its own gra
     '@ultimat3/action',
     '@ultimat3/i18n/subset',
     '@ultimat3/pwa/client',
+    '@ultimat3/render/client',
     '@ultimat3/ui',
   ]);
   expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([
@@ -281,6 +295,7 @@ test('every island in the app is measured, and each is classified by its own gra
   expect(reachable.get('apps/web/app/posts/board/board.island.tsx')).toEqual([
     '@ultimat3/action',
     '@ultimat3/i18n/subset',
+    '@ultimat3/render/client',
     '@ultimat3/ui',
   ]);
   // The summary streams `summarize` through the typed client's `.stream()` and nothing else.
@@ -303,7 +318,11 @@ test('every island reaching core keeps its side-effecting module, in both builds
   const reaching = (through: (pkg: string) => boolean): string[] =>
     [...first.keys()].filter((file) => (reachable.get(file) ?? []).some(through)).sort();
   const expected = reaching(
-    (pkg) => pkg !== CONSTANTS_ONLY && pkg !== OWN_TITLES_ONLY && pkg !== LEAN_ACTION_CLIENT,
+    (pkg) =>
+      pkg !== CONSTANTS_ONLY &&
+      pkg !== OWN_TITLES_ONLY &&
+      pkg !== LEAN_ACTION_CLIENT &&
+      pkg !== LEAN_RENDER_CLIENT,
   );
   // Six until 27.6.0: `like` and `likes-badge` import realtime and nothing else, and realtime no
   // longer brings core's barrel with it (`OWN_TITLES_ONLY`). Five from plan 101 wave 9: `summary`

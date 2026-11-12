@@ -9,9 +9,16 @@ import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
-import { blankRaster, encodeImage, isUltimateError, probeImage } from '@ultimat3/core';
+import {
+  blankRaster,
+  encodeImage,
+  frameworkVersion,
+  isUltimateError,
+  probeImage,
+} from '@ultimat3/core';
 import { type ModernFormat, renderPicture, responsiveImage } from '@ultimat3/seo';
 import { staticCapture } from './static-capture';
+import { imageEncoderIdentity, staticImages } from './static-images';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -114,5 +121,27 @@ describe('unit · static image variants', () => {
       images: [],
       cards: [],
     });
+  });
+});
+
+// #1075's class: an immutable name is a promise about BYTES. A variant's bytes are a function of
+// the source, the width, the format AND the encoder, so a name of the first three alone kept its
+// URL across a framework or Bun upgrade that re-encoded it, and a CDN served the old file.
+describe('unit · a variant is named by everything its bytes depend on', () => {
+  const urlUnder = async (out: string, encoder: string): Promise<string> =>
+    (await staticImages(out, encoder)).imageUrl({ src: HERO.src, width: 32, format: 'webp' });
+
+  test('one source, one encoder: one URL, build after build', async () => {
+    const out = await exportWithAsset();
+    expect(await urlUnder(out, 'core@1+bun@1')).toBe(await urlUnder(out, 'core@1+bun@1'));
+  });
+
+  test('another encoder renames the variant', async () => {
+    const out = await exportWithAsset();
+    expect(await urlUnder(out, 'core@2+bun@1')).not.toBe(await urlUnder(out, 'core@1+bun@1'));
+  });
+
+  test('the default encoder is this framework and this Bun', () => {
+    expect(imageEncoderIdentity()).toBe(`${frameworkVersion()}+bun${Bun.version}`);
   });
 });

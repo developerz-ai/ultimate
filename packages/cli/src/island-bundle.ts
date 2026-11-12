@@ -20,6 +20,7 @@
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { join, posix, relative, sep } from 'node:path';
+import type { IslandsConfig } from '@ultimat3/core';
 import { logger, renderThrowable } from '@ultimat3/core';
 import { ISLAND_EXTENSION } from '@ultimat3/render';
 import { loadAppConfig } from './app-config-load';
@@ -41,6 +42,7 @@ import { groupKey, readGroup, sweepOnce, writeGroup } from './island-group-cache
 import { islandGroups } from './island-groups';
 import { describeBuildError } from './island-identity';
 import { linkOutputs } from './island-link';
+import { refuseUnboundImports } from './island-link-check';
 import { builtOutputs, entryChunks, ISLAND_BASE_PATH, sharedChunks } from './island-outputs';
 import { frameworkDedupePlugins } from './island-package-dedupe';
 import {
@@ -56,6 +58,8 @@ import { solidDedupePlugin } from './island-solid-dedupe';
 import type { SourcePaths } from './island-sources';
 import type { IslandStyles } from './island-styles';
 import { islandStylesPlugin, stylesheetsOf } from './island-styles';
+import type { Vendors } from './island-vendor';
+import { loadingVendor, vendorBuilder, vendorExternalPlugin, vendorShared } from './island-vendor';
 import { hasPathSegment } from './path-segments';
 import { solidJsxPlugin } from './solid-loader';
 
@@ -169,6 +173,7 @@ async function buildAll(
   const follows = new Set(files.filter((_, index) => realtime[index] === 'follows'));
   const kinds = new Map(files.map((file, index) => [file, realtime[index]]));
   const runtime = live[0] === undefined ? undefined : await runtimes(live[0]);
+  const vendor = context.vendors === undefined ? undefined : await context.vendors();
   const entrypoints = files.map((file, index) =>
     realtime[index] !== undefined ? realtimeIslandEntry(file) : join(root, file),
   );
@@ -200,6 +205,8 @@ async function buildAll(
       // gets the same rule (`island-package-dedupe.ts`): a nested copy is a second module where no
       // symlink folds it, which is every `file:` install on Windows.
       plugins: [
+        // Ahead of everything: Solid itself is never read into an island (`island-vendor.ts`).
+        ...(vendor === undefined ? [] : [vendorExternalPlugin(vendor)]),
         ...(runtime === undefined
           ? []
           : [islandRealtimePlugin(root, runtime, follows, live.length === files.length)]),
@@ -250,22 +257,28 @@ async function buildAll(
   await refuseDuplicatedModules(files.join(', '), built.metafile, context.io);
   const sources = new Map<string, SourcePaths>();
   const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
-  const chunks = loadingRuntime(entryChunks(files, linked, sources), live, runtime).map(
+  const entries = loadingRuntime(entryChunks(files, linked, sources), live, runtime).map(
     (chunk): IslandChunk => {
       const kind = kinds.get(chunk.file);
       return kind === undefined ? chunk : { ...chunk, realtime: kind };
     },
   );
-  const shared = sharedChunks(chunks, linked, sources);
+  const shared = sharedChunks(entries, linked, sources);
+  const chunks = loadingVendor(entries, shared, vendor);
   const read = Object.keys(built.metafile.inputs);
   const stylesheets = stylesheetsOf(read);
-  // The bundler's inputs, the runtime's, and every Sass partial a sheet `@use`s: a partial moves
-  // the sheet's class hashes and is read by the Sass compiler, never by the bundler.
+  // The bundler's inputs, the runtime's, the vendor's, and every Sass partial a sheet `@use`s: a
+  // partial moves the sheet's class hashes and is read by the Sass compiler, never by the bundler.
   const partials = context.styles.dependenciesOf(stylesheets);
-  const readFiles = [...(await inputFiles(read)), ...(runtime?.inputs ?? []), ...partials];
+  const readFiles = [
+    ...(await inputFiles(read)),
+    ...(runtime?.inputs ?? []),
+    ...(vendor?.inputs ?? []),
+    ...partials,
+  ];
   return {
     chunks,
-    shared: [...shared, ...runtimeShared(runtime, live)],
+    shared: [...shared, ...runtimeShared(runtime, live), ...vendorShared(vendor, chunks)],
     inputs: [...new Set(readFiles)].sort(),
     stylesheets,
   };
@@ -303,6 +316,8 @@ interface BuildContext {
   readonly styles: IslandStyles;
   /** One realpath per file per call, however many groups' metafiles name it. */
   readonly io: ModuleIdentityIo;
+  /** Solid as one shared output (`island-vendor.ts`); `undefined` bundles it into each build. */
+  readonly vendors: Vendors | undefined;
 }
 
 export interface BuildIslandsOptions {
@@ -336,11 +351,19 @@ export interface BuildIslandsOptions {
    * the registry is read as it stands: the caller loaded the app first.
    */
   readonly persists?: () => Promise<boolean | undefined>;
+  /**
+   * Solid as ONE shared output every island imports (`island-vendor.ts`), off by default. Measured
+   * As of 2026-11-12 (Bun 1.4.4, solid-js 1.9.17): each island inlines a tree-shaken ~14 kB of
+   * Solid, the whole vendor is 48,083 B, so every Solid route of the three tracked apps grew
+   * +33,572…+38,769 B with it on; it pays only where a page renders four or more Solid islands
+   * that are built apart.
+   */
+  readonly vendorSolid?: boolean;
 }
 
-/** `islands.sharedChunks` off the one loader (`app-config-load.ts`) — `false` with no config file. */
-export async function loadSharedChunks(root: string): Promise<boolean> {
-  return (await loadAppConfig(root))?.islands.sharedChunks ?? false;
+/** The `islands` block off the one loader (`app-config-load.ts`) — both off with no config file. */
+async function loadIslandsConfig(root: string): Promise<IslandsConfig> {
+  return (await loadAppConfig(root))?.islands ?? { sharedChunks: false, vendorSolid: false };
 }
 
 /** Build every island in the app. An app with none returns an empty bundle and costs one glob. */
@@ -355,10 +378,16 @@ export async function buildIslands(
   // an empty bundle here would surface two steps later, as a chunk table with no entry for a file
   // the caller can see on disk.
   if (only !== undefined && files.length === 0) throw onlyMissing(only, discovered);
+  // Read only where an option leaves a question open: an app with no islands costs one glob.
+  const asks =
+    files.length > 0 && (options.sharedChunks === undefined || options.vendorSolid === undefined);
+  const configured = asks ? await loadIslandsConfig(root) : undefined;
+  const vendorSolid = files.length > 0 && (options.vendorSolid ?? configured?.vendorSolid ?? false);
   const context: BuildContext = {
     runtimes: runtimeBuilder(root, ISLAND_BASE_PATH),
     styles: islandStylesPlugin(),
     io: memoizedIo(hostIo()),
+    vendors: vendorSolid ? vendorBuilder(root, ISLAND_BASE_PATH) : undefined,
   };
   let asked: Promise<boolean | undefined> | undefined;
   const persistsOnce = (): Promise<boolean | undefined> => {
@@ -369,7 +398,8 @@ export async function buildIslands(
   // build; every other island is alone, splitting off, self-contained but for the page runtime —
   // the ONE file every realtime island loads, counted once however many load it.
   // `islands.sharedChunks` is the one group of every island, split as it always was.
-  const everyIsland = files.length > 0 && (options.sharedChunks ?? (await loadSharedChunks(root)));
+  const everyIsland =
+    files.length > 0 && (options.sharedChunks ?? configured?.sharedChunks ?? false);
   const groups = everyIsland ? [files] : files.length === 0 ? [] : await islandGroups(root, files);
   const reuse = options.reuse ?? true;
   const cache = {
@@ -390,7 +420,13 @@ export async function buildIslands(
     );
     const persists = reaches.includes(true) ? await persistsOnce() : undefined;
     if (!reuse) return buildAll(root, group, splitting, context, persists);
-    const key = groupKey({ group, splitting, environment: cache.environment, persists });
+    const key = groupKey({
+      group,
+      splitting,
+      environment: cache.environment,
+      persists,
+      vendor: vendorSolid,
+    });
     const hit = await readGroup(root, key, cache.digestOf, cache.listingOf);
     if (hit !== undefined) return hit;
     // The wall clock as the filesystem stamps an mtime — never `Date.now()`, which a test may freeze.
@@ -408,7 +444,11 @@ export async function buildIslands(
   };
   if (reuse) await sweepOnce(root);
   const width = navigator.hardwareConcurrency;
-  return islandBundle(...mergeBuilds(await boundedMap(groups, width, build)));
+  const [chunks, shared] = mergeBuilds(await boundedMap(groups, width, build));
+  // Over the MERGED bundle: groups come from a cache or a fresh build, the runtime and the vendor
+  // from builds of their own, so this is the one place every link of the page's files is in view.
+  refuseUnboundImports([...chunks, ...shared.map((one) => ({ ...one, file: one.importers[0] }))]);
+  return islandBundle(chunks, shared);
 }
 
 type GroupBuild = Pick<GroupOutput, 'chunks' | 'shared'>;

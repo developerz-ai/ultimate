@@ -2,7 +2,7 @@
 // the coded 200 and by the 304 that revalidates it, so the two can never name different forms.
 import { describe, expect, test } from 'bun:test';
 import { answer, asking, compressAnonymous } from './compress-fixture';
-import { CONTENT_CODINGS, etagForm, negotiateCoding } from './etag-form';
+import { CONTENT_CODINGS, etagForm, negotiateCoding, negotiateFrom } from './etag-form';
 
 describe('negotiateCoding', () => {
   test.each([
@@ -33,6 +33,28 @@ describe('negotiateCoding', () => {
   // 850 ms per 256 KiB, or through `node:zlib`. Offering it would mean one of the two.
   test('offers only what the runtime codes natively and cheaply, in preference order', () => {
     expect(CONTENT_CODINGS).toEqual(['zstd', 'gzip']);
+  });
+});
+
+// One weight grammar for the per-request offer and the precoded pick (`compress-precode.ts`): the
+// server order and a kept-filter are the only things that differ between the two.
+describe('negotiateFrom', () => {
+  const ORDER = ['br', 'zstd', 'gzip'] as const;
+  test('the server order breaks a tie; a weight still wins over it', () => {
+    expect(negotiateFrom('gzip, br', ORDER)).toBe('br');
+    expect(negotiateFrom('br;q=0.4, gzip;q=0.9', ORDER)).toBe('gzip');
+  });
+
+  test('a coding not kept is skipped, an unreadable weight refused, a * consents to nothing', () => {
+    expect(negotiateFrom('br, gzip', ORDER, (coding) => coding !== 'br')).toBe('gzip');
+    expect(negotiateFrom('br;q=nonsense, zstd', ORDER)).toBe('zstd');
+    expect(negotiateFrom('*', ORDER)).toBeUndefined();
+  });
+
+  test('negotiateCoding is it over CONTENT_CODINGS', () => {
+    for (const accept of ['gzip, br, zstd;q=0.5', 'zstd, gzip', 'br', null]) {
+      expect(negotiateCoding(accept)).toBe(negotiateFrom(accept, CONTENT_CODINGS));
+    }
   });
 });
 
