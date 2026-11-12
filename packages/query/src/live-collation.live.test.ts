@@ -71,7 +71,7 @@ describe.skipIf(!hasPostgres)('live · postgres · text order under a non-C coll
     const matched = await builder.execute();
     expect(await served('word')).toEqual(['apple', 'Banana']);
     expect(matched.map((row) => row.word)).toEqual(['Banana', 'apple']);
-    expect(divergentOrderKey(builder.shape())).toBe('word');
+    expect(divergentOrderKey(builder.shape())).toEqual({ column: 'word', collatable: true });
   });
 
   test('a collate("C") column orders as the matcher does, so it is not', async () => {

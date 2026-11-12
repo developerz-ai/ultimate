@@ -194,12 +194,12 @@ cannot see a declaration: +2,064 B per island that uses `rpc` (measured 2026-11-
 A `<form method="post">` (scripting off, or the client router's submit) to an action declaring
 `native` is answered `303` to `success(output)`, or — refused with a 4xx other than
 `X_UNAUTHENTICATED`, which keeps the sign-in redirect — to
-`refusal(refusal)`, else the same-origin `Referer`. The outcome rides in a one-read flash cookie:
+`refusal(refusal)`, else a `Referer` on this host. The outcome rides in a one-read flash cookie:
 the action, and for a refusal its `code` and each issue's `path`/`rule`/`params`, never a value.
 The next page reads it once, in `load`, with `useActionAnswer(action | name?)`. A `fetch`, the typed
 client, MCP and `.job()` are answered exactly as before. A `page.tsx` form posting to an action
-with no `native` is an `X_NATIVE_FORM_UNANSWERED` warning at `x verify` (the `manifest` step),
-a refusal from `next` on.
+with no `native` is an `X_NATIVE_FORM_UNANSWERED` warning on `main` at `x verify` (the
+`manifest` step), a refusal planned for `next`.
 
 ```ts
 import { action, t } from '@ultimat3/action';

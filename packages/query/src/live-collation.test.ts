@@ -6,7 +6,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { InstrumentEventMap } from '@ultimat3/core';
 import { ctxOf, resetInstrumentation, subscribe, userActor } from '@ultimat3/core';
-import { clearRegistry, entity, integer, text, uuid } from '@ultimat3/entity';
+import { clearRegistry, entity, enumerated, integer, text, url, uuid } from '@ultimat3/entity';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toLiveQuery } from './live';
@@ -51,6 +51,8 @@ beforeAll(() => {
       name: text({ max: 40 }),
       handle: text({ max: 40 }).collate('C'),
       rank: integer(),
+      status: enumerated(['active', 'away']),
+      site: url(),
     },
   });
 });
@@ -76,6 +78,22 @@ describe('reportLiveOrderCollation', () => {
     });
     expect(String(seen[0]?.fields['fix'])).toContain(".collate('C')");
     expect(String(seen[0]?.fields['fix'])).toContain('x db gen');
+  });
+
+  // `enumerated()`, `url()`, `tz()` and `locale()` are text in Postgres but have no `.collate()`:
+  // the only way out the fix may print for them is a different order key.
+  test.each([
+    ['enumerated()', 'status'],
+    ['url()', 'site'],
+  ] as const)('a %s order key warns, and its fix offers only a non-text key', (_kind, column) => {
+    const seen = heard();
+    reportLiveOrderCollation({}, 'members', shapeOrderedBy(TABLE, column), DEV);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.fields).toMatchObject({ code: 'X_LIVE_ORDER_COLLATION', column });
+    const fix = String(seen[0]?.fields['fix']);
+    expect(fix).not.toContain('collate');
+    expect(fix).not.toContain('x db gen');
+    expect(fix).toContain(".orderBy('createdAt', 'desc').orderBy('id')");
   });
 
   test('test warns as development does, and each definition warns for itself', () => {

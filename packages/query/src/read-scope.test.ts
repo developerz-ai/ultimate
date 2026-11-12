@@ -134,7 +134,7 @@ describe('a scoped policy composed into the read', () => {
     const target = query({
       input: t.object({}),
       policy: byOrg,
-      cache: { scope: 'global', ttlMs: 60_000 },
+      cache: { tags: [{ entity: 'scoped_rows' }], scope: 'global', ttlMs: 60_000 },
       sql: () => from<Row>('scoped_rows', pushedDown()).orderBy('rank'),
     }).named('scopedCached');
 
