@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9578c9dbc81210d9c5f2faa3bfedf0b64f200456bc8eb7d4b1a33a8f509a2d60",
+  "buildId": "7f25f459c54ffa8f16ce870bc8fd15c2d40dcdb63e0bf789ec1079590349206a",
   "tiers": {
     "0": [
       "core",
@@ -591,6 +591,11 @@
     },
     {
       "code": "X_ASSET_RETAIN_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ASSET_RETAIN_UNDECLARED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

@@ -382,6 +382,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_SEED_FAILED: 'bun --eval \'await (await import("./packages/db/seeds/dev.ts")).dev.run()\'',
   X_NATIVE_FORM_UNANSWERED:
     "native: { success: (output) => '/where-it-lands' } in the action's declaration, then x verify --only manifest",
+  X_ASSET_RETAIN_UNDECLARED:
+    "edit app.config.ts: add assets: { retain: { disk: 'assets', builds: 3 } }, naming a disk your defineStorage({ disks }) declares that every web pod reads",
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -3,7 +3,7 @@
 // binds, so before `/readyz` can say ready — and hand back the reader the asset routes miss into.
 
 import type { AppConfig, AssetsRetainConfig } from '@ultimat3/core';
-import { ConfigInvalidError, renderFixLiteral } from '@ultimat3/core';
+import { ConfigInvalidError, logger, renderFixLiteral, UltimateError } from '@ultimat3/core';
 import type { Storage } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
 import type { BuildAsset, PublishReport, RetainLog } from './retained-assets';
@@ -60,6 +60,35 @@ export function buildAssetsOf(surface: BuiltSurface): readonly BuildAsset[] {
   return [...new Map(assets.map((asset) => [asset.url, asset] as const)).values()];
 }
 
+/**
+ * A served build that keeps no earlier build's hashed files. Logged, never thrown: one replica
+ * serving its own build is correct until the next deploy, and the boot cannot see how many
+ * replicas the platform runs — only that nothing would answer a URL another build named.
+ */
+export class AssetRetainUndeclaredError extends UltimateError {
+  constructor(input: { readonly environment: string; readonly disks: readonly string[] }) {
+    const disk = renderFixLiteral(input.disks[0], '"assets"');
+    super({
+      code: 'X_ASSET_RETAIN_UNDECLARED',
+      cause: `this web role serves the ${input.environment} environment with no assets.retain, so it answers only its own build's hashed files: across a rolling deploy with more than one replica, or after any deploy, a page can name a stylesheet or island chunk the answering replica 404s, and renders unstyled`,
+      fix: `assets: { retain: { disk: ${disk}, builds: 3 } }   # in app.config.ts, over a disk every web pod reads${input.disks.length === 0 ? ' (declare one with defineStorage({ disks }))' : ''}`,
+      meta: { environment: input.environment },
+    });
+  }
+}
+
+/** Where a boot has no rolling deploy to survive: a laptop, a test run. */
+const LOCAL_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test']);
+
+function warnUndeclared(input: RetainBootInput): void {
+  if (LOCAL_ENVIRONMENTS.has(input.environment) || buildAssetsOf(input).length === 0) return;
+  const warning = new AssetRetainUndeclaredError({
+    environment: input.environment,
+    disks: input.storage.diskNames,
+  });
+  (input.log ?? logger).warn(warning.format(), { code: warning.code, ...warning.meta });
+}
+
 export interface RetainBootInput extends BuiltSurface {
   readonly config: AppConfig | undefined;
   /** The disks the app's routes read (`servedStorage`) — `retain.disk` must be one of them. */
@@ -79,15 +108,20 @@ export interface RetainedBoot {
 }
 
 /**
- * `undefined` when the app declared no window. A misnamed disk refuses the boot: it is the app's
- * config, wrong, and every pod of the deploy would otherwise run without the window it asked for.
+ * `undefined` when the app declared no window — and, outside development and test, one
+ * `X_ASSET_RETAIN_UNDECLARED` warning naming the edit (`warnUndeclared`). A misnamed disk refuses
+ * the boot: it is the app's config, wrong, and every pod of the deploy would otherwise run without
+ * the window it asked for.
  * A disk that refuses a write does NOT: `publishBuildAssets` logs it and the pod serves, reading
  * earlier builds' files all the same. The scope is `config.name` and the environment, so staging
  * and production on one bucket never sweep or serve each other.
  */
 export async function retainBuildAssets(input: RetainBootInput): Promise<RetainedBoot | undefined> {
   const retain = retainOf(input.config);
-  if (input.config === undefined || retain === undefined) return undefined;
+  if (input.config === undefined || retain === undefined) {
+    warnUndeclared(input);
+    return undefined;
+  }
   const names = input.storage.diskNames;
   if (!names.includes(retain.disk)) {
     throw new ConfigInvalidError({

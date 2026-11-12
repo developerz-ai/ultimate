@@ -113,7 +113,10 @@ export const config = defineRoute({
   // measured: 33294 B (2026-11-06; x build --target static, against 32,092) — why:
   // `/x-client-vitals.js` +1,202 B, real-user timings beaconed on hide (`clientErrors.vitals`,
   // `app/` only) — raised 32kb → 33kb (plan 101, 41).
-  budget: { js: '33kb' },
+  // raised 33kb → 33.1kb. measured: 33822 B (2026-11-12; x build --target static) — why: the client
+  // router grew 29,764 → 29,884 (+120 B): a stylesheet that fails to load on navigation now forces a
+  // full load and keeps the old sheets, so a page is never left unstyled.
+  budget: { js: '33.1kb' },
   /**
    * The org the draft is written in, and what the last submission left: `createPost` declares
    * `native`, so a refused draft lands back HERE (`refusal: () => '/posts/new'`) and this read —

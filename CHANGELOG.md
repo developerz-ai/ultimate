@@ -10,7 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/cli`: a web role booted outside `development` and `test` with no `assets.retain` logs `X_ASSET_RETAIN_UNDECLARED` once, naming the edit: `assets: { retain: { disk, builds: 3 } }` in `app.config.ts`. A build that serves no hashed file stays silent.
+
+### Fixed
+
+- `@ultimat3/render`: a soft navigation whose next page's stylesheet fails to load no longer swaps in an unstyled page and retires the working sheet. A GET becomes the browser's full load (the fallback a failed fetch already takes), a `refresh()` ends quietly, and a POST answered in place swaps but keeps the previous page's sheets. `loadStylesheets` resolves to whether every sheet loaded, and a failed `<link>` leaves the head so a later navigation asks for it again.
 
 ## Releases
 

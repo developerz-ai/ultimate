@@ -239,6 +239,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_TYPESCRIPT_VERSION',
   'X_SEED_FAILED',
   'X_NATIVE_FORM_UNANSWERED',
+  'X_ASSET_RETAIN_UNDECLARED',
 ] as const;
 
 /**
@@ -464,6 +465,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_TYPESCRIPT_VERSION: 'The app declares a TypeScript older than the one x new scaffolds',
   X_SEED_FAILED: 'a seed threw an uncoded error',
   X_NATIVE_FORM_UNANSWERED: 'a page form posts to an action that declares no native answer',
+  X_ASSET_RETAIN_UNDECLARED: "A served build keeps no earlier build's assets",
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

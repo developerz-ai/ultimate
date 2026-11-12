@@ -52,28 +52,34 @@ export function missingStylesheets(doc: Document, next: Document): readonly stri
 }
 
 /**
- * Resolves once every sheet loaded OR failed — a missing sheet must not hang the navigation. Each
- * sheet joins `owned` as it is appended, so a swap that never happens still leaves it retirable.
+ * Resolves once every sheet loaded OR failed — a missing sheet must not hang the navigation — to
+ * whether ALL of them loaded. A failed one leaves the head (a later navigation asks for it again
+ * rather than trusting a dead link); the caller decides what an unstyled answer becomes. Each sheet
+ * joins `owned` as it is appended, so a swap that never happens still leaves it retirable.
  */
-export function loadStylesheets(
+export async function loadStylesheets(
   doc: Document,
   hrefs: readonly string[],
   owned: WeakSet<Element>,
-): Promise<void> {
-  return Promise.all(
+): Promise<boolean> {
+  const loaded = await Promise.all(
     hrefs.map(
       (href) =>
-        new Promise<void>((done) => {
+        new Promise<boolean>((done) => {
           const link = doc.createElement('link');
           link.rel = 'stylesheet';
           link.href = href;
-          link.onload = () => done();
-          link.onerror = () => done();
+          link.onload = () => done(true);
+          link.onerror = () => {
+            link.remove();
+            done(false);
+          };
           doc.head.append(link);
           owned.add(link);
         }),
     ),
-  ).then(() => undefined);
+  );
+  return loaded.every(Boolean);
 }
 
 /** `[data-x-persist="id"]` present in BOTH documents: the live element moves into the next body. */
@@ -212,8 +218,15 @@ export function documentHead(doc: Document): WeakSet<Element> {
  * The swap itself, after the caller decided the answer IS a page for this tab. Synchronous from
  * the dispose to the head, so a view transition's "after" snapshot is one consistent document.
  * `owned` is `documentHead`'s set, kept by the caller across swaps and grown by each one.
+ * `retire: false` when one of the next page's sheets did not load: the previous page's sheets are
+ * then the only styling the tab has, and stay until a swap whose sheets all arrived.
  */
-export function swapDocument(doc: Document, next: Document, owned: WeakSet<Element>): Swapped {
+export function swapDocument(
+  doc: Document,
+  next: Document,
+  owned: WeakSet<Element>,
+  retire = true,
+): Swapped {
   // Read before the head moves: `next.title` reads the `<title>` element, which the plan adopts.
   const title = next.title;
   const nextSheets = new Set(
@@ -256,7 +269,7 @@ export function swapDocument(doc: Document, next: Document, owned: WeakSet<Eleme
   // sheet a script added (not `owned`), never one both pages link.
   for (const sheet of [...doc.head.querySelectorAll('link')].filter(isStylesheet)) {
     const href = new URL(sheet.getAttribute('href') ?? '', doc.baseURI).href;
-    if (owned.has(sheet) && !nextSheets.has(href)) sheet.remove();
+    if (retire && owned.has(sheet) && !nextSheets.has(href)) sheet.remove();
   }
   for (const sheet of [...doc.head.querySelectorAll('link')].filter(isStylesheet)) {
     if (nextSheets.has(new URL(sheet.getAttribute('href') ?? '', doc.baseURI).href))
