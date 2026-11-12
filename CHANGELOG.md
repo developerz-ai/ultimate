@@ -10,34 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
+Nothing yet.
 
-- Security: a `native:` form answer and `uploadFlow` are host- and row-guarded — a refused form never redirects off this host, and an upload's policy judges the row it attaches to.
-- A `scoped()` policy now narrows query reads before the page is cut, so a scoped feed returns full pages; the rule still runs on every row.
-- New in `@ultimat3/action`: `native: { success, refusal }` answers a plain HTML form with a 303 and a one-read flash; `uploadFlow()` declares an upload's request/confirm pair once; `postgresAuditSink({ groupCommit: true })` writes concurrent audit records in one insert.
-
-### Added
-
-- `@ultimat3/action`: `action({ native: { success, refusal? } })` answers a browser's own `<form method="post">` (an HTML `accept` and a form body) with a `303` to `success(output)`, or, refused with a 4xx other than `X_UNAUTHENTICATED`, to `refusal(refusal)` else the same-host `Referer`. A same-origin target is answered as its path, never starting `//`; a scheme-less one a browser reads as another host (`//evil.test`, `/\evil.test`, a `Referer` of `http://<host>//evil.test`) is never followed — a refusal takes the error path, a success the form's page else `/` — and only an absolute `http(s):` URL the app wrote leaves the origin. The outcome rides in a one-read flash cookie, `x_action_answer` (`HttpOnly`, `SameSite=Lax`, 60 s): the action, and for a refusal its `code` and each issue's `path`/`rule`/`params`, never a submitted value. `useActionAnswer(action | name?)` reads it once, in a route's `load`. A `setRedirect()` in `handle` still wins on success. `fetch`, the typed client, MCP and `.job()` are answered as before.
-- `@ultimat3/cli`: the `manifest` step of `x verify` warns `X_NATIVE_FORM_UNANSWERED` for a `page.tsx` `<form method="post">` posting to an action with no `native`, naming the page's `file:line`. A warning on `main` (`warnings` in `--json`, the step stays green); the refusal is planned for `next`. A form inside a component other than the page is not read.
-- `@ultimat3/action`: `uploadFlow({ name, target, accept, maxBytes, policy, attached? })` returns a direct upload's two actions, `{ request, confirm }`, from one declaration. `request` grants a presigned PUT under the actor's org and `pending/`, never onto the row's key; `confirm` is `promoteAttachment`: the stored object is measured against `maxBytes`, sniffed against `accept` (`X_STORAGE_TYPE_REJECTED`) and scanned when an `uploadScanner` is installed. `target` is both actions' `row:` loader, so `policy` judges the row the `id` names (`can<I, Row>('post:update', ({ actor, row }) => …)`), once per call. A second `confirm` of the same key answers the attached object and runs `attached` again — it runs on every successful confirm, so a retry completes a first call whose bytes moved but whose row write failed; keep it idempotent. One `PRIMITIVE_FACTORIES` row.
-- `@ultimat3/action`: `postgresAuditSink({ executor, groupCommit: true | { maxRecords, maxDelayMs } })` — concurrent audited calls share one `x_audit` insert (`jsonb_to_recordset`), 256 records / 5 ms by default. Each call resolves or rejects with its own record: a failed batch statement is retried one record at a time, so a record the store refuses fails only its call (`X_AUDIT_SINK_FAILED`, `X_QUERY_AUDIT_SINK_FAILED` for a read). The queue flushes on drain, in the `inflight` phase, before the pool closes. Opt-in. `batchedAuditSink(sink, { maxRecords?, maxDelayMs? })` in `@ultimat3/action/adapter` does the same for any sink with a `writeMany`.
-- `@ultimat3/entity`: `text().collate('C')` declares code-point collation, the order the memory driver and the live matcher keep; any other collation is `X_INVARIANT_VIOLATED`. `x db gen` emits `collate "C"` on create and add column, declares or drops it on an existing column in place with its reverse in `down`, and keeps it across a retype. Drift does not read a column's collation, as it reads no column type.
-- `@ultimat3/query`: a live query ordered by a declared text column (`text()`, and `enumerated()`, `url()`, `tz()`, `locale()`, which store text) not declared `.collate('C')` logs `query.live.order_collation` (`X_LIVE_ORDER_COLLATION`) at subscribe in development and test, once per query; never thrown, and staging and production stay silent. Postgres orders such a column by its collation (`en_US.utf8`: `apple` before `Banana`), the matcher by code point, so a patched row could land where the next read does not put it. A refusal is planned for `next`.
-- `@ultimat3/http`: `hostlessPath(pathname)` — a pathname that starts `//`, rewritten `/.//…` so it stays a path on this origin when emitted without its host; `native:` answers through it.
-- `@ultimat3/http`: `acceptsHtml(request)` — whether a request's `accept` names `text/html`, the test the sign-in redirect, the error page and `native:` answer on.
-
-### Changed
-
-- `@ultimat3/query`: a read whose policy is `scoped()` composes the scope into its `from()` source before the page is cut — the SQL text, the live shape and the provider's `RowWindow.filters` — so a viewer whose hidden rows precede their visible ones gets a full page. The rule still runs on every row returned and drops one it refuses. Such a read is cached per actor whatever `cache.scope` says. A `sql` that returns a hand-written `SqlSource`, not `from()`, under a scoped policy is `X_QUERY_SCOPE_UNCOMPOSABLE` (500), never served unscoped. The shared live window composes no scope; each subscriber's rows are still filtered by the rule. A rule stricter than its scope never ends a listing early: `hasMore` and the cursor come from the rows the source read, dropped rows are refilled from up to 4 further windows, and a page that bound cuts short still carries a cursor; on a limited read the limit counts source rows, as `runQuery` does.
-
-### Fixed
-
-- `@ultimat3/action`: `auditableInput` names a string or key Postgres cannot hold — a NUL (`jsonb` 22P05, `text` 22021) or a lone surrogate — `[unrepresentable]`, so an audited call whose input carries one is recorded instead of failing on the sink after its handler committed.
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.11.0](docs/changelog/31.11.0.md) | 2026-11-12 | Security: a `native:` form answer and `uploadFlow` are host- and row-guarded — a refused form never redirects off this host, and an upload's policy judges the row it attaches to. |
 | [31.10.0](docs/changelog/31.10.0.md) | 2026-11-12 | Security: `subjectErase` now reaches `<table>_history` — every image naming the erased person is purged in the parent's transaction, including rows deleted earlier and images a `set null`/`cascade` write records. An undeclared history table is `X_SUBJECT_TABLE_UNDECLARED`. |
 | [31.9.0](docs/changelog/31.9.0.md) | 2026-11-12 | Set-based entity writes: `db.x.where(…).updateAll(patch)` / `.deleteAll()` is one statement, and `updateMany([{ id, patch }])` writes 1,000 different rows in one statement. |
 | [31.8.0](docs/changelog/31.8.0.md) | 2026-11-12 | A rate-limit check writes no WAL: `x_rate_limit` is unlogged at fillfactor 70 (2 WAL records per take → 0). |
