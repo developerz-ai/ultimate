@@ -235,6 +235,32 @@ describe('mcpAuditor: the hook is a destination, never a gate', () => {
     });
     expect(JSON.stringify(lines[0])).not.toContain('curl');
   });
+
+  test('a missing token is the first step of OAuth discovery: logged at info, not warn', () => {
+    const { logger, lines } = capture();
+    const audit = mcpAuditor({ log: logger, clock });
+    const facts = { address: '203.0.113.4', userAgent: null, origin: null, path: '/mcp' };
+    audit.authRefused('missing-token', 401, facts);
+    audit.authRefused('throttled', 429, facts);
+    expect(lines.map((line) => [line['msg'], line['level']])).toEqual([
+      ['mcp.auth.missing-token', 'info'],
+      ['mcp.auth.throttled', 'warn'],
+    ]);
+  });
+
+  test('the line carries the address NETWORK (an IPv6 /64), never the full address', () => {
+    const { logger, lines } = capture();
+    const events: McpAuditEvent[] = [];
+    mcpAuditor({ log: logger, clock, onAudit: (event) => void events.push(event) }).authRefused(
+      'rejected-token',
+      401,
+      { address: '2001:db8:1:2:aaaa:bbbb:cccc:dddd', userAgent: null, origin: null, path: '/mcp' },
+    );
+    expect(lines[0]).toMatchObject({ address: '2001:db8:1:2::/64' });
+    expect(JSON.stringify(lines[0])).not.toContain('dddd');
+    // The app's own hook still receives the facts as the host resolved them.
+    expect(events[0]).toMatchObject({ facts: { address: '2001:db8:1:2:aaaa:bbbb:cccc:dddd' } });
+  });
 });
 
 describe('defineAppMcp forwards onAudit to the server and the route alike', () => {

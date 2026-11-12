@@ -75,6 +75,13 @@ describe('failed authentication is metered per address, before resolveToken', ()
     expect((await route.handle(ping(GOOD), from('198.51.100.2'))).status).toBe(200);
   });
 
+  test('one IPv6 /64 is one allowance: rotating the interface half buys no new guesses', async () => {
+    const { route } = counted({ read: 120, write: 20, unauthenticated: 1 });
+    expect((await route.handle(ping('x'), from('2001:db8:5:6::1'))).status).toBe(401);
+    expect((await route.handle(ping('x'), from('2001:db8:5:6::2'))).status).toBe(429);
+    expect((await route.handle(ping('x'), from('2001:db8:5:7::1'))).status).toBe(401);
+  });
+
   test('an authenticated agent never spends it', async () => {
     const { route } = counted({ read: 120, write: 20, unauthenticated: 1 });
     for (let i = 0; i < 5; i += 1) {

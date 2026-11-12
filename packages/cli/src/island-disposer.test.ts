@@ -28,7 +28,7 @@ describe('unit · an island mount that returns nothing is refused', () => {
     expect(finding?.code).toBe('X_ISLAND_DISPOSER_MISSING');
     expect(finding?.at).toBe(ISLAND);
     expect(finding?.fix).toStartWith('x verify --only boundaries --json');
-    expect(finding?.fix).toContain('return render(() =>');
+    expect(finding?.fix).toContain('return mountOver(el, (root) => render(() =>');
     expect(finding?.fix).toContain(ISLAND);
   });
 
@@ -70,6 +70,12 @@ describe('unit · a mount that hands back its disposer passes', () => {
     expect(
       at(
         'export function mount(el, props) {\n  if (x) { return render(a, el); }\n  return render(b, el);\n}',
+      ),
+    ).toEqual([]);
+    // The shape the fix names: `mountOver` answers the draw's disposer.
+    expect(
+      at(
+        'export function mount(el: HTMLElement, props: P): () => void {\n  return mountOver(el, (root) => render(() => <Feed {...props} />, root));\n}',
       ),
     ).toEqual([]);
   });

@@ -155,6 +155,12 @@ describe(testName('unit', 'X_TEST_ISLAND_NO_MOUNT pastes names that resolve'), (
     expect(error.fix).toContain('Parameters<typeof Counter>[0]');
     // The import too: `render` is not a global, and a paste that assumes one is a second error.
     expect(error.fix).toContain("import { render } from 'solid-js/web';");
+    // The mount every generator writes: `island-mount-clears` refuses a bare clear.
+    expect(error.fix).toContain("import { mountOver } from '@ultimat3/render/client';");
+    expect(error.fix).toContain(
+      'return mountOver(el, (root) => render(() => <Counter {...props} />, root));',
+    );
+    expect(error.fix).not.toContain("el.textContent = ''");
     expect(error.fix).toContain('"apps/web/site/counter.island.tsx"');
     // The three names nothing in the reader's file declares.
     expect(error.fix).not.toContain('<Island');

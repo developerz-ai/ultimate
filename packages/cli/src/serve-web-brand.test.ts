@@ -1,7 +1,7 @@
 // The container half of the brand seam, booted for real: `ROLE=web` over an app whose theme module
-// declares a brand serves a document carrying the brand `<style>`, under an ENFORCED policy whose
-// `style-src` admits every inline style body that document holds. `x dev` is report-only, so this
-// is the one process where a missing hash is an unstyled page.
+// declares a brand serves a document whose linked stylesheet ends with the brand, and no inline
+// `<style>` for it — so the ENFORCED `style-src` needs no hash of it, and still admits every inline
+// body the document does hold. `x dev` is report-only: here a missing hash is an unstyled page.
 //
 // The app-level favicon is the container's other document-level head: `site.favicon` in
 // `app.config.ts` names one SVG, and every document the container serves carries it at the
@@ -13,11 +13,12 @@ import { mkdir, rm } from 'node:fs/promises'; // why: Bun has no recursive remov
 import { join } from 'node:path';
 import { resetLifecycle } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
-import { brandStyleTag, defineTheme } from '@ultimat3/ui';
+import { brandStyleCspSource, defineTheme } from '@ultimat3/ui';
 import { inlineStyleBodies } from './error-page-csp';
 import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
 import { siteAssetTable } from './site-assets';
+import { setBrandStyles } from './style-bundle';
 import { APP_THEME_MODULE } from './theme-brand';
 
 const ROOT = processRoot(join(import.meta.dir, '..', '.serve-brand-fixture'));
@@ -28,12 +29,13 @@ const UI = join(import.meta.dir, '../../ui/src/index.ts');
 const RENDER = join(import.meta.dir, '../../render/src/index.ts');
 
 afterAll(async () => {
+  setBrandStyles('');
   await rm(ROOT, { recursive: true, force: true });
   await rm(FAVICON_ROOT, { recursive: true, force: true });
 });
 
 describe('integration · ROLE=web serves the app brand, admitted', () => {
-  test('the document carries the brand, and style-src hashes every inline style in it', async () => {
+  test('the linked sheet ends with the brand; style-src hashes every inline style, not it', async () => {
     await rm(ROOT, { recursive: true, force: true });
     await Bun.write(
       join(ROOT, 'package.json'),
@@ -60,12 +62,16 @@ describe('integration · ROLE=web serves the app brand, admitted', () => {
     try {
       const response = await fetch(`${web.url}/`, { headers: { accept: 'text/html' } });
       const html = await response.text();
-      expect(html.split('</head>')[0]).toContain(brandStyleTag(defineTheme({ preset: 'scifi' })));
+      const brand = defineTheme({ preset: 'scifi' });
+      const href = /<link rel="stylesheet" href="([^"]+)">/.exec(html)?.[1] ?? '';
+      const sheet = await fetch(`${web.url}${href}`);
+      expect(sheet.status).toBe(200);
+      expect((await sheet.text()).endsWith(brand.css)).toBe(true);
       const csp = response.headers.get('content-security-policy') ?? '';
       const styleSrc = csp.split(';').find((part) => part.trim().startsWith('style-src')) ?? '';
-      const bodies = inlineStyleBodies(html);
-      expect(bodies.length).toBeGreaterThan(0);
-      for (const body of bodies) expect(styleSrc).toContain(cspHashSource(body));
+      expect(styleSrc).toContain("'self'");
+      expect(styleSrc).not.toContain(brandStyleCspSource(brand));
+      for (const body of inlineStyleBodies(html)) expect(styleSrc).toContain(cspHashSource(body));
     } finally {
       await web.stop();
       // stop() drains the PROCESS lifecycle (a module global): left draining, every later file in

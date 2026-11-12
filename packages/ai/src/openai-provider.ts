@@ -9,6 +9,8 @@
 
 import type { Secret } from '@ultimat3/core';
 import { isSecret, revealSecret } from '@ultimat3/core';
+import { readAnswerBody } from './answer-body';
+import { billedCall } from './billed';
 import { providerFailure } from './context-overflow';
 import { costOf, exactCostOf } from './cost';
 import { detailOf, withoutKey } from './error-body';
@@ -32,6 +34,7 @@ import type {
 } from './provider';
 import { estimateInputTokens, estimateTextTokens, requiresStreaming } from './provider';
 import { readSse } from './sse';
+import { trackSent, trackStreamBill } from './stream-bill';
 import { assertToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
 
@@ -143,10 +146,10 @@ class OpenAiProvider implements Provider {
       model,
       chatCompletionBody({ request, model, stream: false, provider: this.name, ...cache }),
       false,
-      request.signal,
+      request,
       sessionHeaders(request, cacheRule),
     );
-    const answer = parseChatCompletion((await response.json()) as unknown, this.name);
+    const answer = parseChatCompletion(await readAnswerBody(response, this.name), this.name);
     return this.result(request, model, answer);
   }
 
@@ -158,7 +161,7 @@ class OpenAiProvider implements Provider {
       model,
       chatCompletionBody({ request, model, stream: true, provider: this.name, ...cache }),
       true,
-      request.signal,
+      request,
       sessionHeaders(request, cacheRule),
     );
     if (response.body === null) {
@@ -169,6 +172,11 @@ class OpenAiProvider implements Provider {
       });
     }
     const completion = new ChatCompletionStream(this.name);
+    // A stream that stops before `done` is billed what arrived; the prompt estimated only if read.
+    trackStreamBill(request, () => {
+      const usage = completion.partialUsage(estimateInputTokens(request));
+      return usage === undefined ? undefined : billedCall(usage, exactCostOf(model, usage));
+    });
     for await (const frame of readSse(response.body, this.name)) {
       for (const chunk of completion.push(frame)) yield chunk;
     }
@@ -223,11 +231,14 @@ class OpenAiProvider implements Provider {
     model: ModelId,
     body: Record<string, unknown>,
     streaming: boolean,
-    signal: AbortSignal | undefined,
+    request: GenerateRequest,
     extra: Readonly<Record<string, string>>,
   ): Promise<Response> {
+    const { signal } = request;
     const apiKey = this.apiKey();
     const doFetch: AiFetch = this.config.fetch ?? fetch;
+    // From here an abort costs the prompt (`stream-bill.ts`): the request is on its way.
+    trackSent(request, model);
     const response = await doFetch(this.url(), {
       method: 'POST',
       headers: {

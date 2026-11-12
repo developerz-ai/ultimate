@@ -30,7 +30,8 @@ import. The CLI wires it.
 | `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes. `confirmation-installed.ts` is the `mcpConfirmationStore` slot a declaration with no `store` reads; `adapter.ts` (`./adapter`) its interface, error and installer |
 | `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`) |
 | `oauth-server.ts` | `mcpAuthorizationServer`: `@ultimat3/auth`'s `authorizationServer` bound to one endpoint's `resource` (default and required by `resolveToken`), its `oauth` block, `mcp.auth.<event>` lines. No protocol rule lives here |
-| `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
+| `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve`: ≤ 16 calls run, ≤ 64 queued; the reader keeps reading at the cap, so `notifications/cancelled` and `ping` are always heard |
+| `stdio-lines.ts` | raw chunks → lines, the cap in bytes |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `runtime-*` · `*-catalog.ts` · `tenant.ts` | `catalog:` (`runtimeTool()`, checked, merged per request) · `tenant:` (`list_tenants`); codes in `catalog-errors.ts` |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
@@ -39,6 +40,7 @@ import. The CLI wires it.
 | `include-early.ts` | `assertIncludeCurrent`, the mount's after-scan check (`X_MCP_INCLUDE_EARLY`) — [history](../../docs/history/mcp.md) |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
+| `query-page.ts` | a list query tool's ONE bounded page, `_after` cursor |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` · `meta-catalog-render.ts` | `surface: 'meta'` catalog, `groups:` boot checks (dispatch: `server.ts`) · its text, `catalogDetail` |
 | `meta-split.ts` · `meta-split-call.ts` · `meta-host.ts` | `surface: 'meta-split'`: the three dispatchers, the effect boot check · their dispatch (wrong tool, preview, `confirmed_by_user`) · the server half both meta doors call |
@@ -245,17 +247,15 @@ import. The CLI wires it.
 - **`mcpConfirmations` also registers its gate by name** (`@ultimat3/ai`'s adapter reads it). Invalid
   args REFUSE (`X_INPUT_INVALID`), never `run()`: an action's parse drops unknown keys. First
   registered answers in-app; any server without its own asks it. Proof: `scripts/ai-tool-confirmation.test.ts`.
-- **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
-  `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
-  back-pressure; only a child-process test can see it.
-- **A schema property lands through `Object.defineProperty` too** — `@ultimat3/schema`'s
-  `wire-schema.ts`, the twin of `validate-args.ts`'s `put` on the schema side. `out[key] = …` for
-  a property named `__proto__` runs `Object.prototype`'s setter and re-prototypes the published
-  `properties` record instead of adding a key, so a field the tool author declared vanishes from
-  `tools/list` and from what the arg validator reads back.
+- **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe; unawaited, a 4 MB
+  frame lost its tail at exit. Full rule: `docs/history/mcp.md`.
+- **A schema property lands through `Object.defineProperty` too** (`wire-schema.ts`, the twin of
+  `validate-args.ts`'s `put`): a `__proto__` field never vanishes. Full rule: `docs/history/mcp.md`.
 - `transport-stdio.ts` never writes stdout except the wire (diagnostics → stderr) and caps one
-  message at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB): one `-32600` frame, the rest of that line discarded.
+  message at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB, bytes): one `-32600` frame, the rest of that line discarded.
   Full rule: `docs/history/mcp.md`.
+- **`mcpOAuthClient().begin` refuses an endpoint that is not `https:`** (loopback `http:` aside,
+  RFC 8252): the authorize URL is rendered as a link, so `javascript:` would run in the app's origin.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
 - **Invalid arguments are an `isError` RESULT (`X_INPUT_INVALID`), `As of 22.10`** — clients hide a
   `-32602` from the model. Audit outcome stays `invalid-args`. `-32602` only for a call that is not

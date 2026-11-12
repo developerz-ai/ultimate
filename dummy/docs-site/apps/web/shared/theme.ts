@@ -1,6 +1,6 @@
-// This app's brand: the boot reads `brand` from this file and inlines it in every document,
-// after global.scss, with its hash in the CSP. `defineTheme({})` is @ultimat3/ui's default theme
-// and renders nothing, so today no tag is emitted.
+// This app's brand: the boot reads `brand` from this file and appends it to every surface
+// stylesheet, after global.scss. `defineTheme({})` is @ultimat3/ui's default theme and renders
+// nothing, so today the sheets are unchanged.
 //
 // `defineTheme()` is the one seam for restyling — colours, radii, fonts and shadows by role,
 // validated at the call. The dashboard look (near-black panels, a cyan accent, glowing edges, its

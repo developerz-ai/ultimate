@@ -214,7 +214,11 @@ export const config = defineRoute({
   // against 214,415) — why: the feed island +272 B (95,922 B): `useMutation` sending an offline
   // write straight to the outbox instead of queueing it behind the lane, and bounding the lane
   // wait at 10 s so one stalled mutation cannot hold every later one. Raised 209.4kb → 209.7kb.
-  budget: { js: '209.7kb' },
+  // measured: 214829 B (2026-11-12, plan 101 sweep 11; x build --target static, against 214,687)
+  // — why: the feed island +142 B (96,064 B), `mountOver` from `@ultimat3/render/client`: a render
+  // that throws puts the server's loading shell back instead of leaving a blank box. Raised
+  // 209.7kb → 209.8kb.
+  budget: { js: '209.8kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

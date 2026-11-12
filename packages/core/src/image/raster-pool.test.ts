@@ -124,7 +124,9 @@ describe('the raster Worker', () => {
     // landing in the Worker's window measured the collector, not the Worker (50.1 ms, once).
     const workerGap = await worstGap(() => transformImageBytes(big, spec));
     const inlineGap = await worstGap(() => transformInline(big, spec));
-    expect(workerGap).toBeLessThan(50);
+    // Relative, never a wall-clock bound: a slower runner slows both sides (windows measured the
+    // Worker's worst gap at 55-58 ms), but only the inline path holds the loop for a whole hop.
+    // Linux, 2026-11-12: Worker 4-7 ms, inline 289-381 ms (44-69x).
     expect(inlineGap).toBeGreaterThan(workerGap * 2);
   }, 30_000);
 });

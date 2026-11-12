@@ -46,7 +46,10 @@ describe('renderSsr', () => {
 
     expect(result.status).toBe(200);
     expect(result.body).toBe('<p>pricing</p>');
-    expect(result.headers).toEqual(ssrHeaders(input.entry, { buildId: 'b1' }));
+    // The mode's headers, plus the validator over the body (`render-ssr-etag.test.ts`).
+    const { etag, ...headers } = result.headers;
+    expect(headers).toEqual(ssrHeaders(input.entry, { buildId: 'b1' }));
+    expect(etag).toBeDefined();
   });
 
   test('wraps an async render and honors an explicit status', async () => {

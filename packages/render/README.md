@@ -174,6 +174,10 @@ through `cacheControl()`, and its `vary` joins the defaults. `As of 2026-09-24` 
 `RouteCache`; `@ultimat3/http` is a dependency of this package for that type and for
 `cacheControl` in the server half.
 
+Every `ssr` document whose `cache-control` is not `no-store` carries `etag: "<contentHash(html)>"`
+(strong; `compress` weakens it when it offers a coding), and the CLI answers a matching
+`If-None-Match` with a 304. `As of 2026-11-12`.
+
 ## `post` — the page's URL also answers `POST`
 
 `defineRoute({ render: 'ssr', …, post: 'unsubscribeOnboarding' })` binds `POST <this page's path>`
@@ -569,7 +573,7 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 `NavigationModalPathInvalidError`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`,
 `NAVIGATION_MODAL_ATTRIBUTE` (the `data-x-modal` the router marks its `<dialog>` with — style
 `dialog[data-x-modal]` off the constant, never a restated string), `disposeIslands`,
-`scheduleRefresh`.
+`mountOver`, `IslandDraw`, `scheduleRefresh`.
 The barrel bundles for the browser but its `sideEffects` keeps `errors.ts` — render's code table,
 and core's and schema's titles tables behind it — in every chunk that reaches it; this entry's
 graph is the navigation helpers plus `@ultimat3/core/page` (`client-bundle.test.ts`). `As of
@@ -597,6 +601,16 @@ export function release(dropped: readonly Node[]): void {
   for (const node of dropped) if (node instanceof Element) disposeIslands(node);
 }
 ```
+
+**`mountOver(el, draw)`** (`island-mount.ts`, `As of 2026-11`) is how an island's `mount` replaces
+its server markup: it clears `el`, calls `draw(el)` and answers the disposer `draw` returned. A
+draw that THROWS puts the server's nodes back — the same nodes, in order, the half-rendered tree
+taken out — and rethrows, so the runtime still marks the root `data-x-failed` and
+`/x-client-errors.js` reports it once. Without it, a render throw leaves a blank box. Every
+`x g island` / `x new` island is written as
+`return mountOver(el, (root) => render(() => <Island {...props} />, root));`; an older app's
+islands are found by the shipped guard `x g guard island-mount-clears` (`X_ISLAND_MOUNT_CLEARS`).
+167 B minified. Framework-neutral: the draw is the caller's, so this package takes no `solid-js`.
 
 ## Error classes
 
@@ -644,6 +658,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
 | `scheduleRefresh`‡ | a `refresh()` once the visitor is idle, coalesced; never a reload |
 | `disposeIslands` (on `/client` only) | dispose the islands mounted under an element: what the router does on a swap, for an island that drops markup holding other islands |
+| `mountOver`, `IslandDraw` (on `/client` only) | an island's `mount` that clears the server markup for the live render and restores it when the render throws |
 | `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
 | `declaresModal`, `parseModalRoutes`, `modalRouteList`, `ModalRoutes`, `NAVIGATION_MODALS_META`, `NAVIGATION_MODAL_BODY_ATTRIBUTE`, `NAVIGATION_MODAL_CLOSE_ATTRIBUTE`, `NAVIGATION_MODAL_SKELETON_ATTRIBUTE` | the modal that opens on the click: the meta naming a surface's modal routes (composed by the server, read by the router) and the frame's attributes, styled by `@ultimat3/ui` |
 | `isRouteNavigation`, `navigationModeOf`, `navigationPrefetches`, `RouteNavigationDeclaration`, `RouteModalPrefetch` | `navigation:` read back: the four spellings, which mode, prefetched or not |

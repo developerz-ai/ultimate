@@ -159,6 +159,23 @@ const afterOf = (hole: StreamHole, outcome: 'filled' | 'failed'): string => {
   }
 };
 
+// Escaped as `holeMarker` escapes the same id: it lands inside an attribute either way.
+const defaultErrorFallback = (id: string): string =>
+  `<div data-x-hole-error="${escapeHtml(id)}" hidden></div>`;
+
+/**
+ * The app's `errorFallback`, which is app-shaped code like `after`: a throw there would escape the
+ * rejection handler, the hole would never settle and the document would never close.
+ */
+const fallbackOf = (fallback: (id: string) => string, id: string): string => {
+  try {
+    return fallback(id);
+  } catch (error) {
+    logger.warn('render.stream.hole_fallback_failed', { hole: id, error: renderThrowable(error) });
+    return defaultErrorFallback(id);
+  }
+};
+
 /** What a monitor hears when a hole misses its deadline: the visitor got the error markup. */
 const holeDeadlineMissed = (id: string, timeoutMs: number): UltimateError =>
   new UltimateError({
@@ -178,9 +195,7 @@ export function renderStreamHtml(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const tail = plan.tail ?? '</body></html>';
-  const errorFallback =
-    // Escaped as `holeMarker` escapes the same id: it lands inside an attribute either way.
-    options.errorFallback ?? ((id) => `<div data-x-hole-error="${escapeHtml(id)}" hidden></div>`);
+  const errorFallback = options.errorFallback ?? defaultErrorFallback;
   // A deadline is the bound a non-finite value does not disable but MOVES: `setTimeout(fn, NaN)`
   // is `setTimeout(fn, 0)`, so every hole would miss a deadline nobody set and the document would
   // be all fallbacks. `null` is the declared opt-out; there is no spelling that means "immediately".
@@ -256,7 +271,7 @@ export function renderStreamHtml(
           write(revealChunk(hole.id, html, after));
           settle();
         };
-        const failed = (): string => hole.error ?? errorFallback(hole.id);
+        const failed = (): string => hole.error ?? fallbackOf(errorFallback, hole.id);
         const timer =
           timeoutMs === null
             ? undefined

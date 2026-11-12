@@ -47,3 +47,21 @@ Not read in five passes: `hydrate.ts` body, `island*.ts`, `head.ts`, `render-str
 - A page with three standalone islands ships one copy of Solid (bytes table in the PR).
 - The demo serves hashed assets precompressed, with brotli where the client accepts it, and no compression CPU per asset hit.
 - A throwing island in the reference app shows its server HTML and an error-tracker event, not a blank box.
+
+## Outcome (sweep 11, local)
+
+Ships as 31.15.0. `As of 2026-11-12`, measured before release on Bun 1.4.4, solid-js 1.9.17.
+
+| ID | Outcome |
+|---|---|
+| I1 | shipped **opt-in**, by measurement. `island-vendor.ts`: `vendor-solid.<contentHash>.js` (named by its bytes, #1075 — the plan's `graphHash` was removed by that fix) re-exports `solid-js`, `/web`, `/store` whole, plus an explicit `DEV` (two star exports of one name export neither). The whole vendor is 48,083 B (17,388 B gzip) where an island inlines a tree-shaken ~14 kB, so with it on every Solid route of the three tracked apps GREW 33,572–38,769 B. Off by default: `islands.vendorSolid` in `app.config.ts` (`config-islands.ts`), pays from four separately-built Solid islands on one route; no tracked route has two. Counted once by precache, preload and budgets (`loadingVendor`) |
+| I2 | **premise false**, partly. `measure-paths.ts` already weighs a param route from its `exercise.ts` inputs, so `X_BUDGET_UNMEASURED` was not the gap. Shipped: `.x/build-stats.json` rows carry `requests` `{ documents, scripts, styles, total }` (`budgets-requests.ts`). Deferred to the ledger: a per-route request ceiling (`X_ISLAND_REQUESTS_OVER_BUDGET`) — no app declares one yet |
+| I3 | shipped, runtime and static. Runtime: an `immutable` answer is coded once in the background at br 11 / zstd 19 / gzip 9 (`http/src/compress-precode.ts`), later hits are lookups; brotli ~28% smaller than zstd 3 on the demo stylesheet; a strong-ETag answer is kept at zstd 9 / gzip 9 (27,136 → 22,051 B). Static: `x build --target static` writes `.br`/`.gz` siblings for island chunks and stylesheets (`static-precompress.ts`); host rules in `wiki/Static-Assets.md`. No `node:zlib` sibling added for gzip: Bun's native coder |
+| I4 | shipped. `linkHeader` (`route-islands-preload.ts`) from the same URLs as the tags (`route-islands-preload.test.ts` holds header set = tag set); each URL screened before wrapping (the security review's `>;` smuggle, fixed with a failing test) |
+| I5 | shipped, **template included (OD7)**. `mountOver(el, draw)` in `@ultimat3/render/client` (`island-mount.ts`, 167 B): restores the server markup on a throw and rethrows, so `hydrate.ts` still marks `data-x-failed` and `clientErrors` reports once. `x g island`, `x new` and the resource form island write it; the `island-mount-clears` guard ships with `x new` and is installed in all three tracked apps; the reference app's six Solid islands and the docs site's theme toggle mount over. The guard reads only clears of `mount`'s own first parameter, so `summary.island.tsx` (a handler emptying an output region) is not a finding. `X_ISLAND_DISPOSER_MISSING`'s fix names `mountOver` |
+| I6 | shipped (measured first). The brand moved from an inline, CSP-hashed `<style>` to the end of each surface stylesheet: ≈ 6.1 KB less per themed document (demo `/` 18,389 → 12,244 B), no `style-src` hash, same cascade |
+| I7 | not planned, as recorded in Findings |
+| I8 | moved to [`17`](17-test-determinism.md) |
+| H4b | shipped here (from [`06`](06-http.md)): a cacheable `ssr` document carries a strong content `ETag`; `ssr`/`isr` answer `If-None-Match` with 304 (`render-ssr.ts`) |
+| #1075 | follow-ups shipped: `island-link-check.ts` refuses a merged bundle whose imports bind nothing (`X_BUILD_FAILED` naming the island), run over cached groups too (mutation-checked through a tampered cache entry); `/_img/` variants named by source bytes + width + format + encoder |
+| bug hunt | `render-stream.ts`: an `errorFallback` that throws falls back to the default markup (the document never closed); the `stream-hole` e2e serves `/styles/*`; the raster-pool event-loop test is relative, no wall-clock bound (55–58 ms on Windows CI) |

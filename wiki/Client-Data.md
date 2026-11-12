@@ -198,3 +198,55 @@ Layering: the last config layer that states `sharedChunks` wins; absent everywhe
 (`mergeIslands`). A value that is not a boolean is refused at boot (`X_CONFIG_INVALID`). `As of
 2026-11`.
 
+## One Solid for every island
+
+**Off by default, by measurement.** Each island build inlines the part of Solid it uses, ~14 kB
+tree-shaken. `islands: { vendorSolid: true }` in `app.config.ts` builds Solid ONCE instead, as
+`/islands/vendor-solid.<hash>.js` (`solid-js`, `solid-js/web`, `solid-js/store`, whole: 48,083 B,
+17,388 B gzip), and every island imports it. Named by its bytes, like every island output
+(`packages/cli/src/island-vendor.ts`). Measured `As of 2026-11-12`, Bun 1.4.4, solid-js 1.9.17.
+
+| Turn it on when | Leave it off when |
+|---|---|
+| a route renders four or more Solid islands that are built apart (not one route group) | a route renders one to three Solid islands — every Solid route of the three tracked apps grew 33,572–38,769 B with it on |
+| `x build --target static`, then `x verify --only budgets`, shows the routes shrinking | any route's `budget.js` grows past its budget |
+
+The vendor counts once per route in `budget.js`, is precached and preloaded like any shared chunk,
+and adds one request. An island that imports no Solid loads no vendor. An `islands.vendorSolid`
+that is not a boolean is `X_CONFIG_INVALID`.
+
+## Island mounts that never leave a blank box
+
+**An island's `mount` draws through `mountOver`** (`@ultimat3/render/client`): it clears the
+server's markup for the live render — Solid's `render` APPENDS — and puts that markup back when
+the render throws, then rethrows. The hydration runtime still marks the root `data-x-failed`, and
+`clientErrors` still reports it once. A visitor sees the server's HTML, never an empty box. 167 B
+in a chunk; framework-neutral (the caller hands in the draw).
+
+```tsx
+import { mountOver } from '@ultimat3/render/client';
+import { render } from 'solid-js/web';
+
+function Counter(props: { start: number }) {
+  return <p>{props.start}</p>;
+}
+
+export function mount(el: HTMLElement, props: { start: number }): () => void {
+  return mountOver(el, (root) => render(() => <Counter {...props} />, root));
+}
+```
+
+`x g island`, `x new` and the resource form island write it. An app scaffolded earlier adopts
+through the `island-mount-clears` guard, which `x new` ships and an older app installs:
+
+| Step | Command |
+|---|---|
+| install the guard | `x g guard island-mount-clears` |
+| find each island that empties its wrapper outside `mountOver` | `x verify --only boundaries` — one finding per clear, at its line |
+| fix each | delete `el.textContent = ''` and end `mount` with `return mountOver(el, (root) => render(() => <Island {...props} />, root))` |
+
+The guard reads `.textContent = ''`, `.innerHTML = ''` and `.replaceChildren()` on `mount`'s own
+first parameter in a `*.island.tsx` that calls no `mountOver(`. A clear of an element INSIDE the
+wrapper — a handler emptying an output region — is the island's own business and is not read.
+`As of 31.15.0`.
+

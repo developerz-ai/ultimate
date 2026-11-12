@@ -2,6 +2,14 @@
 // gzip-asking GET, and a body that fails the test if anything pulls it.
 import { compressResponse } from './compress';
 import { createCompressCache } from './compress-cache';
+import { createPrecodeStore } from './compress-precode';
+
+/**
+ * A store that never codes in the background: these tests count the per-request coder, and a
+ * precode landing between two of their hits would answer the second unread
+ * (`compress-precode.test.ts` holds that half).
+ */
+export const NO_PRECODE = createPrecodeStore({ concurrency: 0 });
 
 /**
  * An anonymous caller's answer: `compress-exposure.test.ts` holds the signed-in half. A fresh
@@ -11,6 +19,7 @@ export const compressAnonymous = (request: Request, response: Response, signal?:
   compressResponse(request, response, {
     anonymous: true,
     cache: createCompressCache(),
+    precode: NO_PRECODE,
     ...(signal === undefined ? {} : { signal }),
   });
 

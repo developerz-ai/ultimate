@@ -30,6 +30,7 @@ import {
   useQuery,
   useRecord,
 } from '@ultimat3/realtime';
+import { mountOver } from '@ultimat3/render/client';
 import type { JSX } from 'solid-js';
 import { onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -135,12 +136,11 @@ function Like(props: LikeIslandProps): JSX.Element {
 }
 
 /**
- * The one export the hydration runtime calls. The shell goes first and it is load-bearing —
- * Solid's `render` APPENDS when the container already has children.
+ * The one export the hydration runtime calls. `mountOver` clears the shell — Solid's `render`
+ * APPENDS when the container already has children — and puts it back if the render throws.
  */
 export function mount(el: HTMLElement, props: LikeIslandProps): () => void {
-  el.textContent = '';
   // Returned: the router calls it when it swaps this page out, so every effect this island
   // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
-  return render(() => <Like {...props} />, el);
+  return mountOver(el, (root) => render(() => <Like {...props} />, root));
 }

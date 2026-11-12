@@ -52,7 +52,9 @@ A job body runs **before** its checkpoint lands, so both layers are load-bearing
    re-reads). A retry replays a completed chunk from the step store; a chunk that failed part-way
    re-runs whole, and layer 2 answers `sent` for whoever it already reached. Preferences are read
    once per chunk (`PreferenceStore.allowsMany`, required since 31.0.0): 10k recipients is 20 reads
-   and 20 step rows a channel, not 20k (`fanout-chunks.test.ts`). A digest reads preferences per
+   and 20 step rows a channel, not 20k (`fanout-chunks.test.ts`). Inside a chunk,
+   `NOTIFY_DELIVERY_WIDTH` (16) recipients are in flight; a failed one is thrown only after its
+   neighbours were tried (first retryable failure wins). A digest reads preferences per
    chunk and sends per chunk (`digest-send:<channel>:chunk-<n>`, ledger-fenced the same way), but
    its `digest:` append and `digest-drain:` steps stay ONE PER RECIPIENT: a chunked append re-runs
    appends whose joined window may be drained by then (below), and a chunked drain widens the

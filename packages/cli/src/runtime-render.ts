@@ -15,7 +15,6 @@ import type {
 } from '@ultimat3/http';
 import {
   asCtx,
-  html,
   NO_STORE,
   redirect,
   stream,
@@ -44,12 +43,21 @@ import {
   navigationMetaOf,
   principalRelocation,
 } from './page-navigation';
-import { collectorFor, streamScripts } from './route-islands';
+import { bootScript, collectorFor, streamScripts } from './route-islands';
+import { linkHeader, preloadUrls } from './route-islands-preload';
 import { addressedUrl } from './runtime-address';
 import { attachedIsr } from './runtime-isr';
 import { isrOutcome } from './runtime-isr-outcome';
 import type { DevRouteData, RenderOptions } from './runtime-render-document';
-import { documentFrom, headFor, lang, routeBody, stylesFor } from './runtime-render-document';
+import {
+  documentFrom,
+  headFor,
+  lang,
+  renderedDocument,
+  routeBody,
+  stylesFor,
+  stylesheetOf,
+} from './runtime-render-document';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
 import { enterHole } from './stream-hole-scope';
@@ -132,8 +140,11 @@ async function resultFor(
     case 'static': {
       // Not `renderStatic`: that enumerates every prerendered path for the build. A request
       // names exactly one, and it earns the same content-hashed headers.
-      const body = await documentFrom(entry, request, data, options);
-      return { status, headers: staticHeaders(contentHash(body), options.buildId), body };
+      const { html: body, link } = await renderedDocument(entry, request, data, options);
+      return withLink(
+        { status, headers: staticHeaders(contentHash(body), options.buildId), body },
+        link,
+      );
     }
     case 'stream': {
       // Everything outside a `<Hole>` is the first flush; every hole fills after it, in the
@@ -148,18 +159,24 @@ async function resultFor(
         routeBody(entry, request, data, islands, sink),
       ]);
       const scripts = streamScripts(entry, islands, options, scope, sink.holes.length > 0);
+      // The first flush's tags, recomputed from the same recorded islands: the headers leave first.
+      const booted = bootScript(entry, islands, options, scope) !== '';
+      const link = linkHeader(stylesheetOf(entry), preloadUrls(entry, islands, options, booted));
       return withScope(
-        streamResult(
-          {
-            head: `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head><body>`,
-            // The runtime rides the first flush, with the shell it boots. A later chunk would leave
-            // the window between flush one and the close with inert islands and no listeners on
-            // them — the first-click-lost failure `interaction` replay exists for.
-            shell: `${shell}${scripts.first}`,
-            holes: sink.holes.map((hole) => ({ ...hole, after: scripts.after })),
-          },
-          { buildId: options.buildId },
-          status,
+        withLink(
+          streamResult(
+            {
+              head: `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry)}</head><body>`,
+              // The runtime rides the first flush, with the shell it boots. A later chunk would leave
+              // the window between flush one and the close with inert islands and no listeners on
+              // them — the first-click-lost failure `interaction` replay exists for.
+              shell: `${shell}${scripts.first}`,
+              holes: sink.holes.map((hole) => ({ ...hole, after: scripts.after })),
+            },
+            { buildId: options.buildId },
+            status,
+          ),
+          link,
         ),
         scope,
       );
@@ -169,17 +186,24 @@ async function resultFor(
       // scope; an ungated one is `public, s-maxage` and a CDN may hand it to anyone, so it carries
       // none — absent, which core reads as "not rendered for anyone", never as anonymous.
       const scope = documentScope(entry, options.buildId, ctx.actor);
-      return withScope(
-        await renderSsr(
-          { entry, params: request.params, url, ctx },
-          () => documentFrom(entry, request, data, options, scope),
-          { buildId: options.buildId, status },
-        ),
-        scope,
+      let link: string | undefined;
+      const result = await renderSsr(
+        { entry, params: request.params, url, ctx },
+        async () => {
+          const rendered = await renderedDocument(entry, request, data, options, scope);
+          link = rendered.link;
+          return rendered.html;
+        },
+        { buildId: options.buildId, status },
       );
+      return withScope(withLink(result, link), scope);
     }
   }
 }
+
+/** The document's early fetches as a `Link` header (`route-islands-preload.ts`), when it has any. */
+const withLink = (result: RenderResult, link: string | undefined): RenderResult =>
+  link === undefined ? result : { ...result, headers: { ...result.headers, link } };
 
 /**
  * A private document's scope, as a RESPONSE header too: the service worker partitions its offline
@@ -200,9 +224,13 @@ function loadRedirect(entry: RouteEntry, to: RedirectIntent): Response {
   if (entry.config.cache === undefined) response.headers.set('cache-control', 'private, no-store');
   return response;
 }
-const responseOf = (result: RenderResult): Response =>
+/**
+ * A buffered document answers through `staticResponse`, so a 200 carrying a validator (`ssr`'s
+ * cacheable pages, `isr`'s) is a 304 to a request that names it, as a `static` page always was.
+ */
+const responseOf = (request: UltimateRequest, result: RenderResult): Response =>
   typeof result.body === 'string'
-    ? html(result.body, { status: result.status, headers: result.headers })
+    ? staticResponse(request, { ...result, body: result.body })
     : stream(result.body, { status: result.status, headers: result.headers });
 
 /** `auth` follows the route's own guard: a gated page is gated in dev by the production stage. */
@@ -273,7 +301,7 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
       const rendered = shared.document !== undefined || led ? shared : await render();
       // The ETag was only ever a header: a matching `If-None-Match` is a 304, not the page again.
       return rendered.document === undefined
-        ? rendered.respond()
+        ? rendered.respond(request)
         : staticResponse(request, rendered.document);
     },
   }));
@@ -282,7 +310,7 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
 /** A static document a joined request can share, or how to answer when there is none. */
 interface Rendered {
   readonly document?: StaticResult;
-  readonly respond: () => Response;
+  readonly respond: (request: UltimateRequest) => Response;
 }
 
 async function renderEntry(
@@ -321,10 +349,10 @@ async function loadAndRender(
   if (to !== undefined) return { respond: () => loadRedirect(entry, to) };
   const result = await resultFor(entry, data, loaded, options, asCtx(ctx));
   if (entry.config.render !== 'static' || typeof result.body !== 'string') {
-    return { respond: () => responseOf(result) };
+    return { respond: (request) => responseOf(request, result) };
   }
   const document: StaticResult = { ...result, body: result.body };
-  return { document, respond: () => responseOf(document) };
+  return { document, respond: (request) => responseOf(request, document) };
 }
 
 /** `isr`'s outcome (`runtime-isr-outcome.ts`) as this file's answer: a page, or the redirect. */
@@ -346,5 +374,5 @@ async function renderIsr(
     origin: options.origin,
   });
   if (outcome.kind === 'redirect') return { respond: () => loadRedirect(entry, outcome.to) };
-  return { respond: () => responseOf(outcome.result) };
+  return { respond: (request) => responseOf(request, outcome.result) };
 }

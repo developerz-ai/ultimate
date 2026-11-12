@@ -280,5 +280,7 @@
  * unref'd timer, and the stream stop's bounded goodbye read, through `@ultimat3/realtime/server`.
  * Every one a new file, serving-only (`MIGRATE_CEILING` unchanged at 937); no existing module
  * newly reached.
+ * raised 1487 → 1488, measured 1488 (2026-11-12, sweep 11 serving, the test's own walk):
+ * `MIGRATE_CEILING`'s 1, `http/src/compress-precode.ts`. Nothing else moved.
  */
-export const SERVING_ROLE_CEILING = 1487;
+export const SERVING_ROLE_CEILING = 1488;

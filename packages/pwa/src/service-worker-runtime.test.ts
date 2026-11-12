@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { OUTBOX_DRAIN_MESSAGE } from '@ultimat3/core';
+import { PAGES_CACHE_MAX } from './pages-cache-source';
 import type { ServiceWorkerConfig } from './service-worker';
 import { generateServiceWorker } from './service-worker';
 import { config, swHarness } from './service-worker-harness-fixture';
@@ -306,5 +307,78 @@ describe('the offline outbox drain, executed', () => {
     await sw.message({ type: 'flush-outbox' });
 
     expect(sw.messages).toEqual([]);
+  });
+});
+
+/**
+ * Inside one build the pages cache kept every document visited — only the next deploy or the
+ * browser's quota emptied it. Capped at `PAGES_CACHE_MAX`, oldest written first out.
+ */
+describe('the pages cache, bounded', () => {
+  const posts: readonly PwaRoute[] = [
+    { path: '/posts/:id', surface: 'site', mode: 'isr', offline: 'runtime', dynamic: true },
+  ];
+  const pagesOf = (sw: ReturnType<typeof swHarness>) =>
+    [...(sw.caches.get(cacheNamespace('build-1', 'pages'))?.entries.keys() ?? [])].map(
+      (url) => new URL(url).pathname,
+    );
+
+  test('60 page visits leave PAGES_CACHE_MAX entries, the newest kept', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(posts, config, 'build-1').source);
+    for (let n = 0; n < 60; n += 1) await sw.request(`/posts/${String(n)}`);
+    const kept = pagesOf(sw);
+    expect(PAGES_CACHE_MAX).toBe(50);
+    expect(kept).toHaveLength(PAGES_CACHE_MAX);
+    expect(kept).toContain('/posts/59');
+    expect(kept).toContain('/posts/10');
+    expect(kept).not.toContain('/posts/9');
+  });
+
+  test('a page visited again is written again, so it outlives pages visited once since', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(posts, config, 'build-1').source);
+    for (let n = 0; n < 50; n += 1) await sw.request(`/posts/${String(n)}`);
+    await sw.request('/posts/0');
+    await sw.request('/posts/50');
+    const kept = pagesOf(sw);
+    expect(kept).toContain('/posts/0');
+    expect(kept).not.toContain('/posts/1');
+  });
+
+  test('a page refreshed while another write trims is never the one trimmed', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(posts, config, 'build-1').source);
+    for (let n = 0; n < 50; n += 1) await sw.request(`/posts/${String(n)}`);
+    const cache = sw.caches.get(cacheNamespace('build-1', 'pages'));
+    if (cache === undefined) return expect.unreachable('no pages cache was opened');
+    // The trim's `keys()` answers with /posts/0 at its head — and, before the trim deletes, a
+    // refresh of /posts/0 is given every turn it needs to re-append it.
+    const real = cache.keys.bind(cache);
+    let refresh: Promise<Response> | undefined;
+    cache.keys = async () => {
+      const snapshot = await real();
+      cache.keys = real;
+      refresh = sw.request('/posts/0');
+      for (let turn = 0; turn < 500; turn += 1) await Promise.resolve();
+      return snapshot;
+    };
+    await sw.request('/posts/50');
+    await refresh;
+    const kept = pagesOf(sw);
+    expect(kept).toContain('/posts/0');
+    expect(kept).toContain('/posts/50');
+    expect(kept).toHaveLength(PAGES_CACHE_MAX);
+  });
+
+  test("'last-member' bounds the shared pages cache the same way", async () => {
+    const sw = swHarness();
+    const lastMember: ServiceWorkerConfig = {
+      ...config,
+      offline: { ...config.offline, personalPages: 'last-member' },
+    };
+    sw.load(generateServiceWorker(posts, lastMember, 'build-1').source);
+    for (let n = 0; n < 60; n += 1) await sw.request(`/posts/${String(n)}`);
+    expect(pagesOf(sw)).toHaveLength(PAGES_CACHE_MAX);
   });
 });

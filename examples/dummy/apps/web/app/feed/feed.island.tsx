@@ -24,6 +24,7 @@
 import type { CatalogSubset } from '@ultimat3/i18n/subset';
 import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { useConnection, useMutation, useOutbox, useQuery } from '@ultimat3/realtime';
+import { mountOver } from '@ultimat3/render/client';
 import { formatDate } from '@ultimat3/time';
 import {
   AsyncRegion,
@@ -205,8 +206,8 @@ function Feed(props: FeedIslandProps): JSX.Element {
 }
 
 /**
- * The one export the hydration runtime calls. Solid's `render` APPENDS when the container already
- * has children, so the server's loading shell goes first — `settings.island.tsx`'s rule, verbatim.
+ * The one export the hydration runtime calls. `mountOver` clears the server's loading shell (Solid's
+ * `render` APPENDS) and puts it back if the render throws — `settings.island.tsx`'s rule, verbatim.
  */
 export function mount(el: HTMLElement, props: FeedIslandProps): () => void {
   // The design system's reactive seam, from THIS bundle's solid-js — named, never `import *`.
@@ -219,15 +220,16 @@ export function mount(el: HTMLElement, props: FeedIslandProps): () => void {
     onCleanup,
     createRoot,
   });
-  el.textContent = '';
   // Returned: the router calls it when it swaps this page out, so every effect this island
   // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
-  return render(
-    () => (
-      <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
-        <Feed {...props} />
-      </UiProvider>
+  return mountOver(el, (root) =>
+    render(
+      () => (
+        <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
+          <Feed {...props} />
+        </UiProvider>
+      ),
+      root,
     ),
-    el,
   );
 }

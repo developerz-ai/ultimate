@@ -13,7 +13,7 @@ import './errors';
  * below is not `X_RATE_LIMITED`: `@ultimat3/http`'s `X_BODY_INVALID` names `bodyLimitBytes` on the
  * HTTP pipeline, and this route never passes through it — the knob is `mcpHttpRoute`'s (or
  * `defineAppMcp`'s, which forwards it), and over stdio it is `serveStdio({ lineLimitBytes })`, a
- * ceiling in characters rather than bytes. One class for both transports, because the condition is
+ * ceiling in bytes of one line (in characters until 31.7). One class for both transports, because the condition is
  * one: the peer sent more in one message than this end agreed to hold, and the two answers must
  * name the same code so an agent learns it once.
  *
@@ -38,7 +38,7 @@ export class McpBodyTooLargeError extends UltimateError {
       code: 'X_MCP_BODY_TOO_LARGE',
       cause: http
         ? `request body is at least ${input.over ?? input.limit} bytes, limit is ${input.limit}`
-        : `one message exceeded ${input.limit} characters and was dropped`,
+        : `one message exceeded ${input.limit} bytes and was dropped`,
       fix: http
         ? `send less in one request — page a large read, split a long prompt across calls — or raise the cap where the route is built: mcpHttpRoute({ bodyLimitBytes: ${raised} }) or defineAppMcp({ bodyLimitBytes: ${raised} })`
         : `send one JSON-RPC message per line, each under the cap — split a large tool result into paged calls — or raise it where the transport is started: serveStdio({ lineLimitBytes: ${raised} })`,

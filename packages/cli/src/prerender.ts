@@ -47,6 +47,7 @@ import { loadSiteSettings, originWarning, publicOrigin } from './site-config';
 import type { LlmsPages } from './site-llms-pages';
 import { newestSourceMtime } from './source-mtime';
 import { staticCapture } from './static-capture';
+import { immutableUrls, writePrecompressed } from './static-precompress';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 import { styleBundle, writeStyles } from './style-bundle';
@@ -159,12 +160,14 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // behind it, so the artifact carries every byte the browser will ask for.
   const islands = await buildIslands(options.root);
   await writeIslands(islands, options.out);
-  // And the stylesheet every document below LINKS. Derived after the island build on purpose:
-  // `islandStylesPlugin` registers an island's own `.module.scss` during `Bun.build`, so a bundle
-  // minted before it would hash CSS the documents do not carry — and the export would publish
-  // pages whose `<link>` names a file the artifact does not have.
+  // And the stylesheet every document below LINKS, after the island build: `islandStylesPlugin`
+  // registers an island's `.module.scss` during `Bun.build`, so a sheet minted before it is CSS the
+  // documents do not carry. The brand first: it is every sheet's tail, as in the served process.
+  await loadThemeBrand(options.root);
   const styles = styleBundle();
   await writeStyles(styles, options.out);
+  // Every immutable URL above, coded beside itself: a static host serves `.br`/`.gz` unread.
+  await writePrecompressed(options.out, immutableUrls(islands, styles));
   // The hashed `site/assets/**` copies every document's `asset()` URL names — once, never per
   // locale: an asset is the same bytes in every language, so `/en/` pages link the root's copy.
   writeSiteAssets(options.root, options.out);
@@ -190,8 +193,6 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // names it either.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
-  // The brand the served process carries, so an exported page and a served one paint alike.
-  const brand = await loadThemeBrand(options.root);
   // The app's own favicon is resolved by the DOCUMENT, per render, from the app root below — the
   // link the served surfaces emit, so an exported document and a served one carry the same icon.
   // The client router, for the surfaces that opted in: written BEFORE any document names it, for
@@ -276,7 +277,6 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     resolveIsland: (file: string) => islands.resolverFor(file),
     realtimeIslands: () => islands.realtime,
     themeHead: theme.head,
-    ...(brand === undefined ? {} : { brandHead: brand.head }),
     ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
     origin,
     ...(navigation.head === undefined ? {} : { navigation: navigation.head }),

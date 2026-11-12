@@ -10,6 +10,7 @@
 
 import type { CatalogSubset } from '@ultimat3/i18n/subset';
 import { subsetTranslator } from '@ultimat3/i18n/subset';
+import { mountOver } from '@ultimat3/render/client';
 import { Board, type SortMove, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
@@ -76,8 +77,8 @@ export function PostBoard(props: BoardIslandProps): JSX.Element {
 }
 
 /**
- * The one export the hydration runtime calls. Solid's `render` APPENDS when the container already
- * has children, so the server's shell goes first.
+ * The one export the hydration runtime calls. `mountOver` clears the server's shell (Solid's
+ * `render` APPENDS) and puts it back if the render throws.
  */
 export function mount(el: HTMLElement, props: BoardIslandProps): () => void {
   setSolidRuntime({
@@ -89,15 +90,16 @@ export function mount(el: HTMLElement, props: BoardIslandProps): () => void {
     onCleanup,
     createRoot,
   });
-  el.textContent = '';
   // Returned: the router calls it when it swaps this page out, so every effect this island
   // registered — a socket read, a page-wide hotkey — ends with the page that drew it.
-  return render(
-    () => (
-      <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
-        <PostBoard {...props} />
-      </UiProvider>
+  return mountOver(el, (root) =>
+    render(
+      () => (
+        <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
+          <PostBoard {...props} />
+        </UiProvider>
+      ),
+      root,
     ),
-    el,
   );
 }

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, type Mock, spyOn, test } from 'bun:test';
 import { compressResponse } from './compress';
 import { createCompressCache } from './compress-cache';
-import { answer, asking, decoded, SOURCE, untouchable } from './compress-fixture';
+import { answer, asking, decoded, NO_PRECODE, SOURCE, untouchable } from './compress-fixture';
 
 const bytes = (n: number): Uint8Array<ArrayBuffer> => new Uint8Array(n);
 
@@ -63,6 +63,7 @@ describe('the compress stage with a cache', () => {
     compressResponse(new Request(url, { headers: asking().headers }), response, {
       anonymous,
       cache,
+      precode: NO_PRECODE,
     });
 
   test('the same strong ETag served twice is coded once, and the hit leaves the body unread', async () => {
@@ -114,5 +115,39 @@ describe('the compress stage with a cache', () => {
     await run(cache, answer(SOURCE, { etag: ETAG }), { anonymous: false });
     expect(gzip).toHaveBeenCalledTimes(2);
     expect(cache.size).toBe(0);
+  });
+});
+
+// A kept body is coded once per (URL, strong ETag), so it is coded at the level whose cost is paid
+// once — zstd 9, not the per-request 3 (the demo's 170 kB sheet: 22,051 B against 27,136 B, which
+// lost to gzip 6's 23,798 B). An answer coded every time keeps the cheap level.
+describe('the level a kept body is coded at', () => {
+  let zstd: Mock<typeof Bun.zstdCompressSync> | undefined;
+  afterEach(() => zstd?.mockRestore());
+
+  const levelsOf = (spy: Mock<typeof Bun.zstdCompressSync>): readonly unknown[] =>
+    spy.mock.calls.map(([, options]) => (options as { level?: number } | undefined)?.level);
+
+  const zstdRun = (response: Response, anonymous = true) =>
+    compressResponse(
+      new Request('http://app.test/x', { headers: { 'accept-encoding': 'zstd' } }),
+      response,
+      { anonymous, cache: createCompressCache(), precode: NO_PRECODE },
+    );
+
+  test('kept: zstd 9, and the body decodes to the source', async () => {
+    zstd = spyOn(Bun, 'zstdCompressSync');
+    const kept = await zstdRun(answer(SOURCE, { etag: '"css-1"' }));
+    expect(levelsOf(zstd)).toEqual([9]);
+    expect(kept.headers.get('content-encoding')).toBe('zstd');
+    const body = new Uint8Array(await kept.arrayBuffer());
+    expect(new TextDecoder().decode(Bun.zstdDecompressSync(body))).toBe(SOURCE);
+  });
+
+  test('coded every time: zstd 3 — a level 9 there would be paid per request', async () => {
+    zstd = spyOn(Bun, 'zstdCompressSync');
+    await zstdRun(answer(SOURCE, { etag: 'W/"css-1"' }));
+    await zstdRun(answer(SOURCE, { etag: '"css-1"' }), false);
+    expect(levelsOf(zstd)).toEqual([3, 3]);
   });
 });

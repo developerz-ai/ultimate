@@ -173,10 +173,12 @@ export class McpServer {
     this.audit = audit;
   }
 
+  /** `signal` reaches the tool's `handle` — a transport that hears `notifications/cancelled` aborts it. */
   async handle(
     body: unknown,
     caller: McpCaller,
     wire?: McpWire | undefined,
+    signal?: AbortSignal,
   ): Promise<JsonRpcResponse | null> {
     // A batch is legal JSON-RPC 2.0 and this server does not walk one: one call, one answer, one
     // rate-limit class. Refused BY NAME rather than falling through to the envelope check below —
@@ -209,7 +211,7 @@ export class McpServer {
     const era = eraOf(body);
     if (typeof era !== 'string') return unsupportedVersion(id, era.unsupported);
     const answer = METHODS[era].includes(body.method)
-      ? await this.answer(id, body, caller, era)
+      ? await this.answer(id, body, caller, era, signal)
       : undefined;
     if (answer === undefined) {
       return errorResponse(id, METHOD_NOT_FOUND, `method not found: ${body.method}`, {
@@ -225,6 +227,7 @@ export class McpServer {
     body: JsonRpcRequest,
     caller: McpCaller,
     era: McpEra,
+    signal: AbortSignal | undefined,
   ): Promise<JsonRpcResponse | undefined> {
     switch (body.method) {
       case 'initialize':
@@ -247,7 +250,7 @@ export class McpServer {
         return resultResponse(id, { tools: this.listIn(view, caller) });
       }
       case 'tools/call':
-        return this.toolsCall(body, caller);
+        return this.toolsCall(body, caller, signal);
       case 'resources/list':
         return resultResponse(id, { resources: await this.resources.listFor(caller) });
       case 'resources/read':
@@ -320,7 +323,11 @@ export class McpServer {
     return classifyBody(body, this.meta, this.tools);
   }
 
-  private async toolsCall(req: JsonRpcRequest, caller: McpCaller): Promise<JsonRpcResponse> {
+  private async toolsCall(
+    req: JsonRpcRequest,
+    caller: McpCaller,
+    signal: AbortSignal | undefined,
+  ): Promise<JsonRpcResponse> {
     const id = req.id ?? null;
     const params = paramsOf(req);
     if (params === null) return errorResponse(id, INVALID_PARAMS, 'tools/call requires params');
@@ -361,7 +368,7 @@ export class McpServer {
           tools: view.tools,
           audit: this.audit,
           catalogDetail: this.voice.catalogDetail ?? 'full',
-          dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who),
+          dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who, signal),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
           refuse: (at, tool, error, who) =>
             thrownResponse(at, tool, error, who, this.voice.errorAudience, this.audit),
@@ -371,7 +378,7 @@ export class McpServer {
       );
       if (answered !== undefined) return answered;
     }
-    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who);
+    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who, signal);
   }
 
   /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */
@@ -389,6 +396,7 @@ export class McpServer {
     name: string,
     resolved: ToolResolution,
     caller: McpCaller,
+    signal?: AbortSignal,
   ): Promise<JsonRpcResponse> {
     const audience = this.voice.errorAudience;
     // Three outcomes, deliberately different — and every one of them audited, including the
@@ -441,7 +449,7 @@ export class McpServer {
 
     let result: McpToolResult;
     try {
-      result = await resolved.tool.handle(resolved.args, caller);
+      result = await resolved.tool.handle(resolved.args, caller, signal);
     } catch (error) {
       return thrownResponse(id, name, error, caller, audience, this.audit);
     }

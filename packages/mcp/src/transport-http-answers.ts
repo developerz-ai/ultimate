@@ -3,7 +3,7 @@
 // JSON-RPC envelope — nothing was called. Split from `transport-http.ts`, which keeps the order.
 
 import type { Clock, UltimateError } from '@ultimat3/core';
-import { proveSameOrigin } from '@ultimat3/core';
+import { addressNetwork, proveSameOrigin } from '@ultimat3/core';
 import type { Bucket, RateLimitStore } from '@ultimat3/http';
 import {
   McpHostRefusedError,
@@ -47,7 +47,9 @@ export function throttled(verbClass: string, limit: number, retryAfterSeconds: n
  * failure and answers the 429 when that one did not fit. `undefined` from either: carry on.
  */
 export function failureMeter(store: RateLimitStore, bucket: Bucket, clock: Clock) {
-  const keyOf = (address: string): string => `mcp:unauthenticated|ip:${address}`;
+  // The NETWORK, as `@ultimat3/http`'s limiter keys it: one IPv6 host holds a /64, and keying the full
+  // address handed it ~2^64 allowances of guesses.
+  const keyOf = (address: string): string => `mcp:unauthenticated|ip:${addressNetwork(address)}`;
   const refused = (retryAfterSeconds: number): Response =>
     throttled('unauthenticated', bucket.capacity, retryAfterSeconds);
   return {

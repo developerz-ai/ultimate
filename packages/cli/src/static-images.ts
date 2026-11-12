@@ -1,11 +1,17 @@
 // Single responsibility: the image variants a static export's documents promise, as FILES. While
-// the export renders, `responsiveImage` asks this module for each variant's URL — `/_img/<source
+// the export renders, `responsiveImage` asks this module for each variant's URL — `/_img/<variant
 // hash>-<width>.<ext>` — and after it, every URL an exported document names is decoded, resized
 // and written through core's pipeline. A dumb file server then answers `image/webp` for a webp.
 
 // why: Bun exposes no path-join primitive, and every variant path is relative to the export root.
 import { join } from 'node:path';
-import { canEncode, imageUnsupported, sniffImageFormat, transformImageBytes } from '@ultimat3/core';
+import {
+  canEncode,
+  frameworkVersion,
+  imageUnsupported,
+  sniffImageFormat,
+  transformImageBytes,
+} from '@ultimat3/core';
 import { contentHash } from '@ultimat3/render/server';
 import type { StaticImageRequest } from '@ultimat3/seo';
 import { ImageSourceUnreadableError } from './static-capture-errors';
@@ -72,7 +78,19 @@ async function indexSources(out: string): Promise<ReadonlyMap<string, Source>> {
   return sources;
 }
 
-export async function staticImages(out: string): Promise<StaticImages> {
+/**
+ * What re-encodes a variant: core's raster pipeline over Bun's image codecs. The URL is minted
+ * during the render and the bytes are encoded after it — the documents are hashed by then, so
+ * the name cannot be the output's own hash (#1075's rule for islands). It is the hash of
+ * everything those bytes are a function of instead: one URL is one byte string, and an upgrade
+ * that may re-encode costs one cache miss, never an `immutable` file holding other bytes.
+ */
+export const imageEncoderIdentity = (): string => `${frameworkVersion()}+bun${Bun.version}`;
+
+export async function staticImages(
+  out: string,
+  encoder: string = imageEncoderIdentity(),
+): Promise<StaticImages> {
   const sources = await indexSources(out);
   const variants = new Map<string, Variant>();
   return {
@@ -80,7 +98,10 @@ export async function staticImages(out: string): Promise<StaticImages> {
       const source = sources.get(pathOf(src));
       const resolved = format ?? source?.ownFormat ?? 'png';
       // A src the export lacks still gets a stable URL, so `write` can tell which document named it.
-      const stem = source === undefined ? `missing-${contentHash(src)}` : source.hash;
+      const stem =
+        source === undefined
+          ? `missing-${contentHash(src)}`
+          : contentHash(JSON.stringify([source.hash, width, resolved, encoder]));
       const url = `/${STATIC_IMAGE_DIR}/${stem}-${String(width)}.${EXTENSION.get(resolved) ?? resolved}`;
       variants.set(url, { src, width, source, format: resolved });
       return url;

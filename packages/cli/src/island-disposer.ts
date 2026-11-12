@@ -107,7 +107,7 @@ export function islandDisposerFindings(files: readonly SourceFile[]): readonly F
       {
         code: 'X_ISLAND_DISPOSER_MISSING',
         cause: `${path}'s mount() ${why}, so the client router has nothing to call when it navigates away and the island's listeners, hotkeys and live reads stay registered`,
-        fix: `x verify --only boundaries --json   # in ${commentSafe(path)}, end mount() with return render(() => <Island {...props} />, el) — Solid's disposer, which the router calls`,
+        fix: `x verify --only boundaries --json   # in ${commentSafe(path)}, end mount() with return mountOver(el, (root) => render(() => <Island {...props} />, root)) — Solid's disposer, which the router calls (mountOver from @ultimat3/render/client)`,
         docs: ERROR_DOCS_URL,
         at: path,
       },

@@ -68,7 +68,7 @@ describe('McpBodyTooLargeError', () => {
 
   test('over stdio: the fix names the line, the cap and the knob that raises it', () => {
     const error = new McpBodyTooLargeError({ transport: 'stdio', limit: 256 });
-    expect(error.cause).toBe('one message exceeded 256 characters and was dropped');
+    expect(error.cause).toBe('one message exceeded 256 bytes and was dropped');
     expect(error.fix).toContain('one JSON-RPC message per line');
     // Over stdio nothing measured what arrived — the tail was dropped — so twice the cap.
     expect(error.fix).toContain('serveStdio({ lineLimitBytes: 512 })');

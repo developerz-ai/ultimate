@@ -13,6 +13,8 @@ import type { Manifest, RouteFact } from '@ultimat3/manifest';
 import { describePages, parseByteBudget, themeScriptBody } from '@ultimat3/render';
 import type { ChargedFile } from './budgets-charged';
 import { chargedClause, chargedMeta, heaviestFirst } from './budgets-charged';
+import type { RouteRequests } from './budgets-requests';
+import { routeRequests, stylesheetRequests } from './budgets-requests';
 import {
   artifactPath,
   carriesJson,
@@ -55,6 +57,11 @@ export interface RouteStats {
   readonly charged?: readonly ChargedFile[];
   /** The app's inline script bytes inside `jsBytes` — the part no file in `charged` accounts for. */
   readonly inlineJsBytes?: number;
+  /**
+   * The fetches the document makes — itself, its script files, its stylesheets. A measurement,
+   * never a budget. Optional for `frameworkJsBytes`' reason: an older row did not count them.
+   */
+  readonly requests?: RouteRequests;
 }
 
 export interface BuildStats {
@@ -276,6 +283,10 @@ export interface MeasuredJs {
   readonly inlineBytes: number;
   /** Every APP `src=`/`data-x-entry=` module, so a finding can name the heaviest by file. */
   readonly entries: readonly MeasuredEntry[];
+  /** Distinct same-origin script files the document fetches, framework files included. */
+  readonly scriptRequests: number;
+  /** Distinct same-origin stylesheets it links (`budgets-requests.ts`). */
+  readonly styleRequests: number;
 }
 
 /**
@@ -422,7 +433,14 @@ export async function measureDocumentJs(
     const href = HREF_ATTR.exec(match[0])?.groups?.['href'];
     if (href !== undefined) await weigh(href);
   }
-  return { jsBytes, frameworkBytes, inlineBytes, entries };
+  return {
+    jsBytes,
+    frameworkBytes,
+    inlineBytes,
+    entries,
+    scriptRequests: fetched.size,
+    styleRequests: stylesheetRequests(html),
+  };
 }
 
 /**
@@ -441,6 +459,7 @@ export function routeStatsRow(
     ...(chain === undefined ? {} : { heaviestChain: chain }),
     charged: heaviestFirst(measured.entries),
     inlineJsBytes: measured.inlineBytes,
+    requests: routeRequests(measured.scriptRequests, measured.styleRequests),
   };
 }
 

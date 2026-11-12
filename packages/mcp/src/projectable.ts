@@ -18,6 +18,7 @@ import { guardQueryBeforeInput, isQuery, queryName, readAnswer, sourceFor } from
 import { toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
 import type { ProjectablePrimitive } from './from-action';
 import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
+import { pagedRows, takeAfterArg, withAfterArg } from './query-page';
 import type { JsonSchema } from './wire';
 
 /**
@@ -89,7 +90,8 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
     name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
-    inputJsonSchema: toWireSchema(target.input),
+    // A list read takes the cursor its truncated answer hands back (`query-page.ts`).
+    inputJsonSchema: single ? toWireSchema(target.input) : withAfterArg(toWireSchema(target.input)),
     ...(output === undefined
       ? {}
       : { outputJsonSchema: output, ...(single ? {} : { outputWrap: 'rows' }) }),
@@ -100,8 +102,14 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
         const ctx = useContext();
         guardQueryBeforeInput(target.policy, { actor: actorOf(ctx), ctx, query: name }, 'mcp');
       }),
-    run: ({ input, actor }) =>
+    run: ({ input: args, actor }) =>
       asCallerContext(actor, async () => {
+        // A list read answers ONE bounded page through its own `.page()`, never every row.
+        if (!single) {
+          const { input, after } = takeAfterArg(args);
+          return pagedRows(target, input, after);
+        }
+        const input = args;
         // `sourceFor` is the authorized front half of `runQuery` — validate, guard, build —
         // and is what `live`, `paginate` and `explain` build on too. Executed without the
         // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,

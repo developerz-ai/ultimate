@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor, McpExposureDeclaration } from '@ultimat3/core';
+import { ctxOf, runWithContext, useContext } from '@ultimat3/core';
 import type { ProjectablePrimitive } from './from-action';
 import { toolFrom, toolsFrom, toolsListed } from './from-action';
 import type { McpCaller } from './registry';
@@ -184,5 +185,36 @@ describe('a list the author wrote out is refused, not filtered', () => {
 
     expect(toolsListed(list).map((t) => t.name)).toEqual(toolsFrom(list).map((t) => t.name));
     expect(toolsListed(list).map((t) => t.name)).toEqual(['aFeed', 'publishPost']);
+  });
+});
+
+describe('a cancelled call reaches the primitive as ctx.signal', () => {
+  const reader = (seen: AbortSignal[]): ProjectablePrimitive => ({
+    name: 'longRead',
+    mcp: { expose: true },
+    mutates: false,
+    async run() {
+      seen.push(useContext().signal);
+      return { ok: true };
+    },
+  });
+
+  test('outside any request, the signal handed to handle is the context signal', async () => {
+    const seen: AbortSignal[] = [];
+    const controller = new AbortController();
+    await toolFrom(reader(seen)).handle({}, caller(robot), controller.signal);
+    controller.abort();
+    expect(seen[0]?.aborted).toBe(true);
+  });
+
+  test("inside a request it composes with the request's own signal", async () => {
+    const seen: AbortSignal[] = [];
+    const request = new AbortController();
+    const call = new AbortController();
+    await runWithContext(ctxOf({ signal: request.signal }), () =>
+      toolFrom(reader(seen)).handle({}, caller(robot), call.signal),
+    );
+    call.abort();
+    expect(seen[0]?.aborted).toBe(true);
   });
 });

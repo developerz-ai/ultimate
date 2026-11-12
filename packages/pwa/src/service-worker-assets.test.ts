@@ -94,3 +94,59 @@ describe('the offline document per locale', () => {
     expect(await (await sw.respondNavigate('/en/casos')).text()).toBe('bytes for /offline');
   });
 });
+
+/**
+ * A stylesheet sat in `x-precache-<build>` and the offline document still rendered unstyled: no
+ * rule matched `/styles/<hash>.css`, so the request went to the network, and the precache was a
+ * copy nothing read. A precached asset is answered from the precache: from it first when its
+ * revision is its URL (content-addressed), from the network first otherwise.
+ */
+describe('a precached asset', () => {
+  const assets = [
+    { url: '/styles/site-3f2a9c1b.css', revision: '/styles/site-3f2a9c1b.css', bytes: 1 },
+    { url: '/islands/feed-46f06d5d.js', revision: '/islands/feed-46f06d5d.js', bytes: 1 },
+    { url: '/offline.png', revision: 'build-1', bytes: 1 },
+  ];
+  const withAssets = { ...config, runtimeAssets: ['/islands/'], assets };
+
+  test('is answered from the precache offline: the offline document is styled', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(ROUTES, withAssets, 'build-1').source);
+    await sw.install();
+    await sw.activate();
+    sw.goOffline();
+    expect(await (await sw.request('/styles/site-3f2a9c1b.css')).text()).toBe(
+      'bytes for /styles/site-3f2a9c1b.css',
+    );
+    expect(await (await sw.request('/offline.png')).text()).toBe('bytes for /offline.png');
+  });
+
+  test('content-addressed, it is never downloaded twice — not even an island chunk', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(ROUTES, withAssets, 'build-1').source);
+    await sw.install();
+    await sw.activate();
+    await sw.request('/styles/site-3f2a9c1b.css');
+    await sw.request('/islands/feed-46f06d5d.js');
+    const fetchedOnce = (path: string) => sw.fetched.filter((url) => url.includes(path));
+    expect(fetchedOnce('/styles/site-3f2a9c1b.css')).toHaveLength(1);
+    expect(fetchedOnce('/islands/feed-46f06d5d.js')).toHaveLength(1);
+  });
+
+  test('not content-addressed, it goes to the network first while there is one', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(ROUTES, withAssets, 'build-1').source);
+    await sw.install();
+    sw.answerWith((request) =>
+      new URL(request.url).pathname === '/offline.png' ? new Response('fresh') : undefined,
+    );
+    expect(await (await sw.request('/offline.png')).text()).toBe('fresh');
+  });
+
+  test('a stylesheet the precache does not name is left to the browser', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(ROUTES, withAssets, 'build-1').source);
+    const factory = sw.respond('/styles/other-00000000.css');
+    await expect(factory).rejects.toThrow('no handler answered');
+  });
+});

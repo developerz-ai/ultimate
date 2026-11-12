@@ -37,6 +37,7 @@ globalThis.probe = [
   client.NAVIGATION_ERROR_EVENT,
   client.NAVIGATION_MODAL_ATTRIBUTE,
   client.disposeIslands,
+  client.mountOver,
   client.scheduleRefresh,
 ];
 `;
@@ -76,6 +77,7 @@ test('the browser entry carries the navigation helpers and core/page, never the 
   // `client.ts` is re-exports only, so it writes no banner of its own.
   expect(render).toEqual([
     'render/src/island-dispose.ts',
+    'render/src/island-mount.ts',
     'render/src/navigation-api.ts',
     'render/src/navigation-errors.ts',
     'render/src/navigation-modal-rules.ts',
@@ -130,6 +132,16 @@ test('an island that only releases nested islands carries island-dispose.ts and 
   // 296 B when measured (2026-10-10, Bun 1.4.2, `minify: true`).
   const minified = await bundle('dispose-only-min', source, true);
   expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(512);
+});
+
+// Plan 101 sweep 11 I5: the scaffolded `mount` calls `mountOver`, so every island pays for it.
+test('an island that mounts over its server markup carries island-mount.ts and nothing else', async () => {
+  const source =
+    "import { mountOver } from '@ultimat3/render/client';\nglobalThis.probe = mountOver;\n";
+  expect((await bundle('mount-only', source)).modules).toEqual(['render/src/island-mount.ts']);
+  // 167 B when measured (2026-11-12, Bun 1.4.4, `minify: true`).
+  const minified = await bundle('mount-only-min', source, true);
+  expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(256);
 });
 
 test('an island that schedules refreshes carries refresh-idle.ts and the session flag, no router', async () => {

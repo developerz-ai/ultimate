@@ -137,4 +137,45 @@ describe('unit · the island x g island emits actually mounts', () => {
     // mutation test that cannot tell a dead signal from a dead assertion.
     expect(mounted.text('[data-role="count"]')).toBe('0');
   }, 60_000);
+
+  // Plan 101 sweep 11 I5: a render that throws must leave the server's markup on screen, not a
+  // blank box. Real Solid, built: the emitted component is made to throw, and `mount` is wrapped
+  // so the throw is OBSERVED here instead of failing the mount — the runtime's `boot` is what
+  // catches it in a browser and marks the root `data-x-failed` for the error reporter.
+  test('a component that throws leaves the server shell in place, and the throw reaches boot', async () => {
+    const emitted = islandFiles('counter', { dir: DIR }).map((file) =>
+      file.path === ENTRY
+        ? {
+            ...file,
+            contents: `${String(file.contents)
+              .replace(
+                'const [count, setCount] = createSignal(0);',
+                "const [count, setCount] = createSignal(0);\n  if (count() === 0) throw new RangeError('render threw');",
+              )
+              .replace('export function mount(', 'function drawn(')}
+export function mount(el: HTMLElement, props: CounterProps): () => void {
+  try {
+    return drawn(el, props);
+  } catch (error) {
+    el.setAttribute('data-caught', error instanceof Error ? error.message : 'unknown');
+    return () => undefined;
+  }
+}
+`,
+          }
+        : file,
+    );
+    using root = await fixtureAppRoot('island-throws', emitted);
+    using mounted = await mountIsland({
+      build: buildIslands,
+      root: root.path,
+      file: ENTRY,
+      props: { label: 'Open' },
+      shell: '<span>server</span>',
+    });
+
+    expect(mounted.el.getAttribute('data-caught')).toBe('render threw');
+    expect(mounted.text('span')).toBe('server');
+    expect(mounted.find('button')).toBeNull();
+  }, 60_000);
 });

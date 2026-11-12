@@ -46,3 +46,22 @@ Not read in five passes: `mcp` `meta-*`, `validate-args.ts`, `oauth-*`; `ai` pro
 - A dropped stream costs what the provider billed.
 - A small tenant's vector search returns `k` hits on a large shared table.
 - An MCP client can cancel, is never blocked behind a slow call, and never receives an unbounded result.
+
+## Outcome (sweep 11, local)
+
+Ships as 31.15.0. `As of 2026-11-12`, measured before release.
+
+| ID | Outcome |
+|---|---|
+| N1 | reproduced, then shipped. 16 at a time inside a chunk (`NOTIFY_DELIVERY_WIDTH`), each with its own claim; one failing recipient no longer stops its chunk. 100 recipients on a 50 ms channel 5.1 s → 0.36 s. The concurrency review found `mapBounded` rejecting at once on a drain with sends in flight (rows left `sending`, re-sent after the reclaim window): replaced by `fanout-pool.ts`, which stops claiming on abort and settles every started send first (`fanout-drain.test.ts`). Also: the Postgres inbox `add` returns the stored row under a concurrent writer; `memoryDeliveryLedger` no longer evicts a just-reclaimed row |
+| AI1 | shipped, widened by the security review. A stream that stops after the provider's first byte records the running usage (`stream-bill.ts`); a `generate` or `stream` aborted after its request was sent records the prompt's estimate (`trackSent`); only a call never sent, or refused by the provider, releases. A `done` whose record throws is never re-booked (the concurrency review: double cost). A non-streamed 2xx that is not a JSON object or is over 32 MiB is `X_AI_PROVIDER_UNAVAILABLE` (`answer-body.ts`) |
+| AI2 | shipped. `pg-vector-recall.ts`: `hnsw.iterative_scan = relaxed_order` on pgvector ≥ 0.8, else `ef_search = max(40, k × 10)` capped at 1,000, version read in the same statement; scoped to a read-only transaction (or the caller's, restored). `pg-vector-recall.live.test.ts` forces the index on a large table where the tenant holds a small share |
+| AI3 | deferred (OD8): documented only |
+| M1 | shipped. One bounded page through the query's own `.page()`: 500 rows, 256 KiB, `truncated` + `nextCursor`, continued with `_after` (`query-page.ts`) |
+| M2 | shipped. Concurrent stdio dispatch (≤ 16), `notifications/cancelled` → the call's signal, a cancelled call writes nothing. The concurrency review found the reader parked at the cap (a cancel or `ping` for a running call unread): now ≤ 64 requests queue while the reader reads on, `ping` never queues, a cancel removes a queued request |
+| M3 | shipped. `stdio-lines.ts` counts bytes on the raw chunk |
+| M4 | shipped. `missing-token` at `info`; `addressNetwork` on every `mcp.auth.*` line; the unauthenticated allowance keyed per IPv6 /64. Also: `mcpOAuthClient().begin` refuses non-URL metadata, resource metadata for another resource (RFC 9728 §3.3), and — the security review — an authorization or token endpoint that is not `https:` (loopback `http:` aside) |
+| W1 | shipped. ≤ 50 documents per pages cache, oldest written first out; writes serialised so a trim never deletes a page a refresh just stored (the concurrency review). Ledger item fixed with it: a precached `/styles/<hash>.css` is served from the precache (`precached-asset-source.ts`), so an offline document is styled |
+| bug hunt | `scraping/src/cdp-connection.ts`: a close answers every waiting `once()` false at once and clears its timer; `http/src/compress-precode.ts`: a synchronous coder throw is logged, never an unhandled rejection; `http/src/stages-log.test.ts`: the routine-refusal window reset per test (a full-run-only level leak) |
+
+Ledger (later): admin/cli `McpTool` implementations take the optional signal; the MCP HTTP transport passes `request.signal`.

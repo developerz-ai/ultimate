@@ -54,9 +54,9 @@ function registeredGate(tool: AnyMcpTool): AnyMcpTool {
     ...tool,
     // The catalog's label reads what is declared by now; the refusal below reads the call's truth.
     ...(toolGateFor(tool.name) === undefined ? {} : { confirms: true }),
-    async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
+    async handle(args: ToolArgs, caller: McpCaller, signal?: AbortSignal): Promise<McpToolResult> {
       const toolGate = toolGateFor(tool.name);
-      if (toolGate === undefined) return tool.handle(args, caller);
+      if (toolGate === undefined) return tool.handle(args, caller, signal);
       tool.admit?.(caller);
       const call = {
         tool: tool.name,
@@ -65,7 +65,7 @@ function registeredGate(tool: AnyMcpTool): AnyMcpTool {
         actor: caller.actor,
       };
       // What a gate answers is what `run` answered, or it threw: this `run` answers a tool result.
-      return (await toolGate(call, async () => tool.handle(args, caller))) as McpToolResult;
+      return (await toolGate(call, async () => tool.handle(args, caller, signal))) as McpToolResult;
     },
   };
 }
@@ -98,14 +98,14 @@ function gate(tool: AnyMcpTool, confirmations: McpConfirmations): AnyMcpTool {
   return {
     ...tool,
     confirms: true,
-    async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
+    async handle(args: ToolArgs, caller: McpCaller, signal?: AbortSignal): Promise<McpToolResult> {
       // Caller-only half of the policy first: one who may never call this opens no row for a person
       // to look at. Throws the same denial `handle` would, rendered by the server.
       tool.admit?.(caller);
       return confirmedCall(
         confirmations,
         { tool: tool.name, args, actor: caller.actor },
-        async () => tool.handle(args, caller),
+        async () => tool.handle(args, caller, signal),
       );
     },
   };

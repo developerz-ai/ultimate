@@ -7,6 +7,7 @@
 import type { Breaker, Random, RetryPolicy } from '@ultimat3/core';
 import { fingerprint, finiteCount, finiteOption, logger, renderThrowable } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
+import type { Billed } from './billed';
 import { billedOf } from './billed';
 import type { BudgetKeys, BudgetLimits, BudgetReservation, BudgetStore } from './budget';
 import {
@@ -27,6 +28,7 @@ import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 import type { SamplingWire } from './sampling';
+import { sentBillOf, streamBillOf } from './stream-bill';
 import { ZERO_USAGE } from './wire';
 
 /**
@@ -215,7 +217,9 @@ class GatewayImpl implements Gateway {
       // A call that never landed must not go on holding its reservation — and one that DID land
       // and still failed (`billedOf`: the provider answered with something unusable) is recorded
       // as what it cost. Releasing it told the ledger a billed call was free.
-      await settleFailure(ledger, reservation, error);
+      // An abort after the request left the process is billed its prompt, never released.
+      const sentBill = abortedBy(resolved, error) ? sentBillOf(resolved) : undefined;
+      await settleFailure(ledger, reservation, error, sentBill);
       throw error;
     }
     // The provider was PAID by now. Nothing below may turn that answer into a failure: a ledger
@@ -280,6 +284,9 @@ class GatewayImpl implements Gateway {
       throw error;
     }
     let settled = false;
+    // Set BEFORE the `done` record is awaited: a store that throws there may have booked part of
+    // it, and settling again from the running bill would charge the call twice.
+    let recordAttempted = false;
     try {
       for await (const chunk of provider.stream(resolved)) {
         // The first chunk is the provider's verdict for its breaker: it answered.
@@ -294,6 +301,7 @@ class GatewayImpl implements Gateway {
         // Settled only once `record` has LANDED. Marking it first left a store that threw here
         // holding the reservation and half the record — the `finally` saw a settled stream.
         const { usage, cost, costExact } = chunk.result;
+        recordAttempted = true;
         await ledger?.record(usage, costExact ?? cost, reservation);
         settled = true;
         yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
@@ -306,15 +314,26 @@ class GatewayImpl implements Gateway {
       // Thrown after the provider reported usage: the bill is recorded, exactly as `generate` does.
       // Only when nothing settled yet — a provider that throws AFTER its `done` chunk was already
       // recorded, and releasing again would credit the ledger a second time.
+      // A throw with no bill of its own — a cut socket, an abort — is billed what the wire reported.
+      // An abort before the first frame, once the request was sent, is billed its prompt.
       if (!settled) {
         settled = true;
-        await settleFailure(ledger, reservation, error);
+        const running = recordAttempted
+          ? undefined
+          : (streamBillOf(resolved) ??
+            (abortedBy(resolved, error) ? sentBillOf(resolved) : undefined));
+        await settleFailure(ledger, reservation, error, running);
       }
       throw error;
     } finally {
-      // A stream its consumer abandoned never reached `done` — so nothing reconciled the
-      // reservation and it would hold the ceiling for the rest of the window.
-      if (!settled) await ledger?.release(reservation);
+      // A stream its consumer abandoned never reached `done`. Its prompt, and every token it
+      // streamed, were billed all the same: recorded from the provider's running usage, and
+      // released only when no provider byte arrived (or the provider reports none).
+      // Abandoned before its first frame, after the request was sent: the prompt.
+      if (!settled) {
+        const running = streamBillOf(resolved) ?? sentBillOf(resolved);
+        await settleFailure(ledger, reservation, undefined, running);
+      }
       // Abandoned before a chunk: the probe goes back, counting nothing.
       if (!answered) gate?.released(ticket);
     }
@@ -334,15 +353,25 @@ class GatewayImpl implements Gateway {
   }
 }
 
-/** A failed call's reservation: reconciled against its bill when the failure carries one, else given back. */
+/**
+ * A failed call's reservation: reconciled against its bill when the failure carries one — else
+ * against `running`, what a stream's wire reported before it stopped — else given back.
+ */
 async function settleFailure(
   ledger: BudgetLedger | undefined,
   reservation: BudgetReservation | undefined,
   error: unknown,
+  running?: Billed,
 ): Promise<void> {
-  const billed = billedOf(error);
+  const billed = billedOf(error) ?? running;
   if (billed === undefined) return ledger?.release(reservation);
   await ledger?.record(billed.usage, billed.cost, reservation);
+}
+
+/** The caller's abort — its signal, or the `AbortError` a fetch raises for it. */
+function abortedBy(request: GenerateRequest, error: unknown): boolean {
+  if (request.signal?.aborted === true) return true;
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 /** The stored answer as a hit delivers it: no token spent, no money, in the currency it named. */

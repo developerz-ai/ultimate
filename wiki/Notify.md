@@ -61,6 +61,12 @@ message disappears is your decision ([Configuration](Configuration)).
   recipient)` taken before each send — a chunk that failed part-way re-sends nobody it reached.
   10k recipients on two channels is 40 preference reads and 40 delivery steps. A digest's append
   and drain stay one step per recipient; its send is one step per chunk.
+- Inside a chunk, deliveries run 16 at a time (`NOTIFY_DELIVERY_WIDTH`), each with its own ledger
+  claim. One failing recipient never stops its neighbours: they go out and settle `sent`, then the
+  step fails (a retryable failure first) and the retry re-sends the failed one alone. A drain (the
+  run's signal aborting) claims nobody new and waits for every send already claimed to settle
+  before the step answers, so no row is left `sending` behind an exiting process. Measured
+  `As of 2026-11-12`: 100 recipients on a 50 ms channel, 5.1 s → 0.36 s.
 - Two attempts at once: one sends. The other raises `X_NOTIFY_DELIVERY_HELD` and retries past the
   holder's `reclaimAfterMs` (5 minutes by default), so a crashed attempt's recipient is still sent to
   and a late `settle` moves nothing.

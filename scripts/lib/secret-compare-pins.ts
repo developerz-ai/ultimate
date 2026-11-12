@@ -287,6 +287,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A `parentKey` is a COLUMN NAME — the property an orphan child names its parent by — compared to the property the erase filters on, both from the declared subject plan.',
   },
+  'packages/mcp/src/transport-stdio.ts: idKey(one.id) === key': {
+    // why: plan 101 sweep 11, stdio cancel at the in-flight cap finds a queued request by its JSON-RPC id.
+    count: 1,
+    reason:
+      'A JSON-RPC request `id`, normalised by `idKey` so a `notifications/cancelled` finds the queued request it names — a correlation id the peer itself sent in the clear, not a credential.',
+  },
   'packages/notify/src/push-register.ts: device.token !== kept.token': {
     // why: issue #997's per-actor device cap; a push token is a routing address, not a credential.
     count: 1,

@@ -279,8 +279,8 @@ async function bootDev(
     signInPath: await loadSignInPath(options.root),
     // The same seam `serve.ts` passes: the app's own error page is a FILE under this root.
     root: options.root,
-    // The `/_x` shell, the harness's frame, the app's own error pages and its brand — the inline
-    // bodies this process serves; the app's surfaces are content-hashed files `'self'` admits.
+    // The `/_x` shell, the harness's frame and the app's own error pages — the inline bodies this
+    // process serves; the app's surfaces, brand included, are hashed files `'self'` admits.
     inlineStyles: [await devShellStyle(), FRAME_STYLE, ...inlineStyles],
     inlineScripts: [
       theme.cspSource,

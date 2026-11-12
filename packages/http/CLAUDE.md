@@ -135,7 +135,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
-- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by RFC 9110 weight; a 304's validator form is its 200's (`etag-form.ts`); a public strong-ETag body is coded once per process (`compress-cache.ts`, LRU 512 / 16 MiB). Signed-in: coded only when `immutable`. ≤256 KiB declared is coded whole; past it, or undeclared once 1 KiB is read, streamed with no length. An undeclared NDJSON feed never is. A refused response is the SAME object. `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions. A counted read that overruns, fails or passes `ctx.signal`, or a `gzipSync` throw, logs `http.compress_failed`: identity, whole.
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is coded ONCE in the background at br 11 / zstd 19 / gzip 9 (`compress-precode.ts`, 2 keys at a time; a coder that throws is logged, never unhandled), and later hits are lookups. Full rule: `docs/history/http.md`.
 
 ## Rules — errors and the problem document
 
@@ -247,6 +247,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `request-facts.ts` | `RequestFacts`, any token resolver's frozen 2nd arg; address = `ctx.ip` |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 | `compress.ts` | the `compress` stage's rule: which answers leave coded |
+| `compress-precode.ts` | the immutable-asset precoder: background br/zstd/gzip once per key, `pick` by `accept-encoding` |
 | `admit-stage.ts`, `lag-shed.ts` | `admit`'s refusals; lag p99 shed (`shedLagMs`, OFF in 31.x: no sampler) |
 | `request-timings.ts`, `slow-request-log.ts` | a request's stage split: `Server-Timing` (dev), `http.request.slow` |
 | `refusal-log.ts` | `http_refusals_total{code}`; routine refusal `info` once/route/min, then `debug` |

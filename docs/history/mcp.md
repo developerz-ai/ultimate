@@ -301,3 +301,14 @@ Compared before the design was fixed, read only (never run): sst/opencode at
   `actions:` and `queries:` go through **one** `toolsListed` call over the concatenation: it
   collects every offender before throwing, so one boot names all of them and one edit closes
   all of them. Two calls would throw on the first array and never examine the second.
+
+## Moved out 2026-11-12 (sweep 11, the CLAUDE.md ceiling)
+
+- **A schema property lands through `Object.defineProperty` too** — `@ultimat3/schema`'s
+  `wire-schema.ts`, the twin of `validate-args.ts`'s `put` on the schema side. `out[key] = …` for
+  a property named `__proto__` runs `Object.prototype`'s setter and re-prototypes the published
+  `properties` record instead of adding a key, so a field the tool author declared vanishes from
+  `tools/list` and from what the arg validator reads back.
+- **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
+  `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
+  back-pressure; only a child-process test can see it.

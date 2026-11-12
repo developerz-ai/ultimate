@@ -9,7 +9,8 @@
 //
 // The other five are about what the app is like to USE, which no row of `AGENTS.md` had ever been
 // about: a control a keyboard cannot reach, a focus ring taken away and not replaced, an image with
-// no box, an animation the compositor cannot run, and an island nobody has seen fail. Each is
+// no box, an animation the compositor cannot run, an island nobody has seen fail, and one that
+// fails BLANK — its server markup cleared outside `mountOver`. Each is
 // statically decidable from the file alone — the reason those five and not the many that are not.
 //
 // The seven after those are about the STYLESHEET, which Biome does not read at all: a length, a
@@ -29,6 +30,7 @@ import { bareErrorGuardFiles } from './guard-bare-error';
 import { errorDeclaredGuardFiles } from './guard-error-declared';
 import { focusVisibleGuardFiles } from './guard-focus-visible';
 import { imageDimensionsGuardFiles } from './guard-image-dimensions';
+import { islandMountClearsGuardFiles } from './guard-island-mount-clears';
 import { islandWithoutStatesGuardFiles } from './guard-island-without-states';
 import { nativeConfirmGuardFiles } from './guard-native-confirm';
 import { rawBreakpointGuardFiles } from './guard-raw-breakpoint';
@@ -59,6 +61,7 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['error-declared', errorDeclaredGuardFiles],
   ['focus-visible', focusVisibleGuardFiles],
   ['image-dimensions', imageDimensionsGuardFiles],
+  ['island-mount-clears', islandMountClearsGuardFiles],
   ['island-without-states', islandWithoutStatesGuardFiles],
   ['native-confirm', nativeConfirmGuardFiles],
   ['raw-breakpoint', rawBreakpointGuardFiles],

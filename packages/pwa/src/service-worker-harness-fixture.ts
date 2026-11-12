@@ -69,6 +69,9 @@ export class StubCache {
   /** Reads the WHOLE body before it resolves, as the real `Cache.put` does. */
   async put(request: Request | string, response: Response): Promise<void> {
     const bytes = await response.arrayBuffer();
+    // Delete, then set: the real `put` drops the matching entry and appends the new one, so a
+    // re-stored URL moves to the END of `keys()` — the order the pages cache's eviction reads.
+    this.entries.delete(this.#key(request));
     this.entries.set(
       this.#key(request),
       new Response(bytes, { status: response.status, headers: response.headers }),
@@ -77,6 +80,11 @@ export class StubCache {
 
   async delete(request: Request | string): Promise<boolean> {
     return this.entries.delete(this.#key(request));
+  }
+
+  /** Insertion order, oldest first, as the real `Cache.keys()` answers. */
+  async keys(): Promise<Request[]> {
+    return [...this.entries.keys()].map((url) => new Request(url));
   }
 
   /** All-or-nothing, like the real one: a non-ok response rejects the whole install. */

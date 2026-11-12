@@ -3,14 +3,19 @@
 // a cause interpolated into the message reached the log store past every rule that exists to
 // stop it. A rejected `{"password":"…"}` was written verbatim, at 4xx, which is logged and not
 // reported and therefore kept for the full retention.
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { structuredLogger, UltimateError } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { requestContext } from './context';
 import { bodyInvalid, unauthenticated } from './errors';
+import { resetRefusalLog } from './refusal-log';
 import { UltimateRequest } from './request';
 import { httpRouter } from './router';
 import { stageRunners } from './stages';
+
+// The routine-refusal window is per process: another suite's login wall on the same route label
+// within a minute demoted this file's line to `debug` in a full run, never alone.
+beforeEach(() => resetRefusalLog());
 
 const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null });
 

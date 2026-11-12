@@ -284,8 +284,11 @@
  * once), `driver-memory-enqueue.ts`, `driver-pg-enqueue-sql.ts` (debounce and expiry, split off at
  * the file ceiling) and `outbox-relay-publish.ts` (the relay's single-row publish). No existing
  * module newly reached.
+ * raised 948 → 949, measured 949 (2026-11-12, sweep 11 serving, the test's own walk):
+ * `http/src/compress-precode.ts` — the immutable-asset precoder `compress.ts` consults, on the http
+ * barrel. A new file; no existing module newly reached.
  */
-export const MIGRATE_CEILING = 948;
+export const MIGRATE_CEILING = 949;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

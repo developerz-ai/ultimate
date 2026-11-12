@@ -897,3 +897,7 @@ pod for those decisions — logged, and a weaker limit rather than none. Proof:
 `drain.deadlineMs` is the one drain budget (core, per role). The key `drainTimeoutMs` (deleted in
 25.0.0) is `X_CONFIG_INVALID` via `refuseDeletedHttpKeys`. `ServerOptions.drain` passes only
 `readinessGraceMs`, and only when declared.
+
+## `compress`, in full (moved 2026-11-12, sweep 11)
+
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by RFC 9110 weight; a 304's validator form is its 200's (`etag-form.ts`); a public strong-ETag body is coded once per process (`compress-cache.ts`, LRU 512 / 16 MiB). Signed-in: coded only when `immutable`. ≤256 KiB declared is coded whole; past it, or undeclared once 1 KiB is read, streamed with no length. An undeclared NDJSON feed never is. A refused response is the SAME object. `private`, `no-store`, `no-cache` or `no-transform` is identity (BREACH); `vary: accept-encoding` goes on every answer past the type and cache conditions. A counted read that overruns, fails or passes `ctx.signal`, or a `gzipSync` throw, logs `http.compress_failed`: identity, whole.

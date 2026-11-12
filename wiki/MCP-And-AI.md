@@ -66,6 +66,19 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 
 **`bunx @ultimat3/cli`, never `bunx x`, in a client config.** A client may spawn the command outside the installed app, and there `bunx x` fetches an unrelated npm package named `x`. Inside an app's shell, `bunx x` resolves the app's own CLI. `scaffold-mcp-json.test.ts` pins the spelling, and CI's `scaffold-smoke` spawns the file's own command and asks it `initialize` and `tools/list` on every push.
 
+### The stdio wire
+
+`x mcp serve --transport stdio` speaks newline-delimited JSON-RPC (`packages/mcp/src/transport-stdio.ts`).
+`As of 31.15.0`:
+
+| Rule | Detail |
+|---|---|
+| no call blocks another | each request is dispatched without waiting for the one before; answers are written one at a time, never interleaved |
+| at most 16 at once | `STDIO_MAX_IN_FLIGHT`; past it a request waits in a queue of 64 (`STDIO_MAX_QUEUED`), and only a full queue stops the reader |
+| `ping` is always answered | it never queues, so a busy server still says it is alive |
+| `notifications/cancelled` aborts the named call | heard at the cap too: the tool's `ctx.signal` (a hand-written tool: `handle`'s optional third argument) aborts, a queued request never runs, and a cancelled request gets no answer |
+| one message ≤ `lineLimitBytes` | 1 MiB by default, counted in BYTES before decoding; an over-long line is one `-32600` `X_MCP_BODY_TOO_LARGE` frame |
+
 ### Rate limits on the HTTP transport
 
 **Enforced `As of 2026-08-24`.** `mcpHttpRoute` meters itself, per caller, per class, per minute. It has to: all MCP traffic is one `POST /mcp`, so the HTTP pipeline's own buckets — which key on the route — cannot tell an `initialize` handshake from a migration.
@@ -74,7 +87,7 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 |---|---|---|
 | `read` | 120 / minute | every method that is not `tools/call`, plus any tool that does not declare `destructive: true` |
 | `write` | 20 / minute | a `tools/call` naming a `destructive: true` tool, and **any call this server cannot resolve** — fail-closed, so a probing client never gets the cheap bucket |
-| `unauthenticated` | 20 / minute, per **address** | a missing token, or one `resolveToken` answers `null`. Past it the address is refused `429` **before** `resolveToken` runs — a valid guess included, so the answer says nothing about the token (`As of 2026-10`). Keyed on `handle(request, { address })` — the host's resolved client address; a host that passes none is not metered here |
+| `unauthenticated` | 20 / minute, per **address** — an IPv6 /64 is one address (`addressNetwork`, `As of 31.15.0`) | a missing token, or one `resolveToken` answers `null`. Past it the address is refused `429` **before** `resolveToken` runs — a valid guess included, so the answer says nothing about the token (`As of 2026-10`). Keyed on `handle(request, { address })` — the host's resolved client address; a host that passes none is not metered here |
 
 | Rule | Detail |
 |---|---|
@@ -129,6 +142,14 @@ That line is the entire integration. From the existing declaration:
 | audit trail | the same OTel span and log line as an HTTP call |
 
 The projected tool's `run` **is** `invoke` — the same entry point the HTTP route calls (`packages/mcp/src/projectable.ts`). Policy runs inside it, so there is nothing to keep in sync. The projection itself adds **no** MCP scope: a second gate hard-coded into the projection would sit in front of the only gate that matters, and the two would eventually disagree. `defineAppMcp`'s `scopes:` map may still attach one from outside — a property of the connection's token, never invented by the projection.
+
+**An exposed LIST query answers one bounded page.** Its tool reads through the query's own
+`.page()`: at most 500 rows (`MAX_WIRE_PAGE_SIZE`) and 256 KiB of JSON (`QUERY_LIMITS.maxBytes`),
+`db.query`'s own ceilings. An answer that fits is the bare rows, as before. One cut short says so —
+`truncated` (`'rows'` or `'bytes'`) and a `nextCursor` — and the agent asks for the next page by
+passing that cursor back as the tool's optional `_after` argument, published in its `inputSchema`
+(`packages/mcp/src/query-page.ts`). `As of 31.15.0`: a read with no `.limit()` dumped every row into
+the model's context.
 
 No MCP-specific permission table, no service account with broad rights. Exposure is opt-in; silence exposes nothing.
 
@@ -531,6 +552,13 @@ Remote MCP tools as this app's actions — the app's `policy`, rate limit, confi
 3. On the callback, `exchange(handshake, { code, state })` answers `{ accessToken, refreshToken, expiresIn }`. `refresh(handshake, refreshToken)` answers the same shape.
 4. Store the tokens per connection. Return the access token from `mcpTools({ auth })`, which is read on every call, so a rotated token is never cached.
 
+`begin` refuses, as `X_MCP_REMOTE_REFUSED`, metadata it cannot trust: a document that is not a URL,
+resource metadata naming another resource (RFC 9728 §3.3), authorization-server metadata answering
+for another issuer (RFC 8414 §3.3), no PKCE S256, and an `authorization_endpoint` or `token_endpoint`
+that is not `https:` — `http:` only on a loopback host (`localhost`, `127.0.0.1`, `[::1]`, RFC 8252).
+`authorizeUrl` is handed to a person as a link, so a `javascript:` endpoint would run in the app's
+origin. `As of 31.15.0`.
+
 `clientId` is the HTTPS URL at which this app serves `metadata()` (a client ID metadata document), or an id the authorization server issued when the app was registered by hand. A `401` mid-session is `X_MCP_REMOTE_AUTH_REQUIRED`: run the handshake again.
 
 **Proved on itself.** `examples/dummy/packages/mcp/src/remote-self.contract.test.ts` points `mcpTools()` at the reference app's own MCP route. It locks the live list, calls `seatReport`, and meets three refusals: the remote policy's `X_FORBIDDEN` as a result, a stolen token as `X_MCP_REMOTE_AUTH_REQUIRED`, and a schema moved since the lock as `X_MCP_REMOTE_TOOL_CHANGED`.
@@ -612,6 +640,18 @@ export const summarize = llm({
 
 **A stream is the same action over a different transport, with one difference that is forced rather than chosen: there is no repair turn.** The non-streaming call retries once on a parse failure; a stream cannot, because the tokens are already on the reader's screen and a second answer is two answers to one question. So a stream yields **unvalidated** text increments plus one final `done` carrying the value that did satisfy `output`, and a schema disagreement is `X_LLM_STREAM_INVALID` naming the non-streaming call as the fix. A structured schema wants the non-streaming call.
 
+**A call that stops early still costs what the provider billed.** Every budget — `tokensPerRun`,
+`costPerRun`, the actor and org ceilings — is charged on these paths (`packages/ai/src/gateway.ts`,
+`stream-bill.ts`). `As of 31.15.0`:
+
+| The call | Recorded |
+|---|---|
+| reaches `done` | the provider's own counts |
+| a stream abandoned, cut or aborted after its first provider byte | the running usage the wire reported: the prompt from `message_start` (OpenAI-format: estimated) plus the output streamed so far |
+| aborted after its request left the process, before any answer (`generate` or `stream`) | the prompt's estimate (`estimateInputTokens`): the provider has read it |
+| aborted before the request was sent, or refused by the provider (a 4xx) | nothing: the reservation is released |
+| a `done` whose ledger record throws | never booked a second time from the running bill |
+
 **Showing what a model wrote is `Markdown` from `@ultimat3/ui`**, never `innerHTML`: the text is
 parsed to a tree and rendered as elements, so a `<script>` or a `javascript:` link in an answer is
 text, and a streaming answer re-parses per token while finished blocks keep their nodes. Tool calls
@@ -673,6 +713,7 @@ pgvector in the same Postgres. No second datastore.
 | Index | HNSW: `postgresVectorStore({ name, dimension }).ddl()` prints the table and both indexes, pasted into a migration by the app |
 | Hybrid search | one `query` primitive fusing pgvector cosine + Postgres FTS with Reciprocal Rank Fusion; weights are config |
 | Filtering | tenant + policy filters applied **in SQL**, so vector search cannot leak across tenants; a store with no tenant bound, read inside a request acting for an org, is `X_VECTOR_UNSCOPED` — a backfill opts in with `scope: UNSCOPED` |
+| HNSW recall | a search returns `k` hits for a small tenant on a large shared table: on pgvector ≥ 0.8 it runs with `hnsw.iterative_scan = relaxed_order`, before that with `hnsw.ef_search` raised to `max(40, k × 10)`, capped at 1,000 — the setting scoped to a read-only transaction the search opens (2–3 round trips), or to the caller's own, put back after (`pg-vector-recall.ts`). Without it pgvector took the 40 nearest rows and filtered afterwards, so a tenant holding a small share of the table got fewer than `k`, often none. `As of 31.15.0` |
 | Re-embed | `indexDocument` again: every chunk is embedded on each call, so a job decides when text changed |
 
 ## Evals as a test type

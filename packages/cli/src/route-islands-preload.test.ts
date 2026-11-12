@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { RouteEntry } from '@ultimat3/render';
 import type { DocumentOptions, IslandResolve } from './document-options';
 import { collectorFor, streamScripts } from './route-islands';
-import { preloadTags } from './route-islands-preload';
+import { linkHeader, preloadTags, preloadUrls } from './route-islands-preload';
 
 const PAGE = 'apps/web/app/posts/page.tsx';
 const RUNTIME = '/islands/page-runtime.abc123.js';
@@ -100,5 +100,39 @@ describe('streamScripts preloads', () => {
     expect(linksIn(scripts.first)).toEqual([SHARED, RUNTIME]);
     islands.record(spec('list'), {});
     expect(linksIn(scripts.after('filled'))).toEqual([OTHER]);
+  });
+});
+
+describe('linkHeader', () => {
+  test('the stylesheet as a style preload, then each chunk as a modulepreload, in order', () => {
+    expect(linkHeader('/styles/abc.css', [SHARED, OTHER])).toBe(
+      `</styles/abc.css>; rel=preload; as=style, <${SHARED}>; rel=modulepreload, <${OTHER}>; rel=modulepreload`,
+    );
+  });
+
+  test('a document with no stylesheet and no preload carries no header at all', () => {
+    expect(linkHeader(undefined, [])).toBeUndefined();
+  });
+
+  test('a URL that would break the header out of its brackets is left to the tag alone', () => {
+    expect(linkHeader('/styles/a>.css', ['/islands/a, b.js', SHARED])).toBe(
+      `<${SHARED}>; rel=modulepreload`,
+    );
+  });
+
+  test('a URL carrying its own `>;` cannot smuggle a second link past the check', () => {
+    // The text before the FIRST `>;` is header-safe; the rest would be a link to another origin.
+    const smuggled = '/islands/a.js>; rel=preload; as=fetch, <https://evil.example/x.js';
+    expect(linkHeader(smuggled, [smuggled, SHARED])).toBe(`<${SHARED}>; rel=modulepreload`);
+  });
+
+  test('preloadUrls is the set preloadTags writes, URL for URL', () => {
+    const entry = routeEntry('idle');
+    const islands = collectorFor(entry, OPTIONS, undefined);
+    islands.record(spec('form'), {});
+    islands.record(spec('list'), {});
+    expect(preloadUrls(entry, islands, OPTIONS, false)).toEqual(
+      linksIn(preloadTags(entry, islands, OPTIONS, false)),
+    );
   });
 });

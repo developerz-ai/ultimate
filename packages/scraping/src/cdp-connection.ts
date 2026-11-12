@@ -171,7 +171,11 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
 /** A connection over any transport — correlation, deadlines and events, written once. */
 export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpConnection {
   const pending = new Map<number, Pending>();
-  const waiters = new Set<(method: string, sessionId: string | undefined) => void>();
+  // A waiter keeps its own settle: a close answers it now, not at a deadline that may be minutes off.
+  const waiters = new Map<
+    (method: string, sessionId: string | undefined) => void,
+    { readonly timer: ReturnType<typeof setTimeout>; readonly resolve: (seen: boolean) => void }
+  >();
   const listeners = new Map<string, Set<CdpEventListener>>();
   let nextId = 0;
   let closed = false;
@@ -187,9 +191,12 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
       one.reject(new CdpCallFailedError({ method: 'the connection', detail: reason }));
     }
     pending.clear();
-    // A waiter is a "did this happen" question, and on a dead connection the answer is no. Its
-    // own timer settles it, so nothing is left hanging; clearing the set only stops a late frame
-    // from resolving a waiter whose connection has gone.
+    // A waiter is a "did this happen" question, and on a dead connection the answer is no — now,
+    // with its timer cleared, so neither the caller nor the event loop waits out its deadline.
+    for (const [, one] of waiters) {
+      clearTimeout(one.timer);
+      one.resolve(false);
+    }
     waiters.clear();
   };
 
@@ -210,7 +217,7 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
       const method = frame['method'];
       if (typeof method !== 'string') return;
       const on = typeof frame['sessionId'] === 'string' ? frame['sessionId'] : undefined;
-      for (const waiter of [...waiters]) waiter(method, on);
+      for (const waiter of [...waiters.keys()]) waiter(method, on);
       const subscribed = listeners.get(method);
       if (subscribed !== undefined) {
         const params = frame['params'];
@@ -276,7 +283,7 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
           waiters.delete(waiter);
           resolve(false);
         }, timeoutMs);
-        waiters.add(waiter);
+        waiters.set(waiter, { timer, resolve });
       });
     },
     on(method, listener): () => void {

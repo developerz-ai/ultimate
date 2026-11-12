@@ -171,6 +171,7 @@ const overlay = (root: string, app: string): string =>
           '@ultimat3/core/page': [`${root}/packages/core/src/page`],
           '@ultimat3/query/client': [`${root}/packages/query/src/client`],
           '@ultimat3/render/server': [`${root}/packages/render/src/server`],
+          '@ultimat3/render/client': [`${root}/packages/render/src/client`],
           '@ultimat3/cli/serve': [`${root}/packages/cli/src/serve-entry`],
           '@ultimat3/testing/test-types': [`${root}/packages/testing/src/test-types`],
           '@ultimat3/*': [`${root}/packages/*/src`],

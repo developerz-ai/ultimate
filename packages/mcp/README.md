@@ -437,6 +437,8 @@ defineAppMcp({
 | `outputSchema` | an action's `output` with an object root; a query's `rows` as `{ rows: [<row>] }`, or as the row itself for a `single: true` read (which answers one row or `X_NOT_FOUND`, as its route does) — `toWireOutputSchema` (from `@ultimat3/schema`) / `toRowsOutputSchema`, structure only (no bounds, patterns or `additionalProperties`: a client refuses a result that misses its schema) | none |
 | `structuredContent` | `structuredResult(value, wrap?)`: the serialized answer read back, beside the text block — a list query's rows under `rows`, a `single: true` query's row unwrapped | absent |
 
+**A list query answers one bounded page** (`As of 31.7`): its own `.page()`, at most `MAX_WIRE_PAGE_SIZE` (500) rows — fewer under a declared `maxPage` — and 256 KiB of JSON (`QUERY_LIMITS.maxBytes`). A cut answer adds `{ truncated: true, truncatedBy: 'rows' \| 'bytes', nextCursor? }` to `structuredContent` and as a second text block; the agent passes `nextCursor` back as the tool's `_after` argument. An answer that fits is the bare rows, unchanged. A read whose rows carry no `id` is read whole and cut, with no cursor.
+
 A tool's text is **compact JSON** (`jsonResult`; the 2-space form until 22.10). The meta tools
 carry their own hints: `list_resources` and `describe_resource` read-only, `manage_resource` a
 write; on `'meta-split'`, `read_resource` read-only and the other two destructive.
@@ -460,6 +462,8 @@ keeps `fix`. An error whose `docs` is not the framework's one Error-Codes page �
 |---|---|---|
 | HTTP | `mcpHttpRoute({ server, resolveToken })` → `POST /mcp` — `resolveToken(token, facts)` | `Authorization: Bearer <token>` → `Actor { kind: 'agent' }` |
 | stdio | `serveStdio({ server, caller })` | none — the peer already owns the shell |
+
+stdio dispatches each line without waiting for the last (at most 16 at once, then up to 64 more queue while the reader reads on; only a full queue stops it): a slow `tools/call` never holds a `ping`, and a `ping` never queues. `notifications/cancelled` aborts the named call's signal — `tool.handle(args, caller, signal)`, `ctx.signal` inside a projected primitive — and the cancelled call — running or still queued — writes no answer. `lineLimitBytes` counts bytes on the raw chunk (characters until 31.7).
 
 The HTTP transport exports a route *descriptor*, not a mounted handler: a host owns the lifecycle,
 and the descriptor stays drivable from a bare `Request` in a test. It carries
@@ -548,7 +552,7 @@ handed on. What an action or query DID still reaches core's `auditSink` port (`s
 |---|---|---|
 | `tool-call` | every `tools/call` outcome (`ok`, `hidden`, `scope-denied`, `refused`, `policy-denied`, `invalid-args`, `unconfirmed`, `previewed`, `failed`) — `refused` (at `warn`) is the pre-dispatch one: a `tenant:` server's call that named no tenant (`X_MCP_TENANT_REQUIRED`), answered before any tool ran. A `tenant.resolve` that throws or answers a non-agent is `X_MCP_TENANT_UNRESOLVED`, and lands in `failed` | `tool`, `outcome`, `caller`, `scope?`, `code?` |
 | `resource-read` | every `resources/read` outcome | `uri`, `outcome`, `caller`, `scope?`, `code?` |
-| `auth-refused` | a missing or rejected token, a non-agent actor, an address past its failure allowance, a cross-origin `Origin` (`origin-refused`, before the token is read) — also logged `mcp.auth.<reason>` at `warn` | `reason`, `status` (401/403/429), `facts` |
+| `auth-refused` | a missing or rejected token, a non-agent actor, an address past its failure allowance, a cross-origin `Origin` (`origin-refused`, before the token is read) — also logged `mcp.auth.<reason>` at `warn`, except `missing-token` at `info` (OAuth discovery opens with one), the line's `address` its network (an IPv6 /64, `addressNetwork`), the event's `facts` the full one | `reason`, `status` (401/403/429), `facts` |
 
 Every event has `at` from the server's `clock`. Never the token, never the arguments. The hook is
 not awaited and cannot change an answer: one that throws or rejects is logged once as

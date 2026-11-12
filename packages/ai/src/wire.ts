@@ -11,6 +11,7 @@ import { renderThrowable } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
+import { streamedTokens } from './stream-bill';
 import type { MalformedToolCall } from './tool-arguments';
 import { parseToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
@@ -164,6 +165,10 @@ export class MessageStream {
   private usage: TokenUsage = ZERO_USAGE;
   private readonly pending = new Map<number, PendingTool>();
   private stopped = false;
+  /** `message_start` arrived: the provider has billed the prompt from here on. */
+  private started = false;
+  /** Characters of text, thinking and tool arguments streamed — output `usage` has not counted yet. */
+  private streamedChars = 0;
 
   /** Chunks this frame produced, in order. Unknown events yield nothing — the API adds them. */
   push(frame: SseFrame): readonly StreamChunk[] {
@@ -198,6 +203,18 @@ export class MessageStream {
    */
   isComplete(): boolean {
     return this.stopped && this.pending.size === 0;
+  }
+
+  /**
+   * What the provider has billed so far, for a stream that stops before `message_stop` — or
+   * `undefined` before `message_start`, when nothing was. The output count is the larger of the
+   * wire's own running figure and an estimate from the characters streamed: the wire states its
+   * output once, at the end, and a ceiling is not held by an undercount.
+   */
+  partialUsage(): TokenUsage | undefined {
+    if (!this.started) return undefined;
+    const streamed = streamedTokens(this.streamedChars);
+    return { ...this.usage, outputTokens: Math.max(this.usage.outputTokens, streamed) };
   }
 
   state(): StreamState {
@@ -238,6 +255,7 @@ export class MessageStream {
 
   private onMessageStart(payload: Record<string, unknown>): readonly StreamChunk[] {
     const message = asRecord(payload['message']);
+    this.started = true;
     this.usage = { ...this.usage, ...parsePartialUsage(message?.['usage']) };
     return [];
   }
@@ -259,12 +277,14 @@ export class MessageStream {
     const text = delta['text'];
     if (delta['type'] === 'text_delta' && typeof text === 'string') {
       this.text += text;
+      this.streamedChars += text.length;
       return [{ type: 'text', text }];
     }
     const thinking = delta['thinking'];
     if (delta['type'] === 'thinking_delta' && typeof thinking === 'string') {
       // Deliberately NOT appended to `text`: thinking is not the answer, and a caller that
       // concatenated every chunk would otherwise ship the reasoning to the user.
+      this.streamedChars += thinking.length;
       return [{ type: 'thinking', text: thinking }];
     }
     const partial = delta['partial_json'];
@@ -276,6 +296,7 @@ export class MessageStream {
     ) {
       const tool = this.pending.get(index);
       if (tool !== undefined) tool.json += partial;
+      this.streamedChars += partial.length;
     }
     return [];
   }

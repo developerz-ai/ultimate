@@ -26,6 +26,9 @@ export type { RequestedRange } from './byte-range';
 export { byteWindow, contentRangeOf, parseByteRange, RANGE_UNSATISFIABLE } from './byte-range';
 export { PRIVATE_REVALIDATE } from './cache-policy';
 export { COMPRESS_MAX_BYTES, COMPRESS_MIN_BYTES, isCompressibleType } from './compress';
+/** The build-time coders (brotli 11, zstd 19, gzip 9) — what `x build --target static` writes. */
+export type { Precoding } from './compress-precode';
+export { PRECODERS, PRECODINGS } from './compress-precode';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, MAX_PROXY_HOPS } from './config';
 export type { ActorView, RequestContext, RequestContextInit } from './context';

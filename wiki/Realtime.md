@@ -142,15 +142,16 @@ adapter, its sync URL and its `LiveClient`: the page's one socket is the framewo
 ```tsx
 // app/feed/feed.island.tsx — the only module of /feed a browser downloads
 import { useConnection, useQuery } from '@ultimat3/realtime';
+import { mountOver } from '@ultimat3/render/client';
 import { For, Match, Switch } from 'solid-js';
 import { render } from 'solid-js/web';
 
 type FeedRow = { id: string; title: string };
 const LIVE_FEED = { name: 'liveFeed', live: true } as const;
 
-export function mount(el: HTMLElement, props: { orgId: string }) {
-  el.textContent = '';                       // Solid's render APPENDS; the server's loading shell goes first
-  render(() => <Feed orgId={props.orgId} />, el);
+// mountOver clears the server's loading shell (Solid's render APPENDS) and puts it back on a throw.
+export function mount(el: HTMLElement, props: { orgId: string }): () => void {
+  return mountOver(el, (root) => render(() => <Feed orgId={props.orgId} />, root));
 }
 
 function Feed(props: { orgId: string }) {

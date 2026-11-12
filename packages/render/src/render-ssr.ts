@@ -9,6 +9,7 @@ import { BUILD_ID_HEADER } from '@ultimat3/core';
 import { cacheControl } from '@ultimat3/http';
 import { finiteStatus } from './finite-status';
 import type { RouteEntry } from './registry';
+import { contentHash } from './render-static';
 import type { RenderResult, RouteCache, RouteParams } from './route';
 
 export interface SsrRenderInput {
@@ -37,10 +38,25 @@ export async function renderSsr(
     // Screened here and not at the Response boundary: `??` guards nullish, so a non-finite status
     // reaches `new Response` intact and raises a RangeError two frames above the route that set it.
     status: finiteStatus('renderSsr', options.status ?? 200),
-    headers: ssrHeaders(input.entry, options),
+    headers: validated(ssrHeaders(input.entry, options), html),
     body: html,
   };
 }
+
+const NO_STORE = /(?:^|[\s,])no-store(?=$|[\s,=])/i;
+
+/**
+ * A document anyone may keep carries the strong hash of its bytes — `static`'s `contentHash`, the
+ * one ETag function — so a CDN or a browser revalidating `public, s-maxage=30` is answered 304
+ * rather than the page again. `no-store` gets none: nothing holds a copy to revalidate.
+ */
+const validated = (
+  headers: Readonly<Record<string, string>>,
+  html: string,
+): Readonly<Record<string, string>> =>
+  NO_STORE.test(headers['cache-control'] ?? '')
+    ? headers
+    : { ...headers, etag: `"${contentHash(html)}"` };
 
 const PRIVATE_NO_STORE = 'private, no-store';
 

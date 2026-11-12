@@ -140,7 +140,7 @@ card page, `page.screenshot()`, `disk.put()`, then `og: { image }` with the stor
 | `buildFeed()` | RSS 2.0, Atom and JSON Feed from one item list. The channel's `author`, `copyright` and `icon` reach Atom as `<author>`, `<rights>` and `<icon>`; an item's `author` is `<author>` in Atom and, in RSS, `<author>` with an email or `<dc:creator>` without one; an item's `image` is an Atom enclosure link and an RSS `<media:content>`. An item date must be ISO-8601 with an offset or `Z`; one that is not is treated as absent (and an offsetless one is logged as `seo.feed.date_offsetless`), never read through the server's zone |
 | `builtinImageDriver({ read })` | resize and blur placeholder over core's pipeline — decodes `png`, `jpeg`, `webp`, `gif`; encodes `png`, `jpeg`, `webp`. `avif` needs a CDN driver (`X_IMAGE_UNSUPPORTED`), so `responsiveImage()` offers `webp` only unless given `formats`, and no width past 8192 (`MAX_IMAGE_WIDTH`). `As of 2026-10` |
 | `parseImageQuery()` | the one reader of the `?w=&f=&q=` a responsive image URL carries (`X_IMAGE_QUERY_INVALID`) |
-| `setStaticExport()` | the static build's seam: while it renders, `responsiveImage()` names `/_img/<source hash>-<width>.<ext>` files and `og.capture` names `/_og/<path>.png`. Unset in a served process — [Static assets](Static-Assets#responsive-images-in-a-static-export) |
+| `setStaticExport()` | the static build's seam: while it renders, `responsiveImage()` names `/_img/<variant hash>-<width>.<ext>` files (source bytes, width, format and encoder) and `og.capture` names `/_og/<path>.png`. Unset in a served process — [Static assets](Static-Assets#responsive-images-in-a-static-export) |
 
 Every `X_SEO_*` and image code is in [Error codes](Error-Codes).
 

@@ -3,6 +3,13 @@
 // must not be coded says `no-transform`. Every other answer is handed back as the same object.
 import { logger } from '@ultimat3/core';
 import { type CompressCache, compressCacheKey, createCompressCache } from './compress-cache';
+import {
+  createPrecodeStore,
+  isPrecodable,
+  type PrecodeStore,
+  type Precoding,
+  precodeKey,
+} from './compress-precode';
 import { concatChunks, drainCounted, replayDrained } from './compress-read';
 import {
   applyEtagForm,
@@ -39,6 +46,17 @@ const CODERS: Readonly<Record<ContentCoding, Coder>> = Object.assign(Object.crea
 } satisfies Record<ContentCoding, Coder>);
 
 /**
+ * The coder for a body `compress-cache.ts` KEEPS — coded once per (URL, strong ETag), so the level
+ * is paid once. Measured 2026-11-12 on the demo's 170,641 B sheet, Bun 1.4.4, median of 15: zstd 3
+ * 27,136 B (0.7 ms) lost to gzip 6's 23,798 B; zstd 9 is 22,051 B in 3.2 ms; zstd 12 is 21,464 B
+ * in 16 ms — the knee is 9. gzip 9: 23,674 B in 3.9 ms. Still on the loop, so never 19 here.
+ */
+const KEPT_CODERS: Readonly<Record<ContentCoding, Coder>> = Object.assign(Object.create(null), {
+  zstd: (bytes) => Bun.zstdCompressSync(bytes, { level: 9 }),
+  gzip: (bytes) => Bun.gzipSync(bytes, { level: 9 }),
+} satisfies Record<ContentCoding, Coder>);
+
+/**
  * Bun's `CompressionStream` codes `zstd` too (`Bun.CompressionFormat`); the DOM lib's constructor
  * type, which wins in this workspace, predates it. The probe in `etag-form.ts` is the proof.
  */
@@ -51,6 +69,9 @@ const SHARED = /(?:^|[\s,])(?:public|s-maxage)(?=$|[\s,=])/i;
 
 /** The process's coded bodies, used when the caller hands none (`compress-cache.ts`). */
 const processCache = createCompressCache();
+
+/** The process's precoded immutable bodies, used when the caller hands none (`compress-precode.ts`). */
+const processPrecode = createPrecodeStore();
 
 const DECLARED_LENGTH = /^\d+$/;
 
@@ -77,7 +98,11 @@ const pastCeiling = (length: string): boolean =>
   DECLARED_LENGTH.test(length) && Number(length) > COMPRESS_MAX_BYTES;
 
 /** The headers of a coded answer: everything that described the identity bytes, corrected. */
-const codedHeaders = (response: Response, coding: ContentCoding, length: number | null) => {
+const codedHeaders = (
+  response: Response,
+  coding: ContentCoding | Precoding,
+  length: number | null,
+) => {
   const headers = new Headers(response.headers);
   headers.set('content-encoding', coding);
   if (length === null) headers.delete('content-length');
@@ -90,7 +115,7 @@ const codedHeaders = (response: Response, coding: ContentCoding, length: number 
 
 const coded = (
   response: Response,
-  coding: ContentCoding,
+  coding: ContentCoding | Precoding,
   body: Uint8Array<ArrayBuffer>,
   head: boolean,
 ) => rebuilt(response, head ? null : body, codedHeaders(response, coding, body.byteLength));
@@ -180,6 +205,8 @@ export interface CompressContext {
   readonly signal?: AbortSignal;
   /** Where coded public bodies are kept. Omitted: the process's own, bounded. */
   readonly cache?: CompressCache;
+  /** Where `immutable` bodies are precoded. Omitted: the process's own, bounded. */
+  readonly precode?: PrecodeStore;
 }
 
 /**
@@ -189,7 +216,7 @@ export interface CompressContext {
 export const compressResponse = async (
   request: Request,
   response: Response,
-  { anonymous, signal, cache = processCache }: CompressContext,
+  { anonymous, signal, cache = processCache, precode = processPrecode }: CompressContext,
 ): Promise<Response> => {
   if (!compressibleKind(response.headers, anonymous)) return response;
   // On coded and identity alike, before any other refusal: a shared cache must not hand this
@@ -210,7 +237,12 @@ export const compressResponse = async (
   }
   if (response.status !== 200) return response;
   const length = response.headers.get('content-length');
-  const key = inBounds(length) ? keptKey(request, response, coding, length, anonymous) : undefined;
+  // Read before `applyEtagForm`: a strong validator goes to the memo, which answers it unread.
+  const precodable = inBounds(length) && isPrecodable(response.headers);
+  const key =
+    inBounds(length) && !precodable
+      ? keptKey(request, response, coding, length, anonymous)
+      : undefined;
   applyEtagForm(response.headers, coding);
   if (response.body === null || response.bodyUsed) return response;
   if (length === null) return codeUndeclared(response, coding, response.body, signal);
@@ -234,8 +266,15 @@ export const compressResponse = async (
     return identity(response, replayDrained(drained.chunks, reader, drained.pending));
   }
   const bytes = concatChunks(drained.chunks);
+  if (precodable) {
+    // Coded once, off the loop, after the first hit: from then on this answer runs no coder.
+    const precodedKey = precodeKey(request.url, bytes);
+    const kept = precode.pick(precodedKey, request.headers.get('accept-encoding'));
+    if (kept !== undefined) return coded(response, kept.coding, kept.body, head);
+    precode.schedule(precodedKey, bytes);
+  }
   try {
-    const out = CODERS[coding](bytes);
+    const out = (key === undefined ? CODERS : KEPT_CODERS)[coding](bytes);
     const body = ownsPlainBuffer(out) ? out : new Uint8Array(out);
     if (key !== undefined) cache.set(key, body);
     return coded(response, coding, body, head);

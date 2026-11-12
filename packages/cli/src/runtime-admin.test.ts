@@ -26,6 +26,7 @@ import {
 } from '@ultimat3/policy';
 import { describePages, routeEntries } from '@ultimat3/render';
 import { ADMIN_MOUNT_FILE, adminMountRoutes } from './runtime-admin';
+import { setBrandStyles, styleBundle } from './style-bundle';
 
 // After `@ultimat3/render/server` installed its `.tsx` loader, exactly as `loadApp` orders it for
 // an app: the admin's screens are `.tsx`, and a plugin only transforms modules loaded after it.
@@ -181,18 +182,18 @@ describe('unit · the admin mount', () => {
     expect(ADMIN_MOUNT_FILE).toBe('@ultimat3/admin');
   });
 
-  test("a screen carries the app's brand after its stylesheet, and none without one", async () => {
-    const brand = '<style>:root{--color-accent:1 2 3}</style>';
-    const branded = httpServer({
-      routes: adminMountRoutes({ buildId: BUILD_ID, brandHead: brand }),
-      role: 'web',
-      config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
-      hooks: { authenticate: () => VIEWER },
-    });
-    const response = await branded.fetch(new Request('http://dev.test/admin/cli_admin_parts'));
-    const head = (await response.text()).split('</head>')[0] ?? '';
-    expect(head).toContain(brand);
-    expect(await (await get(VIEWER, '/admin/cli_admin_parts')).text()).not.toContain(brand);
+  test("a screen links the app/ stylesheet, whose tail is the app's brand — no <style>", async () => {
+    const brand = ':root{--color-accent:1 2 3}';
+    setBrandStyles(brand);
+    try {
+      const head = (await (await get(VIEWER, '/admin/cli_admin_parts')).text()).split('</head>')[0];
+      expect(head).not.toContain('<style');
+      const href = /<link rel="stylesheet" href="([^"]+)">/.exec(head ?? '')?.[1] ?? '';
+      expect(href).toBe(styleBundle().hrefFor('app') ?? '');
+      expect(styleBundle().chunkAt(href)?.css.endsWith(brand)).toBe(true);
+    } finally {
+      setBrandStyles('');
+    }
   });
 
   test('the detail and the form routes answer under the same catch-all', async () => {

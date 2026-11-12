@@ -108,7 +108,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
 - **Cost is exact in bigint (`cost.ts`, `Money` at `costScale`), rounded UP once**: per call by
   `costOf`, per ledger at `report()`, per run from the summed usage — never a sum of round-ups. A
   price may state a `scale` (≤ `PRICE_SCALE_DIGITS` finer); it is always read through `minorAt`.
-- **`Gateway.stream` routes BEFORE it reserves**; `settled = true` comes after `ledger.record`.
+- **`Gateway.stream` routes BEFORE it reserves**; the `done` record is attempted ONCE (a throw is
+  never re-booked from the running bill). Unsettled: the wire's running bill (`stream-bill.ts`),
+  else the prompt once sent (`trackSent`) — an aborted `generate` too; released only if never sent.
 
 ## Invariants — `llm()`
 
@@ -141,7 +143,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
   `vars()` is `X_AI_PROMPT_SECRET` regardless.
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
-  is stamped by the gateway. Server-side `fallbacks` (beta) are never sent.
+  is stamped by the gateway. Server-side `fallbacks` (beta) are never sent. Media generation:
+  absent, awaiting an owner decision (OD8).
 - **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks every fence closer
   a fenced value wrote, in the ASSEMBLED prompt — never deletes, never touches a template's own.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
@@ -258,14 +261,15 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 
 ## Invariants — provider prompt caching
 
-One switch (`GenerateRequest.promptCache`), `promptCacheRule`: provider rows, then `PROMPT_CACHE_RULES`, then nothing. An app's own endpoint is a row ON ITS PROVIDER (`promptCache: { rules }`, `ProviderCacheRow`, first match wins), screened at construction against the wire (`prompt-cache-rows.ts`, `X_AI_REQUEST_INVALID`); `agent()` defaults `'auto'`, `llm()` `'off'`. In full: [`docs/history/ai.md`](../../docs/history/ai.md#moved-out-2026-11-03-plan-101-wave-3-the-claudemd-ceiling).
+One switch (`GenerateRequest.promptCache`), `promptCacheRule`: provider rows (`ProviderCacheRow`, screened by `prompt-cache-rows.ts`), then `PROMPT_CACHE_RULES`, then nothing; `agent()` `'auto'`, `llm()` `'off'`. In full: [`docs/history/ai.md`](../../docs/history/ai.md#moved-out-2026-11-03-plan-101-wave-3-the-claudemd-ceiling).
 
 ## Invariants — evals, retrieval, fix lines
 
 In brief ([full text](../../docs/history/ai.md#evals-retrieval-fix-lines)): no fix line names
 `x ai`; an eval gates on the DROP from its baseline, mean AND per case, and every prompt has one;
 retrieval is hybrid only; an unbound store read under an org actor is `X_VECTOR_UNSCOPED`;
-`postgresVectorStore()` filters tenant and policy in SQL on every statement; `scoped()` TIGHTENS.
+`postgresVectorStore()` filters tenant and policy in SQL on every statement (hnsw reads widen the
+scan, `pg-vector-recall.ts`); `scoped()` TIGHTENS.
 
 - **An eval never runs a real tool**: no double is `X_EVAL_TOOL_UNDOUBLED` (history, 2026-11-06).
 

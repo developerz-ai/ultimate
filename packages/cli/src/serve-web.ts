@@ -47,7 +47,7 @@ export interface WebSurface {
   readonly routes: readonly Route[];
   /** The theme boot and the speculation rules: the two inline bodies every document may carry. */
   readonly inlineScripts: readonly string[];
-  /** The app's error pages' and its brand's `<style>` bodies, which the enforced policy admits. */
+  /** The app's error pages' `<style>` bodies, which the enforced policy admits. */
   readonly inlineStyles: readonly string[];
   /** Where a browser that opened a guarded page is sent — the declaration `x dev` reads. */
   readonly signInPath: string | null;
@@ -71,8 +71,9 @@ export async function webSurface(
   // prevent, and it is the one an operator cannot see without installing the app.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
-  // The app's brand (`apps/web/shared/theme.ts`), or nothing: the same reader `x dev` calls.
-  const brand = await loadThemeBrand(options.root);
+  // The app's brand (`apps/web/shared/theme.ts`) onto every surface stylesheet, before the first
+  // `styleBundle()` below: the same reader `x dev` calls, so both link one sheet.
+  await loadThemeBrand(options.root);
   // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
   const site = await loadSiteSettings(options.root);
   const origin = publicOrigin(options.env, site);
@@ -180,7 +181,6 @@ export async function webSurface(
     ...adminMountRoutes({
       buildId: buildId,
       themeHead: theme.head,
-      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(origin === undefined ? {} : { origin }),
     }),
     ...appRoutes({
@@ -193,7 +193,6 @@ export async function webSurface(
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
-      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
       // A `static` page is the same bytes for every request of this process: rendered once.
       memoStatic: true,
@@ -213,12 +212,10 @@ export async function webSurface(
       ...(speculation === undefined ? [] : [speculation.cspSource]),
       ...(zone === undefined ? [] : [zone.cspSource]),
     ],
-    // The enforced policy this process sends must admit the app's own error pages' `<style>` and
-    // the brand's; `x dev` is report-only, so only here was a missing hash an unstyled page.
-    inlineStyles: [
-      ...(await errorPageStyleBodies(options.root)),
-      ...(brand === undefined ? [] : [brand.style]),
-    ],
+    // The enforced policy this process sends must admit the app's own error pages' `<style>`;
+    // `x dev` is report-only, so only here was a missing hash an unstyled page. The brand is in
+    // the surface stylesheet, which `'self'` admits: no hash.
+    inlineStyles: await errorPageStyleBodies(options.root),
     // Same declaration `x dev` reads. Without it a container answers a browser that opened a
     // guarded page with the problem document, rendered as raw JSON in the viewport.
     signInPath: await loadSignInPath(options.root),

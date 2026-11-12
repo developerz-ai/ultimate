@@ -1,6 +1,6 @@
-// `apps/web/shared/theme.ts` has one reader, and what it hands the document is exactly what
-// `@ultimat3/ui` says a brand is: the tag `brandStyleTag` writes and the hash `brandStyleCspSource`
-// admits. An app with no theme module, or an empty brand, pays nothing.
+// `apps/web/shared/theme.ts` has one reader, and what it registers with the stylesheet table is
+// exactly what `@ultimat3/ui` says a brand is: `defineTheme(…).css`, every surface sheet's tail.
+// An app with no theme module, or an empty brand, pays nothing — and clears a previous app's.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
@@ -9,9 +9,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write and import() take one already joined.
 import { join } from 'node:path';
 import { isUltimateError } from '@ultimat3/core';
-import { cspHashSource } from '@ultimat3/http';
-import { brandStyleCspSource, brandStyleTag, defineTheme } from '@ultimat3/ui';
-import { inlineStyleSources } from './style-csp';
+import { clearStylesheets } from '@ultimat3/render/server';
+import { defineTheme } from '@ultimat3/ui';
+import { setBrandStyles, styleBundle } from './style-bundle';
 import { APP_THEME_MODULE, loadThemeBrand } from './theme-brand';
 
 // The temp root is outside the workspace, so the module imports ui by absolute path.
@@ -22,8 +22,16 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'ultimate-theme-brand-'));
 });
 afterEach(async () => {
+  setBrandStyles('');
   await rm(root, { recursive: true, force: true });
 });
+
+/** The CSS a `site/` document links, with no stylesheet registered but the brand's. */
+const siteSheet = (): string | undefined => {
+  clearStylesheets();
+  const bundle = styleBundle();
+  return bundle.chunkAt(bundle.hrefFor('site') ?? '')?.css;
+};
 
 const writeTheme = (body: string) => Bun.write(join(root, APP_THEME_MODULE), body);
 
@@ -37,22 +45,19 @@ const codeOf = async (run: () => Promise<unknown>): Promise<string | undefined> 
 };
 
 describe('unit · the app theme module has one reader', () => {
-  test('no theme module: nothing, so an unthemed app emits no tag and no hash', async () => {
+  test('no theme module: nothing, and a brand registered before is cleared', async () => {
+    setBrandStyles(':root{--color-accent:1 2 3}');
     expect(await loadThemeBrand(root)).toBeUndefined();
+    expect(siteSheet()).toBeUndefined();
   });
 
-  test("the scifi preset: ui's own tag, and the hash ui's own helper admits", async () => {
+  test("the scifi preset: ui's own CSS, registered as every surface sheet's tail", async () => {
     await writeTheme(
       `import { defineTheme } from '${UI}';\nexport const brand = defineTheme({ preset: 'scifi' });\n`,
     );
     const brand = defineTheme({ preset: 'scifi' });
-    const loaded = await loadThemeBrand(root);
-    expect(loaded?.head).toBe(brandStyleTag(brand));
-    expect(loaded?.style).toBe(brand.css);
-    // `style-src` is built from bodies (`inlineStyleSources`): the body this loader hands the boot
-    // must hash to exactly the source ui documents as the one that admits the tag.
-    expect(inlineStyleSources([loaded?.style ?? ''])).toEqual([brandStyleCspSource(brand)]);
-    expect(cspHashSource(brand.css)).toBe(brandStyleCspSource(brand));
+    expect((await loadThemeBrand(root))?.css).toBe(brand.css);
+    expect(siteSheet()).toBe(brand.css);
   });
 
   test('an empty brand is no brand: an empty <style> would cost a tag and a hash for nothing', async () => {
