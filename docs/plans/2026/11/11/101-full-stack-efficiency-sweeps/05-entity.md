@@ -60,7 +60,7 @@ Checked and fine, not planned: `pg-sql.ts` binding and seek, `memory-match.ts` p
 
 ## Outcome
 
-As of 2026-11-11, sweep 5a, for 31.8.0. Bun 1.4.4, local test Postgres 17 on loopback. E5–E12, E14: sweep 5b.
+As of 2026-11-11, sweep 5a, for 31.9.0. Bun 1.4.4, local test Postgres 17 on loopback. E5–E12, E14: sweep 5b.
 
 | # | Verdict | What shipped, or why not |
 |---|---|---|

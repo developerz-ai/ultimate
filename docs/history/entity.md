@@ -228,7 +228,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `withStatementAttribution(entity.$name, op, send)`. Each method declares `const op = 'findById'`
   (or its own name) once, and that same local is what everything else downstream of it gets too:
   the plan builder (`idPlan(entity, id, options, op)`, `readPlan(entity, args, op)`,
-  `deletePlan`/`updatePlan` — since 31.8.0 `writeWherePlan`/`updateWherePlan` in `write-where.ts`,
+  `deletePlan`/`updatePlan` — since 31.9.0 `writeWherePlan`/`updateWherePlan` in `write-where.ts`,
   the old names kept as `@ultimat3/entity/adapter` aliases), and in `countBy`, `groupColumnOf`
   and `countsFrom` besides — so the
   operation a refusal names and the operation a diagnostic reports can never drift apart, one

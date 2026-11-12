@@ -10,26 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Added
-
-- `@ultimat3/entity`: `.updateAll(patch)` / `.deleteAll()` end any read chain — a filtered write on every operator the chain has (`'in'`, `'is-null'`, ranges), one statement, under the chain's tenancy and soft-delete reach. No predicate, or a chain predicate whose value is `undefined`, is `X_WRITE_UNFILTERED`; `limit()`, `after()` or `search()` on the chain is `X_INVARIANT_VIOLATED`. `updateWhere`/`deleteWhere` build the same plan (`write-where.ts`).
-- `@ultimat3/entity`: `db.<table>.updateMany([{ id, patch }])` writes a different value to each row in one tenant-scoped `update … from (select …)` per bind-count chunk (1,000 rows of a one-column patch: one statement). Every patch names the same columns and an id appears once, else `X_INVARIANT_VIOLATED`; an absent, soft-deleted or other tenant's id is neither written nor counted.
-- `@ultimat3/entity`: `insertAll(rows, { returning: false })` and `upsertAll(rows, { …, returning: false })` resolve with a count: no `returning *`, nothing decoded.
-- `@ultimat3/entity`: `db.<table>.copyAll(rows)` loads rows through one all-or-nothing `COPY … FROM STDIN`, judged as `insertAll` judges them; every row names the same columns, else `X_INVARIANT_VIOLATED`. As of 2026-11, 100k rows × 4 columns through the typed handle, Postgres 17 on loopback, Bun 1.4.4, median of 5 at load 13–15: `copyAll` 1,073 ms, `insertAll({ returning: false })` 2,778 ms, `insertAll` 2,880 ms. In memory, on a `defineDriver` store, under row-security settings or on a client without `copyIn` it sends `insertAll`'s statements; while a search index or an `entity.row` subscriber listens, `insert … returning *`.
-- `@ultimat3/db`: `postgresClient().copyIn(target, rows)` and `canCopyIn(client)` — `COPY … FROM STDIN` through `Bun.SQL`'s `writable()`. A `withTransaction` handle copies on its connection; the replica router sends a copy to the primary.
-
-### Changed
-
-- `@ultimat3/entity`: a page is bounded by bytes as well as rows. A read whose rows weigh more than `MAX_PAGE_BYTES` (64 MiB) before decoding is `X_ENTITY_PAGE_TOO_LARGE` (500), naming the heaviest column, a `.select({ … })` and a `.limit(n)` that fits — Postgres, memory and `defineDriver` alike. As of 2026-11 the heaviest page in both tracked apps' suites is 16,560 B.
-- `@ultimat3/entity`: `inBatches(size)` halves its batch, down to one row, when a page passes the byte bound, and keeps the smaller size: a sweep over heavy rows — the framework's reindex and history reads included — finishes. Only a single row over the bound is refused.
-- `@ultimat3/entity`: a many-row insert compiles its `(…), (…)` list in one `sql` call (`pg-values-list.ts`): 180 ms → 60–120 ms of statement build per 16k-row chunk, every `insertAll`/`upsertAll`.
-- `@ultimat3/entity`: `deletePlan`/`updatePlan` (`@ultimat3/entity/adapter`) are the shipped names of `writeWherePlan`/`updateWherePlan`, the one filtered-write plan; `options.where` carries a chain's predicates.
-- `@ultimat3/db`: a bound `Date` no longer builds the Invalid Date refusal's text unless it is one (`instantText`), on every statement.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.9.0](docs/changelog/31.9.0.md) | 2026-11-12 | Set-based entity writes: `db.x.where(…).updateAll(patch)` / `.deleteAll()` is one statement, and `updateMany([{ id, patch }])` writes 1,000 different rows in one statement. |
 | [31.8.0](docs/changelog/31.8.0.md) | 2026-11-12 | A rate-limit check writes no WAL: `x_rate_limit` is unlogged at fillfactor 70 (2 WAL records per take → 0). |
 | [31.7.0](docs/changelog/31.7.0.md) | 2026-11-12 | Security: a sealed column no longer enters a history image (its lookup ciphertext was an equality oracle), and the authorization server enforces each client's registered grants and auth method. |
 | [31.6.1](docs/changelog/31.6.1.md) | 2026-11-11 | After a deploy, a CDN can no longer hand a page an island chunk from the previous build: every island and `/_x/assets` script is named by a hash of its final bytes (#1075). |
