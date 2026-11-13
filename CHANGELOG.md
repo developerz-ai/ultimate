@@ -10,6 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- A release commit no longer cold-installs on every CI job: the bun cache is keyed on the packages `bun.lock` resolves, not the whole file.
+- Every exported symbol of every package entry and subpath is hashed into `scripts/lib/public-api.lock.json`; an undeclared signature change is reported (`X_PUBLIC_API_BREAK_UNDECLARED`, report-only in 31.x).
+- A pull request's changed test files run five times in CI (`flaky` job); a test that differs between runs is red before it merges.
+- The tracked apps' images copy manifests before `bun install`, so a source edit keeps the install layer cached; the demo image is 5% smaller and held to a measured ceiling.
+- The gate matrix is `x verify plan --parts 7`, and the host checks share one corpus and a compiler pool.
+
 ### Added
 
 - `bun run scripts/public-api.ts` hashes the emitted declaration of every exported symbol of every publishable package, main entry and every subpath export alike (9,995 symbols, ~4 s), into `scripts/lib/public-api.lock.json`, on the `manifest` step. A symbol that changed or is gone with no `BREAKING â€”` entry naming it under [Unreleased] or in the version's own changelog is `X_PUBLIC_API_BREAK_UNDECLARED`; a lock or surface that cannot be read is `X_PUBLIC_API_UNSCANNED`. Report-only in 31.x: a warning in the step's log, red only under `--strict`. `--write` records an addition or a declared break, and `scripts/release.ts --bump` rewrites the lock after promoting the changelog.
