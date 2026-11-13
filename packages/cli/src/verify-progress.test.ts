@@ -6,7 +6,14 @@ import { expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { msg } from './messages';
 import type { Every } from './verify-progress';
-import { elapsedLabel, HEARTBEAT_MS, stepLine, withVerifyProgress } from './verify-progress';
+import {
+  elapsedLabel,
+  HEARTBEAT_MS,
+  humanStepLine,
+  narrowestRerun,
+  stepLine,
+  withVerifyProgress,
+} from './verify-progress';
 import { runVerify } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
 
@@ -149,4 +156,84 @@ test('elapsed reads as minutes and seconds, seconds alone under a minute', () =>
   expect(elapsedLabel(59_999)).toBe('59s');
   expect(elapsedLabel(60_000)).toBe('1m 0s');
   expect(elapsedLabel(29 * 60_000 + 48_000)).toBe('29m 48s');
+});
+
+// Plan 101 19b Y8: a person's `x verify` printed 21 lines of JSON on stderr, then the table. The
+// JSON line is the `--json` reader's; a person reads a mark, the step, the seconds — and a red
+// step names the narrowest command that runs it again.
+const finding = (at?: string) => ({
+  code: 'X_TEST_FAILED',
+  cause: 'a test failed',
+  fix: 'x test',
+  ...(at === undefined ? {} : { at }),
+});
+
+test('a red suite re-runs only the test files its findings name', () => {
+  const red = {
+    name: 'unit',
+    ok: false,
+    durationMs: 1,
+    findings: [
+      finding('apps/web/a.test.ts'),
+      finding('apps/web/b.test.ts'),
+      finding('apps/web/a.test.ts'),
+    ],
+  };
+  expect(narrowestRerun(red)).toBe(
+    'x test unit --filter apps/web/a.test.ts,apps/web/b.test.ts --json',
+  );
+});
+
+test('a red step with no test file to name re-runs that step alone', () => {
+  expect(
+    narrowestRerun({ name: 'lint', ok: false, durationMs: 1, findings: [finding('a.ts')] }),
+  ).toBe('x verify --only lint --json');
+  // A suite whose finding is not at a test file (the runner died) is the step, not a filter.
+  expect(narrowestRerun({ name: 'unit', ok: false, durationMs: 1, findings: [finding()] })).toBe(
+    'x verify --only unit --json',
+  );
+});
+
+test('a file with a space is quoted, so the printed command runs as printed', () => {
+  const red = {
+    name: 'e2e',
+    ok: false,
+    durationMs: 1,
+    findings: [finding('apps/web/my page.e2e.test.ts')],
+  };
+  expect(narrowestRerun(red)).toBe("x test e2e --filter 'apps/web/my page.e2e.test.ts' --json");
+});
+
+test('the human line is a mark, the step and its seconds; red adds its re-run, never JSON', () => {
+  expect(humanStepLine({ name: 'lint', ok: true, durationMs: 21_987, findings: [] })).toBe(
+    '✓ lint 22.0s',
+  );
+  expect(humanStepLine({ name: 'seo', ok: true, skipped: true, durationMs: 3, findings: [] })).toBe(
+    '○ seo 0.0s',
+  );
+  const red = humanStepLine({ name: 'boundaries', ok: false, durationMs: 1_250, findings: [] });
+  expect(red).toBe('✗ boundaries 1.3s → x verify --only boundaries --json');
+  expect(() => JSON.parse(red)).toThrow();
+});
+
+test('render: human writes the human line, and the default stays the JSON one', async () => {
+  const step = { name: 'lint', ok: true, durationMs: 5, findings: [] };
+  const { every } = fakeEvery();
+  const human: string[] = [];
+  await withVerifyProgress(
+    (line) => human.push(line),
+    async (hooks) => hooks.onStep(step),
+    {
+      every,
+      render: 'human',
+    },
+  );
+  expect(human).toEqual(['✓ lint 0.0s']);
+  const json: string[] = [];
+  await withVerifyProgress(
+    (line) => json.push(line),
+    async (hooks) => hooks.onStep(step),
+    { every },
+  );
+  expect(json).toEqual([stepLine(step)]);
 });

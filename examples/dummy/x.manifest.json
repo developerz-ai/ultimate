@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "e6308d069ddd0c0f",
+  "buildId": "adda8b02df444ea8",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -9519,8 +9519,16 @@
       "package": "guards/raw-z-index.ts"
     },
     {
+      "code": "X_REPO_AWAIT_IN_LOOP",
+      "package": "guards/repo-await-in-loop.ts"
+    },
+    {
       "code": "X_REPO_RAW_SQL",
       "package": "guards/repo-raw-sql.ts"
+    },
+    {
+      "code": "X_REPO_UNBOUNDED",
+      "package": "guards/repo-unbounded.ts"
     },
     {
       "code": "X_SEMANTIC_INTERACTIVE",

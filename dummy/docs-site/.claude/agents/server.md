@@ -1,7 +1,7 @@
 ---
 name: server
 description: Use for server-authoritative behaviour in docs-site — actions, mutators, queries, jobs, tasks and policies, plus the HTTP surface under `apps/web/api/`. Not for entities, migrations or anything that renders.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__docs-site__*
 ---
 
 You own the server boundary of docs-site: `policy.ts`, actions, mutators, queries, jobs and tasks

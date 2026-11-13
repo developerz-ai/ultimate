@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 // The git half of guard-destructive-git.sh: refuse a Bash command that would discard uncommitted
 // work. A tokenizer, not a regex over the flattened string — quoting, comments, redirects,
-// heredocs, `cd`, `git -C` and git's global options all change what a command touches.
+// heredocs, `cd`, `git -C` and git's global options all change what a command touches. Scoped to
+// checkouts of this repository: another repository's work is not this guard's to refuse.
 
 // why: resolving `cd`/`-C` targets against a cwd; Bun ships no path API.
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 export type Verdict = { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
@@ -139,6 +140,24 @@ const GLOBAL_WITH_VALUE = new Set([
   '--exec-path',
 ]);
 
+/** Options that point git at a repository other than the one the directory says. */
+const REPOINTING = ['--git-dir', '--work-tree'];
+
+/**
+ * Whether `dir` sits in a checkout of THIS repository: the nearest ancestor holding `.git` also
+ * holds this guard. A clone of this repository counts (a hive may work in one); an unrelated
+ * repository, or no repository at all, does not.
+ */
+export function inThisRepo(dir: string, exists: (path: string) => boolean): boolean {
+  let at = dir;
+  for (;;) {
+    if (exists(join(at, '.git'))) return exists(join(at, '.claude', 'hooks', 'guard-git.ts'));
+    const up = dirname(at);
+    if (up === at) return false;
+    at = up;
+  }
+}
+
 const deny = (reason: string): Verdict => ({ ok: false, reason });
 const ALLOW: Verdict = { ok: true };
 
@@ -172,16 +191,26 @@ function judgeCheckout(args: Simple, cwd: string, exists: (p: string) => boolean
   return ALLOW;
 }
 
-function judgeGit(words: Simple, cwd: string, exists: (p: string) => boolean): Verdict {
+function judgeGit(
+  words: Simple,
+  cwd: string,
+  exists: (p: string) => boolean,
+  repointed: boolean,
+): Verdict {
   let dir = cwd;
   let k = 1;
+  let elsewhere = repointed;
   while (k < words.length && (words[k] ?? '').startsWith('-')) {
     const opt = words[k] ?? '';
+    if (REPOINTING.some((name) => opt === name || opt.startsWith(`${name}=`))) elsewhere = true;
     if (GLOBAL_WITH_VALUE.has(opt)) {
       if (opt === '-C') dir = resolve(dir, words[k + 1] ?? '.');
       k += 2;
     } else k++;
   }
+  // A re-pointed git is judged as if it were this checkout: failing closed costs a prompt, failing
+  // open costs a tree.
+  if (!elsewhere && !inThisRepo(dir, exists)) return ALLOW;
   const sub = words[k];
   const args = words.slice(k + 1);
   const has = (...flags: string[]): boolean => args.some((a) => flags.includes(a));
@@ -202,7 +231,10 @@ function judgeGit(words: Simple, cwd: string, exists: (p: string) => boolean): V
     case 'clean':
       return deny('git clean');
     case 'stash':
-      return deny('git stash (forbidden in this repo)');
+      // `list` and `show` only read; every other verb (and a bare `git stash`) moves work.
+      return args[0] === 'list' || args[0] === 'show'
+        ? ALLOW
+        : deny('git stash (forbidden in this repo; `git stash list` and `git stash show` read)');
     default:
       return ALLOW;
   }
@@ -218,7 +250,9 @@ export function judge(
   let here = cwd;
   for (const raw of simpleCommands(command)) {
     let words = raw;
+    let repointed = false;
     while (words.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? '')) {
+      if (/^GIT_(DIR|WORK_TREE)=/.test(words[0] ?? '')) repointed = true;
       words = words.slice(1); // FOO=1 git …
     }
     if (words[0] === 'env' || words[0] === 'command' || words[0] === 'exec') words = words.slice(1);
@@ -229,7 +263,7 @@ export function judge(
       continue;
     }
     if (head === 'git' || head?.endsWith('/git') === true) {
-      const verdict = judgeGit(words, here, exists);
+      const verdict = judgeGit(words, here, exists, repointed);
       if (!verdict.ok) return verdict;
     }
   }

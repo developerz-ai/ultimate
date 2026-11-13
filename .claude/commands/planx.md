@@ -1,7 +1,7 @@
 ---
 description: Write a concise, self-contained execution plan to docs/plans/<YYYY>/<MM>/<DD>/<1NN>-<slug>/ for another AI to implement
 argument-hint: [what you want done]
-allowed-tools: Write, Read, Glob, Grep, Agent, Bash
+allowed-tools: Write, Read, Glob, Grep, Agent, Bash, mcp__ultimate-dev__*
 ---
 
 # /planx
@@ -15,7 +15,7 @@ $ARGUMENTS
 
 1. **Resolve path.** Run `date +%Y`, `date +%m`, `date +%d`. Dir = `docs/plans/<YYYY>/<MM>/<DD>/`. `Glob docs/plans/<YYYY>/<MM>/<DD>/1*` → next number = highest existing `1NN-*` + 1, else `101`. Slug = kebab-case title, max 5 words. Final plan dir: `docs/plans/<YYYY>/<MM>/<DD>/<1NN>-<slug>/`.
 
-2. **Explore — at most 4 agents in parallel, ever.** More areas than four → widen each agent's band or re-task a finished one with `SendMessage`; never a fifth concurrent spawn. Tell every agent it may not spawn its own (no `fork`). `Agent` (subagent_type=Explore, thoroughness="very thorough"): existing patterns and the files to touch (`file:line`), **which tier each package sits in and whether the change respects `scripts/lib/tiers.ts`**, which of the eight primitives the feature is, the error codes involved, tests (`unit` vs the opt-in `contract` / `live` / `job` / `e2e` / `eval` suffixes), and gotchas. Prefer `codegraph_explore` for structural lookups over grep. Whether to spawn at all follows [`feature.md`](feature.md) § Work as a hive mind: a broad search or path-separable scale — a single file with an obvious home is read directly, no agent.
+2. **Explore — at most 4 agents in parallel, ever.** More areas than four → widen each agent's band or re-task a finished one with `SendMessage`; never a fifth concurrent spawn. Tell every agent it may not spawn its own (no `fork`). `Agent` (subagent_type=Explore, thoroughness="very thorough"): existing patterns and the files to touch (`file:line`), **which tier each package sits in and whether the change respects `scripts/lib/tiers.ts`**, which of the eight primitives the feature is, the error codes involved, tests (`unit` vs the opt-in `contract` / `live` / `job` / `e2e` / `eval` suffixes), and gotchas. Ask the dev MCP before grepping (`mcp__ultimate-dev__*`: `graph.query` for what an edit reaches, `routes.list`, `schema.describe`, `docs.search`). Whether to spawn at all follows [`feature.md`](feature.md) § Work as a hive mind: a broad search or path-separable scale — a single file with an obvious home is read directly, no agent.
 
    **Falsify the ask before planning it.** Read the code, not just the request. If a claim in the prompt is already false in the tree, say so in `overview.md` under *Risks* with the `file:line` that disproves it, and plan what is actually true.
 

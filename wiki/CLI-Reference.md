@@ -647,6 +647,7 @@ config, a catalog) runs every test.
 | `doc` | `*.md`, `docs/`, `wiki/` | package-shape, errors, unit, manifest, roadmap |
 | `test` | `*.test.ts(x)`, `e2e/` | typecheck, lint, filesize, package-shape, errors + the suite that owns the file |
 | `generated` | `x.manifest.json` | lint, contract-diff, manifest |
+| `page` (`As of 31.22`) | `apps/<app>/site/**/page.tsx`, `apps/<app>/app/**/page.tsx` | typecheck, lint, boundaries, filesize, i18n + the suites, cut to that route's tests. An inner-loop answer, not proved idle: `budgets`, `seo`, `exercise`, `manifest` wait for the full `x verify` |
 | `source` | `apps/`, `packages/`, `guards/`, `scripts/`, `types/`, `bin/` | every step but `drift` |
 | `drift-input` | `packages/db/**`, `apps/*/clients/**`, `openapi.json`, any module importing `@ultimat3/entity` and everything it imports | every step |
 | `root-config` · `deleted` · `unknown` · `outside` | a root file, any `app.config.ts`, a vanished module, another directory, a path outside the app | every step |
@@ -670,8 +671,10 @@ below on `--workers` and batching describe 22.6 and earlier where they differ.
 | `exercise` | `{ "unprovenMax"?: <0–1>, "statementsMax"?: <whole ≥ 1> }` — what the `exercise` step's pass may leave unproven, and statements per call (`X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_STATEMENTS_OVER_BUDGET`); absent, each is a warning line → [`x exercise`](#x-exercise), `As of 31.16.0` |
 | `isolate` · `typecheckBin` · `agentsMdMaxBytes` | a fresh global per test file · the `tsc`-compatible binary · the `AGENTS.md` byte budget |
 
-Either render prints one line per finished step on **stderr** — `{"step":"lint","ok":true,"ms":21987}` —
-as each finishes, and every minute a step is still running a `still running: unit (12m 3s)` line;
+Either render prints one line per finished step on **stderr** as each finishes — under `--json`
+`{"step":"lint","ok":true,"ms":21987}`, otherwise (`As of 31.22`) `✓ lint 22.0s`, `○ seo 0.0s` for a
+step that did not apply, and for a red step its narrowest re-run: `✗ unit 3.1s → x test unit --filter
+<the test files its findings name> --json`, else `x verify --only <step> --json` — and every minute a step is still running a `still running: unit (12m 3s)` line;
 under `--json` stdout stays the single document. A cancelled job's log ends on the last step that
 finished, and a harness that kills a process after N silent minutes never kills a healthy gate.
 
@@ -1182,25 +1185,29 @@ x mcp serve [--transport stdio|http] [--port 9229] [--json]
 | `--transport` | string | `stdio` | `stdio` for an editor client, `http` for a socket |
 | `--port` | string | `9229` | HTTP port when `--transport http`. `9229` is also the inspector's default; a taken port is `X_PORT_IN_USE`, naming the next one |
 
-Serves `@ultimat3/mcp`'s dev server — 19 tools, one catalog, the same on both transports. Every
+Serves `@ultimat3/mcp`'s dev server — 23 tools (`As of 31.22`), one catalog, the same on both transports. Every
 tool declares a scope; the local developer's caller carries all five, and an HTTP caller carries
 whatever its bearer token was issued.
 
 | Tool | Does | Scope |
 |---|---|---|
 | `routes.list` | the `x routes --json` table: pages (render mode, hydrate, offline, budget), then every action, query and `runtime.ts` route | `dev:read` |
-| `schema.describe` | entities with columns, types and invariants | `dev:read` |
+| `schema.describe` | entities with columns, types and invariants; `{ entity }` narrows to one, by name or table (`As of 31.22`) | `dev:read` |
 | `policies.list` | every policy: permission, subject, where it is enforced | `dev:read` |
 | `actions.describe` | actions and queries: schemas, policy, cache tags, MCP exposure | `dev:read` |
 | `jobs.inspect` | job definitions, retry policy and steps | `dev:read` |
 | `queue.depth` | pending, running and failed counts per queue | `dev:read` |
 | `manifest.read` | the generated `x.manifest.json` as text | `dev:read` |
 | `errors.explain` | `X_*` → cause, fix, docs | `dev:read` |
+| `docs.search` | `x docs` as a tool: the installed docs ranked for a question, a topic or a symbol; `limit` 1–20, default 5 (`As of 31.22`) | `dev:read` |
+| `verify.narrow` | `{ file }` → the steps `x verify --changed` selects for that one file and the narrowest commands that run them; runs nothing (`As of 31.22`) | `dev:read` |
 | `db.query` | ONE read-only SQL statement; `limit` defaults to 100 rows, maximum 1000 | `db:read` |
+| `db.explain` | the plan of ONE `SELECT`/`WITH … SELECT` as `EXPLAIN (FORMAT JSON)`; `analyze: true` executes it inside `db.query`'s SELECT-only role, read-only transaction and 5 s timeout. A production database is refused, as `x explain` refuses it (`As of 31.22`) | `db:read` |
 | `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
 | `tests.run` | `x test [--filter]` itself — the shell's files, batches and environment, so it agrees with `x test`; structured results — an error outside any test (`1 error` beside `0 fail`) or a non-zero exit is a failure, never `failed: 0` | `dev:test` |
 | `verify.run` | `x verify` itself, so it agrees with the shell; `only: [steps]` is `--only` (not a gate run); structured per-step result | `dev:test` |
 | `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
+| `requests.statements` | the running `x dev`'s per-request statement ledger: SQL count, repeated statements and N+1 verdicts per recent request, or one `requestId`; `limit` default 10, maximum 50. No `x dev` running: `X_NOT_IMPLEMENTED` naming it (`As of 31.22`) | `dev:logs` |
 | `graph.query` | `{ node }`: what a change to a file or primitive reaches (`x impact`); `{ from, to }`: the edges linking two nodes (`x graph --from --to`) | `dev:read` |
 | `ui.shot` | photograph one route at a named viewport, light or dark; PNG path plus verdict. Launches a browser | `dev:test` |
 | `ui.island` | photograph an island in every state its `*.island.states.ts` declares, as `x shot --island` does | `dev:test` |
@@ -1210,7 +1217,8 @@ whatever its bearer token was issued.
 
 `db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword
 (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, a non-branch target —
-before the host runs anything.
+before the host runs anything. `db.explain` is where `ANALYZE` is allowed: it writes the `EXPLAIN`
+itself around a statement the same scan passed.
 
 Never exposed in `ROLE=web`. Errors split by when they fire:
 
@@ -1229,16 +1237,16 @@ x doctor [--port 3000] [--json]
 
 Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability, PWA prerequisites and **embedded-Postgres readiness** — each failing check carries its own fix command.
 
-It also lists the shipped guards the app's `guards/` does not hold, and the ones it holds that differ from the current template — a copy from an older release, or the app's own edit. `As of 2026-10-07` (owner decision 8: shipped guards stay copies the app owns).
+It also lists the shipped guards the app holds that differ from the current template — a copy from an older release, or the app's own edit — and warns `X_SHIPPED_GUARD_MISSING` for each one the app's `guards/` does not hold, its fix `x g guard <name> && x verify --only boundaries --json` (`As of 31.22`: a warning beside the verdict in `data.warnings[]`, so the exit status is unchanged; it was a listing). `As of 2026-10-07` (owner decision 8: shipped guards stay copies the app owns).
 
 | Listing | One line each | `--json` |
 |---|---|---|
-| missing | `x g guard <name>` | `data.guards.missing[]`: `{ name, add }` |
+| missing | its `X_SHIPPED_GUARD_MISSING` warning line (`As of 31.22`) | `data.guards.missing[]`: `{ name, add }`, and the warning in `data.warnings[]` |
 | differs from the template (line endings ignored) | `x g guard <name> --force` — rewrites the guard and its test; review the diff, and restore your edit if it was deliberate | `data.guards.differs[]`: `{ name, refresh }` |
 
 A listing, never a finding: deleting or editing a guard is how an app changes a rule, so the verdict does not move.
 
-Four warnings about how the app is held, `As of 31.16.0` — beside the verdict, never in it: the exit status, `findings` and `data.codes` stay as they were, and `--json` carries each as `data.warnings[]` (`{ code, cause, fix, docs, at }`). None is a gate step; on `next` they join the verdict, red:
+Four warnings about how the app is held, `As of 31.16.0` (a fifth, `X_SHIPPED_GUARD_MISSING`, `As of 31.22`) — beside the verdict, never in it: the exit status, `findings` and `data.codes` stay as they were, and `--json` carries each as `data.warnings[]` (`{ code, cause, fix, docs, at }`). None is a gate step; on `next` they join the verdict, red:
 
 | Code | Asked | Fix |
 |---|---|---|
@@ -1246,6 +1254,7 @@ Four warnings about how the app is held, `As of 31.16.0` — beside the verdict,
 | `X_VERIFY_STEP_UNFLOORED` | a gate step applies here — its suite files exist, its input is committed — and `x.verify.json` `"steps"` does not hold it, so a deleted suite reads as skipped. `e2e` is never proposed (the scaffold's placeholder skips until a browser driver is registered) | `x verify --only <steps> --json`, then add each step that passed to `"steps"` |
 | `X_FRAMEWORK_PIN_RANGE` | an `@ultimat3/*` dependency in any of the app's manifests is anything but an exact version or a `workspace:`/`file:`/`link:` path (`^31.0.0`, `*`, `latest`, `>=31 <32`; an `npm:` alias by its own spec), one finding per manifest | the exact version `bun install` resolved, at the line named; then `bun install` |
 | `X_ENV_NAME_RESERVED` | a name the app declares in `envSchema` or seals in `secrets.enc.json` is one `FRAMEWORK_ENV` (`@ultimat3/core`) lists as a `switch` or `internal` name — setting it for the app also switches that package's behaviour. Deploy-contract names (`DATABASE_URL`, `PORT`) and host names are not collisions | rename it `APP_<name>` (or delete it where the value is meant for the framework); then `x env example` |
+| `X_SHIPPED_GUARD_MISSING` (`As of 31.22`) | a guard `x new` ships is not in the app's `guards/`, so the gate does not hold the app to that rule — one per guard | `x g guard <name> && x verify --only boundaries --json` |
 
 **The chart's monitoring templates**, the same way (`As of 2026-11`): an app with a `docker/helm/Chart.yaml` and no `templates/servicemonitor.yaml` or `templates/alert-rules.yaml` gets one line per missing file, then `x g chart-alerts`, which writes only those (`--json`: `data.chartAlerts`, `{ missing[], add }`). The dashboard is its own row: no `dashboards/ultimate-app.json` or `templates/dashboard-configmap.yaml` lists them, then `x g chart-dashboard` (`data.chartDashboard`, the same shape). A chart that dropped them on purpose keeps a green verdict; an app with no chart is listed nothing.
 
@@ -1948,6 +1957,8 @@ x docs "<question|topic|symbol>" [--limit <n>] [--json]
 | an `X_*` code | redirected to `x errors explain <CODE>`, the one way to a code |
 
 A question is ranked; a `Page#anchor` topic (`x docs Upgrading#28x--2900-entry-by-entry`) prints that **whole section**, subsections included, and nothing past it. `x upgrade --json`'s `section.local` is that topic. A search hit carries a capped excerpt.
+
+A question is ranked by its task words too (`As of 31.22`): a synonyms table maps a word that names one task to the mechanism that does it — `paginate` → `keyset`, `poll`/`interval` → `pollEvery`/`visibleInterval`, `concurrency` → `mapBounded`, `latest` → `latestBy`, `typing` → `debounce`, `advisory` → `lockKeys`, `denormalize` → `countedIn`, `memoize` → `retryMemo` — and a page that exports the mechanism outranks prose about the task. The dev MCP's `docs.search` is this command.
 
 The ranking — which hits, in which order — is **not a stable surface**: a minor may reorder it. The `--json` shape is. An install with no `wiki/` still answers from the packages, with an `X_CLI_UNEXPECTED` finding.
 

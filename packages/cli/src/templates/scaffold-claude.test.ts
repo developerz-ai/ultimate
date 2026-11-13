@@ -12,6 +12,7 @@ import { LINE_CEILING } from '../workspace-checks';
 import { names } from './naming';
 import { claudeFiles } from './scaffold-claude';
 import { docsFiles } from './scaffold-docs';
+import { mcpJsonFile } from './scaffold-mcp-json';
 
 const app = names('ledger-demo');
 
@@ -163,12 +164,22 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
     }
   });
 
-  test('exactly one PostToolUse hook, and it names a binary the scaffold installs', () => {
+  test('exactly one PostToolUse hook, and it runs the script the bundle writes', () => {
     const hooks = parseSettings().hooks.PostToolUse.flatMap((entry) => entry.hooks);
     expect(hooks).toHaveLength(1);
+    const script = /\.claude\/hooks\/[\w.-]+/.exec(hooks[0]?.command ?? '')?.[0] ?? '';
+    expect(claudeFiles(app).some((file) => file.path === script)).toBe(true);
     // biome is a devDependency `x new` writes into the root package.json: a hook runs on every
     // edit, and even `x verify --only lint` is a whole-tree pass, too slow to run per file.
-    expect(hooks[0]?.command).toContain('biome');
+    expect(fileAt(script)).toContain("'biome'");
+  });
+
+  test('the hook reads the edited path from stdin — the harness sets no $CLAUDE_FILE_PATHS', () => {
+    // The first version read `$CLAUDE_FILE_PATHS` behind `|| true`: never set, so it formatted
+    // nothing and every edit surfaced later as an X_LINT_FAILED finding of its own.
+    const text = textOf(claudeFiles(app));
+    expect(text).not.toContain('CLAUDE_FILE_PATHS');
+    expect(fileAt('.claude/hooks/format-edited.ts')).toContain('tool_input');
   });
 
   test('the hook rewrites files, and the README is where that is disclosed', () => {
@@ -178,7 +189,37 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
     const readme = fileAt('.claude/README.md');
     expect(readme).toContain('--write');
     expect(readme).toContain('in place');
-    expect(parseSettings().hooks.PostToolUse[0]?.hooks[0]?.command).toContain('--write');
+    expect(fileAt('.claude/hooks/format-edited.ts')).toContain("'--write'");
+  });
+
+  test('the read-only commands an agent is told to run are pre-approved', () => {
+    // The app's AGENTS.md says to run `x impact` before every edit; a prompt on it is a stall.
+    const allow = parseSettings().permissions.allow;
+    for (const rule of [
+      'Bash(bunx x impact:*)',
+      'Bash(bunx x graph:*)',
+      'Bash(bunx x affected:*)',
+      'Bash(bunx x exercise:*)',
+      'Bash(bunx x i18n sync:*)',
+      'Bash(bunx x fix boundary:*)',
+      'Bash(bunx x mcp tools:*)',
+    ])
+      expect(allow).toContain(rule);
+  });
+
+  test("every subagent may call the app's own MCP server, by the name .mcp.json gives it", () => {
+    const McpJson = t.object({ mcpServers: t.record(t.object({ command: t.string })) });
+    const mcpJson = parse(McpJson, JSON.parse(String(mcpJsonFile(app).contents)), '.mcp.json');
+    const server = Object.keys(mcpJson.mcpServers);
+    expect(server).toEqual([app.kebab]);
+    const agents = claudeFiles(app).filter((file) => file.path.startsWith('.claude/agents/'));
+    for (const agent of agents) {
+      const tools = /\ntools: (.*)\n/.exec(String(agent.contents))?.[1] ?? '';
+      expect({
+        path: agent.path,
+        tools: tools.split(', ').includes(`mcp__${app.kebab}__*`),
+      }).toEqual({ path: agent.path, tools: true });
+    }
   });
 
   test('every subagent declares a name and a description, or it is never dispatched', () => {

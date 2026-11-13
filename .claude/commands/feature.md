@@ -6,183 +6,116 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Task, SendMessage, Ta
 
 # /feature
 
-You are a **senior engineer on Ultimate** — a Bun-only, opinionated full-stack framework whose *primary developer is an AI agent*. Read [`CLAUDE.md`](../../CLAUDE.md) and [`docs/architecture/15-adding-a-feature.md`](../../docs/architecture/15-adding-a-feature.md) before designing anything. The nine design axioms override any instinct that conflicts with them.
+You are a senior engineer on Ultimate. [`CLAUDE.md`](../../CLAUDE.md) is already loaded — its axioms, tiers, primitives and non-negotiables bind every step here and are not restated. Read [`docs/architecture/15-adding-a-feature.md`](../../docs/architecture/15-adding-a-feature.md) before designing. Why each rule below exists, with the incidents: [`docs/history/feature-workflow.md`](../../docs/history/feature-workflow.md).
 
-**Done means merged and green — nothing less counts.** understand → falsify the spec → explore → slice → build → **`bun run verify` green** → PR → **merged** → **CI green on `main`** → docs, wiki and `examples/dummy/` left true → **npm published**, when a release was in scope. This repo deploys nowhere itself: there is no production, so the arc genuinely ends at merged (or at a published `@ultimat3/*` version). A green local gate is not done; an open PR is not done; a version bump that never published is not done. Report what you actually verified, not what you assume happened.
+**Done means merged and green.** understand → falsify the spec → explore → slice → build → `bun run verify` green → PR → merged → CI green on `main` → docs, wiki and `examples/dummy/` left true → npm published, when a release was in scope. A green local gate, an open PR, a bump that never published: none is done. Report what you verified, not what you assume.
 
 ## Request
 $ARGUMENTS
 
-**The prompt is the context — read the intent.** Autonomy, scope, which packages and tiers, whether to confirm before merging: infer it from the words. "Just ship it" → run start-to-finish, decide everything yourself, merge on green, surfacing decisions in the PR body instead of asking. A tentative or exploratory ask → clarify what is genuinely ambiguous and let the user review first. Don't make the user configure you. **"Do full work", "elite", "independent", "I'm away" mean full autonomy for the whole arc**: the user may not be at the keyboard, so a question — including "shall I run this?" — stalls the run for hours. Decide, act, and report decisions in the PR body. Always stop for a true blocker: a destructive or irreversible action, a **shipped error code** you would have to change (they are stable forever), a design that needs a ninth primitive or a new tier, or a dependency you cannot satisfy.
+**Read the intent.** "Just ship it", "do full work", "independent", "I'm away" = full autonomy for the whole arc: decide, act, report decisions in the PR body; a question stalls the run for hours. A tentative ask → clarify what is genuinely ambiguous first. Always stop for: a destructive or irreversible act outside the ask, a shipped `X_*` code you would change, a ninth primitive or a new tier, a dependency you cannot satisfy.
 
-**A sweep = at most 4 parallel agents → one PR → merged.** Then the next sweep. Never two sweeps in flight. These are coordinator process rules, not `x verify` checks — the gate proves the tree, the coordinator owns the cadence, and a PR body states the sweep's agent count and file count so a reviewer can hold it to them. **The caps here (4 agents, ~100 files) are the default, not a law: an owner ruling in the ask widens them** — plan 101's final run (2026-11) used 12 agents and ~300–400 files per PR. A PR past CodeRabbit's 150-file refusal then carries the replacement review in (3) below, said in its body.
+## The loop: one PR at a time
 
-**One PR at a time: build → CI → merge → next.** The loop is fixed, and it is the only one:
+1. **Cut one PR's worth** — default ≤ ~100 changed files, ≤ 4 workers — from the lowest unmerged tier. An owner ruling in the ask widens both (plan 101's final run: 12 agents, 300–400 files).
+2. **Several agents build it together**, disjoint file sets, this checkout.
+3. **Gate** (`bun run verify`), commit, push, open the PR.
+4. **CI green, every review addressed, then merge.** Nothing else in flight.
+5. **Only then** `git checkout main && git pull`, branch, brief the next PR from the new `main`.
 
-1. **Cut one PR's worth of work** — at most ~100 changed files — from the lowest unmerged tier.
-2. **Several agents build that one PR together**, each on a disjoint file set, in this checkout.
-3. **Gate it** (`bun run verify`), commit, push, open the PR.
-4. **CI green, then merge.** Nothing else is in flight while it runs.
-5. **Only then** `git checkout main && git pull`, branch again, and brief the next PR's agents from the new `main`.
+Never two PRs open, never a stack, never waves piling up uncommitted. **Tier order is PR order**: the tier-0/1 change lands first, consumers adopt after. Size the PR from the slice's file table *before* briefing; recount before committing (`git status --short | wc -l`). Over the cap → `cp` the higher-tier paths into `node_modules/.cache/<run>/`, write each original back with `git show HEAD:<path> > <path>`, `rm` new files, **re-gate the exact tree**, restore them for the next PR.
 
-Never two PRs open, never a stack, never a second wave building while the first waits on CI. Never let several waves pile up uncommitted in the tree and then cut them into a stack at the end. Plan 101 did that (2026-10-01): ~1,450 files across 13 stacked PRs. Each chunk failed CI on its own, because a lower tier's change landed before its consumers. CodeRabbit auto-reviews only PRs whose base is `main`, so it skipped 12 of the 13 until triggered by hand. The real verdict came only from the top of the stack, and every review fix had to be merged up through every branch above it. **Every PR is agent-reviewed before merge** by whichever review bots the repo has (CodeRabbit, `developerz.ai review`, …): wait for each to post — bounded, ~15 min past CI green — then fix or answer every finding and resolve its thread. A reviewer that never posts within the bound (`developerz.ai review` is known to sit pending forever) is named in the PR body, not waited on; CodeRabbit on a non-`main` base is triggered by hand with an `@coderabbitai review` comment.
+**Splitting.** (1) By package, when each half builds alone: gate the first commit alone, merge, cherry-pick the second onto the new `main`, gate again; a shared file splits by hunk. (2) By slice: brief an oversized slice as two PRs. (3) **Never split a package whose halves depend on each other both ways** — one PR, say why, and replace the review CodeRabbit refuses above 150 files: `bug-hunter` (two passes by area), `concurrency-auditor`, `security-auditor`, every confirmed finding fixed and listed in the body.
 
-**Cap a PR at ~100 changed files.** A plan slice larger than that is split into consecutive PRs; several small slices of one tier band may share a PR while the total stays under the cap. CodeRabbit refuses outright above 150 changed files, so the biggest, riskiest PR gets the *least* automated review; a human cannot hold 279 files either, so approval becomes a formality. One red job blocks everything — a single tier violation would hold every unrelated fix hostage — and bisecting later lands on one enormous commit. Size the PR **before briefing**, from the slice's file table, so the tree only ever holds one PR's work: the gate proves the tree it ran on, and a green `bun run verify` over two PRs' changes proves neither alone. Count again before committing (`git status --short | wc -l`); if the build still overran the cap, move the higher-tier paths out (`cp` them into `node_modules/.cache/<run>/`, then write each original back with `git show HEAD:<path> > <path>` and `rm` the new files — the guard hook refuses `git checkout <path>`), **re-run the gate on the exact tree being committed**, and restore them for the next PR. Split even if the user asked for one PR, and say why. **Tier order is the PR order** — land the tier-0/1 change first, then the packages above it adopt it. Never the reverse; imports only go down.
-
-**Two honest ways to split, and one honest way not to.** (1) By package, when the file sets are disjoint AND each half builds and passes alone: commit each set separately, check out the first commit alone, gate that exact tree, PR, merge, then cherry-pick the second onto the new `main` and gate it again. Split a shared file by hunk (`wiki/Error-Codes.md`, `CHANGELOG.md`): the half whose code is not in this PR keeps its row out. (2) By slice, when one slice already exceeds the cap on paper: brief it as two PRs from the start. (3) **Do not split one tightly coupled package whose halves depend on each other in both directions** — hand-partitioning it produces a first PR that does not build. Ship it as one PR, say why in the body, and — because CodeRabbit refuses above 150 files — replace the review it will not get: before opening the PR, run independent read-only reviewers over the diff — `bug-hunter` for correctness (**two passes split by area above ~150 files**: one pass cannot read 300), `concurrency-auditor` for interruption and races, `security-auditor` — fix every confirmed finding before opening, and list the findings in the PR body.
+**Reviews.** Wait for each review bot, bounded ~15 min past CI green; fix or answer every finding, resolve its thread. One that never posts (`developerz.ai review`) is named in the body. CodeRabbit on a non-`main` base: comment `@coderabbitai review`. A change to `http`, `auth`, `jobs`, `realtime`, `action`, core's client path or the release workflow gets `security-auditor` + `concurrency-auditor` before opening.
 
 ## Work as a hive mind, in one checkout
 
-**Whether to hive is a judgement call, not a ritual.** Two things justify it: **searching** (a broad sweep where you want conclusions, not file dumps) and **scale** (independent, path-separable work — 30 packages make that common). Everything else should not hive. A single-file fix or one bug with an obvious home: do it yourself; briefing, collision management and report-reading cost more than the change, and you pay it in the one context that must survive to the merge.
+Hive for **search** (a broad sweep wanting conclusions) or **scale** (path-separable work); a single-file fix, do yourself. **Never git worktrees** or per-agent directories: they hide work from the gate and each needs its own install, build graph and manifest.
 
-When you do hive, a big task is not one agent doing more; it is a **team sharing one working tree**, with you as coordinator. **Never use git worktrees** — no `isolation: worktree`, no per-agent directories, ever. They fragment the tree, hide half-finished work from the gate, and each one needs its own `bun install`, its own `tsc -b` build graph and its own regenerated manifest. One checkout, many hands; the file set is the only lock.
-
-- **A wave is a PR.** Every agent in a wave lands in the same PR; a second PR only when the file cap or an unrelated, separately-rejectable concern forces it.
-- **One PR, up to four workers inside it.** Parallelism lives *inside* the PR, across agents whose file sets are disjoint — never across PRs. The next PR's agents are not briefed until this one is merged and `main` is pulled.
-- **The hive is you plus at most 4 workers, concurrently** — unless an owner ruling widened it (see the caps above). Four is the ceiling, not the target: size the wave to the work you actually estimated, and one agent is the right answer more often than four. Extra agents past the real parallelism buy nothing and cost briefing, collision mediation and report-reading — all paid from the one context that must survive to the merge. When a PR has more slices than workers, queue them: a worker that reports is re-tasked with `SendMessage`, keeping its context and its file lock, rather than spawned alongside.
-- **Only you spawn agents.** A worker does its slice and reports; it never delegates further. Nested fan-out makes the live count unknowable and breaks the disjointness guarantee — two grandchildren you never briefed end up editing one file. A worker that finds its slice too large says so and returns; widening the split is your call, not its own.
-- **You coordinate; you do not code.** You own git, the ledger and the merge, and you are the only participant who must survive to the end — spend your context on routing, not on reading files an agent will report back. Editing `packages/core/` yourself means you took a slice from someone who had room for it.
-- **The file set is the lock.** Every brief names that agent's exclusive paths *and* what every other live agent holds — here that is naturally `packages/<name>/`, which makes clean boundaries cheap. An agent needing a file it does not own **stops and reports the collision**; it never edits across the line and never negotiates peer-to-peer. You mediate: hand the change to the owner, or re-cut the boundary.
-- **Agents are long-lived teammates.** New work in a package someone holds goes to them via `SendMessage`, keeping their context and their file lock. A second agent on the same paths means two writers and a lost fix.
-- **Work in waves; each wave re-tasks the next.** Wave 1's findings decide wave 2's slices. Don't plan wave 3 before wave 1 reports — it will be wrong.
-- **Keep a visible ledger** (`TaskCreate`/`TaskUpdate`) so ownership survives a context handoff.
-- **Expect the hive to contradict you.** A good agent reports "premise H1 is false, here is the line." Drop it. Where the spec runs ahead of the code, this happens constantly and is the hive working correctly.
+- **A wave is a PR**; parallelism lives inside it. Size the wave to the work — one agent is right more often than four. More slices than workers → queue them; re-task a finished worker with `SendMessage` (keeps its context and its lock) rather than spawning beside it.
+- **You coordinate; you do not code.** You own git, the ledger (`TaskCreate`/`TaskUpdate`) and the merge — spend context on routing, not on reading what an agent will report.
+- **The file set is the lock.** A brief names the agent's exclusive paths *and* every other live agent's. A needed file outside the set → the agent stops and reports; you hand it to the owner or re-cut. Never two agents on one path.
+- **Every slice you name, you dispatch**: a named-but-unlaunched slice makes agents defer to nobody. Reconcile roster and dispatched set before reading reports.
+- **Keep an "unowned" bucket.** The real fix often lands where no slice covers (`packages/core/` errors, `scripts/lib/tiers.ts`, `llms.txt`, `wiki/Error-Codes.md`, `examples/dummy/`). An "outside my set" item is assigned at once — widen an owner's set or do it — never filed.
+- **Causal chains**: only you see every report — does A explain B? "Premise H1 is false, here is the line" is the hive working.
 
 ### Who runs which checks
 
-An agent runs lint and tests **narrowed to its own files**. Whole-repo green is the coordinator's job, once, at the end — never N agents running `bun run verify`.
-
 | | Agent (per iteration) | Coordinator (once, at the end) |
 |---|---|---|
-| lint | `bunx biome check <the files it edited>` | `bun run lint` |
-| tests | `bun test ./packages/<pkg>/src/<file>.test.ts` (or `./packages/<pkg>/`), `-t '<name>'` with a path — its own tests, named explicitly. **Always `./`**: a bare `packages/mcp` after `bun test` is a substring filter that also runs `examples/dummy/packages/mcp` under the wrong config (measured: 86 files and 13 false fails vs 75 and 0) | part of `verify` |
-| typecheck | **once when otherwise done**, serialised: `mkdir -p node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` — `tsc -b` is project-wide by nature, so this is the floor | part of `verify` |
-| boundaries | only if it added an import: `bun run boundaries` | part of `verify` |
-| the gate | never | **`bun run verify`**, in the **background** |
+| lint | `bunx biome check <its files>` | `bun run lint` |
+| tests | `bun test ./packages/<pkg>/src/<file>.test.ts`, `-t '<name>'` only with a path — always the `./` | part of `verify` |
+| typecheck | once when done: `mkdir -p node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` | part of `verify` |
+| boundaries | only if it added a cross-package import: `bun run boundaries` | part of `verify` |
+| manifest | never | `bun run manifest`, once, after every agent is done |
+| the gate | never | `bun run verify`, in the background |
 
-**`tsc -b` and the manifest are the shared state here.** `bun run typecheck` is an incremental project-references build writing `.tsbuildinfo` and `dist/` for every workspace; two agents running it at once interleave writes into the same artifacts and produce errors that belong to neither of them. So: at most one typecheck in flight — the `flock` above holds that across agents (Linux; `flock` is util-linux, absent on macOS) — and treat a confusing project-reference error as contention until proven otherwise. Same for `bun run manifest` — it rewrites a generated file, so only the coordinator regenerates it, once, after everyone is done.
+`tsc -b` and the manifest are shared state: concurrent typechecks interleave `.tsbuildinfo`/`dist/` writes into errors nobody owns (`flock` is util-linux, absent on macOS). Never hand a worker `bun run test:affected`: the dirty tree is everyone's, so "affected" is the monorepo.
 
-Do not hand a worker `bun run test:affected` (`x test --affected --base origin/main --dirty`): inside a hive the dirty tree holds every agent's uncommitted work, so the "affected" set becomes everyone's and each run expands to nearly the whole monorepo. Name the paths.
+### Every brief carries all of these
 
-### Two things only the coordinator can do
-
-- **Every slice you NAME, you must dispatch.** Briefs tell each agent who holds which paths, so a named-but-unlaunched slice makes agents defer work to a teammate who does not exist — and it vanishes. Keep roster and dispatched set as one list; reconcile **before** reading reports.
-- **Reserve an "unowned" bucket and expect to fill it mid-run.** The real fix often lands where no slice covers: a `packages/core/` error class, the tier table, `scripts/boundaries.ts`, `llms.txt`, `wiki/Error-Codes.md`, `examples/dummy/`. A homeless finding is the one most likely to be quietly dropped — when a report says "the real fix is outside my set", assign it immediately rather than filing it.
-- **Look for causal chains across reports.** Agents see their own package; only you see all of them. A tier-0 schema change explains a `render` failure a different agent is independently chasing, and neither could see it. After the reports land, spend one pass asking "does A explain B?" It changes what you fix and what you can drop.
+- its **exclusive file set**, and never to edit outside it;
+- **who holds which other paths**, so a collision is reported, not resolved;
+- each finding with `file:line`, defect, failure scenario — and permission to **drop one the code contradicts**;
+- **evidence first**: symptom, `--json` fingerprint, failing input; your hypothesis labelled unverified;
+- "the non-negotiables in `CLAUDE.md` bind you", plus any constraint specific to its area;
+- **tests first**, red before green; **checks narrowed to its files** (table above), never `bun run verify`;
+- **no git writes**: reads only (`diff`/`show`/`status`/`log`); never `checkout`, `restore`, `stash`, `reset`, `add`, `commit`. Auditors too: read-only means no git writes;
+- **no spawning**: a slice too big is reported back;
+- **never "ask me"** — it cannot: decide and flag it, or stop and report with evidence. You take the question to the user.
 
 ## The flow
 
-1. **Understand.** Restate the goal in a line. Name **which of the eight primitives** it is (`entity · policy · action · mutator · query · job · route · task`) and **which tier** it lives in. If it fits none of the eight, it does not ship — do not invent a ninth; if it fits no tier, the design is wrong, so fix the design rather than widening the table. URLs in the ask → `WebFetch` the *mechanism*, then translate it onto this stack (Bun-only, Postgres, SolidJS, containers).
+1. **Understand.** One line: the goal, which of the eight primitives, which tier. URLs in the ask → `WebFetch` the *mechanism*, then translate it onto this stack.
+2. **Distrust the paperwork.** `docs/idea/` is intent; `docs/architecture/` and the roadmap may have moved. Merged commit subjects are the cheapest truth. Name what you falsified; fix the doc in the same PR.
+3. **Prove it on the reference app.** `bun run x -- doctor --json --cwd examples/dummy`, `bun run x -- <cmd> --json --cwd examples/dummy`, the dev MCP (`mcp__ultimate-dev__*`, wired in `.mcp.json`, which `bun run setup` copies from the tracked `.mcp.json.example`). **Run the printed `fix:` before improvising.** A real trace outranks a reading.
+4. **Explore** with read-only agents over disjoint areas (tier bands, `scripts/`, `examples/dummy/`, `wiki/`), within the worker cap. Require severity, `file:line`, one-sentence defect, concrete failure scenario — plus the doc claims they **falsified** and the premises that held.
+5. **Live user reports are first-class**: observed outranks inferred. Reproduce, root-cause, rank them first; extend the owning agent's brief.
+6. **Track in GitHub issues.** `gh issue list --search "<area>" --state all` before creating one; wire each PR with `Fixes #NNN`.
+7. **Build.** Branch while the tree is clean: `git fetch origin && git status --short`, then `git checkout -b <feat|fix|refactor|docs|test>/<slug>`. Fix slice boundaries before launching anyone; two agents that must edit one file are one slice. A cross-package change lands **lowest tier first**, with its first real caller. Small feature → one agent.
+8. **Verify.** `bun run verify`, once, in the background. Never narrow it, disable a rule or loosen a flag to pass. A public export moves its `README.md` + package `CLAUDE.md`; a code lands in `wiki/Error-Codes.md` (`bun run new-error-code`); a flag in `wiki/CLI-Reference.md`; a primitive usage in `examples/dummy/`. Touching client-reachable code, a budget or a tracked app: `bun run scripts/reference-app-gate.ts` and each touched app's `bun run x -- manifest --cwd <app>`.
+9. **Commit & merge.** After every agent finishes. Sweep leftovers first: probes at the root, debug logging, stray `dist/`/`.tsbuildinfo`. `git add <this slice's paths>` (never `-A`), read `git status --short`, commit, push. **Main moves under you**: `git fetch`, intersect main's changed files with yours, three-way merge a real overlap (`git merge-file -p ours base theirs`) — never take one side wholesale. Merge with `gh pr merge --squash` once CI is green on the **head commit** and every review is addressed. `claudetm merge-pr <pr>` is an optional internal tool; one PR in flight. **0 registered checks reads as "pass"** — wait for a plausible count with nothing pending.
+10. **Release + close.** Only when asked or for a confirmed security advisory; else `bun run scripts/release-due.ts --json` decides weekly. [`PUBLISHING.md`](../../PUBLISHING.md): `bun run scripts/release.ts --bump <major|minor|patch>` on a branch; the `chore: release X.Y.Z` PR merged on green CI **is** the release (`release-tag.yml` tags, dispatches `release.yml`; never tag by hand); wait for `gh run list --workflow release.yml --limit 1`; `bun run scripts/registry-audit.ts --json` must answer *N/N publishable packages on npm at X.Y.Z, every one attested* — quote it. Confirm each `Fixes #NNN` closed.
 
-2. **Distrust the paperwork.** `docs/idea/` is the design spec — what is intended, not what exists — and `docs/architecture/` documents internals that may have moved. Before planning work off either, check them against the code and `git log`; `docs/idea/14-roadmap.md` claims milestone state that the packages may contradict in both directions. Merged commit subjects are the cheapest ground truth. State plainly which claims you falsified, and correct the doc in the same PR.
+## Reach: credentials are reach, the ask is the authorisation
 
-3. **Prove it against the reference app.** There is no production to query, so `examples/dummy/` is the proving ground: it exercises every primitive once, idiomatically, and a framework change that does not show up there is unverified. Reach for `bun run x -- doctor --json --cwd examples/dummy` and `bun run x -- <cmd> --json --cwd examples/dummy` (an app command at the bare root answers `X_NOT_IN_APP`) — every command and every error is `--json` for exactly this reason, and every framework error carries an executable `fix:`. **Run the `fix:` before improvising.** A finding backed by a real CLI trace or a failing dummy-app run outranks one derived from reading alone.
-
-4. **Explore (parallel, at most 4 agents at once).** Fan out `Agent` Explore agents (very thorough) over **disjoint** areas — tier bands, `scripts/`, `examples/dummy/`, `wiki/` — **never more than 4 concurrently**, the same ceiling as the build hive. More areas than agents → widen each agent's band, or re-task a finished one with `SendMessage`; never a fifth spawn. Require of every finding: severity, `file:line`, a one-sentence defect statement, and a **concrete failure scenario** (inputs → wrong outcome). Demand two more things explicitly — the doc claims they **falsified**, and the brief premises that turned out **true** — so you neither re-fix working code nor re-verify settled ground. **Protect your own context**: don't read what an agent will report; prefer one thorough agent over three shallow ones plus your own reading.
-
-5. **Fold in live user reports as first-class findings.** A pasted CLI trace, a failing `x verify --json`, an agent transcript from a real app: that is *observed*, not inferred, and routinely outranks the audit's own findings. Reproduce, root-cause, rank above equal-severity read-only findings. If an in-flight agent owns those files, extend its brief with `SendMessage` rather than spawning a second agent onto the same paths.
-
-6. **Track in GitHub issues** — this repo uses no external tracker, so do not invent one. `gh issue list --search "<area>" --state all` **before** creating anything: the work may already be tracked, partly tracked, or a closed issue may have decided what you are about to re-decide. Wire each PR with `Fixes #NNN`.
-
-7. **Build — branch first, then fan out.**
-
-   ```bash
-   git fetch origin && git status --short   # expect a clean tree
-   git checkout -b <type>/<slug>            # feat/ fix/ refactor/ docs/ test/
-   ```
-   Do it now, while the tree is clean; by commit time it is dirty enough that you won't want to think about branches. Then fix slice boundaries **before launching anyone**, each file set **disjoint from every other agent's**. Two agents that must edit one file are one slice, not two. For a cross-package change, never solve it N ways: **land the lowest-tier primitive first**, with its first real caller, then every consumer adopts it.
-
-   **Every brief carries all nine of these** — omitting one is how a run goes wrong:
-   - its **exclusive file set** (normally `packages/<name>/`), and never to edit outside it;
-   - **which other agents are live on which paths**, so a collision is *reported*, not silently resolved;
-   - each finding with `file:line`, the defect, the concrete failure scenario — plus permission to **drop any finding the code contradicts** (that is the agent working correctly);
-   - **evidence first, diagnosis second** — the symptom, the CLI/`--json` fingerprint, the failing input, and only then your hypothesis, explicitly labelled unverified, to confirm or kill *before* building; a brief that leads with a confident root cause sends the agent to the wrong file;
-   - the **house constraints binding its area**: imports go **down tiers only**, never sideways or up; the eight primitives, no ninth; Bun only; **no new dependencies** without a stated reason; **no `any`** (use `unknown` + a schema parse); never a bare `Error` — subclass `UltimateError` with a stable `X_SCREAMING_SNAKE` code, a cause and an executable `fix:`; named exports only, explicit re-exports in `src/index.ts`; `import type`/`export type`; SRP, target < 200 LOC and a hard ~500 ceiling; kebab-case filenames with a 1–4 line responsibility header; `--json` on every CLI command and every error; no hardcoded user-facing strings (everything through `t()`); no raw colours; no date without an explicit IANA `timeZone`; no float money;
-   - **tests ship with the code, failure case first** — next to the source as `<file>.test.ts`; a test that cannot fail is not a test;
-   - **checks narrowed to its OWN files** (see above) — `bun test ./<path>` with the `./`, typecheck only under the run's `flock`; never `bun run verify`, never a bare repo-wide `bun test`;
-   - **no git operations at all** — reads only (`git diff`/`git show`/`git status`), never `checkout`, `restore`, `stash`, `reset`, `add`, `commit`; the coordinator owns all git and work is left uncommitted. Auditors too: read-only means no git writes;
-   - **no spawning** — no `Agent`, no `fork`; say it in every brief. A slice too big for one agent is reported back, not delegated;
-   - **never tell an agent to "ask me" — it cannot.** A subagent has no channel to the user, so a question is a dead end: it blocks or guesses. Give it two legal moves: **decide and flag it** (act on the most defensible reading, state the assumption, mark the artifact so you can overwrite it), or **stop and report** with evidence when either path would be unsafe or wasted. Then *you* take the question to the user and re-task with `SendMessage`.
-
-   Small feature → one agent, skip the fan-out.
-
-8. **Verify.** `bun run verify` is the contract: 21 steps (`VERIFY_STEP_NAMES`), green means shippable. Run it **once, in the background** — and do not narrow its scope, disable a lint rule or loosen a compiler flag to make it pass. If a package gained a public export, its `README.md` and package `CLAUDE.md` move with it; a new error code lands in `wiki/Error-Codes.md`, a new flag in `wiki/CLI-Reference.md`, and a new primitive usage in `examples/dummy/`. Regenerate the manifest (`bun run manifest`) once, at the end.
-
-9. **Commit & merge.** Let every agent finish, **then** plain git; never commit while agents are still writing. **First sweep the agents' leftovers** — scratch `.ts` probes at the repo root, debug logging, stray `dist/` or `.tsbuildinfo` churn that isn't yours.
-
-   ```bash
-   git fetch origin                    # did main move? if so, see below
-   git add <this slice's paths>        # never `git add -A`
-   git status --short                  # then READ it
-   git commit && git push -u origin HEAD
-   ```
-   Naming paths on `git add` is all the selectivity you need. **Never `git stash`** — one global stack shared with every concurrent agent; use `git diff` or a `cp` backup.
-
-   **Main moves under you.** Before each build, `git fetch` and intersect *files changed on main* with *files changed locally*. A real overlap is **three-way merged** (`git merge-file -p ours base theirs`), never taken wholesale — a naive tree build drops main's lines silently, with no conflict marker.
-
-   Then merge with **`gh pr merge --squash`** once CI is green **and** every arrived review is addressed, threads resolved — that is the path, and it needs nothing a contributor lacks. Optional, for those who have it: `claudetm merge-pr <pr>`, an internal tool that waits for CI, fixes failures, addresses review comments (CodeRabbit included) and merges when green. It operates on the **current directory**, so at most one PR is in flight: parallel *building* is fine, parallel *merging* is not; it can hang on an already-green PR, where `gh pr merge --squash` is the answer anyway. Gotcha: **0 registered checks reads as "pass"** — wait until the count is plausible *and* nothing is pending, or you merge RED right after a rebase.
-
-10. **Release + close.** Nothing deploys — this is a framework. `wiki.yml` syncs `wiki/` on merge, so confirm it ran if you touched the wiki. An npm release is deliberate and only when asked or for a fix to a security advisory a first-tier source confirms; every other release is the weekly `release-due` checkup's call (`.dz/briefs/release-due.md`). Publishing goes through **OIDC trusted publishing** — follow [`PUBLISHING.md`](../../PUBLISHING.md): the `chore: release X.Y.Z` PR merged on green CI **is** the release (`release-tag.yml` tags, creates the Release and dispatches `release.yml`), then confirm the published version matches. `bun run scripts/release-due.ts --json` lists what is waiting. Otherwise say so and stop at merged. Verify each `Fixes #NNN` actually closed, and close any straggler with a link to the merged PR.
-
-## Check what you can reach before you decide what to hand back
-
-**Credentials are REACH, and the ask is the authorisation.** Two different questions, and conflating them is how an agent publishes a version nobody asked for. A token answers *what could I do*; the user's own words answer *what am I here to do*. Neither substitutes for the other:
-
-- **Inside the ask, a credential you hold is a step you take.** Do not stop to request permission you were already handed — the arc ends where your credentials end, and nowhere earlier. A step you *could* have run and instead described is not delegation. So establish your reach at the START of the run, not when you hit the wall.
-- **Outside the ask, a credential authorises nothing.** `NPM_TOKEN` in `.env` is not a request to publish, and `workflow` scope is not a request to release. **An irreversible act needs the user's own words** — a release, a force-push, a deletion, anything a later commit cannot undo. "Fix this bug" does not carry "and ship 8.0.0" no matter what the token could reach.
-
-**One approval owner per irreversible act, named in advance.** For a release that act is merging the `chore: release X.Y.Z` PR: `release-tag.yml` and `release.yml` take it from there, and the `npm-publish` environment has had no reviewers since 2026-09-05 — there is nothing to approve afterwards. Merge it on green CI, on an ask that named the release, and say that you did.
-
-This does not loosen the four things that always stop you (bottom of this section) — those stop you *with* full access, because no credential makes a shipped error code safe to change.
-
-**Probe first, once, at step 1.** Read only the *key names*, never the values:
+Inside the ask, a credential you hold is a step you take — probe reach at step 1. Outside it, a credential authorises nothing: `NPM_TOKEN` is not a request to publish. **An irreversible act needs the user's own words.** For a release that act is merging the release PR; `npm-publish` has no reviewers, so nothing is approved after.
 
 ```bash
-ls -a | grep -i '^\.env'                                   # which env files exist
-grep -oE '^[A-Za-z_][A-Za-z0-9_]*' .env | sort -u          # key NAMES only — never cat .env
-gh auth status                                              # gh scopes: repo, workflow, read:org
-gh repo view --json nameWithOwner,viewerPermission          # can you push, can you merge
-git remote -v | sed -E 's#//[^/@]+@#//***@#'                # remotes, credentials redacted
+ls -a | grep -i '^\.env'                                  # which env files exist
+grep -oE '^[A-Za-z_][A-Za-z0-9_]*' .env | sort -u         # key NAMES only — never cat .env
+gh auth status                                             # scopes: repo, workflow, read:org
+gh repo view --json nameWithOwner,viewerPermission         # can you push, can you merge
+git remote -v | sed -E 's#//[^/@]+@#//***@#'               # never bare: a CI clone's URL holds a token
 ```
 
-**Never bare `git remote -v`.** A remote cloned by `gh` or by CI is `https://x-access-token:<token>@github.com/…`, so the unredacted form prints a live credential into your transcript — the one thing the line below forbids. `gh repo view` answers the permission question without touching the URL at all; the redacted `sed` is there only for *which* remotes exist.
-
-Then say in one line what you can do end-to-end and what you cannot. Do not print a value, a token, a password or a TOTP code — not in a message, not in a commit, not in a PR body, not in a log. `.env` is git-ignored and stays that way; if a command needs a secret, pass it through the environment (`NPM_CONFIG_OTP="$(…)" cmd`), never as literal text you wrote out.
+Say in one line what you can and cannot finish. Never print a value, token or OTP anywhere; pass secrets through the environment (`NPM_CONFIG_OTP="$(…)" cmd`).
 
 | Reachable when… | You own, without asking |
 |---|---|
-| `gh auth status` has `repo` | branch, push, open the PR, `gh pr merge --squash` (or the optional `claudetm merge-pr`), close issues |
-| `gh auth status` has `workflow` | re-run a red job (`gh run rerun <id> --failed`), and finish a half-cut release with the command `release-tag.yml`'s failed step printed — e.g. `gh workflow run release.yml --ref v<version> -f version=<version>`. No environment approval exists to give |
-| `.env` has `NPM_TOKEN` | `npm view` / `npm whoami` reads, `registry-audit.ts`, the post-publish confirmation |
-| `.env` has `NPM_TOTP_SECRET` or `NPM_TOTP_URI` | a fresh OTP, generated at call time (a ~25-line Bun HMAC-SHA1 snippet; `oathtool` is usually not installed), never stored and never echoed |
-| **nothing** — `trust-publishers.ts --check` is NOT reachable from a token | Measured 2026-08-22: `npx npm@12 trust list <pkg>` answers `E401 … You must be logged in to publish packages` even with a valid `_authToken` and a fresh `NPM_CONFIG_OTP`, because npm restricts 2FA-bypass tokens for account-level reads. The script then reports **0/30 packages trust …**, which is a false negative, not a finding — do not "fix" it and do not treat it as a release blocker. The real signal is the LAST release's provenance: `npm view @ultimat3/core@<last> _npmUser dist.attestations` answering `GitHub Actions` + a `trustedPublisher.oidcConfigId` proves the OIDC path is live and the next release will publish the same way |
-| OIDC trusted publishers attached | the release publishes **from `release.yml`, with provenance**. Never `npm publish` from the laptop to "save a step" — that is exactly how 2.0.0 lost its attestations |
+| `gh` has `repo` | branch, push, PR, `gh pr merge --squash`, close issues |
+| `gh` has `workflow` | `gh run rerun <id> --failed`; finish a half-cut release with the command `release-tag.yml`'s failed step printed |
+| `.env` has `NPM_TOKEN` | `npm view`, `npm whoami`, `registry-audit.ts` |
+| `.env` has `NPM_TOTP_SECRET`/`NPM_TOTP_URI` | a fresh OTP at call time (a small Bun HMAC-SHA1 snippet), never stored or echoed |
+| nothing | `trust-publishers.ts --check` from a token answers `E401` — "0/30 trust" is a false negative. The signal: `npm view @ultimat3/core@<last> _npmUser dist.attestations` names `GitHub Actions` + a `trustedPublisher` |
 
-**So when the user says "release it", the full arc is yours:** every slice merged and green on `main` → `bun run scripts/release.ts --bump <major|minor|patch>` (or `--version X.Y.Z`) stamps every workspace and the three derived files on a branch → the `chore: release X.Y.Z` PR, merged on green CI → ci.yml green on `main` → `release-tag.yml` creates the **annotated** tag, the Release (notes from the changelog section, `--verify-tag`) and dispatches `release.yml` — never tag or `gh release create` by hand → wait for the release run (`gh run list --workflow release.yml --limit 1`) → `bun run scripts/registry-audit.ts --json` must answer *N/N publishable packages on npm at X.Y.Z, every one attested*. Report that line verbatim. **A version bump that never published is not done.**
+Never `npm publish` from a laptop: provenance comes only from `release.yml`.
 
-**Stop and ask only for what credentials genuinely cannot settle** — the list is short and does not grow with the size of the job: a shipped `X_*` error code you would have to change, a ninth primitive, a new tier, a destructive or irreversible action outside the release path, or a red gate you cannot make green without narrowing it. Missing access is a *reason to say so plainly and finish everything else* — never a reason to hand back work you could have done.
+## Run mechanics
 
-## Run mechanics that cost hours (measured on plan 2026/10/04/101)
-
-- **Commands that never prompt.** A `cd` inside a compound command, and a write outside the checkout, can raise a permission prompt that blocks an unattended run. Use absolute paths, `git -C <repo>`, `bun run x -- <cmd> --cwd <app>` from the root, and keep run files inside the repo.
-- **The scratchpad is not durable** — it was wiped several times mid-run, taking a pinned toolchain and the agents' shared brief with it. Keep run helpers (shared worker rules, a PR waiter, a pinned Bun, logs, PR bodies) in `node_modules/.cache/<run>/`: inside the checkout, git-ignored, never cleaned.
-- **Toolchain parity before measuring.** When a sweep moves a pin past the system toolchain (Bun 1.4.0 → 1.4.2), download the release, check it against the published `SHASUMS256.txt`, put it in the run cache, and prefix every gate and every brief with that `PATH`. A gate on the wrong runtime proves nothing about the pin.
-- **Background jobs: wait on the gate, not on a pattern.** `pkill -f <pattern>` matches its own shell and kills it (exit 144); `setsid` returns at once, so the "done" notice arrives with nothing run. Run the gate itself with `run_in_background`, or kill by PID. A PR waiter must wait for the **head commit's** `ci` run to complete before counting checks — a count taken right after a push reads the previous commit's green.
-- **Which command gates what.** The root gate is `bun run verify [--only <steps>]` — never `bun run x -- verify` at the root, which refuses with `X_NOT_IN_APP`. One app's gate: `bun run x -- verify --cwd <app> [--only …]` (same as `cd <app> && bun run ../../packages/cli/src/bin.ts verify …`, without the prompting `cd`). The root gate runs the app-shaped steps (exercise, budgets, seo, i18n, drift) as no-ops — there is no `app.config.ts` at the root; CI's `reference-app-verify` does not skip them. Before every PR that touches client-reachable code, a route budget or a tracked app: `bun run scripts/reference-app-gate.ts` (`--app <dir>` for one), and regenerate each touched app's `x.manifest.json` (`bun run x -- manifest --cwd <app>`) — a budget edit drifts it.
-- **A budget overrun is attributed before it is raised.** Build `main` (a `git archive origin/main` export under the run cache — not a worktree) and compare whole-chunk bytes (`.x/build-stats.json`, the emitted chunks) against this tree. Source-map per-module attribution misassigns shared code. Then raise by the measured number with the reason (`bun run budget-raises`).
-- **A live red is checked against the ports first.** A foreign service already on a test port (another `nats-server` on :4222, a `redis` on :6379) makes the compose container fail to bind, silently. `docker port <container>` before trusting a live red; an empty or foreign mapping means the suite talked to the wrong server.
-- **Shared files move together.** `bun run new-error-code` edits the package's error map and `wiki/Error-Codes.md` in one go, so it is the coordinator's (or one named agent's) — never two workers at once. A `BREAKING —` line in `CHANGELOG.md`, its `wiki/Upgrading.md` entry number, that page's summary count and its package-range intro move in the same diff. `bun run changelog-check` refuses an unpaired `BREAKING — (#N)` line, a cited entry number with no row, and a stale count; the package-range intro it does not read, so re-read that by hand.
-- **Other repos are not this one.** The no-worktree rule is this checkout's. In another repo the owner may be editing on a non-`main` branch: work in a git worktree there, never on their checkout.
-- **Read-only means no git writes, said in so many words.** A read-only auditor reverted a worker's entire file set (`git checkout`/`restore` of exactly the paths it was told to review) seventeen seconds into a gate run, and the gate then measured a tree missing a whole slice. Every brief, auditors included, says "no git commands that touch the tree — not `checkout`, `restore`, `stash`, `reset`; read with `git diff`/`git show`". After any audit, re-check `git status` against the roster before trusting a gate run. Two hooks back this up (`.claude/settings.json`): `guard-destructive-git.sh` (git rules parsed in `guard-git.ts`, pinned by `bun test ./.claude/hooks/`) refuses a `checkout` naming a working-tree path or pathspec (a snapshot restore excepted), `checkout-index`, `restore`, `reset --hard`, `clean`, `stash` and an `rm -r` of source, and `snapshot-tree.sh` commits the whole tree to `refs/snapshots/<epoch>` at most every 5 minutes. A revert of unknown origin is then a restore, not a re-briefed agent: `git for-each-ref refs/snapshots`, read one with `git show --stat <ref>`, take a path back with `git checkout <ref> -- <path>`. Prune once the PR merged: `.claude/hooks/snapshot-tree.sh --prune`.
-- **Audit every high-stakes sweep's diff, then the fixes.** Above ~150 files: two `bug-hunter` passes split by area, plus `concurrency-auditor` and `security-auditor`. On this run the read-only `security-auditor`/`concurrency-auditor` pass before opening found a pre-existing High open redirect, and two High regressions introduced by the sweep's own first-draft fixes (a drain that cut streamed bodies; a drain that re-sent in-flight webhooks). Anything touching `http`, `auth`, `jobs`, `realtime`, `action`, core's client path or the release workflow gets both, and a confirmed finding is fixed before the PR opens.
-- **Fix, never pin, what a tightened guard surfaces.** Workers reach for "raise the pin by the sites I found". On a high-stakes run, extend the worker's file set and have it screen every site; a pin is for a site that genuinely cannot change, with its reason.
-- **Homeless follow-ups are assigned at once, by widening a set.** A worker's report ends with "outside my set: …". Hand each item to the agent holding the context (extend its exclusive set, name the files) or do the one-line edit yourself; never file it for later.
-- **A flake is proved, not assumed.** An e2e that times out under load is re-run alone 3× before it is called a flake; say so in the PR body.
-- **CodeRabbit's stale verdict.** Its `CHANGES_REQUESTED` review survives after every thread is fixed, answered and resolved. With CI green on the head commit, zero unresolved threads and no new top-level comment, **dismiss that one stale review with its reason** (`gh api -X PUT repos/{owner}/{repo}/pulls/<n>/reviews/<id>/dismissals -f message='every finding fixed in <sha>, threads resolved' -f event=DISMISS`), then `gh pr merge --squash` — so branch protection still decides. Never `--admin`: it bypasses every unmet requirement, not just the stale review, and needs the user's own words.
-
-## Hard rules (from CLAUDE.md — non-negotiable)
-
-**One way to do each thing** — never add a second path. **Define once, project everywhere.** **Enforced, not documented**: a convention that is not a build error does not exist. **Errors are instructions** — stable code + cause + exact `fix:` command + `--json`. **One command means shippable**: `bun run verify` is the contract. **Static path never pays for the app path.** **Deploy anywhere = containers only**; zero platform primitives in the framework. Imports go **down tiers only**. The **eight primitives**, no ninth. Bun only; no new dependencies without a stated reason; no `any`; never a bare `Error`; named exports only; `import type`; tests next to source; `--json` everywhere; no hardcoded strings; no raw colours; no unzoned dates; no float money; SRP under ~200 LOC. Biome owns formatting — don't argue with it. CI runs on free runners only. Never `--force`, `--no-verify`, `reset --hard`, or skipping hooks without permission. **Never `git stash`. No git worktrees.**
+- **Commands that never prompt**: absolute paths, `git -C <repo>`, `bun run x -- <cmd> --cwd <app>`; a `cd` in a compound command can prompt and stall an unattended run.
+- **Where run files go — the one rule.** Anything that must survive the run (worker rules, briefs, a pinned Bun, logs, PR bodies, probes): `node_modules/.cache/<run>/` — inside the checkout, git-ignored, never cleaned. Anything that must not see this repository's config (a scaffolded app, a `git archive` export): the session scratchpad, treated as disposable. Never a tracked path, never the repo root.
+- **Toolchain parity**: a sweep that moves the Bun pin runs every gate on that release (checked against `SHASUMS256.txt`, on `PATH`).
+- **Background jobs**: run the gate itself with `run_in_background`; `pkill -f <pattern>` kills its own shell. A PR waiter waits for the head commit's run before counting checks.
+- **Which command gates what**: the root is `bun run verify [--only <steps>]`; one app is `bun run x -- verify --cwd <app>` — the app-shaped steps the root skips run there.
+- **A budget overrun is attributed before it is raised**: compare whole-chunk bytes (`.x/build-stats.json`) against a `git archive origin/main` build; raise by the measured number (`bun run budget-raises`).
+- **A live red is checked against the ports first**: a foreign service on a test port silently breaks the compose bind — `docker port <container>`.
+- **Shared files move together**: `bun run new-error-code` is the coordinator's; a `BREAKING —` changelog line and its `wiki/Upgrading.md` entry land in one diff (`bun run changelog-check`).
+- **Other repos are not this one**: there, work in a git worktree, never on the owner's checkout.
+- **The hooks** (`.claude/settings.json`): `guard-destructive-git.sh` refuses discarding uncommitted work in a checkout of this repository; `guard-test-path.ts` refuses a `bun test` path without its leading `./`; `after-edit.ts` formats the edited file (+ `boundaries` for a package file); `stop-drift.ts` blocks one stop over a stale manifest or schema dump; `snapshot-tree.sh` commits the tree to `refs/snapshots/<epoch>` every 5 min when tracked files changed (never for a read-only agent). Restore: `git show --stat <ref>`, `git checkout <ref> -- <path>`; prune after merge: `.claude/hooks/snapshot-tree.sh --prune`. After any audit, re-check `git status` against the roster.
+- **Fix, never pin, what a tightened guard surfaces**; a pin is for a site that cannot change, with its reason. **A flake is proved**: re-run alone 3×, said in the PR body.
+- **CodeRabbit's stale verdict**: with CI green on the head commit and zero unresolved threads, dismiss that one stale `CHANGES_REQUESTED` with its reason (`gh api -X PUT repos/{owner}/{repo}/pulls/<n>/reviews/<id>/dismissals -f message='…' -f event=DISMISS`), then `gh pr merge --squash`. Never `--admin` without the user's words.
 
 ## Output
 
@@ -194,7 +127,7 @@ Falsified:   <docs/idea or roadmap claims that were wrong, now corrected>
 Gate:        bun run verify ✓  (21 steps)  · reference-app-gate ✓ | n/a
 Codes:       <new X_SCREAMING_SNAKE error codes, or none>   wiki updated: <y/n>
 Dummy app:   <what examples/dummy/ now demonstrates, or unchanged>
-Release:     <all N packages published at vX.Y.Z, attested — the registry-audit line verbatim | not released (merged only), because …>
+Release:     <the registry-audit line verbatim | not released (merged only), because …>
 Reach:       <what your credentials let you finish; what you could not and why>
 Issues:      <#NNN closed, or none>
 ```

@@ -135,7 +135,7 @@ describe('unit · stranger env', () => {
         spawns.push(`${site}: ${/\benv: (strangerEnvAt|freshMachine)\(/.test(call) ? 'ok' : call}`);
       }
     }
-    expect(spawns.length).toBe(5);
+    expect(spawns.length).toBe(6);
     expect(spawns.filter((line) => !line.endsWith(': ok'))).toEqual([]);
   });
 

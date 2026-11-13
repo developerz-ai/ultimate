@@ -148,10 +148,34 @@ describe('the read tools return what the host answered, each from its own source
     expect(parse(await tool('routes.list').handle({}, caller))).toEqual([
       { url: '/', render: 'static' },
     ]);
-    expect(parse(await tool('schema.describe').handle({}, caller))).toEqual([{ name: 'post' }]);
+    expect(parse(await tool('schema.describe').handle({}, caller))).toEqual([
+      { name: 'post', table: 'posts' },
+    ]);
     expect(parse(await tool('policies.list').handle({}, caller))).toEqual([
       { permission: 'post:publish' },
     ]);
+  });
+
+  test('schema.describe narrows to one entity by name or table, through the server', async () => {
+    // Through `ToolRegistry`, not `handle`: the refusal this replaced was the ARGUMENT check —
+    // `{ entity }` failed a no-argument schema as X_INPUT_INVALID before any handler ran.
+    const { host } = fakeHost(BRANCH);
+    const registry = new ToolRegistry().registerAll(devTools(host));
+    for (const entity of ['post', 'posts']) {
+      const resolved = registry.resolve('schema.describe', { entity }, caller);
+      if (resolved.kind !== 'ok')
+        expect.unreachable(`schema.describe refused { entity: ${entity} }`);
+      expect(parse(await resolved.tool.handle(resolved.args, caller))).toEqual([
+        { name: 'post', table: 'posts' },
+      ]);
+    }
+  });
+
+  test('schema.describe answers an unknown entity with the names there are', async () => {
+    const { tool } = toolset(BRANCH);
+    const result = await tool('schema.describe').handle({ entity: 'comment' }, caller);
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('known: post');
   });
 
   test('actions.describe answers both registries under their own keys', async () => {

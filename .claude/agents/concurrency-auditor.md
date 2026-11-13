@@ -1,7 +1,7 @@
 ---
 name: concurrency-auditor
 description: Audits races, lifecycle, leaks and failure recovery across the repo — shutdown, at-least-once, reconnect, transactions, cache fills. Use when the question is "what happens when this is interrupted", which no scoped bug hunt reaches.
-tools: Read, Grep, Glob, Bash, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, Bash, mcp__ultimate-dev__*
 model: opus
 ---
 

@@ -106,28 +106,31 @@ if (import.meta.main) {
         : // Progress on stderr in either render — a line per finished step, a heartbeat while one
           // runs — so a cancelled CI part's log ends where it hung (#589) and a harness that
           // kills on silence never kills a healthy gate. stdout stays the one document.
-          await withVerifyProgress(writeErrorLine, async (progress) =>
-            runVerify(VERIFY_STEPS, {
-              root,
-              runner: exec,
-              hostChecks: HOST_CHECKS,
-              command: REPO_GATE,
-              // The deadlines at this machine's pace: a 2-core fleet box is not a 4-core CI runner.
-              pace: measurePace(),
-              ...(gate.only === undefined ? {} : { only: gate.only }),
-              ...(gate.workers === undefined ? {} : { workers: gate.workers }),
-              ...progress,
-              ...(gate.shard === undefined
-                ? {}
-                : {
-                    shard: {
-                      ...gate.shard,
-                      ...(gate.timings === undefined
-                        ? {}
-                        : { timings: await readTimings(gate.timings, REPO_GATE) }),
-                    },
-                  }),
-            }),
+          await withVerifyProgress(
+            writeErrorLine,
+            async (progress) =>
+              runVerify(VERIFY_STEPS, {
+                root,
+                runner: exec,
+                hostChecks: HOST_CHECKS,
+                command: REPO_GATE,
+                // The deadlines at this machine's pace: a 2-core fleet box is not a 4-core CI runner.
+                pace: measurePace(),
+                ...(gate.only === undefined ? {} : { only: gate.only }),
+                ...(gate.workers === undefined ? {} : { workers: gate.workers }),
+                ...progress,
+                ...(gate.shard === undefined
+                  ? {}
+                  : {
+                      shard: {
+                        ...gate.shard,
+                        ...(gate.timings === undefined
+                          ? {}
+                          : { timings: await readTimings(gate.timings, REPO_GATE) }),
+                      },
+                    }),
+              }),
+            { render: args.json ? 'json' : 'human' },
           );
     // Through `writeOut`, not `process.stdout.write`: see the note there. A failing gate's JSON
     // carries each failed step's own output, which is exactly when the payload clears 64KB and

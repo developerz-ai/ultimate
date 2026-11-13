@@ -95,10 +95,10 @@ describe('unit · x mcp tools', () => {
   test('prints the framework catalog, not a list the CLI keeps', async () => {
     const result = await mcpCommand.run(context(['mcp', 'tools', '--json']));
     const { tools } = result.data as unknown as CatalogData;
-    expect(tools).toHaveLength(19);
+    expect(tools).toHaveLength(23);
     expect(tools.map((tool) => tool.name)).toContain('verify.run');
     for (const tool of tools) expect(tool.description.length).toBeGreaterThan(20);
-    expect(result.summary).toBe('mcp none serving 19 tools');
+    expect(result.summary).toBe('mcp none serving 23 tools');
     // `x mcp tools` builds the catalog, which now resolves every code's fix by walking the whole
     // framework scope — real I/O over every published package's `src`. The scan is the point and
     // the timeout is what moves. A literal rather than `scripts/lib/run.ts`'s constant: a published
@@ -200,9 +200,9 @@ describe('unit · x mcp serve --transport http', () => {
   test('the minted token is reported so an agent reads it from --json', () => {
     expect(data.url).toMatch(/^http:\/\/localhost:\d+\/mcp$/);
     expect(data.token.length).toBeGreaterThan(16);
-    expect(data.tools).toBe(19);
+    expect(data.tools).toBe(23);
     expect(data.scopes).toEqual(SCOPES);
-    expect(server.result.summary).toBe('mcp http serving 19 tools');
+    expect(server.result.summary).toBe('mcp http serving 23 tools');
   });
 
   test('no token is 401, and the body says how to get one', async () => {
@@ -239,10 +239,10 @@ describe('unit · x mcp serve --transport http', () => {
     expect(body.result.serverInfo.name).toBe('ultimate-dev');
   });
 
-  test('the minted token lists all 19 tools', async () => {
+  test('the minted token lists all 23 tools', async () => {
     const response = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, data.token);
     const body = (await response.json()) as { result: { tools: readonly ToolRow[] } };
-    expect(body.result.tools).toHaveLength(19);
+    expect(body.result.tools).toHaveLength(23);
     expect(body.result.tools.map((tool) => tool.name)).toContain('db.query');
   });
 

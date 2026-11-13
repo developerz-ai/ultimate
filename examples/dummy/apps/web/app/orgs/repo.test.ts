@@ -11,7 +11,14 @@ import { orgId as toOrgId } from '@postly/domain';
 import { ctxOf, runWithContext } from '@ultimat3/core';
 import { allDigestRecipients, digestRecipients } from './repo';
 
-let issued = 0;
+/**
+ * Process-wide, like the store: `--rerun-each` evaluates this module again in the same process,
+ * and a module-level counter restarted at 1 and re-inserted rows the store still held
+ * (X_DB_UNIQUE_VIOLATION on the second run).
+ */
+const ISSUED = Symbol.for('postly.orgs.repo.test.issued');
+const counters = globalThis as unknown as Record<symbol, number | undefined>;
+let issued = counters[ISSUED] ?? 0;
 /**
  * Distinct per call: the memory store is process-wide, so one test's rows must not answer another's.
  * Its own `-8001-` block, too: `posts/repo.test.ts` counts from the same `-8000-…001`, and when the
@@ -19,6 +26,7 @@ let issued = 0;
  */
 const nextId = (): string => {
   issued += 1;
+  counters[ISSUED] = issued;
   return `00000000-0000-4000-8001-${String(issued).padStart(12, '0')}`;
 };
 
@@ -70,4 +78,21 @@ test('a per-org read stays per-org: the scope is on the sweep, not on the featur
 
   expect(recipients).toHaveLength(1);
   expect(recipients[0]?.orgId).toBe(orgId);
+});
+
+test('an org past one page of members gets every one: no silent 50-row cut', async () => {
+  const orgId = nextId();
+  for (let index = 0; index < 51; index += 1) {
+    await db.members.insert({
+      orgId,
+      userId: nextId(),
+      email: `reader-${issued}@postly.dev`,
+      name: `Reader ${issued}`,
+      digestOptIn: true,
+    });
+  }
+
+  expect(await digestRecipients(toOrgId(orgId))).toHaveLength(51);
+  const everyOrg = await inAJob(() => allDigestRecipients());
+  expect(everyOrg.filter((member) => member.orgId === orgId)).toHaveLength(51);
 });

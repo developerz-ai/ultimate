@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 // Enforce a byte ceiling on `CLAUDE.md`: 16 KB for the root file, 24 KB for a package's, and a
-// per-file pin (a ratchet that refuses growth only) for the package files already above it.
+// per-file pin (a ratchet that refuses growth only) for the package files already above it. A
+// slash command under `.claude/commands/` gets the root's 16 KB: `/feature` reached 38 KB, most of
+// it restating `CLAUDE.md`, and the whole file is read on every invocation.
 //
 // Every session loads the root file whole. It reached 64 KB, ~70% of it history, before plan 101
 // slice 17 f moved that history to `docs/history/`; nothing stopped it growing back but a sentence.
@@ -18,6 +20,7 @@ import { repoRoot } from './lib/run';
 const SCRIPT = 'claude-md-size';
 export const ROOT_CEILING = 16 * 1024;
 export const PACKAGE_CEILING = 24 * 1024;
+export const COMMAND_CEILING = 16 * 1024;
 
 const bytes = (n: number): string => `${n.toLocaleString('en-US')} B`;
 
@@ -62,6 +65,19 @@ export async function claudeMdFindings(
           ? `${path} is ${bytes(size)}, over the ${bytes(PACKAGE_CEILING)} package ceiling`
           : `${path} is ${bytes(size)} and is pinned at ${bytes(pinned)} — a pinned file may shrink, never grow`,
       fix: `move narrative out of ${path} into docs/history/ until it is at most ${bytes(ceiling)}; never raise its row in ${CLAUDE_MD_PINS_FILE}`,
+      at: path,
+    });
+  }
+  // Optional: an app or a fork may delete every command, and none is not a smaller one.
+  const commands = new Bun.Glob('.claude/commands/*.md').scan({ cwd: root, dot: true });
+  for (const found of (await Array.fromAsync(commands)).sort()) {
+    const path = found.split('\\').join('/');
+    const size = Bun.file(join(root, path)).size;
+    if (size <= COMMAND_CEILING) continue;
+    findings.push({
+      code: 'X_CLAUDE_MD_OVERSIZE',
+      cause: `${path} is ${bytes(size)}, over the ${bytes(COMMAND_CEILING)} slash-command ceiling — the whole file is read on every invocation`,
+      fix: `edit ${path}:1 — cut it to what CLAUDE.md does not already say; move narrative into docs/history/`,
       at: path,
     });
   }

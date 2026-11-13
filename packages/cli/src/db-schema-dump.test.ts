@@ -13,7 +13,13 @@ import { join } from 'node:path';
 import { dbPanel, staticDevSources } from '@ultimat3/admin/dev';
 import type { Migration } from '@ultimat3/db';
 import type { SchemaDumpFile } from '@ultimat3/db/schema-dump';
-import { readSchemaDump, replaySchema, SCHEMA_DUMP_DIR, writeSchemaDump } from './db-schema-dump';
+import {
+  readSchemaDump,
+  replaySchema,
+  SCHEMA_DUMP_DIR,
+  schemaDumpLines,
+  writeSchemaDump,
+} from './db-schema-dump';
 import { frameworkTableNames } from './framework-schema';
 import { migrationExtensions } from './migration-extensions';
 
@@ -138,5 +144,36 @@ describe('writeSchemaDump', () => {
     await writeSchemaDump(root, files.slice(0, 1));
     expect(await Bun.file(stray).exists()).toBe(true);
     expect((await readSchemaDump(root)).map((file) => file.path)).toEqual(['04_tables/posts.sql']);
+  });
+});
+
+// Plan 101 19b Y8: `bun run setup` on a fresh app printed 75 schema-dump paths, one per line, in
+// the middle of its report. A few are still worth naming; a whole dump is a count — `--json`
+// (`data.schemaDump.written`) keeps every path either way.
+describe('unit · schemaDumpLines', () => {
+  const paths = (count: number): string[] =>
+    Array.from({ length: count }, (_, at) => `${SCHEMA_DUMP_DIR}/04_tables/t${at}.sql`);
+
+  test('a small refresh names each file, a removal marked', () => {
+    expect(schemaDumpLines({ written: paths(2), removed: [`${SCHEMA_DUMP_DIR}/old.sql`] })).toEqual(
+      [
+        `  ${SCHEMA_DUMP_DIR}/04_tables/t0.sql`,
+        `  ${SCHEMA_DUMP_DIR}/04_tables/t1.sql`,
+        `  - ${SCHEMA_DUMP_DIR}/old.sql`,
+      ],
+    );
+  });
+
+  test('a whole dump is one line with the counts, never 75 paths', () => {
+    expect(schemaDumpLines({ written: paths(75), removed: [] })).toEqual([
+      `  ${SCHEMA_DUMP_DIR}/ +75`,
+    ]);
+    expect(schemaDumpLines({ written: paths(6), removed: paths(2) })).toEqual([
+      `  ${SCHEMA_DUMP_DIR}/ +6 -2`,
+    ]);
+  });
+
+  test('a refresh that changed nothing prints nothing', () => {
+    expect(schemaDumpLines({ written: [], removed: [] })).toEqual([]);
   });
 });

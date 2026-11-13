@@ -17,19 +17,23 @@ defineAppMcp({ include: 'exposed' });
 | Tool | Scope | Answers |
 |---|---|---|
 | `routes.list` | `dev:read` | route table — url, render mode, offline strategy, hydrate, budget |
-| `schema.describe` | `dev:read` | entities with columns, types, invariants |
+| `schema.describe` | `dev:read` | entities with columns, types, invariants; `{ entity }` narrows to one by name or table |
 | `policies.list` | `dev:read` | every policy: permission, subject, enforcement points |
 | `actions.describe` | `dev:read` | actions + queries: input/output schema, policy, cache tags, MCP exposure |
 | `jobs.inspect` | `dev:read` | job definitions, retry policy, steps (omit `name` for all) |
 | `queue.depth` | `dev:read` | pending / running / failed per queue |
 | `manifest.read` | `dev:read` | `x.manifest.json` verbatim |
 | `errors.explain` | `dev:read` | stable `X_*` code → cause + exact fix command + docs |
+| `docs.search` | `dev:read` | `x docs <query> --json` run in process — the installed docs, ranked; an `X_*` code is redirected to `errors.explain` |
+| `verify.narrow` | `dev:read` | `{ file }` → the steps `x verify --changed` selects for that file alone and the narrowest commands (`x test --filter`, `x verify --only …`). Runs nothing |
 | `graph.query` | `dev:read` | `{ node }` → what a change to a file or primitive reaches (`x impact`'s answer); `{ from, to }` → the chain of edges linking two nodes (`x graph --from --to`). The CLI answers through `DevCapabilities.queryGraph`: the graph is `@ultimat3/manifest`'s |
 | `db.query` | `db:read` | **read-only, enforced four ways** — SELECT-only role, `BEGIN READ ONLY`, one-statement parse, 5s/1000-row/256 KiB caps |
+| `db.explain` | `db:read` | the plan of ONE `SELECT` / `WITH … SELECT` as `EXPLAIN (FORMAT JSON)`; `analyze: true` executes it inside `db.query`'s role, `BEGIN READ ONLY` and 5 s timeout. `db.query`'s parse runs first (a write in a CTE or after `;` is `X_MCP_QUERY_REJECTED`); a production database is `X_EXPLAIN_PRODUCTION_DATABASE`, `x explain`'s rule |
 | `db.migrate` | `db:migrate` | **branch DB only** — refuses production and any non-branch target |
 | `tests.run` | `dev:test` | `x test [--filter]` — the shell's runner and environment (executes project code) |
 | `verify.run` | `dev:test` | `x verify` — the shippable contract; `only` is `--only` |
 | `logs.tail` | `dev:logs` | last N lines, optionally per runtime role |
+| `requests.statements` | `dev:logs` | the running `x dev`'s recent requests (or one `requestId`): SQL statement count, repeated statements, N+1 verdicts with their fix — read off its `/_x/timeline` |
 
 `db.query` and `db.migrate` are gated *and* say so in their own description, so a model that
 reads only the catalog still knows what it is holding.

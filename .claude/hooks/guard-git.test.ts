@@ -1,7 +1,10 @@
 // Feeds guard-destructive-git.sh the PreToolUse JSON it gets from Claude Code and pins its verdict:
 // every bypass and every false block a bug hunt proved against the regex version, end to end.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+// why: a throwaway directory that is another git repository; Bun ships no mkdtemp.
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const HOOK = `${import.meta.dir}/guard-destructive-git.sh`;
 const ROOT = `${import.meta.dir}/../..`;
@@ -41,7 +44,11 @@ describe('commands that discard work are blocked', () => {
     ['restore --staged --worktree', 'git restore --staged --worktree x.ts'],
     ['reset --hard behind a global option', 'git --no-pager reset --hard'],
     ['clean', 'git clean -fd'],
-    ['stash behind -c', 'git -c x=y stash list'],
+    ['stash pop behind -c', 'git -c x=y stash pop'],
+    ['a bare stash', 'git stash'],
+    ['stash push', 'git stash push -m wip'],
+    ['stash drop', 'git stash drop stash@{0}'],
+    ['a checkout in a subdirectory of this checkout', `cd ${ROOT}/packages && git checkout -- .`],
     ['a second line', 'git status\ngit checkout -- packages'],
     ['env assignment prefix', 'GIT_TRACE=1 git checkout packages'],
     ['rm -r of source', 'rm -rf packages/core'],
@@ -74,7 +81,36 @@ describe('everyday commands pass', () => {
     ['read-only git', 'git status && git diff --stat && git log --oneline -3'],
     ['rm -r of build output', 'rm -rf packages/core/dist node_modules/.cache/run'],
     ['no git at all', 'bun test ./packages/core/'],
+    ['stash list, a read', 'git stash list'],
+    ['stash show, a read', 'git -c x=y stash show -p stash@{0}'],
   ])('%s', (_name, command) => {
     expect(run(command)).toBe(0);
+  });
+});
+
+// The guard protects THIS repository's uncommitted work. Another repository the session `cd`s into
+// is not its business: refusing there blocked ordinary work in an unrelated checkout.
+describe("commands aimed at another repository are not this guard's", () => {
+  const other = mkdtempSync(`${tmpdir()}/guard-git-other-`);
+  mkdirSync(`${other}/.git`);
+  mkdirSync(`${other}/src`);
+  afterAll(() => rmSync(other, { recursive: true, force: true }));
+
+  test.each([
+    ['cd into it', `cd ${other} && git checkout -- .`],
+    ['git -C it', `git -C ${other} reset --hard`],
+    ['a subdirectory of it', `cd ${other}/src && git stash`],
+  ])('%s', (_name, command) => {
+    expect(run(command)).toBe(0);
+  });
+
+  test('and a command that hops back into this checkout is judged again', () => {
+    expect(run(`cd ${other} && git status && cd ${ROOT} && git checkout -- .`)).toBe(BLOCKED);
+  });
+
+  test('a global option that re-points git elsewhere is judged as this checkout (fail closed)', () => {
+    expect(run(`cd ${other} && git --git-dir=${ROOT}/.git --work-tree=${ROOT} clean -fd`)).toBe(
+      BLOCKED,
+    );
   });
 });

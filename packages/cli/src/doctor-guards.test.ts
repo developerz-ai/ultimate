@@ -9,8 +9,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { reportDoctor } from './cmd-doctor';
+import { probe } from './cmd-doctor-fixture';
 import {
   differingShippedGuards,
+  MISSING_GUARD,
+  missingGuardWarnings,
   missingShippedGuards,
   shippedGuardsProbe,
   withGuardListing,
@@ -81,9 +85,8 @@ describe('unit · x doctor · shipped guards the app does not hold', () => {
       count: 0,
       guards: { missing: [{ name: 'raw-length', add: 'x g guard raw-length' }], differs: [] },
     });
-    // The human half carries exactly what the JSON half does: the command, runnable as printed.
-    expect(listed.lines?.at(-1)).toBe('  x g guard raw-length');
-    expect(listed.lines?.[0]).toContain('1 shipped guard(s)');
+    // The printed command is the warning's line now (`missingGuardWarnings`), never twice.
+    expect(listed.lines).toBeUndefined();
   });
 
   test('an app holding every shipped guard gets an empty list and no extra line', () => {
@@ -160,5 +163,46 @@ describe('unit · x doctor · a shipped guard the app holds in an older or edite
     });
     expect(listed.lines?.[0]).toContain('1 shipped guard(s) differ');
     expect(listed.lines?.at(-1)).toBe('  x g guard raw-length --force');
+  });
+});
+
+// Plan 101 19b Y9: the listing alone let `x doctor` print "no findings — environment is shippable"
+// over an app missing a shipped guard. Each one is now a warning — code, cause, fix — in
+// `data.warnings`, beside the verdict and never in it: on `main` an adopter's doctor stays green.
+describe('unit · x doctor · a missing shipped guard is a warning', () => {
+  test('one warning per missing guard, naming its file and the command that writes it', () => {
+    const [warning, ...rest] = missingGuardWarnings([
+      { name: 'raw-length', add: 'x g guard raw-length' },
+    ]);
+    expect(rest).toEqual([]);
+    expect(warning?.code).toBe(MISSING_GUARD);
+    expect(warning?.at).toBe('guards/raw-length.ts');
+    expect(warning?.cause).toContain('raw-length');
+    expect(warning?.fix).toStartWith('x g guard raw-length');
+  });
+
+  test('a guard held in another form is not a warning: an edit may be the decision', () => {
+    expect(
+      missingGuardWarnings([{ name: 'raw-length', refresh: 'x g guard raw-length --force' }]),
+    ).toEqual([]);
+  });
+
+  test('the doctor stays ok and says so, with each missing guard in data.warnings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-doctor-guards-'));
+    try {
+      for (const file of scaffoldGuardFiles()) {
+        if (!file.path.startsWith('guards/raw-length'))
+          await Bun.write(join(root, file.path), file.contents);
+      }
+      const result = await reportDoctor(probe({ root }));
+      expect([result.ok, result.findings]).toEqual([true, []]);
+      expect(result.data).toMatchObject({
+        warnings: [{ code: MISSING_GUARD, at: 'guards/raw-length.ts' }],
+        guards: { missing: [{ name: 'raw-length', add: 'x g guard raw-length' }] },
+      });
+      expect(result.lines?.some((line) => line.includes('x g guard raw-length'))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

@@ -174,7 +174,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
-| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-host-shell.ts` / `mcp-test-{output,run}.ts` | `x mcp serve`: 19 tools, two transports; `tests.run`/`verify.run` ARE `x test`/`x verify`, `ULTIMATE_ENV` unset in children (`mcp-host.parity.test.ts`) † |
+| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-host-shell.ts` / `mcp-test-{output,run}.ts` | `x mcp serve`: 23 tools, two transports, stdout only JSON-RPC under stdio (`cmd-mcp-stdio.test.ts`); `tests.run`/`verify.run` ARE `x test`/`x verify`, `ULTIMATE_ENV` unset in children (`mcp-host.parity.test.ts`) † |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `shot-route.ts` / `shot-run.ts` / `shot-gpu.ts` | `x shot`'s route argument (`readRoute`, `shotSlug`); one capture (`runShot`); the page's `navigator.gpu` adapter (`verdict.gpu`, never gating). `cmd-shot.ts` re-exports the first two |
 | `cmd-pr.ts` / `cmd-ci.ts` / `ci-runs.ts` / `ci-tested.ts` | GitHub through `gh`, schema-parsed; not gate steps † |

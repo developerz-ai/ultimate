@@ -1,12 +1,16 @@
 {
   "mcpServers": {
-    "ultimate": {
+    "ultimate-dev": {
       "command": "bun",
-      "args": ["run", "packages/cli/src/bin.ts", "mcp", "serve", "--stdio"],
-      "env": {
-        "ROLE": "web",
-        "NODE_ENV": "development"
-      }
+      "args": [
+        "packages/cli/src/bin.ts",
+        "mcp",
+        "serve",
+        "--transport",
+        "stdio",
+        "--cwd",
+        "examples/dummy"
+      ]
     }
   }
 }

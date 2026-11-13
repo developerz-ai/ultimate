@@ -62,15 +62,28 @@ export const updatePreferences = (
   },
 ): Promise<Member> => db.members.update(memberId, values, { orgId });
 
+/**
+ * A member list has no bound anything enforces — a plan's seats are a price, never a refusal — so
+ * these reads take EVERY row, a batch at a time. `.all()` answered the first 50 and dropped the
+ * rest: the 51st owner was never texted and the 51st reader never mailed.
+ */
+const MEMBER_BATCH = 500;
+
+const everyRow = async (batches: AsyncIterable<readonly Member[]>): Promise<readonly Member[]> => {
+  const rows: Member[] = [];
+  for await (const batch of batches) rows.push(...batch);
+  return rows;
+};
+
 /** The org's owners who gave a phone: who a quota alert is texted to. `(orgId, role)` is indexed. */
 export const textableOwners = async (orgId: OrgId): Promise<readonly Member[]> =>
-  (await db.members.where({ orgId, role: 'owner' }).orderBy('id').all()).filter(
-    (member) => member.phone !== null,
-  );
+  (
+    await everyRow(db.members.where({ orgId, role: 'owner' }).orderBy('id').inBatches(MEMBER_BATCH))
+  ).filter((member) => member.phone !== null);
 
 /** Everyone who asked for mail. The partial index on `tz` is what makes this cheap. */
 export const digestRecipients = (orgId: OrgId): Promise<readonly Member[]> =>
-  db.members.where({ orgId, digestOptIn: true }).orderBy('id').all();
+  everyRow(db.members.where({ orgId, digestOptIn: true }).orderBy('id').inBatches(MEMBER_BATCH));
 
 /**
  * Who this read is, and it is not the worker: a job's actor carries the org its `tenant` declared,
@@ -97,7 +110,14 @@ export const allDigestRecipients = (): Promise<readonly Member[]> =>
       // One `orderBy` per key: the second argument is the DIRECTION, so `orderBy('orgId', 'id')`
       // asked for `order by orgId id`, which is not a sort and is not the total order this sweep's
       // batching depends on.
-      () => db.members.where({ digestOptIn: true }).orderBy('orgId').orderBy('id').all(),
+      () =>
+        everyRow(
+          db.members
+            .where({ digestOptIn: true })
+            .orderBy('orgId')
+            .orderBy('id')
+            .inBatches(MEMBER_BATCH),
+        ),
     ),
   );
 

@@ -221,6 +221,5 @@ No git worktrees in this checkout: a team of subagents shares it, on disjoint fi
 repo the owner may be editing on a non-`main` checkout: work in a git worktree there.)
 
 **Only the top-level agent spawns subagents.** A subagent does its work and reports back; it never
-delegates. Nested fan-out turned a 4-agent sweep into 17: the count stops being knowable and two
-grandchildren edit one file. Too large a scope is said in the report; widening the split is the
-top-level agent's call.
+delegates ([why](docs/history/feature-workflow.md)). Too large a scope is said in the report;
+widening the split is the top-level agent's call.

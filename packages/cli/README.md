@@ -165,9 +165,10 @@ execute and carries its `why`; `x doctor` prints them. A `--shard` slice hands i
 
 A step has a **deadline** — 8 minutes for the six suites, 5 for every other step,
 `"stepTimeoutMs": { "<step>": ms }` in `x.verify.json` to change one. Past it the step fails by
-name with `X_VERIFY_STEP_TIMEOUT` and every process it started is killed. Under `--json` each
-finished step is one line on stderr (`{"step":"lint","ok":true,"ms":21987}`); stdout stays the
-single document.
+name with `X_VERIFY_STEP_TIMEOUT` and every process it started is killed. Each finished step is
+one line on stderr — under `--json` a JSON one (`{"step":"lint","ok":true,"ms":21987}`), otherwise
+`✓ lint 22.0s`, and a red step names its narrowest re-run (`✗ unit 3.1s → x test unit --filter …
+--json`, `As of 31.22`); stdout stays the single document.
 
 An app extends the gate with its own conventions, never with its own step: a file in `guards/`
 exports a `guard` whose `check(root, sources)` returns `Finding[]`, and the `boundaries` step runs
@@ -175,9 +176,13 @@ every one of them. `sources` is the run's ONE read of the app (`GuardSources`): 
 walked and read once however many guards ask, and `compiled(path)` is a stylesheet as the build
 compiles it. Nothing registers a guard — the directory is the registration — and what a guard returns
 is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUARD_FAILED`,
-`X_GUARD_FINDING_INVALID`). `x g guard <name>` scaffolds one with its test — the shipped guard of
-that name where there is one (`x new` writes all twenty), the blank template otherwise — and
-`x doctor` lists the shipped ones an app does not hold.
+`X_GUARD_FINDING_INVALID`). A guard that exports `severity: 'warning'` is **report-only** (`As of
+31.22`): its findings ride the step as `warnings` — in `--json` and on the step line, never a
+failure — so a rule ships to every app before the apps are clean of it; a finding that breaks the
+contract fails either way. `repo-await-in-loop` and `repo-unbounded` ship that way. `x g guard
+<name>` scaffolds one with its test — the shipped guard of that name where there is one (`x new`
+writes all twenty-five), the blank template otherwise — and `x doctor` warns of each shipped one an
+app does not hold (`X_SHIPPED_GUARD_MISSING`, beside the verdict, never in it).
 
 ## Layout
 

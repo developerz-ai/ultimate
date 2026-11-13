@@ -43,13 +43,13 @@ x g resource post --admin
 
 Generates schema, entity, repo, service, policy, actions, live query, job stub, components, the form island, the `posts` page, i18n keys, admin screens, MCP entries, and the tests beside each. The page is reachable as written: a `<Hole>` reads the list through the slice's query as the request's actor after the shell is flushed, `AsyncRegion` renders ready, empty and refused, and the form island posts to `createPost`. `x g` ends by printing what the new table owes (`x db gen`, `x db migrate`) and the build that weighs the page against its budget. Everything below is *editing* generated files — not creating them.
 
-`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. That directory form is the one layout: a second primitive is a second file, and a primitive module beside its directory (`actions.ts` with `actions/`) is `X_LAYOUT_SIBLING_MODULE` ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). `x g resource <name>` takes no `--feature`: the name is the slice (`X_CLI_BAD_FLAG`). `x g query <name> --feature <slice>` and `x g backfill <name> --feature <slice>` read a table the slice already declares and never create one: no `entity.ts` to read is `X_FEATURE_REQUIRED`.
+`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. That directory form is the one layout: a second primitive is a second file, and a primitive module beside its directory (`actions.ts` with `actions/`) is `X_LAYOUT_SIBLING_MODULE` ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). `x g resource <name>` takes no second name: the name is the slice, and a `--feature` naming another slice is `X_CLI_BAD_FLAG` (one that spells the same slice is accepted). `x g query <name> --feature <slice>` and `x g backfill <name> --feature <slice>` read a table the slice already declares and never create one: a `--feature` with no such directory is `X_FEATURE_UNKNOWN`, a slice with no `entity.ts` to read is `X_FEATURE_REQUIRED`.
 
 ## 2. Entity + invariants
 
 ```ts
 // apps/web/app/post/entity.ts
-export const posts = entity('posts', {
+export const post = entity('posts', {
   columns: {
     id: uuid().primaryKey(),
     orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }).tenant(),
@@ -70,9 +70,10 @@ export const posts = entity('posts', {
 
 ```ts
 // apps/web/app/post/entity.ts
-export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publishedAt']);
+export const PostView = post.$view(['id', 'title', 'excerpt', 'cover', 'publishedAt']);
 ```
 
+- The export is the slice's singular name (`post`), the table the plural (`'posts'`) — what `x g resource post` writes, and what every generated file beside it imports.
 - `entity(name, init)` is name-first; `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }`. `invariants` is one callback over the list, and its `c` is typed from `columns`.
 - Tenancy is `.tenant()` on the column or `tenant: 'orgId'` in `init`; with neither, a column named `orgId` is inferred. The repo injects the filter, you never write it.
 - `trimmed()` strips leading and trailing **spaces** only, exactly as the `btrim(col)` it emits, so a tab-only title passes this rule on both sides; `c.title.matches(/[^ \t\n\r\f\v]/)` refuses a title that is all whitespace (`\S` is refused — the two regex engines disagree on it).
@@ -259,7 +260,7 @@ x i18n check --json           # scans source for t() calls, reports gaps per loc
 x i18n sync es                # copies missing keys for one locale from the app's default locale
 ```
 
-Zero hardcoded user-facing strings — a literal outside `t()` is a build error (`X_CATALOG_MISSING_KEYS` names the locale and the missing keys). Plurals come from CLDR: define every category the locale needs ([`10-cross-cutting.md`](./10-cross-cutting.md)).
+Zero hardcoded user-facing strings — a literal outside `t()` on a rendered surface is a build error: `X_UNTRANSLATED_STRING`, from the `untranslated-string` guard `x new` ships (an app-owned code, so `x errors explain` does not know it; the guard's own `fix:` is the instruction). A `t()` key a locale's catalog lacks is the other half, `X_CATALOG_MISSING_KEYS`, naming the locale and the missing keys. Plurals come from CLDR: define every category the locale needs ([`10-cross-cutting.md`](./10-cross-cutting.md)).
 
 ## 12. Tests
 
@@ -286,6 +287,8 @@ x verify --json | jq '.steps[] | select(.ok == false)'
 
 Green = shippable. There is no `--skip`.
 
+Between edits, before the gate: `x verify --changed --dirty` runs only the steps the uncommitted diff can move, and `data.changed` names the file that chose each one. A route's `page.tsx` alone runs `typecheck`, `lint`, `boundaries`, `filesize`, `i18n` and that route's tests. It is never the verdict — `budgets`, `seo` and the rest wait for `x verify`.
+
 `x verify` is the whole gate, `As of 30.0`. The `budgets` step compares each declared limit against
 measured bytes in `.x/build-stats.json`, and when that file is missing, of an earlier measurement
 rule, or older than the newest app source, the step runs `x build --target static` first (into
@@ -304,7 +307,7 @@ unchanged tree, nothing. A failed build is the step's verdict, with the build's 
 | `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, one the `en` catalog defines, or one a mounted admin derives (`admin.<table>.field.<column>`). The sync writes the catalog nested — never hand-add a dotted key, `loadCatalog` refuses one (`X_CATALOG_INVALID`). The default locale's admin keys get the generator's label; every other key a `⟦…⟧` placeholder to replace | `x i18n sync <locale>` |
 | `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x routes --json` to see the chain, then move the heavy import behind `hydrate: 'interaction'` |
 | `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
-| `X_IDEMPOTENCY_REQUIRED` | job declared without a key | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |
+| `X_IDEMPOTENCY_REQUIRED` | a JS or generated `job()` whose ONLY missing field is `idempotencyKey` (TypeScript refuses the omission first). Missing it and any other required field is `X_JOB_DECLARATION_INVALID`, listing every one; a job with no `name` is told to name itself before the key is written | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |
 | `X_MANIFEST_STALE` | `openapi.json` is stale (`X_MANIFEST_DRIFT` for a stale `framework.manifest.json`) | `x manifest --json` |
 | `X_CACHE_TAG_UNKNOWN` | `cache.invalidates` names a tag no entity declared | `x manifest` |
 | anything else | every error carries a `fix:` | `x errors explain <CODE> --json` |

@@ -168,7 +168,10 @@ the one copy: `scripts/wiki-anchors.ts` and `scripts/release-notes.ts` import th
 heading of its level — for `x docs Upgrading#<anchor>`. `tokenize()` is the query and name splitter
 (camelCase and digit runs, stop words dropped); `searchDocs()` compares one-suffix stems, and at an
 equal score ranks a guide over a source header. The ranking is not a stable surface; the regression
-set is `docs-search-eval-set-fixture.ts`, held at 18 of 20 by `docs-search.test.ts`.
+set is `docs-search-eval-set-fixture.ts`, held at 18 of 20 by `docs-search.test.ts`. A question
+phrased as the task reaches the mechanism through `docs-synonyms.ts` — "paginate a query with a
+cursor" ranks `db.keyset` first, "poll every N seconds" `realtime.query-poll` — held by ten task
+questions in `docs-synonyms.test.ts`, every one in the top 3.
 
 `@ultimat3/manifest/docs-search` is the ranker alone — `searchDocs`, `nearestTopics` and the
 `DocEntry`/`DocHit` types — for a browser island that searches a prebuilt index: no scanner, no

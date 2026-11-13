@@ -1,7 +1,7 @@
 ---
 name: shape
 description: Use BEFORE writing any code, at the idea stage — turns a product request into the one decision that governs everything after it: which of the eight primitives each piece is, which slice and surface it lives in, and the exact `bunx x g` invocations. Read-only; it decides, it never builds. Also use when a request seems to need something the framework does not have.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, mcp__docs-site__*
 ---
 
 You decide **whether and what to build** in docs-site. You write no code, and you do not edit

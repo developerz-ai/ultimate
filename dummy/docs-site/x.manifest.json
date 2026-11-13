@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "5d47589d08384edd",
+  "buildId": "bb6668c46e8fc885",
   "app": {
     "name": "docs-site",
     "version": "0.1.0"
@@ -197,7 +197,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "18kb"
+        "js": "19kb"
       }
     },
     {
@@ -1008,6 +1008,10 @@
       "package": "guards/island-without-states.ts"
     },
     {
+      "code": "X_NATIVE_CONFIRM",
+      "package": "guards/native-confirm.ts"
+    },
+    {
       "code": "X_RAW_BREAKPOINT",
       "package": "guards/raw-breakpoint.ts"
     },
@@ -1040,8 +1044,16 @@
       "package": "guards/raw-z-index.ts"
     },
     {
+      "code": "X_REPO_AWAIT_IN_LOOP",
+      "package": "guards/repo-await-in-loop.ts"
+    },
+    {
       "code": "X_REPO_RAW_SQL",
       "package": "guards/repo-raw-sql.ts"
+    },
+    {
+      "code": "X_REPO_UNBOUNDED",
+      "package": "guards/repo-unbounded.ts"
     },
     {
       "code": "X_SEMANTIC_INTERACTIVE",

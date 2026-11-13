@@ -2,6 +2,7 @@
 // to ask. Only a repo.ts may touch `db` — a job importing it directly is X_BOUNDARY_VIOLATION.
 
 import { DEMO_MARKER_IDS, db, type Media, seedDemo, seededRowIds } from '@social-media-clone/db';
+import { expectedQueryLoop } from '@ultimat3/db';
 
 /**
  * A sweep is a job, not a table scan: it collects a bounded page per run and the next occurrence
@@ -125,12 +126,19 @@ export const restoreSeededGraph = async (): Promise<readonly PurgeCount[]> => {
   // left the demo's feed empty for good — `apps/web/site/feed/service.test.ts` caught it.
   const seeded = await seededRowIds();
   const counts: PurgeCount[] = [];
-  for (const entry of CONTENT_TABLES) {
-    const keep = seeded.get(entry.table) ?? new Set<string>();
-    const ids = (await entry.ids()).map((row) => row.id).filter((id) => !keep.has(id));
-    if (ids.length > 0) await entry.drop(ids);
-    counts.push({ table: entry.table, removed: ids.length });
-  }
+  // One read and one delete per TABLE, never per row: the loop is over the five content tables
+  // named above, a list fixed in this file, so its statement count cannot grow with the data.
+  await expectedQueryLoop(
+    'two statements per content table, five tables fixed in CONTENT_TABLES',
+    async () => {
+      for (const entry of CONTENT_TABLES) {
+        const keep = seeded.get(entry.table) ?? new Set<string>();
+        const ids = (await entry.ids()).map((row) => row.id).filter((id) => !keep.has(id));
+        if (ids.length > 0) await entry.drop(ids);
+        counts.push({ table: entry.table, removed: ids.length });
+      }
+    },
+  );
   // The same seed `apps/web/api/index.ts` runs at boot, against the same driver. A replay is
   // `on conflict do nothing` (packages/entity/src/seed.ts:274), so it restores a seeded row that is
   // GONE and leaves one that is still here — including one a visitor or a job changed. Nothing

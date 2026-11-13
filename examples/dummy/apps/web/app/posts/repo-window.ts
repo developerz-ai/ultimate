@@ -61,6 +61,10 @@ const wholeLastMilli = async (
     .where({ orgId })
     .andWhere('createdAt', 'gte', last.createdAt)
     .andWhere('createdAt', 'lt', new Date(last.createdAt.getTime() + 1))
+    // `from()` cuts the window at `take` in (ms, id) order, so the lowest `take` ids of this
+    // millisecond are every row it can keep. `.all()` stopped at 50 whatever `take` was.
+    .orderBy('id')
+    .limit(take)
     .all();
   return [...rows, ...rest.filter((row) => !held.has(row.id))];
 };

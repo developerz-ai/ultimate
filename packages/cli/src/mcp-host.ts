@@ -44,12 +44,15 @@ import { appManifest, policyFacts } from './app-manifest';
 import { loadAppRuntime } from './app-runtime';
 import { loadAppGraph, resolveNode } from './cmd-graph-load';
 import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
+import { liveDevLock } from './dev-lock';
 import { loadCodeFixes } from './error-fixes';
 import { BadFlagError } from './errors';
 import type { Runner } from './exec';
+import { assertExplainTarget, devNotRunning, narrowVerify, searchDocs } from './mcp-agent-host';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
 import { type ShellRunInput, shellRunner, shellTests, shellVerify } from './mcp-host-shell';
+import { requestStatements } from './mcp-request-statements';
 import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { plainAppRoutes, routeRows } from './route-table';
@@ -284,6 +287,25 @@ function capabilities(
       // layer is reported absent in `guards` rather than quietly assumed present.
       return readOnlyRows(db, sql, limits, await readOnlyRole.get());
     },
+
+    // `db.query`'s layers 1–2 again, behind `x explain`'s production refusal: with `analyze` the
+    // plan is executed, so a production database is refused before any connection is opened.
+    async explainQuery(statement: string, limits: QueryLimits): Promise<QueryRows> {
+      assertExplainTarget(lazy.services, input.env);
+      const { db } = await lazy.running();
+      return readOnlyRows(db, statement, limits, await readOnlyRole.get());
+    },
+
+    searchDocs: (query: string, limit: number) => searchDocs(input, query, limit),
+
+    async requestStatements(ask) {
+      // The lock `x dev` writes names its URL; a missing or stale one is no server to ask.
+      const lock = liveDevLock(lazy.services.stateDir);
+      if (lock === undefined) throw devNotRunning();
+      return requestStatements({ devUrl: lock.url, ...ask });
+    },
+
+    narrowVerify: (file: string) => narrowVerify(root, file),
 
     async runMigrations(branch: string, dryRun: boolean) {
       const before = await pendingIds(root, lazy);

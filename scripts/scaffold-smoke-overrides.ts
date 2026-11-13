@@ -14,10 +14,17 @@
 // another, and `bun run setup` died on `X_REGISTRAR_MISSING`. The isolated linker keeps one
 // store entry per `file:` target — one core — and `link:` instead bundled extra modules into an
 // island on Windows (`post-form` 82.8 kB against the 64 kB budget, 60.9 kB on Linux).
+//
+// A `file:` folder is installed as it stands, and `packages/cli/wiki/` exists only after `prepack`,
+// so the wiki is packed first (`smokeOverrides`): the smoke app's `x docs` reads what a publish ships.
+// why: Bun has no directory listing and no synchronous existence check for a path.
 import { existsSync, readdirSync } from 'node:fs';
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { parseScriptArgs } from './lib/args';
+import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { packWiki } from './pack-cli-wiki';
 
 interface Manifest {
   readonly name?: unknown;
@@ -55,6 +62,23 @@ export async function applyOverrides(
   await Bun.write(pkgPath, `${JSON.stringify(merged, null, 2)}\n`);
 }
 
+export interface SmokeOverrides {
+  readonly overrides: Record<string, string>;
+  /** The wiki pages packed into `packages/cli/wiki/`, as `prepack` packs them for the tarball. */
+  readonly pages: readonly string[];
+  /** A checkout with no wiki to pack: the app is NOT pointed at a CLI that would ship without it. */
+  readonly finding?: Finding;
+}
+
+/** Packs the CLI's wiki, then points `target` at `root`'s packages — the order a publish has. */
+export async function smokeOverrides(root: string, target: string): Promise<SmokeOverrides> {
+  const overrides = await computeOverrides(root);
+  const { pages, finding } = packWiki(root);
+  if (finding !== undefined) return { overrides, pages, finding };
+  await applyOverrides(target, overrides);
+  return { overrides, pages };
+}
+
 const SCRIPT = 'scaffold-smoke-overrides';
 
 if (import.meta.main) {
@@ -77,7 +101,8 @@ if (import.meta.main) {
       args.json,
     );
   }
-  const overrides = await computeOverrides(process.cwd());
+  const root = process.cwd();
+  const overrides = await computeOverrides(root);
   // An empty map is the dangerous case, not a no-op: `bun install` would then resolve every
   // `@ultimat3/*` range from the NPM REGISTRY, so the smoke job would prove that the last PUBLISHED
   // release scaffolds and verifies — a claim about a different tree entirely — and report success.
@@ -99,13 +124,24 @@ if (import.meta.main) {
       args.json,
     );
   }
-  await applyOverrides(target, overrides);
+  const { pages, finding } = await smokeOverrides(root, target);
+  if (finding !== undefined) {
+    report(
+      {
+        ok: false,
+        script: SCRIPT,
+        summary: 'no wiki to pack, so the smoke app would install a CLI x docs cannot answer from',
+        findings: [finding],
+      },
+      args.json,
+    );
+  }
   report(
     {
       ok: true,
       script: SCRIPT,
-      summary: `${Object.keys(overrides).length} @ultimat3/* file: overrides written to ${target}`,
-      data: { target, overrides },
+      summary: `${Object.keys(overrides).length} @ultimat3/* file: overrides written to ${target}, ${pages.length} wiki pages packed into packages/cli/wiki`,
+      data: { target, overrides, wikiPages: pages.length },
     },
     args.json,
   );

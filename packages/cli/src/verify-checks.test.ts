@@ -106,6 +106,33 @@ describe('a report that is not one', () => {
     expect(outcome.output).toContain('bad config');
   });
 
+  test('every file --write repairs is in ONE command; an edit stays its own finding', () => {
+    const diagnostic = (path: string, category: string, line: number) => ({
+      severity: 'error',
+      category,
+      message: 'm',
+      location: { path, start: { line } },
+    });
+    const report = JSON.stringify({
+      diagnostics: [
+        diagnostic('a.ts', 'format', 1),
+        diagnostic('b.ts', 'lint/style/useConst', 4),
+        diagnostic('c.ts', 'assist/source/organizeImports', 1),
+        diagnostic('a.ts', 'format', 9),
+      ],
+    });
+    const findings = lintFindings(report) ?? [];
+    expect(findings.map((one) => one.fix)).toEqual([
+      'bunx biome check --write a.ts c.ts',
+      'bunx biome check b.ts   # lint/style/useConst: edit b.ts:4, m',
+    ]);
+    expect(findings[0]?.cause).toBe(
+      'a.ts:1 format: m; c.ts:1 assist/source/organizeImports: m; a.ts:9 format: m',
+    );
+    expect(findings[0]?.at).toBeUndefined();
+    expect(findings[1]?.at).toBe('b.ts');
+  });
+
   test('a path the shell would read is quoted', () => {
     const report = JSON.stringify({
       diagnostics: [

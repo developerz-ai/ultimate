@@ -1,7 +1,7 @@
 ---
 name: security-auditor
 description: Whole-repo security audit along one axis — authz, tenancy, injection, crypto, secrets, resource exhaustion, supply chain. Use for a security pass rather than a general bug hunt; it crosses package boundaries deliberately.
-tools: Read, Grep, Glob, Bash, WebFetch, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, Bash, WebFetch, mcp__ultimate-dev__*
 model: opus
 ---
 

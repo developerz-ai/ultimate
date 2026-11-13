@@ -182,8 +182,10 @@ describe('devMcpServer', () => {
     const server = devMcpServer({ host: devHost(intro(), capabilities().host) });
     expect(server.list(caller).map((tool) => tool.name)).toEqual([
       'actions.describe',
+      'db.explain',
       'db.migrate',
       'db.query',
+      'docs.search',
       'errors.explain',
       'graph.query',
       'jobs.inspect',
@@ -191,6 +193,7 @@ describe('devMcpServer', () => {
       'manifest.read',
       'policies.list',
       'queue.depth',
+      'requests.statements',
       'routes.list',
       'schema.describe',
       'tests.run',
@@ -199,6 +202,7 @@ describe('devMcpServer', () => {
       'ui.interact',
       'ui.island',
       'ui.shot',
+      'verify.narrow',
       'verify.run',
     ]);
     expect(server.tools.verbClass('ui.diff')).toBe('read');

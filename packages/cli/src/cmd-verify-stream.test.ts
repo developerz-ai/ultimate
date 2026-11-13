@@ -45,11 +45,14 @@ test('--json streams each finished step to stderr and keeps stdout one document'
     expect(json.stdout.trim().split('\n')).toHaveLength(1);
     expect(document.steps.map((step) => step.name)).toEqual(['filesize', 'package-shape']);
 
-    // The human render prints its table only at the end too, so it streams the same lines: a
-    // harness that kills on silence must hear from a healthy gate in either mode.
+    // The human render prints its table only at the end too, so it streams a line per step: a
+    // harness that kills on silence must hear from a healthy gate in either mode. A person reads
+    // it, so it is `✓ filesize 0.0s`, never the JSON a `--json` reader parses.
     const human = await run(root, ['--only', 'filesize']);
-    const humanLines = human.stderr.split('\n').filter((line) => line.startsWith('{'));
-    expect(humanLines.map((line) => JSON.parse(line).step)).toEqual(['filesize']);
+    const humanLines = human.stderr.split('\n').filter((line) => /^[✓○✗] /.test(line));
+    expect(humanLines.map((line) => line.split(' ')[1])).toEqual(['filesize']);
+    expect(humanLines[0]).toMatch(/^✓ filesize \d+\.\ds$/);
+    expect(human.stderr.split('\n').some((line) => line.startsWith('{"step"'))).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

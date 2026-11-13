@@ -25,8 +25,7 @@ const conventions = (app: NameSet): string => `# ${app.pascal}
 Human-authored, short, stable — one file under two names, \`AGENTS.md\` being a symlink to it.
 Facts live in \`x.manifest.json\`; this file holds only what an agent cannot infer from the code.
 
-Every row below names what refuses it. A rule with nothing in the last column is a rule that does
-not exist — five of these had an empty column and were each measured green on \`bunx x verify\`.
+Every row below names what refuses it. A rule with nothing in the last column does not exist.
 
 There is no global \`x\`: every command here is \`bunx x …\`, the CLI this app installs.
 
@@ -43,7 +42,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
-| Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal the handle can express | \`guards/repo-raw-sql.ts\` |
+| Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal it can express; reported, not refused: an \`await\` per loop turn outside \`expectedQueryLoop('<why>', fn)\`, a bare \`.all()\` (it stops at 50 rows: say \`.limit(n)\`) | \`guards/repo-raw-sql.ts\`, \`guards/repo-await-in-loop.ts\`, \`guards/repo-unbounded.ts\` |
 | Fan-out | a database call per element of a list runs through \`mapBounded(rows, fn, { width })\` from \`@ultimat3/core\` — never \`Promise.all(rows.map(async …))\`, one statement per row at once; a \`// why:\` on the line admits a list bounded where it is built | \`guards/unbounded-fanout.ts\` |
 | Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`guards/raw-fetch.ts\` |
 | Polling | an island re-reads a query on a timer with \`useQuery(ref, input, { poll: pollEvery(ms) })\` (\`@ultimat3/realtime\`), anything else with \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` — no call while the tab is hidden, none after a lost session — never a bare \`setInterval(\`; a \`// why:\` on the line admits a tick that is not a read | \`guards/raw-interval.ts\` |
@@ -110,10 +109,6 @@ Money is the one row with no guard, deliberately: a float has no static signatur
 see, and the type already fires — measured, \`price: 19.99\` in a seed is
 \`TS2322: Type 'number' is not assignable to type 'MoneyInput'\`. A guard that pretended to check
 it would be worse than the type that really does.
-
-\`bun run verify\` is \`bunx x verify\`, the whole gate: its \`budgets\` step runs
-\`bunx x build --target static\` itself when \`.x/build-stats.json\` is missing or older than the
-source, so nothing has to be built first.
 
 Commands: \`bun run setup\`, \`bun run dev\`, \`bun run verify\`, \`bunx x g <primitive>\`,
 \`bunx x g guard <name>\`, \`bunx x db branch create <name>\`, \`bunx x doctor\`. \`setup\` is

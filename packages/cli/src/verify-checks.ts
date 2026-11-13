@@ -25,7 +25,7 @@ import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { driftOutcome } from './drift-store';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
 import { withUnprovenFloor } from './exercise-floor-report';
-import { guardFindings } from './guards';
+import { guardReport, guardWarningLine } from './guards';
 import { catalogFindings } from './i18n-registration';
 import { isrQueryAdvice } from './isr-query-advice';
 import { readJobBudgetFindings } from './job-budget';
@@ -128,13 +128,21 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // ONE read of the app's surface files for the whole step: the import rules, the transport
     // rule and every guard are handed the same text. The guards used to walk and read the tree a
     // second time (`guard-sources.ts`).
+    //
+    // A report-only guard's findings ride as warnings, as the filesize band does: listed, never red.
     async run(ctx) {
       const sources = await readAppSources(ctx.root);
-      return fromFindings([
-        ...(await appBoundaryFindings(ctx.root, sources)),
-        ...(await guardFindings(ctx.root, sources)),
-        ...(await hostFindings(ctx, 'boundaries')),
-      ]);
+      const guards = await guardReport(ctx.root, sources);
+      return {
+        ...fromFindings([
+          ...(await appBoundaryFindings(ctx.root, sources)),
+          ...guards.findings,
+          ...(await hostFindings(ctx, 'boundaries')),
+        ]),
+        ...(guards.warnings.length === 0
+          ? {}
+          : { warnings: guards.warnings.map(guardWarningLine) }),
+      };
     },
   },
   {

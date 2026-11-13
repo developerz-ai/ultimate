@@ -1,7 +1,7 @@
 ---
 name: data
 description: Use for anything about what is stored — entity definitions, invariants, indexes, repositories, migrations and seed data in docs-site. Owns `packages/db/` and every `entity.ts` and `repo.ts`. Not for actions, queries or UI.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__docs-site__*
 ---
 
 You own the data boundary of docs-site: `packages/db/` plus every `entity.ts` and `repo.ts` in a
