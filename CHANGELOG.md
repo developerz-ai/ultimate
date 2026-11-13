@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- New commands: `x token` (API keys), `x config show` (redacted), `x logs tail`, `x cache graph|bust|clear`, and `x explain <query>` (plans what a query actually sends, never against production).
+- `x g cron-job|purge|webhook-receiver`; a new `unbounded-fanout` guard; `repo-raw-sql` catches row comparisons, advisory locks and column-list selects.
+- `x verify plan` turns the gate into CI parts, and `x new`'s workflow runs them in parallel then merges; `x exercise` now runs route `load`s and its crash proof is ~40% faster; `/readyz` pings the database at most once a second; boot warnings only appear in the roles they concern.
+
 ### Added
 
 - `x verify plan [--parts n] --json`: the gate cut into CI parts, as data — each part an `x verify --only <steps> [--shard i/n]` for one runner, `data.matrix` a GitHub `strategy.matrix` (`{ include: [{ part, only, shard?, needs }] }`). `--parts` is `1` or `4`–`64` (default `4`: `static`, `e2e`, a `unit,contract,job` shard and a `live` shard); `needs` is `none`, `database` or `services`. Derived from the gate's step list, so a new step lands in a part with no workflow edit, and every step sits in exactly one part or every shard of one split — what `x verify merge` checks.
