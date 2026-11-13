@@ -1,83 +1,64 @@
-// The pure half of `scripts/public-api.ts`: the lock's shape, the diff between the lock and the
-// tree, which changes a `BREAKING —` changelog entry declares, and the lock `--write` produces —
-// additions and declared breaks only, so an undeclared break keeps reporting until it is declared.
+// The pure half of `scripts/public-api.ts`: the diff between the lock and the tree — each change
+// classified compatible or breaking — which breaks a `BREAKING —` changelog entry declares, and the
+// lock `--write` produces: everything but an undeclared break, which keeps reporting until declared.
 
 import { BREAKING_ENTRY } from './changelog-format';
 import type { Changelog } from './changelog-sections';
 import { UNRELEASED } from './changelog-sections';
-
-export const LOCK_PATH = 'scripts/lib/public-api.lock.json';
-
-/** specifier → exported name → hash. */
-export type ApiSnapshot = Readonly<Record<string, Readonly<Record<string, string>>>>;
-
-export interface ApiLock {
-  /** The tree's version when the lock was written. */
-  readonly version: string;
-  readonly entries: ApiSnapshot;
-}
+import type { ApiSymbol } from './public-api-compat';
+import { classify, own } from './public-api-compat';
+import type { ApiLock, ApiSnapshot } from './public-api-lock';
+import { LOCK_FORMAT } from './public-api-lock';
 
 export interface ApiBreak {
   readonly kind: 'changed' | 'removed';
   readonly specifier: string;
   readonly name: string;
+  /** What about it breaks a caller: `member \`x\` was removed`. */
+  readonly why: string;
+}
+
+export interface ApiCompatible {
+  readonly specifier: string;
+  readonly name: string;
+  /** What changed, and why no caller notices: `optional \`x\` added`. */
+  readonly why: string;
 }
 
 export interface ApiDiff {
   readonly breaks: readonly ApiBreak[];
+  /** Changed, and every caller of the recorded declaration still compiles. */
+  readonly compatible: readonly ApiCompatible[];
   readonly added: readonly { readonly specifier: string; readonly name: string }[];
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** The lock parsed from `unknown`, or the reason it is not one. */
-export function parseLock(value: unknown): ApiLock | string {
-  if (!isRecord(value) || typeof value['version'] !== 'string' || !isRecord(value['entries'])) {
-    return 'is not an object with a string `version` and an `entries` object';
-  }
-  const entries: Record<string, Record<string, string>> = {};
-  for (const [specifier, names] of Object.entries(value['entries'])) {
-    if (!isRecord(names)) return `holds \`${specifier}\`, which is not an object of hashes`;
-    const hashes: Record<string, string> = {};
-    for (const [name, hash] of Object.entries(names)) {
-      if (typeof hash !== 'string') return `holds \`${specifier}\` \`${name}\` with no string hash`;
-      hashes[name] = hash;
-    }
-    entries[specifier] = hashes;
-  }
-  return { version: value['version'], entries };
-}
-
-const byKey = <T>(record: Readonly<Record<string, T>>): Record<string, T> =>
-  Object.fromEntries(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-
-/** The lock as committed: keys sorted at both levels, LF, a trailing newline — on every OS. */
-export function renderLock(lock: ApiLock): string {
-  const entries = Object.fromEntries(
-    Object.entries(byKey(lock.entries)).map(([specifier, names]) => [specifier, byKey(names)]),
-  );
-  return `${JSON.stringify({ version: lock.version, entries }, null, 2)}\n`;
-}
+const sorted = <T>(record: Readonly<Record<string, T>>): [string, T][] =>
+  Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 
 export function diffApi(lock: ApiSnapshot, tree: ApiSnapshot): ApiDiff {
   const breaks: ApiBreak[] = [];
+  const compatible: ApiCompatible[] = [];
   const added: { specifier: string; name: string }[] = [];
-  for (const [specifier, names] of Object.entries(byKey(lock))) {
-    const now = tree[specifier] ?? {};
-    // `recorded` and `current` are digests of a PUBLIC declaration's text, never a credential.
-    for (const [name, recorded] of Object.entries(byKey(names))) {
-      const current = now[name];
-      if (current === undefined) breaks.push({ kind: 'removed', specifier, name });
-      else if (current !== recorded) breaks.push({ kind: 'changed', specifier, name });
+  for (const [specifier, names] of sorted(lock)) {
+    const now = own(tree, specifier) ?? {};
+    for (const [name, recorded] of sorted(names)) {
+      const current = own(now, name);
+      if (current === undefined) {
+        breaks.push({ kind: 'removed', specifier, name, why: 'it is no longer exported' });
+        continue;
+      }
+      const change = classify(recorded, current);
+      if (change.kind === 'break')
+        breaks.push({ kind: 'changed', specifier, name, why: change.why });
+      else if (change.kind === 'compatible') compatible.push({ specifier, name, why: change.why });
     }
   }
-  for (const [specifier, names] of Object.entries(byKey(tree))) {
-    for (const name of Object.keys(byKey(names))) {
-      if (lock[specifier]?.[name] === undefined) added.push({ specifier, name });
+  for (const [specifier, names] of sorted(tree)) {
+    for (const [name] of sorted(names)) {
+      if (own(own(lock, specifier), name) === undefined) added.push({ specifier, name });
     }
   }
-  return { breaks, added };
+  return { breaks, compatible, added };
 }
 
 /**
@@ -114,19 +95,22 @@ export function declaredBreak(changelog: Changelog, version: string, name: strin
     .some((section) => breakingEntries(section.lines).some((entry) => word.test(entry)));
 }
 
-/** The lock `--write` writes: the tree, except an undeclared break keeps what the lock held. */
+/**
+ * The lock `--write` writes: the tree — compatible changes and declared breaks recorded — except an
+ * undeclared break, which keeps what the baseline held so it goes on reporting.
+ */
 export function nextLock(
-  lock: ApiLock | undefined,
+  baseline: ApiSnapshot | undefined,
   tree: ApiSnapshot,
   version: string,
   undeclared: readonly ApiBreak[],
 ): ApiLock {
-  const entries = new Map<string, Record<string, string>>();
+  const entries = new Map<string, Record<string, ApiSymbol>>();
   for (const [specifier, names] of Object.entries(tree)) entries.set(specifier, { ...names });
   for (const one of undeclared) {
-    const held = lock?.entries[one.specifier]?.[one.name];
+    const held = own(own(baseline, one.specifier), one.name);
     if (held === undefined) continue;
     entries.set(one.specifier, { ...(entries.get(one.specifier) ?? {}), [one.name]: held });
   }
-  return { version, entries: Object.fromEntries(entries) };
+  return { format: LOCK_FORMAT, version, entries: Object.fromEntries(entries) };
 }

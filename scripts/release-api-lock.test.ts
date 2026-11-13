@@ -7,7 +7,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
-import { LOCK_PATH, parseLock } from './lib/public-api-breaks';
+import { LOCK_PATH, parseLock } from './lib/public-api-lock';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { PublicApiReport } from './public-api';
 import { BREAK_CODE, UNSCANNED_CODE } from './public-api';
@@ -29,11 +29,21 @@ async function tree(): Promise<string> {
   return dir;
 }
 
-const NEXT = { version: '1.1.0', entries: { '@ultimat3/alpha': { area: 'h1', KIND: 'h2' } } };
+const NEXT = {
+  format: 2,
+  version: '1.1.0',
+  entries: { '@ultimat3/alpha': { area: { hash: 'h1' }, KIND: { hash: 'h2' } } },
+} as const;
 
 const reportOf =
   (over: Partial<PublicApiReport>): (() => Promise<PublicApiReport>) =>
-  async () => ({ findings: [], diff: { breaks: [], added: [] }, symbols: 2, ...over });
+  async () => ({
+    findings: [],
+    diff: { breaks: [], compatible: [], added: [] },
+    symbols: 2,
+    migratedFrom: [],
+    ...over,
+  });
 
 describe('writeApiLock', () => {
   test('writes the next lock at the release version, keys sorted', async () => {
@@ -42,10 +52,7 @@ describe('writeApiLock', () => {
     expect(outcome.finding).toBeUndefined();
     expect(outcome.line).toContain('recorded 2 symbols at 1.1.0');
     const written = parseLock(await Bun.file(`${dir}/${LOCK_PATH}`).json());
-    expect(written).toEqual({
-      version: '1.1.0',
-      entries: { '@ultimat3/alpha': { KIND: 'h2', area: 'h1' } },
-    });
+    expect(written).toEqual(NEXT);
   });
 
   test('an undeclared break still pending is said on the line, not hidden by the write', async () => {

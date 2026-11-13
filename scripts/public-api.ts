@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
-// Every publishable package's public surface — the main entry, every subpath export — hashed per
-// exported symbol into `scripts/lib/public-api.lock.json`. A symbol whose declaration changed, or
-// that is gone, with no `BREAKING —` changelog entry naming it is X_PUBLIC_API_BREAK_UNDECLARED.
-// REPORT-ONLY this release: a warning in `data.warnings`, exit 0; red under `--strict` and on
-// every branch `REFUSE_ON_BRANCHES` names. An additive change is recorded with `--write`.
+// Every publishable package's public surface — the main entry, every subpath export — recorded per
+// exported symbol (hash and shape) in `scripts/lib/public-api.lock.json`. A symbol that is gone, or
+// changed in a way a caller can notice, with no `BREAKING —` changelog entry naming it is
+// X_PUBLIC_API_BREAK_UNDECLARED; an additive change (an optional member or trailing parameter, a
+// parameter that accepts more) is listed as compatible, never reported. REPORT-ONLY this release:
+// a warning in `data.warnings`, exit 0; red under `--strict` and on every branch
+// `REFUSE_ON_BRANCHES` names. Compatible changes and declared breaks are recorded with `--write`.
 //
 //   bun run scripts/public-api.ts [--write] [--strict] [--json]
 
@@ -14,18 +16,13 @@ import { targetBranch } from './lib/changelog-highlights';
 import { loadChangelog } from './lib/changelog-store';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
-import type { ApiBreak, ApiDiff, ApiLock, ApiSnapshot } from './lib/public-api-breaks';
-import {
-  declaredBreak,
-  diffApi,
-  LOCK_PATH,
-  nextLock,
-  parseLock,
-  renderLock,
-} from './lib/public-api-breaks';
-import type { ApiEntry, ApiPackage } from './lib/public-api-emit';
-import { dtsPathOf, emitDeclarations, packageEntries } from './lib/public-api-emit';
-import { symbolReader } from './lib/public-api-symbols';
+import type { ApiBreak, ApiDiff } from './lib/public-api-breaks';
+import { declaredBreak, diffApi, nextLock } from './lib/public-api-breaks';
+import type { ApiPackage } from './lib/public-api-emit';
+import type { ApiLock, ApiSnapshot } from './lib/public-api-lock';
+import { LOCK_PATH, parseLock, renderLock } from './lib/public-api-lock';
+import { migrateLock } from './lib/public-api-migrate';
+import { readSurface } from './lib/public-api-surface';
 import { repoRoot } from './lib/run';
 import { listWorkspaces, publishOrder } from './lib/workspaces';
 
@@ -45,6 +42,8 @@ export interface PublicApiOptions {
   readonly version?: string;
   /** The compiler; default this tree's `node_modules/.bin/tsc`. */
   readonly tsc?: string;
+  /** The release tags a format-1 lock is re-baselined from; default `tagsFrom(lock.version)`. */
+  readonly tags?: readonly string[];
 }
 
 export interface PublicApiReport {
@@ -53,23 +52,26 @@ export interface PublicApiReport {
   /** The lock `--write` would write; absent when the surface could not be read. */
   readonly next?: ApiLock;
   readonly symbols: number;
+  /** The tags a format-1 lock was re-baselined from; empty for a format-2 lock. */
+  readonly migratedFrom: readonly string[];
 }
 
 const unscanned = (cause: string, fix: string): PublicApiReport => ({
   findings: [{ code: UNSCANNED_CODE, cause, fix, at: LOCK_PATH }],
-  diff: { breaks: [], added: [] },
+  diff: { breaks: [], compatible: [], added: [] },
   symbols: 0,
+  migratedFrom: [],
 });
 
 function breakFinding(one: ApiBreak, lock: ApiLock, version: string, source: string): Finding {
   const what =
     one.kind === 'removed'
       ? `no longer exports \`${one.name}\``
-      : `exports \`${one.name}\` with a declaration other than the one ${LOCK_PATH} recorded at ${lock.version}`;
+      : `exports \`${one.name}\`, changed from the declaration ${LOCK_PATH} recorded at ${lock.version} so that ${one.why}`;
   return {
     code: BREAK_CODE,
     cause: `${one.specifier} ${what}, and no \`BREAKING —\` entry under CHANGELOG.md [Unreleased] or in docs/changelog/${version}.md names it — code that compiled against ${lock.version} may not compile now`,
-    fix: `git diff ${quoteArg(`v${lock.version}`)} -- ${quoteArg(source)}   # revert the change to \`${one.name}\`, or declare it on next: a "- **BREAKING —** (#N) \`${one.name}\` …" line under ## [Unreleased] in CHANGELOG.md, then bun run scripts/public-api.ts --write --json`,
+    fix: `${lock.format === 1 ? 'git fetch --tags origin && ' : ''}git diff ${quoteArg(`v${lock.version}`)} -- ${quoteArg(source)}   # revert the change to \`${one.name}\`, or declare it on next: a "- **BREAKING —** (#N) \`${one.name}\` …" line under ## [Unreleased] in CHANGELOG.md, then bun run scripts/public-api.ts --write --json`,
     at: source,
   };
 }
@@ -97,24 +99,20 @@ export async function publicApiReport(
   const fallback = options.packages === undefined ? await defaultPackages(root) : undefined;
   const packages = options.packages ?? fallback?.packages ?? [];
   const version = options.version ?? fallback?.version ?? '0.0.0';
-  const entries: ApiEntry[] = [];
-  for (const pkg of packages) entries.push(...(await packageEntries(root, pkg)));
-  if (entries.length === 0) {
+  const surface = await readSurface(root, packages, options.tsc);
+  if (surface.entries.length === 0) {
     return unscanned(
       'no publishable package under packages/ exports a TypeScript entry, so no surface was read',
       'cd "$(git rev-parse --show-toplevel)" && bun run scripts/list-workspaces.ts --json',
     );
   }
-  const emitted = await emitDeclarations(root, entries, options.tsc);
-  if (!emitted.ok) {
+  if (!surface.ok) {
     return unscanned(
-      `the public surface could not be emitted: ${emitted.problem}`,
+      `the public surface could not be emitted: ${surface.problem}`,
       'bun install && bun run scripts/public-api.ts --json',
     );
   }
-  const read = symbolReader(emitted.tree);
-  const tree: Record<string, Readonly<Record<string, string>>> = {};
-  for (const entry of entries) tree[entry.specifier] = read(dtsPathOf(entry.source));
+  const { entries, tree } = surface;
   const symbols = Object.values(tree).reduce((sum, names) => sum + Object.keys(names).length, 0);
   const lock = await readLock(root);
   if (typeof lock === 'string') {
@@ -123,7 +121,11 @@ export async function publicApiReport(
       'bun run scripts/public-api.ts --write --json',
     );
   }
-  const baseline: ApiSnapshot = lock?.entries ?? tree;
+  const migrated =
+    lock?.format === 1
+      ? await migrateLock(root, lock, packages, options.tags, options.tsc)
+      : undefined;
+  const baseline: ApiSnapshot = migrated?.entries ?? lock?.entries ?? tree;
   const diff = diffApi(baseline, tree);
   const changelog = await loadChangelog(root);
   const undeclared = diff.breaks.filter((one) => !declaredBreak(changelog, version, one.name));
@@ -141,12 +143,29 @@ export async function publicApiReport(
       : undeclared.map((one) =>
           breakFinding(one, lock, version, sourceOf.get(one.specifier) ?? LOCK_PATH),
         );
-  return { findings, diff, next: nextLock(lock, tree, version, undeclared), symbols };
+  return {
+    findings,
+    diff,
+    next: nextLock(lock === undefined ? undefined : baseline, tree, version, undeclared),
+    symbols,
+    migratedFrom: migrated?.tags ?? [],
+  };
 }
 
 /** Whether a finding is red: `--strict`, or a target branch `REFUSE_ON_BRANCHES` names. */
 export const refuses = (strict: boolean, env: Readonly<Record<string, string | undefined>>) =>
   strict || REFUSE_ON_BRANCHES.includes(targetBranch(env) ?? '');
+
+/** ` (2 added, 1 compatible change: record them with --write)`, or nothing. */
+function additive(result: PublicApiReport, write: boolean): string {
+  const { added, compatible } = result.diff;
+  const parts = [
+    ...(added.length > 0 ? [`${added.length} added`] : []),
+    ...(compatible.length > 0 ? [`${compatible.length} compatible change(s)`] : []),
+  ];
+  if (parts.length === 0) return '';
+  return ` (${parts.join(', ')}${write ? ', recorded' : ': record them with --write'})`;
+}
 
 const warningLine = (finding: Finding): string =>
   `${finding.code} ${finding.cause} — fix: ${finding.fix}`;
@@ -201,7 +220,7 @@ if (import.meta.main) {
       script: SCRIPT,
       summary:
         result.findings.length === 0
-          ? `${result.symbols} exported symbols match ${LOCK_PATH}${result.diff.added.length > 0 ? ` (${result.diff.added.length} added${write ? ', recorded' : ': record them with --write'})` : ''} — ${ms} ms`
+          ? `${result.symbols} exported symbols match ${LOCK_PATH}${additive(result, write)} — ${ms} ms`
           : `${result.findings.length} public API finding(s)${red ? '' : ' — report-only, exit 0'}${scanned ? ` over ${result.symbols} symbols` : ''} — ${ms} ms`,
       findings: red ? result.findings : [],
       lines: red ? [] : result.findings.map((finding) => `  warning: ${warningLine(finding)}`),
@@ -210,7 +229,9 @@ if (import.meta.main) {
         symbols: result.symbols,
         warnings: red ? [] : result.findings.map(warningLine),
         breaks: result.diff.breaks,
+        compatible: result.diff.compatible,
         added: result.diff.added,
+        migratedFrom: result.migratedFrom,
         written: write && result.next !== undefined,
         ms,
       },

@@ -1,6 +1,7 @@
-// The public-API lock, end to end on a throwaway tree compiled by the repo's own `tsc`: a changed
-// subpath signature or a removed export with no `BREAKING —` entry is reported, a declared one and
-// an addition are not, and reordering or re-spelling a file (CRLF, comments, quotes) is invisible.
+// The public-API lock, end to end on a throwaway tree compiled by the repo's own `tsc`: a breaking
+// change or a removed export with no `BREAKING —` entry is reported, a declared one, an addition
+// and an additive change are not, reordering or re-spelling a file (CRLF, comments, quotes) is
+// invisible, and a format-1 lock is re-baselined from its release tag.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no mkdtemp/rm of its own; a unique directory per run keeps test workers apart.
@@ -8,8 +9,8 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
 import { localBin } from './lib/local-bin';
-import { LOCK_PATH, renderLock } from './lib/public-api-breaks';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { LOCK_PATH, renderLock } from './lib/public-api-lock';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import {
   BREAK_CODE,
   type PublicApiReport,
@@ -54,6 +55,8 @@ const SHAPE = [
 ].join('\n');
 const SUB = [
   'interface Options { readonly label: string }',
+  'export interface Style { readonly color: string; readonly weight?: number }',
+  'export function paint(style: Style): string { return style.color; }',
   'export function render(width: number, options: Options): string { return String(width) + options.label; }',
   "export const KIND = 'sub';",
   '',
@@ -87,7 +90,8 @@ const OPTIONS = {
   tsc: TSC,
 };
 
-const scan = (dir: string): Promise<PublicApiReport> => publicApiReport(dir, OPTIONS);
+const scan = (dir: string, tags?: readonly string[]): Promise<PublicApiReport> =>
+  publicApiReport(dir, tags === undefined ? OPTIONS : { ...OPTIONS, tags });
 
 /** A fixture whose lock is the tree as written: what `--write` commits. */
 async function locked(): Promise<string> {
@@ -104,6 +108,33 @@ const edit = async (dir: string, file: string, from: string, to: string): Promis
   if (!text.includes(from)) expect.unreachable(`${file} must hold ${from}`);
   await Bun.write(path, text.replace(from, to));
 };
+
+const NO_CHANGE = { breaks: [], compatible: [], added: [] };
+
+/** The one change `scan` finds after `edit`: compatible, a reported break, or none. */
+async function changeAfter(
+  file: string,
+  from: string,
+  to: string,
+): Promise<{
+  verdict: 'compatible' | 'break' | 'none';
+  specifier?: string;
+  name?: string;
+  why?: string;
+}> {
+  const dir = await locked();
+  await edit(dir, file, from, to);
+  const { diff, findings } = await scan(dir);
+  const [broken] = diff.breaks;
+  const [fine] = diff.compatible;
+  if (broken !== undefined) {
+    expect(findings.map((one) => one.code)).toEqual([BREAK_CODE]);
+    expect(findings[0]?.cause).toContain(broken.why);
+    return { verdict: 'break', name: broken.name, why: broken.why };
+  }
+  expect(findings).toEqual([]);
+  return fine === undefined ? { verdict: 'none' } : { verdict: 'compatible', ...fine };
+}
 
 const unreleased = (dir: string, entry: string): Promise<number> =>
   Bun.write(`${dir}/CHANGELOG.md`, `# Changelog\n\n## [Unreleased]\n\n### Changed\n\n${entry}\n`);
@@ -149,7 +180,12 @@ describe('public API lock · what is a break', () => {
     await edit(dir, 'sub.ts', 'readonly label: string', 'readonly label: number');
     const result = await scan(dir);
     expect(result.diff.breaks).toEqual([
-      { kind: 'changed', specifier: '@ultimat3/alpha/sub', name: 'render' },
+      {
+        kind: 'changed',
+        specifier: '@ultimat3/alpha/sub',
+        name: 'render',
+        why: 'its heading changed — type parameters, `extends`, or a local type it names',
+      },
     ]);
   });
 
@@ -171,7 +207,12 @@ describe('public API lock · what is a break', () => {
     await Bun.write(`${dir}/packages/alpha/src/index.ts`, INDEX.replace('area, ', ''));
     const result = await scan(dir);
     expect(result.diff.breaks).toEqual([
-      { kind: 'removed', specifier: '@ultimat3/alpha', name: 'area' },
+      {
+        kind: 'removed',
+        specifier: '@ultimat3/alpha',
+        name: 'area',
+        why: 'it is no longer exported',
+      },
     ]);
     expect(result.findings[0]?.cause).toContain('no longer exports `area`');
     if (result.next === undefined) expect.unreachable('a readable surface has a next lock');
@@ -187,7 +228,7 @@ describe('public API lock · what is a break', () => {
     expect(result.diff.added).toEqual([{ specifier: '@ultimat3/alpha/sub', name: 'EXTRA' }]);
     if (result.next === undefined) expect.unreachable('a readable surface has a next lock');
     await Bun.write(`${dir}/${LOCK_PATH}`, renderLock(result.next));
-    expect((await scan(dir)).diff).toEqual({ breaks: [], added: [] });
+    expect((await scan(dir)).diff).toEqual(NO_CHANGE);
   });
 
   test('reordered exports and imports, CRLF, comments and quote style are not reported', async () => {
@@ -205,7 +246,146 @@ describe('public API lock · what is a break', () => {
       SHAPE.split('\n').reverse().join('\r\n').replace('/** A shape. */', ''),
     );
     const result = await scan(dir);
-    expect(result.diff).toEqual({ breaks: [], added: [] });
+    expect(result.diff).toEqual(NO_CHANGE);
+  });
+});
+
+describe('public API lock · additive or breaking', () => {
+  test('unchanged is nothing', async () => {
+    expect(await changeAfter('sub.ts', 'color: string', 'color: string')).toEqual({
+      verdict: 'none',
+    });
+  });
+
+  test('an optional member added is compatible: no finding, and --write records it', async () => {
+    const dir = await locked();
+    await edit(dir, 'sub.ts', 'weight?: number', 'weight?: number; readonly font?: string');
+    const result = await scan(dir);
+    expect(result.findings).toEqual([]);
+    expect(result.diff.compatible).toEqual([
+      { specifier: '@ultimat3/alpha/sub', name: 'Style', why: 'optional `font` added' },
+    ]);
+    if (result.next === undefined) expect.unreachable('a readable surface has a next lock');
+    await Bun.write(`${dir}/${LOCK_PATH}`, renderLock(result.next));
+    expect((await scan(dir)).diff).toEqual(NO_CHANGE);
+  });
+
+  test('a required member added to an input interface is a break', async () => {
+    const change = await changeAfter('sub.ts', 'weight?: number', 'weight?: number; font: string');
+    expect(change).toEqual({
+      verdict: 'break',
+      name: 'Style',
+      why: 'required member `font` was added',
+    });
+  });
+
+  test('an optional member made required is a break', async () => {
+    const change = await changeAfter('sub.ts', 'weight?: number', 'weight: number');
+    expect(change).toEqual({
+      verdict: 'break',
+      name: 'Style',
+      why: 'member `weight` became required',
+    });
+  });
+
+  test('an optional trailing parameter added is compatible', async () => {
+    const change = await changeAfter(
+      'sub.ts',
+      'paint(style: Style)',
+      'paint(style: Style, dpi?: number)',
+    );
+    expect(change).toEqual({
+      verdict: 'compatible',
+      specifier: '@ultimat3/alpha/sub',
+      name: 'paint',
+      why: 'optional parameter 2 added',
+    });
+  });
+
+  test('a required parameter added is a break', async () => {
+    const change = await changeAfter(
+      'sub.ts',
+      'paint(style: Style)',
+      'paint(style: Style, dpi: number)',
+    );
+    expect(change).toEqual({
+      verdict: 'break',
+      name: 'paint',
+      why: 'required parameter 2 was added',
+    });
+  });
+
+  test('a widened return type is a break', async () => {
+    const change = await changeAfter(
+      'shape.ts',
+      'area(shape: Shape): number {',
+      'area(shape: Shape): number | string {',
+    );
+    expect(change).toEqual({ verdict: 'break', name: 'area', why: 'its return type changed' });
+  });
+});
+
+describe('public API lock · a format-1 lock', () => {
+  const git = async (dir: string, ...args: string[]): Promise<void> => {
+    const ran = await run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+      cwd: dir,
+    });
+    if (!ran.ok) expect.unreachable(`git ${args.join(' ')} must succeed in ${dir}: ${ran.output}`);
+  };
+
+  test('is re-baselined from its release tag, so an additive change is compatible', async () => {
+    const dir = await locked();
+    const current = await scan(dir);
+    const hashes = Object.fromEntries(
+      Object.entries(current.next?.entries ?? {}).map(([specifier, names]) => [
+        specifier,
+        Object.fromEntries(Object.entries(names).map(([name, one]) => [name, one.hash])),
+      ]),
+    );
+    await Bun.write(`${dir}/${LOCK_PATH}`, JSON.stringify({ version: '1.0.0', entries: hashes }));
+    await git(dir, 'init', '-q');
+    await git(dir, 'add', '-A');
+    await git(dir, 'commit', '-qm', 'one');
+    await git(dir, 'tag', 'v1.0.0');
+    await edit(dir, 'sub.ts', 'weight?: number', 'weight?: number; readonly font?: string');
+    const result = await scan(dir);
+    expect(result.migratedFrom).toEqual(['v1.0.0']);
+    expect(result.findings).toEqual([]);
+    expect(result.diff.compatible.map((one) => one.name)).toEqual(['Style']);
+    expect(renderLock(result.next ?? { format: 2, version: '', entries: {} })).toContain(
+      '"format": 2',
+    );
+  });
+
+  test('a tag whose declaration is not the one the lock hashed lends it no shape', async () => {
+    const dir = await locked();
+    const lock = {
+      version: '1.0.0',
+      entries: { '@ultimat3/alpha/sub': { Style: 'f'.repeat(16) } },
+    };
+    await Bun.write(`${dir}/${LOCK_PATH}`, JSON.stringify(lock));
+    await git(dir, 'init', '-q');
+    await git(dir, 'add', '-A');
+    await git(dir, 'commit', '-qm', 'one');
+    await git(dir, 'tag', 'v1.0.0');
+    const result = await scan(dir, ['v1.0.0']);
+    expect(result.migratedFrom).toEqual(['v1.0.0']);
+    expect(result.diff.breaks.map((one) => one.why)).toEqual([
+      'its declaration changed, and the lock holds no shape to judge the change by',
+    ]);
+  });
+
+  test('with no tag to read, a change to it is a break whose fix fetches the tags', async () => {
+    const dir = await locked();
+    const current = await scan(dir);
+    const style = current.next?.entries['@ultimat3/alpha/sub']?.['Style']?.hash;
+    const lock = { version: '1.0.0', entries: { '@ultimat3/alpha/sub': { Style: style } } };
+    await Bun.write(`${dir}/${LOCK_PATH}`, JSON.stringify(lock));
+    await edit(dir, 'sub.ts', 'weight?: number', 'weight?: number; readonly font?: string');
+    const result = await scan(dir);
+    expect(result.migratedFrom).toEqual([]);
+    expect(result.findings.map((one) => one.code)).toEqual([BREAK_CODE]);
+    expect(result.findings[0]?.fix).toStartWith('git fetch --tags origin && ');
   });
 });
 

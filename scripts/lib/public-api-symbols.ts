@@ -1,6 +1,6 @@
-// Each exported name of an entry `.d.ts`, followed through re-exports to its declaration and
-// hashed. Keyed by name, never by position, so reordering an export list or the imports above it
-// changes nothing; a non-exported local type a declaration names is folded into its hash.
+// Each exported name of an entry `.d.ts`, followed through re-exports to its normalised
+// declaration text — what `public-api-surface.ts` hashes and shapes. Keyed by name, never by position, so reordering an export list or the imports above it
+// changes nothing; a non-exported local type a declaration names is folded into its text.
 
 // why: Bun ships no path API; `posix` because every key here is `/`-separated on every OS.
 import { posix } from 'node:path';
@@ -14,8 +14,8 @@ export interface DtsTree {
   readonly specifiers: ReadonlyMap<string, string>;
 }
 
-/** name → sha-256 (16 hex) of that name's normalised declaration. */
-export type SymbolHashes = Readonly<Record<string, string>>;
+/** name → that name's normalised declaration, then a `local …` line per local type it names. */
+export type SymbolTexts = Readonly<Record<string, string>>;
 
 export const digest = (text: string): string =>
   new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16);
@@ -24,7 +24,7 @@ const sortedRecord = (map: ReadonlyMap<string, string>): Record<string, string> 
   Object.fromEntries([...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 
 /** The resolver over one emitted tree; memoised per file, cycle-safe. */
-export function symbolReader(tree: DtsTree): (file: string) => SymbolHashes {
+export function symbolReader(tree: DtsTree): (file: string) => SymbolTexts {
   const parsed = new Map<string, DtsModule>();
   const exported = new Map<string, ReadonlyMap<string, string>>();
   const visiting = new Set<string>();
@@ -127,9 +127,5 @@ export function symbolReader(tree: DtsTree): (file: string) => SymbolHashes {
     return out;
   };
 
-  return (file) => {
-    const hashes = new Map<string, string>();
-    for (const [name, text] of exportsOf(file)) hashes.set(name, digest(text));
-    return sortedRecord(hashes);
-  };
+  return (file) => sortedRecord(exportsOf(file));
 }

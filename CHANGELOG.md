@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The API lock tells an additive change from a breaking one: `scripts/lib/public-api.lock.json` (format 2) records each exported symbol's shape beside its hash — members with their optionality, parameters, return type — so a new optional member, a new optional trailing parameter or a parameter that accepts more is listed as `compatible` and recorded by `--write`, never reported as `X_PUBLIC_API_BREAK_UNDECLARED`. A removed or newly required member, a changed member or return type, a required parameter and anything unclassifiable stay breaks, each finding naming what broke. A format-1 lock is re-baselined from its release tags; the five warnings since 31.20.0 (`RedisPubSubOptions`, `RedisSubscriberLike`, `redisPubSubAt`, `NatsTransportOptions`, `SelectTransportOptions`) were all additive.
 
 ## Releases
 

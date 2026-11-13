@@ -4,7 +4,7 @@
 // and a `BREAKING —` entry just moved into `docs/changelog/<version>.md` still declares its break.
 
 import type { Finding } from './lib/log';
-import { LOCK_PATH, renderLock } from './lib/public-api-breaks';
+import { LOCK_PATH, renderLock } from './lib/public-api-lock';
 import type { PublicApiReport } from './public-api';
 import { BREAK_CODE, publicApiReport, UNSCANNED_CODE } from './public-api';
 
@@ -13,7 +13,7 @@ export const API_LOCK_COMMAND = 'bun run scripts/public-api.ts --write --json';
 
 /** What `--dry-run` prints for it, beside `RELEASE_WRITES`' three lines. */
 export const plannedApiLockLine = (): string =>
-  `  ${'api-lock'.padEnd(9)} would write ${LOCK_PATH} — every exported symbol's declaration hash (${API_LOCK_COMMAND})`;
+  `  ${'api-lock'.padEnd(9)} would write ${LOCK_PATH} — every exported symbol's declaration hash and shape (${API_LOCK_COMMAND})`;
 
 export interface ApiLockOutcome {
   /** The one report line: what moved, or what could not. */
