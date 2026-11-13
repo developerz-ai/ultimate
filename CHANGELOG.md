@@ -25,6 +25,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `@ultimat3/cache`: a Redis pub/sub replica that has its subscription refused while the connection stays up (measured after `CLIENT KILL TYPE pubsub`: no second `onconnect` comes) now retries the resubscribe with backoff (250 ms doubling to 10 s, full jitter) until it lands. Before, it logged `cache.broadcast.resubscribe-failed` once and then missed every bust its peers published. Each `SUBSCRIBE`/`UNSUBSCRIBE` is bounded at 1 s (`PUBSUB_COMMAND_TIMEOUT_MS`), so a command on a dead socket no longer stalls the resubscribes queued behind it. Every connect sends `CLIENT SETNAME`, so `CLIENT LIST TYPE pubsub` shows which replica holds each subscription.
 - `@ultimat3/testing`: a test file loaded again in the same process (`bun test --rerun-each`) forgets what its module body declared on the previous load, so `entity()` and `job()` at module scope declare afresh instead of failing with `X_ENTITY_DUPLICATE` / `X_JOB_DUPLICATE`. What a test or a hook registers is still the file's own to undo.
 
+### Security
+
+- `@ultimat3/realtime`: a live socket opened with a session cookie that is then signed out, expired or revoked is now closed (`1008`) at its next re-check. Before, an authenticator that threw `X_UNAUTHENTICATED` or `X_SESSION_EXPIRED` (what `@ultimat3/auth`'s `authenticate()` throws, and what every `x new` app let through) counted as an auth-backend failure: the grant was kept and the socket went on streaming live records under the signed-out actor. An upgrade with such a cookie now gets `401` instead of `503`. Any other throw still keeps the grant, so a database outage does not disconnect anyone.
+- `@ultimat3/http`: the same two codes thrown by an authenticator now mean "anonymous". Public routes (sign-in, the OAuth callback, sign-out) serve a browser holding a stale cookie instead of answering `401` until the cookie's Max-Age runs out. A protected route still answers `401 X_UNAUTHENTICATED`, the same answer as a request with no cookie.
+- `@ultimat3/core`: `isSessionRefusal(error)` and `isSessionRefusalCode(code)` are the one list of "this credential names no session" codes. The http stage, the realtime sweep and the page's session-lost flag all read it.
+- `x new` and `x g sign-in --oidc`: the scaffolded `apps/web/app/auth/authenticator.ts` answers `null` for a session refusal (`if (isSessionRefusal(error)) return null;`), and its test covers a signed-out cookie. In an existing app, make the same edit around `authenticate(auth, token)`. Upgrading the framework alone already closes both holes.
+
 ## Releases
 
 | Version | Date | Summary |

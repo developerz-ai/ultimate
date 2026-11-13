@@ -6,9 +6,7 @@
 
 import { onRescope } from './client-scope';
 import { sessionLostCell } from './record-sink';
-
-/** The two codes that mean the credential this page was rendered with no longer resolves. */
-const LOSS_CODES: ReadonlySet<string> = new Set(['X_UNAUTHENTICATED', 'X_SESSION_EXPIRED']);
+import { SESSION_REFUSAL_CODES } from './session-refusal';
 
 /** Whether a refusal has said this page's session is gone. `rescope()` clears it. */
 export function sessionIsLost(): boolean {
@@ -81,7 +79,7 @@ export interface Refusal {
  */
 export function noteRefusal(refusal: Refusal, principal: string | null | undefined): void {
   if (typeof principal !== 'string' || refusal.status !== 401) return;
-  if (!LOSS_CODES.has(refusal.code) || !isPageOrigin(refusal.url)) return;
+  if (!SESSION_REFUSAL_CODES.has(refusal.code) || !isPageOrigin(refusal.url)) return;
   const cell = sessionLostCell();
   if (cell.lost) return;
   cell.lost = true;

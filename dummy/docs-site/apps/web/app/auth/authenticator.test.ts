@@ -1,6 +1,6 @@
 // The real path and its one fallback: a session cookie is its user in every environment, a bad
 // one is refused rather than replaced, and only development answers a request with no session.
-import { defineAuth, login, memoryAuthAdapter, register } from '@ultimat3/auth';
+import { defineAuth, login, logout, memoryAuthAdapter, register } from '@ultimat3/auth';
 import { configuredAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import { expect, unitTest } from '@ultimat3/testing';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
@@ -43,12 +43,27 @@ unitTest('a session cookie is the user it was issued to, in every environment', 
   }
 });
 
-unitTest('a cookie naming no live session is refused, never answered as the viewer', async () => {
+unitTest('a cookie naming no live session is nobody, never answered as the viewer', async () => {
   const auth = memoryAuth();
   const request = requestWith({ [auth().sessions.policy.cookieName]: 'forged.token' });
-  await expect(sessionAuthenticator({ auth, development: true })(request)).rejects.toMatchObject({
-    code: 'X_UNAUTHENTICATED',
+  // `null`, not a throw: thrown, a stale cookie was a 401 on the sign-in page itself.
+  expect(await sessionAuthenticator({ auth, development: true })(request)).toBeNull();
+});
+
+unitTest('a signed-out cookie is nobody, so its socket is closed on re-check', async () => {
+  const auth = memoryAuth();
+  await register(auth(), {
+    email: 'ada@example.com',
+    password: PASSWORD,
+    orgId: DEMO_ORG_ID,
+    roles: ['member'],
   });
+  const { token } = await login(auth(), { email: 'ada@example.com', password: PASSWORD });
+  await logout(auth(), token);
+  const request = requestWith({ [auth().sessions.policy.cookieName]: token });
+  for (const development of [true, false]) {
+    expect(await sessionAuthenticator({ auth, development })(request)).toBeNull();
+  }
 });
 
 unitTest('no session: the development viewer under x dev, anonymous anywhere else', async () => {

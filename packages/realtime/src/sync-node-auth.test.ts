@@ -6,7 +6,7 @@
 // incapable of seeing a caller.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { type Actor, frozenClock, userActor } from '@ultimat3/core';
+import { type Actor, frozenClock, UltimateError, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub } from './channel';
 import { channel } from './channel-decl';
@@ -42,6 +42,14 @@ afterAll(() => {
 });
 
 const BUILD_ID = 'build-1';
+
+/** What `@ultimat3/auth`'s `authenticate()` throws for a signed-out, expired or forged cookie. */
+const sessionGone = (): UltimateError =>
+  new UltimateError({
+    code: 'X_UNAUTHENTICATED',
+    cause: 'the session cookie does not match any live session',
+    fix: 'sign in again',
+  });
 const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
 
 class FakeWs implements WsLike {
@@ -188,6 +196,23 @@ describe('the sync node authenticates an upgrade', () => {
     await node.stop();
   });
 
+  /** A dead cookie is a refusal: told 503, the client re-dials with it forever. */
+  test('an authenticator that throws X_UNAUTHENTICATED answers 401, not 503', async () => {
+    const { node } = nodeWith(async () => {
+      throw sessionGone();
+    });
+    await node.start();
+    const server = upgradeTarget(node);
+
+    const response = await node.fetch(upgradeRequest, server);
+
+    expect(response?.status).toBe(401);
+    expect(server.data).toBeNull();
+    const body = (await response?.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('X_SOCKET_UNAUTHENTICATED');
+    await node.stop();
+  });
+
   test('an accepted credential rides into the socket and into the row policy', async () => {
     seenBy.length = 0;
     const { node, sockets } = nodeWith(async () => ({ actor: alice }));
@@ -313,6 +338,36 @@ describe('a grant the node cannot renew', () => {
 
     expect(ws.closes).toEqual([[CLOSE.policy, 'grant expired']]);
     // And the release still happened: the socket is out of the table, not merely closed.
+    expect(sockets.get(data.socketId)).toBeUndefined();
+    await node.stop();
+  });
+
+  /**
+   * The defect a security review proved: after `logout()` the refresh THREW `X_UNAUTHENTICATED`
+   * (auth's own `authenticate()` does), the sweep read that as a backend failure, and the socket
+   * opened with the signed-out cookie kept streaming under the victim's role.
+   */
+  test('a refresh that throws X_UNAUTHENTICATED closes the client with 1008', async () => {
+    const { node, sockets } = nodeWith(
+      async () => ({
+        actor: alice,
+        expiresAt: 0,
+        refresh: async () => {
+          throw sessionGone();
+        },
+      }),
+      { reauthenticateIntervalMs: 1 },
+    );
+    await node.start();
+    const server = upgradeTarget(node);
+    await node.fetch(upgradeRequest, server);
+    const data = server.data;
+    const ws = server.ws;
+    if (!data || !ws) return expect.unreachable('the upgrade was refused');
+
+    await until(() => ws.closes.length > 0);
+
+    expect(ws.closes).toEqual([[CLOSE.policy, 'grant expired']]);
     expect(sockets.get(data.socketId)).toBeUndefined();
     await node.stop();
   });

@@ -149,12 +149,13 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
 - Presence lives in `transport.shared`; the sync node is `PresenceRegistry`'s only caller, and
   **one node per topic sweeps**. Detail: `docs/history/realtime-agent-notes.md`.
 - **A socket's actor comes from `syncNode({ authenticate })` only**, run before
-  `server.upgrade`. `null` = 401 `X_SOCKET_UNAUTHENTICATED`; a throw = 503
-  `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the
+  `server.upgrade`. `null` or a thrown session refusal (`isSessionRefusal`) = 401
+  `X_SOCKET_UNAUTHENTICATED`; any other throw = 503 `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the
   `GrantBook`.
 - **The grant is recorded BEFORE `server.upgrade`**; `onUngranted` is REQUIRED on `UpgradeDeps`. †
 - **A grant expires; a socket does not**: expired grants are re-decided on an interval
-  (`hub.onActorChange`, `registry.reauthorize`). No `refresh` = close `1008`; one that raises retries.
+  (`hub.onActorChange`, `registry.reauthorize`). No `refresh` = close `1008`; one that raises retries,
+  except a session refusal, which closes `1008` like `null`.
 - **Inbound frames run in a lane, never the socket**: `subscribe` is `sub:<sid>` or `topic:<name>`,
   everything else unlaned (`frame-lanes.ts`); a lane exists only while work is queued.
 - **A dropped `records` frame is counted AND repaired**: per-node `seq`/`epoch` per channel; a refused

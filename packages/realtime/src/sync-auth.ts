@@ -3,7 +3,7 @@
 // holds it, and the pass that re-decides one whose window has closed.
 
 import type { Actor, Clock } from '@ultimat3/core';
-import { finiteOption } from '@ultimat3/core';
+import { finiteOption, isSessionRefusal } from '@ultimat3/core';
 import { GrantRefreshTimeoutError } from './errors';
 import { type Scheduler, timeoutScheduler } from './thundering-herd';
 
@@ -38,7 +38,9 @@ export interface SyncGrant {
  * refused credential never costs a websocket. `null` is a decision (nobody may open this socket);
  * a throw is a failure (nothing was decided) — the node answers those differently, because reading
  * an auth backend timeout as a denial is the same class of bug as reading a dead pool as a row
- * policy refusing a row.
+ * policy refusing a row. One throw IS a decision: a session refusal (`isSessionRefusal`, core's
+ * one list — `X_UNAUTHENTICATED`, `X_SESSION_EXPIRED`), which `@ultimat3/auth`'s `authenticate()`
+ * raises for a revoked, expired or forged cookie. It is answered exactly as `null` is.
  */
 export type SyncAuthenticator = (request: Request) => Promise<SyncGrant | null>;
 
@@ -109,6 +111,9 @@ export interface GrantSweepResult {
  * the one it would be responding to. It stays expired, so the next pass retries it — and every
  * failure is reported, because a socket that cannot be re-decided is not a socket anyone should
  * discover from a graph of connection counts.
+ *
+ * Except a session refusal, which is a denial that happens to arrive as a throw: read as a failure,
+ * a socket opened with a cookie that was then signed out kept streaming under its actor.
  */
 export async function sweepGrants(deps: GrantSweepDeps): Promise<GrantSweepResult> {
   const now = deps.clock.now().getTime();
@@ -127,9 +132,12 @@ export async function sweepGrants(deps: GrantSweepDeps): Promise<GrantSweepResul
     try {
       next = grant.refresh ? await within(grant.refresh(), socketId, deadlineMs, schedule) : null;
     } catch (error) {
-      failed += 1;
-      deps.onRefreshFailed?.(socketId, error);
-      continue;
+      if (!isSessionRefusal(error)) {
+        failed += 1;
+        deps.onRefreshFailed?.(socketId, error);
+        continue;
+      }
+      next = null;
     }
     // Asked again, because `refresh` is the app's and awaiting it is awaiting a token service: the
     // socket may have closed meanwhile (its grant deleted) or been re-granted. Written back

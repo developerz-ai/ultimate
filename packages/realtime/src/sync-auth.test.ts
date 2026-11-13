@@ -3,7 +3,7 @@
 // once, forever" is what an open websocket meant before this existed.
 
 import { describe, expect, test } from 'bun:test';
-import { type Actor, frozenClock, userActor } from '@ultimat3/core';
+import { type Actor, frozenClock, UltimateError, userActor } from '@ultimat3/core';
 import { GrantBook, type SyncGrant, sweepGrants } from './sync-auth';
 import type { Scheduler } from './thundering-herd';
 
@@ -104,6 +104,55 @@ describe('grant expiry', () => {
 
     const second = await sweepGrants(deps(book, 1_002, log));
     expect(second.refreshed).toBe(1);
+  });
+
+  /**
+   * The security half of that rule. `@ultimat3/auth`'s `authenticate()` THROWS for a revoked,
+   * expired or forged cookie, and an app authenticator that lets it through raised here: read as a
+   * backend failure, the grant was kept and a socket opened with a signed-out cookie streamed on.
+   */
+  test.each(['X_UNAUTHENTICATED', 'X_SESSION_EXPIRED'])(
+    'a refresh that throws %s is a revocation, not a failure',
+    async (code) => {
+      const book = new GrantBook();
+      book.set('s1', {
+        actor: alice,
+        expiresAt: 1_000,
+        refresh: async () => {
+          throw new UltimateError({ code, cause: 'the session is gone', fix: 'sign in again' });
+        },
+      });
+      const log = recorder();
+
+      const result = await sweepGrants(deps(book, 1_001, log));
+
+      expect(result).toEqual({ refreshed: 0, revoked: 1, failed: 0 });
+      expect(log.revoked).toEqual(['s1']);
+      expect(log.failed).toEqual([]);
+      expect(book.size).toBe(0);
+    },
+  );
+
+  test('a refresh that throws any other coded error is still a failure, and keeps the grant', async () => {
+    const book = new GrantBook();
+    book.set('s1', {
+      actor: alice,
+      expiresAt: 1_000,
+      refresh: async () => {
+        throw new UltimateError({
+          code: 'X_DB_UNAVAILABLE',
+          cause: 'the session store is down',
+          fix: 'retry once the session store answers',
+        });
+      },
+    });
+    const log = recorder();
+
+    const result = await sweepGrants(deps(book, 1_001, log));
+
+    expect(result).toEqual({ refreshed: 0, revoked: 0, failed: 1 });
+    expect(log.revoked).toEqual([]);
+    expect(book.size).toBe(1);
   });
 
   test('a grant with no expiry is never re-decided on a clock', async () => {

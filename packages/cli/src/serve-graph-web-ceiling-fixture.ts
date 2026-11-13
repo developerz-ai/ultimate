@@ -246,5 +246,8 @@
  * raised 1687 → 1688, measured 1688 (2026-11-13, sweep 15): `SERVING_ROLE_CEILING`'s 1
  * (`core/src/map-bounded.ts`). why: the admin search's four-wide read. Nothing web-only: the
  * sweep's ui and admin changes import only modules the web role already evaluated.
+ * raised 1688 → 1690, measured 1690 (2026-11-13, revoked-session security fix):
+ * `SERVING_ROLE_CEILING`'s 2 (`core/src/session-refusal.ts`, `http/src/authenticated-actor.ts`).
+ * why: the one session-refusal rule and the http stage that reads it. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1688;
+export const WEB_ROLE_CEILING = 1690;
