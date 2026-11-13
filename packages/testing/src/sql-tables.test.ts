@@ -20,4 +20,19 @@ describe(testName('unit', 'statementTables'), () => {
     expect(statementTables('insert into notes (posts, orgs) values (1, 2)')).toEqual(['notes']);
     expect(statementTables('select * from notes where id in (1, 2)')).toEqual(['notes']);
   });
+
+  test('`as` before a list-ending keyword is itself the alias; a keyword is never one', () => {
+    expect(statementTables('select * from a as where x, b')).toEqual(['a']);
+    expect(statementTables('select * from a AS\tp , b As q,c where 1')).toEqual(['a', 'b', 'c']);
+    expect(statementTables('select * from a where b, c')).toEqual(['a']);
+    expect(statementTables('select * from a asx, b')).toEqual(['a', 'b']);
+  });
+
+  test('a run of 100,000 spaces is scanned once, the tables still read', () => {
+    const run = ' '.repeat(100_000);
+    expect(statementTables(`select * from${run}x`)).toEqual(['x']);
+    expect(statementTables(`from a${run},`)).toEqual(['a']);
+    expect(statementTables(`from a${run}as${run}p${run},${run}b`)).toEqual(['a', 'b']);
+    expect(statementTables(`from a${run}`)).toEqual(['a']);
+  });
 });
