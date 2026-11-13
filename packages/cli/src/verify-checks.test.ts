@@ -275,3 +275,30 @@ describe('a load failure is one finding, on manifest', () => {
     expect(outcome).toEqual({ ok: true, findings: [], output: LOAD_BLOCKED });
   });
 });
+
+describe('the drift step · an index nothing declares', () => {
+  const app = mkdtempSync(join(tmpdir(), 'x-drift-index-'));
+  afterAll(() => rmSync(app, { recursive: true, force: true }));
+
+  // No migration records it and no entity names it. The dump also outruns the replay of zero
+  // migrations, so the step is red on X_SCHEMA_DUMP_DRIFT — and the index is still only advice.
+  test('X_DB_INDEX_UNDECLARED rides in warnings on main, never in the findings', async () => {
+    await Bun.write(
+      join(app, 'app.config.ts'),
+      "import { defineConfig } from '@ultimat3/core';\nexport const config = defineConfig({ name: 'probe' });\n",
+    );
+    await Bun.write(
+      join(app, 'packages/db/schema/05_indexes/posts.sql'),
+      'CREATE INDEX posts_extra_idx ON public.posts USING btree (a);\n',
+    );
+    const drift = VERIFY_STEPS.find((step) => step.name === 'drift');
+    if (drift === undefined) return expect.unreachable('no drift step');
+    const outcome = await drift.run({ root: app, runner: exec });
+    expect(outcome.findings.map((finding) => finding.code)).not.toContain('X_DB_INDEX_UNDECLARED');
+    const warnings = outcome.warnings ?? [];
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toStartWith(
+      'X_DB_INDEX_UNDECLARED packages/db/schema/05_indexes/posts.sql: ',
+    );
+  }, 60_000);
+});

@@ -1,8 +1,9 @@
 /**
- * Ending the demo session. "Sign out" is a SESSION write — a cookie and a full navigation — so the
- * action sets the demo cookie to `DEMO_SIGNED_OUT` on the response the pipeline is assembling (its
- * last stage copies `ctx.headers` onto whatever the handler returned) and, for a browser's native
- * form post, redirects to the public home. The navigation is load-bearing: the next document names
+ * Signing out. "Sign out" is a SESSION write — a cookie and a full navigation — so the action
+ * revokes the session its cookie names, expires that cookie and sets the demo cookie to
+ * `DEMO_SIGNED_OUT` on the response the pipeline is assembling (its last stage copies `ctx.headers`
+ * onto whatever the handler returned) and, for a browser's native form post, redirects to the
+ * public home. The navigation is load-bearing: the next document names
  * no principal, and the page's realtime rescopes on it — the previous member's records leave the
  * store and the disk (plan 101, slice 03).
  *
@@ -10,10 +11,12 @@
  */
 
 import { action, t } from '@ultimat3/action';
-import { signOutHeaders } from '@ultimat3/auth';
+import { logout, signOutHeaders } from '@ultimat3/auth';
+import { readCookie } from '@ultimat3/core';
 import { setCookie, setRedirect, useRequestHeader } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT } from '../demo-actor';
+import { auth } from '../login';
 
 /** Where a signed-out reader lands: the public site, which asks nothing of a session. */
 export const AFTER_SIGN_OUT = '/';
@@ -27,18 +30,25 @@ export const endSession = action({
   output: t.object({ ok: t.boolean, next: t.string }),
   // Anyone may end their own session, signed in or not — ending none is a no-op, never a refusal.
   policy: allow('end-session'),
-  handle({ ctx }) {
+  async handle({ ctx }) {
     const landed = carriesHeaders(ctx);
+    const { policy } = auth.sessions;
+    const token = landed ? readCookie(useRequestHeader('cookie'), policy.cookieName) : null;
+    // Revoked server-side, not only forgotten by this browser: a copied cookie dies with it. A token
+    // no store holds (forged, or already revoked) is `false`, never a refusal.
+    if (token !== null && token !== '') await logout(auth, token);
     if (landed) {
       // Neither `HttpOnly` nor `Secure`: the demo cookie is a development-only viewing switch that
-      // `demo-actor.ts`'s boot line tells a developer to flip with `document.cookie`, and a script
+      // `authenticator.ts`'s boot line tells a developer to flip with `document.cookie`, and a script
       // can overwrite neither an HttpOnly cookie nor (from `http://localhost`) a Secure one — one
       // sign-out would turn that instruction into a silent no-op.
       setCookie(DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT, { httpOnly: false, secure: false });
-      // The browser drops the previous member's IndexedDB, storage and cached pages — `/` is a
-      // static page with no scope tag, so nothing on it would wipe them (the boot wipe is the
-      // second line, for a sign-out with no navigation).
-      for (const [name, value] of signOutHeaders()) ctx.headers.append(name, value);
+      // The session cookie expires, and the browser drops the previous member's IndexedDB, storage
+      // and cached pages — `/` is a static page with no scope tag, so nothing on it would wipe them
+      // (the boot wipe is the second line, for a sign-out with no navigation).
+      for (const [name, value] of signOutHeaders({ session: policy })) {
+        ctx.headers.append(name, value);
+      }
     }
     // A browser's form post gets the navigation; an agent calling the action gets the JSON.
     if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(AFTER_SIGN_OUT);

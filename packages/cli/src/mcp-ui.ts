@@ -10,7 +10,7 @@
 
 // why: Bun exposes no path-join primitive, and the picture's directory is a path an agent opens.
 import { join } from 'node:path';
-import { finiteCount, UltimateError } from '@ultimat3/core';
+import { finiteCount, retryMemo, UltimateError } from '@ultimat3/core';
 import type {
   UiDiffInput,
   UiDiffResult,
@@ -33,7 +33,6 @@ import { islandVerdictJson } from './island-verdict';
 import { diffShots } from './mcp-ui-diff';
 import { inspectRoute } from './mcp-ui-inspect';
 import { interactRoute } from './mcp-ui-interact';
-import { retryMemo } from './retry-memo';
 import type { Env } from './runtime-bindings';
 import { shotBrowserChoice } from './shot-browser';
 import { devServerFor, type ShotServer } from './shot-server';

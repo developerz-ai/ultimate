@@ -10,7 +10,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `retryMemo(start)` in `@ultimat3/core` (moved from `@ultimat3/cli`): a lazily made attempt shared by every caller, and a FAILED one not kept, so a rejected first attempt is retried on the next `get()` where `x ??= start()` keeps the rejection forever. `started()` answers the attempt in flight or made, or `undefined`, so a `close()` can stop what was booted without booting it. Opt-in: nothing switches to it.
+- The `drift` step warns on an index the committed schema dump holds that neither the newest migration snapshot nor any entity declares (`X_DB_INDEX_UNDECLARED`, in `packages/cli/src/schema-dump-drift.ts`): every write maintains an index nothing asked for, as a rename migration that never dropped the old name left behind. Its fix is the `DROP INDEX CONCURRENTLY IF EXISTS` to paste into a migration of its own. A warning in the step's log on `main`; `next` makes it red (`REFUSE_UNDECLARED_INDEX` in `packages/cli/src/drift-store.ts`).
+
+### Changed
+
+- The social demo (`dummy/social-media-clone`): `/messages` with 20 threads is 5 statements, down from 24 (the latest message per thread is one `latestBy` read instead of one read per thread); `markRead` of 50 notifications is 2 statements, down from 51 (one chain `updateAll`); the orphan-media sweep marks a page in one write, and the demo reset deletes visitor rows with one delete per table. The four `expectedQueryLoop` waivers are gone. The demo's jobs and live thread now have `job` and `live` tests (`sweep-orphan-media.job.test.ts`, `reset-demo.job.test.ts`, `live-thread.live.test.ts`).
+- The reference app (`examples/dummy`) serves "log in with GitHub": `app/auth/sign-in-routes.ts` mounts the OAuth `start`/`callback` on `runtime.routes` beside the SAML legs, and `app/auth/authenticator.ts` turns a session cookie into the member in every environment. The demo viewer answers only a request with no session cookie, only under `x dev`, and fails closed everywhere else. A forged, revoked or expired cookie is nobody (`isSessionRefusal` → `null`), never the demo viewer. Sign-out (`endSession`) revokes the session server-side and expires its cookie, and a second sign-out with the same cookie succeeds.
+- The reference app's `post-excerpts` backfill writes a page of rows in one statement instead of one per row (30 → 1).
+- The docs site (`dummy/docs-site`) reads its corpus through `retryMemo`, so a read that failed once is tried again instead of being kept for the life of the process.
 
 ## Releases
 

@@ -9,7 +9,7 @@
 import { logger } from '@ultimat3/core';
 import { job, t } from '@ultimat3/jobs';
 import { instant } from '../instant';
-import { markOrphan, pendingMediaBefore, SWEEP_PAGE } from '../repo';
+import { markOrphans, pendingMediaBefore, SWEEP_PAGE } from '../repo';
 
 /**
  * The cutoff is INPUT, computed by the task from the occurrence it is firing for — never read from
@@ -29,9 +29,9 @@ export const sweepOrphanMedia = job({
   retry: { attempts: 5, backoff: 'exponential', delay: '10s' },
   async run({ input }) {
     const stale = await pendingMediaBefore(new Date(input.before), SWEEP_PAGE);
-    // Convergent: `markOrphan` SETS the state, so a replay over rows it already collected writes
-    // the same value rather than transitioning them a second time.
-    for (const row of stale) await markOrphan(row.id);
+    // Convergent: `markOrphans` SETS the state, so a replay over rows it already collected writes
+    // the same value rather than transitioning them a second time. One statement for the page.
+    await markOrphans(stale.map((row) => row.id));
     logger.info('tasks.media.sweep', {
       before: input.before,
       collected: stale.length,

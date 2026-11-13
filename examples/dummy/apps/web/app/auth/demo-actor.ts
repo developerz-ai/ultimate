@@ -1,18 +1,14 @@
 /**
- * Who a browser is on a laptop, while Postly can issue no session of its own.
- *
- * `login.ts`'s two OAuth descriptors are declared and not served and `PostgresAuthAdapter`'s tables have
- * no migration, so this app configured no authenticator at all — and `hooks.authenticate` is the
- * only place an actor can come from, so every `app/` route answered 401 (`X_CONFIG_INVALID` at
- * boot) and the reference app could not be looked at. This is the stand-in and only that: a viewer
- * named by a cookie, declared here, installed in `development` and nowhere else.
+ * Who a browser with no session is under `x dev`: a viewer named by a cookie, declared here. Postly
+ * signs in with GitHub, SAML and passkeys (`./authenticator.ts` resolves the session they mint), and
+ * none of them works on a fresh clone with no client id, no IdP and no enrolled key — so without this
+ * the reference app could not be looked at. `./authenticator.ts` asks it ONLY when the request
+ * carries no session cookie and ONLY in `development`; a session always wins.
  */
 
 import { seatLimit } from '@postly/domain';
-import { type Actor, logger, readCookie, tryResolveEnvironment } from '@ultimat3/core';
+import { type Actor, readCookie } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
-import type { RequestContext, UltimateRequest } from '@ultimat3/http';
-import { configureAuthenticator } from '@ultimat3/http';
 import { postlyActor } from '../../shared/actor';
 import type { MemberView, OrgView } from '../orgs/entity';
 
@@ -158,35 +154,12 @@ export const demoMemberFrom = (cookieHeader: string | null): DemoMemberName => {
  */
 export const demoActorFor = (name: DemoMemberName): Actor => postlyActor(DEMO_VIEWERS[name]);
 
-const authenticate = (request: UltimateRequest, _ctx: RequestContext): Actor | null => {
-  const cookies = request.header('cookie');
-  if (readCookie(cookies, DEMO_MEMBER_COOKIE) === DEMO_SIGNED_OUT) return null;
-  // `postlyActor` carries the member's saved `locale` and `tz`; the pipeline's auth stage does the
-  // rest, so no preference is resolved here.
-  return demoActorFor(demoMemberFrom(cookies));
-};
-
 /**
- * Installs it, and says so. Gated on `development` alone — not `isLocal()`, which is also true
- * under `test`, where every fixture mints its own actor and a second one arriving from a cookie
- * would decide which member a test is about.
- *
- * A deploy therefore still configures nothing and still warns `X_CONFIG_INVALID` at boot, which is
- * correct: this app cannot hold a session yet, and a viewer that followed it to staging would sign
- * every visitor in as the seed's owner.
+ * The viewer a cookie header names — or nobody, once "Sign out" set the cookie to `DEMO_SIGNED_OUT`.
+ * `postlyActor` carries the member's saved `locale` and `tz`; the pipeline's auth stage does the
+ * rest, so no preference is resolved here.
  */
-export function installDemoAuthenticator(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  if (tryResolveEnvironment({ env }) !== 'development') return false;
-  configureAuthenticator(authenticate);
-  logger.warn('postly is answering every request as a declared demo viewer', {
-    member: DEFAULT_DEMO_MEMBER,
-    cause:
-      'apps/web/app/auth/demo-actor.ts installs a viewer in development only, because this app mounts no sign-in route',
-    fix: `look as someone else: document.cookie = '${DEMO_MEMBER_COOKIE}=mara'`,
-  });
-  return true;
-}
-
-installDemoAuthenticator();
+export const demoAuthenticate = (cookieHeader: string | null): Actor | null =>
+  readCookie(cookieHeader, DEMO_MEMBER_COOKIE) === DEMO_SIGNED_OUT
+    ? null
+    : demoActorFor(demoMemberFrom(cookieHeader));

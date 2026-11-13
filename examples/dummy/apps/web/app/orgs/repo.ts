@@ -10,6 +10,7 @@ import type {
   OrgId,
   PlanCode,
 } from '@postly/domain';
+import { orgId as toOrgId } from '@postly/domain';
 import { serviceActor, withChildContext } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
 
@@ -82,7 +83,8 @@ const digestSweeper = serviceActor({ id: 'digest-fanout', scopes: [CROSS_TENANT_
 /**
  * The scheduler's view: every opted-in member in every org, ordered for deterministic batching.
  *
- * The ONE statement in this app that spans tenants, and the scope is written here rather than in
+ * One of the two reads in this app that span tenants (`sessionMember` below is the other), and the
+ * scope is written here rather than in
  * `sendDigest` because the argument belongs on the read it defends. `members` is tenant-scoped, so
  * without it this is `X_TENANCY_ACTOR_ORG_REQUIRED` — the fan-out has no single org by definition.
  * `withChildContext` and not a context of its own: the run's `requestId` and trace carry through,
@@ -96,5 +98,35 @@ export const allDigestRecipients = (): Promise<readonly Member[]> =>
       // asked for `order by orgId id`, which is not a sort and is not the total order this sweep's
       // batching depends on.
       () => db.members.where({ digestOptIn: true }).orderBy('orgId').orderBy('id').all(),
+    ),
+  );
+
+/** Who resolves a session: the request has no tenant until this read says which org it is in. */
+const sessionResolver = serviceActor({ id: 'session-resolver', scopes: [CROSS_TENANT_SCOPE] });
+
+/** The rows a signed-in member is drawn from: theirs, their org's, and how many seats it fills. */
+export interface SessionMember {
+  readonly member: Member;
+  readonly org: Org;
+  readonly seatsUsed: number;
+}
+
+/**
+ * The member a session's user IS — `x_users.id` is the member's id, as passkeys and `x exercise`
+ * key it — read before the request knows its org, which is the second and last read in Postly that
+ * spans tenants: the session names a person, and only the person's row names the org. Three
+ * statements, each by key; `null` for an identity no org has seated.
+ */
+export const sessionMember = (id: string): Promise<SessionMember | null> =>
+  withChildContext({ actor: sessionResolver }, () =>
+    crossTenant(
+      'a session names a member before the request knows the org they act in',
+      async () => {
+        const member = await db.members.where({ id }).one();
+        if (member === null) return null;
+        const org = await orgById(toOrgId(member.orgId));
+        if (org === null) return null;
+        return { member, org, seatsUsed: await memberCount(toOrgId(member.orgId)) };
+      },
     ),
   );

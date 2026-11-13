@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "df1f82c3dfee35ce4e446a8f5e68c0cc7e91c4f78b6b035963ddf4ad1489132b",
+  "buildId": "31959ec8cf599cfa265185b3284a34e041a5c3d1a721e85895458f7e560c8834",
   "tiers": {
     "0": [
       "core",
@@ -1363,6 +1363,11 @@
       "code": "X_DB_HANDLE_UNREGISTERED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DB_INDEX_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_DB_LOCK_TIMEOUT",

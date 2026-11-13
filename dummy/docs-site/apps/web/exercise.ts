@@ -4,4 +4,8 @@
 // for each one it could not reach; each value is the `exercise` option `.contract()` takes.
 import { defineExercise } from '@ultimat3/testing';
 
-export const exercise = defineExercise({});
+export const exercise = defineExercise({
+  health: {
+    off: 'the readiness probe answers its own role and reads nothing: no statement, no effect, so every proof over it is vacuous',
+  },
+});

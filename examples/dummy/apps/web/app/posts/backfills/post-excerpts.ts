@@ -56,14 +56,14 @@ export const postExcerpts = backfill({
     // composed with this batch's ceiling, so a cancelled pass stops here rather than writing past
     // its lease — and past it `step.run` refuses the write anyway.
     signal.throwIfAborted();
-    // One `update` per row, by primary key, and only the column this pass owns. NOT
-    // `upsertAll(rows, { onConflict: ['id'] })`, which stood here until 2026-10-01: `posts` is
-    // tenant-scoped, a collision judged on `id` alone could land on another tenant's row, so the
-    // handle refuses it (`X_TENANCY_UNSCOPED`) — and this pass retried its first page for ever
-    // while every test that existed asserted the projection and never ran the handler.
-    for (const row of rows) {
-      await db.posts.update(row.id, { excerpt: withExcerpt(row).excerpt });
-    }
+    // ONE statement for the page: `updateMany` writes a different excerpt per row, by primary key,
+    // and only the column this pass owns — a per-row `update` loop stood here until 2026-11 (1,000
+    // statements a page). NOT `upsertAll(rows, { onConflict: ['id'] })`, which stood before that:
+    // `posts` is tenant-scoped, a collision judged on `id` alone could land on another tenant's
+    // row, so the handle refuses it (`X_TENANCY_UNSCOPED`).
+    await db.posts.updateMany(
+      rows.map((row) => ({ id: row.id, patch: { excerpt: withExcerpt(row).excerpt } })),
+    );
   },
   /**
    * How many rows still NEED the change — never how many the pass visits. It is the same predicate

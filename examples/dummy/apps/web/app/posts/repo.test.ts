@@ -10,6 +10,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { db, driver } from '@postly/db';
 import { type MemberId, memberId, type OrgId, orgId, type PostId, postId } from '@postly/domain';
 import { subscribe } from '@ultimat3/core';
+import { testStatements } from '@ultimat3/testing';
 import * as repo from './repo';
 
 /** Distinct per call, so one test's rows never answer another's read — the store is process-wide. */
@@ -128,6 +129,21 @@ test('a replayed like writes nothing, and the count the database keeps stays at 
   expect(await repo.insertLike(at.orgId, id, at.authorId)).toEqual({ inserted: true });
   expect(await repo.insertLike(at.orgId, id, at.authorId)).toEqual({ inserted: false });
 
+  expect((await repo.byId(at.orgId, id))?.likeCount).toBe(1);
+});
+
+test('a like is ONE statement: the count is the trigger’s, never a lock, a recount and a write', async () => {
+  const at = await anOrg();
+  const id = await aPost(at, { slug: 'counted' });
+  let sent = 0;
+  {
+    using statements = await testStatements();
+    await repo.insertLike(at.orgId, id, at.authorId);
+    sent = statements.count();
+  }
+  // `likePost` is `byId` + this + `byId`: three, inside the plan's four. It was a row lock, a
+  // `COUNT(*)` and a write-back on top (13 in the exercise pass) before `countedIn`.
+  expect(sent).toBe(1);
   expect((await repo.byId(at.orgId, id))?.likeCount).toBe(1);
 });
 

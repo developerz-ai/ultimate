@@ -53,19 +53,27 @@ export const ownRows = (
 
 /**
  * Convergent on the server exactly as `local` is on the client: a row that already carries a
- * `readAt` is left alone, so replaying the same mutation never moves the timestamp and applying it
- * three times equals applying it once.
+ * `readAt` is left alone (`readAt is null` is in the write's predicate), so replaying the same
+ * mutation never moves the timestamp and applying it three times equals applying it once.
+ *
+ * Two statements for any batch — one `updateAll`, one read back — where a per-row update made a
+ * screenful 51 (`repo.test.ts`). The batch is cut to `MARK_READ_MAX` distinct ids BEFORE the
+ * write, because a chain write has no `limit()`: the cap that `ownRows` puts on the read has to be
+ * on the ids for the write to carry it too.
  */
 export const markRead = async (
   userId: string,
   ids: readonly string[],
   at: Date,
 ): Promise<readonly Notification[]> => {
-  const updated: Notification[] = [];
-  for (const row of await ownRows(userId, ids)) {
-    updated.push(row.readAt === null ? await db.notifications.update(row.id, { readAt: at }) : row);
-  }
-  return updated;
+  const batch = [...new Set(ids)].sort().slice(0, MARK_READ_MAX);
+  if (batch.length === 0) return [];
+  await db.notifications
+    .where({ userId })
+    .andWhere('id', 'in', batch)
+    .andWhere('readAt', 'is-null')
+    .updateAll({ readAt: at });
+  return ownRows(userId, batch);
 };
 
 export interface NewNotification {

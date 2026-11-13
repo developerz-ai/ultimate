@@ -120,8 +120,21 @@ export const displayNamesOf = async (
   return new Map(rows.map((user) => [user.id, user.displayName]));
 };
 
-export const latestMessage = (conversationId: string): Promise<Message | null> =>
-  db.messages.where({ conversationId }).orderBy('createdAt', 'desc').orderBy('id').limit(1).one();
+/**
+ * The newest message of each conversation, keyed by its id — one `DISTINCT ON` statement for a
+ * whole thread list, where a read per thread made `/messages` 4 + N statements. A conversation
+ * nobody has written in is absent from the map. Ties on `createdAt` go to the larger id.
+ */
+export const latestMessagesOf = async (
+  conversationIds: readonly string[],
+): Promise<ReadonlyMap<string, Message>> => {
+  const ids = [...new Set(conversationIds)].slice(0, THREADS_MAX);
+  if (ids.length === 0) return new Map();
+  const rows = await db.messages
+    .andWhere('conversationId', 'in', ids)
+    .latestBy('conversationId', { order: 'createdAt' });
+  return new Map(rows.map((row) => [row.conversationId, row]));
+};
 
 export interface NewMessage {
   readonly conversationId: string;

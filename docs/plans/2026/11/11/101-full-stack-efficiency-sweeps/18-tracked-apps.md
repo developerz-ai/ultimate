@@ -52,3 +52,25 @@ Checked and fine, not planned: the demo's repositories already batch names, memb
 - Zero duplicate or prefix-redundant indexes in either schema dump.
 - The demo's `pg_stat_statements` (readable after [`30`](30-infra.md) I1) shows the feed read index-served and `/messages` as a constant statement count.
 - Every `expectedRed` table still empty; the app gate green on all three.
+
+## Outcome (18, local)
+
+Ships as 31.21.0. `As of 2026-11-13`, before release. `scripts/lib/gated-apps.ts` stays empty: every tracked app gates every step.
+
+| ID | Outcome |
+|---|---|
+| A1 | done. The demo's seven duplicate indexes were dropped in sweep 0 (`dummy/social-media-clone/packages/db/migrations/20261111162033_drop_duplicate_pre_rename_indexes.sql`). The rail ships here: `undeclaredIndexFindings` (`packages/cli/src/schema-dump-drift.ts`) reads `05_indexes/` against the newest snapshot and the entities, `X_DB_INDEX_UNDECLARED`, fix `DROP INDEX CONCURRENTLY IF EXISTS "<name>";`. A warning on the `drift` step on `main`; `REFUSE_UNDECLARED_INDEX` (`drift-store.ts`) is the `next` switch. 0 warnings on all three apps |
+| A2 | **skipped, framework gap.** `x db gen --drop-redundant` does not exist; the redundant foreign-key indexes stay until it does |
+| A3 | done. `/messages` reads the latest message per thread with one `latestBy` (`messages/repo.ts`): 20 threads, 24 → 5 statements (`messages/service.test.ts`) |
+| A4 | done, all four loops. `markRead` of 50 ids 51 → 2 (`notifications/repo.test.ts`); the orphan-media sweep one write per page and the reset one delete per table (`tasks/repo.test.ts`); the reference app's `post-excerpts` 30 → 1 write per page (`post-excerpts.test.ts`). No `expectedQueryLoop` waiver left in any tracked app |
+| A5 | **skipped, framework gap.** `policy.scope` cannot follow an entity chain and has no OR scope, so the demo's feed visibility cannot be put in SQL. The over-fetch stays |
+| A6 | done. `likes.postId` was already `countedIn`; `posts/repo.test.ts` now proves a like is ONE statement (`likePost` 3, inside the plan's 4) |
+| A7 | **partial.** "Log in with GitHub" is served (`app/auth/sign-in-routes.ts` on `runtime.routes`), `app/auth/authenticator.ts` resolves the session cookie in every environment, and `endSession` revokes the session. The demo actor is not deleted: it answers only a cookie-less request under `x dev` and fails closed elsewhere, because every e2e suite signs in with it. **Owed:** the e2e round trip against an out-of-process stub IdP |
+| A8 | **partial.** `sweep-orphan-media.job.test.ts`, `reset-demo.job.test.ts`, `live-thread.live.test.ts`; `live` and `job` join the demo's floor. The demo's unit coverage floor moves 76/75 → 75/73 (the job and thread suites left `unit`; reason dated in `x.verify.json`). **Owed:** a sync-node subscribe fixture, which needs the app's API imported without `seedDemo`'s side effect (`apps/web/api/index.ts:19`) |
+| A9 | **skipped, framework gap.** No app-facing `bootWarning({ roles })`: an app cannot scope its own boot warning to the `web` role |
+| A10 | done. The hand-written `onCleanup(() => handle.release())` is gone from `feed.island.tsx` and `run-console.island.tsx` |
+| A11 | done. `retryMemo` moved from `@ultimat3/cli` to `@ultimat3/core`; the docs site's corpus reads through it (`shared/docs.ts`, `docs.test.ts`) |
+| A12 | **partial.** `exercise.unprovenMax`: docs site 0, demo 0.1, reference app 0.046, each `statementsMax: 100`. **Framework gap:** per-route `defineExercise` entries (route params, actor), without which the reference app's API-calling loads stay unproven |
+| A13 | **skipped.** The reference app already shows the factory (`app/digest/jobs/send-digest.ts`); the three hourly task + job pairs (`posts/tasks/hourly-likes.ts`, `runs/tasks/hourly-retention.ts`, `mcp/tasks/hourly-purge.ts`) were not converted |
+
+**Framework gaps, for the ledger:** A2 `x db gen --drop-redundant`; A5 `policy.scope` on entity chains, and OR scopes; A9 an app-facing `bootWarning({ roles })`; A12 `defineExercise` per-route entries. Also owed: an out-of-process stub IdP for e2e (A7), one shared `OnTheWire<T>` type, and the reference app's `members.userId` / `x_users.id == members.id` identity model.

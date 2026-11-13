@@ -1,7 +1,7 @@
-// The `drift` step's fourth rail: is the committed schema dump what the migrations produce, does
-// it hold what their snapshots record, and does a database loaded from it come back the same? The other three rails read files and open
-// nothing; this one replays the migrations on a scratch embedded database, because "what the
-// migrations produce" is a fact only a database can state — and so is what a view outputs.
+// The `drift` step's fourth rail: is the committed dump what the migrations produce, does it hold
+// what their snapshots record, and does it load back the same? Only a scratch database can state
+// what migrations produce and what a view outputs. Beside it, with none: an index the dump holds
+// and nothing declares (`X_DB_INDEX_UNDECLARED`), a warning on `main`.
 
 // why: Bun has no directory probe — `Bun.file().exists()` answers about a file.
 import { existsSync } from 'node:fs';
@@ -145,4 +145,78 @@ export async function checkSchemaDump(
     ...[...compareSchemaDump(committed, replayed.files), ...replayed.reload].map(findingFor),
     ...(entities === undefined ? [] : viewColumnFindings(entities, replayed.catalog)),
   ];
+}
+
+/** One `CREATE [UNIQUE] INDEX name ON [ONLY] schema.table` of `pg_get_indexdef`, quoted only when it must be. */
+const DUMP_INDEX =
+  /^CREATE (?:UNIQUE )?INDEX (?:"((?:[^"]|"")+)"|(\S+)) ON (?:ONLY )?(?:"(?:[^"]|"")+"|[^\s."]+)\.(?:"((?:[^"]|"")+)"|(\S+)) /gm;
+
+const unquoted = (quoted: string | undefined, bare: string | undefined): string =>
+  quoted === undefined ? (bare ?? '') : quoted.replaceAll('""', '"');
+
+interface DumpedIndex {
+  readonly name: string;
+  readonly table: string;
+  readonly path: string;
+}
+
+/** The app's own: `framework/` holds the tables the framework's migrations own, which it declares. */
+const dumpedIndexes = (committed: readonly SchemaDumpFile[]): readonly DumpedIndex[] =>
+  committed
+    .filter((file) => file.path.startsWith('05_indexes/'))
+    .flatMap((file) =>
+      [...file.content.matchAll(DUMP_INDEX)].map((match) => ({
+        name: unquoted(match[1], match[2]),
+        table: unquoted(match[3], match[4]),
+        path: file.path,
+      })),
+    );
+
+const undeclaredIndex = (index: DumpedIndex): Finding => ({
+  code: 'X_DB_INDEX_UNDECLARED',
+  cause: `the schema dump holds index "${index.name}" on table "${index.table}", which neither the newest migration snapshot nor any entity declares: every write maintains an index nothing asked for`,
+  fix: `DROP INDEX CONCURRENTLY IF EXISTS "${index.name}";   # a hand-written migration of its own under ${MIGRATIONS_DIR} with -- transaction: false. Meant to keep it: declare it in the "${index.table}" entity's indexes: [...], then x db gen "<change>"`,
+  docs: ERROR_DOCS_URL,
+  at: `${SCHEMA_DUMP_DIR}/${index.path}`,
+});
+
+/**
+ * The dump's own indexes against the newest snapshot and the entities. The replay cannot see this
+ * one either: a generated migration that records an index as renamed without dropping the old name
+ * replays into a dump holding both, and every snapshot since agrees with the entities. A registry
+ * that did not load answers nothing, since "declared by neither" is then not a fact; the entities
+ * are only asked for once the snapshot leaves an index unexplained.
+ */
+export async function undeclaredIndexFindings(
+  root: string,
+  declared: DeclaredEntities = appEntities,
+): Promise<readonly Finding[]> {
+  if (!existsSync(join(root, DB_PACKAGE)) || !hasSchemaDump(root)) return [];
+  const migrations = await readMigrations(root);
+  const snapshot = migrations.findLast((migration) => migration.snapshot !== undefined)?.snapshot;
+  const recorded = new Set(
+    (snapshot?.tables ?? []).flatMap((table) => table.indexes.map((one) => one.name)),
+  );
+  const unexplained = dumpedIndexes(await readSchemaDump(root)).filter(
+    (index) => !recorded.has(index.name),
+  );
+  if (unexplained.length === 0) return [];
+  const entities = await declared(root);
+  if (entities === undefined) return [];
+  const named = new Set(entities.flatMap((entity) => entity.indexes.map((one) => one.name)));
+  return unexplained.filter((index) => !named.has(index.name)).map(undeclaredIndex);
+}
+
+/**
+ * What the `drift` step carries on `main`: advice in `StepOutcome.warnings`, never a failed step —
+ * a red gate on an app that passed yesterday is X_BREAKING_ON_MAIN. The refusal lands on `next`,
+ * where the step reports `undeclaredIndexFindings` as findings.
+ */
+export async function undeclaredIndexWarnings(
+  root: string,
+  declared: DeclaredEntities = appEntities,
+): Promise<readonly string[]> {
+  return (await undeclaredIndexFindings(root, declared)).map(
+    (finding) => `${finding.code} ${finding.at}: ${finding.cause} — fix: ${finding.fix}`,
+  );
 }

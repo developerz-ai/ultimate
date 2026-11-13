@@ -19,7 +19,13 @@ import {
 } from '@ultimat3/db/schema-dump';
 import { SCHEMA_DUMP_DIR, writeSchemaDump } from './db-schema-dump';
 import { MIGRATIONS_DIR } from './migrations';
-import { checkSchemaDump, type SchemaReplay } from './schema-dump-drift';
+import type { DeclaredEntities } from './schema-drift';
+import {
+  checkSchemaDump,
+  type SchemaReplay,
+  undeclaredIndexFindings,
+  undeclaredIndexWarnings,
+} from './schema-dump-drift';
 
 const FILES: readonly SchemaDumpFile[] = [
   { path: '04_tables/posts.sql', content: 'create table "posts" ("id" uuid);\n' },
@@ -261,5 +267,107 @@ describe('the dump against the newest snapshot', () => {
   test('no snapshot at all says nothing: the first generation is what writes one', async () => {
     await migration('0001_init', 'create table posts (id text);');
     expect(await check(dumpOf(['id', 'hacked']))).toEqual([]);
+  });
+});
+
+// A1: the rename migration created each index under its hashed name and recorded the old one as gone
+// without dropping it. Every snapshot since agreed with the entities, the dump replayed clean, and
+// production maintained seven duplicate indexes. Only the dump said so; nothing read it.
+describe('an index in the dump that nothing declares', () => {
+  let root = '';
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'x-dump-indexes-'));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const index = (name: string) => ({
+    name,
+    columns: ['author_id'],
+    unique: false,
+    primary: false,
+    where: null,
+    order: null,
+  });
+
+  const recording = async (indexes: readonly string[]): Promise<void> => {
+    await Bun.write(join(root, MIGRATIONS_DIR, '0001_init.sql'), '-- 0001_init\nselect 1;\n');
+    await Bun.write(
+      join(root, MIGRATIONS_DIR, '0001_init.snapshot.json'),
+      JSON.stringify({
+        tables: [
+          {
+            schema: 'public',
+            name: 'posts',
+            columns: [],
+            primaryKey: [],
+            indexes: indexes.map(index),
+            foreignKeys: [],
+          },
+        ],
+      }),
+    );
+  };
+
+  const dumping = async (lines: readonly string[]): Promise<void> => {
+    await writeSchemaDump(root, [
+      { path: '05_indexes/posts.sql', content: `-- generated\n\n${lines.join('\n\n')}\n` },
+      {
+        path: 'framework/05_indexes/x_jobs.sql',
+        content: 'CREATE INDEX x_jobs_due_idx ON public.x_jobs USING btree (run_at);\n',
+      },
+    ]);
+  };
+
+  const declaring =
+    (indexes: readonly string[]): DeclaredEntities =>
+    async () => [
+      { name: 'post', table: 'posts', primaryKey: [], columns: [], indexes: indexes.map(index) },
+    ];
+
+  test('a dump with an extra index is X_DB_INDEX_UNDECLARED at its file, naming the drop', async () => {
+    await recording(['posts_author_id_08493ec4_idx']);
+    await dumping([
+      'CREATE INDEX posts_author_id_08493ec4_idx ON public.posts USING btree (author_id DESC);',
+      'CREATE INDEX posts_author_id_idx ON public.posts USING btree (author_id DESC);',
+    ]);
+    const findings = await undeclaredIndexFindings(root, declaring([]));
+    expect(findings.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_DB_INDEX_UNDECLARED', `${SCHEMA_DUMP_DIR}/05_indexes/posts.sql`],
+    ]);
+    expect(findings[0]?.cause).toContain('"posts_author_id_idx" on table "posts"');
+    expect(findings[0]?.fix).toContain('DROP INDEX CONCURRENTLY IF EXISTS "posts_author_id_idx";');
+  });
+
+  test('an index the snapshot or the entities name is declared; a framework table is not judged', async () => {
+    await recording(['posts_a_idx']);
+    await dumping([
+      'CREATE INDEX posts_a_idx ON public.posts USING btree (a);',
+      'CREATE UNIQUE INDEX "posts_B_idx" ON public.posts USING btree (b);',
+    ]);
+    expect(await undeclaredIndexFindings(root, declaring(['posts_B_idx']))).toEqual([]);
+    const found = await undeclaredIndexFindings(root, declaring([]));
+    expect(found).toHaveLength(1);
+    expect(found[0]?.cause).toContain('index "posts_B_idx" on table "posts"');
+  });
+
+  test('a registry that did not load judges nothing: "neither" cannot be stated', async () => {
+    await recording([]);
+    await dumping(['CREATE INDEX posts_extra_idx ON public.posts USING btree (a);']);
+    expect(await undeclaredIndexFindings(root, async () => undefined)).toEqual([]);
+  });
+
+  test('warnings on main: one line per finding, code first, the fix carried', async () => {
+    await recording([]);
+    await dumping(['CREATE INDEX posts_extra_idx ON ONLY public.posts USING btree (a);']);
+    const warnings = await undeclaredIndexWarnings(root, declaring([]));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toStartWith(
+      `X_DB_INDEX_UNDECLARED ${SCHEMA_DUMP_DIR}/05_indexes/posts.sql: `,
+    );
+    expect(warnings[0]).toContain(' — fix: DROP INDEX CONCURRENTLY IF EXISTS "posts_extra_idx";');
   });
 });

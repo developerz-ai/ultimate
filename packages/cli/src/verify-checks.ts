@@ -44,7 +44,11 @@ import { checkLockHeavyMigrations } from './migration-lock-check';
 import type { Finding } from './output';
 import { retainUnsweptFindings } from './retain-sweep';
 import { checkMigrationDrift } from './schema-drift';
-import { checkSchemaDump } from './schema-dump-drift';
+import {
+  checkSchemaDump,
+  undeclaredIndexFindings,
+  undeclaredIndexWarnings,
+} from './schema-dump-drift';
 import { cardRouteFindings } from './seo-cards';
 import { scanSiteMeta } from './seo-meta';
 import { quoteArg } from './shell-quote';
@@ -238,6 +242,13 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
           // registry, migrations and image (`X_APP_ROOT_NESTED`, `verify-drift-owner.ts`).
           ...(await nestedAppRootFindings(ctx.root)),
         ],
+        // Beside the schema rails, advice and not a verdict on `main`: an index the dump holds that
+        // no snapshot or entity declares (`X_DB_INDEX_UNDECLARED`). `REFUSE_UNDECLARED_INDEX`
+        // in `drift-store.ts` is the `next` switch that makes it a finding.
+        advice: {
+          findings: () => undeclaredIndexFindings(ctx.root),
+          warnings: () => undeclaredIndexWarnings(ctx.root),
+        },
         // The seventh: a generated client (`x client`) against its own stamp — a source document that
         // moved (`X_CLIENT_STALE`) or a body edited by hand (`X_CLIENT_EDITED`). No database.
         client: () => checkClientDrift(ctx.root),

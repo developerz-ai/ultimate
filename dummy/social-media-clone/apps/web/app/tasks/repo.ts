@@ -33,10 +33,15 @@ export const pendingMediaBefore = (before: Date, limit = SWEEP_PAGE): Promise<re
     .all();
 
 /**
- * Convergent, not incremental: it SETS the state rather than transitioning from an assumed one, so
- * a replayed run over a row it already collected writes the same value instead of double-counting.
+ * One page of uploads marked orphan in ONE statement — it was one update per row, up to
+ * `SWEEP_PAGE` a run (`repo.test.ts` pins the one). Convergent, not incremental: it SETS the state
+ * rather than transitioning from an assumed one, so a replayed run over rows it already collected
+ * writes the same value instead of double-counting. Resolves with how many rows it wrote.
  */
-export const markOrphan = (id: string): Promise<Media> => db.media.update(id, { state: 'orphan' });
+export const markOrphans = (ids: readonly string[]): Promise<number> =>
+  ids.length === 0
+    ? Promise.resolve(0)
+    : db.media.andWhere('id', 'in', [...ids]).updateAll({ state: 'orphan' });
 
 export const mediaById = (id: string): Promise<Media | null> => db.media.where({ id }).one();
 
@@ -63,40 +68,40 @@ export interface PurgeCount {
 }
 
 /**
- * The content tables a visitor can add to, each addressed by a single `id`.
+ * The content tables a visitor can add to, each read as a bounded page of rows and emptied of the
+ * visitor's by one chain `deleteAll` over their ids — soft-deleting where the entity does, exactly
+ * as `Table.delete(id)` did per row.
  *
  * `likes`, `friendships`, `blocks` and `participants` are absent and that is not an oversight: they
- * carry composite primary keys, so `Table.delete(id)` cannot name one — `singleKeyOf`
- * (packages/entity/src/plan.ts:16) refuses it — and `deleteWhere({})` is `X_DELETE_UNFILTERED`
- * rather than "every row". "Empty this join table" is therefore not expressible at all today. The
- * re-seed below leaves the seeded rows of those tables exactly where they are — nothing deletes
- * them — so what survives a reset is join rows a visitor created, seeded ones included.
+ * carry composite primary keys, and the reset keys its keep-set on `id`. The re-seed below leaves
+ * the seeded rows of those tables exactly where they are — nothing deletes them — so what survives
+ * a reset is join rows a visitor created, seeded ones included.
  */
 const CONTENT_TABLES = [
   {
     table: 'media',
     ids: () => db.media.limit(PURGE_PAGE).all(),
-    drop: (id: string) => db.media.delete(id),
+    drop: (ids: string[]) => db.media.andWhere('id', 'in', ids).deleteAll(),
   },
   {
     table: 'comments',
     ids: () => db.comments.limit(PURGE_PAGE).all(),
-    drop: (id: string) => db.comments.delete(id),
+    drop: (ids: string[]) => db.comments.andWhere('id', 'in', ids).deleteAll(),
   },
   {
     table: 'messages',
     ids: () => db.messages.limit(PURGE_PAGE).all(),
-    drop: (id: string) => db.messages.delete(id),
+    drop: (ids: string[]) => db.messages.andWhere('id', 'in', ids).deleteAll(),
   },
   {
     table: 'notifications',
     ids: () => db.notifications.limit(PURGE_PAGE).all(),
-    drop: (id: string) => db.notifications.delete(id),
+    drop: (ids: string[]) => db.notifications.andWhere('id', 'in', ids).deleteAll(),
   },
   {
     table: 'posts',
     ids: () => db.posts.limit(PURGE_PAGE).all(),
-    drop: (id: string) => db.posts.delete(id),
+    drop: (ids: string[]) => db.posts.andWhere('id', 'in', ids).deleteAll(),
   },
 ] as const;
 
@@ -107,13 +112,9 @@ const CONTENT_TABLES = [
  * visitor out mid-click is worse than one that leaves their account alone, and the seed restores
  * every seeded user in place anyway.
  *
- * One statement per row, up to 5 × PURGE_PAGE of them, and no checkpoint — deliberate, at this
- * size. A page is 1,000 and the demo's hour produces dozens, so the real pass is a few dozen
- * statements; a cancelled attempt re-reads what is still there rather than redoing what it already
- * deleted, because `entry.ids()` runs again on the retry. What would change that judgement is a
- * bulk delete this app can express: `deleteWhere` needs an equality filter and `deleteWhere({})` is
- * `X_WRITE_UNFILTERED`, so "empty this table" is not expressible today. Splitting the pass into a
- * `step.run` per table would checkpoint it — the cost is only worth paying when a page is full.
+ * Two statements per table — the page read and one delete — where it was one delete per row, up
+ * to 5 × PURGE_PAGE (`repo.test.ts`). No checkpoint: a cancelled attempt re-reads what is still
+ * there rather than redoing what it already deleted, because `entry.ids()` runs again on the retry.
  */
 export const restoreSeededGraph = async (): Promise<readonly PurgeCount[]> => {
   // What the fixture owns, so the purge removes what VISITORS added and nothing else. It used to
@@ -126,9 +127,9 @@ export const restoreSeededGraph = async (): Promise<readonly PurgeCount[]> => {
   const counts: PurgeCount[] = [];
   for (const entry of CONTENT_TABLES) {
     const keep = seeded.get(entry.table) ?? new Set<string>();
-    const rows = (await entry.ids()).filter((row) => !keep.has(row.id));
-    for (const row of rows) await entry.drop(row.id);
-    counts.push({ table: entry.table, removed: rows.length });
+    const ids = (await entry.ids()).map((row) => row.id).filter((id) => !keep.has(id));
+    if (ids.length > 0) await entry.drop(ids);
+    counts.push({ table: entry.table, removed: ids.length });
   }
   // The same seed `apps/web/api/index.ts` runs at boot, against the same driver. A replay is
   // `on conflict do nothing` (packages/entity/src/seed.ts:274), so it restores a seeded row that is

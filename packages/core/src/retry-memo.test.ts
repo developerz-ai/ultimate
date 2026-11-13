@@ -3,8 +3,13 @@
 // later tool call in an `x mcp serve` session with the first error, forever.
 
 import { describe, expect, test } from 'bun:test';
-import { dbUnavailable } from '@ultimat3/db';
+import { UltimateError } from './errors';
 import { retryMemo } from './retry-memo';
+
+// Input, not a verdict: what a refused connection looks like to the memo (`X_DB_UNAVAILABLE` is
+// `@ultimat3/db`'s, a tier above; only the code is used).
+const dbUnavailable = (cause: string): UltimateError =>
+  new UltimateError({ code: 'X_DB_UNAVAILABLE', cause, fix: 'docker compose up -d --wait' });
 
 describe('unit · retryMemo', () => {
   test('a rejected attempt is not cached — the next caller retries', async () => {

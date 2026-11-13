@@ -32,7 +32,7 @@ import {
 } from '@ultimat3/realtime';
 import { mountOver } from '@ultimat3/render/client';
 import type { JSX } from 'solid-js';
-import { onCleanup, Show } from 'solid-js';
+import { Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { type PluralForms, pluralText } from '../../../shared/plural-text';
 import { ORG_POSTS, POST_RECORD_READ, type PostRecord } from '../channel-ref';
@@ -66,7 +66,9 @@ export interface LikeIslandProps {
 const SAFETY_READ_MS = 60_000;
 
 function Like(props: LikeIslandProps): JSX.Element {
-  const seed = useQuery<PostRecord>(
+  // Called for its effect, the poll that seeds the record — the value is read through `useRecord`.
+  // Every hook here releases itself with the component (`RealtimeInstall.cleanup`).
+  useQuery<PostRecord>(
     { name: POST_RECORD_READ, entity: 'posts' },
     { orgId: props.orgId, postId: props.postId },
     { poll: pollEvery(SAFETY_READ_MS) },
@@ -76,9 +78,6 @@ function Like(props: LikeIslandProps): JSX.Element {
   const like = useMutation(LIKE_POST);
   const outbox = useOutbox();
   const connection = useConnection();
-  onCleanup(() => {
-    for (const held of [seed, channel, post, like, connection, outbox]) held.release();
-  });
 
   const count = (): number => {
     const state = post();
