@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/time",
-  "version": "31.16.0",
+  "version": "31.17.0",
   "description": "UTC instants, DST-correct zone math, cron, durations and Intl formatting with an explicit timezone",
   "keywords": [
     "ultimate",
@@ -46,7 +46,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "31.16.0",
-    "@ultimat3/schema": "31.16.0"
+    "@ultimat3/core": "31.17.0",
+    "@ultimat3/schema": "31.17.0"
   }
 }
