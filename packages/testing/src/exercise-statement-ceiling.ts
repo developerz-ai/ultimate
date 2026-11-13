@@ -1,8 +1,7 @@
-// The absolute statement ceiling: one call of a primitive sends at most `STATEMENTS_MAX` statements
-// unless its `defineExercise` entry raises or lowers it with `statements: { max, why }`. The scale
-// sweep judges growth; this judges the count itself — a fixed 300-statement call is flat and slow.
-// Only statements no `expectedQueryLoop` declared are judged, as the scale sweep's are: a backfill's
-// pass is a loop by design, its size the table's, and the loop's reason is its argument.
+// The absolute statement ceiling: one call sends at most `STATEMENTS_MAX` statements unless its
+// `defineExercise` entry sets `statements: { max, why }`. The scale sweep judges growth; this judges
+// the count — a fixed 300-statement call is flat and slow. Statements inside an `expectedQueryLoop`
+// are not judged, as in the scale sweep: a backfill's pass is a declared loop, its size the table's.
 
 import { finiteCount, renderCauseValue, renderFixLiteral, renderFixShellArg } from '@ultimat3/core';
 import type { StatementTally } from './scale-sweep';
