@@ -29,6 +29,24 @@ describe('unit · shipped guard · repo-raw-sql', () => {
     );
   });
 
+  test('a plain column list is the same select, and the fix projects it with .select({ … })', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: [
+        `export const titles = (orgId: string) => db().query(sql\`select id, title from posts where org_id = ${hole('orgId')}\`);`,
+        `export const one = (id: string) => db().one(sql\`select "id", created_at from posts where id = ${hole('id')}\`);`,
+        // An alias, a qualified column and an expression are past a plain list: silent.
+        `export const a = sql\`select id as key from posts where org_id = ${hole('o')}\`;`,
+        `export const b = sql\`select p.id from posts p where p.org_id = ${hole('o')}\`;`,
+        `export const c = sql\`select count(*) from posts where org_id = ${hole('o')}\`;`,
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => [finding.at, finding.fix.split(' — ')[0]])).toEqual([
+      [`${REPO}:1`, 'db.posts.where({ orgId }).select({ id: true, title: true }).all()'],
+      [`${REPO}:2`, 'db.posts.where({ id }).select({ id: true, createdAt: true }).one()'],
+    ]);
+  });
+
   test('a row locked by its id names db.<table>.lock, where the guard used to be silent', async () => {
     const findings = await shippedGuardFindings('repo-raw-sql', {
       [REPO]: [

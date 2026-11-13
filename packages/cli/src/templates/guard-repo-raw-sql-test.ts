@@ -47,6 +47,14 @@ unitTest('a page reads as the chain that pages it', () => {
   );
 });
 
+unitTest('a plain column list is the same select, projected with .select', () => {
+  expect(handleCallFor('select id, title from posts where org_id = ?')).toBe(
+    'db.posts.where({ orgId }).select({ id: true, title: true }).all()',
+  );
+  expect(handleCallFor('select id as key from posts where org_id = ?')).toBeUndefined();
+  expect(handleCallFor('select count(*) from posts where org_id = ?')).toBeUndefined();
+});
+
 unitTest('insert, update and delete on one table are the same rule', () => {
   const insert = 'insert into short_links (id, url)\\n  values (?, ?)\\n  returning *';
   expect(handleCallFor(insert)).toBe('db.shortLinks.insert({ … })');
@@ -94,7 +102,7 @@ unitTest('a statement past what the handle says is silent', () => {
   const silent = [
     'select p.*, m.name from posts p join members m on m.id = p.author_id',
     'select count(*) from posts where org_id = ?',
-    'select id, title from posts where org_id = ?',
+    'select p.id, p.title from posts p where p.org_id = ?',
     'select * from posts where lower(title) = ?',
     'select * from posts where slug = ? or id = ?',
     'with recent as (select * from posts) select * from recent',

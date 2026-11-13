@@ -27,7 +27,7 @@ import { safeUrlLabel } from './safe-url-label';
  */
 export function databaseTarget(services: DevServices, env: Env): DatabaseTarget {
   const url = services.db.url;
-  const production = isProduction(env);
+  const production = readsAsProduction(env);
   return services.db.mode === 'embedded'
     ? { label: url, branch: pgliteBranch(url, services.stateDir), production }
     : {
@@ -46,9 +46,10 @@ export function databaseTarget(services: DevServices, env: Env): DatabaseTarget 
  * `undefined` is answered **true**, and that is the whole point of using it here. It means exactly
  * one thing: `ULTIMATE_ENV` is set to something that is not an environment. Reading a typo as "not
  * production" would let the single misconfiguration this guard exists to survive defeat it — so an
- * environment that cannot be read is treated as the most dangerous one it could be.
+ * environment that cannot be read is treated as the most dangerous one it could be. `x explain` and
+ * `x token` ask the same question through this one reader (`cmd-explain.ts`, `cmd-token.ts`).
  */
-const isProduction = (env: Env): boolean => {
+export const readsAsProduction = (env: Env): boolean => {
   const environment = tryResolveEnvironment({ env });
   return environment === undefined || environment === 'production';
 };

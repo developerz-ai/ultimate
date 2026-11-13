@@ -26,11 +26,14 @@ import { openAppQueue } from './runtime-boot-ports';
 const ROOT = processRoot(join(import.meta.dir, '..', '.explain-fixture'));
 const ENV = { ULTIMATE_STATE_DIR: join(ROOT, '.x') };
 
-const ctxFor = (argv: readonly string[]): CommandContext => ({
+const ctxFor = (
+  argv: readonly string[],
+  env: Readonly<Record<string, string>> = ENV,
+): CommandContext => ({
   args: parseArgs(argv, SPECS),
   cwd: ROOT,
   runner: exec,
-  env: ENV,
+  env,
   bunVersion: REQUIRED_BUN,
 });
 
@@ -116,5 +119,43 @@ describe('unit · x explain', () => {
       'X_DECLARATION_UNKNOWN',
     );
     expect(opened).toBe(0);
+  }, 60_000);
+
+  test('an external database in production is refused before anything opens: policy is skipped', async () => {
+    const external = { ...ENV, DATABASE_URL: 'postgres://app@db.internal:5432/shop' };
+    for (const env of [
+      { ...external, ULTIMATE_ENV: 'production' },
+      { ...external, NODE_ENV: 'production' },
+      // A typo cannot say which deploy this is, so it reads as the most dangerous one.
+      { ...external, ULTIMATE_ENV: 'prodution' },
+    ]) {
+      const failure = await command.run(ctxFor(['explain', 'xeById'], env)).then(
+        () => expect.unreachable('x explain ran against a production database'),
+        (error: unknown) => error,
+      );
+      expect(failure).toBeUltimateError('X_EXPLAIN_PRODUCTION_DATABASE');
+      expect((failure as { fix: string }).fix).toStartWith(
+        'env -u DATABASE_URL x explain xeById --json',
+      );
+    }
+    expect(opened).toBe(0);
+  }, 60_000);
+
+  test('an external database outside production is planned as before', async () => {
+    const refusedBefore = await command
+      .run(
+        ctxFor(['explain', 'xeById'], {
+          ...ENV,
+          DATABASE_URL: 'postgres://app@127.0.0.1:1/never',
+          ULTIMATE_ENV: 'staging',
+        }),
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    // The fake opener reached: the refusal is the environment's, never the database mode's alone.
+    expect(opened).toBe(1);
+    expect(refusedBefore).not.toBeUltimateError('X_EXPLAIN_PRODUCTION_DATABASE');
   }, 60_000);
 });

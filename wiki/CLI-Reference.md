@@ -1966,7 +1966,7 @@ For each violation involving the file it reports the offending edge, the full ch
 
 | Subcommand | Does |
 |---|---|
-| `create --scopes <a,b> [--user <id>] [--org <id>] [--env dev] [--days n]` | issues one key carrying exactly those scopes (a wildcard is `X_CONFIG_INVALID`). `--user` cuts its scopes to what that user may do and stops it when the user is disabled. The plaintext is printed **once** — in the human lines, or `data.token` under `--json` — and never in the summary; only its SHA-256 is stored |
+| `create --scopes <a,b> [--user <id>] [--org <id>] [--env dev\|stage\|prod] [--days n]` | issues one key carrying exactly those scopes (a wildcard is `X_CONFIG_INVALID`). `--env` unsaid is the environment's label: `ULTIMATE_ENV` (else `NODE_ENV`) production → `prod`, staging → `stage`, else `dev`; an unreadable `ULTIMATE_ENV` reads as `prod`. `--user` cuts its scopes to what that user may do and stops it when the user is disabled. The plaintext is printed **once** — in the human lines, or `data.token` under `--json` — and never in the summary; only its SHA-256 is stored |
 | `list --owner <id>` | the keys of a user or org, as `describeApiKey` answers them: no hash, no secret. A key issued with neither is listed by nobody and revoked by its id |
 | `revoke <id>` | revokes it; an unknown or already-revoked id answers `revoked: false`, exit 0 — neither is a key that works |
 | `grant` | **planned**: a key's scopes are fixed when issued. Issue a wider one and revoke the old |
@@ -1994,7 +1994,7 @@ Every flag is read before the database opens: a refusal costs no boot.
 
 ## x explain
 
-`As of 2026-11`. `x explain <query> [--input '<json>'] [--org <id>]` — the query run once on the app's dev database (rows discarded; its policy is not asked, as `explainQuery`'s is not), every statement it **sent** captured off `db.statement` and planned by `sweepPlans`: the oracle the `exercise` step judges with. A read no declared index serves is `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry as its fix, exit 1. A query over a tenant-scoped entity needs `--org`, else `X_CLI_BAD_FLAG`. Tables the dev database lacks are listed as not planned — run `x db migrate` first.
+`As of 2026-11`. `x explain <query> [--input '<json>'] [--org <id>]` — the query run once on the app's dev database (rows discarded; its policy is not asked, as `explainQuery`'s is not), every statement it **sent** captured off `db.statement` and planned by `sweepPlans`: the oracle the `exercise` step judges with. A read no declared index serves is `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry as its fix, exit 1. A query over a tenant-scoped entity needs `--org`, else `X_CLI_BAD_FLAG`. Tables the dev database lacks are listed as not planned — run `x db migrate` first. An external `DATABASE_URL` where `ULTIMATE_ENV` (else `NODE_ENV`) resolves production — or `ULTIMATE_ENV` is unreadable — is refused before anything opens, `X_EXPLAIN_PRODUCTION_DATABASE`: the query would be sent for real with its policy skipped. Plan on the embedded database, or on a staging restore under `ULTIMATE_ENV=staging`.
 
 ## Planned commands
 

@@ -396,6 +396,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'database: { rowSecurity: true }   # in defineConfig, app.config.ts; then: x db gen "row security" --json && x db migrate --json && x doctor --json',
   X_DEV_DATA_UNOPENABLE:
     'x db migrate --json   # the fresh database has no tables yet; then x db seed --json if the app declares a seed. The moved directory (meta.aside) is kept: delete it once its rows are not needed',
+  X_EXPLAIN_PRODUCTION_DATABASE:
+    'env -u DATABASE_URL x queries list --json   # then the same prefix on x explain <query> --json: it plans on the embedded dev database; for a copy of production data, point DATABASE_URL at a staging restore with ULTIMATE_ENV=staging',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

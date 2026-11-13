@@ -13,7 +13,7 @@ export const tokenSpec: CommandSpec = {
   name: 'token',
   summary: 'MCP and API tokens: issue one with exact scopes, list them by owner, revoke one',
   usage:
-    'x token create --scopes <a,b> [--user <id>] [--org <id>] [--env dev] [--days n] · x token list --owner <id> · x token revoke <id> [--json]',
+    'x token create --scopes <a,b> [--user <id>] [--org <id>] [--env dev|stage|prod] [--days n] · x token list --owner <id> · x token revoke <id> [--json]',
   requiresApp: true,
   // No default: `create` WRITES a credential, and a bare `x token` must not.
   subcommands: [...TOKEN_SUBCOMMANDS],
@@ -34,8 +34,8 @@ export const tokenSpec: CommandSpec = {
     {
       name: 'env',
       type: 'string',
-      summary: 'the label inside the token (ult_<env>_…): dev, stage, prod',
-      default: 'dev',
+      summary:
+        "the label inside the token (ult_<env>_…): dev, stage, prod — default: the environment's (ULTIMATE_ENV production → prod, staging → stage, else dev)",
       subcommands: ['create'],
     },
     {

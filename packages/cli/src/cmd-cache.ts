@@ -42,24 +42,30 @@ export interface CacheHandle {
 
 export type OpenCache = (root: string, ctx: CommandContext) => Promise<CacheHandle>;
 
-/** A role's boot with no role started: the tiers `cache.tiers` declares and the broadcast. */
-const openAppCache: OpenCache = async (root, ctx) => {
-  const running = await startServices(
-    resolveServices(root, ctx.env),
-    ctx.env,
-    await loadAppRuntime(root),
-    'apply',
-    [],
-  );
-  return {
-    invalidate: (tags) => invalidateTags(tags.map(parseTag)),
-    reachesPeers: !(
-      running.transport instanceof InProcessTransport && redisUrlSource(ctx.env) === undefined
-    ),
-    bus: running.transport.name,
-    close: () => running.stop(),
+/**
+ * A role's boot with no role started: the tiers `cache.tiers` declares and the broadcast. `'ensure'`,
+ * as every CLI command but the migrate step: a bust run against production takes no migration
+ * lock, runs no framework DDL and stamps no build (`runtime-queue.ts`'s `SchemaMode`).
+ */
+export const openAppCacheWith =
+  (start: typeof startServices): OpenCache =>
+  async (root, ctx) => {
+    const running = await start(
+      resolveServices(root, ctx.env),
+      ctx.env,
+      await loadAppRuntime(root),
+      'ensure',
+      [],
+    );
+    return {
+      invalidate: (tags) => invalidateTags(tags.map(parseTag)),
+      reachesPeers: !(
+        running.transport instanceof InProcessTransport && redisUrlSource(ctx.env) === undefined
+      ),
+      bus: running.transport.name,
+      close: () => running.stop(),
+    };
   };
-};
 
 async function graph(root: string, only: string | undefined): Promise<CommandResult> {
   const { manifest, findings } = await appManifest(root);
@@ -178,4 +184,4 @@ export const cacheCommandOver = (open: OpenCache): CliCommand => ({
   },
 });
 
-export const cacheCommand: CliCommand = cacheCommandOver(openAppCache);
+export const cacheCommand: CliCommand = cacheCommandOver(openAppCacheWith(startServices));

@@ -33,6 +33,25 @@ describe('unit · shipped guard · unbounded-fanout', () => {
     expect(findings[0]?.fix).toContain('@ultimat3/core');
   });
 
+  test('a callback that returns the call without async, and a named repository, are the rule', async () => {
+    const findings = await shippedGuardFindings('unbounded-fanout', {
+      [SERVICE]: [
+        'export const load = (rows: { id: string }[]) =>',
+        '  Promise.all(rows.map((row) => db.posts.find(row.id)));',
+        'export const owners = (ids: string[]) => Promise.all(ids.map((id) => usersRepo.byId(id)));',
+        'export const both = (ids: string[]) => Promise.all(ids.map(async (id) => PostRepo.byId(id)));',
+        // Not a repository: `report` only starts like one.
+        'export const sums = (ids: string[]) => Promise.all(ids.map(async (id) => report.sum(id)));',
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.at)).toEqual([
+      `${SERVICE}:2`,
+      `${SERVICE}:3`,
+      `${SERVICE}:4`,
+    ]);
+  });
+
   test('a literal list, no database, a why:, a comment and a test are silent', async () => {
     const fanout = 'Promise.all(rows.map(async (row) => db.posts.byId(row)));\n';
     const findings = await shippedGuardFindings('unbounded-fanout', {

@@ -2,8 +2,9 @@
 // `x verify` discovers every file in `guards/` and runs its `guard` inside the `boundaries`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
-// Only a statement the handle can express is reported: `select *`, `insert`, `update` or `delete`
-// on ONE table, with plain comparisons, and `select * … where id = ? for update`. A join, an aggregate, a CTE, a window, an `or`, a function
+// Only a statement the handle can express is reported: `select *` or a plain column list (the fix
+// projects it with `.select({ … })`), `insert`, `update` or `delete` on ONE table, with plain
+// comparisons, and `select * … where id = ? for update`. A join, an aggregate, a CTE, a window, an `or`, a function
 // call and a statement composed from another fragment are past what the handle says, and silent.
 // Three more shapes are reported in any statement, join or not: an `order by date_trunc('milliseconds', …)`
 // and a hand row comparison `(a, b) < (?, ?)`, whose repair is `keyset()` from `@ultimat3/db`, and a
@@ -122,8 +123,11 @@ const WHERE = `(${COMPARISON}(?: and ${COMPARISON})*)`;
 const ORDER = `"?(${NAME})"?(?: (asc|desc))?(?:, ?"?${NAME}"?(?: (?:asc|desc))?)*`;
 const ASSIGNMENT = `"?${NAME}"? = ${VALUE}`;
 
+/** `*`, or plain column names: an alias, a qualified name or an expression is past the handle. */
+const COLUMNS = `(\\*|"?${NAME}"?(?:, ?"?${NAME}"?)*)`;
+
 const SELECT = new RegExp(
-  `^select \\* from ${TABLE}(?: where ${WHERE})?(?: order by ${ORDER})?(?: limit (${VALUE}))?$`,
+  `^select ${COLUMNS} from ${TABLE}(?: where ${WHERE})?(?: order by ${ORDER})?(?: limit (${VALUE}))?$`,
 );
 const INSERT = new RegExp(
   `^insert into ${TABLE} \\([^()]*\\) values \\(${VALUE}(?:, ?${VALUE})*\\)(?: returning \\*)?$`,
@@ -197,6 +201,15 @@ const byIdOnly = (where: string): boolean => /^"?id"? = \?$/.test(where);
 const equalitiesOnly = (where: string): boolean =>
   where.split(' and ').every((comparison) => / = /.test(comparison));
 
+/** `id, created_at` → `.select({ id: true, createdAt: true })`; `*` is the whole row, no call. */
+const projection = (columns: string): string =>
+  columns === '*'
+    ? ''
+    : `.select({ ${columns
+        .split(',')
+        .map((column) => `${camel(column.trim().replaceAll('"', ''))}: true`)
+        .join(', ')} })`;
+
 /**
  * The handle call that says what `sql` says, or `undefined` when the handle cannot say it. `sql`
  * is the literal's text as written; whitespace, case and a trailing `;` are not part of the rule.
@@ -218,14 +231,14 @@ export function handleCallFor(sql: string): string | undefined {
   }
   const select = SELECT.exec(text);
   if (select !== null) {
-    const [, table = '', where, column, direction, limit] = select;
+    const [, columns = '*', table = '', where, column, direction, limit] = select;
     const order =
       column === undefined
         ? ''
         : `.orderBy('${camel(column)}'${direction === 'desc' ? ", 'desc'" : ''})`;
     const one = column === undefined && limit === undefined && /(^| )"?id"? = /.test(where ?? '');
     const bound = limit === undefined ? '' : `.limit(${limit === '?' ? 'limit' : limit})`;
-    return `db.${camel(table)}${filterCalls(where, literals)}${order}${bound}.${one ? 'one' : 'all'}()`;
+    return `db.${camel(table)}${filterCalls(where, literals)}${order}${bound}${projection(columns)}.${one ? 'one' : 'all'}()`;
   }
   const insert = INSERT.exec(text);
   if (insert !== null) return `db.${camel(insert[1] ?? '')}.insert({ … })`;

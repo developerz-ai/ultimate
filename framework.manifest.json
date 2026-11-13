@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f148b070f78d6c96f059bcd4d7929868a43277f100cec6b2495723c43c8b8843",
+  "buildId": "6f3bfaa99aa21d16a7e32687f6556b051106a989aa72d3140313ccde561bb3ab",
   "tiers": {
     "0": [
       "core",
@@ -2208,6 +2208,11 @@
       "code": "X_EXERCISE_UNPROVEN_ABOVE_FLOOR",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-doctor.ts"
+    },
+    {
+      "code": "X_EXPLAIN_PRODUCTION_DATABASE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_EXPORT_PART_TOO_LARGE",

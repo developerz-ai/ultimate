@@ -6,9 +6,10 @@
 // is fine; the ten thousand a table grows to is ten thousand statements queued on a pool of ten,
 // every other request waiting behind them. `mapBounded` from `@ultimat3/core` is the same map with
 // a stated width, results in input order, and the first failure stops the rest.
-// Read: a `Promise.all(` or `Promise.allSettled(` over `<list>.map(async …)` whose callback names
-// `db`, `tx` or `repo`, anywhere under apps/ and packages/ but a test. Not read: an array literal,
-// which is bounded where it is written. Admitted: a `// why:` on the line or the line above it.
+// Read: a `Promise.all(` or `Promise.allSettled(` over `<list>.map(…)`, async or not, whose
+// callback names `db`, `tx` or a `…repo`/`…Repo`, anywhere under apps/ and packages/ but a test.
+// Not read: an array literal, which is bounded where it is written. Admitted: a `// why:` on the
+// line or the line above it.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -22,8 +23,10 @@ export interface SourceFile {
 }
 
 const ALL = /\bPromise\s*\.\s*all(?:Settled)?\s*\(/g;
-const MAPPED = /\.\s*map\s*\(\s*async\b/;
-const DATABASE = /\b(?:db|tx|repo)\s*[.(]/;
+/** `async` or not: `rows.map((row) => db.posts.find(row.id))` is the same statement per row. */
+const MAPPED = /\.\s*map\s*\(/;
+/** `db`, `tx`, and a repository by any name that ends in one: `repo`, `usersRepo`, `PostRepo`. */
+const DATABASE = /\b(?:db|tx|\w*[Rr]epo)\b\s*[.(]/;
 const WHY = /\/\/\s*why:/;
 
 /** Comments and string bodies blanked IN PLACE, so a line number still points at the source. */

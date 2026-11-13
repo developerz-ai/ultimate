@@ -24,6 +24,15 @@ unitTest('allSettled, a tx, a repo and a chained list are the same rule', () => 
   expect(unboundedFanouts(file(chained))[0]?.cause).toContain('rows .filter((row) => row.ok)');
 });
 
+unitTest('a callback without async, and a repository by any name, are the same rule', () => {
+  const plain = 'Promise.all(rows.map((r) => db.posts.find(r.id)));';
+  expect(unboundedFanouts(file(plain))).toHaveLength(1);
+  const named = 'Promise.all(ids.map((id) => usersRepo.byId(id)));';
+  expect(unboundedFanouts(file(named))).toHaveLength(1);
+  // Not a repository: `report` only starts like one.
+  expect(unboundedFanouts(file('Promise.all(ids.map((id) => report.sum(id)));'))).toEqual([]);
+});
+
 unitTest('an array literal, a map with no database call and a why: are not refused', () => {
   const literal = 'Promise.all([a, b].map(async (one) => db.posts.byId(one)));';
   expect(unboundedFanouts(file(literal))).toEqual([]);

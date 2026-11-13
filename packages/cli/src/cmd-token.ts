@@ -5,7 +5,7 @@
 
 import type { ApiKeyStore, ApiKeySummary } from '@ultimat3/auth';
 import { describeApiKey, issueApiKey, postgresAuthAdapter, revokeApiKey } from '@ultimat3/auth';
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock, tryResolveEnvironment } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { plannedSubcommand } from './cmd-planned';
 import { TOKEN_MAX_DAYS, tokenSpec } from './cmd-token-spec';
@@ -13,6 +13,7 @@ import type { CliCommand, CommandContext } from './command';
 import { ok } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { parseIntFlag } from './flag-number';
+import { readsAsProduction } from './mcp-db-target';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagList, flagString } from './parse';
@@ -55,6 +56,16 @@ const summaryLine = (key: ApiKeySummary): string =>
           : msg('cli.token.expires', { at: key.expiresAt.toISOString() }),
   });
 
+/**
+ * `--env` unsaid is the environment's own label, never a constant: a `dev` default stamped every
+ * key minted against production `ult_dev_…`, which reads as harmless in a log or a leak report.
+ * Unreadable `ULTIMATE_ENV` reads as production, as `x explain` and the MCP host read it.
+ */
+const envLabel = (env: CommandContext['env']): string => {
+  if (readsAsProduction(env)) return 'prod';
+  return tryResolveEnvironment({ env }) === 'staging' ? 'stage' : 'dev';
+};
+
 /** Every flag `create` reads, held before the database opens: a typo costs no boot. */
 function createInput(ctx: CommandContext, clock: Clock) {
   const scopes = flagList(ctx.args, 'scopes');
@@ -78,7 +89,7 @@ function createInput(ctx: CommandContext, clock: Clock) {
           example: 'x token create --scopes post:read --days 30 --json',
         });
   return {
-    env: flagString(ctx.args, 'env') ?? 'dev',
+    env: flagString(ctx.args, 'env') ?? envLabel(ctx.env),
     scopes,
     userId: flagString(ctx.args, 'user') ?? null,
     orgId: flagString(ctx.args, 'org') ?? null,

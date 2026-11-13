@@ -31,11 +31,15 @@ const appRoot = (): string => {
   return dir;
 };
 
-const ctxFor = (cwd: string, argv: readonly string[]): CommandContext => ({
+const ctxFor = (
+  cwd: string,
+  argv: readonly string[],
+  env: Readonly<Record<string, string>> = {},
+): CommandContext => ({
   args: parseArgs(argv, SPECS),
   cwd,
   runner: exec,
-  env: {},
+  env,
   bunVersion: REQUIRED_BUN,
 });
 
@@ -81,6 +85,25 @@ describe('unit · x token create', () => {
     expect(result.summary).not.toContain(token);
     expect(occurrences(renderHuman(result), token)).toBe(1);
     expect(occurrences(renderJson(result), token)).toBe(1);
+  });
+
+  test('the label defaults to the environment the command runs in, never dev in production', async () => {
+    const { command } = fixture();
+    const labelIn = async (env: Readonly<Record<string, string>>, argv: readonly string[] = []) => {
+      const result = await command.run(
+        ctxFor(appRoot(), ['token', 'create', '--scopes', 'a:b', ...argv], env),
+      );
+      return (result.data as { token: string }).token.split('_')[1];
+    };
+    expect(await labelIn({ ULTIMATE_ENV: 'production' })).toBe('prod');
+    expect(await labelIn({ NODE_ENV: 'production' })).toBe('prod');
+    // An environment that cannot be read is the most dangerous one it could be.
+    expect(await labelIn({ ULTIMATE_ENV: 'prodution' })).toBe('prod');
+    expect(await labelIn({ ULTIMATE_ENV: 'staging' })).toBe('stage');
+    expect(await labelIn({ ULTIMATE_ENV: 'test' })).toBe('dev');
+    expect(await labelIn({})).toBe('dev');
+    // Said out loud, the flag still wins.
+    expect(await labelIn({ ULTIMATE_ENV: 'production' }, ['--env', 'stage'])).toBe('stage');
   });
 
   test('refuses no scopes, a wildcard, a bad env label and a bad --days before opening a store', async () => {

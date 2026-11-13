@@ -1,6 +1,6 @@
-// `x explain <query> [--input '<json>']` — one declared query run once on the app's dev database,
-// every statement it sent captured (`explain-capture.ts`) and planned by `sweepPlans`, the plan
-// oracle the `exercise` gate step judges with: one verdict, two callers. The rows are discarded.
+// `x explain <query> [--input '<json>']` — one declared query run once on the app's dev database
+// (never production's), every statement it sent captured (`explain-capture.ts`) and planned by
+// `sweepPlans`, the plan oracle the `exercise` gate step judges with. The rows are discarded.
 
 import {
   ctxOf,
@@ -9,6 +9,7 @@ import {
   renderFixShellArg,
   runWithContext,
   serviceActor,
+  UltimateError,
 } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import type { AnyQuery } from '@ultimat3/query';
@@ -22,9 +23,11 @@ import type { CliCommand, CommandContext } from './command';
 import { registeredEntityCores } from './db-seed-generate';
 import { BadFlagError, DeclarationUnknownError, MissingPositionalError } from './errors';
 import { captureStatements } from './explain-capture';
+import { readsAsProduction } from './mcp-db-target';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagString } from './parse';
+import { resolveServices } from './runtime-bindings';
 import { openAppQueue } from './runtime-boot-ports';
 
 /** The dev database, open for one run and ALWAYS released (the PGlite lock). */
@@ -40,6 +43,23 @@ const openDevDb: OpenDb = async (root, ctx) => {
   const queue = await openAppQueue(root, ctx.env);
   return { db: queue.db, close: () => queue.stop() };
 };
+
+/**
+ * The query is SENT, as a service actor with its policy skipped: on a production database that is
+ * an unauthorised read with production's load. Embedded is always a dev database; an external one
+ * is planned only where the environment says it is not production — an unreadable `ULTIMATE_ENV`
+ * reads as production (`readsAsProduction`, the MCP host's `db.migrate` reading). No override flag:
+ * a staging restore under `ULTIMATE_ENV=staging` is the copy of production's data this plans on.
+ */
+export class ExplainProductionDatabaseError extends UltimateError {
+  constructor(query: string) {
+    super({
+      code: 'X_EXPLAIN_PRODUCTION_DATABASE',
+      cause: `DATABASE_URL names an external database and this environment reads as production, where x explain would send ${query} for real with its policy skipped`,
+      fix: `env -u DATABASE_URL x explain ${renderFixShellArg(query, '<query>')} --json   # plans on the embedded dev database; for production's data, a staging restore with ULTIMATE_ENV=staging`,
+    });
+  }
+}
 
 /** `--input`, as JSON: the query's own schema judges the shape, this only the syntax. */
 function readInput(ctx: CommandContext, name: string): unknown {
@@ -135,6 +155,9 @@ export const explainCommandOver = (open: OpenDb): CliCommand => ({
         positional: 'query',
         example: 'x queries list --json   # then x explain <query> --json',
       });
+    }
+    if (resolveServices(root, ctx.env).db.mode === 'external' && readsAsProduction(ctx.env)) {
+      throw new ExplainProductionDatabaseError(name);
     }
     const input = readInput(ctx, name);
     const org = flagString(ctx.args, 'org');

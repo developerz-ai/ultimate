@@ -11,12 +11,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InvalidationReport } from '@ultimat3/cache';
 import { declareTags, isolateDeclaredTags } from '@ultimat3/cache';
+import { InProcessTransport } from '@ultimat3/realtime/server';
 import { REQUIRED_BUN } from './app-root';
-import { type CacheHandle, cacheCommandOver } from './cmd-cache';
+import { type CacheHandle, cacheCommandOver, openAppCacheWith } from './cmd-cache';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+import type { SchemaMode } from './runtime-queue';
+import type { RunningServices } from './runtime-services';
 
 const madeDirs: string[] = [];
 afterAll(() => {
@@ -141,5 +144,25 @@ describe('unit · x cache graph', () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe('unit · x cache boots as a CLI command, not as the migrate step', () => {
+  test("the shipped opener asks for 'ensure': a bust against production takes no migration lock", async () => {
+    const modes: (SchemaMode | undefined)[] = [];
+    let stopped = 0;
+    const open = openAppCacheWith(async (_services, _env, _overrides, schema) => {
+      modes.push(schema);
+      return {
+        transport: new InProcessTransport(),
+        stop: async () => {
+          stopped += 1;
+        },
+      } as unknown as RunningServices;
+    });
+    const handle = await open(appRoot(), ctxFor(appRoot(), ['cache', 'clear']));
+    await handle.close();
+    expect(modes).toEqual(['ensure']);
+    expect(stopped).toBe(1);
   });
 });
