@@ -54,13 +54,13 @@ and its reset — and `apps/web/shared/global.ts` is the one-line side-effect im
 the module graph, which is what makes the framework's boot scan load it once for both surfaces. No
 other stylesheet in the app emits top-level CSS: every module is its own Sass compilation, so a
 second emitter would duplicate the `:root` block. A document that carries none is
-`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. **There is no `/signin` or `/signup`**
-(sign-OUT is the `endSession` action, `app/auth/actions/end-session.ts`: it sets the demo cookie to
-`signed-out` and redirects, and the layout's native form posts to it) — this file claimed all three were mounted "by the wrapped Better Auth integration"
-until 2026-08, which contradicted its own gotcha twelve lines down: `app/auth/login.ts`'s two route
-descriptors are declared, tested and **not served**, and there is no Better Auth wrapper in this
-repo. The route table is exactly `site/` + `app/` + `api/`, and `site/page.tsx`'s CTA points at
-`/pricing` because that is the funnel that exists.
+`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. **There is no `/signin` or `/signup`
+page**: sign-in is `GET /auth/sso/github` (and `/auth/sso/corp` with an IdP configured), mounted by
+`app/auth/sign-in-routes.ts`; sign-OUT is the `endSession` action
+(`app/auth/actions/end-session.ts`: it revokes the session, expires its cookie, sets the demo cookie
+to `signed-out` and redirects, and the layout's native form posts to it). There is no Better Auth
+wrapper in this repo. The page route table is exactly `site/` + `app/` + `api/`, and
+`site/page.tsx`'s CTA points at `/pricing` because that is the funnel that exists.
 
 `NotAMember` (`X_ORG_NOT_A_MEMBER`) lives in **`@postly/core`**, beside the `memberOf` whose `null`
 it refuses — it moved down from `apps/web/shared/errors.ts` on 2026-08-24 when `packages/mcp` needed
@@ -337,25 +337,23 @@ The two guards measured here, and their repairs, are recorded in
 - `withLock`, `variant()`: `app/orgs/avatar*.ts`; `partitionBy`, `smsChannel`: `app/quota/`;
   SAML: `app/auth/sso.ts`, mounted only when `POSTLY_SSO_IDP_METADATA` is set.
 - `app/auth/login.ts` is the whole of "log in with GitHub" — `defineAuth` + `oauthLogin`, and the
-  three decisions an app owns: `providers`, `link` and where a signed-in member lands. Its two
-  route descriptors are **declared and driven by `login.test.ts`, but not yet served**. The seam
-  they waited for exists now: `apps/web/runtime.ts` exports `runtime.routes`, which `serve-web.ts`
-  mounts as the app's plain routes, and the partner authorization server
-  (`app/partners/oauth.ts`) is served through it (As of 2026-11). Mounting `start`/`callback` there
-  is the app work still owed.
-
-  **Two things blocked a Postly session and one of them is now closed** (`As of 2026-08-25`). The
-  second was the schema: `PostgresAuthAdapter` reads `x_users`, `x_sessions`, `x_accounts`,
-  `x_verifications` and `x_api_keys`, **nothing in the framework had ever created them**, and
-  neither half was a file anybody could hand-write — `AUTH_TABLES` is DDL `@ultimat3/auth`
-  exports "so an app can paste them into a migration", while `x db gen` diffs `describeEntities()`
-  and these are not `entity()` declarations. The paragraph above used to record the symptom with
-  no cause, and the cause was that nobody had asked which framework tables have an applier: five
-  of them did not. They are now rows of `FRAMEWORK_SCHEMA`
-  (`packages/cli/src/framework-schema.ts`), applied by `applySchema` — which is on every boot path
-  there is, `ROLE=migrate` included — so `postlyAuth()`'s default adapter has tables to read.
-
-  **What is left is mounting `start`/`callback` in `runtime.routes`.** Until then they are unserved,
-  which is why `configureAuthenticator()` is still uncalled, `ctx.auth` is still undeclared, and
-  `app/auth/demo-actor.ts` still answers every development request as a declared viewer — its own
-  warning says "this app mounts no sign-in route", and that sentence is now the whole of it.
+  three decisions an app owns: `providers`, `link` and where a signed-in member lands.
+  `app/auth/sign-in-routes.ts` mounts its `start`/`callback` on `runtime.routes` (`As of 2026-11`),
+  built on the first request, never at import; the ONE `GET /auth/sso/:provider` answers `corp` as
+  the SAML start and anything else as the OAuth start. Credentials are `GITHUB_CLIENT_ID` /
+  `GITHUB_CLIENT_SECRET`; unset, `/auth/sso/github` is the same 404 an unknown provider gets.
+- **Who a request is: `app/auth/authenticator.ts`**, installed at module scope in every environment.
+  A session cookie (GitHub, SAML or a passkey minted it) is that session's MEMBER — `x_users.id` is
+  the member's id, as passkeys and `x exercise` key it — read by `sessionMember` (`app/orgs/repo.ts`,
+  three statements, the second cross-tenant read in the app) into `postlyActor`; an identity no org
+  seated is itself with no grant; a forged, revoked or expired one is `null`, never a fallback.
+- **No session cookie under `x dev` is the demo viewer** (`app/auth/demo-actor.ts`, a cookie naming
+  one of four seeded members), and nobody anywhere else — the install fails closed
+  (`fallback: 'production'`). It stays because a fresh clone has no GitHub client id, no IdP and no
+  enrolled passkey, and every e2e suite signs in with its cookie (`e2e/fixtures/postly.ts`,
+  `scripts/test-setup.ts`). Deleting it needs an e2e sign-in that mints a real session out of
+  process — the in-process provider stubs (`login.test.ts`, `sign-in-routes.test.ts`) cannot serve
+  a separate app process. The auth tables are `FRAMEWORK_SCHEMA` rows
+  (`packages/cli/src/framework-schema.ts`), applied on every boot path, `ROLE=migrate` included. The
+  seed writes no `x_users` row, so a seeded member signs in with GitHub only once a row with their
+  id and a verified address exists.

@@ -911,6 +911,8 @@ export type { RetryDeps } from './retry';
 export { retry } from './retry';
 export type { RetryDecision, RetryPolicy, RetryStopReason } from './retry-loop';
 export { retryDecision } from './retry-loop';
+export type { RetryMemo } from './retry-memo';
+export { retryMemo } from './retry-memo';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { isRole, ROLE_INFO, ROLES, resolveRole } from './roles';

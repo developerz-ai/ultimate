@@ -7,7 +7,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun has no API naming the OS temporary directory on every platform.
 import { tmpdir } from 'node:os';
-import { driftOutcome, nonSqlDriftSkip } from './drift-store';
+import { driftOutcome, nonSqlDriftSkip, REFUSE_UNDECLARED_INDEX } from './drift-store';
 import { MIGRATIONS_DIR } from './migrations';
 
 let bare: string;
@@ -70,4 +70,60 @@ test('not skipped: schema rails first, then the client rail', async () => {
   });
   expect(outcome.findings.map((each) => each.code)).toEqual(['X_DB_DRIFT', 'X_CLIENT_STALE']);
   expect(outcome.output).toBeUndefined();
+});
+
+const advice = {
+  findings: async () => [finding('X_DB_INDEX_UNDECLARED')],
+  warnings: async () => [
+    'X_DB_INDEX_UNDECLARED packages/db/schema/05_indexes/posts.sql: c — fix: f',
+  ],
+};
+
+test('on main an undeclared index is a warning: carried, and the step stays green', async () => {
+  const outcome = await driftOutcome(bare, {
+    schema: async () => [],
+    client: async () => [],
+    advice,
+    stores: stores([], []),
+  });
+  expect(outcome.ok).toBe(true);
+  expect(outcome.findings).toEqual([]);
+  expect(outcome.warnings).toEqual([
+    'X_DB_INDEX_UNDECLARED packages/db/schema/05_indexes/posts.sql: c — fix: f',
+  ]);
+});
+
+test('the shipped switch is the main one: undeclared indexes warn, never refuse', () => {
+  expect(REFUSE_UNDECLARED_INDEX).toBe(false);
+});
+
+test('switched to refuse (next): the same fact is a finding and the step is red', async () => {
+  const outcome = await driftOutcome(bare, {
+    schema: async () => [],
+    client: async () => [],
+    advice,
+    refuseAdvice: true,
+    stores: stores([], []),
+  });
+  expect(outcome.ok).toBe(false);
+  expect(outcome.findings.map((each) => each.code)).toEqual(['X_DB_INDEX_UNDECLARED']);
+  expect(outcome.warnings).toBeUndefined();
+});
+
+test('skipped for a non-SQL store: no index advice either', async () => {
+  let asked = false;
+  const outcome = await driftOutcome(bare, {
+    schema: async () => [],
+    client: async () => [],
+    advice: {
+      ...advice,
+      warnings: async () => {
+        asked = true;
+        return ['w'];
+      },
+    },
+    stores: stores([], ['mongo']),
+  });
+  expect(asked).toBe(false);
+  expect(outcome.warnings).toBeUndefined();
 });

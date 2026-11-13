@@ -398,6 +398,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x db migrate --json   # the fresh database has no tables yet; then x db seed --json if the app declares a seed. The moved directory (meta.aside) is kept: delete it once its rows are not needed',
   X_EXPLAIN_PRODUCTION_DATABASE:
     'env -u DATABASE_URL x queries list --json   # then the same prefix on x explain <query> --json: it plans on the embedded dev database; for a copy of production data, point DATABASE_URL at a staging restore with ULTIMATE_ENV=staging',
+  X_DB_INDEX_UNDECLARED:
+    'x verify --only drift --json   # each X_DB_INDEX_UNDECLARED warning names the index: its DROP INDEX CONCURRENTLY IF EXISTS "<name>"; goes in a new hand-written migration (-- transaction: false), or declare it in the entity\'s indexes: [...] and x db gen "<change>"',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -1,29 +1,23 @@
 /**
  * The dev viewer: that it resolves, that it carries the member's grants, that the cookie switches
- * it, that it installs in `development` and nowhere else — and that every column declared beside
- * the derived ids still matches the row `packages/db/seeds/dev.ts` writes.
+ * it, that sign-out ends it — and that every column declared beside the derived ids still matches
+ * the row `packages/db/seeds/dev.ts` writes.
  */
 
 import { actorFact } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
-import { configuredAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import { actorHas } from '@ultimat3/policy';
-import { afterEach, describe, expect, test } from '@ultimat3/testing';
+import { describe, expect, test } from '@ultimat3/testing';
 import {
   DEFAULT_DEMO_MEMBER,
   DEMO_MEMBER_COOKIE,
   DEMO_MEMBER_NAMES,
+  DEMO_SIGNED_OUT,
   DEMO_VIEWERS,
   demoActorFor,
+  demoAuthenticate,
   demoMemberFrom,
-  installDemoAuthenticator,
 } from './demo-actor';
-
-const DEVELOPMENT = { NODE_ENV: 'development' } as const;
-
-afterEach(() => {
-  resetAuthenticator();
-});
 
 describe('the cookie names the viewer', () => {
   test('an unset cookie header is the default member', () => {
@@ -70,64 +64,15 @@ describe('the viewer is a Postly actor, not a literal', () => {
   });
 });
 
-describe('installation is development-only', () => {
-  test('development configures the app authenticator', () => {
-    expect(installDemoAuthenticator(DEVELOPMENT)).toBe(true);
-    expect(configuredAuthenticator()).toBeDefined();
+describe('the cookie switch', () => {
+  // Whether it is asked at all — no session cookie, `development` only — is `authenticator.ts`'s,
+  // and `authenticator.test.ts` holds it.
+  test('answers the member the cookie names', () => {
+    expect(demoAuthenticate(`${DEMO_MEMBER_COOKIE}=mara`)?.id).toBe(DEMO_VIEWERS.mara.member.id);
   });
 
-  // `bun test` runs as NODE_ENV=test, and a viewer arriving from a cookie there would decide which
-  // member a test is about — every fixture mints its own actor.
-  test('test and production configure nothing', () => {
-    expect(installDemoAuthenticator({ NODE_ENV: 'test' })).toBe(false);
-    expect(installDemoAuthenticator({ ULTIMATE_ENV: 'production' })).toBe(false);
-    expect(installDemoAuthenticator({ ULTIMATE_ENV: 'staging' })).toBe(false);
-    expect(configuredAuthenticator()).toBeUndefined();
-  });
-
-  /**
-   * The module-scope call, which is the whole fix: a `configureAuthenticator()` nobody runs is the
-   * 401 this file exists to remove, and it cannot be observed in-process because this suite is
-   * `NODE_ENV=test` on purpose. So a child process imports the module as `x dev`'s boot scan does.
-   */
-  test('importing the module in development installs the hook, with nobody calling anything', async () => {
-    const child = Bun.spawn(
-      [
-        'bun',
-        '-e',
-        `await import(${JSON.stringify(`${import.meta.dir}/demo-actor.ts`)});
-         const { configuredAuthenticator } = await import('@ultimat3/http');
-         console.log('VERDICT', configuredAuthenticator() === undefined ? 'none' : 'installed');`,
-      ],
-      {
-        cwd: import.meta.dir,
-        env: { ...process.env, NODE_ENV: 'development', ULTIMATE_ENV: 'development' },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
-    );
-    const [out, err, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    // The child's stack is the only evidence of WHICH module failed to evaluate. Left in the pipe,
-    // an import this app breaks reports `expected 0, received 1` and names nothing.
-    if (code !== 0) expect.unreachable(`the import exited ${code}:\n${err}`);
-    expect(out).toContain('VERDICT installed');
-  });
-
-  test('the installed hook answers the cookie the request carries', async () => {
-    installDemoAuthenticator(DEVELOPMENT);
-    const authenticate = configuredAuthenticator();
-    if (authenticate === undefined) expect.unreachable('development must install an authenticator');
-    const request = { header: () => `${DEMO_MEMBER_COOKIE}=mara` };
-    // Both arguments are structural to the hook; only `header` is read.
-    const actor = await authenticate(
-      request as unknown as Parameters<typeof authenticate>[0],
-      undefined as unknown as Parameters<typeof authenticate>[1],
-    );
-    expect(actor?.id).toBe(DEMO_VIEWERS.mara.member.id);
+  test('answers nobody once the demo session was ended', () => {
+    expect(demoAuthenticate(`${DEMO_MEMBER_COOKIE}=${DEMO_SIGNED_OUT}`)).toBeNull();
   });
 
   test("the actor carries the member's saved locale and zone — the pipeline's `user` rung", () => {

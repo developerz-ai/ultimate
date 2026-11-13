@@ -1,6 +1,6 @@
 // One in-flight attempt, shared — and a FAILED one not kept. `started ??= boot()` caches the
-// rejection with the value, so a Postgres that refused a connection once answered every later
-// call in the session with that same error and no retry was possible short of restarting the host.
+// rejection with the value: a Postgres that refused once answered every later call in an
+// `x mcp serve` session with that error, and a docs corpus that failed to read stayed failed.
 
 /**
  * A lazily made attempt that may be made again.

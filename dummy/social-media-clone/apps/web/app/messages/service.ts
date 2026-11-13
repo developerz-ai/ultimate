@@ -38,19 +38,18 @@ export interface Thread {
 /**
  * Every thread the viewer is in, most recently active first.
  *
- * The members and the names are read for the WHOLE list, not per thread. This loop used to make
- * three round trips per conversation — members, latest message, names — so a 50-thread list was
- * ~152 statements to render one screen, and every one of them waited for the one before it. Only
- * `latestMessage` is still per thread: "the newest row per group" is not something the query
- * builder can express in one statement, and reading N messages across every thread to find them
- * would be one chatty conversation's page and nothing else's.
+ * The members, the newest messages and the names are read for the WHOLE list, not per thread:
+ * five statements whatever the thread count. This loop used to make three round trips per
+ * conversation — members, latest message, names — so a 50-thread list was ~152 statements to
+ * render one screen (`service.test.ts` pins the five).
  */
 export const threadsFor = async (viewerId: string): Promise<readonly ThreadSummary[]> => {
   const memberships = await repo.membershipsOf(viewerId);
   const conversationIds = memberships.map((membership) => membership.conversationId);
-  const [conversations, membersByConversation] = await Promise.all([
+  const [conversations, membersByConversation, latestByConversation] = await Promise.all([
     repo.conversationsByIds(conversationIds),
     repo.membersOfMany(conversationIds),
+    repo.latestMessagesOf(conversationIds),
   ]);
   const otherIdsOf = (conversationId: string): readonly string[] =>
     (membersByConversation.get(conversationId) ?? [])
@@ -64,7 +63,7 @@ export const threadsFor = async (viewerId: string): Promise<readonly ThreadSumma
   for (const conversation of conversations) {
     const membership = memberships.find((row) => row.conversationId === conversation.id);
     if (membership === undefined) continue;
-    const latest = await repo.latestMessage(conversation.id);
+    const latest = latestByConversation.get(conversation.id) ?? null;
     const otherIds = otherIdsOf(conversation.id);
     summaries.push({
       conversationId: conversation.id,

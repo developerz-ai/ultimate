@@ -33,5 +33,9 @@
         "why": "the e2e suites' fixtures and drivers: each runs inside the e2e step against a real browser and a booted app, never under a unit test, so counting them weighed browser-side helpers (page-reads.ts, echo-hold.ts) against the unit floor"
       }
     ]
+  },
+  "exercise": {
+    "unprovenMax": 0.046,
+    "statementsMax": 100
   }
 }

@@ -43,6 +43,10 @@ export const DEPENDENCY_ALLOWLIST: Readonly<Record<string, { readonly reason: st
   'examples/dummy/apps/web/package.json#dependencies#solid-js': {
     reason: 'The SolidJS runtime the UI and app surfaces render with.',
   },
+  'examples/dummy/package.json#dependencies#solid-js': {
+    reason:
+      'The SolidJS runtime x build resolves from the app root, so every island chunk ships one; apps/web pins the same version (solid-root.test.ts).',
+  },
   'examples/dummy/package.json#devDependencies#typescript': { reason: 'The repository compiler.' },
   'examples/dummy/packages/ui/package.json#dependencies#solid-js': {
     reason: 'The SolidJS runtime the UI and app surfaces render with.',

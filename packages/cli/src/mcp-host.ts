@@ -15,6 +15,7 @@ import {
   ROLES,
   renderFixShellArg,
   renderThrowable,
+  retryMemo,
   UltimateError,
 } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
@@ -51,7 +52,6 @@ import { explainErrorCode } from './mcp-errors';
 import { type ShellRunInput, shellRunner, shellTests, shellVerify } from './mcp-host-shell';
 import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
-import { retryMemo } from './retry-memo';
 import { plainAppRoutes, routeRows } from './route-table';
 import type { DevServices, Env } from './runtime-bindings';
 import { resolveServices } from './runtime-bindings';

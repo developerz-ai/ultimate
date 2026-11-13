@@ -289,4 +289,18 @@ describe('the feed island', () => {
     expect(mounted.all('li')).toHaveLength(0);
     expect(mounted.all('p').map((node) => node.textContent)).toContain(PROPS.labels.empty);
   });
+
+  // LAST, because it ends the session: the island writes no `onCleanup(() => h.release())`, so the
+  // drop below is the island bootstrap's — every `use*` hook registers its own release with the
+  // `cleanup` it installs. A hook that stopped doing so would hold the subscription past the page.
+  test('unmounting drops the feed subscription without a hand-written release', async () => {
+    const sid = subscribeFrame()?.sid ?? '';
+    mounted[Symbol.dispose]();
+    await settle();
+
+    const drops = socket()
+      .frames()
+      .filter((frame) => frame.type === 'subscribe' && frame.op === 'drop');
+    expect(drops.map((frame) => (frame.type === 'subscribe' ? frame.sid : ''))).toContain(sid);
+  });
 });

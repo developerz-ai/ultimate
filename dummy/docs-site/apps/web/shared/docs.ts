@@ -9,7 +9,7 @@ import {
   type DocsCorpus,
   readCorpus,
 } from '@docs-site/docs-source';
-import { assertCoded } from '@ultimat3/core';
+import { assertCoded, retryMemo } from '@ultimat3/core';
 import { MARKDOWN_MAX_CHARS } from '@ultimat3/ui';
 import { FOOTER_ANCHOR } from './docs-links';
 
@@ -54,13 +54,17 @@ async function load(): Promise<DocsCorpus> {
   return corpus;
 }
 
-let corpus: Promise<DocsCorpus> | undefined;
+/**
+ * A reader, memoised by `retryMemo` rather than `??=`: a read that rejected (one transient read
+ * failure) is not kept as the answer for the life of the process. Injected for the test.
+ */
+export const corpusReader = (read: () => Promise<DocsCorpus>): (() => Promise<DocsCorpus>) => {
+  const corpus = retryMemo(read);
+  return () => corpus.get();
+};
 
 /** The corpus, read on the first call and shared by every route after it. */
-export const docsCorpus = (): Promise<DocsCorpus> => {
-  corpus ??= load();
-  return corpus;
-};
+export const docsCorpus = corpusReader(load);
 
 /** The page at a site path, or `undefined`: a static route answers 404 for a path it never built. */
 export async function docPage(url: string): Promise<DocPiece | undefined> {

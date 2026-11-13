@@ -106,12 +106,6 @@ function Feed(props: FeedIslandProps): JSX.Element {
   const connection = useConnection();
   const like = useMutation(LIKE_POST);
   const outbox = useOutbox();
-  onCleanup(() => {
-    feed.release();
-    connection.release();
-    like.release();
-    outbox.release();
-  });
   /**
    * The pull's and the button's one re-read: `refetch` settles when the read has, so the busy state
    * lasts exactly as long. The feed is LIVE, so that is at once: its socket is its refresh.

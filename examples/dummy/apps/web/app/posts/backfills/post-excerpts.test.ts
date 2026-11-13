@@ -4,7 +4,15 @@
 // somebody already wrote alone.
 import { db, driver, type Post } from '@postly/db';
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
-import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  testName,
+  testStatements,
+} from '@ultimat3/testing';
 import { postExcerpts } from './post-excerpts';
 
 const orgA = '00000000-0000-4000-8000-000000000002';
@@ -73,5 +81,20 @@ describe(testName('unit', 'postExcerpts'), () => {
     // Nothing is behind any more, so the same sweep kicked again finds no row to write.
     await runJobs(postExcerpts, { force: true });
     expect([...(await excerptsOf(orgA))].sort()).toEqual(first);
+  });
+
+  test('a page of 30 blank rows is written in one statement, not one per row', async ({
+    runJobs,
+  }) => {
+    await Promise.all(Array.from({ length: 30 }, (_, at) => store(orgA, `page-${at}`)));
+    let writes = 0;
+    {
+      // Disposal throws `X_N_PLUS_ONE_WRITE` for a per-row `update` — the loop this test pins.
+      using statements = await testStatements();
+      await runJobs(postExcerpts, {});
+      writes = statements.all().filter((statement) => statement.kind === 'write').length;
+    }
+    expect(writes).toBe(1);
+    expect((await excerptsOf(orgA)).filter((excerpt) => excerpt === '')).toEqual([]);
   });
 });

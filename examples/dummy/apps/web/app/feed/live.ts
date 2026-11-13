@@ -17,21 +17,23 @@
 
 import type { LiveRow } from '@ultimat3/realtime';
 import type { Api } from '../../api';
+import type { PostSummary } from '../posts/entity';
 
 /** What `useQuery` subscribes under. `defineApi` names a query after its export, so this is it. */
 export const LIVE_FEED: keyof Api['queries'] = 'liveFeed';
 
+/** A value as JSON carries it: an instant is its ISO string, a nullable instant stays nullable. */
+type OnTheWire<T> = T extends Date ? string : T;
+
+/** The fields this island renders — named off `PostSummary`, so a renamed column is a type error. */
+type RenderedKeys = 'id' | 'title' | 'excerpt' | 'likeCount' | 'publishedAt' | 'createdAt';
+
 /**
- * The row as it arrives on the socket — JSON, not the server's row type: `PostSummary.createdAt`
- * is a `Date` on the server and a string on the wire, so a type read off the query's return would
- * describe a value no browser ever holds. Only the fields this island renders are named.
+ * The row as it arrives on the socket — `liveFeed`'s own `PostSummary`, DERIVED, never restated:
+ * `PostSummary.createdAt` is a `Date` on the server and a string on the wire, so the server type as
+ * written would describe a value no browser ever holds, and a hand copy (which stood here until
+ * 2026-11) would drift from the view the first time a column moved. A type import: no module edge.
  */
-export interface FeedRow extends LiveRow {
-  readonly id: string;
-  readonly title: string;
-  readonly excerpt: string;
-  readonly likeCount: number;
-  /** ISO instants, as the wire carries them — `<DateTime>` formats one in the member's zone. */
-  readonly publishedAt: string | null;
-  readonly createdAt: string;
-}
+export type FeedRow = LiveRow & {
+  readonly [K in RenderedKeys]: OnTheWire<PostSummary[K]>;
+};

@@ -197,7 +197,6 @@ function RunStream(props: Omit<RunBodyProps, 'events'> & { readonly run: RunHand
     { name: LIVE_RUN_EVENTS, live: true },
     { orgId: props.console.orgId, runId: props.run.runId },
   );
-  onCleanup(() => events.release());
   const body = (rows: readonly RunEventRow[]): JSX.Element => (
     <RunPanes events={orderedEvents(rows)} model={props.model} console={props.console} />
   );

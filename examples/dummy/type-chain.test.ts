@@ -357,10 +357,10 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
    * every page that renders a post off a query's output (hop 8) — `blog/page.tsx` through
    * `<PostCard>`'s props, the `posts/[id]` page in its own reads and in its test's `renderPage`.
    *
-   * Silent today, and pinned silent by the exact set: the feed island reads `FeedRow`
-   * (`apps/web/app/feed/live.ts`), a hand-written wire type, so a view rename reaches the live feed
-   * as `undefined` at runtime. The day that row derives from `PostSummary`, `feed.island.tsx`
-   * joins this list.
+   * And the live feed (hop 9): `FeedRow` (`apps/web/app/feed/live.ts`) is DERIVED from
+   * `PostSummary` since 2026-11, so the rename fails in the row's own key list and in the island
+   * that renders the field — until then a hand-written wire type, and the rename reached the feed as
+   * `undefined` at runtime.
    */
   test('excerpt → summary on the view breaks hops 5+ — the action output, its client, the pages', async () => {
     const introduced = await introducedBy(VIEW_FILE, VIEW_FROM, VIEW_TO);
@@ -376,6 +376,9 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       'apps/web/app/posts/[id]/page.test.ts': 4,
       'apps/web/site/blog/[slug]/page.tsx': 3,
       'apps/web/site/blog/page.tsx': 1,
+      // Hop 9: the live feed's row names the field, and the island renders it.
+      'apps/web/app/feed/live.ts': 1,
+      'apps/web/app/feed/feed.island.tsx': 1,
     });
   }, 120_000);
 });

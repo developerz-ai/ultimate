@@ -72,6 +72,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |
 | how long to wait, and whether to wait at all | `backoff.ts` + `retry-loop.ts` + `retry.ts` | one curve, one loop, one executor that meets the caller's signal and deadline; `jitter` REQUIRED on a retry policy; `attempt` is 1-based † |
 | N callers on one key | `single-flight.ts` | identity-checked eviction, optional injected deadline, optional injected `signal`: a live joiner re-leads after its leader's abort. Reads no context |
+| a lazy boot or load, once per process | `retry-memo.ts` (`retryMemo`) | a rejection is never the memo's answer; never `x ??= start()` for a promise |
 | how many at once | `flight-gate.ts` | hand-over on release, refusal past `maxQueued`, injectable `overflow:` refusal |
 | a fan-out with a bound | `map-bounded.ts` (`mapBounded`) | `width` REQUIRED, no default; input order; first rejection aborts the rest via the signal. Never a hand-rolled worker pool |
 | whether an answer still applies | `generation-fence.ts` | `X_SUPERSEDED` / `isSuperseded` |
