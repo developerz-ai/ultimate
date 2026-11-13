@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- `x verify`'s `drift` step warns `X_DB_INDEX_UNDECLARED` for an index in the schema dump that neither the newest migration snapshot nor any entity declares â€” the shape that hid seven duplicate indexes in production. A warning in 31.x.
+- `retryMemo(start)` is in `@ultimat3/core`: a lazily started, shared attempt that does not keep a rejection.
+- The reference app serves GitHub sign-in with a session authenticator in every environment; the social demo reads `/messages` in a constant five statements and writes its batches in one statement each.
+
 ### Added
 
 - `retryMemo(start)` in `@ultimat3/core` (moved from `@ultimat3/cli`): a lazily made attempt shared by every caller, and a FAILED one not kept, so a rejected first attempt is retried on the next `get()` where `x ??= start()` keeps the rejection forever. `started()` answers the attempt in flight or made, or `undefined`, so a `close()` can stop what was booted without booting it. Opt-in: nothing switches to it.
