@@ -10,46 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- The admin search ignores case and reads four resources at a time; a declared row scope stays case-sensitive, because it is authorization.
-- A large table's admin home tile can show the planner's estimate (`count: 'estimate'`).
-- `@ultimat3/testing` gains seeded property checks and a heap canary; they found three real decoder and money-input bugs, fixed here.
-- The Helm chart ships error-budget burn alerts, an opt-in Grafana dashboard (`x g chart-dashboard`) and memory requests at measured idle.
-- A 4xx scanner no longer writes one `info` line per probe.
-
-### Added
-
-- `@ultimat3/testing`: `property(gen, fn, { runs, seed })` and `gen` (`int`, `oneOf`, `union`, `map`, `constant`, `array`, `tuple`, `string`, `bytes`, `json`; `HOSTILE_CHARS`) — seeded property checks. The first failing draw is shrunk by halving and thrown as `X_TEST_PROPERTY_FAILED`, naming the shrunk input and the `{ seed, runs }` that replays it; a property that returns a promise is refused. Eight framework encoders and decoders are now checked this way: byte ranges, `canonicalJson`, cookies, keyset cursors, `estimateBytes`, `interpolate`, money input and the pgoutput decoder.
-- `@ultimat3/testing`: `soak({ fetch, requests, maxGrowthBytes })` / `measureSoak()` — a heap canary. It sends the requests round-robin in process, collects twice, and refuses growth past the bound as `X_TEST_SOAK_HEAP_GROWTH`, with the statuses counted. The framework's own live step soaks 20,000 requests across SSR, an action, a query and 4xx.
-- `@ultimat3/jobs`: optional `JobIntrospection.countersMany({ names, … })` on the Postgres and memory drivers. The admin's jobs overview now reads every job name's counters in one grouped statement: 4 statements whatever the number of names, where it was 3 + one per name. A driver without it is still read one name at a time.
-- `@ultimat3/admin`: `count: 'estimate'` on a resource. The `/admin` home tile shows the planner's figure (`approximateCount()`, constant time) as `~1,200,000` (`admin.dashboard.records.approximate`) when the resource has no `rows` scope and the estimate is at least 10,000 rows (`ESTIMATE_COUNT_FLOOR`). Everywhere else it is the exact count.
-- `@ultimat3/core`: `process_memory_limit_bytes`, the container's cgroup v2 `memory.max`, read once per `startProcessMetrics()`. An unbounded or non-Linux process does not emit it.
-- Helm chart (`docker/helm`, and `x new`'s chart): multi-window error-budget burn alerts — `UltimateErrorBudgetFastBurn` (14.4× over 1h and 5m) and `UltimateErrorBudgetSlowBurn` (6× over 6h and 30m) against `alerts.objective` (percent, default 99.9) — plus `UltimateJobFailures`, `UltimatePoolSaturated`, `UltimateEventLoopLag` and `UltimateMemoryNearLimit`, each with a runbook in `docs/ops/06-runbooks.md`.
-- Helm chart: a Grafana dashboard (`dashboards/ultimate-app.json`) shipped as a ConfigMap for a Grafana sidecar, opt-in with `dashboard.enabled` (off by default). It is one full-width column over series the framework declares. `x g chart-dashboard` adds the JSON, the ConfigMap and the `dashboard:` values block to an older app chart, and `x doctor` lists them when missing (`data.chartDashboard`). `x g chart-dashboard --print` prints the JSON for a Grafana outside Kubernetes.
-- `bun run log-levels` (`scripts/log-levels.ts`, run by the `unit` step through its test) enforces the log-level policy as a ratchet. A per-unit path's `info` line needs a `// info: <why>` (`X_LOG_LEVEL_UNSTATED`, `X_LOG_LEVEL_PIN_STALE`, `X_LOG_LEVEL_PIN_UNEXPLAINED`). The policy is in `docs/architecture/00-conventions.md`.
-
-### Changed
-
-- `@ultimat3/admin`: the search box, a list's `contains` filter and a reference lookup now ignore case. Each uses the entity's own `contains`, which is `ilike` and served by a `gin_trgm_ops` index where the app declares one. A `contains` the app DECLARES — in `rows` or in a scope's `where` — stays case-sensitive on both read and write, because a row scope is authorization (`caseSensitive: true` on the filter `declaredFilters` returns).
-- `@ultimat3/admin`: search reads up to four resources at a time instead of one after another. Each decision is still audited before any read.
-- `@ultimat3/ui`: `<Toaster>` keeps one node per toast id. A new toast no longer rebuilds or re-announces the visible ones, and focus on a toast's Undo button survives the next toast.
-- `@ultimat3/ui`: `<SearchableSelect>` and `<Combobox>` filter their options once per keystroke. Before, the rows, the status line and the keyboard handling each ran their own pass over the options.
-- Helm chart: memory requests follow measured idle plus headroom — web 256Mi → 128Mi, worker 256Mi → 160Mi, scheduler 128Mi → 160Mi (it idled at 137 MiB). Limits are unchanged.
-
-### Fixed
-
-- `@ultimat3/http`: a 404, 400, 422 or any other 4xx refusal logged at `info` is now `info` once per route and code per minute, then `debug`, like 401, 403 and 429 already were. An unauthenticated scanner wrote one `info` line per probe. Every refusal is still counted in `http_refusals_total{code}`, and the window is per code, so a 401 never hides the first 404 on the same route.
-- `bun run log-levels` now also flags a computed level on a logger (`ctx.logger[level](…)`, `log?.['info'](…)`) and an alias (`const say = logger.info`), which could write `info` unnoticed. Only a literal other level (`logger['debug']`) is exempt.
-- `@ultimat3/entity`: `approximateCount()` on a soft-deleting entity (`deletedAt`) is refused as `X_APPROXIMATE_COUNT_FILTERED`, because `reltuples` counts the rows every read hides. So an admin `count: 'estimate'` tile on such a table shows the exact count, and no longer counts deleted rows.
-- `@ultimat3/money`: `parseAmount` reads back what `formatMoney` writes in right-to-left locales. BHD in `ar-EG` was `X_MONEY_INPUT_INVALID` because the bidi mark was stripped only after trimming, which left a no-break space inside the number. Found by the money property.
-- `@ultimat3/realtime`: the pgoutput decoder refuses a negative length off the wire with `X_REPLICATION_PROTOCOL`. Before, a negative length moved the read cursor backwards and the message decoded silently into wrong values. It also refuses bytes after a complete Begin, Commit, Relation, Insert, Update, Delete, Truncate or Message. Found by the pgoutput property.
-- `@ultimat3/ui`: `<Drawer grabber>` reopens at its `snap` prop's height. Before, it reopened at whatever height the last drag left it.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.18.0](docs/changelog/31.18.0.md) | 2026-11-13 | The admin search ignores case and reads four resources at a time; a declared row scope stays case-sensitive, because it is authorization. |
 | [31.17.0](docs/changelog/31.17.0.md) | 2026-11-13 | New commands: `x token` (API keys), `x config show` (redacted), `x logs tail`, `x cache graph\|bust\|clear`, and `x explain <query>` (plans what a query actually sends, never against production). |
 | [31.16.0](docs/changelog/31.16.0.md) | 2026-11-13 | `x exercise` is fairer and stricter: a refused test-seed table is one finding instead of every check going unproven, one call is held to 100 statements (loops declared with `expectedQueryLoop` excluded), and a data-dependent branch no longer reads as an N+1. `x.verify.json` `exercise.unprovenMax` / `statementsMax` floors are red when declared, warnings otherwise. |
 | [31.15.0](docs/changelog/31.15.0.md) | 2026-11-12 | An island whose render throws keeps its server HTML instead of going blank (`mountOver`, used by `x g island`, `x new` and the resource form; the `island-mount-clears` guard finds older islands). |
