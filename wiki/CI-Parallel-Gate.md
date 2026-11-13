@@ -111,9 +111,9 @@ green; `verify` downloads every part and runs `bun run verify merge`. An app sca
 keeps its one-job workflow, which still works; to adopt, copy a fresh scaffold's
 `.github/workflows/ci.yml`.
 
-This repository's own `ci.yml` stays hand-written — it carries services and URLs only the framework
-has — and `verify-plan.test.ts` holds its `gate` matrix to `verifyPlan(7)`: a step added to the gate
-or a part edited out of the matrix is red there before it is `X_VERIFY_MERGE_INCOMPLETE` after a push.
+This repository's own `ci.yml` reads the same plan: its `tested` job runs `x verify plan --parts 7`
+and `jq` gives each row the test services its `needs` level names; `gate` is `fromJSON` of that.
+`scripts/ci-workflow-shape.test.ts` runs the step and holds every row to `verifyPlan(7)`.
 
 ## A GitHub Actions workflow, by hand
 

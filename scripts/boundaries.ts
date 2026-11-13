@@ -44,6 +44,8 @@ export interface SourceFile {
   readonly source: string;
   /** `maskLiterals(source)`, when the reader already holds it — the corpus masks each file once. */
   readonly masked?: string;
+  /** `stripComments(source)`, likewise: a corpus file computes it on first read and keeps it. */
+  readonly stripped?: string;
 }
 
 export interface Violation {
@@ -104,6 +106,30 @@ export function allImportsOf(file: SourceFile): readonly string[] {
 
 const scanned = new WeakMap<SourceFile, readonly string[]>();
 
+/** A scoped name as the raw text spells it: up to the first character no npm name may hold. */
+const SCOPED_TEXT = /@ultimat3\/([\w.~-]*)/g;
+
+/** Two `..` segments in a row (`../..`, `.././..`, `..\/..`): the least a path needs to leave
+ * `packages/<pkg>/src/`, or `e2e/`, for a sibling package. One `../` never gets past `<pkg>/`. */
+const TWO_UP = /\.\.[/\\](?:\.?[/\\])*\.\./;
+
+/**
+ * Every framework package a file could POSSIBLY import, read off its raw text with no parse: each
+ * `@ultimat3/<name>` it spells anywhere — comments and strings included, so it is a superset of
+ * what the transpiler finds. `undefined` when no such bound exists: a relative path that climbs
+ * two levels may land in any package. Measured 2026-11-13: the two transpiler passes in
+ * `allImportsOf` were 4.6 s of the `boundaries` step over 9,907 files, and nearly every file's
+ * targets are packages its own already-legal edges name.
+ *
+ * WHAT IT CANNOT SEE: a specifier spelled with escape sequences (`'@ultimat\x33/cli'`) — the
+ * transpiler decodes it, this text read does not. No file in the tree does that, and `tsc` reads
+ * such an import as the package it names.
+ */
+export function reachableTargets(file: SourceFile): readonly string[] | undefined {
+  if (TWO_UP.test(file.source)) return undefined;
+  return [...new Set([...file.source.matchAll(SCOPED_TEXT)].map((match) => match[1] ?? ''))];
+}
+
 /**
  * Pure. Callers do the I/O, so a test can hand this a fixture import graph and assert on the
  * violation report without writing a single file.
@@ -113,6 +139,9 @@ export function checkBoundaries(files: readonly SourceFile[]): readonly Violatio
   for (const file of files) {
     const from = packageOf(file.path);
     if (from === undefined) continue;
+    // A file whose every possible target is allowed cannot break the ceiling: not parsed at all.
+    const reach = reachableTargets(file);
+    if (reach?.every((to) => to === from || checkTier(from, to).allowed)) continue;
     for (const specifier of allImportsOf(file)) {
       const to = targetPackage(file.path, specifier);
       if (to === undefined || to === from) continue;
@@ -150,6 +179,9 @@ export function packageEdges(
     if (from === undefined) continue;
     const targets = edges.get(from) ?? new Set<string>();
     edges.set(from, targets);
+    // Nothing new to learn from a file whose every possible target is already an edge.
+    const reach = reachableTargets(file);
+    if (reach?.every((to) => to === from || targets.has(to))) continue;
     for (const specifier of allImportsOf(file)) {
       const to = targetPackage(file.path, specifier);
       if (to !== undefined && to !== from) targets.add(to);

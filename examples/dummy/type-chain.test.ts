@@ -3,19 +3,22 @@
  * `packages/db/src/schema/posts.ts` and change nothing else — the build must fail loudly
  * everywhere the value flows, never arrive silently as `undefined`."
  *
- * This performs the exact rename on a private copy of the app's sources, typechecks that copy with
- * the real compiler before and after, and asserts on the *diff* — not a raw error count. The app
- * already carries pre-existing, separately-tracked drift (the Postgres entity driver — PR 5 —
- * leaves `packages/db`'s repo layer red on its own), so counting total diagnostics would prove
- * nothing about the rename specifically. The diff isolates exactly what the rename broke.
+ * Two renames on a private copy of the app's sources, each typechecked with the real compiler, each
+ * asserted on the exact set of files and diagnostics it breaks:
  *
- * Scope, honestly: this proves hops 1–4 (column → row type → entity → view schema, via the
- * `satisfies Record<PostViewKeys, unknown>` in `apps/web/app/posts/entity.ts`) are real,
- * inferred, and non-stale. Hops 5+ (view → action `output` → typed client → component) run
- * through `packages/db`'s repo/query layer, which PR 5 has not built yet — pinning those hops
- * here would either pin pre-existing breakage or pin nothing, neither of which is this test's job.
+ * - the COLUMN (`posts.ts`) reaches hops 1–4: row type → entity → repo → the view's
+ *   `satisfies Record<PostViewKeys, unknown>` in `apps/web/app/posts/entity.ts`. It stops there by
+ *   design: `PostView` is a declared schema, so the wire shape does not move with a column.
+ * - the VIEW field (`entity.ts`) reaches hops 5+: the repo's mapper into the action `output`, the
+ *   typed action call in a contract test, and the pages that render a post.
+ *
+ * No baseline run. The app's sources typecheck clean (0 diagnostics in this copy, 2026-11-13) — the
+ * Postgres entity driver is built (`packages/entity/src/pg-driver.ts`) and `repo.ts` is on its real
+ * surface — so every in-app diagnostic after a rename IS the rename's, and a red baseline is the
+ * reference app's own `typecheck` step first (`bun run scripts/reference-app-gate.ts`). Both runs
+ * share the copy's one `tsconfig.tsbuildinfo` (`composite` makes it incremental); by measurement
+ * that saves nothing here — a rename at either root rechecks nearly the whole app.
  */
-
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun has no recursive copy, no symlink and no recursive remove, and the copy below needs all three.
 import { cpSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
@@ -42,9 +45,12 @@ const TSC_ARGS = ['--noEmit', '--pretty', 'false', '-p', 'tsconfig.json'] as con
  */
 const COPY = `${ROOT}/.x/type-chain-${String(process.pid)}`;
 const SCHEMA_FILE = `${COPY}/packages/db/src/schema/posts.ts`;
+const VIEW_FILE = `${COPY}/apps/web/app/posts/entity.ts`;
 
 const RENAME_FROM = '    excerpt: text({ max: EXCERPT_MAX }),';
 const RENAME_TO = '    summary: text({ max: EXCERPT_MAX }),';
+const VIEW_FROM = '  excerpt: t.string.max(EXCERPT_MAX),';
+const VIEW_TO = '  summary: t.string.max(EXCERPT_MAX),';
 
 interface Diagnostic {
   /** App-relative path, or `''` for a project-wide error the compiler raised about the config. */
@@ -66,9 +72,6 @@ const PROJECT_WIDE = /^error (TS\d+): (.*)$/;
 const CLEAN = 0;
 const DIAGNOSTICS_REPORTED = 1;
 
-/** File + line + code + message: the same diagnostic reported twice is one diagnostic, not two. */
-const key = (d: Diagnostic): string => `${d.file}:${d.line} ${d.code} ${d.message}`;
-
 /**
  * Inside this app — `apps/…`, `packages/…`, never `../../packages/cli/…`. A rename in this app's
  * schema cannot reach a framework source (nothing in `packages/` imports Postly), so a diagnostic
@@ -83,10 +86,10 @@ const key = (d: Diagnostic): string => `${d.file}:${d.line} ${d.code} ${d.messag
  *
  * `d.file !== ''` first, and it is not cosmetic: a project-wide config error carries no path (see
  * `parseDiagnostics`), so a bare `..` test answered TRUE for the one class this filter cannot
- * attribute to anything. It would then enter `beforeKeys` and `alreadyFailing`, and a config error
- * the rename INTRODUCED could be excused as pre-existing. `harnessFault` refuses that run first
- * today — which makes this a second line of defence rather than a live bug, and a predicate whose
- * correctness depends on another function running first is one edit from being neither.
+ * attribute to anything, and a config error would be counted as a hop. `harnessFault` refuses that
+ * run first today — which makes this a second line of defence rather than a live bug, and a
+ * predicate whose correctness depends on another function running first is one edit from being
+ * neither.
  */
 const inApp = (d: Diagnostic): boolean => d.file !== '' && !d.file.startsWith('..');
 
@@ -192,11 +195,8 @@ async function copyApp(): Promise<void> {
   await Bun.write(`${COPY}/tsconfig.json`, JSON.stringify(config));
 }
 
-/** The copy's schema as read, before the rename. */
-let pristine = '';
-
-// Pure, over fixtures: the three parsing and filtering decisions the proof below rests on, none of
-// which the 30-second run can report on because it asserts on their OUTPUT. Milliseconds.
+// Pure, over fixtures: the three parsing and filtering decisions the proofs below rest on, none of
+// which a compiler run can report on because they assert on its OUTPUT. Milliseconds.
 describe('type chain · what the diff is computed over', () => {
   const at = (file: string, code = 'TS2339'): Diagnostic => ({ file, line: 1, code, message: 'x' });
 
@@ -213,7 +213,7 @@ describe('type chain · what the diff is computed over', () => {
     ]);
   });
 
-  test('and is not an in-app diagnostic, so it can never be excused as pre-existing', () => {
+  test('and is not an in-app diagnostic, so it can never be counted as a hop', () => {
     expect(inApp(at('', 'TS6046'))).toBe(false);
     expect(inApp(at('apps/web/app/posts/repo.ts'))).toBe(true);
     expect(inApp(at('../../packages/cli/src/bin.ts', 'TS6307'))).toBe(false);
@@ -229,6 +229,44 @@ describe('type chain · what the diff is computed over', () => {
   });
 });
 
+/** A copy's file, with one line replaced for the length of `body` and put back after it. */
+async function withEdit<T>(
+  file: string,
+  from: string,
+  to: string,
+  body: () => Promise<T>,
+): Promise<T> {
+  const pristine = await Bun.file(file).text();
+  // If this fails, the fixture drifted from the rename, not the chain under test.
+  expect(pristine).toContain(from);
+  await Bun.write(file, pristine.replace(from, to));
+  try {
+    return await body();
+  } finally {
+    await Bun.write(file, pristine);
+  }
+}
+
+/** What the rename broke: every in-app diagnostic of a run that really compiled. */
+async function introducedBy(
+  file: string,
+  from: string,
+  to: string,
+): Promise<readonly Diagnostic[]> {
+  const run = await withEdit(file, from, to, typecheckApp);
+  // A compiler that did not run reports nothing, and every pin below would fail for a reason that
+  // has nothing to do with the chain.
+  expect(harnessFault(run)).toBe('');
+  return run.diagnostics.filter(inApp);
+}
+
+/** File → how many diagnostics the rename earned there: the shape both proofs pin. */
+const perFile = (found: readonly Diagnostic[]): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const d of found) counts[d.file] = (counts[d.file] ?? 0) + 1;
+  return counts;
+};
+
 describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', () => {
   beforeAll(async () => {
     // A fresh clone with no install has no compiler here, and `Bun.spawn` would fail with an
@@ -243,101 +281,46 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     await version.exited;
 
     await copyApp();
-    pristine = await Bun.file(SCHEMA_FILE).text();
   });
 
   afterAll(() => {
     rmSync(COPY, { recursive: true, force: true });
   });
 
-  test('excerpt → summary, and nothing else, breaks the build — never silently', async () => {
-    // If this fails, the fixture drifted from the rename below, not the chain under test.
-    expect(pristine).toContain(RENAME_FROM);
-
-    const before = await typecheckApp();
-    // Before any diff: a compiler that did not run produces an empty baseline, and every
-    // assertion below would then pass or fail for a reason that has nothing to do with the chain.
-    expect(harnessFault(before)).toBe('');
-    const beforeInApp = before.diagnostics.filter(inApp);
-    const beforeKeys = new Set(beforeInApp.map(key));
-
-    // Sanity: every file the rename is about to hit compiles clean today. Otherwise a
-    // diagnostic appearing "after" the rename could just be pre-existing noise wearing a new line
-    // number, and the diff below would prove nothing.
-    //
-    // `posts/repo.ts` joined the list when it was rewritten onto @ultimat3/entity's real surface:
-    // it spells the column three times now — the view mapper, the feed projection, the insert
-    // shape — where the builder API it used to call named no column at all.
-    //
-    // The two `backfills/post-excerpts` files joined it 2026-08-23 with the backfill itself: a
-    // sweep that fills blank excerpts names the column in its `source` predicate, in its row
-    // projection and in its test's row builder, so a rename reaches it exactly as it reaches the
-    // repo. Added in the same commit as the consumer, which is the discipline this list exists
-    // for — a file appearing here on its own would be a hop that used to be silent.
-    //
-    // `scripts/test-setup.test.ts` joined it 2026-08-24, and it is that sentence in reverse: a hop
-    // that WAS silent became real. `SeedHandle.pick` answered `SeedRow` — an `unknown` index
-    // signature — for every label, so a seeded post's columns were untyped and this rename could
-    // not reach the fixture that writes one. It answers the entity's own row type now, keyed off
-    // the `<entity>:<name>` label, so `db.posts.insert({ excerpt })` there is a real hop.
-    //
-    // `post-excerpts.test.ts` joined it 2026-10-01: the sweep's handler finally has a test that
-    // RUNS it, and that test stores posts and reads their `excerpt` back through the typed handle.
-    const touchedFiles = [
-      'apps/web/app/posts/backfills/post-excerpts.job.test.ts',
-      'apps/web/app/posts/backfills/post-excerpts.test.ts',
-      'apps/web/app/posts/backfills/post-excerpts.ts',
-      'apps/web/app/posts/entity.ts',
-      // `importRows()` writes a restored post back, `excerpt` included, and its job test builds one.
-      'apps/web/app/posts/jobs.job.test.ts',
-      'apps/web/app/posts/jobs/import-posts.ts',
-      // `orgPosts`' paging test inserts 55 posts through the typed handle, `excerpt` included.
-      'apps/web/app/posts/queries/org-posts.test.ts',
-      'apps/web/app/posts/repo.ts',
-      'apps/web/app/posts/repo.test.ts',
-      // The subject-erase test seeds a post per member, and `excerpt` is required on an insert.
-      'apps/web/app/settings/jobs/erase-member.test.ts',
-      'packages/db/seeds/dev.ts',
-      'scripts/test-setup.test.ts',
-    ];
-    for (const file of touchedFiles) {
-      expect(before.diagnostics.filter((d) => d.file === file)).toEqual([]);
-    }
-
-    /**
-     * Files that already fail today. The diff below ignores them, and that is the same rule the
-     * `touchedFiles` sanity check above states — just enforced instead of assumed.
-     *
-     * `apps/web/app/posts/repo.ts` is the case that forced it: it used to carry 18 errors of its
-     * own (it called `.join()`, `.returning()` and friends that `@ultimat3/entity` has never had),
-     * and the rename REWORDED one of them, because the message quotes the column list. A reworded
-     * message is a new `key`, so a keyed diff reads it as introduced when nothing there compiled
-     * before OR after. That file is repaired and pinned above now; the rule stays, because the
-     * app's baseline is still red elsewhere and any of those messages can be reworded the same way.
-     *
-     * Deriving the set from the baseline rather than listing it keeps this honest — a file that
-     * gets repaired drops out on its own, and its next real regression is caught.
-     */
-    const alreadyFailing = new Set(beforeInApp.map((d) => d.file));
-
-    await Bun.write(SCHEMA_FILE, pristine.replace(RENAME_FROM, RENAME_TO));
-    const after = await typecheckApp();
-
-    expect(harnessFault(after)).toBe('');
-    const introduced = after.diagnostics.filter(
-      (d) => inApp(d) && !beforeKeys.has(key(d)) && !alreadyFailing.has(d.file),
-    );
-
-    // The rename must surface as new, attributable failures — not vanish into whatever the app's
-    // baseline already looked like.
-    expect(introduced.length).toBeGreaterThan(0);
+  test('excerpt → summary on the column, and nothing else, breaks hops 1–4 — never silently', async () => {
+    const introduced = await introducedBy(SCHEMA_FILE, RENAME_FROM, RENAME_TO);
 
     // Pinned to the exact files the rename reaches today. A file dropping off this list without
     // the test changing is a fix silently going untested; a file this test doesn't know about
     // starting to break means a hop that was silent has become real — either way, update this
     // list on purpose, in the same commit, the same discipline `KNOWN_GAPS` in
     // `packages/cli/src/scaffold-typecheck-fixture.ts` uses for pinned compiler drift.
-    expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
+    //
+    // `posts/repo.ts` spells the column three times — the view mapper, the feed projection, the
+    // insert shape. The two `backfills/post-excerpts` files name it in the sweep's `source`
+    // predicate, its row projection and its test's row builder (2026-08-23).
+    // `scripts/test-setup.test.ts` joined 2026-08-24, when `SeedHandle.pick` started answering the
+    // entity's own row type. `post-excerpts.test.ts` joined 2026-10-01: it stores posts and reads
+    // their `excerpt` back through the typed handle.
+    expect(new Set(introduced.map((d) => d.file))).toEqual(
+      new Set([
+        'apps/web/app/posts/backfills/post-excerpts.job.test.ts',
+        'apps/web/app/posts/backfills/post-excerpts.test.ts',
+        'apps/web/app/posts/backfills/post-excerpts.ts',
+        'apps/web/app/posts/entity.ts',
+        // `importRows()` writes a restored post back, `excerpt` included, and its job test builds one.
+        'apps/web/app/posts/jobs.job.test.ts',
+        'apps/web/app/posts/jobs/import-posts.ts',
+        // `orgPosts`' paging test inserts 55 posts through the typed handle, `excerpt` included.
+        'apps/web/app/posts/queries/org-posts.test.ts',
+        'apps/web/app/posts/repo.ts',
+        'apps/web/app/posts/repo.test.ts',
+        // The subject-erase test seeds a post per member, and `excerpt` is required on an insert.
+        'apps/web/app/settings/jobs/erase-member.test.ts',
+        'packages/db/seeds/dev.ts',
+        'scripts/test-setup.test.ts',
+      ]),
+    );
     // 22 as of 2026-08-24: 21, plus the one `scripts/test-setup.test.ts` now contributes.
     // 26 as of 2026-10-01: the sweep's handler writes `{ excerpt }` by primary key (2 more in
     // `post-excerpts.ts`), and `post-excerpts.test.ts` stores and reads the column (2).
@@ -355,28 +338,44 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       ),
     ).toBe(true);
 
+    const counts = perFile(introduced);
     // `repo.ts`: the view mapper, the feed projection and the insert shape each name the column,
     // and the projection's THREE readers cascade off it, two diagnostics apiece — the column list
     // and the mapper it feeds (hop 2 → 3). The third reader is `publishedPage`, the public blog
     // index's page: one more reader of one projection is exactly the cascade this pins.
-    expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.ts')).toHaveLength(10);
-
+    expect(counts['apps/web/app/posts/repo.ts']).toBe(10);
     // `repo.test.ts`: a test seeding a row is an insert literal like any other (hop 1 → 2).
-    expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.test.ts')).toHaveLength(1);
-
+    expect(counts['apps/web/app/posts/repo.test.ts']).toBe(1);
     // `seeds/dev.ts`: raw insert literals no longer match the entity's columns (hop 1 → 2).
-    expect(introduced.filter((d) => d.file === 'packages/db/seeds/dev.ts')).toHaveLength(4);
+    expect(counts['packages/db/seeds/dev.ts']).toBe(4);
+  }, 120_000);
 
-    // `backfills/post-excerpts.ts`: the sweep names the column in its `source` predicate and in
-    // its row projection, so the rename reaches a job the same way it reaches a read (hop 2 → 3).
-    expect(
-      introduced.filter((d) => d.file === 'apps/web/app/posts/backfills/post-excerpts.ts').length,
-    ).toBeGreaterThan(0);
-
-    // Its test builds a row literal, which is hop 1 → 2 again — the same shape as `repo.test.ts`.
-    expect(
-      introduced.filter((d) => d.file === 'apps/web/app/posts/backfills/post-excerpts.job.test.ts')
-        .length,
-    ).toBeGreaterThan(0);
+  /**
+   * Hops 5+, which the column rename above cannot reach: `PostView` is declared, not derived, so
+   * the wire keeps `excerpt` until the VIEW changes. Renamed there, the field fails in the repo's
+   * mapper into the action `output` (hop 5), in a contract test's typed action call (hop 7), and in
+   * every page that renders a post off a query's output (hop 8) — `blog/page.tsx` through
+   * `<PostCard>`'s props, the `posts/[id]` page in its own reads and in its test's `renderPage`.
+   *
+   * Silent today, and pinned silent by the exact set: the feed island reads `FeedRow`
+   * (`apps/web/app/feed/live.ts`), a hand-written wire type, so a view rename reaches the live feed
+   * as `undefined` at runtime. The day that row derives from `PostSummary`, `feed.island.tsx`
+   * joins this list.
+   */
+  test('excerpt → summary on the view breaks hops 5+ — the action output, its client, the pages', async () => {
+    const introduced = await introducedBy(VIEW_FILE, VIEW_FROM, VIEW_TO);
+    expect(perFile(introduced)).toEqual({
+      // Hop 4, from the other side: `summary` is no column of `posts`.
+      'apps/web/app/posts/entity.ts': 1,
+      // Hop 5: the view mapper and the feed mapper return an object the `output` no longer has.
+      'apps/web/app/posts/repo.ts': 2,
+      // Hop 7: the typed `createPost` call's result has no `excerpt`.
+      'apps/web/app/posts/actions.contract.test.ts': 1,
+      // Hop 8: the pages that render a post.
+      'apps/web/app/posts/[id]/page.tsx': 3,
+      'apps/web/app/posts/[id]/page.test.ts': 4,
+      'apps/web/site/blog/[slug]/page.tsx': 3,
+      'apps/web/site/blog/page.tsx': 1,
+    });
   }, 120_000);
 });

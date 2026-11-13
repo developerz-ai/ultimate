@@ -122,20 +122,21 @@ function closingQuote(source: string, from: number): number {
  * The `${` and its `}` stay blank on purpose — a bare `${value}` must read as a value with no call
  * around it, and an unblanked brace would also unbalance the segment depth.
  */
-export function maskToCode(source: string): CodeMask {
+export function maskToCode(source: string, masked?: string): CodeMask {
   // Memoised by text: `error-render`, `catch-render` and `fix-shell-arg` each masked every shipped
-  // file for themselves, three passes of one answer on the `errors` step.
+  // file for themselves, three passes of one answer on the `errors` step. `masked` is the corpus
+  // file's own `maskLiterals(source)`, handed in so that pass is not run a second time either.
   const hit = codeMasks.get(source);
   if (hit !== undefined) return hit;
-  const mask = computeCodeMask(source);
+  const mask = computeCodeMask(source, masked);
   codeMasks.set(source, mask);
   return mask;
 }
 
 const codeMasks = new Map<string, CodeMask>();
 
-function computeCodeMask(source: string): CodeMask {
-  const out = maskLiterals(source).split('');
+function computeCodeMask(source: string, masked = maskLiterals(source)): CodeMask {
+  const out = masked.split('');
   const substitutions: Range[] = [];
   for (let i = 0; i < source.length; i += 1) {
     if (source[i] !== '`' || out[i] !== '`') continue;
@@ -382,10 +383,25 @@ function unsafeUses(
   return found;
 }
 
+/**
+ * A finding needs both an `unknown`/`any` annotation and a `cause`/`fix` key, and each is in the
+ * raw text whenever it is in the code mask: the mask writes spaces, and every literal or comment it
+ * blanks ends on a quote, a slash or a newline, never a word character. The annotation's `:` may
+ * have a comment between it and the type, which the mask would have turned into spaces — so this
+ * allows one. A file failing either is never masked: 524 of 5,759 shipped files pass (measured
+ * 2026-11-13), and `checkFile` costs ~2 ms each. A block comment's body is "no star-slash", spelled
+ * so each character has one parse: a lazy any-character body backtracks exponentially (js/redos).
+ */
+const UNKNOWN_WORD = /:(?:\s|\/\*(?:[^*]|\*+[^*/])*\*+\/|\/\/[^\n]*\n)*(?:unknown|any)\b/;
+const FIELD_WORD = /\b(?:cause|fix)\b/;
+
+export const mayRenderUnknown = (source: string): boolean =>
+  UNKNOWN_WORD.test(source) && FIELD_WORD.test(source);
+
 /** Every unsafe render in one file, in source order. */
 export function checkFile(file: SourceFile): readonly UnsafeRender[] {
-  if (isTestPath(file.path)) return [];
-  const mask = maskToCode(file.source);
+  if (isTestPath(file.path) || !mayRenderUnknown(file.source)) return [];
+  const mask = maskToCode(file.source, file.masked);
   const segments = topLevelSegments(mask.code);
   const depths = parenDepths(mask.code);
   const bindings = segments.map(

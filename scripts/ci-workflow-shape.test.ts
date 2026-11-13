@@ -5,12 +5,13 @@
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { NEW_SHAPES } from '../packages/cli/src/new-shapes';
+import { planMatrix, verifyPlan } from '../packages/cli/src/verify-plan';
 import { BESIDE_SERIAL_SUITES } from '../packages/cli/src/verify-run';
 import { SHARDABLE_STEPS } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
 import type { GatePart } from './lib/ci-parts';
 import { partGaps, scriptCalls, shardSetGaps } from './lib/ci-parts';
-import { expr, type Job, jobOf, readWorkflow, text } from './lib/ci-workflow-read';
+import { expr, type Job, jobOf, planRows, readWorkflow, text } from './lib/ci-workflow-read';
 import { GATED_APPS } from './lib/gated-apps';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import * as verifyArgs from './lib/verify-args';
@@ -31,15 +32,15 @@ const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? v
 const record = (value: unknown): Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
-const parts: readonly GatePart[] = listOf(job('gate').strategy?.matrix?.['include']).map((raw) => {
-  const row = record(raw);
-  const shard = text(row['shard']);
-  return {
-    part: text(row['part']),
-    only: text(row['only']).split(','),
-    ...(shard === '' ? {} : { shard }),
-  };
-});
+// The matrix is what the `tested` job's plan step writes, so the rows are READ BY RUNNING IT.
+const planStep = (job('tested').steps ?? []).find((step) => step.id === 'plan');
+const rows = await planRows(ci);
+
+const parts: readonly GatePart[] = rows.map((row) => ({
+  part: text(row['part']),
+  only: text(row['only']).split(','),
+  ...(text(row['shard']) === '' ? {} : { shard: text(row['shard']) }),
+}));
 
 describe('unit · ci.yml · the gate in parts is still the gate', () => {
   test('the parts run every gate step exactly once, and every shard of a split', () => {
@@ -193,6 +194,34 @@ describe('unit · ci.yml · every reader of a job name still finds it', () => {
   });
 });
 
+describe('unit · ci.yml · the gate matrix is `x verify plan`, never typed here', () => {
+  // `gate` already waits on `tested`, so the plan rides there: no runner and no wait of its own.
+  const tested = job('tested');
+
+  test('the gate reads the tested job`s plan through fromJSON', () => {
+    const matrix: unknown = job('gate').strategy?.matrix;
+    expect(matrix).toBe(expr('fromJSON(needs.tested.outputs.matrix)'));
+    expect(record(record(tested)['outputs'])['matrix']).toBe(expr('steps.plan.outputs.matrix'));
+    expect(text(planStep?.run)).toContain('bun run x -- verify plan --parts "$PARTS"');
+    // A pull request needs the plan too: the checkout, the install and the plan run on every event.
+    const upToPlan = (tested.steps ?? []).slice(0, (tested.steps ?? []).indexOf(planStep ?? {}));
+    const uses = upToPlan.map((step) => text(step.uses).split('@')[0]);
+    expect(uses).toEqual(['actions/checkout', './.github/actions/setup']);
+    expect([...upToPlan, planStep].filter((step) => step?.if !== undefined)).toEqual([]);
+  });
+
+  test('the rows are the plan, each with the test services its level of need names', () => {
+    const plan = planMatrix(verifyPlan(Number(planStep?.env?.['PARTS'])));
+    expect(rows.map(({ services, urls, ...row }) => row)).toEqual(plan.include.map(record));
+    const given = (row: Readonly<Record<string, unknown>>): string =>
+      `${text(row['needs'])}: ${text(row['services'])} ${text(row['urls'])}`;
+    expect([...new Set(rows.map(given))].filter((one) => !one.startsWith('services'))).toEqual([
+      'database: postgres TEST_DATABASE_URL',
+      'none:  ',
+    ]);
+  });
+});
+
 describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot', () => {
   // `x db gen` and the `drift` step replay migrations on a scratch PGlite, whose first boot per
   // checkout is an `initdb` (~3.0 s measured, against ~0.75 s restored). The post-`initdb`
@@ -315,6 +344,18 @@ describe('unit · ci.yml · what a red part prints', () => {
 });
 
 describe('unit · ci.yml · what the split may not change', () => {
+  test('container builds the demo image once and refuses it past its measured ceiling', () => {
+    const run = runsOf(job('container'));
+    expect(run).toContain('docker build -f dummy/social-media-clone/docker/Dockerfile.monorepo');
+    expect(run).toContain('docker export "$(docker create social-demo:ci)" | wc -c');
+    expect(Number(/^\s*ceiling=(\d+)$/m.exec(run)?.[1])).toBeGreaterThan(202_533_376);
+    expect(run).toContain('[ "$bytes" -gt "$ceiling" ]');
+    expect(run).toContain(
+      'fix: narrow dummy/social-media-clone/docker/Dockerfile.monorepo.dockerignore',
+    );
+    expect(run.split('Dockerfile.monorepo -t').length).toBe(2);
+  });
+
   test('free runners only: ubuntu-latest, and windows-latest / macos-latest for their own jobs', () => {
     // `windows-latest` and `macos-latest` are free because the repository is public; each is
     // admitted for the one job whose question is the platform, never as a second Linux job.
@@ -412,9 +453,7 @@ describe('unit · ci.yml · the TLS replication suite runs in CI', () => {
   // #519: `pg-tls.live.test.ts` skipped in every run because nothing started a TLS server or
   // exported its CA — a live step green over a suite that never ran. `live` is sharded, and the
   // shard the suite lands on is the sorted file list's: every live part must start it.
-  const live = listOf(job('gate').strategy?.matrix?.['include'])
-    .map(record)
-    .filter((row) => text(row['only']).split(',').includes('live'));
+  const live = rows.filter((row) => text(row['only']).split(',').includes('live'));
 
   test('every live part starts postgres-tls and exports its URL and its CA', () => {
     expect(live.length).toBeGreaterThan(0);

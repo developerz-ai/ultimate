@@ -48,6 +48,7 @@ import {
   publishOrder,
   workspaceManifests,
 } from './lib/workspaces';
+import { plannedApiLockLine, writeApiLock } from './release-api-lock';
 
 export { bumpWindowFindings } from './lib/major-window';
 // The ask query lives with the other release subjects (`lib/release-subject.ts`), one definition
@@ -383,6 +384,9 @@ if (import.meta.main) {
   const performed = dryRun
     ? { writes: [], findings: [] }
     : await performReleaseWrites(root, version);
+  // Last of the derived files: the public API lock reads the stamped version and the promoted
+  // changelog, so the next release's breaks are judged against this one.
+  const apiLock = dryRun ? undefined : await writeApiLock(root);
 
   // The ask this release would close — best effort, and last: by here the manifests are written,
   // so no answer from `gh` (absent binary, failed auth, timeout, garbage) may throw or touch
@@ -399,12 +403,16 @@ if (import.meta.main) {
       // repo was in a releasable state while the report below said it was not.
       // A write this run could not perform is a failing release, not a footnote: the tree it leaves
       // behind is the one the tag would be cut on, and the gate reads all three files.
-      ok: skew.length === 0 && performed.findings.length === 0,
+      ok: skew.length === 0 && performed.findings.length === 0 && apiLock?.finding === undefined,
       script: 'release',
       summary: dryRun
         ? `would release ${publishable.length} packages at ${version}`
         : `${publishable.length} packages set to ${version}`,
-      findings: [...skew, ...performed.findings],
+      findings: [
+        ...skew,
+        ...performed.findings,
+        ...(apiLock?.finding === undefined ? [] : [apiLock.finding]),
+      ],
       lines: [
         `  version   ${current} -> ${version}`,
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,
@@ -413,11 +421,11 @@ if (import.meta.main) {
         `  changelog [Unreleased] promoted to docs/changelog/${version}.md, its row in CHANGELOG.md, a fresh [Unreleased]`,
         `  gaps      wiki/Known-Gaps.md \`main\` cells -> **${version}**`,
         `  stability ${STABILITY_PATH} next-window line from the promoted changelog`,
-        // Three lines either way: a dry run that listed only what it would NOT do is how the three
-        // derived files stayed invisible for nineteen majors.
+        // Every derived file either way, the API lock included: a dry run that listed only what it
+        // would NOT do is how three derived files stayed invisible for nineteen majors.
         ...(dryRun
-          ? RELEASE_WRITES.map(plannedWriteLine)
-          : performed.writes.map(performedWriteLine)),
+          ? [...RELEASE_WRITES.map(plannedWriteLine), plannedApiLockLine()]
+          : [...performed.writes.map(performedWriteLine), apiLock?.line ?? '']),
         log.ok
           ? `  commits   ${subjects.length} since v${current}, appended under ### Commits`
           : `  commits   none listed — this clone has no v${current} tag to bound the range`,

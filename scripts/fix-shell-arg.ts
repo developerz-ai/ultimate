@@ -76,11 +76,23 @@ export interface FixShellArgSite {
 
 export type { FixParams } from './lib/fix-shell-arg-sinks';
 
-/** The first pass, over raw sources: every exported factory taking a `fix`, and where it sits. */
-export const fixParamsOf = (sources: readonly string[]): FixParams =>
+const FIX_WORD = /\bfix\b/;
+
+/**
+ * The first pass, over raw sources: every exported factory taking a `fix`, and where it sits.
+ * `files[i]`, when given, is the corpus file `sources[i]` came from: its `masked` is read only for a
+ * file that passes the prefilter, and is never recomputed.
+ */
+export const fixParamsOf = (
+  sources: readonly string[],
+  files: readonly { readonly masked?: string }[] = [],
+): FixParams =>
   sinkParamsOf(
     valueEnd,
-    sources.map((source) => maskToCode(source).code),
+    // A sink is a parameter NAMED `fix`: a file that never spells the word declares none.
+    sources.flatMap((source, index) =>
+      FIX_WORD.test(source) ? [maskToCode(source, files[index]?.masked).code] : [],
+    ),
   );
 
 /**
@@ -102,8 +114,11 @@ export function scanFixShellArgs(
   path: string,
   source: string,
   params: FixParams = NO_PARAMS,
+  masks: { readonly masked?: string } = {},
 ): readonly FixShellArgSite[] {
-  const mask = maskToCode(source);
+  // Every site is a template substitution, and one is spelled `${` in any reading of the file.
+  if (!source.includes('${')) return [];
+  const mask = maskToCode(source, masks.masked);
   const text = templateText(source, mask.substitutions);
   const screened = screenedConsts(valueEnd, mask.code);
   const seen = new Set<number>();
@@ -217,8 +232,11 @@ let lastParams: FixParams = NO_PARAMS;
 
 export const fixShellArgSites = async (root: string): Promise<readonly FixShellArgSite[]> => {
   const files = (await corpus(root, 'source')).filter(shipped);
-  lastParams = fixParamsOf(files.map((file) => file.source));
-  return files.flatMap((file) => scanFixShellArgs(file.path, file.source, lastParams));
+  lastParams = fixParamsOf(
+    files.map((file) => file.source),
+    files,
+  );
+  return files.flatMap((file) => scanFixShellArgs(file.path, file.source, lastParams, file));
 };
 
 const PROBE: SiteProbe<FixShellArgSite> = {

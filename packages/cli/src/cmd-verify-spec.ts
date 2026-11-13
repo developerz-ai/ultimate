@@ -16,7 +16,9 @@ export const verifySpec: CommandSpec = {
   summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
   usage:
     'x verify [--only <step>[,<step>…] [--shard i/n [--timings file]] | --changed [--base <ref>] [--dirty]] [--workers N] [--isolate] [--json] · x verify merge <part.json…> [--json] · x verify plan [--parts n] [--json]',
-  requiresApp: true,
+  // No `requiresApp`: the dispatcher reads it per command, and `plan` reads nothing from an app —
+  // ci.yml runs it at the repo root. `run` and `merge` call `requireAppRoot` first, before any
+  // flag is read (`cmd-verify.ts`; `cmd-verify-plan.test.ts` holds both sides).
   subcommands: VERIFY_SUBCOMMANDS,
   defaultSubcommand: 'run',
   // `--workers` and `--isolate` change how the test steps run, never which steps run. `--only`

@@ -51,10 +51,20 @@ export interface KeyedHasherSite {
 
 const CONSTRUCTOR = /\bCryptoHasher\s*\(/g;
 
-/** Every keyed construction in one file. `stripped` keeps strings so arguments split correctly. */
-export function keyedHashers(path: string, source: string): readonly KeyedHasherSite[] {
-  const masked = maskLiterals(source);
-  const stripped = stripComments(source);
+/**
+ * Every keyed construction in one file. `stripped` keeps strings so arguments split correctly. A
+ * file that never spells `CryptoHasher` holds none and is not masked at all — 75 of ~10,000 do, and
+ * masking the rest twice was 4.9 s of the `boundaries` step (measured 2026-11-13). A corpus file
+ * hands its own masks in, so the one it already computed is never computed again.
+ */
+export function keyedHashers(
+  path: string,
+  source: string,
+  masks: Pick<SourceFile, 'masked' | 'stripped'> = {},
+): readonly KeyedHasherSite[] {
+  if (!source.includes('CryptoHasher')) return [];
+  const masked = masks.masked ?? maskLiterals(source);
+  const stripped = masks.stripped ?? stripComments(source);
   const sites: KeyedHasherSite[] = [];
   for (const found of masked.matchAll(CONSTRUCTOR)) {
     const open = found.index + found[0].length - 1;
@@ -84,7 +94,7 @@ export function keyedHasherResult(files: readonly SourceFile[]): ScriptResult {
   let sites = 0;
   for (const file of files) {
     if (file.path === HMAC_SEAM) continue;
-    const found = keyedHashers(file.path, file.source);
+    const found = keyedHashers(file.path, file.source, file);
     if (Object.hasOwn(KEYED_HASHER_EXEMPT, file.path)) {
       exemptHits.set(file.path, found.length);
       continue;

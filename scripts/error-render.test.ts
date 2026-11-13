@@ -16,6 +16,7 @@ import {
   checkFile,
   errorRendering,
   maskToCode,
+  mayRenderUnknown,
   topLevelSegments,
   unsafeRenderFindingFor,
 } from './error-render';
@@ -367,5 +368,29 @@ describe('the entry point sees a catch binding', () => {
     );
     const findings = await errorRendering(root);
     expect(findings.map((one) => one.code)).not.toContain('X_CATCH_RENDER_UNSAFE');
+  });
+});
+
+// The pre-filter that skips the mask on most files: it must still see an annotation with a comment
+// between its `:` and the type, and it must answer in linear time on any text a file can hold.
+describe('the pre-filter: an `unknown` annotation and a `cause`/`fix` key', () => {
+  test('a block or line comment between the `:` and the type is still an annotation', () => {
+    for (const annotation of [
+      ': unknown',
+      ':/* x */unknown',
+      ': /** a ** b */ any',
+      ':// c\n unknown',
+    ])
+      expect(mayRenderUnknown(`(e${annotation}) => ({ cause: e })`), annotation).toBe(true);
+    expect(mayRenderUnknown('(e: unknownish) => ({ cause: e })')).toBe(false);
+    expect(mayRenderUnknown('(e: unknown) => ({ reason: e })')).toBe(false);
+    // A comment ends at its first `*/`: what follows it is code, not more comment.
+    expect(mayRenderUnknown('(e:/* a */ x /* b */unknown) => ({ cause: e })')).toBe(false);
+  });
+
+  test('linear on `:/*` and many `*//*`, where a lazy comment body backtracks exponentially', () => {
+    const started = performance.now();
+    expect(mayRenderUnknown(`cause:/*${'*//*'.repeat(40)}`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

@@ -87,7 +87,11 @@ function waitOf(callee: string, args: readonly string[] | undefined): string | u
   return `${name}(…, ${squash(delay) || '?'})`;
 }
 
+/** What every shape `CALL` reads spells: a file with none of it is never stripped. */
+const MAY_WAIT = /sleep|set(?:Timeout|Interval)/;
+
 export function scanRealSleeps(path: string, source: string): readonly RealSleepSite[] {
+  if (!MAY_WAIT.test(source)) return [];
   // Comments are prose, and a rule's own test spells the bad shape as a STRING: neither is a call.
   const code = stripComments(source);
   const literals = sourceStrings(source);

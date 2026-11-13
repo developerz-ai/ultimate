@@ -38,6 +38,9 @@ RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
 # layer every node pulls. `x verify` is the gate and it ran in CI before this image was built.
 # Measured on this tree, `docker images`, linux/amd64, 2026-09-23: 842 MB before, 594 MB after, and
 # the image still applies all 6 migrations and answers `/readyz` 200 and `GET /` 200 as ROLE=web.
+# No `--filter` to the demo's workspace closure: measured 2026-11-13, it installs the same 74
+# packages into the same 58 MB — the closure is every framework package but `create-ultimate`, and no
+# member outside it has a production dependency the demo lacks. The ignore file is what narrowed.
 FROM oven/bun:1.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS deps
 WORKDIR /repo
 COPY --from=manifests /repo ./

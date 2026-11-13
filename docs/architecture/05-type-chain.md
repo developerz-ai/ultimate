@@ -97,9 +97,10 @@ Rename `excerpt` → `summary` in `packages/db/src/schema/posts.ts` and change n
 
 Measured in `examples/dummy`, by running the real compiler over the real app:
 [`type-chain.test.ts`](../../examples/dummy/type-chain.test.ts) performs this exact rename on a
-private copy of the sources (never the tracked file: the unit step's slices run side by side),
-typechecks before and after, and asserts on the DIFF. The file set and the total
-below are what it pins; a per-file count is stated only where that file pins one too.
+private copy of the sources (never the tracked file: the unit step's slices run side by side) and
+typechecks it once. No baseline run and no diff: the app's sources typecheck clean, so every in-app
+diagnostic after the rename is the rename's. The file set and the total below are what it pins; a
+per-file count is stated only where that file pins one too. `As of 2026-11`.
 
 | Where it breaks | Diagnostics | Message shape |
 |---|---|---|
@@ -110,13 +111,33 @@ below are what it pins; a per-file count is stated only where that file pins one
 | `apps/web/app/posts/backfills/post-excerpts.ts` | ≥ 1 | the sweep names the column in its `source` predicate and in its row projection |
 | `apps/web/app/posts/backfills/post-excerpts.job.test.ts` | ≥ 1 | its row builder is a literal |
 | `apps/web/app/posts/backfills/post-excerpts.test.ts` | ≥ 1 | it stores posts and reads the column back through the typed handle |
+| `apps/web/app/posts/jobs/import-posts.ts`, `posts/jobs.job.test.ts` | ≥ 1 each | a restored post is written back, `excerpt` included, and its job test builds one |
+| `apps/web/app/posts/queries/org-posts.test.ts` | ≥ 1 | the paging test inserts its posts through the typed handle |
+| `apps/web/app/settings/jobs/erase-member.test.ts` | ≥ 1 | the subject-erase test seeds a post per member |
 | `scripts/test-setup.test.ts` | ≥ 1 | a seeded post's columns are typed off the entity's row type |
 | migrations | `X_DB_DRIFT` | `cause: table "posts" has column "summary" not present in any migration` / `fix: x db gen "rename excerpt to summary"` |
 | `openapi.json`, `x.manifest.json` | `X_MANIFEST_STALE` | `fix: x manifest` |
 
-Exactly eight source files, 26 `tsc` diagnostics in all — both pinned — plus the two generated
-artifacts. Every diagnostic names a file and a line. Zero silent behavior changes, and the rename
-is **complete when the build is green**: there is no ninth place to remember.
+Exactly twelve source files, 31 `tsc` diagnostics in all — both pinned — plus the two generated
+artifacts. Every diagnostic names a file and a line, and the column rename is **complete when the
+build is green**.
+
+The column stops at hop 4 by design: `PostView` is a declared schema, so the wire shape does not
+move with a column. Renaming the VIEW field (`excerpt` in `apps/web/app/posts/entity.ts`) is the
+same test's second case, and reaches hops 5+:
+
+| Where it breaks | Diagnostics | Hop |
+|---|---|---|
+| `apps/web/app/posts/entity.ts` | 1 | 4, from the other side: `summary` is no column of `posts` |
+| `apps/web/app/posts/repo.ts` | 2 | 5: the view and feed mappers return an object the action `output` no longer has |
+| `apps/web/app/posts/actions.contract.test.ts` | 1 | 7: the typed `createPost` call's result has no `excerpt` |
+| `apps/web/app/posts/[id]/page.tsx`, `[id]/page.test.ts` | 3, 4 | 8: the page's own reads and its test's `renderPage` |
+| `apps/web/site/blog/[slug]/page.tsx`, `site/blog/page.tsx` | 3, 1 | 8: the pages that render a post, through `<PostCard>`'s props |
+
+One reader is silent, and the test pins it silent: the feed island reads `FeedRow`
+(`apps/web/app/feed/live.ts`), a hand-written copy of the post shape, so a view rename reaches the
+live feed as `undefined` at runtime. The day that row derives from the view, `feed.island.tsx`
+joins the table above.
 
 Contrast: the same rename in a stack where the API response is hand-written and the client types are a copied interface. Nothing fails. The field arrives as `undefined`, renders as an empty paragraph, and the SEO description silently becomes blank on every blog post.
 

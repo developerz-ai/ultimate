@@ -126,17 +126,46 @@ runs:
         # array parameter itself; peers resolve pnpm-style (`bun.lock` drops the
         # `@babel/helper-module-transforms` subtree).
         bun-version: '1.4.4'
+    # The install cache holds the packages bun.lock RESOLVES — its `"packages"` section — and
+    # nothing in the `"workspaces"` section above it, which is where a release rewrites every
+    # workspace's version. Keyed on the whole file, each release (7 in two days, 2026-11-10/11)
+    # was a cold ~168 MB install in every job of its run; keyed on the section, a release restores
+    # the entry the previous commit saved (the section hashed identically across 31.17.0 and
+    # 31.18.0, and moved only with #1099's real dependency change). No `"packages"` line (a lock
+    # format change) hashes the whole file: the old key, never a shared one.
+    # The digest is a plain shell over bun.lock, never `bun`: a step before the cache saves runs
+    # with the cache token, and `bun` reads the checkout's bunfig.toml (a `preload` runs repo code)
+    # — CodeQL's actions/cache-poisoning/poisonable-step. The two shells hash the same bytes, from
+    # the `"packages"` line to the end; `scripts/ci-workflow-shape-caches.test.ts` runs each it can
+    # on a bumped and on a moved lock, and holds them to one digest.
+    - id: lock_posix
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        digest=$(awk 'NR == FNR { if (!at && /^  "packages": [{]/) at = FNR; next } FNR >= (at ? at : 1)' bun.lock bun.lock | shasum -a 256 | cut -d ' ' -f 1)
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+    - id: lock_windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $lock = Get-Content -Raw -LiteralPath bun.lock
+        $at = $lock.IndexOf("`n  `"packages`": {")
+        if ($at -ge 0) { $lock = $lock.Substring($at + 1) }
+        $hash = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($lock))
+        Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value ('digest=' + [Convert]::ToHexString($hash).ToLowerInvariant())
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         # `~` is the runner's home on every OS (actions/cache expands it), and Bun's default
         # install cache sits under it on Windows too: %USERPROFILE%\.bun\install\cache.
         path: ~/.bun/install/cache
-        # Exactly one lockfile, and no `restore-keys`. The prefix fallback restored the PREVIOUS
-        # lock's cache, the install added the new packages on top, and the miss saved both under
-        # the new key — so the entry only grew: 34 MB (2026-10-01), 168 MB, 287 MB (run
-        # 42323662996), restored in every job. A lock change now costs that run's jobs one cold
-        # install each; the first to finish saves what this lock installs and nothing else.
-        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        # Exactly one resolution set, and no `restore-keys`. The prefix fallback restored the
+        # PREVIOUS lock's cache, the install added the new packages on top, and the miss saved
+        # both under the new key — so the entry only grew: 34 MB (2026-10-01), 168 MB, 287 MB (run
+        # 42323662996), restored in every job. A dependency change costs that run's jobs one cold
+        # install each; the first to finish saves what this lock installs and nothing else. One
+        # digest step ran, so the other output is empty.
+        key: bun-${{ runner.os }}-${{ steps.lock_posix.outputs.digest }}${{ steps.lock_windows.outputs.digest }}
     # One install, two shells, chosen by the runner's OS — a composite's `shell:` takes no
     # expression. The `windows` job in ci.yml runs every step in PowerShell so that a bash
     # dependency coming back fails it; Git Bash is on `windows-latest` and would hide one here.

@@ -40,15 +40,19 @@ export interface FixProseSite {
   readonly fix: string;
 }
 
+type FixScan = ReturnType<typeof scanFixSites>;
+
+const proseOf = (path: string, scan: FixScan): readonly FixProseSite[] =>
+  scan.sites
+    .filter((site) => fixShape(site.fix) === 'prose')
+    .map((site) => ({ path, line: site.line, fix: site.fix }));
+
 /** Every prose fix in one file's source, given the helpers it imports. */
 export const proseFixes = (
   path: string,
   source: string,
   imported: Parameters<typeof scanFixSites>[2] = [],
-): readonly FixProseSite[] =>
-  scanFixSites(source, path, imported)
-    .sites.filter((site) => fixShape(site.fix) === 'prose')
-    .map((site) => ({ path, line: site.line, fix: site.fix }));
+): readonly FixProseSite[] => proseOf(path, scanFixSites(source, path, imported));
 
 /** The prose sites, and how many fix lines were read at all — zero read is never a clean tree. */
 export async function fixProseScan(
@@ -61,8 +65,10 @@ export async function fixProseScan(
     if (isTest(path) || isGenerated(path) || path.startsWith(TEMPLATE_ROOT)) continue;
     const source = await Bun.file(join(root, path)).text();
     const imported = await imports(path, source);
-    read += scanFixSites(source, path, imported).sites.length;
-    sites.push(...proseFixes(path, source, imported));
+    // One scan for both answers: the count and the prose sites were two passes over one file.
+    const scan = scanFixSites(source, path, imported);
+    read += scan.sites.length;
+    sites.push(...proseOf(path, scan));
   }
   return { sites, read };
 }

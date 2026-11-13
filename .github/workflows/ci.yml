@@ -96,8 +96,11 @@ jobs:
   # Only a push asks, and never a release commit: `release.yml` reads this workflow's whole run for
   # the commit it publishes from, so that run is a run of everything. A release commit is what
   # `RELEASE_SUBJECT` says it is, the rule release-tag.yml reads (the shape test holds the two
-  # steps to one command). On a pull request every step is skipped, the output is empty and
-  # nothing is skipped below: an empty job, a few seconds of runner acquisition ahead of the rest.
+  # steps to one command). On a pull request both questions are skipped, the output is empty and
+  # nothing is skipped below.
+  #
+  # It also writes THE GATE'S MATRIX, on every event: `gate` already waits on this job, so the plan
+  # costs no runner and no wait of its own — a `plan` job would be both, on the critical path.
   tested:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -107,13 +110,32 @@ jobs:
       pull-requests: read
     outputs:
       tested: ${{ steps.tested.outputs.tested }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'push'
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-        if: github.event_name == 'push'
+      # `x verify plan` cuts the gate into parts and `gate` reads its answer by `fromJSON`, so a
+      # step added to `VERIFY_STEP_NAMES` lands in a part with nobody editing this file, and
+      # `x verify merge` refuses a run whose parts are not the whole gate. Each row is given the
+      # test services its `needs` level names: the compose names are spelled here, once.
+      # At the root, no `--cwd`: the plan reads nothing from an app, so it is the one `x verify`
+      # form that answers outside one (packages/cli/src/cmd-verify-plan.test.ts).
+      # `scripts/ci-workflow-shape.test.ts` RUNS this step and holds every part to the gate.
+      - name: x verify plan — the gate's parts, as the matrix
+        id: plan
+        env:
+          PARTS: '7'
+          DATABASE_SERVICES: postgres
+          DATABASE_URLS: TEST_DATABASE_URL
+          ALL_SERVICES: postgres postgres-standby postgres-tls pooler redis nats s3
+          ALL_URLS: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+        run: |
+          set -euo pipefail
+          bun run x -- verify plan --parts "$PARTS" --json > "$RUNNER_TEMP/plan.json"
+          jq -r '.data.matrix.include[] | "\(.part)  --only \(.only)\(if .shard then " --shard \(.shard)" else "" end)  (\(.needs))"' "$RUNNER_TEMP/plan.json"
+          echo "matrix=$(jq -c '.data.matrix | .include |= map(. + (if .needs == "services" then {services: env.ALL_SERVICES, urls: env.ALL_URLS} elif .needs == "database" then {services: env.DATABASE_SERVICES, urls: env.DATABASE_URLS} else {} end))' "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
       # The one release-subject rule — `RELEASE_SUBJECT`, read exactly as release-tag.yml's
       # `subject` step reads it — never a prefix: `chore(deps): release 1.2.3` is a release too.
       - name: is this push a release commit
@@ -196,6 +218,69 @@ jobs:
           jq -r '.summary, (.data.code[:20][] | "  " + .)' "$RUNNER_TEMP/changes.json"
           echo "heavy=$(jq -r '.data.heavy' "$RUNNER_TEMP/changes.json")" >> "$GITHUB_OUTPUT"
 
+  # Does every test this pull request changed pass EVERY time? Retries and quarantine are decided
+  # out (docs/architecture/14-testing-internals.md), so a flaky test is found before it merges or
+  # not at all: each changed test file of the suites the unit parts run is run five times
+  # (`bun test --rerun-each`, every run a fresh module), and any run failing is this job's red.
+  # `scripts/lib/ci/rerun-changed.ts` picks the files, at most 40 (`RERUN_CAP`; the rest are a
+  # `::notice` naming the count); no test file changed skips every step past
+  # the diff, the install included. A pull request only — a push re-runs what its PR already ran —
+  # and beside the gate rather than in it: nothing waits on this job.
+  flaky:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Depth 2: a pull request checks out its merge commit, whose first parent is the base tip.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: the test files this pull request changed
+        id: diff
+        run: |
+          git diff --no-renames --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
+          if grep -E '\.test\.tsx?$' "$RUNNER_TEMP/changed.txt"; then
+            echo "tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no test file changed: nothing to rerun"
+            echo "tests=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/setup
+        if: steps.diff.outputs.tests == 'true'
+      - name: the changed files the unit parts run
+        id: select
+        if: steps.diff.outputs.tests == 'true'
+        run: |
+          bun run scripts/lib/ci/rerun-changed.ts "$RUNNER_TEMP/changed.txt" --json > "$RUNNER_TEMP/rerun.json"
+          jq -r '.summary, (.data.paths[] | "  " + .)' "$RUNNER_TEMP/rerun.json"
+          jq -r '.data.paths[]' "$RUNNER_TEMP/rerun.json" > "$RUNNER_TEMP/rerun.txt"
+          skipped="$(jq -r '.data.skipped' "$RUNNER_TEMP/rerun.json")"
+          if [ "$skipped" -gt 0 ]; then
+            echo "::notice title=Flaky rerun capped::${skipped} changed test file(s) past the first $(jq -r '.data.cap' "$RUNNER_TEMP/rerun.json") (sorted) were not rerun. fix: bun test --rerun-each 5 <path> for each one you changed"
+          fi
+          echo "any=$(jq -r '.data.paths | length > 0' "$RUNNER_TEMP/rerun.json")" >> "$GITHUB_OUTPUT"
+      # What a unit part has before its tests: the test Postgres, origin/main's tip and the two
+      # newest release tags (the gate's own steps say why each is fetched once, up front).
+      - name: test Postgres, in RAM, and the refs the scripts tests read
+        if: steps.select.outputs.any == 'true'
+        run: |
+          docker compose -f docker/docker-compose.test.yml up -d --wait postgres
+          grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          refs=""
+          for tag in $(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -2); do
+            refs="$refs +refs/tags/$tag:refs/tags/$tag"
+          done
+          # shellcheck disable=SC2086
+          [ -z "$refs" ] || git fetch --no-tags --depth=1 origin $refs
+      - name: each changed test file, five times — red if any run fails
+        if: steps.select.outputs.any == 'true'
+        run: |
+          mapfile -t paths < "$RUNNER_TEMP/rerun.txt"
+          bun test --parallel --rerun-each 5 "${paths[@]}"
+
   # The framework gate, one part per runner. Every part is the same command a contributor runs —
   # `bun run verify --only <steps>` — over a slice of the one step list, and none of them is a
   # verdict: a narrowed run says NOT A GATE RUN on its own summary line. `verify`, below, is.
@@ -273,39 +358,8 @@ jobs:
     timeout-minutes: 10
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - part: unit-1
-            only: unit,contract,job
-            shard: 1/3
-            services: postgres
-            urls: TEST_DATABASE_URL
-          - part: unit-2
-            only: unit,contract,job
-            shard: 2/3
-            services: postgres
-            urls: TEST_DATABASE_URL
-          - part: unit-3
-            only: unit,contract,job
-            shard: 3/3
-            services: postgres
-            urls: TEST_DATABASE_URL
-          - part: live-1
-            only: live
-            shard: 1/2
-            services: postgres postgres-standby postgres-tls pooler redis nats s3
-            urls: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
-          - part: live-2
-            only: live
-            shard: 2/2
-            services: postgres postgres-standby postgres-tls pooler redis nats s3
-            urls: TEST_DATABASE_URL|TEST_STANDBY_URL|TEST_POOLER_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
-          - part: static
-            only: lint,boundaries,filesize,package-shape,errors,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
-          - part: e2e
-            only: typecheck,e2e
-            services: postgres
-            urls: TEST_DATABASE_URL
+      # The tested job's `x verify plan` step, never a list typed here.
+      matrix: ${{ fromJSON(needs.tested.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -530,6 +584,22 @@ jobs:
         with: # zizmor: ignore[cache-poisoning]
           path: ${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
+      # Each island group's built output, kept under the app's `.x/cache/islands` and reused while
+      # every file it read still hashes the same (`packages/cli/src/island-group-cache.ts`): a
+      # stale entry is a rebuild of that group, never a wrong byte, so the key only decides when a
+      # new entry is saved and `restore-keys` makes every miss a warm start. Measured 2026-11-13,
+      # 12 cores, `buildIslands` 3 runs each: examples/dummy 2.3 s built, 0.08 s reused;
+      # dummy/docs-site 1.8 s, 0.05 s. The demo app has no island, so its step is skipped.
+      # Growth is bounded by the cache's own sweep: an entry nobody read for 14 days is deleted.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: hashFiles(format('{0}/apps/**/*.island.tsx', matrix.app)) != ''
+        # Not a poisoning path: this job publishes nothing it builds (the demo image and the release
+        # build from clean checkouts with no cache), and a pull request's run saves only to its own
+        # ref, never to the `main` scope every run restores from.
+        with: # zizmor: ignore[cache-poisoning]
+          path: ${{ matrix.app }}/.x/cache/islands
+          key: islands-${{ matrix.app }}-${{ hashFiles('bun.lock') }}-${{ hashFiles(format('{0}/apps/**/*.tsx', matrix.app), 'packages/*/src/**/*.tsx') }}
+          restore-keys: islands-${{ matrix.app }}-
       - name: x build + x verify, against the ratchet
         env:
           APP: ${{ matrix.app }}
@@ -1023,6 +1093,24 @@ jobs:
           esac
           echo "ok: numeric tag renders as a string, only the replicator recreates, an empty repository is refused"
 
+      # How big is the image the demo deploys? `deploy-social-demo.yml` builds this same file from
+      # the root context; nothing else here builds it, so this step does, once. The size is its
+      # FILE SYSTEM — `docker export` of a created container, counted in bytes — which no storage
+      # driver or layer compression changes. The ceiling is a MEASUREMENT, not a budget to game:
+      # 202,533,376 B measured 2026-11-13 (plan 101, sweep 16 G8), plus 10% headroom. Raise it
+      # only with the newly measured number and the reason, in the same diff.
+      - name: the demo image builds, and its file system fits its measured ceiling
+        run: |
+          set -euo pipefail
+          ceiling=223000000
+          docker build -f dummy/social-media-clone/docker/Dockerfile.monorepo -t social-demo:ci .
+          bytes="$(docker export "$(docker create social-demo:ci)" | wc -c)"
+          echo "social-demo:ci file system: ${bytes} B (ceiling ${ceiling} B)"
+          if [ "$bytes" -gt "$ceiling" ]; then
+            echo "::error title=Demo image over its size ceiling::social-demo:ci is ${bytes} B, over the measured ceiling of ${ceiling} B. fix: narrow dummy/social-media-clone/docker/Dockerfile.monorepo.dockerignore, or raise ceiling= with the measured number and reason"
+            exit 1
+          fi
+
   # Does a fresh scaffold's Compose deploy boot? `container` builds and renders and `deploy-proof`
   # takes the chart, so until 2026-11 nothing ran the path the docs give a stranger: on 29.4.0 every
   # role crash-looped on a root-owned `/app/.x` tmpfs (`X_STORAGE_UNWRITABLE`), and no command wrote
@@ -1329,9 +1417,11 @@ jobs:
       # 5 s default on consecutive runs (a repo-wide scan, an openssl mint). This job proves paths,
       # not speed; the Linux gate keeps the 5 s bound that catches a slow test.
       #   W3: a CRLF migration must hash to the checksum its LF twin wrote (`./packages/db/...`).
+      #   The setup composite's pwsh `lock_windows` digest runs only here, on its own OS, held to the
+      #   committed hex the bash step is held to on Linux (`./scripts/ci-workflow-shape-caches...`).
       - name: unit · the path-heavy subset, every core
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/scraping/src/cdp-launch.test.ts ./packages/scraping/src/cdp-launch-wire.test.ts ./packages/scraping/src/cdp-launch-reap.test.ts ./packages/scraping/src/cdp-launch-probe.test.ts
+        run: bun test --isolate --parallel --timeout=30000 ./packages/core ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts ./packages/policy ./packages/render ./scripts/lib ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts ./packages/scraping/src/cdp-launch.test.ts ./packages/scraping/src/cdp-launch-wire.test.ts ./packages/scraping/src/cdp-launch-reap.test.ts ./packages/scraping/src/cdp-launch-probe.test.ts ./scripts/ci-workflow-shape-caches.test.ts
       - name: x new winapp
         id: new
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

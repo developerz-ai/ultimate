@@ -6,14 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exec, readVerifyFloor, VERIFY_STEPS, verifyStepNames } from '@ultimat3/cli';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-// Only the integration assertion below lives here — `checkRoadmap`'s own cases are in
-// `scripts/roadmap.test.ts`, next to their source.
 import { checkRoadmap } from './roadmap';
 import {
   ERROR_REFERENCE,
   errorCodeDocs,
+  errorContract,
   frameworkFiles,
-  frameworkManifest,
   HOST_CHECKS,
   manifestFailureCause,
   mergeGateParts,
@@ -82,6 +80,15 @@ describe('unit · the repo gate is the CLI gate', () => {
     const names: readonly string[] = verifyStepNames();
     for (const step of Object.keys(HOST_CHECKS)) expect(names).toContain(step);
     expect(Object.keys(HOST_CHECKS)).toEqual(['boundaries', 'errors', 'manifest', 'roadmap']);
+  });
+
+  // Which check each step runs, by identity: no real-tree case below restates the gate, so the
+  // step IS the assertion that this repo has no tier violation, stale manifest or roadmap gap.
+  test('each step runs the check this file holds to its fixtures', () => {
+    expect(HOST_CHECKS.boundaries).toBe(tierBoundaries);
+    expect(HOST_CHECKS.errors).toBe(errorContract);
+    expect(HOST_CHECKS.manifest).toBe(frameworkFiles);
+    expect(HOST_CHECKS.roadmap).toBe(checkRoadmap);
   });
 
   // `errorCodeDocs` dynamically imports every @ultimat3/* package to build the registry — real
@@ -349,19 +356,10 @@ describe('unit · the repo gate is the CLI gate', () => {
     REPO_SCAN_TIMEOUT_MS,
   );
 
-  // Four full-repo scans, one of them a complete manifest regeneration over 29 packages —
-  // `REPO_SCAN_TIMEOUT_MS`.
-  test(
-    'this repo has no tier violations and its manifest still generates',
-    async () => {
-      const root = repoRoot();
-      expect(await tierBoundaries(root)).toEqual([]);
-      expect(await frameworkManifest(root)).toEqual([]);
-      expect(await errorCodeDocs(root)).toEqual([]);
-      expect(await checkRoadmap(root)).toEqual([]);
-    },
-    REPO_SCAN_TIMEOUT_MS,
-  );
+  // No real-tree case here, on purpose: "this repo has no findings" is what the gate steps ARE.
+  // `tierBoundaries` is `boundaries`, `frameworkManifest` rides `manifest` (`frameworkFiles`),
+  // `errorCodeDocs` rides `errors` (`errorContract`) and `checkRoadmap` is `roadmap` — pinned
+  // by identity above. Restated here it cost `unit` ~22 s to ask them a second time.
 });
 
 describe('unit · the repo gate says where it is, and where it hung', () => {

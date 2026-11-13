@@ -8,6 +8,22 @@
 #
 # The rule: ignore artifacts and secrets, never a manifest.
 
+# Members outside the demo's closure (its own members, and every framework package they import):
+# each one's SOURCE goes — an edit to the reference app, the docs site, the wiki or a repo guard
+# re-ran `COPY . .` and the prebuilt step under it, for a file no boot reads — and each MANIFEST is
+# re-included, for the refusal above. Above `**/node_modules`, so that line, read later, still
+# drops a host `node_modules/**/package.json` the re-include would otherwise match.
+examples/**
+!examples/**/package.json
+dummy/docs-site/**
+!dummy/docs-site/**/package.json
+packages/create-ultimate/**
+!packages/create-ultimate/package.json
+scripts
+wiki
+.claude
+.dz
+
 node_modules
 **/node_modules
 

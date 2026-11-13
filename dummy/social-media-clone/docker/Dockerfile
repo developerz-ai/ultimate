@@ -7,16 +7,28 @@
 #
 # syntax=docker/dockerfile:1
 
-# ---------- deps: runtime dependencies only, cached on the workspace manifests ----------
-# The tag names the series for the reader; the digest is what builds. A tag is a pointer its
-# publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
-# docker ecosystem moves the digest together with the tag.
+# ---------- manifests: every workspace package.json, and nothing else ----------
+# The install below must be keyed on the MANIFESTS, not on the source: copying `apps` and
+# `packages` ahead of `bun install` made every edit to a page a full reinstall. The set is derived
+# from the context rather than listed, so a workspace glob added later is not a lockfile the frozen
+# install refuses. `bunfig.toml` survives because its `[install]` section is input to the install,
+# and so does a `.tgz`: a `file:` tarball dependency (a vendored or private package) is resolved
+# from the file itself, and without it the frozen install cannot find what the lockfile names.
+# The tag names the series for the reader; the digest is what builds — a tag is a pointer its
+# publisher can move. Dependabot's docker ecosystem moves the digest together with the tag.
+# The digest is `oven/bun:1.4.4-alpine`'s, the patch the framework that wrote this file was
+# tested on — the same patch as `engines.bun` in package.json.
+FROM oven/bun:1.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS manifests
+WORKDIR /app
+COPY . .
+RUN find . ! -type d ! -name package.json ! -name bunfig.toml ! -name '*.tgz' -delete \
+ && find . -type d -empty -delete
+
+# ---------- deps: runtime dependencies only, cached on the lockfile and the manifests ----------
 FROM oven/bun:1.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS deps
 WORKDIR /app
-COPY package.json bun.lock ./
-# The workspace members' manifests are what `bun install` resolves against; their sources are not.
-COPY apps ./apps
-COPY packages ./packages
+COPY --from=manifests /app ./
+COPY bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 # ---------- runtime ----------
@@ -24,9 +36,13 @@ RUN bun install --frozen-lockfile --production
 # before it ever calls `docker build`. Re-running typecheck and lint here would need the
 # devDependencies the `--production` install above deliberately leaves out — which is exactly how
 # a build stage came to run `tsc` and `biome` against a tree that had neither.
-FROM oven/bun:1.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS runtime
+#
+# Built ON the install stage, so the WHOLE installed tree comes with it — Bun's isolated linker
+# links a workspace's dependencies under that workspace's own `node_modules`, and copying only the
+# root one left `apps/web`'s behind — and the source lands on top (the ignore file drops every host
+# `node_modules`, so the two merge). The layer cache is the same as a COPY from it would be.
+FROM deps AS runtime
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # ---------- prebuilt: every island chunk and compiled stylesheet, made once, here ----------
@@ -62,9 +78,11 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 CMD \
 # `.x/` is where any binding that is still embedded keeps its state — the local storage disk, and
 # PGlite if DATABASE_URL is unset. Owned by the runtime user, because /app is not: the alternative
 # is a non-root process failing at boot on a directory it is the only one that ever writes.
-RUN mkdir -p /app/.x && chown -R bun:bun /app/.x
+# Numeric, and the same number docker/helm/values.yaml runs every pod as: 1000 is the base
+# image's `bun` user, and a numeric USER is one a kubelet can check against runAsNonRoot.
+RUN mkdir -p /app/.x && chown -R 1000:1000 /app/.x
 
-USER bun
+USER 1000:1000
 # apps/web/server.ts reads ROLE and PORT and nothing else. `migrate` applies the migrations and
 # exits; every other role serves until SIGTERM.
 ENTRYPOINT ["bun", "apps/web/server.ts"]

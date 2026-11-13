@@ -29,6 +29,7 @@
     "doc-paths": "bun run scripts/doc-paths.ts",
     "doc-test-paths": "bun --preload ./scripts/lib/guard-preload.ts scripts/doc-test-paths.ts",
     "dependency-allowlist": "bun run scripts/dependency-allowlist.ts",
+    "dockerfile-template": "bun run scripts/dockerfile-template.ts",
     "flight-copies": "bun run scripts/flight-copies.ts",
     "finite-bounds": "bun run scripts/finite-bounds.ts",
     "framework-env": "bun run scripts/framework-env.ts",
