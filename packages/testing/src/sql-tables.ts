@@ -1,6 +1,7 @@
 // The tables one SQL statement reads or writes, read without a parser: each name after `from`,
 // `join`, `update`, `into` or `using`, and each further name of a comma list there (`from orgs o,
 // posts p`). Schema-qualified and double-quoted names answer their last part, lowercased.
+
 // Whitespace, `as` and the comma are scanned by index, so no regex here can backtrack
 // (CodeQL js/polynomial-redos).
 
