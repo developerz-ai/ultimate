@@ -10,28 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- `x verify`'s `drift` step warns `X_DB_INDEX_UNDECLARED` for an index in the schema dump that neither the newest migration snapshot nor any entity declares — the shape that hid seven duplicate indexes in production. A warning in 31.x.
-- `retryMemo(start)` is in `@ultimat3/core`: a lazily started, shared attempt that does not keep a rejection.
-- The reference app serves GitHub sign-in with a session authenticator in every environment; the social demo reads `/messages` in a constant five statements and writes its batches in one statement each.
-
-### Added
-
-- `retryMemo(start)` in `@ultimat3/core` (moved from `@ultimat3/cli`): a lazily made attempt shared by every caller, and a FAILED one not kept, so a rejected first attempt is retried on the next `get()` where `x ??= start()` keeps the rejection forever. `started()` answers the attempt in flight or made, or `undefined`, so a `close()` can stop what was booted without booting it. Opt-in: nothing switches to it.
-- The `drift` step warns on an index the committed schema dump holds that neither the newest migration snapshot nor any entity declares (`X_DB_INDEX_UNDECLARED`, in `packages/cli/src/schema-dump-drift.ts`): every write maintains an index nothing asked for, as a rename migration that never dropped the old name left behind. Its fix is the `DROP INDEX CONCURRENTLY IF EXISTS` to paste into a migration of its own. A warning in the step's log on `main`; `next` makes it red (`REFUSE_UNDECLARED_INDEX` in `packages/cli/src/drift-store.ts`).
-
-### Changed
-
-- The social demo (`dummy/social-media-clone`): `/messages` with 20 threads is 5 statements, down from 24 (the latest message per thread is one `latestBy` read instead of one read per thread); `markRead` of 50 notifications is 2 statements, down from 51 (one chain `updateAll`); the orphan-media sweep marks a page in one write, and the demo reset deletes visitor rows with one delete per table. The four `expectedQueryLoop` waivers are gone. The demo's jobs and live thread now have `job` and `live` tests (`sweep-orphan-media.job.test.ts`, `reset-demo.job.test.ts`, `live-thread.live.test.ts`).
-- The reference app (`examples/dummy`) serves "log in with GitHub": `app/auth/sign-in-routes.ts` mounts the OAuth `start`/`callback` on `runtime.routes` beside the SAML legs, and `app/auth/authenticator.ts` turns a session cookie into the member in every environment. The demo viewer answers only a request with no session cookie, only under `x dev`, and fails closed everywhere else. A forged, revoked or expired cookie is nobody (`isSessionRefusal` → `null`), never the demo viewer. Sign-out (`endSession`) revokes the session server-side and expires its cookie, and a second sign-out with the same cookie succeeds.
-- The reference app's `post-excerpts` backfill writes a page of rows in one statement instead of one per row (30 → 1).
-- The docs site (`dummy/docs-site`) reads its corpus through `retryMemo`, so a read that failed once is tried again instead of being kept for the life of the process.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.21.0](docs/changelog/31.21.0.md) | 2026-11-13 | `x verify`'s `drift` step warns `X_DB_INDEX_UNDECLARED` for an index in the schema dump that neither the newest migration snapshot nor any entity declares — the shape that hid seven duplicate indexes in production. A warning in 31.x. |
 | [31.20.0](docs/changelog/31.20.0.md) | 2026-11-13 | Security: a revoked, expired or forged session no longer keeps its live-query socket streaming after sign-out, and a stale session cookie no longer answers 401 on every route. Existing apps are protected by upgrading; the `x new` and `x g sign-in --oidc` templates return `null` for a session refusal. |
 | [31.19.0](docs/changelog/31.19.0.md) | 2026-11-13 | A release commit no longer cold-installs on every CI job: the bun cache is keyed on the packages `bun.lock` resolves, not the whole file. |
 | [31.18.1](docs/changelog/31.18.1.md) | 2026-11-13 | `x exercise` on a large app is about a quarter faster (494 s → 380 s on a 487-primitive app): the seed solver no longer re-tries every parent earlier tenants took, crash-proof id renaming is one pass, and the frozen clock no longer throws per bound string. Findings, verdicts and seed graphs are unchanged. |
