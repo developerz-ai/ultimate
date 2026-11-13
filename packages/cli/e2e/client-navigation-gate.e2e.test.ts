@@ -10,9 +10,11 @@ import {
   count,
   currentTab,
   hover,
+  landed,
   noBrowser,
   ran,
   read,
+  recorded,
   sameDocument,
   session,
   start,
@@ -31,11 +33,18 @@ describe.skipIf(noBrowser)(
       'a hover runs NOTHING that did not opt into prefetch — not an evidence GET, not a page',
       async () => {
         await start('/a');
-        await hover('to-evidence');
-        await hover('to-download');
-        await hover('to-b');
-        await hover('to-doc');
-        await Bun.sleep(500);
+        // One at a time: a hover cancels the intent before it, so four in a row asked about one.
+        // Each hover's prefetch DOES leave — the server's gate answers it an empty 204 — and its
+        // answer landing in the page is the event: the server is done with it, route or no route.
+        for (const [link, path] of [
+          ['to-evidence', '/evidence'],
+          ['to-download', '/download'],
+          ['to-b', '/b'],
+          ['to-doc', '/doc'],
+        ] as const) {
+          await hover(link);
+          await landed(path);
+        }
         expect(ran).toEqual([]);
       },
       TIMEOUT_MS,
@@ -46,7 +55,9 @@ describe.skipIf(noBrowser)(
       async () => {
         await start('/a');
         await hover('to-eager');
-        await Bun.sleep(400);
+        // In the router's cache before the click: its answer has landed in the page.
+        await recorded('GET /eager prefetch');
+        await landed('/eager');
         await click('to-eager');
         await currentTab().waitFor('document.title === "Eager"', 'Eager');
         expect(ran).toEqual(['GET /eager prefetch']);
@@ -81,6 +92,8 @@ describe.skipIf(noBrowser)(
       async () => {
         await start('/a');
         await click('to-download');
+        await recorded('GET /download full');
+        // real-clock: "nobody asks twice" has no event; only Chrome, given time, could ask again
         await Bun.sleep(1_500);
         expect(ran.filter((one) => one.startsWith('GET /download'))).toEqual([
           'GET /download full',
@@ -93,8 +106,13 @@ describe.skipIf(noBrowser)(
       'a POST answered with a download is handed over from the bytes received — one execution',
       async () => {
         await start('/a');
+        // The hand-over IS the event: the router saves the bytes it already has through a blob
+        // URL (`handOver`), the one path that never asks again — counted as it is minted.
+        await read(
+          'window.__handedOver = 0; const mint = URL.createObjectURL; URL.createObjectURL = (blob) => { window.__handedOver += 1; return mint(blob); }',
+        );
         await read('document.getElementById("export").requestSubmit()');
-        await Bun.sleep(1_500);
+        await currentTab().waitFor('window.__handedOver === 1', 'the bytes handed over');
         expect(ran).toEqual(['POST /export soft']);
         expect(await sameDocument()).toBe(true);
       },
@@ -129,6 +147,7 @@ describe.skipIf(noBrowser)(
         } finally {
           await session()?.session.offline(false);
         }
+        // real-clock: "never re-sent" has no event; only Chrome, given time, could send it again
         await Bun.sleep(1_000);
         expect(await read('window.__failed')).toBe('POST the request failed on the network');
         expect(ran).toEqual([]);
@@ -144,6 +163,7 @@ describe.skipIf(noBrowser)(
         await start('/a');
         await click('to-boom');
         await currentTab().waitFor('document.title !== "A"', 'the error page');
+        // real-clock: "runs ONCE" has no event; only Chrome, given time, could ask a second time
         await Bun.sleep(500);
         expect(ran).toEqual(['GET /boom soft']);
         expect(await sameDocument()).toBe(true);
@@ -156,7 +176,8 @@ describe.skipIf(noBrowser)(
       async () => {
         await start('/a');
         await hover('to-eager');
-        await Bun.sleep(400);
+        await recorded('GET /eager prefetch');
+        await landed('/eager');
         await read('document.getElementById("switch").requestSubmit()');
         await currentTab().waitFor('document.title === "Switched"', 'the answer in place');
         expect(await sameDocument()).toBe(true);

@@ -68,7 +68,8 @@ function heldWorker() {
   };
 }
 
-const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+/** One macrotask: every promise the retire chained on a settled one has run by then. No clock. */
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 function logged(): { readonly lines: Record<string, unknown>[]; restore(): void } {
   const lines: Record<string, unknown>[] = [];

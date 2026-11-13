@@ -254,7 +254,8 @@ the two built-ins go through the same call. Before 1.3.0 the id was `keyof typeo
 OAUTH_PROVIDERS` over `github | google | apple`, so an enterprise OP was **unrepresentable**: the
 constraint was a type, there was no runtime escape, and the only ways out were forking the package
 or bypassing OAuth entirely and losing PKCE, the sealed handshake, issuer pinning and account
-linking with it.
+linking with it. There is still no unregister: `registeredOAuthProviders()` /
+`restoreOAuthProviders(providers)` are test-only, the pair `@ultimat3/testing`'s rerun seam uses.
 
 ```ts
 import { discoverOAuthProvider, registerOAuthProvider } from '@ultimat3/auth';

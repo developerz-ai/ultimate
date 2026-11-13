@@ -133,7 +133,8 @@ describe('unit · a session is one page, configured before it loads anything', (
         alive = false;
       }
       expect(alive).toBe(false);
-      await Bun.sleep(100);
+      // Read at once, never after a wait: the only writer is the process just proven dead, so no
+      // later write can come, and a `late` file here is one the close removed too early.
       expect(await Bun.file(join(profile ?? '', 'late')).exists()).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });

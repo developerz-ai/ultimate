@@ -182,6 +182,18 @@ export function resetActions(): void {
   clearToolGates();
 }
 
+/**
+ * Test-only: the registry becomes exactly `actions`, each under the name it carries — what
+ * `listActions()` read earlier. Unlike `resetActions` it keeps the path style, the API declaration
+ * and the tool gates, and every action goes back in through `registerAction`, so no boot check is
+ * skipped. `@ultimat3/testing`'s rerun seam forgets one test file's names with it.
+ */
+export function restoreActions(actions: readonly AnyAction[]): void {
+  registry.clear();
+  paths.clear();
+  for (const target of actions) registerAction(target.name, target);
+}
+
 function byName(a: readonly [string, AnyAction], b: readonly [string, AnyAction]): number {
   return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
 }

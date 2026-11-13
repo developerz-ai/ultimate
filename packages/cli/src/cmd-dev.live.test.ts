@@ -28,6 +28,37 @@ const BOOT_TIMEOUT_MS = paced(60_000);
 const HOLD_ROOT = processRoot(join(import.meta.dir, '..', '.dev-hold-fixture'));
 const BIN = join(import.meta.dir, 'bin.ts');
 
+/**
+ * The status line `GET /healthz` answers on `port`. A loopback socket rather than `fetch`: the
+ * sealed network lets a test dial this machine, and a `fetch` would need an allow-list entry this
+ * file could not take back out again.
+ */
+function statusLine(port: number): Promise<string> {
+  const { promise, resolve, reject } = Promise.withResolvers<string>();
+  let seen = '';
+  Bun.connect({
+    hostname: 'localhost',
+    port,
+    socket: {
+      open: (socket) => {
+        socket.write('GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+      },
+      data: (socket, chunk) => {
+        seen += new TextDecoder().decode(chunk);
+        const line = seen.indexOf('\r\n');
+        if (line === -1) return;
+        resolve(seen.slice(0, line));
+        socket.end();
+      },
+      // Settled already when a status line came; otherwise the assertion reads what did.
+      close: () => resolve(`closed before a status line: ${seen}`),
+      error: (_socket, error) => reject(error),
+      connectError: (_socket, error) => reject(error),
+    },
+  }).catch(reject);
+  return promise;
+}
+
 // A timed-out test never reaches its `finally`; this is what still reaps its children.
 afterEach(async () => {
   await reapIn(HOLD_ROOT);
@@ -71,9 +102,10 @@ describe('x dev stays up until it is signalled', () => {
         port = Number(/"url":"http:\/\/localhost:(\d+)"/.exec(ready)?.[1]);
         started = descendantsOf(child.pid);
 
-        // The regression: the process used to be gone by now, having exited on the code for the
-        // line it had just printed.
-        await Bun.sleep(500);
+        // The regression: the process exited on the code for the line it had just printed. Proved
+        // by what the child DOES after that line — it answers a request — never by a wait that a
+        // slow exit outlasts.
+        expect(await statusLine(port)).toBe('HTTP/1.1 200 OK');
         expect(child.exitCode).toBeNull();
 
         child.kill('SIGINT');

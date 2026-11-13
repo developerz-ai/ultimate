@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installLogSink, isUltimateError } from '@ultimat3/core';
 import { job, resetJobs, t } from '@ultimat3/jobs';
+import { definedStorage, resetStorage, type Storage } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
 import type { RunningRoles } from './role-start';
 import { startRoles } from './role-start';
@@ -25,6 +26,25 @@ import {
   workerQueuesFor,
   workerQueuesFromEnv,
 } from './runtime-jobs';
+import type { RunningServices } from './runtime-services';
+
+/**
+ * `fixtureRuntime` installs a process-wide `defineStorage` registry, and one left behind reads to a
+ * later file's `startStorage` as the APP's declaration: that boot keeps this `local` disk instead of
+ * building its own (`runtime-overrides-ports` saw `local` where it handed `memory`). Dropped after
+ * each test, and only when it is still the one this file installed.
+ */
+const ownStorages = new Set<Storage>();
+const ownedRuntime = (root: string): RunningServices => {
+  const runtime = fixtureRuntime(root);
+  ownStorages.add(runtime.storage);
+  return runtime;
+};
+afterEach(() => {
+  const current = definedStorage();
+  if (current !== undefined && ownStorages.has(current)) resetStorage();
+  ownStorages.clear();
+});
 
 const loadWorkerConfig = async (root: string) => workerConfigOf(await loadAppConfig(root));
 
@@ -128,7 +148,7 @@ describe('startRoles hands the worker its configured queues', () => {
       run: () => Promise.resolve(),
     });
     const runtime = {
-      ...fixtureRuntime(ROOT),
+      ...ownedRuntime(ROOT),
       workerConfig: {
         queues: ['mail'],
         exact: false,
@@ -383,7 +403,7 @@ describe('startRoles refuses a worker whose WORKER_QUEUES the app does not know'
 
   test('the boot rejects with X_WORKER_QUEUE_UNKNOWN', async () => {
     probeJob('boot-unknown-probe', 'banks');
-    const runtime = { ...fixtureRuntime(ROOT), workerConfig: exactConfig(['banks-*'], []) };
+    const runtime = { ...ownedRuntime(ROOT), workerConfig: exactConfig(['banks-*'], []) };
     const code = await startRoles({
       roles: ['worker'],
       port: 0,
@@ -426,7 +446,7 @@ describe('jobs.concurrency as a table, handed to the worker', () => {
   test('a booted worker takes the table and serves exactly its queues', async () => {
     const ROOT = `${import.meta.dir}/../.worker-table-fixture`;
     const runtime = {
-      ...fixtureRuntime(ROOT),
+      ...ownedRuntime(ROOT),
       workerConfig: {
         queues: ['banks', 'banks-long'],
         exact: true,

@@ -147,6 +147,7 @@ const codeOf = (value: unknown): string =>
 const until = async (done: () => boolean | Promise<boolean>, seconds: number): Promise<void> => {
   const deadline = Bun.nanoseconds() + seconds * 1_000_000_000;
   while (!(await done()) && Bun.nanoseconds() < deadline) {
+    // real-clock: a real nats-server behind a TCP relay accepts the redial on its own time
     await Bun.sleep(50);
     advanceClock(50);
   }
@@ -181,8 +182,8 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
         events: true,
         policy: allow('public'),
       });
-      const publish = (): Promise<unknown> =>
-        publishChannelEvent(feed, { orgId: 'o1' }, { kind: 'changed' }).then(
+      const publish = (kind = 'changed'): Promise<unknown> =>
+        publishChannelEvent(feed, { orgId: 'o1' }, { kind }).then(
           () => undefined,
           (error: unknown) => error,
         );
@@ -279,8 +280,12 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       ]);
       expect(await publish()).toBeUndefined();
       await until(() => heard.length === 2, 10);
-      await Bun.sleep(200);
-      expect(heard).toHaveLength(2);
+      // A sentinel from the same connection, which NATS delivers in order: a replayed refusal was
+      // flushed before it, so when the sentinel lands, everything that will ever land has.
+      expect(await publish('sentinel')).toBeUndefined();
+      await until(() => heard.some((payload) => payload.includes('sentinel')), 10);
+      expect(heard).toHaveLength(3);
+      expect(heard[2]).toContain('sentinel');
     },
     TIMEOUT_MS,
   );

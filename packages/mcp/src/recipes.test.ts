@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   agentActor,
   ctxOf,
+  errorCodeSnapshot,
   registerErrorCodes,
   runWithContext,
   UltimateError,
@@ -216,15 +217,21 @@ describe('recipes: an error that links to one', () => {
   test('a declared link no endpoint serves is X_MCP_RECIPE_UNKNOWN at load', () => {
     defineAppMcp({ tools, recipes: [creditNote] });
     expect(() => assertRecipeLinks(servedRecipes())).not.toThrow();
-    registerErrorCodes({
-      X_TEST_CREDIT_LINK: { title: 'linked', docs: 'docs://recipes/issue-a-credit-note' },
-    });
-    // Served by the first endpoint: a second endpoint without it does not break the link.
-    defineAppMcp({ tools: { findInvoice: tools.findInvoice }, recipes: [] });
-    expect(() => assertRecipeLinks(servedRecipes())).not.toThrow();
-    expect(() => assertRecipeLinks(new Set(['other']))).toThrow(
-      expect.objectContaining({ code: 'X_MCP_RECIPE_UNKNOWN' }),
-    );
+    // The code is this test's: taken back after it, so a second load of this file declares it again.
+    const restoreCodes = errorCodeSnapshot();
+    try {
+      registerErrorCodes({
+        X_TEST_CREDIT_LINK: { title: 'linked', docs: 'docs://recipes/issue-a-credit-note' },
+      });
+      // Served by the first endpoint: a second endpoint without it does not break the link.
+      defineAppMcp({ tools: { findInvoice: tools.findInvoice }, recipes: [] });
+      expect(() => assertRecipeLinks(servedRecipes())).not.toThrow();
+      expect(() => assertRecipeLinks(new Set(['other']))).toThrow(
+        expect.objectContaining({ code: 'X_MCP_RECIPE_UNKNOWN' }),
+      );
+    } finally {
+      restoreCodes();
+    }
   });
 
   test('a throw-site link to no recipe is dropped at render once recipes exist', () => {

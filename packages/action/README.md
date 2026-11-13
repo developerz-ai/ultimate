@@ -107,6 +107,8 @@ names deriving one route collide with `X_ACTION_PATH_DUPLICATE` — `pluralize` 
 go through core's `primitiveRegistrar(kind)`, because this package may not import `@ultimat3/query`
 or `@ultimat3/jobs` sideways. It is not on the `.` barrel: `defineApi` is the one path an app has,
 and `x`'s module loader imports `registerAction`/`registerActions` from `@ultimat3/action/loader`.
+Beside them, test-only: `restoreActions(listActions())` makes the registry exactly what was read,
+each action back through `registerAction`'s checks — the rerun seam's writer.
 
 ## Call it — `rpc`
 

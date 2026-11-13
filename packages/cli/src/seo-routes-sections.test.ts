@@ -123,6 +123,16 @@ describe('unit · the web role serves a sectioned sitemap', () => {
   });
 });
 
+/**
+ * Turns of the loop: the refresh runs BEHIND the answer, and its result lands within turns — the
+ * prerender answers from memory, so this is a count, never a delay.
+ */
+const settle = async (): Promise<void> => {
+  for (let left = 10; left > 0; left -= 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+};
+
 describe('unit · a sectioned sitemap refreshes behind the answer it would replace', () => {
   test('a failed prerender keeps the previous index AND its children, then the retry replaces both', async () => {
     const app = server();
@@ -134,7 +144,7 @@ describe('unit · a sectioned sitemap refreshes behind the answer it would repla
     const during = await get(app, '/sitemap.xml');
     expect(during.status).toBe(200);
     expect(await during.text()).toBe(before);
-    await Bun.sleep(5);
+    await settle();
     const child = await get(app, '/sitemaps/blog-2.xml');
     expect(child.status).toBe(200);
     expect(locs(await child.text())).toEqual([`${ORIGIN}/blog/c`]);
@@ -143,7 +153,7 @@ describe('unit · a sectioned sitemap refreshes behind the answer it would repla
     slugs = ['a', 'b'];
     clock += 60_001;
     await get(app, '/sitemap.xml');
-    await Bun.sleep(5);
+    await settle();
     expect(locs(await (await get(app, '/sitemap.xml')).text())).toEqual([
       `${ORIGIN}/sitemaps/pages-1.xml`,
       `${ORIGIN}/sitemaps/blog-1.xml`,

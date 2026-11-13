@@ -3,7 +3,7 @@
 // the reload counter `cmd-dev.test.ts` reads as zero, and because the boot is the fixture's real
 // one — embedded Postgres, the watcher, the HTTP role — never a stubbed rescan.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join, relative } from 'node:path';
@@ -161,6 +161,28 @@ afterAll(async () => {
   }
 }, BOOT_TIMEOUT_MS);
 
+/**
+ * The file a test saved, and the signal the watcher answers its restore with. Rerun-safe: the
+ * module cache outlives a run under `--rerun-each`, so a file left at its saved text is what the
+ * next run's fresh server imports — `headline two` where the test expects `headline one`. Each
+ * test's edit is written back, and the rebuild awaited, before the next one starts.
+ */
+let saved: { readonly file: string; readonly settles: 'reload' | 'restart' } | undefined;
+
+afterEach(async () => {
+  const edit = saved;
+  saved = undefined;
+  if (edit === undefined) return;
+  const settled = new Promise<void>((resolve) => {
+    if (edit.settles === 'reload') onReload = () => resolve();
+    else onRestart = () => resolve();
+  });
+  await Bun.write(join(ROOT, edit.file), FILES[edit.file] ?? '');
+  await settled;
+  onReload = () => undefined;
+  onRestart = () => undefined;
+}, BOOT_TIMEOUT_MS);
+
 const page = async (path: string): Promise<string> => {
   const handle = server.running.server;
   if (handle === null) {
@@ -177,6 +199,7 @@ const save = async (file: string, from: string, to: string): Promise<string> => 
   const reloaded = new Promise<string>((resolve) => {
     onReload = resolve;
   });
+  saved = { file, settles: 'reload' };
   await Bun.write(join(ROOT, file), FILES[file]?.replace(from, to) ?? '');
   return reloaded;
 };
@@ -193,17 +216,33 @@ describe('unit · x dev serves the save', () => {
       try {
         Reflect.set(globalThis, '__xIsrProbe', 1);
         expect(await (await get()).text()).toContain('tagged 1');
-        Reflect.set(globalThis, '__xIsrProbe', 2);
+        // A getter, so the test sees the regeneration's render happen instead of guessing a wait.
+        let rendered = false;
+        Object.defineProperty(globalThis, '__xIsrProbe', {
+          configurable: true,
+          get: () => {
+            rendered = true;
+            return 2;
+          },
+        });
         await invalidateTags([tag('post')]);
         const stale = await get();
         expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
         expect(await stale.text()).toContain('tagged 1');
-        // The regeneration runs behind the stale answer: polled until it lands, with a deadline,
-        // never a fixed wait a loaded runner can outlast.
+        // The regeneration runs behind the stale answer, in this process: awaited across
+        // event-loop turns, bounded by a count, never a clock (the preload freezes `Date`; the old
+        // `Date.now()` deadline here never moved). Few requests: the dev rate limit's bucket does
+        // not refill under the frozen clock, so a request per turn spends it and reads a 429.
+        for (let turn = 0; turn < 100_000 && !rendered; turn += 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        expect(rendered).toBe(true);
         let body = '';
-        for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+        for (let poll = 0; poll < 20 && !body.includes('tagged 2'); poll += 1) {
+          for (let turn = 0; turn < 50; turn += 1) {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          }
           body = await (await get()).text();
-          if (body.includes('tagged 2')) break;
         }
         expect(body).toContain('tagged 2');
       } finally {
@@ -291,6 +330,7 @@ describe('unit · x dev serves the save', () => {
       onReload = () => {
         reloaded = true;
       };
+      saved = { file, settles: 'restart' };
       await Bun.write(join(ROOT, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
       const pins = await restarted;
       expect(pins.map((pin) => relative(ROOT, pin.changed))).toEqual([file]);

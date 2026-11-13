@@ -200,7 +200,9 @@ export const resend = resendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET']
 
 The package ships none (v31). Every mail is an app's own `defineMail`; `@ultimat3/auth` sends
 `auth.<purpose>` templates whose words live in the app catalog. `registeredMails()` /
-`registeredMailIds()` list what the app declared, and nothing else.
+`registeredMailIds()` list what the app declared, and nothing else. Test-only:
+`restoreMails(mails)` and `restoreLayouts([{ name, layout }])` make either registry exactly what
+was read (`registeredMails()`, `registeredLayouts()` + `layoutFor()`) — the rerun seam's pair.
 
 ## Previews — `defineMail({ preview })`
 

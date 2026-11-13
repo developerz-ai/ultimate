@@ -100,8 +100,11 @@ describe('holdWhileBooting', () => {
         // yet — the handlers were installed after this function returned.
         process.emit('SIGTERM', 'SIGTERM');
         stateAfterSignal = lifecycleState();
-        // The rest of a slow boot: the island build, the replicator, the live feed.
-        await Bun.sleep(20);
+        // The rest of a slow boot — the island build, the replicator, the live feed — as turns the
+        // drain already under way runs through: a count of turns, never a duration.
+        for (let left = 20; left > 0; left -= 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
         return { stop: () => worker.stop() };
       },
       { exit: (code) => codes.push(code) },

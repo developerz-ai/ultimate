@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { currentTab, noBrowser, TIMEOUT_MS, useBrowser } from './client-navigation-fixture';
-import { base, count, ran, slow, state } from './client-navigation-modal-fixture';
+import { base, count, ran, recorded, slow, state } from './client-navigation-modal-fixture';
 
 const read = (expression: string): Promise<unknown> => currentTab().evaluate(expression);
 const waitFor = (expression: string, what: string): Promise<void> =>
@@ -101,7 +101,7 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
       );
       expect(framed).toEqual([true, 'true', 'Close', '']);
       // The request reaches the server after the frame is up; it is answered only when released.
-      for (let i = 0; i < 100 && count('GET /runs/slow soft') === 0; i += 1) await Bun.sleep(20);
+      await recorded('GET /runs/slow soft');
       expect(count('GET /runs/slow soft')).toBe(1);
       slow.release();
       await opened('Slow');
@@ -123,7 +123,7 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
       await read('document.getElementById("slow").focus()');
       await read('document.getElementById("slow").click()');
       await waitFor(`${DIALOG}?.matches(":popover-open") === true`, 'the frame');
-      for (let i = 0; i < 100 && count('GET /runs/slow soft') === 0; i += 1) await Bun.sleep(20);
+      await recorded('GET /runs/slow soft');
       await pressEscape();
       await closed();
       slow.release();
@@ -144,11 +144,13 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
       await read(
         'document.getElementById("peek").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }))',
       );
-      for (let i = 0; i < 100 && count('GET /runs/peek prefetch') === 0; i += 1)
-        await Bun.sleep(20);
+      await recorded('GET /runs/peek prefetch');
       expect(count('GET /runs/peek prefetch')).toBe(1);
-      // Settled into the router's cache before the click asks.
-      await read('new Promise((r) => setTimeout(r, 100))');
+      // Settled into the router's cache before the click asks: its answer has landed in the page.
+      await waitFor(
+        `performance.getEntriesByType('resource').some((entry) => entry.initiatorType === 'fetch' && entry.name === '${base}/runs/peek')`,
+        'the prefetched answer to land',
+      );
       await read('document.getElementById("peek").click()');
       await opened('Peek');
       expect(count('GET /runs/peek soft')).toBe(0);

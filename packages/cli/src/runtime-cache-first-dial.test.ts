@@ -16,6 +16,7 @@ import { logger, UltimateError } from '@ultimat3/core';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
 import { DEFAULT_CACHE_TIERS, startCacheTiers } from './runtime-cache';
+import { turn, turns, untilTurn } from './runtime-turns-fixture';
 
 let release: (() => Promise<void>) | undefined;
 let restore: (() => void) | undefined;
@@ -70,10 +71,6 @@ function dialingTransport(): {
   };
 }
 
-const until = async (done: () => boolean): Promise<void> => {
-  for (let tick = 0; tick < 500 && !done(); tick += 1) await Bun.sleep(1);
-};
-
 function captured(): { readonly warns: string[]; readonly infos: string[] } {
   const warns: string[] = [];
   const infos: string[] = [];
@@ -92,16 +89,19 @@ describe('unit · the boot subscribe during the first dial', () => {
       purge: noopPurgeDriver(),
       transport: bus.transport,
       tiers: DEFAULT_CACHE_TIERS,
-      subscribeRetryMs: () => 1,
+      subscribeRetryWait: () => turn(),
       firstDialGraceMs: 60_000,
+      // Frozen: the whole test runs inside the window, however slow the runner.
+      monotonicNow: () => 0,
     });
-    await until(() => bus.attempts() >= 3);
+    await untilTurn(() => bus.attempts() >= 3, 'three refused subscribes');
     // The window was exercised: the subscribe was refused, more than once, before the bus came up.
     expect(bus.attempts()).toBeGreaterThanOrEqual(3);
     expect(bus.landed()).toBe(0);
     bus.up();
-    await until(() => bus.landed() > 0);
-    await Bun.sleep(5);
+    await untilTurn(() => bus.landed() > 0, 'the subscribe lands');
+    // Twenty more turns: a loop still failing, or a late line, would show by now.
+    await turns(20);
 
     // And it ended in a real subscription, not a loop still failing in silence.
     expect(bus.landed()).toBe(1);
@@ -110,6 +110,7 @@ describe('unit · the boot subscribe during the first dial', () => {
   });
 
   test('a bus still down after the window warns, and says when it recovered', async () => {
+    let elapsed = 0;
     restore = isolateTiers();
     const { warns, infos } = captured();
     const bus = dialingTransport();
@@ -118,13 +119,22 @@ describe('unit · the boot subscribe during the first dial', () => {
       purge: noopPurgeDriver(),
       transport: bus.transport,
       tiers: DEFAULT_CACHE_TIERS,
-      subscribeRetryMs: () => 1,
+      subscribeRetryWait: () => turn(),
       firstDialGraceMs: 20,
+      monotonicNow: () => elapsed,
     });
-    await until(() => warns.includes('cache.broadcast.subscribe-failed'));
+    // Inside the window: refused, and silent.
+    await untilTurn(() => bus.attempts() >= 3, 'three refused subscribes');
+    expect(warns).toEqual([]);
+    // The window passes: the next refusal is an outage, and says so once.
+    elapsed = 20;
+    await untilTurn(() => warns.includes('cache.broadcast.subscribe-failed'), 'the outage warning');
     expect(warns.filter((line) => line === 'cache.broadcast.subscribe-failed')).toHaveLength(1);
     bus.up();
-    await until(() => infos.includes('cache.broadcast.subscribe-failed recovered'));
+    await untilTurn(
+      () => infos.includes('cache.broadcast.subscribe-failed recovered'),
+      'the recovered line',
+    );
     expect(infos).toContain('cache.broadcast.subscribe-failed recovered');
   });
 

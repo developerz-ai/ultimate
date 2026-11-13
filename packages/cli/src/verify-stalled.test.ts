@@ -407,6 +407,7 @@ describe('against a real bun test', () => {
         const files = ['a.test.ts', 'b.test.ts', 'c.test.ts', 'stuck.test.ts'];
         const running = guard.runner(['bun', 'test', '--parallel=2', ...files], { cwd: root, env });
         for (let i = 0; i < 2_400 && !(await Bun.file(marker).exists()); i += 1)
+          // real-clock: a `bun test` worker, another process, writes the marker on its own time
           await Bun.sleep(25);
         expect(await Bun.file(marker).exists()).toBe(true);
         const finding = stepTimeoutFinding(

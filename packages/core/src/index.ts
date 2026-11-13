@@ -948,8 +948,11 @@ export {
   defineService,
   installedServices,
   registeredServiceNames,
+  registeredServices,
   resetServices,
+  restoreServices,
   type ServiceFactory,
+  type ServiceRegistration,
 } from './service';
 export { onSessionLost, sessionIsLost } from './session-lost';
 export { isSessionRefusal, isSessionRefusalCode } from './session-refusal';

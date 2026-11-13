@@ -24,7 +24,8 @@ function recordingSteps(log: string[]): readonly VerifyStep[] {
     run: async () => {
       log.push(`start ${name}`);
       // A macrotask, so a step that is truly concurrent with another shows up between its edges.
-      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+      // `setImmediate` is one with no clock in it: the order is the scheduler's, never a race.
+      await new Promise<void>((resolve) => setImmediate(resolve));
       log.push(`end ${name}`);
       return { ok: true, findings: [] };
     },
@@ -44,9 +45,12 @@ describe('unit · the static steps overlap the serial suites', () => {
     // Never beside `unit`, which saturates every core, and never beside `typecheck`, which writes.
     expect(log.indexOf('start lint')).toBeGreaterThan(log.indexOf('end contract'));
     expect(log.indexOf('end contract')).toBeGreaterThan(-1);
-    // Beside `live`: started before `live` ended.
+    // Beside `live`: started before `live` ended, and not finished before `live` began — the
+    // two edges together, since either alone holds for a lint run wholly before or after it.
     expect(log.indexOf('start lint')).toBeLessThan(log.indexOf('end live'));
+    expect(log.indexOf('start live')).toBeLessThan(log.indexOf('end lint'));
     expect(log.indexOf('start lint')).toBeGreaterThan(-1);
+    expect(log.indexOf('start live')).toBeGreaterThan(-1);
     // And joined before anything after the serial suites reads the app.
     expect(log.indexOf('end errors')).toBeLessThan(log.indexOf('start drift'));
     expect(log.indexOf('end errors')).toBeGreaterThan(-1);

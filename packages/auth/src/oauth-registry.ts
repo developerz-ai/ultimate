@@ -78,3 +78,18 @@ export function providerFor(id: string): OAuthProvider {
 export function oauthProviderIds(): readonly string[] {
   return [...registry.keys()];
 }
+
+/** Test-only: every registered provider, the built-ins included — a copy, never the live map. */
+export function registeredOAuthProviders(): readonly OAuthProvider[] {
+  return [...registry.values()];
+}
+
+/**
+ * Test-only: the registry becomes exactly `providers`, each sealed again on the way in. There is
+ * no unregister for an app to reach: `@ultimat3/testing`'s rerun seam forgets one test file's ids
+ * with this when that file loads again, and puts back what it did not declare a second time.
+ */
+export function restoreOAuthProviders(providers: readonly OAuthProvider[]): void {
+  registry.clear();
+  for (const provider of providers) registry.set(provider.id, seal(provider));
+}

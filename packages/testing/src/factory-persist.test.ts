@@ -57,13 +57,18 @@ describe(testName('unit', 'persister'), () => {
 
   test('the default writes a real entity to the process driver and answers the stored row', async () => {
     const stored = await persistRow(notes, { id: ID, body: 'hello' });
-    // `views` was never built: the declared default is what the table holds, and what comes back.
-    expect(stored).toEqual({ id: ID, body: 'hello', views: 0 });
-    expect(await defaultDriver().repo(notes).findById(ID)).toEqual({
-      id: ID,
-      body: 'hello',
-      views: 0,
-    });
+    try {
+      // `views` was never built: the declared default is what the table holds, and what comes back.
+      expect(stored).toEqual({ id: ID, body: 'hello', views: 0 });
+      expect(await defaultDriver().repo(notes).findById(ID)).toEqual({
+        id: ID,
+        body: 'hello',
+        views: 0,
+      });
+    } finally {
+      // The process driver outlives this file: its row is this test's to take back.
+      await defaultDriver().repo(notes).delete(ID);
+    }
   });
 
   test('entityPersister({ driver }) writes to that driver and no other', async () => {

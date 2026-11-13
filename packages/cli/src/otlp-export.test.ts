@@ -162,6 +162,13 @@ describe('OTLP export is driven by the variable the chart already sets', () => {
  * Both halves are observed through the exporter's own `fetch`, captured at construction: after the
  * release nothing this process records may reach the released collector.
  */
+/** `count` macrotask turns: every promise the exporter chained onto a settled fetch has run. */
+async function turns(count: number): Promise<void> {
+  for (let left = count; left > 0; left -= 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
 describe('the release uninstalls the exporters, not only their timers', () => {
   const captureFetch = (): { readonly urls: readonly string[]; restore: () => void } => {
     const urls: string[] = [];
@@ -186,8 +193,9 @@ describe('the release uninstalls the exporters, not only their timers', () => {
       // EXPORTER is what was left configured, and any later caller of one is enough to use it.
       exportMetrics();
       // Awaited: the POST is chained onto a settled promise, so a synchronous read of `urls` here
-      // is empty whatever the exporter is — an assertion that cannot fail.
-      await Bun.sleep(5);
+      // is empty whatever the exporter is — an assertion that cannot fail. Turns, not a delay:
+      // the exporter's fetch is the fake above, so it lands within turns, never on a timer.
+      await turns(20);
       // The release SHUTS the log exporter down, so the boot's own lines queued before it are
       // delivered — that is the batch (c) keeps. Nothing reaches the metrics collector.
       expect(posted.urls.filter((url) => !url.endsWith('/v1/logs'))).toEqual([]);
@@ -205,8 +213,8 @@ describe('the release uninstalls the exporters, not only their timers', () => {
       for (let index = 0; index < 512; index += 1) {
         await withSpan(`otlp.after-release.${index}`, async () => undefined);
       }
-      // The drain is chained through microtasks, so give it a turn before reading the calls.
-      await Bun.sleep(5);
+      // The drain is chained through microtasks, so give it turns before reading the calls.
+      await turns(20);
       expect(posted.urls.filter((url) => url.endsWith('/v1/traces'))).toEqual([]);
     } finally {
       posted.restore();

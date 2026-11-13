@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import type { ExecResult, Runner } from './exec';
 import { exec } from './exec';
 import {
@@ -29,6 +29,7 @@ const alive = (pid: number): boolean => {
 const goneSoon = async (pids: readonly number[]): Promise<boolean> => {
   for (let i = 0; i < 100; i += 1) {
     if (pids.every((pid) => !alive(pid))) return true;
+    // real-clock: the kernel ends a killed process, and init reaps an orphan, on their own time
     await Bun.sleep(20);
   }
   return false;
@@ -87,7 +88,9 @@ describe('raceDeadline', () => {
     });
     expect(await raceDeadline(never, 10)).toEqual({ timedOut: true });
     fail(new TypeError('late'));
-    await Bun.sleep(1);
+    // One macrotask: Bun reports a rejection nothing handles when the microtask queue drains, so
+    // an unhandled one fails this test here — no clock needed.
+    await new Promise<void>((resolve) => setImmediate(resolve));
   });
 });
 
@@ -122,6 +125,7 @@ describe('guardStep', () => {
     });
     let listed: readonly number[] = [];
     for (let i = 0; i < 100 && listed.length < 3; i += 1) {
+      // real-clock: the shell forks its two sleepers on its own time, after its own spawn returned
       await Bun.sleep(20);
       listed = await tagged(tag);
     }
@@ -149,14 +153,15 @@ describe('guardStep', () => {
     const outer = `outer@${crypto.randomUUID()}`;
     const inner = `inner@${crypto.randomUUID()}`;
     const guard = guardStep(exec, inner, { [STEP_TAG_ENV]: outer });
-    const running = guard.runner(['sleep', '300'], { cwd: process.cwd() });
-    let listed: readonly number[] = [];
-    for (let i = 0; i < 100 && listed.length < 1; i += 1) {
-      await Bun.sleep(20);
-      listed = await tagged(outer);
-    }
-    expect(listed).toHaveLength(1);
-    expect(await killTagged(outer)).toEqual([{ pid: listed[0] as number, command: 'sleep 300' }]);
+    let spawned: (pid: number) => void = () => undefined;
+    const pid = new Promise<number>((resolve) => {
+      spawned = resolve;
+    });
+    const running = guard.runner(['sleep', '300'], { cwd: process.cwd(), onSpawn: spawned });
+    // The spawn has returned, so the child has exec'd with the environment it was given.
+    const child = await pid;
+    expect(await tagged(outer)).toEqual([child]);
+    expect(await killTagged(outer)).toEqual([{ pid: child, command: 'sleep 300' }]);
     expect((await running).ok).toBe(false);
   });
 });
@@ -165,13 +170,13 @@ describe('where there is no procfs', () => {
   test('ps lists the tagged child with its environment, and the kill works off that list', async () => {
     const tag = `ps@${crypto.randomUUID()}`;
     const guard = guardStep(exec, tag, {});
-    const running = guard.runner(['sleep', '300'], { cwd: process.cwd() });
-    let found: readonly number[] = [];
-    for (let i = 0; i < 100 && found.length < 1; i += 1) {
-      await Bun.sleep(20);
-      found = taggedPids(await psProcesses(), tag);
-    }
-    expect(found).toHaveLength(1);
+    let spawned: (pid: number) => void = () => undefined;
+    const pid = new Promise<number>((resolve) => {
+      spawned = resolve;
+    });
+    const running = guard.runner(['sleep', '300'], { cwd: process.cwd(), onSpawn: spawned });
+    const found = [await pid];
+    expect(taggedPids(await psProcesses(), tag)).toEqual(found);
     expect(await killTagged(tag, psProcesses)).toHaveLength(1);
     expect((await running).ok).toBe(false);
     expect(await goneSoon(found)).toBe(true);
@@ -243,15 +248,22 @@ describe('what a guard knows of its progress', () => {
     finish(0, 1_500);
     finish(1, 4_000);
     await Promise.all(done);
-    const running = guard.runner(['bun', 'test', 'c.test.ts'], { cwd: '.' });
-    await Bun.sleep(5);
-    const settling = guard.expire();
-    finish(2, 0);
-    const expiry = await settling;
-    await running;
-    expect(expiry.finished).toEqual({ runs: 2, slowestMs: 4_000 });
-    expect(expiry.inFlight).toHaveLength(1);
-    expect(expiry.inFlight[0]?.runningMs).toBeGreaterThan(0);
+    // The guard ages a run off `performance.now()`: moved by hand, so the age is exact.
+    let now = 10_000;
+    const clock = spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      const running = guard.runner(['bun', 'test', 'c.test.ts'], { cwd: '.' });
+      now += 250;
+      const settling = guard.expire();
+      finish(2, 0);
+      const expiry = await settling;
+      await running;
+      expect(expiry.finished).toEqual({ runs: 2, slowestMs: 4_000 });
+      expect(expiry.inFlight).toHaveLength(1);
+      expect(expiry.inFlight[0]?.runningMs).toBe(250);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

@@ -323,6 +323,8 @@ A service that reads the actor (`ctx.posts`, scoped to `ctx.actor.orgId`) regist
 for — importing the module that calls `defineService` is the registration, the same convention
 `registerActions` uses. Passing `services: { posts: ... }` to `ctxOf` still works and
 wins over a registered factory of the same name, for a test that wants to hand in a mock.
+Test-only: `registeredServices()` reads `{ name, factory }[]` and `restoreServices(entries)` makes
+the registry exactly that — `@ultimat3/testing`'s rerun seam forgets one file's names with them.
 
 A factory runs again on **every** `ctxOf` / `withChildContext` call and is never cached,
 because it closes over the ctx (actor, clock, tz) it was built for. `withChildContext` drops a

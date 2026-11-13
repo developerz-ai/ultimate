@@ -11,7 +11,9 @@ test('importing the entry starts the router on the window, once', async () => {
   );
   globals['window'] = win;
   try {
-    await import('./navigation-entry');
+    // A module evaluates once per process, and this file loaded again (`--rerun-each`) must start a
+    // router again: a twin under a query no earlier load used. The counter is only a unique key.
+    await import(`./navigation-entry?load=${String(Bun.nanoseconds())}`);
     const router = win.__xNavigation as NavigationRouter | undefined;
     expect(router).toBeDefined();
     router?.stop();

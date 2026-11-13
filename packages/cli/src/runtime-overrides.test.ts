@@ -23,7 +23,8 @@ import {
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { memoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
-import { defineStorage, localDriver } from '@ultimat3/storage';
+import type { Storage } from '@ultimat3/storage';
+import { definedStorage, defineStorage, localDriver, resetStorage } from '@ultimat3/storage';
 import type { RunningRoles } from './role-start';
 import { startRoles, trustedHopsFromEnv } from './role-start';
 import { resolveServices } from './runtime-bindings';
@@ -31,6 +32,20 @@ import { REALTIME_DEFAULTS } from './runtime-realtime';
 import type { RunningServices } from './runtime-services';
 
 const ROOT = `${import.meta.dir}/../.overrides-fixture`;
+
+/**
+ * The registries this file's fake runtimes installed. `defineStorage` is process-wide, and one left
+ * behind reads to the next file's `startStorage` as the APP's declaration (it was not the boot's), so
+ * that boot keeps this `local` disk instead of building its own: `runtime-overrides-ports` saw
+ * `local` where it handed `memory`, and every `runtime-services-storage` refusal never fired.
+ */
+const installed = new Set<Storage>();
+
+function installStorage(): Storage {
+  const storage = defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } });
+  installed.add(storage);
+  return storage;
+}
 
 function fakeRuntime(): RunningServices {
   const transport = new InProcessTransport();
@@ -44,7 +59,7 @@ function fakeRuntime(): RunningServices {
     realtime: REALTIME_DEFAULTS,
     transportDetail: 'in-process fanout',
     presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
-    storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
+    storage: installStorage(),
     mail: memoryMailDriver(),
     mailDetail: 'embedded',
     purge: noopPurgeDriver(),
@@ -63,6 +78,10 @@ afterEach(async () => {
   resetJobs();
   resetTasks();
   resetLifecycle();
+  // Only a registry this file installed: one another test put there is not this file's to drop.
+  const current = definedStorage();
+  if (current !== undefined && installed.has(current)) resetStorage();
+  installed.clear();
 });
 
 describe('an override that reaches the enqueue side but not the worker is refused', () => {

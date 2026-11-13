@@ -1,7 +1,7 @@
 // A step that hangs fails BY NAME and leaves no process behind, and every finished step is told
 // to the caller as it finishes — the two halves of #589, driven through the real runner.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 // why: Bun ships no temp-directory primitive; the floor file is a real file in a real root.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
@@ -12,7 +12,7 @@ import { exec } from './exec';
 import type { StepResult } from './output';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import { runVerify } from './verify-run';
-import type { VerifyStep } from './verify-step';
+import type { StepOutcome, VerifyStep } from './verify-step';
 
 const MARK = 'ULTIMATE_DEADLINE_TEST_MARK';
 
@@ -32,6 +32,7 @@ async function marked(mark: string): Promise<readonly number[]> {
 const goneSoon = async (mark: string): Promise<boolean> => {
   for (let i = 0; i < 100; i += 1) {
     if ((await marked(mark)).length === 0) return true;
+    // real-clock: the kernel ends a killed process, and init reaps an orphan, on their own time
     await Bun.sleep(20);
   }
   return false;
@@ -46,15 +47,22 @@ const ok = (name: VerifyStep['name'], ran: string[]): VerifyStep => ({
   },
 });
 
-/** Hangs on a child, and — like a batch loop — starts another the moment the first returns. */
-const hangs = (name: VerifyStep['name'], mark: string, after: string[]): VerifyStep => ({
+/**
+ * Hangs on a child, and — like a batch loop — starts another the moment the first returns.
+ * `after` settles with what that second start answered: the step's code runs on past the verdict.
+ */
+const hangs = (
+  name: VerifyStep['name'],
+  mark: string,
+  after: (stderr: string) => void,
+): VerifyStep => ({
   name,
   summary: 'hangs on its child',
   run: async (ctx) => {
     const options = { cwd: process.cwd(), env: { [MARK]: mark } };
     await ctx.runner(['sh', '-c', 'sleep 300 & sleep 300'], options);
     const second = await ctx.runner(['sleep', '300'], options);
-    after.push(second.stderr);
+    after(second.stderr);
     return { ok: true, findings: [] };
   },
 });
@@ -63,9 +71,12 @@ describe('a step past its deadline', () => {
   test('fails by name, kills every process it started, and the steps after it still run', async () => {
     const mark = crypto.randomUUID();
     const ran: string[] = [];
-    const after: string[] = [];
+    let told: (stderr: string) => void = () => undefined;
+    const after = new Promise<string>((resolve) => {
+      told = resolve;
+    });
     const result = await runVerify(
-      [ok('typecheck', ran), hangs('lint', mark, after), ok('drift', ran)],
+      [ok('typecheck', ran), hangs('lint', mark, told), ok('drift', ran)],
       { root: '/nowhere', runner: exec, stepTimeoutMs: { lint: 400 }, command: 'bun run verify' },
     );
     expect(ran).toEqual(['typecheck', 'drift']);
@@ -83,8 +94,8 @@ describe('a step past its deadline', () => {
     expect(lint?.durationMs).toBeLessThan(5_000);
     // No orphan: the shell, both sleepers, and the child the step tried to start afterwards.
     expect(await goneSoon(mark)).toBe(true);
-    await Bun.sleep(50);
-    expect(after).toEqual(['not started: the step is past its deadline']);
+    // The step's own code, run on after its kill: its next child was refused, never started.
+    expect(await after).toBe('not started: the step is past its deadline');
     expect(await marked(mark)).toEqual([]);
   });
 
@@ -112,21 +123,47 @@ describe('a step past its deadline', () => {
         join(root, VERIFY_FLOOR_FILE),
         JSON.stringify({ steps: [], stepTimeoutMs: { filesize: 40 } }),
       );
+      // 150 ms of FAKE time: Bun's fake timers move the gate's deadline, and this loop ends each
+      // step once 150 ms of that time has passed under it — so 150 against 40 is decided by the
+      // numbers and never by a loaded runner.
+      jest.useFakeTimers();
+      let moved = 0;
+      const waiting: { readonly from: number; readonly done: (outcome: StepOutcome) => void }[] =
+        [];
       const slow = (name: VerifyStep['name']): VerifyStep => ({
         name,
         summary: 'takes 150 ms',
-        run: async () => {
-          await Bun.sleep(150);
-          return { ok: true, findings: [] };
-        },
+        run: () =>
+          new Promise<StepOutcome>((done) => {
+            waiting.push({ from: moved, done });
+          }),
       });
-      const result = await runVerify([slow('filesize'), slow('lint')], { root, runner: exec });
+      let settled = false;
+      const running = runVerify([slow('filesize'), slow('lint')], { root, runner: exec }).finally(
+        () => {
+          settled = true;
+        },
+      );
+      // Time moves only while a step's 150 ms is outstanding; between, the floor file and the
+      // expired step's process-table sweep are real I/O, which event-loop turns let land.
+      for (; !settled; await new Promise<void>((done) => setImmediate(done))) {
+        if (waiting.length === 0) continue;
+        if (moved > 1_000) expect.unreachable('a 150 ms step still waits after 1 s of fake time');
+        jest.advanceTimersByTime(5);
+        moved += 5;
+        for (const step of waiting.filter((one) => moved - one.from >= 150)) {
+          waiting.splice(waiting.indexOf(step), 1);
+          step.done({ ok: true, findings: [] });
+        }
+      }
+      const result = await running;
       expect(result.steps?.map((step) => [step.name, step.ok])).toEqual([
         ['filesize', false],
         ['lint', true],
       ]);
       expect(result.steps?.[0]?.findings[0]?.cause).toContain('40 ms');
     } finally {
+      jest.useRealTimers();
       await rm(root, { recursive: true, force: true });
     }
   });

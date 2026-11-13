@@ -9,10 +9,12 @@ import {
   base,
   click,
   currentTab,
+  hold,
   MARK,
   noBrowser,
   ran,
   read,
+  recorded,
   sameDocument,
   start,
   TIMEOUT_MS,
@@ -133,11 +135,23 @@ describe.skipIf(noBrowser)('client navigation · the swap and its fallbacks', ()
     'a second navigation cancels the first — the slower answer is never swapped in',
     async () => {
       await start('/a');
+      // Every signal the router hands `fetch`, by path: the first navigation's own is the verdict.
+      await read(
+        'window.__signals = {}; const ask = window.fetch; window.fetch = function (input, init) { const url = new URL(String(input instanceof Request ? input.url : input), location.href); if (init?.signal) window.__signals[url.pathname] = init.signal; return ask.apply(this, arguments); }',
+      );
+      // Held at the server until B is on screen: slower than the navigation that overtakes it by
+      // the test's say-so, not by a delay the overtaking click has to beat.
+      const release = hold('GET /slow soft');
       await click('to-slow');
-      await Bun.sleep(100);
+      await recorded('GET /slow soft');
       await click('to-b');
       await currentTab().waitFor('document.title === "B"', 'B');
-      await Bun.sleep(2_000);
+      // Cancelled, not merely outrun: its fetch is aborted, so its answer has nowhere to land.
+      await currentTab().waitFor(
+        'window.__signals["/slow"]?.aborted === true',
+        'the first navigation abandoned',
+      );
+      release();
       expect(await read('document.title + " " + location.pathname')).toBe('B /b');
       expect(await read('document.documentElement.hasAttribute("data-x-navigating")')).toBe(false);
     },

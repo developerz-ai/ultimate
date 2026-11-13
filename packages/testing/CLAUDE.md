@@ -43,6 +43,7 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | A port is swappable or says why not | `swap-adapter.ts`: `BINDINGS` + `UNSWAPPED` cover `ADAPTER_PORTS` as a `Record` — a new core row is a compile error here |
 | `toHaveBeenCalledWith` is bun's name | on a `stub()` it parses the expected input by the primitive's schema (`X_TEST_EXPECTED_INPUT_INVALID`); any other receiver goes to bun's own matcher, captured once (`matcher-stub.ts`) |
 | Per-test state is `per-test-reset.ts` | the app preload's `beforeEach`; `installPerTestReset` installs the test-double scope † |
+| A file reruns in one process | `rerun-declarations.ts`: what the file declared (body, hooks, tests) is forgotten as it loads again; a new registry joins `rerun-registries.ts` with its package's lister + exact restore, never a `reset*` |
 | A `mock.module` ends with its file | `module-mock-boundary.ts` restores the real namespace at the boundary (`X_TEST_MODULE_MOCK_UNRESTORABLE`) † |
 | **The frozen clock is reset at every file boundary** | `preload.ts`, `clock-file-boundary.test.ts`: `advanceClock` / `setFrozenClock` move one process-wide instant, and a file that left it moved handed the next file on its worker a different `Date.now()` |
 | An island test is `describeIslandState` | one block per declared state: mounted in `beforeAll` (60 s), disposed in `afterAll`, one build per file. `mountIslandState` + `using` for one test's own mount; an undeclared id is `X_TEST_ISLAND_STATE_UNKNOWN` |

@@ -30,6 +30,7 @@ import {
   DEFAULT_CACHE_TIERS,
   startCacheTiers,
 } from './runtime-cache';
+import { turns } from './runtime-turns-fixture';
 
 let release: (() => Promise<void>) | undefined;
 let restore: (() => void) | undefined;
@@ -477,7 +478,7 @@ describe('cross-instance invalidation', () => {
       seen.push(payload);
     });
     await transport.publish(CACHE_INVALIDATE_SUBJECT, JSON.stringify(['post:9']));
-    await Bun.sleep(10);
+    await turns(20); // a re-emitted frame would have been published back by now
     expect(seen).toEqual([JSON.stringify(['post:9'])]);
   });
 
@@ -490,11 +491,10 @@ describe('cross-instance invalidation', () => {
       transport,
       tiers: DEFAULT_CACHE_TIERS,
     });
-    // A throw here would silently end cross-instance invalidation for the whole process — the
-    // exact failure the hop exists to prevent, arriving quietly.
+    // A throw here would silently end cross-instance invalidation for the process, quietly.
     await transport.publish(CACHE_INVALIDATE_SUBJECT, 'not json');
     await transport.publish(CACHE_INVALIDATE_SUBJECT, '{"not":"an array"}');
-    await Bun.sleep(10);
+    await turns(20);
     expect(registeredTiers().length).toBeGreaterThan(0);
   });
 });

@@ -16,6 +16,7 @@ import { logger } from '@ultimat3/core';
 import type { Transport } from '@ultimat3/realtime/server';
 import { FakeNatsBroker, fakeNatsConnect, selectTransport } from '@ultimat3/realtime/server';
 import { CACHE_INVALIDATE_SUBJECT, DEFAULT_CACHE_TIERS, startCacheTiers } from './runtime-cache';
+import { turn, turnScheduler, untilTurn } from './runtime-turns-fixture';
 
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 
@@ -39,10 +40,6 @@ afterEach(async () => {
   logger.warn = printWarning;
 });
 
-const until = async (done: () => boolean, polls = 500): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
-};
-
 describe('a bust made while the bus is away, with an edge in front', () => {
   test('purges the edge with the bust, and again once the deferred broadcast is published', async () => {
     const broker = new FakeNatsBroker();
@@ -60,6 +57,8 @@ describe('a bust made while the bus is away, with an edge in front', () => {
       use: 'publish',
       connect: fakeNatsConnect(broker),
       backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
+      // Each re-dial waits one loop turn, not 2 ms.
+      scheduler: turnScheduler,
       onError: () => undefined,
     });
     transport = selection.transport;
@@ -84,12 +83,12 @@ describe('a bust made while the bus is away, with an edge in front', () => {
       purge: edge,
       transport: mute,
       tiers: [...DEFAULT_CACHE_TIERS, 'cdn'],
-      subscribeRetryMs: () => 1,
+      subscribeRetryWait: () => turn(),
     });
     broker.client().subscribe(CACHE_INVALIDATE_SUBJECT, () => {
       events.push('peer-heard');
     });
-    await until(() => landed);
+    await untilTurn(() => landed, 'the subscribe lands');
 
     broker.drop();
     const report = await invalidateTags([tag('post', '1')]);
@@ -98,7 +97,10 @@ describe('a bust made while the bus is away, with an edge in front', () => {
     expect(events).toEqual(['edge']);
 
     broker.restore();
-    await until(() => events.filter((event) => event === 'edge').length >= 2);
+    await untilTurn(
+      () => events.filter((event) => event === 'edge').length >= 2,
+      'the second edge purge',
+    );
     expect(events).toEqual(['edge', 'peer-heard', 'edge']);
   });
 });

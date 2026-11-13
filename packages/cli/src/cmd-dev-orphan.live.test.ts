@@ -60,6 +60,7 @@ async function booted(
       return expect.unreachable(
         `x dev exited ${supervisor.exitCode} before it booted:\n${logs.seen()}`,
       );
+    // real-clock: the supervisor, another process, prints its boot line on its own time
     await Bun.sleep(25);
   }
 }
@@ -77,6 +78,7 @@ async function goneWithin(pid: number, ms: number): Promise<number> {
   while (alive(pid)) {
     if (performance.now() - started > ms)
       return expect.unreachable(`pid ${pid} still alive after ${ms}ms`);
+    // real-clock: how soon another process exits is the very thing this measures
     await Bun.sleep(50);
   }
   return performance.now() - started;

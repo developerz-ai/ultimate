@@ -368,6 +368,10 @@ describe('reserve() on the pool that replaced a wedged one', () => {
     await settled();
 
     const delays: number[] = [];
+    // The budget left is read off `performance.now()`. Frozen, so a loaded host's milliseconds
+    // between the reserve and its timer are not read as budget the new pool already spent (82 ms
+    // of 100 was a red unit run, 2026-11-13): the replacement gets all of it, exactly.
+    const clock = spyOn(performance, 'now').mockImplementation(() => 0);
     const realSetTimeout = globalThis.setTimeout;
     const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((
       fn: () => void,
@@ -380,11 +384,11 @@ describe('reserve() on the pool that replaced a wedged one', () => {
       const asked = db.reserve().catch((error: unknown) => error);
       await settled();
       expect(built).toBe(2);
-      expect(delays).toHaveLength(1);
-      expect(delays[0]).toBeGreaterThan(90);
+      expect(delays).toEqual([100]);
       expect(((await asked) as DbError).code).toBe('X_DB_POOL_EXHAUSTED');
     } finally {
       timer.mockRestore();
+      clock.mockRestore();
     }
     for (const old of pins) old.release();
   });

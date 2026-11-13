@@ -12,7 +12,9 @@ import {
   hasOAuthProvider,
   oauthProviderIds,
   providerFor,
+  registeredOAuthProviders,
   registerOAuthProvider,
+  restoreOAuthProviders,
 } from './oauth-registry';
 
 const bigco: OAuthProvider = {
@@ -84,5 +86,36 @@ describe('the oauth provider registry', () => {
     // The object the caller passed is not the object the registry serves, so keeping a reference
     // to it is not a way to widen `issuers` once logins are flowing.
     expect(registered).not.toBe(bigco);
+  });
+});
+
+describe('registeredOAuthProviders / restoreOAuthProviders', () => {
+  test('the registry becomes exactly what was handed back, the built-ins with it', () => {
+    const held = registeredOAuthProviders();
+    expect(held.map((provider) => provider.id)).toEqual([...oauthProviderIds()]);
+    registerOAuthProvider({ ...bigco, id: 'restore-probe' });
+    try {
+      restoreOAuthProviders(held);
+      expect(hasOAuthProvider('restore-probe')).toBe(false);
+      expect(oauthProviderIds()).toEqual(held.map((provider) => provider.id));
+      // Forgotten, so declared afresh; a name the restore kept is still refused.
+      expect(() => registerOAuthProvider({ ...bigco, id: 'restore-probe' })).not.toThrow();
+      expect(codeOf(() => registerOAuthProvider({ ...bigco, id: 'restore-probe' }))).toBe(
+        'X_OAUTH_PROVIDER_DUPLICATE',
+      );
+    } finally {
+      restoreOAuthProviders(held);
+    }
+  });
+
+  test('a restored provider is still frozen: the restore is no way around the seal', () => {
+    const held = registeredOAuthProviders();
+    try {
+      restoreOAuthProviders([...held, { ...bigco, id: 'restore-unfrozen', scopes: ['openid'] }]);
+      expect(Object.isFrozen(providerFor('restore-unfrozen'))).toBe(true);
+      expect(Object.isFrozen(providerFor('restore-unfrozen').scopes)).toBe(true);
+    } finally {
+      restoreOAuthProviders(held);
+    }
   });
 });

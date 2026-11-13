@@ -181,7 +181,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it, and the TOTP guard's |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-builtins.ts` | the two shipped IdPs (`github`, `google`), as data. Imports only the type, so no cycle |
-| `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
+| `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds`; test-only `registeredOAuthProviders` / `restoreOAuthProviders` (re-seals) |
 | `oauth-discovery.ts` | `/.well-known/openid-configuration` → an `OAuthProvider`. One `fetch` |
 | `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`, one shared in-flight refresh. No dependency |
 | `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity`; `checkWorkloadToken`, the verdict form |

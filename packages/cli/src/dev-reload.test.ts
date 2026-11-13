@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { coalesceReloads } from './dev-reload';
+import { settled, untilSettled } from './dev-turns-fixture';
 
 describe('coalesceReloads', () => {
   test('ticks arriving during a rebuild collapse into exactly one more', async () => {
@@ -24,20 +25,22 @@ describe('coalesceReloads', () => {
     // Still one, because the first has not settled.
     expect(started).toEqual(['a.tsx']);
     release();
-    await Bun.sleep(5);
+    await untilSettled(() => started.length === 2, 'the one coalesced rebuild starts');
+    expect(started).toEqual(['a.tsx', 'd.tsx']);
+    // Exactly one more: nothing queued behind it starts once every chained job has run.
+    await settled();
     expect(started).toEqual(['a.tsx', 'd.tsx']);
   });
 
-  test('a tick after the rebuild settles starts a new one', async () => {
+  test('a tick after the rebuild settles starts a new one, at once', async () => {
     const started: string[] = [];
     const reload = coalesceReloads(async (file) => {
       started.push(file);
-      await Bun.sleep(1);
     });
     reload('a.tsx');
-    await Bun.sleep(10);
+    await settled();
     reload('b.tsx');
-    await Bun.sleep(10);
+    // Synchronously: the settled rebuild left nothing running, so `b` is no pending tick.
     expect(started).toEqual(['a.tsx', 'b.tsx']);
   });
 
@@ -49,17 +52,17 @@ describe('coalesceReloads', () => {
     const reload = coalesceReloads(
       async (file) => {
         started.push(file);
-        await Bun.sleep(1);
+        await Promise.resolve();
         throw new TypeError(`broken ${file}`);
       },
       (error) => caught.push(error),
     );
     reload('a.tsx');
-    await Bun.sleep(10);
+    await untilSettled(() => caught.length === 1, 'the first rejection is reported');
     reload('b.tsx');
-    await Bun.sleep(10);
+    await untilSettled(() => caught.length === 2, 'the rebuild after a rejection runs');
     expect(started).toEqual(['a.tsx', 'b.tsx']);
-    expect(caught).toHaveLength(2);
+    expect(caught.map(String)).toEqual(['TypeError: broken a.tsx', 'TypeError: broken b.tsx']);
   });
 
   test('a synchronous throw is reported and does not wedge the next one either', async () => {
@@ -72,11 +75,11 @@ describe('coalesceReloads', () => {
       },
       (error) => caught.push(error),
     );
-    reload('a.tsx');
-    await Bun.sleep(5);
+    expect(() => reload('a.tsx')).not.toThrow();
+    await untilSettled(() => caught.length === 1, 'the synchronous throw is reported');
     reload('b.tsx');
-    await Bun.sleep(5);
+    await untilSettled(() => caught.length === 2, 'the rebuild after a throw runs');
     expect(started).toEqual(['a.tsx', 'b.tsx']);
-    expect(caught).toHaveLength(2);
+    expect(caught.map(String)).toEqual(['TypeError: broken a.tsx', 'TypeError: broken b.tsx']);
   });
 });

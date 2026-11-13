@@ -71,7 +71,8 @@ describe('unit · running batches', () => {
     const runner: Runner = async (command) => {
       running += 1;
       expect(running).toBe(1);
-      await Bun.sleep(1);
+      // One macrotask turn while "running": a second batch launched beside this one lands here.
+      await new Promise<void>((resolve) => setImmediate(resolve));
       running -= 1;
       seen.push(command.slice(2));
       return result(command, seen.length === 1 ? 1 : 0, `batch ${seen.length}`);

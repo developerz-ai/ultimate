@@ -12,14 +12,12 @@
 // to what is measured and refuses to raise one. Raising a count is a hand edit, in a review.
 //
 // As of 2026-11-13 (sweep 17a): 228 sites replaced with seams, 15 packages at zero and so absent —
-// an absent package is pinned at zero. `cli` and `scripts` are sweep 17b's.
+// an absent package is pinned at zero. Sweep 17b took `cli` (104) and `scripts` (2) to zero: the
+// table is empty, and every wait left in a test carries a `// real-clock:` reason.
 //
 // why: the ratchet is new — every row is the tree as measured on its first day, not a raise.
 
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/test-real-sleep-pins.ts';
 
-export const REAL_SLEEP_PINS: Readonly<Record<string, number>> = {
-  cli: 104,
-  scripts: 2,
-};
+export const REAL_SLEEP_PINS: Readonly<Record<string, number>> = {};

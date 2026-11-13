@@ -45,7 +45,11 @@ describe.skipIf(noBrowser)('client navigation · history and scroll', () => {
       await currentTab().waitFor('document.title === "B"', 'B');
       expect(await read('scrollY')).toBe(0);
       await read('scrollTo(0, 700)');
-      await Bun.sleep(400);
+      // Saved once the scroll rests, into this entry's own slot of `history.state`: awaited there.
+      await currentTab().waitFor(
+        'history.state?.__x?.scroll?.[1] === 700',
+        'the offset saved into the entry',
+      );
       await read('history.back()');
       await currentTab().waitFor('document.title === "A" && scrollY === 1200', 'A, where it was');
       await read('history.forward()');

@@ -79,10 +79,17 @@ export interface CacheTiersOptions {
   /** The wait before re-subscribing after `attempt` failures (1-based). Injected by a test. */
   readonly subscribeRetryMs?: ((attempt: number) => number) | undefined;
   /**
+   * How that wait is slept. Default `Bun.sleep`; a test hands one that resolves when it turns the
+   * loop, so a retry is counted rather than timed.
+   */
+  readonly subscribeRetryWait?: ((ms: number) => Promise<unknown>) | undefined;
+  /**
    * How long the boot subscribe may be refused before a refusal is worth a warning. Default
    * `FIRST_DIAL_GRACE_MS`; a test of an OUTAGE passes 0.
    */
   readonly firstDialGraceMs?: number | undefined;
+  /** The monotonic clock that window is read on. Default `performance.now`; a test injects one. */
+  readonly monotonicNow?: (() => number) | undefined;
   /** The client a `redis` rung reads, for the URL `env` names. Default core's `redisClient`. */
   readonly redisClient?: ((url: string) => RedisLike) | undefined;
   /**
@@ -335,12 +342,14 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   /** Cuts the retry's wait short: the bus coming up is a better signal than a backoff. */
   let wake: () => void = () => undefined;
   const retryMs = options.subscribeRetryMs ?? defaultSubscribeRetryMs;
+  const retryWait = options.subscribeRetryWait ?? ((ms: number) => Bun.sleep(ms));
   // This process heard no peer for a window nobody measured — since boot, or since the connection
   // dropped — so nothing it holds in its own heap is known fresh. One cold cache, never a stale one.
   const flushDeaf = (source: string): void => {
     void flushProcessTiers(source);
   };
-  const bootedAt = performance.now();
+  const now = options.monotonicNow ?? (() => performance.now());
+  const bootedAt = now();
   /** Whether an operator has been told of this outage — what makes `recovered` worth a line. */
   let warned = false;
   const subscribing = (async (): Promise<InvalidationSubscription | undefined> => {
@@ -364,7 +373,7 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
         // one line per retry per pod for as long as it lasts.
         // Silent inside the first dial's window. Past it, the FIRST refusal warns whatever its
         // attempt number, then the milestones thin the rest.
-        const inGrace = performance.now() - bootedAt < graceMs;
+        const inGrace = now() - bootedAt < graceMs;
         if (!inGrace && (!warned || isOutageMilestone(attempt))) {
           warned = true;
           logger.warn('cache.broadcast.subscribe-failed', {
@@ -374,7 +383,7 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
         }
         const woken = Promise.withResolvers<undefined>();
         wake = (): void => woken.resolve(undefined);
-        await Promise.race([Bun.sleep(retryMs(attempt)), released.promise, woken.promise]);
+        await Promise.race([retryWait(retryMs(attempt)), released.promise, woken.promise]);
       }
     }
     return undefined;

@@ -6,9 +6,11 @@ import { derivePath } from './naming';
 import {
   describeActions,
   getAction,
+  listActions,
   registerAction,
   registerActions,
   resetActions,
+  restoreActions,
 } from './registry';
 
 const Input = t.object({ postId: t.uuid });
@@ -228,5 +230,31 @@ describe('a .sensitive() field in an output', () => {
       handle: () => ({ ok: true }),
     });
     expect(registerAction('createPayer', fine).name).toBe('createPayer');
+  });
+});
+
+describe('restoreActions', () => {
+  beforeEach(() => {
+    resetActions();
+  });
+
+  test('the registry becomes exactly what was handed back: a forgotten name declares afresh', () => {
+    registerActions({ publishPost: define(), archivePost: define() });
+    const held = listActions();
+    restoreActions(held.filter((entry) => entry.name !== 'archivePost'));
+    expect(listActions().map((entry) => entry.name)).toEqual(['publishPost']);
+    expect(() => registerActions({ archivePost: define() })).not.toThrow();
+    // A name the restore kept is still refused, and so is its path.
+    expect(() => registerActions({ publishPost: define() })).toThrow(/X_ACTION_DUPLICATE/);
+    expect(() => registerAction('publishPosts', define())).toThrow(/X_ACTION_PATH_DUPLICATE/);
+  });
+
+  test('a forgotten path is free again; every boot check still runs on the way back in', () => {
+    registerActions({ publishPost: define() });
+    const held = listActions();
+    restoreActions([]);
+    expect(() => registerAction('publishPosts', define())).not.toThrow();
+    // `held` and the new owner of the same URL cannot both stand.
+    expect(() => restoreActions([...held, ...listActions()])).toThrow(/X_ACTION_PATH_DUPLICATE/);
   });
 });

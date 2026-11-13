@@ -43,8 +43,22 @@ export { assertHeaderSafe } from './header-safety';
 export { safeMailHref } from './html';
 export { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 export { mailMessageSchema, sendMailJob } from './job';
-export type { ColorScheme, LayoutInput, MailLayout, MailToken, UnsubscribeSlot } from './layout';
-export { MAIL_TOKENS, registeredLayouts, registerLayout, token } from './layout';
+export type {
+  ColorScheme,
+  LayoutInput,
+  LayoutRegistration,
+  MailLayout,
+  MailToken,
+  UnsubscribeSlot,
+} from './layout';
+export {
+  layoutFor,
+  MAIL_TOKENS,
+  registeredLayouts,
+  registerLayout,
+  restoreLayouts,
+  token,
+} from './layout';
 export type { AnyMailDefinition, MailDefinition, MailInit, MailPreview, SendOptions } from './mail';
 export {
   defineMail,
@@ -53,6 +67,7 @@ export {
   registeredMails,
   renderMessage,
   resetMails,
+  restoreMails,
   send,
 } from './mail';
 export type { MailPreviewResult, PreviewOptions } from './preview';

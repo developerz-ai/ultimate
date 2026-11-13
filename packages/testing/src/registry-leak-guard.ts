@@ -14,7 +14,8 @@ import {
   mergeSnapshots,
   restoreProcessRegistries,
 } from './registry-snapshot';
-import { frameworkDeclarationRegistries, rerunDeclarations } from './rerun-declarations';
+import { rerunDeclarations } from './rerun-declarations';
+import { frameworkDeclarationRegistries } from './rerun-registries';
 
 /**
  * What is REPORTED, and why only these two. Both are BOOT installs — `declareTags` takes the
@@ -51,9 +52,10 @@ import { frameworkDeclarationRegistries, rerunDeclarations } from './rerun-decla
  *
  * Every "no" needs the SAME two halves the two "yes" rows have: a reader and a writer in the owning
  * package (`restorePermissions` was added to `@ultimat3/policy` for exactly this), and one line
- * here. `@ultimat3/action`, `@ultimat3/query` and `@ultimat3/mail` publish a
- * lister and a reset but no restore, so the change is theirs first and this file's second — and it
- * has to land as ONE change, because the cost of the rest is a second edit of this same shape.
+ * here. `@ultimat3/action` (`restoreActions`, on `./loader`) and `@ultimat3/mail` (`restoreMails`,
+ * `restoreLayouts`) now publish both halves, for the rerun seam (`rerun-registries.ts`);
+ * `@ultimat3/query` still publishes a lister and a reset but no restore. Adding a row to the
+ * snapshot is a separate decision from having the writer: it changes what every later file sees.
  */
 export interface RegistrySample {
   readonly tags: readonly string[];
@@ -223,6 +225,7 @@ export function installRegistryLeakGuard(): void {
         runFileBoundary();
         close();
         pending = repoRelative(args.path);
+        // `loading` closes the previous file's window first (`fileEnd`).
         reruns.loading(args.path);
         return {
           contents: `${SAMPLE_BODY_START}${await Bun.file(args.path).text()}${SAMPLE_BASELINE}`,
@@ -235,6 +238,7 @@ export function installRegistryLeakGuard(): void {
   afterAll(() => {
     // The run's LAST file has no boundary after it: its undisposed island mounts end here.
     runBoundaryHooks();
+    reruns.fileEnd();
     close();
     if (leaks.length > 0) throw new RegistryLeakError({ leaks });
   });

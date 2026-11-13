@@ -10,6 +10,7 @@ import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { clearRoutes, defineRoute, h, registerRoute, withStatus } from '@ultimat3/render';
 import { isrController } from '@ultimat3/render/server';
 import { appRoutes } from './runtime-render';
+import { untilTurnAsync } from './runtime-turns-fixture';
 
 const BUILD_ID = 'isr-locale-under-test';
 const blogTag = tag('blog');
@@ -82,13 +83,20 @@ function served(): {
   return {
     get,
     detach,
-    // The stale copy answers while the regeneration runs behind it: polled to a deadline.
+    // The stale copy answers while the regeneration runs behind it: polled one turn at a time,
+    // to a turn count — `Date.now` is frozen here, so a deadline on it never arrives.
     settled: async (path, status) => {
       let response = await get(path);
-      for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
-        if (response.status === status && !response.headers.has('x-ultimate-isr')) break;
-        response = await get(path);
-      }
+      const landed = (): boolean =>
+        response.status === status && !response.headers.has('x-ultimate-isr');
+      await untilTurnAsync(
+        async () => {
+          if (landed()) return true;
+          response = await get(path);
+          return landed();
+        },
+        `${path} settles at ${String(status)}`,
+      );
       return response;
     },
   };

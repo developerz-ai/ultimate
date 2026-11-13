@@ -30,7 +30,7 @@ export interface SourceBareErrorExemption {
 export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] = [
   {
     path: 'packages/cli/e2e/client-navigation-fixture.ts',
-    line: 359,
+    line: 356,
     reason:
       'the route under test writes and then fails, so what answers it is the framework own error page and not this throw',
   },

@@ -16,12 +16,36 @@ const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 const REALTIME = { enabled: true } as const;
 const takes = { upgrade: () => true, requestIP: () => null };
 
-const waitFor = async (done: () => boolean, polls = 500): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
+/**
+ * The dial loop's backoff, armed by hand (`SelectTransportOptions.scheduler`): a re-dial happens
+ * when the test fires it, never when a loaded runner's clock gets round to it. A cancel removes
+ * the entry, so a stopped transport's wait is gone from the queue as it would be from the timers.
+ */
+let pending: { readonly fn: () => void }[] = [];
+const scheduler = (fn: () => void): (() => void) => {
+  const entry = { fn };
+  pending.push(entry);
+  return () => {
+    pending = pending.filter((armed) => armed !== entry);
+  };
 };
 
+/** One macrotask turn: every promise a fired dial chained has settled. */
+const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** Fire every armed backoff, then let the dials it started run: `rounds` times over. */
+async function redial(rounds: number, done: () => boolean = () => false): Promise<void> {
+  for (let left = rounds; left > 0 && !done(); left -= 1) {
+    for (const armed of pending.splice(0)) armed.fn();
+    for (let turns = 0; turns < 10; turns += 1) await turn();
+  }
+}
+
 const stops: (() => Promise<void>)[] = [];
-beforeEach(() => resetLifecycle());
+beforeEach(() => {
+  pending = [];
+  resetLifecycle();
+});
 afterEach(async () => {
   for (const stop of stops.splice(0).reverse()) await stop();
   resetLifecycle();
@@ -39,6 +63,7 @@ async function boot(broker: FakeNatsBroker, dev: boolean) {
     select: {
       connect: fakeNatsConnect(broker),
       backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
+      scheduler,
       onError: () => undefined,
       connectWithinMs: 30,
     },
@@ -91,7 +116,7 @@ describe('the sync role with the bus away', () => {
       expect(waiting[0]?.[1]?.['code']).toBe('X_TRANSPORT_UNAVAILABLE');
 
       broker.offline = false;
-      await waitFor(() => prepared.node.ready);
+      await redial(50, () => prepared.node.ready);
       expect(prepared.node.ready).toBe(true);
       // Past readiness now: the authenticator (which answers null) is what refuses this dial.
       expect((await dial())?.status).toBe(401);
@@ -117,7 +142,8 @@ describe('the sync role with the bus away', () => {
       const prepared = await boot(broker, true);
       await prepared.stop();
       broker.offline = false;
-      await Bun.sleep(30);
+      // Every backoff still armed, fired, and the dials it would start given their turns.
+      await redial(10);
       expect(prepared.node.ready).toBe(false);
     } finally {
       warn.mockRestore();
@@ -136,8 +162,8 @@ describe('the sync role with the bus away', () => {
       const running = await prepared.listen(null);
       await running.stop();
       broker.offline = false;
-      // As long as the bus took to start the node in the first test, and then some.
-      await waitFor(() => prepared.node.ready, 15);
+      // More rounds than the bus took to start the node in the first test.
+      await redial(10, () => prepared.node.ready);
       expect(prepared.node.ready).toBe(false);
     } finally {
       warn.mockRestore();

@@ -29,6 +29,7 @@ describe.skipIf(noBrowser)('client navigation · real input', () => {
       );
       await currentTab().pointerClick('#to-b');
       await currentTab().waitFor('window.__landed === "/b"', 'B swapped in');
+      // real-clock: the delay IS the input — a press N ms into Chrome's own view transition
       await Bun.sleep(delay);
       await currentTab().pointerClick('#to-a');
       await currentTab().waitFor(
@@ -53,6 +54,7 @@ describe.skipIf(noBrowser)('client navigation · real input', () => {
       await currentTab().pointerClick(link);
       await currentTab().waitFor(`document.title === ${JSON.stringify(title)}`, title);
       // Past the 65 ms rest a hover would have needed, and the focus the press gave the link.
+      // real-clock: a request NOT sent has no event; only Chrome's intent timer could send one
       await Bun.sleep(500);
       expect(requests.filter((line) => line.startsWith(`GET ${path} `))).toHaveLength(1);
       expect(await sameDocument()).toBe(true);

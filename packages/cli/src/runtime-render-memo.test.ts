@@ -7,8 +7,15 @@ import { UltimateError } from '@ultimat3/core';
 import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { appRoutes } from './runtime-render';
+import { turns } from './runtime-turns-fixture';
 
 const BUILD_ID = 'memo-under-test';
+/**
+ * How long a load holds its render open: twenty loop turns, not milliseconds. Every request of a
+ * burst is in-process promise work with no I/O, so all of them reach the memo within those turns
+ * however loaded the runner — a 5 ms sleep was a race the runner could lose.
+ */
+const HOLD = (): Promise<void> => turns(20);
 let loads = 0;
 
 afterEach(() => {
@@ -48,7 +55,7 @@ describe('unit · a cold static page under a burst', () => {
   test('memoStatic: five concurrent requests run load once and answer the same bytes', async () => {
     staticPage('apps/web/site/precios/page.tsx', async () => {
       loads += 1;
-      await Bun.sleep(5);
+      await HOLD();
       return { n: loads };
     });
     const answers = await burst(serve(true), '/precios', 5);
@@ -62,7 +69,7 @@ describe('unit · a cold static page under a burst', () => {
     let fail = true;
     staticPage('apps/web/site/roto/page.tsx', async () => {
       loads += 1;
-      await Bun.sleep(5);
+      await HOLD();
       if (fail) {
         throw new UltimateError({
           code: 'X_ROUTE_LOAD_FAILED',
@@ -87,7 +94,7 @@ describe('unit · a cold static page under a burst', () => {
     staticPage('apps/web/site/salto/page.tsx', async () => {
       loads += 1;
       const mine = loads;
-      await Bun.sleep(5);
+      await HOLD();
       setRedirect(`/to/${mine}`, 302);
       return { n: mine };
     });

@@ -133,6 +133,7 @@ describe.skipIf(noBrowser)('client navigation · the prefetch cache never answer
       await start('/a');
       await prefetched('to-eager-ns', '/eager-ns');
       // The rule under test IS elapsed time: the answer is older than 5 s at the click.
+      // real-clock: the 5 s is measured by the router inside Chrome, on Chrome's own clock
       await Bun.sleep(5_500);
       await click('to-eager-ns');
       await currentTab().waitFor('document.title === "Eager NS"', 'Eager NS');
