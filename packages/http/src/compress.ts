@@ -73,6 +73,9 @@ const processCache = createCompressCache();
 /** The process's precoded immutable bodies, used when the caller hands none (`compress-precode.ts`). */
 const processPrecode = createPrecodeStore();
 
+/** Settles when the process's background precoding is done — a test awaits it, never a clock. */
+export const precodeIdle = (): Promise<void> => processPrecode.idle();
+
 const DECLARED_LENGTH = /^\d+$/;
 
 const inBounds = (length: string | null): length is string =>

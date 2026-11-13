@@ -27,10 +27,22 @@ Bun.serve({ port: Number(Bun.argv[2]), hostname: '127.0.0.1', fetch: () =>
   new Response('x', { status: seen++ < notReady ? 503 : 200 }) });
 `;
 
-// The two servers this file starts; per host, as the seal asks.
-allowHost('127.0.0.1:39411');
-allowHost('127.0.0.1:39412');
-allowHost('127.0.0.1:39413');
+/**
+ * A port the kernel handed out, for a child this file spawns: the parent must name the port to the
+ * seal before the child binds it, so it asks first — serve port 0, read what came back, stop,
+ * pass it on through the child's argv.
+ */
+async function freePort(): Promise<number> {
+  const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response() });
+  const { port } = server;
+  await server.stop(true);
+  // `Server.port` is `number | undefined` — a unix-socket server has none. This one is TCP.
+  // Narrow, not `??`: over `expect.unreachable`'s `never`, TS 7 keeps the undefined.
+  if (port === undefined) {
+    return expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
+  }
+  return port;
+}
 
 const codeOf = async (work: () => Promise<unknown>): Promise<string | undefined> =>
   work().then(
@@ -43,11 +55,14 @@ describe('timeBoot', () => {
     const dir = await mkdtemp(`${tmpdir()}/boot-large-`);
     scratch.push(dir);
     await Bun.write(`${dir}/server.ts`, SERVER);
+    const port = await freePort();
+    // A bare `Bun.serve` announces nothing, so the seal is told this port and no other.
+    allowHost(`127.0.0.1:${String(port)}`);
     const boot = await timeBoot({
-      cmd: ['bun', 'server.ts', '39411', '3'],
+      cmd: ['bun', 'server.ts', String(port), '3'],
       cwd: dir,
       env: { PATH: Bun.env['PATH'] },
-      url: 'http://127.0.0.1:39411/',
+      url: `http://127.0.0.1:${port}/`,
       timeoutMs: 30_000,
     });
     expect(boot.toFirst200Ms).toBeGreaterThan(0);
@@ -58,12 +73,15 @@ describe('timeBoot', () => {
     const dir = await mkdtemp(`${tmpdir()}/boot-large-`);
     scratch.push(dir);
     await Bun.write(`${dir}/server.ts`, SERVER);
+    const port = await freePort();
+    // A bare `Bun.serve` announces nothing, so the seal is told this port and no other.
+    allowHost(`127.0.0.1:${String(port)}`);
     const code = await codeOf(() =>
       timeBoot({
-        cmd: ['bun', 'server.ts', '39412', '-1'],
+        cmd: ['bun', 'server.ts', String(port), '-1'],
         cwd: dir,
         env: { PATH: Bun.env['PATH'] },
-        url: 'http://127.0.0.1:39412/',
+        url: `http://127.0.0.1:${port}/`,
         timeoutMs: 30_000,
       }),
     );
@@ -75,12 +93,15 @@ test('a server that only ever answers 503 is X_BENCH_RUN_FAILED at the timeout',
   const dir = await mkdtemp(`${tmpdir()}/boot-large-`);
   scratch.push(dir);
   await Bun.write(`${dir}/server.ts`, SERVER);
+  const port = await freePort();
+  // A bare `Bun.serve` announces nothing, so the seal is told this port and no other.
+  allowHost(`127.0.0.1:${String(port)}`);
   const code = await codeOf(() =>
     timeBoot({
-      cmd: ['bun', 'server.ts', '39413', '1000000'],
+      cmd: ['bun', 'server.ts', String(port), '1000000'],
       cwd: dir,
       env: { PATH: Bun.env['PATH'] },
-      url: 'http://127.0.0.1:39413/',
+      url: `http://127.0.0.1:${port}/`,
       timeoutMs: 2_000,
     }),
   );

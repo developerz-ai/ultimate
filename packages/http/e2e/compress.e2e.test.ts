@@ -4,6 +4,7 @@
 //   bun test packages/http/e2e/compress.e2e.test.ts
 import { afterAll, describe, expect, test } from 'bun:test';
 import { resetLifecycle } from '@ultimat3/core';
+import { precodeIdle } from '../src/compress';
 import { defineHttpConfig } from '../src/config';
 import { stream, textResponse } from '../src/response';
 import type { Route } from '../src/router';
@@ -77,6 +78,10 @@ describe('what leaves the socket', () => {
   test('HEAD says what GET sends: the coded length, gzip, no body', async () => {
     const at = `${handle.url()}/sheet.css`;
     const headers = { 'accept-encoding': 'gzip' };
+    // The first hit scheduled this asset's background precoding at the strong settings; once
+    // it lands, the lookup answers with a length the on-demand coding does not have. Settle
+    // it, so the GET and the HEAD here are the same coding and the pair compares like for like.
+    await precodeIdle();
     const get = await fetch(at, { decompress: false, headers });
     const wire = (await get.arrayBuffer()).byteLength;
     const head = await fetch(at, { method: 'HEAD', decompress: false, headers });
