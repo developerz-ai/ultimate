@@ -4,9 +4,11 @@
 
 /**
  * What reading the name means for an app that also uses it.
- * - `contract`: the deploy contract — an app sets it, and may declare it in its `envSchema`.
- * - `switch`: present, it turns a framework behaviour on (a CDN purge, a mail driver, a store).
- *   An app that holds the name for its own purpose switches that behaviour on by accident.
+ * - `contract`: the deploy contract — an app sets it, and may declare it in its `envSchema`: every
+ *   adapter setting and credential (object storage, mail, a CDN, replication) is one, because
+ *   declaring it IS how an app configures that adapter, and renaming it switches the adapter off.
+ * - `switch`: present, it turns a framework behaviour on that no app configures by that name (the
+ *   OpenTelemetry signal family). An app holding it for its own purpose turns that on by accident.
  * - `internal`: the framework sets it for itself, or reads it only in a gate or a test harness.
  * - `host`: the platform's (`HOME`, `CI`); read, never owned.
  */
@@ -46,12 +48,13 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('auth', 'SESSION_SECRET'),
   ...contract('auth', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'),
   ...contract('auth', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'),
-  ...toggles('cache', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ZONE_ID'),
-  ...toggles('cache', 'FASTLY_API_TOKEN', 'FASTLY_SERVICE_ID'),
+  ...contract('cache', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ZONE_ID'),
+  ...contract('cache', 'FASTLY_API_TOKEN', 'FASTLY_SERVICE_ID'),
   ...contract('cli', 'APP_URL', 'SITE_ORIGIN', 'SYNC_URL', 'HOST', 'PORT', 'METRICS_PORT'),
   ...contract('cli', 'NODE_ENV', 'TRUSTED_PROXY_HOPS', 'WORKER_QUEUES', 'SENTRY_DSN'),
-  ...toggles('cli', 'S3_ENDPOINT', 'S3_BUCKET', 'S3_REGION', 'S3_FORCE_PATH_STYLE'),
-  ...toggles('cli', 'SCRAPE_CDP_URL', 'OTEL_SDK_DISABLED'),
+  ...contract('cli', 'S3_ENDPOINT', 'S3_BUCKET', 'S3_REGION', 'S3_FORCE_PATH_STYLE'),
+  ...contract('cli', 'SCRAPE_CDP_URL'),
+  ...toggles('cli', 'OTEL_SDK_DISABLED'),
   ...internal('cli', 'ULTIMATE_SEED_TIER', 'ULTIMATE_STATE_DIR', 'ULTIMATE_BUILD_CAPTURE'),
   ...internal('cli', 'ULTIMATE_DEV_CHILD', 'ULTIMATE_DEV_SUPERVISOR_PID', 'X_ENV'),
   ...internal('cli', 'ULTIMATE_KEEP_GLOBAL_CLI', 'ULTIMATE_VERIFY_STEP', 'CI_RUNNER'),
@@ -71,18 +74,18 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...internal('db', 'ROLLBACK_ALLOW_DESTRUCTIVE'),
   ...host('jobs', 'HOSTNAME'),
   ...contract('mail', 'MAIL_FROM', 'MAIL_POOL_SIZE'),
-  ...toggles('mail', 'RESEND_API_KEY', 'RESEND_WEBHOOK_SECRET', 'SMTP_URL'),
-  ...toggles('mail', 'SES_ACCESS_KEY_ID', 'SES_SECRET_ACCESS_KEY', 'SES_SESSION_TOKEN'),
-  ...toggles('mail', 'SES_REGION', 'SES_ENDPOINT', 'SES_CONFIGURATION_SET'),
+  ...contract('mail', 'RESEND_API_KEY', 'RESEND_WEBHOOK_SECRET', 'SMTP_URL'),
+  ...contract('mail', 'SES_ACCESS_KEY_ID', 'SES_SECRET_ACCESS_KEY', 'SES_SESSION_TOKEN'),
+  ...contract('mail', 'SES_REGION', 'SES_ENDPOINT', 'SES_CONFIGURATION_SET'),
   ...contract('notify', 'ULTIMATE_APNS_PRIVATE_KEY', 'ULTIMATE_FCM_PRIVATE_KEY'),
   ...contract('pwa', 'ULTIMATE_VAPID_PUBLIC_KEY', 'ULTIMATE_VAPID_PRIVATE_KEY'),
   ...contract('realtime', 'NATS_URL', 'NATS_KV_BUCKET'),
-  ...toggles('realtime', 'REPLICATION_URL', 'REPLICATION_SLOT', 'REPLICATION_PUBLICATION'),
-  ...toggles('scraping', 'CHROME_PATH', 'PUPPETEER_EXECUTABLE_PATH'),
+  ...contract('realtime', 'REPLICATION_URL', 'REPLICATION_SLOT', 'REPLICATION_PUBLICATION'),
+  ...contract('scraping', 'CHROME_PATH', 'PUPPETEER_EXECUTABLE_PATH'),
   ...host('scraping', 'HOME', 'TMPDIR', 'LOCALAPPDATA'),
   ...contract('storage', 'STORAGE_SIGNING_SECRET'),
-  ...toggles('storage', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_SESSION_TOKEN'),
-  ...toggles('storage', 'AWS_ENDPOINT', 'AWS_REGION', 'AWS_SESSION_TOKEN'),
+  ...contract('storage', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_SESSION_TOKEN'),
+  ...contract('storage', 'AWS_ENDPOINT', 'AWS_REGION', 'AWS_SESSION_TOKEN'),
   ...internal('testing', 'TEST_DATABASE_URL', 'TEST_NATS_URL', 'TEST_REDIS_URL', 'TZ'),
   ...internal('testing', 'ULTIMATE_TEST_ALLOW_NET', 'ULTIMATE_TEST_NOW', 'ULTIMATE_TEST_SEED'),
   ...internal('testing', 'ULTIMATE_TEST_SLOT_HELD', 'ULTIMATE_TEST_ISOLATED'),

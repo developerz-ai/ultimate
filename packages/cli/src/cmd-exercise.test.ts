@@ -193,6 +193,25 @@ describe('unit · x exercise', () => {
     }
   }, 60_000);
 
+  // A one-primitive run is a slice: 1 of 1 unproven is no ratio of the app, and the floor's
+  // "lower it" advice off it was wrong — the whole-pass floor is judged on whole passes only.
+  test('<name> on an unproven primitive is not judged against the whole-pass floor', async () => {
+    unprovenRead();
+    await Bun.write(
+      join(ROOT, 'x.verify.json'),
+      JSON.stringify({ exercise: { unprovenMax: 0.5, statementsMax: 1 } }),
+    );
+    try {
+      const result = await exerciseCommand.run(contextFor(['cxFeed']));
+      expect(Object.keys(outcomes(result.data))).toEqual(['cxFeed']);
+      expect(result.findings ?? []).toEqual([]);
+      expect((result.data as { warnings?: readonly string[] }).warnings).toBeUndefined();
+      expect(result.ok).toBe(true);
+    } finally {
+      await rm(join(ROOT, 'x.verify.json'), { force: true });
+    }
+  }, 60_000);
+
   test('<name> runs that one primitive and nothing else', async () => {
     const result = await exerciseCommand.run(contextFor(['cxWorks']));
     expect(Object.keys(outcomes(result.data))).toEqual(['cxWorks']);

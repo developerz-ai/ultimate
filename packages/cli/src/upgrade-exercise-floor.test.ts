@@ -46,7 +46,7 @@ const app = async (floor: object | undefined, report = true): Promise<string> =>
 describe('unit · ratchetExerciseFloor', () => {
   test('an app with no exercise key gets the measured figures, and its gate is then green', async () => {
     const root = await app({ steps: ['exercise'] });
-    expect(await ratchetExerciseFloor(root)).toEqual({
+    expect(await ratchetExerciseFloor(root, undefined)).toEqual({
       file: 'x.verify.json',
       written: { unprovenMax: 0.5, statementsMax: 140 },
     });
@@ -58,14 +58,22 @@ describe('unit · ratchetExerciseFloor', () => {
 
   test('a key the app already wrote is never touched; only the missing one is written', async () => {
     const root = await app({ steps: [], exercise: { unprovenMax: 0 } });
-    expect((await ratchetExerciseFloor(root))?.written).toEqual({ statementsMax: 140 });
+    expect((await ratchetExerciseFloor(root, undefined))?.written).toEqual({ statementsMax: 140 });
     expect((await readVerifyFloor(root))?.exercise).toEqual({ unprovenMax: 0, statementsMax: 140 });
   });
 
   test('no floor file, no report, or a malformed key: nothing is written', async () => {
-    expect(await ratchetExerciseFloor(await app(undefined))).toBeNull();
-    expect(await ratchetExerciseFloor(await app({ steps: [] }, false))).toBeNull();
+    expect(await ratchetExerciseFloor(await app(undefined), undefined)).toBeNull();
+    expect(await ratchetExerciseFloor(await app({ steps: [] }, false), undefined)).toBeNull();
     const bad = await app({ steps: [], exercise: { unprovenMax: 'lots' } });
-    expect(await ratchetExerciseFloor(bad)).toBeNull();
+    expect(await ratchetExerciseFloor(bad, undefined)).toBeNull();
+  });
+
+  test('a report the hop did not rewrite is never ratcheted: the last pass is not this one', async () => {
+    const root = await app({ steps: [] });
+    const before = await Bun.file(join(root, 'x.verify.json')).text();
+    const stamp = Bun.file(join(root, EXERCISE_REPORT_FILE)).lastModified;
+    expect(await ratchetExerciseFloor(root, stamp)).toBeNull();
+    expect(await Bun.file(join(root, 'x.verify.json')).text()).toBe(before);
   });
 });

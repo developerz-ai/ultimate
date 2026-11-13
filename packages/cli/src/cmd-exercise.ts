@@ -125,7 +125,11 @@ async function exercisePass(
   // one-primitive run is still a fact worth keeping, so it is written either way.
   await Bun.write(join(root, EXERCISE_REPORT_FILE), `${JSON.stringify(report, null, 2)}\n`);
   // `x.verify.json`'s `exercise` key: red where the app opted in, a warning line where it has not.
-  const floor = exerciseFloorVerdict(records, (await readVerifyFloor(root))?.exercise);
+  // A whole-pass floor, so never judged on a `<name>` run's slice: 1 of 1 unproven is no ratio.
+  const floor =
+    only === undefined
+      ? exerciseFloorVerdict(records, (await readVerifyFloor(root))?.exercise)
+      : { findings: [], warnings: [] };
   const findings = [
     ...loaded.findings,
     // The static half of the tenant proof (`exercise-static.ts`): the pass's own question,

@@ -1,10 +1,11 @@
 // A hop's missing shipped guards, installed by the CLI the hop just installed (`x g guard <name>`,
 // that release's own template) — each one only if the `boundaries` step finds nothing more with it
-// on disk. A guard the tree already breaks is taken back out and listed, so a hop is never turned
-// red by a rule the app never had; an app-modified guard is never touched (`differs` is a listing).
+// on disk. One the tree breaks is taken back out — every file its run listed, the refreshed manifest
+// too, put back as it was — and listed; an app-modified guard is never touched (`differs`).
 
 // why: Bun exposes no path-join primitive; a written guard's path is relative to the app root.
 import { join } from 'node:path';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { t } from '@ultimat3/schema';
 import type { ExecResult } from './exec';
 import { documentIn } from './upgrade-document';
@@ -48,15 +49,39 @@ const boundariesCount = async (cli: InstalledCli): Promise<number | undefined> =
   return step === undefined ? undefined : (step.findings ?? []).length;
 };
 
-/** Writes one guard; the files it created, or undefined when the generator refused. */
+/** A path's bytes before a run, or null when it did not exist: what a rollback puts back. */
+type Prior = ReadonlyMap<string, Uint8Array | null>;
+
+/** One generator run: the paths it listed, and how to put each back. */
+interface Generated {
+  readonly files: readonly string[];
+  readonly prior: Prior;
+}
+
+/**
+ * Every path a guard run can write, read before it runs: the guard and its test, and the generated
+ * contracts `x g` refreshes and lists beside them (`x.manifest.json`, `openapi*.json`). A listed
+ * path outside this set has no known prior state and is never deleted.
+ */
+const snapshot = async (root: string, name: string): Promise<Prior> => {
+  const paths = new Set([`guards/${name}.ts`, `guards/${name}.test.ts`, MANIFEST_FILENAME]);
+  paths.add('openapi.json');
+  for await (const path of new Bun.Glob('openapi*.json').scan({ cwd: root })) paths.add(path);
+  const prior = new Map<string, Uint8Array | null>();
+  for (const path of paths) {
+    const file = Bun.file(join(root, path));
+    prior.set(path, (await file.exists()) ? await file.bytes() : null);
+  }
+  return prior;
+};
+
+/** Writes one guard; what it listed with what stood there before, or undefined when refused. */
 const generate = async (
   cli: InstalledCli,
   root: string,
   name: string,
-): Promise<readonly string[] | undefined> => {
-  const conventional = [`guards/${name}.ts`, `guards/${name}.test.ts`];
-  const before = new Set<string>();
-  for (const path of conventional) if (await Bun.file(join(root, path)).exists()) before.add(path);
+): Promise<Generated | undefined> => {
+  const prior = await snapshot(root, name);
   const result = await cli(['g', 'guard', name, '--json']);
   if (!result.ok) return undefined;
   const parsed = GENERATED.safeParse(documentIn(result.stdout));
@@ -64,13 +89,18 @@ const generate = async (
     parsed.issues === undefined
       ? (parsed.value as { readonly data?: { readonly files?: readonly string[] } }).data?.files
       : undefined;
-  return (listed ?? conventional).filter((path) => !before.has(path));
+  return { files: listed ?? [`guards/${name}.ts`, `guards/${name}.test.ts`], prior };
 };
 
-const remove = async (root: string, files: readonly string[]): Promise<void> => {
-  for (const path of files) {
+/** Puts each listed path back: rewritten when it existed before the run, deleted when it did not. */
+const rollback = async (root: string, run: Generated | undefined): Promise<void> => {
+  for (const path of run?.files ?? []) {
+    const before = run?.prior.get(path);
+    // Unknown prior state: leaving a file is recoverable, deleting a committed one is not.
+    if (before === undefined) continue;
     const file = Bun.file(join(root, path));
-    if (await file.exists()) await file.delete();
+    if (before !== null) await Bun.write(file, before);
+    else if (await file.exists()) await file.delete();
   }
 };
 
@@ -94,12 +124,12 @@ export async function installMissingGuards(input: {
   const base = await boundariesCount(cli);
   if (base === undefined) return { installed: [], withheld: missing.map(unmeasured) };
 
-  const written = new Map<string, readonly string[]>();
+  const written = new Map<string, Generated>();
   const withheld: WithheldGuard[] = [];
   for (const guard of missing) {
-    const files = await generate(cli, root, guard.name);
-    if (files === undefined) withheld.push(unmeasured(guard));
-    else written.set(guard.name, files);
+    const run = await generate(cli, root, guard.name);
+    if (run === undefined) withheld.push(unmeasured(guard));
+    else written.set(guard.name, run);
   }
   if (written.size === 0) return { installed: [], withheld };
   const together = await boundariesCount(cli);
@@ -107,18 +137,19 @@ export async function installMissingGuards(input: {
     return { installed: [...written.keys()], withheld: sortByName(withheld) };
   }
 
-  for (const files of written.values()) await remove(root, files);
+  // Newest first, so each artifact ends at the bytes it held before the first run.
+  for (const run of [...written.values()].reverse()) await rollback(root, run);
   const installed: string[] = [];
   let held = base;
   for (const guard of missing.filter(({ name }) => written.has(name))) {
-    const files = await generate(cli, root, guard.name);
-    const count = files === undefined ? undefined : await boundariesCount(cli);
-    if (files !== undefined && count !== undefined && count <= held) {
+    const run = await generate(cli, root, guard.name);
+    const count = run === undefined ? undefined : await boundariesCount(cli);
+    if (run !== undefined && count !== undefined && count <= held) {
       installed.push(guard.name);
       held = count;
       continue;
     }
-    await remove(root, files ?? []);
+    await rollback(root, run);
     withheld.push({ ...guard, findings: count === undefined ? null : count - held });
   }
   return { installed, withheld: sortByName(withheld) };

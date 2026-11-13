@@ -286,4 +286,18 @@ describe('unit · x upgrade, on stderr while it runs', () => {
       'verify',
     ]);
   });
+
+  // The hop's `x exercise` wrote no report (the fixture's never does): the committed one is the last
+  // pass's, and ratcheting it would write figures this hop never measured.
+  test('a stale exercise report is never ratcheted into x.verify.json', async () => {
+    const floor = `${JSON.stringify({ steps: ['exercise'] })}\n`;
+    const report = { records: [{ kind: 'query', name: 'feed', outcome: 'reached' }] };
+    const dir = await fixture({
+      'x.verify.json': floor,
+      '.x/exercise.json': JSON.stringify(report),
+    });
+    const { code } = await run(dir, recording().runner);
+    expect(code).toBe(0);
+    expect(await Bun.file(join(dir, 'x.verify.json')).text()).toBe(floor);
+  });
 });

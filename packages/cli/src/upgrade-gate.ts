@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { t } from '@ultimat3/schema';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
+import { exerciseReportStamp } from './exercise-floor-report';
 import { LOCAL_CLI_BIN } from './local-cli';
 import type { CoverageRebaseline, HopCoverage } from './upgrade-coverage';
 import { rebaselineCoverage, statedCoverage } from './upgrade-coverage';
@@ -247,10 +248,12 @@ export async function runHopGate(input: {
     onStage('coverage');
     coverage = await rebaselineCoverage({ cli: installed, root, stated, bun: input.bunMoved });
   }
+  // The report's stamp first: only a report this exercise rewrote is ratcheted.
+  const stamp = await exerciseReportStamp(root);
   onStage('exercise');
   const exercise = readExercise(await installed(['exercise', '--json']));
   // Before `verify`, from the report that exercise just wrote: the gate judges the figures it holds.
-  const exerciseFloor = await ratchetExerciseFloor(root);
+  const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
   const verify = readVerify(await installed(['verify', '--json']));
   return { manifest, guards, coverage, exercise, exerciseFloor, verify };

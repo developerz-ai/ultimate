@@ -1,4 +1,4 @@
-// `x doctor`'s pin check: an `@ultimat3/*` dependency written as a range (`^31.0.0`, `~31.4`) in
+// `x doctor`'s pin check: an `@ultimat3/*` dependency written as a range (`^31.0.0`, `latest`) in
 // any of the app's manifests. The framework moves in lockstep and `x new` pins exactly; a range is a
 // silent upgrade on the next install, and two of them drift into the mixed set `x upgrade` refuses.
 
@@ -18,9 +18,35 @@ const INSTALLED = t.object({ version: t.string });
 /** An exact release, or a prerelease of one: what `x new` and `x upgrade` write. */
 const EXACT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
-/** A spec naming a version through an operator. `workspace:*`, `file:` and `link:` name none. */
+/** `workspace:*`, `file:` and `link:` name a directory, never a version: nothing to move. */
+const LOCAL = /^(?:workspace|file|link):/;
+
+/** `npm:@ultimat3/core@^31.0.0` → its alias prefix and the spec it pins, the part after the last @. */
+const aliasOf = (spec: string): { readonly prefix: string; readonly version: string } => {
+  const trimmed = spec.trim();
+  if (!trimmed.startsWith('npm:')) return { prefix: '', version: trimmed };
+  const at = trimmed.lastIndexOf('@');
+  return at <= 'npm:'.length
+    ? { prefix: trimmed, version: '' }
+    : { prefix: trimmed.slice(0, at + 1), version: trimmed.slice(at + 1) };
+};
+
+/**
+ * Everything but an exact version or a local link moves on the next install: `^`/`~`, `*`, `x`,
+ * a dist-tag (`latest`), a comparator pair (`>=31 <32`), a hyphen range — and an `npm:` alias is
+ * judged on the spec it carries.
+ */
 const isRange = (spec: string): boolean =>
-  !EXACT.test(spec.trim()) && pinVersion(spec) !== undefined && !/^[a-z]+:/.test(spec.trim());
+  !LOCAL.test(spec.trim()) && !EXACT.test(aliasOf(spec).version);
+
+/** The value the fix writes: the installed version, else the range's floor, alias kept. */
+const exactFor = (pin: UpgradePin, installed: ReadonlyMap<string, string>): string => {
+  const { prefix, version } = aliasOf(pin.spec);
+  const exact = installed.get(pin.name) ?? pinVersion(version);
+  return exact === undefined
+    ? `<the exact version: npm view ${pin.name} version>`
+    : `${prefix}${exact}`;
+};
 
 export interface PinFact {
   readonly pins: readonly UpgradePin[];
@@ -37,9 +63,7 @@ export function pinRangeFindings(fact: PinFact): readonly Finding[] {
     byFile.set(pin.file, [...(byFile.get(pin.file) ?? []), pin]);
   }
   return [...byFile].map(([file, pins]) => {
-    const exact = pins.map(
-      (pin) => `"${pin.name}": "${fact.installed.get(pin.name) ?? pinVersion(pin.spec) ?? ''}"`,
-    );
+    const exact = pins.map((pin) => `"${pin.name}": "${exactFor(pin, fact.installed)}"`);
     const line = fact.lines?.get(file)?.get(pins[0]?.name ?? '') ?? 1;
     return {
       code: PIN_RANGE,

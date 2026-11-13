@@ -775,7 +775,7 @@ Rules:
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |
-| An app's own name is not a framework name | `FRAMEWORK_ENV` (`@ultimat3/core`) lists every name the framework reads. An app name on one it reads as a switch or for itself (a sealed `CLOUDFLARE_*` token turned the CDN purge on) is `X_ENV_NAME_RESERVED` in `x doctor`, `As of 31.16.0`: rename it `APP_<name>` |
+| An app's own name is not a framework name | `FRAMEWORK_ENV` (`@ultimat3/core`) lists every name the framework reads. An app name on one it reads as a switch or for itself (`OTEL_*`, `TEST_DATABASE_URL`, any `ULTIMATE_*`) is `X_ENV_NAME_RESERVED` in `x doctor`, `As of 31.16.0`: rename it `APP_<name>`. An adapter's settings (`S3_*`, `SMTP_URL`, `CLOUDFLARE_*`) are the contract, never reported: declaring them is how an app configures that adapter |
 
 ## The environment — `resolveEnvironment()`
 

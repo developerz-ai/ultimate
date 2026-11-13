@@ -14,11 +14,13 @@ import {
 } from '@ultimat3/core';
 import { assertRowSecurityBinds, DbError, postgresClient } from '@ultimat3/db';
 import { describeTenancy } from '@ultimat3/entity';
+import { statementTables } from '@ultimat3/testing';
 import { loadAppConfig } from './app-config-load';
 import { loadApp } from './app-load';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { rowSecurityDeclared } from './row-security-boot';
+
 import { eachSourceFile } from './source-files';
 
 /**
@@ -86,34 +88,48 @@ export function rowSecurityOffFindings(fact: RowSecurityOffFact): readonly Findi
 }
 
 /**
- * A tagged `sql` template — `@ultimat3/db`'s, or Bun's own `Bun.sql` — found in the masked text so
- * a quoted or commented one is not one.
+ * A tagged `sql` template — `@ultimat3/db`'s, Bun's own `Bun.sql`, or a handle's `tx.sql` — found
+ * in the masked text so a quoted or commented one is not one; `mysql\`` is a longer name, not it.
  */
-const SQL_TAG = /(?<![\w$.])(?:Bun\.)?sql\s*`/g;
-/** The table a statement reads or writes, optionally schema-qualified or double-quoted. */
-const TABLE_REF = /\b(?:from|join|update|into)\s+(?:"?\w+"?\.)?"?(\w+)"?/gi;
+const SQL_TAG = /(?<![\w$])sql\s*`/g;
+/** `raw('…')` (a statement) and `identifier('…')` (a table name): SQL built outside a template. */
+const SQL_CALL = /(?<![\w$.])(raw|identifier)\s*\(\s*/g;
 
-/** The rule's scan, pure: each raw `sql` template in `source` naming one of `tables`. */
+/** The rule's scan, pure: each raw `sql` template or call in `source` naming one of `tables`. */
 export function rawTenantSql(
   path: string,
   source: string,
   tables: ReadonlySet<string>,
 ): readonly RawTenantSql[] {
-  if (tables.size === 0 || !source.includes('sql')) return [];
+  if (tables.size === 0 || !/sql|raw|identifier/.test(source)) return [];
   const masked = maskLiterals(source);
   const text = stripComments(source);
   const found: RawTenantSql[] = [];
+  const report = (index: number, named: readonly string[]) => {
+    const line = text.slice(0, index).split('\n').length;
+    for (const table of new Set(named)) {
+      if (tables.has(table)) found.push({ at: `${path}:${line}`, table });
+    }
+  };
+  // `scope` is masked text or a template's own body, `offset` where it starts in `text`.
+  const calls = (scope: string, offset: number) => {
+    for (const call of scope.matchAll(SQL_CALL)) {
+      const open = offset + call.index + call[0].length;
+      const quote = text[open];
+      if (quote !== "'" && quote !== '"' && quote !== '`') continue;
+      const literal = text.slice(open + 1, endOfLiteral(text, open) - 1);
+      const named = call[1] === 'raw' ? statementTables(literal) : [literal.toLowerCase()];
+      report(offset + call.index, named);
+    }
+  };
   for (const tag of masked.matchAll(SQL_TAG)) {
     const open = tag.index + tag[0].length - 1;
     const body = text.slice(open + 1, endOfLiteral(text, open) - 1);
-    const line = text.slice(0, tag.index).split('\n').length;
-    const named = new Set<string>();
-    for (const ref of body.matchAll(TABLE_REF)) {
-      const table = ref[1]?.toLowerCase();
-      if (table !== undefined && tables.has(table)) named.add(table);
-    }
-    for (const table of named) found.push({ at: `${path}:${line}`, table });
+    report(tag.index, statementTables(body));
+    // Masking blanks a template's `${…}` too: `${identifier('posts')}` is read off the body.
+    calls(body, open + 1);
   }
+  calls(masked, 0);
   return found;
 }
 

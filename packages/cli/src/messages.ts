@@ -104,6 +104,9 @@ const CATALOG = {
   // `x doctor`'s reminder: the rolling rail is off until this key is set (`doctor-rolling.ts`).
   'cli.doctor.rollingSince':
     'the rolling-deploy rail is off: set "rollingSince": "{newest}" in x.verify.json to judge every migration after your newest',
+  // `x doctor`'s warnings: beside the verdict on `main`, red on `next` (`doctor-warnings.ts`).
+  'cli.doctor.warnings': '{count} warning(s) — not in the verdict until the next major:',
+  'cli.doctor.warning': '  {code}: {cause} — fix: {fix}',
   'cli.docs.code': '{code} is an error code — x errors explain answers it',
   'cli.docs.exports': 'exports: {list}',
   'cli.docs.installed': 'installed: {list}',

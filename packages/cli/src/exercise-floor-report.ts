@@ -27,6 +27,7 @@ const CEILING = t.optional(
     statements: t.number,
     max: t.number,
     why: t.optional(t.string),
+    declared: t.optional(t.boolean),
     top: t.optional(t.array(t.object({ fingerprint: t.string, count: t.number }))),
   }),
 );
@@ -47,7 +48,7 @@ const REPORT = t.object({
 const reportFile = (root: string): Bun.BunFile => Bun.file(join(root, EXERCISE_REPORT_FILE));
 
 /** The report's modification stamp, or `undefined` with no report: what "rewritten" is judged by. */
-const stampOf = async (root: string): Promise<number | undefined> => {
+export const exerciseReportStamp = async (root: string): Promise<number | undefined> => {
   const file = reportFile(root);
   return (await file.exists()) ? file.lastModified : undefined;
 };
@@ -74,9 +75,9 @@ export function withUnprovenFloor(step: VerifyStep): VerifyStep {
     async run(ctx) {
       // The file's own stamp before and after, never the clock: a test's frozen `Date.now` and the
       // filesystem's real one are two clocks, and a report this run did not rewrite is not judged.
-      const before = await stampOf(ctx.root);
+      const before = await exerciseReportStamp(ctx.root);
       const outcome = await step.run(ctx);
-      const after = await stampOf(ctx.root);
+      const after = await exerciseReportStamp(ctx.root);
       if (after === undefined || after === before) return outcome;
       const records = await readExerciseRecords(ctx.root);
       if (records === undefined) return outcome;

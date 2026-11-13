@@ -7,7 +7,11 @@
 import { join } from 'node:path';
 import type { ExerciseFloor } from './exercise-floor';
 import { readExerciseFloor } from './exercise-floor';
-import { measuredExerciseFloor, withExerciseFloor } from './exercise-floor-report';
+import {
+  exerciseReportStamp,
+  measuredExerciseFloor,
+  withExerciseFloor,
+} from './exercise-floor-report';
 import { parseJson } from './upgrade-registry';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 
@@ -17,8 +21,17 @@ export interface HopExerciseFloor {
   readonly written: ExerciseFloor;
 }
 
-/** Writes the measured figure for each exercise key the floor file lacks; null when none. */
-export async function ratchetExerciseFloor(root: string): Promise<HopExerciseFloor | null> {
+/**
+ * Writes the measured figure for each exercise key the floor file lacks; null when none. `before`
+ * is the report's stamp ahead of the hop's `x exercise`: a report that pass did not rewrite (it
+ * died, or is a CLI with no report) holds another pass's figures and is never ratcheted.
+ */
+export async function ratchetExerciseFloor(
+  root: string,
+  before: number | undefined,
+): Promise<HopExerciseFloor | null> {
+  const after = await exerciseReportStamp(root);
+  if (after === undefined || after === before) return null;
   const file = Bun.file(join(root, VERIFY_FLOOR_FILE));
   if (!(await file.exists())) return null;
   const text = await file.text();

@@ -43,9 +43,10 @@ export const SCALE_SIZES = { small: 2, large: 8 } as const;
 /**
  * Per shape, the large run against the small one. Only unexpected statements are judged; a shape
  * that grew only under an `expectedQueryLoop` is listed beside the verdict with its reason. A shape
- * absent at the small size, where every table holds rows, is a different PATH, not a loop: the two
- * calls branched on what they were handed. Only that is `unproven`; a shape that grew from one or
- * more is red whatever else differs.
+ * absent at the small size and sent exactly ONCE at the large one is a different PATH, not a loop:
+ * the two calls branched on what they were handed. Only that is `unproven`. One sent more than once
+ * where it was absent is a loop over rows the small graph held none of (a filter on the third enum
+ * value, which two rows never reach) — red, as is a shape that grew from one or more.
  */
 export function judgeScale(
   small: readonly StatementTally[],
@@ -76,7 +77,7 @@ export function judgeScale(
   shapes.sort(byName);
   expected.sort(byName);
   if (shapes.length === 0) return { verdict: 'flat', expected };
-  const grown = shapes.filter((shape) => shape.small > 0);
+  const grown = shapes.filter((shape) => shape.small > 0 || shape.large > 1);
   if (grown.length > 0) return { verdict: 'grows', shapes: grown, expected };
   const appeared = shapes.map((shape) => `${shape.fingerprint} 0 → ${shape.large}`).join(', ');
   return {

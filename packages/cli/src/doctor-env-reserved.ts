@@ -1,6 +1,6 @@
 // `x doctor`'s env-name check: an app's own variable — declared in `envSchema` or sealed in the
-// secrets file — on a name the framework also reads as a switch or for itself (`FRAMEWORK_ENV`).
-// An adopter's sealed Cloudflare token switched the CDN purge on; nothing said the name was taken.
+// secrets file — on a name the framework reads as a switch or for itself (`FRAMEWORK_ENV`). An
+// adapter's settings (`S3_BUCKET`, `SMTP_URL`) are the contract: declaring them is the configuring.
 
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';

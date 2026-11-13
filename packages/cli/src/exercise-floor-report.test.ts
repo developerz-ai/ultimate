@@ -123,6 +123,14 @@ describe('unit · the ratchet x upgrade writes', () => {
     expect(await readExerciseRecords(root)).toHaveLength(2);
   });
 
+  test("a declared ceiling's `declared` survives the report read", async () => {
+    const root = await appRoot();
+    const ceiling = { verdict: 'within', statements: 90, max: 100, declared: true } as const;
+    const record = { kind: 'query', name: 'bulk', outcome: 'reached', statementCeiling: ceiling };
+    await Bun.write(join(root, EXERCISE_REPORT_FILE), JSON.stringify({ records: [record] }));
+    expect((await readExerciseRecords(root))?.[0]?.statementCeiling).toEqual(ceiling);
+  });
+
   test('written beside every other key; a lower floor is kept, a higher one falls', () => {
     const text = JSON.stringify({ steps: ['unit'], exercise: { statementsMax: 100 } });
     expect(JSON.parse(withExerciseFloor(text, { unprovenMax: 0.2 }))).toEqual({

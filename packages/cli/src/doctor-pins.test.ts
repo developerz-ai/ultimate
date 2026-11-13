@@ -36,6 +36,46 @@ describe('unit · x doctor framework pins', () => {
   });
 });
 
+describe('unit · what a range is', () => {
+  // Anything but an exact version or a local link moves on the next install.
+  test('a star, an x, a dist-tag, a comparator pair, a hyphen range and an npm alias are ranges', () => {
+    const specs = [
+      '*',
+      'x',
+      '31.x',
+      'latest',
+      'next',
+      '>=31 <32',
+      '31.0.0 - 31.9.0',
+      'npm:@ultimat3/core@^31.0.0',
+    ];
+    const findings = pinRangeFindings({
+      pins: specs.map((spec, i) => pin(`apps/a${i}/package.json`, '@ultimat3/core', spec)),
+      installed: new Map([['@ultimat3/core', '31.14.0']]),
+    });
+    expect(findings.map((finding) => finding.at)).toEqual(
+      specs.map((_, i) => `apps/a${i}/package.json`),
+    );
+    // The alias keeps its target: the exact edit is the alias at the installed version.
+    expect(findings.at(-1)?.fix).toContain('"@ultimat3/core": "npm:@ultimat3/core@31.14.0"');
+  });
+
+  test('an exact npm alias, file: and link: are not ranges', () => {
+    const specs = ['npm:@ultimat3/core@31.14.0', 'file:../core', 'link:@ultimat3/core'];
+    const pins = specs.map((spec) => pin('package.json', '@ultimat3/core', spec));
+    expect(pinRangeFindings({ pins, installed: new Map() })).toEqual([]);
+  });
+
+  test('with nothing installed and no version in the spec, the fix names where to read one', () => {
+    const [finding] = pinRangeFindings({
+      pins: [pin('package.json', '@ultimat3/core', 'latest')],
+      installed: new Map(),
+    });
+    expect(finding?.fix).toContain('npm view @ultimat3/core version');
+    expect(finding?.fix).not.toContain('"@ultimat3/core": ""');
+  });
+});
+
 describe('unit · the probe', () => {
   // The fix's own edit, applied verbatim, clears the finding.
   test('reads every workspace manifest, and the exact edit clears it', async () => {

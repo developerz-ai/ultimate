@@ -21,13 +21,18 @@ describe('unit · x doctor reserved env names', () => {
     expect(reservedEnvFindings(NO_APP_ENV_NAMES)).toEqual([]);
   });
 
-  // The adopter case: an app's own Cloudflare token was read by the CDN purge.
-  test('a sealed switch name is reported, naming the package that reads it', () => {
-    const [finding] = reservedEnvFindings({ declared: [], sealed: ['CLOUDFLARE_API_TOKEN'] });
+  // A name the framework sets for itself, sealed by the app, is overwritten or read as the harness's.
+  test('a sealed framework-internal name is reported, naming the package that reads it', () => {
+    const [finding] = reservedEnvFindings({ declared: [], sealed: ['TEST_DATABASE_URL'] });
     expect(finding?.code).toBe('X_ENV_NAME_RESERVED');
-    expect(finding?.cause).toContain('@ultimat3/cache');
-    expect(finding?.fix).toContain(`${APP_ENV_PREFIX}CLOUDFLARE_API_TOKEN`);
+    expect(finding?.cause).toContain('@ultimat3/testing');
+    expect(finding?.fix).toContain(`${APP_ENV_PREFIX}TEST_DATABASE_URL`);
     expect(finding?.fix.startsWith('x secrets edit')).toBe(true);
+  });
+
+  test('a switch name is reported: its presence turns a framework behaviour on', () => {
+    const [finding] = reservedEnvFindings({ declared: ['OTEL_TRACES_EXPORTER'], sealed: [] });
+    expect(finding?.cause).toContain('@ultimat3/core also reads OTEL_TRACES_EXPORTER');
   });
 
   test('a declared framework-internal name, and a name under ULTIMATE_, are reported', () => {
@@ -40,13 +45,45 @@ describe('unit · x doctor reserved env names', () => {
     );
   });
 
+  // Declared on purpose so `@ultimat3/storage`, `mail`, `cache` and `realtime` read them: the
+  // rename the fix names would switch object storage, mail or the CDN purge off without a word.
+  test('the adapter settings an app declares for the framework are the contract, never reported', () => {
+    const names = [
+      'S3_ENDPOINT',
+      'S3_BUCKET',
+      'S3_REGION',
+      'S3_ACCESS_KEY_ID',
+      'S3_SECRET_ACCESS_KEY',
+      'AWS_REGION',
+      'RESEND_API_KEY',
+      'SMTP_URL',
+      'SES_ACCESS_KEY_ID',
+      'CLOUDFLARE_API_TOKEN',
+      'FASTLY_API_TOKEN',
+      'REPLICATION_URL',
+      'CHROME_PATH',
+    ];
+    expect(codes(names)).toEqual([]);
+    expect(codes([], names)).toEqual([]);
+  });
+
+  // Its `defineEnv` block read as text: the probe reads an `envSchema` export, which it has none of.
+  test("the deployed demo's declared names yield no finding, declared or sealed", async () => {
+    const config = join(import.meta.dir, '..', '..', '..', 'dummy', 'social-media-clone');
+    const text = await Bun.file(join(config, 'app.config.ts')).text();
+    const names = [...text.matchAll(/^ {2}([A-Z][A-Z0-9_]*): \{/gm)].map((match) => match[1] ?? '');
+    expect(names).toContain('S3_BUCKET');
+    expect(codes(names)).toEqual([]);
+    expect(codes([], names)).toEqual([]);
+  });
+
   // `x new`'s own declaration must never be a finding on day one.
   test('the scaffold declares no reserved name', () => {
     expect(codes(scaffoldEnvVarNames())).toEqual([]);
   });
 
   test('the renamed key clears the finding', () => {
-    expect(codes([`${APP_ENV_PREFIX}CLOUDFLARE_API_TOKEN`])).toEqual([]);
+    expect(codes([`${APP_ENV_PREFIX}TEST_DATABASE_URL`])).toEqual([]);
   });
 });
 
@@ -56,14 +93,14 @@ describe('unit · the probe', () => {
     try {
       await Bun.write(
         join(root, 'app.config.ts'),
-        "export const envSchema = {\n  PORT: { type: 'port' },\n  FASTLY_API_TOKEN: { type: 'string' },\n};\n",
+        "export const envSchema = {\n  PORT: { type: 'port' },\n  ULTIMATE_SEED_TIER: { type: 'string' },\n};\n",
       );
       const fact = await appEnvNamesProbe(root, {});
-      expect(fact).toMatchObject({ declared: ['PORT', 'FASTLY_API_TOKEN'], sealed: [] });
+      expect(fact).toMatchObject({ declared: ['PORT', 'ULTIMATE_SEED_TIER'], sealed: [] });
       const findings = reservedEnvFindings(fact);
       expect(findings.map((finding) => finding.code)).toEqual(['X_ENV_NAME_RESERVED']);
       // The edit opens at the key's own line.
-      expect(findings[0]?.fix.startsWith('edit app.config.ts:3 — rename FASTLY_API_TOKEN')).toBe(
+      expect(findings[0]?.fix.startsWith('edit app.config.ts:3 — rename ULTIMATE_SEED_TIER')).toBe(
         true,
       );
     } finally {

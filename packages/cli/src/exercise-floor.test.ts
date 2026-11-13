@@ -47,12 +47,41 @@ describe('unit · unprovenTally', () => {
     expect(tally.figure).toBeGreaterThanOrEqual(1 / 3);
   });
 
+  // 7 / 100 * 10 000 is 700.0000000000001 in floats: ceil'd, the figure read 0.0701.
+  test('an exact ratio is its own figure, never one ten-thousandth over', () => {
+    const records = Array.from({ length: 100 }, (_, i) =>
+      i < 7 ? unproven(`u${i}`) : reached(`r${i}`),
+    );
+    expect(unprovenTally(records).figure).toBe(0.07);
+  });
+
   test('nothing reached is figure 0, never NaN', () => {
     expect(unprovenTally([]).figure).toBe(0);
   });
 });
 
+const pass = (count: number, of: number): ExerciseRecord[] =>
+  Array.from({ length: of }, (_, i) => (i < count ? unproven(`u${i}`) : reached(`r${i}`)));
+
 describe('unit · judgeUnproven', () => {
+  // 0.29 * 100 is 28.999999999999996 and 0.07 * 100 is 7.000000000000001: compared in integers.
+  test('a pass exactly at its declared floor is green, whichever way the floats round', () => {
+    for (const [count, max] of [
+      [7, 0.07],
+      [29, 0.29],
+      [57, 0.57],
+    ] as const) {
+      expect(judgeUnproven(pass(count, 100), { unprovenMax: max })).toEqual({
+        findings: [],
+        warnings: [],
+      });
+    }
+    expect(judgeUnproven(pass(8, 100), { unprovenMax: 0.07 }).findings).toHaveLength(1);
+    expect(judgeUnproven(pass(1, 3), { unprovenMax: 0.33333 }).findings).toHaveLength(1);
+    // Judged on the ratio itself, never the rounded-up figure: 1 / 3 is under 0.33334.
+    expect(judgeUnproven(pass(1, 3), { unprovenMax: 0.33334 }).findings).toEqual([]);
+  });
+
   test('all-unproven against a declared 0 is red under X_EXERCISE_UNPROVEN_ABOVE_FLOOR', () => {
     const { findings, warnings } = judgeUnproven(ALL_UNPROVEN, { unprovenMax: 0 });
     expect(warnings).toEqual([]);

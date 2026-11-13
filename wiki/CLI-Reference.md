@@ -1208,13 +1208,13 @@ It also lists the shipped guards the app's `guards/` does not hold, and the ones
 
 A listing, never a finding: deleting or editing a guard is how an app changes a rule, so the verdict does not move.
 
-Four findings about how the app is held, `As of 31.16.0` — each red in `x doctor`, none a gate step:
+Four warnings about how the app is held, `As of 31.16.0` — beside the verdict, never in it: the exit status, `findings` and `data.codes` stay as they were, and `--json` carries each as `data.warnings[]` (`{ code, cause, fix, docs, at }`). None is a gate step; on `next` they join the verdict, red:
 
 | Code | Asked | Fix |
 |---|---|---|
-| `X_DB_ROW_SECURITY_OFF` | `database.rowSecurity` is off and a raw `` sql`…` `` (or `` Bun.sql`…` ``) outside migrations, seeds and tests names a tenant table — up to five sites listed. Off with no raw tenant SQL is not reported | `database: { rowSecurity: true }` in `app.config.ts`, then `x db gen "row security" && x db migrate` |
+| `X_DB_ROW_SECURITY_OFF` | `database.rowSecurity` is off and a raw `` sql`…` `` (or `` Bun.sql`…` ``, `` tx.sql`…` ``, `raw('…')`, `identifier('…')`) outside migrations, seeds and tests names a tenant table — up to five sites listed. Off with no raw tenant SQL is not reported | `database: { rowSecurity: true }` in `app.config.ts`, then `x db gen "row security" && x db migrate` |
 | `X_VERIFY_STEP_UNFLOORED` | a gate step applies here — its suite files exist, its input is committed — and `x.verify.json` `"steps"` does not hold it, so a deleted suite reads as skipped. `e2e` is never proposed (the scaffold's placeholder skips until a browser driver is registered) | `x verify --only <steps> --json`, then add each step that passed to `"steps"` |
-| `X_FRAMEWORK_PIN_RANGE` | an `@ultimat3/*` dependency in any of the app's manifests is a range (`^31.0.0`, `~31.4`), one finding per manifest | the exact version `bun install` resolved, at the line named; then `bun install` |
+| `X_FRAMEWORK_PIN_RANGE` | an `@ultimat3/*` dependency in any of the app's manifests is anything but an exact version or a `workspace:`/`file:`/`link:` path (`^31.0.0`, `*`, `latest`, `>=31 <32`; an `npm:` alias by its own spec), one finding per manifest | the exact version `bun install` resolved, at the line named; then `bun install` |
 | `X_ENV_NAME_RESERVED` | a name the app declares in `envSchema` or seals in `secrets.enc.json` is one `FRAMEWORK_ENV` (`@ultimat3/core`) lists as a `switch` or `internal` name — setting it for the app also switches that package's behaviour. Deploy-contract names (`DATABASE_URL`, `PORT`) and host names are not collisions | rename it `APP_<name>` (or delete it where the value is meant for the framework); then `x env example` |
 
 **The chart's monitoring templates**, the same way (`As of 2026-11`): an app with a `docker/helm/Chart.yaml` and no `templates/servicemonitor.yaml` or `templates/alert-rules.yaml` gets one line per missing file, then `x g chart-alerts`, which writes only those (`--json`: `data.chartAlerts`, `{ missing[], add }`). A chart that dropped them on purpose keeps a green verdict; an app with no chart is listed nothing.

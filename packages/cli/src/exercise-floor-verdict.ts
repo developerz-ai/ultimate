@@ -33,6 +33,13 @@ const asWarning = (finding: Omit<Finding, 'docs'>): string =>
   `${finding.code} ${finding.cause} — fix: ${finding.fix}`;
 
 /**
+ * A within proof the entry declared: `declared`, or — in a report written before it carried that —
+ * a max other than the default. `statements: { max: 100, why }` is the default figure, declared.
+ */
+const declaredWithin = (proof: { readonly max: number; readonly declared?: true }): boolean =>
+  proof.declared === true || proof.max !== STATEMENTS_MAX;
+
+/**
  * `statementsMax` replaces the default ceiling for every primitive whose entry declared none; an
  * entry's own `statements: { max, why }` stands. The pass judged against `STATEMENTS_MAX`, so the
  * floor re-judges from the counts it recorded.
@@ -41,7 +48,7 @@ const rejudged = (records: readonly FloorRecord[], max: number): readonly FloorR
   records.map((record) => {
     const proof = record.statementCeiling;
     if (proof === undefined || (proof.verdict === 'over' && proof.why !== undefined)) return record;
-    if (proof.verdict === 'within' && proof.max !== STATEMENTS_MAX) return record;
+    if (proof.verdict === 'within' && declaredWithin(proof)) return record;
     if (proof.statements <= max) {
       return {
         ...record,
@@ -60,8 +67,7 @@ export function measuredStatementsMax(records: readonly FloorRecord[]): number {
   return records.reduce((top, record) => {
     const proof = record.statementCeiling;
     if (proof === undefined) return top;
-    const declared =
-      proof.verdict === 'over' ? proof.why !== undefined : proof.max !== STATEMENTS_MAX;
+    const declared = proof.verdict === 'over' ? proof.why !== undefined : declaredWithin(proof);
     return declared ? top : Math.max(top, proof.statements);
   }, STATEMENTS_MAX);
 }

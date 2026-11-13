@@ -26,9 +26,15 @@ export interface CeilingShape {
   readonly count: number;
 }
 
-/** The busiest call against the ceiling in force; `why` when the entry declared it. */
+/** The busiest call against the ceiling in force; `why` / `declared` when the entry declared it. */
 export type StatementCeilingProof =
-  | { readonly verdict: 'within'; readonly statements: number; readonly max: number }
+  | {
+      readonly verdict: 'within';
+      readonly statements: number;
+      readonly max: number;
+      /** The entry's own `statements` — at the default figure too, so no floor re-judges it. */
+      readonly declared?: true;
+    }
   | {
       readonly verdict: 'over';
       readonly statements: number;
@@ -52,7 +58,14 @@ export function judgeStatementCeiling(
   if (busiest === undefined) return undefined;
   // `defineExercise` screens a declared max; an override built by hand reaches here unscreened.
   const max = finiteCount('statements', 'max', declared?.max ?? STATEMENTS_MAX, 1);
-  if (busiest.statements <= max) return { verdict: 'within', statements: busiest.statements, max };
+  if (busiest.statements <= max) {
+    return {
+      verdict: 'within',
+      statements: busiest.statements,
+      max,
+      ...(declared === undefined ? {} : { declared: true as const }),
+    };
+  }
   const top = [...busiest.shapes]
     .sort((a, b) => b.count - a.count || a.fingerprint.localeCompare(b.fingerprint))
     .slice(0, TOP_SHAPES)

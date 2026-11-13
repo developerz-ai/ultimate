@@ -82,9 +82,30 @@ export function unprovenTally(records: readonly Proven[]): UnprovenTally {
     const reason = unprovenReason(one);
     return reason === undefined ? [] : [{ name: `${one.kind} ${one.name}`, reason }];
   });
-  const ratio = reached.length === 0 ? 0 : unproven.length / reached.length;
-  return { reached: reached.length, unproven, figure: Math.ceil(ratio * 10_000) / 10_000 };
+  // Integers first: `7 / 100 * 10_000` is 700.0000000000001 and ceil'd to 0.0701, over its own run.
+  const units = reached.length === 0 ? 0 : Math.ceil((unproven.length * 10_000) / reached.length);
+  return { reached: reached.length, unproven, figure: units / 10_000 };
 }
+
+/** `value` as `digits ÷ 10^scale`, read off its shortest decimal spelling (`0.07`, `1e-7`): exact. */
+const decimal = (value: number): { readonly digits: bigint; readonly scale: bigint } => {
+  const [mantissa = '0', exponent = '0'] = String(value).toLowerCase().split('e');
+  const [whole = '0', fraction = ''] = mantissa.split('.');
+  const scale = fraction.length - Number(exponent);
+  const digits = BigInt(`${whole}${fraction}`);
+  return scale < 0
+    ? { digits: digits * 10n ** BigInt(-scale), scale: 0n }
+    : { digits, scale: BigInt(scale) };
+};
+
+/**
+ * `unproven ÷ reached > max`, in integers: `0.29 * 100` is 28.999999999999996 in floats, and a pass
+ * exactly at the floor it wrote read red. Not money — a ratio — so a bigint holds the cross product.
+ */
+const aboveFloor = (unproven: number, reached: number, max: number): boolean => {
+  const { digits, scale } = decimal(max);
+  return BigInt(unproven) * 10n ** scale > digits * BigInt(reached);
+};
 
 /** How many unproven records a finding names: the head is where to start. */
 const NAMED = 3;
@@ -108,7 +129,7 @@ export function judgeUnproven(
           ],
         };
   }
-  if (tally.figure > max) {
+  if (aboveFloor(tally.unproven.length, tally.reached, max)) {
     const named = tally.unproven
       .slice(0, NAMED)
       .map((one) => `${one.name} (${renderCauseValue(one.reason)})`)

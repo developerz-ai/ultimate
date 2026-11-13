@@ -7,6 +7,7 @@ import type { SentStatement } from './plan-sweep';
 import type { SeedGraph, SeedRow, SeedWriter } from './seed-graph-plan';
 import { entityRuns } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
+import { statementTables } from './sql-tables';
 
 /** One table the sized seed could not write: the entity, and the driver's words (the constraint). */
 export interface ScaleSeedFailure {
@@ -78,21 +79,41 @@ export async function writeSizedSeeds(
   return { failures, lost };
 }
 
-/** `"posts"`, `posts.` or `posts ` — the table as an identifier, never inside a longer name. */
-const WORD = /[A-Za-z0-9_]/;
-const mentions = (text: string, table: string): boolean => {
-  for (let at = text.indexOf(table); at !== -1; at = text.indexOf(table, at + 1)) {
-    const before = text[at - 1];
-    const after = text[at + table.length];
-    if ((before === undefined || !WORD.test(before)) && (after === undefined || !WORD.test(after)))
-      return true;
+/**
+ * Each entity with no rows of its own whose source lost its rows: a view over a lost table (read
+ * off its SQL, views over views too) and a history table whose parent is lost — the trigger writes
+ * its rows from the parent's. Their reads are judged against rows the sized seed never wrote.
+ */
+const derivedLoss = (
+  entities: readonly SeedEntity[],
+  lost: ReadonlyMap<string, ScaleSeedFailure>,
+): ReadonlyMap<string, ScaleSeedFailure> => {
+  const byTable = new Map(entities.map((entity) => [entity.$table.toLowerCase(), entity.$name]));
+  const all = new Map(lost);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const entity of entities) {
+      if (all.has(entity.$name)) continue;
+      const described = entity.$describe();
+      const sources = [
+        ...(described.historyOf === undefined ? [] : [described.historyOf]),
+        ...(described.view === undefined ? [] : statementTables(described.view.sql)).flatMap(
+          (table) => byTable.get(table) ?? [],
+        ),
+      ];
+      const failure = sources.map((source) => all.get(source)).find((one) => one !== undefined);
+      if (failure === undefined) continue;
+      all.set(entity.$name, failure);
+      grew = true;
+    }
   }
-  return false;
+  return all;
 };
 
 /**
- * The lost table `subject` read in the pass — any statement it sent naming one — or none. Read off
- * the room's `sent()`: what a primitive's own call sent is what its sized call sends again.
+ * The lost table `subject` read in the pass — any statement it sent naming one in a table position
+ * (`statementTables`: a column spelled like one is no read of it) — or none. Read off the room's
+ * `sent()`: what a primitive's own call sent is what its sized call sends again.
  */
 export function readsLost(
   subject: string,
@@ -101,13 +122,19 @@ export function readsLost(
   entities: readonly SeedEntity[],
 ): ScaleSeedFailure | undefined {
   if (loss.lost.size === 0) return undefined;
-  const tables = entities.flatMap((entity) => {
-    const failure = loss.lost.get(entity.$name);
-    return failure === undefined ? [] : [[entity.$table, failure] as const];
-  });
+  const lost = derivedLoss(entities, loss.lost);
+  const tables = new Map(
+    entities.flatMap((entity) => {
+      const failure = lost.get(entity.$name);
+      return failure === undefined ? [] : [[entity.$table.toLowerCase(), failure] as const];
+    }),
+  );
   for (const [text, statement] of sent) {
     if (!statement.primitives.has(subject)) continue;
-    for (const [table, failure] of tables) if (mentions(text, table)) return failure;
+    for (const table of statementTables(text)) {
+      const failure = tables.get(table);
+      if (failure !== undefined) return failure;
+    }
   }
   return undefined;
 }

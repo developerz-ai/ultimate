@@ -418,6 +418,8 @@ export type { EntitySeedWriterOptions, SeedWriterTarget } from './seed-writer';
 export { entitySeedWriter } from './seed-writer';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
+// One SQL table scan for the sweep's lost-table reader and `x doctor`'s raw tenant SQL probe.
+export { statementTables } from './sql-tables';
 // Test doubles: `stub(primitive)` replaces an action's, an llm()'s or a job's body, `swapAdapter`
 // an adapter port; both are put back after the test that made them (`test-scope.ts`).
 export { stub } from './stub';

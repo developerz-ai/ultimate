@@ -21,9 +21,35 @@ describe('unit · raw tenant sql', () => {
     expect(scan('sql`select * from audit_log`')).toEqual([]);
     expect(scan('// sql`select * from posts`')).toEqual([]);
     expect(scan("const s = 'sql`select * from posts`';")).toEqual([]);
-    // A property named sql is not the tag; Bun's own is.
-    expect(scan('db.sql`select * from posts`')).toEqual([]);
+    // A longer name ending in sql is not the tag; Bun's own and a handle's `.sql` are.
+    expect(scan('mysql`select * from posts`')).toEqual([]);
     expect(scan('Bun.sql`select * from posts`').map((hit) => hit.table)).toEqual(['posts']);
+  });
+
+  test('a transaction handle, a comma join and delete … using are raw tenant sql', () => {
+    expect(scan('tx.sql`select * from posts`').map((hit) => hit.table)).toEqual(['posts']);
+    expect(scan('sql`select * from orgs o, posts p where true`').map((hit) => hit.table)).toEqual([
+      'posts',
+    ]);
+    expect(scan('sql`select * from orgs, "public"."members"`').map((hit) => hit.table)).toEqual([
+      'members',
+    ]);
+    expect(scan('sql`delete from audit using posts where true`').map((hit) => hit.table)).toEqual([
+      'posts',
+    ]);
+    // A comma inside a SET list or a column list names no table.
+    expect(scan('sql`update audit set a = 1, posts = 2`')).toEqual([]);
+    expect(scan('sql`insert into audit (a, posts) values (1, 2)`')).toEqual([]);
+  });
+
+  test('raw("…") and identifier("…") naming a tenant table are found, at their line', () => {
+    expect(scan('const q = raw("select * from posts");')).toEqual([
+      { at: 'apps/web/app/posts/repo.ts:1', table: 'posts' },
+    ]);
+    expect(scan(`\nsql\`select * from \${identifier('members')}\``)).toEqual([
+      { at: 'apps/web/app/posts/repo.ts:2', table: 'members' },
+    ]);
+    expect(scan("identifier('audit'); draw('posts'); x.raw('from posts')")).toEqual([]);
   });
 });
 

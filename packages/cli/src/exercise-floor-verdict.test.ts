@@ -69,6 +69,30 @@ describe('unit · exerciseFloorVerdict', () => {
   });
 });
 
+// `statements: { max: 100, why }` equals the default figure, and was read as undeclared: a floor's
+// lower `statementsMax` re-judged it red, against the entry's own written decision.
+const declaredAtDefault: FloorRecord = {
+  kind: 'query',
+  name: 'bulk',
+  outcome: 'reached',
+  statementCeiling: { verdict: 'within', statements: 90, max: 100, declared: true },
+} as FloorRecord;
+
+describe('unit · a declared ceiling at the default figure', () => {
+  test('stands against a lower statementsMax', () => {
+    expect(exerciseFloorVerdict([declaredAtDefault], { statementsMax: 10 }).findings).toEqual([]);
+  });
+
+  test('is no undeclared call for the measured figure', () => {
+    const busy: FloorRecord = {
+      ...declaredAtDefault,
+      statementCeiling: { verdict: 'within', statements: 100, max: 100, declared: true },
+    } as FloorRecord;
+    expect(measuredStatementsMax([busy, heavy(13)])).toBe(100);
+    expect(exerciseFloorVerdict([busy, heavy(13)], { statementsMax: 13 }).findings).toEqual([]);
+  });
+});
+
 describe('unit · measuredStatementsMax', () => {
   test('the busiest undeclared call, never under the default 100', () => {
     expect(measuredStatementsMax([heavy(13)])).toBe(100);

@@ -2,7 +2,7 @@
 // others are written; a reader is one whose own statements named a lost table, as an identifier.
 
 import { describe, expect, test } from 'bun:test';
-import { entity, text, uuid } from '@ultimat3/entity';
+import { bigint, entity, text, uuid } from '@ultimat3/entity';
 import type { SentStatement } from './plan-sweep';
 import { readsLost, writeSizedSeeds } from './scale-sweep-seed';
 import { seedGraph } from './seed-graph';
@@ -11,6 +11,7 @@ import { testName } from './test-types';
 
 const orgs = entity('sss_orgs', { columns: { id: uuid().primaryKey(), name: text({ max: 40 }) } });
 const posts = entity('sss_posts', {
+  history: true,
   columns: {
     id: uuid().primaryKey(),
     orgId: uuid()
@@ -85,5 +86,42 @@ describe(testName('unit', 'writeSizedSeeds'), () => {
     expect(readsLost('thread', sent, loss, entities)?.entity).toBe('sss_posts');
     expect(readsLost('archive', sent, loss, entities)).toBeUndefined();
     expect(readsLost('listNotes', sent, loss, entities)).toBeUndefined();
+  });
+
+  test('a column named like a lost table is no read of it: only a table position is', async () => {
+    const loss = await writeSizedSeeds([graph()], entities, refusingPosts());
+    const sent = new Map<string, SentStatement>([
+      ['select "sss_posts" from "sss_notes"', { primitives: new Set(['column']) }],
+      ['update "sss_notes" set "sss_posts" = 1', { primitives: new Set(['set']) }],
+      ['select * from "sss_notes" n, "sss_posts" p', { primitives: new Set(['comma']) }],
+    ]);
+    expect(readsLost('column', sent, loss, entities)).toBeUndefined();
+    expect(readsLost('set', sent, loss, entities)).toBeUndefined();
+    expect(readsLost('comma', sent, loss, entities)?.entity).toBe('sss_posts');
+  });
+
+  test('a view or a history table over a lost table is read as the lost table', async () => {
+    const totals = entity('sss_post_totals', {
+      view: { sql: 'select org_id, count(*) as total from sss_posts group by org_id' },
+      columns: { orgId: uuid().tenant(), total: bigint() },
+      primaryKey: ['orgId'],
+    });
+    const rollup = entity('sss_rollup', {
+      view: { sql: 'select org_id, total from sss_post_totals' },
+      columns: { orgId: uuid().tenant(), total: bigint() },
+      primaryKey: ['orgId'],
+    });
+    const history = posts.$history ?? expect.unreachable('history: true declares a history entity');
+    // The view over a view first: one pass in declaration order would not reach it.
+    const all = [...entities, rollup, totals, history];
+    const loss = await writeSizedSeeds([graph()], all, refusingPosts());
+    const sent = new Map<string, SentStatement>([
+      ['select * from "sss_post_totals"', { primitives: new Set(['totals']) }],
+      ['select * from "sss_rollup"', { primitives: new Set(['rollup']) }],
+      [`select * from "${history.$table}"`, { primitives: new Set(['audit']) }],
+    ]);
+    expect(readsLost('totals', sent, loss, all)?.entity).toBe('sss_posts');
+    expect(readsLost('rollup', sent, loss, all)?.entity).toBe('sss_posts');
+    expect(readsLost('audit', sent, loss, all)?.entity).toBe('sss_posts');
   });
 });

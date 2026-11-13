@@ -55,7 +55,11 @@ describe(testName('unit', 'judgeStatementCeiling'), () => {
     });
     expect(
       judgeStatementCeiling([{ statements: 150, shapes: [] }], { max: 150, why: 'x' }),
-    ).toEqual({ verdict: 'within', statements: 150, max: 150 });
+    ).toEqual({ verdict: 'within', statements: 150, max: 150, declared: true });
+    // At the default figure too: the entry's written decision, which a floor never re-judges.
+    expect(
+      judgeStatementCeiling([{ statements: 90, shapes: [] }], { max: 100, why: 'bulk import' }),
+    ).toEqual({ verdict: 'within', statements: 90, max: 100, declared: true });
     expect(judgeStatementCeiling([])).toBeUndefined();
   });
 
@@ -143,6 +147,11 @@ describe(testName('unit', 'runExercisePass · statement ceiling'), () => {
 
   test("an entry's statements: { max: 120, why } holds the same call within", async () => {
     const record = await pass('escDeclared');
-    expect(record.statementCeiling).toEqual({ verdict: 'within', statements: 120, max: 120 });
+    expect(record.statementCeiling).toEqual({
+      verdict: 'within',
+      statements: 120,
+      max: 120,
+      declared: true,
+    });
   });
 });

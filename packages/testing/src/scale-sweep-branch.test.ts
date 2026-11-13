@@ -84,3 +84,45 @@ describe(testName('unit', 'scaleSweep · a branch on the seeded row'), () => {
     }
   }
 });
+
+/** Every one of the tenant's signals, as a list primitive reads them. */
+const listSetup: ScaleSetup = async (_subject, graph, tenant) => ({
+  actor: null,
+  input: graph.inserts
+    .filter((one) => one.entity === 'ssb_signals' && one.tenant === tenant)
+    .map((one) => one.row),
+});
+
+/** One read of the list, then one events read PER closed signal: an N+1 over a filtered set. */
+const perClosed = {
+  name: 'closedEvents',
+  call: async (input: unknown) => {
+    const rows = (input as readonly { status?: string }[] | undefined) ?? [];
+    const closed = rows.filter((row) => row.status === 'closed').length;
+    sent = [
+      { fingerprint: 'ssb_signals.findMany', count: 1, unexpected: 1 },
+      ...(closed === 0
+        ? []
+        : [{ fingerprint: 'ssb_events.findMany', count: closed, unexpected: closed }]),
+    ];
+    return {};
+  },
+};
+
+describe(testName('unit', 'scaleSweep · a loop over a filtered set'), () => {
+  for (const seed of [2, 5, 11]) {
+    test(`a read per closed row grows, though no closed row is in the 2-row graph (seed ${seed})`, async () => {
+      const main = seedGraph({ orgs, signals }, { tenants: 2, seed });
+      const proofs = await scaleSweep({
+        subjects: [perClosed],
+        entities: [orgs, signals],
+        writer,
+        main,
+        seed,
+        room,
+        setup: listSetup,
+      });
+      expect(proofs.get('closedEvents')?.verdict).toBe('grows');
+    });
+  }
+});
