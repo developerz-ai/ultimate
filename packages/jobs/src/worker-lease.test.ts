@@ -1,7 +1,8 @@
 // The worker's half of the lease contract: every claimed job gets a heartbeat, the heartbeat is
 // released with the job, and renewals that stop landing are REPORTED. `.catch(() => undefined)`
 // on the renewal made the one failure a queue cannot recover from on its own — a lease that
-// expired under a job still running — look exactly like a healthy run.
+// expired under a job still running — look exactly like a healthy run. The renewals run on a
+// scheduler handed in (`WorkerOptions.schedule`) and fired by hand: no interval is waited.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
@@ -10,6 +11,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
+import { manualSchedule } from './manual-schedule-fixture';
 import { jobWorker } from './worker';
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
@@ -28,11 +30,6 @@ const lostCount = (queue: string): number | undefined =>
   collectMetrics()
     .metrics.find((metric) => metric.descriptor.name === 'job_leases_lost_total')
     ?.points.find((point) => point.attributes['queue'] === queue)?.value;
-
-/** Waits for what the worker's own interval will do, bounded so a failure fails fast. */
-async function until(condition: () => boolean): Promise<void> {
-  for (let waited = 0; waited < 1_000 && !condition(); waited += 2) await Bun.sleep(2);
-}
 
 interface Parked {
   readonly driver: JobDriver;
@@ -93,48 +90,59 @@ afterEach(() => {
 describe('the worker renews the lease it claimed', () => {
   test('a running job is heartbeated, and the interval stops with the job', async () => {
     const parked = await parkOne(() => Promise.resolve());
+    const timers = manualSchedule();
     const worker = jobWorker({
       driver: parked.driver,
       clock: frozenClock(0),
       visibilityTimeoutMs: 5_000,
       heartbeatIntervalMs: 1,
+      schedule: timers.schedule,
       context,
       drainOnShutdown: false,
     });
 
     const tick = worker.tick();
     await parked.running;
-    await until(() => parked.renewals() > 0);
-    expect(parked.renewals()).toBeGreaterThan(0);
+    // The job's lease renewal, armed at the interval asked for.
+    expect(timers.ticks(1)).toHaveLength(1);
+    await timers.fire(1);
+    await timers.fire(1);
+    expect(parked.renewals()).toBe(2);
 
     parked.release();
     await tick;
-    const atEnd = parked.renewals();
-    await Bun.sleep(20);
-
-    // An interval per claimed job that outlived the job would be a timer leak on every run.
-    expect(parked.renewals()).toBe(atEnd);
+    // An interval per claimed job that outlived the job would be a timer leak on every run: the
+    // one handed over was handed BACK, and nothing armed is left to beat.
+    expect(timers.armed.size).toBe(0);
+    await timers.fire();
+    expect(parked.renewals()).toBe(2);
     expect(lostCount('default')).toBeUndefined();
   });
 
   test('renewals that stop landing past the window are reported as a lost lease', async () => {
     const clock = frozenClock(0);
     const parked = await parkOne(() => Promise.reject(new Error('connection reset')));
+    const timers = manualSchedule();
     const worker = jobWorker({
       driver: parked.driver,
       clock,
       visibilityTimeoutMs: 50,
       heartbeatIntervalMs: 1,
+      schedule: timers.schedule,
       context,
       drainOnShutdown: false,
     });
 
     const tick = worker.tick();
     await parked.running;
+    // One renewal that fails inside the window is not a loss.
+    await timers.fire(1);
+    expect(lostCount('default')).toBeUndefined();
     // The window this worker bought at `claim()` is gone and no renewal has landed since: the
     // queue is free to hand this job to another worker while this one is still running it.
     clock.advance(51);
-    await until(() => lostCount('default') !== undefined);
+    await timers.fire(1);
+    expect(lostCount('default')).toBe(1);
 
     parked.release();
     await tick;

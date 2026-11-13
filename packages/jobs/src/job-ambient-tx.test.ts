@@ -11,6 +11,7 @@ import { type Ctx, ctxOf } from '@ultimat3/core';
 import { currentTx, recordingClient, setDbClient, withTransaction } from '@ultimat3/db';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
 
@@ -24,13 +25,8 @@ const input: StandardSchemaV1<unknown, { id: string }> = {
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
-async function waitFor(check: () => Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 400; i += 1) {
-    if (await check()) return;
-    await Bun.sleep(5);
-  }
-  expect.unreachable('the job never reached done');
-}
+/** Fake time moves the poll loop: its timers still carry the starter's async context. */
+const time = useFakeTime();
 
 beforeEach(() => {
   setDbClient(recordingClient());
@@ -69,11 +65,12 @@ async function observe(start: (begin: () => void) => Promise<void>): Promise<rea
   const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
   await start(() => worker.start());
   try {
-    await waitFor(
+    await time.until(
       async () => ((await driver.introspect?.list({ state: 'done' })) ?? []).length > 0,
+      2_000,
     );
   } finally {
-    await worker.stop('test-end');
+    await time.settles(worker.stop('test-end'), 100);
   }
   return seen;
 }

@@ -111,6 +111,7 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
 
   /** Waits until `count` changes have been decoded AND delivered to the registry. */
   const settle = async (count: number): Promise<void> => {
+    // real-clock: the walsender decodes and streams the commit on its own time
     for (let poll = 0; poll < 200 && events.length < count; poll += 1) await Bun.sleep(25);
     await delivered;
   };

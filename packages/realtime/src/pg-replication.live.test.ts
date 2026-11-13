@@ -68,6 +68,7 @@ if (entityForTable(TABLE) === undefined) {
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
 const waitFor = async (done: () => boolean, polls = 400): Promise<void> => {
+  // real-clock: the walsender streams a commit on its own time, not this process's
   for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(50);
 };
 
@@ -104,6 +105,7 @@ const PROBE_TIMEOUT_MS = 2_000;
 const bounded = async (probe: Promise<boolean>): Promise<boolean> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<boolean>((resolve) => {
+    // real-clock: bounds a TCP dial to a database host that may never answer
     timer = setTimeout(() => resolve(false), PROBE_TIMEOUT_MS);
     timer.unref?.();
   });
@@ -232,6 +234,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     };
     let slot = await slotRow();
     for (let poll = 0; poll < 200 && slot?.[1] !== 'f'; poll += 1) {
+      // real-clock: the server's walsender exits, and releases the slot, on its own time
       await Bun.sleep(50);
       slot = await slotRow();
     }

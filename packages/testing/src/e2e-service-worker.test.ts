@@ -99,20 +99,25 @@ describe('unit · waitForServiceWorker hands the first page over', () => {
   });
 });
 
-/** A `navigator.serviceWorker` whose worker is active and which may or may not claim the page. */
-const container = (input: { controller: boolean; claimAfterMs?: number }) => {
+/**
+ * A `navigator.serviceWorker` whose worker is active and which may or may not claim the page. One
+ * that `claims` does so a macrotask after the page starts listening — inside the grace, by event.
+ */
+const container = (input: { controller: boolean; claims?: boolean }) => {
   const listeners: (() => void)[] = [];
-  const sw = {
+  const sw: { controller: object | null; ready: Promise<object>; addEventListener: unknown } = {
     controller: input.controller ? {} : null,
     ready: Promise.resolve({}),
-    addEventListener: (_type: string, fn: () => void) => listeners.push(fn),
+    addEventListener: (_type: string, fn: () => void) => {
+      listeners.push(fn);
+      if (input.claims === true && listeners.length === 1) {
+        setTimeout(() => {
+          sw.controller = {};
+          for (const listener of listeners) listener();
+        }, 0);
+      }
+    },
   };
-  if (input.claimAfterMs !== undefined) {
-    setTimeout(() => {
-      sw.controller = {};
-      for (const fn of listeners) fn();
-    }, input.claimAfterMs);
-  }
   return { serviceWorker: sw };
 };
 
@@ -125,7 +130,7 @@ describe('unit · the in-page half', () => {
   });
 
   test('a claim inside the grace answers controlled', async () => {
-    expect(await run(container({ controller: false, claimAfterMs: 10 }))).toEqual({
+    expect(await run(container({ controller: false, claims: true }))).toEqual({
       state: 'controlled',
     });
   });

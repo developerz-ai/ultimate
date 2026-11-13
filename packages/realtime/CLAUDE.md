@@ -123,7 +123,8 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   `X_TRANSPORT_UNAVAILABLE`; `'publish'` dials in background. Never `waitOnFirstConnect`
   (retries forever). A publish with no live connection is refused.
 - **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. GIVEN UP
-  (`onClosed`), `NatsTransport` re-dials on backoff and re-binds.
+  (`onClosed`), `NatsTransport` re-dials on backoff and re-binds; the backoff wait is armed on
+  its `scheduler` option, so a test fires it by hand (`ManualScheduler`) and never sleeps.
 - **Nothing leaves `NatsTransport` uncoded** — `#translating` wraps `publish`/`subscribe` refusals
   as `X_TRANSPORT_UNAVAILABLE`. `#ensure` reuses a mid-reconnect client on purpose;
   `Transport.onReconnect(listener)` (required) announces each recovery.

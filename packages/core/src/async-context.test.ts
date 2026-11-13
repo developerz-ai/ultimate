@@ -26,23 +26,27 @@ describe('asyncContext, on a server', () => {
   test('propagates across an await, which is the whole reason for AsyncLocalStorage', async () => {
     const scope = asyncContext<number>('the thing');
     await scope.run(7, async () => {
-      await Bun.sleep(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(scope.get()).toBe(7);
     });
   });
 
   test('stays isolated across interleaved async tasks', async () => {
     const scope = asyncContext<string>('the thing');
-    const task = async (value: string, delayMs: number): Promise<string> =>
+    // Each task parks on a gate the test opens, in an order none of them started in: the
+    // interleaving is chosen, not left to which timer a loaded runner fires first.
+    const gates = new Map<string, () => void>();
+    const task = (value: string): Promise<string> =>
       scope.run(value, async () => {
-        await Bun.sleep(delayMs);
+        await new Promise<void>((resolve) => gates.set(value, resolve));
         return scope.get() ?? 'lost';
       });
-    expect(await Promise.all([task('a', 20), task('b', 5), task('c', 10)])).toEqual([
-      'a',
-      'b',
-      'c',
-    ]);
+    const all = Promise.all([task('a'), task('b'), task('c')]);
+    for (const value of ['b', 'c', 'a']) {
+      (gates.get(value) ?? expect.unreachable(`gate ${value} never armed`))();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(await all).toEqual(['a', 'b', 'c']);
   });
 
   test('nests, innermost wins, and the outer value survives the inner scope', () => {
@@ -59,7 +63,7 @@ describe('asyncContext, on a server', () => {
       expect(scope.exit(() => scope.get())).toBeUndefined();
       // A loop begun under exit keeps the absence across its awaits and timers.
       const later = await scope.exit(async () => {
-        await Bun.sleep(1);
+        await new Promise((resolve) => setTimeout(resolve, 0));
         return scope.get();
       });
       expect(later).toBeUndefined();

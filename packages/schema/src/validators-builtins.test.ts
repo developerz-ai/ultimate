@@ -4,18 +4,23 @@
 // questions and together were over the 500-line ceiling.
 
 import { describe, expect, test } from 'bun:test';
-import { validate } from './standard';
+import { issueRuleFacts } from './schema-rules';
+import { type StandardResult, validate } from './standard';
 import { builtinT } from './validators';
+
+/** The rule each issue names: a refusal for the wrong reason, or an empty `issues`, is a failure. */
+const rulesOf = (result: StandardResult<unknown>): readonly (string | undefined)[] | undefined =>
+  result.issues?.map((issue) => issueRuleFacts(issue).rule);
 
 const UUID = '018f4a1c-1b2c-7d3e-8f90-abcdef012345';
 
 describe('builtinT.string', () => {
   test('rejects an empty string by default', () => {
-    expect(validate(builtinT.string, '').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.string, ''))).toEqual(['string.min']);
   });
 
   test('rejects non-strings', () => {
-    expect(validate(builtinT.string, 123).issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.string, 123))).toEqual(['type']);
   });
 
   test('a pattern keeps its flags, in the check and in the message', () => {
@@ -25,12 +30,12 @@ describe('builtinT.string', () => {
     expect(insensitive.node.patternFlags).toBe('i');
     expect(validate(insensitive, 'ABC').issues).toBeUndefined();
     expect(validate(insensitive, 'abc').issues).toBeUndefined();
-    expect(validate(insensitive, 'A1').issues).toBeDefined();
+    expect(rulesOf(validate(insensitive, 'A1'))).toEqual(['string.pattern']);
     expect(validate(insensitive, 'A1').issues?.[0]?.message).toContain('/^[a-z]+$/i');
     // An unflagged pattern carries no flags field and its message is unchanged.
     const plain = builtinT.string.pattern(/^[a-z]+$/);
     expect(plain.node.patternFlags).toBeUndefined();
-    expect(validate(plain, 'ABC').issues).toBeDefined();
+    expect(rulesOf(validate(plain, 'ABC'))).toEqual(['string.pattern']);
   });
 
   test('min/max/pattern chain onto a new schema without mutating the original', () => {
@@ -52,9 +57,9 @@ describe('builtinT.string', () => {
     // "chars" — but the check counted UTF-16 code units, so `t.string.max(1)` refused a value a
     // human, the published schema and Postgres' `char_length` all read as one character.
     expect(validate(builtinT.string.max(1), '👍').issues).toBeUndefined();
-    expect(validate(builtinT.string.max(1), '👍👍').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.string.max(1), '👍👍'))).toEqual(['string.max']);
     expect(validate(builtinT.string.min(2), '👍👍').issues).toBeUndefined();
-    expect(validate(builtinT.string.min(2), '👍').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.string.min(2), '👍'))).toEqual(['string.min']);
   });
 
   test('a global pattern gives the same verdict every time it is asked', () => {
@@ -71,9 +76,9 @@ describe('builtinT.string', () => {
       .min(3)
       .max(5)
       .pattern(/^[a-z]+$/);
-    expect(validate(schema, 'ab').issues).toBeDefined();
-    expect(validate(schema, 'abcdef').issues).toBeDefined();
-    expect(validate(schema, 'AB').issues).toBeDefined();
+    expect(rulesOf(validate(schema, 'ab'))).toEqual(['string.min']);
+    expect(rulesOf(validate(schema, 'abcdef'))).toEqual(['string.max']);
+    expect(rulesOf(validate(schema, 'ABC'))).toEqual(['string.pattern']);
     expect(validate(schema, 'abc').issues).toBeUndefined();
   });
 });
@@ -81,9 +86,9 @@ describe('builtinT.string', () => {
 describe('builtinT.number', () => {
   test('accepts finite numbers, rejects non-finite and non-numbers', () => {
     expect(validate(builtinT.number, 5).issues).toBeUndefined();
-    expect(validate(builtinT.number, Number.POSITIVE_INFINITY).issues).toBeDefined();
-    expect(validate(builtinT.number, Number.NaN).issues).toBeDefined();
-    expect(validate(builtinT.number, '5').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.number, Number.POSITIVE_INFINITY))).toEqual(['type']);
+    expect(rulesOf(validate(builtinT.number, Number.NaN))).toEqual(['type']);
+    expect(rulesOf(validate(builtinT.number, '5'))).toEqual(['type']);
   });
 
   test('min/max/int chain onto a new schema without mutating the original', () => {
@@ -102,9 +107,9 @@ describe('builtinT.number', () => {
 
   test('enforces min/max/int once chained', () => {
     const schema = builtinT.number.min(1).max(10).int();
-    expect(validate(schema, 0).issues).toBeDefined();
-    expect(validate(schema, 11).issues).toBeDefined();
-    expect(validate(schema, 5.5).issues).toBeDefined();
+    expect(rulesOf(validate(schema, 0))).toEqual(['number.min']);
+    expect(rulesOf(validate(schema, 11))).toEqual(['number.max']);
+    expect(rulesOf(validate(schema, 5.5))).toEqual(['number.integer']);
     expect(validate(schema, 5).issues).toBeUndefined();
   });
 
@@ -117,9 +122,9 @@ describe('builtinT.number', () => {
     const int = builtinT.number.int();
     expect(validate(int, Number.MAX_SAFE_INTEGER).issues).toBeUndefined();
     expect(validate(int, -Number.MAX_SAFE_INTEGER).issues).toBeUndefined();
-    expect(validate(int, 2 ** 53).issues).toBeDefined();
-    expect(validate(int, -(2 ** 53)).issues).toBeDefined();
-    expect(validate(int, 2 ** 53 + 2).issues).toBeDefined();
+    expect(rulesOf(validate(int, 2 ** 53))).toEqual(['number.integer']);
+    expect(rulesOf(validate(int, -(2 ** 53)))).toEqual(['number.integer']);
+    expect(rulesOf(validate(int, 2 ** 53 + 2))).toEqual(['number.integer']);
   });
 
   // The message states the rule that fired, because `expected an integer` is false about a value
@@ -135,7 +140,7 @@ describe('builtinT.boolean', () => {
   test('accepts booleans only', () => {
     expect(validate(builtinT.boolean, true).issues).toBeUndefined();
     expect(validate(builtinT.boolean, false).issues).toBeUndefined();
-    expect(validate(builtinT.boolean, 'true').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.boolean, 'true'))).toEqual(['type']);
   });
 });
 
@@ -145,8 +150,10 @@ describe('builtinT.uuid', () => {
   });
 
   test('rejects a malformed uuid', () => {
-    expect(validate(builtinT.uuid, 'not-a-uuid').issues).toBeDefined();
-    expect(validate(builtinT.uuid, '018f4a1c-1b2c-7d3e-8f90-abcdef01234').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.uuid, 'not-a-uuid'))).toEqual(['string.format']);
+    expect(rulesOf(validate(builtinT.uuid, '018f4a1c-1b2c-7d3e-8f90-abcdef01234'))).toEqual([
+      'string.format',
+    ]);
   });
 });
 
@@ -156,8 +163,8 @@ describe('builtinT.email', () => {
   });
 
   test('rejects a malformed email address', () => {
-    expect(validate(builtinT.email, 'not-an-email').issues).toBeDefined();
-    expect(validate(builtinT.email, 'missing-domain@').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.email, 'not-an-email'))).toEqual(['string.format']);
+    expect(rulesOf(validate(builtinT.email, 'missing-domain@'))).toEqual(['string.format']);
   });
 });
 
@@ -167,7 +174,7 @@ describe('builtinT.url', () => {
   });
 
   test('rejects a relative path', () => {
-    expect(validate(builtinT.url, '/path/to/thing').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.url, '/path/to/thing'))).toEqual(['string.format']);
   });
 });
 
@@ -182,17 +189,17 @@ describe('builtinT.date', () => {
     // `expected()` -> `describeValue()` used to call `.toISOString()` unconditionally, which
     // throws a RangeError for an invalid Date — this asserts the fixed, graceful behavior.
     const result = validate(builtinT.date, new Date('not-a-date'));
-    expect(result.issues).toBeDefined();
+    expect(rulesOf(result)).toEqual(['type']);
     expect(result.issues?.[0]?.message).toContain('invalid Date');
   });
 
   test('rejects a string that produces NaN when parsed', () => {
-    expect(validate(builtinT.date, 'definitely not a date').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.date, 'definitely not a date'))).toEqual(['string.format']);
   });
 
   test('rejects other types entirely', () => {
-    expect(validate(builtinT.date, true).issues).toBeDefined();
-    expect(validate(builtinT.date, null).issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.date, true))).toEqual(['type']);
+    expect(rulesOf(validate(builtinT.date, null))).toEqual(['type']);
   });
 
   test('refuses a zone-less date-time: one wire value must not be two instants', () => {
@@ -239,7 +246,7 @@ describe('builtinT.timezone', () => {
   });
 
   test('rejects an unknown time zone', () => {
-    expect(validate(builtinT.timezone, 'Not/AZone').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.timezone, 'Not/AZone'))).toEqual(['string.format']);
   });
 
   // ICU 78 (Bun 1.4) RESOLVES every one of these where ICU 75 threw, which is how the bare `Intl`
@@ -264,9 +271,9 @@ describe('builtinT.timezone', () => {
   ];
 
   test.each(ABBREVIATIONS)('refuses %s — an abbreviation carries no DST rule', (zone) => {
-    expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.timezone, zone))).toEqual(['string.format']);
     // Every casing, because `Intl` accepts every casing of every name it accepts at all.
-    expect(validate(builtinT.timezone, zone.toLowerCase()).issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.timezone, zone.toLowerCase()))).toEqual(['string.format']);
   });
 
   // Single-label `backward` links name real zones, and refusing them is deliberate rather than ICU
@@ -274,7 +281,7 @@ describe('builtinT.timezone', () => {
   test.each(['Japan', 'GB', 'Eire', 'W-SU', 'PRC', 'ROK', 'Singapore', 'Israel', 'Universal'])(
     'refuses the single-label legacy link %s',
     (zone) => {
-      expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+      expect(rulesOf(validate(builtinT.timezone, zone))).toEqual(['string.format']);
     },
   );
 
@@ -282,7 +289,7 @@ describe('builtinT.timezone', () => {
   // class has been reaching `t.timezone` off the wire under every runtime this framework has
   // shipped on, which is what makes this the worst of the three sites.
   test.each(['+01:00', '-05:00', '+0100', '-08'])('refuses the bare offset %s', (zone) => {
-    expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.timezone, zone))).toEqual(['string.format']);
   });
 
   test.each(['Europe/Berlin', 'UTC', 'utc', 'US/Eastern', 'Asia/Calcutta', 'Etc/GMT+2'])(
@@ -295,7 +302,7 @@ describe('builtinT.timezone', () => {
   test.each(['', ' ', 'Mars/Olympus', 'Europe/Berlin ', 'Not a zone'])(
     'refuses %p, which is not a zone at all',
     (zone) => {
-      expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+      expect(rulesOf(validate(builtinT.timezone, zone))).toEqual(['string.format']);
     },
   );
 
@@ -321,7 +328,7 @@ describe('builtinT.locale', () => {
   });
 
   test('rejects a malformed locale tag', () => {
-    expect(validate(builtinT.locale, '!!!not-a-locale!!!').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.locale, '!!!not-a-locale!!!'))).toEqual(['string.format']);
   });
 });
 
@@ -331,9 +338,9 @@ describe('builtinT.slug', () => {
   });
 
   test('rejects spaces, uppercase and leading/trailing hyphens', () => {
-    expect(validate(builtinT.slug, 'Hello World').issues).toBeDefined();
-    expect(validate(builtinT.slug, '-hello').issues).toBeDefined();
-    expect(validate(builtinT.slug, 'hello--world').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.slug, 'Hello World'))).toEqual(['string.pattern']);
+    expect(rulesOf(validate(builtinT.slug, '-hello'))).toEqual(['string.pattern']);
+    expect(rulesOf(validate(builtinT.slug, 'hello--world'))).toEqual(['string.pattern']);
   });
 });
 
@@ -343,8 +350,8 @@ describe('builtinT.cursor', () => {
   });
 
   test('rejects characters outside the base64url alphabet', () => {
-    expect(validate(builtinT.cursor, 'abc 123').issues).toBeDefined();
-    expect(validate(builtinT.cursor, 'abc+123').issues).toBeDefined();
+    expect(rulesOf(validate(builtinT.cursor, 'abc 123'))).toEqual(['string.pattern']);
+    expect(rulesOf(validate(builtinT.cursor, 'abc+123'))).toEqual(['string.pattern']);
   });
 });
 
@@ -361,7 +368,9 @@ describe('builtinT.url takes only what the URL parser reads as written', () => {
     'https://example.com/\r',
     '\u0000https://example.com',
   ])('refuses %j', (value) => {
-    expect(validate(builtinT.url, value).issues).toBeDefined();
+    // A NUL is refused before the parser runs, as no string may carry one.
+    const rule = value.includes('\u0000') ? 'type' : 'string.format';
+    expect(rulesOf(validate(builtinT.url, value))).toEqual([rule]);
   });
 
   test.each([

@@ -10,6 +10,7 @@ import { installJobDriver, resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { signalStaged } from './enqueue-signal';
+import { useFakeTime } from './fake-time-fixture';
 import { createIdleBackoff, IDLE_POLL_CEILING_MS } from './idle-backoff';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
@@ -21,6 +22,9 @@ import type { SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
 import { resetTasks, task } from './task';
 import { jobWorker } from './worker';
+
+/** The one test with a running loop moves its timers by hand. */
+const time = useFakeTime();
 
 const MINUTE = 60_000;
 const TASKS = 35;
@@ -365,14 +369,13 @@ describe('an idle worker', () => {
     worker.start();
     try {
       // Let it idle until the wait in hand is far longer than the assertion's budget.
-      while ((await worker.stats()).pollDelayMs < 400) await Bun.sleep(10);
-      const before = performance.now();
+      await time.until(async () => (await worker.stats()).pollDelayMs >= 400, 5_000);
       await handle.enqueue({ item: 'local' });
-      await started;
-      // Well inside ONE poll interval: the pass runs now, not `pollIntervalMs` from now.
-      expect(performance.now() - before).toBeLessThan(60);
+      // Well inside ONE poll interval of fake time: the pass runs now, not `pollIntervalMs` from
+      // now — and nowhere near the 400 ms+ wait in hand.
+      await time.settles(started, 60);
     } finally {
-      await worker.stop();
+      await time.settles(worker.stop(), 100);
     }
   });
 });

@@ -2,7 +2,7 @@
 // closed: a dropped subscription is SAID under its sid, one re-auth pass runs at a time, a
 // reconnect invalidates every window, and a close leaves only the rooms that have a roster.
 
-import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub } from './channel';
@@ -40,6 +40,28 @@ channel('reauth-room', {
 afterAll(() => {
   clearChannels();
 });
+
+// The node's sweeps — the re-auth one at 1 ms here — are real `setInterval`s on Bun's fake timers:
+// a tick fires because the test moves the timers, never because time went by.
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+afterEach(() => {
+  jest.useRealTimers();
+});
+
+/** Every promise the node chained settles: the in-process bus and the fakes answer on microtasks. */
+const microtasks = async (): Promise<void> => {
+  for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+};
+
+/** `count` re-auth intervals elapse, each followed by everything it set off. */
+const intervals = async (count: number): Promise<void> => {
+  for (let tick = 0; tick < count; tick += 1) {
+    jest.advanceTimersByTime(1);
+    await microtasks();
+  }
+};
 
 /** A denial as a real policy raises it: a coded throw, read by its code. */
 class Denied extends Error {
@@ -126,7 +148,7 @@ function rig(
     },
     async send(ws, frame): Promise<void> {
       node.websocket.message(ws as unknown as SyncWs, encode(frame));
-      await Bun.sleep(2);
+      await microtasks();
     },
   };
 }
@@ -145,7 +167,7 @@ const subscribe = (
 async function until(predicate: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (predicate()) return;
-    await Bun.sleep(1);
+    await intervals(1);
   }
   expect.unreachable('the node never got there');
 }
@@ -208,8 +230,8 @@ describe('the re-auth pass', () => {
     await app.dial();
     app.clock.advance(2_000);
 
-    // Many 1 ms ticks land while the first pass is parked in the token service.
-    await Bun.sleep(25);
+    // 25 ticks of the 1 ms interval land while the first pass is parked in the token service.
+    await intervals(25);
     expect(refreshes).toBe(1);
 
     release();
@@ -267,7 +289,7 @@ describe('a socket that closes', () => {
     const leave = spyOn(app.presence, 'leave');
 
     app.node.websocket.close(ws as unknown as SyncWs);
-    await Bun.sleep(2);
+    await microtasks();
 
     expect(leave.mock.calls.map(([name]) => String(name))).toEqual(['reauth-room.o1']);
     await app.node.stop();
@@ -296,7 +318,7 @@ describe('a change sequence that skipped', () => {
           seq,
         }),
       );
-      await Bun.sleep(1);
+      await microtasks();
     };
 
     await publish(1);

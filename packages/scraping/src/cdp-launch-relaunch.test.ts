@@ -192,6 +192,7 @@ describe.skipIf(WINDOWS)('launchChrome — the one relaunch', () => {
     const [first] = await it.launches();
     const forked = (await Bun.file(join(it.fake, '..', 'forked-1')).text()).trim();
     expect(alive(forked)).toBe(false);
+    // real-clock: a forked shell child rewrites the profile every 20 ms while it lives.
     await Bun.sleep(100);
     expect(await Bun.file(join(first?.[1] ?? '', 'late')).exists()).toBe(false);
   });

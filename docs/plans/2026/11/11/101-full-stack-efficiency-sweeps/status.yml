@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 54
-current_focus: "Sweep 16 done, ships as 31.19.0: concurrent host checks and one mask per file, the gate matrix from x verify plan, a release-proof install cache, manifests-only tracked images, a flaky-rerun job, the public API lock (report-only). Next: 17"
+percent: 56
+current_focus: "Sweep 16 done, ships as 31.19.0: concurrent host checks and one mask per file, the gate matrix from x verify plan, a release-proof install cache, manifests-only tracked images, a flaky-rerun job, the public API lock (report-only). Sweep 17a done (unreleased): test-real-sleep pins at zero for 15 packages, the --rerun-each declaration seam, the Redis pub/sub resubscribe retry. Next: 17b (cli)"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -99,9 +99,9 @@ slices:
     percent: 90
   - file: 17-test-determinism.md
     tier: 0
-    sweep: "17a"           # every package but cli in 17a; cli in 17b
-    status: not_started
-    percent: 0
+    sweep: "17a"           # 17a done: 15 packages' pins at zero (226 sites), --rerun-each seam for entity()/job(); 17b: cli 104 + scripts 2, the 55 files that cannot rerun, the flaky CI job (16's ci.yml)
+    status: in_progress
+    percent: 60
   - file: 18-tracked-apps.md
     tier: 5
     sweep: "18"

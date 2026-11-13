@@ -6,14 +6,25 @@
 // The half that mattered more was silent: `stats().failure` stayed `null`, so `/readyz` reported the
 // replicator live while `confirmed_flush_lsn` stopped advancing and WAL piled up on the primary.
 
-import { expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, jest, test } from 'bun:test';
 import { BrokenWriteWalsender, feedOver } from './pg-replication-fixture';
 
-/** Bounded poll on real timers: the confirm interval is one, so nothing here can be microtasks. */
+// The confirm interval is a real `setInterval` on Bun's fake timers: it fires because the test
+// moves them, one interval at a time, never because time went by.
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+afterEach(() => {
+  jest.useRealTimers();
+});
+
+/** Bounded: intervals elapsed by hand until `done`, or the test fails naming what never came. */
 async function waitUntil(done: () => boolean, label: string): Promise<void> {
   for (let tick = 0; tick < 200; tick += 1) {
     if (done()) return;
-    await Bun.sleep(5);
+    jest.advanceTimersByTime(1);
+    // The fakes answer on microtasks: let every confirm the interval set off settle.
+    for (let settle = 0; settle < 30; settle += 1) await Promise.resolve();
   }
   expect.unreachable(`timed out waiting for ${label}`);
 }

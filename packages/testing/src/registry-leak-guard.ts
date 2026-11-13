@@ -14,6 +14,7 @@ import {
   mergeSnapshots,
   restoreProcessRegistries,
 } from './registry-snapshot';
+import { frameworkDeclarationRegistries, rerunDeclarations } from './rerun-declarations';
 
 /**
  * What is REPORTED, and why only these two. Both are BOOT installs — `declareTags` takes the
@@ -106,10 +107,22 @@ const repoRelative = (path: string): string => {
  */
 const BASELINE_HOOK = '__ultimateRegistryLeakBaseline';
 
-/** Appended, never prepended: an `import` is hoisted and would sample before the graph evaluates. */
+/** Appended: the baseline is the file's whole module scope, its body's declarations included. */
 const SAMPLE_BASELINE = `\n;globalThis[${JSON.stringify(BASELINE_HOOK)}]?.();\n`;
 
-const hookHost = globalThis as typeof globalThis & { [BASELINE_HOOK]?: () => void };
+/**
+ * PREPENDED: `import`s are hoisted, so this runs once the file's whole import graph has evaluated
+ * and before its body (measured on Bun 1.4.4) — the start of the window in which the BODY declares
+ * (`rerun-declarations.ts`). On line 1 with no newline, so every line number a stack trace or a
+ * coverage report names is the file's own.
+ */
+const BODY_START_HOOK = '__ultimateBodyStart';
+const SAMPLE_BODY_START = `;globalThis[${JSON.stringify(BODY_START_HOOK)}]?.();`;
+
+const hookHost = globalThis as typeof globalThis & {
+  [BASELINE_HOOK]?: () => void;
+  [BODY_START_HOOK]?: () => void;
+};
 
 let installed = false;
 
@@ -141,6 +154,7 @@ export function installRegistryLeakGuard(): void {
   // The locale config before any app code ran — preload time.
   const pristineLocales = JSON.stringify(captureProcessRegistries().locales);
   const inApp = isAppRoot();
+  const reruns = rerunDeclarations(frameworkDeclarationRegistries);
 
   const close = (): void => {
     if (current === undefined) return;
@@ -182,7 +196,9 @@ export function installRegistryLeakGuard(): void {
   // Called by the statement appended below, once per test file, from that file's own module scope:
   // everything the file's MODULE graph registered is its environment — importing an app module is
   // how an app declares its tags — and everything after this point is the file's own to undo.
+  hookHost[BODY_START_HOOK] = () => reruns.bodyStart();
   hookHost[BASELINE_HOOK] = () => {
+    reruns.bodyEnd();
     if (pending === undefined) return;
     accumulated = mergeSnapshots(accumulated, captureProcessRegistries());
     current = { file: pending, before: sampleRegistries(), snapshot: accumulated };
@@ -207,8 +223,9 @@ export function installRegistryLeakGuard(): void {
         runFileBoundary();
         close();
         pending = repoRelative(args.path);
+        reruns.loading(args.path);
         return {
-          contents: `${await Bun.file(args.path).text()}${SAMPLE_BASELINE}`,
+          contents: `${SAMPLE_BODY_START}${await Bun.file(args.path).text()}${SAMPLE_BASELINE}`,
           loader: 'ts',
         };
       });

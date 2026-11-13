@@ -15,23 +15,24 @@ function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   } as Clock & { advance(ms: number): void };
 }
 
-const filler = (bytes: number): string => 'x'.repeat(bytes);
+/** Same size, distinct content: a read that answered another key's value would show. */
+const filler = (bytes: number, mark = 'x'): string => mark.repeat(bytes);
 
 describe('LruCache byte budget', () => {
   test('evicts least-recently-used entries once the byte budget is exceeded', () => {
     const cache = new LruCache({ maxBytes: 400, defaultTtlMs: 3_600_000 });
-    cache.set('a', filler(100));
-    cache.set('b', filler(100));
-    cache.set('c', filler(100));
+    cache.set('a', filler(100, 'a'));
+    cache.set('b', filler(100, 'b'));
+    cache.set('c', filler(100, 'c'));
 
     // Touch 'a' so 'b' becomes the eviction victim, not insertion order.
-    expect(cache.get('a')).toBeDefined();
-    cache.set('d', filler(100));
+    expect(cache.get('a')?.value).toBe(filler(100, 'a'));
+    cache.set('d', filler(100, 'd'));
 
     expect(cache.get('b')).toBeUndefined();
-    expect(cache.get('a')).toBeDefined();
-    expect(cache.get('c')).toBeDefined();
-    expect(cache.get('d')).toBeDefined();
+    expect(cache.get('a')?.value).toBe(filler(100, 'a'));
+    expect(cache.get('c')?.value).toBe(filler(100, 'c'));
+    expect(cache.get('d')?.value).toBe(filler(100, 'd'));
     expect(cache.stats().bytes).toBeLessThanOrEqual(400);
     expect(cache.stats().evictions).toBe(1);
   });
@@ -69,7 +70,7 @@ describe('LruCache byte budget', () => {
     cache.set('a', filler(100));
     cache.set('b', filler(100));
     cache.set('c', filler(100));
-    expect(cache.get('a')).toBeDefined(); // a hit; also re-touches 'a' so 'b' is evicted next
+    expect(cache.get('a')?.value).toBe(filler(100)); // a hit; also re-touches 'a' so 'b' is evicted next
     cache.set('d', filler(100)); // evicts 'b'
     expect(cache.get('b')).toBeUndefined(); // a miss
     const before = cache.stats();
@@ -102,9 +103,9 @@ describe('LruCache tag invalidation', () => {
     const removed = cache.invalidateTags([tag('post', '1')]);
 
     expect([...removed].sort()).toEqual(['post:1', 'post:list']);
-    expect(cache.get('post:2')).toBeDefined();
-    expect(cache.get('user:list')).toBeDefined();
-    expect(cache.get('untagged')).toBeDefined();
+    expect(cache.get('post:2')?.value).toEqual({ id: '2' });
+    expect(cache.get('user:list')?.value).toEqual(['u']);
+    expect(cache.get('untagged')?.value).toBe('keep');
   });
 
   test('invalidating a collection tag sweeps every row of that entity', () => {
@@ -116,7 +117,7 @@ describe('LruCache tag invalidation', () => {
     const removed = cache.invalidateTags([tag('post')]);
 
     expect([...removed].sort()).toEqual(['post:1', 'post:2']);
-    expect(cache.get('user:1')).toBeDefined();
+    expect(cache.get('user:1')?.value).toBe(3);
   });
 
   test('overwriting a key re-indexes its tags so the stale tag no longer matches', () => {

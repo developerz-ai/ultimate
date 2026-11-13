@@ -133,6 +133,46 @@ describe('uploadFile in parts', () => {
     expect(resumed.key).toBe(grant?.key ?? 'no grant');
   });
 
+  // The CI flake behind the resume test, made deterministic: part 3 fails fast while part 1 is still
+  // moving. A failure that answered before its siblings settled let a resume race the stale PUT.
+  test('a failed upload answers only once every part in flight has settled', async () => {
+    const { client, put } = server();
+    const order: string[] = [];
+    let releaseOne = (): void => undefined;
+    const oneHeld = new Promise<void>((done) => (releaseOne = done));
+    const holdsOne: SignedPut = async (input) => {
+      if (input.url.includes('x-part=3')) {
+        order.push('part 3 failed');
+        throw uploadFailed('/_storage/memory/x', 503, 'the connection dropped');
+      }
+      if (input.url.includes('x-part=1')) {
+        await oneHeld;
+        await put(input);
+        order.push('part 1 landed');
+        return;
+      }
+      await put(input);
+    };
+    const outcome = uploadFile({
+      file: fileOf(SIZE),
+      grant: async () => expect.unreachable('parts, not one PUT'),
+      multipart: client(),
+      put: holdsOne,
+    }).catch((error: unknown) => {
+      order.push('upload failed');
+      return error;
+    });
+    // Released on a later macrotask than part 3's last attempt: an upload that answered without
+    // waiting for part 1 has already pushed 'upload failed'.
+    while (order.filter((step) => step === 'part 3 failed').length < 4) {
+      await new Promise((turn) => setTimeout(turn, 0));
+    }
+    await new Promise((turn) => setTimeout(turn, 0));
+    releaseOne();
+    expect(await outcome).toBeUltimateError('X_STORAGE_UPLOAD_FAILED');
+    expect(order.slice(-2)).toEqual(['part 1 landed', 'upload failed']);
+  });
+
   test('a cancelled upload aborts its session, so no part is left billing', async () => {
     const { disk, client, calls, put } = server();
     const controller = new AbortController();

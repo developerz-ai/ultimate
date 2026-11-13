@@ -36,6 +36,7 @@ async function until(condition: () => boolean | Promise<boolean>, budgetMs = 8_0
   const deadline = performance.now() + budgetMs;
   while (!(await condition())) {
     if (performance.now() > deadline) expect.unreachable('the condition never became true');
+    // real-clock: paces reads of a real server's state — a NOTIFY crossing a socket, a re-dial.
     await Bun.sleep(5);
   }
 }

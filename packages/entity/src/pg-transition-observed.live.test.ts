@@ -6,7 +6,7 @@
 // parity half).
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
+import { probeDatabaseName, sweepProbeDatabases, UltimateError } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
@@ -37,6 +37,25 @@ const posts = entity('pg_to_posts', {
 
 type Post = typeof posts.$row;
 const DROP = 'drop table if exists "pg_to_posts" cascade';
+/**
+ * Its own database: this file drops and re-creates its table, so two runs sharing one would drop
+ * each other's rows mid-case — and the lock this file waits on would be any run's.
+ */
+const PROBE_DB = probeDatabaseName('x_transition_probe');
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
+  const server = new Bun.SQL(adminUrl ?? '', { max: 1 });
+  try {
+    return [...(await server.unsafe(statement, [...values]))];
+  } finally {
+    await server.end();
+  }
+};
+const probeUrl = (): string => {
+  const target = new URL(adminUrl ?? '');
+  target.pathname = `/${PROBE_DB}`;
+  return target.href;
+};
+
 const id = (n: number): string => `00000000-0000-7000-8000-0000000702${String(n).padStart(2, '0')}`;
 
 afterAll(() => {
@@ -67,7 +86,15 @@ describe.skipIf(!hasPostgres)(
     let client: PostgresClient;
 
     beforeAll(async () => {
-      client = postgresClient({ url: adminUrl ?? '' });
+      await sweepProbeDatabases(
+        {
+          query: async <R>(text: string, values: readonly unknown[]) =>
+            (await admin(text, values)) as R[],
+        },
+        PROBE_DB,
+      );
+      await admin(`create database ${PROBE_DB}`);
+      client = postgresClient({ url: probeUrl() });
       setDbClient(client);
       await client.execute(raw(DROP));
       const migration = generateMigration({
@@ -79,10 +106,27 @@ describe.skipIf(!hasPostgres)(
     });
 
     afterAll(async () => {
-      await client.execute(raw(DROP));
       await client.close();
       setDbClient(undefined);
+      await admin(`drop database if exists ${PROBE_DB} with (force)`);
     });
+
+    /**
+     * Until the server itself reports a backend parked on a lock over this table — the database
+     * fact, polled one round trip at a time. The budget is an escape so a lock nobody waits on
+     * fails by name; it is never the verdict.
+     */
+    const blockedOnLock = async (): Promise<boolean> => {
+      const deadline = performance.now() + 5_000;
+      while (performance.now() < deadline) {
+        const rows = await client.query<{ n: number }>(
+          raw(`select count(*)::int as n from pg_stat_activity
+                where wait_event_type = 'Lock' and datname = current_database()`),
+        );
+        if ((rows[0]?.n ?? 0) > 0) return true;
+      }
+      return false;
+    };
 
     const seeded = (rowId: string): Promise<Post> =>
       postgresRepo(posts).insert({ id: rowId, authorId: 'u-author', status: 'draft' });
@@ -104,9 +148,14 @@ describe.skipIf(!hasPostgres)(
       });
       await locked;
       // Issued while the reassignment holds the row: the statement blocks on its lock.
-      const move = settled(publish(id(1), read, ['authorId']));
-      const early = await Promise.race([move, Bun.sleep(150).then(() => 'blocked')]);
-      expect(early).toBe('blocked');
+      let early: string | undefined;
+      const move = settled(publish(id(1), read, ['authorId'])).then((outcome) => {
+        early = outcome;
+        return outcome;
+      });
+      expect(await blockedOnLock()).toBe(true);
+      // Parked on the row lock, so nothing has answered the move yet.
+      expect(early).toBeUndefined();
       release();
       await writer;
       expect(await move).toBe('X_STATE_CONFLICT');

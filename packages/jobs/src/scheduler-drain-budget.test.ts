@@ -2,6 +2,7 @@
 // a lock instead of a pool. One `accept` hook that waited out the dispatch round spent the whole
 // budget in the phase whose job is to be over immediately, and a round parked on a slow queue left
 // the teardown running forever: the hooks never came back and the lease was never decided about.
+// Fake time (`fake-time-fixture.ts`) moves the drain's deadline: the budget is spent by the timers.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
@@ -16,6 +17,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver } from './adapter';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -24,6 +26,8 @@ import { jobScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
+
+const time = useFakeTime();
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -117,7 +121,7 @@ async function rig(): Promise<Rig> {
   clock.advance(2_000);
   scheduler.start();
   void scheduler.tick();
-  await first;
+  await time.settles(first, 50);
   return { scheduler, releases: () => releases, entered: () => first, release: () => open() };
 }
 
@@ -146,13 +150,13 @@ describe('the scheduler drains in two phases, and its wait is bounded', () => {
     onShutdown(
       'probe:accept',
       async () => {
-        await Bun.sleep(5);
+        await time.sleep(5);
         accepted += 1;
       },
       { phase: 'accept' },
     );
 
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 300);
     // Read the instant the drain returns: an abandoned hook is still running, so a probe asserted
     // after a sleep would pass either way. What this asks is whether the phase FINISHED inside the
     // drain — which is the difference between a pod that stopped taking work and one that did not.
@@ -165,8 +169,8 @@ describe('the scheduler drains in two phases, and its wait is bounded', () => {
     configureLifecycle({ deadlineMs: 150 });
     const app = await rig();
 
-    await drain('SIGTERM');
-    await Bun.sleep(30);
+    await time.settles(drain('SIGTERM'), 300);
+    await time.advance(30);
 
     // The teardown reached its end — hooks handed back — rather than parking forever on a round
     // this process cannot cancel.
@@ -183,14 +187,11 @@ describe('the scheduler drains in two phases, and its wait is bounded', () => {
     configureLifecycle({ deadlineMs: 150 });
     const app = await rig();
 
-    await drain('SIGTERM');
-    await Bun.sleep(30);
+    await time.settles(drain('SIGTERM'), 300);
+    await time.advance(30);
 
-    const answered = await Promise.race([
-      app.scheduler.stop('rollback').then(() => 'stopped'),
-      Bun.sleep(250).then(() => 'wedged'),
-    ]);
-    expect(answered).toBe('stopped');
+    // Answered inside 250 ms of fake time; the round it abandoned never answers at all.
+    await time.settles(app.scheduler.stop('rollback'), 250);
 
     app.release();
   });
@@ -204,14 +205,9 @@ describe('the scheduler drains in two phases, and its wait is bounded', () => {
     const app = await rig();
 
     const manual = app.scheduler.stop('rollback');
-    const drained = await Promise.race([
-      drain('SIGTERM').then(() => 'drained'),
-      Bun.sleep(600).then(() => 'wedged'),
-    ]);
-    expect(drained).toBe('drained');
-    expect(
-      await Promise.race([manual.then(() => 'stopped'), Bun.sleep(100).then(() => 'wedged')]),
-    ).toBe('stopped');
+    // The round never answers: only the bound the SIGTERM brought can end either wait.
+    await time.settles(drain('SIGTERM'), 600);
+    await time.settles(manual, 100);
 
     app.release();
   });

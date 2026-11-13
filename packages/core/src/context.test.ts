@@ -24,31 +24,35 @@ describe('request context', () => {
   test('stays isolated across concurrent async tasks', async () => {
     const observed: string[] = [];
 
-    async function handle(actorId: string, delayMs: number): Promise<string> {
+    // Two gates per task, opened by the test in an order no task started in: the interleaving is
+    // chosen here, never left to which of three timers a loaded runner fires first.
+    const gates = new Map<string, () => void>();
+    const gate = (key: string): Promise<void> =>
+      new Promise<void>((resolve) => gates.set(key, resolve));
+    async function handle(actorId: string): Promise<string> {
       const ctx = ctxOf({ actor: userActor({ id: actorId }), locale: `x-${actorId}` });
       return runWithContext(ctx, async () => {
-        await Bun.sleep(delayMs);
+        await gate(`${actorId}1`);
         // Interleaved on purpose: a leak between tasks shows up right here.
         observed.push(useContext().actor.id);
-        await Bun.sleep(delayMs);
+        await gate(`${actorId}2`);
         expect(useContext().locale).toBe(`x-${actorId}`);
         return useContext().requestId;
       });
     }
 
-    const [first, second, third] = await Promise.all([
-      handle('a', 30),
-      handle('b', 5),
-      handle('c', 15),
-    ]);
+    const all = Promise.all([handle('a'), handle('b'), handle('c')]);
+    for (const key of ['b1', 'c1', 'b2', 'a1', 'c2', 'a2']) {
+      (gates.get(key) ?? expect.unreachable(`gate ${key} never armed`))();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const [first, second, third] = await all;
 
-    // The SET, not the sequence. Each task pushes the id its OWN ambient context reports, so a
-    // leak between tasks shows up as a duplicate or a wrong id here either way — while asserting
-    // the completion ORDER asserted that a 5ms sleep always resolves before a 15ms one, which is
-    // false on a loaded machine and is the one flaky test in this repo (seen across three PRs
-    // before it was caught: `bun run x -- test unit` failing one shard, then passing on retry).
-    // The preload freezes `Date` and seeds `Math.random`, but `Bun.sleep` is a real timer.
-    expect([...observed].sort()).toEqual(['a', 'b', 'c']);
+    // The ORDER is now the test's own (the gates above), so it is asserted exactly: each task pushes
+    // the id its OWN ambient context reports, so a leak shows up as a wrong id in a known slot. It
+    // used to race three `Bun.sleep`s, and asserting their completion order was the one flaky test
+    // in this repo (three PRs, one shard failing then passing on retry) — a set was all it could pin.
+    expect(observed).toEqual(['b', 'c', 'a']);
     expect(new Set([first, second, third]).size).toBe(3);
     expect(hasContext()).toBe(false);
   });
@@ -241,7 +245,7 @@ describe('the server path is unchanged by the lazy storage', () => {
   test('propagates across an await, which is the whole reason for AsyncLocalStorage', async () => {
     const ctx = ctxOf({ locale: 'fr-FR' });
     await runWithContext(ctx, async () => {
-      await Bun.sleep(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(useContext().locale).toBe('fr-FR');
     });
   });

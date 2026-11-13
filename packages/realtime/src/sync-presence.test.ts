@@ -17,6 +17,7 @@ import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import { type SyncNode, type SyncWs, syncNode, type WsData } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import { turns } from './turns-fixture';
 
 const BUILD_ID = 'build-1';
 /** Presence rides a channel's `events`, so the room is a channel declared `events: true`. */
@@ -95,8 +96,8 @@ function harness(ttlMs = 30_000): Harness {
   });
   const send = async (ws: RecordingWs, frame: Frame): Promise<void> => {
     node.websocket.message(ws, encode(frame));
-    // `message` dispatches an async route and returns; one turn is enough for an in-process bus.
-    await Bun.sleep(1);
+    // `message` dispatches an async route and returns; a few turns settle it on an in-process bus.
+    await turns(3);
   };
   return {
     node,
@@ -197,7 +198,7 @@ describe('the sync node speaks presence', () => {
     await app.join(gone);
 
     app.node.websocket.close(gone);
-    await Bun.sleep(1);
+    await turns(3);
 
     expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1']);
     expect(watcher.frames('leave')).toHaveLength(1);

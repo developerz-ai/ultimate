@@ -210,9 +210,10 @@ describe('the fleet slot is handed back before the driver goes', () => {
     const store = memoryLeaseStore();
     const leases: LeaseStore = {
       ...store,
-      // A slot release is a DELETE in `x_job_leases` — a round trip, not a map delete.
+      // A slot release is a DELETE in `x_job_leases` — a round trip, not a map delete: a few
+      // macrotask turns, past every microtask a teardown that did not wait for it would close in.
       async release(lease): Promise<void> {
-        await Bun.sleep(5);
+        for (let turn = 0; turn < 3; turn += 1) await new Promise((done) => setImmediate(done));
         trace.push('slot:released');
         await store.release(lease);
       },

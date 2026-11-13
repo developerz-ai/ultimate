@@ -1,12 +1,14 @@
 // The idempotency-dedupe guarantee, run through a real worker. A queue delivers at least once —
 // a caller retries an enqueue after a timeout, an outbox relay republishes — so two enqueues that
 // carry the same idempotency key while one is still live must collapse into one row, and a real
-// worker (`start()`/`stop()`, not `tick()`) must run the handler exactly once for it.
+// worker (`start()`/`stop()`, not `tick()`) must run the handler exactly once for it. Fake time
+// (`fake-time-fixture.ts`) moves the workers' poll timers: "reaches done" is never a race.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
 
@@ -22,13 +24,11 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
-async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
-  for (let i = 0; i < 400; i += 1) {
-    if (await check()) return;
-    await Bun.sleep(5);
-  }
-  throw new Error(`waitFor timed out: ${label}`);
-}
+const time = useFakeTime();
+
+/** Moves fake time until `check` holds; red after two seconds of it, never a hang. */
+const waitFor = (check: () => Promise<boolean> | boolean): Promise<void> =>
+  time.until(check, 2_000);
 
 afterEach(() => {
   resetJobs();
@@ -72,9 +72,9 @@ describe('two enqueues racing on one idempotency key', () => {
       await waitFor(async () => {
         const [record] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return record !== undefined;
-      }, 'job reaches done');
+      });
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     expect(runs).toEqual([1]);
@@ -92,7 +92,7 @@ describe('two enqueues racing on one idempotency key', () => {
       run: async ({ input, jobId }) => {
         // A slow-ish body widens the window in which a second worker COULD claim the same row
         // if dedupe or the driver's own claim exclusivity ever slipped.
-        await Bun.sleep(15);
+        await time.sleep(15);
         runs.push(`${jobId}:${input.orgId}`);
       },
     });
@@ -115,9 +115,9 @@ describe('two enqueues racing on one idempotency key', () => {
       await waitFor(async () => {
         const [record] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return record !== undefined;
-      }, 'job reaches done');
+      });
     } finally {
-      await Promise.all(workers.map((worker) => worker.stop('test-end')));
+      await time.settles(Promise.all(workers.map((worker) => worker.stop('test-end'))), 100);
     }
 
     expect(runs.length).toBe(1);
@@ -156,7 +156,7 @@ describe('the dedupe window is "currently live", not "ever existed"', () => {
       await waitFor(async () => {
         const [record] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return record !== undefined;
-      }, 'first run reaches done');
+      });
 
       const secondEnqueue = await enqueueOne();
       expect(secondEnqueue.deduped).toBe(false);
@@ -165,9 +165,9 @@ describe('the dedupe window is "currently live", not "ever existed"', () => {
       await waitFor(async () => {
         const done = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return done.length === 2;
-      }, 'second run reaches done');
+      });
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     // Two genuinely separate deliveries — receipts for two separate purchases share the key's

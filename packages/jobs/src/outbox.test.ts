@@ -4,6 +4,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { EnqueueRequest, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { OutboxNoTxError } from './errors';
+import { useFakeTime } from './fake-time-fixture';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
@@ -15,6 +16,9 @@ import {
   setJobsFacade,
 } from './outbox';
 import { outboxRelay } from './outbox-relay';
+
+/** The relay's own timers, moved by hand: a pass counted here is one the relay armed. */
+const time = useFakeTime();
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -244,15 +248,12 @@ describe('the relay loop', () => {
     const relay = outboxRelay({ store, driver, intervalMs: 5 });
     relay.start();
     try {
-      const deadline = Date.now() + 2_000;
-      while (store.claims < 3 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
+      await time.until(() => store.claims >= 3, 2_000);
     } finally {
       // AWAITED: the assertions below read the state the pass in flight is still writing, so a
       // teardown that returned before it was the difference between this test proving the row was
       // published and this test proving it usually is.
-      await relay.stop();
+      await time.settles(relay.stop(), 100);
     }
 
     expect(store.claims).toBeGreaterThanOrEqual(2);
@@ -344,7 +345,7 @@ describe('the relay joins the tick it is stopping', () => {
 
     const relay = outboxRelay({ store, driver: driver as JobDriver, intervalMs: 1 });
     relay.start();
-    await entered.passed;
+    await time.settles(entered.passed, 50);
 
     let joined = false;
     const stopped = (async (): Promise<void> => {
@@ -357,7 +358,7 @@ describe('the relay joins the tick it is stopping', () => {
     expect(joined).toBe(false);
 
     release.open();
-    await stopped;
+    await time.settles(stopped, 50);
     expect(published).toEqual(['notify:parked']);
     expect(await store.pendingCount()).toBe(0);
   });

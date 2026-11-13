@@ -248,7 +248,8 @@ describe('sentryErrorReporter', () => {
       });
       reporter.report(report());
       // Two turns: one for the rejection, one for the `.catch` handler's own outcome.
-      await Bun.sleep(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }

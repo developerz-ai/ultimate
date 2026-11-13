@@ -22,7 +22,13 @@ import {
   htmlAnswer,
   settle,
 } from './navigation-dom-fixture';
-import { NAVIGATE_EVENT, NAVIGATED_EVENT, NAVIGATION_ERROR_EVENT } from './navigation-rules';
+import {
+  NAVIGATE_EVENT,
+  NAVIGATED_EVENT,
+  NAVIGATION_ERROR_EVENT,
+  NAVIGATION_PREFETCH_DELAY_MS,
+  NAVIGATION_PROGRESS_DELAY_MS,
+} from './navigation-rules';
 
 afterEach(stopRouter);
 
@@ -78,8 +84,12 @@ describe('a click', () => {
         }),
       '/b': answers.b,
     });
+    const clock = win.holdTimers();
     click(win, 'to-slow');
-    await new Promise((r) => setTimeout(r, 200));
+    await settle();
+    clock.advance(NAVIGATION_PROGRESS_DELAY_MS - 1);
+    expect(doc.documentElement.hasAttribute('data-x-navigating')).toBe(false);
+    clock.advance(1);
     expect(doc.documentElement.hasAttribute('data-x-navigating')).toBe(true);
     click(win, 'to-b');
     await settle();
@@ -309,12 +319,18 @@ const hand303 = () =>
 describe('prefetch and its cache', () => {
   test('a resting pointer fetches once; the click reuses it; leaving early fetches nothing', async () => {
     const { win, doc, calls } = tab({ '/b': answers.b, '/c': answers.c });
+    const clock = win.holdTimers();
     fire(doc, 'pointerover', doc.getElementById('to-c'));
     fire(doc, 'pointerout', doc.getElementById('to-c'));
     fire(doc, 'pointerover', doc.getElementById('to-b'));
-    await new Promise((r) => setTimeout(r, 120));
+    clock.advance(NAVIGATION_PREFETCH_DELAY_MS - 1);
+    await settle();
+    expect(calls).toEqual([]);
+    clock.advance(1);
+    await settle();
     fire(doc, 'pointerover', doc.getElementById('to-b'));
-    await new Promise((r) => setTimeout(r, 120));
+    clock.advance(NAVIGATION_PREFETCH_DELAY_MS);
+    await settle();
     click(win, 'to-b');
     await settle();
     expect(calls).toEqual(['GET /b prefetch']);
@@ -332,6 +348,10 @@ describe('prefetch and its cache', () => {
   });
 
   test('a client write, a rescope and another tab each empty it; a refused guess is not reused', async () => {
+    // The page's principal is process-wide (`client-scope.ts`), and a rescope to the principal
+    // already in place is a no-op: pinned to another one first, so 'member:9' below is a change
+    // on every run — a second run of this file once found it already there and cleared nothing.
+    rescope('member:8');
     const { win, doc, calls } = tab({
       '/b': answers.b,
       '/c': () => new Response(null, { status: 204 }),
@@ -363,9 +383,12 @@ describe('history and scroll', () => {
       '/a': () => htmlAnswer('page:A2', page('A')),
       '/b': answers.b,
     });
+    const clock = win.holdTimers();
     win.scrollY = 800;
     fire(win, 'scroll', win);
-    await new Promise((r) => setTimeout(r, 200));
+    // The scroll is saved once it rests (`SCROLL_SETTLE_MS`, 150 in `navigation-scroll.ts`).
+    clock.advance(150);
+    expect(win.history.state).toEqual({ __x: { scroll: [0, 800], doc: 'https://app.test/a' } });
     click(win, 'to-b');
     await settle();
     win.go(-1);

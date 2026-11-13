@@ -3,7 +3,7 @@
 // The embedded database's `now()` is frozen with the test clock, so one wake slot lasts until rows
 // are aged out of it — which makes "one per slot" exact.
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { postgresJobDriver } from './driver-pg';
@@ -29,6 +29,18 @@ afterEach(async () => {
   await tap?.unlisten();
 });
 
+/**
+ * The boot is this suite's setup, not any one test's work: booted inside the first test's hook it
+ * ran on that test's 5 s budget, and under `--rerun-each` or a loaded `job` step it overran — the
+ * boot went on in the background (bun cancels nothing) and starved whatever test ran next. Its own
+ * budget, as `queue-wake.job.test.ts` measures it (32-42 s loaded); every test keeps the default.
+ */
+const PGLITE_BOOT_MS = 120_000;
+
+beforeAll(async () => {
+  await embeddedPg();
+}, PGLITE_BOOT_MS);
+
 afterAll(async () => {
   await (await embeddedPg()).close();
 });
@@ -43,9 +55,12 @@ const enqueue = (driver: JobDriver, key: string, extra: { queue?: string; runAt?
     ...(extra.runAt === undefined ? {} : { runAt: extra.runAt }),
   });
 
-/** Notifications are delivered on a microtask after the statement: give them their turn. */
+/**
+ * Notifications are delivered in this process, behind the statement that sent them: a few turns of
+ * the event loop are their turn. The database is in-process, so no wall-clock wait is theirs.
+ */
 const delivered = async (): Promise<readonly string[]> => {
-  await Bun.sleep(2);
+  for (let turn = 0; turn < 6; turn += 1) await new Promise((done) => setImmediate(done));
   return heard;
 };
 

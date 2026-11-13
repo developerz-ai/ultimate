@@ -13,6 +13,7 @@ import { LiveQueryRegistry } from './live-query';
 import { CHANGE_SUBJECT_PREFIX } from './replicator';
 import { SocketRegistry } from './socket';
 import { type SyncNode, syncNode } from './sync-node';
+import { turns } from './turns-fixture';
 
 const BUILD_ID = 'build-1';
 
@@ -50,8 +51,8 @@ function harness(registry: LiveQueryRegistry): {
         `${CHANGE_SUBJECT_PREFIX}.${event.table}.${event.orgId}`,
         JSON.stringify(event),
       );
-      // The handler is synchronous and the fanout is not; one turn is enough for an in-process bus.
-      await Bun.sleep(1);
+      // The handler is synchronous and the fanout is not; a few turns settle an in-process bus.
+      await turns(3);
     },
   };
 }

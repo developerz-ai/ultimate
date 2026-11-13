@@ -237,7 +237,14 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
     // A caller that asked has no budget to spend and wants its work finished — the bound and the
     // abort both belong to the SIGTERM path, where the budget is real.
     const stopped = worker.stop('deploy');
-    await Bun.sleep(10);
+    let answered = false;
+    void stopped.then(() => {
+      answered = true;
+    });
+    // A manual stop arms no timer — there is no budget — so whatever it would tell the job it
+    // tells on these turns. It is still waiting on the job it holds.
+    for (let turn = 0; turn < 10; turn += 1) await new Promise((done) => setImmediate(done));
+    expect(answered).toBe(false);
     release();
     await stopped;
 

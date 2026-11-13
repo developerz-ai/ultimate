@@ -14,13 +14,14 @@ import {
   isolateGraph,
   isolateTiers,
   noopPurgeDriver,
+  redisPubSubAt,
   registerDependent,
   registeredTiers,
   registerRevalidator,
   tag,
 } from '@ultimat3/cache';
 import { InProcessTransport } from '@ultimat3/realtime/server';
-import { CACHE_INVALIDATE_SUBJECT, startCacheTiers } from './runtime-cache';
+import { startCacheTiers } from './runtime-cache';
 
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
@@ -65,42 +66,61 @@ afterEach(async () => {
   registerRevalidator(() => undefined);
 });
 
-/** Polls the condition, one event-loop turn apart — the server and the peer answer when they do. */
-const until = async (done: () => Promise<boolean> | boolean, polls = 5_000): Promise<boolean> => {
-  for (let poll = 0; poll < polls; poll += 1) {
-    if (await done()) return true;
+/**
+ * Polls the condition, one event-loop turn apart — the server and the peer answer when they do. A
+ * condition that never holds fails NAMING what was waited on, never a bare `false` or a timeout.
+ */
+const until = async (what: string, done: () => Promise<boolean> | boolean): Promise<void> => {
+  for (let poll = 0; poll < 2_000; poll += 1) {
+    if (await done()) return;
     // real-clock: a real Redis server and a peer process deliver on their own time, not ours
     await Bun.sleep(1);
   }
-  return false;
+  expect.unreachable(`still waiting for ${what} after 2,000 polls`);
 };
 
-/** How many connections the server holds subscribed to the hop's channel. */
-const subscribers = async (): Promise<number> => {
-  const reply: unknown = await admin?.send('PUBSUB', ['NUMSUB', CACHE_INVALIDATE_SUBJECT]);
-  return Array.isArray(reply) ? Number(reply[1]) : 0;
+/**
+ * B's subscriber as the SERVER lists it, by its own `CLIENT SETNAME` — never a count of every
+ * pub/sub connection: that raced the server reaping the sockets an earlier test closed, and any
+ * suite running beside this one on the same Redis moved it.
+ */
+const connectionOf = async (name: string): Promise<{ id: string; sub: number } | undefined> => {
+  const reply: unknown = await admin?.send('CLIENT', ['LIST', 'TYPE', 'pubsub']);
+  for (const line of String(reply ?? '').split('\n')) {
+    const fields = new Map(line.split(' ').map((pair) => pair.split('=', 2) as [string, string]));
+    if (fields.get('name') !== name) continue;
+    return { id: fields.get('id') ?? '', sub: Number(fields.get('sub') ?? '0') };
+  }
+  return undefined;
 };
+
+const subscribedAs = async (name: string): Promise<boolean> =>
+  ((await connectionOf(name))?.sub ?? 0) > 0;
 
 /** Replica B: an `lru` rung holding the post, and its ISR page registered on the same tag. */
-async function replicaB(): Promise<{ lru: CacheTier; revalidated: string[] }> {
+async function replicaB(): Promise<{ lru: CacheTier; revalidated: string[]; name: string }> {
   declareTags(['post']);
   const revalidated: string[] = [];
   registerRevalidator((path) => {
     revalidated.push(path);
   });
-  const before = await subscribers();
+  // One name per replica, so a rerun in this same process never finds the last one's socket.
+  const name = `x-cache-bus-live:${String(process.pid)}:${crypto.randomUUID()}`;
   release = startCacheTiers({
     env: { REDIS_URL: url ?? '' },
     purge: noopPurgeDriver(),
     transport: new InProcessTransport(),
     tiers: ['lru'],
+    redisPubSub: (at) => redisPubSubAt(at, { connectionName: name }),
   });
   const lru = registeredTiers().find((tier) => tier.name === 'lru');
   if (lru === undefined) return expect.unreachable('cache.tiers named lru');
-  expect(await until(async () => (await subscribers()) > before)).toBe(true);
+  await until(`B's subscriber ${name} subscribed (CLIENT LIST TYPE pubsub)`, () =>
+    subscribedAs(name),
+  );
   await lru.set(KEY, { title: 'old' }, { tags: [tag('post', '1')], ttlMs: 60_000 });
   registerDependent([tag('post', '1')], { kind: 'isr-route', id: PAGE });
-  return { lru, revalidated };
+  return { lru, revalidated, name };
 }
 
 /** Replica A: a separate process busting `post:1`, as an action's `invalidates` would. */
@@ -124,23 +144,38 @@ describe.skipIf(!hasRedis)('live · cache invalidation over Redis pub/sub, no NA
 
     await writeOnA();
 
-    expect(await until(async () => (await b.lru.get(KEY)) === undefined)).toBe(true);
-    expect(await until(() => b.revalidated.includes(PAGE))).toBe(true);
+    await until(
+      `B's lru to drop ${KEY} on A's bust`,
+      async () => (await b.lru.get(KEY)) === undefined,
+    );
+    await until(`B to revalidate ${PAGE} on A's bust`, () => b.revalidated.includes(PAGE));
   });
 
   test('a dropped subscription is restored, and what B held while deaf is dropped', async () => {
     const b = await replicaB();
-    // Every pub/sub connection on the server, B's included: the server forgets the subscription.
-    await admin?.send('CLIENT', ['KILL', 'TYPE', 'pubsub']);
+    // B's connection only, by the id its name maps to: the server forgets the subscription. Every
+    // pub/sub connection would cut a suite running beside this one on the same Redis too.
+    const killed = await connectionOf(b.name);
+    if (killed === undefined) return expect.unreachable(`B's subscriber ${b.name} listed`);
+    await admin?.send('CLIENT', ['KILL', 'ID', killed.id]);
 
     // Nobody busted `post:1`; B cannot know what it missed, so its own heap goes cold.
-    expect(await until(async () => (await b.lru.get(KEY)) === undefined)).toBe(true);
-    expect(await until(async () => (await subscribers()) > 0)).toBe(true);
+    await until(
+      `B's lru to drop ${KEY} after its resubscribe`,
+      async () => (await b.lru.get(KEY)) === undefined,
+    );
+    await until(`B's subscriber ${b.name} back on a new connection`, async () => {
+      const now = await connectionOf(b.name);
+      return now !== undefined && now.id !== killed.id && now.sub > 0;
+    });
 
     // Resubscribed: the next write on A still reaches it.
     b.revalidated.length = 0;
     await b.lru.set(KEY, { title: 'refilled' }, { tags: [tag('post', '1')], ttlMs: 60_000 });
     await writeOnA();
-    expect(await until(async () => (await b.lru.get(KEY)) === undefined)).toBe(true);
+    await until(
+      `B's lru to drop the refilled ${KEY} on A's bust`,
+      async () => (await b.lru.get(KEY)) === undefined,
+    );
   });
 });

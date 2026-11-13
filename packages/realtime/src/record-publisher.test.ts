@@ -17,6 +17,7 @@ import { CHANGE_SUBJECT_ALL } from './replicator';
 import { SeqGapDetector } from './replicator-envelope';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { changeHandler, ProducerKinds } from './sync-bus-handlers';
+import { turns } from './turns-fixture';
 
 const ORG = '00000000-0000-4000-8000-0000000000b1';
 const runs = entity('published_runs', {
@@ -143,7 +144,7 @@ describe('recordPublisher', () => {
 
     using publisher = recordPublisher({ transport, entities: [runs] });
     await publisher.publish(runs, [run('1', 'live')]);
-    await Bun.sleep(1);
+    await turns(3);
 
     const [frame] = ws.of('records');
     expect(frame?.['adopt']).toEqual({
@@ -223,7 +224,7 @@ describe('an entity whose table is not its name', () => {
     using publisher = recordPublisher({ transport, entities: [ledger] });
     const id = run('1', '').id;
     await publisher.publish(ledger, [{ id, orgId: ORG, label: 'entry' }]);
-    await Bun.sleep(1);
+    await turns(3);
 
     expect(wire[0]?.subject).toBe(`x.change.published_gl_entries.${ORG}`);
     expect(wire[0]?.body['table']).toBe('published_gl_entries');

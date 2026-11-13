@@ -8,6 +8,7 @@ import { resetPage } from './hooks-fixture';
 import { pageLocalStore } from './local-store-idb';
 import { pageOutbox } from './page-outbox';
 import { pageRealtime, pageStore } from './page-store';
+import { turns, untilTurn } from './turns-fixture';
 
 const realFetch = globalThis.fetch;
 const host = globalThis as { document?: unknown };
@@ -39,7 +40,8 @@ describe('the page boot', () => {
     // Nothing but the page boot script: no hook, no write, no call to the outbox from here.
     void bootPage();
     await pageRealtime().booted;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await untilTurn(() => sent.length > 0, 'the queued write replayed');
+    await turns(20);
     expect(sent).toEqual(['likePost:k1']);
   });
 });
@@ -99,7 +101,8 @@ describe('an island that hydrates before the boot script ran', () => {
     void page.booted.then(() => {
       settled = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Nothing but the boot settles it: no number of turns does.
+    await turns(20);
     expect(settled).toBe(false);
     expect(Reflect.has(globalThis, Symbol.for('ultimate.outbox'))).toBe(false);
 
@@ -187,12 +190,14 @@ describe('a reload taken offline', () => {
       void bootPage();
       await pageRealtime().booted;
       await pageOutbox().ready;
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      // Offline: the replay a browser page owes on open is held, however many turns pass.
+      await turns(20);
       expect(sent).toEqual([]);
 
       navigator.onLine = true;
       dispatchEvent(new Event('online'));
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await untilTurn(() => sent.length > 0, 'the online event replayed the queue');
+      await turns(20);
       expect(sent).toEqual(['likePost:k7']);
     } finally {
       Reflect.deleteProperty(globalThis, 'navigator');

@@ -11,6 +11,16 @@ beforeAll(async () => {
   signer = await snsSigner();
 });
 
+/** One macrotask: every lookup already issued has run as far as it can go. */
+const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+/** A download held open until the test says so — "in flight" as a fact, not a delay. */
+function gate(): { readonly opened: Promise<void>; open(): void } {
+  let open = (): void => undefined;
+  const opened = new Promise<void>((done) => (open = done));
+  return { opened, open };
+}
+
 const url = (index: number): string =>
   `https://sns.us-west-2.amazonaws.com/SimpleNotificationService-${index.toString(16).padStart(32, '0')}.pem`;
 
@@ -37,14 +47,20 @@ describe('createSnsCertificateCache', () => {
 
   test('concurrent identical lookups share one download', async () => {
     let calls = 0;
+    const download = gate();
     const cache = createSnsCertificateCache({
       fetchCertificate: async () => {
         calls += 1;
-        await Bun.sleep(5);
+        await download.opened;
         return signer.certificatePem;
       },
     });
-    await Promise.all(Array.from({ length: 10 }, () => cache.spkiFor(url(7))));
+    const all = Promise.all(Array.from({ length: 10 }, () => cache.spkiFor(url(7))));
+    // All ten are issued and have had their turns while the one download is still open.
+    while (calls === 0) await settle();
+    for (let turn = 0; turn < 5; turn += 1) await settle();
+    download.open();
+    await all;
     expect(calls).toBe(1);
   });
 });

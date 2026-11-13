@@ -7,9 +7,20 @@ import { isUltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { StepDuplicateError } from './errors';
 import { memoryEventBus } from './events';
+import { useFakeTime } from './fake-time-fixture';
 import type { StepStore } from './steps';
 import { isStepSuspension, MAX_TRACE_NAMES, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
+
+/** Every ceiling here is a real `setTimeout`, fired by fake time rather than waited out. */
+const time = useFakeTime();
+
+/** What a step answered — its value, or what it rejected with — read off fake time. */
+const outcomeOf = (running: Promise<unknown>): Promise<unknown> =>
+  running.then(
+    (value) => value,
+    (error: unknown) => error,
+  );
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   let current = startMs;
@@ -111,13 +122,13 @@ describe('a step timeout cancels the body it is timing', () => {
       stepTimeoutMs: 5,
     });
 
-    await expect(
-      runner.step.run('slow', async (signal) => {
-        observed = signal;
-        await Bun.sleep(40);
-        return 'done';
-      }),
-    ).rejects.toThrow(/X_JOB_TIMEOUT/);
+    const running = runner.step.run('slow', async (signal) => {
+      observed = signal;
+      await time.sleep(40);
+      return 'done';
+    });
+    // Settled inside 20 ms of fake time: at the 5 ms ceiling, never at the body's own 40.
+    expect(String(await time.settles(outcomeOf(running), 20, 1))).toContain('X_JOB_TIMEOUT');
     // The failure is recorded — this run is still ours, only the step's ceiling passed — but the
     // body was told to stop first, so it is not still working beside the retry.
     expect(observed?.aborted).toBe(true);
@@ -137,11 +148,11 @@ describe('a step timeout cancels the body it is timing', () => {
 
     const running = runner.step.run('watching', async (signal) => {
       observed = signal;
-      await Bun.sleep(5);
+      await time.sleep(5);
       return 'done';
     });
     controller.abort();
-    await expect(running).rejects.toThrow(/X_ABORTED/);
+    expect(String(await time.settles(outcomeOf(running), 10, 1))).toContain('X_ABORTED');
 
     expect(observed?.aborted).toBe(true);
   });
@@ -245,9 +256,13 @@ describe('a replay is the same value on every store', () => {
 /** `X_JOB_TIMEOUT`'s `fix:` names the knob that set the ceiling; the job's `timeout` set neither. */
 describe('a timeout names the option that set it', () => {
   test('a step ceiling names stepTimeout', async () => {
-    const thrown = await stepRunner({ runId: 'run-k1', jobName: 'j', store, stepTimeoutMs: 1 })
-      .step.run('slow', () => new Promise<void>(() => undefined))
-      .catch((error: unknown) => error);
+    const thrown = await time.settles(
+      stepRunner({ runId: 'run-k1', jobName: 'j', store, stepTimeoutMs: 1 })
+        .step.run('slow', () => new Promise<void>(() => undefined))
+        .catch((error: unknown) => error),
+      5,
+      1,
+    );
     if (!isUltimateError(thrown)) return expect.unreachable('expected X_JOB_TIMEOUT');
     expect(thrown.code).toBe('X_JOB_TIMEOUT');
     expect(thrown.fix).toContain('stepTimeout');

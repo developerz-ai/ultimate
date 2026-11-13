@@ -133,7 +133,7 @@ describe('acquireTimeoutMs', () => {
         released += 1;
       },
     });
-    await Bun.sleep(1);
+    await new Promise((turn) => setTimeout(turn, 0));
     expect(released).toBe(1);
   });
 

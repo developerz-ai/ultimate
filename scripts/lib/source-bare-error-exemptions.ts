@@ -47,7 +47,7 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
   },
   {
     path: 'packages/render/src/navigation-dom-fixture.ts',
-    line: 440,
+    line: 452,
     reason:
       'the fake DOMParser refuses a document no test registered, rather than answering an empty one the router would read as a page',
   },

@@ -112,6 +112,7 @@ describe.skipIf(url === undefined)('a nats-server that goes silent under open co
         relay.hold();
         const heldAt = performance.now();
         const detected: { publisher?: number; node?: number } = {};
+        // real-clock: measures how long the nats library takes to notice a held socket — its pings
         const watching = setInterval(() => {
           if (!publisher.connected) detected.publisher ??= elapsedSince(heldAt);
           if (!transport.connected) detected.node ??= elapsedSince(heldAt);

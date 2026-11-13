@@ -2,6 +2,7 @@
 // loop that turns a committed `x_outbox` row into a queued job. It registered NO hook, so on
 // SIGTERM it went on claiming through every phase: rows leased on a pod that would never run them,
 // and a pass killed between `driver.enqueue` and `markPublished` published twice on the next boot.
+// Fake time (`fake-time-fixture.ts`) moves the relay's poll and the drain's deadline together.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -15,10 +16,13 @@ import {
 import type { Tx } from '@ultimat3/entity';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import type { MemoryOutboxStore, OutboxRecord } from './outbox';
 import { memoryOutboxStore } from './outbox';
 import type { OutboxRelay } from './outbox-relay';
 import { outboxRelay } from './outbox-relay';
+
+const time = useFakeTime();
 
 /** The tx identity is the store's map key and nothing here reads a connection off it. */
 const fakeTx = (id: string): Tx => ({ id }) as unknown as Tx;
@@ -92,7 +96,7 @@ async function rig(options: { park: boolean }): Promise<Rig> {
 
   const relay = outboxRelay({ store, driver, intervalMs: 1 });
   relay.start();
-  await first;
+  await time.settles(first, 50);
   let staged = 1;
   return {
     relay,
@@ -124,7 +128,7 @@ describe('the relay takes part in the drain instead of running through it', () =
     // defect: the relay was stopped only by `RunningRoles.stop()`, which a signal can skip.
     expect(shutdownHookCount()).toBe(2);
 
-    await app.relay.stop();
+    await time.settles(app.relay.stop(), 100);
     // Handed back in the teardown's `finally`, so start -> stop -> start holds one pair rather
     // than one per start, each retaining a stopped relay's store and driver.
     expect(shutdownHookCount()).toBe(0);
@@ -141,7 +145,7 @@ describe('the relay takes part in the drain instead of running through it', () =
     // Driven here, because this relay registered nothing to drive it: `unref()` keeps the timer off
     // the process exit and does not stop it, so a relay left running polls its store through every
     // test that follows this one.
-    await relay.stop();
+    await time.settles(relay.stop(), 100);
   });
 
   test('start() during a drain is refused, so no second pair of hooks is stacked', async () => {
@@ -150,24 +154,25 @@ describe('the relay takes part in the drain instead of running through it', () =
     // parked pass out. A relay re-armed here would poll a store the drain is about to leave, and
     // its second registration would overwrite the unregisters of the first.
     const draining = drain('SIGTERM');
-    await Bun.sleep(5);
+    await time.advance(5);
     app.relay.start();
     expect(shutdownHookCount()).toBe(2);
 
     app.release();
-    await draining;
+    await time.settles(draining, 100);
     expect(shutdownHookCount()).toBe(0);
   });
 
   test('nothing is claimed or published once the drain has resolved', async () => {
     const app = await rig({ park: false });
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 100);
     const atDrain = app.published().length;
 
     // A row committed after the drain is a row this pod has no business leasing: its lease would
     // sit on a row nothing here will ever publish, for the whole visibility window.
     await app.stage('row-after');
-    await Bun.sleep(30);
+    // Thirty polls' worth of fake time: a relay still armed would have claimed it on the first.
+    await time.advance(30);
 
     expect(app.published().length).toBe(atDrain);
     expect(await app.store.pendingCount()).toBe(1);
@@ -180,14 +185,15 @@ describe('the relay takes part in the drain instead of running through it', () =
     // The drain must still be OPEN while the publish is parked: the close phase is where this
     // wait belongs, and a drain that resolved here returned between `driver.enqueue` and
     // `markPublished` — the row is published, unmarked, and published again on the next boot.
-    const outcome = await Promise.race([
-      draining.then(() => 'drained'),
-      Bun.sleep(60).then(() => 'waiting'),
-    ]);
-    expect(outcome).toBe('waiting');
+    let drained = false;
+    void draining.then(() => {
+      drained = true;
+    });
+    await time.advance(60);
+    expect(drained).toBe(false);
 
     app.release();
-    await draining;
+    await time.settles(draining, 100);
     // Published AND retired: a teardown that returned between the two closed the database under
     // the row it was about to mark, which republishes it on the next boot.
     expect(app.published()).toEqual(['notify:row-1']);
@@ -202,13 +208,13 @@ describe('the relay takes part in the drain instead of running through it', () =
     onShutdown(
       'probe:accept',
       async () => {
-        await Bun.sleep(5);
+        await time.sleep(5);
         accepted += 1;
       },
       { phase: 'accept' },
     );
 
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 300);
     // Read the instant the drain returns. The relay's own wait belongs to `close`; parked in
     // `accept` it would spend the whole budget before this hook — the HTTP server's "stop
     // listening" is an `accept` hook too — ever ran.
@@ -223,23 +229,21 @@ describe('the relay takes part in the drain instead of running through it', () =
     const app = await rig({ park: true });
 
     const manual = app.relay.stop();
-    const still = await Promise.race([
-      manual.then(() => 'stopped'),
-      Bun.sleep(20).then(() => 'waiting'),
-    ]);
+    let stopped = false;
+    void manual.then(() => {
+      stopped = true;
+    });
+    await time.advance(20);
     // Manual: it waits as long as its pass takes.
-    expect(still).toBe('waiting');
+    expect(stopped).toBe(false);
 
     const bounded = app.relay.stop(systemClock.monotonic() + 40);
-    const outcome = await Promise.race([
-      Promise.all([manual, bounded]).then(() => 'stopped'),
-      Bun.sleep(400).then(() => 'wedged'),
-    ]);
-    expect(outcome).toBe('stopped');
+    // Answered at the 40 ms bound, never at the release that does not come.
+    await time.settles(Promise.all([manual, bounded]), 100);
     // Abandoned, not finished: the row was never marked, and the next boot republishes it.
     expect(await app.store.pendingCount()).toBe(1);
     // And a relay that was abandoned still answers a later stop at once.
-    await app.relay.stop();
+    await time.settles(app.relay.stop(), 5);
 
     app.release();
   });
@@ -249,8 +253,8 @@ describe('the relay takes part in the drain instead of running through it', () =
     const started = performance.now();
     const first = app.relay.stop(systemClock.monotonic() + 40);
     const second = app.relay.stop(systemClock.monotonic() + 5_000);
-    await Promise.all([first, second]);
-    expect(performance.now() - started).toBeLessThan(400);
+    await time.settles(Promise.all([first, second]), 100);
+    expect(performance.now() - started).toBeLessThan(100);
     app.release();
   });
 });

@@ -10,6 +10,7 @@ import type { NatsClientOptions, NatsConnect } from './nats-client';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
 import { defaultBackoff, policyDelay } from './thundering-herd';
+import { turns } from './turns-fixture';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -20,9 +21,8 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-const settle = async (): Promise<void> => {
-  await Bun.sleep(1);
-};
+/** The fake bus delivers on promise chains, never on a timer: a few turns settle every one. */
+const settle = (): Promise<void> => turns(3);
 
 interface Bus {
   readonly broker: FakeNatsBroker;

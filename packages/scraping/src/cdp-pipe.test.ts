@@ -36,7 +36,8 @@ function ends() {
 }
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+/** One macrotask: the in-memory stream has handed the transport every chunk pushed so far. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('pipeTransport', () => {
   test('writes each message as its JSON text ended by one NUL', () => {
@@ -60,7 +61,7 @@ describe('pipeTransport', () => {
       new Uint8Array([...snowman.subarray(cut), 0, ...bytes('{"a":1}'), 0, ...bytes('{"b"')]),
     );
     io.push(new Uint8Array([...bytes(':2}'), 0]));
-    await settle();
+    for (let turn = 0; turn < 20 && seen.length < 3; turn += 1) await settle();
 
     expect(seen).toEqual(['{"t":"☃"}', '{"a":1}', '{"b":2}']);
   });

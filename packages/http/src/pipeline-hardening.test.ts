@@ -2,7 +2,7 @@
 // real span. That is the point: each of these defects shipped BECAUSE the tests around it built
 // a context by hand (core's `ctxOf`) or asserted on a response and never on the span, so
 // the pipeline's own answer was the one thing nothing exercised.
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import {
   beginWork,
@@ -172,11 +172,20 @@ describe('the request deadline', () => {
   });
 
   test('ctx.signal aborts, so cooperative code can unwind on its own', async () => {
+    // The handler waits on the abort itself, never on a sleep it hopes outlasts the deadline.
+    let unwound: unknown;
     const pipeline = pipelineFor(
       async () => {
         const ctx = useContext();
-        await Bun.sleep(40);
-        throwIfAborted(ctx);
+        await new Promise<void>((resolve) => {
+          ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        try {
+          throwIfAborted(ctx);
+        } catch (error) {
+          unwound = error;
+          throw error;
+        }
         return textResponse('never');
       },
       { requestTimeoutMs: 15 },
@@ -184,6 +193,8 @@ describe('the request deadline', () => {
     // Either half may answer first — the abort's X_ABORTED (499) or the deadline's 504. Both say
     // "nobody is waiting on this", and neither is a connection held open.
     expect([499, 504]).toContain((await call(pipeline)).status);
+    // …and the handler's own code saw the abort and unwound, rather than running on to its end.
+    expect(unwound).toBeUltimateError('X_ABORTED');
   });
 
   // A handler that answers the abort with a RESPONSE rather than a throw finishes a microtask or
@@ -210,14 +221,27 @@ describe('the request deadline', () => {
   });
 
   test('requestTimeoutMs: 0 is a deployment that would rather hold the connection', async () => {
-    const pipeline = pipelineFor(
-      async () => {
-        await Bun.sleep(20);
-        return textResponse('slow but served');
-      },
-      { requestTimeoutMs: 0 },
-    );
-    expect(await (await call(pipeline)).text()).toBe('slow but served');
+    // Fake timers, moved an hour while the handler is held: any deadline at all would fire in it.
+    jest.useFakeTimers();
+    try {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const pipeline = pipelineFor(
+        async () => {
+          entered.resolve();
+          await release.promise;
+          return textResponse('slow but served');
+        },
+        { requestTimeoutMs: 0 },
+      );
+      const answered = call(pipeline);
+      await entered.promise;
+      jest.advanceTimersByTime(60 * 60 * 1_000);
+      release.resolve();
+      expect(await (await answered).text()).toBe('slow but served');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

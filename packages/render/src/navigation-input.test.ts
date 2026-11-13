@@ -5,17 +5,21 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { answers, click, fire, page, stopRouter, tab } from './navigation-controller-fixture';
 import { type FakeDocument, type FakeElement, htmlAnswer, settle } from './navigation-dom-fixture';
+import { NAVIGATION_PREFETCH_DELAY_MS } from './navigation-rules';
 
 afterEach(stopRouter);
 
 describe('real input', () => {
   test('a press is not a hover: it cancels the pending guess, and the focus it gives is no guess', async () => {
-    const { doc, calls } = tab({ '/b': answers.b });
+    const { win, doc, calls } = tab({ '/b': answers.b });
+    const clock = win.holdTimers();
     const link = doc.getElementById('to-b');
     fire(doc, 'pointerover', link);
     fire(doc, 'pointerdown', link);
     fire(doc, 'focusin', link);
-    await new Promise((r) => setTimeout(r, 120));
+    clock.advance(NAVIGATION_PREFETCH_DELAY_MS);
+    await settle();
+    expect(calls).toEqual([]);
     fire(doc, 'pointerup', link);
     fire(doc, 'focusin', link);
     await settle();

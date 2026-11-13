@@ -12,6 +12,7 @@ import { REAP_AFTER_BEATS, SocketEngine } from './socket-engine';
 import { openHost, type SocketHost } from './socket-host';
 import { type Frame, PROTOCOL_VERSION, type SubscribeFrame } from './sync-protocol';
 import type { Scheduler } from './thundering-herd';
+import { turns } from './turns-fixture';
 
 const target = { url: 'ws://node.test/_x/sync', buildId: 'b1' };
 const orgFeed = {
@@ -39,8 +40,8 @@ function timers(): { schedule: Scheduler; fire: () => void } {
   };
 }
 
-/** MessageChannel delivers a task later; a few turns lets a round trip land. */
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+/** A `MessageChannel` hop is one task (one turn): ten turns land a round trip and its replies. */
+const settle = (): Promise<void> => turns(10);
 
 interface Rig {
   readonly engine: SocketEngine;

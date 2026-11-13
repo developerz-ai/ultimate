@@ -3,8 +3,8 @@
 // the default — and on the Linux runner.
 
 import { afterAll, describe, expect, jest, test } from 'bun:test';
-// why: Bun exposes no temp-directory primitive and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no temp-directory primitive, no recursive remove and no synchronous write.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -73,21 +73,29 @@ describe('portConnection', () => {
     const server = standIn();
     const profileDir = mkdtempSync(join(scratch, 'profile-'));
     try {
-      // Written AFTER the wait began, as a starting browser writes it.
-      setTimeout(() => {
-        void Bun.write(
-          join(profileDir, DEVTOOLS_ACTIVE_PORT),
-          `${String(server.port)}\n/devtools/browser/stand-in\n`,
-        );
-      }, 60);
+      // Written AFTER the wait began, as a starting browser writes it: on the wait's first look
+      // that found nothing (its `exited` check), synchronously, so the next look is the one to see
+      // it — an event, not a 60 ms guess.
+      let looks = 0;
       const connection = await portConnection({
         profileDir,
-        exited: () => false,
+        exited: () => {
+          looks += 1;
+          if (looks === 1) {
+            writeFileSync(
+              join(profileDir, DEVTOOLS_ACTIVE_PORT),
+              `${String(server.port)}\n/devtools/browser/stand-in\n`,
+            );
+          }
+          return false;
+        },
         deadlineMs: 5_000,
         timeoutMs: 5_000,
       });
       const reply = await connection.send('Browser.getVersion');
       expect(reply).toEqual({ result: { product: 'StandIn' } });
+      // It waited: one look found nothing, the next found the announcement.
+      expect(looks).toBe(1);
       connection.close();
     } finally {
       await server.stop(true);

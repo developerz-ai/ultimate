@@ -62,26 +62,27 @@ afterAll(() => {
 const repo = () => postgresRepo(invoices);
 
 /**
- * `Promise.allSettled` with a deadline. A caller a batch never settles hangs, and a hang reaches
- * the test runner as a timeout with no line number — so the deadline turns "unsettled forever",
- * the one failure mode these tests exist to refuse, into a named assertion failure.
+ * `Promise.allSettled` with a deadline counted in event-loop turns, not milliseconds. A caller a
+ * batch never settles hangs, and a hang reaches the runner as a timeout with no line number — so
+ * the deadline turns "unsettled forever", the one failure these tests refuse, into a named one.
+ * The client here answers in microtasks, so a lookup still open after `turns` macrotasks is one
+ * nothing will ever settle, on any runner.
  */
 const settledWithin = async <T>(
   promises: readonly Promise<T>[],
-  ms: number,
+  turns: number,
 ): Promise<readonly PromiseSettledResult<T>[]> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${promises.length} lookups were still unsettled after ${ms}ms`)),
-      ms,
-    );
+  let settled: readonly PromiseSettledResult<T>[] | undefined;
+  void Promise.allSettled(promises).then((results) => {
+    settled = results;
   });
-  try {
-    return await Promise.race([Promise.allSettled(promises), deadline]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
+  for (let turn = 0; turn < turns && settled === undefined; turn += 1) {
+    await new Promise((next) => setTimeout(next, 0));
   }
+  return (
+    settled ??
+    expect.unreachable(`${promises.length} lookups were still unsettled after ${turns} turns`)
+  );
 };
 // The tenant is the actor's, so a request that reads a tenant-scoped table is a request with an
 // actor that carries one — `{ orgId: ORG }` on the call below is now a restatement of it.
@@ -281,7 +282,7 @@ describe('findById coalescing', () => {
     await inRequest(async () => {
       const settled = await settledWithin(
         ids.map((id) => pinned.findById(id, { orgId: ORG })),
-        2_000,
+        20,
       );
       const first = settled.slice(0, MAX_IDS_PER_STATEMENT);
       const second = settled.slice(MAX_IDS_PER_STATEMENT);

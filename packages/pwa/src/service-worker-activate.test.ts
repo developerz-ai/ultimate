@@ -5,6 +5,22 @@ import { generateServiceWorker } from './service-worker';
 import { config, SW_ORIGIN, swHarness } from './service-worker-harness-fixture';
 import type { PwaRoute } from './strategies';
 
+/** One macrotask. The harness runs on promises alone, so a turn lets every pending step run. */
+const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+/**
+ * `'held'` once `turns` macrotasks pass first: what the harness has not answered by then it is
+ * holding, on any runner — a count of turns, never a duration.
+ */
+const withinTurns = async <T>(work: Promise<T>, turns = 10): Promise<T | 'held'> => {
+  let outcome: { readonly value: T } | undefined;
+  void work.then((value) => {
+    outcome = { value };
+  });
+  for (let turn = 0; turn < turns && outcome === undefined; turn += 1) await settle();
+  return outcome === undefined ? 'held' : outcome.value;
+};
+
 /**
  * The page that installed the worker loaded BEFORE the worker controlled it, so no strategy saw it:
  * a runtime-cached route was unavailable offline until a second online visit. Activation now runs
@@ -21,7 +37,11 @@ describe('the emitted activate block, executed', () => {
     sw.load(generateServiceWorker(runtimeRoutes, config, 'build-1').source);
     sw.openWindows(`${SW_ORIGIN}/feed`);
     await sw.activate();
-    await Bun.sleep(10); // the warm-up's fetch leaves after activation — let it, then go offline
+    // The warm-up's fetch leaves after activation: wait for its copy to land, then go offline.
+    const landed = (): boolean =>
+      [...sw.caches.values()].some((cache) => cache.entries.has(`${SW_ORIGIN}/feed`));
+    for (let turn = 0; turn < 50 && !landed(); turn += 1) await settle();
+    expect(landed()).toBe(true);
 
     sw.goOffline();
     const response = await sw.request('/feed');
@@ -91,10 +111,7 @@ describe('a streamed response through the worker', () => {
     const gate = gatedBody();
     sw.answerWith(() => new Response(gate.body));
     sw.openWindows(`${SW_ORIGIN}/news`);
-    const done = await Promise.race([
-      sw.activate().then(() => 'activated' as const),
-      new Promise<'held'>((resolve) => setTimeout(() => resolve('held'), 500)),
-    ]);
+    const done = await withinTurns(sw.activate().then(() => 'activated' as const));
     gate.finish();
     expect(done).toBe('activated');
   });
@@ -112,10 +129,7 @@ describe('a streamed response through the worker', () => {
       const gate = gatedBody();
       sw.answerWith(() => new Response(gate.body, { headers: { ...extra } }));
 
-      const response = await Promise.race([
-        sw.respond(path),
-        new Promise<'held'>((resolve) => setTimeout(() => resolve('held'), 500)),
-      ]);
+      const response = await withinTurns(sw.respond(path));
       if (response === 'held')
         return expect.unreachable(`the worker held ${path} until its body ended`);
       const reader = response.body?.getReader();
@@ -160,9 +174,21 @@ describe('a stale-while-revalidate refresh keeps its event alive', () => {
     const hit = await sw.respond('/about');
     expect(await hit.text()).toBe('bytes for /about');
     release();
-    // The refresh lands on its own schedule; give it every tick it needs before reading.
-    await Bun.sleep(10);
+    // The refresh lands on its own schedule: until its fresh copy is in the cache — or a late
+    // `waitUntil` was refused on the way, which is the failure — then every extension settled.
+    const refreshed = async (): Promise<boolean> => {
+      for (const cache of sw.caches.values()) {
+        const entry = cache.entries.get(`${SW_ORIGIN}/about`);
+        if (entry !== undefined && (await entry.clone().text()) === 'fresh') return true;
+      }
+      return false;
+    };
+    for (let turn = 0; turn < 50 && sw.lateWaitUntil.length === 0; turn += 1) {
+      if (await refreshed()) break;
+      await settle();
+    }
     await sw.settled();
     expect(sw.lateWaitUntil).toEqual([]);
+    expect(await refreshed()).toBe(true);
   });
 });

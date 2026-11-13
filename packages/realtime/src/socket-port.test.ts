@@ -3,13 +3,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { messagePort, type PortMessage } from './socket-port';
+import { turns, untilTurn } from './turns-fixture';
 
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
-
-/** Waits for `check`, never a fixed tick count: a `MessageChannel` hop is a task, not a promise. */
-async function until(check: () => boolean): Promise<void> {
-  for (let waited = 0; waited < 2_000 && !check(); waited += 5) await settle();
-}
+/** A `MessageChannel` hop is one task (one turn): a positive claim awaits its condition. */
+const until = (check: () => boolean): Promise<void> => untilTurn(check, 'the port delivered');
 
 describe('messagePort', () => {
   test('a message crosses with its data alone, and the handler reads back as set', async () => {
@@ -28,7 +25,8 @@ describe('messagePort', () => {
     port.onmessage = null;
     expect(port.onmessage).toBeNull();
     channel.port2.postMessage({ t: 'bye' } satisfies PortMessage);
-    await settle();
+    // Ten hops' worth of turns: a listener still attached would have heard it by now.
+    await turns(10);
     expect(heard).toHaveLength(1);
 
     const back: unknown[] = [];

@@ -27,6 +27,16 @@ beforeAll(async () => {
 const clock = frozenClock('2026-10-06T12:01:00.000Z');
 
 /** The input a failing download throws — built once, so no test states its verdict with it. */
+/** One macrotask: every lookup already issued has run as far as it can go. */
+const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+/** A download held open until the test says so — "in flight" as a fact, not a delay. */
+function gate(): { readonly opened: Promise<void>; open(): void } {
+  let open = (): void => undefined;
+  const opened = new Promise<void>((done) => (open = done));
+  return { opened, open };
+}
+
 const notFound = new TypeError('HTTP 404');
 
 function receiver() {
@@ -82,18 +92,24 @@ describe('sesEventReceiver — one certificate fetch per pinned URL', () => {
   test('concurrent messages naming one URL share one download', async () => {
     const message = await sesNotification(signer, SES_DELIVERY);
     let calls = 0;
+    const download = gate();
     const instance = sesEventReceiver({
       topicArns: [TOPIC_ARN],
       clock,
       fetchCertificate: async () => {
         calls += 1;
-        await Bun.sleep(5);
+        await download.opened;
         return signer.certificatePem;
       },
     });
-    const outcomes = await Promise.all(
+    const all = Promise.all(
       Array.from({ length: 10 }, () => instance.receive(snsRequest(snsBody(message)))),
     );
+    // All ten are issued and have had their turns while the one download is still open.
+    while (calls === 0) await settle();
+    for (let turn = 0; turn < 5; turn += 1) await settle();
+    download.open();
+    const outcomes = await all;
     expect(outcomes.every((outcome) => outcome.type === 'events')).toBe(true);
     expect(calls).toBe(1);
   });
@@ -129,15 +145,16 @@ describe('sesEventReceiver — a flood of valid-looking certificate URLs', () =>
   const hexPath = (index: number): string =>
     `https://sns.us-west-2.amazonaws.com/SimpleNotificationService-${index.toString(16).padStart(32, '0')}.pem`;
 
-  function flooded() {
+  /** A forged URL's download is held until `forgedAnswer` opens — default, at once. */
+  function flooded(forgedAnswer: Promise<void> = Promise.resolve()) {
     const fetched: string[] = [];
     const instance = sesEventReceiver({
       topicArns: [TOPIC_ARN],
       clock,
       fetchCertificate: async (url) => {
         fetched.push(url);
-        await Bun.sleep(2);
         if (url === CERT_URL) return signer.certificatePem;
+        await forgedAnswer;
         throw notFound;
       },
     });
@@ -145,14 +162,26 @@ describe('sesEventReceiver — a flood of valid-looking certificate URLs', () =>
   }
 
   test('100 concurrent distinct paths cost at most the in-flight cap, and the real cert stays', async () => {
-    const { instance, fetched } = flooded();
+    const forgedDownloads = gate();
+    const { instance, fetched } = flooded(forgedDownloads.opened);
     const real = await sesNotification(signer, SES_DELIVERY);
     expect((await instance.receive(snsRequest(snsBody(real)))).type).toBe('events');
-    const forged = await Promise.all(
+    let refused = 0;
+    const all = Promise.all(
       Array.from({ length: 100 }, (_, index) =>
-        refusal(instance.receive(snsRequest(snsBody({ ...real, SigningCertURL: hexPath(index) })))),
+        refusal(
+          instance.receive(snsRequest(snsBody({ ...real, SigningCertURL: hexPath(index) }))),
+        ).then((error) => {
+          refused += 1;
+          return error;
+        }),
       ),
     );
+    // Every one of the hundred is either refused or holding a download open — and the downloads
+    // stay open until then, so a cap that let them through one after another would show.
+    while (refused + fetched.length - 1 < 100) await settle();
+    forgedDownloads.open();
+    const forged = await all;
     expect(forged.every((error) => error.code === 'X_MAIL_EVENT_PROVIDER_UNREACHABLE')).toBe(true);
     expect(fetched.length).toBeLessThanOrEqual(1 + 2);
     expect((await instance.receive(snsRequest(snsBody(real)))).type).toBe('events');

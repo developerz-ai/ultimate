@@ -4,6 +4,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import type { PortMessage } from './socket-port';
+import { untilTurn } from './turns-fixture';
 
 class FakeWebSocket {
   static opened: FakeWebSocket[] = [];
@@ -29,19 +30,24 @@ afterAll(() => {
   Reflect.deleteProperty(globalThis, 'onconnect');
 });
 
-/** A MessageChannel delivers a task later; a few turns lets a round trip land. */
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
+/** A `MessageChannel` hop is one task (one turn): wait for the condition, never a delay. */
+const until = (check: () => boolean): Promise<void> => untilTurn(check, 'the worker round trip');
 
-/** Waits for `check`, never a fixed tick count: a `MessageChannel` hop is a task, not a promise. */
-async function until(check: () => boolean): Promise<void> {
-  for (let waited = 0; waited < 2_000 && !check(); waited += 5) await settle();
-}
+/**
+ * Where the handler the entry installed is kept for a rerun. The entry is evaluated once per
+ * process and the `afterAll` above takes the global away, while `--rerun-each` evaluates THIS file
+ * again: a rerun imported the cached entry, which installs nothing, and found no `onconnect`.
+ */
+const INSTALLED = Symbol.for('ultimate.test.sync-worker.onconnect');
+const kept = globalThis as { [INSTALLED]?: WorkerScope['onconnect'] };
 
 describe('the sync worker entry', () => {
   test('a connecting tab is attached: its open dials the node, and its bye closes the socket', async () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    FakeWebSocket.opened = [];
     await import('./sync-worker');
-    const scope = globalThis as WorkerScope;
+    kept[INSTALLED] ??= (globalThis as WorkerScope).onconnect;
+    const scope = { onconnect: kept[INSTALLED] };
     if (scope.onconnect === undefined)
       return expect.unreachable('the entry installed no onconnect');
 

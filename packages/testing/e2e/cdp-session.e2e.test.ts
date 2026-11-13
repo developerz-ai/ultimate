@@ -150,6 +150,7 @@ describe.skipIf(chrome === undefined && !required)('the e2e session, in a real b
       await session.offline(false);
       await tab.waitFor('navigator.onLine === true', 'the open document to read online again');
       // Exactly once: the `online` event is what a page reconnects on, and two is two replays.
+      // real-clock: a second `online` would come from the real Chrome's own event loop, if at all.
       await Bun.sleep(300);
       expect(await tab.evaluate('window.onlineEvents')).toBe(1);
       await tab.reload();

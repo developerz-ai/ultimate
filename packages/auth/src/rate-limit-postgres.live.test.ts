@@ -14,7 +14,12 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock, PgExecutor } from '@ultimat3/core';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import {
+  frozenClock,
+  isUltimateError,
+  probeDatabaseName,
+  sweepProbeDatabases,
+} from '@ultimat3/core';
 import { type AuthRateLimitPolicy, accountKey } from './rate-limit';
 import type { PostgresAuthLimiter } from './rate-limit-postgres';
 import { postgresAuthLimiter } from './rate-limit-postgres';
@@ -52,6 +57,20 @@ const laggingClock: Clock = {
 
 let sql: Bun.SQL;
 
+/**
+ * Its own database: this file drops and re-creates `x_auth_lockouts`, so two runs sharing one
+ * would drop each other's table mid-case. Server-level statements go through `admin`.
+ */
+const PROBE_DB = probeDatabaseName('x_auth_limit_probe');
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
+  const server = new Bun.SQL(url ?? '', { max: 1 });
+  try {
+    return [...(await server.unsafe(statement, [...values]))];
+  } finally {
+    await server.end();
+  }
+};
+
 /** A lockout written by the previous release's two-column table, before the upgrade ran. */
 const CARRIED_KEY = 'account:carried@example.com';
 let carriedCode = 'never-ran';
@@ -73,8 +92,17 @@ let laggingPod: PostgresAuthLimiter;
 
 beforeAll(async () => {
   if (url === undefined) return;
-  sql = new Bun.SQL(url, { max: 6 });
-  await sql.unsafe('drop table if exists x_auth_lockouts', []);
+  await sweepProbeDatabases(
+    {
+      query: async <R>(text: string, values: readonly unknown[]) =>
+        (await admin(text, values)) as R[],
+    },
+    PROBE_DB,
+  );
+  await admin(`create database ${PROBE_DB}`);
+  const target = new URL(url);
+  target.pathname = `/${PROBE_DB}`;
+  sql = new Bun.SQL(target.href, { max: 6 });
   // The table as the previous release made it, with a lockout that release established: the
   // install below has to upgrade it in place and the take has to honour what it holds.
   await sql.unsafe(
@@ -101,8 +129,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (url === undefined) return;
-  await sql.unsafe('drop table if exists x_auth_lockouts', []);
   await sql.end();
+  await admin(`drop database if exists ${PROBE_DB} with (force)`);
 });
 
 beforeEach(async () => {
@@ -128,12 +156,14 @@ const RACE_TIMEOUT_MS = 20_000;
 const rowLockHasWaiter = async (): Promise<boolean> => {
   const deadline = Bun.nanoseconds() + LOCK_WAIT_DEADLINE_MS * 1_000_000;
   while (Bun.nanoseconds() < deadline) {
+    // This database's backends only: a run beside this one parks on locks of its own.
     const rows = (await sql.unsafe(
-      'select count(*)::int as n from pg_locks where not granted',
+      `select count(*)::int as n from pg_stat_activity
+        where wait_event_type = 'Lock' and datname = current_database()`,
       [],
     )) as { readonly n: number }[];
+    // No sleep between looks: each one is a round trip to the server, which is the wait.
     if ((rows[0]?.n ?? 0) > 0) return true;
-    await Bun.sleep(10);
   }
   return false;
 };

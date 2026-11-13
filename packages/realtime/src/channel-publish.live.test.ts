@@ -18,6 +18,7 @@ const url = Bun.env['TEST_NATS_URL'];
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
 const waitFor = async (done: () => boolean, polls = 400): Promise<void> => {
+  // real-clock: a real nats-server delivers the frame on its own time, not this process's
   for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(25);
 };
 

@@ -7,7 +7,7 @@
 // completed step replays from storage without re-paying its pause. Paced outside the step, a
 // backfill resuming at batch 500 would spend the whole throttle of 500 batches it had already done.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf, frozenClock, isUltimateError } from '@ultimat3/core';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
@@ -15,14 +15,25 @@ import type { BackfillDefinition } from './backfill';
 import { backfill } from './backfill';
 import { backfillPass } from './backfill-pass';
 import { backfillPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import { useFakeTime } from './fake-time-fixture';
+import { registeredJobs, restoreJobs } from './job';
 import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
+
+const time = useFakeTime();
 
 const rows = entity('backfill_rate_rows', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 40 }) },
 });
 
 type Row = typeof rows.$row;
+
+// A test's `backfill({ name })` registers its job; put the registry back after each, so the same
+// test run again (`--rerun-each`, CI's `flaky` job) declares it afresh, not X_JOB_DUPLICATE.
+const inheritedJobs = registeredJobs();
+afterEach(() => {
+  restoreJobs(inheritedJobs);
+});
 
 const ORG = '00000000-0000-7000-8000-0000000000b1';
 
@@ -167,8 +178,8 @@ describe('the rate throttle', () => {
   });
 
   test('a declared rate throttles the real pass, and cancelling it leaves the wait at once', async () => {
-    // Real timers, the shipped sleeper, and `backfill()` rather than a hand-built plan: this is the
-    // end-to-end claim that `rate:` on a definition reaches the batch loop at all.
+    // The shipped sleeper under fake timers, and `backfill()` rather than a hand-built plan: this is
+    // the end-to-end claim that `rate:` on a definition reaches the batch loop at all.
     const store = memoryStepStore();
     const seen: string[][] = [];
     const table = tableFor(rows, memoryRepo(rows, SEED));
@@ -200,17 +211,19 @@ describe('the rate throttle', () => {
       runId: 'run-slow',
     });
 
-    await Bun.sleep(25);
+    const outcome = running.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await time.advance(25);
     // Unthrottled this pass is over in microtasks — `memoryRepo` never touches a socket. One batch
     // in 25ms is the two-second interval actually being spent.
     expect(seen).toHaveLength(1);
 
-    const abortedAt = performance.now();
     controller.abort();
-    await expect(running).rejects.toMatchObject({ code: 'X_ABORTED' });
-
-    // The attempt no longer owns the run, so the wait ends with it and not with the slot.
-    expect(performance.now() - abortedAt).toBeLessThan(1_000);
+    // The attempt no longer owns the run, so the wait ends with it — within one 5 ms slice of
+    // fake time — and not with the slot two seconds out.
+    expect(await time.settles(outcome, 0)).toMatchObject({ code: 'X_ABORTED' });
     expect(seen).toHaveLength(1);
   });
 });

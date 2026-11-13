@@ -24,7 +24,7 @@ import { t } from '@ultimat3/schema';
 import { installMailDriver, resetMailDriver } from './adapter';
 import { blocks } from './blocks';
 import { type MemoryMailDriver, memoryMailDriver } from './driver';
-import { defineMail, type SendOptions, send } from './mail';
+import { defineMail, resetMails, type SendOptions, send } from './mail';
 
 /** The facade's transaction token, named without importing `@ultimat3/entity` into this package. */
 type Tx = NonNullable<ReturnType<Parameters<typeof outboxJobsFacade>[1]>>;
@@ -58,12 +58,15 @@ afterEach(() => {
   resetMailDriver();
 });
 
-/** Holds a real worker open for a bounded number of polls: the point is what it never delivers. */
+/**
+ * A real worker's passes, driven by hand (`tick()`), never its poll timer: with no `until`, one
+ * pass that runs nothing is the proof nothing was there to deliver; with one, passes run until it
+ * holds. Bounded, so a delivery that never comes fails by name instead of hanging.
+ */
 async function drainWith(driver: JobDriver, until?: () => boolean): Promise<void> {
   const worker = jobWorker({
     driver,
     drainOnShutdown: false,
-    pollIntervalMs: 5,
     context: () =>
       ctxOf({
         role: 'worker',
@@ -71,9 +74,15 @@ async function drainWith(driver: JobDriver, until?: () => boolean): Promise<void
         logger: structuredLogger({ writer: () => undefined }),
       }),
   });
-  worker.start();
   try {
-    for (let i = 0; i < 200 && until?.() !== true; i += 1) await Bun.sleep(5);
+    for (let pass = 0; pass < 20 && until?.() !== true; pass += 1) {
+      const ran = await worker.tick();
+      if (until === undefined) {
+        expect(ran).toEqual([]);
+        return;
+      }
+    }
+    expect(until?.() ?? true).toBe(true);
   } finally {
     await worker.stop('test-end');
   }
@@ -159,6 +168,8 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  // The mail above is declared at module scope: dropped, so a re-run of this file declares it anew.
+  resetMails();
   await sql?.end();
   if (url !== undefined) await admin(`drop database if exists ${PROBE_DB} with (force)`);
 }, 60_000);

@@ -15,7 +15,13 @@ import { selectTransport, type TransportSelection } from './transport-env';
 
 const url = Bun.env['TEST_NATS_URL'];
 const BUCKET = 'xlivepresence';
-const ROOM = topic('org', 'o1', 'cursors');
+/**
+ * Rooms of this evaluation's own: the bucket outlives a run, and so does the sweep LEASE a room's
+ * last leader wrote — a rerun (`--rerun-each`) or a second copy of this suite found the previous
+ * run's leader still holding it, followed it, never saw `lost`, and swept nothing.
+ */
+const RUN = crypto.randomUUID().slice(0, 8);
+const ROOM = topic('org', 'o1', `cursors-${RUN}`);
 
 const selected: TransportSelection[] = [];
 
@@ -69,7 +75,7 @@ describe.skipIf(url === undefined)('presence over a real bus', () => {
     // participates. This is the claim that makes `sync` stateless, so it is proven, not asserted.
     const dying = await node(1_000);
     const survivor = await node(1_000);
-    const room = topic('org', 'o1', 'expiry');
+    const room = topic('org', 'o1', `expiry-${RUN}`);
     await survivor.join(room, { id: 'watcher', actorId: 'watcher' });
     await dying.join(room, { id: 'lost', actorId: 'lost' });
     expect((await survivor.list(room)).map((member) => member.id).sort()).toEqual([
@@ -81,10 +87,14 @@ describe.skipIf(url === undefined)('presence over a real bus', () => {
     // runs one on an interval rather than on demand. This is that first pass, with `lost` alive.
     expect(await survivor.sweepAll()).toHaveLength(0);
 
-    // `dying` stops heartbeating: its node is gone. Nothing cleans up on its behalf.
-    for (let beat = 0; beat < 6; beat += 1) {
-      await Bun.sleep(500);
+    // `dying` stops heartbeating: its node is gone. Nothing cleans up on its behalf. Polled on the
+    // server's own fact — `lost` gone from the bucket — while `watcher` keeps beating inside its TTL.
+    const listed = async (): Promise<string[]> =>
+      (await survivor.list(room)).map((member) => member.id);
+    for (let beat = 0; beat < 50 && (await listed()).includes('lost'); beat += 1) {
       await survivor.heartbeat(room, 'watcher');
+      // real-clock: the nats-server expires `lost` on its own per-message TTL
+      await Bun.sleep(100);
     }
 
     const gone = await survivor.sweepAll();

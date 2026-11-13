@@ -2,6 +2,7 @@
 // acquire that REJECTS (the lease store is a database, so a failover rejects it) must not keep the
 // in-process slot it was taken under, and a renewal that answers `false` — another worker holds
 // this slot now — must stop the run rather than let two of them share one `job.concurrency`.
+// Every renewal runs on a scheduler this file hands in and fires by hand: no interval is waited.
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { type Ctx, ctxOf, isUltimateError, logger } from '@ultimat3/core';
@@ -12,6 +13,7 @@ import { job, resetJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { memoryLeaseStore } from './leases';
 import { concurrencyLimiter } from './limits';
+import { manualSchedule } from './manual-schedule-fixture';
 import { jobWorker } from './worker';
 import { createFleetSlots } from './worker-fleet-slots';
 
@@ -136,11 +138,13 @@ describe('a fleet-slot renewal that answers false', () => {
       },
     };
     const driver = memoryJobDriver({ leases });
+    const timers = manualSchedule();
     const worker = jobWorker({
       driver,
       concurrency: 1,
       visibilityTimeoutMs: 30_000,
       heartbeatIntervalMs: 1,
+      schedule: timers.schedule,
       context,
       drainOnShutdown: false,
     });
@@ -154,16 +158,20 @@ describe('a fleet-slot renewal that answers false', () => {
 
     const tick = worker.tick();
     await started.passed;
+    // Both renewals ride the heartbeat's interval: the lease's and the fleet slot's.
+    expect([...timers.armed.values()]).toEqual([1, 1]);
+    await timers.fire();
     // The body ends because the run was cancelled — before the fix nothing ever aborted it and
     // this await never resolved.
     await tick;
 
     expect(isUltimateError(reason) && reason.code).toBe('X_JOB_SLOT_LOST');
+    expect(renewals).toBe(1);
     // Reported once and then the timer stops: renewing a slot this worker no longer holds would
-    // extend somebody else's lease.
-    const atLoss = renewals;
-    await Bun.sleep(20);
-    expect(renewals).toBe(atLoss);
+    // extend somebody else's lease. Handed back, not merely ignored.
+    expect(timers.armed.size).toBe(0);
+    await timers.fire();
+    expect(renewals).toBe(1);
   });
 });
 
@@ -193,11 +201,13 @@ describe('a fleet-slot renewal that answers false AFTER the run settled', () => 
           land = resolve;
         }),
     };
+    const timers = manualSchedule();
     const slots = createFleetSlots({
       leases,
       workerId: 'worker-1',
       ttlMs: 30_000,
       renewIntervalMs: 1,
+      schedule: timers.schedule,
     });
     const claimed = { id: 'job-1', name: 'settledJob' } as ClaimedJob;
     expect(await slots.acquire(claimed)).toEqual({ outcome: 'granted' });
@@ -208,11 +218,12 @@ describe('a fleet-slot renewal that answers false AFTER the run settled', () => 
       lost = slot;
     });
     // The interval fires and the renewal is on the wire.
-    await Bun.sleep(5);
+    await timers.fire();
     stop();
+    expect(timers.armed.size).toBe(0);
     await slots.release(claimed.id);
     land(false);
-    await Bun.sleep(5);
+    for (let turn = 0; turn < 6; turn += 1) await new Promise((done) => setImmediate(done));
     const slotLost = error.mock.calls.filter((call) => call[0] === 'jobs.worker.slot-lost');
     error.mockRestore();
 

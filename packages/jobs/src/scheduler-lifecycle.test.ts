@@ -3,9 +3,10 @@
 // `accept` (stop dispatching, and return) and `close` (wait the round out, release the lease).
 // Two rounds over one `lastFiredAt` re-mark the watermark and report occurrences they never
 // enqueued; a lock released mid-dispatch hands the next node an occurrence this one is still
-// firing. The budget those two phases share is `scheduler-drain-budget.test.ts`.
+// firing. The budget those two phases share is `scheduler-drain-budget.test.ts`. Fake time
+// (`fake-time-fixture.ts`) fires the scheduler's own timer: a re-arm is one this test moved to.
 
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { drain, logger, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -13,6 +14,7 @@ import { resetJobDriver } from './adapter';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { DriverUnavailableError } from './errors';
+import { useFakeTime } from './fake-time-fixture';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -21,6 +23,8 @@ import { jobScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
+
+const time = useFakeTime();
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -207,12 +211,16 @@ describe('the scheduler runs one dispatch round at a time', () => {
     clock.advance(2_000);
 
     scheduler.start();
-    await gated.entered();
-    await Bun.sleep(20);
+    await time.settles(gated.entered(), 50);
+    // Twenty periods of a zero gap: a fixed-period loop would have fired through the held round.
+    await time.advance(20, 1);
 
+    // The timers handed over: none while the round is held. A fixed period would hold its next
+    // tick armed here — and that tick is invisible to `enqueues()`, which the round guard dedups.
+    expect(jest.getTimerCount()).toBe(0);
     expect(gated.enqueues()).toBe(1);
     gated.release();
-    await scheduler.stop();
+    await time.settles(scheduler.stop(), 100);
   });
 });
 
@@ -226,7 +234,7 @@ describe('the scheduler drains before the lock goes back', () => {
     const dispatching = scheduler.tick();
     await gated.entered();
     const stopped = scheduler.stop('deploy');
-    await Bun.sleep(1);
+    await time.flush();
 
     // The lock is what stops a second node firing this occurrence. Handing it back here, with
     // the enqueue still open, is the double-fire leader election exists to prevent.
@@ -252,7 +260,7 @@ describe('the scheduler drains before the lock goes back', () => {
     const beforeDrain = counting.acquires();
 
     const stopped = scheduler.stop('deploy');
-    await Bun.sleep(1);
+    await time.flush();
 
     // Parked inside `release()`: the lock is on its way back, so a round that dispatched here
     // would be enqueueing for an occurrence the next leader is already free to take.
@@ -340,11 +348,8 @@ describe('a round that fails says what to do about it', () => {
     clock.advance(2_000);
 
     scheduler.start();
-    for (let waited = 0; waited < 2_000; waited += 2) {
-      if (spy.mock.calls.some((call) => call[0] === 'jobs.task.round_failed')) break;
-      await Bun.sleep(2);
-    }
-    await scheduler.stop();
+    await time.until(() => spy.mock.calls.some((call) => call[0] === 'jobs.task.round_failed'));
+    await time.settles(scheduler.stop(), 100);
     const failed = spy.mock.calls.find((call) => call[0] === 'jobs.task.round_failed');
     spy.mockRestore();
 
@@ -377,11 +382,8 @@ describe('a round that fails says what to do about it', () => {
     clock.advance(2_000);
 
     scheduler.start();
-    for (let waited = 0; waited < 2_000; waited += 2) {
-      if (spy.mock.calls.some((call) => call[0] === 'jobs.task.round_failed')) break;
-      await Bun.sleep(2);
-    }
-    await scheduler.stop();
+    await time.until(() => spy.mock.calls.some((call) => call[0] === 'jobs.task.round_failed'));
+    await time.settles(scheduler.stop(), 100);
     const failed = spy.mock.calls.find((call) => call[0] === 'jobs.task.round_failed');
     spy.mockRestore();
 

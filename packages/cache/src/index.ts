@@ -76,7 +76,7 @@ export type {
   RedisPubSubOptions,
   RedisSubscriberLike,
 } from './redis-pubsub';
-export { redisPubSub, redisPubSubAt } from './redis-pubsub';
+export { cacheBusConnectionName, redisPubSub, redisPubSubAt } from './redis-pubsub';
 export type {
   Embedding,
   SemanticCache,

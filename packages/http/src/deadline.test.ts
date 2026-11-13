@@ -1,10 +1,15 @@
 // `signal` appeared nowhere in this package, so `ctx.signal` was undefined, `throwIfAborted()`
 // threw a TypeError instead of unwinding, and a hung vendor call held its connection and its
 // pool slot until the process died. This is the timer that ends that.
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 import { MAX_TIMER_MS, REQUEST_TIMEOUT_HEADER } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { resolveTimeoutMs, startDeadline } from './deadline';
+
+// Bun's fake timers stand in for the deadline's `setTimeout`: time passes because a test moves it.
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 const config = (requestTimeoutMs: number) =>
   defineHttpConfig({ rateLimit: { scope: 'process' }, requestTimeoutMs });
@@ -60,14 +65,17 @@ describe('a budget no timer can hold', () => {
     ).toBe(0);
   });
 
-  test('with requestTimeoutMs: 0 that header does not time the request out', async () => {
+  test('with requestTimeoutMs: 0 that header does not time the request out', () => {
+    jest.useFakeTimers();
     const deadline = startDeadline({
       headers: new Headers({ [REQUEST_TIMEOUT_HEADER]: OVER }),
       config: config(0),
       method: 'GET',
       pathname: '/slow',
     });
-    await Bun.sleep(50);
+    // No timer at all, and the clock moved past the overflowed ~1 ms one this used to arm.
+    expect(jest.getTimerCount()).toBe(0);
+    jest.advanceTimersByTime(60_000);
     expect(deadline.signal.aborted).toBe(false);
     expect(deadline.expired).toBeUndefined();
     expect(deadline.deadlineAt).toBeNull();
@@ -115,10 +123,13 @@ describe('startDeadline', () => {
 
   // A live timer keeps the event loop from going idle, so a process that answered every request
   // would still refuse to exit for the length of one timeout.
-  test('clear() stops the timer before it can fire', async () => {
+  test('clear() stops the timer before it can fire', () => {
+    jest.useFakeTimers();
     const deadline = start(5);
+    expect(jest.getTimerCount()).toBe(1);
     deadline.clear();
-    await Bun.sleep(15);
+    expect(jest.getTimerCount()).toBe(0);
+    jest.advanceTimersByTime(15);
     expect(deadline.signal.aborted).toBe(false);
   });
 });

@@ -1484,7 +1484,7 @@ Full list: [Error codes](Error-Codes).
 - Never assert on wall-clock time. Advance the frozen clock.
 - Never let a test reach the network unmocked — it fails by design.
 - A flaky test is deleted or fixed the day it flakes. There is no `retry: 3`.
-- Hunting an order flake: `x test unit --filter <file> -- --rerun-each=30 --randomize` — the `--` hands the rest to `bun test`.
+- Hunting an order flake: `x test unit --filter <file> -- --rerun-each=30 --randomize` — the `--` hands the rest to `bun test`. A rerun forgets the `entity()` and `job()` calls the file's module body made on its last load, so they declare again. `As of 2026-11`, an `action()`, a mail template or an OAuth provider declared at module scope still fails its second load with `X_*_DUPLICATE`. Declare those inside the test, or put the file in its own run.
 - Every framework package ships at least 2 tests that would catch a real regression. No `expect(true).toBe(true)`.
 - Tests live next to their source as `<file>.test.ts`.
 - A denial test per policy branch, not one happy-path test per action.

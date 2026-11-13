@@ -1,11 +1,12 @@
 // Pins the raster Worker: the same bytes as the inline transform, the event loop free while it
 // works, coded errors arriving as their own class, the inline fallback, and the web role's budget.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import { isUltimateError } from '../errors';
 import { installLogSink } from '../logger';
 import { ImageDecodeFailedError, ImageRasterBudgetError } from './errors';
 import { transformImageBytes } from './pipeline';
+import * as pngPixels from './png-pixels';
 import { encodeImage } from './png-pixels';
 import { rasterFrom } from './raster';
 import { RASTER_SYNC_PIXELS, type RasterPool, rasterPool } from './raster-pool';
@@ -51,20 +52,21 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
   return expect.unreachable('the transform resolved where it had to refuse');
 }
 
-/** The worst gap a 1 ms timer saw while `work` ran: how long the event loop was blocked. */
-async function worstGap(work: () => Promise<unknown>): Promise<number> {
-  let last = performance.now();
-  let worst = 0;
-  // real-clock: a probe, not a wait — it measures this loop while the Worker's thread works.
-  const timer = setInterval(() => {
-    const now = performance.now();
-    worst = Math.max(worst, now - last);
-    last = now;
-  }, 1);
-  last = performance.now();
-  await work();
-  clearInterval(timer);
-  return worst;
+/**
+ * How many times THIS thread ran the inflate and the deflate (`png-pixels.ts`'s `decodeImage`,
+ * `encodeImage`) while `work` ran. A Worker has its own module graph, so a call there is never
+ * counted here: the count is where the blocking hops ran, which no runner's load can change.
+ */
+async function hopsOnThisThread(work: () => Promise<unknown>): Promise<number> {
+  const inflate = spyOn(pngPixels, 'decodeImage');
+  const deflate = spyOn(pngPixels, 'encodeImage');
+  try {
+    await work();
+    return inflate.mock.calls.length + deflate.mock.calls.length;
+  } finally {
+    inflate.mockRestore();
+    deflate.mockRestore();
+  }
 }
 
 const SPECS: readonly (readonly [string, ImageTransformSpec])[] = [
@@ -114,21 +116,17 @@ describe('the raster Worker', () => {
   });
 
   test('keeps the event loop free where the inline hops block it', async () => {
-    // 4096², the plan's measurement: inline, the canvas hop blocked the loop 98-1,945 ms.
-    const big = gradient(4096, 4096);
-    // A 4096x2048 letterbox: 2048² of art inflated and 8.4 MP of canvas deflated.
-    const spec: ImageTransformSpec = { width: 4096, height: 2048, fit: 'contain' };
+    // A letterbox: the canvas hop, so the inline path inflates AND deflates on its thread.
+    const spec: ImageTransformSpec = { width: 192, height: 96, fit: 'contain' };
     // The PUBLIC function, so a `transformImageBytes` that stopped reaching the Worker fails here.
-    await transformImageBytes(source, { width: 8 }); // the Worker's start-up is not the transform
-    // Worker first: the inline run leaves hundreds of MB of rasters behind, and their collection
-    // landing in the Worker's window measured the collector, not the Worker (50.1 ms, once).
-    const workerGap = await worstGap(() => transformImageBytes(big, spec));
-    const inlineGap = await worstGap(() => transformInline(big, spec));
-    // Relative, never a wall-clock bound: a slower runner slows both sides (windows measured the
-    // Worker's worst gap at 55-58 ms), but only the inline path holds the loop for a whole hop.
-    // Linux, 2026-11-12: Worker 4-7 ms, inline 289-381 ms (44-69x).
-    expect(inlineGap).toBeGreaterThan(workerGap * 2);
-  }, 30_000);
+    // Never a stopwatch: the old worst-gap bound (50 ms, then Worker vs inline) measured the
+    // runner — 65 ms under nine parallel workers, 55 ms on Windows — not where the work ran.
+    expect(await hopsOnThisThread(() => transformImageBytes(source, spec))).toBe(0);
+    // The control: the same transform inline runs both hops right here, so the probe can see one.
+    expect(await hopsOnThisThread(() => transformInline(source, spec))).toBe(2);
+    // …and the Worker's answer is the inline one.
+    expect(await transformImageBytes(source, spec)).toEqual(await transformInline(source, spec));
+  });
 });
 
 describe('where no Worker can start', () => {

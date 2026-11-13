@@ -1,12 +1,15 @@
 // The pacer on its own: what it ASKS for between batches, what the batch's own time buys back, and
 // that a cancelled attempt leaves the wait immediately instead of holding a timer it no longer owns.
-// The sleeper is injected in most of these, so the pacing is asserted rather than spent — the two
-// that keep the real one are there because "does not sit in the timer" cannot be faked.
+// The sleeper is injected in most of these, so the pacing is asserted rather than spent — the one
+// that keeps the real sleeper runs it under fake timers, and asserts on the timer it armed.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { DEFAULT_BACKFILL_BATCH } from './backfill';
 import { backfillPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import { useFakeTime } from './fake-time-fixture';
+
+const time = useFakeTime();
 
 const NEVER_ABORTED = new AbortController().signal;
 
@@ -152,21 +155,33 @@ describe('cancellation', () => {
   });
 
   test('the real sleeper wakes on abort instead of sitting the interval out', async () => {
-    // Real timers on purpose — this is the one claim an injected sleeper cannot make. One batch
-    // every two seconds, cancelled 5ms in: the wait has to end with the attempt, not with the slot.
+    // The shipped sleeper — no `sleep` injected — under fake timers: the claim is about the TIMER it
+    // arms. One batch every two seconds, cancelled 5ms in: the wait has to end with the attempt,
+    // not with the slot, and the two-second timer must not outlive it.
     const pacer = backfillPacer({ rate: 0.5, job: 'rewrite-titles' });
     const controller = new AbortController();
-    await pacer.wait({ signal: controller.signal });
-    setTimeout(() => controller.abort(), 5);
+    await time.settles(pacer.wait({ signal: controller.signal }), 0);
 
-    const startedAt = performance.now();
-    const thrown = await pacer
-      .wait({ signal: controller.signal, step: 'batch:1' })
-      .catch((error: unknown) => error);
-    const elapsed = performance.now() - startedAt;
+    let settled = false;
+    const thrown = pacer.wait({ signal: controller.signal, step: 'batch:1' }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    void thrown.finally(() => {
+      settled = true;
+    });
+    await time.advance(5);
+    // Sitting in the real sleeper's one timer, not done early by anything else.
+    expect(settled).toBe(false);
+    expect(jest.getTimerCount()).toBe(1);
 
-    expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_ABORTED');
-    expect(elapsed).toBeLessThan(1_000);
+    controller.abort();
+    await time.flush();
+    expect(settled).toBe(true);
+    const error = await thrown;
+    expect(isUltimateError(error) ? error.code : undefined).toBe('X_ABORTED');
+    // Cleared on the abort: a cancelled pass leaves no two-second timer pending behind it.
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
 

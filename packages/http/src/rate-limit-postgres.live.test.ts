@@ -33,12 +33,21 @@ const describeLive = url === undefined ? describe.skip : describe;
  */
 let sql: Bun.SQL;
 let store: PostgresRateLimitStore;
+/**
+ * This file DROPS its table, so it runs in a schema of its own: a second copy of the suite on the
+ * same server (a CI rerun beside it, `--rerun-each` in four processes) dropped the table the first
+ * was measuring. Every connection here starts with this `search_path`.
+ */
+const SCHEMA = `x_rl_${String(process.pid)}_${crypto.randomUUID().slice(0, 8)}`;
+const connect = (max: number): Bun.SQL =>
+  new Bun.SQL(url as string, { max, connection: { search_path: SCHEMA } });
 
 const bucket: Bucket = { capacity: 4, refillPerSecond: 1 };
 
 beforeAll(async () => {
   if (url === undefined) return;
-  sql = new Bun.SQL(url, { max: 8 });
+  sql = connect(8);
+  await sql.unsafe(`create schema if not exists ${SCHEMA}`, []);
   await sql.unsafe('drop table if exists x_rate_limit', []);
   // One piece at a time, exactly as the boot's `framework-schema.ts` sends the DDL — and twice,
   // because every boot runs it again over the table it made.
@@ -56,7 +65,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (url === undefined) return;
-  await sql.unsafe('drop table if exists x_rate_limit', []);
+  await sql.unsafe(`drop schema if exists ${SCHEMA} cascade`, []);
   await sql.end();
 });
 
@@ -145,8 +154,9 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
     takes: number,
   ): Promise<{ updates: number; ratio: number }> => {
     // One connection, so the counters this backend accumulated are the ones flushed below.
-    const one = new Bun.SQL(url as string, { max: 1 });
+    const one = connect(1);
     try {
+      await untilHorizonClear(one);
       const single = postgresRateLimitStore({
         executor: {
           query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
@@ -206,6 +216,56 @@ describeLive('live · postgres · upgrading a table an earlier boot created', ()
     expect((await store.peek('kept', bucket, 1_000)).remaining).toBe(1);
   });
 });
+
+/** How long a holder may take to let go before the suite names it. */
+const HORIZON_WAIT_MS = 2_000;
+
+interface HorizonHolder {
+  readonly pid: number;
+  readonly backend_type: string;
+  readonly application_name: string;
+  readonly state: string | null;
+  readonly backend_xid: string | null;
+  readonly backend_xmin: string | null;
+}
+
+/**
+ * Another backend holding an xid or a snapshot (`backend_xmin`) holds back the horizon HOT pruning
+ * reads: no dead version on the page can be reclaimed, the next one goes to a new page, and the
+ * ratio is the OTHER transaction's — measured 0.377 with one idle repeatable-read transaction open.
+ */
+const horizonHolders = async (on: Bun.SQL): Promise<readonly HorizonHolder[]> =>
+  (await on.unsafe(
+    `select pid, backend_type, application_name, state, backend_xid::text as backend_xid,
+            backend_xmin::text as backend_xmin
+       from pg_stat_activity
+      where pid <> pg_backend_pid()
+        and (backend_xid is not null or backend_xmin is not null)`,
+    [],
+  )) as HorizonHolder[];
+
+/**
+ * Waits on the database fact the ratio depends on: no other backend holding the horizon back. One
+ * that does not let go fails BY NAME — never a ratio that measured someone else's transaction.
+ */
+const untilHorizonClear = async (on: Bun.SQL): Promise<void> => {
+  // A bound well inside the test's own timeout, so the verdict is the holder's name, not a timeout.
+  const until = performance.now() + HORIZON_WAIT_MS;
+  let holders: readonly HorizonHolder[] = [];
+  while (performance.now() < until) {
+    holders = await horizonHolders(on);
+    if (holders.length === 0) return;
+    // real-clock: another backend's transaction ends on its own time, not this test's
+    await Bun.sleep(1);
+  }
+  const named = holders.map(
+    (holder) =>
+      `pid ${String(holder.pid)} (${holder.backend_type}, application_name '${holder.application_name}', ${holder.state ?? 'no state'}, xid ${holder.backend_xid ?? '-'}, xmin ${holder.backend_xmin ?? '-'})`,
+  );
+  expect.unreachable(
+    `HOT pruning held back for ${String(HORIZON_WAIT_MS)} ms by ${named.join('; ')} — end it: select pg_terminate_backend(<pid>)`,
+  );
+};
 
 const hotCounts = async (on: Bun.SQL): Promise<{ updates: number; hot: number }> => {
   const rows = (await on.unsafe(
