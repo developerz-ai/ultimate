@@ -10,32 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Added
-
-- `@ultimat3/realtime`: `NatsTransportOptions.scheduler` and `SelectTransportOptions.scheduler` (a `Scheduler`, default `setTimeout`) arm the re-dial loop's backoff wait, so a test hands a manual scheduler and fires each wait itself instead of sleeping through it.
-- `@ultimat3/cache`: `RedisPubSubOptions` takes `schedule` (arms each command's deadline, each resubscribe retry and the publisher's connect wait), `resubscribeRetryMs(attempt)` and `connectionName`; `redisPubSubAt(url, { connectionName })`; `cacheBusConnectionName()` — `x-cache-bus:<pid>`, the subscriber's name in `CLIENT LIST`, which `redisPubSubAt` sends by default.
-
-### Changed
-
-- Framework tests: 226 wall-clock waits removed from 15 packages, so their `test-real-sleep` pins are at zero (`ai`, `auth`, `cache`, `core`, `db`, `entity`, `http`, `jobs`, `mail`, `pwa`, `realtime`, `render`, `scraping`, `testing`, `ui`). Most were replaced by injected schedulers, fake timers or awaited events. The 19 that wait on another process's clock now carry a `// real-clock:` reason instead. `cli` (104) and `scripts` (2) come next.
-
-### Fixed
-
-- `@ultimat3/storage`: a multipart upload with a failed part now waits for the parts already in flight to settle before it rejects, and starts no new part after the failure. A caller that resumes on the rejection no longer races a stale `PUT`.
-- `@ultimat3/cache`: a Redis pub/sub replica that has its subscription refused while the connection stays up (measured after `CLIENT KILL TYPE pubsub`: no second `onconnect` comes) now retries the resubscribe with backoff (250 ms doubling to 10 s, full jitter) until it lands. Before, it logged `cache.broadcast.resubscribe-failed` once and then missed every bust its peers published. Each `SUBSCRIBE`/`UNSUBSCRIBE` is bounded at 1 s (`PUBSUB_COMMAND_TIMEOUT_MS`), so a command on a dead socket no longer stalls the resubscribes queued behind it. Every connect sends `CLIENT SETNAME`, so `CLIENT LIST TYPE pubsub` shows which replica holds each subscription.
-- `@ultimat3/testing`: a test file loaded again in the same process (`bun test --rerun-each`) forgets what its module body declared on the previous load, so `entity()` and `job()` at module scope declare afresh instead of failing with `X_ENTITY_DUPLICATE` / `X_JOB_DUPLICATE`. What a test or a hook registers is still the file's own to undo.
-
-### Security
-
-- `@ultimat3/realtime`: a live socket opened with a session cookie that is then signed out, expired or revoked is now closed (`1008`) at its next re-check. Before, an authenticator that threw `X_UNAUTHENTICATED` or `X_SESSION_EXPIRED` (what `@ultimat3/auth`'s `authenticate()` throws, and what every `x new` app let through) counted as an auth-backend failure: the grant was kept and the socket went on streaming live records under the signed-out actor. An upgrade with such a cookie now gets `401` instead of `503`. Any other throw still keeps the grant, so a database outage does not disconnect anyone.
-- `@ultimat3/http`: the same two codes thrown by an authenticator now mean "anonymous". Public routes (sign-in, the OAuth callback, sign-out) serve a browser holding a stale cookie instead of answering `401` until the cookie's Max-Age runs out. A protected route still answers `401 X_UNAUTHENTICATED`, the same answer as a request with no cookie.
-- `@ultimat3/core`: `isSessionRefusal(error)` and `isSessionRefusalCode(code)` are the one list of "this credential names no session" codes. The http stage, the realtime sweep and the page's session-lost flag all read it.
-- `x new` and `x g sign-in --oidc`: the scaffolded `apps/web/app/auth/authenticator.ts` answers `null` for a session refusal (`if (isSessionRefusal(error)) return null;`), and its test covers a signed-out cookie. In an existing app, make the same edit around `authenticate(auth, token)`. Upgrading the framework alone already closes both holes.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.20.0](docs/changelog/31.20.0.md) | 2026-11-13 | Security: a revoked, expired or forged session no longer keeps its live-query socket streaming after sign-out, and a stale session cookie no longer answers 401 on every route. Existing apps are protected by upgrading; the `x new` and `x g sign-in --oidc` templates return `null` for a session refusal. |
 | [31.19.0](docs/changelog/31.19.0.md) | 2026-11-13 | A release commit no longer cold-installs on every CI job: the bun cache is keyed on the packages `bun.lock` resolves, not the whole file. |
 | [31.18.1](docs/changelog/31.18.1.md) | 2026-11-13 | `x exercise` on a large app is about a quarter faster (494 s → 380 s on a 487-primitive app): the seed solver no longer re-tries every parent earlier tenants took, crash-proof id renaming is one pass, and the frozen clock no longer throws per bound string. Findings, verdicts and seed graphs are unchanged. |
 | [31.18.0](docs/changelog/31.18.0.md) | 2026-11-13 | The admin search ignores case and reads four resources at a time; a declared row scope stays case-sensitive, because it is authorization. |
