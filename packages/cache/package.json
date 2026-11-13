@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/cache",
-  "version": "31.19.0",
+  "version": "31.20.0",
   "description": "Tagged caching: request memo, LRU, Redis, CDN — one invalidation graph",
   "keywords": [
     "ultimate",
@@ -43,6 +43,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "31.19.0"
+    "@ultimat3/core": "31.20.0"
   }
 }

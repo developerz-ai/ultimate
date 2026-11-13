@@ -18,10 +18,10 @@
   "dependencies": {
     "@postly/db": "0.0.1",
     "@postly/web": "0.0.1",
-    "@ultimat3/action": "31.19.0",
-    "@ultimat3/admin": "31.19.0",
-    "@ultimat3/core": "31.19.0",
-    "@ultimat3/policy": "31.19.0",
-    "@ultimat3/schema": "31.19.0"
+    "@ultimat3/action": "31.20.0",
+    "@ultimat3/admin": "31.20.0",
+    "@ultimat3/core": "31.20.0",
+    "@ultimat3/policy": "31.20.0",
+    "@ultimat3/schema": "31.20.0"
   }
 }
