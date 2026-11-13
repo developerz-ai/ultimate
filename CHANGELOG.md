@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+The admin search ignores case and reads four resources at a time, and a huge table's home tile shows the planner's estimate (`count: 'estimate'`); a declared row scope stays case-sensitive, because it is authorization. `@ultimat3/testing` gains seeded property checks and a heap canary, which found three real decoder and money-input bugs, fixed here. The Helm chart ships error-budget burn alerts, an opt-in Grafana dashboard (`x g chart-dashboard`) and memory requests at measured idle. A 4xx scanner no longer writes one `info` line per probe.
+
 ### Added
 
 - `@ultimat3/testing`: `property(gen, fn, { runs, seed })` and `gen` (`int`, `oneOf`, `union`, `map`, `constant`, `array`, `tuple`, `string`, `bytes`, `json`; `HOSTILE_CHARS`) â€” seeded property checks. The first failing draw is shrunk by halving and thrown as `X_TEST_PROPERTY_FAILED`, naming the shrunk input and the `{ seed, runs }` that replays it; a property that returns a promise is refused. Eight framework encoders and decoders are now checked this way: byte ranges, `canonicalJson`, cookies, keyset cursors, `estimateBytes`, `interpolate`, money input and the pgoutput decoder.
