@@ -70,6 +70,9 @@ describe('unit · x upgrade, a Bun-floor hop and the coverage floor', () => {
   test('a floor the new Bun measures under moves to the measurement, dated, the old why kept', async () => {
     const dir = await fixture({ 'x.verify.json': `${JSON.stringify(FLOOR, null, 2)}\n` });
     const { data, lines, spawned } = await hop(dir, { unit: BELOW });
+    // `spawned` holds exact labels, so `indexOf('x verify')` is the full run, never the unit-only one.
+    expect(spawned).toContain('x verify --only unit');
+    expect(spawned).toContain('x verify');
     expect(spawned.indexOf('x verify --only unit')).toBeLessThan(spawned.indexOf('x verify'));
     const written = await floorFile(dir);
     expect(written.steps).toEqual(FLOOR.steps);
