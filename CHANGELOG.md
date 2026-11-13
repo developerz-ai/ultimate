@@ -10,18 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- `x exercise` on a large app is about a quarter faster (494 s → 380 s on a 487-primitive app): the seed solver no longer re-tries every parent earlier tenants took, crash-proof id renaming is one pass, and the frozen clock no longer throws per bound string. Findings, verdicts and seed graphs are unchanged.
-
-### Fixed
-
-- `x exercise` on a large app is fast again, to the same seed byte for byte and the same verdict on every record. The pass seed grew with the square of its tenants: a tenant child of a `shared` parent under a table-wide unique key (`approvalRequestId: uuid().references(…).unique()`) stepped past every parent earlier tenants took, building and judging each row. The solver now skips a taken value without judging it, and a shared pool is rotated once per row position, not once per row. The crash proof names queue ids in one pass, where it had replaced every id in every effect key (ids × effects for a job that enqueues 500). `instanceof Date` under the frozen clock answers a string without a caught throw. The scale sweep finds the readers of a refused sized table once per sweep, not once per primitive. On an adopter app (487 primitives, 101 route loads, same `--seed`): seed 163 → 81 s, primitives 259 → 217 s, the pass 494 → 380 s.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.18.1](docs/changelog/31.18.1.md) | 2026-11-13 | `x exercise` on a large app is about a quarter faster (494 s → 380 s on a 487-primitive app): the seed solver no longer re-tries every parent earlier tenants took, crash-proof id renaming is one pass, and the frozen clock no longer throws per bound string. Findings, verdicts and seed graphs are unchanged. |
 | [31.18.0](docs/changelog/31.18.0.md) | 2026-11-13 | The admin search ignores case and reads four resources at a time; a declared row scope stays case-sensitive, because it is authorization. |
 | [31.17.0](docs/changelog/31.17.0.md) | 2026-11-13 | New commands: `x token` (API keys), `x config show` (redacted), `x logs tail`, `x cache graph\|bust\|clear`, and `x explain <query>` (plans what a query actually sends, never against production). |
 | [31.16.0](docs/changelog/31.16.0.md) | 2026-11-13 | `x exercise` is fairer and stricter: a refused test-seed table is one finding instead of every check going unproven, one call is held to 100 statements (loops declared with `expectedQueryLoop` excluded), and a data-dependent branch no longer reads as an N+1. `x.verify.json` `exercise.unprovenMax` / `statementsMax` floors are red when declared, warnings otherwise. |
