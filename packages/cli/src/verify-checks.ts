@@ -24,6 +24,7 @@ import { checkUngeneratableMigrations } from './db-ungeneratable';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { driftOutcome } from './drift-store';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
+import { withUnprovenFloor } from './exercise-floor-report';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
 import { isrQueryAdvice } from './isr-query-advice';
@@ -195,7 +196,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   ...TEST_STEPS.slice(0, AFTER_JOB),
   // Every step that loads the app stands down while the load is red: the cause is `manifest`'s,
   // and what a half-filled registry looks like is not a finding (`load-findings.ts`).
-  blockedByLoad(exerciseStep),
+  // The floor's verdict on the report the child wrote rides on the step (`exercise-floor-report.ts`).
+  blockedByLoad(withUnprovenFloor(exerciseStep)),
   ...TEST_STEPS.slice(AFTER_JOB),
   blockedByLoad({
     name: 'drift',

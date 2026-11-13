@@ -424,6 +424,15 @@ fallback of its own; the caller does.
 is not our key. This is the twin of `roles.ts` — `ROLE` says what the process does,
 `ULTIMATE_ENV` says which deploy it belongs to.
 
+`FRAMEWORK_ENV` lists every environment name the framework itself reads, each with its owning
+package and its `use`: `contract` (the deploy contract an app sets and may declare — `DATABASE_URL`,
+`PORT`), `switch` (present, it turns a behaviour on — `CLOUDFLARE_API_TOKEN` starts the CDN purge),
+`internal` (the framework's own, every `ULTIMATE_*` included) or `host` (`HOME`, `CI`).
+`frameworkEnvEntry(name)` answers the exact name first, then the longest registered prefix.
+`x doctor` reports an app's own declared or sealed name on a `switch` or `internal` one
+(`X_ENV_NAME_RESERVED`); `bun run scripts/framework-env.ts` holds the list complete against every
+literal env read in shipped source.
+
 `storeMode(Bun.env)` is the one answer to "memory store or database store?" for a seam with both —
 `memory` under `test` (no database client is installed there), `database` everywhere else, `x dev`'s
 embedded PGlite included. Never a `DATABASE_URL` truthiness check: `x dev` sets none.

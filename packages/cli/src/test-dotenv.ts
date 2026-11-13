@@ -27,6 +27,18 @@ import { readFileSync } from 'node:fs'; // why: Bun ships no synchronous file re
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 
+/**
+ * Keys that LOCATE something on this host and never change what the app does: a browser binary
+ * (`browser-launcher.ts`'s `BROWSER_PATH_VARS`, restated so this file does not load the CDP driver
+ * graph; `test-dotenv.test.ts` pins the two lists together) and the temp directory. Scrubbing one
+ * because `.env.development` happens to name it only breaks the child — e2e stops finding Chrome.
+ */
+export const HOST_LOCATOR_KEYS: readonly string[] = [
+  'PUPPETEER_EXECUTABLE_PATH',
+  'CHROME_PATH',
+  'TMPDIR',
+];
+
 /** Bun's own grammar, matched against `env-example.ts`'s `ENV_KEY_RE` (kept separate: see header). */
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -72,14 +84,15 @@ export interface DevOnlyLeakInput {
 
 /**
  * The pure decision, no filesystem: every key `.env.development`/`.env.development.local` would
- * set, where `env`'s CURRENT value for that key is exactly what the file would have set. See this
- * file's header for why a legitimate test file declaring the same key does not exempt it.
+ * set, where `env`'s CURRENT value for that key is exactly what the file would have set — a
+ * `HOST_LOCATOR_KEYS` member excepted. See this file's header for why a legitimate test file declaring the same key does not exempt it.
  */
 export function devOnlyLeakedKeys(input: DevOnlyLeakInput): readonly string[] {
   const merged = new Map(parseDotenvValues(input.devText));
   for (const [key, value] of parseDotenvValues(input.devLocalText)) merged.set(key, value);
   const leaked: string[] = [];
   for (const [key, devValue] of merged) {
+    if (HOST_LOCATOR_KEYS.includes(key)) continue;
     // `Object.hasOwn` FIRST: `key` is data (a name out of a dotenv file), and `env['constructor']`
     // on a plain object answers `Object.prototype`'s member, not `undefined` — the rule
     // `scripts/proto-index.ts` ratchets, with its own sanctioned repair.

@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { entity, text, uuid } from '@ultimat3/entity';
 import type { ExerciseRoom } from './exercise-report';
 import { defineFactory } from './factories';
+import type { SentStatement } from './plan-sweep';
 import { scaleSweep } from './scale-sweep-run';
 import { seedGraph } from './seed-graph';
 import type { SeedRow, SeedWriter } from './seed-graph-plan';
@@ -51,7 +52,7 @@ const uniqueWriter = (): SeedWriter & { readonly codes: Set<unknown> } => {
 };
 
 const quiet = { statements: 0, effects: [], refusedHosts: [], payloads: [], shapes: [] };
-const quietRoom = (): ExerciseRoom => ({
+const quietRoom = (sent: ReadonlyMap<string, SentStatement> = new Map()): ExerciseRoom => ({
   observe: async (_subject, fn) => {
     try {
       return { observed: quiet, value: await fn() };
@@ -60,7 +61,7 @@ const quietRoom = (): ExerciseRoom => ({
     }
   },
   owns: () => false,
-  sent: () => new Map(),
+  sent: () => sent,
   [Symbol.asyncDispose]: async () => {},
 });
 
@@ -83,5 +84,44 @@ describe(testName('unit', 'scaleSweep'), () => {
     // The pass's rows, then 2 and 8 for the one sized tenant each.
     const passRows = main.inserts.filter((insert) => insert.entity === 'ssr_tokens').length;
     expect(writer.codes.size).toBe(passRows + 2 + 8);
+  });
+
+  test("one table's refusal is that table's: its readers unproven with it, the rest judged", async () => {
+    const writer = uniqueWriter();
+    const main = seedGraph({ orgs, tokens }, { tenants: 4, seed: 9, factories });
+    for (const row of main.inserts) await writer.insert(row);
+    // Every sized token collides with the pass's first one: the sized `ssr_tokens` cannot write.
+    const collide: SeedWriter = {
+      ...writer,
+      insert: (row) =>
+        writer.insert(
+          row.entity === 'ssr_tokens' ? { ...row, row: { ...row.row, code: 'c0' } } : row,
+        ),
+    };
+    const sent = new Map<string, SentStatement>([
+      [
+        'select "code" from "ssr_tokens" where "orgId" = $1',
+        { primitives: new Set(['listTokens']) },
+      ],
+      ['select "name" from "ssr_orgs" where "id" = $1', { primitives: new Set(['getOrg']) }],
+    ]);
+    const proofs = await scaleSweep({
+      subjects: [
+        { name: 'listTokens', call: async () => ({}) },
+        { name: 'getOrg', call: async () => ({}) },
+      ],
+      entities: [orgs, tokens],
+      writer: collide,
+      main,
+      seed: 9,
+      room: quietRoom(sent),
+      setup: async () => ({ actor: null, input: {} }),
+      factories,
+    });
+    expect(proofs.get('getOrg')).toEqual({ verdict: 'flat', expected: [] });
+    const lost = proofs.get('listTokens');
+    expect(lost?.verdict).toBe('unproven');
+    expect(lost?.verdict === 'unproven' ? lost.seed?.entity : undefined).toBe('ssr_tokens');
+    expect(lost?.verdict === 'unproven' ? lost.seed?.cause : '').toContain('unique constraint');
   });
 });

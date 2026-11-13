@@ -31,6 +31,7 @@ import {
   renderExerciseTable,
   slowestProofLines,
 } from './exercise-findings';
+import { exerciseFloorVerdict } from './exercise-floor-verdict';
 import { readExerciseOverrides } from './exercise-overrides';
 import { entityTenantFindings } from './exercise-static';
 import { subjectFindings, subjectProofFindings } from './exercise-subject';
@@ -38,6 +39,7 @@ import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import { withOfflinePorts } from './offline-ports';
 import type { CommandResult, JsonValue } from './output';
+import { readVerifyFloor } from './verify-floor';
 
 /**
  * The actors `x policy explain` evaluates — `devActors()`, the `/_x` panel's own set — each a
@@ -122,6 +124,8 @@ async function exercisePass(
   // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a
   // one-primitive run is still a fact worth keeping, so it is written either way.
   await Bun.write(join(root, EXERCISE_REPORT_FILE), `${JSON.stringify(report, null, 2)}\n`);
+  // `x.verify.json`'s `exercise` key: red where the app opted in, a warning line where it has not.
+  const floor = exerciseFloorVerdict(records, (await readVerifyFloor(root))?.exercise);
   const findings = [
     ...loaded.findings,
     // The static half of the tenant proof (`exercise-static.ts`): the pass's own question,
@@ -131,6 +135,7 @@ async function exercisePass(
     ...subjectProofs,
     // The fix pastes into the file the app has, or hands it the file it lacks.
     ...exerciseFindings(records, overrides === undefined ? 'absent' : 'present'),
+    ...floor.findings,
   ];
   return {
     ok: findings.length === 0,
@@ -146,8 +151,12 @@ async function exercisePass(
       ...tenantFindingLines(records),
       ...crashFindingLines(records),
       ...planSweepLines(records),
+      ...floor.warnings.map((warning) => `! ${warning}`),
     ].map((line) => `  ${line}`),
     findings,
-    data: report as unknown as JsonValue,
+    // The warning lines ride in `--json` too (`lines` never holds what the document lacks).
+    data: (floor.warnings.length === 0
+      ? report
+      : { ...report, warnings: floor.warnings }) as unknown as JsonValue,
   };
 }

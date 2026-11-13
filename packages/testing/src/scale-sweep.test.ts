@@ -32,11 +32,22 @@ describe('unit · judgeScale', () => {
     expect(judgeScale(calls, calls)).toEqual({ verdict: 'flat', expected: [] });
   });
 
-  test('a shape absent at the small size grew from zero', () => {
-    const proof = judgeScale([], [tally('tags.findById', 3)]);
-    expect(proof.verdict === 'grows' && proof.shapes).toEqual([
-      { fingerprint: 'tags.findById', small: 0, large: 3 },
-    ]);
+  test('a shape absent at the small size is another path, unproven — never red on its own', () => {
+    const proof = judgeScale([tally('a.findById', 1)], [tally('a.findById', 1), tally('b', 3)]);
+    expect(proof.verdict).toBe('unproven');
+    expect(proof.verdict === 'unproven' ? proof.reason : '').toContain('b 0 → 3');
+  });
+
+  test('beside a shape that grew from one, the loop is red and the new path is not named', () => {
+    const proof = judgeScale(
+      [tally('users.findById', 2)],
+      [tally('users.findById', 8), tally('tags.findMany', 1)],
+    );
+    expect(proof).toEqual({
+      verdict: 'grows',
+      shapes: [{ fingerprint: 'users.findById', small: 2, large: 8 }],
+      expected: [],
+    });
   });
 
   test('a declared loop grows and stays flat, its reason reported', () => {

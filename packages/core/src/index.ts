@@ -690,6 +690,9 @@ export type {
 export { flightGate, gateOverloaded } from './flight-gate';
 export { fnv1a } from './fnv1a';
 export { formatBytes } from './format-bytes';
+// Every environment name the framework reads, and its owner: what `x doctor` judges an app's against.
+export type { FrameworkEnvName, FrameworkEnvUse } from './framework-env';
+export { FRAMEWORK_ENV, frameworkEnvEntry } from './framework-env';
 export type { GateRateLimit, RateLimitSubject } from './gate-shapes';
 export {
   AUDIT_SINK_FAILED_EVENT,

@@ -5,6 +5,8 @@
 import { registerErrorCodes } from '@ultimat3/core';
 import type { CliBoundaryErrorCode } from './error-codes-boundary';
 import { CLI_BOUNDARY_ERROR_CODES, CLI_BOUNDARY_ERROR_TITLES } from './error-codes-boundary';
+import type { CliDoctorErrorCode } from './error-codes-doctor';
+import { CLI_DOCTOR_ERROR_CODES, CLI_DOCTOR_ERROR_TITLES } from './error-codes-doctor';
 import type { CliPackageErrorCode } from './error-codes-package';
 import { CLI_PACKAGE_ERROR_CODES, CLI_PACKAGE_ERROR_TITLES } from './error-codes-package';
 import type { CliShotErrorCode } from './error-codes-shot';
@@ -276,6 +278,7 @@ export const CLI_BORROWED_ERROR_CODES = [
 export const CLI_ERROR_CODES = [
   ...CLI_OWNED_ERROR_CODES,
   ...CLI_BOUNDARY_ERROR_CODES,
+  ...CLI_DOCTOR_ERROR_CODES,
   ...CLI_PACKAGE_ERROR_CODES,
   ...CLI_SHOT_ERROR_CODES,
   ...CLI_TOOLING_ERROR_CODES,
@@ -287,6 +290,7 @@ type CliListedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
 export type CliOwnedErrorCode =
   | CliListedErrorCode
   | CliBoundaryErrorCode
+  | CliDoctorErrorCode
   | CliPackageErrorCode
   | CliShotErrorCode
   | CliToolingErrorCode;
@@ -475,6 +479,7 @@ registerErrorCodes(
     Object.entries({
       ...CLI_ERROR_TITLES,
       ...CLI_BOUNDARY_ERROR_TITLES,
+      ...CLI_DOCTOR_ERROR_TITLES,
       ...CLI_PACKAGE_ERROR_TITLES,
       ...CLI_SHOT_ERROR_TITLES,
       ...CLI_TOOLING_ERROR_TITLES,

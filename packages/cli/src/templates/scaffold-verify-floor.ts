@@ -1,6 +1,7 @@
 // `x new`'s `x.verify.json`: the suite floor and the coverage bar every scaffolded app starts on.
 // Split from `scaffold-repo.ts` (the repo's root files), which had reached the 500-line ceiling.
 
+import { STATEMENTS_MAX } from '@ultimat3/testing';
 import type { CoverageExclude } from '../coverage-floor';
 import { COVERAGE_BAR } from '../coverage-floor';
 import type { VerifyStepName } from '../verify-step';
@@ -91,6 +92,9 @@ export const verifyFloor = (example: boolean): string =>
       },
       // The rolling rail judges from the first migration: a new app has nothing to grandfather.
       rollingSince: '0',
+      // Nor does the exercise pass: every proof must ask, and one call sends the default ceiling
+      // at most. An app scaffolded before this key reads warnings instead (`exercise-floor.ts`).
+      exercise: { unprovenMax: 0, statementsMax: STATEMENTS_MAX },
     },
     null,
     2,

@@ -1118,13 +1118,13 @@ Source: `packages/testing/src/scale-sweep*.ts`, `plan-oracle.ts`, `plan-sweep*.t
 
 | Sweep | What | Red |
 |---|---|---|
-| scale | every reached primitive once more in a tenant at 2 rows a table, once in one at 8; per statement shape, the counts compared. Each sized seed is written beside the graph before it: row positions (a generated integer, a factory's `index`) continue past that graph's, so ``code: `c${index}` `` on a unique column never repeats the pass's own row | a shape sent more often at 8: `X_QUERY_SCALES_WITH_ROWS`, fix `preload()` or `expectedQueryLoop('<why>', fn)` |
+| scale | every reached primitive once more in a tenant at 2 rows a table, once in one at 8; per statement shape, the counts compared. Each sized seed is written beside the graph before it: row positions (a generated integer, a factory's `index`) continue past that graph's, so ``code: `c${index}` `` on a unique column never repeats the pass's own row | a shape sent more often at 8 than at 2, where it was sent at least once: `X_QUERY_SCALES_WITH_ROWS`, fix `preload()` or `expectedQueryLoop('<why>', fn)`. A shape sent only at 8, nothing else grown, is another path (a branch on the handed row), `unproven` (`As of 31.16.0`); the 8-row graph opens on the 2-row graph's values in every non-unique column, so the handed row is the same at both sizes |
 | plans | every distinct statement whose first relation is an app table, `PREPARE`d and explained as a generic plan with `enable_seqscan`, `enable_bitmapscan` off — and, for a statement with a `Limit`, planned again with `enable_sort` off for its sort alone — in a read-only transaction | `Seq Scan`, or an index scan with no `Index Cond` no `Limit` stops: `X_QUERY_UNINDEXED`. `Sort` under `Limit`: `X_QUERY_SORT_UNSERVED`, on the table its key names. Each prints an `indexes:` entry, one per arm for an `or`; a sort no declarable index serves (an expression, an aggregate, a derived column, keys across tables, mixed directions) or an index the entity already declares prints a rewrite or `expectedSeqScan` instead |
 
 With the planner's scans and sorts disabled it picks one only when no index can answer, so the
 verdict reads the schema on empty tables — no volume, no statistics. Never red: `scale.verdict`
 `flat` (a declared loop listed in `expected` with its reason) or `unproven` (a call that did not
-answer at both sizes); a statement whose equality pins a unique key; one a partial index serves once
+answer at both sizes, or took another path at 8); a statement whose equality pins a unique key; one a partial index serves once
 its value is bound; a whole read beside a join whose join column leads a declared index on that
 side, while the other side is bound by its own key — on empty tables a partial index the statement
 implies looks like one row, so the planner walks it rather than probe it per row (`As of
@@ -1136,6 +1136,63 @@ under `expectedSeqScan('<why>', fn)` or on an entity with `scan: '<why>'`
 ```bash
 x db gen posts-orgId-createdAt-id-index   # after indexes: [{ on: ['orgId', 'createdAt', 'id'] }] in entity("posts")
 ```
+
+**Seed isolation** (`As of 31.16.0`). A sized-seed table the database refuses — usually a unique
+column the default factory repeats — is that table's failure alone: the primitives whose statements
+read it are `unproven`, the failure on their `scale.seed` (`{ entity, cause }`), and every other
+primitive is still scale-judged. `scaleSeedFindings(records)` folds them into one
+`X_EXERCISE_SEED_FAILED` per table, naming the entity, the driver's words and up to ten readers; the
+fix is the factory to declare. Before, one refused table left every primitive `unproven` with the
+same reason.
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+import { defineExercise, defineFactory } from '@ultimat3/testing';
+
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), slug: text({ max: 80 }).unique() },
+});
+
+export const exercise = defineExercise(
+  {},
+  { factories: { posts: defineFactory(posts, { defaults: (index) => ({ slug: `post-${index}` }) }) } },
+);
+```
+
+### The statement ceiling
+
+`As of 31.16.0`. The scale sweep judges growth; this judges the count. One call of an action, query
+or job may send `STATEMENTS_MAX` — 100 — statements; the busiest of its calls is the one judged,
+never the runs' sum. Over it the record carries `statementCeiling: { verdict: 'over', statements,
+max, top }` — `top` its three most-sent shapes, what a `preload()` would fold — and
+`statementCeilingFindings(records)` reports `X_STATEMENTS_OVER_BUDGET`. A flat 300-statement call is
+never `X_QUERY_SCALES_WITH_ROWS`, and it is still slow.
+
+One primitive's ceiling, raised or lowered with a reason; a blank `why` (or none) is
+`X_CONTRACT_EXERCISE_UNDECLARED`, and `max` is a whole number ≥ 1:
+
+```ts
+import { defineExercise } from '@ultimat3/testing';
+
+export const exercise = defineExercise({
+  importRows: { statements: { max: 140, why: 'one insert per line, bounded by the 140-line form' } },
+});
+```
+
+### The floor: `unprovenMax` and `statementsMax`
+
+What is red is `x.verify.json`'s call ([Configuration](Configuration#the-gates-file--xverifyjson)):
+`x exercise` and the gate's `exercise` step read its `exercise` key.
+
+| Key | Red above it | Without the key |
+|---|---|---|
+| `unprovenMax` | `X_EXERCISE_UNPROVEN_ABOVE_FLOOR` — unproven ÷ reached, rounded up to four places, names the first three; the sized-seed findings behind it are red with it | a warning line naming the figure to write |
+| `statementsMax` | `X_STATEMENTS_OVER_BUDGET` for every primitive over it whose entry declares no `statements` (an entry's own ceiling stands) | the ceiling is 100 and each finding is a warning line |
+
+`x new` writes `{ "unprovenMax": 0, "statementsMax": 100 }`. An app scaffolded before 31.16.0 stays
+green with warnings until it opts in, and `x upgrade` writes the figures its hop measured — the
+busiest undeclared call, never under 100 — so the floor starts where the app is. A figure the run
+beats is a warning naming the lower number: the floor only falls.
 
 ## Memory, width and isolation
 

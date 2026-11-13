@@ -76,6 +76,8 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_MAIL_EXPECTED',
   'X_TEST_ADAPTER_PORT_UNSWAPPABLE',
   'X_TEST_FACTORY_INVALID',
+  'X_EXERCISE_SEED_FAILED',
+  'X_STATEMENTS_OVER_BUDGET',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -154,6 +156,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_MAIL_EXPECTED: 'toHaveSentMail was handed something other than the mail fixture',
   X_TEST_ADAPTER_PORT_UNSWAPPABLE: 'swapAdapter() was named a port it cannot swap for one test',
   X_TEST_FACTORY_INVALID: 'a factory builds a row its own entity refuses',
+  X_EXERCISE_SEED_FAILED: 'The scale sweep could not write the sized rows of one entity',
+  X_STATEMENTS_OVER_BUDGET: 'One primitive call sent more statements than its ceiling',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

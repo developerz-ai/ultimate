@@ -11,13 +11,17 @@ import { authStorageFindings } from './doctor-auth';
 import { chartAlertsProbe, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
+import { reservedEnvFindings } from './doctor-env-reserved';
+import { unflooredStepFindings } from './doctor-floor';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import { offlineFallbackFinding } from './doctor-offline';
+import { pinRangeFindings } from './doctor-pins';
 import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
 import { doctorPort, portFindings } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { probeFor } from './doctor-probe';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
+import { rowSecurityOffFindings } from './doctor-row-security';
 import { sealedKeyFindings } from './doctor-sealed';
 import { typescriptFindings } from './doctor-typescript';
 import { ICON_SOURCE } from './icon-assets';
@@ -65,6 +69,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // Right after the runtime and for its reason: a compiler a major behind reds typecheck and build
   // on the framework's own files, and every finding below is read through a gate that cannot pass.
   findings.push(...typescriptFindings(await probe.typescript()));
+  // Beside the compiler and for its reason: a ranged pin moves one package on the next install.
+  findings.push(...pinRangeFindings(await probe.pins()));
   if (!probe.exists(ENV_DEVELOPMENT)) {
     findings.push(
       finding(
@@ -85,6 +91,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // Silent in development and on a shell naming no environment; reported where this machine names
   // a deploy. One list, one wording (`framework-env.ts`, #679).
   findings.push(...probe.frameworkFindings);
+  // The other side of the same list: an app's own name the framework reads too (`FRAMEWORK_ENV`).
+  findings.push(...reservedEnvFindings(await probe.envNames()));
   findings.push(...(await portFindings(probe)));
   findings.push(...appUrlFindings(probe.appUrl, probe.port));
   // `@ultimat3/pwa`'s own codes, not CLI twins of them. `X_PWA_NO_ICON_SOURCE` and
@@ -124,6 +132,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   const reachable = pooler.refused === undefined && database === null;
   if (reachable) findings.push(...((await probe.rowSecurity?.()) ?? []));
   findings.push(...(await probe.drift()));
+  // Static, so asked whatever the database answered: raw tenant SQL with the policy off.
+  findings.push(...rowSecurityOffFindings(await probe.rowSecurityOff()));
   // Last, and it is why `X_CLI_UNEXPECTED`'s `fix: x doctor --json` is not a dead end on the path an
   // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
   // condition this diagnostic could not see at all, so the fix line ran clean over a broken app.
@@ -131,6 +141,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // Sealed columns against the key ring: no key at all, or a rotation whose re-seal is pending.
   findings.push(...sealedKeyFindings(await probe.sealedKeys()));
   findings.push(...authStorageFindings(await probe.authStorage()));
+  // Last: a floor gap is the gate's blind spot, never a reason anything above it is red.
+  findings.push(...unflooredStepFindings(await probe.unflooredSteps()));
   return findings;
 }
 

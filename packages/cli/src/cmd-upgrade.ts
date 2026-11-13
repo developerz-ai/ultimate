@@ -146,7 +146,14 @@ async function withHeartbeat<T>(
   }
 }
 
-export const createUpgradeCommand = (write: (line: string) => void): CliCommand => ({
+/** `YYYY-MM-DD` in UTC: the day a rebaselined floor's `why` names. */
+const utcDay = (at: Date): string => at.toISOString().slice(0, 10);
+
+export const createUpgradeCommand = (
+  write: (line: string) => void,
+  /** The clock a rebaselined coverage floor is dated by; a test pins it. */
+  now: () => Date = () => new Date(),
+): CliCommand => ({
   spec: upgradeSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const { dir: root, app } = await findUpgradeRoot(ctx.cwd);
@@ -261,7 +268,17 @@ export const createUpgradeCommand = (write: (line: string) => void): CliCommand 
         });
         return { gate: undefined, scripts: ran };
       }
-      const hopGate = await runHopGate({ runner: ctx.runner, root, onStage: stageReached });
+      // Bun 1.4.4 counted functions differently: a hop that moves the floor re-measures coverage.
+      const bunMoved =
+        bunRange === undefined || bunRange === bunFrom
+          ? undefined
+          : { release: hop.to, bunFrom, bunTo: bunRange, today: utcDay(now()) };
+      const hopGate = await runHopGate({
+        runner: ctx.runner,
+        root,
+        onStage: stageReached,
+        ...(bunMoved === undefined ? {} : { bunMoved }),
+      });
       return { gate: hopGate, scripts: [] };
     });
 

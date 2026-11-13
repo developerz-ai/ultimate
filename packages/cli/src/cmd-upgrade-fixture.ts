@@ -136,7 +136,41 @@ interface Script {
   readonly manifestCode?: number;
   /** Exit code per `bun run <script>`; a script not named here exits 0. */
   readonly scriptCodes?: Readonly<Record<string, number>>;
+  /** Findings each guard on disk adds to `boundaries`, by guard name; one not named adds none. */
+  readonly guardFindings?: ReadonlyMap<string, number>;
+  /** `x verify --only boundaries`' stdout, replacing the count read off disk. */
+  readonly boundaries?: string;
+  /** `x g guard`'s exit code. */
+  readonly generateCode?: number;
+  /** `x verify --only unit`'s stdout. */
+  readonly unit?: string;
 }
+
+/** `boundaries`, as the installed CLI reports it: one finding per break of each guard on disk. */
+const boundariesDocument = async (cwd: string, script: Script): Promise<string> => {
+  let count = 0;
+  for await (const path of new Bun.Glob('guards/*.ts').scan({ cwd })) {
+    if (path.endsWith('.test.ts')) continue;
+    const name = path.replaceAll('\\', '/').slice('guards/'.length, -'.ts'.length);
+    count += script.guardFindings?.get(name) ?? 0;
+  }
+  const finding = {
+    code: 'X_GUARD_FAILED',
+    cause: 'a break',
+    fix: 'x verify --only boundaries --json',
+  };
+  return JSON.stringify({
+    ok: count === 0,
+    steps: [{ name: 'boundaries', ok: count === 0, findings: Array(count).fill(finding) }],
+  });
+};
+
+/** `x g guard <name>`: the rule and its test, written for real so `git status` and the count see them. */
+const generated = async (cwd: string, name: string): Promise<string> => {
+  const files = [`guards/${name}.ts`, `guards/${name}.test.ts`];
+  await Promise.all(files.map((path) => Bun.write(join(cwd, path), `// ${name}\n`)));
+  return JSON.stringify({ ok: true, command: 'g', data: { files } });
+};
 
 /** Git runs for real; everything `process.execPath` would run is the script, recorded in order. */
 export const recording = (script: Script = {}): { runner: Runner; spawned: string[] } => {
@@ -145,7 +179,8 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
     if (command[0] === 'git') return exec(command, options);
     expect(command[0]).toBe(process.execPath);
     const args = command.slice(1);
-    const label = args[0]?.endsWith('bin.ts') ? `x ${args[1]}` : args.slice(0, 2).join(' ');
+    const only = args[2] === '--only' ? ` --only ${args[3] ?? ''}` : '';
+    const label = args[0]?.endsWith('bin.ts') ? `x ${args[1]}${only}` : args.slice(0, 2).join(' ');
     spawned.push(label);
     switch (label) {
       case 'pm view':
@@ -184,6 +219,16 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
         return answer(command, script.exercise ?? EXERCISE_GREEN, script.exerciseCode ?? 0);
       case 'x verify':
         return answer(command, script.verify ?? VERIFY_GREEN, script.verifyCode ?? 0);
+      case 'x verify --only boundaries':
+        return answer(
+          command,
+          script.boundaries ?? (await boundariesDocument(options.cwd, script)),
+        );
+      case 'x verify --only unit':
+        return answer(command, script.unit ?? VERIFY_GREEN);
+      case 'x g':
+        if ((script.generateCode ?? 0) !== 0) return answer(command, '', script.generateCode);
+        return answer(command, await generated(options.cwd, args[3] ?? ''));
       default:
         return expect.unreachable(`an unscripted spawn: ${label}`);
     }
@@ -224,6 +269,12 @@ interface Output {
       readonly reported: boolean;
       readonly missing: readonly { name: string; add: string }[];
       readonly differs: readonly { name: string; refresh: string }[];
+      readonly installed: readonly string[];
+      readonly withheld: readonly { name: string; add: string; findings: number | null }[];
+    } | null;
+    readonly coverage: {
+      readonly file: string;
+      readonly to: { lines: number; funcs: number };
     } | null;
     readonly manifest: { ok: boolean } | null;
     readonly exercise: {

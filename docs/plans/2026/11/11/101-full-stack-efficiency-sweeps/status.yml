@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 41
-current_focus: "Sweep 11 done, ships as 31.15.0; next 13a"
+percent: 43
+current_focus: "Sweep 13a done, ships as 31.16.0: x exercise isolates a refused sized seed (X_EXERCISE_SEED_FAILED), holds one call to 100 statements (X_STATEMENTS_OVER_BUDGET) and judges exercise.unprovenMax / statementsMax from x.verify.json (warnings until opted in; x new strict, x upgrade writes the measured figures); x upgrade installs clean missing guards and rebaselines coverage on a Bun-floor hop; x doctor reports row security off, unfloored steps, ranged pins and reserved env names (FRAMEWORK_ENV). Next: 13b"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -74,14 +74,14 @@ slices:
     percent: 100
   - file: 13-cli-exercise-verify.md
     tier: 5
-    sweep: "13a"           # X1, X2, X4, X7, X10 in 13a; the rest in 13b
-    status: not_started
-    percent: 0
+    sweep: "13a"           # X1, X2, X4, X7 in 13a (done, 31.16.0; X1/X2/X4 red only once x.verify.json opts in), X10 closed measured; X3, X5, X6, X9, X11, X12 in 13b; X8 parked for next (OD10)
+    status: in_progress
+    percent: 40
   - file: 14-cli-commands-upgrade.md
     tier: 5
-    sweep: "13a"           # U1–U4 in 13a; U5–U12 in 13b
-    status: not_started
-    percent: 0
+    sweep: "13a"           # U1–U4 in 13a (done, 31.16.0; U1 baseline, U3 e–g and U4's boot refusal deferred); U5–U12 in 13b
+    status: in_progress
+    percent: 25
   - file: 15-admin-ui-testing.md
     tier: 4
     sweep: "15"
@@ -168,5 +168,5 @@ slices:
     status: complete
     percent: 100
 evidence: []
-notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b and 11 implemented (31.5.0–31.15.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b and 13a implemented (31.5.0–31.16.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
 last_updated: 2026-11-12

@@ -188,14 +188,14 @@ export async function measureCoverage(
 }
 
 /** One decimal, rounded DOWN: a printed number never claims more than was measured. */
-const shown = (value: number): string => (Math.floor(value * 10) / 10).toFixed(1);
+export const shown = (value: number): string => (Math.floor(value * 10) / 10).toFixed(1);
 
 /**
  * The floor a measured number supports: the bar once it clears it, the whole number under it
  * below — up to a point of room, so one uncovered line in an unrelated file is not a red gate,
  * and less than `FLOOR_SLACK`, so the floor it writes is never stale the moment it is written.
  */
-const floorFor = (measured: number): number =>
+export const floorFor = (measured: number): number =>
   measured >= COVERAGE_BAR ? COVERAGE_BAR : Math.floor(measured);
 
 const WHY_PLACEHOLDER = '<what is uncovered and who closes it>';

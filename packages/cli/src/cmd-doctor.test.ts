@@ -220,6 +220,28 @@ describe('unit · x doctor', () => {
     expect(await codes(probe({ frameworkFindings: [] }))).toEqual([]);
   });
 
+  // Plan 101 U3: the discovery probes, each ASKED by runDoctor. Their rules are their own files'.
+  test('an adopter-shaped app: ranged pins, a reserved name, raw tenant SQL and an unfloored step', async () => {
+    const adopter = probe({
+      pins: async () => ({
+        pins: [{ file: 'package.json', name: '@ultimat3/core', spec: '^31.0.0' }],
+        installed: new Map([['@ultimat3/core', '31.14.0']]),
+      }),
+      envNames: async () => ({ declared: [], sealed: ['CLOUDFLARE_API_TOKEN'] }),
+      rowSecurityOff: async () => ({
+        declared: false,
+        touches: [{ at: 'apps/web/app/posts/repo.ts:9', table: 'posts' }],
+      }),
+      unflooredSteps: async () => ['live', 'job'],
+    });
+    expect(await codes(adopter)).toEqual([
+      'X_FRAMEWORK_PIN_RANGE',
+      'X_ENV_NAME_RESERVED',
+      'X_DB_ROW_SECURITY_OFF',
+      'X_VERIFY_STEP_UNFLOORED',
+    ]);
+  });
+
   test('every finding carries a fix command — a diagnostic without one is not shippable', async () => {
     const findings = await runDoctor(probe({ exists: () => false, portFree: async () => false }));
     expect(findings.length).toBeGreaterThan(2);

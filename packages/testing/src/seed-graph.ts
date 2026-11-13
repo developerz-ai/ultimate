@@ -209,6 +209,10 @@ export function seedGraph(
     // Positions continue past the graph written before this one: a reset factory rebuilt that
     // graph's first values, and a unique column refused the second copy.
     const start = besideNext[name] ?? 0;
+    // Only a unique column needs the continued position. Every other value is drawn from the row's
+    // place in THIS graph, so the scale sweep's 8-row graph opens on the 2-row graph's values and a
+    // branch on the handed row takes one path at both sizes (`scale-sweep-branch.test.ts`).
+    const uniqueColumns = new Set(allUniques.flat());
     for (let skipped = 0; factory !== undefined && skipped < start; skipped += 1) factory.build();
     let ordinal = start;
     for (const [bucket, tenant] of buckets.entries()) {
@@ -245,7 +249,7 @@ export function seedGraph(
                             valuesInWindow(partitioned.kind, window, ordinal, position),
                           )
                         : candidatesFor(property, column, {
-                            ordinal,
+                            ordinal: uniqueColumns.has(property) ? ordinal : ordinal - start,
                             canary,
                             position,
                             patterns: patterns.get(property),

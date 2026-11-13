@@ -153,6 +153,17 @@ export type {
   TenantProof,
 } from './exercise-report';
 export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
+export type {
+  CeilingShape,
+  ExerciseStatementCeiling,
+  StatementCeilingFinding,
+  StatementCeilingProof,
+} from './exercise-statement-ceiling';
+export {
+  judgeStatementCeiling,
+  STATEMENTS_MAX,
+  statementCeilingFindings,
+} from './exercise-statement-ceiling';
 export { defineFactory } from './factories';
 export type { AnyFactory, Factory, FactoryExtension, FactoryOptions } from './factory-api';
 export type { BelongsToOptions, HasManyOptions } from './factory-associations';
@@ -365,6 +376,9 @@ export type { LoggedRequest } from './request-log';
 export { reusableDatabase } from './reusable-database';
 export type { ScaleProof, ScaleShape, StatementTally } from './scale-sweep';
 export { judgeScale, SCALE_SIZES } from './scale-sweep';
+export type { ScaleSeedFinding } from './scale-sweep-findings';
+export { scaleSeedFindings } from './scale-sweep-findings';
+export type { ScaleSeedFailure } from './scale-sweep-seed';
 export type { NetworkSnapshot, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process

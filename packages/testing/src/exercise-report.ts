@@ -9,6 +9,7 @@ import { expectedSeqScanReason, statementFingerprint } from '@ultimat3/db';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import type { ExerciseDefect } from './exercise-defect';
 import { roomMail } from './exercise-room-mail';
+import type { StatementCeilingProof } from './exercise-statement-ceiling';
 import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
 import type { LoggedRequest } from './request-log';
@@ -128,6 +129,8 @@ export interface ExerciseRecord {
   readonly plans?: PlanProof;
   /** On a reached primitive: its statement shapes at 2 and at 8 rows a table (`scale-sweep.ts`). */
   readonly scale?: ScaleProof;
+  /** On a primitive whose control ran: its busiest call against its statement ceiling. */
+  readonly statementCeiling?: StatementCeilingProof;
   /** Wall time of each proof that ran on it; `ms` above is the control's own call. */
   readonly proofMs?: ProofMs;
 }

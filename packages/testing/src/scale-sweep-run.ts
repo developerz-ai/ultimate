@@ -11,8 +11,8 @@ import type { ScaleProof, StatementTally } from './scale-sweep';
 import { judgeScale, SCALE_SIZES } from './scale-sweep';
 import type { ScaleGraph } from './scale-sweep-graph';
 import { scaleGraph } from './scale-sweep-graph';
+import { readsLost, writeSizedSeeds } from './scale-sweep-seed';
 import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
-import { insertSeedGraph } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
 /** What the sweep needs of a primitive: the pass's own call. */
@@ -79,7 +79,10 @@ async function callAt(
   return 'failure' in seen.value ? { failed: renderThrowable(seen.value.failure) } : seen.observed;
 }
 
-/** Seed both sizes, call each subject at each, judge. Unseedable: every subject `unproven`. */
+/**
+ * Seed both sizes, call each subject at each, judge. A table the sized seed could not write leaves
+ * `unproven` only the subjects that read it, the failure on their proof; the rest are judged.
+ */
 export async function scaleSweep(
   options: ScaleSweepOptions,
 ): Promise<ReadonlyMap<string, ScaleProof>> {
@@ -99,20 +102,25 @@ export async function scaleSweep(
       }),
     );
   }
-  try {
-    for (const size of sizes) await insertSeedGraph(size.write, options.writer);
-  } catch (error) {
-    const reason = `the sized seed did not write: ${renderThrowable(error)}`;
-    for (const subject of options.subjects)
-      proofs.set(subject.name, { verdict: 'unproven', reason });
-    return proofs;
-  }
+  const loss = await writeSizedSeeds(
+    sizes.map((size) => size.write),
+    options.entities,
+    options.writer,
+  );
+  const sent = options.room.sent();
+  const subjects = options.subjects.filter((subject) => {
+    const seed = readsLost(subject.name, sent, loss, options.entities);
+    if (seed === undefined) return true;
+    const reason = `the sized seed did not write ${seed.entity}, which it reads: ${seed.cause}`;
+    proofs.set(subject.name, { verdict: 'unproven', reason, seed });
+    return false;
+  });
   const runs: Call[][] = [];
   // The reading that answered at the small size is the one the large size repeats.
-  const selves = options.subjects.map(() => true);
+  const selves = subjects.map(() => true);
   for (const [at, size] of sizes.entries()) {
     const calls: Call[] = [];
-    for (const [i, subject] of options.subjects.entries()) {
+    for (const [i, subject] of subjects.entries()) {
       let call = await callAt(subject, size.lookup, size.tenant, options, selves[i] ?? true);
       if (at === 0 && 'failed' in call) {
         const other = await callAt(subject, size.lookup, size.tenant, options, false);
@@ -125,7 +133,7 @@ export async function scaleSweep(
     }
     runs.push(calls);
   }
-  options.subjects.forEach((subject, i) => {
+  subjects.forEach((subject, i) => {
     const small = runs[0]?.[i];
     const large = runs[1]?.[i];
     if (small === undefined || large === undefined) return;

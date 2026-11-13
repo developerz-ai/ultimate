@@ -5,7 +5,13 @@
 // the VALUE comparison itself is asserted, quoting included.
 
 import { describe, expect, test } from 'bun:test';
-import { devOnlyLeakedKeys, parseDotenvValues, testEnvOverrides } from './test-dotenv';
+import { BROWSER_PATH_VARS } from './browser-launcher';
+import {
+  devOnlyLeakedKeys,
+  HOST_LOCATOR_KEYS,
+  parseDotenvValues,
+  testEnvOverrides,
+} from './test-dotenv';
 
 describe('unit · parseDotenvValues', () => {
   test('a bare KEY=VALUE line', () => {
@@ -119,6 +125,27 @@ describe('unit · devOnlyLeakedKeys', () => {
       env: { FOO: 'dev', BAR: 'shared', BAZ: 'something-else' },
     });
     expect([...leaked].sort()).toEqual(['BAR', 'FOO']);
+  });
+});
+
+describe('unit · host-locator keys survive the scrub', () => {
+  test('`CHROME_PATH` set by `.env.development` and still in env is kept: e2e must find Chrome', () => {
+    const leaked = devOnlyLeakedKeys({
+      devText: 'CHROME_PATH=/usr/bin/chromium\nFOO=dev',
+      devLocalText: 'PUPPETEER_EXECUTABLE_PATH=/opt/chrome\nTMPDIR=/var/tmp',
+      env: {
+        CHROME_PATH: '/usr/bin/chromium',
+        FOO: 'dev',
+        PUPPETEER_EXECUTABLE_PATH: '/opt/chrome',
+        TMPDIR: '/var/tmp',
+      },
+    });
+    expect(leaked).toEqual(['FOO']);
+  });
+
+  test('every browser variable `x shot`/e2e reads is a host-locator key', () => {
+    for (const name of BROWSER_PATH_VARS) expect(HOST_LOCATOR_KEYS).toContain(name);
+    expect(HOST_LOCATOR_KEYS).toContain('TMPDIR');
   });
 });
 
