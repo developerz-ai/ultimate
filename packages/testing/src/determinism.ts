@@ -82,6 +82,10 @@ class FrozenDate extends RealDate {
    * `[[DateValue]]` slot, and that slot is the one thing neither a fake nor a realm can hide.
    */
   static override [Symbol.hasInstance](value: unknown): boolean {
+    // Only an object holds the slot. A string, a number or null answers here, never by a throw
+    // caught: `instanceof Date` guards every bound SQL parameter, and the throws were 13 s of an
+    // adopter's `x exercise`.
+    if (typeof value !== 'object' || value === null) return false;
     try {
       dateGetTime.call(value);
       return true;

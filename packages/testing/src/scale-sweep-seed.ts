@@ -1,6 +1,6 @@
 // The scale sweep's sized seed, written entity by entity: one table's refusal (a unique key, a check)
 // is that table's, never the sweep's. Its rows, and every table that points at it, are skipped; the
-// rest are written, so only a primitive that reads a lost table goes `unproven` (`readsLost`).
+// rest are written, so only a primitive that reads a lost table goes `unproven` (`lostReaders`).
 
 import { renderThrowable } from '@ultimat3/core';
 import type { SentStatement } from './plan-sweep';
@@ -111,17 +111,19 @@ const derivedLoss = (
 };
 
 /**
- * The lost table `subject` read in the pass — any statement it sent naming one in a table position
- * (`statementTables`: a column spelled like one is no read of it) — or none. Read off the room's
- * `sent()`: what a primitive's own call sent is what its sized call sends again.
+ * Each subject that read a lost table in the pass, and the first such table: any statement it sent
+ * naming one in a table position (`statementTables`: a column spelled like one is no read of it),
+ * in the order the room saw them. Read off the room's `sent()` — what a primitive's own call sent
+ * is what its sized call sends again — in one pass for the whole sweep: per subject, the lost set
+ * was re-derived and every statement re-read, subjects × (entities + statements).
  */
-export function readsLost(
-  subject: string,
+export function lostReaders(
   sent: ReadonlyMap<string, SentStatement>,
   loss: ScaleSeedLoss,
   entities: readonly SeedEntity[],
-): ScaleSeedFailure | undefined {
-  if (loss.lost.size === 0) return undefined;
+): ReadonlyMap<string, ScaleSeedFailure> {
+  const readers = new Map<string, ScaleSeedFailure>();
+  if (loss.lost.size === 0) return readers;
   const lost = derivedLoss(entities, loss.lost);
   const tables = new Map(
     entities.flatMap((entity) => {
@@ -130,11 +132,13 @@ export function readsLost(
     }),
   );
   for (const [text, statement] of sent) {
-    if (!statement.primitives.has(subject)) continue;
-    for (const table of statementTables(text)) {
-      const failure = tables.get(table);
-      if (failure !== undefined) return failure;
+    const failure = statementTables(text)
+      .map((table) => tables.get(table))
+      .find((one) => one !== undefined);
+    if (failure === undefined) continue;
+    for (const subject of statement.primitives) {
+      if (!readers.has(subject)) readers.set(subject, failure);
     }
   }
-  return undefined;
+  return readers;
 }

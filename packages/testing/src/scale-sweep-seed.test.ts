@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { bigint, entity, text, uuid } from '@ultimat3/entity';
 import type { SentStatement } from './plan-sweep';
-import { readsLost, writeSizedSeeds } from './scale-sweep-seed';
+import { lostReaders, writeSizedSeeds } from './scale-sweep-seed';
 import { seedGraph } from './seed-graph';
 import type { SeedRow, SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
@@ -82,10 +82,10 @@ describe(testName('unit', 'writeSizedSeeds'), () => {
       ['select * from sss_comments', { primitives: new Set(['thread']) }],
       ['select * from "sss_notes"', { primitives: new Set(['listNotes']) }],
     ]);
-    expect(readsLost('listPosts', sent, loss, entities)?.entity).toBe('sss_posts');
-    expect(readsLost('thread', sent, loss, entities)?.entity).toBe('sss_posts');
-    expect(readsLost('archive', sent, loss, entities)).toBeUndefined();
-    expect(readsLost('listNotes', sent, loss, entities)).toBeUndefined();
+    expect(lostReaders(sent, loss, entities).get('listPosts')?.entity).toBe('sss_posts');
+    expect(lostReaders(sent, loss, entities).get('thread')?.entity).toBe('sss_posts');
+    expect(lostReaders(sent, loss, entities).get('archive')).toBeUndefined();
+    expect(lostReaders(sent, loss, entities).get('listNotes')).toBeUndefined();
   });
 
   test('a column named like a lost table is no read of it: only a table position is', async () => {
@@ -95,9 +95,9 @@ describe(testName('unit', 'writeSizedSeeds'), () => {
       ['update "sss_notes" set "sss_posts" = 1', { primitives: new Set(['set']) }],
       ['select * from "sss_notes" n, "sss_posts" p', { primitives: new Set(['comma']) }],
     ]);
-    expect(readsLost('column', sent, loss, entities)).toBeUndefined();
-    expect(readsLost('set', sent, loss, entities)).toBeUndefined();
-    expect(readsLost('comma', sent, loss, entities)?.entity).toBe('sss_posts');
+    expect(lostReaders(sent, loss, entities).get('column')).toBeUndefined();
+    expect(lostReaders(sent, loss, entities).get('set')).toBeUndefined();
+    expect(lostReaders(sent, loss, entities).get('comma')?.entity).toBe('sss_posts');
   });
 
   test('a view or a history table over a lost table is read as the lost table', async () => {
@@ -120,8 +120,34 @@ describe(testName('unit', 'writeSizedSeeds'), () => {
       ['select * from "sss_rollup"', { primitives: new Set(['rollup']) }],
       [`select * from "${history.$table}"`, { primitives: new Set(['audit']) }],
     ]);
-    expect(readsLost('totals', sent, loss, all)?.entity).toBe('sss_posts');
-    expect(readsLost('rollup', sent, loss, all)?.entity).toBe('sss_posts');
-    expect(readsLost('audit', sent, loss, all)?.entity).toBe('sss_posts');
+    expect(lostReaders(sent, loss, all).get('totals')?.entity).toBe('sss_posts');
+    expect(lostReaders(sent, loss, all).get('rollup')?.entity).toBe('sss_posts');
+    expect(lostReaders(sent, loss, all).get('audit')?.entity).toBe('sss_posts');
+  });
+
+  // Per subject, the lost set was re-derived — every entity described, each fixpoint round — and
+  // every statement re-scanned: subjects × (entities + statements), 2.7 s of an adopter's sweep.
+  // Once per sweep now: the descriptions do not grow with the subjects.
+  test('the lost readers are found once per sweep, not once per subject', async () => {
+    let described = 0;
+    const counted = entities.map((one) =>
+      Object.assign(Object.create(one) as typeof one, {
+        $describe: () => {
+          described += 1;
+          return one.$describe();
+        },
+      }),
+    );
+    const loss = await writeSizedSeeds([graph()], entities, refusingPosts());
+    const sent = new Map<string, SentStatement>(
+      Array.from({ length: 300 }, (_, i) => [
+        `select * from "sss_posts" where id = ${i}`,
+        { primitives: new Set([`reader${i}`]) },
+      ]),
+    );
+    const readers = lostReaders(sent, loss, counted);
+    expect(readers.size).toBe(300);
+    expect(readers.get('reader299')?.entity).toBe('sss_posts');
+    expect(described).toBeLessThanOrEqual(counted.length * 4);
   });
 });

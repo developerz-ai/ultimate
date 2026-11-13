@@ -146,19 +146,32 @@ export function seedGraph(
   // The same rows by tenant: a pool read per row was a filter of the whole parent table, so a pass
   // seeding a tenant pair per primitive planned in primitives² time.
   const placedIn = new Map<string, Map<string | null, Placed[]>>();
+  /**
+   * `memo`: one table's insert loop, where no placed row changes. A shared pool's rotation is the
+   * same for every tenant's row at one index, and copying the whole pool per row was the second
+   * quadratic of a pass seed (6 s of an adopter's 36 at 1,188 tenants).
+   */
   const parentValues = (
     reference: ReferenceDescription,
     tenant: string | null,
     index: number,
+    memo?: Map<string, unknown[]>,
   ): unknown[] => {
     if (!shapes.has(reference.targetEntity)) return reference.nullable ? [null] : [];
+    const own = tenant === null || !scoped(reference.targetEntity) ? null : tenant;
     const pool =
-      tenant === null || !scoped(reference.targetEntity)
+      own === null
         ? (placed.get(reference.targetEntity) ?? [])
-        : (placedIn.get(reference.targetEntity)?.get(tenant) ?? []);
+        : (placedIn.get(reference.targetEntity)?.get(own) ?? []);
+    // The length too: a table's own pool grows under its own loop.
+    const key = `${reference.targetEntity}\u0000${reference.targetProperty}\u0000${String(reference.nullable)}\u0000${own ?? ''}\u0000${index}\u0000${pool.length}`;
+    const known = memo?.get(key);
+    if (known !== undefined) return known;
     const values =
       pool.length === 0 ? [] : rotate(pool, index).map((p) => p.row[reference.targetProperty]);
-    return reference.nullable ? [...values, null] : values;
+    const answer = reference.nullable ? [...values, null] : values;
+    memo?.set(key, answer);
+    return answer;
   };
   const refuseEmpty = (shape: EntityShape, property: string, tenant: string | null): never => {
     const reference = shape.references.get(property);
@@ -196,6 +209,10 @@ export function seedGraph(
     placedIn.set(name, byTenant);
     const allUniques = [...shape.uniques, ...shape.partialUniques];
     const taken = allUniques.map(() => new Set<string>());
+    // A one-property set's string values beside its keys: the solver's skip list (`takenStrings`).
+    const takenStrings = allUniques.map((set) =>
+      set.length === 1 ? new Set<string>() : undefined,
+    );
     const rootProperty = roots.get(name);
     // Read once per table: each `matches(/…/)` an invariant holds a column to, sampled from.
     const patterns = declaredPatterns(entity);
@@ -213,6 +230,7 @@ export function seedGraph(
     // place in THIS graph, so the scale sweep's 8-row graph opens on the 2-row graph's values and a
     // branch on the handed row takes one path at both sizes (`scale-sweep-branch.test.ts`).
     const uniqueColumns = new Set(allUniques.flat());
+    const pools = new Map<string, unknown[]>();
     for (let skipped = 0; factory !== undefined && skipped < start; skipped += 1) factory.build();
     let ordinal = start;
     for (const [bucket, tenant] of buckets.entries()) {
@@ -240,7 +258,7 @@ export function seedGraph(
                   : reference !== undefined
                     ? deferred.has(edgeKey(name, property))
                       ? [null]
-                      : parentValues(reference, tenant, index)
+                      : parentValues(reference, tenant, index, pools)
                     : Object.hasOwn(built, property)
                       ? storable(column, [built[property]])
                       : window !== null && property === partitioned?.property
@@ -262,7 +280,7 @@ export function seedGraph(
         });
         // A partial unique whose every column the factory built is the database's to judge.
         const held = allUniques
-          .map((set, i) => [set, taken[i] as Set<string>] as const)
+          .map((set, i) => [set, taken[i] as Set<string>, takenStrings[i]] as const)
           .filter(
             ([set], i) =>
               i < shape.uniques.length || !set.every((property) => Object.hasOwn(built, property)),
@@ -272,6 +290,7 @@ export function seedGraph(
           checks: shape.checks,
           uniques: held.map(([set]) => set),
           taken: held.map(([, set]) => set),
+          takenStrings: held.map(([, , values]) => values),
           derive: factory?.derive?.bind(factory),
         };
         const solved = solveRow(problem);
@@ -291,7 +310,10 @@ export function seedGraph(
         const row = { ...solved.row };
         allUniques.forEach((set, i) => {
           const key = uniqueKey(row, set);
-          if (key !== undefined) taken[i]?.add(key);
+          if (key === undefined) return;
+          taken[i]?.add(key);
+          const value = row[set[0] as string];
+          if (typeof value === 'string') takenStrings[i]?.add(value);
         });
         const one = { tenant, row, index };
         rows.push(one);

@@ -3,7 +3,7 @@
 // — `perTable` alone ran it out before tenant 2 (`X_SEED_GRAPH_UNSATISFIED`).
 
 import { describe, expect, test } from 'bun:test';
-import { entity, text, uuid } from '@ultimat3/entity';
+import { entity, invariant, text, uuid } from '@ultimat3/entity';
 import { seedGraph } from './seed-graph';
 import { testName } from './test-types';
 
@@ -58,6 +58,48 @@ describe(testName('unit', 'seedGraph · a shared parent under a unique key'), ()
     const graph = seedGraph({ orgs, requests, notes }, { tenants: 2, perTable: 3 });
     expect(of(graph, 'sgs_approval_requests')).toHaveLength(3);
     expect(of(graph, 'sgs_notes')).toHaveLength(6);
+  });
+
+  // Every tenant's child opens on the same rotation of the shared pool, so tenant k's row stepped
+  // past the 3k parents earlier tenants took, building and judging each: quadratic in tenants —
+  // an adopter's pass seed spent 98 s of 106 here at 1,188 tenants. The invariant is judged once
+  // per row the solver builds, so it counts the tries: linear now, ~3·60²/2 = 5,400 before.
+  test('a child row is judged a bounded number of times, however many tenants took parents first', () => {
+    let judged = 0;
+    const counted = entity('sgs_counted_refunds', {
+      columns: {
+        id: uuid().primaryKey(),
+        orgId: uuid()
+          .references(() => orgs.id)
+          .tenant(),
+        approvalRequestId: uuid()
+          .references(() => requests.id)
+          .unique(),
+      },
+      invariants: (c) => [
+        invariant(
+          'sgs_counted',
+          c.satisfies(() => {
+            judged += 1;
+            return true;
+          }, ['approvalRequestId']),
+        ),
+      ],
+    });
+    const graph = seedGraph({ orgs, requests, counted }, { tenants: 60, perTable: 3 });
+    const children = of(graph, 'sgs_counted_refunds');
+    expect(children).toHaveLength(180);
+    expect(new Set(children.map((row) => row.row['approvalRequestId'])).size).toBe(180);
+    expect(judged).toBeLessThanOrEqual(children.length * 4);
+    // A factory's `derive` may rewrite any column, so the rows are still built — but each one a
+    // taken key refuses is refused before its rules are judged: still linear in what is judged.
+    judged = 0;
+    const factory = { build: () => ({}), reset: () => undefined, derive: () => ({}) };
+    seedGraph(
+      { orgs, requests, counted },
+      { tenants: 60, perTable: 3, factories: { sgs_counted_refunds: factory } },
+    );
+    expect(judged).toBeLessThanOrEqual(children.length * 4);
   });
 
   test('a unique that includes the tenant column is per tenant: perTable parent rows serve all', () => {
