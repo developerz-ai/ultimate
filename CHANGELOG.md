@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `x exercise` on a large app is fast again, to the same seed byte for byte and the same verdict on every record. The pass seed grew with the square of its tenants: a tenant child of a `shared` parent under a table-wide unique key (`approvalRequestId: uuid().references(…).unique()`) stepped past every parent earlier tenants took, building and judging each row. The solver now skips a taken value without judging it, and a shared pool is rotated once per row position, not once per row. The crash proof names queue ids in one pass, where it had replaced every id in every effect key (ids × effects for a job that enqueues 500). `instanceof Date` under the frozen clock answers a string without a caught throw. The scale sweep finds the readers of a refused sized table once per sweep, not once per primitive. On an adopter app (487 primitives, 101 route loads, same `--seed`): seed 163 → 81 s, primitives 259 → 217 s, the pass 494 → 380 s.
 
 ## Releases
 

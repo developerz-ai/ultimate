@@ -17,6 +17,12 @@ export interface RowProblem {
   readonly uniques: readonly (readonly string[])[];
   /** Per entry of `uniques`, the keys earlier rows already hold. */
   readonly taken: readonly ReadonlySet<string>[];
+  /**
+   * Per entry of `uniques`: for a one-property set, the string values earlier rows hold in it —
+   * `taken`'s answer for a string candidate without building its key. With it the solver steps
+   * over a candidate no row can keep instead of building and judging that row (`searchPruned`).
+   */
+  readonly takenStrings?: readonly (ReadonlySet<string> | undefined)[];
   /** A factory's `derive`: columns that follow from the picked ones, applied before any rule. */
   readonly derive?: ((row: Readonly<Record<string, unknown>>) => object) | undefined;
 }
@@ -98,6 +104,102 @@ function* combinations(problem: RowProblem, vary: readonly number[]): Generator<
   }
 }
 
+/** The columns worth varying: the ones a broken rule reads, with more than one candidate. */
+const variable = (problem: RowProblem, properties: ReadonlySet<string>): number[] =>
+  problem.columns.flatMap(([property, candidates], index) =>
+    properties.has(property) && candidates.length > 1 ? [index] : [],
+  );
+
+/** Each property under a one-property unique set, and the strings earlier rows hold in it. */
+const takenByProperty = (problem: RowProblem): ReadonlyMap<string, ReadonlySet<string>[]> => {
+  const byProperty = new Map<string, ReadonlySet<string>[]>();
+  problem.uniques.forEach((set, i) => {
+    const values = problem.takenStrings?.[i];
+    const [property] = set;
+    if (set.length !== 1 || property === undefined || values === undefined) return;
+    byProperty.set(property, [...(byProperty.get(property) ?? []), values]);
+  });
+  return byProperty;
+};
+
+/** `brokenBy`'s verdict on the one-property sets for a string value, without building its key. */
+const isTaken = (sets: readonly ReadonlySet<string>[] | undefined, value: unknown): boolean =>
+  typeof value === 'string' && sets !== undefined && sets.some((values) => values.has(value));
+
+/**
+ * Per column, the candidate positions a row could keep — `undefined` for every one: a taken string
+ * is dropped, as `brokenBy` refuses every row built on it. Under a `derive` nothing is dropped — it
+ * may rewrite the very column a candidate was refused on — and each built row meets `isTaken` first.
+ */
+const keptPositions = (
+  problem: RowProblem,
+  byProperty: ReadonlyMap<string, ReadonlySet<string>[]>,
+): { readonly kept: (readonly number[] | undefined)[]; readonly dropped: boolean } => {
+  let dropped = false;
+  const kept = problem.columns.map(([property, candidates]) => {
+    const sets = byProperty.get(property);
+    if (sets === undefined || problem.derive !== undefined) return undefined;
+    const free: number[] = [];
+    candidates.forEach((value, position) => {
+      if (!isTaken(sets, value)) free.push(position);
+    });
+    if (free.length === candidates.length) return undefined;
+    dropped = true;
+    return free;
+  });
+  return { kept, dropped };
+};
+
+/**
+ * `search`'s first round, stepping over rows a taken string refuses, or undefined to run `search`
+ * itself. The odometer visits the kept combinations in the order `combinations` visits all of them
+ * and each one stepped over breaks a unique key, so the first row that holds is `search`'s own —
+ * unless `search` would stop at `MAX_TRIES` before reaching it, or find none and widen: both are
+ * answered by `search`. The stepping over is the point: a tenant child of a shared parent under a
+ * table-wide unique key walked past every parent earlier tenants took, a judged row each —
+ * quadratic in tenants (an adopter's pass seed: 98 s of 106).
+ */
+const searchPruned = (problem: RowProblem): RowSolution | undefined => {
+  const byProperty = takenByProperty(problem);
+  if (byProperty.size === 0) return undefined;
+  const { kept, dropped } = keptPositions(problem, byProperty);
+  // Nothing dropped and no `derive` to judge cheaply: the plain search is this search.
+  if (!dropped && problem.derive === undefined) return undefined;
+  const picks = problem.columns.map(() => 0);
+  const first = brokenBy(problem, build(problem, picks), true);
+  if (first.names.length === 0) return { ok: true, row: build(problem, picks) };
+  const vary = variable(problem, first.properties);
+  const radix = vary.map((column) => problem.columns[column]?.[1].length ?? 1);
+  const sizes = vary.map((column, slot) => kept[column]?.length ?? radix[slot] ?? 1);
+  if (vary.length === 0 || sizes.some((size) => size === 0)) return undefined;
+  const refusing = [...byProperty];
+  const at = vary.map(() => 0);
+  for (;;) {
+    // Where `combinations` yields this one: the same odometer, over every candidate.
+    let ordinal = 0;
+    for (let slot = 0; slot < vary.length; slot += 1) {
+      const column = vary[slot] as number;
+      const step = at[slot] ?? 0;
+      const position = kept[column]?.[step] ?? step;
+      ordinal = ordinal * (radix[slot] ?? 1) + position;
+      picks[column] = position;
+    }
+    if (ordinal >= MAX_TRIES) return undefined;
+    const row = build(problem, picks);
+    // Own properties only, as `uniqueKey` reads them: a column named `constructor` is no prototype.
+    const refused = refusing.some(
+      ([property, sets]) => Object.hasOwn(row, property) && isTaken(sets, row[property]),
+    );
+    if (!refused && brokenBy(problem, row, true).names.length === 0) return { ok: true, row };
+    let slot = vary.length - 1;
+    for (; slot >= 0; slot -= 1) {
+      at[slot] = ((at[slot] ?? 0) + 1) % (sizes[slot] ?? 1);
+      if (at[slot] !== 0) break;
+    }
+    if (slot < 0) return undefined;
+  }
+};
+
 const search = (problem: RowProblem, unique: boolean): RowSolution => {
   const zero = problem.columns.map(() => 0);
   const first = brokenBy(problem, build(problem, zero), unique);
@@ -108,13 +210,9 @@ const search = (problem: RowProblem, unique: boolean): RowSolution => {
     capacity: false,
   };
   if (first.names.length === 0) return { ok: true, row: build(problem, zero) };
-  const variable = (properties: ReadonlySet<string>): number[] =>
-    problem.columns.flatMap(([property, candidates], index) =>
-      properties.has(property) && candidates.length > 1 ? [index] : [],
-    );
   let wanted = new Set(first.properties);
   for (let round = 0; round < ROUNDS; round += 1) {
-    const vary = variable(wanted);
+    const vary = variable(problem, wanted);
     const grown = new Set(wanted);
     for (const picks of combinations(problem, vary)) {
       const row = build(problem, picks);
@@ -122,7 +220,7 @@ const search = (problem: RowProblem, unique: boolean): RowSolution => {
       if (broken.names.length === 0) return { ok: true, row };
       for (const property of broken.properties) grown.add(property);
     }
-    if (variable(grown).length === vary.length) return failed;
+    if (variable(problem, grown).length === vary.length) return failed;
     wanted = grown;
   }
   return failed;
@@ -130,6 +228,8 @@ const search = (problem: RowProblem, unique: boolean): RowSolution => {
 
 /** The first row that keeps every rule; failing that, whether only uniqueness stood in the way. */
 export function solveRow(problem: RowProblem): RowSolution {
+  const pruned = searchPruned(problem);
+  if (pruned !== undefined) return pruned;
   const found = search(problem, true);
   if (found.ok) return found;
   return search(problem, false).ok ? { ...found, capacity: true } : found;

@@ -17,6 +17,7 @@ import type { SimDecision, SimDriver, SimOp } from './job-sim-driver';
 import { isSimFault, simDriver } from './job-sim-driver';
 import type { EffectLog, SimEffect } from './job-sim-effects';
 import { openEffectLog } from './job-sim-effects';
+import { ordinalNamer } from './job-sim-names';
 
 /** A lease short enough that a lapse is one clock jump, long enough that no renewal misses it. */
 export const SIM_VISIBILITY_MS = 30_000;
@@ -135,12 +136,6 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
     }
   };
 
-  const normalise = (key: string): string => {
-    let out = key;
-    for (const [id, ordinal] of ordinals) out = out.split(id).join(ordinal);
-    return out;
-  };
-
   return {
     sim,
     log: effectLog,
@@ -187,7 +182,11 @@ export async function openSimWorld(options: SimWorldOptions): Promise<SimWorld> 
       return due.length === 0 ? undefined : Math.min(...due);
     },
     name: (id) => ordinals.get(id) ?? id,
-    effects: () => effectLog.effects().map((effect) => ({ ...effect, key: normalise(effect.key) })),
+    effects: () => {
+      // One namer per read: the ids are read once, never once per effect (`job-sim-names.ts`).
+      const name = ordinalNamer(ordinals);
+      return effectLog.effects().map((effect) => ({ ...effect, key: name(effect.key) }));
+    },
     [Symbol.asyncDispose]: async (): Promise<void> => {
       try {
         await effectLog[Symbol.asyncDispose]();

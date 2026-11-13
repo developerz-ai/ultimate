@@ -11,7 +11,7 @@ import type { ScaleProof, StatementTally } from './scale-sweep';
 import { judgeScale, SCALE_SIZES } from './scale-sweep';
 import type { ScaleGraph } from './scale-sweep-graph';
 import { scaleGraph } from './scale-sweep-graph';
-import { readsLost, writeSizedSeeds } from './scale-sweep-seed';
+import { lostReaders, writeSizedSeeds } from './scale-sweep-seed';
 import type { SeedFactory, SeedGraph, SeedWriter } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 
@@ -107,9 +107,9 @@ export async function scaleSweep(
     options.entities,
     options.writer,
   );
-  const sent = options.room.sent();
+  const readers = lostReaders(options.room.sent(), loss, options.entities);
   const subjects = options.subjects.filter((subject) => {
-    const seed = readsLost(subject.name, sent, loss, options.entities);
+    const seed = readers.get(subject.name);
     if (seed === undefined) return true;
     const reason = `the sized seed did not write ${seed.entity}, which it reads: ${seed.cause}`;
     proofs.set(subject.name, { verdict: 'unproven', reason, seed });
