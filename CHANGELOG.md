@@ -10,6 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- Agent tooling: the format hook `x new` writes now runs (it read a variable Claude Code never sets); the dev MCP server gains `docs.search`, `db.explain`, `requests.statements` and `verify.narrow`; `x docs` answers task phrasing.
+- Two report-only guards ship: `repo-await-in-loop` and `repo-unbounded` (a bare `.all()` stops at 50 rows). A guard may declare `severity: 'warning'`; `x doctor` warns about a missing shipped guard.
+- Framework tests have no unexplained wall-clock wait left, and every test file can run again in one process (`--rerun-each`), so CI's flaky-test job only reds a real flake.
+- The public API lock tells an additive change from a breaking one.
+
 ### Added
 
 - The dev MCP server has four more tools (23 in all): `docs.search` (`x docs` as a tool), `db.explain` (the plan of one `SELECT`/`WITH … SELECT` as `EXPLAIN (FORMAT JSON)`; `analyze: true` executes it inside `db.query`'s SELECT-only role, read-only transaction and 5 s timeout, and a production database is refused as `x explain` refuses it), `requests.statements` (the running `x dev`'s per-request statement ledger — SQL count, repeated statements and N+1 verdicts — or `X_NOT_IMPLEMENTED` naming `x dev` when none runs) and `verify.narrow` (`{ file }` → the steps `x verify --changed` selects for it and the narrowest commands, its tests first; runs nothing). `schema.describe` takes `{ entity }` — a name or a table — and an unknown one answers the names there are.
