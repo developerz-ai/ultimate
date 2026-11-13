@@ -8,6 +8,7 @@ import {
   healthBody,
   healthPeerListed,
   healthzPayload,
+  isSessionRefusal,
   readyzPayload,
   reportError,
 } from '@ultimat3/core';
@@ -171,14 +172,18 @@ async function answerUpgrade(
     try {
       grant = await deps.authenticate(request);
     } catch (error) {
-      // A failure is not a denial. The token service timing out must not read to a client as "you
-      // may not connect" — it is told to come back, and this node is the one that pages.
-      reportError(error, { source: 'realtime', scope: { operation: 'sync.authenticate' } });
-      refund();
-      return wireErrorResponse(
-        503,
-        new SocketAuthUnavailableError({ detail: 'see the node log for the cause' }),
-      );
+      // A session refusal IS a denial that arrived as a throw (`sync-auth.ts`): answered 503, the
+      // client re-dials with the same dead cookie forever. It falls through to the `null` branch.
+      if (!isSessionRefusal(error)) {
+        // A failure is not a denial. The token service timing out must not read to a client as
+        // "you may not connect" — it is told to come back, and this node is the one that pages.
+        reportError(error, { source: 'realtime', scope: { operation: 'sync.authenticate' } });
+        refund();
+        return wireErrorResponse(
+          503,
+          new SocketAuthUnavailableError({ detail: 'see the node log for the cause' }),
+        );
+      }
     }
     // The decision, made before a socket exists: an upgrade is the cheapest thing to refuse and the
     // most expensive thing to take back.

@@ -347,7 +347,8 @@ const options: Pick<SyncNodeOptions, 'authenticate'> = {
 |---|---|
 | a `SyncGrant` | upgrades, and the socket carries `grant.actor` |
 | `null` | **401** `X_SOCKET_UNAUTHENTICATED` — a decision, and the client's own condition |
-| a throw | **503** `X_SOCKET_AUTH_UNAVAILABLE` — a failure, reported, and the client is told to retry |
+| a thrown session refusal (`X_UNAUTHENTICATED`, `X_SESSION_EXPIRED`: core's `isSessionRefusal`) | the same as `null` — what `@ultimat3/auth`'s `authenticate()` throws for a signed-out, expired or forged cookie |
+| any other throw | **503** `X_SOCKET_AUTH_UNAVAILABLE` — a failure, reported, and the client is told to retry |
 | the option is absent | upgrades **anonymous**, and `start()` warns: every policy on that node is being asked about `null` |
 
 `expiresAt` is the half a long-lived socket needs: the node re-decides an expired grant on an
@@ -355,7 +356,8 @@ interval (`reauthenticateIntervalMs`, 30s), calling `refresh` and then `hub.onAc
 `registry.reauthorize` — so a revoked role drops the topics and subscriptions it no longer covers,
 and survivors are re-snapshotted under the new authority. No `refresh`, and an expired grant closes
 the socket with `1008`; the client re-dials with a fresh credential. A `refresh` that *raises* keeps
-the socket and retries next pass — a token service timing out is not a revocation.
+the socket and retries next pass — a token service timing out is not a revocation. A raised session
+refusal is the exception: it IS a revocation, and closes the socket with `1008` like `null` does.
 
 **Without `authenticate` this node is single-tenant.** Every actor is `null`, so
 `hub.guard('org.*.feed', ({ actor }) => actor?.orgId === …)` denies everyone and the only guard that

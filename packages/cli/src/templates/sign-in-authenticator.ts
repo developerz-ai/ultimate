@@ -12,7 +12,7 @@ const authenticatorSource =
 // live subscribers, MCP tools) reads the actor this returns. With no session the request is
 // anonymous, everywhere: a developer signs in through \`/auth/sign-in\` like everyone else.
 import { type Auth, authenticate } from '@ultimat3/auth';
-import type { Actor } from '@ultimat3/core';
+import { type Actor, isSessionRefusal } from '@ultimat3/core';
 import { configureAuthenticator } from '@ultimat3/http';
 import { appAuth } from './auth';
 
@@ -22,15 +22,24 @@ export interface SessionRequest {
 }
 
 /**
- * A session cookie is that session's user, or a refusal — never a fallback to anyone else:
- * \`X_SESSION_EXPIRED\` past its expiry, \`X_UNAUTHENTICATED\` for one unknown, revoked or forged.
+ * A session cookie is that session's user, or nobody — never a fallback to anyone else. A session
+ * past its expiry, or one unknown, revoked or forged, is a refusal \`authenticate()\` THROWS
+ * (\`isSessionRefusal\`: \`X_SESSION_EXPIRED\`, \`X_UNAUTHENTICATED\`), answered \`null\`: a stale
+ * cookie is an anonymous visitor, so sign-in still opens and a live socket it opened is closed.
+ * Anything else it throws — a session store that is down — propagates.
  */
 export const sessionAuthenticator =
   (auth: () => Auth) =>
   async (request: SessionRequest): Promise<Actor | null> => {
     const resolved = auth();
     const token = request.cookie(resolved.sessions.policy.cookieName);
-    return token !== null && token.length > 0 ? await authenticate(resolved, token) : null;
+    if (token === null || token.length === 0) return null;
+    try {
+      return await authenticate(resolved, token);
+    } catch (error) {
+      if (isSessionRefusal(error)) return null;
+      throw error;
+    }
   };
 
 /** Installs the session authenticator. */
@@ -44,8 +53,9 @@ installAuthenticator();
 `;
 
 const authenticatorTest =
-  (): string => `// A session cookie is the user it was issued to; a bad one is refused; none is nobody.
-import { defineAuth, login, memoryAuthAdapter, register } from '@ultimat3/auth';
+  (): string => `// A session cookie is the user it was issued to; a bad, expired or signed-out one is nobody, and
+// so is none.
+import { defineAuth, login, logout, memoryAuthAdapter, register } from '@ultimat3/auth';
 import { configuredAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import { expect, unitTest } from '@ultimat3/testing';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
@@ -78,13 +88,26 @@ unitTest('a session cookie is the user it was issued to', async () => {
   expect(actor?.roles).toEqual(['member']);
 });
 
-unitTest('a forged cookie is refused, and no cookie is anonymous', async () => {
+unitTest('a forged cookie is nobody, and no cookie is anonymous', async () => {
   const auth = memoryAuth();
   const forged = requestWith({ [auth().sessions.policy.cookieName]: 'forged.token' });
-  await expect(sessionAuthenticator(auth)(forged)).rejects.toMatchObject({
-    code: 'X_UNAUTHENTICATED',
-  });
+  // \`null\`, not a throw: thrown, a stale cookie was a 401 on the sign-in page itself.
+  expect(await sessionAuthenticator(auth)(forged)).toBeNull();
   expect(await sessionAuthenticator(auth)(requestWith({}))).toBeNull();
+});
+
+unitTest('a signed-out cookie is nobody, so its socket is closed on re-check', async () => {
+  const auth = memoryAuth();
+  await register(auth(), {
+    email: 'ada@example.com',
+    password: PASSWORD,
+    orgId: DEMO_ORG_ID,
+    roles: ['member'],
+  });
+  const { token } = await login(auth(), { email: 'ada@example.com', password: PASSWORD });
+  await logout(auth(), token);
+  const cookie = requestWith({ [auth().sessions.policy.cookieName]: token });
+  expect(await sessionAuthenticator(auth)(cookie)).toBeNull();
 });
 
 unitTest('it installs', () => {

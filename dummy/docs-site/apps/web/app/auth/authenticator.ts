@@ -9,7 +9,7 @@
 // otherwise read as development too. `x dev` declares `ULTIMATE_ENV=development` for exactly this
 // reason, and `bun test` sets `NODE_ENV=test`, where a fixture mints its own actor.
 import { type Auth, authenticate } from '@ultimat3/auth';
-import { type Actor, logger, tryResolveEnvironment } from '@ultimat3/core';
+import { type Actor, isSessionRefusal, logger, tryResolveEnvironment } from '@ultimat3/core';
 import { configureAuthenticator } from '@ultimat3/http';
 import { appAuth } from './auth';
 import {
@@ -32,18 +32,27 @@ export interface SessionAuthenticatorOptions {
 }
 
 /**
- * A session cookie is that session's user, or a refusal — never a fallback to anyone else:
- * `X_SESSION_EXPIRED` for a session past its absolute or idle expiry, `X_UNAUTHENTICATED` for
- * one that is unknown, revoked or forged, or whose user is disabled. No cookie is the development
- * viewer or nobody.
+ * A session cookie is that session's user, or nobody — never a fallback to anyone else. A session
+ * past its expiry, or one unknown, revoked or forged, or whose user is disabled, is a refusal
+ * `authenticate()` THROWS (`isSessionRefusal`: `X_SESSION_EXPIRED`, `X_UNAUTHENTICATED`), and it
+ * is answered `null`: a stale cookie is an anonymous visitor, so sign-in still opens and a live
+ * socket it opened is closed. Anything else it throws — a session store that is down — is not an
+ * answer about this visitor and propagates. No cookie is the development viewer or nobody.
  */
 export const sessionAuthenticator =
   (options: SessionAuthenticatorOptions) =>
   async (request: SessionRequest): Promise<Actor | null> => {
     const auth = options.auth();
     const token = request.cookie(auth.sessions.policy.cookieName);
-    if (token !== null && token.length > 0) return await authenticate(auth, token);
-    return options.development ? devAuthenticate(request) : null;
+    if (token === null || token.length === 0) {
+      return options.development ? devAuthenticate(request) : null;
+    }
+    try {
+      return await authenticate(auth, token);
+    } catch (error) {
+      if (isSessionRefusal(error)) return null;
+      throw error;
+    }
   };
 
 /**

@@ -49,6 +49,20 @@ describe('unit · the scaffold authenticates through @ultimat3/auth', () => {
     expect(authenticator).toContain('authenticate(auth, token)');
   });
 
+  // `authenticate()` THROWS for a revoked, expired or forged cookie. Let through, every route — the
+  // sign-in page included — answered 401 to a browser still holding one, and the realtime sweep
+  // read it as an outage and kept the socket a signed-out cookie had opened.
+  test('a stale session cookie is null, from the one core list, and anything else propagates', () => {
+    const authenticator = code(text('apps/web/app/auth/authenticator.ts'));
+    expect(authenticator).toContain('isSessionRefusal');
+    expect(authenticator).toContain('if (isSessionRefusal(error)) return null;');
+    expect(authenticator).toContain('throw error;');
+    expect(authenticator).not.toContain("'X_UNAUTHENTICATED'");
+    const tests = code(text('apps/web/app/auth/authenticator.test.ts'));
+    expect(tests).not.toContain('rejects.toMatchObject');
+    expect(tests).toContain('await logout(');
+  });
+
   // The real path is installed whatever the environment says; only the no-session fallback is
   // environment-gated, and it fails closed — a process naming no environment is production.
   test('the installer is unconditional; only the development viewer reads the environment', () => {

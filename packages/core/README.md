@@ -43,6 +43,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | the per-tab page handle (`globalThis[Symbol.for('ultimate.client')]`) records land in | `record-sink.ts` |
 | which principal the page acts for, and the epoch that moves when it changes | `client-scope.ts` |
 | whether the page's session is lost — the first `X_UNAUTHENTICATED` / `X_SESSION_EXPIRED` on a page rendered for a principal, said once (`onSessionLost`, `sessionIsLost`), cleared by `rescope()`; on `./page` | `session-lost.ts` |
+| whether a thrown value or a wire code says "this credential names no session" — `X_UNAUTHENTICATED` / `X_SESSION_EXPIRED`, the one list (`isSessionRefusal`, `isSessionRefusalCode`). The http `auth` stage reads such a throw from an authenticator as anonymous, the realtime sweep as a revocation | `session-refusal.ts` |
 | a poll a hidden tab and a lost session stop — `visibleInterval(run, ms, { maxMs? })`: no call while hidden, one when shown, a failed run doubling the wait up to `maxMs` (jittered) and a success resetting it, an idempotent disposer; on `./page` (6,045 B alone, `page-bundle.test.ts`) | `visible-interval.ts` |
 | which row survives a conflict — `server-wins`, `last-write-wins`, `custom` | `conflict-policy.ts` |
 | the four shapes an async region can be in | `async-state.ts` |

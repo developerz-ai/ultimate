@@ -4,9 +4,10 @@
 // work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fifteen implementations
 // it names, so `Record<StageName, StageRun>` below is the build error that catches a missing one.
 
-import { anonymousActor, BUILD_ID_HEADER, isAnonymous, reportError } from '@ultimat3/core';
+import { BUILD_ID_HEADER, isAnonymous, reportError } from '@ultimat3/core';
 import { admitRequest } from './admit-stage';
 import { signInRedirect } from './auth-redirect';
+import { authenticatedActor } from './authenticated-actor';
 import { finalizeCacheHeaders } from './cache-stage';
 import { compressResponse } from './compress';
 import { type HttpConfig, stripBasePath } from './config';
@@ -199,9 +200,10 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         await refuseExhaustedAddress(ctx, limiter, config.rateLimit);
       }
       if (authenticate !== undefined) {
-        // The hook says "anonymous" with null; the context says it with core's anonymous actor,
-        // because `asCtx` publishes this object as a `Ctx` and `Ctx.actor` is never null.
-        ctx.actor = (await authenticate(request, ctx)) ?? anonymousActor();
+        // The hook says "anonymous" with null, or with a session refusal it throws; the context
+        // says it with core's anonymous actor, because `asCtx` publishes this object as a `Ctx` and
+        // `Ctx.actor` is never null.
+        ctx.actor = await authenticatedActor(authenticate, request, ctx);
         // The `user` rung the `locale` stage could not know: re-resolved through the same owners,
         // so a cookie the reader chose still beats a saved locale where i18n's order says it does.
         if (ctx.actor.locale !== undefined || ctx.actor.tz !== undefined) {

@@ -2414,6 +2414,8 @@
       "isSecret": "4775ba7856a65479",
       "isSelfOrigin": "5cd27d7d393297f1",
       "isSentryErrorReporter": "8c57eb26f463cb67",
+      "isSessionRefusal": "ae81e6a3e4576187",
+      "isSessionRefusalCode": "8f0a185693ba08f7",
       "isSuperseded": "7e2790a522f42c17",
       "isThrownError": "5bf3f9ccb4027515",
       "isTransientFailure": "624a3ebd69ac639b",

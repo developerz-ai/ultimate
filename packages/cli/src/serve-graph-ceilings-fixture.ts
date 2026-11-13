@@ -292,8 +292,13 @@
  * search reads resources four at a time through core's `mapBounded`, and once any module of the
  * build imports it the bundle keeps it, so the core barrel's edge to it is walked from every role.
  * An existing module, newly reached; no new file.
+ * raised 950 → 952, measured 952 (2026-11-13, revoked-session security fix, the test's own walk):
+ * `core/src/session-refusal.ts` and `http/src/authenticated-actor.ts`. why: the one "names no
+ * session" rule (`isSessionRefusal`) on the core barrel, and the http `auth` stage reading a thrown
+ * session refusal as anonymous instead of a 401 on every public route. Two new files; no existing
+ * module newly reached.
  */
-export const MIGRATE_CEILING = 950;
+export const MIGRATE_CEILING = 952;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

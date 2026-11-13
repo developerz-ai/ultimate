@@ -55,7 +55,11 @@ One registration, read once by whatever process starts the web role — the same
 `configureAuthenticator(authenticate, { credentialTtlMs? })` is. `credentialTtlMs` is what a
 resolved identity is worth on a connection that carries no further request (the `sync` node's
 websocket re-asks after it; omitted, five minutes) — the credential's lifetime is the
-authenticator's fact, so it is declared beside the function, never as a second authenticator. **Breaking, `As of 2026-08-24`**: before it, the only `HttpConfig`
+authenticator's fact, so it is declared beside the function, never as a second authenticator. The
+authenticator answers "nobody" with `null` — or with a session refusal it throws (`X_UNAUTHENTICATED`,
+`X_SESSION_EXPIRED`: core's `isSessionRefusal`), which the `auth` stage reads as the same anonymous
+actor, so a stale cookie still reaches sign-in and a required route answers it the no-cookie `401`. Any
+other throw propagates. **Breaking, `As of 2026-08-24`**: before it, the only `HttpConfig`
 any shipped process built was a fixed literal inside `@ultimat3/cli`, so none of the four values
 above could be set from an app at all — `cors.origins` was `[]` in every deployment, which refuses
 every cross-origin browser call, permanently. `AppConfig` has never carried an `http` key and does

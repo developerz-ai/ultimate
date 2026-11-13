@@ -950,6 +950,7 @@ export {
   type ServiceFactory,
 } from './service';
 export { onSessionLost, sessionIsLost } from './session-lost';
+export { isSessionRefusal, isSessionRefusalCode } from './session-refusal';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { singleFlight } from './single-flight';
 export { ambientClock, noWaitClock } from './sleep-clock';

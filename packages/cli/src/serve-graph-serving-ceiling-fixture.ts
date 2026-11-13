@@ -290,5 +290,9 @@
  * raised 1491 → 1492, measured 1492 (2026-11-13, sweep 15 admin search, the test's own walk):
  * `MIGRATE_CEILING`'s 1, `core/src/map-bounded.ts`. why: the admin search's four-wide read keeps
  * it in the bundle. An existing module newly reached; nothing else moved.
+ * raised 1492 → 1494, measured 1494 (2026-11-13, revoked-session security fix, the test's own
+ * walk): `MIGRATE_CEILING`'s 2, `core/src/session-refusal.ts` and `http/src/authenticated-actor.ts`.
+ * why: a revoked or expired session closes its live socket and no longer 401s public routes.
+ * Nothing else moved.
  */
-export const SERVING_ROLE_CEILING = 1492;
+export const SERVING_ROLE_CEILING = 1494;

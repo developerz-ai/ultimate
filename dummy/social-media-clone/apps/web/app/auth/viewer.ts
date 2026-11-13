@@ -5,7 +5,7 @@
 
 import type { User } from '@social-media-clone/db';
 import { authenticate } from '@ultimat3/auth';
-import { isUltimateError } from '@ultimat3/core';
+import { isSessionRefusal } from '@ultimat3/core';
 import type { Actor } from '../../shared/actor';
 import { viewerActor } from '../../shared/actor';
 import { appAuth } from './auth';
@@ -42,12 +42,6 @@ const canAct = (user: User | null): user is User =>
   user !== null && user.deletedAt === null && !user.suspended;
 
 /**
- * What `authenticate()` answers a token that names no live session with — a forged or revoked one,
- * and one past its expiry. Both are an ordinary anonymous visitor here, never an error page.
- */
-const NOT_A_SESSION: ReadonlySet<string> = new Set(['X_UNAUTHENTICATED', 'X_SESSION_EXPIRED']);
-
-/**
  * The viewer a cookie names, or `null`.
  *
  * `null` for every failure, and there are four: no cookie, a token that names no live session, one
@@ -62,7 +56,9 @@ export const viewerFor = async (token: string | null): Promise<Actor | null> => 
   try {
     id = (await authenticate(appAuth(), token)).id;
   } catch (error) {
-    if (isUltimateError(error) && NOT_A_SESSION.has(error.code)) return null;
+    // What `authenticate()` answers a token naming no live session with — a forged or revoked one,
+    // and one past its expiry: core's one list, so this file and the framework cannot disagree.
+    if (isSessionRefusal(error)) return null;
     throw error;
   }
   const user = await userById(id);

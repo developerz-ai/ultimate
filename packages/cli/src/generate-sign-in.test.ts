@@ -122,6 +122,9 @@ describe('x g sign-in --oidc', () => {
     expect(await exists(`${AUTH}/dev-actor.test.ts`)).toBe(false);
     const authenticator = await read(`${AUTH}/authenticator.ts`);
     expect(authenticator).not.toContain('devAuthenticate');
+    // A stale cookie is nobody: thrown through, sign-in itself answered 401 to the browser.
+    expect(authenticator).toContain('if (isSessionRefusal(error)) return null;');
+    expect(await read(`${AUTH}/authenticator.test.ts`)).toContain('await logout(');
   }, 60_000);
 
   test('an authenticator the author edited is never overwritten: the swap is a finding', async () => {
