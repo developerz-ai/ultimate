@@ -12,7 +12,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Highlights
 
-The admin search ignores case and reads four resources at a time, and a huge table's home tile shows the planner's estimate (`count: 'estimate'`); a declared row scope stays case-sensitive, because it is authorization. `@ultimat3/testing` gains seeded property checks and a heap canary, which found three real decoder and money-input bugs, fixed here. The Helm chart ships error-budget burn alerts, an opt-in Grafana dashboard (`x g chart-dashboard`) and memory requests at measured idle. A 4xx scanner no longer writes one `info` line per probe.
+- The admin search ignores case and reads four resources at a time; a declared row scope stays case-sensitive, because it is authorization.
+- A large table's admin home tile can show the planner's estimate (`count: 'estimate'`).
+- `@ultimat3/testing` gains seeded property checks and a heap canary; they found three real decoder and money-input bugs, fixed here.
+- The Helm chart ships error-budget burn alerts, an opt-in Grafana dashboard (`x g chart-dashboard`) and memory requests at measured idle.
+- A 4xx scanner no longer writes one `info` line per probe.
 
 ### Added
 
