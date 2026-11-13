@@ -28,6 +28,7 @@ import {
   taskFiles,
 } from './templates';
 import { adminCatalogFiles } from './templates/admin-catalog';
+import { helmDashboardFiles } from './templates/chart-dashboard';
 import { cronJobFiles } from './templates/generate-cron-job';
 import { purgeFiles } from './templates/generate-purge';
 import { webhookReceiverFiles } from './templates/generate-webhook-receiver';
@@ -288,6 +289,9 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       // `name` is the chart's own (`Chart.yaml`), which its helpers are named after. The values
       // blocks are an edit to a file the app owns, so `generate-chart-alerts.ts` makes it.
       return helmMonitoringFiles(names(options.name));
+    case 'chart-dashboard':
+      // The same chart, the same name: the dashboard JSON and the ConfigMap that ships it.
+      return helmDashboardFiles(names(options.name));
     case 'route':
       // `--locales` reaches the route generator too: its catalog entry is the route's title and
       // description, and a locale asked for on the command line is a locale that gets a file.

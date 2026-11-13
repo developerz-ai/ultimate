@@ -249,6 +249,7 @@ apps/web/app/auth/{sign-in,actions,…}            # x g sign-in --password | --
 apps/web/runtime.ts                              #   …and the boot guard it calls (x new writes the
                                                  #   port-commented one; replaced only while untouched)
 docker/helm/templates/{servicemonitor,alert-rules}.yaml   # x g chart-alerts [--print]
+docker/helm/{dashboards/ultimate-app.json,templates/dashboard-configmap.yaml}   # x g chart-dashboard [--print]
 ```
 
 Every emitted source has a `<file>.test.ts` beside it that passes on the first run.
@@ -256,7 +257,9 @@ Every emitted source has a `<file>.test.ts` beside it that passes on the first r
 `x g chart-alerts` takes no `<name>` either — `docker/helm/Chart.yaml` names the chart — and writes
 only the monitoring templates and `values.yaml` blocks an older app chart lacks
 (`generate-chart-alerts.ts`); `x doctor` lists them (`doctor-chart-alerts.ts`). `--print` is the
-same rule table as plain Prometheus rule groups, for a loader outside Kubernetes.
+same rule table as plain Prometheus rule groups, for a loader outside Kubernetes. `x g
+chart-dashboard` is the same backfill for the Grafana dashboard JSON, its ConfigMap and the
+`dashboard:` values block; its `--print` is the JSON, for a Grafana outside Kubernetes.
 
 `x g sign-in` takes no `<name>` — an app has one sign-in — and exactly one of `--password` or
 `--oidc <provider>` (`generate-sign-in-mode.ts`). It writes through `writeFiles` like every

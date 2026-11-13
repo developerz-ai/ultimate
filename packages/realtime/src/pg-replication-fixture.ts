@@ -54,6 +54,8 @@ export const relation = (
   return writer.finish();
 };
 
+const encoder = new TextEncoder();
+
 /** `'u'` in a tuple: an out-of-line (TOAST) value the UPDATE left alone, sent as no bytes at all. */
 export const UNCHANGED_TOAST: unique symbol = Symbol('unchanged-toast');
 export type TupleValue = string | null | typeof UNCHANGED_TOAST;
@@ -63,7 +65,8 @@ export const tuple = (writer: ByteWriter, values: readonly TupleValue[]): ByteWr
   for (const value of values) {
     if (value === null) writer.uint8(0x6e);
     else if (value === UNCHANGED_TOAST) writer.uint8(0x75);
-    else writer.uint8(0x74).int32(value.length).utf8(value);
+    // The UTF-8 BYTE count, as Postgres frames it — `value.length` counts UTF-16 units.
+    else writer.uint8(0x74).int32(encoder.encode(value).byteLength).utf8(value);
   }
   return writer;
 };
@@ -133,7 +136,7 @@ export const dataRow = (values: readonly (string | null)[]): Uint8Array => {
   const writer = new ByteWriter().int16(values.length);
   for (const value of values) {
     if (value === null) writer.int32(-1);
-    else writer.int32(value.length).utf8(value);
+    else writer.int32(encoder.encode(value).byteLength).utf8(value);
   }
   return frame('D', writer.finish());
 };

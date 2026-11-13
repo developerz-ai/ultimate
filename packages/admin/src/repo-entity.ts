@@ -20,13 +20,16 @@ import type {
 type TableOperator = Parameters<AdminTableRead['andWhere']>[1];
 
 /**
- * `contains` is the admin's word for it; `like` with both wildcards is what a driver runs. A Map,
- * so an operator that is not one of the seven answers `undefined` rather than a prototype member.
+ * Every admin operator is the handle's own, `contains` included: on a `text()`/`char()` column the
+ * entity's `contains` is a case-insensitive substring, compiled to the bound `ilike` a
+ * `gin_trgm_ops` index serves (`packages/entity/src/text-contains.ts`) and escaped there, so a `%`
+ * an operator types is a percent sign. A declared one (`caseSensitive`) stays an exact `like`.
+ * A Map, so an operator that is not one of these answers `undefined` rather than a prototype member.
  */
 const OPERATOR_OF: ReadonlyMap<AdminFilter['op'], TableOperator> = new Map([
   ['eq', 'eq'],
   ['neq', 'neq'],
-  ['contains', 'like'],
+  ['contains', 'contains'],
   ['gt', 'gt'],
   ['gte', 'gte'],
   ['lt', 'lt'],
@@ -35,7 +38,7 @@ const OPERATOR_OF: ReadonlyMap<AdminFilter['op'], TableOperator> = new Map([
   ['is-null', 'is-null'],
 ]);
 
-/** `%` and `_` are wildcards to `LIKE`; a `contains` matches the text an operator typed. */
+/** `%` and `_` are wildcards to `LIKE`; a declared `contains` matches the exact text it names. */
 const literal = (text: string): string => text.replace(/[\\%_]/g, (wild) => `\\${wild}`);
 
 /**
@@ -65,8 +68,12 @@ const typedBy = (entity: AdminEntity): Typed => {
 const predicate =
   (typed: Typed) =>
   (read: AdminTableRead, filter: AdminFilter): AdminTableRead => {
-    if (filter.op === 'contains') {
+    // An app-declared `contains` (a row scope is authorization) keeps its case-sensitive `like`.
+    if (filter.op === 'contains' && filter.caseSensitive === true) {
       return read.andWhere(filter.field, 'like', `%${literal(String(filter.value))}%`);
+    }
+    if (filter.op === 'contains') {
+      return read.andWhere(filter.field, 'contains', String(filter.value));
     }
     // One admin operator, two of the handle's: `false` asks for the rows that HAVE a value.
     if (filter.op === 'is-null') {
@@ -162,6 +169,7 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
     update: async (id, patch) => table.update(idOf(id), patch),
     destroy: async (id) => table.delete(idOf(id)),
     count: async (where) => filtered(table, where ?? [], typed).count(),
+    approximateCount: async () => (await table.approximateCount?.()) ?? null,
   };
 }
 

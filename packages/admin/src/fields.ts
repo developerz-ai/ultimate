@@ -232,8 +232,8 @@ export function sortable(type: AdminFieldType, column: AdminColumnFacts): boolea
  *
  * It has to be the KIND and not the field type, because several kinds render in a text box and
  * only two of them can be searched: `adminSearch` issues one `contains` filter per searchable
- * field and the driver compiles `contains` to `<column> like $1` with NO cast
- * (`packages/entity/src/pg-sql.ts`), so a searchable column of any other kind makes the admin's
+ * field and the driver compiles `contains` to `<column> ilike $1` with NO cast
+ * (`packages/entity/src/text-contains.ts`), so a searchable column of any other kind makes the admin's
  * search box answer a database error rather than an empty result.
  */
 const LIKE_ABLE_COLUMN_KINDS: ReadonlySet<string> = new Set(['text', 'char']);

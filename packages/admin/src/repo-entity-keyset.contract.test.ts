@@ -1,6 +1,7 @@
 // The admin's keyset against a REAL Postgres (embedded PGlite): ten rows sharing one sort value at
 // page size 3, a nullable sort column, and the case only a server can hold — instants that differ
 // in the MICROSECONDS a row's `Date` drops. Walked to the end and back; every row exactly once.
+// Plus the one filter whose meaning is the server's: `contains`, case-insensitive and literal.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
@@ -149,4 +150,26 @@ describe('contract · the admin keyset on Postgres', () => {
       expect(await walkBackward(resource(), sort)).toEqual(forward);
     });
   }
+});
+
+describe('contract · the admin `contains` on Postgres', () => {
+  test('is the entity’s ilike: any case, and a typed `%` or `_` is a character', async () => {
+    await client.execute(
+      raw(`insert into "admin_kc_ranked" ("id", "title", "at") values
+        ('${idAt(1)}', 'Alice', now()), ('${idAt(2)}', '50% off', now()), ('${idAt(3)}', '500 off', now()),
+        ('${idAt(4)}', 'a_b', now()), ('${idAt(5)}', 'axb', now())`),
+    );
+    const found = async (value: string): Promise<readonly string[]> =>
+      (
+        await adminRepoFor(ranked, table()).list({
+          sort: { field: 'title', direction: 'asc' },
+          limit: 9,
+          where: [{ field: 'title', op: 'contains', value }],
+        })
+      ).map((row) => String(row['title']));
+    expect(await found('alice')).toEqual(['Alice']);
+    expect(await found('LIC')).toEqual(['Alice']);
+    expect(await found('50%')).toEqual(['50% off']);
+    expect(await found('A_B')).toEqual(['a_b']);
+  });
 });

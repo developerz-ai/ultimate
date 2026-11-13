@@ -92,14 +92,16 @@ export function SearchableSelect(props: SearchableSelectProps): JSX.Element {
     finiteOption('SearchableSelect', 'debounceMs', props.debounceMs ?? DEBOUNCE_DEFAULT_MS),
   );
 
-  const view = (): SearchableView => {
+  // One pass per keystroke: the rows, the status text and its class, and every key handler read
+  // the view, and a plain function re-ran the O(n) check and ranking once per read.
+  const view = rt.createMemo((): SearchableView => {
     checkOptions(props.options, chosen());
     const limit = finiteCount('SearchableSelect', 'limit', props.limit ?? COMBOBOX_LIMIT, 0);
     // Under `onSearch` the caller already matched: ranking again could drop what it found.
     return props.onSearch === undefined
       ? searchableView(props.options, query() ?? '', limit)
       : searchableView(props.options, '', limit);
-  };
+  });
   const picked = (): readonly SearchableOption[] => chosenOptions(props.options, chosen());
   const text = (): string => query() ?? (many() ? '' : (picked()[0]?.label ?? ''));
 

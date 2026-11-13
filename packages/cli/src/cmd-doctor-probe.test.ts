@@ -207,6 +207,9 @@ describe('unit · x doctor · the chart listing', () => {
       const listed = await doctorCommand.run(ctx);
       expect(listed.data).toMatchObject({ chartAlerts: { missing, add: 'x g chart-alerts' } });
       expect(listed.lines).toEqual(expect.arrayContaining(['  x g chart-alerts']));
+      // The dashboard is its own row, with its own command (`x g chart-dashboard`).
+      expect(listed.data).toMatchObject({ chartDashboard: { add: 'x g chart-dashboard' } });
+      expect(listed.lines).toEqual(expect.arrayContaining(['  x g chart-dashboard']));
       writeFileSync(join(root, missing[0] as string), '# held\n');
       writeFileSync(join(root, missing[1] as string), '# held\n');
       const held = await doctorCommand.run(ctx);

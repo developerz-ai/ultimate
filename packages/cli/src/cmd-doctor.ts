@@ -8,7 +8,7 @@ import { doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
 import { appUrlFindings } from './doctor-app-url';
 import { authStorageFindings } from './doctor-auth';
-import { chartAlertsProbe, withChartAlertsListing } from './doctor-chart-alerts';
+import { chartAlertsProbe, NOTHING_MISSING, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
@@ -162,10 +162,10 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
     listed,
     probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
   );
-  // The third: the monitoring templates the app's chart predates (`doctor-chart-alerts.ts`).
+  // The third: the monitoring templates and dashboard the chart predates (`doctor-chart-alerts.ts`).
   const charted = withChartAlertsListing(
     covered,
-    probe.root === undefined ? [] : chartAlertsProbe(probe.root),
+    probe.root === undefined ? NOTHING_MISSING : chartAlertsProbe(probe.root),
   );
   // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
   const reminded = withPoolerReport(

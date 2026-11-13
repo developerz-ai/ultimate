@@ -79,6 +79,42 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
     expect(await operator.counters({ job: 'no-such-job', sinceMs: since })).toEqual([]);
   });
 
+  test(`${label}: countersMany is counters for several names in one read, the same buckets`, async () => {
+    const driver = await harness.driver();
+    const operator = operatorOf(driver);
+    const many = operator.countersMany?.bind(operator);
+    if (many === undefined) return expect.unreachable(`the ${label} driver ships countersMany`);
+    const [first, second, other] = [0, 1, 2].map(() => itemJob({ run: () => Promise.resolve() }));
+    if (first === undefined || second === undefined || other === undefined) {
+      return expect.unreachable('three handles were minted');
+    }
+    const ids = [
+      await enqueueItem(driver, first),
+      await enqueueItem(driver, second),
+      await enqueueItem(driver, other),
+    ];
+    const since = (await rowOf(driver, ids[0] ?? '')).createdAt - COUNTER_BUCKET_MS;
+    const by = { workerId: 'worker-a', claim: 1 };
+    await driver.claim({
+      queues: ['default'],
+      limit: 3,
+      visibilityTimeoutMs: TTL_MS,
+      workerId: 'worker-a',
+    });
+    for (const id of ids) await driver.ack(id, { ...by, durationMs: 3 });
+
+    const one = async (job: string) => operator.counters({ job, sinceMs: since });
+    const both = await many({ jobs: [second.name, first.name, 'no-such-job'], sinceMs: since });
+    expect(new Set(both.map((bucket) => bucket.job))).toEqual(new Set([first.name, second.name]));
+    const byJob = (job: string) => both.filter((bucket) => bucket.job === job);
+    expect(byJob(first.name)).toEqual([...(await one(first.name))]);
+    expect(byJob(second.name)).toEqual([...(await one(second.name))]);
+    // Oldest first across names, as one job's buckets are.
+    const starts = both.map((bucket) => bucket.bucketStart);
+    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+    expect(await many({ jobs: [], sinceMs: since })).toEqual([]);
+  });
+
   test(`${label}: a settle from a worker that no longer owns the row lands on nothing`, async () => {
     const driver = await harness.driver();
     const operator = operatorOf(driver);

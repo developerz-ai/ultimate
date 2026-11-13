@@ -1,0 +1,22 @@
+{{/*
+The chart's Grafana dashboard (dashboards/ultimate-app.json, written from @ultimat3/cli's panel
+table), as a ConfigMap a Grafana sidecar provisions by label. Opt-in: dashboard.enabled. The JSON
+is read with .Files.Get, never templated: its legends use Grafana's own double-brace syntax.
+*/}}
+{{- $cfg := .Values.dashboard | default dict }}
+{{- if eq (toString $cfg.enabled) "true" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ultimate.fullname" . }}-dashboard
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}
+    {{- toYaml ($cfg.labels | default (dict "grafana_dashboard" "1")) | nindent 4 }}
+  {{- with $cfg.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  ultimate-app.json: |-
+{{ .Files.Get "dashboards/ultimate-app.json" | indent 4 }}
+{{- end }}

@@ -66,7 +66,8 @@ function satisfies(row: AdminRow, filter: AdminFilter): boolean | undefined {
     case 'in':
       return Array.isArray(filter.value) && filter.value.some((one) => equal(held, one));
     case 'contains':
-      // `LIKE` is case-sensitive and collation-free for a literal substring.
+      // A row scope is authorization: its `contains` is the exact, case-sensitive substring the
+      // read runs as `like` (`repo-entity.ts`, `caseSensitive`) — folding case here would widen it.
       return typeof held === 'string' ? held.includes(String(filter.value)) : undefined;
     default: {
       const order = ordered(held, filter.value);

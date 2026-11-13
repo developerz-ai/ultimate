@@ -1,87 +1,9 @@
 // The monitoring objects every Ultimate chart ships: the scrape object and the alert rules. The
-// rules are one table, rendered as the chart's PrometheusRule template and as plain rule groups for
-// a loader outside Kubernetes. Only mechanism ships — a stalled queue, a dead letter, a lost lease,
-// a dropped frame, a 5xx share, a dead target; a latency target is the app's (axiom 8).
+// rules are one table (`scaffold-helm-alert-rules.ts`), rendered here as the chart's PrometheusRule
+// template and as plain rule groups for a loader outside Kubernetes.
 import type { GeneratedFile, NameSet } from './naming';
-
-/** How an expression names a series and groups its result, per renderer. */
-export interface AlertScope {
-  /** `name{matchers}` — the scope's own matchers, then `extra`. */
-  readonly series: (name: string, extra?: string) => string;
-  /** The labels every rule groups by, so one release (or one job) fires one alert. */
-  readonly by: string;
-  /** The label naming a scrape target's role. */
-  readonly component: string;
-  /** The rule's threshold, as the renderer spells it: a value lookup or the default. */
-  readonly threshold: (fallback: number) => string;
-}
-
-export interface ChartAlert {
-  readonly alert: string;
-  readonly expr: (scope: AlertScope) => string;
-  /** The default `alerts.rules.<alert>.threshold`, for a rule whose comparison is a number. */
-  readonly threshold?: number;
-  readonly for: string;
-  readonly severity: 'warning' | 'critical';
-  readonly summary: string;
-  /** The heading in `docs/ops/06-runbooks.md` the rule's `runbook_url` lands on. */
-  readonly anchor: string;
-}
-
-const rule = (alert: Omit<ChartAlert, 'anchor'>): ChartAlert => ({
-  ...alert,
-  anchor: alert.alert.toLowerCase(),
-});
-
-export const CHART_ALERTS: readonly ChartAlert[] = [
-  rule({
-    alert: 'UltimateQueueStalled',
-    threshold: 300,
-    expr: (s) =>
-      `max by (${s.by}, queue) (${s.series('queue_oldest_ready_seconds')}) > ${s.threshold(300)}`,
-    for: '5m',
-    severity: 'warning',
-    summary: 'A queue has a due job nothing has claimed for longer than the threshold',
-  }),
-  rule({
-    alert: 'UltimateDeadLetters',
-    expr: (s) => `max by (${s.by}, queue) (${s.series('queue_dead_jobs')}) > 0`,
-    for: '5m',
-    severity: 'warning',
-    summary: 'A queue holds dead-lettered jobs',
-  }),
-  rule({
-    alert: 'UltimateLeaseLost',
-    expr: (s) => `sum by (${s.by}, queue) (rate(${s.series('job_leases_lost_total')}[5m])) > 0`,
-    for: '5m',
-    severity: 'warning',
-    summary: 'Job leases are lapsing while their jobs still run, so jobs run twice',
-  }),
-  rule({
-    alert: 'UltimateFramesDropped',
-    expr: (s) => `sum by (${s.by}) (rate(${s.series('channel_frames_dropped_total')}[5m])) > 0`,
-    for: '5m',
-    severity: 'warning',
-    summary: 'Sync nodes are dropping channel frames to socket backpressure',
-  }),
-  rule({
-    alert: 'UltimateServerErrors',
-    threshold: 0.05,
-    expr: (s) =>
-      `sum by (${s.by}) (rate(${s.series('http_requests_total', 'status="5xx"')}[5m])) / ` +
-      `sum by (${s.by}) (rate(${s.series('http_requests_total')}[5m])) > ${s.threshold(0.05)}`,
-    for: '10m',
-    severity: 'critical',
-    summary: 'The share of requests answered 5xx is above the threshold',
-  }),
-  rule({
-    alert: 'UltimateTargetDown',
-    expr: (s) => `count by (${s.by}, ${s.component}) (${s.series('up')} == 0) > 0`,
-    for: '5m',
-    severity: 'critical',
-    summary: 'A role has a scrape target that is down',
-  }),
-];
+import type { AlertScope, ChartAlert } from './scaffold-helm-alert-rules';
+import { budgetOf, CHART_ALERTS, DEFAULT_OBJECTIVE } from './scaffold-helm-alert-rules';
 
 /** Where `runbook_url` points unless `alerts.runbookBase` says otherwise. */
 export const RUNBOOK_BASE =
@@ -99,22 +21,30 @@ export const K8S_SCOPE: AlertScope = {
     `${name}{${matchers('namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"', extra)}}`,
   by: 'namespace, app_kubernetes_io_instance',
   component: 'app_kubernetes_io_component',
+  // The operator's own target label: one pod, whichever role it runs.
+  target: 'pod',
   threshold: (fallback) => `{{ ternary $r.threshold ${fallback} (hasKey $r "threshold") }}`,
+  budget: budgetOf('{{ $objective }}'),
 };
 
-const plainScope = (own: string): AlertScope => ({
+const plainScope = (own: string, objective: number): AlertScope => ({
   series: (name, extra) => {
     const inner = matchers(own, extra);
     return inner === '' ? name : `${name}{${inner}}`;
   },
   by: 'job',
   component: 'instance',
+  target: 'instance',
   threshold: (fallback) => String(fallback),
+  budget: budgetOf(String(objective)),
 });
 
-/** The rules as one plain Prometheus rule group, defaults in place, scoped by `own` matchers. */
-export function alertRuleGroups(own = ''): string {
-  const scope = plainScope(own);
+/**
+ * The rules as one plain Prometheus rule group, defaults in place, scoped by `own` matchers, the
+ * burn-rate rules against `objective` (percent).
+ */
+export function alertRuleGroups(own = '', objective: number = DEFAULT_OBJECTIVE): string {
+  const scope = plainScope(own, objective);
   const rules = CHART_ALERTS.map(
     (a) => `      - alert: ${a.alert}
         expr: >-
@@ -164,9 +94,14 @@ const operatorGate = (
 const alertRulesTemplate = (chart: string): string => `{{/*
 The alert rules for this release's own series, written from @ultimat3/cli's rule table. Each rule
 reads alerts.rules.<alert> for threshold, for, severity and enabled; its runbook_url is
-alerts.runbookBase plus the rule's anchor. Rendered by capability, like servicemonitor.yaml.
+alerts.runbookBase plus the rule's anchor; the burn-rate rules read alerts.objective (percent).
+Rendered by capability, like servicemonitor.yaml.
 */}}
 ${operatorGate('alerts', 'PrometheusRule')}
+{{- $objective := float64 (ternary $cfg.objective ${DEFAULT_OBJECTIVE} (hasKey $cfg "objective")) }}
+{{- if not (and (gt $objective 0.0) (lt $objective 100.0)) }}
+{{- fail (printf "alerts.objective is %v — set it to the percent of requests answered without a 5xx, above 0 and below 100, e.g. 99.9" $objective) }}
+{{- end }}
 {{- $rules := $cfg.rules | default dict }}
 {{- $base := $cfg.runbookBase | default "${RUNBOOK_BASE}" }}
 apiVersion: monitoring.coreos.com/v1

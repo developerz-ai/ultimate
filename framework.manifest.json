@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "02cf4c525d73fd0a1ddaaaab83c3ae74b9b777ea9fbc379759cf0d9b736a6bb5",
+  "buildId": "7c0ed6d18c6a5a6710b11e36ec326b2f6787483a90b213f5290664fdb3a10b5b",
   "tiers": {
     "0": [
       "core",
@@ -3080,6 +3080,21 @@
       "at": "scripts/lib/release-writes.ts"
     },
     {
+      "code": "X_LOG_LEVEL_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/log-levels.ts"
+    },
+    {
+      "code": "X_LOG_LEVEL_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/log-levels.ts"
+    },
+    {
+      "code": "X_LOG_LEVEL_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/log-levels.ts"
+    },
+    {
       "code": "X_MAIL_ADDRESS_INVALID",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
@@ -6030,6 +6045,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_PROPERTY_FAILED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_REAL_SLEEP",
       "owner": "scripts",
       "at": "scripts/test-real-sleep.ts"
@@ -6068,6 +6088,11 @@
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TEST_SOAK_HEAP_GROWTH",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_TEST_STUB_TARGET_UNSUPPORTED",

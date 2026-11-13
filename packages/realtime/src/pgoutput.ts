@@ -156,6 +156,13 @@ export class PgOutputDecoder {
   decode(payload: Uint8Array): PgOutputMessage {
     const reader = new ByteReader(payload, 'pgoutput');
     const tag = reader.tag();
+    const message = this.#decodeTagged(tag, reader);
+    // Protocol 1 fixes every decoded message's length; an 'other' tag is skipped unread.
+    if (message.kind !== 'other') reader.end();
+    return message;
+  }
+
+  #decodeTagged(tag: string, reader: ByteReader): PgOutputMessage {
     switch (tag) {
       case 'B':
         return this.#decodeBegin(reader);

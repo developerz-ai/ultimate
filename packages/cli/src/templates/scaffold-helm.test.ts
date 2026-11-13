@@ -120,6 +120,25 @@ describe('unit · the scaffolded chart boots, drains and scales honestly', () =>
     for (const [role, memory] of limits) expect([role, toMi(memory) >= 512]).toEqual([role, true]);
   });
 
+  // Requests are what the scheduler reserves, so they follow the measured idle (plus headroom), and
+  // both charts state the same ones: a scaffold reserving twice what a role uses wastes a node.
+  test('memory requests are the measured idle plus headroom, in both charts', async () => {
+    type Roles = Record<string, { resources: { requests: { memory: string } } }>;
+    const requests = (roles: Roles) =>
+      Object.fromEntries(
+        ['web', 'worker', 'scheduler'].map((role) => [
+          role,
+          roles[role]?.resources.requests.memory,
+        ]),
+      );
+    const measured = { web: '128Mi', worker: '160Mi', scheduler: '160Mi' };
+    expect(requests((values() as { roles: Roles }).roles)).toEqual(measured);
+    const chart = Bun.YAML.parse(
+      await Bun.file(`${import.meta.dir}/../../../../docker/helm/values.yaml`).text(),
+    ) as { roles: Roles };
+    expect(requests(chart.roles)).toEqual(measured);
+  });
+
   test('a release named after the app is not stuttered into my-app-my-app', () => {
     // `x deploy --method helm` names the release after the app, so helm create's rule applies: a
     // release that already contains the chart name is the full name on its own.

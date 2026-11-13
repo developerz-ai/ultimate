@@ -165,6 +165,9 @@ export const config = defineRoute({
   // wave 10, 38-ui-pickers).
   // measured: 107593 B (2026-11-07, sweep 2; x build --target static) — why: the record envelope's `order` decode in the transport (sweep 2). Sweep 1, 107446 B: the island 73,386 → 73,816
   // (core's `clientStream` sharing `call()`'s unwrap) and the router +122 B.
+  // measured: 108523 B (2026-11-13, sweep 15; x build --target static, against 108,509 with the
+  // sweep's ui files at HEAD) — SearchableSelect's one filter pass per keystroke (`createMemo`)
+  // costs the island +14 B (74,687 → 74,701); still under 106kb (108,544), so no raise.
   budget: { js: '106kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });

@@ -91,9 +91,11 @@ describe('firstRunPlan', () => {
   });
 
   // One chart per app, named by its Chart.yaml: a `<name>` is X_CLI_BAD_FLAG, like sign-in's.
-  test('chart-alerts runs with no name', () => {
+  test('chart-alerts and chart-dashboard run with no name', () => {
     const step = firstRunPlan().find((one) => one.name === 'g chart-alerts');
     expect(step?.args).toEqual(['g', 'chart-alerts', '--json']);
+    const dashboard = firstRunPlan().find((one) => one.name === 'g chart-dashboard');
+    expect(dashboard?.args).toEqual(['g', 'chart-dashboard', '--json']);
   });
 
   // A read never creates its table (`X_FEATURE_REQUIRED`), so each needs a slice to read, and one

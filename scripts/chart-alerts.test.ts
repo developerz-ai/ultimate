@@ -1,4 +1,4 @@
-// The alert rules every chart renders (`packages/cli/src/templates/scaffold-helm-alerts.ts`) read
+// The alert rules every chart renders (`packages/cli/src/templates/scaffold-helm-alert-rules.ts`) read
 // only series the framework declares, and each one names a runbook entry that exists. A renamed
 // metric is a rule that evaluates to "no data" forever and looks correct in review — so a rename
 // with no matching rule edit is red here, not silent in a cluster.
@@ -10,11 +10,11 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import {
-  alertRuleGroups,
   CHART_ALERTS,
   type ChartAlert,
-  K8S_SCOPE,
-} from '../packages/cli/src/templates/scaffold-helm-alerts';
+} from '../packages/cli/src/templates/scaffold-helm-alert-rules';
+import { alertRuleGroups, K8S_SCOPE } from '../packages/cli/src/templates/scaffold-helm-alerts';
+import { declaredSeries, isDeclared } from './lib/declared-series';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -24,28 +24,21 @@ const RUNBOOKS = join(ROOT, 'docs', 'ops', '06-runbooks.md');
 const HELM = Bun.which('helm');
 
 /** The PromQL words an expression may hold besides series: aggregators, functions, operators. */
-const PROMQL_WORDS = new Set(['max', 'sum', 'count', 'rate', 'by', 'and', 'or', 'unless', 'bool']);
+const PROMQL_WORDS = new Set([
+  'max',
+  'sum',
+  'count',
+  'rate',
+  'histogram_quantile',
+  'by',
+  'and',
+  'or',
+  'unless',
+  'bool',
+]);
 
 /** `up` is Prometheus' own, written per target by the scraper rather than declared by a package. */
 const SCRAPER_SERIES = new Set(['up']);
-
-/** Every name passed to `counter(`, `gauge(` or `histogram(` in a package's non-test source. */
-async function declaredSeries(): Promise<ReadonlySet<string>> {
-  const names = new Set<string>();
-  const glob = new Bun.Glob('packages/*/src/**/*.ts');
-  for await (const path of glob.scan({ cwd: ROOT })) {
-    if (path.endsWith('.test.ts') || path.includes('.contract.') || path.includes('.live.')) {
-      continue;
-    }
-    const text = await Bun.file(join(ROOT, path)).text();
-    for (const match of text.matchAll(
-      /\b(?:counter|gauge|histogram)\(\s*'([a-z_:][a-z0-9_:]*)'/g,
-    )) {
-      if (match[1] !== undefined) names.add(match[1]);
-    }
-  }
-  return names;
-}
 
 /** The identifiers an expression reads as series: matchers, ranges and `by (…)` lists dropped. */
 function seriesOf(expr: string): readonly string[] {
@@ -53,7 +46,8 @@ function seriesOf(expr: string): readonly string[] {
     .replace(/\{\{[\s\S]*?\}\}/g, ' ')
     .replace(/\{[^}]*\}/g, ' ')
     .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\bby\s*\([^)]*\)/g, ' ');
+    .replace(/\bby\s*\([^)]*\)/g, ' ')
+    .replace(/\b\d+(?:\.\d+)?\b/g, ' ');
   const words = bare.match(/[A-Za-z_:][A-Za-z0-9_:]*/g) ?? [];
   return [...new Set(words.filter((word) => !PROMQL_WORDS.has(word)))];
 }
@@ -62,7 +56,7 @@ function seriesOf(expr: string): readonly string[] {
 function unknownSeries(alerts: readonly ChartAlert[], declared: ReadonlySet<string>): string[] {
   return alerts.flatMap((alert) =>
     seriesOf(alert.expr(K8S_SCOPE))
-      .filter((series) => !declared.has(series) && !SCRAPER_SERIES.has(series))
+      .filter((series) => !isDeclared(series, declared) && !SCRAPER_SERIES.has(series))
       .map((series) => `${alert.alert}: ${series}`),
   );
 }
@@ -77,14 +71,14 @@ const anchorOf = (heading: string): string =>
 
 describe('unit · the chart alert rules read declared series', () => {
   test('every series a rule reads is declared by a package, or is the scraper`s own `up`', async () => {
-    const declared = await declaredSeries();
+    const declared = await declaredSeries(ROOT);
     // fix: rename the rule's series in packages/cli/src/templates/scaffold-helm-alerts.ts to the
     // name the package passes to counter(/gauge(, then copy the regenerated alert-rules.yaml.
     expect(unknownSeries(CHART_ALERTS, declared)).toEqual([]);
   });
 
   test('a renamed series is caught', async () => {
-    const declared = await declaredSeries();
+    const declared = await declaredSeries(ROOT);
     const renamed = CHART_ALERTS.map((alert) =>
       alert.alert === 'UltimateDeadLetters'
         ? { ...alert, expr: () => 'max by (queue) (queue_dead_letters{}) > 0' }

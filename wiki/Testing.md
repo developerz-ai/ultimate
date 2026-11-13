@@ -926,6 +926,38 @@ await insertSeedGraph(graph, writer);
 
 `X_SEED_GRAPH_UNSATISFIED` names the table, the columns to supply and the `defineFactory` call. `As of 2026-11-05`, `seed-graph.live.test.ts` inserts both tracked apps' schemas into Postgres with no factory, and `seed-graph-pglite.test.ts` the same into PGlite, in the unit step. Source: `packages/testing/src/seed-graph*.ts`.
 
+## Property checks
+
+`As of 2026-11`. `property(gen, fn, { runs, seed, maxShrinks })` checks a claim against `runs` (200) seeded draws. A throw or a `false` fails it as `X_TEST_PROPERTY_FAILED`. The failure carries the input shrunk by halving to the smallest that still fails, plus a `fix:` whose `{ seed, runs }` replays exactly that draw.
+
+```ts
+import { decodeCursor, encodeCursor } from '@ultimat3/core';
+import { expect, gen, property, unitTest } from '@ultimat3/testing';
+
+const position = gen.map(
+  gen.tuple(gen.string({ maxLength: 24 }), gen.string(), gen.array(gen.int(-100, 100))),
+  ([scope, id, key]) => ({ scope, id, key }),
+);
+
+unitTest('a cursor round-trips any position', () => {
+  property(position, (payload) => {
+    expect(decodeCursor(encodeCursor(payload), payload.scope)).toEqual(payload);
+  });
+});
+```
+
+| Fact | Why |
+|---|---|
+| the default seed is fixed | the gate never flakes; pass another `seed` to explore |
+| draw *n*'s size never depends on `runs` | so `{ runs: n }` replays draw *n* |
+| a promise returned is refused (`PropertyAsyncError`, the same code) | every draw would pass before its assertion ran |
+| `gen`: `int` `oneOf` `union` `map` `constant` `array` `tuple` `string` `bytes` `json`; `HOSTILE_CHARS` | each draw carries its shrinks, so a mapped value shrinks through its source |
+| the framework's own: `packages/testing/src/property-*.test.ts` | cursor, canonical JSON, money, byte range, cookie, pgoutput, interpolate, `estimateBytes`. They found two shipped bugs (fixed in 31.18.0): `parseAmount` refused BHD formatted in `ar-EG`, and the pgoutput decoder accepted a negative length |
+
+## The heap canary
+
+`As of 2026-11`. `soak({ fetch, requests, total, warmup, maxGrowthBytes })` sends `total` (20,000) requests round-robin through an in-process handler, after `warmup` (2,000). It then compares the live heap after `Bun.gc(true)`; growth past `maxGrowthBytes` is `X_TEST_SOAK_HEAP_GROWTH`. Every response status is counted, because a soak that only ever answered 500 soaked nothing. The bound is a measurement: three runs, the largest × 1.5, written beside it. `measureSoak` reports without a verdict. The framework's own canary is `packages/testing/src/soak.live.test.ts` (SSR, an action, a query, a 404, a 400), in the `live` step.
+
 ## Shared examples
 
 One contract, asserted against many subjects, with the subject passed as a **thunk** so a `beforeAll`-built value is read at test time rather than at declaration time.

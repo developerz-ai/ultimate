@@ -79,6 +79,8 @@ export const TESTING_ERROR_CODES = [
   'X_EXERCISE_SEED_FAILED',
   'X_STATEMENTS_OVER_BUDGET',
   'X_EXERCISE_EMPTY_REACH',
+  'X_TEST_PROPERTY_FAILED',
+  'X_TEST_SOAK_HEAP_GROWTH',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -161,6 +163,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_STATEMENTS_OVER_BUDGET: 'One primitive call sent more statements than its ceiling',
   X_EXERCISE_EMPTY_REACH:
     'an exercised primitive was reached and sent no statement and had no effect',
+  X_TEST_PROPERTY_FAILED: 'a property() run found an input its claim refuses',
+  X_TEST_SOAK_HEAP_GROWTH: 'a soak() run grew the live heap past its stated bound',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

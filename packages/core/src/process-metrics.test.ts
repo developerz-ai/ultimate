@@ -13,6 +13,7 @@ import type { ProcessReading } from './process-metrics';
 import {
   EVENT_LOOP_LAG_BOUNDS,
   EVENT_LOOP_SAMPLE_MS,
+  readMemoryLimit,
   readProcess,
   resetProcessMetrics,
   startProcessMetrics,
@@ -194,6 +195,41 @@ describe('unit · process metrics', () => {
     expect(() => startProcessMetrics({ role: 'web', read: () => reading(), sampleMs: 0 })).toThrow(
       /sampleMs/,
     );
+  });
+
+  test('a cgroup memory limit is process_memory_limit_bytes, read at start', () => {
+    stop = startProcessMetrics({
+      role: 'web',
+      read: () => reading(),
+      memoryLimit: () => 134_217_728,
+      every: manualTimer().every,
+    });
+    expect(seriesValue('process_memory_limit_bytes')).toBe(134_217_728);
+  });
+
+  test('no limit, no gauge: an unbounded container emits no process_memory_limit_bytes', () => {
+    stop = startProcessMetrics({
+      role: 'web',
+      read: () => reading(),
+      memoryLimit: () => undefined,
+      every: manualTimer().every,
+    });
+    // The instrument may survive from an earlier test (declarations outlive resetMetrics): what
+    // must not exist is a sample, which is what an alert divides by.
+    expect(seriesValue('process_resident_memory_bytes')).toBe(100);
+    expect(seriesValue('process_memory_limit_bytes')).toBeUndefined();
+  });
+
+  test('readMemoryLimit parses cgroup v2 memory.max: bytes, `max` and no file', async () => {
+    const file = join(FIXTURE_DIR, 'memory.max');
+    await Bun.write(file, '268435456\n');
+    expect(readMemoryLimit(file)).toBe(268_435_456);
+    await Bun.write(file, 'max\n');
+    expect(readMemoryLimit(file)).toBeUndefined();
+    // Number() would read hex; the kernel never writes it, so it is not a limit.
+    await Bun.write(file, '0x100\n');
+    expect(readMemoryLimit(file)).toBeUndefined();
+    expect(readMemoryLimit(join(FIXTURE_DIR, 'absent'))).toBeUndefined();
   });
 
   test('readProcess answers this process in bytes and seconds', () => {

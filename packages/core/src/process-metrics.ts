@@ -1,8 +1,10 @@
 // Single responsibility: the series every Ultimate PROCESS emits about itself — memory, CPU,
-// event-loop lag, start time and which role it is. `runtime-metrics.ts` names what a role does;
-// this names what the process costs, so "what is growing?" is a query and not a guess. Runs
-// nothing at import: the first `startProcessMetrics()` declares the instruments.
+// event-loop lag, start time, the container's memory limit and its role. `runtime-metrics.ts`
+// names what a role does; this names what the process costs, so "what is growing?" is a query.
+// Runs nothing at import: the first `startProcessMetrics()` declares the instruments.
 
+// why: one synchronous read of a kernel file at start; Bun.file is async and the start is not.
+import { readFileSync } from 'node:fs';
 import { type Clock, systemClock } from './clock';
 import { finiteCount } from './finite-option';
 import type { Counter, Gauge, Histogram } from './metrics';
@@ -54,11 +56,32 @@ export function readProcess(): ProcessReading {
   };
 }
 
+/** Where cgroup v2 states the container's memory limit: bytes, or `max` for none. */
+export const CGROUP_MEMORY_MAX = '/sys/fs/cgroup/memory.max';
+
+/**
+ * The memory limit the kernel enforces on this container, in bytes, or `undefined` for none: no
+ * file (not Linux, cgroup v1, no namespace), `max`, or anything that is not a whole number.
+ */
+export function readMemoryLimit(path: string = CGROUP_MEMORY_MAX): number | undefined {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf-8').trim();
+  } catch {
+    return undefined;
+  }
+  if (!/^\d+$/.test(text)) return undefined;
+  const bytes = Number(text);
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : undefined;
+}
+
 export interface ProcessMetricsOptions {
   /** What this process is: a `ROLE`, or `x dev`'s several joined. The `process_info` label. */
   readonly role: string;
   /** Defaults to `readProcess`. Injected by a test. */
   readonly read?: (() => ProcessReading) | undefined;
+  /** Defaults to `readMemoryLimit`, read once per start. Injected by a test. */
+  readonly memoryLimit?: (() => number | undefined) | undefined;
   readonly clock?: Clock | undefined;
   /** The sampler's timer. Injected by a test; the default is an unref'd `setInterval`. */
   readonly every?: ((tick: () => void, intervalMs: number) => () => void) | undefined;
@@ -86,6 +109,13 @@ let active: { readonly stopTimer: () => void } | undefined;
 // The role `process_info` last said 1 for, so a start under another role sets it back to 0 —
 // one process, one role, even across a stop and a start.
 let infoRole: string | undefined;
+// Declared by the first start that finds a limit and recorded once per start, never observed: an
+// unbounded container then never names the series, and an alert on rss ÷ limit has nothing to divide.
+const recordMemoryLimit = (bytes: number): void =>
+  gauge('process_memory_limit_bytes', {
+    unit: 'By',
+    description: 'The memory limit the kernel enforces on this container (cgroup memory.max)',
+  }).record(bytes);
 
 /** 0 while stopped: a scrape between a stop and a start reads a flat line, never a throw. */
 const observed = (pick: (reading: ProcessReading) => number) => (): number =>
@@ -178,6 +208,8 @@ export function startProcessMetrics(options: ProcessMetricsOptions): () => void 
   }
   infoRole = options.role;
   declared.info.record(1, { role: options.role });
+  const limit = (options.memoryLimit ?? readMemoryLimit)();
+  if (limit !== undefined) recordMemoryLimit(limit);
 
   const countCpu = (): void => {
     const cpu = read().cpuSeconds;

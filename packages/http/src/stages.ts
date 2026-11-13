@@ -326,8 +326,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // The other half of this is `@ultimat3/schema`'s, and it is the load-bearing one: an issue
       // message must stop echoing the rejected value at all. This change makes the value
       // redactable; it does not make it absent.
-      // A routine refusal (a scanner on the login wall) is counted, and `info` once per route per
-      // minute — `debug` after (`refusal-log.ts`).
+      // A refusal logged at `info` (a scanner on the login wall, a 404, a 400, a 422) is counted,
+      // and `info` once per route and code per minute — `debug` after (`refusal-log.ts`).
       const level = refusalLogLevel({
         status: facts.status,
         code: facts.code,
@@ -335,6 +335,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         route: ctx.route?.path ?? UNMATCHED_ROUTE,
         nowMs: performance.now(),
       });
+      // info: only a 4xx's first line per route and code per minute; every repeat is debug
       ctx.logger[level](facts.code, {
         cause: facts.cause,
         status: facts.status,

@@ -42,6 +42,7 @@ beforeAll(async () => {
   registerCatalog('en', {
     'admin.home_widgets.title': 'Widgets',
     'admin.home_vaults.title': 'Vaults',
+    'admin.dashboard.records.approximate': '~{figure}',
   });
   defineRoles({
     ...previousRoles,
@@ -160,6 +161,31 @@ describe('unit · /admin home counts what the actor may list', () => {
   // A count the store refuses — a tenant-scoped table asked by an actor with no org answers
   // X_TENANCY_UNSCOPED — costs that resource its tile, never the front page: the matrix still
   // renders, as search skips a resource whose repo threw rather than answering 500 for the rest.
+  test('an estimated count reads ~ on its tile, an exact one does not', async () => {
+    const estimated = defineAdmin({
+      entities: [widgets, vaults],
+      db,
+      resources: {
+        ...COUNTED,
+        home_vaults: {
+          count: 'estimate',
+          repo: {
+            list: async () => [],
+            find: async () => null,
+            create: async () => expect.unreachable('no write'),
+            update: async () => expect.unreachable('no write'),
+            destroy: async () => expect.unreachable('no write'),
+            count: async () => expect.unreachable('a big unscoped table is estimated'),
+            approximateCount: async () => 1_200_000,
+          },
+        },
+      },
+    });
+    const html = await home(estimated, 'keeper');
+    expect(stat(html, 'admin-count-home_vaults')).toBe('~1,200,000');
+    expect(stat(html, 'admin-count-home_widgets')).toBe('3');
+  });
+
   test('a count that throws drops that tile only', async () => {
     const refusing = defineAdmin({
       entities: [widgets, vaults],

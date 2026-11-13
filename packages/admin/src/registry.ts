@@ -122,6 +122,8 @@ export interface AdminTableRead {
   all(): Promise<readonly AdminRow[]>;
   one(): Promise<AdminRow | null>;
   count(): Promise<number>;
+  /** The planner's whole-table estimate, `null` when it has none. Optional: a slice may lack it. */
+  approximateCount?(): Promise<number | null>;
   /** Read for the entity NAME only: it is how a handle is matched to the entity it serves. */
   plan(): { readonly entity: string };
 }
@@ -171,6 +173,13 @@ export interface AdminFilter {
   readonly field: string;
   readonly op: FilterOp;
   readonly value: string | number | boolean | null | readonly string[];
+  /**
+   * Set on every predicate the APP declared — a `rows` scope, a scope tab's `where` — by
+   * `declaredFilters`, and never on one a caller typed: such a `contains` is the exact,
+   * case-sensitive substring it shipped as, because a row scope is authorization and folding case
+   * would widen it. A caller's `contains` (search box, list filter, lookup) ignores case.
+   */
+  readonly caseSensitive?: true;
 }
 
 export interface AdminSort {
@@ -216,6 +225,12 @@ export interface AdminRepo<Row> {
   update(id: string, patch: Readonly<Record<string, unknown>>): Promise<Row>;
   destroy(id: string): Promise<void>;
   count?(where?: readonly AdminFilter[]): Promise<number>;
+  /**
+   * The store's whole-table estimate in constant time — `null` when it has none, a rejection when
+   * the table cannot be estimated whole (a tenant-scoped one). What `count: 'estimate'` reads;
+   * never asked with a predicate.
+   */
+  approximateCount?(): Promise<number | null>;
 }
 
 /** What the admin runs an action with. The action's own `ctx` is richer; this is the slice

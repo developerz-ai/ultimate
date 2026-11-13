@@ -359,6 +359,11 @@ export { QueryPlanUnavailableError, sweepPlans } from './plan-sweep';
 export type { PlanFinding } from './plan-sweep-fix';
 export type { SweepFinding } from './plan-sweep-report';
 export { planSweepFindings, planSweepLines } from './plan-sweep-report';
+// Seeded property checks: a claim over generated inputs, failing as the shrunk counterexample.
+export type { PropertyOptions } from './property';
+export { PropertyAsyncError, PropertyFailedError, property } from './property';
+export type { Gen, LengthOptions, Shrinkable } from './property-gen';
+export { gen, HOSTILE_CHARS } from './property-gen';
 // `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.
 // This barrel is what a `packages/core` test imports for `expect` alone, and a static re-export
 // evaluates the module it names: that one would load `@ultimat3/entity` and its process-global
@@ -421,6 +426,9 @@ export type { EntitySeedWriterOptions, SeedWriterTarget } from './seed-writer';
 export { entitySeedWriter } from './seed-writer';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
+// The heap canary: many in-process requests, and the live heap after a full GC under a bound.
+export type { SoakOptions, SoakReport } from './soak';
+export { measureSoak, SoakHeapGrowthError, soak } from './soak';
 // One SQL table scan for the sweep's lost-table reader and `x doctor`'s raw tenant SQL probe.
 export { statementTables } from './sql-tables';
 // Test doubles: `stub(primitive)` replaces an action's, an llm()'s or a job's body, `swapAdapter`

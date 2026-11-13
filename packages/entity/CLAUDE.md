@@ -80,7 +80,7 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
 - **A `timestamp` cursor carries MICROSECONDS** (`seekPrecision`, `instant.ts`). Full rule: `docs/history/entity.md`.
 - **The four aggregates** (`sum`, `avg`, `min`, `max`) share `aggregate.ts`:
   never a float; `null` for an empty set; refusals `X_AGGREGATE_UNSUPPORTED`,
-  `X_AGGREGATE_MIXED_CURRENCY`. Full rule: `docs/history/entity.md`. **`approximateCount()` is `reltuples`**; a filtered chain or tenant-scoped entity is
+  `X_AGGREGATE_MIXED_CURRENCY`. Full rule: `docs/history/entity.md`. **`approximateCount()` is `reltuples`**; a filtered chain, a tenant-scoped or a soft-deleting entity is
   `X_APPROXIMATE_COUNT_FILTERED`; `null` for an unanalysed table.
 - **`series`, views**: `time-bucket.ts` (zone rules, measured), `view-repo.ts` (read-only); `time-bucket.test.ts`, `view-entity.test.ts`.
 - **`json()` / `arrayOf()` are filterable** (`containment.ts`); no jsonpath operator. †

@@ -199,7 +199,8 @@
         "title": "Records",
         "label": "Records per resource",
         "resource": "Resource",
-        "total": "records in all"
+        "total": "records in all",
+        "approximate": "~{figure}"
       },
       "access": {
         "title": "Access",

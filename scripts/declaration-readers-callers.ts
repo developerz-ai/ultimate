@@ -62,10 +62,6 @@ export const CORE_THROWER_PINS: Readonly<Record<string, ThrowerPin>> = Object.fr
     reason:
       'the opt-in `flight:` an app builds from @ultimat3/core and hands rpc() / queryClient(); action and query name only its `ClientFlight` type, so a caller that never builds one pays nothing, and neither tracked app builds one yet',
   },
-  mapBounded: {
-    reason:
-      "an app's bounded fan-out over a vendor with a concurrency limit; its first framework caller is notify's fan-out (plan 101 sweep 12, N1)",
-  },
   notImplemented: {
     reason:
       'the one door an X_NOT_IMPLEMENTED stub goes through; zero shipped stubs is the goal (axiom 9), so its callers are a test fixture and nothing else',

@@ -1248,6 +1248,44 @@ still stored, is `X_SUBJECT_ERASE_INCOMPLETE` naming the table and column. A dec
 refuses comes back as its own problems, nothing seeded. `x exercise` runs it for every
 `defineSubject()`, on a scratch database of its own.
 
+## A claim over generated inputs
+
+`property(gen, fn, { runs, seed, maxShrinks })` checks `fn` against `runs` (200) seeded draws. A
+throw or a `false` fails it as `X_TEST_PROPERTY_FAILED`: the input shrunk by halving to the
+smallest that still fails, the seed, and a `fix:` whose `{ seed, runs }` replay exactly that draw.
+
+```ts
+import { decodeCursor, encodeCursor } from '@ultimat3/core';
+import { expect, gen, property, unitTest } from '@ultimat3/testing';
+
+const position = gen.map(
+  gen.tuple(gen.string({ maxLength: 24 }), gen.string(), gen.array(gen.int(-100, 100))),
+  ([scope, id, key]) => ({ scope, id, key }),
+);
+
+unitTest('a cursor round-trips any position', () => {
+  property(position, (payload) => {
+    expect(decodeCursor(encodeCursor(payload), payload.scope)).toEqual(payload);
+  });
+});
+```
+
+| Fact | Why |
+|---|---|
+| the default seed is fixed | the gate never flakes; pass another `seed` to explore |
+| draw *n*'s size never depends on `runs` | so `{ runs: n }` replays draw *n* |
+| a promise back is refused (`PropertyAsyncError`) | every draw would pass before its assertion ran |
+| `gen`: `int` `oneOf` `union` `map` `constant` `array` `tuple` `string` `bytes` `json` | each draw carries its shrinks, so a mapped value shrinks through its source |
+| the framework's own: `src/property-*.test.ts` | cursor, canonical JSON, money, byte range, cookie, pgoutput, interpolate, `estimateBytes` |
+
+## The heap canary
+
+`soak({ fetch, requests, total, warmup, maxGrowthBytes })` sends `total` (20,000) requests
+round-robin through an in-process handler after `warmup` (2,000), then compares the live heap after
+`Bun.gc(true)`: growth past `maxGrowthBytes` is `X_TEST_SOAK_HEAP_GROWTH`. The bound is a
+measurement — three runs, the largest × 1.5, written beside it. `measureSoak` reports without a
+verdict. The framework's canary: `src/soak.live.test.ts` (SSR, action, query, 404, 400).
+
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
@@ -1258,7 +1296,8 @@ refuses comes back as its own problems, nothing seeded. `x exercise` runs it for
 `X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
 `X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`
 `X_TEST_ISLAND_STATE_STUB_INVALID` `X_SEED_GRAPH_UNSATISFIED` `X_E2E_A11Y_VIOLATION`
-`X_SEED_GRAPH_ENTITY_UNKNOWN` `X_TENANT_LEAK` `X_TENANT_WRITE_CROSSED` — the last two are findings
+`X_SEED_GRAPH_ENTITY_UNKNOWN` `X_TEST_PROPERTY_FAILED` `X_TEST_SOAK_HEAP_GROWTH`
+`X_TENANT_LEAK` `X_TENANT_WRITE_CROSSED` — the last two are findings
 `x exercise` returns, never thrown
 
 ### Error classes
@@ -1276,8 +1315,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `NetworkOfflineError` | `X_TEST_NETWORK_OFFLINE` | `src/errors.ts` |
 | `NetworkSealedError` | `X_TEST_NETWORK_SEALED` | `src/errors.ts` |
 | `NondeterministicError` | `X_TEST_NONDETERMINISTIC` | `src/errors.ts` |
+| `PropertyAsyncError` | `X_TEST_PROPERTY_FAILED` | `src/property.ts` |
+| `PropertyFailedError` | `X_TEST_PROPERTY_FAILED` | `src/property.ts` |
 | `RegistryLeakError` | `X_TEST_REGISTRY_LEAK` | `src/errors.ts` |
 | `SeedGraphUnsatisfiedError` | `X_SEED_GRAPH_UNSATISFIED` | `src/seed-graph-error.ts` |
+| `SoakHeapGrowthError` | `X_TEST_SOAK_HEAP_GROWTH` | `src/soak.ts` |
 | `TestDatabaseUnavailableError` | `X_TEST_DB_UNAVAILABLE` | `src/errors.ts` |
 
 ## Log lines under test

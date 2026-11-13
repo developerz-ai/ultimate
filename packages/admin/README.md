@@ -85,6 +85,12 @@ the actor may not list has no tile, no segment and no matrix; one that did not o
 no tile and never fails the page. A count reads no row, so it is not audited. Each matrix is a
 closed `<details>` whose summary reads "N of M allowed".
 
+`count: 'estimate'` instead reads `AdminRepo.approximateCount()` — the planner's whole-table
+figure, constant time — when the resource declares no `rows` scope and the estimate is at least
+10,000 rows; the tile reads `~1,200,000` (`admin.dashboard.records.approximate`). Anything else —
+a row scope, a small or never-analysed table, a tenant-scoped or soft-deleting one the estimate
+refuses — is the exact `count()`.
+
 | Input | What it is | Omitted |
 |---|---|---|
 | `entities` | the objects `entity()` returned — `adminEntitiesOf(db)` is every entity the handle serves | required |
@@ -127,7 +133,7 @@ unfiltered list. An empty value is no parameter: a GET form submits every input 
 
 | Filter shape | Derived for | Control | Operators (first is the default) |
 |---|---|---|---|
-| `text` | a text column `LIKE` runs against — the label always, others when indexed | search box | `contains` `eq` `neq` `is-null` |
+| `text` | a text column `contains` runs against — the label always, others when indexed; case-insensitive (`ilike`, served by a `gin_trgm_ops` index) | search box | `contains` `eq` `neq` `is-null` |
 | `exact` | a uuid, `bigint` or `numeric` column | text box | `eq` `neq` `in` `is-null` |
 | `choice` | an enum (its own values, labelled by the catalog), a locale, a zone | select | `eq` `neq` `in` `is-null` |
 | `boolean` | a boolean | any / yes / no | `eq` |
@@ -164,6 +170,7 @@ defineAdmin({
 |---|---|
 | `scopes.<name>` | `where` is predicates or `(actor) => predicates`; `default: true` at most once; `count: true` reads `AdminRepo.count` — never the caller's filters, so a tab's number is the scope's size |
 | `rows` | applied by every read of the resource; a row outside it is "not found", exactly as a missing one |
+| a declared `contains` | in `rows` or a scope's `where`: case-SENSITIVE (`like`, `caseSensitive: true` on the filter), on the read and the write — a row scope is authorization and never widens. Only what an operator types — search, list filter, lookup — ignores case |
 | `columns.<name>` | `render`: `badge` · `relative-time` · `money` · `truncate` · `link` · `json`, or `(props) => JSX`; the row it reads carries no sealed column; a name that is also an entity column is refused |
 | `labelField` | what a reference to this resource SHOWS, linked to the row; read once per page per target, never per row |
 
@@ -474,6 +481,8 @@ Reads are audited too, and on both branches: `adminDetail` keys its entry on the
 `adminList` and `adminSearch` key theirs on the table (`entityId: null`), and a refusal is an
 entry of its own. `AdminSearchResult.audit` carries one entry per resource the call decided
 about — searched or refused — so a jump box that walked every readable entity leaves a trace.
+Search is the entity's `contains` per text field — case-insensitive, the `ilike` a `gin_trgm_ops`
+index serves — at most three statements per resource, resources read four at a time.
 
 ## AI-first
 

@@ -270,6 +270,45 @@ More than the threshold (5 %) of `http_requests_total` answered `5xx` for 10 m. 
 error's `X_*` code; group by it, and if the share rose with a rollout,
 [roll back the image](#roll-back-a-bad-image).
 
+### UltimateErrorBudgetFastBurn
+
+The 5xx share of `http_requests_total` is above 14.4 × the error budget over BOTH the last hour and
+the last 5 m, for 2 m: at this rate a 30-day budget (`alerts.objective`, default 99.9 %) is 2 %
+gone in an hour. The short window resets it minutes after the fault stops. A rollout in the hour:
+[roll back the image](#roll-back-a-bad-image). Otherwise group the logs by `X_*` code.
+
+### UltimateErrorBudgetSlowBurn
+
+The same ratio above 6 × the budget over 6 h and 30 m, for 15 m: 5 % of the budget in six hours.
+Not a page-now fault — a slow leak (one route, one dependency). Break `http_requests_total` down by
+`route`; set `alerts.objective` to your real target rather than raising the factor.
+
+### UltimateJobFailures
+
+More than the threshold (10 %) of a queue's runs on `jobs_total` ended `failed` or `dead` over
+15 m, for 15 m. Read the worker's logs for the job's `X_*` code; a dependency outage shows on every
+queue at once. Dead ones also raise [UltimateDeadLetters](#ultimatedeadletters).
+
+### UltimatePoolSaturated
+
+`db_pool_waiting` above zero on one pod for 5 m: statements queue for a connection because the
+pool is at `db_pool_max`. A slow statement holds connections — read
+`db_client_operation_duration_seconds` first; raise the pool only if Postgres' `max_connections`
+has room for every pod's pool.
+
+### UltimateEventLoopLag
+
+The p99 of `process_event_loop_lag_seconds` above the threshold (0.5 s) on one pod for 10 m: its
+timers run late, so leases, heartbeats and probes do too. A long synchronous step, or a CPU limit
+throttling the pod; compare `process_cpu_seconds_total` with the limit.
+
+### UltimateMemoryNearLimit
+
+`process_resident_memory_bytes` above the threshold (90 %) of `process_memory_limit_bytes` (the
+cgroup `memory.max`) on one pod for 10 m: the next growth is an OOMKill. Growth after a deploy is a
+leak to bisect; flat and high is a limit set below the role's working set — raise
+`roles.<role>.resources.limits.memory`. A pod with no limit emits no limit series and never fires.
+
 ### UltimateTargetDown
 
 A scrape target of one role (`app_kubernetes_io_component`) reads `up == 0` for 5 m: the pod is

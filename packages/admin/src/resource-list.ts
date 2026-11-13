@@ -132,14 +132,14 @@ export function scopesOf(
       );
     }
     const where = scope.where;
-    if (typeof where !== 'function') declaredFilters(resource, where, declaredAs);
+    const fixed = typeof where === 'function' ? [] : declaredFilters(resource, where, declaredAs);
     return {
       name,
       labelKey: scope.labelKey ?? `admin.${resource.name}.scope.${name}`,
       default: scope.default === true,
       count: scope.count === true,
       where: (actor) =>
-        typeof where === 'function' ? declaredFilters(resource, where(actor), declaredAs) : where,
+        typeof where === 'function' ? declaredFilters(resource, where(actor), declaredAs) : fixed,
     };
   });
 }

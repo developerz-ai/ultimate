@@ -3,7 +3,12 @@
 // from `overviewData`, so the chart's bucketing is tested without a queue.
 
 import { expectedQueryLoop } from '@ultimat3/db';
-import { type CounterTotals, inspectQueues, type JobCounter } from '@ultimat3/jobs';
+import {
+  type CounterTotals,
+  inspectQueues,
+  type JobCounter,
+  type JobIntrospection,
+} from '@ultimat3/jobs';
 import { AdminFilterInvalidError } from '../errors';
 import { jobsOperator } from './operator';
 
@@ -90,6 +95,22 @@ export function nameRowsOf(totals: readonly CounterTotals[]): readonly NameRow[]
   });
 }
 
+/** The fallback for a driver that ships no `countersMany`: one read per name, declared. */
+function countersPerName(
+  introspect: JobIntrospection,
+  jobs: readonly string[],
+  sinceMs: number,
+): Promise<readonly JobCounter[]> {
+  return expectedQueryLoop(
+    'the jobs overview reads each settled job name’s counter buckets: this driver has no countersMany',
+    async () => {
+      const all: JobCounter[] = [];
+      for (const job of jobs) all.push(...(await introspect.counters({ job, sinceMs })));
+      return all;
+    },
+  );
+}
+
 export interface OverviewData {
   readonly totals: Awaited<ReturnType<typeof inspectQueues>>['totals'];
   readonly oldestReadyMs: number;
@@ -99,9 +120,10 @@ export interface OverviewData {
 }
 
 /**
- * Two statements and one per job name that settled in the range: the totals say which names have
- * buckets at all, and each one's buckets are read by name — the store keys counters by job. The
- * loop is declared rather than hidden: it is bounded by the app's registered job names.
+ * Four statements whatever the app's size: queue depth, the worker registry, the totals (which
+ * names have buckets at all), then every one of those names' buckets in ONE `countersMany` read.
+ * A driver without it is read one `counters` call per name — declared, bounded by the app's
+ * registered job names.
  */
 export async function overviewData(range: OverviewRange, nowMs: number): Promise<OverviewData> {
   const { driver, introspect } = jobsOperator();
@@ -111,14 +133,11 @@ export async function overviewData(range: OverviewRange, nowMs: number): Promise
     introspect.workers(),
     introspect.counterTotals(sinceMs),
   ]);
-  const counters = await expectedQueryLoop(
-    'the jobs overview reads each settled job name’s counter buckets; the store keys them by name',
-    async () => {
-      const all: JobCounter[] = [];
-      for (const row of totals) all.push(...(await introspect.counters({ job: row.job, sinceMs })));
-      return all;
-    },
-  );
+  const jobs = totals.map((row) => row.job);
+  const counters =
+    introspect.countersMany === undefined
+      ? await countersPerName(introspect, jobs, sinceMs)
+      : await introspect.countersMany({ jobs, sinceMs });
   return {
     totals: depth.totals,
     oldestReadyMs: depth.oldestReadyMs,

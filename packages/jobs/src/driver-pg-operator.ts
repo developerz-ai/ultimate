@@ -12,6 +12,7 @@ import {
   SQL_COUNTER_FOLD,
   SQL_COUNTER_TOTALS,
   SQL_COUNTERS,
+  SQL_COUNTERS_MANY,
   SQL_JOB_PROGRESS,
   SQL_JOB_PROMOTE,
   SQL_JOB_PROMOTE_MANY,
@@ -40,6 +41,7 @@ import type {
   BulkFilter,
   BulkResult,
   CounterBucketMs,
+  JobCounter,
   JobIntrospection,
   PausedName,
 } from './introspection';
@@ -79,6 +81,12 @@ const counts = (row: CounterRow) => ({
   failed: num(row.failed),
   dead: num(row.dead),
   durationMs: num(row.duration_ms),
+});
+
+const bucketOf = (row: CounterRow): JobCounter => ({
+  ...counts(row),
+  bucketStart: num(row.bucket_start),
+  bucketMs: num(row.bucket_ms) as CounterBucketMs,
 });
 
 /** A `jsonb` list of strings, from a client with a type map or without one. */
@@ -339,11 +347,16 @@ export function pgOperator(
     async counters(query) {
       await flushCounters();
       const rows = await exec().query<CounterRow>(SQL_COUNTERS, [query.job, query.sinceMs]);
-      return rows.map((row) => ({
-        ...counts(row),
-        bucketStart: num(row.bucket_start),
-        bucketMs: num(row.bucket_ms) as CounterBucketMs,
-      }));
+      return rows.map(bucketOf);
+    },
+    async countersMany(query) {
+      if (query.jobs.length === 0) return [];
+      await flushCounters();
+      const rows = await exec().query<CounterRow>(SQL_COUNTERS_MANY, [
+        [...query.jobs],
+        query.sinceMs,
+      ]);
+      return rows.map(bucketOf);
     },
     async counterTotals(sinceMs) {
       await flushCounters();

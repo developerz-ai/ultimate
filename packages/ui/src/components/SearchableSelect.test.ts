@@ -17,8 +17,10 @@ import {
 } from '@ultimat3/core/render-nodes';
 import { FakeElement, installFakeDom, keydown } from '../fake-dom-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
+import { COMBOBOX_LIMIT } from './combobox-filter';
 import { SearchableSelect } from './SearchableSelect';
 import type { SearchableOption } from './searchable-select-view';
+import { checkOptions, searchableView } from './searchable-select-view';
 
 type Solid = typeof import('solid-js');
 
@@ -215,6 +217,44 @@ describe('SearchableSelect under a real Solid runtime', () => {
     fire(view.combobox(), 'onInput', { currentTarget: { value: 'ber' } });
     fire(view.combobox(), 'onKeyDown', keydown('Enter'));
     expect(view.validity.at(-1)).toBe('');
+    view.dispose();
+  });
+
+  /** ZONES again, every `group` read counted: each pass over the options reads it per option. */
+  const counted = () => {
+    const reads = { group: 0 };
+    const options = ZONES.map((zone) => {
+      const { group, ...rest } = zone;
+      return Object.defineProperty({ ...rest }, 'group', {
+        enumerable: true,
+        get: () => {
+          reads.group += 1;
+          return group;
+        },
+      }) as SearchableOption;
+    });
+    return { options, reads };
+  };
+
+  test('one keystroke is one pass over the options, however often the view is read', () => {
+    const { options, reads } = counted();
+    checkOptions(options, []);
+    searchableView(options, 'zur', COMBOBOX_LIMIT);
+    const pass = reads.group;
+    expect(pass).toBeGreaterThan(0);
+
+    const view = mount({ name: 'tz', options });
+    reads.group = 0;
+    fire(view.combobox(), 'onInput', { currentTarget: { value: 'zur' } });
+    // The re-render reads the view for the rows, the status text and its class; the keys read it
+    // for the active row. Unmemoised, each of those was its own O(n) pass.
+    view.nodes();
+    expect(reads.group).toBe(pass);
+
+    reads.group = 0;
+    fire(view.combobox(), 'onKeyDown', keydown('ArrowDown'));
+    view.nodes();
+    expect(reads.group).toBe(0);
     view.dispose();
   });
 });
