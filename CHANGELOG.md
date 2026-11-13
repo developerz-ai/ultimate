@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- `x exercise` is fairer and stricter: a refused test-seed table is one finding instead of every check going unproven, one call is held to 100 statements (loops declared with `expectedQueryLoop` excluded), and a data-dependent branch no longer reads as an N+1. `x.verify.json` `exercise.unprovenMax` / `statementsMax` floors are red when declared, warnings otherwise.
+- `x upgrade` installs missing shipped guards the tree already meets and moves the coverage floor on a Bun-floor hop, instead of only printing what to do.
+- `x doctor` warns (never fails, on main) on raw SQL against tenant tables with row security off, ranged `@ultimat3/*` pins, applicable verify steps outside the floor, and app env names that collide with a framework switch; `FRAMEWORK_ENV` lists every env name the framework reads.
+
 ### Added
 
 - `@ultimat3/core`: `FRAMEWORK_ENV` and `frameworkEnvEntry(name)` â€” every environment name the framework reads, its owning package and what reading it means (`contract`, `switch`, `internal`, `host`). `bun run framework-env` (`scripts/framework-env.ts`, run by the `unit` step through its test) keeps the list complete: a literal env read in `packages/*/src` the list does not name is `X_FRAMEWORK_ENV_UNREGISTERED`, a listed name no shipped file spells is `X_FRAMEWORK_ENV_STALE`.
