@@ -51,12 +51,14 @@ There is no `url` field. The canonical origin is an env key the app reads at its
 
 ## `database`
 
-`DatabaseConfig` is **two fields**, deliberately — the connection itself is env, not config.
+`DatabaseConfig` is **four fields**, deliberately — the connection itself is env, not config.
 
 | field | type | default | notes |
 |---|---|---|---|
 | `database.driver` | `'postgres'` | `'postgres'` | one driver; `postgresDriver()` from `@ultimat3/entity` is its only implementation |
 | `database.ssl` | `boolean` | `false` | `true` on managed Postgres |
+| `database.rowSecurity` | `boolean` | `false` | every `tenant:` table carries a forced row-security policy (`x db gen`), and a serving role Postgres exempts from it is refused at boot (`X_DB_ROW_SECURITY_BYPASSED`) |
+| `database.slowStatementMs` | whole ms ≥ 0 | unset: 500 | `As of 31.17.0`. A statement at or over it writes one `db.statement.slow` warn line in **production** — the normalised shape (never a bound value), duration, rows, the request/job id; one line per shape per 10 s, the rest counted as `suppressed`. `0` is off; `NaN`, a negative or a fraction is `X_CONFIG_INVALID` at boot. Outside production the line is off whatever the key says: a test suite's deliberately slow statements are not an incident |
 | ~~`database.urlEnv`~~ | — | — | **Deleted 2026-08.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). `@ultimat3/db`'s `client.ts` reads `process.env['DATABASE_URL']` as a hardcoded literal, so a different key here could never be honoured. Migration: delete the key; the connection string is `DATABASE_URL` |
 | ~~`database.poolSize`~~ | — | — | **Deleted 2026-08.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). A second, non-functioning spelling of `DATABASE_POOL_MAX`, which `baseClient()` layers over the role profile and which works. Migration: delete the key; set `DATABASE_POOL_MAX`. The sizing rule is unchanged — the pool is per PROCESS, so keep `replicas × poolMax` under Postgres `max_connections` |
 | ~~`database.schema`~~ | — | — | **Deleted 2026-08.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). Nothing emits `SET search_path`. Migration: delete the key; there is no replacement, and `entity()` tables live in `public` |
@@ -880,6 +882,6 @@ Not configuration of the app: what `x verify` holds it to, committed at the repo
 
 `x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls. A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
 
-`x config show` is **planned**, not shipped — it throws `X_NOT_IMPLEMENTED` naming `x manifest --json` as the closest thing today → [CLI reference](CLI-Reference).
+`x config show --json` prints the resolved config — defaults merged, credentials redacted; `--section database` for one key (since 31.17.0) → [CLI reference](CLI-Reference).
 
 Error shapes: [Error codes](Error-Codes). Symptom-first fixes: [Troubleshooting](Troubleshooting). Metrics, spans and logs: [Observability](Observability).

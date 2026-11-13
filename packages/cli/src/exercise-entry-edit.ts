@@ -34,6 +34,10 @@ const KEY = /^(?:([A-Za-z_$][\w$]*)|'([^']*)'|"([^"]*)")\s*(?::|$)/;
 
 const refused = (reason: string): ExerciseEdit => ({ kind: 'refused', reason });
 
+/** As an object key: bare where it is an identifier, quoted where it is not (`'billing-events'`). */
+export const entryKey = (name: string): string =>
+  /^[A-Za-z_$][\w$]*$/.test(name) ? name : `'${name}'`;
+
 /** `source` (or `x new`'s file when there is none) with every entry it does not name yet. */
 export function editExerciseFile(
   source: string | undefined,
@@ -83,7 +87,7 @@ const lineIndent = (source: string, at: number): string => {
 
 /** `  name: value,` with every line of the value under `indent`. */
 const row = (indent: string, entry: ExerciseEntry): string =>
-  `${indent}${entry.name}: ${entry.value.split('\n').join(`\n${indent}`)},`;
+  `${indent}${entryKey(entry.name)}: ${entry.value.split('\n').join(`\n${indent}`)},`;
 
 function insertRows(
   source: string,

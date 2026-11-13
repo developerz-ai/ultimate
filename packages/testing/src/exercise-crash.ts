@@ -6,6 +6,7 @@ import type { Actor } from '@ultimat3/core';
 import { ctxOf, isUltimateError, renderThrowable } from '@ultimat3/core';
 import type { AnyJobHandle } from '@ultimat3/jobs';
 import type { CrashFinding, CrashProof } from './exercise-report';
+import { PRELOAD_CLOCK } from './fixture-jobs';
 import type { CrashDivergence } from './job-crash-proof';
 import { crashProof } from './job-crash-proof';
 
@@ -31,7 +32,14 @@ export async function proveCrash(
   input: unknown,
   actor: Actor | null,
 ): Promise<CrashProof> {
-  const worker = ctxOf(actor === null ? { role: 'worker' } : { role: 'worker', actor });
+  // The control's worker clock (`fixture-jobs.ts`): `ctxOf`'s default read the frozen `Date` but
+  // had no `advance`, so a `backfill()` pacer slept its whole `rate` interval in WALL time on every
+  // killed rerun — 8 of the reference app's 23 s pass.
+  const worker = ctxOf(
+    actor === null
+      ? { role: 'worker', clock: PRELOAD_CLOCK }
+      : { role: 'worker', actor, clock: PRELOAD_CLOCK },
+  );
   try {
     const report = await crashProof(handle, input, { context: () => worker });
     const counted = {

@@ -24,6 +24,7 @@
 // is `bare-error`'s second half: an app code is declared once, with core's `defineError`. One is
 // about the TAB: an island polls with `visibleInterval()`, which a hidden tab and a lost session stop.
 // One is about the QUESTION: a destructive act asks through `ConfirmDialog`, never `confirm(`.
+// One is about the POOL: a database call per row runs through `mapBounded`, never all at once.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
@@ -43,6 +44,7 @@ import { rawShadowGuardFiles } from './guard-raw-shadow';
 import { rawZIndexGuardFiles } from './guard-raw-z-index';
 import { repoRawSqlGuardFiles } from './guard-repo-raw-sql';
 import { semanticInteractiveGuardFiles } from './guard-semantic-interactive';
+import { unboundedFanoutGuardFiles } from './guard-unbounded-fanout';
 import { undeclaredCustomPropertyGuardFiles } from './guard-undeclared-custom-property';
 import { undefinedStyleClassGuardFiles } from './guard-undefined-style-class';
 import { untranslatedStringGuardFiles } from './guard-untranslated-string';
@@ -74,6 +76,7 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['raw-z-index', rawZIndexGuardFiles],
   ['repo-raw-sql', repoRawSqlGuardFiles],
   ['semantic-interactive', semanticInteractiveGuardFiles],
+  ['unbounded-fanout', unboundedFanoutGuardFiles],
   ['undeclared-custom-property', undeclaredCustomPropertyGuardFiles],
   ['undefined-style-class', undefinedStyleClassGuardFiles],
   ['untranslated-string', untranslatedStringGuardFiles],

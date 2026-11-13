@@ -27,6 +27,18 @@ describe('readKind', () => {
     expect(thrown.fix).toBe('x g resource invoice');
   });
 
+  // A factory with no generator is a decision on the record (`generate-factories.ts`): asked for by
+  // name, the refusal says it, rather than reading as a typo of some generator.
+  test('a factory no generator writes is refused with the reason it has none', () => {
+    for (const raw of ['llm', 'agent-job', 'agentJob', 'export-rows']) {
+      const thrown = thrownBy(() => readKind(raw));
+      expect([raw, thrown.code]).toEqual([raw, 'X_CLI_UNKNOWN_COMMAND']);
+      expect(thrown.cause).toContain('has no generator: ');
+    }
+    expect(thrownBy(() => readKind('llm')).cause).toContain('registerModel');
+    expect(thrownBy(() => readKind('resourse')).cause).not.toContain('has no generator');
+  });
+
   /**
    * The fix used to be the literal `x g resource`, for every typo of every generator: `x g rout x`
    * — one edit from `route` — answered with the WRONG PRIMITIVE, and answered with a command that

@@ -5,14 +5,17 @@ import { DEFAULT_BASE_HELP } from './affected-base';
 import type { CommandSpec } from './parse';
 import { BUDGET_RULE, WORKER_BYTES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 
-/** `run` is the gate (and what a bare `x verify` means); `merge` folds CI parts into its verdict. */
-export const VERIFY_SUBCOMMANDS = ['run', 'merge'] as const;
+/**
+ * `run` is the gate (and what a bare `x verify` means); `merge` folds CI parts into its verdict;
+ * `plan` cuts the gate into those parts, as the matrix a workflow reads.
+ */
+export const VERIFY_SUBCOMMANDS = ['run', 'merge', 'plan'] as const;
 
 export const verifySpec: CommandSpec = {
   name: 'verify',
   summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
   usage:
-    'x verify [--only <step>[,<step>…] [--shard i/n [--timings file]] | --changed [--base <ref>] [--dirty]] [--workers N] [--isolate] [--json] · x verify merge <part.json…> [--json]',
+    'x verify [--only <step>[,<step>…] [--shard i/n [--timings file]] | --changed [--base <ref>] [--dirty]] [--workers N] [--isolate] [--json] · x verify merge <part.json…> [--json] · x verify plan [--parts n] [--json]',
   requiresApp: true,
   subcommands: VERIFY_SUBCOMMANDS,
   defaultSubcommand: 'run',
@@ -73,6 +76,13 @@ export const verifySpec: CommandSpec = {
       subcommands: ['run'],
       summary:
         'a fresh global per test file (bun test --isolate) — off by default since 22.7; x.verify.json "isolate": true makes it the repo default',
+    },
+    {
+      name: 'parts',
+      type: 'string',
+      subcommands: ['plan'],
+      summary:
+        'runners to cut the gate into: 1, or 4 to 64 (default 4) — data.matrix is a GitHub strategy.matrix, each row an `x verify --only … [--shard i/n]`',
     },
   ],
 };

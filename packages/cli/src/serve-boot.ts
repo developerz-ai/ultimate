@@ -12,7 +12,7 @@ import { armFailureCapture } from './failure-capture-boot';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
 import type { Finding } from './output';
-import { loadAppForRole, roleLoadFor } from './role-load';
+import { loadAppForRole } from './role-load';
 import { startRoles } from './role-start';
 import { armRowSecurity, rowSecurityDeclared } from './row-security-boot';
 import { resolveServices } from './runtime-bindings';
@@ -22,6 +22,9 @@ import { warnUnsealedMfaSecrets } from './runtime-mfa-warning';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
 import { releaseOrThrow, startServices } from './runtime-services';
+import type { BootTimeline } from './serve-boot-phases';
+import { bootTimeline } from './serve-boot-phases';
+import { bootWarningConcerns, warnAtBoot } from './serve-boot-warnings';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import { adoptPrebuiltStyles, reportBootBuilds, watchBootBuilds } from './serve-prebuilt';
@@ -37,7 +40,7 @@ import type { ServedApp, ServeOptions } from './serve-types';
 async function buildIdFor(options: ServeOptions, role: Role): Promise<string> {
   const stamped = options.env['BUILD_ID'];
   if (stamped !== undefined && stamped.length > 0) return stamped;
-  if (roleLoadFor(role) === 'background') {
+  if (bootWarningConcerns('build-id-unstamped', role)) {
     logger.warn('ultimate build id unstamped', {
       role,
       cause:
@@ -89,6 +92,8 @@ export async function bootServing(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options } = boot;
+  // One `boot.phase` line as each step ends, so a slow boot names its slow step (U12).
+  const timeline = bootTimeline(boot.role, options.runtime?.clock);
   const services = resolveServices(options.root, options.env);
   // A serving role on a real database runs no DDL: `ROLE=migrate` applied this build's framework
   // tables first, and this boot only verifies the stamp it left (`framework-schema-apply.ts`).
@@ -97,7 +102,8 @@ export async function bootServing(boot: {
   // The role decides whether this boot waits for the bus: only `sync` and the replicator do.
   const runtime = await startServices(services, options.env, options.runtime, schema, [boot.role]);
   boot.acquired.push(() => runtime.stop());
-  return bootRoles({ ...boot, runtime });
+  timeline.phase('services');
+  return bootRoles({ ...boot, runtime, timeline });
 }
 
 /**
@@ -131,8 +137,9 @@ async function bootRoles(boot: {
   readonly acquired: (() => void | Promise<void>)[];
   /** The scrape listener `serveApp` opened before any of this work; `startRoles` adopts it. */
   readonly metrics: MetricsEndpoint;
+  readonly timeline: BootTimeline;
 }): Promise<ServedApp> {
-  const { options, role, runtime, acquired, metrics } = boot;
+  const { options, role, runtime, acquired, metrics, timeline } = boot;
   // Before the app's modules, because importing one may register a `close` hook, and that phase
   // runs last-registered first: the flush has to be the hook registered earliest, or a teardown's
   // spans are recorded into an exporter already shut down. `OTEL_EXPORTER_OTLP_ENDPOINT` is in the
@@ -141,7 +148,11 @@ async function bootRoles(boot: {
   // different lifetime — so this is the production boot's alone (axiom 6).
   // At the FRONT of the unwind list, so the stop and a failed boot's rollback alike release it
   // last: the drain's own spans and the final counter snapshot still have somewhere to go.
-  acquired.unshift(startOtlpExport(options.env));
+  // The config first, for `database.slowStatementMs`: `app.config.ts` declares, it registers no hook.
+  const appConfig = await loadAppConfig(options.root);
+  acquired.unshift(
+    startOtlpExport(options.env, { slowStatementMs: appConfig?.database.slowStatementMs }),
+  );
   // The image's compiled stylesheets, before the first page is imported — importing one IS
   // compiling its sheet — and the count of what this boot compiles anyway.
   adoptPrebuiltStyles(options.root);
@@ -158,17 +169,17 @@ async function bootRoles(boot: {
     logger.error('ultimate app module failed to load', { role, ...finding });
   }
   refuseHalfLoadedApp(role, loaded.findings);
+  timeline.phase('app-load');
   // After the app's modules and before any role serves: a role Postgres exempts from row security is
   // refused here (`X_DB_ROW_SECURITY_BYPASSED`), never discovered on another tenant's first read.
   // PGlite's one session is a superuser: there the boot serves as `x_app` instead of refusing.
   const embedded = runtime.services.db.mode === 'embedded';
-  const appConfig = await loadAppConfig(options.root);
   acquired.push(await armRowSecurity(rowSecurityDeclared(appConfig), { embedded }));
   // `failureCapture.enabled`: a 5xx keeps a replayable bundle for `x repro` (off by default).
   acquired.push(armFailureCapture(appConfig, { store: runtime.failureStore }));
-  // After the app's modules: an app swaps the store at import time, after `startServices`.
-  warnIfIdempotencyProcessScoped();
+  timeline.phase('app-checks');
   const buildId = await buildIdFor(options, role);
+  timeline.phase('build-id');
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
   // Released with the boot, so a second boot in this process starts from the app's reporter alone.
@@ -181,9 +192,16 @@ async function bootRoles(boot: {
     role === 'web'
       ? await (await import('./serve-web')).webSurface(options, runtime, buildId)
       : undefined;
-  if (web !== undefined) acquired.push(web.release);
-  // The web role alone — it is where a second factor is asked for — and once per pod boot.
-  if (role === 'web') await warnUnsealedMfaSecrets(runtime.db);
+  if (web !== undefined) {
+    acquired.push(web.release);
+    timeline.phase('web');
+  }
+  // After the app's modules — an app swaps the idempotency store at import time, after
+  // `startServices` — and each only in the roles its table row names (`serve-boot-warnings.ts`).
+  await warnAtBoot(role, {
+    idempotency: () => warnIfIdempotencyProcessScoped(),
+    mfa: () => warnUnsealedMfaSecrets(runtime.db),
+  });
   // Islands and stylesheets are the image build's to make (`x build --target prebuilt`). A role
   // that made either here served correctly and paid for it — seconds of CPU and a compiler's
   // memory, on every start of every replica — so it says so once, with the Dockerfile line.
@@ -230,6 +248,7 @@ async function bootRoles(boot: {
     ...(replicaOverride === undefined ? {} : { overrides: replicaOverride }),
   });
   acquired.push(() => running.stop());
+  timeline.phase('roles');
   return {
     kind: 'served',
     role,

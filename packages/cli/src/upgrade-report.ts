@@ -118,6 +118,9 @@ export const humanLines = (input: {
             figures: JSON.stringify(gate.exerciseFloor.written),
           }),
         ]),
+    ...(gate?.doctorWarnings ?? []).map((warning) =>
+      msg('cli.upgrade.doctorWarning', { code: warning.code, fix: warning.fix }),
+    ),
     // The exercise's own list first: every fix it has, before the gate's verdict on the same tree.
     ...findingLines([
       ...(gate?.exercise.findings ?? []),
@@ -172,6 +175,7 @@ export const report = (input: {
     guards: gate?.guards ?? null,
     coverage: gate?.coverage ?? null,
     manifest: gate?.manifest ?? null,
+    doctorWarnings: gate?.doctorWarnings ?? [],
     exercise: gate?.exercise ?? null,
     exerciseFloor: gate?.exerciseFloor ?? null,
     verify: gate?.verify ?? null,

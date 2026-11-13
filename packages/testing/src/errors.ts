@@ -78,6 +78,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_FACTORY_INVALID',
   'X_EXERCISE_SEED_FAILED',
   'X_STATEMENTS_OVER_BUDGET',
+  'X_EXERCISE_EMPTY_REACH',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -158,6 +159,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_FACTORY_INVALID: 'a factory builds a row its own entity refuses',
   X_EXERCISE_SEED_FAILED: 'The scale sweep could not write the sized rows of one entity',
   X_STATEMENTS_OVER_BUDGET: 'One primitive call sent more statements than its ceiling',
+  X_EXERCISE_EMPTY_REACH:
+    'an exercised primitive was reached and sent no statement and had no effect',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

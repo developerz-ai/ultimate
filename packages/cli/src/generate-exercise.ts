@@ -4,7 +4,7 @@
 
 import { UltimateError } from '@ultimat3/core';
 import type { ExerciseEntry } from './exercise-entry-edit';
-import { editExerciseFile } from './exercise-entry-edit';
+import { editExerciseFile, entryKey } from './exercise-entry-edit';
 import { EXERCISE_FILE } from './exercise-registration';
 import type { GenerateDisk } from './generate-disk';
 import type { Finding } from './output';
@@ -23,7 +23,7 @@ export const writtenExercises = (
 
 /** One line of an entry: what the fix asks to paste, whitespace folded. */
 const oneLine = (entry: ExerciseEntry): string =>
-  `${entry.name}: ${entry.value.replace(/\s*\n\s*/g, ' ').replace(/, }/g, ' }')}`;
+  `${entryKey(entry.name)}: ${entry.value.replace(/\s*\n\s*/g, ' ').replace(/, }/g, ' }')}`;
 
 /** Inserts `entries` into the app's exercise file; answers the path when it changed, or a refusal. */
 export async function declareGeneratedExercises(

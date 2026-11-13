@@ -240,5 +240,8 @@
  * mcp `query-page.ts` (the bounded list page) and `stdio-lines.ts` (the byte-counted line
  * splitter), pwa `precached-asset-source.ts` (assets served from the precache). Every one a new
  * file; no existing module newly reached.
+ * raised 1684 → 1687, measured 1687 (2026-11-12, sweep 13b, the test's own walk):
+ * `SERVING_ROLE_CEILING`'s 3 (`serve-boot-warnings.ts`, `serve-boot-phases.ts`, `messages-ops.ts`).
+ * Nothing web-only moved.
  */
-export const WEB_ROLE_CEILING = 1684;
+export const WEB_ROLE_CEILING = 1687;

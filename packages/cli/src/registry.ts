@@ -9,9 +9,11 @@
 import { affectedSpec } from './cmd-affected-spec';
 import { authSpec } from './cmd-auth-spec';
 import { buildSpec } from './cmd-build-spec';
+import { cacheSpec } from './cmd-cache-spec';
 import { ciSpec } from './cmd-ci-spec';
 import { cleanSpec } from './cmd-clean-spec';
 import { clientSpec } from './cmd-client-spec';
+import { configSpec } from './cmd-config-spec';
 import { dbSpec } from './cmd-db-spec';
 import { deploySpec } from './cmd-deploy-spec';
 import { devSpec } from './cmd-dev-spec';
@@ -21,6 +23,7 @@ import { drillSpec } from './cmd-drill-spec';
 import { envSpec } from './cmd-env-spec';
 import { errorsSpec } from './cmd-errors-spec';
 import { exerciseSpec } from './cmd-exercise-spec';
+import { explainSpec } from './cmd-explain-spec';
 import { fixSpec } from './cmd-fix-spec';
 import { generateSpec } from './cmd-generate-spec';
 import { graphSpec } from './cmd-graph-spec';
@@ -31,6 +34,7 @@ import { createHelpCommand, createVersionCommand } from './cmd-help';
 import { i18nSpec } from './cmd-i18n-spec';
 import { impactSpec } from './cmd-impact-spec';
 import { jobsSpec } from './cmd-jobs-spec';
+import { logsSpec } from './cmd-logs-spec';
 import { mailSpec } from './cmd-mail-spec';
 import { manifestSpec } from './cmd-manifest-spec';
 import { mcpSpec } from './cmd-mcp-spec';
@@ -46,6 +50,7 @@ import { shotSpec } from './cmd-shot-spec';
 import { stopSpec } from './cmd-stop-spec';
 import { tasksSpec } from './cmd-tasks-spec';
 import { testSpec } from './cmd-test-spec';
+import { tokenSpec } from './cmd-token-spec';
 import { upgradeSpec } from './cmd-upgrade-spec';
 import { vapidSpec } from './cmd-vapid-spec';
 import { verifySpec } from './cmd-verify-spec';
@@ -125,6 +130,11 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(clientSpec, async () => (await import('./cmd-client')).clientCommand),
   lazy(graphSpec, async () => (await import('./cmd-graph')).graphCommand),
   lazy(impactSpec, async () => (await import('./cmd-impact')).impactCommand),
+  lazy(tokenSpec, async () => (await import('./cmd-token')).tokenCommand),
+  lazy(configSpec, async () => (await import('./cmd-config')).configCommand),
+  lazy(logsSpec, async () => (await import('./cmd-logs')).logsCommand),
+  lazy(cacheSpec, async () => (await import('./cmd-cache')).cacheCommand),
+  lazy(explainSpec, async () => (await import('./cmd-explain')).explainCommand),
 ];
 
 /**

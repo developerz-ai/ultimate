@@ -277,6 +277,7 @@ interface Output {
       readonly to: { lines: number; funcs: number };
     } | null;
     readonly manifest: { ok: boolean } | null;
+    readonly doctorWarnings?: readonly { code: string; cause: string; fix: string }[];
     readonly exercise: {
       readonly reported: boolean;
       readonly ok: boolean;

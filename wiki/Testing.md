@@ -1111,6 +1111,10 @@ reruns the one job and names the effect to move:
 x exercise chargeOrder --json   # in job("chargeOrder"): wrap the "row:payments:insert" made after step "create" in step.run('<name>', async () => …)
 ```
 
+**A throttled sweep pays no wall clock**, `As of 31.17.0`: every killed rerun runs on the pass's
+frozen clock, the control's own (`fixture-jobs.ts`), so a `backfill()` pacer's `rate` wait moves the
+instant instead of sleeping. The reference app's pass went from 23.3 s to 13.6 s.
+
 ### The plan and scale sweeps
 
 **After every primitive ran, two sweeps, with no flag to turn either off**, `As of 2026-11`.
@@ -1183,6 +1187,34 @@ export const exercise = defineExercise({
   importRows: { statements: { max: 140, why: 'one insert per line, bounded by the 140-line form' } },
 });
 ```
+
+### Route loads
+
+`As of 31.17.0`. A page read is a read: after the primitives the pass runs every `app/` and `site/`
+file route that declares a `load` — the route table `x routes` prints — once, in a seeded tenant of
+its own, as the runtime calls it (in a request, as the first actor the route's permission allows, a
+signed-in one where it names none). Params are a seeded row's id where a param's stem names an
+entity, else the route's own `prerender()` sample. Source:
+`packages/testing/src/exercise-route-loads.ts`, `exercise-route-subjects.ts`.
+
+| Proof | As for a primitive |
+|---|---|
+| statements | counted; the busiest call held to the ceiling (100) — `statementCeiling` |
+| scale | swept at 2 and 8 rows a table: a shape that grows is `X_QUERY_SCALES_WITH_ROWS` — the demo's `/messages` at 4 + N |
+| plans | the statements it sent, planned by the oracle the primitives share |
+
+The records are `routes[]` beside `records[]` in `.x/exercise.json` and `--json`: `{ kind: 'route',
+name, file, outcome, reason?, statements, effects, ms, statementCeiling?, plans?, scale?, proofMs? }`.
+Every finding on them is a **warning line**, never red — no floor key opts a page read in yet — and a
+load that could not run says why: `route /settings (…/page.tsx) · load not exercised: <reason>`.
+Measured on the tracked apps: docs-site 3 of 3 loads ran, the demo 6 of 10; the reference app's 7
+report `load not exercised` — a load that calls the app's own API needs an origin the pass does not
+serve yet, and one reads a member fact its actor does not carry.
+
+**A primitive reached with nothing to prove** — no statement, no effect — has vacuous proofs (a
+sweep of nothing is `flat`). On a whole pass one warning line names the first five:
+`X_EXERCISE_EMPTY_REACH`, fixed in `apps/web/exercise.ts` with an input that reaches the work, or
+`{ off: '<why>' }`.
 
 ### The floor: `unprovenMax` and `statementsMax`
 

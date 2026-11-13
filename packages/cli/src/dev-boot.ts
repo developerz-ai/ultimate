@@ -5,7 +5,7 @@
 
 import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
-import { subscribe, subscribeSemconvMetrics } from '@ultimat3/core';
+import { subscribe, subscribeSemconvMetrics, systemClock } from '@ultimat3/core';
 import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx, subscribeRequestTimings } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
@@ -13,6 +13,7 @@ import { loadAppConfig } from './app-config-load';
 import type { StalePin } from './app-reload-graph';
 import { enableReloadTracking } from './app-reload-graph';
 import { loadAppRuntime } from './app-runtime';
+import { pgliteOpens, startOverUnopenable } from './dev-boot-data-dir';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devPanels } from './dev-dashboard';
 import { createInvalidationLog } from './dev-dashboard-invalidations';
@@ -25,6 +26,7 @@ import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
 import { armFailureCapture } from './failure-capture-boot';
 import { FRAME_STYLE } from './island-harness';
+import { appExtensions } from './migration-extensions';
 import type { Finding } from './output';
 import { plainRoutes } from './plain-routes';
 import type { RunningRoles } from './role-start';
@@ -118,22 +120,31 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // actions wrote to two different places in `x dev` and to one in production.
   const appRuntime = await loadAppRuntime(options.root);
   // The roles decide whether this boot waits for the bus, exactly as a container's one role does.
-  const runtime: RunningServices = await startServices(
-    resolved,
-    env,
-    appRuntime,
-    'apply',
-    options.roles ?? DEV_ROLES,
-    // Every role in one process: a bus that is away must not take the pages down with it.
-    true,
-  );
+  // An embedded data directory that will not open is set aside and the boot runs again over an
+  // empty one — the developer is told where it went (`dev-boot-data-dir.ts`).
+  const started = await startOverUnopenable(resolved.db, {
+    start: () =>
+      startServices(
+        resolved,
+        env,
+        appRuntime,
+        'apply',
+        options.roles ?? DEV_ROLES,
+        // Every role in one process: a bus that is away must not take the pages down with it.
+        true,
+      ),
+    opens: (dataDir) => pgliteOpens(dataDir, () => appExtensions(options.root)),
+    now: () => (appRuntime?.clock ?? systemClock).now(),
+  });
+  const runtime: RunningServices = started.value;
+  const notices = started.notice === undefined ? [] : [started.notice];
   // The events binding the boot line reports is the bus the runtime chose, read off it.
   const services = withRealtimeEvents(resolved, env, appRuntime?.transport !== undefined);
   // `serve.ts`'s `releaseBoot` shape: everything acquired from here on is released, newest first,
   // if the boot throws — a failed `x dev` left PGlite holding `.x/pgdata` for the retry to meet.
   const acquired: (() => void | Promise<void>)[] = [() => runtime.stop()];
   try {
-    return await bootDev(options, services, runtime, acquired, appRuntime);
+    return await bootDev(options, services, runtime, acquired, appRuntime, notices);
   } catch (error) {
     await releaseBoot(acquired);
     throw error;
@@ -146,6 +157,8 @@ async function bootDev(
   runtime: RunningServices,
   acquired: (() => void | Promise<void>)[],
   appRuntime: RuntimeOverrides | undefined,
+  /** What the boot did on the developer's behalf and must say: a set-aside data directory. */
+  notices: readonly Finding[],
 ): Promise<DevServer> {
   // Installed before the app loads, so a span opened during registration is already recorded.
   // Tracing is always on in the framework and free until something subscribes to `span.end`;
@@ -321,8 +334,8 @@ async function bootDev(
     get findings(): readonly Finding[] {
       const loops = statements.repeats().map(loopFacts).map(loopFinding);
       return state.reloadFinding === undefined
-        ? [...state.appFindings, ...loops]
-        : [...state.appFindings, state.reloadFinding, ...loops];
+        ? [...notices, ...state.appFindings, ...loops]
+        : [...notices, ...state.appFindings, state.reloadFinding, ...loops];
     },
     running,
     runtime,

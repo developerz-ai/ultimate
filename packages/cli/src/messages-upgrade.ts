@@ -31,6 +31,7 @@ export const UPGRADE_MESSAGES = {
   'cli.upgrade.done': '{from} -> {to}: the gate is green',
   'cli.upgrade.dryRun': '{from} -> {to}: nothing written, no gate run',
   'cli.upgrade.guard': 'guard, yours to take or leave: {fix}',
+  'cli.upgrade.doctorWarning': 'doctor warning: {code}, red on the next major — fix: {fix}',
   'cli.upgrade.guardInstalled':
     'guard installed: guards/{name}.ts, from this release (delete the file to drop the rule)',
   'cli.upgrade.guardWithheld':

@@ -68,11 +68,13 @@ describe('unit · parseArgs', () => {
   // not the point: the point is that a mistyped word must not reach a subcommand at all.
   // `x auth` joined them with its first subcommand: `seal-mfa` rewrites credential rows in place,
   // and it has no read-only sibling to default to — the count it would report is `x doctor`'s.
+  // `x token` joined them in 31.x: `create` mints a credential, `revoke` ends one, and a bare
+  // `x token` reaching either by default is a mistyped word with a side effect nobody asked for.
   test('exactly the commands whose bare form is dangerous refuse it', () => {
     const refusing = SPECS_SHIPPED.filter(
       (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
     ).map((spec) => spec.name);
-    expect(refusing.sort()).toEqual(['auth', 'client', 'db', 'mcp', 'pr']);
+    expect(refusing.sort()).toEqual(['auth', 'client', 'db', 'mcp', 'pr', 'token']);
   });
 
   // `--json` is axiom 4: every command and every error answers in machine-readable form, so

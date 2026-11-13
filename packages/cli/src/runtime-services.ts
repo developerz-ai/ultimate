@@ -6,7 +6,9 @@
 import { postgresAuthLimiter, postgresTotpReplayGuard } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
+import type { Clock } from '@ultimat3/core';
 import {
+  finiteCount,
   type RealtimeConfig,
   type Role,
   registerReadinessCheck,
@@ -158,35 +160,48 @@ export function cdnLabel(runtime: RunningServices): string {
 }
 
 /**
- * A readiness check over a dependency that can only be asked asynchronously.
- *
- * `ReadinessCheck` is synchronous and that is the mechanism, not a limitation: a probe that awaits
- * a network call takes as long as the dependency does, so a slow database makes `/readyz` miss its
- * `timeoutSeconds`, the kubelet reads that as unready, and capacity is pulled from an already
- * struggling system — the outage the probe existed to prevent, caused by the probe.
- *
- * So the read answers the PREVIOUS probe and schedules the next, which is the standard cached
- * health shape: staleness is one poll period, and the poll period is the operator's own
- * `periodSeconds`. Deliberately not a `setInterval`: a timer would probe a process nobody is
- * asking about, and in `x dev` every probe is a statement — one span, one trace id — so a
- * one-per-second heartbeat would evict every real request from `/_x/timeline` inside a minute.
- *
- * It starts `true` because it is already proven: `startQueue` pinged this pool before this line
- * ran, and a boot that could not would have thrown instead of reaching here.
+ * The fewest milliseconds between two pings. Production saw `select $1` as the most-called
+ * statement — 38,195 in 26 h — because every read once the last ping settled started another. One
+ * second is below any kubelet `periodSeconds`, so the answer a probe reads is never staler than
+ * the probe period it already accepted.
  */
-function probedReadinessCheck(name: string, probe: () => Promise<unknown>): () => void {
+export const READINESS_PROBE_MIN_MS = 1_000;
+
+/**
+ * `ReadinessCheck` is synchronous and that is the mechanism: a probe that awaits a network call
+ * takes as long as the dependency does, so a slow database makes `/readyz` miss its
+ * `timeoutSeconds`, and capacity is pulled from an already struggling system. Deliberately not a
+ * `setInterval`: a timer probes a process nobody is asking about, and in `x dev` every probe is a
+ * statement on `/_x/timeline`.
+ *
+ * It starts `true`, with the interval already running, because it is proven: `startQueue` pinged
+ * this pool before this line ran, and a boot that could not would have thrown instead.
+ */
+export function probedReadinessCheck(
+  name: string,
+  probe: () => Promise<unknown>,
+  options: { readonly clock?: Clock; readonly minIntervalMs?: number } = {},
+): () => void {
+  const clock = options.clock ?? systemClock;
+  const minIntervalMs = finiteCount(
+    'probedReadinessCheck',
+    'minIntervalMs',
+    options.minIntervalMs ?? READINESS_PROBE_MIN_MS,
+  );
   let live = true;
   let inFlight = false;
+  let startedAt = clock.monotonic();
   const refresh = (): void => {
-    if (inFlight) return;
+    if (inFlight || clock.monotonic() - startedAt < minIntervalMs) return;
     inFlight = true;
+    startedAt = clock.monotonic();
     void probe()
       .then(
         () => {
           live = true;
         },
-        // Every rejection, including the coded `X_DB_UNAVAILABLE` a closed pool answers with. A
-        // check that threw would be reported as failing anyway; catching it here keeps the reason
+        // Every rejection, including the coded `X_DB_UNAVAILABLE` a closed pool answers with: a
+        // check that threw is reported as failing anyway, and catching it here keeps the reason
         // out of the endpoint's own path, where nothing could report it.
         () => {
           live = false;
@@ -380,7 +395,8 @@ export async function startServices(
     // `packages/http/src/server.ts` calls that BEFORE `Bun.serve`, while `role-start.ts` calls it
     // before `sync`, `worker` and `scheduler` start. The chart's `readinessProbe` and the container
     // healthcheck both route on it, so a replica whose pool was gone kept taking traffic.
-    started.push(probedReadinessCheck('database', () => db.ping()));
+    // At most one ping per `READINESS_PROBE_MIN_MS` on this boot's clock, however many pollers ask.
+    started.push(probedReadinessCheck('database', () => db.ping(), { clock }));
     // Dialled here rather than at selection: the socket is a resource the unwind below has to
     // release. AWAITED only by a process that cannot work without the bus — a `sync` node, a
     // replicator — where an unreachable one must fail the boot, not the first change nobody

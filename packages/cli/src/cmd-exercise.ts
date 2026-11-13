@@ -1,4 +1,4 @@
-// `x exercise [<name>] [--seed n]` — every action, query and job run once against generated rows,
+// `x exercise [<name>] [--seed n]` — every action, query, job and route `load` run once on rows
 // with no test written: load the app, read `apps/web/exercise.ts`, run `@ultimat3/testing`'s pass
 // on a scratch database, write `.x/exercise.json`. CLI wiring only: the pass is testing's, the
 // verdict is `exercise-findings.ts`'s, so the gate step and this command read one rule.
@@ -8,10 +8,16 @@ import { join } from 'node:path';
 import { describeEntities, registeredEntities } from '@ultimat3/entity';
 import { registeredSubjects } from '@ultimat3/jobs';
 import type { NamedActor } from '@ultimat3/policy';
-import type { ExercisePhaseMs, ExerciseRecord, SeedEntity } from '@ultimat3/testing';
+import type {
+  ExercisePhaseMs,
+  ExerciseRecord,
+  RouteLoadRecord,
+  SeedEntity,
+} from '@ultimat3/testing';
 import {
   entitySeedWriter,
   planSweepLines,
+  routeLoadSubjects,
   runExercisePass,
   tenantFindingLines,
 } from '@ultimat3/testing';
@@ -33,6 +39,7 @@ import {
 } from './exercise-findings';
 import { exerciseFloorVerdict } from './exercise-floor-verdict';
 import { readExerciseOverrides } from './exercise-overrides';
+import { emptyReachWarnings, routeLoadWarnings } from './exercise-routes';
 import { entityTenantFindings } from './exercise-static';
 import { subjectFindings, subjectProofFindings } from './exercise-subject';
 import { readIntFlag } from './flag-number';
@@ -96,6 +103,8 @@ async function exercisePass(
     (subject) => only === undefined && !subjectStatic.some((f) => f.at === subject.entity),
   );
   let pass: ExercisePhaseMs | undefined;
+  let routes: readonly RouteLoadRecord[] = [];
+  const routeSubjects = await routeLoadSubjects();
   const records: readonly ExerciseRecord[] = await withExerciseDatabase(root, ctx.env, (client) =>
     runExercisePass({
       entities,
@@ -104,8 +113,13 @@ async function exercisePass(
       ...(overrides === undefined ? {} : { overrides }),
       ...(only === undefined ? {} : { only }),
       roles: exerciseRoles,
+      // Every `app/` and `site/` route's `load`, after the primitives: a page read is measured too.
+      ...(only === undefined ? { routes: routeSubjects } : {}),
       onPhases: (ms) => {
         pass = ms;
+      },
+      onRoutes: (got) => {
+        routes = got;
       },
     }),
   );
@@ -120,16 +134,28 @@ async function exercisePass(
         );
   const subject = Math.round(performance.now() - subjectStarted);
   const phases = pass === undefined ? undefined : { ...pass, subject };
-  const report = exerciseReport(records, seed, phases);
-  // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a
-  // one-primitive run is still a fact worth keeping, so it is written either way.
-  await Bun.write(join(root, EXERCISE_REPORT_FILE), `${JSON.stringify(report, null, 2)}\n`);
+  // `routes` beside `records`, never in it: every reader of `records` reads a primitive's.
+  const report = {
+    ...exerciseReport(records, seed, phases),
+    ...(routes.length === 0 ? {} : { routes }),
+  };
   // `x.verify.json`'s `exercise` key: red where the app opted in, a warning line where it has not.
   // A whole-pass floor, so never judged on a `<name>` run's slice: 1 of 1 unproven is no ratio.
   const floor =
     only === undefined
       ? exerciseFloorVerdict(records, (await readVerifyFloor(root))?.exercise)
       : { findings: [], warnings: [] };
+  // Warnings, never red on `main`: no floor key opts a page read in yet (`exercise-routes.ts`).
+  const warnings = [
+    ...floor.warnings,
+    ...routeLoadWarnings(routes),
+    ...(only === undefined ? emptyReachWarnings(records) : []),
+  ];
+  // One document, the file's and `--json`'s, its warnings in it (`lines` never holds what it lacks).
+  const document = warnings.length === 0 ? report : { ...report, warnings };
+  // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a
+  // one-primitive run is still a fact worth keeping, so it is written either way.
+  await Bun.write(join(root, EXERCISE_REPORT_FILE), `${JSON.stringify(document, null, 2)}\n`);
   const findings = [
     ...loaded.findings,
     // The static half of the tenant proof (`exercise-static.ts`): the pass's own question,
@@ -155,12 +181,10 @@ async function exercisePass(
       ...tenantFindingLines(records),
       ...crashFindingLines(records),
       ...planSweepLines(records),
-      ...floor.warnings.map((warning) => `! ${warning}`),
+      ...warnings.map((warning) => `! ${warning}`),
     ].map((line) => `  ${line}`),
     findings,
     // The warning lines ride in `--json` too (`lines` never holds what the document lacks).
-    data: (floor.warnings.length === 0
-      ? report
-      : { ...report, warnings: floor.warnings }) as unknown as JsonValue,
+    data: document as unknown as JsonValue,
   };
 }

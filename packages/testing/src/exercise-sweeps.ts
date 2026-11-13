@@ -75,9 +75,12 @@ export async function sizedCall(
   return { actor, input: seatIn(subject, given, tenant) };
 }
 
+/** What the sweeps write on a record: a primitive's, or a route load's (`exercise-route-loads.ts`). */
+type SweptFields = Pick<ExerciseRecord, 'plans' | 'scale' | 'proofMs'>;
+
 /** The records with both sweeps' verdicts and scale time on them, and each sweep's whole time. */
-export interface Swept {
-  readonly records: readonly ExerciseRecord[];
+export interface Swept<R extends SweptFields = ExerciseRecord> {
+  readonly records: readonly R[];
   readonly ms: Pick<ExercisePhaseMs, 'scale' | 'plans'>;
 }
 
@@ -99,11 +102,11 @@ const timed = (subject: ScaleSubject, spent: Map<string, number>): ScaleSubject 
  * only: with none, the pass ran on a driver that sends no SQL and there is no plan to read. Each
  * proof is found under `label(record)`, the name its primitive ran under in the room.
  */
-export async function attachSweeps(
-  records: readonly ExerciseRecord[],
-  label: (record: ExerciseRecord) => string,
+export async function attachSweeps<R extends SweptFields>(
+  records: readonly R[],
+  label: (record: R) => string,
   options: ScaleSweepOptions,
-): Promise<Swept> {
+): Promise<Swept<R>> {
   const spent = new Map<string, number>();
   let scale: Awaited<ReturnType<typeof scaleSweep>>;
   const scaleStarted = performance.now();

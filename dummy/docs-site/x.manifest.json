@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "683d16d878d07736",
+  "buildId": "5d47589d08384edd",
   "app": {
     "name": "docs-site",
     "version": "0.1.0"
@@ -1046,6 +1046,10 @@
     {
       "code": "X_SEMANTIC_INTERACTIVE",
       "package": "guards/semantic-interactive.ts"
+    },
+    {
+      "code": "X_UNBOUNDED_FANOUT",
+      "package": "guards/unbounded-fanout.ts"
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",

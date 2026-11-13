@@ -2,7 +2,14 @@
 // a green gate over the convention it was written to enforce.
 
 import { expect, unitTest } from '@ultimat3/testing';
-import { handleCallFor, rawRepoSql, sqlStatements, truncatedOrder } from './repo-raw-sql';
+import {
+  advisoryLock,
+  handleCallFor,
+  rawRepoSql,
+  rowComparison,
+  sqlStatements,
+  truncatedOrder,
+} from './repo-raw-sql';
 
 const REPO = 'apps/web/app/post/repo.ts';
 const repo = (source: string) => [{ path: REPO, source }];
@@ -47,6 +54,20 @@ unitTest('insert, update and delete on one table are the same rule', () => {
   expect(handleCallFor('delete from posts where id = ?')).toBe('db.posts.delete(id)');
   expect(handleCallFor('delete from likes where post_id = ? and user_id = ?')).toBe(
     'db.likes.deleteWhere({ … })',
+  );
+});
+
+// `deleteWhere`/`updateWhere` take equalities only: a range is the chain's one-statement write,
+// never a filter that would drop the range and write every row of the tenant.
+unitTest('a range in an update or delete names the chain write that keeps it', () => {
+  expect(handleCallFor('delete from run_logs where run_id = ? and seq <= ?')).toBe(
+    "db.runLogs.where({ runId }).andWhere('seq', 'lte', value).deleteAll()",
+  );
+  expect(handleCallFor('update posts set title = ? where org_id = ? and created_at < ?')).toBe(
+    "db.posts.where({ orgId }).andWhere('createdAt', 'lt', value).updateAll({ … })",
+  );
+  expect(handleCallFor("delete from run_logs where note = 'a and b' and seq <= ?")).toBe(
+    "db.runLogs.where({ note: 'a and b' }).andWhere('seq', 'lte', value).deleteAll()",
   );
 });
 
@@ -99,6 +120,25 @@ unitTest(
     expect(findings[0]?.fix).toStartWith('keyset({ scope, keys: [');
   },
 );
+
+unitTest('a hand row comparison is refused; a range on separate columns is not', () => {
+  const seek = 'select * from posts where (created_at, id) < (?, ?) limit 20';
+  expect(rowComparison(seek)).toBe(true);
+  expect(rowComparison('select * from posts where created_at < ? and (id < ?)')).toBe(false);
+});
+
+unitTest('an advisory lock is refused; a literal holding either shape is data', () => {
+  expect(advisoryLock('select pg_advisory_xact_lock(hashtext(?))')).toBe(true);
+  const quoted = "select * from notes where body = 'pg_advisory_xact_lock(1)'";
+  expect(advisoryLock(quoted)).toBe(false);
+  expect(rowComparison("select * from notes where body = '(a, b) < (c, d)'")).toBe(false);
+});
+
+unitTest('a quoted literal splices as its value, never as a binding', () => {
+  expect(handleCallFor("select * from posts where status = 'Draft' and org_id = ?")).toBe(
+    "db.posts.where({ status: 'Draft', orgId }).all()",
+  );
+});
 
 unitTest('a statement composed from another fragment is silent', () => {
   const inner = `sql\`and a = ${hole('a')}\``;

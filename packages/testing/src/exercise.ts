@@ -1,6 +1,7 @@
 // `runExercisePass`: every registered action, query and job, run once with no test written. Each
 // gets its own pair of committed tenants from the pass's one seed graph, an actor its policy allows,
-// and the input 39's minimal draw gives with seeded ids bound in; the verdict is 39's loop.
+// and the input 39's minimal draw gives with seeded ids bound in; the verdict is 39's loop. Each
+// route `load` it is handed runs after them, in a pair of its own (`exercise-route-loads.ts`).
 //
 // Committed, never rolled back. Around that call the tenant proof runs: the pair's other tenant
 // calls with the first one's ids before and after it (`tenant-proof.ts`, plan 101, 40). A reached
@@ -36,6 +37,15 @@ import type {
   Observed,
 } from './exercise-report';
 import { openExerciseRoom } from './exercise-report';
+import type { RouteLoadRecord } from './exercise-route-loads';
+import {
+  reachedRouteSubjects,
+  routeSizedCall,
+  runRouteLoads,
+  splitRouteRecords,
+  sweepLabel,
+} from './exercise-route-loads';
+import type { RouteLoadSubject } from './exercise-route-subjects';
 import { withExerciseSetup } from './exercise-setup';
 import type { ExerciseStatementCeiling } from './exercise-statement-ceiling';
 import { judgeStatementCeiling } from './exercise-statement-ceiling';
@@ -65,6 +75,13 @@ export interface ExercisePassOptions {
   readonly roles: RoleGrants;
   /** Told once, as the pass returns: how long each phase took, so a slow pass names its slow part. */
   readonly onPhases?: (ms: ExercisePhaseMs) => void;
+  /**
+   * Route `load`s run after the primitives (`routeLoadSubjects()`), each in a tenant pair of its
+   * own, swept and planned with them. Omitted, and on an `only` run: none.
+   */
+  readonly routes?: readonly RouteLoadSubject[];
+  /** Told once, as the pass returns: each route load's record, the sweeps' proofs on it. */
+  readonly onRoutes?: (records: readonly RouteLoadRecord[]) => void;
 }
 
 const isOff = (overrides: ExerciseOverrides | undefined, subject: Subject): boolean => {
@@ -391,14 +408,17 @@ export async function runExercisePass(
   // The app's setup runs inside the seal, before the first row: its routes answer every call.
   const room = await withExerciseSetup(await openExerciseRoom(), options.overrides?.setup);
   const live = chosen.filter((subject) => !isOff(options.overrides, subject));
+  const routes = options.only === undefined ? (options.routes ?? []) : [];
   const records: ExerciseRecord[] = [];
+  let routeRecords: readonly RouteLoadRecord[] = [];
   let graph: SeedGraph;
   const seedStarted = performance.now();
   let primitivesStarted = seedStarted;
   try {
     // Seeded before the first primitive runs: a failure here is the pass's, never one primitive's.
     graph = await seedPass(options.entities, options.writer, {
-      primitives: live.length,
+      // A route's pair after every primitive's: a run with no routes seeds what it always did.
+      primitives: live.length + routes.length,
       seed: passSeed,
       ...(options.overrides?.factories === undefined
         ? {}
@@ -413,6 +433,11 @@ export async function runExercisePass(
       const pair = tenantPair(graph, at);
       records.push(await exerciseOne(subject, label(subject), options, pair, view, room, sampler));
     }
+    routeRecords = await runRouteLoads(routes, options, {
+      view: (i) => pairGraph(graph, live.length + i),
+      tenant: (i) => tenantPair(graph, live.length + i)[0],
+      room,
+    });
   } catch (error) {
     await room[Symbol.asyncDispose]();
     throw error;
@@ -421,11 +446,14 @@ export async function runExercisePass(
   const primitives = Math.round(performance.now() - primitivesStarted);
   // The sweeps: every reached primitive again at two sizes, then every statement planned.
   const reached = new Set(records.filter((r) => r.outcome === 'reached').map(label));
-  const swept = await attachSweeps(records, label, {
+  const swept = await attachSweeps([...records, ...routeRecords], sweepLabel(label), {
     // Named by label: the sweeps key their proofs by name, and a shared name is two primitives.
-    subjects: chosen
-      .filter((subject) => reached.has(label(subject)))
-      .map((subject) => ({ ...subject, name: label(subject) })),
+    subjects: [
+      ...chosen
+        .filter((subject) => reached.has(label(subject)))
+        .map((subject) => ({ ...subject, name: label(subject) })),
+      ...reachedRouteSubjects(routes, routeRecords),
+    ],
     entities: options.entities,
     // The sized graphs close their cycles as the pass's did: a refused deferred key stays null.
     writer: deferredMayStayNull(options.writer),
@@ -435,7 +463,9 @@ export async function runExercisePass(
     factories: options.overrides?.factories,
     setup: async (subject, sized, tenant, self) => {
       const full = chosen.find((one) => label(one) === subject.name);
-      if (full === undefined) return undefined;
+      if (full === undefined) {
+        return routeSizedCall(routes, options, { label: subject.name, graph: sized, tenant });
+      }
       const call = await sizedCall(full, options, sampler, { graph: sized, tenant, self });
       // Before the sweep's room opens: the sized tenant's actor is a user too.
       if (call !== undefined) await seatActorUsers([call.actor]);
@@ -443,5 +473,7 @@ export async function runExercisePass(
     },
   });
   options.onPhases?.({ seed, primitives, ...swept.ms });
-  return swept.records;
+  const split = splitRouteRecords(swept.records);
+  options.onRoutes?.(split.routes);
+  return split.primitives;
 }

@@ -127,12 +127,13 @@ describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invo
     (JSON.parse(out) as { findings?: { code: string; fix: string }[] }).findings?.[0] ?? {};
 
   test('a flag the planned command never declared is still not-implemented', async () => {
-    const result = await run(['logs', 'tail', '--follow', '--json']);
+    // `x status`, not the `x logs tail --follow` this was first written against: `logs` shipped.
+    const result = await run(['status', '--follow', '--json']);
     expect(result.code).toBe(1);
     // The same fix the command's own `run` would have thrown — one answer for one command.
     expect(finding(result.out)).toMatchObject({
       code: 'X_NOT_IMPLEMENTED',
-      fix: 'x dev   # then the timeline panel at /_x',
+      fix: 'x doctor --json',
     });
   });
 
@@ -160,7 +161,7 @@ describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invo
   test('an unsupported Bun still wins over the planned pre-empt', async () => {
     const lines: string[] = [];
     const code = await dispatch({
-      argv: ['logs', 'tail', '--follow', '--json'],
+      argv: ['status', '--follow', '--json'],
       cwd: import.meta.dir,
       env: {},
       bunVersion: '1.0.0',

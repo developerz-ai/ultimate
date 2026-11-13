@@ -20,6 +20,7 @@ import {
 } from '@ultimat3/policy';
 import { from, query, resetQueries } from '@ultimat3/query';
 import { registerQuery } from '@ultimat3/query/loader';
+import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { disk } from '@ultimat3/storage';
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { REQUIRED_BUN } from './app-root';
@@ -83,6 +84,7 @@ afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
 });
 const clearDeclarations = (): void => {
+  clearRoutes();
   resetActions();
   resetQueries();
   clearRoles();
@@ -174,8 +176,10 @@ describe('unit · x exercise', () => {
     expect(result.ok).toBe(true);
     expect(result.findings ?? []).toEqual([]);
     const warnings = (result.data as { warnings?: readonly string[] }).warnings ?? [];
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('"unprovenMax": 0.3334');
+    // The floor's one line; the empty-reach line beside it is `exercise-routes.test.ts`'s.
+    const floor = warnings.filter((warning) => warning.startsWith('exercise left'));
+    expect(floor).toHaveLength(1);
+    expect(floor[0]).toContain('"unprovenMax": 0.3334');
     expect(result.lines?.some((line) => line.includes('! exercise left 1 of 3'))).toBe(true);
   }, 60_000);
 
@@ -222,4 +226,33 @@ describe('unit · x exercise', () => {
     expect(actors.map((one) => one.name)).toEqual(['anonymous', 'writer']);
     expect(actors[1]?.actor?.orgId).toBe('tenant-1');
   });
+
+  test("a route's load is run and reported beside the records; one that throws is a warning, never red", async () => {
+    const page = (file: string, load: () => Promise<object>) =>
+      registerRoute({
+        file,
+        config: defineRoute({
+          render: 'ssr',
+          offline: 'network-only',
+          hydrate: 'never',
+          budget: { js: '0kb' },
+          load,
+          meta: () => ({ title: 'a page', description: 'a page under test' }),
+        }),
+      });
+    page('apps/web/app/cx/ok/page.tsx', async () => ({ ok: true }));
+    page('apps/web/app/cx/broken/page.tsx', () => Promise.reject(new TypeError('the load broke')));
+    const result = await exerciseCommand.run(contextFor());
+    expect(result.ok).toBe(true);
+    expect(result.findings ?? []).toEqual([]);
+    const written = (await Bun.file(join(ROOT, EXERCISE_REPORT_FILE)).json()) as {
+      routes?: readonly { name: string; outcome: string }[];
+      warnings?: readonly string[];
+    };
+    expect(written.routes?.map((r) => [r.name, r.outcome])).toEqual([
+      ['/cx/broken', 'unreached'],
+      ['/cx/ok', 'reached'],
+    ]);
+    expect(written.warnings?.some((w) => w.includes('apps/web/app/cx/broken/page.tsx'))).toBe(true);
+  }, 60_000);
 });

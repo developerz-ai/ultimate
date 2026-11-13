@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "579a0f7b6a8865cb",
+  "buildId": "e6308d069ddd0c0f",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -9525,6 +9525,10 @@
     {
       "code": "X_SEMANTIC_INTERACTIVE",
       "package": "guards/semantic-interactive.ts"
+    },
+    {
+      "code": "X_UNBOUNDED_FANOUT",
+      "package": "guards/unbounded-fanout.ts"
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",

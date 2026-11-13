@@ -54,7 +54,7 @@ export const tag = tags({
 | Actions / mutators | `cache: { invalidates: [...] }` |
 | LLM calls | `cache: { invalidates: [...] }` |
 
-The graph is a build-time artifact in `x.manifest.json`, so it records exactly what a write will evict — before you run it. `x cache graph --json` is the planned reader of it; today it is `x dev` → the `/_x` cache panel. Tag typing comes from a generated registry augmentation; `x manifest` regenerates it.
+The graph is a build-time artifact in `x.manifest.json`, so it records exactly what a write will evict — before you run it. `x cache graph --json` reads it (since 31.17.0), as does `x dev` → the `/_x` cache panel. Tag typing comes from a generated registry augmentation; `x manifest` regenerates it.
 
 ## One hop, all tiers
 
@@ -229,19 +229,19 @@ No threshold fixes that, because the same number has to keep an honest repeat *a
 
 Also cached exactly (tier 3, not semantic): embeddings themselves, keyed by content hash + model. Re-embedding unchanged text is pure waste. See [MCP and AI](MCP-And-AI).
 
-## CLI — `x cache` is **planned**
+## CLI — `x cache`
 
-Every row below exits `X_NOT_IMPLEMENTED` `As of 2026-08`, with `x dev` → the `/_x` cache panel as its `fix:`. A planned command declares no flags either, so `x cache graph --tag post` dies at the parser with `X_CLI_BAD_FLAG` before the honest message — call the bare form.
+Ships since **31.17.0** (`graph`, `bust`, `clear`); `stats` is still **planned** and exits `X_NOT_IMPLEMENTED` with `x dev` → the `/_x` cache panel as its `fix:`.
 
-| Command | Will do |
+| Command | Does |
 |---|---|
-| `x cache graph --json` | print the tag → dependents graph: cache keys, ISR routes, CDN paths, live queries. Build-time truth, no runtime call |
+| `x cache graph --json` | the tag graph off the app's manifest: per declared tag, the actions whose `invalidates` name it, the queries cached under it and the ISR routes it revalidates. Build-time truth, no runtime call |
 | `x cache graph --tag post --json` | the blast radius of one tag |
-| `x cache bust <tag>` | run the real fanout for one tag, all tiers, and print the invalidation report |
-| `x cache clear` | **dev only.** The only `flushAll` there would be; there is no runtime API for it |
-| `x cache stats --json` | per-tier hit rate, byte usage against budget, evictions |
+| `x cache bust <tag> --json` | the real fanout for one tag — the app's own tiers booted as a role boots them, then `invalidateTags`: shared tiers dropped, the edge purged, the bus told — and the invalidation report |
+| `x cache clear --json` | the same bust over every tag the app's modules declare |
+| `x cache stats` | **planned** — hit rates live in the serving processes; `x dev` then the `/_x` cache panel |
 
-Today: `x dev` then the `/_x` cache panel, and `invalidateTags([...])` from `@ultimat3/cache` for a bust from code.
+From code: `invalidateTags([...])` from `@ultimat3/cache`, the call `x cache bust` makes.
 
 ## Errors
 
@@ -260,7 +260,7 @@ Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-
 - Cache keys are framework-generated. A hand-built key is a rejected PR.
 - Every cached `query` carries at least one tag. Review catches it `As of 2026-08`, not the gate — `X_CACHE_UNTAGGED_QUERY` is reserved and no `x verify` step reads a query's tags.
 - Never cache a value whose policy scope is not in its key.
-- `flushAll` has no shipped caller: `x cache clear` is planned, and there is no runtime API for it.
+- `flushAll` has no shipped caller: `x cache clear` busts every declared tag through `invalidateTags`, never a flush, and there is no runtime API for it.
 - Cache misses must be correct and merely slower — no code path may depend on a hit.
 - Prefer `tag.post.id(x)` over `tag.post`. Narrow eviction is the default, not an optimization.
 - A cache tier may never fail a business read or write. Tier errors land in the invalidation report, or in a `cache.tier_failure` event on the read ladder.

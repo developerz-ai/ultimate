@@ -387,6 +387,33 @@ describe("the slow-statement line is a production boot's", () => {
     release = startOtlpExport({ ULTIMATE_ENV: environment });
     expect(slowLines('select 1')).toBe(0);
   });
+
+  // `database.slowStatementMs`: the app's figure replaces the 500 ms default; `0` switches it off.
+  test('the declared threshold decides, and 0 is off', () => {
+    const at = (thresholdMs: number, durationMs: number): number => {
+      release = startOtlpExport({ ULTIMATE_ENV: 'production' }, { slowStatementMs: thresholdMs });
+      const lines: string[] = [];
+      const releaseSink = installLogSink((line) => {
+        if (line.includes('"db.statement.slow"')) lines.push(line);
+      });
+      try {
+        instrument('db.statement', {
+          text: `select ${String(thresholdMs)}, ${String(durationMs)}`,
+          values: [],
+          durationMs,
+          rows: 1,
+        });
+      } finally {
+        releaseSink();
+        release();
+        release = undefined;
+      }
+      return lines.length;
+    };
+    expect(at(100, 150)).toBe(1);
+    expect(at(200, 150)).toBe(0);
+    expect(at(0, 60_000)).toBe(0);
+  });
 });
 
 describe('the request timings are a boot subscriber', () => {

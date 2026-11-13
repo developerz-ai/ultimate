@@ -276,8 +276,9 @@ describe('unit · x verify', () => {
       'shard',
       'timings',
       'isolate',
+      'parts',
     ]);
-    expect(verifyCommand.spec.subcommands).toEqual(['run', 'merge']);
+    expect(verifyCommand.spec.subcommands).toEqual(['run', 'merge', 'plan']);
     expect(verifyCommand.spec.defaultSubcommand).toBe('run');
   });
 

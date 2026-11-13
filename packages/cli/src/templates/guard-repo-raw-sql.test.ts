@@ -98,6 +98,76 @@ describe('unit · shipped guard · repo-raw-sql', () => {
     expect(findings).toEqual([]);
   });
 
+  // A keyset page written by hand: the row comparison is the seek `keyset()` builds, with its
+  // tie-break, its direction and the cursor's codec — and the one detail a hand copy gets wrong.
+  test('a hand row-comparison names keyset(), in a join or not', async () => {
+    for (const statement of [
+      `select * from posts where org_id = ${hole('org')} and (created_at, id) < (${hole('at')}, ${hole('id')}) order by created_at desc, id desc limit 20`,
+      `select p.* from posts p join members m on m.id = p.author_id where (p.created_at, p.id) > (${hole('at')}, ${hole('id')})`,
+    ]) {
+      const findings = await shippedGuardFindings('repo-raw-sql', {
+        [REPO]: `export const page = sql\`${statement}\`;\n`,
+      });
+      expect([statement, findings.map((finding) => finding.code)]).toEqual([
+        statement,
+        ['X_REPO_RAW_SQL'],
+      ]);
+      expect(findings[0]?.fix).toStartWith('keyset({ scope, keys: [');
+      expect(findings[0]?.cause).toContain('row comparison');
+    }
+  });
+
+  test('a pg_advisory_xact_lock literal names lockKeys, the ordered set of keys', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: [
+        "import { db, sql } from '@ultimat3/db';",
+        'export const hold = (key: string) =>',
+        `  db().query(sql\`select pg_advisory_xact_lock(hashtext(${hole('key')}))\`);`,
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.code)).toEqual(['X_REPO_RAW_SQL']);
+    expect(findings[0]?.at).toBe(`${REPO}:3`);
+    expect(findings[0]?.fix).toStartWith('db.<table>.lockKeys([key], async (tx) => …) — ');
+  });
+
+  // The two lookalikes the new shapes must not catch: the words inside a quoted literal are data,
+  // and a range on two separate columns is a filter, not a row comparison.
+  test('a quoted literal and a plain range predicate are not those shapes', async () => {
+    for (const statement of [
+      "select p.* from posts p join notes n on n.post_id = p.id where n.body = '(a, b) < (c, d)'",
+      "select p.* from posts p join notes n on n.post_id = p.id where n.body = 'pg_advisory_xact_lock(1)'",
+      `select p.* from posts p join likes l on l.post_id = p.id where p.created_at < ${hole('at')} and (p.id < ${hole('id')})`,
+    ]) {
+      const source = `export const q = sql\`${statement}\`;\n`;
+      expect([statement, await shippedGuardFindings('repo-raw-sql', { [REPO]: source })]).toEqual([
+        statement,
+        [],
+      ]);
+    }
+  });
+
+  // A literal is not a binding: `.where({ status })` names a variable the caller never declared.
+  test('a quoted literal in a where the handle expresses is spliced as its value', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: `export const q = sql\`select * from posts where status = 'published' and org_id = ${hole('org')} and rank >= 3\`;\n`,
+    });
+    expect(findings[0]?.fix).toStartWith(
+      "db.posts.where({ status: 'published', orgId }).andWhere('rank', 'gte', 3).all() — ",
+    );
+  });
+
+  // `deleteWhere` takes equalities only, so naming it for a range would advise a wider write. The
+  // adopters' copies silenced ranges for that reason; the chain's `deleteAll()` keeps the range.
+  test('a range in a delete names the chain write, never deleteWhere', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: `export const q = sql\`delete from run_logs where run_id = ${hole('run')} and seq <= ${hole('seq')}\`;\n`,
+    });
+    expect(findings[0]?.fix).toStartWith(
+      "db.runLogs.where({ runId }).andWhere('seq', 'lte', value).deleteAll() — ",
+    );
+  });
+
   test('only a repo.ts is read: the same statement in a query source is not this rule', async () => {
     const statement = `export const q = sql\`select * from posts where id = ${hole('id')}\`;\n`;
     expect(

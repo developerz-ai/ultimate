@@ -282,5 +282,10 @@
  * newly reached.
  * raised 1487 → 1488, measured 1488 (2026-11-12, sweep 11 serving, the test's own walk):
  * `MIGRATE_CEILING`'s 1, `http/src/compress-precode.ts`. Nothing else moved.
+ * raised 1488 → 1491, measured 1491 (2026-11-12, sweep 13b, the test's own walk; `MIGRATE_CEILING`
+ * unchanged at 949): three new files, serving-only — `cli/src/serve-boot-warnings.ts` (the roles
+ * each boot warning concerns), `cli/src/serve-boot-phases.ts` (the `boot.phase` timeline) and
+ * `cli/src/messages-ops.ts` (the `x token`/`config`/`logs`/`cache`/`explain` catalog, merged into
+ * `messages.ts`). No existing module newly reached.
  */
-export const SERVING_ROLE_CEILING = 1488;
+export const SERVING_ROLE_CEILING = 1491;

@@ -45,7 +45,7 @@ A number written into a file goes stale on the next commit; the command does not
 | what npm serves; every package is there, with a provenance attestation | `npm view @ultimat3/core version` · `bun run scripts/registry-audit.ts --json` |
 | a fresh scaffold is green on its first gate run, every push | the `scaffold-smoke` job in [`ci.yml`](.github/workflows/ci.yml) |
 | the gate's steps, in order, each with a verdict | `bun run x -- verify --json` |
-| `x new` writes 229 files you never edit (196 with `--no-example`), asks 0 questions | `bun run scripts/generator-counts.ts --json` |
+| `x new` writes 231 files you never edit (198 with `--no-example`), asks 0 questions | `bun run scripts/generator-counts.ts --json` |
 | a rolling restart on Kubernetes drops no request: 0 of 9,201, `As of 2026-11-10` | the `deploy-proof` job in [`ci.yml`](.github/workflows/ci.yml), `docker/deploy-proof/run.sh` |
 | realtime recovery on one node, from a forced restart | [`scripts/bench/results/README.md`](scripts/bench/results/README.md), each run dated in its JSON and held to the prose by [`scripts/bench-claims.ts`](scripts/bench-claims.ts) |
 | every `X_*` code, its owner and its fix | `bun run x -- errors explain <CODE> --json` |

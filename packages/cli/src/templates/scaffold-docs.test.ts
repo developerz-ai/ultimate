@@ -53,11 +53,13 @@ describe('unit · the generated brain names bun run verify as the gate', () => {
     expect(order.indexOf('CLAUDE.md')).toBeLessThan(order.indexOf('AGENTS.md'));
   });
 
-  test('the gate row names the CI that runs the same two commands', () => {
+  test('the gate row names the CI that runs the same gate, in parts it plans and merges', () => {
     const row = doc('CLAUDE.md')
       .split('\n')
       .find((line) => line.startsWith('| One gate |'));
-    expect(row).toContain('bun run setup && bun run verify');
+    expect(row).toContain('bun run setup && bun run verify --only');
+    expect(row).toContain('bun run verify plan --json');
+    expect(row).toContain('bun run verify merge');
     expect(doc('CLAUDE.md')).toContain('.github/workflows/ci.yml');
   });
 

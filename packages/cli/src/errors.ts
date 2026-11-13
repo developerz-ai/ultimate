@@ -7,10 +7,16 @@ import { quoteArg } from './shell-quote';
 
 /** An unknown command or subcommand. Carries a suggestion so the retry is one keystroke away. */
 export class UnknownCommandError extends UltimateError {
-  constructor(input: { path: string; known: readonly string[]; suggestion?: string }) {
+  /** `why`: the decision behind a name that is deliberately not a command, said after the list. */
+  constructor(input: {
+    path: string;
+    known: readonly string[];
+    suggestion?: string;
+    why?: string;
+  }) {
     super({
       code: 'X_CLI_UNKNOWN_COMMAND',
-      cause: `"x ${input.path}" is not a command (known: ${input.known.join(', ')})`,
+      cause: `"x ${input.path}" is not a command (known: ${input.known.join(', ')})${input.why === undefined ? '' : ` — ${input.why}`}`,
       fix: input.suggestion === undefined ? 'x help' : `x ${input.suggestion}`,
     });
   }

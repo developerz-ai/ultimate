@@ -6,6 +6,7 @@
 import { CLIENT_MESSAGES } from './messages-client';
 import { DB_MESSAGES } from './messages-db';
 import { GATE_MESSAGES } from './messages-gate';
+import { OPS_MESSAGES } from './messages-ops';
 import { REPRO_MESSAGES } from './messages-repro';
 import { SHOT_MESSAGES } from './messages-shot';
 import { UPGRADE_MESSAGES } from './messages-upgrade';
@@ -282,6 +283,7 @@ const CATALOG = {
   ...SHOT_MESSAGES,
   ...UPGRADE_MESSAGES,
   ...GATE_MESSAGES,
+  ...OPS_MESSAGES,
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

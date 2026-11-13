@@ -195,6 +195,17 @@ describe('database config carries only what something reads', () => {
       rowSecurity: true,
     });
   });
+
+  // Optional, no default: the boot's own 500 ms stands until an app names a figure (`0` is off).
+  test('slowStatementMs is carried when declared and absent when not', () => {
+    expect(defineConfig({ name: 'myapp' }).database).not.toHaveProperty('slowStatementMs');
+    expect(
+      defineConfig({ name: 'myapp', database: { slowStatementMs: 200 } }).database.slowStatementMs,
+    ).toBe(200);
+    expect(
+      defineConfig({ name: 'myapp', database: { slowStatementMs: 0 } }).database.slowStatementMs,
+    ).toBe(0);
+  });
 });
 
 describe('realtime section', () => {
@@ -409,6 +420,9 @@ describe('defineConfig · a mistyped value is X_CONFIG_INVALID naming its key, n
     ['jobs.backoff', { jobs: { backoff: 'linear' } }],
     ['database.ssl', { database: { ssl: 'false' } }],
     ['database.rowSecurity', { database: { rowSecurity: 'true' } }],
+    ['database.slowStatementMs', { database: { slowStatementMs: Number.NaN } }],
+    ['database.slowStatementMs', { database: { slowStatementMs: -1 } }],
+    ['database.slowStatementMs', { database: { slowStatementMs: '500' } }],
     ['realtime.enabled', { realtime: { enabled: 'false' } }],
     ['database.driver', { database: { driver: 'mysql' } }],
     ['theme', { theme: 'dark' }],
