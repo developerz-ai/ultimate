@@ -394,6 +394,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x doctor --json   # its X_VERIFY_STEP_UNFLOORED fix names the steps: run that x verify --only, then add each step that passed, not skipped, to "steps" in x.verify.json',
   X_DB_ROW_SECURITY_OFF:
     'database: { rowSecurity: true }   # in defineConfig, app.config.ts; then: x db gen "row security" --json && x db migrate --json && x doctor --json',
+  X_DEV_DATA_UNOPENABLE:
+    'x db migrate --json   # the fresh database has no tables yet; then x db seed --json if the app declares a seed. The moved directory (meta.aside) is kept: delete it once its rows are not needed',
+  X_EXPLAIN_PRODUCTION_DATABASE:
+    'env -u DATABASE_URL x queries list --json   # then the same prefix on x explain <query> --json: it plans on the embedded dev database; for a copy of production data, point DATABASE_URL at a staging restore with ULTIMATE_ENV=staging',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

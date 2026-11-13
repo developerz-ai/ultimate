@@ -82,8 +82,9 @@ bun run verify --json   # the same, machine-readable
 \`\`\`
 
 \`bun run verify\` is \`bunx x verify\`, the whole gate: its \`budgets\` step builds what it weighs when
-\`.x/build-stats.json\` is missing or older than the source. CI runs this same script —
-\`.github/workflows/ci.yml\` is \`bun run setup\` and then \`bun run verify\`, nothing else.
+\`.x/build-stats.json\` is missing or older than the source. CI runs this same script, cut into
+parts — \`.github/workflows/ci.yml\` asks \`bun run verify plan\` for them, runs \`bun run setup\` and
+each part's \`bun run verify --only …\`, and \`bun run verify merge\` is the verdict.
 
 Red is instructions, not a verdict: **every finding carries an executable \`fix:\` — run it verbatim
 before improvising**, and \`bunx x errors explain <CODE>\` expands any code it names. Never narrow the gate

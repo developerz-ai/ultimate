@@ -103,7 +103,7 @@ const RENEW_MS = 1;
  * and slept its whole `rate` interval in WALL time. Moving the instant is the wait now, and it is
  * a move the frozen scheduler hears, so the renewals see exactly the time the throttle spent.
  */
-const PRELOAD_CLOCK: FrozenClock = Object.freeze({
+export const PRELOAD_CLOCK: FrozenClock = Object.freeze({
   now: frozenNow,
   monotonic: () => frozenNow().getTime(),
   advance: (ms: number): void => {

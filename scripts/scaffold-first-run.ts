@@ -133,7 +133,7 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
  *
  * | # | Step | What only this step can tell you |
  * |---|---|---|
- * | 1 | `g <kind>` x 15 | every generator runs |
+ * | 1 | `g <kind>` x 20 | every generator runs |
  * | 2 | its `data.next`, after each, but `x verify` (`SKIPPED_NEXT_VERBS`) | the commands the generator tells its author to run — the migration of every entity it emitted, written and applied — so a generator that forgets one leaves the gate after this sweep red on `drift` |
  *
  * The plan spells no `db` command (a test holds it): the sweep used to run one `db gen

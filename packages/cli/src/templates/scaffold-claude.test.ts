@@ -85,9 +85,9 @@ const textOf = (files: readonly { readonly contents: string | Uint8Array }[]): s
 describe('unit · the .claude bundle names only shipped commands', () => {
   test('the check itself fails on a command that does not ship', () => {
     // Without this the whole suite could be a green regex that matches nothing. `x lint` never
-    // existed; `x cache bust` is in the registry but planned, and a planned command is not a fix.
+    // existed; `x status` is in the registry but planned, and a planned command is not a fix.
     expect(unknown('run `x lint` first')).toEqual(['x lint']);
-    expect(unknown('run `x cache bust orders`')).toEqual(['x cache']);
+    expect(unknown('run `x status --json`')).toEqual(['x status']);
     expect(unknown('run `x db squash`')).toEqual(['x db squash']);
   });
 

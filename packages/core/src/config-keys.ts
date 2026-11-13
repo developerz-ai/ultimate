@@ -2,7 +2,7 @@
 // at any depth and in any layer, is refused by path with the key it most likely meant. A key that
 // is merged and read by nothing is the switch with no wire, and a typo (`drian`) is the same defect.
 
-import type { JobsConfig } from './config';
+import type { DatabaseConfig, JobsConfig } from './config';
 import type { AssetsRetainConfig } from './config-assets';
 import { BASE_FIX } from './config-fixes';
 import type { MailRetainMimeConfig } from './config-mail';
@@ -64,6 +64,7 @@ export const SECTION_KEYS: Readonly<Record<string, readonly string[]>> = Object.
   'pwa.screenshots[]': keysOf<PwaScreenshot>()(['src', 'sizes', 'type', 'formFactor', 'label']),
   'mail.retainMime': keysOf<MailRetainMimeConfig>()(['maxBytes']),
   'assets.retain': keysOf<AssetsRetainConfig>()(['disk', 'builds']),
+  database: keysOf<DatabaseConfig>()(['driver', 'ssl', 'rowSecurity', 'slowStatementMs']),
   jobs: keysOf<JobsConfig>()([
     'queues',
     'concurrency',

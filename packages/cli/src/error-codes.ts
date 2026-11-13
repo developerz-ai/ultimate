@@ -242,6 +242,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SEED_FAILED',
   'X_NATIVE_FORM_UNANSWERED',
   'X_ASSET_RETAIN_UNDECLARED',
+  'X_DEV_DATA_UNOPENABLE',
 ] as const;
 
 /**
@@ -470,6 +471,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_SEED_FAILED: 'a seed threw an uncoded error',
   X_NATIVE_FORM_UNANSWERED: 'a page form posts to an action that declares no native answer',
   X_ASSET_RETAIN_UNDECLARED: "A served build keeps no earlier build's assets",
+  X_DEV_DATA_UNOPENABLE: 'x dev set aside an embedded data directory that would not open',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

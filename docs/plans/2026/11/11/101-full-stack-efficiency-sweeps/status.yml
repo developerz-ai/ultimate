@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 43
-current_focus: "Sweep 13a done, ships as 31.16.0: x exercise isolates a refused sized seed (X_EXERCISE_SEED_FAILED), holds one call to 100 statements (X_STATEMENTS_OVER_BUDGET) and judges exercise.unprovenMax / statementsMax from x.verify.json (warnings until opted in; x new strict, x upgrade writes the measured figures); x upgrade installs clean missing guards and rebaselines coverage on a Bun-floor hop; x doctor reports row security off, unfloored steps, ranged pins and reserved env names (FRAMEWORK_ENV). Next: 13b"
+percent: 46
+current_focus: "Sweep 13b done, ships as 31.17.0: x verify plan and a scaffolded CI read from it; x exercise runs route loads (warnings) and names empty reaches; x token, config, logs, cache and explain ship; x g cron-job, purge, webhook-receiver; the unbounded-fanout guard; boot warnings per role, boot.phase lines, /readyz at most one ping a second; x dev sets an unopenable data dir aside. Next: 15"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -74,14 +74,14 @@ slices:
     percent: 100
   - file: 13-cli-exercise-verify.md
     tier: 5
-    sweep: "13a"           # X1, X2, X4, X7 in 13a (done, 31.16.0; X1/X2/X4 red only once x.verify.json opts in), X10 closed measured; X3, X5, X6, X9, X11, X12 in 13b; X8 parked for next (OD10)
+    sweep: "13b"           # X1, X2, X4, X7 in 13a (31.16.0), X10 closed measured; 13b (31.17.0): X6, X12 shipped, X11 closed (fixed since 30.8.0, fixtures added), X3 shipped as warnings (route-load floor key, per-route entries, self-API loads deferred), X5 partial (crash proof on the frozen clock; template-database clone and --shard deferred), X9 deferred (measured); X8 parked for next (OD10)
     status: in_progress
-    percent: 40
+    percent: 80
   - file: 14-cli-commands-upgrade.md
     tier: 5
-    sweep: "13a"           # U1–U4 in 13a (done, 31.16.0; U1 baseline, U3 e–g and U4's boot refusal deferred); U5–U12 in 13b
+    sweep: "13b"           # U1–U4 in 13a (31.16.0; U1 baseline, U3 e–g and U4's boot refusal deferred); 13b (31.17.0): U5 four shipped (status needs a build-id aggregate; OD3 parked for next), U6 3 of 9 generators, U7, U8, U10 shipped, U9 already wired (+ database.slowStatementMs), U11 x explain (x profile deferred), U12 measured and closed
     status: in_progress
-    percent: 25
+    percent: 83
   - file: 15-admin-ui-testing.md
     tier: 4
     sweep: "15"
@@ -168,5 +168,5 @@ slices:
     status: complete
     percent: 100
 evidence: []
-notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b and 13a implemented (31.5.0–31.16.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a and 13b implemented (31.5.0–31.17.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
 last_updated: 2026-11-12

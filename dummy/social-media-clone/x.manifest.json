@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "6d6e9239f559deff",
+  "buildId": "82bb11c58cc1c0a4",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -3101,6 +3101,10 @@
     {
       "code": "X_SEMANTIC_INTERACTIVE",
       "package": "guards/semantic-interactive.ts"
+    },
+    {
+      "code": "X_UNBOUNDED_FANOUT",
+      "package": "guards/unbounded-fanout.ts"
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",

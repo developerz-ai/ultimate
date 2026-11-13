@@ -71,8 +71,9 @@ function lineOf(
  * never reach the line: the event's `values` is not read at all.
  */
 export function slowStatementLog(options: SlowStatementLogOptions): () => void {
-  const { thresholdMs } = options;
-  if (!(thresholdMs > 0)) return () => undefined;
+  // Screened, never read for truthiness: `NaN` compared false here and switched the line off.
+  const thresholdMs = finiteOption('slowStatementLog', 'thresholdMs', options.thresholdMs);
+  if (thresholdMs <= 0) return () => undefined;
   const windowMs = finiteOption(
     'slowStatementLog',
     'windowMs',

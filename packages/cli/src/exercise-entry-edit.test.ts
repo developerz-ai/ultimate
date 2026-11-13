@@ -44,6 +44,14 @@ describe('unit · the exercise file edit', () => {
     );
   });
 
+  // A job is registered by its pinned kebab name: unquoted, `billing-events: {` is a syntax error.
+  test('a name that is no identifier is written quoted, and read back as already there', () => {
+    const job: ExerciseEntry = { name: 'billing-events', value: '{ actor: null }' };
+    const once = edited(SCAFFOLD, [job]);
+    expect(once).toContain("  'billing-events': { actor: null },");
+    expect(editExerciseFile(once, [job])).toEqual({ kind: 'unchanged', source: once });
+  });
+
   test('a second run changes nothing: an entry the file names is the app’s', () => {
     const once = edited(SCAFFOLD, [WRITER]);
     const again = editExerciseFile(once, [WRITER]);

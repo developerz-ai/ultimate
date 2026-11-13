@@ -106,11 +106,11 @@ describe('unit · the planned subcommand table', () => {
 });
 
 describe('unit · what a planned command tells the caller', () => {
-  test('x cache points at the /_x panel that already answers the question', async () => {
-    const cache = commandFor('cache');
-    expect(cache).toBeDefined();
+  test('x status points at the doctor that already answers half of it', async () => {
+    const status = commandFor('status');
+    expect(status).toBeDefined();
     const failure: unknown = await Promise.resolve()
-      .then(() => cache?.run(ctxFor(['cache', 'graph'])))
+      .then(() => status?.run(ctxFor(['status'])))
       .then(
         () => undefined,
         (error: unknown) => error,
@@ -118,7 +118,16 @@ describe('unit · what a planned command tells the caller', () => {
     expect(failure).toBeUltimateError('X_NOT_IMPLEMENTED');
     // Core's one constructor of the code — the CLI keeps no wrapper of its own beside it.
     expect(failure).toBeInstanceOf(NotImplementedError);
-    expect((failure as { fix: string }).fix).toContain('x dev');
+    expect((failure as { fix: string }).fix).toBe('x doctor --json');
+  });
+
+  // Shipped in 31.x (plan 101-full-stack-efficiency-sweeps U5): each now runs its own body, and a
+  // row left here would answer X_NOT_IMPLEMENTED for a command that works.
+  test('token, config, logs and cache are shipped, never planned', () => {
+    for (const name of ['token', 'config', 'logs', 'cache']) {
+      expect([name, PLANNED_COMMANDS.some((entry) => entry.name === name)]).toEqual([name, false]);
+      expect([name, commandFor(name)?.spec.summary.endsWith('(planned)')]).toEqual([name, false]);
+    }
   });
 
   test('x branch points at the database half that is shipped', () => {

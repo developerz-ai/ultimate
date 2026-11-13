@@ -50,6 +50,7 @@ import { reportUnservedQueues } from './runtime-jobs-unserved';
 import { startLiveFeed } from './runtime-live-feed';
 import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
+import { bootWarningConcernsAny } from './serve-boot-warnings';
 import { inlineStyleSources } from './style-csp';
 import { syncConnectSources } from './sync-url';
 import { trustedHopsFromEnv } from './trusted-hops';
@@ -157,10 +158,7 @@ function warnIfProcessScoped(store: RateLimitStore): void {
  * runtime, which is `httpServer`'s per-process memory store and `scope: 'process'` below.
  */
 function rateLimitStoreFor(options: StartRolesOptions): RateLimitStore | undefined {
-  const supplied = options.overrides?.rateLimitStore;
-  if (supplied === undefined) return options.runtime.rateLimitStore;
-  warnIfProcessScoped(supplied);
-  return supplied;
+  return options.overrides?.rateLimitStore ?? options.runtime.rateLimitStore;
 }
 
 /**
@@ -174,7 +172,6 @@ function startWeb(
   devices: readonly DeviceMount[],
   mount?: WebSocketMount<SyncWs>,
 ): ServerHandle {
-  warnIfUnauthenticatable(options.routes);
   const binding = options.http ?? DEV_BINDING;
   const hops = trustedHopsFromEnv(options.env);
   const store = rateLimitStoreFor(options);
@@ -270,6 +267,15 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     (options.http ?? DEV_BINDING).dev,
   );
   assertOneJobDriver(options.runtime);
+  // Once per process, and only where a role in it can act on the line (`serve-boot-warnings.ts`):
+  // `rateLimitStoreFor` is asked twice in a web boot, and a scheduler spends no limit at all.
+  if (bootWarningConcernsAny('auth-unconfigured', selected)) {
+    warnIfUnauthenticatable(options.routes);
+  }
+  const supplied = options.overrides?.rateLimitStore;
+  if (supplied !== undefined && bootWarningConcernsAny('rate-limit-process-scoped', selected)) {
+    warnIfProcessScoped(supplied);
+  }
   // Roles bind sockets in order, so a role that fails to start has to release the ones before it.
   // Without this a failed `sync` leaves the web server bound and unreachable by any caller.
   const started: (() => Promise<void>)[] = [];

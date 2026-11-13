@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { logger } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
 import { installRateLimitStore, resetRateLimitStore } from '@ultimat3/http/adapter';
@@ -70,5 +71,27 @@ describe('the store primitives spend their declared limits from', () => {
     // The roles' stop restored "what was there before" over `later`, which was still in use.
     expect(installedRateLimitStore()).toBe(later);
     releaseLater();
+  });
+
+  // The multiplier is said once per process, and only where a role spends a declared limit.
+  test('a per-process override warns once in a web boot and never in a scheduler', async () => {
+    const perProcess = (): RateLimitStore => ({ ...memoryRateLimitStore(), scope: 'process' });
+    const said = async (roles: string): Promise<number> => {
+      const lines: string[] = [];
+      const original = logger.warn;
+      logger.warn = (line: string) => lines.push(line);
+      try {
+        running = await boot(roles, shared(), perProcess());
+      } finally {
+        logger.warn = original;
+      }
+      await running.stop();
+      running = undefined;
+      resetDevRolesState();
+      return lines.filter((line) => line.includes('keeps its counters per process')).length;
+    };
+    expect(await said('web')).toBe(1);
+    expect(await said('worker')).toBe(1);
+    expect(await said('scheduler')).toBe(0);
   });
 });

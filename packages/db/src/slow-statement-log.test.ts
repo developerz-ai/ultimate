@@ -115,6 +115,11 @@ describe('slowStatementLog', () => {
     expect(() => slowStatementLog({ thresholdMs: 500, windowMs: Number.NaN })).toThrow(/windowMs/);
   });
 
+  // `NaN > 0` is false, so a threshold that is not a number silently switched the line off.
+  test('a thresholdMs that is not a number is refused, not a line that is silently off', () => {
+    expect(() => slowStatementLog({ thresholdMs: Number.NaN })).toThrow(/thresholdMs/);
+  });
+
   test('a threshold of 0 is off: nothing subscribes', () => {
     start(0);
     instrument('db.statement', statement({ durationMs: 60_000 }));

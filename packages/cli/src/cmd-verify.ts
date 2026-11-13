@@ -26,6 +26,7 @@ import { readVerifyFloor } from './verify-floor';
 import type { VerifyPart } from './verify-merge';
 import { coverageRiders, mergeParts, parsePart, VerifyMergeInputError } from './verify-merge';
 import { measurePace } from './verify-pace';
+import { verifyPlanCommand } from './verify-plan';
 import { withVerifyProgress } from './verify-progress';
 import { runVerify } from './verify-run';
 import type { ShardSpec, Timings } from './verify-shard';
@@ -45,6 +46,7 @@ export const verifyCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('verify', ctx.cwd).dir;
     if (ctx.args.subcommand === 'merge') return mergeCommand(root, ctx.args.positionals, ctx.cwd);
+    if (ctx.args.subcommand === 'plan') return verifyPlanCommand(ctx.args);
     // Every reader before the run: an unrunnable flag must be refused in milliseconds, not after
     // `tsc -b` has spent fourteen seconds on a run the caller cannot use.
     const workers = readWorkers(ctx.args);

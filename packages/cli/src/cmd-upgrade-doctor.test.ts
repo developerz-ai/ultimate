@@ -29,6 +29,18 @@ describe('unit · x upgrade, the hop and the doctor', () => {
     expect(output.ok).toBe(true);
   });
 
+  // The warnings are the next major's red: the hop that installs the doctor saying them says them
+  // too, rather than leaving an author to rerun `x doctor` to learn what `next` will refuse.
+  test('the doctor warnings ride in the report, a line each, and the hop stays green', async () => {
+    const doctor = JSON.stringify({ ok: true, findings: [], data: { ...listing, warnings: held } });
+    const { code, output } = await run(await fixture(), doctorAnswering(doctor, 0));
+    expect(code).toBe(0);
+    expect(output.data?.doctorWarnings?.map((warning) => warning.code)).toEqual(HELD);
+    const human = await run(await fixture(), doctorAnswering(doctor, 0), [], { json: false });
+    const said = human.lines.join('\n').split('\n');
+    expect(said.filter((line) => line.includes('doctor warning: X_'))).toHaveLength(3);
+  });
+
   test('a doctor that exits red on them still leaves a hop green whose verify is green', async () => {
     const doctor = JSON.stringify({ ok: false, findings: held, data: listing });
     const { code, output } = await run(await fixture(), doctorAnswering(doctor, 1));

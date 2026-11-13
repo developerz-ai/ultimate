@@ -73,6 +73,8 @@ export const GATE_MESSAGES = {
   'cli.verify.notAGateRun': 'NOT A GATE RUN — {summary}',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
+  'cli.verify.plan':
+    'the gate in {parts} part(s) over {steps} steps — the CI matrix is data.matrix',
   // The budgets step built before it weighed (`verify-budgets-build.ts`): which stats state made it.
   'cli.verify.budgets.built':
     'built first: build stats were {state} — x build --target static --out {out} ({ms}ms)',

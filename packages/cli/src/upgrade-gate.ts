@@ -42,6 +42,7 @@ const GUARD_DIFFERS = t.object({ name: t.string, refresh: t.string });
 const DOCTOR = t.object({
   data: t.optional(
     t.object({
+      warnings: t.optional(t.array(FINDING)),
       guards: t.optional(
         t.object({
           missing: t.optional(t.array(GUARD_MISSING)),
@@ -81,6 +82,7 @@ interface VerifyDocument {
 
 interface DoctorDocument {
   readonly data?: {
+    readonly warnings?: readonly RawFinding[];
     readonly guards?: {
       readonly missing?: readonly { readonly name: string; readonly add: string }[];
       readonly differs?: readonly { readonly name: string; readonly refresh: string }[];
@@ -114,6 +116,11 @@ export interface HopExercise {
 
 export interface HopGate {
   readonly manifest: { readonly ok: boolean; readonly findings: readonly GateFinding[] };
+  /**
+   * The installed `x doctor`'s `data.warnings[]`: never red on this major, the next one's red —
+   * said by the hop that installed the doctor saying them (`X_VERIFY_STEP_UNFLOORED` among them).
+   */
+  readonly doctorWarnings: readonly GateFinding[];
   readonly guards: HopGuards;
   /** The coverage floor a Bun-floor hop moved to what it measured; null when none moved. */
   readonly coverage: HopCoverage | null;
@@ -193,11 +200,14 @@ const readExercise = (result: ExecResult): HopExercise => {
   return { reported: true, ok: result.ok && document.ok, findings: flatten(document) };
 };
 
-/** A doctor that exits red is normal (a port, an env key); only its listing is read here. */
-const readGuards = (result: ExecResult): HopGuards => {
+/** A doctor that exits red is normal (a port, an env key); its listing and warnings are read. */
+const readDoctor = (result: ExecResult): DoctorDocument['data'] => {
   const parsed = DOCTOR.safeParse(documentIn(result.stdout));
-  const guards =
-    parsed.issues === undefined ? (parsed.value as DoctorDocument).data?.guards : undefined;
+  return parsed.issues === undefined ? (parsed.value as DoctorDocument).data : undefined;
+};
+
+const readGuards = (doctor: DoctorDocument['data']): HopGuards => {
+  const guards = doctor?.guards;
   if (guards === undefined) {
     return { reported: false, missing: [], differs: [], installed: [], withheld: [] };
   }
@@ -230,7 +240,9 @@ export async function runHopGate(input: {
   onStage('manifest');
   const manifest = readManifest(await installed(['manifest', '--json']));
   onStage('doctor');
-  const listed = readGuards(await installed(['doctor', '--json']));
+  const doctor = readDoctor(await installed(['doctor', '--json']));
+  const doctorWarnings = (doctor?.warnings ?? []).map(pick);
+  const listed = readGuards(doctor);
   let guards = listed;
   if (listed.missing.length > 0) {
     onStage('guards');
@@ -256,7 +268,7 @@ export async function runHopGate(input: {
   const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
   const verify = readVerify(await installed(['verify', '--json']));
-  return { manifest, guards, coverage, exercise, exerciseFloor, verify };
+  return { manifest, doctorWarnings, guards, coverage, exercise, exerciseFloor, verify };
 }
 
 /** What a repository with no app can still be asked, in the order an author would run them. */

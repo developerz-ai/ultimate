@@ -114,6 +114,11 @@ export interface DatabaseConfig {
    * (`X_DB_ROW_SECURITY_BYPASSED`). Off by default: a transaction per bare statement is not free.
    */
   readonly rowSecurity: boolean;
+  /**
+   * A statement at or over this many ms writes one `db.statement.slow` warn line in production.
+   * Unset is the boot's own 500 ms (`SLOW_STATEMENT_THRESHOLD_MS`); `0` is off.
+   */
+  readonly slowStatementMs?: number;
 }
 
 /**
@@ -307,6 +312,9 @@ function validate(config: AppConfig): void {
     oneOfIssue('database.driver', config.database.driver, DATABASE_DRIVERS),
     booleanIssue('database.ssl', config.database.ssl),
     booleanIssue('database.rowSecurity', config.database.rowSecurity),
+    config.database.slowStatementMs === undefined
+      ? undefined
+      : countIssue('database.slowStatementMs', config.database.slowStatementMs, 0),
     oneOfIssue('theme.defaultMode', config.theme.defaultMode, THEME_MODES),
     // `null` is the documented "no redirect"; a path that is said must be one a browser can follow.
     config.auth.signInPath === null

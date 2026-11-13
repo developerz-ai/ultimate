@@ -152,6 +152,9 @@ export type {
   TenantLeg,
   TenantProof,
 } from './exercise-report';
+export type { RouteLoadRecord } from './exercise-route-loads';
+export type { RouteLoadSubject } from './exercise-route-subjects';
+export { routeLoadSubjects } from './exercise-route-subjects';
 export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
 export type {
   CeilingShape,

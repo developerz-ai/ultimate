@@ -9,6 +9,7 @@ import {
   MissingSubcommandError,
   UnknownCommandError,
 } from './errors';
+import { factoryWithoutGenerator } from './generate-factories';
 import { quoteArg } from './shell-quote';
 import type { Surface } from './templates';
 import { camel, kebab } from './templates/naming';
@@ -18,6 +19,11 @@ export const GENERATORS = [
   'action',
   'mutator',
   'backfill',
+  // Three primitive factories, each its one call in the feature's `jobs/`. Which factories have a
+  // generator, and why the rest have none, is `FACTORY_GENERATORS` (`generate-factories.ts`).
+  'cron-job',
+  'purge',
+  'webhook-receiver',
   'job',
   'route',
   'policy',
@@ -102,12 +108,16 @@ export function readKind(raw: string | undefined): Generator {
   // deliberately never asked about an absent word, since the empty string is within `job`'s
   // cutoff and would "suggest" a generator nobody typed.
   if (raw === undefined) throw new MissingSubcommandError({ command: 'g', known: GENERATORS });
+  const decided = factoryWithoutGenerator(raw);
   const near = nearestName(raw, kinds);
   const suggestion = GENERATORS.find((kind) => kind === near);
   throw new UnknownCommandError({
     path: `g ${raw}`.trim(),
     known: GENERATORS,
     suggestion: suggestion === undefined ? 'help g' : `g ${suggestion} ${EXAMPLE_NAME[suggestion]}`,
+    ...(decided === undefined
+      ? {}
+      : { why: `${decided.factory}() has no generator: ${decided.none}` }),
   });
 }
 
@@ -275,6 +285,9 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   action: 'publish-post',
   mutator: 'rename-post',
   backfill: 'backfill-slugs',
+  'cron-job': 'nightly-report',
+  purge: 'purge-retained',
+  'webhook-receiver': 'billing-events',
   job: 'send-digest',
   route: 'posts',
   policy: 'post',

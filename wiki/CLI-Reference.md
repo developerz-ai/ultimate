@@ -33,7 +33,7 @@ x version              # CLI version
 | `x stop [--timeout 30s]` | stop this checkout's `x dev` (the pid its `.x/dev.lock` names, nothing else) and return once the next `x dev` can boot | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill, diagnostics | shipped |
-| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]] \| --changed [--base <ref>] [--dirty]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
+| `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]] \| --changed [--base <ref>] [--dirty]] [--workers N] [--isolate]` · `x verify merge <part.json…>` · `x verify plan [--parts n]` | the gate — 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example\|init]` | validate the process env against `envSchema`, regenerate `.env.example` from it, or write `.env.production` (`init --production`) | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
@@ -66,14 +66,15 @@ x version              # CLI version
 | `x docs "<question>"` | framework docs and this wiki, offline, from the install — the first lookup | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate, the section to read | shipped |
-| `x cache` | tag graph, bust, clear, stats | planned |
+| `x token create\|list\|revoke` | MCP and API tokens in the app's `x_api_keys`: issue one with exact scopes (plaintext shown once), list an owner's, revoke one · `grant` is **planned** | shipped |
+| `x config show [--section <key>]` | the resolved `app.config.ts`, defaults merged, credentials redacted | shipped |
+| `x logs tail [--lines n] [--role <role>]` | the last lines of `.x/dev.log` or `.x/logs/<role>.log` — the `logs.tail` MCP tool's file and reader | shipped |
+| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` is **planned** | shipped |
+| `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
 | `x branch` | copy-on-write branch environments | planned |
 | `x status` | connected-client build-ID distribution, role health | planned |
-| `x logs tail` | structured logs + OTel spans | planned |
-| `x token` | create and grant MCP scopes | planned |
 | `x ai` | eval, cache stats, reindex | planned |
 | `x money add-currency` | extend the currency table | planned |
-| `x config show` | the resolved `app.config.ts` | planned |
 
 ## x new
 
@@ -315,6 +316,7 @@ Errors: `X_DEV_STOP_TIMEOUT`, `X_CLI_BAD_FLAG` (a `--timeout` that is not a posi
 
 ```bash
 x g resource|action|mutator|backfill|job|route|policy|entity|query|task <name> [--feature f]
+x g cron-job|purge|webhook-receiver <name> [--feature f]   # a primitive factory's one call + tests
 x g island <name> [--at <dir>]              # a client component on an otherwise static page
 x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen, guarded by construction
 x g guard <name>                            # a convention this app enforces, as a build error
@@ -338,6 +340,16 @@ The boot guard is generated, app-owned: `apps/web/runtime.ts` calls `assertSignI
 **`x g chart-alerts`** (`As of 2026-11`) writes the two monitoring templates `x new`'s chart carries into an app chart that predates them — `docker/helm/templates/servicemonitor.yaml` and `alert-rules.yaml`, named after `Chart.yaml`'s `name` — and appends the `serviceMonitor:` / `alerts:` blocks `values.yaml` lacks. Only what is missing: a template already there is kept (`--force` rewrites both), and a values key already there — `enabled: false` included — is never touched; both templates read a missing block as `auto`, rendering only where the cluster serves the Prometheus operator's kinds. A second run writes nothing. No `<name>`, and any other `x g` flag but `--force`/`--dry-run` is `X_CLI_BAD_FLAG`. **`--print`** writes nothing and needs no chart: the same rules as plain Prometheus rule groups, defaults in place, for a loader outside Kubernetes (`--json`: `data.rules`, the YAML text). No `docker/helm/Chart.yaml` is `X_CHART_MISSING`, fix `x g chart-alerts --print --json`. `x doctor` lists the missing templates. The rules: [Observability](Observability).
 
 `x g guard <name>` writes `guards/<name>.ts` and its test. A name the framework ships a guard under — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`, `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql` and every other name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) — writes THAT guard, which is how an app adopts one it does not hold; any other name writes the blank template. `x doctor` lists the shipped ones missing, and the held ones that differ from the current template ([Interface rules](Interface-Rules#stylesheets)).
+
+**`x g cron-job` · `x g purge` · `x g webhook-receiver`** (`As of 31.17.0`) scaffold a primitive *factory*'s one declaration — each a factory over `job()`, never a ninth primitive — with its tests, into the feature's slice, listed in `apps/web/api/index.ts`'s `jobs:`. None reads a table, so a slice with no `entity.ts` is fine.
+
+| Generator | Writes | What the declaration holds |
+|---|---|---|
+| `x g cron-job <name>` | `jobs/<name>.ts`, `<name>.job.test.ts`, `<name>.test.ts` | `cronJob({ name, cron: '0 3 * * *', tz: 'UTC', tenant: 'none' })` — the job and its `.schedule` task from one call, an explicit IANA zone, the org stripped so a tenant read fails closed |
+| `x g purge <name>` | `jobs/<name>.ts`, `<name>.job.test.ts`, `<name>.test.ts`, `tasks/<name>-hourly.ts` | `purge({ name, entities: 'declared' })` — the sweep for every `retain` the schema declares (`X_ENTITY_RETAIN_UNSWEPT` without one), fired on `DEFAULT_PURGE_CRON` |
+| `x g webhook-receiver <name>` | `jobs/<name>.ts`, `<name>.test.ts`, and the job's entry in `apps/web/exercise.ts` (a draw cannot sign an event, so `x exercise` queues a verified-shape one) | `webhookReceiver()` at `/hooks/<name>`: the exact bytes `verifyBodyHmac`-checked under `<NAME>_WEBHOOK_SECRET` (comma-separated, so a rotation keeps the old one live), the event read out of the signed body, queued, then acknowledged; an unreadable event is the app's own `X_<NAME>_UNREADABLE` |
+
+Every other factory, and why no generator writes it (`exportRows`, `importRows`, `rollup`, `webhook`, `llm`, `agentJob`, …): `FACTORY_GENERATORS` in `packages/cli/src/generate-factories.ts`, held complete against `PRIMITIVE_FACTORIES` by its test.
 
 Alias: `x generate`.
 
@@ -430,6 +442,8 @@ lands in `apps/admin/app/admin/pages/` without `--at` — beside the declaration
 | `x g action` · `x g mutator` | `<name>.test.ts` **and** `<name>.contract.test.ts` | `unit`, `contract` |
 | `x g query --live` | `<name>.live.test.ts` | `live` |
 | `x g job` · `x g task` · `x g backfill` | `<name>.job.test.ts` | `job` |
+| `x g cron-job` · `x g purge` | `<name>.job.test.ts` **and** `<name>.test.ts` | `job`, `unit` |
+| `x g webhook-receiver` | `<name>.test.ts` | `unit` |
 | `x g query` (not live) · `x g entity` · `x g policy` · `x g route` | `<name>.test.ts` | `unit` |
 
 `--force` writes the new name and does not touch a file under the old one, because the old name is not in its output list. Delete the orphan by hand.
@@ -600,7 +614,20 @@ Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is no
 ```bash
 x verify [--only <step>[,<step>…] [--shard i/n [--timings file]] | --changed [--base <ref>] [--dirty]] [--workers N] [--isolate] [--json]
 x verify merge <part.json…> [--json]
+x verify plan [--parts n] [--json]
 ```
+
+**`x verify plan`** (`As of 31.17.0`) — the gate cut into CI parts, as data: each part an `x verify
+--only <steps> [--shard i/n]` for one runner, and `data.matrix` a GitHub `strategy.matrix`
+(`{ include: [{ part, only, shard?, needs }] }`) a workflow reads with `fromJSON`. `--parts`: `1`
+(the whole gate on one runner) or `4`–`64`, default `4` — a `static` part (every step that is not a
+suite), an `e2e` part (`typecheck` + `e2e`), and the rest split between shards of `unit,contract,job`
+and of `live`, the unit group taking the odd one. `needs` says what the runner starts first:
+`none`, `database` (the test Postgres) or `services` (every test service). Derived from
+`VERIFY_STEP_NAMES`, so a new gate step lands in a part with no workflow edit, and every step sits in
+exactly one part or every shard of one split — the rule `x verify merge` refuses a run by. `x new`'s
+`.github/workflows/ci.yml` is three jobs: `plan` → one `gate` per part → `verify` (the merge) →
+[CI: the gate across parallel jobs](CI-Parallel-Gate). Pure: it reads no file and starts nothing.
 
 **`--changed`**, `As of 31.0` — the steps whose inputs the diff touches, NOT A GATE RUN like `--only`
 and never beside it (`X_CLI_BAD_FLAG`). The diff is `x affected`'s: `<base>...HEAD`, `--base` default
@@ -1409,7 +1436,24 @@ write, and the run stays green; with it, above a declared figure is red.
 | a sized-seed table the database refused | `X_EXERCISE_SEED_FAILED`, one per table, naming the entity, the driver's words and its readers — red exactly when the unproven ratio is | the same finding as a line |
 | one call over its statement ceiling — `statementsMax`, or the entry's own `statements: { max, why }` | `X_STATEMENTS_OVER_BUDGET`, the busiest call and its three largest shapes | the same finding as a line, judged at 100 |
 
-Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`, `X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_EXERCISE_SEED_FAILED`, `X_STATEMENTS_OVER_BUDGET`.
+**Route loads** (`As of 31.17.0`). After the primitives, the pass runs every `app/` and `site/`
+file route that declares a `load` — the route table `x routes` prints — once in its own seeded
+tenant, as the runtime calls it: in a request, as the first actor the route's permission allows (a
+signed-in one where it names none), its params a seeded row's id or the route's own `prerender()`
+sample. Each load gets the primitives' proofs: its statements counted against the ceiling (100), a
+scale sweep at 2 and 8 rows a table, and the plan oracle over what it sent. The records ride beside
+`records`, as `routes[]` in `--json` and `.x/exercise.json` (`{ kind: 'route', name, file, outcome,
+reason?, statements, effects, ms, statementCeiling?, plans?, scale? }`), and every finding is a
+**warning line** on `main` — `route /messages (apps/web/app/messages/page.tsx) · X_QUERY_SCALES_WITH_ROWS …`,
+`· X_STATEMENTS_OVER_BUDGET …`, a plan code, or `· load not exercised: <reason>` — never red: no
+floor key opts a page read in yet.
+
+**Reached with nothing to prove** (`As of 31.17.0`): a primitive reached that sent no statement and
+had no effect has vacuous proofs — a sweep of nothing is `flat`. One warning line names the first
+five, `X_EXERCISE_EMPTY_REACH … — fix: edit exercise.ts: give each an input that reaches its work, or
+{ off: '<why>' }`. A warning, not red, on a whole-pass run only.
+
+Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`, `X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_EXERCISE_SEED_FAILED`, `X_STATEMENTS_OVER_BUDGET`; warning lines only: `X_EXERCISE_EMPTY_REACH`.
 
 ## x drill
 
@@ -1916,24 +1960,58 @@ For each violation involving the file it reports the offending edge, the full ch
 
 `<file>` is app-root-relative, or any suffix that matches exactly one source file — the short form a `fix:` line emits. Errors: `X_FIX_TARGET_UNKNOWN` (with the nearest real path as its fix), `X_CLI_BAD_FLAG` on an ambiguous suffix.
 
+## x token
+
+`As of 2026-11`. The app's machine credentials — the keys an MCP endpoint's `apiKeyResolver` and the `/v1` mount accept — in the framework's `x_api_keys`, through `@ultimat3/auth`'s `issueApiKey` / `describeApiKey` / `revokeApiKey`. No default subcommand: `create` writes a credential.
+
+| Subcommand | Does |
+|---|---|
+| `create --scopes <a,b> [--user <id>] [--org <id>] [--env dev\|stage\|prod] [--days n]` | issues one key carrying exactly those scopes (a wildcard is `X_CONFIG_INVALID`). `--env` unsaid is the environment's label: `ULTIMATE_ENV` (else `NODE_ENV`) production → `prod`, staging → `stage`, else `dev`; an unreadable `ULTIMATE_ENV` reads as `prod`. `--user` cuts its scopes to what that user may do and stops it when the user is disabled. The plaintext is printed **once** — in the human lines, or `data.token` under `--json` — and never in the summary; only its SHA-256 is stored |
+| `list --owner <id>` | the keys of a user or org, as `describeApiKey` answers them: no hash, no secret. A key issued with neither is listed by nobody and revoked by its id |
+| `revoke <id>` | revokes it; an unknown or already-revoked id answers `revoked: false`, exit 0 — neither is a key that works |
+| `grant` | **planned**: a key's scopes are fixed when issued. Issue a wider one and revoke the old |
+
+Every flag is read before the database opens: a refusal costs no boot.
+
+## x config
+
+`As of 2026-11`. `x config show [--section <key>]` — `app.config.ts` as the boot reads it: through `loadAppConfig` and core's `defineConfig`, every default merged. A credential-named key (the logger's own rule, `isRedactedKey`), a `secret()` value and the password in a URL's userinfo print as `[redacted]`. `--section` takes a top-level key the resolved record owns; any other is `X_CLI_BAD_FLAG` listing them.
+
+## x logs
+
+`As of 2026-11`. `x logs tail [--lines n] [--role <role>]` — the last `n` lines (default 100, at most 10,000) of `.x/dev.log`, which `x dev` tees, or of `.x/logs/<role>.log`. The same file, path rule and end-first reader as the `logs.tail` MCP tool. A `--role` that is not a runtime role is `X_CLI_BAD_FLAG` before any path is built; no log yet exits `X_NOT_IMPLEMENTED` with `x dev` as the fix.
+
+## x cache
+
+`As of 2026-11`.
+
+| Subcommand | Does |
+|---|---|
+| `graph` (default) | per tag: the actions whose `invalidates` name it, the queries cached under it and the routes revalidated by it, read off the manifest. `data.neverEvicted` lists the tags something reads and no action invalidates — fresh only until their TTL |
+| `bust <tag>` | boots the app's declared tiers and bus as a role does (`startServices`), then `invalidateTags`: shared tiers dropped, the edge purged, every replica told. With an in-process bus (no `NATS_URL`, no `REDIS_URL`) the summary says no running server heard it. A tier that failed is `X_CACHE_DRIVER_UNAVAILABLE`, exit 1; an undeclared tag is `X_CACHE_TAG_UNKNOWN` |
+| `clear` | the same bust over every declared tag. An entry cached under no tag waits for its TTL |
+| `stats` | **planned**: hit rates live in the serving processes — the `/_x` cache panel reads them there |
+
+## x explain
+
+`As of 2026-11`. `x explain <query> [--input '<json>'] [--org <id>]` — the query run once on the app's dev database (rows discarded; its policy is not asked, as `explainQuery`'s is not), every statement it **sent** captured off `db.statement` and planned by `sweepPlans`: the oracle the `exercise` step judges with. A read no declared index serves is `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry as its fix, exit 1. A query over a tenant-scoped entity needs `--org`, else `X_CLI_BAD_FLAG`. Tables the dev database lacks are listed as not planned — run `x db migrate` first. An external `DATABASE_URL` where `ULTIMATE_ENV` (else `NODE_ENV`) resolves production — or `ULTIMATE_ENV` is unreadable — is refused before anything opens, `X_EXPLAIN_PRODUCTION_DATABASE`: the query would be sent for real with its policy skipped. Plan on the embedded database, or on a staging restore under `ULTIMATE_ENV=staging`.
+
 ## Planned commands
 
 Specified in the design docs, not yet implemented. Every one is in the command registry: calling it exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts and only one of them is true.
 
-The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement: `x db studio` and `x jobs drain`. Each stays in its command's subcommand list, so the parser reaches it and `x help <command>` lists it.
+The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement: `x db studio`, `x jobs drain`, `x token grant` and `x cache stats`. Each stays in its command's subcommand list, so the parser reaches it and `x help <command>` lists it.
 
 | Command | Purpose | `fix:` today |
 |---|---|---|
-| `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` — then the cache panel at `/_x` |
 | `x branch [<name>\|delete <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch list --json` — the database half: `list`, `create <name>`, `delete <name>` |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
-| `x logs tail` | structured logs and spans, filterable | `x dev` — then the timeline panel at `/_x` |
-| `x token [create --scopes <s>\|grant <scope>]` | MCP tokens and scopes | `x mcp serve --help` |
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
 | `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x errors explain X_CURRENCY_UNKNOWN --json` — extend it in code: `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot. Shipped `As of 2026-08`, and it is what this command promised |
-| `x config show` | the resolved configuration, defaults included | `x manifest --json` |
 
-**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x logs tail --follow --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
+**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x status --follow --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
+
+`x token`, `x config`, `x logs` and `x cache` left this table `As of 2026-11` (plan 101-full-stack-efficiency-sweeps U5); each has its section above.
 
 ## Names that moved
 

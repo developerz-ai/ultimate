@@ -38,12 +38,13 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same two commands as your terminal: \`bun run setup && bun run verify\` | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
+| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same gate, cut into parts: \`bun run verify plan --json\` names them, each runner runs \`bun run setup && bun run verify --only <steps>\`, and \`bun run verify merge\` is the verdict | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
 | Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal the handle can express | \`guards/repo-raw-sql.ts\` |
+| Fan-out | a database call per element of a list runs through \`mapBounded(rows, fn, { width })\` from \`@ultimat3/core\` — never \`Promise.all(rows.map(async …))\`, one statement per row at once; a \`// why:\` on the line admits a list bounded where it is built | \`guards/unbounded-fanout.ts\` |
 | Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`guards/raw-fetch.ts\` |
 | Polling | an island re-reads a query on a timer with \`useQuery(ref, input, { poll: pollEvery(ms) })\` (\`@ultimat3/realtime\`), anything else with \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` — no call while the tab is hidden, none after a lost session — never a bare \`setInterval(\`; a \`// why:\` on the line admits a tick that is not a read | \`guards/raw-interval.ts\` |
 | Confirmation | a destructive act asks through \`ConfirmDialog\` from \`@ultimat3/ui\` — Cancel focused, a native post, stays open on a refusal — never \`confirm(\`; a \`// why:\` on the line admits a call that is not that question | \`guards/native-confirm.ts\` |
@@ -181,7 +182,7 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
 | \`.mcp.json\` | MCP client config: the dev tools, \`bunx @ultimat3/cli mcp serve --transport stdio\` |
 | \`apps/web/mcp.ts\` | the app's own \`POST /mcp\`: exposed actions, behind a bearer token |
-| \`.github/workflows/ci.yml\` | \`bun run setup\` then \`bun run verify\`, on push and pull request |
+| \`.github/workflows/ci.yml\` | on push and pull request: \`bun run verify plan\` cuts the gate into parts, each runner runs \`bun run setup\` then its \`bun run verify --only …\`, and \`bun run verify merge\` folds them into the one verdict |
 | \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`, always on \`ubuntu-latest\` (bash and Docker). \`ci.yml\` runs on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
 `;
 

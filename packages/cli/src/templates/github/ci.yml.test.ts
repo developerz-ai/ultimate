@@ -6,10 +6,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import { YAML } from 'bun';
+import { VERIFY_SUBCOMMANDS } from '../../cmd-verify-spec';
+import { DEFAULT_PLAN_PARTS, planMatrix, verifyPlan } from '../../verify-plan';
 import { names } from '../naming';
 import { docsFiles } from '../scaffold-docs';
 import { repoFiles } from '../scaffold-repo';
-import { CI_WORKFLOW_PATH, githubFiles } from './ci.yml';
+import { TEST_COMPOSE_PATH } from '../scaffold-test-services';
+import { CI_WORKFLOW_PATH, githubFiles, PLAN_COMMAND } from './ci.yml';
 
 const app = names('ledger-demo');
 
@@ -27,19 +30,36 @@ const emitted = (
 
 const workflow = (): string => emitted(githubFiles(app), CI_WORKFLOW_PATH);
 
+interface Job {
+  readonly if?: string;
+  readonly 'timeout-minutes'?: number;
+  readonly needs?: string | readonly string[];
+  readonly outputs?: Readonly<Record<string, string>>;
+  readonly strategy?: { readonly 'fail-fast'?: boolean; readonly matrix?: unknown };
+  readonly steps?: readonly Step[];
+}
 interface Workflow {
   readonly on?: Readonly<Record<string, unknown>>;
-  readonly jobs?: Readonly<Record<string, { readonly steps?: readonly Step[] }>>;
+  readonly jobs?: Readonly<Record<string, Job>>;
 }
 interface Step {
+  readonly id?: string;
+  readonly if?: string;
   readonly uses?: string;
   readonly run?: string;
   readonly with?: Readonly<Record<string, unknown>>;
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 const parsed = (): Workflow => YAML.parse(workflow()) as Workflow;
 
-const steps = (): readonly Step[] => parsed().jobs?.['check']?.steps ?? [];
+const job = (name: string): Job => parsed().jobs?.[name] ?? expect.unreachable(`no ${name} job`);
+
+/** The gate part's steps: the job every runner of the matrix runs. */
+const steps = (): readonly Step[] => job('gate').steps ?? [];
+
+const runsOf = (name: string): readonly string[] =>
+  (job(name).steps ?? []).flatMap((step) => (step.run === undefined ? [] : [step.run]));
 
 describe('unit · the CI workflow x new writes', () => {
   // GitHub reads `.github/workflows/*.yml` and nothing else. A workflow one directory away is a
@@ -51,9 +71,11 @@ describe('unit · the CI workflow x new writes', () => {
 
   // Parsed, not matched: a workflow that is not YAML is accepted by every `toContain` in this file
   // and by no runner on GitHub.
-  test('it is YAML, with one job whose steps are a list', () => {
-    expect(Object.keys(parsed().jobs ?? {})).toEqual(['check']);
-    expect(steps().length).toBeGreaterThan(0);
+  test('it is YAML: the plan, the gate in parts, the verdict — each a list of steps', () => {
+    expect(Object.keys(parsed().jobs ?? {})).toEqual(['plan', 'gate', 'verify']);
+    for (const name of ['plan', 'gate', 'verify']) {
+      expect(job(name).steps?.length ?? 0).toBeGreaterThan(0);
+    }
   });
 
   test('it triggers on push and on pull request, and on nothing else', () => {
@@ -77,16 +99,18 @@ describe('unit · the CI workflow x new writes', () => {
     expect(code.filter((line) => line.includes('branches'))).toEqual([]);
   });
 
-  // The contract this file exists for: the app's OWN scripts, in order, never a restatement of
-  // their steps. A workflow that ran `bun install && x verify` would be green here and would be a
-  // second gate free to drift from the one a human runs.
-  test('it runs bun run setup and then bun run verify, and restates neither', () => {
-    expect(steps().flatMap((step) => (step.run === undefined ? [] : [step.run]))).toEqual([
-      'bun run setup',
-      'docker compose -f docker/docker-compose.test.yml up -d --wait',
-      'cat docker/test-services.env >> "$GITHUB_ENV"',
-      'bun run verify',
-    ]);
+  // The contract this file exists for: the app's OWN scripts, never a restatement of their steps.
+  // A part runs `bun run setup`, starts what its level needs, and runs `bun run verify` on its
+  // slice; the plan and the verdict are `bun run verify` too.
+  test('every part runs bun run setup and then bun run verify on its slice, and restates neither', () => {
+    const runs = runsOf('gate');
+    expect(runs[0]).toBe('bun run setup');
+    expect(runs.at(-1)).toContain(
+      ['bun run verify --only "$ONLY" $', '{SHARD:+--shard "$SHARD"} --json'].join(''),
+    );
+    expect(runsOf('plan').at(-1)).toContain(PLAN_COMMAND);
+    expect(runsOf('verify').at(-1)).toBe('bun run verify merge "$RUNNER_TEMP"/parts/*.json');
+    for (const name of ['plan', 'verify']) expect(runsOf(name)).toContain('bun install');
   });
 
   // The stack those two steps start and read is one the scaffold actually writes — the order is
@@ -100,7 +124,7 @@ describe('unit · the CI workflow x new writes', () => {
   // One gate, one name: `bun run verify` is `x verify`, whose budgets step builds when its stats
   // are missing or stale (plan 101, 21) — so no step builds first, and no `bun run check` exists.
   test('the gate it runs is bun run verify alone: no build step before it, no check script', () => {
-    const runs = steps().flatMap((step) => (step.run === undefined ? [] : [step.run]));
+    const runs = ['plan', 'gate', 'verify'].flatMap(runsOf);
     expect(runs.filter((run) => run.includes('x build') || run.includes('run check'))).toEqual([]);
   });
 
@@ -113,10 +137,11 @@ describe('unit · the CI workflow x new writes', () => {
     };
     const declared = manifest.engines?.bun ?? '';
     expect(declared).toMatch(/^>=\d+\.\d+\.\d+$/);
-    const pin = steps().find((step) => step.uses?.startsWith('oven-sh/setup-bun'))?.with?.[
-      'bun-version'
-    ];
-    expect(pin).toBe(declared.replace('>=', ''));
+    for (const name of ['plan', 'gate', 'verify']) {
+      const pin = (job(name).steps ?? []).find((step) => step.uses?.startsWith('oven-sh/setup-bun'))
+        ?.with?.['bun-version'];
+      expect(pin).toBe(declared.replace('>=', ''));
+    }
   });
 
   // `latest` and a bare major are how a runtime change arrives unannounced in every run at once.
@@ -137,8 +162,82 @@ describe('unit · the CI workflow x new writes', () => {
   });
 
   // A hung step holds a runner for GitHub's six-hour default with no signal at all.
-  test('the job is bounded in time', () => {
-    expect(workflow()).toContain('timeout-minutes:');
+  test('every job is bounded in time', () => {
+    for (const name of ['plan', 'gate', 'verify']) {
+      expect(job(name)['timeout-minutes']).toBeGreaterThan(0);
+    }
+  });
+});
+
+// The matrix is `x verify plan`'s answer, never a list typed here: a step added to the gate lands
+// in a part with no edit to this file. These hold the workflow to the plan it reads.
+describe('unit · the CI workflow x new writes · the gate in parts', () => {
+  test('the matrix is the plan job’s output, read by fromJSON, and a red part cancels none', () => {
+    expect(job('gate').needs).toBe('plan');
+    expect(job('gate').strategy?.matrix).toBe(expr('fromJSON(needs.plan.outputs.matrix)'));
+    expect(job('gate').strategy?.['fail-fast']).toBe(false);
+    expect(job('plan').outputs?.['matrix']).toBe(expr('steps.plan.outputs.matrix'));
+    const plan = (job('plan').steps ?? []).find((step) => step.id === 'plan');
+    expect(plan?.run).toBe(
+      `echo "matrix=$(${PLAN_COMMAND} | jq -c '.data.matrix')" >> "$GITHUB_OUTPUT"`,
+    );
+    expect(PLAN_COMMAND).toBe(`bun run verify plan --parts ${String(DEFAULT_PLAN_PARTS)} --json`);
+  });
+
+  // `bun run verify plan` is `x verify plan`: a subcommand the CLI does not have is a plan job
+  // that dies on X_CLI_UNKNOWN_COMMAND and a repository whose every run is red.
+  test('every x verify subcommand the workflow runs is one the CLI has', () => {
+    const subs = ['plan', 'gate', 'verify']
+      .flatMap(runsOf)
+      .flatMap((run) => [...run.matchAll(/bun run verify ([a-z]+)\b/g)].map((m) => m[1] ?? ''));
+    expect(subs.length).toBeGreaterThan(0);
+    for (const sub of subs) expect(VERIFY_SUBCOMMANDS as readonly string[]).toContain(sub);
+  });
+
+  test('the keys the part reads are the keys the plan emits, and every level is handled', () => {
+    const rows = planMatrix(verifyPlan(DEFAULT_PLAN_PARTS)).include as Record<string, unknown>[];
+    const emitted = new Set(rows.flatMap((row) => Object.keys(row)));
+    const read = new Set([...workflow().matchAll(/matrix\.([a-z]+)/g)].map((m) => m[1] ?? ''));
+    expect([...read].sort()).toEqual([...emitted].sort());
+    const handled = steps().flatMap(
+      (step) => /^matrix\.needs == '([a-z]+)'$/.exec(step.if ?? '')?.[1] ?? [],
+    );
+    // Every level any runner count can emit but `none`, which starts nothing.
+    const levels = new Set(
+      [1, DEFAULT_PLAN_PARTS]
+        .flatMap((parts) => verifyPlan(parts).map((part) => part.needs))
+        .filter((level) => level !== 'none'),
+    );
+    expect(handled.sort()).toEqual([...levels].sort());
+  });
+
+  test('a database part starts the compose file’s postgres and hands on its URL alone', () => {
+    const compose = YAML.parse(emitted(repoFiles(app, '1.0.0', true), TEST_COMPOSE_PATH)) as {
+      readonly services: Readonly<Record<string, unknown>>;
+    };
+    const database = steps().find((step) => step.if === "matrix.needs == 'database'")?.run ?? '';
+    expect(Object.keys(compose.services)).toContain('postgres');
+    expect(database).toContain(`docker compose -f ${TEST_COMPOSE_PATH} up -d --wait postgres`);
+    expect(emitted(repoFiles(app, '1.0.0', true), 'docker/test-services.env')).toMatch(
+      /^TEST_DATABASE_URL=/m,
+    );
+  });
+
+  test('every part hands the verdict its document, red or green, under its own name', () => {
+    const upload = steps().find((step) => step.uses?.startsWith('actions/upload-artifact@'));
+    expect(upload?.with?.['name']).toBe(`verify-part-${expr('matrix.part')}`);
+    expect(upload?.with?.['overwrite']).toBe(true);
+    expect(String(steps().at(-1)?.if)).toBe(expr('!cancelled()'));
+  });
+
+  test('the verdict runs over a red part and merges every part the plan made', () => {
+    expect(job('verify').needs).toEqual(['plan', 'gate']);
+    expect(job('verify').if).toContain('!cancelled()');
+    const download = (job('verify').steps ?? []).find((step) =>
+      step.uses?.startsWith('actions/download-artifact@'),
+    );
+    expect(download?.with?.['pattern']).toBe('verify-part-*');
+    expect(download?.with?.['merge-multiple']).toBe(true);
   });
 });
 
@@ -162,7 +261,7 @@ describe('unit · the CI workflow pays for each commit once', () => {
   // Both halves: dropping the pull_request run for a same-repo branch is the saving, and a fork's
   // pull request — which fires no push in this repository — must still be gated.
   test('a same-repository pull request is skipped, and a fork pull request still runs', () => {
-    const gate = doc().jobs?.['check']?.if ?? '';
+    const gate = doc().jobs?.['plan']?.if ?? '';
     expect(gate).toContain("github.event_name == 'push'");
     expect(gate).toContain('github.event.pull_request.head.repo.full_name != github.repository');
   });

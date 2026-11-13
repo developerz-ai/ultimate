@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { stripComments } from '@ultimat3/core';
 import type { GenerateOptions } from '../cmd-generate';
 import { generate } from '../cmd-generate';
+import { entryKey } from '../exercise-entry-edit';
 import { scaffoldVariants } from '../scaffold-fixture';
 import type { TestType } from '../verify-tests';
 import { ownerOf } from '../verify-tests';
@@ -387,7 +388,7 @@ describe('unit · every emitted .contract() call reads its exercise from apps/we
       return variant.files.flatMap((one) =>
         'exercise' in one &&
         one.exercise !== undefined &&
-        !source.includes(`  ${one.exercise.name}: {`)
+        !source.includes(`  ${entryKey(one.exercise.name)}: {`)
           ? [`${variant.name} → ${one.exercise.name}`]
           : [],
       );

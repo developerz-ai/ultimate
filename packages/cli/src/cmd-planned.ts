@@ -1,5 +1,5 @@
 // The commands the design docs specify and this build does not yet implement. They are in the
-// registry on purpose: `x cache bust` exiting X_CLI_UNKNOWN_COMMAND says "you typed something that
+// registry on purpose: `x status` exiting X_CLI_UNKNOWN_COMMAND says "you typed something that
 // does not exist", which is false and sends an agent looking for a typo. X_NOT_IMPLEMENTED plus a
 // fix naming the closest shipped command says the true thing, and `x help` lists them honestly.
 
@@ -24,13 +24,6 @@ export interface PlannedCommand {
  */
 export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
   {
-    name: 'cache',
-    summary: 'the tag graph, targeted eviction, hit stats',
-    usage: 'x cache [graph|bust <tag>|clear|stats] [--json]',
-    subcommands: ['graph', 'bust', 'clear', 'stats'],
-    fix: 'x dev   # then the cache panel at /_x',
-  },
-  {
     name: 'branch',
     summary: 'copy-on-write branch environments with a preview URL',
     usage: 'x branch [<name>|delete <name>] [--json]',
@@ -41,20 +34,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     summary: 'role health and the build-ID distribution of connected clients',
     usage: 'x status [--json]',
     fix: 'x doctor --json',
-  },
-  {
-    name: 'logs',
-    summary: 'structured logs and OTel spans, filterable',
-    usage: 'x logs tail [--json]',
-    subcommands: ['tail'],
-    fix: 'x dev   # then the timeline panel at /_x',
-  },
-  {
-    name: 'token',
-    summary: 'create MCP tokens and grant scopes',
-    usage: 'x token [create --scopes <s>|grant <scope>] [--json]',
-    subcommands: ['create', 'grant'],
-    fix: 'x mcp serve --help   # the scopes this build serves',
   },
   {
     name: 'ai',
@@ -75,13 +54,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     usage: 'x money add-currency <ISO> --exponent <n> [--json]',
     subcommands: ['add-currency'],
     fix: "x errors explain X_CURRENCY_UNKNOWN --json   # extend it in code: registerCurrency({ code: 'GHS', exponent: 2, name: 'Ghana Cedi' }) at boot",
-  },
-  {
-    name: 'config',
-    summary: 'the resolved app.config.ts, defaults included',
-    usage: 'x config show [--json]',
-    subcommands: ['show'],
-    fix: 'x manifest --json   # the facts the resolved config produced',
   },
 ];
 
@@ -116,6 +88,20 @@ export interface PlannedSubcommand {
  * own ledger. One subcommand is not worth a second engine.
  */
 export const PLANNED_SUBCOMMANDS: readonly PlannedSubcommand[] = [
+  // A key's scopes are fixed when it is issued — `AuthApiKeyRecord.scopes` is "never widened" and
+  // `ApiKeyStore` has no update — so a grant is a NEW key with the wider set and a revoke of the old.
+  {
+    command: 'token',
+    subcommand: 'grant',
+    fix: 'x token create --scopes post:read,post:write --json   # a key with the wider set; then x token revoke <old-id>',
+  },
+  // Hit rates live in the serving processes' tiers, and a CLI process has served nothing: the
+  // number is the running server's, which `/_x` already reads in that process.
+  {
+    command: 'cache',
+    subcommand: 'stats',
+    fix: 'x dev   # then the cache panel at /_x',
+  },
   {
     command: 'db',
     subcommand: 'studio',

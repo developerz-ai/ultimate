@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dc0122bf4734e7108f188a4a98c54fadd2ef378e209ccadc5001972de7fb7daa",
+  "buildId": "6f3bfaa99aa21d16a7e32687f6556b051106a989aa72d3140313ccde561bb3ab",
   "tiers": {
     "0": [
       "core",
@@ -1580,6 +1580,11 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_DEV_DATA_UNOPENABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_DEV_HOST_REFUSED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2170,6 +2175,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_EXERCISE_EMPTY_REACH",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_EXERCISE_FILE_UNEDITABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2198,6 +2208,11 @@
       "code": "X_EXERCISE_UNPROVEN_ABOVE_FLOOR",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-doctor.ts"
+    },
+    {
+      "code": "X_EXPLAIN_PRODUCTION_DATABASE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_EXPORT_PART_TOO_LARGE",

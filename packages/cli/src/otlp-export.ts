@@ -8,6 +8,7 @@
 
 import type { OtlpSignal, ShutdownReason } from '@ultimat3/core';
 import {
+  finiteCount,
   isProduction,
   logger,
   onShutdown,
@@ -65,7 +66,15 @@ export const METRIC_EXPORT_INTERVAL_MS = 60_000;
  * and its timer stops, rather than being dropped and leaked. Metrics are the same shape since
  * 31.0.0: a `metric.export` subscription, released by its unsubscribe.
  */
-export function startOtlpExport(env: Env = process.env): () => void {
+export interface OtlpExportOptions {
+  /** `database.slowStatementMs` from `app.config.ts`: replaces the 500 ms default, `0` is off. */
+  readonly slowStatementMs?: number | undefined;
+}
+
+export function startOtlpExport(
+  env: Env = process.env,
+  options: OtlpExportOptions = {},
+): () => void {
   const releases: (() => void)[] = [];
   const flushes: (() => Promise<void>)[] = [];
 
@@ -78,7 +87,12 @@ export function startOtlpExport(env: Env = process.env): () => void {
   // test suite's deliberately slow statements are not an operator's incident. Released with the
   // rest, so a second boot in this process never logs each statement twice.
   const production = isProduction({ env });
-  releases.push(slowStatementLog({ thresholdMs: production ? SLOW_STATEMENT_THRESHOLD_MS : 0 }));
+  const threshold = finiteCount(
+    'startOtlpExport',
+    'slowStatementMs',
+    options.slowStatementMs ?? SLOW_STATEMENT_THRESHOLD_MS,
+  );
+  releases.push(slowStatementLog({ thresholdMs: production ? threshold : 0 }));
   // Every environment: the statements, renders and cache lookups each request caused, which
   // `http.request.slow` carries (its own threshold, `http.slowRequestMs`, decides whether it is
   // written). Without it the line holds the gate and handler split and no statement count.

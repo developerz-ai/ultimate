@@ -80,7 +80,44 @@ slowest part's, which is the wall time CI waited. A part that is not an `x verif
 document is `X_VERIFY_MERGE_INPUT` — and so is a step whose `durationMs` is not a number or whose
 `findings` are not each a `code`, `cause` and `fix`.
 
-## A GitHub Actions workflow
+## `x verify plan` — the parts, as data
+
+`As of 31.17.0`. `x verify plan [--parts n] --json` answers the split instead of a workflow spelling
+it: `data.matrix` is a GitHub `strategy.matrix`, one row per part —
+`{ part, only, shard?, needs }` — derived from `VERIFY_STEP_NAMES`, so a step the gate gains lands in
+a part with no workflow edit. Pure: no file read, nothing started.
+
+```text
+$ x verify plan --parts 4
+unit-1  x verify --only unit,contract,job --shard 1/1  (database)
+live-1  x verify --only live --shard 1/1  (services)
+static  x verify --only lint,boundaries,filesize,package-shape,errors,exercise,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap  (none)
+e2e  x verify --only typecheck,e2e  (database)
+```
+
+| `--parts` | Layout |
+|---|---|
+| `1` | `gate`: every step on one runner, `needs: services` |
+| `4`–`64` (default `4`) | `static` and `e2e` (`typecheck` + `e2e`, the two slow unsharded steps) whole; the rest of the runners split between shards of `unit,contract,job` and of `live`, the unit group taking the odd one |
+| `2`, `3`, `0`, `65`+ | `X_CLI_BAD_FLAG` — two or three runners cannot hold this layout |
+
+`needs` is a level, not service names: `none`, `database` (the test Postgres alone) or `services`
+(every test service) — the compose file is the app's, and the workflow is the one place its names are
+spelled. **`x new`'s `.github/workflows/ci.yml` reads it**: a `plan` job runs
+`bun run verify plan --parts 4 --json` and hands `.data.matrix` to the `gate` job by `fromJSON`;
+each part runs `bun run setup`, starts what its `needs` asks for, runs
+`bun run verify --only "$ONLY" ${SHARD:+--shard "$SHARD"} --json` and uploads the document, red or
+green; `verify` downloads every part and runs `bun run verify merge`. An app scaffolded before 31.17.0
+keeps its one-job workflow, which still works; to adopt, copy a fresh scaffold's
+`.github/workflows/ci.yml`.
+
+This repository's own `ci.yml` stays hand-written — it carries services and URLs only the framework
+has — and `verify-plan.test.ts` holds its `gate` matrix to `verifyPlan(7)`: a step added to the gate
+or a part edited out of the matrix is red there before it is `X_VERIFY_MERGE_INCOMPLETE` after a push.
+
+## A GitHub Actions workflow, by hand
+
+The same shape with a matrix you write yourself — for a split the plan does not make:
 
 ```yaml
 name: ci

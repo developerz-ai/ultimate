@@ -4,6 +4,7 @@
 // back, and it reports only what the handle can say: the call it names is the repair.
 
 import { guardCode } from './guard';
+import { repoRawSqlTest } from './guard-repo-raw-sql-test';
 import type { GeneratedFile } from './naming';
 
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
@@ -15,11 +16,13 @@ const source =
 // \`x verify\` discovers every file in \`guards/\` and runs its \`guard\` inside the \`boundaries\`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
-// Only a statement the handle can express is reported: \`select *\`, \`insert\`, \`update\` or \`delete\`
-// on ONE table, with plain comparisons, and \`select * … where id = ? for update\`. A join, an aggregate, a CTE, a window, an \`or\`, a function
+// Only a statement the handle can express is reported: \`select *\` or a plain column list (the fix
+// projects it with \`.select({ … })\`), \`insert\`, \`update\` or \`delete\` on ONE table, with plain
+// comparisons, and \`select * … where id = ? for update\`. A join, an aggregate, a CTE, a window, an \`or\`, a function
 // call and a statement composed from another fragment are past what the handle says, and silent.
-// One more shape is reported in any statement, join or not: an \`order by date_trunc('milliseconds', …)\`,
-// whose repair is \`keyset()\` from \`@ultimat3/db\`.
+// Three more shapes are reported in any statement, join or not: an \`order by date_trunc('milliseconds', …)\`
+// and a hand row comparison \`(a, b) < (?, ?)\`, whose repair is \`keyset()\` from \`@ultimat3/db\`, and a
+// \`pg_advisory_xact_lock(…)\`, whose repair is the handle's \`lockKeys\`. A quoted literal is data, never shape.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -134,8 +137,11 @@ const WHERE = \`(\${COMPARISON}(?: and \${COMPARISON})*)\`;
 const ORDER = \`"?(\${NAME})"?(?: (asc|desc))?(?:, ?"?\${NAME}"?(?: (?:asc|desc))?)*\`;
 const ASSIGNMENT = \`"?\${NAME}"? = \${VALUE}\`;
 
+/** \`*\`, or plain column names: an alias, a qualified name or an expression is past the handle. */
+const COLUMNS = \`(\\\\*|"?\${NAME}"?(?:, ?"?\${NAME}"?)*)\`;
+
 const SELECT = new RegExp(
-  \`^select \\\\* from \${TABLE}(?: where \${WHERE})?(?: order by \${ORDER})?(?: limit (\${VALUE}))?$\`,
+  \`^select \${COLUMNS} from \${TABLE}(?: where \${WHERE})?(?: order by \${ORDER})?(?: limit (\${VALUE}))?$\`,
 );
 const INSERT = new RegExp(
   \`^insert into \${TABLE} \\\\([^()]*\\\\) values \\\\(\${VALUE}(?:, ?\${VALUE})*\\\\)(?: returning \\\\*)?$\`,
@@ -162,18 +168,39 @@ const OPERATORS: Readonly<Record<string, string>> = {
   in: 'in',
 };
 
-/** The predicate as the handle spells it: equalities in one \`where({ … })\`, the rest chained. */
-const filterCalls = (where: string | undefined): string => {
+/**
+ * A quoted literal, and the value it splices as. Masked to \`'<n>'\` before the statement is
+ * lowercased and split on spaces, so its case, its spaces and an \`and\` inside it survive.
+ */
+const LITERAL = /'(?:[^']|'')*'/g;
+
+const jsString = (sqlLiteral: string): string => {
+  const inner = sqlLiteral.slice(1, -1).replaceAll("''", "'");
+  return /['\\\\]/.test(inner) ? JSON.stringify(inner) : \`'\${inner}'\`;
+};
+
+/**
+ * The predicate as the handle spells it: equalities in one \`where({ … })\`, the rest chained. A
+ * literal is its value, never a binding: \`.where({ status })\` names a variable nobody declared.
+ */
+const filterCalls = (where: string | undefined, literals: readonly string[]): string => {
   if (where === undefined) return '';
+  const spliced = (value: string): string | undefined => {
+    if (value === '?') return undefined;
+    const masked = /^'(\\d+)'$/.exec(value);
+    return masked === null ? value : jsString(literals[Number(masked[1])] ?? "''");
+  };
   const equal: string[] = [];
   const others: string[] = [];
   for (const comparison of where.split(' and ')) {
-    const [column = '', operator = '', ...rest] = comparison.replaceAll('"', '').split(' ');
+    const [column = '', operator = '', value = '?'] = comparison.replaceAll('"', '').split(' ');
     const name = camel(column);
-    if (operator === '=') equal.push(name);
+    const literal = spliced(value);
+    if (operator === '=') equal.push(literal === undefined ? name : \`\${name}: \${literal}\`);
     else if (operator !== 'is') {
-      others.push(\`.andWhere('\${name}', '\${OPERATORS[operator] ?? operator}', value)\`);
-    } else others.push(\`.andWhere('\${name}', '\${rest.length === 2 ? 'is-not-null' : 'is-null'}')\`);
+      const op = Object.hasOwn(OPERATORS, operator) ? OPERATORS[operator] : operator;
+      others.push(\`.andWhere('\${name}', '\${op}', \${literal ?? 'value'})\`);
+    } else others.push(\`.andWhere('\${name}', '\${value === 'not' ? 'is-not-null' : 'is-null'}')\`);
   }
   return \`\${equal.length === 0 ? '' : \`.where({ \${equal.join(', ')} })\`}\${others.join('')}\`;
 };
@@ -182,11 +209,29 @@ const filterCalls = (where: string | undefined): string => {
 const byIdOnly = (where: string): boolean => /^"?id"? = \\?$/.test(where);
 
 /**
+ * Whether every comparison is an equality: all \`updateWhere\`/\`deleteWhere\` take. A range is the
+ * chain's one-statement \`updateAll\`/\`deleteAll\` — naming the filter would drop the range.
+ */
+const equalitiesOnly = (where: string): boolean =>
+  where.split(' and ').every((comparison) => / = /.test(comparison));
+
+/** \`id, created_at\` → \`.select({ id: true, createdAt: true })\`; \`*\` is the whole row, no call. */
+const projection = (columns: string): string =>
+  columns === '*'
+    ? ''
+    : \`.select({ \${columns
+        .split(',')
+        .map((column) => \`\${camel(column.trim().replaceAll('"', ''))}: true\`)
+        .join(', ')} })\`;
+
+/**
  * The handle call that says what \`sql\` says, or \`undefined\` when the handle cannot say it. \`sql\`
  * is the literal's text as written; whitespace, case and a trailing \`;\` are not part of the rule.
  */
 export function handleCallFor(sql: string): string | undefined {
+  const literals: string[] = [];
   const text = sql
+    .replaceAll(LITERAL, (literal) => \`'\${literals.push(literal) - 1}'\`)
     .toLowerCase()
     .replaceAll(/\\s+/g, ' ')
     .replaceAll(/\\( /g, '(')
@@ -200,30 +245,32 @@ export function handleCallFor(sql: string): string | undefined {
   }
   const select = SELECT.exec(text);
   if (select !== null) {
-    const [, table = '', where, column, direction, limit] = select;
+    const [, columns = '*', table = '', where, column, direction, limit] = select;
     const order =
       column === undefined
         ? ''
         : \`.orderBy('\${camel(column)}'\${direction === 'desc' ? ", 'desc'" : ''})\`;
     const one = column === undefined && limit === undefined && /(^| )"?id"? = /.test(where ?? '');
     const bound = limit === undefined ? '' : \`.limit(\${limit === '?' ? 'limit' : limit})\`;
-    return \`db.\${camel(table)}\${filterCalls(where)}\${order}\${bound}.\${one ? 'one' : 'all'}()\`;
+    return \`db.\${camel(table)}\${filterCalls(where, literals)}\${order}\${bound}\${projection(columns)}.\${one ? 'one' : 'all'}()\`;
   }
   const insert = INSERT.exec(text);
   if (insert !== null) return \`db.\${camel(insert[1] ?? '')}.insert({ … })\`;
   const update = UPDATE.exec(text);
   if (update !== null) {
     const [, table = '', where = ''] = update;
-    return byIdOnly(where)
-      ? \`db.\${camel(table)}.update(id, { … })\`
-      : \`db.\${camel(table)}.updateWhere({ … }, { … })\`;
+    if (byIdOnly(where)) return \`db.\${camel(table)}.update(id, { … })\`;
+    return equalitiesOnly(where)
+      ? \`db.\${camel(table)}.updateWhere({ … }, { … })\`
+      : \`db.\${camel(table)}\${filterCalls(where, literals)}.updateAll({ … })\`;
   }
   const remove = DELETE.exec(text);
   if (remove !== null) {
     const [, table = '', where = ''] = remove;
-    return byIdOnly(where)
-      ? \`db.\${camel(table)}.delete(id)\`
-      : \`db.\${camel(table)}.deleteWhere({ … })\`;
+    if (byIdOnly(where)) return \`db.\${camel(table)}.delete(id)\`;
+    return equalitiesOnly(where)
+      ? \`db.\${camel(table)}.deleteWhere({ … })\`
+      : \`db.\${camel(table)}\${filterCalls(where, literals)}.deleteAll()\`;
   }
   return undefined;
 }
@@ -251,13 +298,59 @@ const truncatedFinding = (at: string): Finding => ({
   at,
 });
 
+/** Comments dropped and every quoted literal emptied: the words inside one are data, not shape. */
+const shapeOf = (sql: string): string =>
+  sql
+    .replaceAll(/--[^\\n]*/g, ' ')
+    .replaceAll(LITERAL, "''")
+    .toLowerCase()
+    .replaceAll(/\\s+/g, ' ');
+
+const COLUMN = '"?[a-z_][a-z0-9_.]*"?';
+
+/** \`(created_at, id) < (?, ?)\`: the seek of a keyset page, written by hand. */
+const ROW_COMPARISON = new RegExp(\`\\\\( ?\${COLUMN}(?: ?, ?\${COLUMN})+ ?\\\\) ?(?:<=|>=|<|>) ?\\\\(\`);
+
+export const rowComparison = (sql: string): boolean => ROW_COMPARISON.test(shapeOf(sql));
+
+/** A transaction-scoped advisory lock taken by hand, under a key only this statement knows. */
+export const advisoryLock = (sql: string): boolean =>
+  /\\bpg_advisory_xact_lock ?\\(/.test(shapeOf(sql));
+
+/** The shapes reported in ANY statement, join or not, each with the call that replaces it. */
+const ANY_STATEMENT: readonly {
+  readonly matches: (sql: string) => boolean;
+  readonly finding: (at: string) => Finding;
+}[] = [
+  { matches: truncatedOrder, finding: (at) => truncatedFinding(at) },
+  {
+    matches: rowComparison,
+    finding: (at) => ({
+      code: CODE,
+      cause: \`\${at} pages with a hand row comparison, (a, b) < (?, ?) — the seek keyset() writes with its tie-break, its direction and its cursor codec, each one a detail a hand copy gets wrong when a key column changes\`,
+      fix: \`\${KEYSET_CALL} — from @ultimat3/db, its keys the columns of the row comparison at \${at}, then: x verify\`,
+      at,
+    }),
+  },
+  {
+    matches: advisoryLock,
+    finding: (at) => ({
+      code: CODE,
+      cause: \`\${at} takes pg_advisory_xact_lock by hand — a key hashed where nothing else can see it, and two keys taken in whatever order two callers reach them, which is a deadlock\`,
+      fix: \`db.<table>.lockKeys([key], async (tx) => …) — the typed handle of the table the lock guards, sorted keys in one transaction, in place of the sql literal at \${at}, then: x verify\`,
+      at,
+    }),
+  },
+];
+
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function rawRepoSql(files: readonly RepoFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     for (const statement of sqlStatements(file.source)) {
-      if (truncatedOrder(statement.text)) {
-        findings.push(truncatedFinding(\`\${file.path}:\${statement.line}\`));
+      const shape = ANY_STATEMENT.find((one) => one.matches(statement.text));
+      if (shape !== undefined) {
+        findings.push(shape.finding(\`\${file.path}:\${statement.line}\`));
         continue;
       }
       const call = handleCallFor(statement.text);
@@ -287,131 +380,8 @@ export const guard: Guard = {
 };
 `;
 
-const test =
-  (): string => `// The rule, driven directly. Failure case first: a guard whose rule silently stopped matching is
-// a green gate over the convention it was written to enforce.
-
-import { expect, unitTest } from '@ultimat3/testing';
-import { handleCallFor, rawRepoSql, sqlStatements, truncatedOrder } from './repo-raw-sql';
-
-const REPO = 'apps/web/app/post/repo.ts';
-const repo = (source: string) => [{ path: REPO, source }];
-
-/** An interpolation as SOURCE TEXT, spelled apart so this file holds no placeholder of its own. */
-const hole = (name: string): string => ['$', '{', name, '}'].join('');
-
-unitTest('a select the handle can express is refused, naming the call', () => {
-  const source = [
-    "import { db, sql } from '@ultimat3/db';",
-    'export const byId = (id: string) =>',
-    \`  db().one(sql\\\`select * from posts where id = \${hole('id')}\\\`);\`,
-    '',
-  ].join('\\n');
-  const findings = rawRepoSql(repo(source));
-  expect(findings).toHaveLength(1);
-  expect(findings[0]?.code).toBe('${CODE}');
-  expect(findings[0]?.at).toBe(\`\${REPO}:3\`);
-  expect(findings[0]?.fix).toStartWith('db.posts.where({ id }).one() — ');
-});
-
-unitTest('a page reads as the chain that pages it', () => {
-  const page = 'select * from posts where org_id = ? order by created_at desc limit ?';
-  expect(handleCallFor(page)).toBe(
-    "db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()",
-  );
-  const open = 'SELECT * FROM posts WHERE deleted_at IS NULL AND created_at >= ? LIMIT 10;';
-  expect(handleCallFor(open)).toBe(
-    "db.posts.andWhere('deletedAt', 'is-null').andWhere('createdAt', 'gte', value).limit(10).all()",
-  );
-});
-
-unitTest('insert, update and delete on one table are the same rule', () => {
-  const insert = 'insert into short_links (id, url)\\n  values (?, ?)\\n  returning *';
-  expect(handleCallFor(insert)).toBe('db.shortLinks.insert({ … })');
-  expect(handleCallFor('update posts set title = ? where id = ?')).toBe(
-    'db.posts.update(id, { … })',
-  );
-  expect(handleCallFor('update posts set title = ? where org_id = ? and slug = ?')).toBe(
-    'db.posts.updateWhere({ … }, { … })',
-  );
-  expect(handleCallFor('delete from posts where id = ?')).toBe('db.posts.delete(id)');
-  expect(handleCallFor('delete from likes where post_id = ? and user_id = ?')).toBe(
-    'db.likes.deleteWhere({ … })',
-  );
-});
-
-unitTest('a row locked by its id is the lock call, with or without its tenant', () => {
-  const locks = [
-    'select * from posts where id = ? for update',
-    'select * from posts where id = ? limit 1 for update',
-    'SELECT * FROM posts WHERE org_id = ? AND id = ? FOR UPDATE;',
-  ];
-  for (const sql of locks) expect(handleCallFor(sql)).toBe('db.posts.lock(id, fn)');
-  const source = \`const row = sql\\\`select * from short_links where id = \${hole('id')} for update\\\`;\`;
-  const findings = rawRepoSql(repo(source));
-  expect(findings[0]?.fix).toStartWith('db.shortLinks.lock(id, fn) — ');
-});
-
-// The legitimate lookalikes — the reason the rule can stay switched on. Each is a statement the
-// handle has no word for, and raw SQL in a repo is the right answer for it.
-unitTest('a statement past what the handle says is silent', () => {
-  const silent = [
-    'select p.*, m.name from posts p join members m on m.id = p.author_id',
-    'select count(*) from posts where org_id = ?',
-    'select id, title from posts where org_id = ?',
-    'select * from posts where lower(title) = ?',
-    'select * from posts where slug = ? or id = ?',
-    'with recent as (select * from posts) select * from recent',
-    'update posts set like_count = like_count + 1 where id = ?',
-    'insert into likes (post_id, user_id) values (?, ?) on conflict do nothing',
-    'select * from jobs where state = ? for update skip locked',
-    'select * from posts where id = ? for no key update',
-    'select * from posts where org_id = ? for update',
-  ];
-  for (const sql of silent) expect(handleCallFor(sql)).toBeUndefined();
-});
-
-unitTest(
-  'an order by a millisecond-truncated column is refused in any statement, naming keyset()',
-  () => {
-    const join =
-      "select p.* from posts p join members m on m.id = p.author_id order by date_trunc('milliseconds', p.created_at) desc, p.id desc";
-    expect(truncatedOrder(join)).toBe(true);
-    expect(
-      truncatedOrder(
-        "select * from posts where date_trunc('day', created_at) = ? order by created_at",
-      ),
-    ).toBe(false);
-    expect(
-      truncatedOrder("select * from posts -- order by date_trunc('milliseconds', created_at)"),
-    ).toBe(false);
-    const findings = rawRepoSql(repo(\`const q = sql\\\`\${join}\\\`;\`));
-    expect(findings[0]?.fix).toStartWith('keyset({ scope, keys: [');
-  },
-);
-
-unitTest('a statement composed from another fragment is silent', () => {
-  const inner = \`sql\\\`and a = \${hole('a')}\\\`\`;
-  const source = \`const rows = sql\\\`select * from posts where id = \${hole('id')} \${hole(inner)}\\\`;\`;
-  expect(sqlStatements(source)).toHaveLength(1);
-  expect(rawRepoSql(repo(source))).toEqual([]);
-});
-
-unitTest('a comment, a string and an untagged template are not statements', () => {
-  const source = [
-    "// Only this file and a query's \`sql\` may touch \`db\`.",
-    \`/* sql\\\`delete from posts where id = \${hole('id')}\\\` */\`,
-    "const note = 'sql\`select * from posts\`';",
-    'const text = \`select * from posts\`;',
-    '',
-  ].join('\\n');
-  expect(sqlStatements(source)).toEqual([]);
-  expect(rawRepoSql(repo(source))).toEqual([]);
-});
-`;
-
 /** `guards/repo-raw-sql.ts` and its test. No index, no registry — the directory is the registration. */
 export const repoRawSqlGuardFiles = (): readonly GeneratedFile[] => [
   { path: `guards/${NAME}.ts`, contents: source() },
-  { path: `guards/${NAME}.test.ts`, contents: test() },
+  { path: `guards/${NAME}.test.ts`, contents: repoRawSqlTest(CODE) },
 ];

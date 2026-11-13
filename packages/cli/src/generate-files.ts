@@ -28,6 +28,9 @@ import {
   taskFiles,
 } from './templates';
 import { adminCatalogFiles } from './templates/admin-catalog';
+import { cronJobFiles } from './templates/generate-cron-job';
+import { purgeFiles } from './templates/generate-purge';
+import { webhookReceiverFiles } from './templates/generate-webhook-receiver';
 import { helmMonitoringFiles } from './templates/scaffold-helm-alerts';
 import { oidcSignInFiles } from './templates/sign-in-oidc';
 import { passwordSignInFiles } from './templates/sign-in-password';
@@ -195,6 +198,14 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
         }),
       );
+    // A primitive factory's one call, in the feature's slice. None reads the slice: each declares
+    // no table of its own, so it compiles in a feature that has no entity yet.
+    case 'cron-job':
+      return dedupe(cronJobFiles(options.name, target));
+    case 'purge':
+      return dedupe(purgeFiles(options.name, target));
+    case 'webhook-receiver':
+      return dedupe(webhookReceiverFiles(options.name, target));
     case 'entity':
       // With the labels the admin reads for it: the entity is an admin screen once it is in the
       // handle, whether or not a resource was generated around it.
