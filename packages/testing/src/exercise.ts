@@ -37,6 +37,8 @@ import type {
 } from './exercise-report';
 import { openExerciseRoom } from './exercise-report';
 import { withExerciseSetup } from './exercise-setup';
+import type { ExerciseStatementCeiling } from './exercise-statement-ceiling';
+import { judgeStatementCeiling } from './exercise-statement-ceiling';
 import type { Subject } from './exercise-subjects';
 import { fixedTenant, seatIn, subjectsOf } from './exercise-subjects';
 import { actorRowsOf, attachSweeps, seated, sizedCall } from './exercise-sweeps';
@@ -120,6 +122,8 @@ interface Prepared {
   readonly bindInput: OverrideInput | undefined;
   /** The actor the pass picked, as the paste line spells it (`exercise-override-line.ts`). */
   readonly actorHint: OverrideHint['actor'];
+  /** The entry's `statements: { max, why }`: the ceiling each call is held to. */
+  readonly ceiling: ExerciseStatementCeiling | undefined;
 }
 
 /** Thrown out of 39's loop by a bind that failed: the record is the entry's, never the loop's. */
@@ -213,6 +217,8 @@ async function control(
     verdict.kind === 'defect' && verdictOf.outcome === 'unreached'
       ? await defectDetail(verdict.error, verdict.input, subject.input)
       : undefined;
+  // Each segment is one call: the ceiling is per call, never the runs' sum.
+  const statementCeiling = judgeStatementCeiling(segments, run.ceiling);
   const record = {
     kind,
     name,
@@ -221,6 +227,7 @@ async function control(
     ms,
     ...verdictOf,
     ...(defect === undefined ? {} : { defect }),
+    ...(statementCeiling === undefined ? {} : { statementCeiling }),
   };
   return { record, output, input: lastInput };
 }
@@ -312,6 +319,7 @@ async function exerciseOne(
     lookups,
     bindInput,
     actorHint: actorHintOf(chosen, override),
+    ceiling: override === undefined || 'off' in override ? undefined : override.statements,
   };
   // A's own first input, A's ids in it: B sends exactly what A legitimately would.
   const drawn = bindIds(drawInput(sampler, subject.input, 0, 0), lookups[0]);

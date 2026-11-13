@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun ships no path-join primitive; an emitted relative import is resolved against its file.
 import { posix } from 'node:path';
+import { STATEMENTS_MAX } from '@ultimat3/testing';
 import { planNewApp } from '../cmd-new';
 import { COVERAGE_BAR } from '../coverage-floor';
 import { hasExecutableCode, TEST_FILE } from '../coverage-source';
@@ -28,6 +29,12 @@ describe('the floor a scaffolded app starts on', () => {
       expect(floor.coverage?.funcs).toBe(COVERAGE_BAR);
       // At the bar there is no `why` to owe: the reason is only for a floor under it.
       expect(floor.coverage?.why).toBeUndefined();
+    });
+
+    test(`opts the exercise pass into the strict floor (${String(example)})`, () => {
+      // A new app has nothing to grandfather: every proof asked, every call under the default.
+      const floor = parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, example));
+      expect(floor.exercise).toEqual({ unprovenMax: 0, statementsMax: STATEMENTS_MAX });
     });
   }
 

@@ -22,7 +22,7 @@ import { SPECS } from './registry';
 afterEach(removeFixtures);
 
 describe('unit · x upgrade, the walk', () => {
-  test('order is registry, pins, install, manifest, doctor, exercise, verify', async () => {
+  test('order is registry, pins, install, manifest, doctor, guards, exercise, verify', async () => {
     const dir = await fixture();
     const { runner, spawned } = recording();
     const { code, output } = await run(dir, runner);
@@ -32,6 +32,9 @@ describe('unit · x upgrade, the walk', () => {
       'install',
       'x manifest',
       'x doctor',
+      'x verify --only boundaries',
+      'x g',
+      'x verify --only boundaries',
       'x exercise',
       'x verify',
     ]);
@@ -110,13 +113,15 @@ describe('unit · x upgrade, the walk', () => {
     expect(manifest.engines.bun).toBe(`>=${REQUIRED_BUN}`);
   });
 
-  test('a differing guard is reported and its file unchanged', async () => {
+  test('a differing guard is reported and its file unchanged; a missing one is installed', async () => {
     const dir = await fixture();
     const { output } = await run(dir, recording().runner);
     expect(output.data?.guards).toEqual({
       reported: true,
-      missing: [{ name: 'no-eval', add: 'x g guard no-eval' }],
+      missing: [],
       differs: [{ name: 'no-raw-colors', refresh: 'x g guard no-raw-colors --force' }],
+      installed: ['no-eval'],
+      withheld: [],
     });
     expect(await git(dir, 'diff', '--', 'guards/')).toBe('');
   });
@@ -204,7 +209,13 @@ describe('unit · x upgrade, an installed CLI much older than this one', () => {
     const dir = await fixture();
     const { runner } = recording({ doctor: JSON.stringify({ ok: true, findings: [] }) });
     const { output } = await run(dir, runner);
-    expect(output.data?.guards).toEqual({ reported: false, missing: [], differs: [] });
+    expect(output.data?.guards).toEqual({
+      reported: false,
+      missing: [],
+      differs: [],
+      installed: [],
+      withheld: [],
+    });
   });
 
   test('a boot log ahead of the document is read past', async () => {
@@ -270,8 +281,23 @@ describe('unit · x upgrade, on stderr while it runs', () => {
       'install',
       'manifest',
       'doctor',
+      'guards',
       'exercise',
       'verify',
     ]);
+  });
+
+  // The hop's `x exercise` wrote no report (the fixture's never does): the committed one is the last
+  // pass's, and ratcheting it would write figures this hop never measured.
+  test('a stale exercise report is never ratcheted into x.verify.json', async () => {
+    const floor = `${JSON.stringify({ steps: ['exercise'] })}\n`;
+    const report = { records: [{ kind: 'query', name: 'feed', outcome: 'reached' }] };
+    const dir = await fixture({
+      'x.verify.json': floor,
+      '.x/exercise.json': JSON.stringify(report),
+    });
+    const { code } = await run(dir, recording().runner);
+    expect(code).toBe(0);
+    expect(await Bun.file(join(dir, 'x.verify.json')).text()).toBe(floor);
   });
 });

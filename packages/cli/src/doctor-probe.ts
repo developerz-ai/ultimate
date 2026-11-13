@@ -12,11 +12,17 @@ import { checkMigrationSnapshots } from './db-snapshot';
 import { type AuthStorageFact, authStorageProbe } from './doctor-auth';
 import type { EmbeddedDatabase } from './doctor-database';
 import { externalUrl, installedAbove, probeDatabase } from './doctor-database';
+import type { AppEnvNamesFact } from './doctor-env-reserved';
+import { appEnvNamesProbe, NO_APP_ENV_NAMES } from './doctor-env-reserved';
+import { unflooredStepsProbe } from './doctor-floor';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackProbe } from './doctor-offline';
+import type { PinFact } from './doctor-pins';
+import { pinProbe } from './doctor-pins';
 import type { PoolerFact } from './doctor-pooler';
 import { poolerProbe } from './doctor-pooler';
-import { rowSecurityProbe } from './doctor-row-security';
+import type { RowSecurityOffFact } from './doctor-row-security';
+import { rowSecurityOffProbe, rowSecurityProbe } from './doctor-row-security';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeysProbe } from './doctor-sealed';
 import { typescriptProbe } from './doctor-typescript';
@@ -25,6 +31,7 @@ import type { Finding } from './output';
 import { portFree } from './port-probe';
 import { checkMigrationDrift } from './schema-drift';
 import type { TypescriptLag } from './typescript-floor';
+import type { VerifyStepName } from './verify-step';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -98,6 +105,14 @@ export interface DoctorProbe {
   typescript(): Promise<readonly TypescriptLag[]>;
   /** With `database.rowSecurity` on, whether the serving role is exempt (`doctor-row-security.ts`). */
   rowSecurity?(): Promise<readonly Finding[]>;
+  /** With it off, the raw `sql` statements that name a tenant table (`doctor-row-security.ts`). */
+  rowSecurityOff(): Promise<RowSecurityOffFact>;
+  /** The app's own env names, declared and sealed (`doctor-env-reserved.ts`). */
+  envNames(): Promise<AppEnvNamesFact>;
+  /** Every `@ultimat3/*` pin and the version installed for it (`doctor-pins.ts`). */
+  pins(): Promise<PinFact>;
+  /** The gate steps that apply here and `x.verify.json` does not floor (`doctor-floor.ts`). */
+  unflooredSteps(): Promise<readonly VerifyStepName[]>;
 }
 
 export function probeFor(
@@ -140,6 +155,11 @@ export function probeFor(
     typescript: async () => (root === undefined ? [] : typescriptProbe(root)),
     rowSecurity: async () =>
       root === undefined ? [] : rowSecurityProbe(root, process.env['DATABASE_URL'], env),
+    rowSecurityOff: async () =>
+      root === undefined ? { declared: false, touches: [] } : rowSecurityOffProbe(root),
+    envNames: async () => (root === undefined ? NO_APP_ENV_NAMES : appEnvNamesProbe(root, env)),
+    pins: async () => (root === undefined ? { pins: [], installed: new Map() } : pinProbe(root)),
+    unflooredSteps: async () => (root === undefined ? [] : unflooredStepsProbe(root)),
   };
 }
 

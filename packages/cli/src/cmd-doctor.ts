@@ -20,6 +20,7 @@ import { probeFor } from './doctor-probe';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import { sealedKeyFindings } from './doctor-sealed';
 import { typescriptFindings } from './doctor-typescript';
+import { doctorWarnings, withDoctorWarnings } from './doctor-warnings';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -131,48 +132,57 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // Sealed columns against the key ring: no key at all, or a rotation whose re-seal is pending.
   findings.push(...sealedKeyFindings(await probe.sealedKeys()));
   findings.push(...authStorageFindings(await probe.authStorage()));
+  // `X_FRAMEWORK_PIN_RANGE`, `X_ENV_NAME_RESERVED`, `X_DB_ROW_SECURITY_OFF` and
+  // `X_VERIFY_STEP_UNFLOORED` are not here: on `main` they warn beside the verdict
+  // (`doctor-warnings.ts`), so an upgrade with no change keeps this green.
   return findings;
+}
+
+/** The whole report over one probe: the verdict, then the listings and warnings beside it. */
+export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
+  // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
+  const pooler = probe.root === undefined ? NO_POOLER_FACT : await probe.pooler();
+  const findings = await runDoctor({ ...probe, pooler: async () => pooler });
+  const listed = withGuardListing(
+    {
+      ok: findings.length === 0,
+      command: 'doctor',
+      summary:
+        findings.length === 0
+          ? msg('cli.doctor.clean')
+          : msg('cli.doctor.findings', { count: findings.length }),
+      findings,
+      data: { count: findings.length, codes: findings.map((entry) => entry.code) },
+    },
+    // A listing beside the verdict, never part of it (`doctor-guards.ts` says why).
+    probe.root === undefined ? [] : await shippedGuardsProbe(probe.root),
+  );
+  // The second listing: what the coverage floor does not see (`doctor-coverage.ts`).
+  const covered = withCoverageExcludes(
+    listed,
+    probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
+  );
+  // The third: the monitoring templates the app's chart predates (`doctor-chart-alerts.ts`).
+  const charted = withChartAlertsListing(
+    covered,
+    probe.root === undefined ? [] : chartAlertsProbe(probe.root),
+  );
+  // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
+  const reminded = withPoolerReport(
+    withRollingReminder(
+      charted,
+      probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
+    ),
+    pooler,
+  );
+  // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
+  return withDoctorWarnings(reminded, await doctorWarnings(probe));
 }
 
 export const doctorCommand: CliCommand = {
   spec: doctorSpec,
-  async run(ctx: CommandContext): Promise<CommandResult> {
+  run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args, ctx.env);
-    const probe = probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env);
-    // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
-    const pooler = probe.root === undefined ? NO_POOLER_FACT : await probe.pooler();
-    const findings = await runDoctor({ ...probe, pooler: async () => pooler });
-    const listed = withGuardListing(
-      {
-        ok: findings.length === 0,
-        command: 'doctor',
-        summary:
-          findings.length === 0
-            ? msg('cli.doctor.clean')
-            : msg('cli.doctor.findings', { count: findings.length }),
-        findings,
-        data: { count: findings.length, codes: findings.map((entry) => entry.code) },
-      },
-      // A listing beside the verdict, never part of it (`doctor-guards.ts` says why).
-      probe.root === undefined ? [] : await shippedGuardsProbe(probe.root),
-    );
-    // The second listing: what the coverage floor does not see (`doctor-coverage.ts`).
-    const covered = withCoverageExcludes(
-      listed,
-      probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
-    );
-    // The third: the monitoring templates the app's chart predates (`doctor-chart-alerts.ts`).
-    const charted = withChartAlertsListing(
-      covered,
-      probe.root === undefined ? [] : chartAlertsProbe(probe.root),
-    );
-    // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
-    return withPoolerReport(
-      withRollingReminder(
-        charted,
-        probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
-      ),
-      pooler,
-    );
+    return reportDoctor(probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env));
   },
 };

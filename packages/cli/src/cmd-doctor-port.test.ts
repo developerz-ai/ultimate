@@ -4,9 +4,9 @@
 import { describe, expect, test } from 'bun:test';
 import { REQUIRED_BUN } from './app-root';
 import { doctorCommand, runDoctor } from './cmd-doctor';
+import { probe as healthyProbe } from './cmd-doctor-fixture';
 import { devPortFor } from './dev-port';
 import { appUrlFindings } from './doctor-app-url';
-import { NO_POOLER_FACT } from './doctor-pooler';
 import { doctorPort } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { probeFor } from './doctor-probe';
@@ -63,27 +63,7 @@ describe('unit · x doctor reads APP_URL against the port it probes', () => {
 
 describe('unit · runDoctor asks the APP_URL rule of the port it probed', () => {
   /** The healthy app `cmd-doctor.test.ts` describes, on port 4000 with a laptop APP_URL. */
-  const probe = (appUrl: string | undefined): DoctorProbe => ({
-    bunVersion: REQUIRED_BUN,
-    root: '/app',
-    port: 4000,
-    appUrl,
-    frameworkFindings: [],
-    exists: () => true,
-    portFree: async () => true,
-    database: async () => null,
-    embeddedDatabase: async () => ({ selected: true, resolved: true }),
-    drift: async () => [],
-    snapshots: async () => [],
-    offlineFallback: async () => ({
-      fallback: '/offline',
-      routes: [{ path: '/offline', surface: 'site' }],
-    }),
-    sealedKeys: async () => ({ columns: [], keys: undefined }),
-    authStorage: async () => ({ unsealedMfaSecrets: 0, retiredTables: [] }),
-    pooler: async () => NO_POOLER_FACT,
-    typescript: async () => [],
-  });
+  const probe = (appUrl: string | undefined): DoctorProbe => healthyProbe({ port: 4000, appUrl });
 
   test('a stale laptop APP_URL is a finding; the matching one is not', async () => {
     const codes = async (appUrl: string | undefined) =>

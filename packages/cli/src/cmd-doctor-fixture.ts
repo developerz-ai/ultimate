@@ -3,6 +3,7 @@
 
 import { REQUIRED_BUN } from './app-root';
 import { runDoctor } from './cmd-doctor';
+import { NO_APP_ENV_NAMES } from './doctor-env-reserved';
 import { NO_POOLER_FACT } from './doctor-pooler';
 import type { DoctorProbe } from './doctor-probe';
 
@@ -36,6 +37,14 @@ export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   pooler: async () => NO_POOLER_FACT,
   // The scaffold's own TypeScript: nothing lags.
   typescript: async () => [],
+  // Row security off and no raw tenant SQL riding on it: the scaffold's own state.
+  rowSecurityOff: async () => ({ declared: false, touches: [] }),
+  // The scaffold's envSchema: the deploy contract alone, nothing the framework reserves.
+  envNames: async () => NO_APP_ENV_NAMES,
+  // Exact pins, as `x new` writes them.
+  pins: async () => ({ pins: [], installed: new Map() }),
+  // Every step that applies is floored.
+  unflooredSteps: async () => [],
   ...over,
 });
 

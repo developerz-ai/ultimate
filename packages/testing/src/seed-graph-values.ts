@@ -15,7 +15,10 @@ export interface SeedColumn {
 
 /** What one row lends every column it generates: its place, its canary and its id stream. */
 export interface ValueContext {
-  /** 1-based and unique per table, so a value derived from it is unique per table. */
+  /**
+   * 1-based. For a unique column it continues past the graph written before (`beside`), so a value
+   * derived from it is unique per table; for any other column it restarts with each graph.
+   */
   readonly ordinal: number;
   /** The row's canary: lower-case hex, so it survives a slug or a handle pattern. */
   readonly canary: string;

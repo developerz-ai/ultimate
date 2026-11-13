@@ -1,15 +1,26 @@
-// A hop's gate, run by the CLI the hop just installed: `x manifest`, `x doctor --json`, `x exercise
-// --json`, `x verify --json`. Never in this process, because the installed CLI is the one that knows the installed
-// framework (`local-cli.ts`), and it may be many majors older than this one: each answer is read as
-// a foreign document, and one that will not parse is a finding, never a green.
+// A hop's gate, run by the CLI the hop just installed: manifest, doctor, the missing guards and a
+// Bun-floor hop's coverage (`upgrade-guards.ts`, `upgrade-coverage.ts`), exercise, verify. Never in
+// this process: the installed CLI knows the installed framework (`local-cli.ts`) and may be majors
+// older, so each answer is read as a foreign document, and one that will not parse is never green.
 
 // why: Bun exposes no path-join primitive; the installed bin is assembled from the app root.
 import { join } from 'node:path';
 import { t } from '@ultimat3/schema';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
+import { exerciseReportStamp } from './exercise-floor-report';
 import { LOCAL_CLI_BIN } from './local-cli';
+import type { CoverageRebaseline, HopCoverage } from './upgrade-coverage';
+import { rebaselineCoverage, statedCoverage } from './upgrade-coverage';
+import { documentIn } from './upgrade-document';
+import type { HopExerciseFloor } from './upgrade-exercise-floor';
+import { ratchetExerciseFloor } from './upgrade-exercise-floor';
+import type { WithheldGuard } from './upgrade-guards';
+import { installMissingGuards } from './upgrade-guards';
 import { parseJson } from './upgrade-registry';
+
+// Where it always was: `verify-exercise.ts` and `verify-budgets-build.ts` read it from here.
+export { documentIn } from './upgrade-document';
 
 const FINDING = t.object({
   code: t.string,
@@ -80,8 +91,14 @@ interface DoctorDocument {
 export interface HopGuards {
   /** False when the hop's `x doctor` predates the listing: unknown, which is not the same as none. */
   readonly reported: boolean;
+  /** Still missing after the hop: the ones it withheld, each with the command that adds it. */
   readonly missing: readonly { readonly name: string; readonly add: string }[];
+  /** Held in another form: the app's edit, listed and never touched. */
   readonly differs: readonly { readonly name: string; readonly refresh: string }[];
+  /** Written by this hop from the installed release's template; `boundaries` found nothing more. */
+  readonly installed: readonly string[];
+  /** Not written, with how many findings each would have added (`upgrade-guards.ts`). */
+  readonly withheld: readonly WithheldGuard[];
 }
 
 /**
@@ -98,7 +115,11 @@ export interface HopExercise {
 export interface HopGate {
   readonly manifest: { readonly ok: boolean; readonly findings: readonly GateFinding[] };
   readonly guards: HopGuards;
+  /** The coverage floor a Bun-floor hop moved to what it measured; null when none moved. */
+  readonly coverage: HopCoverage | null;
   readonly exercise: HopExercise;
+  /** The exercise figures the hop wrote into `x.verify.json` as its ratchet; null when none. */
+  readonly exerciseFloor: HopExerciseFloor | null;
   readonly verify: {
     readonly ok: boolean;
     readonly summary: string;
@@ -106,21 +127,6 @@ export interface HopGate {
     readonly failed: readonly string[];
     readonly findings: readonly GateFinding[];
   };
-}
-
-/**
- * The one JSON document on a child's stdout. Whole first; then its last line that parses, because
- * the CLI that keeps fd 1 to one document under `--json` is a recent one and a hop can install one
- * that still logs a boot line ahead of it.
- */
-export function documentIn(stdout: string): unknown {
-  const whole = parseJson(stdout.trim());
-  if (whole !== undefined) return whole;
-  const lines = stdout.split('\n').filter((line) => line.trimStart().startsWith('{'));
-  return lines
-    .reverse()
-    .map(parseJson)
-    .find((parsed) => parsed !== undefined);
 }
 
 const flatten = (document: {
@@ -192,15 +198,31 @@ const readGuards = (result: ExecResult): HopGuards => {
   const parsed = DOCTOR.safeParse(documentIn(result.stdout));
   const guards =
     parsed.issues === undefined ? (parsed.value as DoctorDocument).data?.guards : undefined;
-  if (guards === undefined) return { reported: false, missing: [], differs: [] };
-  return { reported: true, missing: guards.missing ?? [], differs: guards.differs ?? [] };
+  if (guards === undefined) {
+    return { reported: false, missing: [], differs: [], installed: [], withheld: [] };
+  }
+  return {
+    reported: true,
+    missing: guards.missing ?? [],
+    differs: guards.differs ?? [],
+    installed: [],
+    withheld: [],
+  };
 };
 
-/** The four, in order, each told apart by `onStage` so a long gate is not a long silence. */
+export type HopStage = 'manifest' | 'doctor' | 'guards' | 'coverage' | 'exercise' | 'verify';
+
+/**
+ * The gate, in order, each stage told apart by `onStage` so a long gate is not a long silence.
+ * `guards` runs only when the doctor lists a missing one; `coverage` only on a hop that moved the
+ * Bun floor — both before `verify`, so the verdict is the one on the tree the hop leaves.
+ */
 export async function runHopGate(input: {
   readonly runner: Runner;
   readonly root: string;
-  readonly onStage: (stage: 'manifest' | 'doctor' | 'exercise' | 'verify') => void;
+  readonly onStage: (stage: HopStage) => void;
+  /** Present when the hop moved the Bun floor: what the coverage rebaseline's `why` says. */
+  readonly bunMoved?: CoverageRebaseline;
 }): Promise<HopGate> {
   const { runner, root, onStage } = input;
   const installed = (args: readonly string[]): Promise<ExecResult> =>
@@ -208,12 +230,33 @@ export async function runHopGate(input: {
   onStage('manifest');
   const manifest = readManifest(await installed(['manifest', '--json']));
   onStage('doctor');
-  const guards = readGuards(await installed(['doctor', '--json']));
+  const listed = readGuards(await installed(['doctor', '--json']));
+  let guards = listed;
+  if (listed.missing.length > 0) {
+    onStage('guards');
+    const done = await installMissingGuards({ cli: installed, root, missing: listed.missing });
+    const still = new Set(done.withheld.map((guard) => guard.name));
+    guards = {
+      ...listed,
+      missing: listed.missing.filter((guard) => still.has(guard.name)),
+      ...done,
+    };
+  }
+  let coverage: HopCoverage | null = null;
+  const stated = input.bunMoved === undefined ? undefined : await statedCoverage(root);
+  if (input.bunMoved !== undefined && stated !== undefined) {
+    onStage('coverage');
+    coverage = await rebaselineCoverage({ cli: installed, root, stated, bun: input.bunMoved });
+  }
+  // The report's stamp first: only a report this exercise rewrote is ratcheted.
+  const stamp = await exerciseReportStamp(root);
   onStage('exercise');
   const exercise = readExercise(await installed(['exercise', '--json']));
+  // Before `verify`, from the report that exercise just wrote: the gate judges the figures it holds.
+  const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
   const verify = readVerify(await installed(['verify', '--json']));
-  return { manifest, guards, exercise, verify };
+  return { manifest, guards, coverage, exercise, exerciseFloor, verify };
 }
 
 /** What a repository with no app can still be asked, in the order an author would run them. */

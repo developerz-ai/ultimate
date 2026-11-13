@@ -153,6 +153,17 @@ export type {
   TenantProof,
 } from './exercise-report';
 export type { ExerciseSetup, ExerciseSetupHandle } from './exercise-setup';
+export type {
+  CeilingShape,
+  ExerciseStatementCeiling,
+  StatementCeilingFinding,
+  StatementCeilingProof,
+} from './exercise-statement-ceiling';
+export {
+  judgeStatementCeiling,
+  STATEMENTS_MAX,
+  statementCeilingFindings,
+} from './exercise-statement-ceiling';
 export { defineFactory } from './factories';
 export type { AnyFactory, Factory, FactoryExtension, FactoryOptions } from './factory-api';
 export type { BelongsToOptions, HasManyOptions } from './factory-associations';
@@ -365,6 +376,9 @@ export type { LoggedRequest } from './request-log';
 export { reusableDatabase } from './reusable-database';
 export type { ScaleProof, ScaleShape, StatementTally } from './scale-sweep';
 export { judgeScale, SCALE_SIZES } from './scale-sweep';
+export type { ScaleSeedFinding } from './scale-sweep-findings';
+export { scaleSeedFindings } from './scale-sweep-findings';
+export type { ScaleSeedFailure } from './scale-sweep-seed';
 export type { NetworkSnapshot, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process
@@ -404,6 +418,8 @@ export type { EntitySeedWriterOptions, SeedWriterTarget } from './seed-writer';
 export { entitySeedWriter } from './seed-writer';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
+// One SQL table scan for the sweep's lost-table reader and `x doctor`'s raw tenant SQL probe.
+export { statementTables } from './sql-tables';
 // Test doubles: `stub(primitive)` replaces an action's, an llm()'s or a job's body, `swapAdapter`
 // an adapter port; both are put back after the test that made them (`test-scope.ts`).
 export { stub } from './stub';

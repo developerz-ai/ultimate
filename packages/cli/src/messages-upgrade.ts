@@ -31,6 +31,19 @@ export const UPGRADE_MESSAGES = {
   'cli.upgrade.done': '{from} -> {to}: the gate is green',
   'cli.upgrade.dryRun': '{from} -> {to}: nothing written, no gate run',
   'cli.upgrade.guard': 'guard, yours to take or leave: {fix}',
+  'cli.upgrade.guardInstalled':
+    'guard installed: guards/{name}.ts, from this release (delete the file to drop the rule)',
+  'cli.upgrade.guardWithheld':
+    'guard not installed, the tree breaks it in {count} place(s) — yours to take: {fix}',
+  'cli.upgrade.guardUnmeasured':
+    'guard not installed, its findings could not be counted — yours to take: {fix}',
+  'cli.upgrade.coverage':
+    'coverage floor: {file} {fromLines} / {fromFuncs} -> {toLines} / {toFuncs}, measured {lines}% / {funcs}% after the Bun floor moved — review the why',
+  'cli.upgrade.exerciseFloor':
+    'exercise floor: {file} "exercise" {figures}, measured by this hop\'s x exercise — it may only fall',
+  'cli.upgrade.coverage.unpinned': 'no engines.bun',
+  'cli.upgrade.coverage.why':
+    'Rebaselined {date} by x upgrade to {release}: Bun {bunFrom} -> {bunTo}, with no test or source changed, measured {lines}% of lines and {funcs}% of functions, so the floor moves from {fromLines} / {fromFuncs} to {toLines} / {toFuncs}.',
   'cli.upgrade.read': 'read: {title} — {url}',
   'cli.upgrade.red': '{from} -> {to}: not done, the gate says: {summary}',
   'cli.upgrade.stillRunning': 'x upgrade: still in {stage} ({elapsed})',

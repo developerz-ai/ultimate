@@ -88,10 +88,36 @@ export const humanLines = (input: {
     ...(agentsMd === 'link' || agentsMd === 'differs'
       ? [msg(agentsMd === 'link' ? 'cli.upgrade.agentsMd.link' : 'cli.upgrade.agentsMd.differs')]
       : []),
-    ...(gate?.guards.missing ?? []).map((guard) => msg('cli.upgrade.guard', { fix: guard.add })),
+    ...(gate?.guards.installed ?? []).map((name) => msg('cli.upgrade.guardInstalled', { name })),
+    ...(gate?.guards.withheld ?? []).map((guard) =>
+      guard.findings === null
+        ? msg('cli.upgrade.guardUnmeasured', { fix: guard.add })
+        : msg('cli.upgrade.guardWithheld', { fix: guard.add, count: guard.findings }),
+    ),
     ...(gate?.guards.differs ?? []).map((guard) =>
       msg('cli.upgrade.guard', { fix: guard.refresh }),
     ),
+    ...(gate === undefined || gate.coverage === null
+      ? []
+      : [
+          msg('cli.upgrade.coverage', {
+            file: gate.coverage.file,
+            fromLines: gate.coverage.from.lines,
+            fromFuncs: gate.coverage.from.funcs,
+            toLines: gate.coverage.to.lines,
+            toFuncs: gate.coverage.to.funcs,
+            lines: Math.floor(gate.coverage.measured.lines * 10) / 10,
+            funcs: Math.floor(gate.coverage.measured.funcs * 10) / 10,
+          }),
+        ]),
+    ...(gate === undefined || gate.exerciseFloor === null
+      ? []
+      : [
+          msg('cli.upgrade.exerciseFloor', {
+            file: gate.exerciseFloor.file,
+            figures: JSON.stringify(gate.exerciseFloor.written),
+          }),
+        ]),
     // The exercise's own list first: every fix it has, before the gate's verdict on the same tree.
     ...findingLines([
       ...(gate?.exercise.findings ?? []),
@@ -144,8 +170,10 @@ export const report = (input: {
     typescript: input.typescript,
     agentsMd: input.agentsMd ?? null,
     guards: gate?.guards ?? null,
+    coverage: gate?.coverage ?? null,
     manifest: gate?.manifest ?? null,
     exercise: gate?.exercise ?? null,
+    exerciseFloor: gate?.exerciseFloor ?? null,
     verify: gate?.verify ?? null,
     scripts,
     then,

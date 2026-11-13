@@ -3,13 +3,19 @@
 // A blank `off` is refused at declaration, an unknown name when the pass runs. A key is a bare name
 // or a kind-qualified one (`'job:eraseAccount'`), which wins over the bare name for its kind.
 
-import type { ExerciseOptions } from '@ultimat3/action';
-import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import type { ExerciseActorOptions, ExerciseOffOptions } from '@ultimat3/action';
+import { finiteCount, renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
 import type { ExerciseSetup } from './exercise-setup';
+import type { ExerciseStatementCeiling } from './exercise-statement-ceiling';
 import type { SeedFactory } from './seed-graph-plan';
 
-/** 39's option type, exactly: `{ actor, input?, runs? }` or `{ off: '<reason>' }`. */
-export type ExerciseOverride = ExerciseOptions;
+/**
+ * 39's option type — `{ actor, input?, runs? }` or `{ off: '<reason>' }` — and the pass's own
+ * `statements: { max, why }`: the ceiling one call is held to, `STATEMENTS_MAX` when omitted.
+ */
+export type ExerciseOverride =
+  | (ExerciseActorOptions & { readonly statements?: ExerciseStatementCeiling })
+  | ExerciseOffOptions;
 
 /**
  * What `defineExercise` returns: the overrides, by primitive name. Read by `runExercisePass` and,
@@ -81,6 +87,23 @@ const blankReason = (name: string): UltimateError =>
     fix: `defineExercise({ ${renderFixLiteral(name, '<name>')}: { off: '<why this primitive cannot run in the exercise pass>' } })   # in apps/web/exercise.ts`,
   });
 
+/** The same silence for a ceiling: `statements: { max }` with no stated reason to move it. */
+const blankCeiling = (name: string): UltimateError =>
+  new UltimateError({
+    code: 'X_CONTRACT_EXERCISE_UNDECLARED',
+    cause: `defineExercise() moves the statement ceiling of ${renderCauseValue(name)} with a blank why, so the exception is silent`,
+    fix: `defineExercise({ ${renderFixLiteral(name, '<name>')}: { statements: { max: <n>, why: '<why one call sends that many>' } } })   # in apps/web/exercise.ts`,
+  });
+
+/** The entry's ceiling, held to a whole count ≥ 1 and a stated reason. */
+const checkCeiling = (name: string, override: ExerciseOverride): void => {
+  if ('off' in override || override.statements === undefined) return;
+  finiteCount('defineExercise()', `${name}.statements.max`, override.statements.max, 1);
+  const { why } = override.statements;
+  // Typed, but an untyped `exercise.ts` can omit it: absent is as silent as blank.
+  if (typeof why !== 'string' || why.trim().length === 0) throw blankCeiling(name);
+};
+
 export function defineExercise(
   overrides: Readonly<Record<string, ExerciseOverride>>,
   app: ExerciseAppOptions = {},
@@ -89,6 +112,7 @@ export function defineExercise(
   // `Object.entries`, never `for in`: an inherited key is not a declaration.
   for (const [name, override] of Object.entries(overrides)) {
     if ('off' in override && override.off.trim().length === 0) throw blankReason(name);
+    checkCeiling(name, override);
     entries.set(name, override);
   }
   return Object.freeze({

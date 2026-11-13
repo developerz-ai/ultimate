@@ -54,6 +54,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | Concept | Owner | Note |
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
+| every env name the framework reads | `framework-env.ts` (`FRAMEWORK_ENV`) | a literal env read missing from it is red: `bun run scripts/framework-env.ts` (`X_FRAMEWORK_ENV_UNREGISTERED`) |
 | one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` `der` | never copied (`X_HELPER_COPY`). Rows here: `docs/history/core.md` |
 | an X.509 certificate's public key | `der.ts` (`x509Spki(der)`) | the ONE DER walk to the `subjectPublicKeyInfo` Web Crypto imports: auth's SAML key and mail's SNS key both read it; trailing bytes refused |
 | the ONE keyed hash | `hmac.ts` (`hmac(alg, key, data, encoding?)`) | `bun run keyed-hasher` (`X_KEYED_HASHER`) † |

@@ -2,6 +2,8 @@
 // sent more often when the tables hold more rows is a loop over rows — an N+1 no test named — and
 // red, unless `expectedQueryLoop` scoped it, which is reported with its reason. Pure: tallies in.
 
+import type { ScaleSeedFailure } from './scale-sweep-seed';
+
 /** One statement shape in one call: every statement, and the ones no `expectedQueryLoop` covered. */
 export interface StatementTally {
   /** `statementFingerprint`: `posts.findById` when attributed, else the collapsed text. */
@@ -29,8 +31,11 @@ export type ScaleProof =
       readonly shapes: readonly ScaleShape[];
       readonly expected: readonly ScaleShape[];
     }
-  /** A call at one size did not answer as at the other: the counts are not comparable. Never red. */
-  | { readonly verdict: 'unproven'; readonly reason: string };
+  /**
+   * A call at one size did not answer as at the other: the counts are not comparable. Never red
+   * itself; `seed` is the sized table it read and could not be written, `X_EXERCISE_SEED_FAILED`.
+   */
+  | { readonly verdict: 'unproven'; readonly reason: string; readonly seed?: ScaleSeedFailure };
 
 /** Rows a table per tenant at each size: a loop over them sends 2 statements, then 8. */
 export const SCALE_SIZES = { small: 2, large: 8 } as const;
@@ -38,7 +43,10 @@ export const SCALE_SIZES = { small: 2, large: 8 } as const;
 /**
  * Per shape, the large run against the small one. Only unexpected statements are judged; a shape
  * that grew only under an `expectedQueryLoop` is listed beside the verdict with its reason. A shape
- * absent at the small size and present at the large one grew from zero.
+ * absent at the small size and sent exactly ONCE at the large one is a different PATH, not a loop:
+ * the two calls branched on what they were handed. Only that is `unproven`. One sent more than once
+ * where it was absent is a loop over rows the small graph held none of (a filter on the third enum
+ * value, which two rows never reach) — red, as is a shape that grew from one or more.
  */
 export function judgeScale(
   small: readonly StatementTally[],
@@ -68,7 +76,12 @@ export function judgeScale(
     a.fingerprint.localeCompare(b.fingerprint);
   shapes.sort(byName);
   expected.sort(byName);
-  return shapes.length === 0
-    ? { verdict: 'flat', expected }
-    : { verdict: 'grows', shapes, expected };
+  if (shapes.length === 0) return { verdict: 'flat', expected };
+  const grown = shapes.filter((shape) => shape.small > 0 || shape.large > 1);
+  if (grown.length > 0) return { verdict: 'grows', shapes: grown, expected };
+  const appeared = shapes.map((shape) => `${shape.fingerprint} 0 → ${shape.large}`).join(', ');
+  return {
+    verdict: 'unproven',
+    reason: `the call took another path at ${SCALE_SIZES.large} rows than at ${SCALE_SIZES.small} (${appeared}): a branch on the row it was handed, so the counts are not comparable`,
+  };
 }

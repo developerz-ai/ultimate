@@ -11,6 +11,8 @@ import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import type { CoverageFloor } from './coverage-floor';
 import { COVERAGE_FIELD, readCoverageFloor } from './coverage-floor';
+import type { ExerciseFloor } from './exercise-floor';
+import { EXERCISE_FIELD, readExerciseFloor } from './exercise-floor';
 import type { Finding } from './output';
 import type { StepTimeouts } from './verify-deadline';
 import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
@@ -75,6 +77,11 @@ export interface VerifyFloor {
    * whole `x verify` under `CI`. Absent is no ceiling, and a CI run names the number to write.
    */
   readonly skipCeiling?: SkipCeiling;
+  /**
+   * What the `exercise` step's pass may leave unproven (`exercise-floor.ts`). Absent is a warning
+   * naming the figure to write, never red: an app that has not opted in stays green on `main`.
+   */
+  readonly exercise?: ExerciseFloor;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
@@ -194,6 +201,7 @@ export function parseVerifyFloor(
   const coverage = readCoverageFloor(record);
   const rolling = readRollingSince(record);
   const skips = readSkipCeiling(record, declared);
+  const exercise = readExerciseFloor(record);
   const rest = {
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
@@ -202,6 +210,7 @@ export function parseVerifyFloor(
     ...(coverage.coverage === undefined ? {} : { coverage: coverage.coverage }),
     ...(rolling.since === undefined ? {} : { rollingSince: rolling.since }),
     ...(skips.ceiling === undefined ? {} : { skipCeiling: skips.ceiling }),
+    ...(exercise.floor === undefined ? {} : { exercise: exercise.floor }),
   };
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
@@ -217,6 +226,7 @@ export function parseVerifyFloor(
         ...coverage.problems,
         ...rolling.problems,
         ...skips.problems,
+        ...exercise.problems,
       ],
     };
   }
@@ -237,6 +247,7 @@ export function parseVerifyFloor(
       ...coverage.problems,
       ...rolling.problems,
       ...skips.problems,
+      ...exercise.problems,
     ],
   };
 }
@@ -330,5 +341,7 @@ const fixFor = (problem: string): string => {
     return `x doctor --json   # it names your newest migration id: set "${ROLLING_SINCE_FIELD}" in ${VERIFY_FLOOR_FILE} to that, "0" to judge them all, or drop the key`;
   if (problem.includes(`"${SKIP_CEILING_FIELD}"`))
     return `x verify --json   # then write "${SKIP_CEILING_FIELD}" in ${VERIFY_FLOOR_FILE} as { "contract": 9 } — a step it runs, a whole number of tests`;
+  if (problem.includes(`"${EXERCISE_FIELD}`))
+    return `x exercise --json   # then write "${EXERCISE_FIELD}" in ${VERIFY_FLOOR_FILE} as { "unprovenMax": 0, "statementsMax": 100 } — a ratio from 0 to 1, a whole number of statements`;
   return `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;
 };

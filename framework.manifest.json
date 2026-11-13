@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d6570532b40c837338722f689d5a8266d9ae59a3e2fa95c66e6642641cd8cc24",
+  "buildId": "946e0fe90a761e6f83966fe7dfba4c8775a66ffe59595612e4db4620c0813669",
   "tiers": {
     "0": [
       "core",
@@ -1400,6 +1400,11 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_DB_ROW_SECURITY_OFF",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
+    },
+    {
       "code": "X_DB_SCHEMA_STALE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -2025,6 +2030,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_ENV_NAME_RESERVED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
+    },
+    {
       "code": "X_ENVIRONMENT_INVALID",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -2175,9 +2185,19 @@
       "at": "packages/http/src/error-titles.ts"
     },
     {
+      "code": "X_EXERCISE_SEED_FAILED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_EXERCISE_SETUP_UNSEALED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_EXERCISE_UNPROVEN_ABOVE_FLOOR",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_EXPORT_PART_TOO_LARGE",
@@ -2343,6 +2363,21 @@
       "code": "X_FRAME_RATE_LIMIT",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_ENV_STALE",
+      "owner": "scripts",
+      "at": "scripts/framework-env.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_ENV_UNREGISTERED",
+      "owner": "scripts",
+      "at": "scripts/framework-env.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_PIN_RANGE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_FRAMEWORK_SCHEMA_FAILED",
@@ -5440,6 +5475,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_STATEMENTS_OVER_BUDGET",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_STEP_DUPLICATE",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
@@ -6338,6 +6378,11 @@
       "code": "X_VERIFY_STEP_TIMEOUT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_STEP_UNFLOORED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_VERIFY_SUITE_VANISHED",

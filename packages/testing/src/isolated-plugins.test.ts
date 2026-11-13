@@ -156,6 +156,9 @@ describe('ISOLATED_ENV is spelled once', () => {
     const spelled: string[] = [];
     for await (const path of new Bun.Glob('*/src/**/*.{ts,tsx}').scan({ cwd: packages })) {
       if (path.endsWith('.test.ts') || path === 'testing/src/isolated-plugins.ts') continue;
+      // The env-name registry lists every name the framework reads and reads none of them itself;
+      // `scripts/framework-env.ts` holds it to the reads, this one included.
+      if (path === 'core/src/framework-env.ts') continue;
       if ((await Bun.file(join(packages, path)).text()).includes(`'${ISOLATED_ENV}'`)) {
         spelled.push(path);
       }

@@ -18,7 +18,8 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { resetQueries } from '@ultimat3/query';
+import { from, query, resetQueries } from '@ultimat3/query';
+import { registerQuery } from '@ultimat3/query/loader';
 import { disk } from '@ultimat3/storage';
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { REQUIRED_BUN } from './app-root';
@@ -153,6 +154,62 @@ describe('unit · x exercise', () => {
     });
     const result = await exerciseCommand.run(contextFor(['cxStore']));
     expect(outcomes(result.data)).toEqual({ cxStore: 'reached' });
+  }, 60_000);
+
+  // A read returning none of the tenant's rows leaves its tenant proof `unproven`: the floor's case.
+  const unprovenRead = (): void => {
+    registerQuery(
+      'cxFeed',
+      query({
+        input: t.object({}),
+        policy: can('cx:write'),
+        sql: () => from<{ id: string }>('cx_rows', [{ id: 'a' }]),
+      }),
+    );
+  };
+
+  test('an unproven primitive with no exercise floor is a warning, and the run stays green', async () => {
+    unprovenRead();
+    const result = await exerciseCommand.run(contextFor());
+    expect(result.ok).toBe(true);
+    expect(result.findings ?? []).toEqual([]);
+    const warnings = (result.data as { warnings?: readonly string[] }).warnings ?? [];
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('"unprovenMax": 0.3334');
+    expect(result.lines?.some((line) => line.includes('! exercise left 1 of 3'))).toBe(true);
+  }, 60_000);
+
+  test('the same pass above a declared unprovenMax is red, naming the primitive', async () => {
+    unprovenRead();
+    await Bun.write(join(ROOT, 'x.verify.json'), JSON.stringify({ exercise: { unprovenMax: 0 } }));
+    try {
+      const result = await exerciseCommand.run(contextFor());
+      expect(result.ok).toBe(false);
+      const codes = (result.findings ?? []).map((finding) => finding.code);
+      expect(codes).toEqual(['X_EXERCISE_UNPROVEN_ABOVE_FLOOR']);
+      expect(result.findings?.[0]?.cause).toContain('query cxFeed');
+    } finally {
+      await rm(join(ROOT, 'x.verify.json'), { force: true });
+    }
+  }, 60_000);
+
+  // A one-primitive run is a slice: 1 of 1 unproven is no ratio of the app, and the floor's
+  // "lower it" advice off it was wrong — the whole-pass floor is judged on whole passes only.
+  test('<name> on an unproven primitive is not judged against the whole-pass floor', async () => {
+    unprovenRead();
+    await Bun.write(
+      join(ROOT, 'x.verify.json'),
+      JSON.stringify({ exercise: { unprovenMax: 0.5, statementsMax: 1 } }),
+    );
+    try {
+      const result = await exerciseCommand.run(contextFor(['cxFeed']));
+      expect(Object.keys(outcomes(result.data))).toEqual(['cxFeed']);
+      expect(result.findings ?? []).toEqual([]);
+      expect((result.data as { warnings?: readonly string[] }).warnings).toBeUndefined();
+      expect(result.ok).toBe(true);
+    } finally {
+      await rm(join(ROOT, 'x.verify.json'), { force: true });
+    }
   }, 60_000);
 
   test('<name> runs that one primitive and nothing else', async () => {

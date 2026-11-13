@@ -58,6 +58,9 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | The tenant proof is taint only | `tenant-proof.ts`: B, A, B; B is A's role minus `tenancy:cross`. Leak = seeded canary or unhanded id (`tenant-canary.ts`); write = moved digest. Only `crossed` is red |
 | Every statement the pass sent is planned | `plan-sweep.ts` + `plan-oracle.ts`: `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` fix; no generic plan is `X_QUERY_PLAN_UNAVAILABLE`, never a pass † |
 | A shape that grows with the rows is red | `scale-sweep-run.ts` + pure `judgeScale`: `X_QUERY_SCALES_WITH_ROWS` † |
+| A sized-seed refusal is one finding, not N `unproven` | `scale-sweep-seed.ts`: table by table; only a primitive that read the lost table is `unproven`, `scaleSeedFindings` → `X_EXERCISE_SEED_FAILED` (`scale-sweep-run.test.ts`) |
+| A lost table is read where a table is named | `sql-tables.ts` `statementTables`: `from`/`join`/`update`/`into`/`using` and their comma lists, never a column spelled like one; a view or history table over a lost table is lost too (`scale-sweep-seed.test.ts`). `x doctor`'s raw tenant SQL probe reads tables by the same function |
+| One call has a statement ceiling | `exercise-statement-ceiling.ts`: `STATEMENTS_MAX` 100 per call, `statements: { max, why }` per entry; `X_STATEMENTS_OVER_BUDGET` (`exercise-statement-ceiling.test.ts`) |
 | An erase is PROVED, not asserted | `subject-proof.ts`: a survivor outside `retain` is `X_SUBJECT_ERASE_INCOMPLETE`, never the value † |
 | A captured failure replays as a test | `repro.ts`: `reproduce(bundle, { driver })`, `reproJob(runJobs, failure)` — what `x repro --write` emits † |
 | A vendor's answers are a cassette | `cassette.ts`: replay = `mockFetch` routes, seal kept; record refused under `CI`, secrets scanned before disk; written by action's `stableStringify`, loaded dynamically (`serializeCassette`) † |

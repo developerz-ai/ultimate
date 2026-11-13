@@ -3,6 +3,7 @@ import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import { doctorCommand, ENV_DEVELOPMENT, runDoctor } from './cmd-doctor';
 import { codes, probe } from './cmd-doctor-fixture';
 import { doctorPort } from './doctor-port';
+import { doctorWarnings } from './doctor-warnings';
 import { PORT_RANGE, parseIntFlag } from './flag-number';
 import { frameworkSecretFindings } from './framework-env';
 import { ICON_SOURCE } from './icon-assets';
@@ -218,6 +219,30 @@ describe('unit · x doctor', () => {
 
   test('a probe owing nothing reports nothing', async () => {
     expect(await codes(probe({ frameworkFindings: [] }))).toEqual([]);
+  });
+
+  // Plan 101 U3: the discovery probes, each ASKED by runDoctor. Their rules are their own files'.
+  test('an adopter-shaped app: ranged pins, a reserved name, raw tenant SQL and an unfloored step', async () => {
+    const adopter = probe({
+      pins: async () => ({
+        pins: [{ file: 'package.json', name: '@ultimat3/core', spec: '^31.0.0' }],
+        installed: new Map([['@ultimat3/core', '31.14.0']]),
+      }),
+      envNames: async () => ({ declared: [], sealed: ['TEST_DATABASE_URL'] }),
+      rowSecurityOff: async () => ({
+        declared: false,
+        touches: [{ at: 'apps/web/app/posts/repo.ts:9', table: 'posts' }],
+      }),
+      unflooredSteps: async () => ['live', 'job'],
+    });
+    // Warnings on `main`, never the verdict (`doctor-warnings.ts`): red only on `next`.
+    expect(await codes(adopter)).toEqual([]);
+    expect((await doctorWarnings(adopter)).map((warning) => warning.code)).toEqual([
+      'X_FRAMEWORK_PIN_RANGE',
+      'X_ENV_NAME_RESERVED',
+      'X_DB_ROW_SECURITY_OFF',
+      'X_VERIFY_STEP_UNFLOORED',
+    ]);
   });
 
   test('every finding carries a fix command — a diagnostic without one is not shippable', async () => {

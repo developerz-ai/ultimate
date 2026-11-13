@@ -21,6 +21,7 @@ import { errorRendering } from './error-render';
 import { finiteBoundFindings } from './finite-bounds';
 import { fixShellArgFindings } from './fix-shell-arg';
 import { flightCopyFindings } from './flight-copies';
+import { frameworkEnvCheck } from './framework-env';
 import { frozenRecordReport } from './frozen-records';
 import { CORPUS_FLOORS, corpus } from './lib/corpus';
 import { scanFrameworkCatalogSources } from './lib/i18n-scan';
@@ -52,6 +53,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['finite-bounds', finiteBoundFindings],
   ['fix-shell-arg', fixShellArgFindings],
   ['flight-copies', flightCopyFindings],
+  ['framework-env', frameworkEnvCheck],
   ['frozen-records', frozenRecordReport],
   ['i18n-catalog', scanFrameworkCatalogSources],
   ['node-imports', nodeImportFindings],

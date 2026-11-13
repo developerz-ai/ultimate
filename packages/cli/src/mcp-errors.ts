@@ -384,6 +384,16 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     "native: { success: (output) => '/where-it-lands' } in the action's declaration, then x verify --only manifest",
   X_ASSET_RETAIN_UNDECLARED:
     "edit app.config.ts: add assets: { retain: { disk: 'assets', builds: 3 } }, naming a disk your defineStorage({ disks }) declares that every web pod reads",
+  X_EXERCISE_UNPROVEN_ABOVE_FLOOR:
+    'x exercise --json   # each unproven record in .x/exercise.json names the proof and its reason: fix the seed or the override it names; the floor only falls',
+  X_ENV_NAME_RESERVED:
+    'edit app.config.ts: add an APP_ prefix to the envSchema name the finding cites (or delete it where the value is meant for the framework); then: x env example --json && x doctor --json',
+  X_FRAMEWORK_PIN_RANGE:
+    'x doctor --json   # each X_FRAMEWORK_PIN_RANGE names a package.json line and the exact version: write it there, then: bun install',
+  X_VERIFY_STEP_UNFLOORED:
+    'x doctor --json   # its X_VERIFY_STEP_UNFLOORED fix names the steps: run that x verify --only, then add each step that passed, not skipped, to "steps" in x.verify.json',
+  X_DB_ROW_SECURITY_OFF:
+    'database: { rowSecurity: true }   # in defineConfig, app.config.ts; then: x db gen "row security" --json && x db migrate --json && x doctor --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

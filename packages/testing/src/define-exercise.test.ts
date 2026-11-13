@@ -70,3 +70,33 @@ describe('defineExercise(…, { actor }) names whose rows ARE the actors', () =>
     expect(exercise.actorColumn).toBe('userId');
   });
 });
+
+describe('defineExercise({ name: { statements } }) moves one ceiling, with a reason', () => {
+  const refusal = (fn: () => unknown): unknown => {
+    try {
+      fn();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
+
+  test('a whole max ≥ 1 and a stated why are kept on the entry', () => {
+    const statements = { max: 140, why: 'one row per form line' };
+    expect(defineExercise({ importRows: { statements } }).entries.get('importRows')).toEqual({
+      statements,
+    });
+  });
+
+  test('a blank why is X_CONTRACT_EXERCISE_UNDECLARED; a fractional max is refused', () => {
+    expect(
+      refusal(() => defineExercise({ a: { statements: { max: 5, why: ' ' } } })),
+    ).toMatchObject({ code: 'X_CONTRACT_EXERCISE_UNDECLARED' });
+    expect(
+      refusal(() => defineExercise({ a: { statements: { max: 2.5, why: 'w' } } })),
+    ).toMatchObject({ cause: expect.stringContaining('a.statements.max') });
+    expect(
+      refusal(() => defineExercise({ a: { statements: { max: 0, why: 'w' } } })),
+    ).toBeDefined();
+  });
+});

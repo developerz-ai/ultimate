@@ -637,6 +637,7 @@ below on `--workers` and batching describe 22.6 and earlier where they differ.
 | `steps` | steps this repo may never report as skipped (`X_VERIFY_SUITE_VANISHED`) |
 | `coverage` | `{ "lines", "funcs", "why"?, "exclude"?: [{ "glob", "why" }] }` — the floor the `unit` step holds an app's whole source tree to (`X_COVERAGE_BELOW_FLOOR`, `X_COVERAGE_FLOOR_UNSTATED`, `X_COVERAGE_FLOOR_STALE`) → [Testing](Testing#coverage). `x doctor` prints every `exclude` |
 | `stepTimeoutMs` | `{ "<step>": milliseconds }` — a step's own deadline. Default 8 minutes for the six suites, 5 for every other step; past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes are killed |
+| `exercise` | `{ "unprovenMax"?: <0–1>, "statementsMax"?: <whole ≥ 1> }` — what the `exercise` step's pass may leave unproven, and statements per call (`X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_STATEMENTS_OVER_BUDGET`); absent, each is a warning line → [`x exercise`](#x-exercise), `As of 31.16.0` |
 | `isolate` · `typecheckBin` · `agentsMdMaxBytes` | a fresh global per test file · the `tsc`-compatible binary · the `AGENTS.md` byte budget |
 
 Either render prints one line per finished step on **stderr** — `{"step":"lint","ok":true,"ms":21987}` —
@@ -1207,6 +1208,15 @@ It also lists the shipped guards the app's `guards/` does not hold, and the ones
 
 A listing, never a finding: deleting or editing a guard is how an app changes a rule, so the verdict does not move.
 
+Four warnings about how the app is held, `As of 31.16.0` — beside the verdict, never in it: the exit status, `findings` and `data.codes` stay as they were, and `--json` carries each as `data.warnings[]` (`{ code, cause, fix, docs, at }`). None is a gate step; on `next` they join the verdict, red:
+
+| Code | Asked | Fix |
+|---|---|---|
+| `X_DB_ROW_SECURITY_OFF` | `database.rowSecurity` is off and a raw `` sql`…` `` (or `` Bun.sql`…` ``, `` tx.sql`…` ``, `raw('…')`, `identifier('…')`) outside migrations, seeds and tests names a tenant table — up to five sites listed. Off with no raw tenant SQL is not reported | `database: { rowSecurity: true }` in `app.config.ts`, then `x db gen "row security" && x db migrate` |
+| `X_VERIFY_STEP_UNFLOORED` | a gate step applies here — its suite files exist, its input is committed — and `x.verify.json` `"steps"` does not hold it, so a deleted suite reads as skipped. `e2e` is never proposed (the scaffold's placeholder skips until a browser driver is registered) | `x verify --only <steps> --json`, then add each step that passed to `"steps"` |
+| `X_FRAMEWORK_PIN_RANGE` | an `@ultimat3/*` dependency in any of the app's manifests is anything but an exact version or a `workspace:`/`file:`/`link:` path (`^31.0.0`, `*`, `latest`, `>=31 <32`; an `npm:` alias by its own spec), one finding per manifest | the exact version `bun install` resolved, at the line named; then `bun install` |
+| `X_ENV_NAME_RESERVED` | a name the app declares in `envSchema` or seals in `secrets.enc.json` is one `FRAMEWORK_ENV` (`@ultimat3/core`) lists as a `switch` or `internal` name — setting it for the app also switches that package's behaviour. Deploy-contract names (`DATABASE_URL`, `PORT`) and host names are not collisions | rename it `APP_<name>` (or delete it where the value is meant for the framework); then `x env example` |
+
 **The chart's monitoring templates**, the same way (`As of 2026-11`): an app with a `docker/helm/Chart.yaml` and no `templates/servicemonitor.yaml` or `templates/alert-rules.yaml` gets one line per missing file, then `x g chart-alerts`, which writes only those (`--json`: `data.chartAlerts`, `{ missing[], add }`). A chart that dropped them on purpose keeps a green verdict; an app with no chart is listed nothing.
 
 The embedded half is the bare-VM case: the external-database probe answers nothing the moment `DATABASE_URL` is unset, and that silence *is* the configuration a fresh box has. So `x doctor` also asks whether `@electric-sql/pglite` resolves from the app root — a resolve, never an import, because loading it boots the WASM build and takes the single-writer lock the next command needs. Red only where both hold: `DATABASE_URL` unset **and** the peer unresolvable, reported as `X_DB_UNAVAILABLE` with `@ultimat3/db`'s own sentence and its own runnable fix ([Bare VM](Bare-VM)). The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
@@ -1388,7 +1398,18 @@ A blank `off` reason is `X_CONTRACT_EXERCISE_UNDECLARED`; so is an `exercise.ts`
 exactly its findings, plus the static half of the tenant proof: an entity with no tenant column
 that references one with a tenant and declares no `shared` reason.
 
-Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`.
+**The `exercise` floor** (`As of 31.16.0`). `x exercise` and the gate step judge the pass against
+`x.verify.json`'s `exercise` key ([Configuration](Configuration#the-gates-file--xverifyjson)). Without the key every
+judgement below is a warning line (`! …`, and `data.warnings[]` under `--json`) naming the figure to
+write, and the run stays green; with it, above a declared figure is red.
+
+| Judged | Red, once opted in | Warning otherwise |
+|---|---|---|
+| unproven ÷ reached — a tenant, crash or scale proof that could not ask | `X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, naming the first three | the ratio, rounded up, to write as `unprovenMax`; also when it fell under the floor, naming the lower figure |
+| a sized-seed table the database refused | `X_EXERCISE_SEED_FAILED`, one per table, naming the entity, the driver's words and its readers — red exactly when the unproven ratio is | the same finding as a line |
+| one call over its statement ceiling — `statementsMax`, or the entry's own `statements: { max, why }` | `X_STATEMENTS_OVER_BUDGET`, the busiest call and its three largest shapes | the same finding as a line, judged at 100 |
+
+Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`, `X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_EXERCISE_SEED_FAILED`, `X_STATEMENTS_OVER_BUDGET`.
 
 ## x drill
 
@@ -1554,7 +1575,7 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 | 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
 | 4 | write exact pins, raise the Bun floor | — |
 | 5 | `bun install` | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
-| 6 | the installed CLI: `x manifest`, `x doctor --json`, `x exercise --json`, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
+| 6 | the installed CLI: `x manifest`, `x doctor --json`, each missing guard (`x g guard <name>`, kept only when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
 
 A dry run refuses exactly what the real run would, then stops before step 4. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
@@ -1572,7 +1593,9 @@ A dry run refuses exactly what the real run would, then stops before step 4. It 
 | `pins[]` | `{ file, name, from, to }` |
 | `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
 | `agentsMd` | `link`: `AGENTS.md` was byte-identical to `CLAUDE.md` and the hop makes it a relative symlink to it · `linked`: already one · `differs`: two different files, left alone; merge what only `AGENTS.md` says into `CLAUDE.md`, then `ln -sf CLAUDE.md AGENTS.md` · `none`: one of the two is missing · `null`: no hop planned |
-| `guards` | `{ reported, missing[], differs[] }` from the hop's own `x doctor`. Offered, never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
+| `guards` | `{ reported, missing[], differs[], installed[], withheld[] }` from the hop's own `x doctor`. `As of 31.16.0` each missing shipped guard is written from the installed release's template and kept when `boundaries` finds nothing more with it on disk: `installed[]` names it. One the tree already breaks is taken back out: `withheld[]` is `{ name, add, findings }` (`findings: null` when the count could not be measured) and `missing[]` still lists it. `differs[]` — the app's edit or an older copy — is never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
+| `coverage` | a hop that moved the Bun floor re-measures unit coverage (`x verify --only unit`); only when that measurement is `X_COVERAGE_BELOW_FLOOR` is the `x.verify.json` `coverage` floor moved to it, the number that fell alone, with a dated `why`: `{ file, measured, from, to, why }`. `null` when nothing moved |
+| `exerciseFloor` | `{ file, written }`: the `exercise` keys (`unprovenMax`, `statementsMax` ≥ 100) the hop's own `x exercise` measured, written into an `x.verify.json` that stated none, so the hop stays green and the floor only falls. A key the app already wrote is never touched; `null` when nothing was written |
 | `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
 | `exercise` | `{ reported, ok, findings[] }` from the hop's own `x exercise --json`, listed (and printed) before the gate's findings; each `fix` pastes as written. `reported: false`: the hop's CLI answered no exercise document — unknown, never a finding |
 | `verify` | `{ ok, summary, failed[], findings[] }`, each finding `{ step?, code, cause, fix, at? }` |

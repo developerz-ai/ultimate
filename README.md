@@ -57,7 +57,7 @@ A number written into a file goes stale on the next commit; the command does not
 | packages, versioned and published in lockstep | 31 | `bun run scripts/list-workspaces.ts --json` |
 | steps in the gate, `x verify` | 21 | `bun run x -- verify --json` |
 | coverage, per package and `create-ultimate` | ≥ 95% lines and functions; `scripts/` pinned at 83% / 89% | `bun run coverage` |
-| test files beside their source | 4,000+ | `git ls-files '*.test.ts' '*.test.tsx' \| grep -cE '^(packages\|scripts)/'` |
+| test files beside their source | 4,100+ | `git ls-files '*.test.ts' '*.test.tsx' \| grep -cE '^(packages\|scripts)/'` |
 | `X_*` codes, each with a cause and a `fix:` | 1,200+ | `jq '.errorCodes \| length' framework.manifest.json` |
 <!-- end generated -->
 

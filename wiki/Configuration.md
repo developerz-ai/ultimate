@@ -775,6 +775,7 @@ Rules:
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |
+| An app's own name is not a framework name | `FRAMEWORK_ENV` (`@ultimat3/core`) lists every name the framework reads. An app name on one it reads as a switch or for itself (`OTEL_*`, `TEST_DATABASE_URL`, any `ULTIMATE_*`) is `X_ENV_NAME_RESERVED` in `x doctor`, `As of 31.16.0`: rename it `APP_<name>`. An adapter's settings (`S3_*`, `SMTP_URL`, `CLOUDFLARE_*`) are the contract, never reported: declaring them is how an app configures that adapter |
 
 ## The environment — `resolveEnvironment()`
 
@@ -863,6 +864,21 @@ Key-name redaction still exists and is separate: `defineEnv()` registers every `
 x doctor --json           # env + connectivity + version checks
 x verify --json           # the gate
 ```
+
+## The gate's file — `x.verify.json`
+
+Not configuration of the app: what `x verify` holds it to, committed at the repo root. Every key is in [CLI reference](CLI-Reference#x-verify); the `exercise` key, `As of 31.16.0`:
+
+| Key | Value | Absent |
+|---|---|---|
+| `exercise.unprovenMax` | a ratio from 0 to 1: how many reached primitives the exercise pass may leave `unproven` (`X_EXERCISE_UNPROVEN_ABOVE_FLOOR` above it) | a warning line naming the figure to write; the step stays green |
+| `exercise.statementsMax` | a whole number ≥ 1: statements one call may send, for every primitive whose `defineExercise` entry declares no `statements: { max, why }` (`X_STATEMENTS_OVER_BUDGET` above it) | judged at 100, as a warning line |
+
+```json
+{ "exercise": { "unprovenMax": 0, "statementsMax": 100 } }
+```
+
+`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls. A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
 
 `x config show` is **planned**, not shipped — it throws `X_NOT_IMPLEMENTED` naming `x manifest --json` as the closest thing today → [CLI reference](CLI-Reference).
 
