@@ -64,7 +64,11 @@ export function Drawer(props: DrawerProps): JSX.Element {
   rt.createEffect(() => {
     const dialog = element;
     if (dialog === undefined) return;
-    if (props.open && !dialog.open) dialog.showModal();
+    if (props.open && !dialog.open) {
+      // `snap` is where a sheet OPENS: last time's drag to `full` does not decide this time.
+      setSnap(props.snap ?? 'half');
+      dialog.showModal();
+    }
     if (!props.open && dialog.open) dialog.close();
   });
 

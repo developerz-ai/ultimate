@@ -2,7 +2,7 @@
 // search config to drift from the entities, and no result an actor could not have opened —
 // the same `admin:read` + `<entity>:read` pair gates the hit and the detail page it links to.
 
-import { finiteCount } from '@ultimat3/core';
+import { finiteCount, mapBounded } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { type AuditEntry, deniedDraft } from './audit';
 import type { AdminActor } from './authz';
@@ -18,6 +18,11 @@ import { type AdminResource, repoOf } from './resource';
 /** Per resource, and per field within it. Search is a jump box, not a report. */
 const MAX_FIELDS_PER_RESOURCE = 3;
 const DEFAULT_LIMIT_PER_RESOURCE = 5;
+/**
+ * Resources read at once. Independent reads, so their latencies overlap rather than add — and a
+ * bound, so an admin of fifty resources never holds fifty pool connections for one keystroke.
+ */
+const SEARCH_WIDTH = 4;
 
 export interface AdminSearchHit {
   readonly entity: string;
@@ -53,9 +58,10 @@ export interface AdminSearchInput {
 }
 
 /**
- * One query per searchable field rather than one query with an OR: the admin's query IR is
- * a conjunction by design (each filter maps to an indexed predicate), and three small
- * indexed lookups beat one unindexed disjunction.
+ * One `contains` per searchable field rather than one query with an OR: the admin's query IR is a
+ * conjunction by design, and each field's `contains` is the entity's case-insensitive `ilike` —
+ * served by that column's `gin_trgm_ops` index where the app declared one (`X_QUERY_UNINDEXED`
+ * names the declaration where it did not), which one OR across columns could not use.
  *
  * That argument is declared to the runtime and not only to the reader — `expectedQueryLoop`
  * carries it onto every statement the loop issues, so a statement diagnostic reports the loops
@@ -129,6 +135,10 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
   // reaches a repo.
   if (term === '') return { term, hits: [], searched: [], skipped: [], audit: [] };
 
+  // Decided and audited in resource order, every entry appended BEFORE any read — so a repo that
+  // throws still leaves the record that the rows were asked for (`audit.ts`: if it isn't logged,
+  // it didn't happen) — and only then read, side by side.
+  const readable: AdminResource[] = [];
   for (const resource of input.resources) {
     const offered = resource.operations.includes('search');
     const decision = decideOperation(resource, 'search', ctx);
@@ -161,8 +171,6 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
       skipped.push({ entity: resource.name, reason: 'admin.search.skipped.no-repo' });
       continue;
     }
-    // Appended BEFORE the read, so a repo that throws still leaves the record that the rows were
-    // asked for — `audit.ts`: if it isn't logged, it didn't happen.
     audit.push(
       await ctx.audit.append({
         requestId: ctx.requestId,
@@ -176,15 +184,31 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
         reason: decision.reason,
       }),
     );
-    try {
-      hits.push(...(await searchResource(resource, ctx.actor, term, limit)));
-      searched.push(resource.name);
-    } catch {
-      // One resource whose repo fails is a resource this search could not read — listed, so the
-      // operator is never silently shown a subset — never a 500 for every other one. Nothing is
-      // read off the thrown value: a reason is a key.
+    readable.push(resource);
+  }
+
+  const answers = await mapBounded(
+    readable,
+    async (resource) => {
+      try {
+        return await searchResource(resource, ctx.actor, term, limit);
+      } catch {
+        // One resource whose repo fails is a resource this search could not read — listed, so the
+        // operator is never silently shown a subset — never a 500 for every other one. Nothing is
+        // read off the thrown value: a reason is a key.
+        return undefined;
+      }
+    },
+    { width: SEARCH_WIDTH },
+  );
+  for (const [index, resource] of readable.entries()) {
+    const found = answers[index];
+    if (found === undefined) {
       skipped.push({ entity: resource.name, reason: SKIPPED_FAILED });
+      continue;
     }
+    hits.push(...found);
+    searched.push(resource.name);
   }
 
   return { term, hits, searched, skipped, audit };

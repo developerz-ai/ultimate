@@ -87,10 +87,11 @@ export function parseAmount(text: string, options: ParseAmountOptions): Money {
     .filter((each) => each.type === 'currency')
     .map((each) => each.value);
 
-  let rest = text.trim();
-  for (const symbol of [...symbols, code]) rest = rest.replace(symbol, '').trim();
   // Bidi marks travel with a copied right-to-left amount; they are not characters of the number.
-  rest = rest.replace(/[‎‏؜]/g, '');
+  // Stripped FIRST: `ar-EG` closes BHD's symbol with U+200F, and a trim before the strip leaves the
+  // no-break space the mark shielded inside the number (found by `property-money.test.ts`).
+  let rest = text.replace(/[‎‏؜]/g, '').trim();
+  for (const symbol of [...symbols, code]) rest = rest.replace(symbol, '').trim();
   let negative = false;
   if (rest.startsWith(numerals.minus) || rest.startsWith('-')) {
     negative = true;

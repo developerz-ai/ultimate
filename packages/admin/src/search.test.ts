@@ -6,12 +6,22 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { expectedQueryLoopReason } from '@ultimat3/db';
-import { clearRegistry, entity, enumerated, newId, text, uuid } from '@ultimat3/entity';
+import {
+  clearRegistry,
+  database,
+  entity,
+  enumerated,
+  memoryDriver,
+  newId,
+  text,
+  uuid,
+} from '@ultimat3/entity';
 import { defineAdmin } from './admin';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import type { AdminRepo, AdminRow } from './registry';
+import { adminRepoFor } from './repo-entity';
 import { adminResource } from './resource';
 import { adminSearch } from './search';
 
@@ -334,5 +344,56 @@ describe('adminSearch when one resource’s repo throws', () => {
     ]);
     expect(found.searched).toEqual(['admin_search_note']);
     expect(found.hits.map((hit) => hit.entity)).toEqual(['admin_search_note']);
+  });
+});
+
+describe('adminSearch reads like an operator types', () => {
+  test('the match is case-insensitive: "first" finds "First post" through the entity handle', async () => {
+    const table = database({ posts }, { driver: memoryDriver() }).posts;
+    const repo = adminRepoFor(posts, table);
+    await repo.create({ title: 'First post', body: 'Body' });
+    const found = await adminSearch({
+      term: 'first',
+      resources: [adminOver(repo).resource('admin_search_post')],
+      ctx: ctx(),
+    });
+    expect(found.hits.map((hit) => hit.label)).toEqual(['First post']);
+  });
+
+  test('resources are read side by side, each at most one statement per text field', async () => {
+    const notes = entity('admin_search_parallel_note', {
+      columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
+    });
+    let inFlight = 0;
+    let widest = 0;
+    let statements = 0;
+    const slow = (store: Map<string, AdminRow>): AdminRepo<AdminRow> => ({
+      ...repoOver(store),
+      list: async (): Promise<readonly AdminRow[]> => {
+        statements += 1;
+        inFlight += 1;
+        widest = Math.max(widest, inFlight);
+        for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
+        inFlight -= 1;
+        return [];
+      },
+    });
+    const found = await adminSearch({
+      term: 'First',
+      resources: [
+        adminResource(posts, { repo: slow(new Map()) }),
+        adminResource(notes, { repo: slow(new Map()) }),
+      ],
+      ctx: { ...ctx(), authz: staticAuthz([...GRANTS, 'admin_search_parallel_note:read']) },
+    });
+    expect(found.searched).toEqual(['admin_search_post', 'admin_search_parallel_note']);
+    // Two fields on posts, one on notes: three statements, never a fourth.
+    expect(statements).toBe(3);
+    expect(widest).toBeGreaterThan(1);
+    // The audit still reads in resource order, each entry written before its rows were asked for.
+    expect(found.audit.map((entry) => entry.entity)).toEqual([
+      'admin_search_post',
+      'admin_search_parallel_note',
+    ]);
   });
 });

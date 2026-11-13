@@ -30,12 +30,18 @@ export function HomeKpis(props: HomeKpisProps): JSX.Element {
         {t('admin.dashboard.records.title')}
       </h2>
       <ul class={styles['kpis']}>
-        {props.counts.map(({ resource, count: total }) => (
+        {props.counts.map(({ resource, count: total, approximate }) => (
           <li>
             <a class={styles['kpi']} href={`${props.basePath}${resource.path}`}>
               <StatTile
                 label={t(resource.titleKey)}
-                value={count.format(total)}
+                value={
+                  // The planner's figure (`count: 'estimate'`) says so: `~1,200,000`, never a
+                  // number that reads as exact.
+                  approximate === true
+                    ? t('admin.dashboard.records.approximate', { figure: count.format(total) })
+                    : count.format(total)
+                }
                 stat={countStat(resource.name)}
               />
             </a>

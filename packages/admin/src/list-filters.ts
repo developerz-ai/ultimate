@@ -216,7 +216,7 @@ export function checkedFilter(resource: AdminResource, asked: AskedFilter): Admi
  * Predicates the APP declared — a scope's `where`, a resource's `rows` — held to a narrower rule
  * than a caller's: any column of the entity may be named (the app knows which of its columns are
  * indexed), but never one that is not a column and never a sealed one, whose ciphertext no
- * predicate can be written against.
+ * predicate can be written against. A declared `contains` comes back `caseSensitive`.
  */
 export function declaredFilters(
   resource: Pick<AdminResource, 'name' | 'entity'>,
@@ -242,5 +242,9 @@ export function declaredFilters(
     if (!open.includes(filter.field)) refuse('names a field that is not a column', open);
     if (!isOp(filter.op)) refuse('names an operator the admin does not have', FILTER_OPS);
   }
-  return where;
+  // Marked, so the read (`repo-entity.ts`) and the write (`row-scope-write.ts`) both keep a
+  // declared `contains` exact — the case-insensitive one is for what an operator types.
+  return where.map((filter) =>
+    filter.op === 'contains' ? { ...filter, caseSensitive: true as const } : filter,
+  );
 }

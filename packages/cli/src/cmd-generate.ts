@@ -12,7 +12,7 @@ import { generateSpec } from './cmd-generate-spec';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { localiseCatalogs, namedOrAppLocales } from './generate-catalog-locales';
-import { refuseChartAlertsFlags, runChartAlerts } from './generate-chart-alerts';
+import { isChartGenerator, refuseChartAlertsFlags, runChartAlerts } from './generate-chart-alerts';
 import { appDisk, plannedDisk } from './generate-disk';
 import { writtenExercises } from './generate-exercise';
 import { assertFeatureExists } from './generate-feature';
@@ -80,7 +80,7 @@ export const generateCommand: CliCommand = {
     // One sign-in per app, named by a flag rather than a `<name>`, and edits no other kind makes.
     if (kind === 'sign-in') return await runSignIn(ctx, root);
     // One chart per app, named by its `Chart.yaml`: the same shape, for the same reason.
-    if (kind === 'chart-alerts') return await runChartAlerts(ctx, root);
+    if (isChartGenerator(kind)) return await runChartAlerts(ctx, root, kind);
     // A workspace, not a slice: no feature, no surface, no follow-up edit (`generate-workspace.ts`).
     if (isWorkspaceKind(kind)) return await runWorkspace(ctx, root, kind);
     const name = readName(ctx.args.positionals[1], kind);

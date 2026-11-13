@@ -161,12 +161,12 @@ export const firstRunPlan = (
     (kind) => ({
       name: `g ${kind}`,
       // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
-      // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates,
-      // so this step is the backfill's no-op over a current chart.
+      // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates
+      // and the dashboard, so each chart step is the backfill's no-op over a current chart.
       args:
         kind === 'sign-in'
           ? ['g', kind, '--password', '--json']
-          : kind === 'chart-alerts'
+          : kind === 'chart-alerts' || kind === 'chart-dashboard'
             ? ['g', kind, '--json']
             : [
                 'g',

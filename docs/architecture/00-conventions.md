@@ -120,6 +120,13 @@ convention does not exist; the `Fails on` column says which is which.
 
 Details and the enforcement mechanisms: [`10-cross-cutting.md`](10-cross-cutting.md).
 
+**Log levels.** Routine per-unit events — one per request, job, fire or message — are `debug`.
+`info` is lifecycle (boot, drain, a listener up) and rare outcomes. `warn` asks an operator to act;
+`error` is a failure someone owns. Fails on: an `info` line in a per-unit file
+(`PER_UNIT_FILES` in `scripts/log-levels.ts`) with no `// info: <why>` on or above it, past its
+package's pin — `X_LOG_LEVEL_UNSTATED`, run by `scripts/log-levels.test.ts` in the `unit` step.
+The pins (`scripts/lib/log-levels-pins.ts`) only shrink: `bun run log-levels --unpin <pkg>`.
+
 ## Tests
 
 - Every package: at least two tests that would **actually catch a regression**. `expect(true).toBe(true)` is worse than nothing.

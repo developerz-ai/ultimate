@@ -343,6 +343,7 @@ export function memoryOperator(state: MemoryQueueState): MemoryOperator {
     },
 
     counters: (query) => Promise.resolve(counters.list(query)),
+    countersMany: (query) => Promise.resolve(counters.listMany(query)),
     counterTotals: (sinceMs) => Promise.resolve(counters.totals(sinceMs)),
     rollupCounters: () => Promise.resolve(counters.rollup(nowMs(clock))),
   };

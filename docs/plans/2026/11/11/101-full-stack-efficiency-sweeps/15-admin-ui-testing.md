@@ -53,3 +53,19 @@ Island coverage mapping is [`13`](13-cli-exercise-verify.md) X9.
 - The admin jobs overview and search are a bounded statement count on any app size.
 - A toast arriving does not move focus or re-announce its neighbours.
 - Eight round-trip properties, a heap canary and a rendered a11y check run in the gate.
+
+## Outcome (15, local)
+
+Ships as 31.18.0. `As of 2026-11-13`, measured before release.
+
+| ID | Outcome |
+|---|---|
+| D1 | **partial.** The search box, a list's `contains` filter and a lookup are now the entity's `contains`, a bound `ilike` that a `gin_trgm_ops` index serves (`repo-entity.ts`), so `alice` finds `Alice`. Resources are read four at a time under `mapBounded` (`search.ts`, `SEARCH_WIDTH`); every decision is still audited before any read. Statements per search are unchanged (≤ 3 per resource); latency overlaps instead of adding. **Coordinator decision:** a `contains` the app DECLARES (`rows`, a scope's `where`) stays case-sensitive on the read (`like`) and the write (`row-scope-write.ts`), marked `caseSensitive: true` by `declaredFilters`, because a row scope is authorization and must never widen (`row-scope-case.test.ts`). **Deferred:** the `search_tsv` path. The admin IR has no OR/`matches` operator, and the memory driver refuses `matches` |
+| D2 | shipped. Optional `JobIntrospection.countersMany` on the Postgres and memory drivers (Redis keeps no counters). The jobs overview costs 4 statements at 100 job names, where it was 3 + N (`overview-data.test.ts`). A driver without it falls back to one `counters()` per name |
+| D3 | shipped for home tiles. `count: 'estimate'` reads `approximateCount()` when the row scope adds no predicate and the estimate is ≥ 10,000 (`ESTIMATE_COUNT_FLOOR`), and the tile shows `~N` (`admin.dashboard.records.approximate`). Everything else is exact. Scope tabs keep the exact count: a tab is a predicate, and the estimate is whole-table |
+| V1 | shipped. `<Toaster>` keeps one node per toast id (`keyedRows`). A new toast leaves the surviving `<li>` in place: no rebuild, no re-announce, and focus on Undo survives |
+| V2 | shipped. `<SearchableSelect>` and `<Combobox>` filter once per keystroke (`createMemo`); counting spies in both tests. Reference-app settings island: +14 B (74,687 → 74,701), page 108,523 B, still under its 106kb budget, so no raise |
+| V3 | shipped. `<Drawer grabber>` resets `snap` to the prop on every open (`Drawer.test.ts`) |
+| T1 | shipped. `property(gen, fn, { runs, seed })` + `gen`, with the eight properties as `packages/testing/src/property-*.test.ts`. Each was mutation-checked against a planted bug. They found **two real bugs, fixed here**: `parseAmount` refused BHD in `ar-EG` (bidi mark stripped after the trim), and pgoutput's `ByteReader` accepted a negative length (the cursor moved backwards, a silent misread); the decoder now also refuses trailing bytes. A third was in test support: the replication fixture framed values by UTF-16 length. `X_TEST_PROPERTY_FAILED` registered |
+| T2 | shipped, in `packages/testing/src/soak.live.test.ts` rather than `examples/dummy`: the framework's own pipeline (SSR, action, query, 404, 400), 20,000 requests, bound 404 KB = 1.5 × the largest of three runs (265,050–269,194 B). `soak()` / `measureSoak()` are public; `X_TEST_SOAK_HEAP_GROWTH` registered. The canary is the framework's own `live` suite and never an app's red |
+| T3 | **already shipped** (#987, `X_E2E_A11Y_VIOLATION`, the CDP AX tree audit on every page `e2eTest` visits). **Deferred, ledger for `next`:** the listbox/option/menuitem*/treeitem roles and focusable-without-role. The audit has no warn mode, so adding them would turn existing apps red on main |

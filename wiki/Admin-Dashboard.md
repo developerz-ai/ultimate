@@ -30,7 +30,7 @@ export const admin = defineAdmin({ entities: adminEntitiesOf(db), db });
 | `/admin/<entity>/<id>` | detail: sections, related lists, row actions, history (`?history=` pages older) | `POST _operation=action` (`input.<field>`) · `_operation=delete` (needs `confirmation`) |
 | `/admin/<entity>/<id>?action=<name>` | an action's own form, when it declares an `input` schema | posts at the row |
 | `/admin/<entity>/<id>/edit` | edit form | `POST` → 303 to the row, or 422 |
-| `/admin/search?term=` · `/admin/audit` | built-in screens | — |
+| `/admin/search?term=` · `/admin/audit` | built-in screens — search is case-insensitive, at most three text fields per resource, four resources read at a time | — |
 | `/admin/jobs` · `/admin/jobs/runs` · `/queues` · `/tasks` · `/workers` | the jobs dashboard every admin carries — [below](#the-jobs-dashboard) | row actions and the batch bar, as any resource |
 | `/admin/<page path>` | a `pages:` entry | — |
 
@@ -53,6 +53,8 @@ resources: { posts: { count: true } },
 
 A count reads no row, so it is not audited. Upgrading from a release that counted every listable resource: add `count: true` to each resource whose tile you want back.
 
+**`count: 'estimate'`** (`As of 2026-11`) reads the planner's figure (`AdminRepo.approximateCount()`, constant time) instead of a full count. It applies only when the resource declares no `rows` scope (the estimate is a whole-table figure) and the estimate is at least 10,000 rows (`ESTIMATE_COUNT_FLOOR`). The tile then reads `~1,200,000` (`admin.dashboard.records.approximate`). A small or never-analysed table, a row-scoped resource and a tenant-scoped or soft-deleting table the estimate refuses all show the exact `count()`.
+
 ## The list
 
 `As of 2026-10`. Everything on a list page is derived from the entity or declared once on the resource.
@@ -64,6 +66,8 @@ A count reads no row, so it is not audited. Upgrading from a release that counte
 | Reference cells | the TARGET resource's `labelField`, linked to the row | one read per referenced resource per page, never one per row |
 | Computed columns | `columns: { age: { value, render } }` | `render`: `badge`, `relative-time`, `money`, `truncate`, `link`, `json`, or a component |
 | Row scope | `rows: (actor) => AdminFilter[]` | applied by the list, the search, the detail read, the lookup, the labels and the MCP tools — one declaration, no second copy of the resource for a second audience |
+
+**Case.** `As of 2026-11`. What an operator types ignores case: the search box, a `contains` filter and a lookup each use the entity's `contains`, a bound `ilike` that a `gin_trgm_ops` index on the column serves. What the app declares does not: a `contains` in `rows` or in a scope's `where` stays exact and case-sensitive (`like`, `caseSensitive: true` on the filter), on the read and on the write. A row scope is authorization, so it never widens. `rows: () => [{ field: 'company', op: 'contains', value: 'Acme' }]` admits `Acme Ltd` and never `acme corp`, however the operator spells a search.
 
 | URL parameter | Means |
 |---|---|
@@ -162,7 +166,7 @@ export const admin = defineAdmin({
 
 | URL | Shows | Actions (`job:manage`) |
 |---|---|---|
-| `/admin/jobs` | tiles: ready, running, delayed, suspended, dead, workers, oldest ready (one `stats()`); done vs failed over `?range=1h\|24h\|7d\|30d` from the settle counters; volume, failure rate and mean duration per job name. Re-read every 30 s by a declared `<meta http-equiv="refresh">` | — |
+| `/admin/jobs` | tiles: ready, running, delayed, suspended, dead, workers, oldest ready (one `stats()`); done vs failed over `?range=1h\|24h\|7d\|30d` from the settle counters; volume, failure rate and mean duration per job name — every name's counters in one grouped read (`countersMany`), so the screen costs 4 statements at any number of names. Re-read every 30 s by a declared `<meta http-equiv="refresh">` | — |
 | `/admin/jobs/runs` | one tab per state; the search box is an id prefix; filters by name, queue, state, tenant, created time | retry (dead rows), retry from a step, run now (waiting on its clock), cancel (live), remove |
 | `/admin/jobs/runs/<id>` | input (redacted by `@ultimat3/jobs`), steps, error and stack, progress, tenant, trace, history | the row's own |
 | `/admin/jobs/queues` | depth per state, paused, a link to the queue's jobs | pause, resume |

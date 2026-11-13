@@ -193,6 +193,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
     // lines in production): `debug`, as the sibling per-unit events are. A catch-up is news.
     const occurrence = new Date(occurrenceMs).toISOString();
     const fields = { task: handle.name, occurrence, tz: handle.tz, catchUp, jobs: jobs.length };
+    // info: a catch-up fire is a rare outcome — the scheduler was down or behind for an occurrence.
     if (catchUp) logger.info('jobs.scheduler.dispatched', fields);
     else logger.debug('jobs.scheduler.dispatched', fields);
     return { task: handle.name, occurrenceMs, jobs, catchUp };

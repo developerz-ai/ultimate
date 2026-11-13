@@ -287,5 +287,8 @@
  * each boot warning concerns), `cli/src/serve-boot-phases.ts` (the `boot.phase` timeline) and
  * `cli/src/messages-ops.ts` (the `x token`/`config`/`logs`/`cache`/`explain` catalog, merged into
  * `messages.ts`). No existing module newly reached.
+ * raised 1491 → 1492, measured 1492 (2026-11-13, sweep 15 admin search, the test's own walk):
+ * `MIGRATE_CEILING`'s 1, `core/src/map-bounded.ts`. why: the admin search's four-wide read keeps
+ * it in the bundle. An existing module newly reached; nothing else moved.
  */
-export const SERVING_ROLE_CEILING = 1491;
+export const SERVING_ROLE_CEILING = 1492;

@@ -3,11 +3,20 @@
 // queue's own rules are proven in `toast/toast-state.test.ts`; a correct store handed to the wrong
 // element passes every one of them.
 
-import { describe, expect, test } from 'bun:test';
-import { byTag, fire, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import {
+  byTag,
+  fire,
+  nodesOf,
+  one,
+  type RenderNode,
+  renderNodes,
+  withAttr,
+} from '@ultimat3/core/render-nodes';
+import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import { TOAST_MAX_VISIBLE, type ToastHold } from '../toast/toast-state';
 import { INERT_TOAST_ENV, type ToastStore, toastStore } from '../toast/toast-store';
-import { ToastRegion } from './Toast';
+import { Toast, ToastRegion } from './Toast';
 import { Toaster } from './Toaster';
 
 const storeWith = (...messages: readonly string[]): ToastStore => {
@@ -109,5 +118,71 @@ describe('Toaster', () => {
     fire(buttons[0] as never, 'onClick', {});
     expect(undone).toEqual([1]);
     expect(store.queue().items).toEqual([]);
+  });
+});
+
+type Solid = typeof import('solid-js');
+
+async function browserSolid(): Promise<Solid> {
+  const manifest = Bun.resolveSync('solid-js/package.json', import.meta.dir);
+  return (await import(new URL('dist/solid.js', Bun.pathToFileURL(manifest)).href)) as Solid;
+}
+
+describe('Toaster under a real Solid runtime: one node per toast id', () => {
+  let solid: Solid;
+  beforeAll(async () => {
+    solid = await browserSolid();
+  });
+  afterEach(clearSolidRuntime);
+
+  const mount = (store: ToastStore) => {
+    const { createContext, useContext, createSignal, createMemo, createEffect, onCleanup } = solid;
+    setSolidRuntime({
+      createContext,
+      useContext,
+      createSignal,
+      createMemo,
+      createEffect,
+      onCleanup,
+      createRoot: solid.createRoot,
+    });
+    let output: unknown;
+    let dispose = (): void => {};
+    solid.createRoot((done) => {
+      dispose = done;
+      output = Toaster({ store, label: 'Notifications' });
+    });
+    // The `<Toast>` elements themselves: a rebuilt list is new ones, a kept toast is the same one.
+    const toasts = (): RenderNode[] =>
+      nodesOf(output, { components: 'keep' }).filter((node) => (node.type as unknown) === Toast);
+    return { toasts, dispose: () => dispose() };
+  };
+
+  test('a new toast leaves the surviving one’s node in place — no rebuild, no re-announce', () => {
+    const store = storeWith('one');
+    const view = mount(store);
+    const [first] = view.toasts();
+    expect(first).toBeDefined();
+    store.show({ message: 'two' });
+    const after = view.toasts();
+    expect(after).toHaveLength(2);
+    // A rebuilt <li> is a new node in the live region, read again; focus on its Undo is dropped.
+    expect(after[0]).toBe(first as RenderNode);
+    view.dispose();
+  });
+
+  test('dismissing one keeps the other’s node, and a re-shown message is a new one', () => {
+    const store = storeWith('one', 'two');
+    const view = mount(store);
+    const [first, second] = view.toasts();
+    const firstId = store.queue().items[0]?.id ?? '';
+    store.dismiss(firstId);
+    expect(view.toasts()).toEqual([second as RenderNode]);
+    expect(view.toasts()[0]).toBe(second as RenderNode);
+    store.show({ message: 'one' });
+    const [, again] = view.toasts();
+    expect(again).toBeDefined();
+    expect(again).not.toBe(first as RenderNode);
+    view.dispose();
   });
 });

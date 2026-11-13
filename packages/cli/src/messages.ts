@@ -102,6 +102,7 @@ const CATALOG = {
   'cli.doctor.coverageExclude':
     '{count} path(s) x.verify.json excludes from the coverage floor — each with the reason it gives:',
   'cli.doctor.chartAlerts': '{count} monitoring template(s) missing from the chart:',
+  'cli.doctor.chartDashboard': '{count} dashboard file(s) missing from the chart:',
   // `x doctor`'s reminder: the rolling rail is off until this key is set (`doctor-rolling.ts`).
   'cli.doctor.rollingSince':
     'the rolling-deploy rail is off: set "rollingSince": "{newest}" in x.verify.json to judge every migration after your newest',
@@ -146,6 +147,7 @@ const CATALOG = {
   // believed the files were on disk.
   'cli.generate.planned': 'would write {count} file(s) for {kind} {name} — nothing written',
   'cli.generate.chartAlertsPrinted': '{count} alert rule(s), as Prometheus rule groups',
+  'cli.generate.chartDashboardPrinted': 'the Grafana dashboard, as JSON to import',
   'cli.i18n.added': 'added {locale} — {keys} key(s) seeded from {from}',
   'cli.i18n.dynamic': '{count} dynamic t() call(s) the extractor cannot verify:',
   'cli.i18n.gaps': '{missing} missing key(s) across {locales} locale(s)',

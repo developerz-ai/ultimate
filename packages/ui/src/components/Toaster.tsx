@@ -8,11 +8,14 @@
 
 import type { JSX } from 'solid-js';
 import type { Politeness } from '../a11y';
+import { solid } from '../theme/solid-adapter';
 import { type ToastItem, visibleToasts } from '../toast/toast-state';
 import type { ToastStore } from '../toast/toast-store';
 import { useToasts } from '../toast/use-toasts';
 import { Button } from './Button';
+import { keyedRows } from './data-table-rows';
 import { Toast, type ToastPlacement, ToastRegion } from './Toast';
+import { thunk } from './thunk';
 
 export interface ToasterProps {
   /** The queue. One per app — `toastStore()` in the island that mounts this. */
@@ -27,6 +30,7 @@ export interface ToasterProps {
 }
 
 export function Toaster(props: ToasterProps): JSX.Element {
+  const rt = solid();
   const queue = useToasts(props.store);
 
   /**
@@ -34,7 +38,7 @@ export function Toaster(props: ToasterProps): JSX.Element {
    * it disappears on a timer, and a keyboard user who was typing when it arrived never reached it.
    * Taking the undo also dismisses — the offer has been answered.
    */
-  const actionSlot = (item: ToastItem): JSX.Element => {
+  const actionSlot = (item: ToastItem, id: string): JSX.Element => {
     const action = item.action;
     if (action === undefined) return null;
     return (
@@ -44,13 +48,32 @@ export function Toaster(props: ToasterProps): JSX.Element {
         tone={item.tone}
         onClick={() => {
           action.onAction();
-          props.store.dismiss(item.id);
+          props.store.dismiss(id);
         }}
       >
         {action.label}
       </Button>
     );
   };
+
+  // One node per toast id, built once in the body: a publish that adds toast B leaves toast A's
+  // <li> where it was, so the live region reads only B (`aria-atomic="false"`) and a keyboard user
+  // on A's Undo keeps their focus. A plain `.map` rebuilt every visible <li> on every arrival.
+  const toastNodes = keyedRows<ToastItem, JSX.Element>(
+    rt,
+    (item) => item.id,
+    (item, id) => (
+      <Toast
+        title={item().title}
+        tone={item().tone}
+        dismissLabel={props.dismissLabel}
+        action={actionSlot(item(), id)}
+        onDismiss={() => props.store.dismiss(id)}
+      >
+        {item().message}
+      </Toast>
+    ),
+  );
 
   return (
     <ToastRegion
@@ -61,17 +84,7 @@ export function Toaster(props: ToasterProps): JSX.Element {
       onHold={(reason) => props.store.hold(reason)}
       onRelease={(reason) => props.store.release(reason)}
     >
-      {visibleToasts(queue()).map((item) => (
-        <Toast
-          title={item.title}
-          tone={item.tone}
-          dismissLabel={props.dismissLabel}
-          action={actionSlot(item)}
-          onDismiss={() => props.store.dismiss(item.id)}
-        >
-          {item.message}
-        </Toast>
-      ))}
+      {thunk(() => toastNodes(visibleToasts(queue())))}
     </ToastRegion>
   );
 }

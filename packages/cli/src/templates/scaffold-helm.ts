@@ -43,9 +43,21 @@ export const ALERTS_VALUES = `# Each rule's runbook_url is runbookBase#<alert, l
 # threshold, for, severity, enabled — e.g. rules: { UltimateQueueStalled: { threshold: 600 } }.
 alerts:
   enabled: auto
+  objective: 99.9    # percent of requests answered without a 5xx; the burn-rate rules' budget
   runbookBase: ${RUNBOOK_BASE}
   labels: {}         # what your operator's ruleSelector matches, if it uses one
   rules: {}
+
+`;
+
+/** The dashboard's `values.yaml` block, beside the two monitoring ones. */
+export const DASHBOARD_VALUES = `# The Grafana dashboard (dashboards/ultimate-app.json) as a ConfigMap, OFF by default: a Grafana
+# sidecar provisions every ConfigMap carrying its label (kube-prometheus-stack's is the one below).
+# Without a sidecar, import the JSON by hand; it picks namespace and release from process_info.
+dashboard:
+  enabled: false
+  labels: { grafana_dashboard: "1" }
+  annotations: {}   # e.g. the sidecar's grafana_folder: Ultimate
 
 `;
 
@@ -143,7 +155,7 @@ networkPolicy:
 # METRICS_PORT in the container; move one and the other follows.
 metricsPort: 9090
 
-${SERVICE_MONITOR_VALUES}${ALERTS_VALUES}# The image's \`bun\` user, the same uid as the Dockerfile's USER: move one and the other follows.
+${SERVICE_MONITOR_VALUES}${ALERTS_VALUES}${DASHBOARD_VALUES}# The image's \`bun\` user, the same uid as the Dockerfile's USER: move one and the other follows.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: ${RUNTIME_UID}
@@ -196,8 +208,10 @@ roles:
     enabled: true
     replicas: 2
     port: 3000
+    # Requests are measured idle plus headroom, limits the ceiling: a web pod of the demo app idled
+    # at 73 Mi (plan 101 O6, 2026-11-11), so 128Mi; the limit is what an OOMKill reads.
     resources:
-      requests: { cpu: 200m, memory: 256Mi }
+      requests: { cpu: 200m, memory: 128Mi }
       limits: { memory: 512Mi }
     autoscaling:
       enabled: false
@@ -234,8 +248,9 @@ roles:
     # exits at once, and a Terminating pod does not hold a rollout back. Added to this role's
     # terminationGracePeriodSeconds, which the kubelet counts the preStop against.
     retireSeconds: 3600
+    # 160Mi: ROLE=worker of the reference app idled at 138 MiB (Bun 1.4.4, 45 s, 2026-11-13).
     resources:
-      requests: { cpu: 200m, memory: 256Mi }
+      requests: { cpu: 200m, memory: 160Mi }
       limits: { memory: 1Gi }
     autoscaling:
       enabled: false
@@ -258,7 +273,8 @@ roles:
     # when every role still built the app's islands first; at 256Mi the pod was OOMKilled on every
     # boot. Only web builds islands now, so the peak is lower but unmeasured, and the limit stays.
     resources:
-      requests: { cpu: 50m, memory: 128Mi }
+      # 160Mi: ROLE=scheduler of the reference app idled at 137 MiB (Bun 1.4.4, 45 s, 2026-11-13).
+      requests: { cpu: 50m, memory: 160Mi }
       limits: { memory: 512Mi }
 
   replicator:

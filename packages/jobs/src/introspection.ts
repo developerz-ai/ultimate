@@ -311,6 +311,16 @@ export interface JobIntrospection {
     readonly job: string;
     readonly sinceMs: number;
   }): Promise<readonly JobCounter[]>;
+  /**
+   * `counters` for several job names in ONE read — what a dashboard drawing every name's history
+   * asks, rather than a statement per name. The same buckets `counters` answers for each listed
+   * name, oldest first across names; an unknown name adds none, an empty list answers `[]`.
+   * Optional, as `cancel` is: a driver without it is read one `counters` call per name.
+   */
+  countersMany?(query: {
+    readonly jobs: readonly string[];
+    readonly sinceMs: number;
+  }): Promise<readonly JobCounter[]>;
   /** One row per job name: every bucket from `sinceMs` on, summed. Ordered by name. */
   counterTotals(sinceMs: number): Promise<readonly CounterTotals[]>;
   /**

@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 46
-current_focus: "Sweep 13b done, ships as 31.17.0: x verify plan and a scaffolded CI read from it; x exercise runs route loads (warnings) and names empty reaches; x token, config, logs, cache and explain ship; x g cron-job, purge, webhook-receiver; the unbounded-fanout guard; boot warnings per role, boot.phase lines, /readyz at most one ping a second; x dev sets an unopenable data dir aside. Next: 15"
+percent: 52
+current_focus: "Sweep 15 done, ships as 31.18.0: admin search and estimates, property checks, heap canary, memory requests, log-level policy, x g chart-dashboard. Next: 16"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -84,14 +84,14 @@ slices:
     percent: 83
   - file: 15-admin-ui-testing.md
     tier: 4
-    sweep: "15"
-    status: not_started
-    percent: 0
+    sweep: "15"            # D2, D3, V1–V3, T1, T2 shipped (31.18.0); D1 partial (search_tsv deferred: no OR/matches op); T3 shipped earlier (#987), its role gaps deferred to next
+    status: in_progress
+    percent: 90
   - file: 20-ops-defaults.md
     tier: 5
-    sweep: "15"
-    status: not_started
-    percent: 0
+    sweep: "15"            # O1–O4, O6 shipped (31.18.0; O1's replication-lag rule dropped, no series; O6 sync/replicator unmeasured); O5 in 13b
+    status: in_progress
+    percent: 95
   - file: 16-gate-ci-docker.md
     tier: 5
     sweep: "16"
@@ -168,5 +168,5 @@ slices:
     status: complete
     percent: 100
 evidence: []
-notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a and 13b implemented (31.5.0–31.17.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
-last_updated: 2026-11-12
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a, 13b and 15 implemented (31.5.0–31.18.0). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+last_updated: 2026-11-13

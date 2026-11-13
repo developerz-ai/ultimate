@@ -243,5 +243,8 @@
  * raised 1684 → 1687, measured 1687 (2026-11-12, sweep 13b, the test's own walk):
  * `SERVING_ROLE_CEILING`'s 3 (`serve-boot-warnings.ts`, `serve-boot-phases.ts`, `messages-ops.ts`).
  * Nothing web-only moved.
+ * raised 1687 → 1688, measured 1688 (2026-11-13, sweep 15): `SERVING_ROLE_CEILING`'s 1
+ * (`core/src/map-bounded.ts`). why: the admin search's four-wide read. Nothing web-only: the
+ * sweep's ui and admin changes import only modules the web role already evaluated.
  */
-export const WEB_ROLE_CEILING = 1687;
+export const WEB_ROLE_CEILING = 1688;

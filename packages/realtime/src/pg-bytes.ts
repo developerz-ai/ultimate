@@ -1,7 +1,7 @@
 // Single responsibility: the byte primitives every Postgres frame is built from — big-endian
 // integers, NUL-terminated strings, length-prefixed blobs. Shared by the wire framing, the auth
 // handshake and the pgoutput decoder so none of them owns a second copy of "read an Int32".
-// A read past the end is `X_REPLICATION_PROTOCOL`, never a silent `NaN` or an empty string.
+// A read past the end, or a negative length, is `X_REPLICATION_PROTOCOL` — never a silent misread.
 
 import { ReplicationProtocolError } from './errors';
 
@@ -32,6 +32,14 @@ export class ByteReader {
 
   #need(count: number): number {
     const at = this.#at;
+    // A length is off the wire: a negative one would move the cursor BACKWARDS and every later read
+    // would succeed on the wrong bytes — a silent misread, not a truncation (`property-pgoutput`).
+    if (count < 0 || !Number.isInteger(count)) {
+      throw new ReplicationProtocolError({
+        stage: this.#stage,
+        detail: `a length of ${count} at offset ${at} is not a byte count`,
+      });
+    }
     if (at + count > this.#bytes.length) {
       throw new ReplicationProtocolError({
         stage: this.#stage,
@@ -83,6 +91,18 @@ export class ByteReader {
 
   utf8(count: number): string {
     return decoder.decode(this.take(count));
+  }
+
+  /**
+   * The message is over: a format that fixes its own length has no tail, and bytes after it mean
+   * the frame was cut or built at the wrong boundary — refused rather than ignored.
+   */
+  end(): void {
+    if (this.remaining === 0) return;
+    throw new ReplicationProtocolError({
+      stage: this.#stage,
+      detail: `${this.remaining} bytes follow a complete message at offset ${this.#at}`,
+    });
   }
 
   /** NUL-terminated string. A frame that never terminates one is a truncated frame. */

@@ -327,4 +327,21 @@ describe('the aggregate terminals', () => {
       'X_APPROXIMATE_COUNT_FILTERED',
     );
   });
+
+  test('approximateCount is refused on a soft-deleting entity: the estimate counts the deleted', async () => {
+    // `reltuples` counts every row in the table, so the figure would include rows every other read
+    // hides. The admin home's `.catch` falls back to the exact count on this refusal.
+    const drafts = entity('query_test_drafts', {
+      columns: { id: uuid().primaryKey(), deletedAt: timestamp().nullable() },
+    });
+    const rows = [
+      { id: id(0), deletedAt: null },
+      { id: id(1), deletedAt: AT },
+    ];
+    const table_ = tableFor(drafts, memoryRepo(drafts, rows));
+    await expect(table_.approximateCount()).rejects.toBeUltimateError(
+      'X_APPROXIMATE_COUNT_FILTERED',
+    );
+    expect(await table_.count()).toBe(1);
+  });
 });

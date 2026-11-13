@@ -59,8 +59,11 @@ export function Combobox(props: ComboboxProps): JSX.Element {
     rt.onCleanup(() => notify.cancel());
   });
 
-  const matches = (): readonly ComboboxOption[] =>
-    filterOptions(props.options, props.value ?? '', props.limit);
+  // One filter pass per change of query or options: the datalist, the status class and its count
+  // all read it, and a plain function ran the O(n) pass once per read.
+  const matches = rt.createMemo((): readonly ComboboxOption[] =>
+    filterOptions(props.options, props.value ?? '', props.limit),
+  );
 
   const describedBy = (): string =>
     [props['aria-describedby'], statusId].filter((id) => id !== undefined).join(' ');

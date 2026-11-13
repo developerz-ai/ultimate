@@ -176,7 +176,9 @@ describe('unit · outsideRowScope decides what it can decide exactly, and refuse
     expect(outside({ field: 'at', op: 'gte', value: '2026-01-01T00:00:00.000Z' })).toBe(false);
     expect(outside({ field: 'at', op: 'lt', value: '2026-01-01T00:00:00.000Z' })).toBe(true);
     expect(outside({ field: 'title', op: 'contains', value: 'lph' })).toBe(false);
+    // A row scope is authorization: its `contains` is exact, case included — never widened.
     expect(outside({ field: 'title', op: 'contains', value: 'LPH' })).toBe(true);
+    expect(outside({ field: 'title', op: 'contains', value: 'lpx' })).toBe(true);
   });
 
   test('an ordering over TEXT is a collation’s to decide, so the write is refused', () => {

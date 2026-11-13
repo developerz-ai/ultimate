@@ -474,7 +474,7 @@ visibility, never its page.
 | Empty set | `null` in every function, which is what SQL answers — a `0` would claim rows were seen. `count()` is `0`, and that is the distinction |
 | `avg` | one fixed scale (6 digits), rounded half away from zero from the exact rational, so both drivers land on one number |
 | Refused | `min`/`max` on `text` (ordering is the database's collation there and JS code-unit order here); `avg` over money (every answer would be a silent rounding of a fraction of a minor unit — `sum()` and `count()` instead, dividing where the rounding is a decision); an amount covering more than one currency **or scale**; a money total past ±2^53 minor units |
-| `approximateCount()` | `reltuples` out of `pg_class`, constant time, because `count(*)` walks every visible row and no index can make it cheaper. The whole **table** — a filtered chain and every tenant-scoped entity are `X_APPROXIMATE_COUNT_FILTERED`, and `null` means the table has never been analysed |
+| `approximateCount()` | `reltuples` out of `pg_class`, constant time, because `count(*)` walks every visible row and no index can make it cheaper. The whole **table** — a filtered chain, every tenant-scoped entity and every soft-deleting one (`reltuples` counts the deleted rows) are `X_APPROXIMATE_COUNT_FILTERED`, and `null` means the table has never been analysed |
 
 ## The operator vocabulary
 

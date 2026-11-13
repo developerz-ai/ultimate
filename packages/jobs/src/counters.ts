@@ -40,6 +40,10 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 export interface MemoryCounters {
   add(job: string, outcome: CounterOutcome, durationMs: number, atMs: number): void;
   list(query: { readonly job: string; readonly sinceMs: number }): readonly JobCounter[];
+  listMany(query: {
+    readonly jobs: readonly string[];
+    readonly sinceMs: number;
+  }): readonly JobCounter[];
   totals(sinceMs: number): readonly CounterTotals[];
   rollup(atMs: number): number;
 }
@@ -61,16 +65,22 @@ export function memoryCounters(): MemoryCounters {
     buckets.set(key, { job, bucketMs, bucketStart, ...sum(current ?? ZERO, add) });
   };
 
+  const listMany: MemoryCounters['listMany'] = ({ jobs, sinceMs }) => {
+    const wanted = new Set(jobs);
+    return [...buckets.values()]
+      .filter((bucket) => wanted.has(bucket.job) && bucket.bucketStart >= sinceMs)
+      .sort(
+        (a, b) => a.bucketStart - b.bucketStart || a.bucketMs - b.bucketMs || byName(a.job, b.job),
+      );
+  };
+
   return {
     add(job, outcome, durationMs, atMs) {
       const start = counterBucketStart(atMs, COUNTER_BUCKET_MS);
       merge(job, COUNTER_BUCKET_MS, start, { ...ZERO, [outcome]: 1, durationMs });
     },
-    list({ job, sinceMs }) {
-      return [...buckets.values()]
-        .filter((bucket) => bucket.job === job && bucket.bucketStart >= sinceMs)
-        .sort((a, b) => a.bucketStart - b.bucketStart || a.bucketMs - b.bucketMs);
-    },
+    list: ({ job, sinceMs }) => listMany({ jobs: [job], sinceMs }),
+    listMany,
     totals(sinceMs) {
       const byJob = new Map<string, Counts>();
       for (const bucket of buckets.values()) {

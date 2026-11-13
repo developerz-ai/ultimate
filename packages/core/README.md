@@ -94,7 +94,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
-| what the process itself costs: `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes`, `process_cpu_seconds_total`, `process_event_loop_lag_seconds`, `process_start_time_seconds`, `process_info{role}` — **server-only**, never on `@ultimat3/core/page` | `process-metrics.ts` (`startProcessMetrics`) |
+| what the process itself costs: `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes`, `process_cpu_seconds_total`, `process_event_loop_lag_seconds`, `process_start_time_seconds`, `process_info{role}`, `process_memory_limit_bytes` (cgroup `memory.max`; absent when unbounded) — **server-only**, never on `@ultimat3/core/page` | `process-metrics.ts` (`startProcessMetrics`) |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |

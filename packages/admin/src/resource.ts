@@ -74,9 +74,11 @@ export interface AdminResourceOptions<Row extends AdminRow = AdminRow> {
    * Show this resource's row count on the `/admin` home. Opt-in, as a scope tab's `count` is: the
    * figure is one full `count()` over the actor's rows on EVERY visit to the front page, so on a
    * big table any operator reloading it is a load generator. Absent: no tile, the resource is still
-   * listed in the permission matrix.
+   * listed in the permission matrix. `'estimate'`: the planner's figure (`approximateCount()`,
+   * constant time) where the row scope is the whole predicate and the estimate is at least
+   * `ESTIMATE_COUNT_FLOOR` — the tile then reads `~` — and the exact count everywhere else.
    */
-  readonly count?: boolean;
+  readonly count?: boolean | 'estimate';
   /**
    * The rows this ACTOR may see at all. Applied to every read of the resource — list, search,
    * detail, lookup, labels, MCP — so it is the one place a second audience is declared.
@@ -142,8 +144,10 @@ export interface AdminResource<Row extends AdminRow = AdminRow> {
   readonly columns: readonly AdminComputedColumn[];
   /** Declared scopes, in tab order. Empty for a resource that declares none. */
   readonly scopes: readonly AdminScope[];
-  /** The `/admin` home counts this resource — `count: true` declared. */
+  /** The `/admin` home counts this resource — `count: true` or `count: 'estimate'` declared. */
   readonly count: boolean;
+  /** `count: 'estimate'`: the home may show the planner's figure. Absent or `false`: exact. */
+  readonly countEstimate?: boolean;
   /** `rows`, validated per call. Absent for a resource every permitted actor sees whole. */
   readonly rowScope?: AdminRowScope;
   /** The detail page's groups. Always at least one: undeclared fields have a default section. */
@@ -319,7 +323,8 @@ export function adminResource<Row extends AdminRow = AdminRow>(
     searchFields: fields.filter((field) => field.searchable),
     columns: computedColumnsOf(declared, opts.columns),
     scopes: scopesOf(declared, opts.scopes, opts.repo),
-    count: opts.count === true,
+    count: opts.count === true || opts.count === 'estimate',
+    countEstimate: opts.count === 'estimate',
     ...(rowScope === undefined ? {} : { rowScope }),
     sections: layoutOf(
       {

@@ -111,9 +111,18 @@ serviceMonitor:
 # threshold, for, severity, enabled — e.g. rules: { UltimateQueueStalled: { threshold: 600 } }.
 alerts:
   enabled: auto
+  objective: 99.9    # percent of requests answered without a 5xx; the burn-rate rules' budget
   runbookBase: https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md
   labels: {}         # what your operator's `ruleSelector` matches, if it uses one
   rules: {}
+
+# The Grafana dashboard (dashboards/ultimate-app.json) as a ConfigMap, OFF by default: a Grafana
+# sidecar provisions every ConfigMap carrying its label (kube-prometheus-stack's is the one below).
+# Without a sidecar, import the JSON by hand; it picks namespace and release from process_info.
+dashboard:
+  enabled: false
+  labels: { grafana_dashboard: "1" }
+  annotations: {}   # e.g. the sidecar's grafana_folder: Ultimate
 
 # Read by `ultimate.serviceAccountName` (_helpers.tpl), which BOTH workloads and the optional
 # ServiceAccount resource go through. `helm create`'s semantics:
@@ -206,8 +215,10 @@ roles:
     enabled: true
     replicas: 3
     port: 3000
+    # Requests are measured idle plus headroom, limits the ceiling: a web pod of the demo app idled
+    # at 73 Mi (plan 101 O6, 2026-11-11), so 128Mi; the limit is what an OOMKill reads.
     resources:
-      requests: { cpu: 200m, memory: 256Mi }
+      requests: { cpu: 200m, memory: 128Mi }
       limits: { memory: 512Mi }
     autoscaling:
       enabled: true
@@ -248,8 +259,9 @@ roles:
     # drain.deadlineSeconds) still applies. Added to this role's terminationGracePeriodSeconds, which
     # the kubelet counts the preStop against.
     retireSeconds: 3600
+    # 160Mi: ROLE=worker of the reference app idled at 138 MiB (Bun 1.4.4, 45 s, 2026-11-13).
     resources:
-      requests: { cpu: 200m, memory: 256Mi }
+      requests: { cpu: 200m, memory: 160Mi }
       limits: { memory: 1Gi }
     autoscaling:
       enabled: true
@@ -279,7 +291,8 @@ roles:
     # islands first; at 256Mi the pod was OOMKilled on every boot. Only web builds islands now
     # (packages/cli/src/serve-boot.ts), so the peak is lower — unmeasured, so the limit stays.
     resources:
-      requests: { cpu: 50m, memory: 128Mi }
+      # 160Mi: ROLE=scheduler of the reference app idled at 137 MiB (Bun 1.4.4, 45 s, 2026-11-13).
+      requests: { cpu: 50m, memory: 160Mi }
       limits: { memory: 512Mi }
 
   replicator:

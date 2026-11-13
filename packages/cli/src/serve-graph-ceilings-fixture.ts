@@ -287,8 +287,13 @@
  * raised 948 → 949, measured 949 (2026-11-12, sweep 11 serving, the test's own walk):
  * `http/src/compress-precode.ts` — the immutable-asset precoder `compress.ts` consults, on the http
  * barrel. A new file; no existing module newly reached.
+ * raised 949 → 950, measured 950 (2026-11-13, sweep 15 admin search, metafile walk against the
+ * same tree with `admin/src/search.ts` at HEAD: 949): `core/src/map-bounded.ts`. why: the admin
+ * search reads resources four at a time through core's `mapBounded`, and once any module of the
+ * build imports it the bundle keeps it, so the core barrel's edge to it is walked from every role.
+ * An existing module, newly reached; no new file.
  */
-export const MIGRATE_CEILING = 949;
+export const MIGRATE_CEILING = 950;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

@@ -168,6 +168,9 @@ describe('unit · adminRepoFor over a typed handle', () => {
     expect(await found('50%')).toBe('50% off');
     expect(await found('a_b')).toBe('a_b');
     expect(await found('off')).toBe('50% off|500 off');
+    // The entity's own `contains`: a case-insensitive substring, the `ilike` a trigram index serves.
+    expect(await found('OFF')).toBe('50% off|500 off');
+    expect(await found('A_B')).toBe('a_b');
     // One admin operator, two of the handle's: `true` is the rows with no value, `false` the rest.
     const nullness = async (value: boolean): Promise<number> =>
       (await repoOfTexts.list({ sort, limit: 9, where: [{ field: 'note', op: 'is-null', value }] }))

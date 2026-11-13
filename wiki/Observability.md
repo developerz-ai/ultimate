@@ -233,6 +233,7 @@ Declared in `process-metrics.ts` and `packages/db/src/pool-gauge.ts`, started by
 | `process_event_loop_lag_seconds` | histogram | `s` | none | how late a 1,000 ms timer fired, one sample a second |
 | `process_start_time_seconds` | gauge | `s` | none | Unix time the process started |
 | `process_info` | gauge | `1` | `role` | always 1; `role` is `ROLE`, or `x dev`'s roles joined by `+` |
+| `process_memory_limit_bytes` | gauge | `By` | none | the container's memory limit, cgroup v2 `memory.max`, read once per start (`As of 2026-11`). **Absent** where there is none: `max`, no cgroup v2 file, not Linux. `process_resident_memory_bytes / process_memory_limit_bytes` is how near the pod is to its OOMKill |
 | `db_pool_max` | gauge | `{connection}` | none | connections this process may open, summed over its pools |
 | `db_pool_in_use` | gauge | `{connection}` | none | connections running a statement or pinned by a transaction |
 | `db_pool_waiting` | gauge | `{statement}` | none | statements and pins queued because the pool is at `max` |
@@ -242,6 +243,10 @@ Declared in `process-metrics.ts` and `packages/db/src/pool-gauge.ts`, started by
 - **The pool series are derived from demand.** `Bun.SQL` publishes no occupancy, so `client.ts` counts every statement from send to settle and every pin from ask to release: demand up to `max` is in use, the rest is waiting. `db_pool_max - db_pool_in_use` is the headroom; there is no idle count.
 - **`queue_wake_live`** (gauge, `worker` only): 1 once a notification has crossed the worker's `LISTEN` session, 0 while jobs start on the poll alone — a transaction-pooling proxy disables the wake without an error.
 - **What grows?** `process_resident_memory_bytes` rising with `process_heap_used_bytes` flat is memory outside the heap (`process_external_memory_bytes`, or the allocator); both rising is a retained structure.
+
+### Alerts and the dashboard the chart ships
+
+`As of 2026-11`. The Helm chart's `alert-rules.yaml` holds the mechanism alerts, now with multi-window error-budget burn: `UltimateErrorBudgetFastBurn` (the 5xx share above 14.4 × the budget over 1h and 5m) and `UltimateErrorBudgetSlowBurn` (6 × over 6h and 30m). Both are measured against `alerts.objective`, in percent, default 99.9. Saturation rules sit beside them: `UltimateJobFailures`, `UltimatePoolSaturated`, `UltimateEventLoopLag` and `UltimateMemoryNearLimit`. The chart also ships one Grafana dashboard, off by default (`dashboard.enabled`), as a ConfigMap for a Grafana sidecar. `x g chart-alerts` / `x g chart-dashboard` backfill an older chart, and `--print` serves a loader outside Kubernetes. Every rule and panel is held to a declared series (`scripts/chart-alerts.test.ts`, `scripts/chart-dashboard.test.ts`). The full table and the runbooks: [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md#alerts-on-the-apps-own-metrics).
 
 ### The one series a `sync` node adds
 
@@ -269,7 +274,7 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 | Head sampling | `otel.sampling`, default `0.1`; errors are always sampled |
 | OTLP delivery | a 429, 502, 503, 504 or a transport failure is retried, 3 attempts with full jitter and `Retry-After` honoured, inside the exporter's `timeoutMs` (default 10 s, the whole export); any other status is one POST. One `otlp export rejected`/`failed` line per batch, with `attempts`. A collector that accepted and then answered 503 receives that batch twice; span ids dedupe it |
 | Error grouping | `errorFingerprint(report)`: 16 hex over `code`, `source`, `scope.operation`, plus the top application frame (function and root-relative path, no line) for `X_INTERNAL`. Never the cause or an id, so two throws differing in a row id are one group, and a deploy is not a new one. The Sentry envelope sends it as `fingerprint` |
-| Log level | `LOG_LEVEL`, default `info` |
+| Log level | `LOG_LEVEL`, default `info`. The framework's own policy (`As of 2026-11`): a routine per-unit event (one per request, job, fire or message) is `debug`; `info` is lifecycle and rare outcomes; `warn` asks an operator to act. `scripts/log-levels.ts` refuses an unstated per-unit `info` line in the framework (`X_LOG_LEVEL_UNSTATED`) |
 | Secret redaction | a `Secret` is redacted by value before every other branch, at any depth → [Configuration](Configuration) |
 | Request context | the ALS context carries the request id every log line and span inherits |
 | Live queries | the realtime client puts a `traceparent` on the `subscribe` frame (`LiveClient({ traceparent })`); the snapshot that subscribe causes is the span `live.snapshot <query>`, a CHILD of it, and a re-read a change forces is `live.rerun <query>`, which LINKS to it and parents on the change. A value that is not a valid W3C header is ignored, never refused: telemetry never fails a subscribe. The page boot sends none (`As of 2026-11`): a browser holds no trace |

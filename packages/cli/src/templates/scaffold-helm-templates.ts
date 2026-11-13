@@ -2,6 +2,7 @@
 // role, the release-phase Job, an optional ingress and an optional per-role autoscaler.
 // Split from scaffold-helm.ts, which holds the chart's INPUTS (Chart.yaml, values.yaml).
 
+import { helmDashboardFiles } from './chart-dashboard';
 import type { GeneratedFile, NameSet } from './naming';
 import { helmMonitoringFiles } from './scaffold-helm-alerts';
 import { helmFenceFiles } from './scaffold-helm-fences';
@@ -471,5 +472,6 @@ export function helmTemplateFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'docker/helm/templates/hpa.yaml', contents: hpa(app) },
     ...helmFenceFiles(app),
     ...helmMonitoringFiles(app),
+    ...helmDashboardFiles(app),
   ];
 }

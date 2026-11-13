@@ -322,8 +322,10 @@ Each rule's `runbook_url` is `alerts.runbookBase` plus its anchor in
 `severity` or `enabled` per rule. An app whose chart predates them gets both templates from
 `x g chart-alerts` (`x doctor` lists them missing); outside Kubernetes, `x g chart-alerts --print`
 prints the same rules as plain rule groups for any loader. One table in
-`packages/cli/src/templates/scaffold-helm-alerts.ts` feeds both, and `scripts/chart-alerts.test.ts`
-holds every expression to a series a package declares.
+`packages/cli/src/templates/scaffold-helm-alert-rules.ts` feeds both, and
+`scripts/chart-alerts.test.ts` holds every expression to a series a package declares. The two
+burn-rate rules read `alerts.objective` (percent, default 99.9; the chart refuses a value outside
+0–100); their factor is the rule's `threshold`.
 
 | Rule | Fires on | Default |
 |---|---|---|
@@ -332,9 +334,26 @@ holds every expression to a series a package declares.
 | `UltimateLeaseLost` | any `job_leases_lost_total` rate | for 5m, warning |
 | `UltimateFramesDropped` | any `channel_frames_dropped_total` rate | for 5m, warning |
 | `UltimateServerErrors` | the 5xx share of `http_requests_total` above the threshold | 5%, for 10m, critical |
+| `UltimateErrorBudgetFastBurn` | the 5xx share above 14.4 × the budget over 1h AND 5m | for 2m, critical |
+| `UltimateErrorBudgetSlowBurn` | the 5xx share above 6 × the budget over 6h AND 30m | for 15m, warning |
+| `UltimateJobFailures` | the `failed`/`dead` share of a queue's `jobs_total` over 15m | 10%, for 15m, warning |
+| `UltimatePoolSaturated` | `db_pool_waiting` above zero on a pod | for 5m, warning |
+| `UltimateEventLoopLag` | p99 `process_event_loop_lag_seconds` on a pod | 0.5 s, for 10m, warning |
+| `UltimateMemoryNearLimit` | `process_resident_memory_bytes` ÷ `process_memory_limit_bytes` on a pod | 90%, for 10m, warning |
 | `UltimateTargetDown` | `up == 0` for any role's scrape target | for 5m, critical |
 
-A latency target or an error budget is business, so none ships: write those beside the chart's. The
+The burn-rate mechanism ships; the objective is the app's value. A latency target is business, so
+none ships: write it beside the chart's. `process_memory_limit_bytes` is the cgroup `memory.max`,
+absent on an unbounded pod, so that rule never fires there.
+
+**The chart ships one dashboard**, off by default: `dashboard.enabled: true` renders
+`dashboards/ultimate-app.json` as a ConfigMap labelled `grafana_dashboard: "1"` for a Grafana
+sidecar. One full-width column (a phone reads it unchanged): requests, latency by route, 5xx share,
+statement p95, pool, jobs, queue age, job duration, realtime, memory over limit, CPU, loop lag and
+restarts, picked by `namespace` and release from `process_info`. An app chart that predates it gets
+the JSON, the ConfigMap and the values block from `x g chart-dashboard` (`x doctor` lists them
+missing); without a sidecar, `x g chart-dashboard --print` is the JSON to import.
+`scripts/chart-dashboard.test.ts` holds every panel to a declared series. The
 table below is the rest of what is worth an alert, the rows above included; `As of 2026-09-23`
 every series in it is emitted and scrapable, and a row whose signal comes from outside the app
 names that source.

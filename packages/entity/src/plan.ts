@@ -157,6 +157,9 @@ export const readPlan = <Row>(
  * A TENANT-SCOPED entity is therefore refused outright, filters or none: its whole-table estimate
  * is a number about every tenant, and a per-tenant row count is not a thing the planner holds.
  * That refusal is not a limitation of this method, it is what the method means.
+ *
+ * A SOFT-DELETING entity is refused for the same reason: `reltuples` counts the rows every other read
+ * hides (`deletedAt` set), so the estimate answers a question no caller of this repo can ask.
  */
 const assertEstimable = <Row>(entity: EntityCore<Row>, plan: QueryPlan): void => {
   if (entity.$tenantColumn !== null) {
@@ -164,6 +167,13 @@ const assertEstimable = <Row>(entity: EntityCore<Row>, plan: QueryPlan): void =>
       code: 'X_APPROXIMATE_COUNT_FILTERED',
       cause: `${entity.$name}.approximateCount() is a whole-TABLE estimate and ${entity.$name} is scoped by ${entity.$tenantColumn} — the planner holds one number for every tenant together`,
       fix: `${entity.$name}.count()   # the exact answer, scoped to the acting actor's tenant as every other read is`,
+    });
+  }
+  if (entity.$softDelete) {
+    throw new EntityError({
+      code: 'X_APPROXIMATE_COUNT_FILTERED',
+      cause: `${entity.$name}.approximateCount() is a whole-TABLE estimate and ${entity.$name} soft-deletes — the planner counts the deletedAt rows every read of it hides`,
+      fix: `${entity.$name}.count()   # the exact answer, which leaves the soft-deleted rows out as every other read does`,
     });
   }
   if (plan.where.length === 0) return;

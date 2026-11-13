@@ -250,7 +250,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `compress-precode.ts` | the immutable-asset precoder: background br/zstd/gzip once per key, `pick` by `accept-encoding` |
 | `admit-stage.ts`, `lag-shed.ts` | `admit`'s refusals; lag p99 shed (`shedLagMs`, OFF in 31.x: no sampler) |
 | `request-timings.ts`, `slow-request-log.ts` | a request's stage split: `Server-Timing` (dev), `http.request.slow` |
-| `refusal-log.ts` | `http_refusals_total{code}`; routine refusal `info` once/route/min, then `debug` |
+| `refusal-log.ts` | `http_refusals_total{code}`; an `info` refusal (routine, 404, 400, 422) `info` once/route/code/min, then `debug` |
 | `compress-read.ts` | the one body read that rule does: counted, deadline-bound, replayable |
 | `request-as.ts` | `withRequestAs`: an exercise entry's `request` (cookies, headers) as an inbound request, for `x exercise` and the contract step |
 

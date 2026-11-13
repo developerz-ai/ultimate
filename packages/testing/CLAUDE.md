@@ -124,6 +124,12 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | Globals install in layers | `island-globals.ts`: a key's real DESCRIPTOR is saved by the first live mount, restored by the last, in any dispose order |
 | Which command shards | `bun test` is one process on one database — what a scaffolded app's `test` script runs |
 
+## Properties and the soak never read ambient randomness
+
+`property()` draws from its own `seededRandom(seed)`, never the preload's `Math.random`; `soak()`
+reads `bun:jsc`'s `heapStats()` after `Bun.gc(true)` twice. The eight framework properties live in
+`src/property-*.test.ts`, not beside their sources: a tier ≤ 4 test cannot import this package.
+
 ## The frozen instant and the seed are screened
 
 Through one `instantMs` and core's `finiteOption`/`finiteCount` (`determinism-bounds.test.ts`). Full rule: `docs/history/testing.md`.

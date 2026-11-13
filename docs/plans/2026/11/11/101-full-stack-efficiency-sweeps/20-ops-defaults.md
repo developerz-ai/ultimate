@@ -39,3 +39,16 @@ Production: the demo has no app alerts and neither app has a dashboard; a siblin
 ## Done when
 - A fresh `helm install` of any app alerts on burn rate, job failures, queue latency, pool saturation and memory, and shows one dashboard.
 - A scheduler pod at idle logs under ten lines an hour.
+
+## Outcome (15, local)
+
+Ships as 31.18.0. `As of 2026-11-13`, before release.
+
+| ID | Outcome |
+|---|---|
+| O1 | shipped. `UltimateErrorBudgetFastBurn` (14.4×, 1h AND 5m, for 2m, critical) and `UltimateErrorBudgetSlowBurn` (6×, 6h AND 30m, for 15m, warning) against `alerts.objective` (percent, default 99.9; refused outside 0–100). Also `UltimateJobFailures`, `UltimatePoolSaturated`, `UltimateEventLoopLag` and `UltimateMemoryNearLimit`. One table (`scaffold-helm-alert-rules.ts`) feeds the chart, `x g chart-alerts` and `--print`; `scripts/chart-alerts.test.ts` holds every expression to a declared series (`scripts/lib/declared-series.ts`). Runbooks are in `docs/ops/06-runbooks.md`. **Dropped:** the replication-lag rule. No series exists for it in the app; it is a Postgres-side signal (`pg_stat_replication`) |
+| O2 | shipped. `docker/helm/dashboards/ultimate-app.json` (one full-width column, `uid` stable) + `templates/dashboard-configmap.yaml`, opt-in with `dashboard.enabled`. `x new`'s chart writes it, `x g chart-dashboard` backfills an older chart (`--print`: the JSON), and `x doctor` lists the files missing (`data.chartDashboard`). `scripts/chart-dashboard.test.ts` holds every panel to a declared series |
+| O3 | shipped. `process_memory_limit_bytes` from `/sys/fs/cgroup/memory.max`, read once per start. `max`, an absent file or a non-integer emits nothing (`process-metrics.test.ts`) |
+| O4 | shipped as a ratchet. `scripts/log-levels.ts` (`bun run log-levels`, in the `unit` step through its test): an `info` line in a `PER_UNIT_FILES` file needs `// info: <why>`. `X_LOG_LEVEL_UNSTATED` / `_PIN_STALE` / `_PIN_UNEXPLAINED`, pins in `scripts/lib/log-levels-pins.ts` (http 2, jobs 10, mcp 1, mail 1, notify 2, scraping 1). The policy paragraph is in `docs/architecture/00-conventions.md`. The scheduler's on-time `dispatched` was already `debug` (31.13.0), and `mcp.auth.missing-token` was already `info` (31.15.0); this sweep annotated the catch-up line |
+| O5 | already shipped in sweep 13b (U12) |
+| O6 | shipped with **measured** figures, because the plan's did not hold. Web 128Mi (demo web idled at 73 MiB). Worker 160Mi and scheduler 160Mi: `ROLE=worker` / `ROLE=scheduler` of the reference app idled at 138 / 137 MiB (Bun 1.4.4, 45 s), so the planned 96 Mi would sit below idle. Sync and replicator keep their requests (not measured here). Limits unchanged |

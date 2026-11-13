@@ -213,6 +213,15 @@ select job, bucket_ms, (extract(epoch from bucket_start) * 1000)::bigint as buck
  order by bucket_start, bucket_ms
 `.trim();
 
+/** `SQL_COUNTERS` over a name list: $1 is a `text[]`, one bind whatever its length. */
+export const SQL_COUNTERS_MANY = `
+select job, bucket_ms, (extract(epoch from bucket_start) * 1000)::bigint as bucket_start,
+       ${COUNTER_COLUMNS}
+  from x_job_counters
+ where job = any($1::text[]) and bucket_start >= to_timestamp($2::bigint / 1000.0)
+ order by bucket_start, bucket_ms, job collate "C"
+`.trim();
+
 export const SQL_COUNTER_TOTALS = `
 select job, sum(done)::bigint as done, sum(retried)::bigint as retried,
        sum(failed)::bigint as failed, sum(dead)::bigint as dead,

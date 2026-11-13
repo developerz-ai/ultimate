@@ -79,6 +79,7 @@
     "test-discovery": "bun run scripts/test-discovery.ts",
     "source-headers": "bun run scripts/source-headers.ts",
     "spawn-timeout": "bun run scripts/spawn-timeout.ts",
+    "log-levels": "bun run scripts/log-levels.ts",
     "sql-literal-copies": "bun run scripts/sql-literal-copies.ts",
     "test": "bun run packages/cli/src/bin.ts test",
     "test:affected": "bun run packages/cli/src/bin.ts test --affected --base origin/main --dirty",
