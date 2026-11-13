@@ -42,7 +42,8 @@ function fakeBrowser(name: string, answer: () => Promise<unknown> = async () => 
     // Counted only once the reap has FINISHED: a run that starts a close and moves on leaves a
     // Chrome beside the next launch, and reads here as never closed.
     close: async () => {
-      await Bun.sleep(5);
+      // A macrotask first: a run that started the close without awaiting it reads zero here.
+      await new Promise((reap) => setTimeout(reap, 0));
       closed += 1;
     },
   } as unknown as E2eBrowser;

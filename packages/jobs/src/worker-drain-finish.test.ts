@@ -4,6 +4,7 @@
 // effect completed during the drain was refused by the runner and run again by the next worker —
 // a charge made twice on every deploy. Only at `deadlineAt − margin` is what is still running cut
 // short, and what is still held after that goes back to the queue at once (no visibility wait).
+// Fake time (`fake-time-fixture.ts`) moves the drain's deadline, the cut-off and every body's wait.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -19,8 +20,11 @@ import {
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AckOptions, JobDriver, NackOptions, QueueStats } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
+
+const time = useFakeTime();
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
@@ -41,15 +45,9 @@ const sleepUnless = (ms: number, signal: AbortSignal): Promise<void> =>
       reject(signal.reason);
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
+    // A resolve after the reject is a no-op: whichever lands first ends this body.
+    void time.sleep(ms).then(resolve);
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
   });
 
 interface Recorded {
@@ -155,12 +153,12 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
     await enqueueOne(rec.driver, 'chargeCard');
     const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
-    await started.reached;
+    await time.settles(started.reached, 100);
 
     const drained = drain('SIGTERM');
-    await Bun.sleep(10);
+    await time.advance(10);
     release.arrive();
-    await drained;
+    await time.settles(drained, 3_000);
 
     // Before the fix: the drain aborted the run at SIGTERM, `put` refused the step the side effect
     // had already happened for, and the attempt went back to the queue — the next worker charged
@@ -198,10 +196,10 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
     await enqueueOne(rec.driver, 'cooperative');
     const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
-    await started.reached;
+    await time.settles(started.reached, 100);
 
     const startedAt = systemClock.monotonic();
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 3_000);
 
     // Told nothing: 80 ms of work inside a 2 s budget is work this process can finish.
     expect(told).toBe(false);
@@ -240,10 +238,10 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
     await enqueueOne(rec.driver, 'longRunning');
     const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
-    await started.reached;
+    await time.settles(started.reached, 100);
 
     drainStartedAt = systemClock.monotonic();
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 3_000);
 
     // Not at SIGTERM — the old behaviour, ~0 ms — but near the end of the budget, still inside it.
     expect(heardAfterMs).toBeGreaterThanOrEqual(100);
@@ -287,9 +285,9 @@ describe('a claim still held at the cut-off goes back to the queue before the dr
       workerId: 'w-old',
     });
     first.start();
-    await started.reached;
+    await time.settles(started.reached, 100);
 
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 3_000);
 
     // Before the fix the row stayed `running` under w-old's 30 s lease: the replacement pod found
     // nothing to claim and the job waited out the whole visibility window.
@@ -347,17 +345,18 @@ describe('a worker started inside a drain claims nothing', () => {
       },
     });
     await enqueueOne(rec.driver, 'lateBoot');
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 3_000);
 
     // `startRoles` reaching `worker.start()` after the signal: the shutdown hooks it would register
     // never run — the drain is past them — so a worker that claimed here held jobs nothing drains.
     const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
-    await Bun.sleep(30);
+    // Thirty 1 ms polls' worth of fake time: a worker that claimed would have run it on the first.
+    await time.advance(30);
 
     expect(ran).toBe(0);
     expect((await worker.stats()).state).not.toBe('running');
-    await worker.stop();
+    await time.settles(worker.stop(), 100);
     expect((await rec.driver.stats())[0]?.ready).toBe(1);
   });
 });

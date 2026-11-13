@@ -58,7 +58,8 @@ describe('arm', () => {
       },
     );
     fire('request', failingRequest(url));
-    await Bun.sleep(5);
+    // Two macrotasks: the rejection has settled and Bun has reported whatever nobody handled.
+    for (let turn = 0; turn < 2; turn += 1) await new Promise((next) => setTimeout(next, 0));
     expect(unhandled).toEqual([]);
   });
 

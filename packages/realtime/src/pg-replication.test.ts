@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 import { bigint, entity, entityForTable, text } from '@ultimat3/entity';
 import type { PostgresChangeFeed } from './changefeed';
 import { pgTimestampToEpochMs } from './pg-bytes';
@@ -268,17 +268,34 @@ describe('decoded changes', () => {
   });
 
   test('the confirm timer stops with the pump it confirms for', async () => {
-    const { server, feed } = await start({ entities: ['audit_log'], statusIntervalMs: 5 });
-    server.push(xlog(relation(OTHER_OID, 'audit_log', [{ name: 'seq', key: true }])));
-    server.push(xlog(begin(0x7100n, 0n, 22)));
-    server.push(xlog(insert(OTHER_OID, ['1'])));
-    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
-    const confirmations = server.standby.length;
-    await Bun.sleep(30);
+    // The interval is a real `setInterval` on Bun's fake timers: it fires when the test moves them.
+    jest.useFakeTimers();
+    try {
+      const microtasks = async (): Promise<void> => {
+        for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+      };
+      const { server, feed } = await start({ entities: ['audit_log'], statusIntervalMs: 5 });
+      // Alive, the timer confirms: three intervals are standby status updates on the wire.
+      const idle = server.standby.length;
+      jest.advanceTimersByTime(15);
+      await microtasks();
+      expect(server.standby.length).toBeGreaterThan(idle);
 
-    // A dead loop must stop telling the walsender it is keeping up.
-    expect(server.standby.length).toBe(confirmations);
-    await feed.stop();
+      server.push(xlog(relation(OTHER_OID, 'audit_log', [{ name: 'seq', key: true }])));
+      server.push(xlog(begin(0x7100n, 0n, 22)));
+      server.push(xlog(insert(OTHER_OID, ['1'])));
+      await microtasks();
+      expect(feed.stats().failure).not.toBeNull();
+      const confirmations = server.standby.length;
+      jest.advanceTimersByTime(30);
+      await microtasks();
+
+      // A dead loop must stop telling the walsender it is keeping up.
+      expect(server.standby.length).toBe(confirmations);
+      await feed.stop();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

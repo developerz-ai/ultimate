@@ -11,7 +11,7 @@ import { InProcessTransport } from './fanout';
 import type { NatsConnect } from './nats-client';
 import { assertBucket } from './nats-jetstream';
 import { NatsTransport } from './nats-transport';
-import type { ReconnectBackoff } from './thundering-herd';
+import type { ReconnectBackoff, Scheduler } from './thundering-herd';
 
 /**
  * The keys read here, and nothing else. Named once so docs and tests cannot drift from the code.
@@ -94,6 +94,8 @@ export interface SelectTransportOptions {
   readonly connectWithinMs?: number | undefined;
   /** The dial's retry curve; the transport's own default when unset. */
   readonly backoff?: ReconnectBackoff | undefined;
+  /** Arms the dial loop's backoff wait (`NatsTransportOptions.scheduler`); `setTimeout` when unset. */
+  readonly scheduler?: Scheduler | undefined;
   /** Where the transport's background failures go; its own logger line when unset. */
   readonly onError?: ((error: unknown, subject: string) => void) | undefined;
 }
@@ -154,6 +156,7 @@ export function selectTransport(
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.connect === undefined ? {} : { connect: options.connect }),
     ...(options.backoff === undefined ? {} : { backoff: options.backoff }),
+    ...(options.scheduler === undefined ? {} : { scheduler: options.scheduler }),
     ...(options.onError === undefined ? {} : { onError: options.onError }),
   });
   const withinMs = finiteOption(

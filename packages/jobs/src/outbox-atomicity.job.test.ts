@@ -1,13 +1,15 @@
 // The outbox-atomicity guarantee, followed all the way to a real worker. `outbox.test.ts` proves
 // atomicity stops at the queue row; this proves it stops nowhere short of the handler actually
 // running — a rolled-back stage must never reach a worker, a committed one must reach it exactly
-// once, and a relay that republishes after a crash must not turn into a second execution.
+// once, and a relay that republishes after a crash must not turn into a second execution. Fake
+// time (`fake-time-fixture.ts`) moves every poll loop here, so each poll counted is one armed.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
 import { enqueueInTx, memoryOutboxStore } from './outbox';
@@ -27,13 +29,11 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 const fakeTx = (id: string): Tx => ({ id }) as unknown as Tx;
 
-async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
-  for (let i = 0; i < 400; i += 1) {
-    if (await check()) return;
-    await Bun.sleep(5);
-  }
-  throw new Error(`waitFor timed out: ${label}`);
-}
+const time = useFakeTime();
+
+/** Moves fake time until `check` holds; red after two seconds of it, never a hang. */
+const waitFor = (check: () => Promise<boolean> | boolean): Promise<void> =>
+  time.until(check, 2_000);
 
 afterEach(() => {
   resetJobs();
@@ -59,15 +59,17 @@ describe('a rolled-back stage never reaches a worker', () => {
     const tx = fakeTx('rolled-back');
     await enqueueInTx({ store, driver }, tx, handle, { orgId: 'org-1' });
     await store.rollback(tx);
+    // The relay pass the committed case below takes: a row the rollback left would publish here.
+    expect(await outboxRelay({ store, driver }).tick()).toBe(0);
 
     const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
     worker.start();
     try {
       // Nothing to wait FOR here — the point is the absence, so this holds the loop open across
-      // a bounded number of real polls instead of returning on the first empty round.
-      for (let i = 0; i < 20; i += 1) await Bun.sleep(5);
+      // twenty polls' worth of fake time instead of returning on the first empty round.
+      await time.advance(100);
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     expect(runs).toEqual([]);
@@ -104,9 +106,9 @@ describe('a committed stage reaches a real worker exactly once', () => {
       await waitFor(async () => {
         const [record] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return record !== undefined;
-      }, 'job reaches done');
+      });
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     expect(runs).toEqual([{ orgId: 'org-2' }]);
@@ -154,11 +156,11 @@ describe('a committed stage reaches a real worker exactly once', () => {
       await waitFor(async () => {
         const [done] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return done !== undefined;
-      }, 'job reaches done');
+      });
       // Captured before stop(): the memory driver's close() clears its jobs map.
       rowCount = ((await driver.introspect?.list()) ?? []).length;
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     expect(runs).toEqual([{ orgId: 'org-3' }]);

@@ -13,6 +13,7 @@ import { hasPageSocket, pageSocket, resetPageSocket } from './page-socket';
 import { BOOT_KEY, type BootHost, pageRealtime } from './page-store';
 import { installRealtime } from './reactivity';
 import type { SocketHost, SocketHostOptions } from './socket-host';
+import { untilTurn } from './turns-fixture';
 
 /** Unroutable on purpose: whatever happens, a case never reaches a real node. */
 const TARGET = { url: 'ws://127.0.0.1:9/_x/sync', buildId: 'b1' };
@@ -205,11 +206,8 @@ describe('pageSocket over the real in-page engine', () => {
     }
   }
   const realWebSocket = globalThis.WebSocket;
-  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
-  /** A `MessageChannel` hop is a task, not a promise: wait for the condition, never a tick count. */
-  async function until(check: () => boolean): Promise<void> {
-    for (let waited = 0; waited < 2_000 && !check(); waited += 5) await settle();
-  }
+  /** A `MessageChannel` hop is a task, not a promise: one turn each, awaited by condition. */
+  const until = (check: () => boolean): Promise<void> => untilTurn(check, 'the page socket');
 
   afterEach(() => {
     globalThis.WebSocket = realWebSocket;

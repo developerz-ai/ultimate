@@ -5,12 +5,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, installLogSink, isUltimateError } from '@ultimat3/core';
+import { ManualScheduler } from './client-harness-fixture';
 import type { NatsClient, NatsConnect } from './nats-client';
 import { DIAL_TIMEOUT_MS } from './nats-dial-wait';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
 import type { ReconnectBackoff } from './thundering-herd';
 import { BUS_CONNECT_WAIT_MS } from './transport-env';
+import { turns, untilTurn } from './turns-fixture';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -23,10 +25,18 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-/** Real timers: the preload freezes `Date.now()`, never `setTimeout`. */
-const waitFor = async (done: () => boolean, polls = 500): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
-};
+/**
+ * Lets the dial loop's backoff run out `count` times by hand: each wait is armed (the loop is
+ * parked, not spinning) and fired, and the next dial is awaited — never a wall-clock wait.
+ */
+async function fireBackoffs(timers: ManualScheduler, attempts: () => number, count: number) {
+  for (let fired = 0; fired < count; fired += 1) {
+    await untilTurn(() => timers.pending !== null, `backoff #${fired + 1} armed`);
+    const before = attempts();
+    timers.fire();
+    await untilTurn(() => attempts() > before, `the dial after backoff #${fired + 1}`);
+  }
+}
 
 const QUICK: ReconnectBackoff = { base: 5, max: 5, factor: 1, jitter: 'none' };
 
@@ -36,6 +46,8 @@ function harness() {
   const open = fakeNatsConnect(broker);
   const reported: unknown[] = [];
   let attempts = 0;
+  /** The dial loop's backoff wait: armed here, ended only by `timers.fire()` or `close()`. */
+  const timers = new ManualScheduler();
   const connect: NatsConnect = async (options) => {
     attempts += 1;
     return open(options);
@@ -48,10 +60,12 @@ function harness() {
       rng: () => 0.5,
       backoff: QUICK,
       connect,
+      scheduler: timers.schedule,
       onError: (error) => reported.push(error),
       ...overrides,
     });
-  return { broker, reported, transport, attempts: () => attempts };
+  const backoffs = (count: number): Promise<void> => fireBackoffs(timers, () => attempts, count);
+  return { broker, reported, timers, transport, backoffs, attempts: () => attempts };
 }
 
 describe('NatsTransport.connectInBackground', () => {
@@ -62,7 +76,8 @@ describe('NatsTransport.connectInBackground', () => {
 
     transport.connectInBackground();
     expect(transport.connected).toBe(false);
-    await waitFor(() => bus.attempts() >= 2);
+    await bus.backoffs(1);
+    expect(bus.attempts()).toBe(2);
     const before = bus.attempts();
     const refused = await caught(transport.publish('x.channel.feed', 'lost'));
 
@@ -81,11 +96,17 @@ describe('NatsTransport.connectInBackground', () => {
     });
 
     transport.connectInBackground();
-    await Bun.sleep(110);
+    await untilTurn(() => bus.timers.pending !== null, 'the first refusal armed a backoff');
+    // Parked on the wait: however many turns pass, nothing dials until it runs out.
+    await turns(50);
+    expect(bus.attempts()).toBe(1);
+    expect(bus.timers.pending).toBe(20);
 
-    // 20 ms apart over ~110 ms: a handful. A loop that spun would be in the thousands.
-    expect(bus.attempts()).toBeGreaterThanOrEqual(2);
-    expect(bus.attempts()).toBeLessThan(12);
+    // And each wait that runs out buys exactly one dial, on the policy's delay every time.
+    await bus.backoffs(3);
+    await turns(50);
+    expect(bus.attempts()).toBe(4);
+    expect(bus.timers.delays).toEqual([20, 20, 20, 20]);
     await transport.close();
   });
 
@@ -98,10 +119,12 @@ describe('NatsTransport.connectInBackground', () => {
       announced += 1;
     });
     transport.connectInBackground();
-    await waitFor(() => bus.attempts() >= 2);
+    await bus.backoffs(1);
 
     bus.broker.offline = false;
-    await waitFor(() => transport.connected);
+    await untilTurn(() => bus.timers.pending !== null, 'the second refusal armed a backoff');
+    bus.timers.fire();
+    await untilTurn(() => transport.connected, 'the dial after the bus came back');
 
     expect(transport.connected).toBe(true);
     expect(announced).toBe(1);
@@ -119,11 +142,12 @@ describe('NatsTransport.connectInBackground', () => {
     const transport = bus.transport();
     transport.connectInBackground();
     transport.connectInBackground();
-    await waitFor(() => transport.connected);
+    await untilTurn(() => transport.connected, 'the background dial landed');
     transport.connectInBackground();
-    await Bun.sleep(20);
+    await turns(50);
 
     expect(bus.attempts()).toBe(1);
+    expect(bus.timers.delays).toEqual([]);
     expect(bus.broker.clients).toHaveLength(1);
     await transport.close();
   });
@@ -133,12 +157,14 @@ describe('NatsTransport.connectInBackground', () => {
     bus.broker.offline = true;
     const transport = bus.transport();
     transport.connectInBackground();
-    await waitFor(() => bus.attempts() >= 1);
+    await untilTurn(() => bus.timers.pending !== null, 'the first refusal armed a backoff');
 
     await transport.close();
     const after = bus.attempts();
     bus.broker.offline = false;
-    await Bun.sleep(30);
+    // The wait close() cut short is disarmed: no timer is left that could dial again.
+    expect(bus.timers.pending).toBeNull();
+    await turns(50);
 
     expect(bus.attempts()).toBe(after);
     expect(bus.broker.clients).toHaveLength(0);
@@ -182,7 +208,7 @@ describe('NatsTransport, the dial loop at its edges', () => {
     });
 
     transport.connectInBackground();
-    await waitFor(() => dialled.length === 2 && transport.connected);
+    await untilTurn(() => dialled.length === 2 && transport.connected, 'the lost client replaced');
 
     expect(dialled).toHaveLength(2);
     expect(transport.connected).toBe(true);
@@ -205,13 +231,15 @@ describe('NatsTransport, the dial loop at its edges', () => {
     });
     try {
       transport.connectInBackground();
-      await waitFor(() => bus.attempts() >= 4);
-      expect(bus.attempts()).toBeGreaterThanOrEqual(4);
+      await bus.backoffs(3);
+      expect(bus.attempts()).toBe(4);
 
       bus.broker.offline = false;
-      await waitFor(() => transport.connected);
+      await bus.backoffs(1);
+      await untilTurn(() => transport.connected, 'the dial after the bus came back');
       expect(transport.connected).toBe(true);
-      await Bun.sleep(5);
+      // An unhandled rejection is reported after the microtasks drain: a few turns, not a delay.
+      await turns(20);
       expect(unhandled).toEqual([]);
     } finally {
       process.off('unhandledRejection', note);
@@ -229,15 +257,13 @@ describe('NatsTransport, the dial loop at its edges', () => {
     });
 
     transport.connectInBackground();
-    await waitFor(() => bus.attempts() >= 40);
+    await bus.backoffs(39);
+    await untilTurn(() => bus.timers.pending !== null, 'the 40th refusal armed a backoff');
     await transport.close();
 
-    // Every failed attempt up to the one `close()` cut short: the powers of two among them.
-    const attempts = bus.attempts();
-    const powers = Math.floor(Math.log2(attempts)) + 1;
-    expect(attempts).toBeGreaterThanOrEqual(40);
-    expect(bus.reported.length).toBeGreaterThanOrEqual(powers - 1);
-    expect(bus.reported.length).toBeLessThanOrEqual(powers);
+    // 40 failed attempts, and a line for each power of two among them: 1, 2, 4, 8, 16, 32.
+    expect(bus.attempts()).toBe(40);
+    expect(bus.reported).toHaveLength(6);
     expect(bus.reported.every((error) => codeOf(error) === 'X_TRANSPORT_UNAVAILABLE')).toBe(true);
   });
 
@@ -260,10 +286,12 @@ describe('NatsTransport, the dial loop at its edges', () => {
       const open = fakeNatsConnect(broker);
       let attempts = 0;
       const bus = { attempts: () => attempts };
+      const timers = new ManualScheduler();
       const transport = new NatsTransport({
         url: 'nats://bus.test:4222',
         bucket: 'x-test',
         backoff: { base: 0, max: 0, factor: 1, jitter: 'none' },
+        scheduler: timers.schedule,
         connect: async (options) => {
           attempts += 1;
           return open(options);
@@ -272,19 +300,21 @@ describe('NatsTransport, the dial loop at its edges', () => {
       });
       try {
         transport.connectInBackground();
-        await waitFor(() => bus.attempts() >= 20);
+        await fireBackoffs(timers, bus.attempts, 19);
         broker.offline = false;
-        await waitFor(() => transport.connected);
-        await waitFor(() => lines.some((line) => line.msg === 'nats transport recovered'));
+        await fireBackoffs(timers, bus.attempts, 1);
+        await untilTurn(() => transport.connected, 'the dial after the bus came back');
+        await untilTurn(
+          () => lines.some((line) => line.msg === 'nats transport recovered'),
+          'the recovered line',
+        );
 
         const failed = lines.filter((line) => line.msg === 'nats transport error');
         const said = failed.map((line) => line.fields['failures']);
-        // Every failed dial counted, and only the powers of two among them written.
+        // 20 failed dials, and only the powers of two among them written.
         const after = bus.attempts() - 1;
-        expect(after).toBeGreaterThanOrEqual(20);
-        expect(said).toEqual(
-          [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024].filter((failures) => failures <= after),
-        );
+        expect(after).toBe(20);
+        expect(said).toEqual([1, 2, 4, 8, 16]);
         expect(failed.every((line) => line.level === outageLevel)).toBe(true);
         expect(lines.filter((line) => line.level === quiet)).toEqual([]);
         expect(lines.filter((line) => line.msg === 'nats transport recovered')).toEqual([
@@ -386,7 +416,7 @@ describe('NatsTransport.connect({ withinMs })', () => {
     // The boot unwinds by closing the transport; the dial that lands afterwards is not leaked.
     await transport.close();
     landed.resolve(bus.broker.client());
-    await waitFor(() => bus.broker.clients.length === 0);
+    await untilTurn(() => bus.broker.clients.length === 0, 'the late client closed');
     expect(bus.broker.clients).toHaveLength(0);
   });
 
@@ -398,13 +428,18 @@ describe('NatsTransport.connect({ withinMs })', () => {
     await up.close();
 
     bus.broker.offline = true;
+    const before = bus.attempts();
     const down = bus.transport();
-    const refused = await caught(down.connect({ withinMs: 60 }));
+    // The wait is the transport's own real timer (`landWithin`), long enough for two backoffs
+    // fired by hand on any runner; the refusal is what ends it.
+    const refusal = caught(down.connect({ withinMs: 250 }));
+    await bus.backoffs(2);
+    const refused = await refusal;
     expect(codeOf(refused)).toBe('X_TRANSPORT_UNAVAILABLE');
-    expect(causeOf(refused)).toContain('within 60ms');
+    expect(causeOf(refused)).toContain('within 250ms');
     expect(causeOf(refused)).toContain('refused the connection');
     // Retried inside the wait, not given up on at the first refusal.
-    expect(bus.attempts()).toBeGreaterThan(2);
+    expect(bus.attempts() - before).toBe(3);
     await down.close();
   });
 
@@ -413,8 +448,10 @@ describe('NatsTransport.connect({ withinMs })', () => {
     bus.broker.offline = true;
     const transport = bus.transport();
     const connecting = transport.connect({ withinMs: 2_000 });
-    await waitFor(() => bus.attempts() >= 2);
+    await bus.backoffs(1);
     bus.broker.offline = false;
+    await untilTurn(() => bus.timers.pending !== null, 'the second refusal armed a backoff');
+    bus.timers.fire();
 
     await connecting;
     expect(transport.connected).toBe(true);
@@ -426,7 +463,7 @@ describe('NatsTransport.connect({ withinMs })', () => {
     bus.broker.offline = true;
     const transport = bus.transport();
     const connecting = caught(transport.connect({ withinMs: 5_000 }));
-    await waitFor(() => bus.attempts() >= 1);
+    await untilTurn(() => bus.timers.pending !== null, 'the first refusal armed a backoff');
     await transport.close();
 
     expect(codeOf(await connecting)).toBe('X_TRANSPORT_UNAVAILABLE');

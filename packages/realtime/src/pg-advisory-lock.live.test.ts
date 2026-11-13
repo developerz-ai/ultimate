@@ -172,6 +172,7 @@ describeLive('live · pg advisory lock', () => {
       );
       expect(killed.map((row) => row[0])).toEqual(['t']);
       // Polled, not slept: the preload freezes the clock, and the FATAL arrives when it arrives.
+      // real-clock: Postgres sends the FATAL to the terminated session on its own time
       for (let poll = 0; poll < 200 && lost.length === 0; poll += 1) await Bun.sleep(25);
     } finally {
       await admin.close();

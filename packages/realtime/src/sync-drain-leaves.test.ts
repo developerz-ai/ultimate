@@ -17,6 +17,7 @@ import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import { type SyncWs, syncNode, type WsData } from './sync-node';
 import { encode, PROTOCOL_VERSION } from './sync-protocol';
+import { turns } from './turns-fixture';
 
 const BUILD_ID = 'build-1';
 /** A channel declared `events: true`: joining it is joining its presence set. */
@@ -122,14 +123,15 @@ describe('drain() waits out the presence leaves it started', () => {
         }),
       );
     }
-    await Bun.sleep(2);
+    await turns(5);
     expect((await presence.list(ROOM)).length).toBe(3);
 
     let drained = false;
     const draining = node.drain({ graceMs: 0 }).then(() => {
       drained = true;
     });
-    await Bun.sleep(2);
+    // Held by the three gated KV writes, not by time: no number of turns ends it.
+    await turns(20);
 
     // The whole finding: `release()` and `hub.close()` ran under three in-flight KV writes and the
     // drain reported itself finished — so a process that exits here leaves every other node

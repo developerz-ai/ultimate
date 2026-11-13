@@ -4,7 +4,8 @@
 // `stop()`. What must hold no matter how many workers die mid-job: every job still reaches a
 // terminal state (no orphan stuck `running` forever) and the unit of work behind each job runs
 // exactly once (no double-execution) — a reclaimed job replays its finished steps rather than
-// redoing them and the two never race each other for the same row.
+// redoing them and the two never race each other for the same row. Fake time
+// (`fake-time-fixture.ts`) moves the real poll loops; the leases expire on the frozen run clock.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
@@ -18,6 +19,7 @@ import type {
   SettleBy,
 } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
 
@@ -33,13 +35,11 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
-async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
-  for (let i = 0; i < 600; i += 1) {
-    if (await check()) return;
-    await Bun.sleep(5);
-  }
-  throw new Error(`waitFor timed out: ${label}`);
-}
+const time = useFakeTime();
+
+/** Moves fake time until `check` holds; red after three seconds of it, never a hang. */
+const waitFor = (check: () => Promise<boolean> | boolean): Promise<void> =>
+  time.until(check, 3_000);
 
 interface ChaosDriver {
   readonly driver: JobDriver;
@@ -130,7 +130,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
         try {
           await step.run('work', async () => {
             started.push(jobId);
-            await Bun.sleep(5);
+            await time.sleep(5);
             return 'ok';
           });
           // Only the FIRST attempt at the two designated "chaos" jobs parks here — long enough
@@ -186,11 +186,11 @@ describe('N real workers, one killed mid-flight, under load', () => {
           if (step?.status !== 'completed') return false;
         }
         return true;
-      }, 'both chaos jobs finished their work and are parked');
+      });
 
       // Every OTHER job settled first, because the clock jump below expires leases by wall time
       // and the driver cannot tell a lease held by a dead worker from one held by a live handler
-      // mid-`Bun.sleep`. Jumping while a healthy job is still running would re-deliver it to a
+      // mid-sleep. Jumping while a healthy job is still running would re-deliver it to a
       // second worker and trip the concurrency guard — a failure of the test's staging, not of
       // the worker. Before the kill, too: a killed worker's own acks fail, so a non-chaos job it
       // still owns would never reach `done`.
@@ -199,7 +199,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
         const done = (await chaos.driver.introspect?.list({ state: 'done' })) ?? [];
         const settled = new Set(done.map((row) => row.id));
         return nonChaosIds.every((id) => settled.has(id));
-      }, 'every non-chaos job settled before the clock jump');
+      });
 
       const killed = new Set<string>();
       for (const jobId of chaosJobIds) {
@@ -220,13 +220,13 @@ describe('N real workers, one killed mid-flight, under load', () => {
         const done = (await chaos.driver.introspect?.list({ state: 'done' })) ?? [];
         const dead = (await chaos.driver.introspect?.list({ state: 'dead' })) ?? [];
         return done.length + dead.length === NUM_JOBS;
-      }, 'every job reaches a terminal state');
+      });
       // Captured before stop(): every worker's teardown closes the SAME shared driver, and the
       // memory driver's close() clears its jobs map on the first one to get there.
       doneCount = ((await chaos.driver.introspect?.list({ state: 'done' })) ?? []).length;
       deadCount = ((await chaos.driver.introspect?.list({ state: 'dead' })) ?? []).length;
     } finally {
-      await Promise.all(workers.map((worker) => worker.stop('test-end')));
+      await time.settles(Promise.all(workers.map((worker) => worker.stop('test-end'))), 100);
     }
 
     // No orphan: every enqueued job is accounted for, none left stuck `running`/`ready`.

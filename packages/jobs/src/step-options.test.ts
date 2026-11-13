@@ -14,8 +14,12 @@ import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { JobExecution } from './execute-result';
+import { useFakeTime } from './fake-time-fixture';
 import type { AnyJobHandle, JobDefinition } from './job';
 import { job, resetJobs } from './job';
+
+/** The step ceiling is a real `setTimeout`, fired by fake time rather than waited out. */
+const time = useFakeTime();
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -148,8 +152,8 @@ describe('the declaration reaches the handle', () => {
 
 describe('the per-step ceiling actually stops a step', () => {
   test('a step past its declared ceiling fails the attempt, and the job retries', async () => {
-    // Raced against a fallback rather than awaited bare: with the option unreachable this step
-    // never settles, and a test that hangs is a test that fails for the wrong reason.
+    // Settled on fake time rather than awaited bare: with the option unreachable this step never
+    // settles, and a test that hangs is a test that fails for the wrong reason.
     const harness = await claimOne({
       stepTimeout: '15ms',
       run: ({ step }) =>
@@ -162,13 +166,8 @@ describe('the per-step ceiling actually stops a step', () => {
         ),
     });
 
-    const outcome = await Promise.race([
-      harness.execute(),
-      Bun.sleep(400).then(() => 'the step ran past its ceiling forever' as const),
-    ]);
-
-    expect(typeof outcome).not.toBe('string');
-    const execution = outcome as JobExecution;
+    // Inside 400 ms of fake time, or the step ran past its 15 ms ceiling forever.
+    const execution: JobExecution = await time.settles(harness.execute(), 400);
     expect(execution.outcome).toBe('retried');
     expect(execution.error).toContain('X_JOB_TIMEOUT');
     // The job's own `timeout` is absent here, so this rejection can only be the step's.

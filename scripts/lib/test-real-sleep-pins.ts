@@ -11,29 +11,15 @@
 // Shrink it with `bun run scripts/test-real-sleep.ts --unpin <pkg>[,<pkg>]`, which lowers a count
 // to what is measured and refuses to raise one. Raising a count is a hand edit, in a review.
 //
+// As of 2026-11-13 (sweep 17a): 228 sites replaced with seams, 15 packages at zero and so absent —
+// an absent package is pinned at zero. `cli` and `scripts` are sweep 17b's.
+//
 // why: the ratchet is new — every row is the tree as measured on its first day, not a raise.
 
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/test-real-sleep-pins.ts';
 
 export const REAL_SLEEP_PINS: Readonly<Record<string, number>> = {
-  ai: 4,
-  auth: 1,
-  cache: 1,
   cli: 104,
-  core: 18,
-  db: 25,
-  entity: 2,
-  http: 10,
-  jobs: 77,
-  mail: 6,
-  pwa: 6,
-  realtime: 57,
-  render: 7,
-  // why: moved from testing with the CDP launcher (testing −4): the same four waits on a real
-  // child process, socket or pipe that the launcher's own deadlines run on, no new one (31.0.0).
-  scraping: 6,
   scripts: 2,
-  testing: 3,
-  ui: 3,
 };

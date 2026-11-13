@@ -3,11 +3,12 @@
 // clock that never moves meant every batch paid the whole interval in wall time — a 1,000-batch
 // sweep in a test took 1,000 / rate real seconds.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { ctxOf, frozenClock } from '@ultimat3/core';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import { backfill } from './backfill';
 import { DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import { registeredJobs, restoreJobs } from './job';
 import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
@@ -16,6 +17,13 @@ const rows = entity('backfill_clock_rows', {
 });
 
 type Row = typeof rows.$row;
+
+// A test's `backfill({ name })` registers its job; put the registry back after each, so the same
+// test run again (`--rerun-each`, CI's `flaky` job) declares it afresh, not X_JOB_DUPLICATE.
+const inheritedJobs = registeredJobs();
+afterEach(() => {
+  restoreJobs(inheritedJobs);
+});
 
 /**
  * Enough that the old pacer needed 99 real intervals — 19.8 s at the default rate — and few enough

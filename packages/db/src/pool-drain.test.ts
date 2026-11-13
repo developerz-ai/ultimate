@@ -5,7 +5,7 @@
 // driver honours the option; this file asserts what the client ASKS FOR, which is where the unit
 // bug would live.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { postgresClient } from './client';
 import { type DbError, dbUnavailable } from './errors';
@@ -19,14 +19,20 @@ const host = globalThis as unknown as { Bun?: { SQL?: unknown } };
 const realSql = host.Bun?.SQL;
 afterEach(() => {
   if (host.Bun !== undefined) host.Bun.SQL = realSql;
+  jest.useRealTimers();
 });
 
-/** A pool that records what `close()` was asked for and takes `delayMs` to answer. */
+/**
+ * A pool that records what `close()` was asked for and takes `delayMs` to answer — on Bun's fake
+ * clock, which `performance.now()` reads too: the drain spends the time, the test never waits it.
+ */
 const fakePool = (calls: CloseCall[], delayMs: number): void => {
+  jest.useFakeTimers();
   class Fake {
     close(options?: { readonly timeout?: number }): Promise<void> {
       calls.push({ options });
-      return new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      jest.advanceTimersByTime(delayMs);
+      return Promise.resolve();
     }
     unsafe(): Promise<unknown> {
       return Promise.resolve([]);
@@ -78,7 +84,8 @@ describe('unit · close() hands the driver its own drain budget', () => {
     const calls: CloseCall[] = [];
     // The driver RESOLVES when it gives up rather than rejecting, so elapsed time is the only
     // signal — a drain that silently gave up looks exactly like a clean one.
-    fakePool(calls, 60);
+    // Exactly the budget: the driver gave up on its deadline, which is the case to report.
+    fakePool(calls, 40);
     const client = clientWith(40);
     await warm(client);
     let thrown: unknown;

@@ -20,6 +20,7 @@ const BUCKET = 'xlive';
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
 const waitFor = async (done: () => boolean, polls = 200): Promise<void> => {
+  // real-clock: a real nats-server answers on its own time, not this process's
   for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(25);
 };
 
@@ -108,8 +109,14 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
     const kvKey = `${encodeToken(key)}.${encodeToken('brief')}`;
 
     expect(await kvGet(client, BUCKET, kvKey)).toBeDefined();
-    // Real seconds, deliberately: per-message TTL is the server's own clock, and that is the point.
-    await Bun.sleep(3_500);
+    // Polled on the server's own fact, the key gone from the bucket, never a fixed wait: the
+    // per-message TTL is the server's clock, and that is the point. Bounded well past the 1 s TTL.
+    let held = true;
+    for (let poll = 0; poll < 100 && held; poll += 1) {
+      held = (await kvGet(client, BUCKET, kvKey)) !== undefined;
+      // real-clock: the nats-server expires the key on its own per-message TTL
+      if (held) await Bun.sleep(100);
+    }
 
     expect(await kvGet(client, BUCKET, kvKey)).toBeUndefined();
     await client.close();

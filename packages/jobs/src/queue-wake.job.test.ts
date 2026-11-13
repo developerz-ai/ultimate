@@ -3,6 +3,8 @@
 // in-process signal — exactly what a web pod is to a worker pod. Opt-in (`.job.`): booting
 // Postgres costs seconds. The embedded database's `now()` is frozen with the test clock, so one
 // notification slot lasts until rows are aged out of it — which makes "one per slot" exact.
+// Fake time (`fake-time-fixture.ts`, installed after the boot) moves every loop's timers, so a
+// bound asserted is counted in the timers the loops armed, never in what a loaded runner did.
 
 import {
   afterAll,
@@ -26,6 +28,7 @@ import {
 import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
 import { setWakeLive, wakeIsLive } from './enqueue-signal';
+import { useFakeTime } from './fake-time-fixture';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
 import { postgresOutboxStore } from './outbox-pg';
@@ -52,9 +55,9 @@ setDefaultTimeout(PGLITE_BOOT_MS);
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/** Observation window with no wake: still below the no-wake arm's poll, margin for a loaded box. */
+/** Observation window with no wake: well below the no-wake arm's poll. */
 const SOON_MS = 250;
-/** Completion budget, separate from the latency assertion, for a loaded runner. */
+/** Completion budget, in fake time, separate from the latency assertion. */
 const BUDGET_MS = 2_000;
 /**
  * The ceiling those loops idle at, and so the poll's own guarantee — `IDLE_POLL_CEILING_MS` in
@@ -63,16 +66,13 @@ const BUDGET_MS = 2_000;
  */
 const POLL_CEILING_MS = 2_000;
 /**
- * The bound the two cross-process cases assert, and about half the ceiling: what the wake path has
- * to beat it by. It is a LOADED number, and the reason this suite has one: the bound used to be
- * `SOON_MS` (150 ms), which went red on the `job` step — nineteen files over three workers, four
- * PGlite instances on one box. Four copies of this file at once measured the wake path at 206 ms.
- * So the promise asserted is the one that survives a loaded runner — the wake HALVES the poll's
- * worst case — and not a figure an idle machine produced. Both loops idle at POLL_CEILING_MS
- * first, so only a wake lands inside this bound. The mechanism is also pinned deterministically
- * by the wake tests and idle-cost.test.ts's statement counts.
+ * The bound the two cross-process cases assert: ten floors, an eighth of the ceiling. It used to be
+ * a LOADED number (1 s), because these loops ran on the wall clock and four PGlite instances on one
+ * box measured the wake path at 206 ms. On fake time a slice passes only when this file moves it,
+ * so the wake path measures 5-10 ms however loaded the runner, and the poll path exactly the
+ * ceiling. Both loops idle at POLL_CEILING_MS first, so only a wake lands inside this bound.
  */
-const WAKE_BOUND_MS = 1_000;
+const WAKE_BOUND_MS = 10 * FLOOR_MS;
 
 let pg: EmbeddedPg;
 let heard: { channel: string; payload: string }[] = [];
@@ -105,22 +105,27 @@ afterAll(async () => {
   await (await embeddedPg()).close();
 });
 
-/** Notifications are delivered on a microtask after the statement: give them their turn. */
+/** Installed after the boot above: PGlite starts on real timers, every loop runs on fake ones. */
+const time = useFakeTime();
+
+/**
+ * Notifications are delivered in this process, behind the statement that sent them: a few turns of
+ * the event loop are their turn. The database is in-process, so no wall-clock wait is theirs.
+ */
 const delivered = async (): Promise<typeof heard> => {
-  await Bun.sleep(2);
+  await time.flush();
   return heard;
 };
 
 const payloads = async (channel: string): Promise<string[]> =>
   (await delivered()).filter((entry) => entry.channel === channel).map((entry) => entry.payload);
 
-async function until(condition: () => boolean | Promise<boolean>, budgetMs = 5_000): Promise<void> {
-  const deadline = performance.now() + budgetMs;
-  while (!(await condition())) {
-    if (performance.now() > deadline) expect.unreachable('the condition never became true');
-    await Bun.sleep(2);
-  }
-}
+/** Moves fake time in `step` slices until `condition` holds; red past `budgetMs` of it. */
+const until = (
+  condition: () => boolean | Promise<boolean>,
+  budgetMs = 5_000,
+  step = 5,
+): Promise<void> => time.until(condition, budgetMs, step);
 
 const enqueue = (
   driver: JobDriver,
@@ -149,11 +154,10 @@ async function idleWorker(ms: number, idlePollMaxMs = 60_000): Promise<Worker> {
   });
   worker.start();
   cleanups.push(() => worker.stop());
-  // The ramp to the 2 s ceiling is 5.2 s of timer arithmetic alone (25 doubling to 2000), plus
-  // one queue-depth round per pass — which a loaded runner multiplies — so the default budget
-  // sat under the climb it was waiting for. `until` returns the moment the condition holds; the
-  // budget bounds pathology, not the wait.
-  await until(async () => (await worker.stats()).pollDelayMs >= ms, 15_000);
+  // The ramp to the 2 s ceiling is 5.2 s of timer arithmetic (25 doubling to 2000), in fake time
+  // moved a floor at a time. `until` returns the moment the condition holds; the budget bounds
+  // pathology, not the wait.
+  await until(async () => (await worker.stats()).pollDelayMs >= ms, 15_000, FLOOR_MS);
   return worker;
 }
 
@@ -333,16 +337,8 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
-    // No `startQueueWake`: a transaction-pooling proxy, or a session that died. The arm is a
-    // LOADED number, like WAKE_BOUND_MS: `idleWorker` returns on a `stats()` observation that
-    // awaits a queue-depth round, so the ceiling's wait is already that round old when `before`
-    // is read — and the window below is safe exactly while one queue-depth round plus the
-    // enqueue's commit stay under `ceiling - SOON_MS`. At 400 ms that margin went red on the
-    // `job` step — the armed poll claimed the job inside the window; 800 leaves ~550, and the
-    // gate's loaded run of 2026-11 (unit and e2e beside the `job` step) measured a single
-    // queue-depth round at 300-800 ms and crossed that too. So this arm idles at
-    // POLL_CEILING_MS, the ceiling the poll alone guarantees — 1.75 s of room for the rounds —
-    // and the wake tests keep the tighter bound, which the wake itself buys.
+    // No `startQueueWake`: a transaction-pooling proxy, or a session that died. The worker idles
+    // at POLL_CEILING_MS, the ceiling the poll alone guarantees, and only that poll can start it.
     const ceiling = POLL_CEILING_MS;
     await idleWorker(ceiling, ceiling);
 
@@ -350,12 +346,12 @@ describe('the loops it wakes', () => {
     const before = performance.now();
     await enqueue(other, handle.name, 'polled');
     // Nothing told the worker: where the wake starts the job, this one is still waiting.
-    await Bun.sleep(SOON_MS);
+    await time.advance(SOON_MS);
     expect(started).toEqual([]);
     // A budget past the bound below, so a late start fails on the bound — the promise —
     // rather than on this wait.
     await until(() => started.length === 1, ceiling + WAKE_BOUND_MS + 2_000);
-    // The guarantee: never past the ceiling, plus one loaded pass.
+    // The guarantee: never past the ceiling, plus one pass.
     expect((started[0] ?? 0) - before).toBeLessThan(ceiling + WAKE_BOUND_MS);
     expect(wakeIsLive()).toBe(false);
   });

@@ -3,6 +3,7 @@ import type { UltimateError } from '@ultimat3/core';
 import { type FakeIdbOptions, fakeIndexedDb } from './idb-fake-fixture';
 import type { LocalStore } from './local-store-idb';
 import { memoryLocalStore, openLocalStore, scopeKey } from './local-store-idb';
+import { turns } from './turns-fixture';
 
 const quiet = (): { warn: (error: UltimateError) => void; warned: UltimateError[] } => {
   const warned: UltimateError[] = [];
@@ -111,14 +112,21 @@ describe('a write the browser aborts', () => {
     const knobs: FakeIdbOptions = {};
     const store = await openLocalStore({ indexedDB: fakeIndexedDb(knobs), warn: quiet().warn });
     knobs.quotaExceeded = true;
-    const outcome = (pending: Promise<unknown>): Promise<string> =>
-      Promise.race([
-        pending.then(
-          () => 'resolved',
-          (error: unknown) => `rejected ${(error as { name?: string }).name}`,
-        ),
-        new Promise<string>((resolve) => setTimeout(() => resolve('hung'), 200)),
-      ]);
+    // The fake settles a transaction on microtasks: a write still unsettled after a bounded number
+    // of turns is one that waits for an event that never comes — hung, whatever the wall clock says.
+    const outcome = async (pending: Promise<unknown>): Promise<string> => {
+      let settled = 'hung';
+      void pending.then(
+        () => {
+          settled = 'resolved';
+        },
+        (error: unknown) => {
+          settled = `rejected ${(error as { name?: string }).name}`;
+        },
+      );
+      await turns(50);
+      return settled;
+    };
     expect(
       await outcome(store.write('p:u1', [{ type: 'post', key: 'p1', row: { id: 'p1' } }], [])),
     ).toBe('rejected QuotaExceededError');

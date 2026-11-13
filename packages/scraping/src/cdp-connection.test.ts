@@ -2,7 +2,7 @@
 // matched to its own call and not to the one before it, that a deadline fires, that an error frame
 // becomes a coded refusal, and that a close settles everything still in flight at once.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 import { cdpConnect } from './cdp-connection';
 
 /** One frame, as the browser would send it. */
@@ -146,16 +146,23 @@ describe('cdpConnect', () => {
   test('one call may carry its own deadline, and the next call is back on the connection’s', async () => {
     install();
     const connection = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 20 });
+    // The deadlines run on Bun's fake clock: the test moves it, never waits it out.
+    jest.useFakeTimers();
+    try {
+      // Outlives the connection's 20 ms: the launcher's first call is a cold start, not a call.
+      const slow = connection.send('Browser.getVersion', {}, undefined, 2_000);
+      jest.advanceTimersByTime(1_999);
+      socket().reply({ id: 1, result: { product: 'late' } });
+      expect((await slow).result).toEqual({ product: 'late' });
 
-    // Outlives the connection's 20 ms: the launcher's first call is a cold start, not a call.
-    const slow = connection.send('Browser.getVersion', {}, undefined, 2_000);
-    await Bun.sleep(80);
-    socket().reply({ id: 1, result: { product: 'late' } });
-    expect((await slow).result).toEqual({ product: 'late' });
-
-    const thrown = await connection.send('Runtime.evaluate').catch((error: unknown) => error);
-    expect((thrown as { cause?: string }).cause).toContain('20ms');
-    connection.close();
+      const next = connection.send('Runtime.evaluate').catch((error: unknown) => error);
+      jest.advanceTimersByTime(20);
+      const thrown = await next;
+      expect((thrown as { cause?: string }).cause).toContain('20ms');
+    } finally {
+      jest.useRealTimers();
+      connection.close();
+    }
   });
 
   test('a close settles every in-flight call at once, rather than one deadline each', async () => {

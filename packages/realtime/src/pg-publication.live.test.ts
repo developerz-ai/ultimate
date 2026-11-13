@@ -50,6 +50,7 @@ const logicalWal = async (): Promise<boolean> => {
   })();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<boolean>((resolve) => {
+    // real-clock: bounds a TCP dial to a database host that may never answer
     timer = setTimeout(() => resolve(false), 2_000);
     timer.unref?.();
   });

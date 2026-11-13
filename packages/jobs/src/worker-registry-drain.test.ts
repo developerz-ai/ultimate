@@ -8,6 +8,7 @@ import { type Ctx, configureLifecycle, ctxOf, drain, resetLifecycle } from '@ult
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import type { WorkerAnnouncement } from './introspection';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
@@ -31,14 +32,12 @@ afterEach(() => {
   resetJobs();
 });
 
-/** Real time, bounded: fails rather than hangs when the worker never gets there. */
-async function until(condition: () => boolean, budgetMs = 3_000): Promise<void> {
-  const deadline = performance.now() + budgetMs;
-  while (!condition()) {
-    if (performance.now() > deadline) expect.unreachable('the condition never became true');
-    await Bun.sleep(2);
-  }
-}
+/** Fake time moves the drain's deadline and the claim loop: a budget here is one it armed. */
+const time = useFakeTime();
+
+/** Moves fake time until `condition` holds; red past `budgetMs` of it, never a hang. */
+const until = (condition: () => boolean, budgetMs = 3_000): Promise<void> =>
+  time.until(condition, budgetMs, 2);
 
 describe('the registry row in the teardown', () => {
   test('a forgetWorker that never answers is abandoned at the drain deadline, and the driver still closes', async () => {
@@ -58,7 +57,7 @@ describe('the registry row in the teardown', () => {
     const worker = jobWorker({ driver, context, pollIntervalMs: 60_000 });
     worker.start();
 
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 500);
     // Core abandons a hook at the deadline whatever it does; what is asked here is whether the
     // worker's OWN teardown got past the row — it sat on `forgetWorker` with the driver open.
     await until(() => closed === 1, 1_000);
@@ -148,7 +147,7 @@ describe('the in-flight list of one job held twice', () => {
       expect(announced.at(-1)).toEqual([queued.id]);
     } finally {
       for (const gate of gates) gate();
-      await worker.stop();
+      await time.settles(worker.stop(), 100);
     }
   });
 });

@@ -26,7 +26,14 @@ import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-open';
 import { NatsReports } from './nats-reports';
 import { NatsSubscriptions } from './nats-subscriptions';
-import { defaultBackoff, policyDelay, type ReconnectBackoff, type Rng } from './thundering-herd';
+import {
+  defaultBackoff,
+  policyDelay,
+  type ReconnectBackoff,
+  type Rng,
+  type Scheduler,
+  timeoutScheduler,
+} from './thundering-herd';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -43,6 +50,11 @@ export interface NatsTransportOptions {
   /** A failing subscriber, or a connection lost in the background, must not break the process. */
   readonly onError?: (error: unknown, subject: string) => void;
   readonly rng?: Rng;
+  /**
+   * Arms the re-dial loop's backoff wait. Default `timeoutScheduler` (`setTimeout`); a test hands
+   * a manual one and fires the wait itself, so a backoff is a delay it names, not one it sleeps.
+   */
+  readonly scheduler?: Scheduler;
   /** Injected so the whole transport — reconnect included — runs in a test with no network. */
   readonly connect?: NatsConnect;
   /**
@@ -73,6 +85,7 @@ export class NatsTransport implements Transport {
   readonly #backoff: ReconnectBackoff;
   readonly #attempts: number;
   readonly #rng: Rng;
+  readonly #schedule: Scheduler;
   #client: NatsClient | undefined;
   #dialing: Promise<NatsClient> | undefined;
   #retries = 0;
@@ -112,6 +125,7 @@ export class NatsTransport implements Transport {
       options.maxReconnectAttempts ?? DEFAULT_ATTEMPTS,
     );
     this.#rng = options.rng ?? Math.random;
+    this.#schedule = options.scheduler ?? timeoutScheduler;
     this.#dialTimeoutMs = finiteOption(
       'createNatsTransport',
       'dialTimeoutMs',
@@ -402,11 +416,11 @@ export class NatsTransport implements Transport {
   #pause(ms: number): Promise<void> {
     return new Promise((resolve) => {
       const done = (): void => {
-        clearTimeout(timer);
+        cancel();
         this.#wakeRedial = undefined;
         resolve();
       };
-      const timer = setTimeout(done, ms);
+      const cancel = this.#schedule(done, ms);
       this.#wakeRedial = done;
     });
   }

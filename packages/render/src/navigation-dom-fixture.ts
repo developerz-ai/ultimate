@@ -8,6 +8,7 @@
  */
 
 import { CLIENT_BUILD_META } from '@ultimat3/core';
+import { HeldTimers } from './navigation-timers-fixture';
 
 type Attrs = Readonly<Record<string, string>>;
 
@@ -409,10 +410,21 @@ export class FakeWindow extends EventTarget {
     return { matches: this.reducedMotion };
   }
   setTimeout(fn: () => void, ms?: number): number {
-    return globalThis.setTimeout(fn, ms) as unknown as number;
+    const delay = ms ?? 0;
+    if (this.held === undefined || delay <= 0)
+      return globalThis.setTimeout(fn, ms) as unknown as number;
+    return this.held.hold(fn, delay);
   }
   clearTimeout(id: number | undefined): void {
-    globalThis.clearTimeout(id);
+    if (this.held?.clear(id) !== true) globalThis.clearTimeout(id);
+  }
+
+  // The router's scheduler is this window; `navigation-timers-fixture.ts` says how a held one runs.
+  private held: HeldTimers | undefined;
+  /** Holds every delayed timer from here on, and answers the clock that releases them. */
+  holdTimers(): HeldTimers {
+    this.held ??= new HeldTimers();
+    return this.held;
   }
 }
 

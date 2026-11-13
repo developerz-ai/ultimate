@@ -10,6 +10,7 @@ import { memoryJobDriver } from './driver-memory';
 import { JOB_ROW_COLUMNS, SQL_ACK, SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 import { cancelJob } from './inspect';
 import { job, resetJobs } from './job';
+import { manualSchedule } from './manual-schedule-fixture';
 import { jobWorker } from './worker';
 
 afterEach(() => {
@@ -99,18 +100,25 @@ describe('cancelling a job', () => {
   test('a cancelled attempt stops writing: the run belongs to nobody now', async () => {
     const driver = memoryJobDriver();
     let reachedSecondStep = false;
+    let abortedByBeat: boolean | undefined;
+    // The renewals the worker hands over (`WorkerOptions.schedule`), fired by hand: the heartbeat
+    // that hears the cancel runs when this test says so, never on a 5 ms wall-clock interval.
+    const timers = manualSchedule();
     job({
       tenant: 'none',
       name: 'runaway',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'runaway:one',
       retry: { attempts: 1 },
-      async run({ step, jobId }) {
+      async run({ step, jobId, ctx }) {
         await step.run('batch:0', () => Promise.resolve(1));
         // Cancelled mid-run, exactly as `x jobs cancel` would. The next heartbeat aborts the
         // attempt and `steps.ts` refuses the write, which is what unwinds the body.
         await driver.introspect?.cancel?.(jobId);
-        await Bun.sleep(15);
+        // The lease renewal is the one armed at `heartbeatIntervalMs`; its next beat hears it.
+        expect(timers.ticks(5)).toHaveLength(1);
+        await timers.fire(5);
+        abortedByBeat = ctx.signal.aborted;
         await step.run('batch:1', () => {
           reachedSecondStep = true;
           return Promise.resolve(2);
@@ -124,11 +132,14 @@ describe('cancelling a job', () => {
       context: () => ctxOf({ role: 'worker' }),
       visibilityTimeoutMs: 5000,
       heartbeatIntervalMs: 5,
+      schedule: timers.schedule,
       drainOnShutdown: false,
     });
     const [execution] = await worker.tick();
     await worker.stop('test');
 
+    // The beat that missed the row told the body to stop: the attempt is unwound, not just fenced.
+    expect(abortedByBeat).toBe(true);
     // The body ran the second step's function but its RESULT was refused — the fence is the write.
     expect(reachedSecondStep).toBe(true);
     expect(execution?.outcome).not.toBe('completed');

@@ -3,7 +3,7 @@
 // declares one. The unit under it is `lifecycle-deadline.ts`; split from `lifecycle.test.ts`
 // for the file-size ceiling.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { frozenClock, systemClock } from './clock';
 import {
   configureLifecycle,
@@ -23,8 +23,27 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  jest.useRealTimers();
   resetLifecycle();
 });
+
+/**
+ * Moves Bun's fake clock 1 ms at a time, letting the promise jobs each fired timer queued run, until
+ * `drained` settles — so a timer past the drain's end (an abandoned hook's) is never fired — or
+ * `ms` runs out.
+ */
+async function drainOver(drained: Promise<void>, ms: number): Promise<void> {
+  let settled = false;
+  void drained.then(() => {
+    settled = true;
+  });
+  for (let m = 0; m < 20; m += 1) await Promise.resolve();
+  for (let i = 0; i < ms && !settled; i += 1) {
+    jest.advanceTimersByTime(1);
+    for (let m = 0; m < 20; m += 1) await Promise.resolve();
+  }
+  if (!settled) expect.unreachable(`the drain was still running ${ms} fake ms in`);
+}
 
 /**
  * A promise a test resolves by hand. Races here are driven by these and never by a sleep: a
@@ -98,35 +117,39 @@ describe('the drain deadline', () => {
   test('the budget bounds the WHOLE drain — a hook that spends it leaves none for the ones behind', async () => {
     const lines: string[] = [];
     const stuck = deferred();
+    jest.useFakeTimers();
     configureLifecycle({
       deadlineMs: 30,
       logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
 
     onShutdown('spends-it', () => stuck.promise, { phase: 'accept' });
-    // Deterministic, and not a stopwatch: both waits are timers in one queue, so they settle in
-    // due-time order however slow the machine is. Whole-drain, this hook's budget is already 0 and
-    // its own 15ms timer cannot beat it; per-hook, it would get a fresh 30ms and finish.
+    // Deterministic, and not a stopwatch: the clock is Bun's fake one, moved by the test. Whole-
+    // drain, the hook behind is left a budget of 0, so it is abandoned on the next tick and the
+    // drain ends at 31 fake ms (the 0 ms timer armed at 30 fires on the stepper's next ms);
+    // per-hook, it would get a fresh 30 and the drain end at 61.
+    const behind = deferred();
     let finished = false;
     onShutdown(
       'after-it',
-      () =>
-        new Promise<void>((resolve) => {
-          setTimeout(() => {
-            finished = true;
-            resolve();
-          }, 15);
-        }),
+      async () => {
+        await behind.promise;
+        finished = true;
+      },
       { phase: 'close' },
     );
 
-    await drain('SIGTERM');
+    const startedAt = performance.now();
+    const drained = drain('SIGTERM');
+    await drainOver(drained, 100);
+    expect(performance.now() - startedAt).toBe(31);
 
     const overran = lines.filter((line) => line.includes('X_SHUTDOWN_TIMEOUT'));
     expect(overran).toHaveLength(2);
     expect(overran[1]).toContain('after-it');
     expect(finished).toBe(false);
 
+    behind.resolve();
     stuck.resolve();
   });
 
@@ -137,6 +160,7 @@ describe('the drain deadline', () => {
     const order: string[] = [];
     const entered = deferred();
     const release = deferred();
+    jest.useFakeTimers();
     configureLifecycle({
       logger: structuredLogger({ level: 'info', writer: () => undefined }),
     });
@@ -158,11 +182,12 @@ describe('the drain deadline', () => {
       order.push('drained');
     });
     await entered.promise;
-    // Not an ordering assertion: a hook well inside the budget must be awaited to completion, so
-    // waiting longer only strengthens this. 30ms against a 25s budget is what makes a default that
-    // shrank — to 0, to a per-phase slice, to whatever a refactor thought "no budget" meant — show
-    // up here as an abandoned hook rather than as a green test.
-    await Bun.sleep(30);
+    // Not an ordering assertion: a hook inside the budget must be awaited to completion. The fake
+    // clock is moved to 1 ms short of the 25 s default, so a default that shrank by ANY amount — to
+    // 0, to a per-phase slice, to whatever a refactor thought "no budget" meant — shows up here as
+    // an abandoned hook rather than as a green test. Nothing else is armed: one jump is exact.
+    jest.advanceTimersByTime(25_000 - 1);
+    for (let m = 0; m < 20; m += 1) await Promise.resolve();
     expect(order).toEqual([]);
 
     release.resolve();

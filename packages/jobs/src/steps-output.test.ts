@@ -164,7 +164,10 @@ describe('a step output past its byte ceiling', () => {
     expect(STEP_OUTPUT_MAX_BYTES).toBe(256 * KIB);
     const warn = spyOn(logger, 'warn').mockImplementation(() => undefined);
     const store = memoryStepStore();
-    const runner = stepRunner({ runId: 'r', jobName: 'warned', store });
+    // Its own job name per evaluation: the once-per-job-and-step memo is the PROCESS's, and a rerun
+    // of this file (`--rerun-each`) is the same process.
+    const jobName = `warned-${crypto.randomUUID()}`;
+    const runner = stepRunner({ runId: 'r', jobName, store });
     expect(await runner.step.run('small', () => ofKiB(200))).toHaveLength(200 * KIB - 2);
     expect(warn).not.toHaveBeenCalled();
 
@@ -181,7 +184,7 @@ describe('a step output past its byte ceiling', () => {
     expect(String((fields as { fix?: unknown }).fix)).toContain('stepOutputMax');
 
     // The same job and step on the next run: warned already, not again.
-    const next = stepRunner({ runId: 'r2', jobName: 'warned', store });
+    const next = stepRunner({ runId: 'r2', jobName, store });
     await next.step.run('large', () => ofKiB(300));
     expect(warn).toHaveBeenCalledTimes(1);
   });

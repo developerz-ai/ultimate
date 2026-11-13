@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
 
@@ -22,14 +23,15 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
-/** Polls a real worker's own loop rather than a fake timer, so this proves the shipped path. */
-async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
-  for (let i = 0; i < 400; i += 1) {
-    if (await check()) return;
-    await Bun.sleep(5);
-  }
-  throw new Error(`waitFor timed out: ${label}`);
-}
+/**
+ * The real worker's own loop, its timers moved by fake time: the shipped path, polled by the code
+ * that ships, with no wall-clock wait between the passes.
+ */
+const time = useFakeTime();
+
+/** Moves fake time until `check` holds; red after two seconds of it, never a hang. */
+const waitFor = (check: () => Promise<boolean> | boolean): Promise<void> =>
+  time.until(check, 2_000);
 
 afterEach(() => {
   resetJobs();
@@ -84,12 +86,12 @@ describe('a completed step survives a real retry', () => {
       await waitFor(async () => {
         const [record] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return record !== undefined;
-      }, 'job reaches done');
+      });
       // Captured before stop(): `worker.stop()` closes the driver, and the memory driver's
       // `close()` clears its jobs map — so this must be read while the worker is still up.
       jobs = (await driver.introspect?.list({ state: 'done' })) ?? [];
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     // Two attempts happened, but `charge` paid its price exactly once — attempt 2 replayed it
@@ -155,7 +157,7 @@ describe('a suspended step resumes without re-running what already ran', () => {
         if (record === undefined) return false;
         const steps = await driver.steps.list(record.runId);
         return steps.some((s) => s.name.startsWith('sleep:') && s.status === 'sleeping');
-      }, 'run suspended on the sleep step');
+      });
 
       expect(stepOneCalls).toEqual([1]);
       expect(stepTwoCalls).toEqual([]);
@@ -167,9 +169,9 @@ describe('a suspended step resumes without re-running what already ran', () => {
       await waitFor(async () => {
         const [record] = (await driver.introspect?.list({ state: 'done' })) ?? [];
         return record !== undefined;
-      }, 'run resumes and completes');
+      });
     } finally {
-      await worker.stop('test-end');
+      await time.settles(worker.stop('test-end'), 100);
     }
 
     expect(stepOneCalls).toEqual([1]);

@@ -49,7 +49,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   entity: 25, // why: 17 -> 25, the K19 class list; the new sites are stubs (input)
   flags: 1,
   http: 32, // why: 11 -> 32, the K19 class list; the new sites are stubs (input)
-  jobs: 33, // why: 23 -> 33, the K19 class list; the new sites are stubs (input)
+  jobs: 28, // why: 23 -> 33, the K19 class list; the new sites are stubs (input)
   mail: 5, // why: 0 -> 5, the K19 class list; the new sites are stubs (input)
   mcp: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
   notify: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)

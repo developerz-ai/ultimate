@@ -125,7 +125,14 @@ describe('a per-member document on a shared browser', () => {
     signedIn(sw);
     sw.openWindows(`${SW_ORIGIN}/feed`);
     await sw.activate();
-    await Bun.sleep(10);
+    // The warm-up leaves after activation: until its fetch went out, then turns for its copy (the
+    // harness is promises alone, so five macrotasks are every step it has) — then offline.
+    const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+    for (let turn = 0; turn < 50 && !sw.fetched.includes(`${SW_ORIGIN}/feed`); turn += 1) {
+      await settle();
+    }
+    expect(sw.fetched).toContain(`${SW_ORIGIN}/feed`);
+    for (let turn = 0; turn < 5; turn += 1) await settle();
     sw.goOffline();
     expect(await (await sw.request('/feed')).text()).not.toBe('feed for kenji');
     expect(await storedBodies(sw)).toEqual([]);

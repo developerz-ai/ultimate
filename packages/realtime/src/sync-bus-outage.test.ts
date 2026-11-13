@@ -24,6 +24,7 @@ import { SocketRegistry } from './socket';
 import { busOutage, SYNC_BUS_UNAVAILABLE } from './sync-bus-outage';
 import { outageRig, waitFor } from './sync-outage-rig-fixture';
 import type { ReconnectBackoff } from './thundering-herd';
+import { turns } from './turns-fixture';
 
 const room = channel('outage-room', {
   params: ['orgId'],
@@ -201,7 +202,7 @@ describe('what a sync node says while its bus is away', () => {
       broker.drop();
       for (let sweep = 0; sweep < 19; sweep += 1) {
         outage.sweep(presence);
-        await Bun.sleep(1);
+        await turns(3);
       }
       const lines = error.mock.calls;
       expect(lines.map(([message]) => message)).toEqual(
@@ -214,9 +215,9 @@ describe('what a sync node says while its bus is away', () => {
 
       broker.restore();
       outage.sweep(presence);
-      await Bun.sleep(1);
+      await turns(3);
       outage.sweep(presence);
-      await Bun.sleep(1);
+      await turns(3);
       // The transport says its own drop is over (one failure: the drop); the node, its 19.
       expect(info.mock.calls).toEqual([
         ['nats transport recovered', { transport: 'nats', after: 1 }],
@@ -236,7 +237,8 @@ describe('what a sync node says while its bus is away', () => {
     for (let failure = 0; failure < 3; failure += 1) {
       outage.detach(Promise.reject(new TypeError('a policy threw')), 'presence.leave', 'room.o1');
     }
-    await Bun.sleep(1);
+    // Each rejection is caught a microtask later: a turn is every one of them.
+    await turns(1);
     expect(error.mock.calls.map(([message, fields]) => [message, fields?.['at']])).toEqual(
       Array.from({ length: 3 }, () => ['presence.leave failed', 'room.o1']),
     );

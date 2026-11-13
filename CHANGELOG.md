@@ -10,7 +10,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/realtime`: `NatsTransportOptions.scheduler` and `SelectTransportOptions.scheduler` (a `Scheduler`, default `setTimeout`) arm the re-dial loop's backoff wait, so a test hands a manual scheduler and fires each wait itself instead of sleeping through it.
+- `@ultimat3/cache`: `RedisPubSubOptions` takes `schedule` (arms each command's deadline, each resubscribe retry and the publisher's connect wait), `resubscribeRetryMs(attempt)` and `connectionName`; `redisPubSubAt(url, { connectionName })`; `cacheBusConnectionName()` â€” `x-cache-bus:<pid>`, the subscriber's name in `CLIENT LIST`, which `redisPubSubAt` sends by default.
+
+### Changed
+
+- Framework tests: 226 wall-clock waits removed from 15 packages, so their `test-real-sleep` pins are at zero (`ai`, `auth`, `cache`, `core`, `db`, `entity`, `http`, `jobs`, `mail`, `pwa`, `realtime`, `render`, `scraping`, `testing`, `ui`). Most were replaced by injected schedulers, fake timers or awaited events. The 19 that wait on another process's clock now carry a `// real-clock:` reason instead. `cli` (104) and `scripts` (2) come next.
+
+### Fixed
+
+- `@ultimat3/storage`: a multipart upload with a failed part now waits for the parts already in flight to settle before it rejects, and starts no new part after the failure. A caller that resumes on the rejection no longer races a stale `PUT`.
+- `@ultimat3/cache`: a Redis pub/sub replica that has its subscription refused while the connection stays up (measured after `CLIENT KILL TYPE pubsub`: no second `onconnect` comes) now retries the resubscribe with backoff (250 ms doubling to 10 s, full jitter) until it lands. Before, it logged `cache.broadcast.resubscribe-failed` once and then missed every bust its peers published. Each `SUBSCRIBE`/`UNSUBSCRIBE` is bounded at 1 s (`PUBSUB_COMMAND_TIMEOUT_MS`), so a command on a dead socket no longer stalls the resubscribes queued behind it. Every connect sends `CLIENT SETNAME`, so `CLIENT LIST TYPE pubsub` shows which replica holds each subscription.
+- `@ultimat3/testing`: a test file loaded again in the same process (`bun test --rerun-each`) forgets what its module body declared on the previous load, so `entity()` and `job()` at module scope declare afresh instead of failing with `X_ENTITY_DUPLICATE` / `X_JOB_DUPLICATE`. What a test or a hook registers is still the file's own to undo.
 
 ## Releases
 

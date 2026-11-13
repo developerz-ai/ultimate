@@ -85,8 +85,12 @@ describe('fleet-wide job concurrency', () => {
     });
 
     void workerA.tick();
-    // Let the first round claim and start before the second worker reaches for the same slot.
-    await Bun.sleep(5);
+    // The first round claims and STARTS before the second worker reaches for the same slot: the
+    // body's own start is the event, awaited turn by turn — no timer stands between them.
+    for (let turn = 0; turn < 50 && started === 0; turn += 1) {
+      await new Promise((done) => setImmediate(done));
+    }
+    expect(started).toBe(1);
     await workerB.tick();
 
     expect(started).toBe(1);

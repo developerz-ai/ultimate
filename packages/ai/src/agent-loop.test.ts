@@ -179,7 +179,7 @@ describe('cancellation reaches the loop', () => {
 describe('the tools of one turn run concurrently', () => {
   // No assertion on DURATION. `slow` cannot settle until `fast` has released it, so a serial loop
   // records `['slow', 'fast']` and this fails; run concurrently it records `['fast', 'slow']`. The
-  // 50ms escape is there only so a broken loop FAILS instead of hanging the suite.
+  // escape (twenty event-loop turns, no clock) is there only so a broken loop FAILS, not hangs.
   test('results pair with their own tool_use ids under out-of-order completion', async () => {
     resetAiRuntime();
     const finished: string[] = [];
@@ -188,7 +188,9 @@ describe('the tools of one turn run concurrently', () => {
       new Promise<void>((resolve) => {
         release = resolve;
       }),
-      Bun.sleep(50),
+      (async () => {
+        for (let turn = 0; turn < 20; turn += 1) await new Promise((next) => setTimeout(next, 0));
+      })(),
     ]);
     const { provider, seen } = scripted([
       {

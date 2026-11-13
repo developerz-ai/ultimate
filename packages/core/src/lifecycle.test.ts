@@ -98,7 +98,9 @@ describe('lifecycle', () => {
     expect(inflightCount()).toBe(1);
 
     const drained = drain('SIGTERM');
-    await Bun.sleep(5);
+    // A few loop turns, never a stopwatch: nothing but `finish()` (or the 25 s default budget)
+    // can end the in-flight wait, so how long the turns take on a loaded runner changes nothing.
+    for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
     // The accept hook has run, but close must not have — work is still in flight.
     expect(order).toEqual(['accept']);
 

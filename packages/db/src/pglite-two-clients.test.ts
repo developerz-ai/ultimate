@@ -12,6 +12,9 @@ import { withTransaction } from './transaction';
 
 const PGLITE_BOOT_MS = 60_000;
 
+/** One macrotask: a statement PGlite was free to run has run by then — it is in-process wasm. */
+const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
 describe('two embedded clients', () => {
   const a = pgliteClient();
   const b = pgliteClient();
@@ -29,19 +32,29 @@ describe('two embedded clients', () => {
 
       // INPUT, not a verdict: the body failing is what makes A's transaction roll back.
       const bodyFailure = new Error('A rolls back');
+      // Ordered by events, not delays: A's row is in before B's write is issued, and A fails only
+      // once B's write has been issued and had a turn to run — on A's session, were it let in.
+      let aInserted = (): void => undefined;
+      const aHolds = new Promise<void>((done) => (aInserted = done));
+      let bIssued = (): void => undefined;
+      const bWrites = new Promise<void>((done) => (bIssued = done));
       const failing = withTransaction(
         async (tx) => {
           await tx.execute(sql`insert into tc_posts values (${1})`);
-          await Bun.sleep(60);
+          aInserted();
+          await bWrites;
+          await settle();
           throw bodyFailure;
         },
         { client: a },
       );
       const acrossB = withTransaction(
         async () => {
-          await Bun.sleep(15);
+          await aHolds;
           // Autocommit on A, from inside B's live transaction: it must wait for A's turn.
-          await a.execute(sql`insert into tc_posts values (${2})`);
+          const write = a.execute(sql`insert into tc_posts values (${2})`);
+          bIssued();
+          await write;
         },
         { client: b },
       );

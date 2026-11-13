@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, jest, test } from 'bun:test';
 import { clearChannels } from './channel-registry';
 import { CLOSE } from './socket';
 import { harness, held, NOTHING } from './sync-drain-fixture';
+import { turns } from './turns-fixture';
 
 afterAll(() => {
   clearChannels();
@@ -62,7 +63,8 @@ describe('a socket the node evicts is released the way a closed one is', () => {
     const ws = await app.seat('s1');
     const started = performance.now();
     const draining = app.node.drain({ graceMs: 5_000 });
-    await Bun.sleep(5);
+    // The drain is under way (its grace armed) before the client hangs up.
+    await turns(5);
     // Bun's close callback: the client hung up on its own during the grace.
     app.node.websocket.close(ws);
     await draining;

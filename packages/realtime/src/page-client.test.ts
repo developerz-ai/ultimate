@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import type { AsyncState, Row } from '@ultimat3/core';
 import { resetPage, signal } from './hooks-fixture';
+import { turns, untilTurn } from './turns-fixture';
 
 interface IslandCopy {
   installRealtime(install: unknown): void;
@@ -146,8 +147,10 @@ describe('two island bundles on one page', () => {
     first.useQuery({ name: 'feed', live: true }, null);
     second.useQuery({ name: 'feed', live: true }, null);
     second.useQuery({ name: 'other', live: true }, null);
-    // The in-page host's engine hears the tab over a MessageChannel, which delivers a task later.
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // The in-page host's engine hears the tab over a MessageChannel, which delivers a task later;
+    // then as many turns again, so a second dial would have been made by now.
+    await untilTurn(() => dialled.length > 0, 'the engine dialled');
+    await turns(10);
     expect(dialled).toEqual(['ws://node.test/_x/sync?build=build-1']);
   });
 });

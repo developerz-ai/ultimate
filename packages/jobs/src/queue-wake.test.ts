@@ -9,6 +9,7 @@ import { ctxOf, frozenClock, installLogSink } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
+import { useFakeTime } from './fake-time-fixture';
 import {
   createIdleBackoff,
   IDLE_POLL_CEILING_MS,
@@ -437,31 +438,37 @@ describe('the relay hears a COMMITTED stage', () => {
     });
   };
 
-  test('a committed row is a pass NOW; a row this process staged is a pass at the floor', async () => {
-    const script = scripted();
-    const wake = startQueueWake(script);
-    await settle();
-    let claims = 0;
-    const relay = relayOver(() => {
-      claims += 1;
+  // The relay's own timers are real `setTimeout`s: moved by hand here, a pass counted is one armed.
+  describe('on fake time', () => {
+    const time = useFakeTime();
+
+    test('a committed row is a pass NOW; a row this process staged is a pass at the floor', async () => {
+      const script = scripted();
+      const wake = startQueueWake(script);
+      await settle();
+      let claims = 0;
+      const relay = relayOver(() => {
+        claims += 1;
+      });
+      await relay.tick();
+      await relay.tick();
+      await relay.tick();
+      expect(relay.pollDelayMs()).toBe(800);
+      relay.start();
+      try {
+        // Still inside its transaction: the wait is cut to the floor, not to nothing.
+        signalStaged();
+        expect(relay.pollDelayMs()).toBe(200);
+        const before = claims;
+        script.notify(OUTBOX_WAKE_CHANNEL, '');
+        expect(relay.pollDelayMs()).toBe(0);
+        // One millisecond of fake time: the pass armed at 0 runs, the floor's (200) cannot.
+        await time.advance(1, 1);
+        expect(claims).toBe(before + 1);
+      } finally {
+        await time.settles(relay.stop(), 100);
+        await wake.stop();
+      }
     });
-    await relay.tick();
-    await relay.tick();
-    await relay.tick();
-    expect(relay.pollDelayMs()).toBe(800);
-    relay.start();
-    try {
-      // Still inside its transaction: the wait is cut to the floor, not to nothing.
-      signalStaged();
-      expect(relay.pollDelayMs()).toBe(200);
-      const before = claims;
-      script.notify(OUTBOX_WAKE_CHANNEL, '');
-      expect(relay.pollDelayMs()).toBe(0);
-      await Bun.sleep(5);
-      expect(claims).toBe(before + 1);
-    } finally {
-      await relay.stop();
-      await wake.stop();
-    }
   });
 });

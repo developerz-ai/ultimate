@@ -2,7 +2,7 @@
 // `accept` phase closing the listener. Without it Kubernetes endpoints still route to a socket that
 // SIGTERM just closed, and an in-flight POST from the load balancer gets a 502.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { isUltimateError } from './errors';
 import {
   configureLifecycle,
@@ -25,11 +25,23 @@ beforeEach(() => {
   resetLifecycle();
 });
 afterEach(() => {
+  jest.useRealTimers();
   resetLifecycle();
 });
 
+/** Moves Bun's fake clock 1 ms at a time, letting the promise jobs each fired timer queued run. */
+async function advance(ms: number): Promise<void> {
+  for (let i = 0; i < ms; i += 1) {
+    jest.advanceTimersByTime(1);
+    for (let m = 0; m < 20; m += 1) await Promise.resolve();
+  }
+}
+
 describe('the readiness grace', () => {
   test('/readyz answers 503 while the listener still accepts, for graceMs', async () => {
+    // Fake timers move `Bun.sleep` and `performance.now()` together: the grace is measured on the
+    // clock the test turns, to the millisecond, and no loaded runner can stretch or shrink it.
+    jest.useFakeTimers();
     configureLifecycle({ readinessGraceMs: 300 });
     markReady();
     let listenerClosedAt: number | undefined;
@@ -45,14 +57,14 @@ describe('the readiness grace', () => {
     const drained = drain('SIGTERM');
     // Readiness flips at once — that is what tells the endpoints controller to stop routing here.
     expect(readyzPayload().status).toBe(503);
-    await Bun.sleep(50);
+    await advance(299);
     // …and the listener is still open, so what was already routed here is still answered.
     expect(listenerClosedAt).toBeUndefined();
     expect(readyzPayload().status).toBe(503);
 
+    await advance(1);
     await drained;
-    expect(listenerClosedAt).toBeDefined();
-    expect((listenerClosedAt ?? 0) - startedAt).toBeGreaterThanOrEqual(290);
+    expect(listenerClosedAt).toBe(startedAt + 300);
   });
 
   test('the grace is ADDED to the drain budget, never taken out of it', async () => {
@@ -88,7 +100,8 @@ describe('the readiness grace', () => {
       { phase: 'accept' },
     );
     const drained = drain('SIGTERM');
-    await Bun.sleep(5);
+    // One loop turn: a grace of 0 is no `Bun.sleep` at all, so the hook has run before any timer.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(closed).toBe(true);
     await drained;
   });

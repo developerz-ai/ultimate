@@ -15,8 +15,13 @@ afterEach(() => {
   mock.restore();
 });
 
-/** Each run's step is its own name: the default's warning is once per job and step, per process. */
+/**
+ * Each run's step is its own name: the default's warning is once per job and step, per PROCESS —
+ * and a rerun of this file (`--rerun-each`) is the same process with `runs` back at 0, so the
+ * names carry this evaluation's own token too.
+ */
 let runs = 0;
+const EVALUATION = crypto.randomUUID().slice(0, 8);
 
 async function runOnce(declared: { stepOutputMax?: number }, bytes: number) {
   runs += 1;
@@ -28,7 +33,7 @@ async function runOnce(declared: { stepOutputMax?: number }, bytes: number) {
     retry: { attempts: 3 },
     ...declared,
     run: async ({ step }) => {
-      await step.run(`page-${runs}`, () => 'x'.repeat(bytes - 2));
+      await step.run(`page-${EVALUATION}-${runs}`, () => 'x'.repeat(bytes - 2));
     },
   });
   const driver = memoryJobDriver();

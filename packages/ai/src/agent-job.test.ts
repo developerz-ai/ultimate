@@ -341,10 +341,10 @@ describe('the ceilings shipped for the request path hold on the job path too', (
       models: ['claude-opus-5'],
       generate(request) {
         calls += 1;
-        setTimeout(() => aborted.abort(), 5);
-        // A socket that ends only by being aborted.
+        // A socket that ends only by being aborted — and the attempt is abandoned once it is open.
         return new Promise((_, reject) => {
           request.signal?.addEventListener('abort', () => reject(request.signal?.reason));
+          aborted.abort();
         });
       },
       stream: (request) => echoProvider().stream(request),

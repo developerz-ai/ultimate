@@ -1,7 +1,7 @@
 // The process series: declared on the first start and never at import, read through whatever
 // source is live, and fed by one sampler whose lag and CPU arithmetic a frozen clock can check.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 // why: Bun ships no directory-removal API, and the fixture directory is this process's own.
 import { rm } from 'node:fs/promises';
 // why: Bun ships no path API; the browser entry is written inside the package to resolve it.
@@ -243,12 +243,20 @@ describe('unit · process metrics', () => {
   });
 
   test('the default timer is unref-ed: it samples, and it does not hold the process open', async () => {
-    stop = startProcessMetrics({ role: 'web', sampleMs: 5 });
-    await Bun.sleep(30);
+    // Bun's fake timers stand in for `setInterval` AND `performance.now()`, so the default timer is
+    // the one under test and six 5 ms periods are six samples, none of them late.
+    jest.useFakeTimers();
+    try {
+      stop = startProcessMetrics({ role: 'web', sampleMs: 5 });
+      jest.advanceTimersByTime(30);
+    } finally {
+      jest.useRealTimers();
+    }
     const lag = collectMetrics().metrics.find(
       (one) => one.descriptor.name === 'process_event_loop_lag_seconds',
     )?.points[0] as HistogramPoint | undefined;
-    expect(lag?.count ?? 0).toBeGreaterThan(0);
+    expect(lag?.count).toBe(6);
+    expect(lag?.max).toBe(0);
   });
 });
 

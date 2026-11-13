@@ -11,6 +11,15 @@ import { readOnlyQuery } from './readonly-query';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 
+/** In-process delivery, a turn at a time, bounded so a lost notification fails rather than hangs. */
+async function until(condition: () => boolean, budgetMs = 5_000): Promise<void> {
+  const deadline = performance.now() + budgetMs;
+  while (!condition()) {
+    if (performance.now() > deadline) expect.unreachable('the condition never became true');
+    await new Promise((turn) => setTimeout(turn, 0));
+  }
+}
+
 describe('the real embedded database', () => {
   // A WASM compile plus an initdb — ~1.5s on a CI runner, against bun's 5s default. Stated so a
   // slow machine reads as slow rather than as a broken driver; it is a hang detector, not a budget.
@@ -24,6 +33,9 @@ describe('the real embedded database', () => {
    * reservation rules below exist for, so a shared client is the shape production runs.
    */
   const client = pgliteClient();
+
+  /** One macrotask: a statement PGlite was free to run has run by then — it is in-process wasm. */
+  const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
 
   // Each case owns `posts` outright, so none of them inherits the previous one's table or rows.
   beforeEach(async () => {
@@ -62,13 +74,18 @@ describe('the real embedded database', () => {
       try {
         await client.execute(sql`create table posts (id int primary key, title text)`);
 
+        // Ordered by events: the second unit starts once the first holds a row, and the first
+        // fails only after the second has had a turn to BEGIN and write on a shared session.
+        let firstInserted = (): void => undefined;
+        const firstHolds = new Promise<void>((done) => (firstInserted = done));
         const rolledBack = withTransaction(async (tx) => {
           await tx.execute(sql`insert into posts values (${1}, ${'abandoned'})`);
-          await Bun.sleep(20);
+          firstInserted();
+          for (let turn = 0; turn < 5; turn += 1) await settle();
           throw new Error('this unit of work fails');
         });
+        await firstHolds;
         const committed = withTransaction(async (tx) => {
-          await Bun.sleep(5);
           await tx.execute(sql`insert into posts values (${2}, ${'kept'})`);
         });
 
@@ -203,17 +220,26 @@ describe('the real embedded database', () => {
         ).rejects.toThrow('this unit of work fails');
         await withTransaction(async (tx) => {
           await tx.execute(sql`select pg_notify('x_embedded_wake', 'committed')`);
-          await Bun.sleep(5);
+          // Another statement's answer inside the transaction: a NOTIFY leaked before its commit
+          // would have come back with it.
+          await tx.execute(sql`select 1`);
           expect(got).toEqual([]);
         });
         await client.execute(sql`select pg_notify('x_embedded_wake', 'plain')`);
-        await Bun.sleep(5);
+        await until(() => got.length >= 2);
         expect(got).toEqual(['committed', 'plain']);
 
+        // A sibling listener on the channel is the marker: once it has the notification, a
+        // subscription still wired up would have it too.
+        const marker: string[] = [];
+        const sibling = await client.listen('x_embedded_wake', (payload) => marker.push(payload));
         await subscription.unlisten();
         await client.execute(sql`select pg_notify('x_embedded_wake', 'after-unlisten')`);
-        await Bun.sleep(5);
+        await until(() => marker.length > 0);
+        await settle();
+        expect(marker).toEqual(['after-unlisten']);
         expect(got).toEqual(['committed', 'plain']);
+        await sibling.unlisten();
       } finally {
         setDbClient(undefined);
       }

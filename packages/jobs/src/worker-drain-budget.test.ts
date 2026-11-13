@@ -3,7 +3,8 @@
 // spent the whole drain deadline before the second accept hook — the HTTP server's "stop
 // listening", the sync node's "stop upgrading" — had been invoked at all, and left the worker
 // pinned at 'draining' with its driver open, so a later `stop()` joined a teardown nothing would
-// ever finish.
+// ever finish. Fake time (`fake-time-fixture.ts`) moves the drain's deadline and the body's wait
+// alike, so "outran the budget" is a fact of the timers armed, not of a runner's speed.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -19,8 +20,11 @@ import {
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker, type Worker } from './worker';
+
+const time = useFakeTime();
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
@@ -77,7 +81,7 @@ async function rig(options: { jobMs: number }): Promise<Rig> {
         { once: true },
       );
       started();
-      await Bun.sleep(options.jobMs);
+      await time.sleep(options.jobMs);
     },
   });
   await driver.enqueue({
@@ -89,7 +93,7 @@ async function rig(options: { jobMs: number }): Promise<Rig> {
   });
   const worker = jobWorker({ driver, context, pollIntervalMs: 1 });
   worker.start();
-  await isRunning;
+  await time.settles(isRunning, 50);
   return { worker, closes: () => closes, running: () => isRunning, reason: () => reason };
 }
 
@@ -112,7 +116,7 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
     // had to do the waiting itself, inside a hook, in the phase whose whole job is to be quick.
     expect(inflightCount()).toBe(1);
 
-    await app.worker.stop();
+    await time.settles(app.worker.stop(), 100);
     expect(inflightCount()).toBe(0);
   });
 
@@ -128,13 +132,13 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
     onShutdown(
       'probe:accept',
       async () => {
-        await Bun.sleep(5);
+        await time.sleep(5);
         acceptedAt += 1;
       },
       { phase: 'accept' },
     );
 
-    await drain('SIGTERM');
+    await time.settles(drain('SIGTERM'), 300);
     // Read the instant the drain returns, not later: an abandoned hook is still RUNNING, so a
     // probe asserted after a sleep would pass either way — it is whether the phase finished
     // inside the drain that decides whether the load balancer was ever told.
@@ -142,8 +146,8 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
     // The close hook is ABANDONED at the deadline — the job is still running and no budget is
     // left — so the teardown behind it finishes on its own clock. What matters is that it
     // finishes: bounded, it closes the driver and reaches 'stopped' instead of parking forever
-    // on a body that ignores its signal.
-    await Bun.sleep(30);
+    // on a body that ignores its signal — well before the 600 ms body ends.
+    await time.advance(30);
 
     expect((await app.worker.stats()).state).toBe('stopped');
     expect(app.closes()).toBe(1);
@@ -153,17 +157,15 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
     configureLifecycle({ deadlineMs: 150 });
     const app = await rig({ jobMs: 600 });
 
-    await drain('SIGTERM');
-    await Bun.sleep(30);
+    await time.settles(drain('SIGTERM'), 300);
+    await time.advance(30);
 
     // The memoized teardown is what a second `stop()` joins, and an unbounded one never settles:
     // `x dev`'s role rollback awaits this, so a wedged teardown wedges the shutdown that was
     // supposed to be tearing it down.
-    const answered = await Promise.race([
-      app.worker.stop('rollback').then(() => 'stopped'),
-      Bun.sleep(250).then(() => 'wedged'),
-    ]);
-    expect(answered).toBe('stopped');
+    // Inside 250 ms of fake time, and so well before the 600 ms body could release it.
+    await time.settles(app.worker.stop('rollback'), 250);
+    expect((await app.worker.stats()).state).toBe('stopped');
   });
 
   test('a SIGTERM landing on a manual stop() binds the teardown to the shutdown deadline', async () => {
@@ -176,8 +178,8 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
     // `undefined` deadline it was started with: core abandoned the hook at 150ms and moved on,
     // while the worker sat on the 600ms body with its driver open and `stopping` never settling.
     const stopped = app.worker.stop('deploy');
-    await Bun.sleep(10);
-    await drain('SIGTERM');
+    await time.advance(10);
+    await time.settles(drain('SIGTERM'), 300);
 
     // The abort is the accept hook's and fires either way; what the join was missing is the bound.
     const reason = app.reason();
@@ -188,11 +190,7 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
 
     // Well inside the 600ms the body still has to run: the teardown adopted the 150ms deadline,
     // abandoned the body there, closed the driver and answered the manual caller.
-    const answered = await Promise.race([
-      stopped.then(() => 'stopped'),
-      Bun.sleep(200).then(() => 'wedged'),
-    ]);
-    expect(answered).toBe('stopped');
+    await time.settles(stopped, 200);
     expect((await app.worker.stats()).state).toBe('stopped');
     expect(app.closes()).toBe(1);
   });

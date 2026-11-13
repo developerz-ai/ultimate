@@ -3,12 +3,14 @@
 // subscribe was X_TRANSPORT_UNAVAILABLE until somebody restarted the pod. The stub connect below
 // wraps the fake bus and can close a client the way the library does — `onClosed`, never `close()`.
 
-import { describe, expect, spyOn, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { ManualScheduler } from './client-harness-fixture';
 import type { NatsClient, NatsClientOptions, NatsConnect } from './nats-client';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
 import type { ReconnectBackoff } from './thundering-herd';
+import { turns, untilTurn } from './turns-fixture';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -18,11 +20,6 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     () => undefined,
     (error: unknown) => error,
   );
-
-/** Real timers: the preload freezes `Date.now()`, never `setTimeout`. */
-const waitFor = async (done: () => boolean, polls = 200): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
-};
 
 const NO_WAIT: ReconnectBackoff = { base: 0, max: 0, factor: 1, jitter: 'none' };
 
@@ -39,6 +36,8 @@ function harness() {
   const reported: unknown[] = [];
   /** Every dial asked for, the refused ones included — `dialled` holds only the ones that landed. */
   let attempts = 0;
+  /** The re-dial loop's backoff wait: armed here, and only `timers.fire()` ends it. */
+  const timers = new ManualScheduler();
   const connect: NatsConnect = async (options) => {
     attempts += 1;
     const client = await open(options);
@@ -53,6 +52,7 @@ function harness() {
       rng: () => 0.5,
       backoff: NO_WAIT,
       connect,
+      scheduler: timers.schedule,
       onError: (error) => reported.push(error),
       ...overrides,
     });
@@ -63,7 +63,7 @@ function harness() {
     await dial.client.close();
     dial.options.onClosed?.();
   };
-  return { broker, dialled, reported, transport, exhaust, attempts: () => attempts };
+  return { broker, dialled, reported, timers, transport, exhaust, attempts: () => attempts };
 }
 
 describe('NatsTransport, once the library has given up on a connection', () => {
@@ -73,7 +73,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     await transport.connect();
 
     await bus.exhaust(0);
-    await waitFor(() => bus.dialled.length === 2 && transport.connected);
+    await untilTurn(() => bus.dialled.length === 2 && transport.connected, 'the re-dial landed');
 
     expect(bus.dialled).toHaveLength(2);
     expect(transport.connected).toBe(true);
@@ -99,7 +99,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     await publisher.publish('x.change.posts', 'before');
 
     await bus.exhaust(0);
-    await waitFor(() => subscriber.connected);
+    await untilTurn(() => subscriber.connected, 'the subscriber re-dialled');
     await publisher.publish('x.change.posts', 'after');
 
     expect(seen).toEqual(['before', 'after']);
@@ -118,7 +118,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     });
 
     await bus.exhaust(0);
-    await waitFor(() => announced > 0);
+    await untilTurn(() => announced > 0, 'the re-dial was announced');
 
     expect(announced).toBe(1);
     await transport.close();
@@ -126,7 +126,6 @@ describe('NatsTransport, once the library has given up on a connection', () => {
 
   test('while the bus stays down, a caller is refused at once and the re-dial backs off', async () => {
     const bus = harness();
-    // 20 ms between attempts: over 100 ms a loop that spun would dial hundreds of times.
     const transport = bus.transport({
       backoff: { base: 20, max: 20, factor: 1, jitter: 'none' },
     });
@@ -134,20 +133,29 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     bus.broker.offline = true;
 
     await bus.exhaust(0);
-    await Bun.sleep(5);
+    // The first re-dial failed and the loop is parked on its backoff — not dialling again.
+    await untilTurn(() => bus.timers.pending !== null, 'the re-dial armed its backoff');
+    expect(bus.timers.pending).toBe(20);
     const before = bus.attempts();
     // Refused without a dial of its own: a request handler is never parked behind the re-dial.
     const refused = await caught(transport.publish('x.change.posts', 'lost'));
     expect(bus.attempts()).toBe(before);
-    await Bun.sleep(100);
-
     expect(codeOf(refused)).toBe('X_TRANSPORT_UNAVAILABLE');
+
+    // One dial per backoff wait, never a spin: each fire buys exactly one more attempt.
+    for (let wait = 1; wait <= 3; wait += 1) {
+      bus.timers.fire();
+      await untilTurn(() => bus.attempts() === before + wait, `re-dial #${wait} after its wait`);
+      await untilTurn(() => bus.timers.pending !== null, `backoff #${wait} re-armed`);
+      expect(bus.attempts()).toBe(before + wait);
+    }
     expect(transport.connected).toBe(false);
-    expect(bus.attempts()).toBeGreaterThan(2);
-    expect(bus.attempts()).toBeLessThan(12);
+    expect(bus.timers.delays.slice(-4)).toEqual([20, 20, 20, 20]);
+
     bus.broker.offline = false;
-    await waitFor(() => transport.connected, 500);
-    expect(transport.connected).toBe(true);
+    bus.timers.fire();
+    await untilTurn(() => transport.connected, 'the re-dial landed once the bus was back');
+    expect(bus.timers.pending).toBeNull();
     await transport.close();
   });
 
@@ -159,12 +167,16 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     await transport.connect();
     bus.broker.offline = true;
     await bus.exhaust(0);
-    await Bun.sleep(5);
+    await untilTurn(() => bus.timers.pending !== null, 'the re-dial armed its backoff');
+    const attempts = bus.attempts();
 
     await transport.close();
     bus.broker.offline = false;
-    await Bun.sleep(40);
+    // The wait close() cut short is disarmed: there is no timer left that could dial again.
+    expect(bus.timers.pending).toBeNull();
+    await turns(20);
 
+    expect(bus.attempts()).toBe(attempts);
     expect(bus.dialled).toHaveLength(1);
     expect(bus.broker.clients).toHaveLength(0);
   });
@@ -178,15 +190,11 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     await transport.connect();
     bus.broker.offline = true;
     await bus.exhaust(0);
-    await Bun.sleep(5);
-    const cleared = spyOn(globalThis, 'clearTimeout');
+    await untilTurn(() => bus.timers.pending !== null, 'the re-dial armed its backoff');
+    expect(bus.timers.pending).toBe(3_600_000);
 
-    try {
-      await transport.close();
-      expect(cleared).toHaveBeenCalled();
-    } finally {
-      cleared.mockRestore();
-    }
+    await transport.close();
+    expect(bus.timers.pending).toBeNull();
   });
 
   test('our own close() is never mistaken for a lost connection', async () => {
@@ -197,8 +205,9 @@ describe('NatsTransport, once the library has given up on a connection', () => {
 
     await transport.close();
     first?.options.onClosed?.();
-    await Bun.sleep(10);
+    await turns(20);
 
+    expect(bus.attempts()).toBe(1);
     expect(bus.dialled).toHaveLength(1);
   });
 
@@ -239,7 +248,10 @@ describe('NatsTransport, once the library has given up on a connection', () => {
 
     await bus.broker.clients[0]?.close();
     lost[0]?.onClosed?.();
-    await waitFor(() => dials === 2 && seen.length === 0 && bus.reported.length >= 2);
+    await untilTurn(
+      () => dials === 2 && seen.length === 0 && bus.reported.length >= 2,
+      'the second client dialled and its refusal reported',
+    );
     await publisher.publish('x.allowed', 'after');
 
     expect(seen).toEqual(['after']);
@@ -254,11 +266,12 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     const transport = bus.transport();
     await transport.connect();
     await bus.exhaust(0);
-    await waitFor(() => transport.connected);
+    await untilTurn(() => transport.connected, 'the re-dial landed');
 
     bus.dialled[0]?.options.onClosed?.();
-    await Bun.sleep(10);
+    await turns(20);
 
+    expect(bus.attempts()).toBe(2);
     expect(bus.dialled).toHaveLength(2);
     expect(transport.connected).toBe(true);
     await transport.close();

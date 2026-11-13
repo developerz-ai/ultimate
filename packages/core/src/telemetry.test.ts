@@ -88,7 +88,7 @@ describe('telemetry', () => {
 
     await expect(
       withSpan('job.onboardOrg', async () => {
-        await Bun.sleep(1);
+        await new Promise((resolve) => setTimeout(resolve, 0));
         throw new Error('provision failed');
       }),
     ).rejects.toThrow('provision failed');

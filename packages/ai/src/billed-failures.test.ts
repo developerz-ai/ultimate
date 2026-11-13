@@ -262,11 +262,14 @@ describe('a call that never reported usage is counted, never priced', () => {
   });
 
   test('the caller leaves during the first call: nothing known, one call unsettled', async () => {
-    model({ hang: true });
+    const { seen } = model({ hang: true });
     const run = declareAgent();
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 20);
-    const outcome = await failing((ctx) => run({ topic: 'tides' }, { ctx }), controller.signal);
+    const outcomeOf = failing((ctx) => run({ topic: 'tides' }, { ctx }), controller.signal);
+    // The caller leaves once the first call is out — on the event, not after a guessed delay.
+    while (seen.length === 0) await new Promise((turn) => setTimeout(turn, 0));
+    controller.abort();
+    const outcome = await outcomeOf;
     expect(outcome.code).toBe('X_ABORTED');
     expect(outcome.billed).toMatchObject(bill(0, 1));
     expect(outcome.ledgerTokens).toBe(0);

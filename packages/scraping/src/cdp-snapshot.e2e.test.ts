@@ -116,6 +116,7 @@ async function dumpDom(url: string, deadlineMs: number): Promise<string> {
     { stdout: 'pipe', stderr: 'pipe' },
   );
   let killed = false;
+  // real-clock: the deadline on a real Chrome child, which runs on its own time.
   const timer = setTimeout(() => {
     killed = true;
     child.kill('SIGKILL');

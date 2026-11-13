@@ -29,7 +29,8 @@ afterEach(() => {
 class HangsBeforeReady implements PgliteDriver {
   private ready = false;
   async query(): Promise<{ rows: readonly unknown[] }> {
-    await Bun.sleep(5);
+    // Readiness lands on a later macrotask than the call, as initdb's does.
+    await new Promise((turn) => setTimeout(turn, 0));
     this.ready = true;
     return { rows: [] };
   }

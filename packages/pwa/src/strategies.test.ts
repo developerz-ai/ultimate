@@ -331,8 +331,14 @@ describe('emitted parity', () => {
   }
 
   const URL_ = 'https://x.test/parity';
-  const tick = (ms: number): Promise<'held'> =>
-    new Promise((resolve) => setTimeout(() => resolve('held'), ms));
+  /**
+   * `'held'` after `turns` macrotasks. Both halves run on promises alone, so an answer not in by
+   * then is one the strategy is holding — a count of turns, never a duration a slow runner can eat.
+   */
+  const tick = async (turns: number): Promise<'held'> => {
+    for (let turn = 0; turn < turns; turn += 1) await new Promise((next) => setTimeout(next, 0));
+    return 'held';
+  };
 
   function world(scenario: Scenario) {
     const store = new Map<string, Response>();
@@ -365,9 +371,9 @@ describe('emitted parity', () => {
           async (r) => ({ status: r.status, body: await r.text() }),
           () => 'rejected' as const,
         ),
-        tick(50),
+        tick(10),
       ]);
-      await Promise.race([Promise.all(waits), tick(20)]);
+      await Promise.race([Promise.all(waits), tick(10)]);
       const kept = store.get(URL_);
       return { answer, stored: kept === undefined ? null : await kept.clone().text(), fetched };
     };

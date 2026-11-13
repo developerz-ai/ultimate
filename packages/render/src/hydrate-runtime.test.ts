@@ -229,17 +229,17 @@ describe('the mount markers, executed', () => {
     readonly dispose: () => Promise<void>;
   }
 
-  /** Microtasks plus one real timer: the idle fallback path is `setTimeout(go,1)`. */
+  /** Microtasks plus one loop turn: the idle fallback is `setTimeout(go,1)`, armed before it. */
   const tick = async (): Promise<void> => {
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     await new Promise((resolve) => {
-      setTimeout(resolve, 5);
+      setTimeout(resolve, 1);
     });
   };
 
   /** Bounded and non-throwing — a boot that never happens must fail an assertion, not hang. */
   const waitFor = async (ready: () => boolean): Promise<void> => {
-    for (let i = 0; i < 50 && !ready(); i += 1) await tick();
+    for (let i = 0; i < 1_000 && !ready(); i += 1) await tick();
   };
 
   async function bootIdleRuntime(): Promise<MountHarness> {
@@ -388,11 +388,14 @@ describe('the mount markers, executed', () => {
 // The same rule for `visible`, which reaches `boot` from an IntersectionObserver callback — a
 // stack with no caller left to hand a rejection to.
 describe('the visible runtime, executed', () => {
-  const tick = async (): Promise<void> => {
-    for (let i = 0; i < 8; i += 1) await Promise.resolve();
-    await new Promise((resolve) => {
-      setTimeout(resolve, 5);
-    });
+  /** The import of the island is file I/O, not time: wait for the marker, bounded, never hang. */
+  const waitFor = async (ready: () => boolean): Promise<void> => {
+    for (let i = 0; i < 1_000 && !ready(); i += 1) {
+      for (let m = 0; m < 8; m += 1) await Promise.resolve();
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1);
+      });
+    }
   };
 
   test('an island that fails to mount is marked failed and rejects nothing globally', async () => {
@@ -444,7 +447,7 @@ describe('the visible runtime, executed', () => {
       await import(pathToFileURL(runtime).href);
 
       failMount('mount is not a function');
-      await tick();
+      await waitFor(() => attributes.has('data-x-failed'));
 
       expect(attributes.get('data-x-failed')).toBe('mount is not a function');
       expect(attributes.has('data-x-mounted')).toBe(false);

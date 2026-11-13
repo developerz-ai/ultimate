@@ -42,8 +42,8 @@ function recordingTier(name: TierName, order: string[], fails = false): CacheTie
     set: () => Promise.resolve(),
     del: () => Promise.resolve(),
     async invalidateTags(): Promise<TierInvalidation> {
-      // A real hop, so anything that did not wait for this tier is recorded ahead of it.
-      await Bun.sleep(1);
+      // A macrotask hop, so anything that did not wait for this tier is recorded ahead of it.
+      await new Promise((hop) => setTimeout(hop, 0));
       order.push(name);
       if (fails) return Promise.reject(new Error(`${name} is down`));
       return { tier: name, keys: [] };

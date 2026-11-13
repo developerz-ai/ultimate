@@ -16,7 +16,7 @@ let installed = false;
  * that never touched the package has nothing to reset, and loading it to reset would put its graph
  * into every `packages/core` test. Resolved once per process: the path does not move.
  */
-function loaded(pkg: string, file: string): string | undefined {
+export function loaded(pkg: string, file: string): string | undefined {
   const key = `${pkg}/${file}`;
   let path = paths.get(key);
   if (path === undefined) {

@@ -404,7 +404,13 @@ registers the listener twice — then fires `onReconnect`; the CLI's listener ca
 busts it deferred. A publisher connect fires `onReconnect` too: after a Redis restart the
 subscriber may be back first, and the deferred busts are refused until the publisher is. A publish
 on a disconnected publisher waits up to `PUBLISHER_CONNECT_WAIT_MS` (1 s) once per outage, then
-refuses at once and is deferred. The channel is the hop's one subject,
+refuses at once and is deferred. Each SUBSCRIBE/UNSUBSCRIBE is bounded
+(`PUBSUB_COMMAND_TIMEOUT_MS`, 1 s), and a resubscribe refused while the connection stays up is
+retried on a backoff (250 ms doubling to 10 s, full jitter) until it lands — after `CLIENT KILL` no
+second `onconnect` comes. `schedule` and `resubscribeRetryMs` are injectable, so a test fires both
+by hand. Every connect also sends `CLIENT SETNAME connectionName` before subscribing —
+`redisPubSubAt` passes `cacheBusConnectionName()` (`x-cache-bus:<pid>`), so `CLIENT LIST TYPE
+pubsub` says which replica a subscription is. The channel is the hop's one subject,
 unprefixed: old and new builds of one app must hear each other mid-rollout.
 
 **`flushProcessTiers(source)` is the repair for a process that cannot know what it missed** — its

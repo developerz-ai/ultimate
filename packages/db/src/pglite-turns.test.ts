@@ -1,19 +1,31 @@
 import { describe, expect, test } from 'bun:test';
 import { createTurnQueue } from './pglite-turns';
 
+/**
+ * One macrotask: every promise the queue chains has settled by then. The queue is pure promises,
+ * so after a turn a caller that could have run, has — a negative read here is a fact, not a race.
+ */
+const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
 describe('createTurnQueue', () => {
   test('runs work in the order it arrived, never overlapping', async () => {
     const queue = createTurnQueue();
     const order: string[] = [];
-    const work = (name: string, ms: number) =>
+    let releaseA = (): void => undefined;
+    const aHeld = new Promise<void>((done) => (releaseA = done));
+    const work = (name: string, gate: Promise<void>) =>
       queue.run(async () => {
         order.push(`${name}:start`);
-        await Bun.sleep(ms);
+        await gate;
         order.push(`${name}:end`);
       });
 
-    // The slow one first: without the queue it would still be running when `b` started.
-    await Promise.all([work('a', 20), work('b', 1), work('c', 1)]);
+    // `a` holds until released: without the queue `b` and `c` would start beside it.
+    const all = Promise.all([work('a', aHeld), work('b', settle()), work('c', settle())]);
+    await settle();
+    expect(order).toEqual(['a:start']);
+    releaseA();
+    await all;
     expect(order).toEqual(['a:start', 'a:end', 'b:start', 'b:end', 'c:start', 'c:end']);
   });
 
@@ -25,7 +37,7 @@ describe('createTurnQueue', () => {
       ran = true;
     });
 
-    await Bun.sleep(5);
+    await settle();
     expect(ran).toBe(false);
     turn.release();
     await next;
@@ -41,7 +53,7 @@ describe('createTurnQueue', () => {
     });
 
     const release = await first;
-    await Bun.sleep(5);
+    await settle();
     expect(secondTaken).toBe(false);
     release.release();
     await second;
@@ -69,7 +81,7 @@ describe('createTurnQueue', () => {
       next = queue.run(async () => {
         ran = true;
       });
-      await Bun.sleep(5);
+      await settle();
       expect(ran).toBe(false);
       expect(turn.release).toBeInstanceOf(Function);
     }

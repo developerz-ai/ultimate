@@ -1,6 +1,6 @@
 // The claim loop's timer, through a real worker: what cuts a backed-off wait short, and that a
-// wake never forks the loop. The waits here are real because the timer is — each is bounded by
-// the worker's own floor (25 ms), and the assertion is the gap a regression would stretch.
+// wake never forks the loop. Fake time moves the worker's own timers (`fake-time-fixture.ts`), so
+// each gap asserted is the one the loop armed, never one a loaded runner stretched.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
@@ -9,6 +9,7 @@ import { resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { setWakeLive, signalEnqueued } from './enqueue-signal';
+import { useFakeTime } from './fake-time-fixture';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
 import { jobWorker } from './worker';
@@ -22,7 +23,10 @@ afterEach(() => {
 
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 
-/** The preload freezes `Date`; a retry's due time needs a clock that moves with the timers. */
+const time = useFakeTime();
+const until = time.until;
+
+/** The preload freezes `Date`; a retry's due time needs a clock that moves with the fake timers. */
 const moving: Clock = {
   now: () => new Date(1_790_000_000_000 + performance.now()),
   monotonic: () => performance.now(),
@@ -34,15 +38,6 @@ function deferred(): { readonly promise: Promise<void>; resolve(): void } {
     resolve = done;
   });
   return { promise, resolve };
-}
-
-/** Real time, bounded: fails rather than hangs when the loop never gets there. */
-async function until(condition: () => boolean | Promise<boolean>, budgetMs = 4_000): Promise<void> {
-  const deadline = performance.now() + budgetMs;
-  while (!(await condition())) {
-    if (performance.now() > deadline) expect.unreachable('the condition never became true');
-    await Bun.sleep(2);
-  }
 }
 
 const backedOffTo = (worker: Worker, ms: number) => async (): Promise<boolean> =>
@@ -91,13 +86,13 @@ describe('the claim loop', () => {
       await until(() => claims === 1);
       signalEnqueued();
       signalEnqueued('default');
-      await Bun.sleep(40);
+      await time.advance(40);
       // A second chain would have opened its own claim beside the one held open.
       expect(claims).toBe(1);
       gate.resolve();
       // The news arrived after that claim's snapshot: one more pass, at once.
       await until(() => claims === 2, 200);
-      await Bun.sleep(120);
+      await time.advance(120);
       expect(most).toBe(1);
       // One loop: 25 and 50 ms after the second pass. Two loops would have doubled it.
       expect(claims).toBeLessThanOrEqual(4);

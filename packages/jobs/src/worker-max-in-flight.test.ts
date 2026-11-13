@@ -1,15 +1,19 @@
 // `maxInFlight`: one cap on the runs a worker PROCESS holds across every queue, under which the
 // per-queue slots still bound each pool. What it must hold: never one claim over the cap however
 // many queues have room, a claim back the moment a run ends, every free slot handed to a queue
-// with work, no queue starved by a busier one, and the drain unchanged at the cap.
+// with work, no queue starved by a busier one, and the drain unchanged at the cap. Fake time
+// (`fake-time-fixture.ts`) moves the claim loop's timers: a backed-off wait is one the loop armed.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, collectMetrics, ctxOf, resetMetrics, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimOptions, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { useFakeTime } from './fake-time-fixture';
 import { job, resetJobs } from './job';
 import { jobWorker } from './worker';
+
+const time = useFakeTime();
 
 const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
@@ -96,7 +100,7 @@ const byQueue = (ids: readonly string[]): Record<string, number> => {
 /** Lets every pending settle and the next claim pass finish without a timer. */
 const settle = async (): Promise<void> => {
   for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
-  await Bun.sleep(0);
+  await new Promise<void>((done) => setImmediate(done));
 };
 
 beforeEach(() => {
@@ -169,20 +173,16 @@ describe('maxInFlight caps the process across every queue', () => {
     });
 
     worker.start();
-    await parked.startedAtLeast(3);
+    await time.settles(parked.startedAtLeast(3), 100);
     // At the cap every pass finds nothing, so the loop backs off. Caught the moment it arms an
     // 800 ms wait, the refill below cannot be the poll's: only the finish's own `kick` brings the
     // next pass inside 300 ms.
-    while ((await worker.stats()).pollDelayMs < 800) await Bun.sleep(5);
+    await time.until(async () => (await worker.stats()).pollDelayMs >= 800, 5_000);
     expect(parked.running).toHaveLength(3);
 
     const first = parked.running[0] ?? '';
     parked.release(first);
-    const refilled = await Promise.race([
-      parked.startedAtLeast(4).then(() => true),
-      Bun.sleep(300).then(() => false),
-    ]);
-    expect(refilled).toBe(true);
+    await time.settles(parked.startedAtLeast(4), 300);
     await settle();
     expect(parked.running).toHaveLength(3);
     expect(parked.running).not.toContain(first);
@@ -211,10 +211,10 @@ describe('maxInFlight caps the process across every queue', () => {
 
     worker.start();
     for (let round = 1; round <= 6; round += 1) {
-      await parked.startedAtLeast(round);
+      await time.settles(parked.startedAtLeast(round), 100);
       // Long enough for the loop to go idle at the cap: the next pass is an IDLE one, which once
       // asked every queue in one statement and took the oldest row — `a`'s, twenty deep.
-      await Bun.sleep(30);
+      await time.advance(30);
       expect(parked.running).toHaveLength(1);
       parked.release(parked.running[0] ?? '');
     }
@@ -322,7 +322,7 @@ describe('maxInFlight caps the process across every queue', () => {
     });
 
     worker.start();
-    await parked.startedAtLeast(2);
+    await time.settles(parked.startedAtLeast(2), 100);
     let stopped = false;
     const stopping = worker.stop('deploy').then(() => {
       stopped = true;
@@ -334,7 +334,7 @@ describe('maxInFlight caps the process across every queue', () => {
     await stopping;
     // The two held runs finished; their freed claims went to none of the four rows left, though
     // a 1 ms poll had every chance to take them.
-    await Bun.sleep(10);
+    await time.advance(10);
     expect(parked.started).toHaveLength(2);
     expect((await worker.stats()).state).toBe('stopped');
   });

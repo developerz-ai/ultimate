@@ -3,7 +3,8 @@
 // the receiver getting the event twice, and an abandoned attempt that wrote the ledger counted a
 // failure nobody saw toward `disableAfter`. The drain is the opposite case: a POST already on the
 // wire finishes inside the drain budget, because tearing it down hands the job to the next pod,
-// which re-POSTs the same event on every deploy.
+// which re-POSTs the same event on every deploy. Fake time (`fake-time-fixture.ts`) fires every
+// deadline here: no assertion stands on how long the runner took.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, isUltimateError, UltimateError } from '@ultimat3/core';
@@ -11,6 +12,7 @@ import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { JobDrainedError } from './errors';
 import { executeJob } from './execute';
+import { useFakeTime } from './fake-time-fixture';
 import type { AnyJobHandle } from './job';
 import { resetJobs } from './job';
 import { webhook } from './webhook';
@@ -38,14 +40,10 @@ const heldOpen = (init: RequestInit): Promise<Response> =>
     signal.addEventListener('abort', () => reject(signal.reason), { once: true });
   });
 
-/** Poll, never a guessed sleep: what is awaited is an attempt the deadline already gave up on. */
-async function until(condition: () => boolean): Promise<void> {
-  for (let waited = 0; waited < 2_000; waited += 2) {
-    if (condition()) return;
-    await Bun.sleep(2);
-  }
-  expect.unreachable('the abandoned delivery never reached its fetch');
-}
+const time = useFakeTime();
+
+/** Moves fake time until `condition` holds: what is awaited is an attempt already given up on. */
+const until = (condition: () => boolean): Promise<void> => time.until(condition, 2_000, 1);
 
 const drained = (): JobDrainedError => new JobDrainedError({ workerId: 'w1', signal: 'SIGTERM' });
 
@@ -80,12 +78,16 @@ async function queued(options: { readonly timeout?: string; readonly fetch: Webh
     ledger,
     driver,
     execute: (signal?: AbortSignal) =>
-      executeJob({
-        driver,
-        claimed: claimed as ClaimedJob,
-        handle: handle as AnyJobHandle,
-        ctx: ctxOf({ role: 'worker', buildId: 'test', signal }),
-      }),
+      time.settles(
+        executeJob({
+          driver,
+          claimed: claimed as ClaimedJob,
+          handle: handle as AnyJobHandle,
+          ctx: ctxOf({ role: 'worker', buildId: 'test', signal }),
+        }),
+        2_000,
+        1,
+      ),
     row: () => driver.introspect?.job((claimed as ClaimedJob).id),
   };
 }
@@ -112,7 +114,8 @@ describe('a delivery is cancelled with its attempt', () => {
     expect(signals).toHaveLength(1);
     expect(signals[0]?.aborted).toBe(true);
     await until(() => rejected);
-    await Bun.sleep(5);
+    // Past every timer the abandoned attempt could still write the ledger behind.
+    await time.advance(5);
     // The request was torn down, so the abandoned attempt has nothing to record — the queue's
     // next attempt is the one whose outcome the endpoint's count should hear.
     expect(delivery.ledger.attempts()).toHaveLength(0);
@@ -170,7 +173,7 @@ describe('the drain lets a POST on the wire finish', () => {
       const open = heldOpen(init);
       // SIGTERM lands while the request is on the wire; the receiver answers a moment later.
       drain.abort(drained());
-      return Promise.race([open, Bun.sleep(5).then(() => new Response('answered', { status }))]);
+      return Promise.race([open, time.sleep(5).then(() => new Response('answered', { status }))]);
     };
     return { drain, signals, fetch, sends: () => sends };
   }
@@ -227,7 +230,7 @@ describe('the drain lets a POST on the wire finish', () => {
     expect(execution.outcome).toBe('interrupted');
     await until(() => rejected);
     expect(signals[0]?.aborted).toBe(true);
-    await Bun.sleep(5);
+    await time.advance(5);
     expect(delivery.ledger.attempts()).toHaveLength(0);
   });
 

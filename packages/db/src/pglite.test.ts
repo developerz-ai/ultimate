@@ -30,6 +30,12 @@ const fakeModule = (
 });
 
 /** A promise the test resolves by hand, so a race is driven by an event and not by the clock. */
+/**
+ * One macrotask: the fake driver is pure promises, so a statement free to run has run by then and
+ * a negative read after it is a fact, not a race.
+ */
+const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
 function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
   let resolve!: () => void;
   const promise = new Promise<void>((settle) => {
@@ -259,7 +265,7 @@ describe('pgliteClient', () => {
 
     await reserved.execute(sql`begin`);
     const queued = client.execute(sql`insert into t values (1)`);
-    await Bun.sleep(5);
+    await settle();
     expect(driver.calls.map((call) => call.text)).toEqual(['begin']);
 
     await reserved.execute(sql`commit`);
@@ -285,7 +291,7 @@ describe('pgliteClient', () => {
     const holder = await client.reserve();
     await holder.execute(sql`begin`);
     const late = leaked.execute(sql`insert into t values (1)`);
-    await Bun.sleep(5);
+    await settle();
     expect(driver.calls.map((call) => call.text)).toEqual(['begin']);
 
     holder.release();
@@ -362,9 +368,9 @@ describe('pgliteClient', () => {
     const holder = await client.reserve();
     await holder.execute(sql`begin`);
     gate.resolve();
-    // Not an ordering assertion: the straggler must never run here, so waiting longer only
-    // strengthens it — the same shape as the released-reservation test above.
-    await Bun.sleep(5);
+    // Not an ordering assertion: the straggler must never run here, and after a settled turn a
+    // straggler let through has run — the same shape as the released-reservation test above.
+    await settle();
     expect(driver.calls.map((call) => call.text)).toEqual([
       'BEGIN',
       "select 'inside tx'",
@@ -421,7 +427,7 @@ describe('pgliteClient', () => {
     // the connection; taking a fresh reservation proves the queue has exactly one turn in it.
     const holder = await client.reserve();
     const queued = client.execute(sql`insert into t values (1)`);
-    await Bun.sleep(5);
+    await settle();
     expect(driver.calls).toEqual([]);
 
     holder.release();

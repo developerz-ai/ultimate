@@ -291,7 +291,9 @@ describe('a run has a deadline when it declares one', () => {
       { id: 'x' },
       { ctx: ctxOf({ actor: userActor({ id: 'u-1' }), signal: controller.signal }) },
     );
-    setTimeout(() => controller.abort(), 10);
+    // The caller leaves once the hung call is out — on the event, not after a guessed delay.
+    while (hung.length === 0) await new Promise((turn) => setTimeout(turn, 0));
+    controller.abort();
     // Not the deadline's code, and not the transport's either: the aborted socket surfaces as a
     // provider failure, which is retryable — a job would have re-run a run nobody is waiting for.
     await expect(call).rejects.toMatchObject({ code: 'X_ABORTED' });

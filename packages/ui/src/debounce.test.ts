@@ -1,52 +1,55 @@
-// Real timers, small windows: a debounce that is tested against a mocked clock proves the mock,
-// not the timer. Every case leaves nothing scheduled — a leaked timer is the actual bug here.
+// Bun's fake timers: the subject arms the runtime's own `setTimeout` and the test moves the clock,
+// so a window is asserted to the millisecond and nothing waits on the wall. Every case leaves
+// nothing scheduled — `jest.getTimerCount()` reads it directly; a leaked timer is the bug here.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { debounce } from './debounce';
 import { UI_ERROR_CODES, UiError } from './errors';
 
 const WINDOW = 10;
-const QUIET = 40;
 
-/**
- * A loaded runner fires a 10ms timer far later than 10ms, so a call that IS expected is polled for
- * rather than bet on a fixed sleep covering the window — that bet is what went red on CI, with two
- * chained windows landing past a 40ms budget. A call that is NOT expected still needs a real wait,
- * and `QUIET` is that one: waiting longer there only makes the assertion stricter.
- */
-const waitFor = async (done: () => boolean, polls = 200): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(5);
-};
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 describe('debounce', () => {
-  test('only the last call of a burst runs, with its own arguments', async () => {
+  test('only the last call of a burst runs, with its own arguments, a window after it', () => {
     const seen: string[] = [];
     const filter = debounce((query: string) => seen.push(query), WINDOW);
 
     filter('a');
+    jest.advanceTimersByTime(WINDOW - 1);
     filter('ab');
+    jest.advanceTimersByTime(WINDOW - 1);
     filter('abc');
+    // The window restarts on every call: a millisecond short of it, still nothing.
+    jest.advanceTimersByTime(WINDOW - 1);
     expect(seen).toEqual([]);
 
-    await waitFor(() => seen.length > 0);
+    jest.advanceTimersByTime(1);
     expect(seen).toEqual(['abc']);
     expect(filter.pending()).toBe(false);
+    expect(jest.getTimerCount()).toBe(0);
   });
 
-  test('a second burst runs again — the timer is not one-shot', async () => {
+  test('a second burst runs again — the timer is not one-shot', () => {
     let calls = 0;
     const tick = debounce(() => {
       calls += 1;
     }, WINDOW);
 
     tick();
-    await waitFor(() => calls > 0);
+    jest.advanceTimersByTime(WINDOW);
+    expect(calls).toBe(1);
     tick();
-    await waitFor(() => calls > 1);
+    jest.advanceTimersByTime(WINDOW);
     expect(calls).toBe(2);
   });
 
-  test('cancel drops the pending call and leaves nothing scheduled', async () => {
+  test('cancel drops the pending call and leaves nothing scheduled', () => {
     let calls = 0;
     const tick = debounce(() => {
       calls += 1;
@@ -56,20 +59,22 @@ describe('debounce', () => {
     expect(tick.pending()).toBe(true);
     tick.cancel();
     expect(tick.pending()).toBe(false);
+    expect(jest.getTimerCount()).toBe(0);
 
-    await Bun.sleep(QUIET);
+    jest.advanceTimersByTime(WINDOW * 4);
     expect(calls).toBe(0);
   });
 
-  test('flush runs the pending call now, and only once', async () => {
+  test('flush runs the pending call now, and only once', () => {
     const seen: string[] = [];
     const filter = debounce((query: string) => seen.push(query), WINDOW);
 
     filter('now');
     filter.flush();
     expect(seen).toEqual(['now']);
+    expect(jest.getTimerCount()).toBe(0);
 
-    await Bun.sleep(QUIET);
+    jest.advanceTimersByTime(WINDOW * 4);
     expect(seen).toEqual(['now']);
   });
 
@@ -82,7 +87,7 @@ describe('debounce', () => {
     expect(calls).toBe(0);
   });
 
-  test('a handler that re-queues keeps its next call', async () => {
+  test('a handler that re-queues keeps its next call', () => {
     const seen: string[] = [];
     const filter = debounce((query: string) => {
       seen.push(query);
@@ -90,8 +95,11 @@ describe('debounce', () => {
     }, WINDOW);
 
     filter('first');
-    await waitFor(() => seen.length > 1);
+    jest.advanceTimersByTime(WINDOW);
+    expect(seen).toEqual(['first']);
+    jest.advanceTimersByTime(WINDOW);
     expect(seen).toEqual(['first', 'second']);
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   test('an impossible delay is a UiError, not a silent immediate call', () => {

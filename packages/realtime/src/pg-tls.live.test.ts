@@ -163,6 +163,7 @@ describe.skipIf(!ready)('live · replication over TLS, libpq sslmode', () => {
       await feed.start({ onChange: (event) => void events.push(event) });
       const large = 'x'.repeat(70_000);
       await sql.query(`INSERT INTO ${TABLE} VALUES ('small', 'hello'), ('large', '${large}')`);
+      // real-clock: the walsender streams the commit over TLS on its own time
       for (let poll = 0; poll < 200 && events.length < 2; poll += 1) await Bun.sleep(50);
       await feed.stop();
 

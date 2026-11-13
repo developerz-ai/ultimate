@@ -226,6 +226,7 @@ test('a refused connection is a transient send failure, not a bare socket error'
 test('poolSize caps how many conversations run at once', async () => {
   let open = 0;
   let peak = 0;
+  let closed = 0;
   const connector = (): Promise<SmtpStream> => {
     open += 1;
     peak = Math.max(peak, open);
@@ -240,10 +241,12 @@ test('poolSize caps how many conversations run at once', async () => {
     ];
     return Promise.resolve({
       read: () => Promise.resolve(outbox.shift()),
-      write: () => Bun.sleep(5),
+      // A macrotask per write, so every conversation spans many turns and overlaps the others.
+      write: () => new Promise<void>((done) => setTimeout(done, 0)),
       startTls: () => Promise.resolve(),
       close: () => {
         open -= 1;
+        closed += 1;
       },
     });
   };
@@ -256,9 +259,10 @@ test('poolSize caps how many conversations run at once', async () => {
   });
 
   const first = Array.from({ length: 6 }, () => driver.send(messageFixture()));
-  // Arrivals after the queue has started draining: the ceiling has to hold for them too, and
-  // every stream from the first batch has to have been closed rather than leaked.
-  await Bun.sleep(12);
+  // Arrivals after the queue has started draining — once a first conversation has closed: the
+  // ceiling has to hold for them too, and every stream from the first batch has to have been
+  // closed rather than leaked.
+  while (closed === 0) await new Promise((turn) => setTimeout(turn, 0));
   const late = Array.from({ length: 3 }, () => driver.send(messageFixture()));
 
   await Promise.all([...first, ...late]);

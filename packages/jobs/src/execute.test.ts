@@ -1,6 +1,7 @@
 // The deadline is a cancellation, not just a rejection. What is proven here is the ORDER — the
 // body is told to stop before the nack that hands its job to another worker — and the fence that
 // holds when the body ignores it: a step from the timed-out attempt never reaches the store.
+// Fake time (`fake-time-fixture.ts`) fires the deadline: no wait here is the runner's to decide.
 
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
@@ -10,6 +11,7 @@ import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { JobExecution } from './execute-result';
+import { useFakeTime } from './fake-time-fixture';
 import type { AnyJobHandle, JobRunArgs } from './job';
 import { job, resetJobs } from './job';
 
@@ -23,18 +25,10 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
-/**
- * Poll, never sleep a guessed interval: every wait below is for an ABANDONED body — work the
- * deadline already gave up on — and a fixed sleep sized against it inverts on a loaded runner,
- * failing for scheduling rather than for the behaviour under test.
- */
-async function until(condition: () => boolean, label: string): Promise<void> {
-  for (let waited = 0; waited < 2_000; waited += 2) {
-    if (condition()) return;
-    await Bun.sleep(2);
-  }
-  throw new Error(`until timed out: ${label}`);
-}
+const time = useFakeTime();
+
+/** Moves fake time until `condition` holds: every wait below is for an ABANDONED body. */
+const until = (condition: () => boolean): Promise<void> => time.until(condition, 2_000, 1);
 
 /**
  * Work that ENDS at the cancellation rather than racing it. `Bun.sleep(40)` under a 5ms deadline
@@ -113,7 +107,7 @@ async function claimOne(
     driver,
     claimed,
     execute: (ctx = ctxOf({ role: 'worker', buildId: 'test' })) =>
-      executeJob({ driver, claimed, handle: handle as AnyJobHandle, ctx }),
+      time.settles(executeJob({ driver, claimed, handle: handle as AnyJobHandle, ctx }), 2_000, 1),
     nacks: () => nacks,
   };
 }
@@ -148,7 +142,7 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     // The nack makes the job claimable by another worker, so the body must already have been told
     // to stop by the time it happens — otherwise two copies of one job run side by side.
     expect(abortedAtNack).toBe(true);
-    await until(() => abortedInBody !== undefined, 'the abandoned body finished');
+    await until(() => abortedInBody !== undefined);
     expect(abortedInBody).toBe(true);
   });
 
@@ -178,7 +172,7 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     const harness = await claimOne({
       run: ({ step }) => {
         // A handler that does not await its own step: the run returns, the step keeps going.
-        forgotten = step.run('forgotten', () => Bun.sleep(20).then(() => 'done'));
+        forgotten = step.run('forgotten', () => time.sleep(20).then(() => 'done'));
         return Promise.resolve();
       },
     });
@@ -186,7 +180,14 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     const execution = await harness.execute();
 
     expect(execution.outcome).toBe('completed');
-    await expect(forgotten).rejects.toThrow(/X_ABORTED/);
+    // Caught before time moves, so the refusal is read here and never an unhandled rejection. Not
+    // `expect(...).rejects`: it runs the loop until the promise settles, and fake time never moves.
+    const refused = Promise.resolve(forgotten).then(
+      () => 'written',
+      (error: unknown) => String(error),
+    );
+    await time.advance(20);
+    expect(await refused).toContain('X_ABORTED');
     expect(await harness.driver.steps.get(harness.claimed.runId, 'forgotten')).toBeUndefined();
   });
 
@@ -198,10 +199,7 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     });
 
     await harness.execute();
-    await until(
-      () => warn.mock.calls.some((call) => call[0] === 'jobs.timeout.abandoned'),
-      'jobs.timeout.abandoned logged',
-    );
+    await until(() => warn.mock.calls.some((call) => call[0] === 'jobs.timeout.abandoned'));
     const abandoned = warn.mock.calls.find((call) => call[0] === 'jobs.timeout.abandoned');
     warn.mockRestore();
 
@@ -215,22 +213,18 @@ describe('a timed-out job is cancelled, not orphaned', () => {
       // The cooperative handler: it watches the signal and unwinds when it fires.
       run: ({ ctx }) =>
         new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 40);
-          ctx.signal.addEventListener(
-            'abort',
-            () => {
-              clearTimeout(timer);
-              reject(ctx.signal.reason as Error);
-            },
-            { once: true },
-          );
+          // A resolve after the reject is a no-op: the abort is what ends this body.
+          void time.sleep(40).then(resolve);
+          ctx.signal.addEventListener('abort', () => reject(ctx.signal.reason as Error), {
+            once: true,
+          });
         }),
     });
 
     await harness.execute();
-    // The one wait here that must stay fixed: this asserts an ABSENCE, so there is no condition
-    // to poll for. The bound covers the 40ms at which an uncooperative body would have logged.
-    await Bun.sleep(60);
+    // An ABSENCE, so there is no condition to poll for: fake time past the 40ms at which an
+    // uncooperative body would have logged, so every timer that could log has fired.
+    await time.advance(60);
     const abandoned = warn.mock.calls.filter((call) => call[0] === 'jobs.timeout.abandoned');
     warn.mockRestore();
 

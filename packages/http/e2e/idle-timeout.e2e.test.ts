@@ -20,6 +20,7 @@ const handle = httpServer({
       path: '/slow',
       meta: { name: 'slow', auth: 'public' },
       handler: async () => {
+        // real-clock: Bun's socket idle cut is the runtime's native timer, which no fake timer moves
         await Bun.sleep(SILENT_MS);
         return textResponse('done');
       },

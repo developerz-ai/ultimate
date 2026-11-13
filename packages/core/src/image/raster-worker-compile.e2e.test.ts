@@ -9,6 +9,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; Bun.build takes the paths already joined.
 import { join } from 'node:path';
+import { removeTempDir } from '../temp-dir-fixture';
 import { rasterWorkerBundle } from './raster-worker-bundle';
 
 // Under the repository, never the OS temp: on `windows-latest` the checkout is on D: and the temp
@@ -16,8 +17,20 @@ import { rasterWorkerBundle } from './raster-worker-bundle';
 const scratch = join(import.meta.dir, '..', '..', '..', '..', 'node_modules', '.cache');
 mkdirSync(scratch, { recursive: true });
 const dir = mkdtempSync(join(scratch, 'ultimate-raster-worker-e2e-'));
-afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
+/** Every compiled probe started, so none can outlive the directory it runs in (its cwd and image). */
+const started: Bun.Subprocess[] = [];
+afterAll(async () => {
+  // A probe a failed or timed-out test left running holds `dir` as its cwd and its executable:
+  // ended and AWAITED first, so the removal never races a process this file started.
+  for (const run of started) run.kill();
+  await Promise.all(started.map((run) => run.exited));
+  // Then Windows' own hold: an exited `.exe` stays mapped, and a fresh one is scanned, for a moment
+  // after `exited` resolved — EBUSY on a bare `rmSync` (`temp-dir-fixture.ts`).
+  await removeTempDir(dir, {
+    remove: (path) => rmSync(path, { recursive: true, force: true }),
+    // real-clock: Windows releases the just-exited binary on its own schedule, not this test's.
+    sleep: (ms) => Bun.sleep(ms),
+  });
 });
 
 const own = (file: string): string => JSON.stringify(join(import.meta.dir, file));
@@ -81,6 +94,7 @@ async function compileAndRun(name: string, withWorker: boolean): Promise<Record<
     stdout: 'pipe',
     stderr: 'pipe',
   });
+  started.push(run);
   const [stdout, exit] = await Promise.all([new Response(run.stdout).text(), run.exited]);
   expect(exit).toBe(0);
   const last = stdout.trim().split('\n').at(-1) ?? '';

@@ -11,6 +11,11 @@ import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 const MAX_FRAMES = 400;
 const DROPS_WANTED = 5;
 const PAD = 'x'.repeat(150 * 1024);
+/**
+ * Sent raw after the burst, on the same ordered stream: queued behind every frame the server
+ * accepted, so its arrival is the proof that everything before it has landed — no quiet window.
+ */
+const SENTINEL = '{"sentinel":true}';
 
 let stop: (() => void) | undefined;
 afterEach(() => {
@@ -30,6 +35,7 @@ describe('unit · what a real socket says about a frame', () => {
   test('a frame counted as dropped never arrives; every other frame does', async () => {
     const sent = new Set<number>();
     let attempted = 0;
+    let sentinelQueued = false;
     let socket: SyncSocket | undefined;
     const server = Bun.serve({
       port: 0,
@@ -58,6 +64,8 @@ describe('unit · what a real socket says about a frame', () => {
             if (socket.send(frameAt(attempted))) sent.add(attempted);
             attempted += 1;
           }
+          // `0` alone is a drop (`socket.ts`); queued under backpressure (`-1`) is delivered.
+          sentinelQueued = ws.send(SENTINEL) !== 0;
         },
         message() {},
       },
@@ -71,23 +79,20 @@ describe('unit · what a real socket says about a frame', () => {
     const received = new Set<number>();
     await new Promise<void>((resolve, reject) => {
       const client = new WebSocket(`ws://127.0.0.1:${server.port}/`);
-      let quiet: ReturnType<typeof setTimeout> | undefined;
-      const settle = (): void => {
-        clearTimeout(quiet);
-        quiet = setTimeout(() => {
+      client.onmessage = (event) => {
+        const text = String(event.data);
+        if (text === SENTINEL) {
           client.close();
           resolve();
-        }, 300);
-      };
-      client.onmessage = (event) => {
-        const frame = JSON.parse(String(event.data)) as { event: { index: number } };
+          return;
+        }
+        const frame = JSON.parse(text) as { event: { index: number } };
         received.add(frame.event.index);
-        if (received.size === sent.size) settle();
       };
       client.onerror = () => reject(new TypeError('the test socket failed to connect'));
-      client.onopen = settle;
     });
 
+    expect(sentinelQueued).toBe(true);
     expect(socket?.sentFrames).toBe(sent.size);
     expect(socket?.droppedFrames).toBe(attempted - sent.size);
     // The claim itself: nothing counted as dropped arrived, and nothing reported sent went missing.

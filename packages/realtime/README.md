@@ -874,6 +874,8 @@ made it — a key already queued collapses as always, and nothing queued is ever
   asserts the KV bucket when `shared` is first read instead of at the dial, so a publisher needs no
   JetStream. The first dial is ONE attempt of the library's — `waitOnFirstConnect` is not set,
   because under it nats@2.29.3 retries a failed first dial forever and the promise never settles.
+  `scheduler` (a `Scheduler`, default `timeoutScheduler`) arms the re-dial loop's backoff wait: a
+  test hands a manual one and fires each wait itself, so no test of the loop sleeps.
 - **`NatsTransport` runs on the official `nats` client** — `nats@2.29.3`, pinned exact, admitted at
   this transport seam and nowhere else
   ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)). The package reaches it

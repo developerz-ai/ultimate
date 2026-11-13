@@ -3,7 +3,7 @@
 // the counter written inside the settle, the atomic fire and the counters' fold. Opt-in (`.job.`):
 // booting Postgres costs seconds.
 
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -56,6 +56,18 @@ afterEach(() => {
   resetJobs();
 });
 
+/**
+ * The boot is this suite's setup, not any one test's work: booted inside the first test's hook it
+ * ran on that test's 5 s budget, and under `--rerun-each` or a loaded `job` step it overran — the
+ * boot went on in the background (bun cancels nothing) and starved whatever test ran next. Its own
+ * budget, as `queue-wake.job.test.ts` measures it (32-42 s loaded); every test keeps the default.
+ */
+const PGLITE_BOOT_MS = 120_000;
+
+beforeAll(async () => {
+  await embeddedPg();
+}, PGLITE_BOOT_MS);
+
 afterAll(async () => {
   await (await embeddedPg()).close();
 });
@@ -72,10 +84,13 @@ describe('the operator surface on the pg driver', () => {
     const killed = workerOn(harness, driver, 'worker-killed');
     alive.start();
     killed.start();
-    // `start()` announces at once; the statement is on the wire, not yet answered.
-    await Bun.sleep(20);
-
-    const both = await operator.workers();
+    // `start()` announces at once; the statement is on the wire, not yet answered. The rows
+    // landing is the database fact waited on — turn by turn, never a guessed interval.
+    let both = await operator.workers();
+    for (let turn = 0; turn < 500 && both.length < 2; turn += 1) {
+      await new Promise((done) => setImmediate(done));
+      both = await operator.workers();
+    }
     expect(both.map((worker) => worker.id).sort()).toEqual(['worker-alive', 'worker-killed']);
     expect(both.find((worker) => worker.id === 'worker-alive')).toMatchObject({
       host: 'host-of-worker-alive',

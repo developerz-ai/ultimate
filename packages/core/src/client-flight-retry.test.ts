@@ -24,9 +24,11 @@ function recordedSleep(): { sleep: (ms: number) => Promise<void>; waits: number[
 function manualClock(): {
   schedule: (fn: () => void, ms: number) => () => void;
   fireAll: () => void;
+  armed: () => number;
 } {
   let pending: Array<{ fn: () => void; live: boolean }> = [];
   return {
+    armed: (): number => pending.filter((entry) => entry.live).length,
     schedule: (fn) => {
       const entry = { fn, live: true };
       pending.push(entry);
@@ -242,13 +244,31 @@ describe('the concurrency ceiling', () => {
   });
 });
 
-/** Whether `promise` settles within `ms` of real time — a wait that cannot be cancelled never does. */
-async function settledWithin<T>(promise: Promise<T>, ms: number): Promise<T | 'still waiting'> {
-  return Promise.race([promise, Bun.sleep(ms).then(() => 'still waiting' as const)]);
+const turn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * Whether `promise` settles within a few event-loop turns. The manual clock never fires on its
+ * own, so a call that only settles when its retry timer fires is 'still waiting' here, always.
+ */
+async function settledWithin<T>(promise: Promise<T>): Promise<T | 'still waiting'> {
+  let waited = false;
+  const turns = (async () => {
+    for (let i = 0; i < 5; i += 1) await turn();
+    waited = true;
+    return 'still waiting' as const;
+  })();
+  const outcome = await Promise.race([promise, turns]);
+  return waited ? 'still waiting' : outcome;
 }
 
-/** Lets the first attempt fail and the loop reach its wait. */
-const reachTheWait = (): Promise<void> => Bun.sleep(5);
+/** Turns until `ready()` holds — bounded, so a fact that never comes fails the assertion after. */
+async function until(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 100 && !ready(); i += 1) await turn();
+}
+
+/** Lets the first attempt fail and the loop reach its wait: the retry timer is armed. */
+const reachTheWait = (clock: { armed: () => number }): Promise<void> =>
+  until(() => clock.armed() > 0);
 
 describe('the wait between attempts', () => {
   test('a bump during the wait settles the call at once, not when the timer fires', async () => {
@@ -265,10 +285,10 @@ describe('the wait between attempts', () => {
     const flight = clientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
 
     const pending = flight.run(plan).catch((caught: unknown) => caught);
-    await reachTheWait();
+    await reachTheWait(clock);
     flight.bump();
 
-    const outcome = await settledWithin(pending, 50);
+    const outcome = await settledWithin(pending);
     expect(outcome).toBeUltimateError('X_SUPERSEDED');
     expect(calls).toBe(1);
   });
@@ -289,10 +309,10 @@ describe('the wait between attempts', () => {
     const flight = clientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
 
     const pending = flight.run(plan).catch((caught: unknown) => caught);
-    await reachTheWait();
+    await reachTheWait(clock);
     caller.abort();
 
-    const outcome = await settledWithin(pending, 50);
+    const outcome = await settledWithin(pending);
     expect(outcome).toBeInstanceOf(DOMException);
     expect((outcome as DOMException).name).toBe('AbortError');
     expect(calls).toBe(1);
@@ -306,7 +326,7 @@ describe('the wait between attempts', () => {
       limit: { maxConcurrent: 1, maxQueued: 0 },
     });
     const waiting = flight.run(flaky(1, gateway));
-    await reachTheWait();
+    await reachTheWait(clock);
     expect(flight.active).toBe(0);
 
     const other = await flight.run(flaky(0, gateway)).catch((caught: unknown) => caught);
@@ -356,11 +376,11 @@ describe('a retry attempt queued at the gate', () => {
       limit: { maxConcurrent: 1, maxQueued: 1 },
     });
     const retrying = flight.run(failsOnce(signal)).catch((caught: unknown) => caught);
-    await reachTheWait();
+    await reachTheWait(clock);
     const holder = holding();
     const held = flight.run(holder);
     clock.fireAll();
-    await reachTheWait();
+    await until(() => flight.queued === 1);
     expect(flight.queued).toBe(1);
     return { flight, retrying, holder, held };
   }
@@ -368,7 +388,7 @@ describe('a retry attempt queued at the gate', () => {
   test('bump() removes it from the queue and settles it at once; the slot holder runs on', async () => {
     const { flight, retrying, holder, held } = await queuedBehind();
     flight.bump();
-    expect(await settledWithin(retrying, 50)).toBeUltimateError('X_SUPERSEDED');
+    expect(await settledWithin(retrying)).toBeUltimateError('X_SUPERSEDED');
     expect(flight.queued).toBe(0);
     // The holder is a write, so the bump never aborts it: it keeps its slot and finishes, and its
     // answer is then fenced like every call issued before the bump.
@@ -382,7 +402,7 @@ describe('a retry attempt queued at the gate', () => {
     const caller = new AbortController();
     const { flight, retrying, holder, held } = await queuedBehind(caller.signal);
     caller.abort();
-    const outcome = await settledWithin(retrying, 50);
+    const outcome = await settledWithin(retrying);
     expect((outcome as DOMException).name).toBe('AbortError');
     expect(flight.queued).toBe(0);
     const next = flight.run(flaky(0, gateway));

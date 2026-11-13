@@ -4,10 +4,11 @@
 // loss is declared — one failed renewal is not a lost lease, an expired window is — and that a
 // heartbeat which never answers at all is still caught.
 
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import type { FrozenClock } from '@ultimat3/core';
 import { collectMetrics, frozenClock, logger, resetMetrics } from '@ultimat3/core';
 import type { ClaimedJob } from './driver';
+import { useFakeTime } from './fake-time-fixture';
 import { startLeaseHeartbeat } from './heartbeat';
 
 const VISIBILITY_MS = 30_000;
@@ -288,7 +289,8 @@ describe('a clean completion is not a lost lease', () => {
     void heartbeat.renew();
     heartbeat.stop();
     land(false);
-    await Bun.sleep(1);
+    // The answer's continuation is promise-chained: a few turns are its whole wait.
+    for (let turn = 0; turn < 6; turn += 1) await new Promise((done) => setImmediate(done));
 
     const lost = error.mock.calls.filter((call) => call[0] === 'jobs.lease.lost');
     error.mockRestore();
@@ -302,6 +304,9 @@ describe('a clean completion is not a lost lease', () => {
 });
 
 describe('the interval drives it without the test touching a timer', () => {
+  // The shipped interval (no `schedule` handed in), under fake timers: the one armed is asserted.
+  const time = useFakeTime();
+
   test('a live lease renews on its own, and stop() really stops', async () => {
     let renewals = 0;
     const heartbeat = startLeaseHeartbeat({
@@ -318,12 +323,16 @@ describe('the interval drives it without the test touching a timer', () => {
       clock: frozenClock(0),
     });
 
-    await Bun.sleep(20);
+    expect(jest.getTimerCount()).toBe(1);
+    await time.advance(20, 1);
     heartbeat.stop();
     const armed = renewals;
-    await Bun.sleep(20);
+    // Cleared, not merely ignored: nothing is left armed to fire.
+    expect(jest.getTimerCount()).toBe(0);
+    await time.advance(20, 1);
 
-    expect(armed).toBeGreaterThan(0);
+    // One renewal per fake millisecond: the interval it was handed, and nothing else, drove it.
+    expect(armed).toBe(20);
     expect(renewals).toBe(armed);
   });
 });

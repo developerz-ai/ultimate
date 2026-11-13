@@ -210,7 +210,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `value-codec.ts` | the one value encoding every tier stores and decodes |
 | `redis.ts` | the shared tier over core's `redisClient()` (`@ultimat3/core/redis`, never `Bun.redis`), build-namespaced keys, the value budget, the write/bust order |
-| `redis-pubsub.ts` | `redisPubSub`/`redisPubSubAt`: invalidations between replicas over Redis pub/sub, resubscribe on every connect |
+| `redis-pubsub.ts` | `redisPubSub`/`redisPubSubAt`: invalidations between replicas over Redis pub/sub, resubscribe on every connect, each command bounded, a refused resubscribe retried on a backoff |
 | `redis-deadline.ts` | `withinDeadline`: a per-command deadline (150 ms, `commandTimeoutMs`), a 5 s park of the value path after one is missed, and the bust view that skips the park on its own 1,000 ms |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |

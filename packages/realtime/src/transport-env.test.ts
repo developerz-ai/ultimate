@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { ManualScheduler } from './client-harness-fixture';
 import { InProcessTransport } from './fanout';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport } from './nats-transport';
@@ -13,6 +14,7 @@ import {
   selectTransport,
   TRANSPORT_ENV_KEYS,
 } from './transport-env';
+import { untilTurn } from './turns-fixture';
 
 const URL = 'nats://bus.test:4222';
 
@@ -149,6 +151,7 @@ describe('selectTransport', () => {
   test("use: 'publish' connects in the background: connect() resolves with the bus down", async () => {
     const broker = new FakeNatsBroker();
     broker.offline = true;
+    const timers = new ManualScheduler();
     const selection = selectTransport(
       { NATS_URL: URL },
       {
@@ -156,6 +159,7 @@ describe('selectTransport', () => {
         clock: frozenClock(0),
         connect: fakeNatsConnect(broker),
         backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
+        scheduler: timers.schedule,
         onError: () => undefined,
       },
     );
@@ -169,8 +173,12 @@ describe('selectTransport', () => {
     );
     expect(codeOf(refused)).toBe('X_TRANSPORT_UNAVAILABLE');
 
+    // The background dial was refused and is parked on its backoff, on the scheduler handed in.
+    await untilTurn(() => timers.pending !== null, 'the refused dial armed its backoff');
+    expect(timers.pending).toBe(2);
     broker.offline = false;
-    for (let poll = 0; poll < 500 && selection.state() !== 'up'; poll += 1) await Bun.sleep(2);
+    timers.fire();
+    await untilTurn(() => selection.state() === 'up', 'the dial after the bus came back');
     expect(selection.state()).toBe('up');
     // A publisher never reads presence, so it asks JetStream for nothing.
     expect(broker.streams).toEqual([]);

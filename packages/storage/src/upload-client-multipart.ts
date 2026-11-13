@@ -133,14 +133,20 @@ export async function uploadInParts(input: MultipartUploadInput): Promise<Multip
     input.onProgress?.({ loaded: confirmed, total, ratio: total > 0 ? confirmed / total : 0 });
   };
 
+  // One failed part stops every worker taking another, and the upload answers only once the parts
+  // already in flight have settled: a caller that resumes on the failure never races a stale PUT.
+  let failure: { readonly error: unknown } | undefined;
   const worker = async (): Promise<void> => {
     for (let next = missing.shift(); next !== undefined; next = missing.shift()) {
-      if (signal?.aborted === true) return;
-      await sendPart(next);
+      if (signal?.aborted === true || failure !== undefined) return;
+      await sendPart(next).catch((error: unknown) => {
+        failure ??= { error };
+      });
     }
   };
   try {
     await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, missing.length) }, worker));
+    if (failure !== undefined) throw failure.error;
     if (signal?.aborted === true) throw cancelled();
   } catch (error) {
     // Cancelled is abandoned: the parts are dropped now rather than billing until a sweep. Any
