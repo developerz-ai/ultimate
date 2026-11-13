@@ -8,6 +8,7 @@ import { UltimateError } from '@ultimat3/core';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
 import { DEFAULT_CACHE_TIERS, startCacheTiers } from './runtime-cache';
+import { turn, turns, untilTurn } from './runtime-turns-fixture';
 
 let release: (() => Promise<void>) | undefined;
 let restore: (() => void) | undefined;
@@ -44,10 +45,6 @@ function flakyTransport(refusals: number): { transport: Transport; attempts: () 
   return { transport, attempts: () => attempts };
 }
 
-const until = async (done: () => boolean): Promise<void> => {
-  for (let tick = 0; tick < 200 && !done(); tick += 1) await Bun.sleep(1);
-};
-
 describe('unit · the invalidation subscribe is retried', () => {
   test('two refusals, then the third subscribe is made — and no fourth', async () => {
     restore = isolateTiers();
@@ -57,10 +54,11 @@ describe('unit · the invalidation subscribe is retried', () => {
       purge: noopPurgeDriver(),
       transport: bus.transport,
       tiers: DEFAULT_CACHE_TIERS,
-      subscribeRetryMs: () => 0,
+      subscribeRetryWait: () => turn(),
     });
-    await until(() => bus.attempts() >= 3);
-    await Bun.sleep(5);
+    await untilTurn(() => bus.attempts() >= 3, 'the third subscribe');
+    // Twenty more turns, each a whole retry wait: a fourth subscribe would have been made by now.
+    await turns(20);
     expect(bus.attempts()).toBe(3);
   });
 
@@ -72,12 +70,11 @@ describe('unit · the invalidation subscribe is retried', () => {
       purge: noopPurgeDriver(),
       transport: bus.transport,
       tiers: DEFAULT_CACHE_TIERS,
-      subscribeRetryMs: () => 60_000,
+      // A delay that never ends on its own: only the release can end the wait.
+      subscribeRetryWait: () => new Promise(() => undefined),
     });
-    await until(() => bus.attempts() >= 1);
-    const started = performance.now();
+    await untilTurn(() => bus.attempts() >= 1, 'the first refused subscribe');
     await stop();
-    expect(performance.now() - started).toBeLessThan(1_000);
     expect(bus.attempts()).toBe(1);
   });
 });

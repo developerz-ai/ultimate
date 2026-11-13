@@ -14,6 +14,7 @@ import type { IsrController } from '@ultimat3/render/server';
 import { isrController } from '@ultimat3/render/server';
 import { attachedIsr } from './runtime-isr';
 import { appRoutes } from './runtime-render';
+import { untilTurnAsync } from './runtime-turns-fixture';
 
 const BUILD_ID = 'isr-spelling-under-test';
 const postTag = tag('post');
@@ -222,11 +223,13 @@ describe.each(PAGES)('unit · $name, in every spelling the router accepts', (pag
     // Stale-while-revalidate: the copy once more, MARKED, and the 404 renders behind it.
     const stale = await app.get(spelling);
     expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
+    // The regeneration is in-process promises over a memory store: polled one turn at a time.
     let next = await app.get(spelling);
-    for (const from = Date.now(); next.status !== 404 && Date.now() - from < 10_000; ) {
-      await Bun.sleep(5);
+    await untilTurnAsync(async () => {
+      if (next.status === 404) return true;
       next = await app.get(spelling);
-    }
+      return next.status === 404;
+    }, `the regenerated 404 for ${spelling}`);
     expect(next.status).toBe(404);
     expect(await app.isr.store().paths()).toEqual([page.key]);
   });

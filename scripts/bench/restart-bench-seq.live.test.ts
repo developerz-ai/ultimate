@@ -22,6 +22,8 @@ const BENCH_TOPIC = BENCH_CHANNEL.topic({ room: BENCH_ROOM });
 
 const CLIENTS = 24;
 
+/** Paces polls of real sockets: TCP delivery, the clients' reconnect timers, a port's release. */
+// real-clock: real WebSockets over the kernel's TCP stack, and a port the OS frees on its own time
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**

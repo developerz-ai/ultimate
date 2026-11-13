@@ -9,6 +9,8 @@
 // routes to — and a save loop does not grow the process (the old instances are collectable).
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive mkdir; the root is a module-level `const`, so sync.
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
@@ -21,8 +23,12 @@ import { resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
 
 // Under `packages/cli/` for the reason `.dev-fixture` is: the page imports `@ultimat3/render`,
-// which resolves through this package's own node_modules and not from /tmp.
-const ROOT = processRoot(join(import.meta.dir, '..', '.app-graph-fixture'));
+// which resolves through this package's own node_modules and not from /tmp. And a directory of
+// this LOAD's own below the process's: the fixture's modules stay in Bun's cache for the life of
+// the process, so a second load of this file (`--rerun-each`) on the same paths found them there.
+const RUN = processRoot(join(import.meta.dir, '..', '.app-graph-fixture'));
+mkdirSync(RUN, { recursive: true });
+const ROOT = mkdtempSync(join(RUN, 'load-'));
 const DIR = join(ROOT, 'apps/web/app/hello');
 const PAGE = join(DIR, 'page.tsx');
 const CARD = join(DIR, 'card.tsx');
@@ -108,7 +114,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   try {
-    await rm(ROOT, { recursive: true, force: true });
+    await rm(RUN, { recursive: true, force: true });
   } finally {
     enableReloadTracking(false);
     clearRoutes();

@@ -6,10 +6,10 @@
 
 | File | Single responsibility |
 |---|---|
-| `mail.ts` | `defineMail`, the registry, `send` / `sendById` / `renderMessage` |
+| `mail.ts` | `defineMail`, the registry (`restoreMails`: test-only), `send` / `sendById` / `renderMessage` |
 | `blocks.ts` | the template vocabulary: `MailBlock`, `blocks`, `MailTemplate`, `TemplateArgs` |
 | `render.ts` | blocks → HTML **and** text, plus the layout call and the footer slots |
-| `layout.ts` | `MAIL_TOKENS` (light + dark), the 600px table shell, layout registry |
+| `layout.ts` | `MAIL_TOKENS` (light + dark), the 600px table shell, layout registry (`restoreLayouts`: test-only) |
 | `adapter.ts` | `@ultimat3/mail/adapter`: `installMailDriver` + reset, the `MailDriver` port, `MailError`/`sendFailed` — never on the `.` barrel; an app's line is `mail:` in `apps/<app>/runtime.ts` |
 | `driver.ts` | `MailDriver` + memory/log/unconfigured + `resultFor` + the `installMailDriver` seam (on `./adapter`) |
 | `driver-env.ts` | `selectMailDriver`: which transport an environment installs, and nothing else |
@@ -248,7 +248,8 @@ bun run --filter @ultimat3/mail typecheck
 Gotchas:
 - The registry erases `I` (`AnyMailDefinition`); `sendById` holds the package's only cast.
 - No job driver configured ⇒ `send` delivers inline rather than dropping the message.
-- Tests must not call `resetMails()` — template registration is module-level and shared.
+- Tests must not call `resetMails()` — template registration is module-level and shared. Take a
+  test's own mails back with `restoreMails(held)` (`mail-registry.test.ts`).
 - `driver-smtp.test.ts` runs a real `Bun.listen` SMTP server on loopback. The sealed test network
   covers `fetch` only, so this is allowed — and it is the only proof the socket, the chunk queue
   and the reply framing agree. Resend tests inject `options.fetch`; never unseal.

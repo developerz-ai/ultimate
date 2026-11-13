@@ -115,6 +115,26 @@ const newRunPage = (error = '', step: string | null = null): string =>
 export const ran: string[] = [];
 export const count = (line: string): number => ran.filter((one) => one === line).length;
 
+/** Who waits for a line to be recorded: woken by the route as it runs, never by a poll. */
+const watchers = new Set<() => void>();
+
+/**
+ * Resolves once a route has recorded `line` — the request REACHED the server. The event itself,
+ * so a loaded runner takes longer, never a different verdict; one that never comes is the test's
+ * own timeout.
+ */
+export function recorded(line: string): Promise<void> {
+  if (ran.includes(line)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const watch = (): void => {
+      if (!ran.includes(line)) return;
+      watchers.delete(watch);
+      resolve();
+    };
+    watchers.add(watch);
+  });
+}
+
 const html = (body: string, status = 200): Response =>
   new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
 
@@ -131,6 +151,7 @@ const route = (
   meta: { name: path, auth: 'public', ...(navigation === undefined ? {} : { navigation }) },
   handler: (request) => {
     ran.push(`${method} ${path} ${request.raw.headers.get('x-ultimate-navigation') ?? 'full'}`);
+    for (const watch of [...watchers]) watch();
     return handler(request.raw);
   },
 });

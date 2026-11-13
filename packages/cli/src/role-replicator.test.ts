@@ -2,7 +2,7 @@
 // real walsender in `@ultimat3/realtime`; what is pinned here is that this role selects the
 // Postgres feed at all — it was unreachable, and the class of bug is a driver nothing constructs.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { readinessChecks } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import type { Replicator, ReplicatorStats, Transport } from '@ultimat3/realtime/server';
@@ -235,15 +235,30 @@ const scripted = (answers: readonly boolean[]) => {
   };
 };
 
+/** One fake millisecond, then every promise the timers it fired chained: the standby's own pace. */
+const tick = async (): Promise<void> => {
+  jest.advanceTimersByTime(1);
+  for (let left = 0; left < 20; left += 1) await Promise.resolve();
+};
+
+/** The condition, within 200 fake milliseconds — a bound no loaded runner stretches. */
 const until = async (condition: () => boolean, label: string): Promise<void> => {
-  for (let tick = 0; tick < 200; tick += 1) {
+  for (let left = 200; left > 0; left -= 1) {
     if (condition()) return;
-    await Bun.sleep(1);
+    await tick();
   }
-  expect.unreachable(`timed out waiting for ${label}`);
+  if (!condition()) expect.unreachable(`never held within 200 fake ms: ${label}`);
 };
 
 describe('losing the advisory lock', () => {
+  // The standby's retry is a `setTimeout` it arms itself: Bun's fake clock moves it by hand.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('an x dev boot that loses the lock refuses with X_REPLICATOR_SLOT_HELD', async () => {
     declarePost();
     const fake = scripted([false]);
@@ -301,7 +316,8 @@ describe('losing the advisory lock', () => {
     await until(() => fake.calls() >= 2, 'the standby to ask again');
     await running.stop();
     const asked = fake.calls();
-    await Bun.sleep(10);
+    // Fifty retry delays of fake time: a standby still armed would have asked by now.
+    for (let left = 50; left > 0; left -= 1) await tick();
     expect(fake.calls()).toBe(asked);
   });
 

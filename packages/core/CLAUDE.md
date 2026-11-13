@@ -122,6 +122,8 @@ top-level `UltimateError` use in `error-codes.ts`.
   source of non-determinism. †
 - **`finiteOption` / `finiteCount` (`finite-option.ts`) are the framework's ONE screen for a numeric option.** Full rule: `docs/history/core.md`.
 - **`mcp-exposure.ts`'s `isMcpExposed` is the ONE answer to "did this opt into MCP?"** †
+- **`service.ts` has no unregister for an app.** `registeredServices` / `restoreServices` are
+  test-only — `@ultimat3/testing`'s rerun seam; `resetServices` drops every module's for good.
 
 ## Metrics, tracing, reporting
 

@@ -228,3 +228,22 @@ export function layoutFor(name: string): MailLayout | undefined {
 export function registeredLayouts(): readonly string[] {
   return [...layouts.keys()].sort();
 }
+
+/** One layout under its name, as `restoreLayouts` takes it back. */
+export interface LayoutRegistration {
+  readonly name: string;
+  readonly layout: MailLayout;
+}
+
+/**
+ * Test-only: the layouts become exactly `registrations`, `base` only if it is among them. One name
+ * twice is still `X_MAIL_DUPLICATE`. The map has no delete otherwise, so this is how
+ * `@ultimat3/testing`'s rerun seam forgets the layouts one test file registered.
+ */
+export function restoreLayouts(registrations: readonly LayoutRegistration[]): void {
+  layouts.clear();
+  for (const { name, layout } of registrations) {
+    if (layouts.has(name)) throw mailLayoutDuplicate(name);
+    layouts.set(name, layout);
+  }
+}

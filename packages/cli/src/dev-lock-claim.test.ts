@@ -4,66 +4,60 @@
 // `x dev` on one single-writer `.x/pgdata`. The window is two syscalls wide, so this observes it
 // directly: every write the claim makes snapshots what a rival reading the lock path would see.
 
-import { afterAll, describe, expect, mock, test } from 'bun:test';
-// why: the claim is built on these synchronous calls; the test wraps the same module it uses.
+import { describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory, directory-listing or recursive-remove primitive.
 import * as fs from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
+import { type ClaimFiles, lockPath, parseLock, preflight } from './dev-lock';
 
-const realWrite = fs.writeFileSync;
-const realLink = fs.linkSync;
-const seen: string[] = [];
-let watched = '';
-/** The errno the next `linkSync` fails with — a filesystem without hard links — or none. */
-let linkFails: string | undefined;
+/** What a rival preflight reading `watched` would get at this instant. */
+const rivalView = (watched: string): string =>
+  fs.existsSync(watched) ? fs.readFileSync(watched, 'utf8') : '<absent>';
 
-/** What a rival preflight reading the lock path would get at this instant. */
-const rivalView = (): string => {
-  if (watched === '' || !fs.existsSync(watched)) return '<absent>';
-  return fs.readFileSync(watched, 'utf8');
-};
-
-await mock.module('node:fs', () => ({
-  ...fs,
-  writeFileSync: (...args: Parameters<typeof fs.writeFileSync>) => {
-    if (watched !== '') seen.push(rivalView());
-    return realWrite(...args);
-  },
-  linkSync: (...args: Parameters<typeof fs.linkSync>) => {
-    if (linkFails !== undefined) {
-      const refusal = Object.assign(new Error(`${linkFails}: operation not permitted, link`), {
-        code: linkFails,
-      });
-      throw refusal;
-    }
-    return realLink(...args);
-  },
-}));
-
-const { lockPath, parseLock, preflight } = await import('./dev-lock');
-
-afterAll(() => {
-  // `mock.restore()` does not undo `mock.module`, and a run may share this process with other
-  // files: the wrapper stays, so it is made inert — it only ever delegates once `watched` is empty.
-  watched = '';
-  seen.length = 0;
-  linkFails = undefined;
-  mock.restore();
-});
+/**
+ * The claim's own writes, made for real, each preceded by a snapshot of the lock path — handed to
+ * `preflight` as its `files`, never by replacing `node:fs`: `mock.module` outlives this file and
+ * every later file in the process imported the replacement (10 cli failures in one process).
+ */
+function watchingFiles(watched: string, linkFails?: string): { files: ClaimFiles; seen: string[] } {
+  const seen: string[] = [];
+  return {
+    seen,
+    files: {
+      write: (path, text) => {
+        seen.push(rivalView(watched));
+        fs.writeFileSync(path, text);
+      },
+      link: (existing, path) => {
+        seen.push(rivalView(watched));
+        if (linkFails !== undefined) {
+          // Input, not a verdict: the errno a filesystem without hard links answers.
+          throw Object.assign(new Error(`${linkFails}: operation not permitted, link`), {
+            code: linkFails,
+          });
+        }
+        fs.linkSync(existing, path);
+      },
+    },
+  };
+}
 
 describe('claim · the lock is never visible half-written', () => {
   test('a rival reading the lock path sees no file or a whole lock — never an empty one', async () => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'ultimate-dev-lock-claim-'));
     try {
-      watched = lockPath(dir);
+      const watched = lockPath(dir);
+      const { files, seen } = watchingFiles(watched);
       const claim = await preflight({
         stateDir: dir,
         port: 3000,
         hostname: 'localhost',
         portBound: () => false,
+        files,
       });
       // The claim wrote something, or this proves nothing.
       expect(seen.length).toBeGreaterThan(0);
@@ -85,13 +79,13 @@ describe('claim · the lock is never visible half-written', () => {
 describe('claim · a link the filesystem refuses is X_DEV_STATE_UNWRITABLE', () => {
   test('EPERM from linkSync names the state dir and the errno, and leaves nothing behind', async () => {
     const dir = fs.mkdtempSync(join(tmpdir(), 'ultimate-dev-lock-link-'));
-    linkFails = 'EPERM';
     try {
       const refusal = await preflight({
         stateDir: dir,
         port: 3000,
         hostname: 'localhost',
         portBound: () => false,
+        files: watchingFiles(lockPath(dir), 'EPERM').files,
       }).then(
         () => expect.unreachable('a refused link must not answer a claim'),
         (error: unknown) => error,
@@ -105,7 +99,6 @@ describe('claim · a link the filesystem refuses is X_DEV_STATE_UNWRITABLE', () 
       // The staging file is removed even on this path.
       expect(fs.readdirSync(dir)).toEqual([]);
     } finally {
-      linkFails = undefined;
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -175,10 +168,10 @@ while (!(await reader.read()).done) {}
       const procs: Bun.Subprocess<'pipe', 'pipe', 'pipe'>[] = [];
       try {
         const script = join(dir, 'claim.ts');
-        realWrite(script, claimer(join(dir, '.x')));
+        fs.writeFileSync(script, claimer(join(dir, '.x')));
         if (round % 2 === 1) {
           fs.mkdirSync(join(dir, '.x'));
-          realWrite(join(dir, '.x', 'dev.lock'), '{"pid":2147483646,"port":3000}\n');
+          fs.writeFileSync(join(dir, '.x', 'dev.lock'), '{"pid":2147483646,"port":3000}\n');
         }
         for (let i = 0; i < CLAIMERS; i += 1) {
           procs.push(

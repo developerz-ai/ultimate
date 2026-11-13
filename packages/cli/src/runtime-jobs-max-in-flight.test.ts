@@ -12,10 +12,30 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-joining API, so the temp root and the config file are joined with this.
 import { join } from 'node:path';
 import { resetJobs } from '@ultimat3/jobs';
+import { definedStorage, resetStorage, type Storage } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
 import { startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
 import { workerConfigOf, workerOptionsFor } from './runtime-jobs';
+import type { RunningServices } from './runtime-services';
+
+/**
+ * `fixtureRuntime` installs a process-wide `defineStorage` registry, and one left behind reads to a
+ * later file's `startStorage` as the APP's declaration: that boot keeps this `local` disk instead of
+ * building its own (`runtime-overrides-ports` saw `local` where it handed `memory`). Dropped after
+ * each test, and only when it is still the one this file installed.
+ */
+const ownStorages = new Set<Storage>();
+const ownedRuntime = (root: string): RunningServices => {
+  const runtime = fixtureRuntime(root);
+  ownStorages.add(runtime.storage);
+  return runtime;
+};
+afterEach(() => {
+  const current = definedStorage();
+  if (current !== undefined && ownStorages.has(current)) resetStorage();
+  ownStorages.clear();
+});
 
 const dirs: string[] = [];
 
@@ -53,7 +73,7 @@ describe('jobs.maxInFlight', () => {
   test('a booted worker reports the configured cap in its stats', async () => {
     const ROOT = `${import.meta.dir}/../.worker-cap-fixture`;
     const runtime = {
-      ...fixtureRuntime(ROOT),
+      ...ownedRuntime(ROOT),
       workerConfig: {
         queues: ['banks'],
         exact: true,

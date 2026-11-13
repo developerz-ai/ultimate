@@ -11,6 +11,7 @@ import { clearRoutes, defineRoute, h, registerRoute } from '@ultimat3/render';
 import { isrController } from '@ultimat3/render/server';
 import { attachedIsr } from './runtime-isr';
 import { appRoutes } from './runtime-render';
+import { untilTurnAsync } from './runtime-turns-fixture';
 
 const BUILD_ID = 'isr-under-test';
 const postTag = tag('post');
@@ -71,13 +72,13 @@ async function bustCycle(routes: ReturnType<typeof appRoutes>): Promise<readonly
   await invalidateTags([postTag]);
   const second = await get();
   const secondBody = await second.text();
-  // The stale copy is answered while the regeneration runs behind it: polled until it lands, with
-  // a deadline, never a fixed wait a loaded runner can outlast.
+  // The stale copy is answered while the regeneration runs behind it: polled one turn at a time
+  // until it lands, to a turn count — never a fixed wait a loaded runner can outlast.
   let third = '';
-  for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+  await untilTurnAsync(async () => {
     third = await (await get()).text();
-    if (third.includes('version 2')) break;
-  }
+    return third.includes('version 2');
+  }, 'the regenerated version 2');
   return [second.headers.get('x-ultimate-isr') ?? 'fresh', secondBody, third];
 }
 
@@ -190,10 +191,10 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
       // The stale copy answers this one; the regeneration behind it finds the redirect.
       expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
       let status = 0;
-      for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+      await untilTurnAsync(async () => {
         status = (await server.fetch(new Request('http://dev.test/pricing'))).status;
-        if (status === 302) break;
-      }
+        return status === 302;
+      }, 'the regenerated redirect');
       expect(status).toBe(302);
     } finally {
       releaseLogSink();

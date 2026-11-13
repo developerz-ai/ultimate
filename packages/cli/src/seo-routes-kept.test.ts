@@ -2,7 +2,7 @@
 // rows; when the hourly memo expired during a database blip the running web role answered
 // `/sitemap.xml` a 500, and a read that never answered held every request on its pending promise.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { installLogSink } from '@ultimat3/core';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
@@ -43,6 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  jest.useRealTimers();
   clearRoutes();
 });
 
@@ -60,8 +61,15 @@ const server = (enumerationTimeoutMs?: number) =>
 const locsOf = async (response: Response): Promise<readonly string[]> =>
   [...(await response.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1] ?? '').sort();
 
-/** One turn of the loop: a refresh runs BEHIND the answer, so its result lands after the request. */
-const settle = (): Promise<void> => Bun.sleep(5);
+/**
+ * Turns of the loop: a refresh runs BEHIND the answer, so its result lands after the request. The
+ * enumeration answers from memory, so it lands within turns — a count, never a delay.
+ */
+const settle = async (): Promise<void> => {
+  for (let left = 10; left > 0; left -= 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+};
 
 describe('unit · a sitemap refresh runs behind the answer it would replace', () => {
   test('the memo expires during a failing read: the last good sitemap is served, then retried', async () => {
@@ -108,14 +116,25 @@ describe('unit · a sitemap refresh runs behind the answer it would replace', ()
     const good = ['https://www.example.com/blog/hello', 'https://www.example.com/blog/world'];
     expect(await locsOf(await get())).toEqual(good);
 
+    // The hung refresh's deadline is the one `setTimeout` it arms: Bun's fake clock owns it, so
+    // "past the deadline" is a step this test takes, not a sleep a loaded runner stretches.
+    jest.useFakeTimers();
     slugs = 'hung';
     clock += HOUR_MS + 1;
     for (let request = 0; request < 3; request += 1)
       expect(await locsOf(await get())).toEqual(good);
     expect(enumerations).toBe(2);
 
-    // Past the enumeration's own deadline and the retry wait, a new refresh starts.
-    await Bun.sleep(40);
+    // A millisecond short of the deadline the hung read is still the refresh: even past the
+    // retry wait, nobody starts a second one beside it.
+    jest.advanceTimersByTime(19);
+    clock += 60_001;
+    expect(await locsOf(await get())).toEqual(good);
+    expect(enumerations).toBe(2);
+
+    // At the deadline it is given up, and past the retry wait a new refresh starts.
+    jest.advanceTimersByTime(1);
+    jest.useRealTimers();
     slugs = ['only'];
     clock += 60_001;
     expect(await locsOf(await get())).toEqual(good);

@@ -7,7 +7,7 @@
 // REAL script text executed in a sandboxed page-like global — never against a string that merely
 // *contains* `window.WebSocket=`, which is what let both defects ship unnoticed.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 import { decodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { isStubMatch } from '@ultimat3/testing';
 import { HARNESS_GLOBAL, harnessScript, readinessProbe } from './island-harness-script';
@@ -48,6 +48,10 @@ function runHarness(
 }
 
 describe('unit · a live socket must not fail every state of a live island', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('constructing window.WebSocket does not throw', () => {
     const { window } = runHarness();
     const WS = window['WebSocket'] as new (url: string) => unknown;
@@ -88,7 +92,9 @@ describe('unit · a live socket must not fail every state of a live island', () 
   // stub match) for another (an unreachable --settle deadline). The framework's own page socket
   // does not need this — it registers callbacks and returns — but this harness may not
   // assume that of every app on `@ultimat3/realtime`, so `open` fires exactly once regardless.
-  test('onopen fires exactly once, and no message or error ever follows', async () => {
+  test('onopen fires exactly once, and no message or error ever follows', () => {
+    // The socket's open is the script's own zero-delay timer: Bun's fake clock runs it by hand.
+    jest.useFakeTimers();
     const { window } = runHarness();
     const WS = window['WebSocket'] as new (
       url: string,
@@ -111,16 +117,18 @@ describe('unit · a live socket must not fail every state of a live island', () 
       messages += 1;
     };
     expect(socket.readyState).toBe(0);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    jest.runOnlyPendingTimers();
     expect(socket.readyState).toBe(1);
     expect(opens).toBe(1);
     expect(messages).toBe(0);
-    // A second wait proves "exactly once" rather than "at least once".
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Every timer the socket could still have armed, run: "exactly once", not "at least once".
+    jest.runAllTimers();
     expect(opens).toBe(1);
+    expect(messages).toBe(0);
   });
 
-  test('an addEventListener("open", …) listener fires the same as onopen', async () => {
+  test('an addEventListener("open", …) listener fires the same as onopen', () => {
+    jest.useFakeTimers();
     const { window } = runHarness();
     const WS = window['WebSocket'] as new (
       url: string,
@@ -130,7 +138,8 @@ describe('unit · a live socket must not fail every state of a live island', () 
     socket.addEventListener('open', () => {
       opened = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(opened).toBe(false);
+    jest.runOnlyPendingTimers();
     expect(opened).toBe(true);
   });
 

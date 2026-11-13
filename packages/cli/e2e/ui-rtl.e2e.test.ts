@@ -63,6 +63,7 @@ const BODY = `
 const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
+  // real-clock: the shot driver's waits are on Chrome's time, another process's.
   sleep: (ms) => Bun.sleep(ms),
 };
 

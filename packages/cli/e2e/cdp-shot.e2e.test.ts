@@ -30,8 +30,26 @@ const DOCUMENT = `<!doctype html><html><head><title>Shot fixture</title>
 const clock: SleepClock = {
   now: () => new Date(),
   monotonic: () => performance.now(),
+  // real-clock: the shot driver's waits are on Chrome's time, another process's.
   sleep: (ms) => Bun.sleep(ms),
 };
+
+/**
+ * Resolves once `done()` holds, one CDP round trip per try. The wire is ordered, so an answered
+ * `evaluate` means every event Chrome sent before it — a console line, an exception, a request
+ * — is already recorded. The bound is a count of round trips, never a duration.
+ */
+async function untilRecorded(
+  session: () => ShotSession['page'],
+  done: () => boolean,
+  what: string,
+): Promise<void> {
+  for (let left = 500; left > 0; left -= 1) {
+    if (done()) return;
+    await session().evaluate('0');
+  }
+  if (!done()) expect.unreachable(`never recorded within 500 round trips: ${what}`);
+}
 
 /** A PNG's width and height, read off its IHDR chunk. */
 const pngSize = (bytes: Uint8Array): readonly [number, number] => {
@@ -84,7 +102,17 @@ describe.skipIf(chrome === undefined && !required)('x shot’s browser, in a rea
 
   test('the console, the thrown exception and the refused request are all recorded', async () => {
     await page().waitFor('#out', { state: 'attached' });
-    await Bun.sleep(100);
+    // The exception is a zero-delay timer in the page: awaited as a fact, not slept for.
+    await untilRecorded(
+      page,
+      () =>
+        page().pageErrors().length > 0 &&
+        page().console().length > 0 &&
+        page()
+          .network()
+          .some((entry) => entry.refused === 'host'),
+      'the console line, the exception and the refused request',
+    );
     expect(page().console()).toContainEqual(
       expect.objectContaining({ level: 'warn', text: 'booted 2' }),
     );

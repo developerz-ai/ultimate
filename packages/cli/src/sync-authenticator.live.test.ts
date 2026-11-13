@@ -35,14 +35,34 @@ const BUILD_ID = 'build-1';
 /**
  * The window is crossed with `advanceClock`, never by sleeping: the repo's test preload freezes
  * `Date`, so the grant's `expiresAt` and the sweep's `now` both read the frozen instant and a real
- * five-minute wait would prove nothing anyway. The sweep INTERVAL is a `setInterval`, which runs
- * on the real clock — so it is the one number here that is milliseconds of actual waiting.
+ * five-minute wait would prove nothing anyway. The sweep INTERVAL is the node's own `setInterval`
+ * on the real clock, and the test never times it: it awaits the sweep's consequence — the close
+ * frame, or the resolver asked again — so a slow runner takes longer, never a different verdict.
  * `MAX_CREDENTIAL_TTL_MS` itself is asserted in the unit twin.
  */
 const TTL_MS = 60_000;
 const SWEEP_MS = 20;
 
 let sql: Bun.SQL;
+
+/** How many times the app's resolver has been asked, and who waits for the next ask. */
+let resolved = 0;
+let askWaiters: { readonly at: number; readonly wake: () => void }[] = [];
+const asked = (): void => {
+  resolved += 1;
+  const due = askWaiters.filter((waiter) => waiter.at <= resolved);
+  askWaiters = askWaiters.filter((waiter) => waiter.at > resolved);
+  // Woken a macrotask later, never inside the resolver: the grant this answer becomes is built in
+  // the microtasks after it returns, and a test that moved the clock first would stamp it ahead.
+  for (const waiter of due) setImmediate(waiter.wake);
+};
+/** Resolves once the resolver has been asked `count` times in all — each sweep asks once. */
+const untilAsked = (count: number): Promise<void> =>
+  resolved >= count
+    ? Promise.resolve()
+    : new Promise((wake) => {
+        askWaiters.push({ at: count, wake });
+      });
 
 beforeAll(async () => {
   if (url === undefined) return;
@@ -61,11 +81,14 @@ beforeEach(async () => {
   if (url === undefined) return;
   await sql.unsafe('delete from x_sync_sessions', []);
   await sql.unsafe("insert into x_sync_sessions (sid) values ('abc')", []);
+  resolved = 0;
+  askWaiters = [];
   // The app's own resolver, reading the session table on every call — which is what makes a
   // deleted row a different answer rather than a cached one.
   configureAuthenticator(async (request) => {
     const sid = (request.header('cookie') ?? '').replace('sid=', '');
     const rows = await sql.unsafe('select sid from x_sync_sessions where sid = $1', [sid]);
+    asked();
     return rows.length === 0 ? null : userActor({ id: 'u1', roles: ['member'] });
   });
 });
@@ -114,14 +137,13 @@ function opened(ws: WebSocket): Promise<void> {
   });
 }
 
-/** The close frame the server sent, or `null` if it never sent one inside `withinMs`. */
-function closedWithin(ws: WebSocket, withinMs: number): Promise<number | null> {
+/**
+ * The close frame the server sent. A socket the sweep never closes leaves this pending, and the
+ * test's own timeout is the red verdict — no deadline of this file's to tune against a runner.
+ */
+function closed(ws: WebSocket): Promise<number> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      resolve(null);
-    }, withinMs);
     ws.addEventListener('close', (event: CloseEvent) => {
-      clearTimeout(timer);
       resolve(event.code);
     });
   });
@@ -146,7 +168,7 @@ describeLive('a revoked session closes the socket it authorized', () => {
 
     // Observed before the fix: `null` — no close at all, at any deadline, because a grant with no
     // `expiresAt` never enters `GrantBook.expired()` and the sweep has nothing to re-decide.
-    const code = await closedWithin(ws, SWEEP_MS * 25);
+    const code = await closed(ws);
     expect(code).toBe(1008);
     expect(sync.sockets.count).toBe(0);
 
@@ -164,11 +186,31 @@ describeLive('a revoked session closes the socket it authorized', () => {
     // The other direction of the same mechanism, and the one that makes it safe to ship: a window
     // that closed live sockets still holding a valid credential would be an outage the framework
     // caused. Several windows pass, with the row intact and every sweep re-deciding it.
-    advanceClock(TTL_MS * 4);
-    expect(await closedWithin(ws, SWEEP_MS * 25)).toBe(null);
+    let closeCode: number | null = null;
+    // Set before this test's own `ws.close()`: only a close the node sent is a verdict.
+    let ending = false;
+    const revoked = closed(ws).then((code) => {
+      closeCode = code;
+      if (!ending) expect.unreachable(`a live credential's socket was closed with ${String(code)}`);
+    });
+    // Three windows, each crossed by hand and each awaited as the resolver's next ask: a sweep
+    // re-decides a grant only once its window has passed, and the frozen clock moves only here.
+    // The passes are serialised, so the third ask means the first two — verdicts included — are
+    // done: a socket either of them revoked is already off this node's books.
+    const before = resolved;
+    for (let window = 1; window <= 3; window += 1) {
+      advanceClock(TTL_MS + 1);
+      // Raced against the close: a sweep that revoked a live grant asks nothing more, so the
+      // close is the verdict, not the suite's timeout.
+      await Promise.race([untilAsked(before + window), revoked]);
+    }
     expect(sync.sockets.count).toBe(1);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    expect(closeCode).toBe(null);
 
+    ending = true;
     ws.close();
+    await revoked;
     listener.stop();
     await sync.stop();
   });

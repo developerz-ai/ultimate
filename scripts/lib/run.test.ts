@@ -87,15 +87,11 @@ describe('unit · run() deadline', () => {
   //   (`packages/cli/src/verify-deadline.ts`: Windows keeps no tag to find a re-parented
   //   grandchild).
   //
-  // That leaves Windows with two same-deadline killers — `run()`'s own timer, and Bun's spawn
-  // timeout, which kills the holder and so EOFs its pipes — and whichever wins the race decides
-  // the verdict's SHAPE (`timedOut` + no code, or a killed code), measured 1 in 15 flips on a
-  // Linux box, 2026-10. Both answers carry the same facts, so those are what these tests assert
-  // on every platform: answered AT the deadline (never the #780 hang), `ok: false`, what was
-  // printed kept. The coded verdict is asserted where it is deterministic — POSIX, whose orphan
-  // leaves no second killer. Dropping Bun's redundant internal spawn timeout from `run()` (one
-  // line, `scripts/lib/run.ts`) removes the race everywhere and is what lets the Windows branch
-  // grow the POSIX assertions.
+  // Either way `run()`'s own timer is the only killer, so the verdict is the coded one on both
+  // platforms. It used to arm a second, Bun's spawn `timeout` with the same deadline, which kills
+  // the holder and so EOFs its pipes: whichever won decided the verdict's SHAPE (`timedOut` + no
+  // code, or a killed code and `timedOut: false`), measured 1 in 15 flips on a Linux box, 2026-10,
+  // and the windows-latest flake of 'a child that never exits is killed at the deadline'.
   //
   // One constant, because both tests assert on the same program and its exact text — `run()`
   // echoes `command.join(' ')` into the timeout line.
@@ -108,23 +104,16 @@ describe('unit · run() deadline', () => {
     const started = performance.now();
     const result = await run(['bun', '-e', HOLDS_STDOUT], { cwd, timeoutMs: 300 });
     expect(performance.now() - started).toBeLessThan(5_000);
-    // Answered AT the deadline on both platforms, whichever killer won: the holder hangs for a
-    // minute, so an answer this early is the deadline speaking — never the 18 ms `ok: true` the
-    // old grandchild fixture got on Windows.
-    expect(result.ok).toBe(false);
+    // Answered AT the deadline: the holder hangs for a minute, so an answer this early is the
+    // deadline speaking — never the 18 ms `ok: true` the old grandchild fixture got on Windows.
     expect(result.durationMs).toBeGreaterThanOrEqual(190);
+    expect(result).toMatchObject({ ok: false, code: null, timedOut: true });
     // What the child DID print is kept: it is the clue to where it stopped.
     expect(result.output).toContain('started');
-    if (process.platform !== 'win32') {
-      // POSIX reaches the deadline one way only — the orphan holds the pipes past the child's
-      // death, so EOF never comes and `run()`'s timer always wins — which makes the coded
-      // verdict deterministic here and not on Windows (see the fixture comment).
-      expect(result).toMatchObject({ ok: false, code: null, timedOut: true });
-      // The coded line names the program that was killed, verbatim: `run()` echoes
-      // `command.join(' ')`, so the reported command is the one that actually hung.
-      expect(result.output).toContain(`${RUN_TIMEOUT_CODE}: bun -e ${HOLDS_STDOUT}`);
-      expect(result.output).toContain('did not finish within 300 ms');
-    }
+    // The coded line names the program that was killed, verbatim: `run()` echoes
+    // `command.join(' ')`, so the reported command is the one that actually hung.
+    expect(result.output).toContain(`${RUN_TIMEOUT_CODE}: bun -e ${HOLDS_STDOUT}`);
+    expect(result.output).toContain('did not finish within 300 ms');
   });
 
   test('a child that never exits is killed at the deadline', async () => {
@@ -135,6 +124,36 @@ describe('unit · run() deadline', () => {
     });
     expect(performance.now() - started).toBeLessThan(5_000);
     expect(result).toMatchObject({ ok: false, code: null, timedOut: true });
+  });
+
+  // The verdict alone cannot tell a killed child from an abandoned one: `run()` answers at its
+  // deadline either way. What the deadline must also do is end the child, or every timed-out run
+  // leaves a process behind — so the child names its pid, and the test watches it go.
+  test('the child is killed at the deadline, not left running', async () => {
+    const result = await run(
+      ['bun', '-e', 'console.log(process.pid); setTimeout(() => {}, 60_000);'],
+      {
+        cwd,
+        timeoutMs: 300,
+      },
+    );
+    expect(result.timedOut).toBe(true);
+    const pid = Number(/^\d+$/m.exec(result.output)?.[0]);
+    expect(Number.isInteger(pid) && pid > 0).toBe(true);
+    const alive = (): boolean => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // The kill and the reap are the kernel's and the runtime's: awaited across event-loop turns,
+    // bounded by a count — a child nobody killed stays alive through every one of them.
+    for (let turn = 0; turn < 50_000 && alive(); turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    expect(alive()).toBe(false);
   });
 
   // The pipes are released, not only abandoned: a script whose `run()` timed out still exits,
@@ -157,17 +176,11 @@ console.log(${JSON.stringify(VERDICT)} + JSON.stringify({ code: inner.code, dura
       ok: boolean;
       timedOut: boolean;
     };
-    // The inner run reached its deadline on both platforms — the holder hangs for a minute, so
-    // only the deadline ends it — and answered refused, never the old Windows `ok: true`.
-    expect(inner.ok).toBe(false);
+    // The inner run reached its deadline — the holder hangs for a minute, so only the deadline
+    // ends it — and answered the coded verdict, never the old Windows `ok: true`.
     expect(inner.durationMs).toBeGreaterThanOrEqual(190);
     expect(inner.durationMs).toBeLessThan(10_000);
-    if (process.platform !== 'win32') {
-      // Deterministic on POSIX only — the orphan holds the pipes past the child's death, so
-      // `run()`'s timer always wins (see the fixture comment for the Windows race).
-      expect(inner.timedOut).toBe(true);
-      expect(inner.code).toBeNull();
-    }
+    expect(inner).toMatchObject({ ok: false, code: null, timedOut: true });
   });
 
   test("stdin is never the caller's: a reader of it sees EOF at once", async () => {

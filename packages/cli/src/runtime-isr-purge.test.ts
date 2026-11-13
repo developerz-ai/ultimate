@@ -25,6 +25,8 @@ const postTag = tag('post');
 let published = true;
 /** When set, `load` waits on it — a render that read its rows before the withdrawal. */
 let gate: Promise<void> | undefined;
+/** Resolved once `load` has read `published` — the race's first half, awaited rather than slept. */
+let readRows: (() => void) | undefined;
 
 function registerArticle(onInvalidate: 'purge' | 'stale' = 'purge'): void {
   registerRoute({
@@ -39,6 +41,7 @@ function registerArticle(onInvalidate: 'purge' | 'stale' = 'purge'): void {
       budget: { js: '0kb' },
       load: async () => {
         const was = published;
+        readRows?.();
         if (gate !== undefined) await gate;
         return was ? { body: 'THE ARTICLE' } : withStatus(404, { body: 'no such article' });
       },
@@ -55,6 +58,7 @@ afterEach(() => {
   resetTiers();
   published = true;
   gate = undefined;
+  readRows = undefined;
 });
 
 afterAll(() => {
@@ -135,8 +139,11 @@ describe('unit · a purge route, as the edge sees it', () => {
     const { release, get } = serving();
     const open = Promise.withResolvers<void>();
     gate = open.promise;
+    const read = Promise.withResolvers<void>();
+    readRows = read.resolve;
     const racing = get();
-    await Bun.sleep(5);
+    // The render has read its rows (the article was published) and is held at the gate.
+    await read.promise;
     published = false;
     await invalidateTags([postTag]);
     gate = undefined;

@@ -2,7 +2,7 @@
 // is on disk. The real orphan — a SIGKILLed supervisor, a deleted root — is
 // `cmd-dev-orphan.live.test.ts`.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import {
   DEV_SUPERVISOR_PID_ENV,
   type DevChildGone,
@@ -17,23 +17,34 @@ import {
 
 const SUPERVISED = { [DEV_SUPERVISOR_PID_ENV]: '4242' };
 
-/** Runs a watch at 5ms until it leaves or `ms` passes; answers why it left, if it did. */
-async function watched(
+/**
+ * Runs a watch at 5ms for `ticks` ticks of Bun's fake clock; answers why it left, if it did, and
+ * how often it asked — a "stays" verdict from a watch that never polled would prove nothing.
+ */
+function watched(
   options: { parent: () => number; exists: () => boolean; env?: Record<string, string> },
-  ms = 100,
-): Promise<readonly DevChildGone[]> {
+  ticks = 20,
+  between?: (tick: number) => void,
+): { readonly left: readonly DevChildGone[]; readonly polls: number } {
   const left: DevChildGone[] = [];
+  let polls = 0;
   const stop = watchDevChild({
     root: '/app',
     env: options.env ?? SUPERVISED,
     leave: (why) => left.push(why),
     supervisorAlive: (pid) => options.parent() === pid,
-    rootExists: options.exists,
+    rootExists: (root) => {
+      polls += 1;
+      return root === '/app' && options.exists();
+    },
     intervalMs: 5,
   });
-  await Bun.sleep(ms);
+  for (let tick = 0; tick < ticks; tick += 1) {
+    between?.(tick);
+    jest.advanceTimersByTime(5);
+  }
   stop();
-  return left;
+  return { left, polls };
 }
 
 describe('unit · supervisorPid', () => {
@@ -76,34 +87,71 @@ describe('unit · the drain message', () => {
 });
 
 describe('unit · watchDevChild', () => {
-  test('a live supervisor and a present root: the child stays', async () => {
-    expect(await watched({ parent: () => 4242, exists: () => true })).toEqual([]);
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
-  test('reparented — the supervisor is gone — the child leaves, once', async () => {
+  test('a live supervisor and a present root: the child stays', () => {
+    const run = watched({ parent: () => 4242, exists: () => true });
+    expect(run.left).toEqual([]);
+    expect(run.polls).toBe(20);
+  });
+
+  test('reparented — the supervisor is gone — the child leaves, once', () => {
     let parent = 4242;
-    const left = watched({ parent: () => parent, exists: () => true });
-    await Bun.sleep(20);
+    const run = watched({ parent: () => parent, exists: () => true }, 20, (tick) => {
+      if (tick === 4) parent = 1;
+    });
+    expect(run.left).toEqual(['supervisor']);
+    // Four ticks with the root asked, then the supervisor's death, then not one more poll.
+    expect(run.polls).toBe(4);
+  });
+
+  test('a supervisor that died before the first tick is still caught', () => {
+    expect(watched({ parent: () => 1, exists: () => true }).left).toEqual(['supervisor']);
+  });
+
+  test('the app root deleted: the child leaves, naming the root', () => {
+    expect(watched({ parent: () => 4242, exists: () => false }).left).toEqual(['root']);
+  });
+
+  test('an unsupervised process watches its root and never its parent', () => {
+    const stays = watched({ parent: () => 1, exists: () => true, env: {} });
+    expect(stays).toEqual({ left: [], polls: 20 });
+    expect(watched({ parent: () => 1, exists: () => false, env: {} }).left).toEqual(['root']);
+  });
+
+  test('the stop it answers ends the watch: a later death is never reported', () => {
+    let parent = 4242;
+    const left: DevChildGone[] = [];
+    const stop = watchDevChild({
+      root: '/app',
+      env: SUPERVISED,
+      leave: (why) => left.push(why),
+      supervisorAlive: (pid) => parent === pid,
+      rootExists: () => true,
+      intervalMs: 5,
+    });
+    jest.advanceTimersByTime(10);
+    stop();
     parent = 1;
-    expect(await left).toEqual(['supervisor']);
-  });
-
-  test('a supervisor that died before the first tick is still caught', async () => {
-    expect(await watched({ parent: () => 1, exists: () => true })).toEqual(['supervisor']);
-  });
-
-  test('the app root deleted: the child leaves, naming the root', async () => {
-    expect(await watched({ parent: () => 4242, exists: () => false })).toEqual(['root']);
-  });
-
-  test('an unsupervised process watches its root and never its parent', async () => {
-    expect(await watched({ parent: () => 1, exists: () => true, env: {} })).toEqual([]);
-    expect(await watched({ parent: () => 1, exists: () => false, env: {} })).toEqual(['root']);
+    jest.advanceTimersByTime(50);
+    expect(left).toEqual([]);
   });
 });
 
 describe('unit · hardExit', () => {
-  test('armed once, it exits with the first code after its delay, however often it is asked', async () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('armed once, it exits with the first code after its delay, however often it is asked', () => {
     const exits: number[] = [];
     const stopping = hardExit(
       (code) => exits.push(code),
@@ -112,7 +160,11 @@ describe('unit · hardExit', () => {
     stopping(143);
     stopping(1);
     expect(exits).toEqual([]);
-    await Bun.sleep(60);
+    jest.advanceTimersByTime(19);
+    expect(exits).toEqual([]);
+    jest.advanceTimersByTime(1);
+    expect(exits).toEqual([143]);
+    jest.advanceTimersByTime(100);
     expect(exits).toEqual([143]);
   });
 });

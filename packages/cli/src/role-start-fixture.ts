@@ -18,7 +18,13 @@ import {
 } from '@ultimat3/jobs';
 import { memoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
-import { defineStorage, localDriver } from '@ultimat3/storage';
+import {
+  definedStorage,
+  defineStorage,
+  localDriver,
+  resetStorage,
+  type Storage,
+} from '@ultimat3/storage';
 import { resolveServices } from './runtime-bindings';
 import type { RunningServices } from './runtime-services';
 
@@ -30,6 +36,13 @@ import type { RunningServices } from './runtime-services';
  */
 /** Enabled, in-process: the section every role test before 22.0.0 was implicitly booting. */
 const REALTIME_ON: RealtimeConfig = { enabled: true };
+
+/**
+ * Every storage registry `fixtureRuntime` installed. `defineStorage` is process-wide, and one left
+ * standing reads to a later file's `startStorage` as the APP's own declaration — that boot keeps
+ * this `local` disk instead of building its own. Weak: a runtime nobody holds is not kept alive.
+ */
+const installed = new WeakSet<Storage>();
 
 export function fixtureRuntime(root: string, realtime = REALTIME_ON): RunningServices {
   const services = resolveServices(root, {});
@@ -49,13 +62,19 @@ export function fixtureRuntime(root: string, realtime = REALTIME_ON): RunningSer
     // The sync role reads this to build its `PresenceRegistry`; the default is what a boot with no
     // `NATS_URL` resolves to, so the fixture is the real number rather than a rounder one.
     presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
-    storage: defineStorage({ disks: { local: localDriver({ root: `${root}/storage` }) } }),
+    storage: installedStorage(root),
     mail: memoryMailDriver(),
     mailDetail: 'embedded',
     purge: noopPurgeDriver(),
     purgeDetail: 'none',
     stop: async () => transport.close(),
   };
+}
+
+function installedStorage(root: string): Storage {
+  const storage = defineStorage({ disks: { local: localDriver({ root: `${root}/storage` }) } });
+  installed.add(storage);
+  return storage;
 }
 
 /**
@@ -75,4 +94,7 @@ export function resetDevRolesState(): void {
   // (`apps/web/app/http.ts`). Nothing is broken today; this is the same rule the four resets above
   // already follow, applied to the fifth global before it is the one that costs an afternoon.
   resetHttpConfig();
+  // Only while it is still OURS: a test that declared its own storage after the fixture's keeps it.
+  const current = definedStorage();
+  if (current !== undefined && installed.has(current)) resetStorage();
 }

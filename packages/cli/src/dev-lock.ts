@@ -234,6 +234,20 @@ const stagingPath = (path: string): string =>
 const lockText = (lock: DevLock): string => `${JSON.stringify(lock, null, 2)}\n`;
 
 /**
+ * The claim's two filesystem writes. A seam, so a test can see what a rival would read between
+ * them without replacing `node:fs` for every module in its process (`mock.module` never undoes).
+ */
+export interface ClaimFiles {
+  readonly write: (path: string, text: string) => void;
+  readonly link: (existing: string, path: string) => void;
+}
+
+const NODE_CLAIM_FILES: ClaimFiles = {
+  write: (path, text) => writeFileSync(path, text),
+  link: (existing, path) => linkSync(existing, path),
+};
+
+/**
  * Take the lock, or answer `false` because someone else holds it.
  *
  * Written whole to a staging file first, then `linkSync`ed into place: the link is the create AND
@@ -246,15 +260,20 @@ const lockText = (lock: DevLock): string => `${JSON.stringify(lock, null, 2)}\n`
  * `.x/` this user may not write, a filesystem without hard links — is `X_DEV_STATE_UNWRITABLE`
  * naming the directory and the errno, the original kept as its `sourceError`.
  */
-function claimExclusive(stateDir: string, path: string, lock: DevLock): boolean {
+function claimExclusive(
+  stateDir: string,
+  path: string,
+  lock: DevLock,
+  files: ClaimFiles = NODE_CLAIM_FILES,
+): boolean {
   const staged = stagingPath(path);
   try {
-    writeFileSync(staged, lockText(lock));
+    files.write(staged, lockText(lock));
   } catch (error) {
     throw new DevStateUnwritableError({ stateDir, error });
   }
   try {
-    linkSync(staged, path);
+    files.link(staged, path);
     return true;
   } catch (error) {
     // Same rule as `isProcessAlive` above: read the field, never cast and dereference.
@@ -299,6 +318,8 @@ export interface PreflightInput {
   readonly portBound?: (port: number, hostname: string) => boolean;
   readonly alive?: (pid: number) => boolean;
   readonly holder?: (port: number) => Promise<PortHolder>;
+  /** Injected by the test; `node:fs` in production. */
+  readonly files?: ClaimFiles;
 }
 
 export interface PreflightResult {
@@ -331,7 +352,7 @@ async function claimOrClearStale(
   let clearedStale = false;
   let held: DevLock | null = null;
   for (let round = 0; round < CLAIM_ROUNDS; round += 1) {
-    if (claimExclusive(input.stateDir, path, mine)) return clearedStale;
+    if (claimExclusive(input.stateDir, path, mine, input.files)) return clearedStale;
     const raw = await readRaw(path);
     const now = raw === null ? null : parseLock(raw);
     // `held` keeps the last identity read: a half-written file parses as `null` for microseconds.
@@ -350,7 +371,7 @@ async function claimOrClearStale(
     const outcome = stealStale({
       path,
       judged: raw,
-      claim: (guard) => claimExclusive(input.stateDir, guard, mine),
+      claim: (guard) => claimExclusive(input.stateDir, guard, mine, input.files),
       alive: isProcessAlive,
     });
     if (outcome === 'busy') await Bun.sleep(STEAL_BUSY_MS);

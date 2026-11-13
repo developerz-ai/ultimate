@@ -19,6 +19,8 @@ import type { ServedApp } from '../src/serve-types';
 
 const ROOT = processRoot(join(import.meta.dir, '..', '.isr-e2e-fixture'));
 const PROBE = '__xIsrE2eProbe';
+/** What the page calls with each body it renders: the regeneration, observed as an event. */
+const RENDERED = '__xIsrE2eRendered';
 const BOOT_TIMEOUT_MS = 120_000;
 
 const FILES: Readonly<Record<string, string>> = {
@@ -39,7 +41,9 @@ export const config = defineRoute({
 });
 
 export function Page() {
-  return <main><p>{\`journal \${String(Reflect.get(globalThis, '${PROBE}') ?? 0)}\`}</p></main>;
+  const body = \`journal \${String(Reflect.get(globalThis, '${PROBE}') ?? 0)}\`;
+  Reflect.get(globalThis, '${RENDERED}')?.(body);
+  return <main><p>{body}</p></main>;
 }
 `,
 };
@@ -61,6 +65,7 @@ afterAll(async () => {
     await rm(ROOT, { recursive: true, force: true });
   } finally {
     Reflect.deleteProperty(globalThis, PROBE);
+    Reflect.deleteProperty(globalThis, RENDERED);
     clearRoutes();
     resetAppLoad();
     restoreTags();
@@ -87,17 +92,25 @@ test(
     expect(await first.text()).toContain('journal 1');
 
     Reflect.set(globalThis, PROBE, 2);
+    const regenerated = new Promise<void>((resolve) => {
+      Reflect.set(globalThis, RENDERED, (body: string) => {
+        if (body === 'journal 2') resolve();
+      });
+    });
     await invalidateTags([tag('post')]);
     const stale = await get('/journal');
     expect(stale.headers.get('x-ultimate-isr')).toBe('stale');
     expect(await stale.text()).toContain('journal 1');
 
-    // The regeneration runs behind the stale answer: poll until it lands, never a fixed wait.
+    // The regeneration runs behind the stale answer: awaited as the page's own render, then asked
+    // for until the store has it — a count of round trips, never a deadline (the preload froze
+    // `Date`, so a `Date.now()` bound here was a loop with no end), and far under the 120-request
+    // bucket a fast loop would otherwise exhaust into a 429.
+    await regenerated;
     let body = '';
-    for (const deadline = Date.now() + 10_000; Date.now() < deadline; ) {
+    for (let left = 20; left > 0 && !body.includes('journal 2'); left -= 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
       body = await (await get('/journal')).text();
-      if (body.includes('journal 2')) break;
-      await Bun.sleep(25);
     }
     expect(body).toContain('journal 2');
   },

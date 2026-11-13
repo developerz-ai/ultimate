@@ -126,6 +126,19 @@ export function resetMails(): void {
 }
 
 /**
+ * Test-only: the registry becomes exactly `mails` — what `registeredMails()` read earlier. One id
+ * twice is still `X_MAIL_DUPLICATE`. `@ultimat3/testing`'s rerun seam forgets one test file's ids
+ * with it, where `resetMails` would drop every mail a module imported earlier declared for good.
+ */
+export function restoreMails(mails: readonly AnyMailDefinition[]): void {
+  registry.clear();
+  for (const mail of mails) {
+    if (registry.has(mail.id)) throw mailDuplicate(mail.id);
+    registry.set(mail.id, mail);
+  }
+}
+
+/**
  * Validate, render, and build the envelope — everything `send` does before it decides
  * between the queue and the transport. Exported so a host or a test can render a mail without
  * delivering it — the `/_x` mail panel and `mailIdempotencyKey`'s callers both need that.

@@ -73,3 +73,24 @@ export function resetServices(): void {
 export function registeredServiceNames(): readonly string[] {
   return [...factories.keys()];
 }
+
+/** One registration, as `registeredServices` reads it and `restoreServices` writes it back. */
+export interface ServiceRegistration {
+  readonly name: string;
+  readonly factory: ServiceFactory;
+}
+
+/** Test-only: every registered factory, in registration order — a copy, never the live map. */
+export function registeredServices(): readonly ServiceRegistration[] {
+  return [...factories].map(([name, factory]) => ({ name, factory }));
+}
+
+/**
+ * Test-only: the registry becomes exactly `registrations`. The writer `resetServices` is not: a
+ * reset drops what every module imported earlier declared, and a module evaluates once per
+ * process — `@ultimat3/testing`'s rerun seam forgets one file's names with this and puts them back.
+ */
+export function restoreServices(registrations: readonly ServiceRegistration[]): void {
+  factories.clear();
+  for (const { name, factory } of registrations) factories.set(name, factory);
+}

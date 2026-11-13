@@ -143,3 +143,102 @@ Weak assertions: `toBeDefined()` drops from 41 to 0 in `validators-builtins.test
 | `X_SERVICE_DUPLICATE` (1) | `packages/cli/src/verify-role-load.test.ts` |
 
 What fixes each: entity and job files already have their seam, so they only need their declarations hoisted into the module body or restored by the file's own `afterAll`. `action`, `mail`, `oauth`, `defineError` and `service` each need a forget/restore export in the package that owns the registry, landed lowest tier first. A `DeclarationRegistry` row in `rerun-declarations.ts` then consumes it.
+
+## Outcome (17b, local)
+
+`As of 2026-11-13`, before release. `cli` and `scripts` are at zero, and `REAL_SLEEP_PINS` in `scripts/lib/test-real-sleep-pins.ts` is empty: every package is pinned at zero. `bun run scripts/test-real-sleep.ts --json` reports `"counts":{}`.
+
+| Band (file names) | Before → after | Replaced | `real-clock` | How |
+|---|---|---|---|---|
+| W1 `cmd-*`, `serve*`, `verify-*` | 17 → 0 | 11 | 6 | awaited exits and ready lines; the verify deadline tests wait on the kernel's reap, said so |
+| W2 `dev-*` | 20 → 0 | 20 | 0 | `dev-turns-fixture.ts`: event-loop turns, bounded by a count. `dev-lock.ts` takes an internal `ClaimFiles` seam, which replaces `mock.module('node:fs')` in `dev-lock-claim.test.ts` |
+| W3 `runtime-*` | 28 → 0 | 26 | 2 | `runtime-turns-fixture.ts`; `startCacheTiers` takes internal `subscribeRetryWait` / `monotonicNow` seams (`runtime-cache.ts`); the transport's `scheduler` from 17a |
+| W4 the rest of `cli` | 39 → 0 | 31 | 8 | the Chrome e2e files wait on `waitFor` predicates; the CDP driver tests on fake timers |
+| W4 `scripts` | 2 → 0 | 0 | 2 | both wait on a child (`helm`, a real WebSocket server) |
+| W5 | — | — | — | the rerun seam for every registry (below) |
+| integration | — | — | — | `scripts/lib/run.ts` has one deadline; `cmd-dev-reload.test.ts` restores each saved file; `rerun-modules.ts` reads the cache, never `require`; `pool-pins.test.ts` on a frozen clock |
+
+Counted per file with `scanRealSleeps` over `HEAD` and the tree: 106 sites, 88 replaced, 18 now carry a reason. The 18 are the lines this sweep added; 14 more in `cli` and `scripts` predate it.
+
+### Every `// real-clock:` line in `cli` and `scripts`
+
+32 lines; "17b" marks the 18 this sweep added.
+
+| Site | Added | Reason, as written |
+|---|---|---|
+| `packages/cli/e2e/cdp-shot.e2e.test.ts:33` | 17b | the shot driver's waits are on Chrome's time, another process's |
+| `packages/cli/e2e/client-navigation-cache.e2e.test.ts:136` | 17b | the 5 s is measured by the router inside Chrome, on Chrome's own clock |
+| `packages/cli/e2e/client-navigation-gate.e2e.test.ts:96` | 17b | "nobody asks twice" has no event; only Chrome, given time, could ask again |
+| `packages/cli/e2e/client-navigation-gate.e2e.test.ts:150` | 17b | "never re-sent" has no event; only Chrome, given time, could send it again |
+| `packages/cli/e2e/client-navigation-gate.e2e.test.ts:166` | 17b | "runs ONCE" has no event; only Chrome, given time, could ask a second time |
+| `packages/cli/e2e/client-navigation-input.e2e.test.ts:32` | 17b | the delay IS the input — a press N ms into Chrome's own view transition |
+| `packages/cli/e2e/client-navigation-input.e2e.test.ts:57` | 17b | a request NOT sent has no event; only Chrome's intent timer could send one |
+| `packages/cli/e2e/ui-chart-live.e2e.test.ts:119` | before | the shot driver's waits are on Chrome's time, another process's |
+| `packages/cli/e2e/ui-confirm.e2e.test.ts:99` | before | the poll waits on Chrome, another process, which no fake timer moves |
+| `packages/cli/e2e/ui-date-pickers.e2e.test.ts:72` | before | the shot driver's waits are on Chrome's time, another process's |
+| `packages/cli/e2e/ui-mobile-frame.e2e.test.ts:142` | before | the poll waits on Chrome, another process, which no fake timer moves |
+| `packages/cli/e2e/ui-rtl.e2e.test.ts:66` | 17b | the shot driver's waits are on Chrome's time, another process's |
+| `packages/cli/e2e/ui-searchable-select.e2e.test.ts:63` | before | the shot driver's waits are on Chrome's time, another process's |
+| `packages/cli/e2e/ui-virtual-list.e2e.test.ts:108` | before | the shot driver's waits are on Chrome's time, another process's |
+| `packages/cli/src/cdp-shot-popup.e2e.test.ts:82` | before | the popups open in Chrome's own process, on its time |
+| `packages/cli/src/cmd-deploy-verify.test.ts:106` | before | this server answers late on purpose, against the sample's own signal |
+| `packages/cli/src/cmd-dev-orphan.live.test.ts:63` | 17b | the supervisor, another process, prints its boot line on its own time |
+| `packages/cli/src/cmd-dev-orphan.live.test.ts:81` | 17b | how soon another process exits is the very thing this measures |
+| `packages/cli/src/cmd-dev-restart.live.test.ts:109` | before | the restarted child boots an embedded Postgres on its own time |
+| `packages/cli/src/dev-rebuild-restart.live.test.ts:91` | before | the restarted child boots an embedded Postgres on its own time |
+| `packages/cli/src/runtime-bus.live.test.ts:150` | 17b | a real nats-server behind a TCP relay accepts the redial on its own time |
+| `packages/cli/src/runtime-cache-redis.live.test.ts:76` | before | a real Redis server and a peer process deliver on their own time, not ours |
+| `packages/cli/src/runtime-replica-roundtrip.live.test.ts:44` | before | the standby's startup process replays and pauses on its own schedule |
+| `packages/cli/src/runtime-services.live.test.ts:105` | 17b | the probe asks a real Postgres, which answers (or refuses) on its own time |
+| `packages/cli/src/templates/scaffold-helm-retire.test.ts:106` | before | a deadline on a child's pipe, read only on a failure — a pass never waits it out |
+| `packages/cli/src/verify-deadline.test.ts:32` | 17b | the kernel ends a killed process, and init reaps an orphan, on their own time |
+| `packages/cli/src/verify-deadline.test.ts:128` | 17b | the shell forks its two sleepers on its own time, after its own spawn returned |
+| `packages/cli/src/verify-run-deadline.test.ts:35` | 17b | the kernel ends a killed process, and init reaps an orphan, on their own time |
+| `packages/cli/src/verify-stalled.test.ts:410` | 17b | a `bun test` worker, another process, writes the marker on its own time |
+| `scripts/bench/restart-bench-seq.live.test.ts:26` | 17b | real WebSockets over the kernel's TCP stack, and a port the OS frees on its own time |
+| `scripts/helm-drain.test.ts:97` | 17b | a deadline on a helm child that may hang — a passing render never waits it out |
+| `scripts/helm-template.test.ts:158` | before | a deadline on the helm child process, which runs on its own time |
+
+**The weaker four.** Most survivors bound a wait on another process and are passed the moment it answers. Four are not: they assert that something **never happens later**, and that has no event in real Chrome, so each still rests on a real sleep that a slow runner can outlast without proving anything:
+
+- `client-navigation-gate.e2e.test.ts:96` — a download link: "nobody asks twice" (1.5 s);
+- `client-navigation-gate.e2e.test.ts:150` — a POST form: "never re-sent" (1 s);
+- `client-navigation-gate.e2e.test.ts:166` — N2: the gate "runs once" (500 ms);
+- `client-navigation-input.e2e.test.ts:57` — a pressed link is requested once, not again by the hover-intent timer (500 ms).
+
+A pass on a fast host is evidence; a pass on a loaded one is weaker. The fix would be a router-side count the page exposes (requests asked for, per URL), asserted after an event that does happen. Not done.
+
+### Flakes root-caused
+
+| Flake | Cause | Fix |
+|---|---|---|
+| "Is port in use?" in `scripts/bench/boot-large-app-proc.test.ts` | fixed ports `39421` / `39422`, held by another file or another copy under the 9-worker run | a port the kernel hands out (`Bun.serve({ port: 0 })`), allowed through the seal |
+| 10 failures after `dev-lock-claim.test.ts` in one process | `mock.module('node:fs')` replaced `node:fs` for every module in the process, and `mock.restore()` never undoes `mock.module` | the mechanism is gone: `dev-lock.ts`'s `claimExclusive` takes an internal `ClaimFiles` seam. **The 10 failures were not reproduced on 31.21.0**, so this removes the cause rather than a measured red |
+| `exercise-services.test.ts` "an app that defined no storage gets a memory disk" in one-process runs, and storage reads across `runtime-jobs*` / `runtime-overrides` | fake runtimes left their `defineStorage` disk in the process registry | each fixture resets storage only when the disk installed is its own (`role-start-fixture.ts`'s `WeakSet`; the same in the three runtime test files) |
+| `channel-bus.test.ts` `X_TRANSPORT_UNAVAILABLE` after `runtime-bus.test.ts` | the supplied-transport test closed its NATS transport but left it installed as the process's channel bus | `ownRunning.stop()`, not a bare `close()` |
+| 4 unhandled `ENOENT` errors in `serve-web*.test.ts`, `verify-role-load-probe.test.ts` (new on this branch, found by its own `unit` run) | the rerun seam read each new module's exports with `require(key)`; on a `?x-reload=` entry that went back through the render loader plugin, whose async read of a fixture app already deleted rejected unhandled | `rerun-modules.ts` reads `require.cache[key].exports`, which evaluates nothing. Regression test in `rerun-modules.test.ts`, red on the old code |
+| `pool-pins.test.ts` "reserve() on the pool that replaced a wedged one" (`82` not `> 90`) under the loaded unit run | the budget left is `100 - (performance.now() - started)`, read on the real clock | `performance.now` frozen; asserts the whole 100 ms. Red when the budget is cut by 10 ms |
+| `run() deadline > a child that never exits is killed at the deadline` on windows-latest | `scripts/lib/run.ts` armed two killers with one deadline, Bun's spawn `timeout` and its own timer; when Bun's won, `exited` resolved first and the verdict was `timedOut: false` with the killed exit code | the spawn's `timeout` dropped for an abort `signal` (the `spawn-timeout` guard still sees a deadline), aborted only after `late` has answered. Proved by mutation: a spawn `timeout` of half the deadline turns two tests red. New test: the child's pid is gone after the deadline (red with the abort removed) |
+
+### The files that could not rerun
+
+All 53 of 17a's list pass `--rerun-each 5` in one parallel run here (2,140 tests, 0 fail); W5 measured `--rerun-each 20` on 57 files. The seam (`packages/testing/src/rerun-declarations.ts`) now forgets everything a file declared on its last run, in its body, its hooks and its tests, except a name a module first evaluated meanwhile exports. `rerun-registries.ts` covers jobs, services, entities, actions, queries, mails, mail layouts and OAuth providers, each over a test-only restore its own package exports: `registeredServices` / `restoreServices` (`core`), `registeredOAuthProviders` / `restoreOAuthProviders` (`auth`), `restoreActions` (`action/loader`), `restoreMails` / `restoreLayouts` and a public `layoutFor` (`mail`). `cmd-dev-reload.test.ts` also needed its own fix: it saves files under one `beforeAll` server, and the module cache outlives a run, so each test now writes its file back and awaits the rebuild.
+
+### `unit` step
+
+`bun run verify --only unit --json`, origin/main (`761c08079`) then this branch, back to back, one 12-CPU host shared with other work, the live services up, 9 workers each. Two pairs:
+
+| Pair | Load average (start → between → end) | main | this branch |
+|---|---|---|---|
+| 1 | 4.7 → 19.3 → 18.7 | **480.4 s**, 40,646 tests, green | **458.8 s**, 40,674 tests, red (2 fail, 4 errors, all fixed since; table above) |
+| 2 | 5.1 → 15.8 → 17.1 | **367.9 s**, 40,646 tests, red (1 fail: `realtime/offline-queue-scale.test.ts`, a timing ratio, 76.6 against `< 64`) | **360.6 s**, 40,676 tests, green |
+
+Pair 1's main run also shared the host with a wait loop of this run's own that spun one CPU for about three minutes. The branch is 2–5 % faster in both pairs, but the two pairs differ by 25 % between themselves, so that 2–5 % is inside the host's noise: **not measurably faster**. The waits removed are milliseconds each, spread across 9 workers. Still owed, as in 17a: a per-file `--timings` comparison on a quiet host.
+
+`realtime/offline-queue-scale.test.ts` (a wall-clock ratio, red on main under load) is unrelated to this sweep and is not fixed here.
+
+### Still owed
+
+- The `flaky` job (16's `ci.yml`) has to catch nothing for a week, or have what it caught fixed.
+- The four "never happens later" asserts above.
+- A guard refusing `mock.module('node:*')` in a test: never undone, it leaks into every later file in the process. Not built.

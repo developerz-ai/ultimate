@@ -57,14 +57,18 @@ describe('descendantsIn', () => {
 
 describe('descendantsOf', () => {
   test('finds a real child and grandchild of a running process', async () => {
-    const root = Bun.spawn(['sh', '-c', '(sleep 30 & wait) & wait'], { stdout: 'ignore' });
+    // The subshell says `forked` only once its `sleep` is forked, and the root shell forked the
+    // subshell before that: the line is the fact, so no poll guesses when both exist.
+    const root = Bun.spawn(['sh', '-c', '(sleep 30 & echo "forked $!"; wait) & wait'], {
+      stdout: 'pipe',
+    });
     try {
-      let found: readonly number[] = [];
-      for (let attempt = 0; attempt < 40 && found.length < 2; attempt += 1) {
-        await Bun.sleep(25);
-        found = descendantsOf(root.pid);
-      }
-      expect(found.length).toBeGreaterThanOrEqual(2);
+      const seen = await waitFor(pump(root.stdout), 'forked ');
+      const grandchild = Number(/forked (\d+)/.exec(seen)?.[1]);
+      const found = descendantsOf(root.pid);
+      expect(found).toHaveLength(2);
+      // Depth first: the subshell, then the `sleep` it said it forked.
+      expect(found[1]).toBe(grandchild);
     } finally {
       // Asked BEFORE the root dies: afterwards its children are init's and no walk reaches them.
       for (const pid of [...descendantsOf(root.pid), root.pid]) {

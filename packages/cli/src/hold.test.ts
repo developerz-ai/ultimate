@@ -18,15 +18,21 @@ afterEach(() => {
   resetLifecycle();
 });
 
-/** Resolves to what `promise` did, or to `'pending'` if it has not settled by the next ticks. */
-async function settledOr<T>(promise: Promise<T>, fallback: string): Promise<T | string> {
-  return Promise.race([
-    promise,
-    // Two macrotask turns: enough for any already-resolved continuation chain to run.
-    new Promise<string>((resolve) => {
-      setTimeout(() => resolve(fallback), 2);
-    }),
-  ]);
+/** One macrotask turn: every continuation already chained has run when it resolves. */
+const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** What `promise` resolved to, or `fallback` if it has not settled within `count` turns. */
+async function settledOr<T>(
+  promise: Promise<T>,
+  fallback: string,
+  count = 20,
+): Promise<T | string> {
+  let settled: { value: T } | undefined;
+  void promise.then((value) => {
+    settled = { value };
+  });
+  for (let left = count; left > 0 && settled === undefined; left -= 1) await turn();
+  return settled === undefined ? fallback : settled.value;
 }
 
 describe('holdUntilShutdown', () => {
@@ -130,10 +136,15 @@ describe('holdUntilShutdown', () => {
     // One in-flight request, never finished: what makes the drain exhaust its deadline.
     const endWork = beginWork();
     let finished = false;
+    // A teardown whose first awaits are real timer turns: each `setTimeout(…, 0)` it arms queues
+    // BEHIND the abandon timer `releaseWithin` armed first, so a budget of 0 abandons it every
+    // time and the floor never does — ordered by the timer queue, not by a race between delays.
     const hold = holdUntilShutdown('probe', async () => {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 20);
-      });
+      for (let left = 3; left > 0; left -= 1) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      }
       finished = true;
     });
     const held = hold();

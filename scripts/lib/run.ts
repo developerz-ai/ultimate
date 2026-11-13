@@ -95,13 +95,18 @@ export async function run(
       'run(command, { cwd, timeoutMs: LONG_RUN_TIMEOUT_MS })   # a positive, finite number of milliseconds',
     );
   }
+  // One deadline, never two: the spawn takes an abort `signal`, never Bun's own `timeout`. That
+  // timer, armed with the same number, EOFs the pipes when it wins, so `exited` resolved before
+  // `late` below — a killed exit code reported as `timedOut: false` (exit 1 on windows-latest, the
+  // `run.test.ts` deadline flake). Here `late` resolves first, and only then is the signal aborted.
+  const deadline = new AbortController();
   const proc = Bun.spawn([head, ...rest], {
     cwd: options.cwd,
     env: { ...(options.env ?? Bun.env) },
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
-    timeout: timeoutMs,
+    signal: deadline.signal,
     killSignal: 'SIGKILL',
   });
   const stdout = drain(proc.stdout);
@@ -124,7 +129,7 @@ export async function run(
       timedOut: false,
     };
   }
-  proc.kill('SIGKILL');
+  deadline.abort();
   await Promise.all([stdout.cancel(), stderr.cancel()]);
   const timeout = new ScriptError({
     code: RUN_TIMEOUT_CODE,

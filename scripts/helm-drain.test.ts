@@ -94,6 +94,7 @@ async function render(
   );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<'late'>((resolve) => {
+    // real-clock: a deadline on a helm child that may hang — a passing render never waits it out
     timer = setTimeout(() => resolve('late'), RENDER_DEADLINE_MS);
   });
   const outReader = child.stdout.getReader();

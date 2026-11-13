@@ -37,20 +37,40 @@ function scaffolded(path: string): string {
     : expect.unreachable(`${path} is bytes, not text`);
 }
 
+/** Who is waiting for the child's next chunk: woken by the pump, never by a poll interval. */
+let waiting: (() => void)[] = [];
+const nextChunk = (): Promise<void> =>
+  new Promise((resolve) => {
+    waiting.push(resolve);
+  });
+const wake = (): void => {
+  const woken = waiting;
+  waiting = [];
+  for (const resolve of woken) resolve();
+};
+
 /** One pump per stream; reading a stream twice abandons the first reader forever. */
 function pump(stream: ReadableStream<Uint8Array>): () => string {
   const decoder = new TextDecoder();
   let seen = '';
   void (async () => {
-    for await (const chunk of stream) seen += decoder.decode(chunk, { stream: true });
+    for await (const chunk of stream) {
+      seen += decoder.decode(chunk, { stream: true });
+      wake();
+    }
+    wake();
   })();
   return () => seen;
 }
 
+/**
+ * The child's output once it holds `marker` — re-read on each chunk the child writes, the event
+ * itself. A child that exits without it leaves this pending, and the test's own timeout says so.
+ */
 async function waitFor(seen: () => string, marker: string): Promise<string> {
   for (;;) {
     if (seen().includes(marker)) return seen();
-    await Bun.sleep(25);
+    await nextChunk();
   }
 }
 

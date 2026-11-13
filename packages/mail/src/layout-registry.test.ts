@@ -14,6 +14,7 @@ import {
   layoutFor,
   registeredLayouts,
   registerLayout,
+  restoreLayouts,
 } from './layout';
 import { type RenderableMail, renderMail } from './render';
 
@@ -147,5 +148,29 @@ describe('a layout name is taken once', () => {
       registerLayout(BASE_LAYOUT, layout('hijacked'));
     }).toThrow(expect.objectContaining({ code: 'X_MAIL_DUPLICATE' }));
     expect(registeredLayouts()).toContain(BASE_LAYOUT);
+  });
+});
+
+describe('restoreLayouts', () => {
+  const held = () =>
+    registeredLayouts().flatMap((name) => {
+      const layout = layoutFor(name);
+      return layout === undefined ? [] : [{ name, layout }];
+    });
+
+  test('the registry becomes exactly what was handed back: a forgotten name registers afresh', () => {
+    const before = held();
+    registerLayout('test-restore-layout', () => '<restored/>');
+    try {
+      restoreLayouts(before);
+      expect(layoutFor('test-restore-layout')).toBeUndefined();
+      expect(registeredLayouts()).toEqual(before.map((entry) => entry.name).sort());
+      expect(() => registerLayout('test-restore-layout', () => '<again/>')).not.toThrow();
+      expect(() => registerLayout(BASE_LAYOUT, () => '<hijacked/>')).toThrow(
+        expect.objectContaining({ code: 'X_MAIL_DUPLICATE' }),
+      );
+    } finally {
+      restoreLayouts(before);
+    }
   });
 });

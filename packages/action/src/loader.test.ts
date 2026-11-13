@@ -12,10 +12,16 @@ import { getAction, resetActions } from './registry';
 
 afterEach(() => resetActions());
 
-test('the package exports ./loader, and it carries the two registration functions only', async () => {
+test('the package exports ./loader, and it carries the registry writers only', async () => {
   const manifest: unknown = await Bun.file(new URL('../package.json', import.meta.url)).json();
   expect(manifest).toMatchObject({ exports: { './loader': './src/loader.ts' } });
-  expect(Object.keys(subpath).sort()).toEqual(['registerAction', 'registerActions']);
+  // `restoreActions` is the test seam's: it hands back what `listActions()` read, through
+  // `registerAction`, so the barrel still carries no way to register beside `defineApi`.
+  expect(Object.keys(subpath).sort()).toEqual([
+    'registerAction',
+    'registerActions',
+    'restoreActions',
+  ]);
 });
 
 test('a registration through the loader is the one the registry serves', () => {

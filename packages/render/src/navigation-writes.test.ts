@@ -33,7 +33,15 @@ const stale = () => htmlAnswer('page:Stale', page('Stale'));
 describe('a guess in flight when the cache is emptied', () => {
   const emptiers: [string, () => void][] = [
     ['a client write', () => notifyClientWrite('/api/x')],
-    ['a rescope', () => rescope('member:7')],
+    // A rescope to the principal the page already has is a no-op, and the scope is the process's:
+    // through `null` first, so the move to `member:7` is a real one on every load of this file.
+    [
+      'a rescope',
+      () => {
+        rescope(null);
+        rescope('member:7');
+      },
+    ],
     ['another tab', () => new BroadcastChannel('ultimate:navigation').postMessage('clear')],
   ];
   for (const [name, empty] of emptiers) {

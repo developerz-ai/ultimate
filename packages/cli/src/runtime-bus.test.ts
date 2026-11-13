@@ -24,6 +24,7 @@ import {
   publishChannelEvent,
 } from '@ultimat3/realtime/server';
 import { busLabel, busUseFor, DEV_BUS_WAIT_MS, selectBus } from './runtime-bus';
+import { turnScheduler, turns, untilTurn } from './runtime-turns-fixture';
 
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 // v31: the bus is `NATS_URL`'s alone; the section only says whether realtime runs.
@@ -39,13 +40,11 @@ const caught = (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-const waitFor = async (done: () => boolean, polls = 500): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
-};
-
 const fake = (broker: FakeNatsBroker): SelectTransportOptions => ({
   connect: fakeNatsConnect(broker),
   backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
+  // Each re-dial waits one turn, not 2 ms: the loop moves when the test turns it.
+  scheduler: turnScheduler,
   onError: () => undefined,
 });
 
@@ -107,7 +106,7 @@ describe('selectBus().start(), for a role that only publishes', () => {
       const heard: string[] = [];
       broker.client().subscribe('x.channel.>', (message) => heard.push(message.subject));
       broker.offline = false;
-      await waitFor(() => busLabel(running.transport) === 'nats(up)');
+      await untilTurn(() => busLabel(running.transport) === 'nats(up)', 'the dial lands');
       expect(busLabel(running.transport)).toBe('nats(up)');
       expect(readyzPayload().body.checks).toEqual({ transport: 'ok' });
       expect(readyzPayload({ deep: true }).status).toBe(200);
@@ -134,11 +133,12 @@ describe('selectBus().start(), for a role that only publishes', () => {
     const said = (): unknown[] =>
       lines.filter((line) => line.message === 'ultimate bus').map((line) => line.fields);
     try {
-      await Bun.sleep(10);
+      // Twenty re-dials against an offline broker: none of them may log the bus as up.
+      await turns(20);
       expect(said()).toEqual([]);
 
       broker.offline = false;
-      await waitFor(() => said().length === 1);
+      await untilTurn(() => said().length === 1, 'the bus line is logged');
       expect(said()).toEqual([{ bus: 'nats(up)', use: 'publish' }]);
 
       broker.drop();
@@ -162,7 +162,7 @@ describe('selectBus().start(), for a role that only publishes', () => {
     const bus = selectBus({ env: ENV, realtime: NATS, roles: ['worker'], select: fake(broker) });
     const running = await bus.start();
     try {
-      await waitFor(() => busLabel(running.transport) === 'nats(up)');
+      await untilTurn(() => busLabel(running.transport) === 'nats(up)', 'the dial lands');
       expect(busLabel(running.transport)).toBe('nats(up)');
       expect(broker.streams).toEqual([]);
     } finally {
@@ -260,7 +260,7 @@ describe('selectBus().start(), under x dev with a role that serves sockets', () 
       expect(readyzPayload().body.checks).toEqual({ transport: 'degraded' });
 
       broker.offline = false;
-      await waitFor(() => busLabel(running.transport) === 'nats(up)');
+      await untilTurn(() => busLabel(running.transport) === 'nats(up)', 'the dial lands');
       expect(busLabel(running.transport)).toBe('nats(up)');
       expect(readyzPayload().body.checks).toEqual({ transport: 'ok' });
       // Still one line: the retries in between said nothing here.
@@ -323,7 +323,8 @@ describe('selectBus(), the cases that are not NATS', () => {
   test('a transport the host supplied is used as it is, and never closed by the boot', async () => {
     const broker = new FakeNatsBroker();
     const own = selectBus({ env: ENV, realtime: NATS, roles: ['sync'], select: fake(broker) });
-    const supplied = (await own.start()).transport;
+    const ownRunning = await own.start();
+    const supplied = ownRunning.transport;
     resetLifecycle();
     let closed = 0;
     const close = supplied.close.bind(supplied);
@@ -338,7 +339,11 @@ describe('selectBus(), the cases that are not NATS', () => {
     expect(running.detail).toBe('runtime override');
     await running.stop();
     expect(closed).toBe(0);
-    await close();
+    // Stopped, not just closed: `own.start()` installed its transport as the process's channel bus,
+    // and a bare `close()` left it there — the next file's `publishChannelEvent` (channel-bus.test)
+    // then published on this closed NATS transport (`X_TRANSPORT_UNAVAILABLE`).
+    supplied.close = close;
+    await ownRunning.stop();
   });
 });
 

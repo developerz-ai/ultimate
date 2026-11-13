@@ -299,11 +299,8 @@ const routes: Route[] = [
   route(
     'GET',
     '/slow',
-    async () => {
-      // Slower than the navigation that overtakes it.
-      await Bun.sleep(1_500);
-      return html(documentOf({ title: 'Slow', path: '/slow' }));
-    },
+    // Slower than the navigation that overtakes it: the test holds its answer (`hold`).
+    () => html(documentOf({ title: 'Slow', path: '/slow' })),
     nav(),
   ),
   page('/search', (url) => ({

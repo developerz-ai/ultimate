@@ -24,8 +24,11 @@ const root = mkdtempSync(join(tmpdir(), 'x-test-database-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 writeFileSync(join(root, 'app.config.ts'), 'export default {};\n');
 mkdirSync(join(root, MIGRATIONS_DIR), { recursive: true });
+// Each migration names this load's root in a comment. A template is held in memory per migration
+// state for the life of the process, so a second load of this file (`--rerun-each`) with the same
+// migrations read the first load's template and wrote none into its own `.x/test-db`.
 const migration = (name: string, ddl: string): void =>
-  writeFileSync(join(root, MIGRATIONS_DIR, `${name}.sql`), ddl);
+  writeFileSync(join(root, MIGRATIONS_DIR, `${name}.sql`), `-- ${root}\n${ddl}`);
 const templates = (): readonly string[] =>
   readdirSync(join(root, '.x', TEST_DB_DIR)).filter((name) => name.endsWith('.tar'));
 

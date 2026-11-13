@@ -2,7 +2,7 @@
 // fake child, so no process is started. The real two-process restart is
 // `cmd-dev-restart.live.test.ts`.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 import { DEV_SUPERVISOR_PID_ENV } from './dev-child-watch';
 import type { DevChild } from './dev-supervisor';
 import {
@@ -16,6 +16,7 @@ import {
   stopChild,
   superviseDev,
 } from './dev-supervisor';
+import { settled } from './dev-turns-fixture';
 
 const pick = (): number => 4242;
 
@@ -244,11 +245,40 @@ describe('unit · stopChild', () => {
     expect(closed.killed).toEqual(['SIGTERM']);
   });
 
-  test('a message nobody acted on is followed by the signal once the bound has passed', async () => {
-    const booting = child(() => undefined);
-    stopChild(booting.child, 'SIGTERM', 5);
-    expect(booting.killed).toEqual([]);
-    await Bun.sleep(30);
-    expect(booting.killed).toEqual(['SIGTERM']);
+  test('a message nobody acted on is followed by the signal once the bound has passed', () => {
+    jest.useFakeTimers();
+    try {
+      const booting = child(() => undefined);
+      stopChild(booting.child, 'SIGTERM', 5_000);
+      jest.advanceTimersByTime(4_999);
+      expect(booting.killed).toEqual([]);
+      jest.advanceTimersByTime(1);
+      expect(booting.killed).toEqual(['SIGTERM']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a child that exits within the bound is never signalled after it', async () => {
+    jest.useFakeTimers();
+    try {
+      const killed: string[] = [];
+      let exit = (_code: number): void => undefined;
+      const exited = new Promise<number>((resolve) => {
+        exit = resolve;
+      });
+      stopChild(
+        { exited, kill: (signal) => killed.push(signal), send: () => undefined },
+        'SIGTERM',
+        50,
+      );
+      exit(0);
+      // The exit's `then` clears the fallback: every chained job runs before the clock moves.
+      await settled();
+      jest.advanceTimersByTime(1_000);
+      expect(killed).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

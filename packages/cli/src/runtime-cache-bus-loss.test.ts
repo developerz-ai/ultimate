@@ -31,6 +31,7 @@ import {
   MAX_DEFERRED_TAGS,
   startCacheTiers,
 } from './runtime-cache';
+import { turn, turnScheduler, turns, untilTurn, untilTurnAsync } from './runtime-turns-fixture';
 
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 
@@ -58,16 +59,23 @@ afterEach(async () => {
   logger.warn = printWarning;
 });
 
-const until = async (done: () => boolean, polls = 500): Promise<void> => {
-  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(2);
-};
+/** A backoff that never ends on its own: only the bus coming up can end the wait. */
+const never = (): Promise<unknown> => new Promise(() => undefined);
 
-/** This process as one replica: a web role's bus (background dial) with the cache hop on top. */
-async function replica(broker: FakeNatsBroker, retryMs: (attempt: number) => number = () => 1) {
+/**
+ * This process as one replica: a web role's bus (background dial) with the cache hop on top. Both
+ * waits — the bus's re-dial and the subscribe's retry — are one loop turn long, so a retry is
+ * counted in turns and nothing here sleeps on the wall clock.
+ */
+async function replica(
+  broker: FakeNatsBroker,
+  retryWait: (ms: number) => Promise<unknown> = () => turn(),
+) {
   const selection = selectTransport(ENV, {
     use: 'publish',
     connect: fakeNatsConnect(broker),
     backoff: { base: 2, max: 2, factor: 1, jitter: 'none' },
+    scheduler: turnScheduler,
     onError: () => undefined,
   });
   transport = selection.transport;
@@ -92,7 +100,7 @@ async function replica(broker: FakeNatsBroker, retryMs: (attempt: number) => num
     purge: noopPurgeDriver(),
     transport: counted,
     tiers: DEFAULT_CACHE_TIERS,
-    subscribeRetryMs: retryMs,
+    subscribeRetryWait: retryWait,
     // These tests are OUTAGES, so the boot's quiet first-dial window is off: every refusal here is
     // one an operator should hear about (`runtime-cache-first-dial.test.ts` holds the window).
     firstDialGraceMs: 0,
@@ -122,7 +130,7 @@ describe('a bust made while the bus is away', () => {
     const broker = new FakeNatsBroker();
     const self = await replica(broker);
     const other = peer(broker);
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands');
 
     broker.drop();
     const report = await invalidateTags([tag('post', '1')]);
@@ -132,8 +140,9 @@ describe('a bust made while the bus is away', () => {
     expect(other.heard).toEqual([]);
 
     broker.restore();
-    await until(() => other.heard.length >= 1);
-    await Bun.sleep(10);
+    await untilTurn(() => other.heard.length >= 1, 'the peer hears the settle');
+    // Twenty more turns: a second publish of the same busts would have arrived by now.
+    await turns(20);
 
     expect(other.heard).toEqual(['["post:1","post:2"]']);
   });
@@ -142,7 +151,7 @@ describe('a bust made while the bus is away', () => {
     const broker = new FakeNatsBroker();
     const self = await replica(broker);
     const other = peer(broker);
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands');
 
     broker.drop();
     for (let id = 0; id <= MAX_DEFERRED_TAGS; id += 1) await invalidateTags([tag('post', `${id}`)]);
@@ -150,8 +159,9 @@ describe('a bust made while the bus is away', () => {
     for (let id = 0; id < 50; id += 1) await invalidateTags([tag('comment', `${id}`)]);
 
     broker.restore();
-    await until(() => other.heard.length >= 1);
-    await Bun.sleep(10);
+    await untilTurn(() => other.heard.length >= 1, 'the peer hears the settle');
+    // Twenty more turns: a second publish of the same busts would have arrived by now.
+    await turns(20);
 
     expect(other.heard).toEqual([CACHE_FLUSH_ALL]);
   });
@@ -160,7 +170,7 @@ describe('a bust made while the bus is away', () => {
     const broker = new FakeNatsBroker();
     const self = await replica(broker);
     const other = peer(broker);
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands');
 
     // Refused by the bus itself, with the connection up: no reconnect will ever announce it.
     const publish = self.selection.transport.publish.bind(self.selection.transport);
@@ -172,7 +182,7 @@ describe('a bust made while the bus is away', () => {
     await invalidateTags([tag('post', '1')]);
     refuse = false;
     await invalidateTags([tag('post', '2')]);
-    await until(() => other.heard.length >= 2);
+    await untilTurn(() => other.heard.length >= 2, 'the peer hears both publishes');
 
     expect(other.heard).toEqual(['["post:2"]', '["post:1"]']);
   });
@@ -183,7 +193,7 @@ describe('a replica whose own connection was down', () => {
     const broker = new FakeNatsBroker();
     const self = await replica(broker);
     const other = peer(broker);
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands');
     registerDependent([tag('post')], { kind: 'isr-route', id: '/blog' });
     const marked: string[] = [];
     registerRevalidator((path) => {
@@ -194,12 +204,13 @@ describe('a replica whose own connection was down', () => {
     await self.lru.set('post:1', 'stale', { tags: [tag('post', '1')] });
     // The peer edits the post. This replica cannot hear it, and nobody will repeat it.
     other.bust('["post:1"]');
-    await Bun.sleep(5);
+    // Twenty turns: a connected replica would have applied the bust by now; this one is deaf.
+    await turns(20);
     expect((await self.lru.get('post:1'))?.value).toBe('stale');
     expect(marked).toEqual([]);
 
     broker.restore();
-    await until(() => marked.length > 0);
+    await untilTurn(() => marked.length > 0, 'the ISR page is marked stale');
 
     expect(await self.lru.get('post:1')).toBeUndefined();
     expect(marked).toEqual(['/blog']);
@@ -209,11 +220,14 @@ describe('a replica whose own connection was down', () => {
     const broker = new FakeNatsBroker();
     const self = await replica(broker);
     const other = peer(broker);
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands');
     await self.lru.set('anything', 1);
 
     other.bust(CACHE_FLUSH_ALL);
-    await Bun.sleep(40);
+    await untilTurnAsync(
+      async () => (await self.lru.get('anything')) === undefined,
+      "the peer's flush-all empties the lru",
+    );
 
     expect(await self.lru.get('anything')).toBeUndefined();
   });
@@ -226,15 +240,16 @@ describe('the invalidation subscribe of a role booted with the bus down', () => 
     const broker = new FakeNatsBroker();
     broker.offline = true;
     const self = await replica(broker);
-    await until(() => self.subscribes() >= 3);
+    await untilTurn(() => self.subscribes() >= 3, 'three refused subscribes');
     expect(self.subscribes()).toBeGreaterThanOrEqual(3);
     expect(self.landed()).toBe(0);
     await self.lru.set('post:1', 'old', { tags: [tag('post', '1')] });
 
     broker.offline = false;
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands');
     const attempts = self.subscribes();
-    await Bun.sleep(20);
+    // Twenty turns, each one retry wait long: a loop still retrying would have asked again.
+    await turns(20);
     // One that lands, then none.
     expect(self.landed()).toBe(1);
     expect(self.subscribes()).toBe(attempts);
@@ -243,29 +258,31 @@ describe('the invalidation subscribe of a role booted with the bus down', () => 
 
     await self.lru.set('post:1', 'old', { tags: [tag('post', '1')] });
     peer(broker).bust('["post:1"]');
-    await Bun.sleep(40);
+    await untilTurnAsync(
+      async () => (await self.lru.get('post:1')) === undefined,
+      "the peer's bust is applied",
+    );
     expect(await self.lru.get('post:1')).toBeUndefined();
   });
 
   test('is woken by the bus coming up, not by its own backoff', async () => {
     const broker = new FakeNatsBroker();
     broker.offline = true;
-    const self = await replica(broker, () => 60_000);
-    await until(() => self.subscribes() >= 1);
+    // A backoff that never ends: a landing can only be the bus waking the loop.
+    const self = await replica(broker, never);
+    await untilTurn(() => self.subscribes() >= 1, 'the first refused subscribe');
 
-    const startedAt = performance.now();
     broker.offline = false;
-    await until(() => self.landed() === 1);
+    await untilTurn(() => self.landed() === 1, 'the subscribe lands once the bus is up');
 
     expect(self.landed()).toBe(1);
-    expect(performance.now() - startedAt).toBeLessThan(2_000);
   });
 
   test('warns on attempts 1, 2, 4, 8 — not once per retry for as long as the outage lasts', async () => {
     const broker = new FakeNatsBroker();
     broker.offline = true;
-    const self = await replica(broker, () => 0);
-    await until(() => self.subscribes() >= 20);
+    const self = await replica(broker);
+    await untilTurn(() => self.subscribes() >= 20, 'twenty refused subscribes');
 
     const attempts = warnings
       .filter((warning) => warning.line === 'cache.broadcast.subscribe-failed')
@@ -282,11 +299,12 @@ describe('the invalidation subscribe of a role booted with the bus down', () => 
     try {
       const broker = new FakeNatsBroker();
       broker.offline = true;
-      const self = await replica(broker, () => 0);
-      await until(() => self.subscribes() >= 5);
+      const self = await replica(broker);
+      await untilTurn(() => self.subscribes() >= 5, 'five refused subscribes');
       broker.offline = false;
-      await until(() => self.landed() === 1);
-      await Bun.sleep(5);
+      await untilTurn(() => said.length >= 1, 'the recovered line');
+      // Twenty more turns: a second `recovered` line would have been said by now.
+      await turns(20);
       expect(said).toEqual([{ after: self.subscribes() - 1 }]);
     } finally {
       info.mockRestore();

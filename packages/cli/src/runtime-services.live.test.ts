@@ -102,6 +102,7 @@ async function readyzUntil(base: string, status: number): Promise<Readyz> {
   const deadline = Bun.nanoseconds() + 10_000_000_000;
   let last = await readyz(base);
   while (last.status !== status && Bun.nanoseconds() < deadline) {
+    // real-clock: the probe asks a real Postgres, which answers (or refuses) on its own time
     await Bun.sleep(20);
     last = await readyz(base);
   }

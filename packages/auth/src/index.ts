@@ -300,7 +300,9 @@ export {
   hasOAuthProvider,
   oauthProviderIds,
   providerFor,
+  registeredOAuthProviders,
   registerOAuthProvider,
+  restoreOAuthProviders,
 } from './oauth-registry';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
 export { oauthLogin } from './oauth-route';

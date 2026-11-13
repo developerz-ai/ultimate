@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { InternalError, isRetiring, resetLifecycle } from '@ultimat3/core';
 import type { WorkerStats } from '@ultimat3/jobs';
 import { type RetiringWorker, retireThenDrain } from './dev-restart-retire';
+import { settled, untilSettled } from './dev-turns-fixture';
 
 const statsHolding = (inFlight: number): WorkerStats => ({
   workerId: 'worker-test',
@@ -47,8 +48,6 @@ function heldWorker(inFlight: number): {
   return { worker, events, finish: () => finish() };
 }
 
-const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
-
 describe('unit · retireThenDrain', () => {
   test('the drain waits for the jobs the worker holds, and the wait is said once', async () => {
     const held = heldWorker(2);
@@ -60,7 +59,9 @@ describe('unit · retireThenDrain', () => {
       },
       say: (line) => said.push(line),
     });
-    await tick();
+    await untilSettled(() => held.events.length > 0, 'the worker is asked to stop');
+    // Every chained job has run, and the drain still waits on the jobs the worker holds.
+    await settled();
     expect(held.events).toEqual(['stop:x dev restart']);
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('2 running job(s)');
@@ -128,7 +129,7 @@ describe('unit · retireThenDrain', () => {
         },
         { drain: () => Promise.resolve(), say: () => undefined },
       );
-      await tick();
+      await untilSettled(() => retiringAtStop !== undefined, 'the worker is asked to stop');
       expect(retiringAtStop).toBe(true);
       held.finish();
       await done;

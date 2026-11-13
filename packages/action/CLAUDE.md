@@ -49,7 +49,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `declared-errors-contract.ts` | `.contract()`'s source scan |
 | `openapi-errors.ts` | core's builder bound to http's status and `problemTypeFor` |
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
-| `loader.ts` | `@ultimat3/action/loader`: `registerAction`/`registerActions` for `x`'s loader and framework fixtures. Never the barrel — `defineApi` is an app's one path (`loader.test.ts`) |
+| `loader.ts` | `@ultimat3/action/loader`: `registerAction`/`registerActions` for `x`'s loader and framework fixtures; test-only `restoreActions`. Never the barrel — `defineApi` is an app's one path (`loader.test.ts`) |
 | `adapter.ts` | `@ultimat3/action/adapter`: both stores' installers (each returns a release removing that install alone) + resets, port types, store errors, and `overrideHandler`. Never the barrel |
 | `handler-override.ts` | the slot `overrideHandler` writes: a test double where `handle` is, keyed by the stored declaration and read per call by `invoke` (`run`) and, for a stream, by the drain (`action-stream.ts`) — so policy, parse, meter, idempotency and output parse still run on every surface. `@ultimat3/testing`'s `stub()` is its one caller (`handler-override.test.ts`) |
 | `idempotency-key.ts` | the namespaced key — action + actor + the caller's key, as one JSON tuple — and the refusal of one that names no request |

@@ -3,7 +3,7 @@
 // monorepo root 1901, of which 1490 were `.git/` and `node_modules/`. The filter answered
 // correctly every time; the cost was that the kernel and the JS callback had already run.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 // why: Bun exposes no directory-create, file-write or recursive-remove primitive — `Bun.write`
 // creates parents for a FILE only, and a fixture tree needs empty directories too. `readdirSync`
 // and `readFileSync` read `/proc/self/fdinfo`, which is a kernel interface and not a Bun one.
@@ -102,7 +102,15 @@ describe('admittedDirectories', () => {
 });
 
 describe('watchTree', () => {
-  test('a write under an ignored directory never reaches onChange', async () => {
+  // The debounce is a `setTimeout`: Bun's fake clock fires it at the millisecond the test names.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('a write under an ignored directory never reaches onChange', () => {
     const root = tree('filter', '/coverage/\n*.tsbuildinfo\n');
     const seen: string[] = [];
     const watchers = fakeWatchers(root);
@@ -117,14 +125,17 @@ describe('watchTree', () => {
     for (const name of ['.git', 'node_modules', '.x', 'coverage', 'tsconfig.tsbuildinfo']) {
       watchers.fire('', 'change', name);
     }
+    // Asked before any admitted write, or the debounce's last-file-wins would hide an ignored one.
+    jest.advanceTimersByTime(100);
+    expect(seen).toEqual([]);
     watchers.fire('apps/web/app/feed', 'change', 'page.tsx');
-    await Bun.sleep(20);
+    jest.advanceTimersByTime(100);
     expect(seen).toEqual(['apps/web/app/feed/page.tsx']);
     handle.close();
     rmSync(root, { recursive: true, force: true });
   });
 
-  test("an app's own /coverage route still reloads", async () => {
+  test("an app's own /coverage route still reloads", () => {
     const root = tree('route', '/coverage/\n');
     const seen: string[] = [];
     const watchers = fakeWatchers(root);
@@ -135,13 +146,13 @@ describe('watchTree', () => {
       watchDirectory: watchers.watchDirectory,
     });
     watchers.fire('apps/web/site/coverage', 'change', 'page.tsx');
-    await Bun.sleep(20);
+    jest.advanceTimersByTime(1);
     expect(seen).toEqual(['apps/web/site/coverage/page.tsx']);
     handle.close();
     rmSync(root, { recursive: true, force: true });
   });
 
-  test('a burst of writes is one reload, naming the last file', async () => {
+  test('a burst of writes is one reload, naming the last file', () => {
     const root = tree('burst');
     const seen: string[] = [];
     const watchers = fakeWatchers(root);
@@ -151,10 +162,15 @@ describe('watchTree', () => {
       onChange: (file) => seen.push(file),
       watchDirectory: watchers.watchDirectory,
     });
+    // Each write lands inside the last one's window, so each pushes the reload back.
     for (const name of ['a.tsx', 'b.tsx', 'c.tsx']) {
       watchers.fire('apps/web/app/feed', 'change', name);
+      jest.advanceTimersByTime(4);
     }
-    await Bun.sleep(30);
+    expect(seen).toEqual([]);
+    jest.advanceTimersByTime(1);
+    expect(seen).toEqual(['apps/web/app/feed/c.tsx']);
+    jest.advanceTimersByTime(100);
     expect(seen).toEqual(['apps/web/app/feed/c.tsx']);
     handle.close();
     rmSync(root, { recursive: true, force: true });
@@ -185,7 +201,7 @@ describe('watchTree', () => {
   // Reproduced: Bun's recursive watcher delivers `undefined` when the root is renamed or removed
   // (`mv myapp myapp2`, a re-clone, a volume remount). `isIgnoredPath(undefined)` threw a TypeError
   // inside an fs callback, outside any try, with no uncaughtException handler — `x dev` died.
-  test('an event with no filename is survived, not thrown on', async () => {
+  test('an event with no filename is survived, not thrown on', () => {
     const root = tree('unnamed');
     const seen: string[] = [];
     const watchers = fakeWatchers(root);
@@ -198,13 +214,13 @@ describe('watchTree', () => {
     expect(() => watchers.fire('', 'rename', undefined)).not.toThrow();
     expect(() => watchers.fire('', 'rename', null)).not.toThrow();
     watchers.fire('apps/web/app/feed', 'change', 'page.tsx');
-    await Bun.sleep(20);
+    jest.advanceTimersByTime(100);
     expect(seen).toEqual(['apps/web/app/feed/page.tsx']);
     handle.close();
     rmSync(root, { recursive: true, force: true });
   });
 
-  test('a new directory is picked up and watched', async () => {
+  test('a new directory is picked up and watched', () => {
     const root = tree('new');
     const watchers = fakeWatchers(root);
     const handle = watchTree({
@@ -226,7 +242,7 @@ describe('watchTree', () => {
   // The root `.gitignore` is matched against ROOT-relative paths. The new directory's walk matched
   // it against paths relative to that directory, so an anchored `/build` hid `pricing/build/` —
   // saves there never reloaded until a restart — while the boot's own walk admitted it.
-  test('a new directory is walked against the root .gitignore at root-relative paths', async () => {
+  test('a new directory is walked against the root .gitignore at root-relative paths', () => {
     const root = tree('anchored', '/build\n');
     mkdirSync(join(root, 'build'));
     const watchers = fakeWatchers(root);
@@ -245,7 +261,7 @@ describe('watchTree', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  test('a removed directory gives its descriptor back', async () => {
+  test('a removed directory gives its descriptor back', () => {
     const root = tree('removed');
     const watchers = fakeWatchers(root);
     const handle = watchTree({
@@ -263,7 +279,7 @@ describe('watchTree', () => {
     handle.close();
   });
 
-  test('editing .gitignore re-reads it, and a newly ignored directory loses its watch', async () => {
+  test('editing .gitignore re-reads it, and a newly ignored directory loses its watch', () => {
     const root = tree('reread');
     mkdirSync(join(root, 'scratch/notes'), { recursive: true });
     const seen: string[] = [];
@@ -281,7 +297,7 @@ describe('watchTree', () => {
     expect(handle.directories()).not.toContain('scratch/notes');
     expect(watchers.open.get('scratch')?.closed).toBe(true);
     watchers.fire('', 'change', 'scratch');
-    await Bun.sleep(20);
+    jest.advanceTimersByTime(100);
     // The ignore file itself is not app source, so re-reading it is not a rebuild either.
     expect(seen).toEqual([]);
     handle.close();

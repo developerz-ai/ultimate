@@ -10,8 +10,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- Test-only registry restores, each the exact inverse of the package's own lister, for `@ultimat3/testing`'s rerun seam: `registeredServices()` / `restoreServices(registrations)` (and the `ServiceRegistration` type) in `@ultimat3/core`; `registeredOAuthProviders()` / `restoreOAuthProviders(providers)` in `@ultimat3/auth`; `restoreActions(actions)` in `@ultimat3/action/loader`; `restoreMails(mails)` and `restoreLayouts(registrations)` (and the `LayoutRegistration` type) in `@ultimat3/mail`, where `layoutFor(name)` is now public too. An app does not call them; `resetX()` stays the writer a test reaches for.
+
+### Changed
+
+- Framework tests: no test waits on the wall clock without saying why. `cli` went from 104 unexplained waits to 0 and `scripts` from 2 to 0 (88 replaced with an awaited event, an injected clock or fake timers); each of the 18 that wait on another process — Chrome, a child, Postgres, nats-server, the kernel — carries a `// real-clock:` reason. `scripts/lib/test-real-sleep-pins.ts` is empty: every package is pinned at zero.
+
 ### Fixed
 
+- `@ultimat3/testing`: a test file loaded again in the same process (`bun test --rerun-each`, CI's `flaky` job) forgets everything it declared on its last run — in its module body, its hooks and its tests — before it declares again, so it no longer fails with `X_*_DUPLICATE`. A name a module it imported first evaluated meanwhile exports (`sendMailJob`) stays. It covers jobs, services, entities, actions, queries, mails, mail layouts and OAuth providers, each once its package is loaded. The 53 framework test files that could not run twice in one process now pass `--rerun-each 5` together. Reading a loaded module's exports never loads it again: a page a loader plugin imported under `?x-reload=` and a fixture since deleted is no longer an unhandled `ENOENT` at the file's end.
+- Root scripts: `run()` (`scripts/lib/run.ts`) has one deadline, not two. Bun's spawn `timeout` raced its own timer at the same deadline, and when Bun's won, a hung child was reported as an ordinary non-zero exit (`timedOut: false`, exit 1 on Windows) instead of `X_SPAWN_TIMED_OUT`. The spawn now takes an abort `signal` that the timer fires after it has answered.
 - The API lock tells an additive change from a breaking one: `scripts/lib/public-api.lock.json` (format 2) records each exported symbol's shape beside its hash — members with their optionality, parameters, return type — so a new optional member, a new optional trailing parameter or a parameter that accepts more is listed as `compatible` and recorded by `--write`, never reported as `X_PUBLIC_API_BREAK_UNDECLARED`. A removed or newly required member, a changed member or return type, a required parameter and anything unclassifiable stay breaks, each finding naming what broke. A format-1 lock is re-baselined from its release tags; the five warnings since 31.20.0 (`RedisPubSubOptions`, `RedisSubscriberLike`, `redisPubSubAt`, `NatsTransportOptions`, `SelectTransportOptions`) were all additive.
 
 ## Releases
