@@ -10,36 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- A release commit no longer cold-installs on every CI job: the bun cache is keyed on the packages `bun.lock` resolves, not the whole file.
-- Every exported symbol of every package entry and subpath is hashed into `scripts/lib/public-api.lock.json`; an undeclared signature change is reported (`X_PUBLIC_API_BREAK_UNDECLARED`, report-only in 31.x).
-- A pull request's changed test files run five times in CI (`flaky` job); a test that differs between runs is red before it merges.
-- The tracked apps' images copy manifests before `bun install`, so a source edit keeps the install layer cached; the demo image is 5% smaller and held to a measured ceiling.
-- The gate matrix is `x verify plan --parts 7`, and the host checks share one corpus and a compiler pool.
-
-### Added
-
-- `bun run scripts/public-api.ts` hashes the emitted declaration of every exported symbol of every publishable package, main entry and every subpath export alike (9,995 symbols, ~4 s), into `scripts/lib/public-api.lock.json`, on the `manifest` step. A symbol that changed or is gone with no `BREAKING —` entry naming it under [Unreleased] or in the version's own changelog is `X_PUBLIC_API_BREAK_UNDECLARED`; a lock or surface that cannot be read is `X_PUBLIC_API_UNSCANNED`. Report-only in 31.x: a warning in the step's log, red only under `--strict`. `--write` records an addition or a declared break, and `scripts/release.ts --bump` rewrites the lock after promoting the changelog.
-- `bun run dockerfile-template` (`scripts/dockerfile-template.ts`, on the `boundaries` step) holds each tracked app's `docker/Dockerfile` install stages to the scaffold template's, instruction for instruction (`X_DOCKERFILE_DEPS_DRIFT`). `--write` splices the template's stages over a drifted file.
-- CI: a `flaky` job on pull requests runs each changed unit, contract and job test file five times (`--rerun-each 5`, at most 40 files) and is red if any run fails.
-- CI: each tracked app's built islands (`.x/cache/islands`) are cached between runs, keyed on `bun.lock` and the island sources.
-- CI: the `container` job builds the demo image from `Dockerfile.monorepo` and fails when its file system is over a measured ceiling (223,000,000 B).
-
-### Changed
-
-- `x verify plan` answers outside an app. Every other `x verify` form still refuses there with `X_NOT_IN_APP`. CI's `gate` matrix is now read from `x verify plan --parts 7 --json` instead of being written out by hand.
-- The tracked apps' Dockerfiles (`examples/dummy`, `dummy/social-media-clone`) install from a manifests-only stage, as `x new`'s template does, so an edit to a page no longer re-runs `bun install`. The runtime stage is built `FROM deps`, so a workspace's own `node_modules` ships too, and it runs as `USER 1000:1000`, the uid `x new`'s Helm chart runs a pod as. Both files now match `x new`'s template stage for stage.
-- CI's bun install cache is keyed on the `"packages"` section of `bun.lock`, not the whole file. A release rewrites only the workspace versions, so it no longer costs every job a cold install. There is still no `restore-keys` fallback, which made the cache grow from 34 MB to 287 MB.
-- The demo image's ignore file (`Dockerfile.monorepo.dockerignore`) drops the source of every workspace outside the demo's closure (the reference app, the docs site, `create-ultimate`, `scripts/`, `wiki/`), so an edit there no longer rebuilds the demo's `COPY . .` layer.
-- The repo gate runs each step's host checks concurrently (`scripts/verify-host-checks.ts`, split out of `scripts/verify.ts`). The four checks that start a `tsc` share a pool of one compiler per four CPUs (`compilerWidth()` in `scripts/lib/host-check-run.ts`), so a 4-vCPU CI runner runs them one at a time, as before. The finding set and its order are unchanged, and `verify-host-checks.test.ts` holds the serial and the concurrent results equal.
-- Repo guards read the shared corpus with a substring prefilter, and each file's masked and comment-stripped text is computed at most once per process (`scripts/lib/corpus.test.ts` counts it). This covers the tier table, `keyed-hasher`, `seal-calls`, the framework catalog scan and the guards that masked files themselves.
-- Faster tests. The `unit` step no longer re-runs the `boundaries`, `manifest`, `errors` and `roadmap` checks on the real tree in `scripts/verify.test.ts` (~22 s): those steps are the assertion. `packages/cli/src/runtime-queue.test.ts` pays for `initdb` once per file and boots each test from a copy. `examples/dummy/type-chain.test.ts` runs no baseline typecheck, and now also pins hops 5+ by renaming the view field.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.19.0](docs/changelog/31.19.0.md) | 2026-11-13 | A release commit no longer cold-installs on every CI job: the bun cache is keyed on the packages `bun.lock` resolves, not the whole file. |
 | [31.18.1](docs/changelog/31.18.1.md) | 2026-11-13 | `x exercise` on a large app is about a quarter faster (494 s → 380 s on a 487-primitive app): the seed solver no longer re-tries every parent earlier tenants took, crash-proof id renaming is one pass, and the frozen clock no longer throws per bound string. Findings, verdicts and seed graphs are unchanged. |
 | [31.18.0](docs/changelog/31.18.0.md) | 2026-11-13 | The admin search ignores case and reads four resources at a time; a declared row scope stays case-sensitive, because it is authorization. |
 | [31.17.0](docs/changelog/31.17.0.md) | 2026-11-13 | New commands: `x token` (API keys), `x config show` (redacted), `x logs tail`, `x cache graph\|bust\|clear`, and `x explain <query>` (plans what a query actually sends, never against production). |
