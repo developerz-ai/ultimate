@@ -28,6 +28,8 @@ describe('unit · ci.yml · the windows job runs in PowerShell, from a default-a
     './packages/cli/src/path-segments.test.ts',
     './packages/cli/src/templates/scaffold-gitattributes.test.ts',
     './packages/scraping/src/cdp-launch.test.ts',
+    // The only run of the setup composite's pwsh digest step: never started off Windows.
+    './scripts/ci-workflow-shape-caches.test.ts',
   ];
   const windows = job('windows');
   const steps = windows.steps ?? [];
@@ -62,7 +64,11 @@ describe('unit · ci.yml · the windows job runs in PowerShell, from a default-a
     const composite = Bun.YAML.parse(
       await Bun.file(`${repoRoot()}/.github/actions/setup/action.yml`).text(),
     ) as { readonly runs?: { readonly steps?: readonly Step[] } };
-    const runs = (composite.runs?.steps ?? []).filter((step) => step.run !== undefined);
+    // The `lock_*` steps compute the install cache's key (`ci-workflow-shape-caches.test.ts`
+    // holds them): one command in both shells, so the install is the only run that differs.
+    const runs = (composite.runs?.steps ?? []).filter(
+      (step) => step.run !== undefined && !text(step.id).startsWith('lock_'),
+    );
     const onWindows = runs.filter((step) => text(step.if) !== "runner.os != 'Windows'");
     expect(onWindows.map((step) => step.shell)).toEqual(['pwsh']);
     expect(onWindows.map((step) => text(step.if))).toEqual(["runner.os == 'Windows'"]);

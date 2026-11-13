@@ -2,15 +2,22 @@
 // two things are worth pinning: stopping it takes both accessors back, and `applySchema` really
 // applied each table. A leaked `jobDriver()` is invisible until the NEXT command in the same
 // process reuses it over a closed database; a missing table is invisible until the first request.
+// One `initdb` per file: the first boot's data directory is the template every later boot copies.
 
-import { afterEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun has no recursive copy, no mkdtemp and no recursive remove.
+import { cp, mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun ships no path joiner.
+import { join } from 'node:path';
 import { getIdempotencyStore } from '@ultimat3/action';
 import { POOL_MAX_ENV, REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
 import { configureHttp, resetHttpConfig } from '@ultimat3/http';
 import { eventBus, jobDriver, memoryJobDriver } from '@ultimat3/jobs';
 import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { resolveServices } from './runtime-bindings';
+import type { RuntimeOverrides } from './runtime-overrides';
 import type { RunningQueue } from './runtime-queue';
 import { startDb, startQueue } from './runtime-queue';
 
@@ -25,6 +32,23 @@ const BOOT_TIMEOUT_MS = 60_000;
 
 let running: RunningQueue | undefined;
 
+/**
+ * A booted app root, `initdb` and the framework schema both paid ONCE: that boot is the real
+ * `startQueue` on a fresh directory, so what it applied is what every test below asks about. Each
+ * test then boots over a copy, which PGlite resumes in a fraction of the cost (`ensureSchema` reads
+ * the stamp and applies nothing) — five cold boots were ~15 s of this file's ~15.6 s.
+ */
+let template = '';
+
+/** `startQueue` over a private copy of the template — never over the template itself. */
+async function bootQueue(overrides?: RuntimeOverrides): Promise<RunningQueue> {
+  await rm(ROOT, { recursive: true, force: true });
+  await cp(template, ROOT, { recursive: true });
+  const queue = await startQueue(resolveServices(ROOT, {}), overrides);
+  running = queue;
+  return queue;
+}
+
 afterEach(async () => {
   await running?.stop();
   running = undefined;
@@ -35,12 +59,21 @@ afterEach(async () => {
 }, BOOT_TIMEOUT_MS);
 
 describe('startQueue', () => {
+  // Inside this block, so the env-only cases below never pay the template's `initdb`.
+  beforeAll(async () => {
+    template = await mkdtemp(join(tmpdir(), 'ultimate-queue-template-'));
+    const first = await startQueue(resolveServices(template, {}));
+    await first.stop();
+  }, BOOT_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await rm(template, { recursive: true, force: true });
+  });
+
   test(
     'installs the ambient job driver, then clears it on stop',
     async () => {
-      const services = resolveServices(ROOT, {});
-      const queue = await startQueue(services);
-      running = queue;
+      const queue = await bootQueue();
 
       expect(jobDriver()).toBe(queue.jobs);
       expect(eventBus()).toBe(queue.events);
@@ -65,8 +98,7 @@ describe('startQueue', () => {
   test(
     'an override driver gets a bus that does not wake',
     async () => {
-      const queue = await startQueue(resolveServices(ROOT, {}), { jobs: memoryJobDriver() });
-      running = queue;
+      const queue = await bootQueue({ jobs: memoryJobDriver() });
       expect(queue.events.wakes).toBe(false);
     },
     BOOT_TIMEOUT_MS,
@@ -77,8 +109,7 @@ describe('startQueue', () => {
   test(
     'hands back the shared idempotency store it installed',
     async () => {
-      const queue = await startQueue(resolveServices(ROOT, {}));
-      running = queue;
+      const queue = await bootQueue();
       // `runtime.ts` supplied none, so the boot built — and installed — its own.
       const own = queue.idempotency ?? expect.unreachable('the boot builds the default store');
       expect(own.scope).toBe('shared');
@@ -93,8 +124,7 @@ describe('startQueue', () => {
   test(
     'the installed store reclaims on the request deadline the app configured, declared after boot',
     async () => {
-      const queue = await startQueue(resolveServices(ROOT, {}));
-      running = queue;
+      const queue = await bootQueue();
       // Reserved inside a transaction and never settled: the record a dead request leaves.
       await withTransaction(async () => {
         expect((await queue.idempotency?.reserve('k', 'hash'))?.created).toBe(true);
@@ -121,8 +151,7 @@ describe('startQueue', () => {
   test(
     'applies every framework table the boot owns, x_rate_limit and the auth pair included',
     async () => {
-      const queue = await startQueue(resolveServices(ROOT, {}));
-      running = queue;
+      const queue = await bootQueue();
 
       const rows = await queue.db.query<{ readonly table_name: string }>(
         raw("select table_name from information_schema.tables where table_schema = 'public'"),

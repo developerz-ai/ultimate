@@ -276,8 +276,12 @@ export function scanCatchRenders(
   path: string,
   source: string,
   laundered: ReadonlySet<string> = new Set(),
+  masks: { readonly masked?: string } = {},
 ): readonly CatchRenderSite[] {
-  const mask = maskToCode(source);
+  // Every scope this reads opens on `catch` — a block or a `.catch(` — and the word survives any
+  // mask: a file that never spells it is never masked. `masks` is the corpus file, read past here.
+  if (!source.includes('catch')) return [];
+  const mask = maskToCode(source, masks.masked);
   const code = mask.code;
   const ducks = localDuckRenderers(code);
   const seen = new Set<string>();
@@ -334,7 +338,12 @@ export function catchRenderSites(files: readonly SourceFile[]): readonly CatchRe
   return files.flatMap((file) =>
     isTestPath(file.path)
       ? []
-      : scanCatchRenders(file.path, file.source, laundered.get(packageOf(file.path)) ?? NOTHING),
+      : scanCatchRenders(
+          file.path,
+          file.source,
+          laundered.get(packageOf(file.path)) ?? NOTHING,
+          file,
+        ),
   );
 }
 

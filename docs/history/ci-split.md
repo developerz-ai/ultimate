@@ -188,7 +188,7 @@ work, and the work is single-pole:
 | the gate, `verify`, `packages` and every `reference-app-verify` never read it | `x verify merge` is red for a step no part reported, and `errors`, `manifest` and the citation tests read exactly these files; the docs site builds the wiki |
 | not a workflow `paths:` filter | that leaves every check of the workflow pending forever; a skipped job concludes |
 | `windows`: the seven unit steps are one `bun test --isolate --parallel` | ~105 s on one core of four; `x verify`'s unit step already runs `--parallel` green on the same runner |
-| the bun install cache keyed on `bun.lock` alone, no `restore-keys` (`.github/actions/setup/action.yml`, held by `scripts/ci-workflow-cache.test.ts`) | the fallback restored the previous lock's cache and saved it again with the new packages on top, so the entry only grew: 34 MB (2026-10-01) → 168 MB → 287 MB, restored in every job. A lock change now costs one cold install per job of that run |
+| the bun install cache keyed on one resolution set, no `restore-keys` (`.github/actions/setup/action.yml`, held by `scripts/ci-workflow-shape-caches.test.ts`) | the fallback restored the previous lock's cache and saved it again with the new packages on top, so the entry only grew: 34 MB (2026-10-01) → 168 MB → 287 MB, restored in every job. Keyed on `bun.lock` whole until 2026-11-13, a release (7 in two days) rewrote every workspace version and cost a cold ~168 MB install in every job; since then the key is a digest of the lock's `"packages"` section alone, so only a real dependency change goes cold (plan 101 sweep 16, G6) |
 
 Not done here, each with the measurement that decides it:
 

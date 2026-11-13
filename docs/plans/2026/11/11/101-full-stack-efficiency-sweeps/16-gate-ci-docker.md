@@ -56,3 +56,29 @@ Not reached: whether each guard in `docs/architecture/guards.md` can run on chan
 - A release commit no longer cold-installs on every job.
 - A source edit to a tracked app rebuilds its image without re-running `bun install`.
 - A signature change to any exported symbol cannot reach `main` undeclared.
+
+## Outcome (16, local)
+
+Ships as 31.19.0. `As of 2026-11-13`, measured before the first CI run of the branch; the CI before-table (three `main` runs) goes in the PR.
+
+| ID | Outcome |
+|---|---|
+| G1 | shipped. `scripts/verify-host-checks.ts` runs each step's checks concurrently (`lib/host-check-run.ts`), keeping list order and the first-failing throw; `verify-host-checks.test.ts` holds serial and parallel equal on a fixture tree with a planted finding per check. Local, shared 12-core machine: `boundaries` + `errors` + `manifest` 67.1 s (plan baseline) → 38.1 s and 45.1 s in two runs (a third, beside other load, 89 s). The Done-when figure is CI's, owed from the branch's first run. CI's first runs were slower (`gate (static)` 93 s against 55-66 s on main): each TypeScript 7 `tsc` is threaded, and the three compiler chains at once oversubscribed a 4-vCPU runner (`lint`, unchanged, 15-19 s → 26-43 s). The four `tsc` checks now share `compilerWidth()` slots, one per four CPUs. The static part's `--only` list, 2026-11-13, shared host: `taskset -c 0-3` 67-72 s against main's 77-86 s; all 12 cores 47-63 s against main's 67-72 s |
+| G2 | shipped. `keyed-hasher` returns before masking a file that never spells `CryptoHasher`, and reads the corpus file's `masked` |
+| G3 | shipped for the `boundaries`, `errors` and `manifest` steps. `masked` / `stripped` are lazy, memoised fields of a corpus file; the tier table reads a parse-free bound (`reachableTargets`) and parses only a file it cannot clear (`boundaries-reach.test.ts`); `corpus.test.ts` counts one mask per file per process. **Deferred:** ~20 unit-only guards still mask files themselves |
+| G4 | shipped. `seal-calls` and the framework catalog scan read the corpus behind a prefilter (`mayNameKeys`: 2,657 of 5,431 files pass). `i18n`'s `extractKeys` still strips twice: deferred |
+| G5 | shipped. The real-tree case in `verify.test.ts` is gone; a test pins each step to the check by identity |
+| G6 | shipped differently, **premise false.** The plan's fix (`restore-keys: bun-${{ runner.os }}-`) is exactly what `.github/actions/setup/action.yml` had removed on purpose: the prefix fallback restored the previous lock's cache and saved both, so the entry grew 34 → 168 → 287 MB (`docs/history/ci-split.md`). Instead the key is a digest of `bun.lock`'s `"packages"` section, which a release does not touch (identical across 31.17.0 and 31.18.0). `ci-workflow-shape-caches.test.ts` runs the key step on a bumped and on a moved lock |
+| G7 | shipped. Both tracked Dockerfiles are the template's: a manifests-only `manifests` stage, `deps` installing from it, runtime `FROM deps`, `USER 1000:1000`. `scripts/dockerfile-template.ts` (`X_DOCKERFILE_DEPS_DRIFT`, `boundaries` step) refuses drift in the install stages; `--write` splices |
+| G8 | partial, **premise half false.** `bun install --filter` over the demo's closure saves nothing (measured: the same 74 packages, 58 MB — the closure is every framework package but `create-ultimate`), so it is not used and the Dockerfile says why. The ignore file now drops the sources outside the closure. The `container` job builds the image and holds its file system under 223,000,000 B. **Owed:** the job's added wall-clock, from the first CI run |
+| G9 | shipped. `reference-app-verify` caches `<app>/.x/cache/islands`, keyed on `bun.lock` and the island sources |
+| G10 | shipped, **premises partly false.** `runtime-queue.test.ts` booted 5 PGlites (five `startQueue` sites), not 8; it now pays `initdb` and the framework schema once and boots each test over a copy of that directory, not from `pglite-snapshot.ts`: 22.6 s → 7.1 s. `type-chain.test.ts`: one shared build-info measured no saving (a rename at either root rechecks nearly the whole app), so the fix is dropping the baseline run instead — the app's sources typecheck clean, so every in-app diagnostic is the rename's. Its second compiler run now renames the view field and pins hops 5+. 31.8 s → 18.3 s, under a concurrent gate run. Header rewritten (the Postgres driver is built). The column rename's pins: 12 files, 31 diagnostics (`docs/architecture/05-type-chain.md` rewritten to match) |
+| G11 | shipped. The `gate` matrix is `fromJSON` of `x verify plan --parts 7 --json`, run in `tested`; `x verify plan` now answers outside an app (`cmd-verify-plan.test.ts`) |
+| G12 | shipped. `flaky` (pull requests only) reruns the changed unit/contract/job test files `--rerun-each 5`, at most 40 (`scripts/lib/ci/rerun-changed.ts`) |
+| G13 | shipped report-only, as step 4 says. `scripts/public-api.ts` hashes 9,995 symbols (~4 s) into `scripts/lib/public-api.lock.json`; `X_PUBLIC_API_BREAK_UNDECLARED` / `X_PUBLIC_API_UNSCANNED` are warnings on the `manifest` step, red under `--strict`. `release.ts --bump` rewrites the lock after promoting the changelog (`release-api-lock.test.ts`). **Owed:** one entry in `REFUSE_ON_BRANCHES` once a release has run with it |
+| G14 | partial. `scripts/verify.ts` 490 → 144 lines (`verify-host-checks.ts` 389). The other files at the ceiling were not touched by this slice |
+
+Integration decisions:
+
+- The plan's `new-error-code X_PUBLIC_API_* --package cli --off-socket` was wrong twice: `--off-socket` is refused for a tier-5 package, and a code registered in `@ultimat3/cli` that only `scripts/` throws is `X_ERROR_CODE_UNTHROWN`. All three new codes are gate-only: a hand-written row in `wiki/Error-Codes.md` and an entry in its never-ship list, like `X_LOG_LEVEL_*`.
+- Step 5 (`--changed` guards) was not measured.

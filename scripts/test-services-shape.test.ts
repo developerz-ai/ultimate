@@ -7,7 +7,7 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { names } from '../packages/cli/src/templates/naming';
 import { docsFiles } from '../packages/cli/src/templates/scaffold-docs';
 import { ownerOf } from '../packages/cli/src/verify-tests';
-import { jobOf, readWorkflow, text } from './lib/ci-workflow-read';
+import { planRows, readWorkflow, text } from './lib/ci-workflow-read';
 import { corpus } from './lib/corpus';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { ServicePart, ServiceSuite } from './lib/test-service-coverage';
@@ -55,18 +55,15 @@ const urls = new Map(
 // The one reader of `.github/workflows/*.yml` the ci-workflow tests share — the same parse and the
 // same schema, so this file and `ci-workflow-shape.test.ts` cannot drift on what a job says.
 const ci = await readWorkflow('ci.yml');
-const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
-const record = (value: unknown): Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 /**
  * The gate's parts, as the coverage rule reads them: the steps each one runs, the servers it
  * starts and the URLs it exports. One read of the matrix for the whole file — the forward check
- * below and the reverse one beside it must never answer about different parts.
+ * below and the reverse one beside it must never answer about different parts. The gate's matrix
+ * is what the `tested` job's plan step writes, so the rows are that step's, run.
  */
-const rows = listOf(jobOf(ci, 'gate').strategy?.matrix?.['include']);
-const parts: readonly ServicePart[] = rows.map((raw) => {
-  const row = record(raw);
+const rows = await planRows(ci);
+const parts: readonly ServicePart[] = rows.map((row) => {
   return {
     part: text(row['part']),
     only: text(row['only'])
@@ -378,6 +375,10 @@ describe('unit · test services · a suite finds each one where it was started',
   test('each CI part exports the URLs of exactly the services it started', () => {
     const withServices = parts.filter((part) => part.services.length > 0);
 
+    expect(
+      parts.length,
+      'the plan step answered no rows: the rules below watch nothing',
+    ).toBeGreaterThan(1);
     expect(withServices.length).toBeGreaterThan(0);
     for (const part of parts) {
       const started = part.services;

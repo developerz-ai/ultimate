@@ -7,7 +7,7 @@ import type { Extraction } from '@ultimat3/i18n';
 import { loadCatalog } from '@ultimat3/i18n';
 import { stripComments } from '../packages/core/src/source-mask';
 import { CATALOG_FILE, type CatalogGap, catalogGapFindingFor, checkCatalog } from './i18n-catalog';
-import { keyLiteralsIn } from './lib/i18n-scan';
+import { keyLiteralsIn, mayNameKeys } from './lib/i18n-scan';
 
 const usage = (key: string, file = 'packages/admin/src/list.tsx', line = 44): Extraction =>
   ({ usages: [{ key, file, line, column: 1 }], dynamic: [] }) satisfies Extraction;
@@ -179,5 +179,17 @@ describe('the scan', () => {
       'c.d',
       'e.f',
     ]);
+  });
+});
+
+describe('the prefilter keeps every file that can name a key', () => {
+  test('a key literal or a translator call passes; a file with neither does not', () => {
+    expect(mayNameKeys("const k = 'admin.list.title';")).toBe(true);
+    expect(mayNameKeys("render(t('x'))")).toBe(true);
+    // A comment inside the call's whitespace: the stripped text still reads `t (`.
+    expect(mayNameKeys("t /* why */ ('admin')")).toBe(true);
+    expect(mayNameKeys("$t('a')")).toBe(true);
+    expect(mayNameKeys('export const plain = 1;')).toBe(false);
+    expect(mayNameKeys('const t2 = format(x);')).toBe(false);
   });
 });

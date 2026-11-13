@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "bc790743c4fe8cdbfa6782bd5e350745d8cd21e1132941a0ed02bedecfb5b408",
+  "buildId": "f21c3270fac7c7fc2dacd66def7806a557d564602e86401f0738fac9546615e6",
   "tiers": {
     "0": [
       "core",
@@ -1833,6 +1833,11 @@
       "code": "X_DOC_UNRELEASED_STALE",
       "owner": "scripts",
       "at": "scripts/doc-unreleased.ts"
+    },
+    {
+      "code": "X_DOCKERFILE_DEPS_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/dockerfile-template.ts"
     },
     {
       "code": "X_DRAINING",
@@ -4143,6 +4148,16 @@
       "code": "X_PROTOCOL_VERSION",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_PUBLIC_API_BREAK_UNDECLARED",
+      "owner": "scripts",
+      "at": "scripts/public-api.ts"
+    },
+    {
+      "code": "X_PUBLIC_API_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/public-api.ts"
     },
     {
       "code": "X_PUBLISH_LIST_INCOMPLETE",

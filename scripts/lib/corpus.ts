@@ -53,19 +53,32 @@ export interface CorpusFile {
   readonly stripped: string;
 }
 
-/** A file whose masks are computed on first read and kept: most guards read one of the two. */
-function corpusFile(path: string, source: string): CorpusFile {
+/** The two masks a corpus file computes. A parameter so a test can count the calls. */
+export interface CorpusMasks {
+  readonly mask: (source: string) => string;
+  readonly strip: (source: string) => string;
+}
+
+const CORE_MASKS: CorpusMasks = { mask: maskLiterals, strip: stripComments };
+
+/**
+ * A file whose masks are computed on first read and kept: most guards read one of the two, and a
+ * guard whose prefilter clears the file reads neither. With `corpus()` handing every guard in a
+ * process the same objects, each file is masked at most once per process — what
+ * `corpus.test.ts` holds, rule by rule.
+ */
+export function corpusFile(path: string, source: string, masks = CORE_MASKS): CorpusFile {
   let masked: string | undefined;
   let stripped: string | undefined;
   return {
     path,
     source,
     get masked() {
-      masked ??= maskLiterals(source);
+      masked ??= masks.mask(source);
       return masked;
     },
     get stripped() {
-      stripped ??= stripComments(source);
+      stripped ??= masks.strip(source);
       return stripped;
     },
   };

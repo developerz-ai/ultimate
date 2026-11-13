@@ -1,15 +1,14 @@
 // The CI plan is the gate, cut: every step in exactly one part or in every shard of one split, for
-// any runner count — and the framework's own hand-written `ci.yml` matrix is the plan at seven.
+// any runner count. ci.yml's gate matrix is this plan at seven: scripts/ci-workflow-shape.test.ts.
 
 import { describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove; the dispatch test needs a throwaway app root.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
-// why: Bun ships no path-joining primitive; the repository's workflow is read from this file's dir.
+// why: Bun ships no path-joining primitive; the dispatch test writes into a throwaway dir.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
-import { YAML } from 'bun';
 import { verifyCommand } from './cmd-verify';
 import type { FlagValue, ParsedArgs } from './parse';
 import { parseArgs } from './parse';
@@ -129,30 +128,5 @@ describe('unit · x verify plan · --parts', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
-});
-
-// The framework's own `ci.yml` stays hand-written — it carries per-part services and URLs only
-// this repository has — and this holds it to the plan: a step added to the gate, or a part edited
-// out of the matrix, is red here before it is `X_VERIFY_MERGE_INCOMPLETE` after a push.
-describe('unit · x verify plan · the framework repository’s ci.yml is the plan at seven', () => {
-  const workflow = join(import.meta.dir, '..', '..', '..', '.github', 'workflows', 'ci.yml');
-
-  test('every gate part: the same name, steps and shard, and the services its level needs', async () => {
-    const doc = YAML.parse(await Bun.file(workflow).text()) as {
-      readonly jobs: { readonly gate: { readonly strategy: { readonly matrix: unknown } } };
-    };
-    const rows = (doc.jobs.gate.strategy.matrix as { include: readonly Record<string, unknown>[] })
-      .include;
-    const needsOf = (services: unknown): string =>
-      services === undefined ? 'none' : services === 'postgres' ? 'database' : 'services';
-    const repo = rows.map((row) => ({
-      part: row['part'],
-      only: row['only'],
-      ...(row['shard'] === undefined ? {} : { shard: row['shard'] }),
-      needs: needsOf(row['services']),
-    }));
-    const planned: readonly unknown[] = planMatrix(verifyPlan(rows.length)).include;
-    expect(repo).toEqual(planned as typeof repo);
   });
 });

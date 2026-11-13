@@ -2,7 +2,13 @@
 // returned Error, the first test below goes red and this whole rule can be deleted.
 
 import { describe, expect, test } from 'bun:test';
-import { checkToThrowReturns, errorFactoriesIn, type ThrowGap } from './to-throw-returns';
+import {
+  checkToThrowReturns,
+  errorFactoriesIn,
+  IN_SOURCE_GLOBS,
+  SOURCE_GLOBS,
+  type ThrowGap,
+} from './to-throw-returns';
 
 class Boom extends Error {}
 
@@ -201,5 +207,23 @@ describe('the rule does not read its own fixtures', () => {
     expect(
       checkToThrowReturns({ tests: [{ path: 'a.test.ts', text }], factories: new Set() }),
     ).toEqual([]);
+  });
+});
+
+describe('the factory scan reads the corpus through SOURCE_GLOBS', () => {
+  test('a corpus path passes IN_SOURCE_GLOBS exactly when one of the globs matches it', () => {
+    const paths = [
+      'packages/core/src/errors.ts',
+      'packages/core/src/deep/x.ts',
+      'packages/ui/src/button.tsx',
+      'packages/core/e2e/a.ts',
+      'scripts/lib/run.ts',
+      'scripts/a.tsx',
+      'examples/dummy/x.ts',
+    ];
+    for (const path of paths) {
+      const globbed = SOURCE_GLOBS.some((glob) => new Bun.Glob(glob).match(path));
+      expect(`${path} ${IN_SOURCE_GLOBS.test(path)}`).toBe(`${path} ${globbed}`);
+    }
   });
 });

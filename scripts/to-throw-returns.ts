@@ -21,6 +21,7 @@
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
 import { balancedClose, topLevelArguments } from './lib/balanced-paren';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -30,6 +31,9 @@ import { readTestSources } from './test-fix-citations';
 const SCRIPT = 'to-throw-returns';
 
 export const SOURCE_GLOBS: readonly string[] = ['packages/*/src/**/*.ts', 'scripts/**/*.ts'];
+
+/** `SOURCE_GLOBS` as a test on a corpus path — `to-throw-returns.test.ts` holds the two equal. */
+export const IN_SOURCE_GLOBS = /^(?:packages\/[^/]+\/src|scripts)\/.+\.ts$/;
 
 /**
  * A function this repo declares as RETURNING an error — `export function sendFailed(…): MailError`.
@@ -135,6 +139,8 @@ export function checkToThrowReturns(input: ThrowGapInput): readonly ThrowGap[] {
     // A checker's own unit test spells the bad shape as a STRING and feeds it to the pure function
     // below. That is a fixture, not an assertion this file makes — the same exemption
     // `test-fix-citations.ts` rests on, and the same tokenizer.
+    // Every gap sits before a `.toThrow…(`: a file that never spells it is never tokenized.
+    if (!file.text.includes('.toThrow')) continue;
     const literals = sourceStrings(file.text);
     for (const match of file.text.matchAll(EXPECT)) {
       if (insideString(literals, match.index)) continue;
@@ -166,13 +172,11 @@ export const throwFindingFor = (gap: ThrowGap): Finding => ({
 
 export async function throwGaps(root: string): Promise<readonly ThrowGap[]> {
   const factories = new Set<string>();
-  for (const glob of SOURCE_GLOBS) {
-    for await (const path of new Bun.Glob(glob).scan({ cwd: root, absolute: false })) {
-      if (/\.test\.tsx?$/.test(path)) continue;
-      for (const name of errorFactoriesIn(await Bun.file(`${root}/${path}`).text())) {
-        factories.add(name);
-      }
-    }
+  // The `source` corpus narrowed to `SOURCE_GLOBS`, read once per process instead of a third
+  // walk of the tree: no `.tsx`, no `e2e/`, no tests.
+  for (const file of await corpus(root, 'source')) {
+    if (!IN_SOURCE_GLOBS.test(file.path) || /\.test\.tsx?$/.test(file.path)) continue;
+    for (const name of errorFactoriesIn(file.source)) factories.add(name);
   }
   return checkToThrowReturns({ tests: await readTestSources(root), factories });
 }

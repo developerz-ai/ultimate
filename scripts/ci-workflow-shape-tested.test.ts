@@ -31,8 +31,11 @@ const PATH_SKIPPED = [
   'macos',
 ] as const;
 
-/** Never reused: `deploy-proof` keeps its own due rule; `tested` and `changes` are questions. */
-const OWN_RULE = ['tested', 'changes', 'deploy-proof', 'verify'] as const;
+/**
+ * Never reused: `deploy-proof` keeps its own due rule; `tested` and `changes` are questions;
+ * `flaky` reruns a pull request's changed tests and runs on nothing else.
+ */
+const OWN_RULE = ['tested', 'changes', 'deploy-proof', 'verify', 'flaky'] as const;
 
 const REUSE_IF = "needs.tested.outputs.tested != 'true'";
 const PATH_IF = "needs.changes.outputs.heavy != 'false'";
@@ -104,10 +107,20 @@ describe('unit · ci.yml · a push a green PR run already tested', () => {
   // Only a push asks, and never a release commit: release.yml reads ci.yml's whole run, so the
   // commit it publishes from must be a run of everything. A release commit is RELEASE_SUBJECT's,
   // read by the very command release-tag.yml's `subject` step runs — never a prefix of it.
-  test('every step of tested is a push`s, and the ask is behind RELEASE_SUBJECT', async () => {
+  // The checkout, the install and the gate's `plan` run on EVERY event: `gate` reads its matrix
+  // from that step (`ci-workflow-shape.test.ts` holds them unconditioned). Every other step asks.
+  test('every step of tested past the plan is a push`s, and the ask is behind RELEASE_SUBJECT', async () => {
     const steps = job('tested').steps ?? [];
-    expect(steps.length).toBeGreaterThan(0);
-    for (const step of steps) expect(text(step.if)).toContain("github.event_name == 'push'");
+    const plan = steps.findIndex((step) => step.id === 'plan');
+    expect(plan).toBeGreaterThanOrEqual(0);
+    expect(steps.slice(0, plan).map((step) => text(step.uses).split('@')[0])).toEqual([
+      'actions/checkout',
+      './.github/actions/setup',
+    ]);
+    expect(steps.length).toBeGreaterThan(plan + 1);
+    for (const step of steps.slice(plan + 1)) {
+      expect(text(step.if)).toContain("github.event_name == 'push'");
+    }
     const subject = steps.find((step) => step.id === 'subject');
     const releaseTag = await readWorkflow('release-tag.yml');
     const theirs = (jobOf(releaseTag, 'prepare').steps ?? []).find((step) => step.id === 'subject');

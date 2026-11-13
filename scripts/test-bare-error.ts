@@ -72,7 +72,13 @@ export interface BareErrorSite {
   readonly line: number;
 }
 
-export function scanBareErrorThrows(path: string, source: string): readonly BareErrorSite[] {
+export function scanBareErrorThrows(
+  path: string,
+  source: string,
+  masks: { readonly masked?: string } = {},
+): readonly BareErrorSite[] {
+  // Every shape `THROWN` reads opens on the word `throw`: a file without it is never masked.
+  if (!source.includes('throw')) return [];
   // A COMMENT quoting the shape is prose ABOUT a throw, never one — and reading it as a throw is
   // this rule punishing the only sentence that can explain it. It fired: a `packages/db` test
   // whose header read "reads a literal `throw new Error(…)` as a verdict wherever it appears" took
@@ -86,7 +92,7 @@ export function scanBareErrorThrows(path: string, source: string): readonly Bare
   // that took the first of those for a string opener swallowed the rest of the file and hid a
   // real bare throw behind it — `packages/render/src/navigation-dom-fixture.ts`, whose fake
   // DOMParser threw a builtin `TypeError` in shipped source that no rule could see.
-  const code = maskLiterals(source);
+  const code = masks.masked ?? maskLiterals(source);
   const out: BareErrorSite[] = [];
   for (const match of code.matchAll(THROWN)) {
     const at = match.index ?? 0;
@@ -253,7 +259,7 @@ const treeSites = async (root: string): Promise<readonly BareErrorSite[]> =>
 const sourceTreeSites = async (root: string): Promise<readonly BareErrorSite[]> =>
   (await corpus(root, 'source'))
     .filter((file) => !isTestPath(file.path))
-    .flatMap((file) => scanBareErrorThrows(file.path, file.source));
+    .flatMap((file) => scanBareErrorThrows(file.path, file.source, file));
 
 /** Both scopes, as one list: a test site answers to its package, a source site to itself. */
 const allSites = async (root: string): Promise<readonly BareErrorSite[]> => [

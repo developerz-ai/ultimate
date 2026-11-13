@@ -58,11 +58,16 @@ export interface SealCall {
   readonly via: string;
 }
 
-/** A file as two readings: `masked` blanks strings and comments, `stripped` blanks comments only. */
+/**
+ * A file as two readings: `masked` blanks strings and comments, `stripped` blanks comments only.
+ * `source`, when the reader has it, is the prefilter's: a corpus file computes either mask only
+ * when it is first read, so a file the prefilter clears is never masked at all.
+ */
 export interface SealSource {
   readonly path: string;
   readonly masked: string;
   readonly stripped: string;
+  readonly source?: string;
 }
 
 const CALL = /\bsubtle\s*\??\.\s*(encrypt|decrypt)\s*\(/g;
@@ -70,9 +75,17 @@ const CIPHER = /\b(createCipheriv|createDecipheriv|createCipher|createDecipher)\
 /** The WHOLE string is the name: a quote, `AES-`, the mode, a quote. Prose never matches. */
 const ALGORITHM = /(['"`])(AES-[A-Za-z0-9-]{2,12})\1/gi;
 
+/**
+ * What every one of the three shapes spells, case-folded as `ALGORITHM` is: no `subtle`, no
+ * `cipher` and no `aes-` means no finding, and the file is not masked. Masking all 5,431 shipped
+ * files was 0.8 s of the `boundaries` step for a rule that matches a handful (measured 2026-11-13).
+ */
+const MAY_SEAL = /subtle|cipher|aes-/i;
+
 export function sealCalls(file: SealSource): readonly SealCall[] {
   if (SEAL_SEAM.includes(file.path) || Object.hasOwn(STANDARD_CIPHERS, file.path)) return [];
   if (isTestPath(file.path)) return [];
+  if (!MAY_SEAL.test(file.source ?? file.stripped)) return [];
   const found: SealCall[] = [];
   const push = (text: string, index: number, kind: SealCallKind, via: string): void => {
     found.push({ file: file.path, line: lineOf(text, index), kind, via });

@@ -22,6 +22,19 @@ export function keyLiteralsIn(source: string): readonly string[] {
   return [...source.matchAll(KEY_LITERAL)].map((match) => match[1] ?? '');
 }
 
+/**
+ * Whether a file can contribute anything — a key-shaped literal or a translator call — read off
+ * the RAW text. Each is a superset of what the stripped text yields: blanking a comment writes
+ * spaces, and neither shape can be completed by one. `extractKeys`'s callee pattern is read here
+ * without its `\s*\(`, which a comment could sit inside. Half the shipped files fail both and are
+ * never stripped (measured 2026-11-13: 2,657 of 5,431 pass).
+ */
+const ONE_KEY_LITERAL = new RegExp(KEY_LITERAL.source);
+const TRANSLATOR = /(?<![\w$.])(?:t|\$t|translate)(?![\w$])/;
+
+export const mayNameKeys = (source: string): boolean =>
+  ONE_KEY_LITERAL.test(source) || TRANSLATOR.test(source);
+
 export interface CatalogScan {
   readonly extraction: Extraction;
   readonly literals: readonly string[];
@@ -37,7 +50,7 @@ export async function scanFrameworkCatalogSources(root: string): Promise<Catalog
   const extractions: Extraction[] = [];
   const literals = new Set<string>();
   for (const file of await corpus(root, 'shipped')) {
-    if (file.path.startsWith(TEMPLATE_DIR)) continue;
+    if (file.path.startsWith(TEMPLATE_DIR) || !mayNameKeys(file.source)) continue;
     extractions.push(extractKeys(file.stripped, file.path));
     for (const literal of keyLiteralsIn(file.stripped)) literals.add(literal);
   }
