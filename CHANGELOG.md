@@ -10,6 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- Security: a revoked, expired or forged session no longer keeps its live-query socket streaming after sign-out, and a stale session cookie no longer answers 401 on every route. Existing apps are protected by upgrading; the `x new` and `x g sign-in --oidc` templates return `null` for a session refusal.
+- `@ultimat3/cache`: a Redis pub/sub cache bus retries a refused resubscribe instead of leaving a replica serving stale cache.
+- `@ultimat3/storage`: a failed multipart upload settles every part still in flight before it rejects, so a resume never races a stale part.
+- Framework tests: 226 wall-clock waits replaced with seams across 15 packages; a test file can run again in one process (`--rerun-each`) with module-scope `entity()` / `job()`.
+
 ### Added
 
 - `@ultimat3/realtime`: `NatsTransportOptions.scheduler` and `SelectTransportOptions.scheduler` (a `Scheduler`, default `setTimeout`) arm the re-dial loop's backoff wait, so a test hands a manual scheduler and fires each wait itself instead of sleeping through it.
