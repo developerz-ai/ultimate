@@ -49,16 +49,16 @@ const rejudged = (records: readonly FloorRecord[], max: number): readonly FloorR
     const proof = record.statementCeiling;
     if (proof === undefined || (proof.verdict === 'over' && proof.why !== undefined)) return record;
     if (proof.verdict === 'within' && declaredWithin(proof)) return record;
-    if (proof.statements <= max) {
-      return {
-        ...record,
-        statementCeiling: { verdict: 'within', statements: proof.statements, max },
-      };
+    // The excluded `expectedQueryLoop` count rides along: the judged count alone reads as a typo.
+    const { statements } = proof;
+    const expected = proof.expected === undefined ? {} : { expected: proof.expected };
+    if (statements <= max) {
+      return { ...record, statementCeiling: { verdict: 'within', statements, max, ...expected } };
     }
     const top = proof.verdict === 'over' ? proof.top : [];
     return {
       ...record,
-      statementCeiling: { verdict: 'over', statements: proof.statements, max, top },
+      statementCeiling: { verdict: 'over', statements, max, ...expected, top },
     };
   });
 

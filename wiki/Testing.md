@@ -1168,6 +1168,11 @@ max, top }` — `top` its three most-sent shapes, what a `preload()` would fold 
 `statementCeilingFindings(records)` reports `X_STATEMENTS_OVER_BUDGET`. A flat 300-statement call is
 never `X_QUERY_SCALES_WITH_ROWS`, and it is still slow.
 
+Only statements no `expectedQueryLoop` declared are counted, as in the scale sweep: the loop's reason
+is its argument. A `backfill()` pass writes every row it visits under the factory's own loop, so a
+sweep over 500 seeded rows judges its page reads, never the seed's size; the excluded count is
+`statementCeiling.expected`, named in the finding.
+
 One primitive's ceiling, raised or lowered with a reason; a blank `why` (or none) is
 `X_CONTRACT_EXERCISE_UNDECLARED`, and `max` is a whole number ≥ 1:
 

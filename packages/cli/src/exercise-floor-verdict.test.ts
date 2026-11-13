@@ -99,3 +99,20 @@ describe('unit · measuredStatementsMax', () => {
     expect(measuredStatementsMax([heavy(13), heavy(140), heavy(300, 'declared')])).toBe(140);
   });
 });
+
+// A backfill's pass under a strict floor: 222 statements under its loop reasons, five it did not declare.
+const sweep: FloorRecord = {
+  kind: 'job',
+  name: 'smoke-backfill',
+  outcome: 'reached',
+  statementCeiling: { verdict: 'within', statements: 5, max: 100, expected: 222 },
+} as FloorRecord;
+
+describe('unit · statements an expectedQueryLoop declared, under a floor', () => {
+  test('a strict statementsMax re-judges the judged count, the excluded count carried', () => {
+    expect(exerciseFloorVerdict([sweep], { statementsMax: 100 }).findings).toEqual([]);
+    const [red] = exerciseFloorVerdict([sweep], { statementsMax: 4 }).findings;
+    expect(red?.cause).toContain('5 statements in one call (222 more under expectedQueryLoop');
+    expect(measuredStatementsMax([sweep])).toBe(100);
+  });
+});

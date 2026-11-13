@@ -5,6 +5,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { action, t } from '@ultimat3/action';
 import { registerActions } from '@ultimat3/action/loader';
+import { expectedQueryLoop } from '@ultimat3/db';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { allow } from '@ultimat3/policy';
 import { defineExercise } from './define-exercise';
@@ -63,6 +64,39 @@ describe(testName('unit', 'judgeStatementCeiling'), () => {
     expect(judgeStatementCeiling([])).toBeUndefined();
   });
 
+  test('statements an expectedQueryLoop declared are not judged: the loop argued for itself', () => {
+    // A backfill's pass: 111 rows, each an update under its loop reason, each update's entity.row
+    // read under its own, and one page read nobody declared. 223 sent, one judged.
+    const loop = (fingerprint: string, count: number) => ({
+      fingerprint,
+      count,
+      unexpected: 0,
+      expected: 'a backfill writes every row it visits',
+    });
+    const pass = {
+      statements: 223,
+      shapes: [loop('r.findById', 111), loop('r.update', 111), tally('r.findMany', 1)],
+    };
+    expect(judgeStatementCeiling([pass])).toEqual({
+      verdict: 'within',
+      statements: 1,
+      max: 100,
+      expected: 222,
+    });
+    // Undeclared statements still count in full, and the busiest call is the busiest judged one.
+    const mixed = {
+      statements: 230,
+      shapes: [loop('r.update', 120), tally('r.findById', 110)],
+    };
+    expect(judgeStatementCeiling([pass, mixed])).toEqual({
+      verdict: 'over',
+      statements: 110,
+      max: 100,
+      expected: 120,
+      top: [{ fingerprint: 'r.findById', count: 110 }],
+    });
+  });
+
   test('one finding per primitive over its ceiling, its fix the rerun and the entry to raise', () => {
     const findings = statementCeilingFindings([
       {
@@ -89,6 +123,16 @@ describe(testName('unit', 'judgeStatementCeiling'), () => {
       `defineExercise({ "importRows": { statements: { max: 140, why: '`,
     );
     expect(findings[0]?.fix).toEndWith('then: x exercise importRows --json');
+    expect(findings[0]?.cause).not.toContain('expectedQueryLoop');
+    // The excluded ones are named, so a count beside the record's own total reads as one.
+    const [loop] = statementCeilingFindings([
+      {
+        kind: 'job',
+        name: 'sweep',
+        statementCeiling: { verdict: 'over', statements: 110, max: 100, expected: 120, top: [] },
+      },
+    ]);
+    expect(loop?.cause).toContain('110 statements in one call (120 more under expectedQueryLoop');
   });
 });
 
@@ -121,6 +165,18 @@ const deep = () =>
     },
   });
 registerActions({ escDeep: deep(), escDeclared: deep() });
+registerActions({
+  escLooped: action({
+    input: t.object({ word: t.string.max(20) }),
+    output: t.object({ ok: t.boolean }),
+    policy: allow('the statement count is the subject here, not the policy'),
+    handle: () =>
+      expectedQueryLoop('reads the list once per form field', async () => {
+        for (let i = 0; i < 120; i += 1) await driver.repo(items).findMany();
+        return { ok: true };
+      }),
+  }),
+});
 
 const pass = async (only: string): Promise<ExerciseRecord> => {
   const records = await runExercisePass({
@@ -153,5 +209,18 @@ describe(testName('unit', 'runExercisePass · statement ceiling'), () => {
       max: 120,
       declared: true,
     });
+  });
+
+  test('the same 120 under expectedQueryLoop are within the default: the loop is declared', async () => {
+    const record = await pass('escLooped');
+    expect(record.outcome).toBe('reached');
+    expect(record.statements).toBe(120);
+    expect(record.statementCeiling).toEqual({
+      verdict: 'within',
+      statements: 0,
+      max: 100,
+      expected: 120,
+    });
+    expect(statementCeilingFindings([record])).toEqual([]);
   });
 });
