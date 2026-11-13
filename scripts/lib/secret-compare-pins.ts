@@ -38,6 +38,18 @@ export interface SecretComparePin {
  * every row in `data.counts`; no number below is a claim the command cannot check.
  */
 export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
+  'scripts/lib/public-api-compat.ts: before.hash === after.hash': {
+    // why: new with the API lock telling additive from breaking — a public digest, not a secret.
+    count: 1,
+    reason:
+      'The public-API lock: a sha-256 digest of a PUBLIC exported declaration as committed in `scripts/lib/public-api.lock.json` against the same digest of the tree. Both are in the repository; the answer is whether a type changed, never an authentication decision.',
+  },
+  'scripts/lib/public-api-migrate.ts: names[name]?.hash !== tagged.hash': {
+    // why: new with the API lock telling additive from breaking — a public digest, not a secret.
+    count: 1,
+    reason:
+      'The public-API lock re-baselined from a release tag: a committed digest of a PUBLIC exported declaration against the same digest computed from the tag. Both are in the repository; the answer picks which declaration a format-1 lock recorded.',
+  },
   'packages/action/src/idempotency.ts: record.requestHash !== requestHash': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `action` package row.
     count: 1,

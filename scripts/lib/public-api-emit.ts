@@ -72,7 +72,8 @@ export async function emitDeclarations(
   tsc: string = localBin(root, 'tsc'),
 ): Promise<EmitResult> {
   const base = toPosix(root);
-  const scratch = `${base}/node_modules/.cache/ultimate-public-api-${process.pid}`;
+  // Per process AND per tree: a release tag's tree shares this one's `node_modules` (a junction).
+  const scratch = `${base}/node_modules/.cache/ultimate-public-api-${process.pid}-${Bun.hash(base).toString(36)}`;
   await rm(scratch, { recursive: true, force: true });
   await mkdir(scratch, { recursive: true });
   try {

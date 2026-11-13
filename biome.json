@@ -24,6 +24,7 @@
       "!site/templates",
       "!wiki",
       "!framework.manifest.json",
+      "!scripts/lib/public-api.lock.json",
       "!**/x.manifest.json",
       "!**/openapi.json"
     ]

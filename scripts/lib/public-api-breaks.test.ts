@@ -1,9 +1,11 @@
-// Which changelog entry declares a break, the diff the lock is judged by, and the lock `--write`
-// writes: committed byte-for-byte the same on every OS.
+// Which changelog entry declares a break, the diff the lock is judged by — each change classified —
+// and the lock `--write` writes from it.
 
 import { describe, expect, test } from 'bun:test';
 import { parseChangelog } from './changelog-sections';
-import { declaredBreak, diffApi, nextLock, parseLock, renderLock } from './public-api-breaks';
+import { declaredBreak, diffApi, nextLock } from './public-api-breaks';
+import type { ApiSymbol } from './public-api-compat';
+import { symbolsOf } from './public-api-surface';
 
 const changelog = (text: string) => [
   ...parseChangelog(text),
@@ -51,39 +53,37 @@ describe('public-api-breaks · a declared break', () => {
   });
 });
 
-describe('public-api-breaks · the lock', () => {
-  const lock = { version: '1.0.0', entries: { '@a/b': { x: '1', y: '2' } } };
+describe('public-api-breaks · the diff', () => {
+  const one = (text: string): ApiSymbol =>
+    symbolsOf({ x: text })['x'] ?? expect.unreachable('symbolsOf keeps every name');
+  const x = {
+    before: one('interface X { a : 1 ; }'),
+    after: one('interface X { a : 1 ; b ? : 2 ; }'),
+  };
+  const w = {
+    before: one('interface W { a : 1 ; }'),
+    after: one('interface W { a : 1 ; b : 2 ; }'),
+  };
+  const [y, z] = [one('const y : 2'), one('const z : 3')];
+  const lock = { '@a/b': { x: x.before, y, w: w.before } };
+  const tree = { '@a/b': { x: x.after, w: w.after, z } };
 
-  test('changed, removed and added are each found, sorted', () => {
-    expect(diffApi(lock.entries, { '@a/b': { x: '9', z: '3' } })).toEqual({
+  test('compatible, breaking, removed and added are each found, sorted, with why', () => {
+    expect(diffApi(lock, tree)).toEqual({
       breaks: [
-        { kind: 'changed', specifier: '@a/b', name: 'x' },
-        { kind: 'removed', specifier: '@a/b', name: 'y' },
+        { kind: 'changed', specifier: '@a/b', name: 'w', why: 'required member `b` was added' },
+        { kind: 'removed', specifier: '@a/b', name: 'y', why: 'it is no longer exported' },
       ],
+      compatible: [{ specifier: '@a/b', name: 'x', why: 'optional `b` added' }],
       added: [{ specifier: '@a/b', name: 'z' }],
     });
   });
 
-  test('--write records additions and keeps an undeclared break as the lock held it', () => {
-    const next = nextLock(lock, { '@a/b': { x: '9', z: '3' } }, '1.1.0', [
-      { kind: 'removed', specifier: '@a/b', name: 'y' },
-    ]);
-    expect(next).toEqual({ version: '1.1.0', entries: { '@a/b': { x: '9', y: '2', z: '3' } } });
-  });
-
-  test('rendered with sorted keys, LF and a trailing newline, and parsed back', () => {
-    const text = renderLock({ version: '1', entries: { b: { z: '1', a: '2' }, a: {} } });
-    expect(text).toBe(
-      '{\n  "version": "1",\n  "entries": {\n    "a": {},\n    "b": {\n      "a": "2",\n      "z": "1"\n    }\n  }\n}\n',
-    );
-    expect(parseLock(JSON.parse(text))).toEqual({
-      version: '1',
-      entries: { a: {}, b: { a: '2', z: '1' } },
-    });
-  });
-
-  test('a lock of the wrong shape is a reason, never a cast', () => {
-    expect(typeof parseLock({ version: 1, entries: {} })).toBe('string');
-    expect(typeof parseLock({ version: '1', entries: { a: { b: 2 } } })).toBe('string');
+  test('--write records compatible changes and keeps an undeclared break as the lock held it', () => {
+    const { breaks } = diffApi(lock, tree);
+    const next = nextLock(lock, tree, '1.1.0', breaks);
+    expect(next.format).toBe(2);
+    expect(next.version).toBe('1.1.0');
+    expect(next.entries['@a/b']).toEqual({ x: x.after, w: w.before, y, z });
   });
 });
