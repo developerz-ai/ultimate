@@ -11,6 +11,7 @@ own — see [The hook](#the-hook), and delete the `hooks` block if you would rat
 | Path | What it costs | When you pay it |
 |---|---|---|
 | `settings.json` | nothing in context | read once per session; the hook runs per edit |
+| `hooks/format-edited.ts` | nothing in context | runs after each edit, on that one file |
 | `commands/*.md` | nothing until invoked | the file is read when you type `/<name>` |
 | `agents/*.md` | one `description` line each | the body is read only when that agent is dispatched |
 
@@ -42,15 +43,17 @@ framework's.
 
 ## The hook
 
-One `PostToolUse` hook: `bunx biome check --write` on the file that was just edited. **`--write`
-means it rewrites that file in place** — the same safe fixes `biome check --write .` would make
-repo-wide, but your working tree does change after every agent edit. Scoped to one file, so it costs
-milliseconds, and it settles formatting arguments before they reach a diff.
+One `PostToolUse` hook, `.claude/hooks/format-edited.ts`: `bunx biome check --write` on the file that was just
+edited, named by the JSON the harness sends on stdin. **`--write` means it rewrites that file in
+place** — the same safe fixes `biome check --write .` would make repo-wide, but your working tree
+does change after every agent edit. Scoped to one file, so it costs milliseconds, and it settles
+formatting arguments before they reach a diff. What biome cannot fix is shown to the agent at once,
+with the command that re-checks the file, instead of surfacing later as a red `lint` step.
 
-It is not a typecheck, because a *scoped* one does not exist: `tsc` needs the project, and `bunx x verify`
-takes no `--only` and no `--skip` by design — narrowing the gate would make "green" mean whatever
-the caller chose. If you want types on every edit, `bun run typecheck` is the whole project and you
-are choosing to pay for it.
+It is not a typecheck, because a *scoped* one does not exist: `tsc` needs the project, and even
+`bunx x verify --only typecheck` checks the whole tree — and says `NOT A GATE RUN`, because green
+means the run with no flag. There is no `--skip`. If you want types on every edit, `bun run typecheck`
+is the whole project and you are choosing to pay for it.
 
 ## Where the rules live
 

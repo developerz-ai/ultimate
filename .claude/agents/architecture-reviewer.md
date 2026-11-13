@@ -1,7 +1,7 @@
 ---
 name: architecture-reviewer
 description: Judges design coherence — second paths, wrong tiers, leaky seams, dead declarations, duplication that will diverge. Use before committing to a structural change, or as a periodic sweep. Reports what to delete, not what to add.
-tools: Read, Grep, Glob, Bash, WebFetch, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, Bash, WebFetch, mcp__ultimate-dev__*
 model: opus
 ---
 

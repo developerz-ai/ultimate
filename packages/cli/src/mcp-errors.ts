@@ -400,6 +400,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'env -u DATABASE_URL x queries list --json   # then the same prefix on x explain <query> --json: it plans on the embedded dev database; for a copy of production data, point DATABASE_URL at a staging restore with ULTIMATE_ENV=staging',
   X_DB_INDEX_UNDECLARED:
     'x verify --only drift --json   # each X_DB_INDEX_UNDECLARED warning names the index: its DROP INDEX CONCURRENTLY IF EXISTS "<name>"; goes in a new hand-written migration (-- transaction: false), or declare it in the entity\'s indexes: [...] and x db gen "<change>"',
+  X_SHIPPED_GUARD_MISSING:
+    "x doctor --json   # each X_SHIPPED_GUARD_MISSING warning's fix is the command that writes its guard, then x verify --only boundaries --json",
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

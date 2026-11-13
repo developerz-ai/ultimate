@@ -6,12 +6,16 @@
 import type { GeneratedFile, NameSet } from './naming';
 import { claudeAgentFiles } from './scaffold-claude-agents';
 import { claudeCommandFiles } from './scaffold-claude-commands';
+import { claudeHookFile, HOOK_COMMAND, HOOK_PATH } from './scaffold-claude-hook';
 
 /**
  * Read-only commands and the two write commands whose blast radius is a file the gate checks.
  * Spelled `bunx x`, the form that runs with no global `x` and the one the generators print.
  * Deliberately absent: `x db reset`, `x db backfill --write`, `x secrets`, `x deploy` — each is
  * destructive or reaches production, and an allowlist that covers them is a prompt nobody reads.
+ *
+ * The read-only commands the app's own docs tell an agent to run (`x impact` before every edit,
+ * `x graph`, `x affected`, `x exercise`, `x mcp tools`) are here too: a prompt on one is a stall.
  *
  * The hook is the one part of the bundle that ACTS: `--write` rewrites the file just edited, in
  * place. JSON takes no comment (the lesson `scaffold-repo.ts`'s `biome.json` already paid for), so
@@ -41,6 +45,13 @@ const settings = (): string => `{
       "Bash(bunx x i18n check:*)",
       "Bash(bunx x errors:*)",
       "Bash(bunx x docs:*)",
+      "Bash(bunx x impact:*)",
+      "Bash(bunx x graph:*)",
+      "Bash(bunx x affected:*)",
+      "Bash(bunx x exercise:*)",
+      "Bash(bunx x i18n sync:*)",
+      "Bash(bunx x fix boundary:*)",
+      "Bash(bunx x mcp tools:*)",
       "Bash(bunx x env check:*)",
       "Bash(bunx x manifest:*)",
       "Bash(bunx x db gen:*)",
@@ -54,11 +65,12 @@ const settings = (): string => `{
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bunx biome check --no-errors-on-unmatched --write \\"$CLAUDE_FILE_PATHS\\" 2>/dev/null || true"
+            "command": "${HOOK_COMMAND.replaceAll('"', '\\"')}",
+            "timeout": 20
           }
         ]
       }
@@ -80,6 +92,7 @@ own — see [The hook](#the-hook), and delete the \`hooks\` block if you would r
 | Path | What it costs | When you pay it |
 |---|---|---|
 | \`settings.json\` | nothing in context | read once per session; the hook runs per edit |
+| \`hooks/format-edited.ts\` | nothing in context | runs after each edit, on that one file |
 | \`commands/*.md\` | nothing until invoked | the file is read when you type \`/<name>\` |
 | \`agents/*.md\` | one \`description\` line each | the body is read only when that agent is dispatched |
 
@@ -111,10 +124,12 @@ framework's.
 
 ## The hook
 
-One \`PostToolUse\` hook: \`bunx biome check --write\` on the file that was just edited. **\`--write\`
-means it rewrites that file in place** — the same safe fixes \`biome check --write .\` would make
-repo-wide, but your working tree does change after every agent edit. Scoped to one file, so it costs
-milliseconds, and it settles formatting arguments before they reach a diff.
+One \`PostToolUse\` hook, \`${HOOK_PATH}\`: \`bunx biome check --write\` on the file that was just
+edited, named by the JSON the harness sends on stdin. **\`--write\` means it rewrites that file in
+place** — the same safe fixes \`biome check --write .\` would make repo-wide, but your working tree
+does change after every agent edit. Scoped to one file, so it costs milliseconds, and it settles
+formatting arguments before they reach a diff. What biome cannot fix is shown to the agent at once,
+with the command that re-checks the file, instead of surfacing later as a red \`lint\` step.
 
 It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and even
 \`bunx x verify --only typecheck\` checks the whole tree — and says \`NOT A GATE RUN\`, because green
@@ -131,6 +146,7 @@ export function claudeFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: '.claude/README.md', contents: readme(app) },
     { path: '.claude/settings.json', contents: settings() },
+    claudeHookFile(),
     ...claudeCommandFiles(app),
     ...claudeAgentFiles(app),
   ];

@@ -2,7 +2,8 @@
 // A new app, as a coding agent arriving cold meets it: the command `.mcp.json` names answers an MCP
 // `initialize` and a non-empty `tools/list`, and the app's own `POST /mcp` is mounted under `x dev`
 // — 401 with no token, `health` listed and callable with the development token, and a boot log
-// that says `app mcp mounted` rather than X_MCP_APP_UNMOUNTED. Run by `scaffold-smoke` per push.
+// that says `app mcp mounted` rather than X_MCP_APP_UNMOUNTED — and `x docs` answers a task-phrased
+// question from the wiki a publish packs (`scaffold-smoke-overrides.ts`). Run by `scaffold-smoke`.
 //
 //   bun run scripts/scaffold-agent.ts <app dir> [--json]
 
@@ -25,6 +26,8 @@ export const PROBE_TOOL = 'health';
 const BOOT_BUDGET_MS = 60_000;
 /** The dev server's whole life: boot, then a handful of requests. A check that outlives it hung. */
 const SERVE_BUDGET_MS = 3 * BOOT_BUDGET_MS;
+/** A question as an agent phrases it, never as a page is titled (plan 101 19b, Y9). */
+export const DOCS_QUERY = 'paginate a query with a cursor';
 
 /** The one server `.mcp.json` names, as an argv — or `undefined` when the file says none. */
 export function mcpCommand(config: unknown): readonly string[] | undefined {
@@ -73,6 +76,8 @@ export interface AgentCheckIo {
   readonly port: () => number;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
+  /** `x docs <query> --json` in `dir`: its parsed stdout, or `undefined` when it printed none. */
+  readonly docs: (dir: string, query: string) => Promise<unknown>;
 }
 
 const finding = (dir: string, cause: string, fix: string): Finding => ({
@@ -188,6 +193,23 @@ async function checkEndpoint(dir: string, io: AgentCheckIo): Promise<readonly Fi
   return [...problems, ...log].map((problem) => finding(dir, problem, fix));
 }
 
+/** `x docs` over an installed app: an answer with at least one page, not `ships no wiki/`. */
+async function checkDocs(dir: string, io: AgentCheckIo): Promise<readonly Finding[]> {
+  const answer = (await io.docs(dir, DOCS_QUERY)) as {
+    readonly ok?: unknown;
+    readonly data?: { readonly matches?: unknown };
+  } | null;
+  const matches = answer?.data?.matches;
+  if (answer?.ok === true && Array.isArray(matches) && matches.length > 0) return [];
+  return [
+    finding(
+      dir,
+      `x docs ${quoteArg(DOCS_QUERY)} answered ${JSON.stringify(answer ?? null).slice(0, 200)}`,
+      `cd ${quoteArg(appDirWord(dir))} && bunx x docs ${quoteArg(DOCS_QUERY)} --json`,
+    ),
+  ];
+}
+
 export async function checkAgent(dir: string, io: AgentCheckIo): Promise<ScriptResult> {
   if (!(await Bun.file(appBin(dir)).exists())) {
     const where = quoteArg(appDirWord(dir));
@@ -200,13 +222,17 @@ export async function checkAgent(dir: string, io: AgentCheckIo): Promise<ScriptR
     ];
     return { ok: false, script: SCRIPT, summary: `no x binary in ${dir}`, findings };
   }
-  const findings = [...(await checkStdio(dir, io)), ...(await checkEndpoint(dir, io))];
+  const findings = [
+    ...(await checkStdio(dir, io)),
+    ...(await checkEndpoint(dir, io)),
+    ...(await checkDocs(dir, io)),
+  ];
   return {
     ok: findings.length === 0,
     script: SCRIPT,
     summary:
       findings.length === 0
-        ? `${dir}: ${MCP_JSON} answers initialize and tools/list; POST /mcp refuses no token and serves ${PROBE_TOOL} to the development agent`
+        ? `${dir}: ${MCP_JSON} answers initialize and tools/list; POST /mcp refuses no token and serves ${PROBE_TOOL} to the development agent; x docs answers`
         : `${String(findings.length)} agent-facing finding(s) in ${dir}`,
     findings,
   };
@@ -278,6 +304,22 @@ const realIo: AgentCheckIo = {
   port: () => freeDevPair(),
   now: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),
+  docs: async (dir, query) => {
+    const child = Bun.spawn([appBin(dir), 'docs', query, '--json'], {
+      cwd: dir,
+      env: strangerEnvAt(repoRoot()),
+      stdout: 'pipe',
+      stderr: 'ignore',
+      timeout: BOOT_BUDGET_MS,
+    });
+    const printed = (await new Response(child.stdout).text()).trim();
+    await child.exited;
+    try {
+      return printed === '' ? undefined : (JSON.parse(printed) as unknown);
+    } catch {
+      return printed;
+    }
+  },
 };
 
 if (import.meta.main) {

@@ -23,8 +23,10 @@ import type { DevServices } from './runtime-bindings';
 /** Every tool `@ultimat3/mcp` ships for dev, in `tools/list` order. */
 const TOOL_NAMES = [
   'actions.describe',
+  'db.explain',
   'db.migrate',
   'db.query',
+  'docs.search',
   'errors.explain',
   'graph.query',
   'jobs.inspect',
@@ -32,6 +34,7 @@ const TOOL_NAMES = [
   'manifest.read',
   'policies.list',
   'queue.depth',
+  'requests.statements',
   'routes.list',
   'schema.describe',
   'tests.run',
@@ -40,6 +43,7 @@ const TOOL_NAMES = [
   'ui.interact',
   'ui.island',
   'ui.shot',
+  'verify.narrow',
   'verify.run',
 ] as const;
 
@@ -68,6 +72,18 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
     async runQuery() {
       calls.runQuery += 1;
       return { columns: [], rows: [], guards: ['txn:read-only'] };
+    },
+    async explainQuery() {
+      return { columns: [], rows: [], guards: ['txn:read-only'] };
+    },
+    async searchDocs() {
+      return {};
+    },
+    async requestStatements() {
+      return {};
+    },
+    async narrowVerify() {
+      return {};
     },
     async runMigrations(branch: string) {
       calls.runMigrations += 1;
@@ -164,7 +180,7 @@ describe('unit · the dev tool catalog', () => {
   test('every dev tool is reachable by the local caller, by name', () => {
     const server = serverFor(BRANCH, noCalls());
     expect(server.tools.names(localCaller())).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(19);
+    expect(TOOL_NAMES).toHaveLength(23);
   });
 
   test('exactly the mutating tools bill the write bucket', () => {

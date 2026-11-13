@@ -1,11 +1,15 @@
 // What the gate writes to stderr WHILE it runs, in every render mode: a line per finished step and
 // a heartbeat naming the steps still running. Both entries print their verdict only at the end, so
 // a run killed mid-way left nothing (#589), and a harness that kills on SILENCE killed a healthy one.
+// The line is JSON for a `--json` reader and a mark, step and seconds for a person (`render`).
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
+import { TEST_TYPES } from '@ultimat3/testing';
 import { msg } from './messages';
 import type { StepResult } from './output';
+import { quoteArg } from './shell-quote';
+import { isTest } from './source-files';
 import type { VerifyStepName } from './verify-step';
 
 /**
@@ -36,6 +40,28 @@ export const stepLine = (step: StepResult): string =>
     ...(step.skipped === true ? { skipped: true } : {}),
   });
 
+const SUITES: ReadonlySet<string> = new Set(TEST_TYPES);
+
+/**
+ * The narrowest command that runs a red step again: the suite over the test files its findings
+ * name, or the step alone. Never the whole gate — a person fixing one step re-runs one step.
+ */
+export function narrowestRerun(step: StepResult): string {
+  const files = [
+    ...new Set(step.findings.flatMap((f) => (f.at !== undefined && isTest(f.at) ? [f.at] : []))),
+  ];
+  return SUITES.has(step.name) && files.length > 0
+    ? `x test ${step.name} --filter ${quoteArg(files.join(','))} --json`
+    : `x verify --only ${step.name} --json`;
+}
+
+/** `✓ lint 22.0s`, `○ seo 0.0s` (did not apply), `✗ unit 3.1s → x test unit --filter … --json`. */
+export function humanStepLine(step: StepResult): string {
+  const mark = step.skipped === true ? '○' : step.ok ? '✓' : '✗';
+  const line = `${mark} ${step.name} ${(step.durationMs / 1000).toFixed(1)}s`;
+  return step.ok ? line : `${line} → ${narrowestRerun(step)}`;
+}
+
 /** `12m 3s`, `45s`: a person reading a CI log, not a parser — the step lines carry exact ms. */
 export const elapsedLabel = (ms: number): string => {
   const seconds = Math.floor(ms / 1000);
@@ -58,6 +84,11 @@ export interface VerifyProgressHooks {
 export interface VerifyProgressOptions {
   readonly clock?: Clock;
   readonly every?: Every;
+  /**
+   * `json` (the default): `stepLine`, for a reader that parses stderr. `human`: `humanStepLine`,
+   * for a person — `x verify` and `scripts/verify.ts` pass it when `--json` is unset.
+   */
+  readonly render?: 'json' | 'human';
 }
 
 /**
@@ -89,7 +120,7 @@ export async function withVerifyProgress<T>(
       },
       onStep: (step) => {
         running.delete(step.name);
-        write(stepLine(step));
+        write(options.render === 'human' ? humanStepLine(step) : stepLine(step));
       },
     });
   } finally {

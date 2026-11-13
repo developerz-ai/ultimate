@@ -27,12 +27,8 @@ import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
 import { liveObjectDrift } from './db-object-drift';
 import { layTemplate } from './db-reset-template';
-import {
-  afterWrittenMigration,
-  refreshSchemaDump,
-  type SchemaDumpRefresh,
-  schemaDumpJson,
-} from './db-schema-refresh';
+import { schemaDumpLines } from './db-schema-dump';
+import { afterWrittenMigration, refreshSchemaDump, schemaDumpJson } from './db-schema-refresh';
 import type { SeedPassRow } from './db-seed';
 import {
   discoverSeeds,
@@ -149,7 +145,7 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
               : msg('cli.db.gen.unchanged'),
       findings: [...generated.findings, ...dumpFindings],
       // `files` is what this command WROTE, so the empty array here was a false claim.
-      lines: [...generated.files.map((file) => `  ${file}`), ...dumpLines(dump), ...lost],
+      lines: [...generated.files.map((file) => `  ${file}`), ...schemaDumpLines(dump), ...lost],
       data: {
         outcome: generated.outcome,
         migration: null,
@@ -169,7 +165,7 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
         : msg('cli.db.gen.writtenDumpFailed', { id: migration.id }),
     // Exit 1 with a migration on disk: the finding has to say so, or the next move is a duplicate.
     findings: dumpFindings.map((finding) => afterWrittenMigration(finding, migration.id)),
-    lines: [...generated.files.map((file) => `  ${file}`), ...dumpLines(dump), ...lost],
+    lines: [...generated.files.map((file) => `  ${file}`), ...schemaDumpLines(dump), ...lost],
     data: {
       outcome: generated.outcome,
       migration: migration.id,
@@ -183,15 +179,6 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
     },
   };
 }
-
-/**
- * What the dump refresh did, one path per line — the same list `data.schemaDump` carries, so the
- * human render and `--json` report one fact. A refresh that changed nothing prints nothing.
- */
-const dumpLines = (dump: SchemaDumpRefresh): readonly string[] => [
-  ...dump.written.map((file) => `  ${file}`),
-  ...dump.removed.map((file) => `  - ${file}`),
-];
 
 /**
  * The post-migrate report, rendered. Through `driftError` rather than a second literal: the
@@ -237,7 +224,7 @@ async function runMigrate(
       command: 'db',
       summary,
       findings,
-      lines: dumpLines(dump),
+      lines: schemaDumpLines(dump),
       data: {
         applied: report.applied.map((entry) => entry.id),
         skipped: report.skipped.length,

@@ -1,7 +1,7 @@
 ---
 name: dx-auditor
 description: Audits the framework by actually using it — scaffolds an app, runs the generators, makes realistic mistakes, and grades the errors. Use to find what costs an AI agent time. Slow and expensive; run it deliberately, not routinely.
-tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, mcp__codegraph__codegraph_explore
+tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, mcp__ultimate-dev__*
 model: opus
 ---
 
@@ -14,8 +14,9 @@ job is to find where it fails that.
 ## Do not just read — use it
 
 This is the whole method. Reading the CLI's source tells you what it intends; running it tells you
-what an agent gets. Work in a scratchpad directory **outside the checkout** — never scaffold into the
-repo.
+what an agent gets. Scaffold in the session scratchpad, **outside the checkout**, so the app never sees
+this repository's config; anything that must outlive the session (notes, a timing log) goes in
+`node_modules/.cache/<run>/` — the one rule, `.claude/commands/feature.md` § Run mechanics.
 
 1. **Scaffold and gate.** `x new` → `bun install` → `x verify`. Record every failure, every slow step,
    every unclear line. If the repo publishes to npm, also run the **published** path

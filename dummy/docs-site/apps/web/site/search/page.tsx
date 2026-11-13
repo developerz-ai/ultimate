@@ -23,7 +23,10 @@ export const config = defineRoute({
   // runtime 1,812 — why: the island ranks with `searchDocs` and its tokenizer
   // (`@ultimat3/manifest/docs-search`, a few kB) and reads the static index through core's one
   // browser transport, `clientTransport`, which is most of the rest. The only script on this site.
-  budget: { js: '18kb' },
+  // measured: 18940 B (2026-11-13; `x build --target static`): the island chunk 17,128 + the inline
+  // runtime 1,812 — why: `searchDocs` ranks task phrasing through its synonyms table (`paginate` →
+  // `keyset`, `docs-synonyms.ts`, plan 101 19b Y9), so this search answers the questions `x docs` does.
+  budget: { js: '19kb' },
   meta: ({ t, url }) => ({
     title: t('docs.search.title'),
     description: t('docs.search.description'),

@@ -22,7 +22,7 @@ import. The CLI wires it.
 | `server-resources.ts` | `resources/read`'s three outcomes, audited, provider in a `try` |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
-| `dev-server.ts` · `dev-ui-*.ts` · `dev-graph-tool.ts` | the 19 dev tools: 13 here (`routes.list` … `logs.tail`), the five `ui.*`, `graph.query`. Depends only on an injected `DevHost` |
+| `dev-server.ts` · `dev-ui-*.ts` · `dev-graph-tool.ts` · `dev-agent-tools.ts` | 23 dev tools: 13 here, five `ui.*`, `graph.query`, four agent tools (`db.explain` …). Only an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself; it keeps the order |
 | `transport-http-answers.ts` | the pre-dispatch answers (401, 403 not-an-agent / origin, 421, 429) and the per-address failure meter |
@@ -39,7 +39,7 @@ import. The CLI wires it.
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
 | `include-early.ts` | `assertIncludeCurrent`, the mount's after-scan check (`X_MCP_INCLUDE_EARLY`) — [history](../../docs/history/mcp.md) |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
-| `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
+| `readonly-sql.ts` · `readonly-sql-calls.ts` · `explain-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families · `db.explain`'s screen |
 | `query-page.ts` | a list query tool's ONE bounded page, `_after` cursor |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` · `meta-catalog-render.ts` | `surface: 'meta'` catalog, `groups:` boot checks (dispatch: `server.ts`) · its text, `catalogDetail` |

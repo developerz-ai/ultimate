@@ -1,6 +1,7 @@
-// `biome check --reporter=json` read as findings, one per diagnostic. `X_LINT_FAILED` alone said
-// `bunx biome check --write .`, and that exits "Skipped 1 suggested fixes", still red, with what was
-// wrong in the step's `output` where a reader of `findings` never looks.
+// `biome check --reporter=json` read as findings: one per diagnostic an edit fixes, and ONE for every
+// diagnostic `--write` repairs, naming all their files in a single command. `X_LINT_FAILED` alone
+// said `bunx biome check --write .`, which exits "Skipped 1 suggested fixes", still red; a finding
+// per formatted file was twenty commands for one keystroke's worth of work (plan 101 19b, Y1).
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { commentSafe } from './comment-safe';
@@ -53,16 +54,33 @@ const diagnosticFrom = (value: unknown): Diagnostic | undefined => {
 const REPAIRED_BY_WRITE = (category: string): boolean =>
   category === 'format' || category.startsWith('assist/');
 
-const findingOf = ({ category, message, path, line }: Diagnostic): Finding => {
-  const place = line > 0 ? `${path}:${String(line)}` : path;
+const placeOf = ({ path, line }: Diagnostic): string =>
+  line > 0 ? `${path}:${String(line)}` : path;
+
+/** A diagnostic only an edit fixes: the file, the rule and the message, one finding each. */
+const editFinding = (diagnostic: Diagnostic): Finding => {
+  const { category, message, path } = diagnostic;
+  const place = placeOf(diagnostic);
   return {
     code: 'X_LINT_FAILED',
     cause: `${place} ${category}: ${message}`,
-    fix: REPAIRED_BY_WRITE(category)
-      ? `bunx biome check --write ${quoteArg(path)}`
-      : `bunx biome check ${quoteArg(path)}   # ${category}: edit ${commentSafe(place)}, ${commentSafe(message)}`,
+    fix: `bunx biome check ${quoteArg(path)}   # ${category}: edit ${commentSafe(place)}, ${commentSafe(message)}`,
     docs: ERROR_DOCS_URL,
     at: path,
+  };
+};
+
+/** Every diagnostic `--write` repairs, as one finding whose one command names each file once. */
+const writeFinding = (diagnostics: readonly Diagnostic[]): Finding => {
+  const paths = [...new Set(diagnostics.map((diagnostic) => diagnostic.path))];
+  const places = diagnostics.map((d) => `${placeOf(d)} ${d.category}: ${d.message}`);
+  return {
+    code: 'X_LINT_FAILED',
+    cause: places.join('; '),
+    // Each path through `quoteArg`, joined after: one command, every file one argument.
+    fix: ['bunx biome check --write', ...paths.map(quoteArg)].join(' '),
+    docs: ERROR_DOCS_URL,
+    ...(paths.length === 1 ? { at: paths[0] } : {}),
   };
 };
 
@@ -75,10 +93,16 @@ export function lintFindings(stdout: string): readonly Finding[] | undefined {
     return undefined;
   }
   if (!isRecord(report) || !Array.isArray(report['diagnostics'])) return undefined;
-  return report['diagnostics'].flatMap((value) => {
+  const diagnostics = report['diagnostics'].flatMap((value) => {
     const diagnostic = diagnosticFrom(value);
-    return diagnostic === undefined ? [] : [findingOf(diagnostic)];
+    return diagnostic === undefined ? [] : [diagnostic];
   });
+  const written = diagnostics.filter((d) => REPAIRED_BY_WRITE(d.category));
+  // The command first: it clears its share in one run, and the edits are what is left after it.
+  return [
+    ...(written.length === 0 ? [] : [writeFinding(written)]),
+    ...diagnostics.filter((d) => !REPAIRED_BY_WRITE(d.category)).map(editFinding),
+  ];
 }
 
 /**

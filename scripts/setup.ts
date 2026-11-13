@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { copyMcpConfig, MCP_CONFIG, MCP_EXAMPLE } from './lib/mcp-config';
 import { LONG_RUN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { liveSuiteLines } from './lib/test-services-hint';
 
@@ -83,6 +84,10 @@ if (!existsSync(localEnv)) {
   );
   lines.push('  wrote .env.development.local');
 }
+
+// The dev MCP server for agents (`mcp__ultimate-dev__*`): gitignored, so copied, never committed.
+if ((await copyMcpConfig(root)) === 'wrote')
+  lines.push(`  wrote ${MCP_CONFIG} from ${MCP_EXAMPLE}`);
 
 if (findings.length === 0) {
   const hooks = await run(['bunx', 'lefthook', 'install'], { cwd: root });

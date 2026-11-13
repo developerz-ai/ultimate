@@ -64,21 +64,25 @@ export const verifyCommand: CliCommand = {
     // Either render prints its verdict only when the run ends; the progress on stderr — a line per
     // finished step, a heartbeat while one runs — is what a cancelled job's log ends on (#589) and
     // what keeps a silence-killing harness from killing a healthy gate. stdout stays the document.
-    const result = await withVerifyProgress(writeErrorLine, (progress) =>
-      runVerify(VERIFY_STEPS, {
-        root,
-        runner: ctx.runner,
-        env: ctx.env,
-        pace: measurePace(),
-        ...(workers === undefined ? {} : { workers }),
-        ...(only === undefined ? {} : { only }),
-        ...(shard === undefined ? {} : { shard }),
-        ...(isolate === undefined ? {} : { isolate }),
-        ...(changed?.tests === undefined
-          ? {}
-          : { tests: { scope: changed.tests.scope, whole: changed.tests.whole } }),
-        ...progress,
-      }),
+    const result = await withVerifyProgress(
+      writeErrorLine,
+      (progress) =>
+        runVerify(VERIFY_STEPS, {
+          root,
+          runner: ctx.runner,
+          env: ctx.env,
+          pace: measurePace(),
+          ...(workers === undefined ? {} : { workers }),
+          ...(only === undefined ? {} : { only }),
+          ...(shard === undefined ? {} : { shard }),
+          ...(isolate === undefined ? {} : { isolate }),
+          ...(changed?.tests === undefined
+            ? {}
+            : { tests: { scope: changed.tests.scope, whole: changed.tests.whole } }),
+          ...progress,
+        }),
+      // A line per step a person reads, JSON only for the `--json` reader that parses stderr.
+      { render: ctx.args.json ? 'json' : 'human' },
     );
     const sharded = shard === undefined ? result : withShardData(result, shard);
     return changed === undefined ? sharded : withChangedData(sharded, changed);

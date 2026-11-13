@@ -1,4 +1,4 @@
-// `x mcp serve` — the framework's dev MCP server over stdio or HTTP. The 18 tools, the JSON-RPC
+// `x mcp serve` — the framework's dev MCP server over stdio or HTTP. The tools, the JSON-RPC
 // dispatch, both transports and the structural SQL refusals all come from `@ultimat3/mcp`; the CLI
 // supplies only the app, the caller and the socket. A tool answered here would be a second answer
 // to a question the framework already answers.
@@ -7,6 +7,7 @@ import {
   markListening,
   nanoid,
   renderFixShellArg,
+  setLogStream,
   timingSafeEqual,
   UltimateError,
 } from '@ultimat3/core';
@@ -236,6 +237,10 @@ export const mcpCommand: CliCommand = {
       });
     }
     const port = readPort(ctx);
+    // BEFORE the host imports an app module: under stdio fd 1 is the wire, and a module that logs
+    // as it loads (the reference app's demo-viewer warning) wrote its line ahead of `initialize`'s
+    // reply. `dispatch` sends logs to stderr for `--json` only; a session is the other case.
+    if (transport === 'stdio' && ctx.args.subcommand !== 'tools') setLogStream('stderr');
     const host = await createDevMcpServer({ root, env: ctx.env, runner: ctx.runner });
     if (ctx.args.subcommand === 'tools') return catalog(host);
     if (transport !== 'http') return serveOverStdio(host);

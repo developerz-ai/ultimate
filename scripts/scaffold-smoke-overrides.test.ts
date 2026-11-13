@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-import { applyOverrides, computeOverrides } from './scaffold-smoke-overrides';
+import { applyOverrides, computeOverrides, smokeOverrides } from './scaffold-smoke-overrides';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -75,6 +75,47 @@ describe('unit · the empty case is a hard error, not a quiet no-op', () => {
       expect(await computeOverrides(dir)).toEqual({});
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Plan 101 19b Y10: a `file:` install copies `packages/cli` as it stands, and `wiki/` is written
+// into it only by `prepack` — so the smoke app's `x docs` answered "ships no wiki/" (`X_CLI_UNEXPECTED`)
+// while every published install had one. The smoke run packs the wiki first, as a publish would.
+describe('unit · the smoke app installs the CLI with the wiki its tarball ships', () => {
+  test('the wiki is packed into packages/cli before the overrides point the app at it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'scaffold-smoke-root-'));
+    const target = await mkdtemp(join(tmpdir(), 'scaffold-smoke-app-'));
+    try {
+      await Bun.write(join(root, 'packages/cli/package.json'), '{"name":"@ultimat3/cli"}');
+      await Bun.write(join(root, 'wiki/Home.md'), '# Home\n');
+      await Bun.write(join(root, 'wiki/Error-Codes.md'), '# Codes\n');
+      await Bun.write(join(target, 'package.json'), '{"name":"demoapp"}');
+      const result = await smokeOverrides(root, target);
+      expect(result.finding).toBeUndefined();
+      expect(result.pages).toEqual(['Home.md']);
+      expect(await Bun.file(join(root, 'packages/cli/wiki/Home.md')).exists()).toBe(true);
+      expect((await Bun.file(join(target, 'package.json')).json()).overrides).toEqual({
+        '@ultimat3/cli': `file:${join(root, 'packages', 'cli')}`,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test('a checkout with no wiki is refused before the app is pointed at a CLI without one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'scaffold-smoke-root-'));
+    const target = await mkdtemp(join(tmpdir(), 'scaffold-smoke-app-'));
+    try {
+      await Bun.write(join(root, 'packages/cli/package.json'), '{"name":"@ultimat3/cli"}');
+      await Bun.write(join(target, 'package.json'), '{"name":"demoapp"}');
+      const result = await smokeOverrides(root, target);
+      expect(result.finding?.code).toBe('X_PACKAGE_SHAPE');
+      expect((await Bun.file(join(target, 'package.json')).json()).overrides).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(target, { recursive: true, force: true });
     }
   });
 });

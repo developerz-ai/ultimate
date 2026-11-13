@@ -11,7 +11,7 @@ import { authStorageFindings } from './doctor-auth';
 import { chartAlertsProbe, NOTHING_MISSING, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
-import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
+import { missingGuardWarnings, shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import { offlineFallbackFinding } from './doctor-offline';
 import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
 import { doctorPort, portFindings } from './doctor-port';
@@ -143,6 +143,7 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
   // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
   const pooler = probe.root === undefined ? NO_POOLER_FACT : await probe.pooler();
   const findings = await runDoctor({ ...probe, pooler: async () => pooler });
+  const guardEntries = probe.root === undefined ? [] : await shippedGuardsProbe(probe.root);
   const listed = withGuardListing(
     {
       ok: findings.length === 0,
@@ -155,7 +156,7 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
       data: { count: findings.length, codes: findings.map((entry) => entry.code) },
     },
     // A listing beside the verdict, never part of it (`doctor-guards.ts` says why).
-    probe.root === undefined ? [] : await shippedGuardsProbe(probe.root),
+    guardEntries,
   );
   // The second listing: what the coverage floor does not see (`doctor-coverage.ts`).
   const covered = withCoverageExcludes(
@@ -176,7 +177,11 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
     pooler,
   );
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
-  return withDoctorWarnings(reminded, await doctorWarnings(probe));
+  // A missing shipped guard among them (`X_SHIPPED_GUARD_MISSING`): a warning, so exit stays.
+  return withDoctorWarnings(reminded, [
+    ...(await doctorWarnings(probe)),
+    ...missingGuardWarnings(guardEntries),
+  ]);
 }
 
 export const doctorCommand: CliCommand = {

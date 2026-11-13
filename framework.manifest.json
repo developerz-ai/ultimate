@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "66c690ebc156b2864221b07db0fb5d713cc93d2bbc08f9cc197b7a1ae4055cfa",
+  "buildId": "d1a0cc64ff4ca4db504b4a64c33f64d7b33690990915662cf7c66842fbcd4c31",
   "tiers": {
     "0": [
       "core",
@@ -5288,6 +5288,11 @@
       "code": "X_SETUP_INSTALL_FAILED",
       "owner": "scripts",
       "at": "scripts/setup.ts"
+    },
+    {
+      "code": "X_SHIPPED_GUARD_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_SHOT_BROWSER_MISSING",

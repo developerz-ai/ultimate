@@ -249,5 +249,10 @@
  * raised 1688 → 1690, measured 1690 (2026-11-13, revoked-session security fix):
  * `SERVING_ROLE_CEILING`'s 2 (`core/src/session-refusal.ts`, `http/src/authenticated-actor.ts`).
  * why: the one session-refusal rule and the http stage that reads it. Nothing web-only.
+ * raised 1690 → 1693, measured 1693 (2026-11-13, sweep 19b dev MCP tools): three new web-only
+ * files `mcp/src/dev-server.ts` — already in this graph — now imports: `dev-agent-tools.ts`
+ * (`docs.search`, `db.explain`, `requests.statements`, `verify.narrow`), `dev-schema-describe.ts`
+ * (`schema.describe {entity}`) and `explain-sql.ts` (the EXPLAIN screen). No existing module newly
+ * reached; nothing serving-only.
  */
-export const WEB_ROLE_CEILING = 1690;
+export const WEB_ROLE_CEILING = 1693;

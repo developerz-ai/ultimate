@@ -7,7 +7,14 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import type { AgentCheckIo } from './scaffold-agent';
-import { checkAgent, DEV_AGENT_TOKEN, mcpCommand, PROBE_TOOL, toolNames } from './scaffold-agent';
+import {
+  checkAgent,
+  DEV_AGENT_TOKEN,
+  DOCS_QUERY,
+  mcpCommand,
+  PROBE_TOOL,
+  toolNames,
+} from './scaffold-agent';
 
 const MCP_JSON = {
   mcpServers: {
@@ -38,6 +45,8 @@ interface Fake {
   readonly bootLog?: string;
   /** Status for the development token sent WITH an Origin — what a rebound browser page sends. */
   readonly browserStatus?: number;
+  /** What `x docs --json` printed; the default is one page found. */
+  readonly docs?: unknown;
 }
 
 const listAnswer = (id: number, names: readonly string[]) => ({
@@ -50,6 +59,7 @@ const listAnswer = (id: number, names: readonly string[]) => ({
 function fakeIo(fake: Fake = {}) {
   const spawned: (readonly string[])[] = [];
   let stopped = 0;
+  const asked: string[] = [];
   const io: AgentCheckIo = {
     stdio: async (_dir, argv) => {
       spawned.push(argv);
@@ -91,8 +101,12 @@ function fakeIo(fake: Fake = {}) {
     port: () => 4321,
     now: () => 0,
     sleep: async () => undefined,
+    docs: async (_dir, query) => {
+      asked.push(query);
+      return 'docs' in fake ? fake.docs : { ok: true, data: { matches: [{ topic: 'db.keyset' }] } };
+    },
   };
-  return { io, spawned, stopped: () => stopped };
+  return { io, spawned, stopped: () => stopped, asked };
 }
 
 describe('unit · scaffold-agent reads what a cold agent reads', () => {
@@ -120,6 +134,7 @@ describe('unit · scaffold-agent reads what a cold agent reads', () => {
       ['bunx', '@ultimat3/cli', 'mcp', 'serve', '--transport', 'stdio'],
     ]);
     expect(fake.stopped()).toBe(1);
+    expect(fake.asked).toEqual([DOCS_QUERY]);
   });
 
   const cases: readonly [string, Fake, string][] = [
@@ -135,6 +150,13 @@ describe('unit · scaffold-agent reads what a cold agent reads', () => {
     ],
     ['a boot that never mounts', { bootLog: 'ready' }, 'never says app mcp mounted'],
     ['a dev token honoured from a browser', { browserStatus: 200 }, 'with an Origin answered 200'],
+    [
+      'x docs on an install that ships no wiki',
+      { docs: { ok: false, findings: [{ code: 'X_DOCS_UNAVAILABLE' }] } },
+      'x docs',
+    ],
+    ['x docs that finds nothing', { docs: { ok: true, data: { matches: [] } } }, 'x docs'],
+    ['x docs that prints nothing', { docs: undefined }, 'answered null'],
   ];
   for (const [name, fake, cause] of cases) {
     test(`${name} is a finding`, async () => {

@@ -2,6 +2,7 @@
 // order it produces is a function of its input alone, and a scan plus a search is reproducible.
 
 import type { DocEntry } from './docs-scan';
+import { SYNONYMS } from './docs-synonyms';
 import { stem, tokenize } from './docs-tokens';
 
 /**
@@ -47,6 +48,14 @@ const COVERAGE = 0.5;
  */
 const EXACT_SYMBOL = 12;
 const PARTIAL_SYMBOL = 4;
+/**
+ * A task word the synonyms table maps to a mechanism. Where the entry EXPORTS that name, it is the
+ * strongest signal the ranker has — stronger than typing the name, because a curated row says
+ * this is the page the task is answered on, and prose that discusses the task must not outrank
+ * it. An entry that only mentions the name (a header, a longer symbol) earns a partial symbol's.
+ */
+const SYNONYM_EXPORT = 2 * EXACT_SYMBOL;
+const SYNONYM_MENTION = PARTIAL_SYMBOL;
 const TOPIC = 7;
 const PACKAGE = 3;
 const TITLE = 3;
@@ -85,6 +94,28 @@ function prepare(entry: DocEntry): Prepared {
   return prepared;
 }
 
+interface SynonymHit {
+  readonly target: string;
+  readonly score: number;
+}
+
+/** The mechanism `word` stands for, when this entry exports it or its symbols or header name it. */
+function synonymOf(
+  word: string,
+  symbolsLower: readonly string[],
+  titleLower: string,
+): SynonymHit | undefined {
+  const targets = SYNONYMS.get(word);
+  if (targets === undefined) return undefined;
+  const exported = targets.find((target) => symbolsLower.includes(target));
+  if (exported !== undefined) return { target: exported, score: SYNONYM_EXPORT };
+  const mentioned = targets.find(
+    (target) =>
+      titleLower.includes(target) || symbolsLower.some((symbol) => symbol.includes(target)),
+  );
+  return mentioned === undefined ? undefined : { target: mentioned, score: SYNONYM_MENTION };
+}
+
 function scoreEntry(
   entry: DocEntry,
   tokens: readonly string[],
@@ -96,6 +127,7 @@ function scoreEntry(
   let textScore = 0;
 
   let covered = 0;
+  let answered = false;
   for (const word of tokens) {
     const before = score + textScore;
     // The stem, not the word, against every name and every line of prose: `upgrade` has to reach
@@ -107,14 +139,20 @@ function scoreEntry(
     const exact = symbolsLower.indexOf(word);
     const partial = exact >= 0 ? -1 : symbolsLower.findIndex((symbol) => symbol.includes(word));
     const symbolScore = exact >= 0 ? EXACT_SYMBOL : partial >= 0 ? PARTIAL_SYMBOL : 0;
+    const synonym = synonymOf(word, symbolsLower, titleLower);
     const nameScore = Math.max(
       symbolScore,
+      synonym?.score ?? 0,
       topicStems.includes(root) ? TOPIC : 0,
       packageStem === root ? PACKAGE : 0,
     );
     score += nameScore;
     const named = entry.symbols[exact >= 0 ? exact : partial];
-    if (symbolScore > 0 && named !== undefined) matched.push(named);
+    if (synonym?.score === SYNONYM_EXPORT) answered = true;
+    if (exact >= 0 && named !== undefined) matched.push(named);
+    else if (synonym !== undefined) {
+      if (!matched.includes(synonym.target)) matched.push(synonym.target);
+    } else if (symbolScore > 0 && named !== undefined) matched.push(named);
     else if (nameScore > 0 && !matched.includes(word)) matched.push(word);
 
     // Prose is independent evidence of the same word, and is counted on top — capped, so a long
@@ -136,7 +174,10 @@ function scoreEntry(
     entry,
     score: score + (rationale && entry.kind === 'guide' ? RATIONALE_BONUS : 0),
     matched,
-    covered,
+    // The coverage floor exists to refuse an entry that merely MENTIONS one word of a long
+    // question. The export a synonym names is not a mention: the table asserts the question names this mechanism's
+    // task ("wait until the user stops typing" is `debounce`), so the whole question is answered.
+    covered: answered ? tokens.length : covered,
   };
 }
 

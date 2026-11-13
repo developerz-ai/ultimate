@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
-import { guardFindings } from '../guards';
+import { type GuardReport, guardReport } from '../guards';
 import type { Finding } from '../output';
 import { shippedGuardFiles } from './scaffold-guards';
 
@@ -23,14 +23,15 @@ export async function linkUi(root: string): Promise<void> {
 }
 
 /**
- * The findings of ONE shipped guard over `files`. `ui: true` links the token package first, which
- * a fixture needs only when a sheet in it uses the tokens and the guard compiles it.
+ * The gate's report of ONE shipped guard over `files`: what fails it, and what a report-only guard
+ * lists. `ui: true` links the token package first, which a fixture needs only when a sheet in it
+ * uses the tokens and the guard compiles it.
  */
-export async function shippedGuardFindings(
+export async function shippedGuardReport(
   name: string,
   files: Readonly<Record<string, string>>,
   options: { readonly ui?: boolean } = {},
-): Promise<readonly Finding[]> {
+): Promise<GuardReport> {
   const root = await mkdtemp(join(tmpdir(), `x-guard-${name}-`));
   try {
     for (const file of shippedGuardFiles(name) ?? []) {
@@ -40,8 +41,18 @@ export async function shippedGuardFindings(
       await Bun.write(join(root, path), contents);
     }
     if (options.ui === true) await linkUi(root);
-    return await guardFindings(root);
+    return await guardReport(root);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 }
+
+/** Everything ONE shipped guard reports over `files`, failing or report-only alike. */
+export const shippedGuardFindings = async (
+  name: string,
+  files: Readonly<Record<string, string>>,
+  options: { readonly ui?: boolean } = {},
+): Promise<readonly Finding[]> => {
+  const report = await shippedGuardReport(name, files, options);
+  return [...report.findings, ...report.warnings];
+};

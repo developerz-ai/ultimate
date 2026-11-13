@@ -37,7 +37,7 @@ export function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string
   const host: DevHost = {
     database,
     routes: () => [{ url: '/', render: 'static' }],
-    entities: () => [{ name: 'post' }],
+    entities: () => [{ name: 'post', table: 'posts' }],
     actions: () => [{ name: 'publishPost' }],
     queries: () => [{ name: 'liveFeed' }],
     policies: () => [{ permission: 'post:publish' }],
@@ -50,6 +50,22 @@ export function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string
     async runQuery(sql) {
       ran.push(sql);
       return EMPTY_ROWS;
+    },
+    async explainQuery(statement, limits) {
+      ran.push(`explain:${limits.timeoutMs}:${statement}`);
+      return { columns: ['QUERY PLAN'], rows: [['[{"Plan":{}}]']], guards: EMPTY_ROWS.guards };
+    },
+    async searchDocs(query, limit) {
+      ran.push(`docs:${limit}:${query}`);
+      return { summary: 'one match', data: { matches: [{ topic: 'query' }] } };
+    },
+    async requestStatements({ requestId, limit }) {
+      ran.push(`statements:${requestId ?? '*'}:${limit}`);
+      return { requests: [] };
+    },
+    async narrowVerify(file) {
+      ran.push(`narrow:${file}`);
+      return { file, commands: ['x verify --only lint --json'] };
     },
     async runMigrations(branch, dryRun) {
       ran.push(`migrate:${branch}:${String(dryRun)}`);

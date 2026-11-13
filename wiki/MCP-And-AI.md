@@ -13,19 +13,23 @@ The whole catalog, spelled exactly as each tool must be called; `bunx x mcp tool
 | Tool | Introspects / does | Replaces the agent's usual guess |
 |---|---|---|
 | `routes.list` | the `x routes --json` table: pages (render mode, hydrate, offline, budget), then every action, query and `runtime.ts` route | grepping a router directory |
-| `schema.describe` | entities with columns, types and invariants | reading migration files in order |
+| `schema.describe` | entities with columns, types and invariants; `{ entity }` (a name or a table) narrows to one, an unknown name answers the names there are (`As of 31.22`) | reading migration files in order |
 | `policies.list` | every `policy`: permission, subject, where it is enforced | "is this endpoint protected?" |
 | `actions.describe` | every action **and query**: input/output schema, policy, cache tags, MCP exposure | reading `api/` by hand |
 | `jobs.inspect` | job definitions, retry policy and steps; omit `name` for all | reading `jobs.ts` and guessing the retry |
 | `queue.depth` | pending, running and failed counts per queue | tailing a worker to see if it keeps up |
 | `manifest.read` | the whole `x.manifest.json`, as text | ten separate reads |
 | `errors.explain` | `X_*` code → cause, exact fix command, docs URL | web search |
+| `docs.search` | `x docs` as a tool: the installed framework docs (packages and wiki) ranked for a task-phrased question, a topic or a symbol; an `X_*` code is redirected to `errors.explain`. Offline (`As of 31.22`) | a web search for the wrong version |
+| `verify.narrow` | `{ file }` → the `x verify --changed` plan for that one file: its rule, the steps it selects and the narrowest commands (its tests first). Runs nothing (`As of 31.22`) | the whole gate after a one-line edit |
 | `graph.query` | `{ node }` (a file path, a primitive name or a node id) → every route, action, query, job, MCP tool, published operation, test and budget a change to it reaches, each with the provenance of the edges that reached it — `x impact`'s answer. `{ from, to }` → the chain of edges linking two nodes — `x graph --from --to`'s. An unknown name is `X_GRAPH_NODE_UNKNOWN` naming the nearest three; any other combination of arguments is an `isError` naming the two shapes. Rebuilt per call, so it answers for the code as it is now | grepping importers before an edit, and missing the route that reads it through a query |
 | `db.query` | **read-only** SQL, 100-row default and 1000-row maximum, `EXPLAIN` on request | inventing a query and hoping |
+| `db.explain` | the plan of ONE `SELECT`/`WITH … SELECT`, `EXPLAIN (FORMAT JSON)`; `analyze: true` executes it inside `db.query`'s SELECT-only role and read-only transaction, under its timeout. Writes, a second statement and data-modifying CTEs are `X_MCP_QUERY_REJECTED`; a production database is refused (`As of 31.22`) | guessing why a query is slow |
 | `db.migrate` | apply pending migrations **in a branch DB only** | mutating the dev database |
 | `tests.run` | run the suite or a substring filter, structured results | parsing terminal output |
 | `verify.run` | the whole gate; `fix: true` applies safe autofixes | guessing whether the work is shippable |
 | `logs.tail` | last N structured log lines, filterable by runtime role | scrollback archaeology |
+| `requests.statements` | the running `x dev`'s statement ledger: per recent request the SQL count, repeated statements and N+1 verdicts (`X_N_PLUS_ONE_QUERY`/`WRITE`, with the fix); `requestId` for one. Needs `x dev` running (`As of 31.22`) | counting queries in a log |
 | `ui.shot` | photograph one route at a named viewport (`phone`/`tablet`/`desktop`, or `width`+`height`) in `light` or `dark` (`theme`: `prefers-color-scheme` is emulated **and** the scheme is stored as the visitor's choice under `THEME_STORAGE_KEY` before navigation, so an app with `theme.defaultMode: 'dark'` still captures light when asked — `As of 2026-09-19`), against the running `x dev`; returns the PNG **path** and the same verdict `x shot` writes — console, page errors, refused requests, whether every island mounted. Refuses a route with no `budget.js` | a hand-written puppeteer script, and a picture nobody judged |
 | `ui.island` | `x shot --island <name> [--state]` as a tool: every declared state photographed and judged | the same, per component |
 | `ui.inspect` | DOM, computed-style and accessibility facts for up to 20 selectors in **one** navigation of a route: per match the tag, text (≤200 chars), box, visibility, attributes (≤20), the computed `styles` you name (≤32, kebab-case; the rest land in `droppedStyles`) and with `a11y: true` the browser-computed role and name; plus `title`, `data-theme`, the focused element, the island count, console and page errors. ≤25 matches per selector, 64 KB on the wire (matches are dropped from the LAST selectors first, `truncated: true`); an unparsable selector answers `valid: false`. Takes the same PNG and verdict as `ui.shot` under `inspect/`; same budget gate, same `theme` semantics (the reported `data-theme` is the one asked for, on a dark-default app too) | `page.evaluate` scripts written per question, and a browser launched per question |
@@ -34,8 +38,8 @@ The whole catalog, spelled exactly as each tool must be called; `bunx x mcp tool
 
 | Class | Tools | Exposure |
 |---|---|---|
-| read | `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `graph.query`, `ui.diff` | scope `dev:read`, unrestricted in dev — `ui.diff` reads files, and sits here because it reads only `.x/shot/` (resolve + prefix check, symlinks resolved) and launches nothing |
-| gated read | `db.query`, `logs.tail` | scope `db:read` / `dev:logs` |
+| read | `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain`, `graph.query`, `docs.search`, `verify.narrow`, `ui.diff` | scope `dev:read`, unrestricted in dev — `ui.diff` reads files, and sits here because it reads only `.x/shot/` (resolve + prefix check, symlinks resolved) and launches nothing |
+| gated read | `db.query`, `db.explain`, `logs.tail`, `requests.statements` | scope `db:read` / `dev:logs` |
 | executes code | `tests.run`, `verify.run`, `ui.shot`, `ui.island`, `ui.inspect`, `ui.interact` | scope `dev:test`; all six declare `destructive: true`, so none is metered as read chatter — the four `ui.*` tools launch a browser |
 | write | `db.migrate` | scope `db:migrate`, **branch environments only** |
 

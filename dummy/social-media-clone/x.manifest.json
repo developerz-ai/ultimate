@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "82bb11c58cc1c0a4",
+  "buildId": "6cfebc77faa29bb6",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -3095,8 +3095,16 @@
       "package": "guards/raw-z-index.ts"
     },
     {
+      "code": "X_REPO_AWAIT_IN_LOOP",
+      "package": "guards/repo-await-in-loop.ts"
+    },
+    {
       "code": "X_REPO_RAW_SQL",
       "package": "guards/repo-raw-sql.ts"
+    },
+    {
+      "code": "X_REPO_UNBOUNDED",
+      "package": "guards/repo-unbounded.ts"
     },
     {
       "code": "X_SEMANTIC_INTERACTIVE",

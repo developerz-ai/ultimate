@@ -8,7 +8,7 @@ import type { GeneratedFile, NameSet } from './naming';
 const shape = (app: NameSet): string => `---
 name: shape
 description: Use BEFORE writing any code, at the idea stage — turns a product request into the one decision that governs everything after it: which of the eight primitives each piece is, which slice and surface it lives in, and the exact \`bunx x g\` invocations. Read-only; it decides, it never builds. Also use when a request seems to need something the framework does not have.
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, mcp__${app.kebab}__*
 ---
 
 You decide **whether and what to build** in ${app.kebab}. You write no code, and you do not edit
@@ -63,7 +63,7 @@ Refused:    <anything that fits no primitive, and why>
 const data = (app: NameSet): string => `---
 name: data
 description: Use for anything about what is stored — entity definitions, invariants, indexes, repositories, migrations and seed data in ${app.kebab}. Owns \`packages/db/\` and every \`entity.ts\` and \`repo.ts\`. Not for actions, queries or UI.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__${app.kebab}__*
 ---
 
 You own the data boundary of ${app.kebab}: \`packages/db/\` plus every \`entity.ts\` and \`repo.ts\` in a
@@ -88,7 +88,7 @@ once when you are otherwise done. Never \`bunx x verify\` — that belongs to wh
 const server = (app: NameSet): string => `---
 name: server
 description: Use for server-authoritative behaviour in ${app.kebab} — actions, mutators, queries, jobs, tasks and policies, plus the HTTP surface under \`apps/web/api/\`. Not for entities, migrations or anything that renders.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__${app.kebab}__*
 ---
 
 You own the server boundary of ${app.kebab}: \`policy.ts\`, actions, mutators, queries, jobs and tasks
@@ -115,7 +115,7 @@ once when you are otherwise done. Never \`bunx x verify\` — that belongs to wh
 const web = (app: NameSet): string => `---
 name: web
 description: Use for anything rendered in ${app.kebab} — pages under \`apps/web/site/\` and \`apps/web/app/\`, islands, components in \`packages/ui/\`, styles, tokens and i18n catalogs. Not for actions, queries, entities or migrations.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__${app.kebab}__*
 ---
 
 You own the rendering boundary of ${app.kebab}: \`apps/web/site/\`, the pages and UI of

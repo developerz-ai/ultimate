@@ -9,6 +9,8 @@ const facts = (overrides: Partial<ChangedFacts> = {}): ChangedFacts => ({
     'apps/web/app/post/entity.ts',
     'apps/web/app/post/service.ts',
     'apps/web/site/page.tsx',
+    'apps/web/site/home.tsx',
+    'apps/web/app/posts/page.tsx',
     'packages/domain/src/money.ts',
     'packages/ui/src/card.tsx',
     'guards/raw-fetch.ts',
@@ -39,7 +41,10 @@ const RULE_CASES: [string, ChangeRule][] = [
   ['apps/api/app.config.ts', 'root-config'],
   ['bun.lock', 'root-config'],
   ['x.verify.json', 'root-config'],
-  ['apps/web/site/page.tsx', 'source'],
+  ['apps/web/site/page.tsx', 'page'],
+  ['apps/web/app/posts/page.tsx', 'page'],
+  // A component beside a page is imported by islands and pages alike: its bytes are not one route's.
+  ['apps/web/site/home.tsx', 'source'],
   ['packages/ui/src/card.module.scss', 'source'],
   ['guards/raw-fetch.ts', 'source'],
   ['apps/web/app/post/gone.ts', 'deleted'],
@@ -64,9 +69,31 @@ describe('unit · verify --changed selects the steps whose inputs moved', () => 
   });
 
   test('a source change outside every entity closure runs everything but drift (B3)', () => {
-    const steps = stepsOf(['apps/web/site/page.tsx']);
+    const steps = stepsOf(['apps/web/site/home.tsx']);
     expect(steps).not.toContain('drift');
     expect(steps).toEqual(VERIFY_STEP_NAMES.filter((name) => name !== 'drift'));
+  });
+
+  // Plan 101 19b Y8: a one-line page edit selected 16 of 21 steps (17 s against the gate's 26 s).
+  // A page's inner loop is its types, its lint, its imports, its strings and its route's tests.
+  test('a page edit runs typecheck, lint, boundaries, filesize, i18n and the suites', () => {
+    expect(stepsOf(['apps/web/app/posts/page.tsx'])).toEqual([
+      'typecheck',
+      'lint',
+      'boundaries',
+      'filesize',
+      'unit',
+      'contract',
+      'live',
+      'job',
+      'e2e',
+      'i18n',
+    ]);
+  });
+
+  test('a page an entity closure reaches is still a drift input', () => {
+    const given = facts({ driftReach: new Set(['apps/web/site/page.tsx']) });
+    expect(classifyChange('apps/web/site/page.tsx', given)).toBe('drift-input');
   });
 
   test('an entity, a migration or a module an entity imports runs drift', () => {
@@ -124,7 +151,21 @@ describe('unit · verify --changed selects the steps whose inputs moved', () => 
 });
 
 describe('unit · the suites narrow to the tests the import closure reaches', () => {
-  const plan = planChangedSteps(['apps/web/site/page.tsx'], facts());
+  test("a page edit narrows to that route's tests: the suites none of them belong to drop", () => {
+    const page = planChangedSteps(['apps/web/app/posts/page.tsx'], facts());
+    const narrowed = narrowSuites(page, ['apps/web/app/posts/page.test.ts']);
+    expect(narrowed.plan.steps.map((step) => step.name)).toEqual([
+      'typecheck',
+      'lint',
+      'boundaries',
+      'filesize',
+      'unit',
+      'i18n',
+    ]);
+    expect(narrowed.whole).toEqual([]);
+  });
+
+  const plan = planChangedSteps(['apps/web/site/home.tsx'], facts());
 
   test('a suite no selected test belongs to is dropped; eval and exercise are never', () => {
     const narrowed = narrowSuites(plan, ['apps/web/site/page.test.ts', 'apps/web/x.e2e.test.ts']);

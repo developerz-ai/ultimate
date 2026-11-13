@@ -63,3 +63,23 @@ Checked and fine, not planned: both scaffold paths, the seven generators' output
 - The MCP server and the shell agree on tests and the gate.
 - An agent in a scaffolded app can search docs, read a plan, read logs and ask what to run, all over MCP.
 - `.claude/` hooks do what their comments say.
+
+## Outcome (19b, local)
+
+Ships as 31.22.0. `As of 2026-11-13`, before release. The report-only guards find 0 sites in each tracked app after the reference-app fix below; `scripts/lib/gated-apps.ts` stays empty.
+
+| ID | Outcome |
+|---|---|
+| Y1 | done, verified by doing: a mis-formatted file piped through `.claude/hooks/after-edit.ts` as a PostToolUse record comes back formatted (exit 0); the scaffold's `.claude/hooks/format-edited.ts` the same, in `dummy/docs-site`. `X_LINT_FAILED`'s format and import-order misses are ONE finding, `bunx biome check --write <file…>` (`lint-findings.ts`) |
+| Y2 | done. `git stash list`/`show` allowed; the guard judges checkouts of this repository only, `--git-dir`/`GIT_DIR` judged as this one (`guard-git.test.ts`); `snapshot-tree.sh` snapshots only a tracked-dirty tree, never for a read-only agent, and prunes past 7 days (`snapshot-tree.test.ts`) |
+| Y3 | done, **one premise overruled**: `/.mcp.json` stays gitignored (25.0.0: a contributor's copy may carry keys). The tracked `.mcp.json.example` wires `ultimate-dev` (`bun packages/cli/src/bin.ts mcp serve --transport stdio --cwd examples/dummy`), `bun run setup` copies it when absent (`scripts/lib/mcp-config.ts`), and `scripts/claude-harness.test.ts` reads the example. Every agent names `mcp__ultimate-dev__*`; `codegraph` is gone, `/planx` included. A scaffolded app keeps its `.mcp.json` tracked — it carries no secret and CI's `scaffold-agent.ts` spawns its command |
+| Y4 | done. `feature.md` 38,330 → 16,227 B under `COMMAND_CEILING` (16 KiB, `claude-md-size.ts`); `CLAUDE.md` 16,371 → 16,298 B; history in `docs/history/feature-workflow.md`. `packages/db/CLAUDE.md` was already 24,550 B |
+| Y5 | **partial, by design.** PostToolUse is `biome check --write` plus `bun run boundaries` for a package file — no typecheck, because `tsc -b` writes shared `.tsbuildinfo` and per-edit runs from several agents interleave. Stop blocks once on a stale `framework.manifest.json` or schema dump (it caught this sweep's own new code); PreToolUse refuses `bun test packages/…` with the `./` fix. All three verified by piping a real record |
+| Y6 | done, both allow-lists; `claude-harness.test.ts` holds every rule to one Claude Code can match |
+| Y7 | done. `docs.search`, `db.explain` (`ANALYZE` inside the read-only transaction, production refused), `requests.statements`, `verify.narrow`; `schema.describe {entity}`. A refused tool argument's fix names `tools/list`, not `x actions show` (`action/src/errors.ts`). Found on the way: under stdio an app module's boot log reached stdout ahead of `initialize`'s reply — logs go to stderr for the session (`cmd-mcp-stdio.test.ts`) |
+| Y8 | done. A red step's line names its narrowest re-run; human mode prints `✓ lint 22.0s` lines, JSON only under `--json` (both entries); a route's `page.tsx` selects at most 10 of 21 steps (the `page` rule; suites with none of that route's tests drop), where `source` selected every step but `drift` and 16 ran — wall time not re-measured; a schema-dump refresh over five files prints a count |
+| Y9 | done. `x docs` ranks task words through a synonyms table held by ten questions (`docs-synonyms.test.ts`); a missing shipped guard is `X_SHIPPED_GUARD_MISSING`, a doctor warning on `main`. **Premise already true:** the `raw-interval` fix named `pollEvery` and `visibleInterval` before this sweep |
+| Y10 | done. The three doc lines; `scripts/architecture-codes.test.ts` holds every code `docs/architecture/` names to a wiki row, an owning app or a stated reason — a `unit` test, not the `manifest` step; scaffold smoke packs the wiki first and `scaffold-agent.ts` asks `x docs` a task question |
+| Y11 | done, report-only. `repo-await-in-loop`, `repo-unbounded` (`severity: 'warning'`, a new guard field). Real bug found: the reference app's member reads stopped at `.all()`'s 50 rows — the 51st owner never texted, the 51st reader never mailed — now `.inBatches(500)` (`orgs/repo.test.ts`); the demo's task reset is declared with `expectedQueryLoop` |
+
+**Not done:** step 5's re-run of the 2026-11-11 scaffold session (timing and grade tables) was not repeated. The `tests.run` hang reported against `mcp-host-tools.test.ts` did not reproduce in this tree (14 pass in 4.3 s, alone, with `--isolate` and with the test services' env).

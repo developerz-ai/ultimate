@@ -22,6 +22,13 @@
       "Bash(bunx x i18n check:*)",
       "Bash(bunx x errors:*)",
       "Bash(bunx x docs:*)",
+      "Bash(bunx x impact:*)",
+      "Bash(bunx x graph:*)",
+      "Bash(bunx x affected:*)",
+      "Bash(bunx x exercise:*)",
+      "Bash(bunx x i18n sync:*)",
+      "Bash(bunx x fix boundary:*)",
+      "Bash(bunx x mcp tools:*)",
       "Bash(bunx x env check:*)",
       "Bash(bunx x manifest:*)",
       "Bash(bunx x db gen:*)",
@@ -35,11 +42,12 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bunx biome check --no-errors-on-unmatched --write \"$CLAUDE_FILE_PATHS\" 2>/dev/null || true"
+            "command": "bun \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format-edited.ts",
+            "timeout": 20
           }
         ]
       }

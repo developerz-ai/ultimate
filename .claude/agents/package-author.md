@@ -1,7 +1,7 @@
 ---
 name: package-author
 description: Creates a new @ultimat3/* package at the right tier, or restructures an existing one — exports, deps, README.md + CLAUDE.md, tier registration. Use when the work is a package boundary rather than a feature inside one.
-tools: Read, Write, Edit, Grep, Glob, Bash, mcp__codegraph__codegraph_explore
+tools: Read, Write, Edit, Grep, Glob, Bash, mcp__ultimate-dev__*
 model: opus
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: web
 description: Use for anything rendered in docs-site — pages under `apps/web/site/` and `apps/web/app/`, islands, components in `packages/ui/`, styles, tokens and i18n catalogs. Not for actions, queries, entities or migrations.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__docs-site__*
 ---
 
 You own the rendering boundary of docs-site: `apps/web/site/`, the pages and UI of

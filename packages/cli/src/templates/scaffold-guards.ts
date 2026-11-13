@@ -25,6 +25,8 @@
 // about the TAB: an island polls with `visibleInterval()`, which a hidden tab and a lost session stop.
 // One is about the QUESTION: a destructive act asks through `ConfirmDialog`, never `confirm(`.
 // One is about the POOL: a database call per row runs through `mapBounded`, never all at once.
+// Two more are about the REPO, REPORT ONLY (`severity: 'warning'`) until the apps are clean of
+// them: an `await` per turn of a loop, and a `.all()` that says no bound.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
@@ -42,7 +44,9 @@ import { rawLengthGuardFiles } from './guard-raw-length';
 import { rawMotionGuardFiles } from './guard-raw-motion';
 import { rawShadowGuardFiles } from './guard-raw-shadow';
 import { rawZIndexGuardFiles } from './guard-raw-z-index';
+import { repoAwaitInLoopGuardFiles } from './guard-repo-await-in-loop';
 import { repoRawSqlGuardFiles } from './guard-repo-raw-sql';
+import { repoUnboundedGuardFiles } from './guard-repo-unbounded';
 import { semanticInteractiveGuardFiles } from './guard-semantic-interactive';
 import { unboundedFanoutGuardFiles } from './guard-unbounded-fanout';
 import { undeclaredCustomPropertyGuardFiles } from './guard-undeclared-custom-property';
@@ -74,7 +78,9 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['raw-motion', rawMotionGuardFiles],
   ['raw-shadow', rawShadowGuardFiles],
   ['raw-z-index', rawZIndexGuardFiles],
+  ['repo-await-in-loop', repoAwaitInLoopGuardFiles],
   ['repo-raw-sql', repoRawSqlGuardFiles],
+  ['repo-unbounded', repoUnboundedGuardFiles],
   ['semantic-interactive', semanticInteractiveGuardFiles],
   ['unbounded-fanout', unboundedFanoutGuardFiles],
   ['undeclared-custom-property', undeclaredCustomPropertyGuardFiles],

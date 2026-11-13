@@ -5,6 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
+import { planNewApp } from '../cmd-new';
+import { NEW_SHAPES } from '../new-shapes';
 import { SPECS } from '../registry';
 import { names } from './naming';
 import { docsFiles } from './scaffold-docs';
@@ -103,4 +105,31 @@ describe('unit · AGENTS.md runs as written, for any agent', () => {
   test('it stays inside the AGENTS.md budget the manifest step enforces', () => {
     expect(new TextEncoder().encode(agentsMd()).byteLength).toBeLessThan(AGENTS_MD_MAX_BYTES);
   });
+
+  // Every scaffold the `scaffold-smoke` matrix gates, measured as it lands: a shape's overlay edits
+  // CLAUDE.md, which AGENTS.md links to, so the default scaffold's headroom is not a shape's. A row
+  // added to the shared conventions passed the one-scaffold case above with 50 B to spare and put
+  // three shapes over, found only by `X_AGENTS_MD_TOO_LARGE` on CI. The longest matrix name, since
+  // the app's name is spelled into the file.
+  const scaffolds = [
+    { label: 'default', options: { example: true } },
+    { label: '--no-example', options: { example: false } },
+    ...NEW_SHAPES.map((shape) => ({
+      label: `--shape ${shape}`,
+      options: { example: true, shape },
+    })),
+  ] as const;
+  for (const { label, options } of scaffolds) {
+    test(`x new ${label}: CLAUDE.md and the AGENTS.md copy stay inside the budget`, () => {
+      const files = planNewApp({ name: 'dashboardapp', ...options });
+      for (const path of ['CLAUDE.md', 'AGENTS.md']) {
+        const bytes = new TextEncoder().encode(textAt(files, path)).byteLength;
+        expect({ path, bytes, over: bytes > AGENTS_MD_MAX_BYTES }).toEqual({
+          path,
+          bytes,
+          over: false,
+        });
+      }
+    });
+  }
 });

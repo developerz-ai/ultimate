@@ -170,7 +170,12 @@ export class InputInvalidError extends UltimateError {
     super({
       code: 'X_INPUT_INVALID',
       cause: `input for ${subject} "${name}" failed validation: ${detail}`,
-      fix: `x actions show ${renderFixShellArg(name, '<action-name>')} --json  # prints the expected input schema`,
+      // A tool's schema is the one `tools/list` publishes — `x actions show` knows actions alone,
+      // so it answered a dev tool's refused arguments (`schema.describe {entity}`) with nothing.
+      fix:
+        subject === 'tool'
+          ? `{"jsonrpc":"2.0","id":1,"method":"tools/list"}  # the inputSchema of ${renderFixShellArg(name, '<tool-name>')} names every field: correct the ones in cause, then call it again`
+          : `x actions show ${renderFixShellArg(name, '<action-name>')} --json  # prints the expected input schema`,
       // A remote caller holds the published schema — the MCP `inputSchema`, the OpenAPI request
       // body — and cannot run `x actions show`.
       callerFix:

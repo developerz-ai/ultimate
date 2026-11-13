@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 59
-current_focus: "Sweep 17b done (unreleased): cli and scripts wall-clock waits to zero, so every package is pinned at zero; the rerun seam covers every framework registry; run() reports its deadline on Windows. Owed on 17: a week of the flaky CI job catching nothing, and a measurably faster unit step. Next: the framework gaps sweep 18 recorded (A2, A5, A9, A12)"
+percent: 60
+current_focus: "Sweep 19b done (unreleased): agent tooling — a format hook that runs, four dev MCP tools, task-phrased x docs, report-only repo guards; step 5 scaffold re-run owed. Sweep 17b done (unreleased): cli and scripts wall-clock waits to zero, so every package is pinned at zero; the rerun seam covers every framework registry; run() reports its deadline on Windows. Owed on 17: a week of the flaky CI job catching nothing, and a measurably faster unit step. Next: the framework gaps sweep 18 recorded (A2, A5, A9, A12)"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -14,9 +14,9 @@ slices:
     percent: 100
   - file: 19-agent-tooling-dx.md
     tier: 5
-    sweep: "19a"           # FX1–FX11 in 19a (done, 31.6.0); Y1–Y11 in sweep 19b (last)
+    sweep: "19b"           # FX1–FX11 in 19a (done, 31.6.0); Y1–Y11 in 19b (31.22.0; Y3 keeps .mcp.json ignored, a tracked example; Y5 no per-edit typecheck); step 5's scaffold re-run owed
     status: in_progress
-    percent: 50
+    percent: 95
   - file: 02-schema-core.md
     tier: 0
     sweep: "1"
@@ -168,5 +168,5 @@ slices:
     status: complete
     percent: 100
 evidence: []
-notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a, 13b, 15, 16, 17a, 17b and 18 implemented (31.5.0–31.21.0; 17b unreleased). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a, 13b, 15, 16, 17a, 17b, 18 and 19b implemented (31.5.0–31.22.0; 17b and 19b unreleased). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
 last_updated: 2026-11-13

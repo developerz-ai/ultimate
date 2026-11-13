@@ -1,13 +1,14 @@
 // `x doctor`'s guard listing: the shipped guards this app's `guards/` does not hold, and the ones
-// it holds in a form that is not the current template — each with the command that writes it. A
-// LISTING, never a finding: every shipped guard is the app's copy ("delete this file to drop the
-// rule"), so a missing or edited one may be a decision the framework must not overrule.
+// it holds in a form that is not the current template — each with the command that writes it.
+// Never in the VERDICT: every shipped guard is the app's copy ("delete this file to drop the
+// rule"), so a missing one is a warning beside it (`data.warnings`) and an edited one a listing.
 
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { GUARD_DIR, guardPaths } from './guards';
 import { msg } from './messages';
-import type { CommandResult, JsonValue } from './output';
+import type { CommandResult, Finding, JsonValue } from './output';
 import { SHIPPED_GUARD_NAMES, shippedGuardSource } from './templates/scaffold-guards';
 
 export interface MissingGuard {
@@ -23,6 +24,25 @@ export function missingShippedGuards(present: readonly string[]): readonly Missi
     name,
     add: `x g guard ${name}`,
   }));
+}
+
+export const MISSING_GUARD = 'X_SHIPPED_GUARD_MISSING';
+
+/**
+ * A missing shipped guard as a WARNING, one per guard: the gate does not hold this app to that
+ * rule, and "no findings — environment is shippable" alone said nothing of it. A warning and not a
+ * finding, so on `main` an adopter's doctor keeps its exit status (`doctor-warnings.ts`).
+ */
+export function missingGuardWarnings(entries: readonly GuardListingEntry[]): readonly Finding[] {
+  return entries
+    .filter((entry): entry is MissingGuard => 'add' in entry)
+    .map(({ name, add }) => ({
+      code: MISSING_GUARD,
+      cause: `${GUARD_DIR}/${name}.ts is not in this app, so x verify does not hold it to the shipped ${name} rule`,
+      fix: `${add} && x verify --only boundaries --json`,
+      docs: ERROR_DOCS_URL,
+      at: `${GUARD_DIR}/${name}.ts`,
+    }));
 }
 
 export interface DifferingGuard {
@@ -73,8 +93,9 @@ export async function shippedGuardsProbe(root: string): Promise<readonly GuardLi
 }
 
 /**
- * The listing, on a result `x doctor` already decided: `data.guards.missing` for a machine, one
- * line per command for a person. `ok`, the summary and the findings are returned as they came.
+ * The listing, on a result `x doctor` already decided: `data.guards` for a machine; for a person,
+ * a line per differing guard — a missing one's command is its warning's line, never printed twice.
+ * `ok`, the summary and the findings are returned as they came.
  */
 export function withGuardListing(
   result: CommandResult,
@@ -84,12 +105,6 @@ export function withGuardListing(
   const missing = entries.filter((entry): entry is MissingGuard => 'add' in entry);
   const differs = entries.filter((entry): entry is DifferingGuard => 'refresh' in entry);
   const lines = [
-    ...(missing.length === 0
-      ? []
-      : [
-          msg('cli.doctor.guards', { count: missing.length }),
-          ...missing.map(({ add }) => `  ${add}`),
-        ]),
     ...(differs.length === 0
       ? []
       : [

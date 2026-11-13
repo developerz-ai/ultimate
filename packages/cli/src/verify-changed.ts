@@ -1,7 +1,7 @@
-// `x verify --changed`, the pure half: each changed file (app-root-relative) to the rule it falls
-// under, each rule to the gate steps whose inputs it can move. Fail-open by construction: a path
-// no rule speaks for — a root config, an unknown directory, a deleted module, a file outside the
-// app — selects the whole step list, so a narrowing can only ever skip a step it can prove idle.
+// `x verify --changed`, the pure half: each changed file (app-root-relative) to its rule, each rule
+// to the gate steps whose inputs it can move. Fail-open: a path no rule speaks for (a root config,
+// a deleted module, a file outside the app) selects every step. One rule trades proof for the inner
+// loop — a route's `page.tsx` (`PAGE_STEPS`) — and the full `x verify` stays the verdict.
 
 import { isTest } from './source-files';
 import type { VerifyStepName } from './verify-step';
@@ -17,6 +17,7 @@ export type ChangeRule =
   | 'test'
   | 'drift-input'
   | 'generated'
+  | 'page'
   | 'source';
 
 /** What the disk says, read once by `verify-changed-facts.ts`, so this file needs no disk. */
@@ -48,6 +49,10 @@ const isDriftFile = (path: string): boolean =>
 
 const isTypeScript = (path: string): boolean => /\.[cm]?tsx?$/.test(path);
 
+/** A route file, as `registerRoute()` names one: `page.tsx` under an app's `site/` or `app/`. */
+const isPage = (path: string): boolean =>
+  /^apps\/[^/]+\/(?:site|app)\/(?:.+\/)?page\.tsx$/.test(path);
+
 /** The one rule a changed file falls under, most specific first. */
 export function classifyChange(path: string, facts: ChangedFacts): ChangeRule {
   if (path.startsWith('../')) return 'outside';
@@ -64,6 +69,7 @@ export function classifyChange(path: string, facts: ChangedFacts): ChangeRule {
   // A module gone from disk took its importers' facts with it, entity declarations included.
   if (isTypeScript(path) && !facts.known.has(path)) return 'deleted';
   if (facts.driftReach === 'everything' || facts.driftReach.has(path)) return 'drift-input';
+  if (isPage(path)) return 'page';
   return 'source';
 }
 
@@ -82,6 +88,25 @@ const TEST_STEPS: readonly VerifyStepName[] = [
   'errors',
 ];
 const GENERATED_STEPS: readonly VerifyStepName[] = ['lint', 'contract-diff', 'manifest'];
+/**
+ * A page edit, between edits: what the file itself can break — its types, lint, imports (a page
+ * is where `site/` reaches for `app/`), its length and its `t()` keys — and the suites, which
+ * `narrowSuites` cuts to that route's tests. NOT proved idle, and said so: `budgets`, `seo`,
+ * `exercise`, `manifest` and the rest wait for the full `x verify`, the only verdict. Measured
+ * (plan 101 19b Y8): the `source` rule ran 16 of 21 steps for a one-line page edit.
+ */
+const PAGE_STEPS: readonly VerifyStepName[] = [
+  'typecheck',
+  'lint',
+  'boundaries',
+  'filesize',
+  'unit',
+  'contract',
+  'live',
+  'job',
+  'e2e',
+  'i18n',
+];
 const NOT_DRIFT = VERIFY_STEP_NAMES.filter((name) => name !== 'drift');
 
 /** The steps one file selects under its rule. */
@@ -93,6 +118,8 @@ export function stepsOfChange(path: string, rule: ChangeRule): readonly VerifySt
       return [...TEST_STEPS, ownerOf(path)];
     case 'generated':
       return GENERATED_STEPS;
+    case 'page':
+      return PAGE_STEPS;
     case 'source':
       return NOT_DRIFT;
     default:
@@ -139,7 +166,7 @@ const NARROWED_SUITES: ReadonlySet<VerifyStepName> = new Set([
 ]);
 
 /** The rules whose files the import closure speaks for; any other rule's suites run whole. */
-const CLOSURE_RULES: ReadonlySet<ChangeRule> = new Set(['source', 'test', 'drift-input']);
+const CLOSURE_RULES: ReadonlySet<ChangeRule> = new Set(['source', 'page', 'test', 'drift-input']);
 
 export interface NarrowedPlan {
   readonly plan: ChangedStepPlan;

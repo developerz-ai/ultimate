@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -11,16 +11,28 @@ import { join } from 'node:path';
 import { reportDoctor, runDoctor } from './cmd-doctor';
 import { probe } from './cmd-doctor-fixture';
 import { renderJson } from './output';
+import { scaffoldGuardFiles } from './templates';
 
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-/** An app pinning `@ultimat3/core` as a range — the adopter shape `x new` never writes. */
-const ranged = () => {
+/**
+ * An app root holding every shipped guard, as `x new` writes it: a missing one is its own warning
+ * (`doctor-guards.test.ts`), and these cases are about the others.
+ */
+const appRoot = (): string => {
   const root = mkdtempSync(join(tmpdir(), 'x-doctor-warn-'));
   roots.push(root);
+  mkdirSync(join(root, 'guards'));
+  for (const file of scaffoldGuardFiles()) writeFileSync(join(root, file.path), file.contents);
+  return root;
+};
+
+/** An app pinning `@ultimat3/core` as a range — the adopter shape `x new` never writes. */
+const ranged = () => {
+  const root = appRoot();
   return probe({
     root,
     pins: async () => ({
@@ -49,9 +61,7 @@ describe('unit · x doctor · warnings beside the verdict', () => {
   });
 
   test('a clean app carries no warnings key at all', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'x-doctor-warn-'));
-    roots.push(root);
-    const result = await reportDoctor(probe({ root }));
+    const result = await reportDoctor(probe({ root: appRoot() }));
     expect(result.data).not.toHaveProperty('warnings');
   });
 

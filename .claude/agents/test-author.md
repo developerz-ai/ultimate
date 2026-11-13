@@ -1,7 +1,7 @@
 ---
 name: test-author
 description: Writes tests that actually fail when the code breaks, and proves it by mutation. Use to close a named coverage hole, or to back a bug fix with a failing-first test. Not a coverage-percentage chaser.
-tools: Read, Write, Edit, Grep, Glob, Bash, mcp__codegraph__codegraph_explore
+tools: Read, Write, Edit, Grep, Glob, Bash, mcp__ultimate-dev__*
 model: opus
 ---
 

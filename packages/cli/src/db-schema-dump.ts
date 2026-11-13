@@ -148,3 +148,23 @@ export async function writeSchemaDump(
   }
   return { written, removed, total: files.length };
 }
+
+/** How many changed files a person's report names one per line before it says a count instead. */
+const DUMP_LINES_SHOWN = 5;
+
+/**
+ * What a refresh did, for a person: each file when there are a few, `packages/db/schema/ +75` when
+ * a whole dump was written — the first `bun run setup` listed 75 paths mid-report. `--json`
+ * (`data.schemaDump`) carries every path either way, so the count hides nothing from a reader.
+ */
+export function schemaDumpLines(
+  write: Pick<SchemaDumpWrite, 'written' | 'removed'>,
+): readonly string[] {
+  const { written, removed } = write;
+  if (written.length + removed.length <= DUMP_LINES_SHOWN) {
+    return [...written.map((file) => `  ${file}`), ...removed.map((file) => `  - ${file}`)];
+  }
+  return [
+    `  ${SCHEMA_DUMP_DIR}/ +${written.length}${removed.length > 0 ? ` -${removed.length}` : ''}`,
+  ];
+}

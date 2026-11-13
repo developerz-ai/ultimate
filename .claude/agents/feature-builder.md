@@ -1,7 +1,7 @@
 ---
 name: feature-builder
 description: Implements one path-disjoint slice of framework work end to end — primitives, mechanism, tests, error codes. Use as a worker in a hive; give it an exclusive file set and tell it who holds the neighbouring paths.
-tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, mcp__codegraph__codegraph_explore
+tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, mcp__ultimate-dev__*
 model: opus
 ---
 

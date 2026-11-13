@@ -1,7 +1,7 @@
 ---
 name: docs-author
 description: Writes and repairs Ultimate's documentation — wiki, docs/, README.md, CLAUDE.md, error-code rows — in house style, and verifies every load-bearing claim against the code. Use after a feature lands, or to close doc drift.
-tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, mcp__codegraph__codegraph_explore
+tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, mcp__ultimate-dev__*
 model: opus
 ---
 

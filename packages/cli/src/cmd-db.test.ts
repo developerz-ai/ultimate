@@ -317,9 +317,13 @@ describe('unit · x db migrate', () => {
         // What it wrote is on disk, and it is the table the migration created.
         const table = Bun.file(join(root, SCHEMA_DUMP_DIR, '04_tables/notes.sql'));
         expect(await table.text()).toContain('"email" citext');
-        expect(result.lines).toContain(`  ${SCHEMA_DUMP_DIR}/01_extensions/citext.sql`);
-        // Human render and `--json` agree: one line per file written.
-        expect(result.lines).toContain(`  ${SCHEMA_DUMP_DIR}/04_tables/notes.sql`);
+        // A whole dump is a count for a person (`schemaDumpLines`); `--json` names every file.
+        const { written } = (result.data as { schemaDump: { written: readonly string[] } })
+          .schemaDump;
+        expect(written).toContain(`${SCHEMA_DUMP_DIR}/01_extensions/citext.sql`);
+        expect(written).toContain(`${SCHEMA_DUMP_DIR}/04_tables/notes.sql`);
+        expect(result.lines).toContain(`  ${SCHEMA_DUMP_DIR}/ +${String(written.length)}`);
+        expect(result.lines).not.toContain(`  ${SCHEMA_DUMP_DIR}/04_tables/notes.sql`);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

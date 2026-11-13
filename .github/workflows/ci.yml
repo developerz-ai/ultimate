@@ -746,8 +746,9 @@ jobs:
       # The cold start an agent of any vendor meets: the command `.mcp.json` names answers MCP
       # `initialize` and a non-empty `tools/list`, and `x dev`'s `POST /mcp` refuses a request with
       # no token (401), lists and calls `health` for the development token, and boots with no
-      # X_MCP_APP_UNMOUNTED. Nothing earlier opens either socket.
-      - name: .mcp.json and POST /mcp answer a cold agent
+      # X_MCP_APP_UNMOUNTED. Nothing earlier opens either socket. Last, `x docs` answers a
+      # task-phrased question from the wiki `scaffold-smoke-overrides.ts` packed, as a publish does.
+      - name: .mcp.json, POST /mcp and x docs answer a cold agent
         run: bun run scripts/scaffold-agent.ts "$RUNNER_TEMP/$APP"
 
   # The deployable artifacts, BUILT and RENDERED — not merely present.

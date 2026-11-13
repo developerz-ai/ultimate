@@ -1,7 +1,7 @@
 ---
 name: bug-hunter
 description: Hunts real correctness bugs in a named set of packages or directories. Use when you want defects with file:line and a reproduction, not a code tour. Give it an explicit scope — sibling hunters cover the rest.
-tools: Read, Grep, Glob, Bash, WebFetch, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, Bash, WebFetch, mcp__ultimate-dev__*
 model: opus
 ---
 

@@ -10,8 +10,11 @@
 // packages of this same tier, and the shell-side capabilities (db, tests, logs) belong to
 // the CLI, so this file defines the interface and the CLI satisfies it.
 
+import type { DevAgentHost } from './dev-agent-tools';
+import { agentHostOf, agentTools } from './dev-agent-tools';
 import type { DevGraphHost } from './dev-graph-tool';
 import { graphTool } from './dev-graph-tool';
+import { describeSchema, ENTITY_ARG } from './dev-schema-describe';
 import type { UiInteractInput, UiInteractResult } from './dev-ui-interact';
 import { uiInteractTools } from './dev-ui-interact';
 import type {
@@ -138,6 +141,12 @@ export interface DevIntrospection {
  */
 export interface DevCapabilities extends DevGraphHost {
   readonly database: DatabaseTarget;
+  // The four agent tools' answers (`dev-agent-tools.ts`), optional so a host written against an
+  // earlier 31.x still compiles: a host without one answers that tool X_NOT_IMPLEMENTED.
+  readonly searchDocs?: DevAgentHost['searchDocs'];
+  readonly explainQuery?: DevAgentHost['explainQuery'];
+  readonly requestStatements?: DevAgentHost['requestStatements'];
+  readonly narrowVerify?: DevAgentHost['narrowVerify'];
   /**
    * Run one already-parsed read-only statement under layers 1–2 (a SELECT-only role, a
    * `BEGIN READ ONLY` transaction, `limits.timeoutMs`) and return at most `limits.maxRows + 1`
@@ -202,8 +211,11 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
       () => jsonResult(host.routes()),
     ),
 
-    read('schema.describe', 'Entities with columns, types and invariants.', NO_ARGS, () =>
-      jsonResult(host.entities()),
+    read(
+      'schema.describe',
+      'Entities with columns, types and invariants. `entity` narrows to one, by name or table.',
+      ENTITY_ARG,
+      (args) => describeSchema(host.entities(), args['entity']),
     ),
 
     read(
@@ -240,6 +252,13 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
 
     // What an edit reaches, before it is made: `x impact` / `x graph --from --to` as a tool.
     graphTool(host, DEV_SCOPES.read),
+
+    // `docs.search`, `db.explain`, `requests.statements`, `verify.narrow` (`dev-agent-tools.ts`).
+    ...agentTools(agentHostOf(host), {
+      read: DEV_SCOPES.read,
+      logs: DEV_SCOPES.logs,
+      dbRead: DEV_SCOPES.dbRead,
+    }),
 
     read(
       'errors.explain',

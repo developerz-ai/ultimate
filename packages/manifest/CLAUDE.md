@@ -34,6 +34,7 @@ by the CLI, not imported.
 | `docs-search-subpath.ts` | the `./docs-search` entry: `searchDocs`, `nearestTopics`, the entry types. Nothing with I/O may join its graph — an island imports it (`docs-search-subpath.test.ts` bundles it for a browser) |
 | `docs-wiki.ts` | read-only: a shipped `wiki/` directory → `DocEntry[]`, topic `wiki.<Page>#<GitHub anchor>`; `wikiSection` is one whole section. Never reads `Error-Codes.md` |
 | `docs-tokens.ts` | pure: the query/name splitter and the one-suffix stem both sides of `docs-search` share |
+| `docs-synonyms.ts` | pure data: a task word (`paginate`, `poll`, `typing`) → the mechanism that does it (`keyset`, `pollEvery`, `debounce`). Keyed on the word, never the stem |
 | `diff-rows.ts` | a read's row, member by member: removed, retyped or no longer required is breaking, added is additive. Never `canonicalJson` inequality: an entity gaining a column would flip every `rows: X.$schema` read |
 | `diff-mounts.ts` | a bearer mount's cut, per (scope, name): the one classifier that sees a held token's 404, because the primitive stays registered |
 | `diff-consumers.ts` | the `consumers` section: a consumer removed is breaking (its stream is never read again, nothing throws); every field that moved is internal |
@@ -121,6 +122,9 @@ by the CLI, not imported.
 - A guide topic is unique within its package — repeated headings take a document-order suffix.
 - **`docs-search-eval-set-fixture.ts` is the ranking's regression set**: `docs-search.test.ts` holds it at
   `EVAL_FLOOR` (18 of 20) over the repo's `packages/` and `wiki/`. Ranking is not a stable surface.
+- **`docs-synonyms.test.ts` holds the synonyms table**: ten task questions each land their page in
+  the top 3 (no floor), four unrelated ones sharing a table word stay off its target, and every
+  target is a name the shipped tree carries. A row whose word means more than one task fails there.
 - Neither docs module may import a registry or a clock. `docs-search.ts` is pure; `docs-scan.ts`
   reads files and nothing else.
 - **A new manifest field ⇒ a `diff-*.ts` rule for it.** Always — a field nothing classifies is a

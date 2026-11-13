@@ -31,6 +31,13 @@ export interface Guard {
    * may, from `root`.
    */
   check(root: string, sources: GuardSources): Promise<readonly Finding[]> | readonly Finding[];
+  /**
+   * `'warning'`: REPORT ONLY. The findings it returns ride the step as warnings — listed in
+   * `--json` and on the step line, never a failure — so a rule can ship to every app before the
+   * apps are clean of it. Absent: every finding fails the gate. A finding that breaks the contract
+   * is a failure either way, because a guard that fails open is the defect this seam refuses.
+   */
+  readonly severity?: 'warning';
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -40,7 +47,8 @@ const isGuard = (value: unknown): value is Guard =>
   isRecord(value) &&
   typeof value['summary'] === 'string' &&
   value['summary'].trim() !== '' &&
-  typeof value['check'] === 'function';
+  typeof value['check'] === 'function' &&
+  (value['severity'] === undefined || value['severity'] === 'warning');
 
 const CODE = /^X_[A-Z0-9_]+$/;
 
@@ -122,6 +130,22 @@ const invalid = (path: string, cause: string): Finding => ({
   at: path,
 });
 
+const notAGuard = (path: string, exported: unknown): Finding => {
+  if (exported === undefined) {
+    return invalid(
+      path,
+      `${path} exports no \`guard\`, so a file in ${GUARD_DIR}/ enforces nothing`,
+    );
+  }
+  const severity = isRecord(exported) ? exported['severity'] : undefined;
+  return invalid(
+    path,
+    severity !== undefined && severity !== 'warning'
+      ? `${path} exports a \`guard\` whose severity is ${shown(severity)} — 'warning' (report only) is the one, or none to fail the gate`
+      : `${path} exports a \`guard\` with no summary and no check()`,
+  );
+};
+
 const findingInvalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FINDING_INVALID',
   cause: `${path} returned a finding that is not one: ${cause}`,
@@ -133,52 +157,53 @@ const findingInvalid = (path: string, cause: string): Finding => ({
 /** Same reason as `shown`: an app's guard may throw a value that fights every way of reading it. */
 const messageOf = (error: unknown): string => renderThrowable(error);
 
+/** What the gate does with a guard's findings: fail on `findings`, list `warnings`. */
+export interface GuardReport {
+  readonly findings: readonly Finding[];
+  /** A report-only guard's findings, each held to the same contract. Never a failure. */
+  readonly warnings: readonly Finding[];
+}
+
+const refused = (finding: Finding): GuardReport => ({ findings: [finding], warnings: [] });
+
 /** One guard: import it, run it, and hold what it returns to the contract. Never throws. */
-async function runGuard(
-  root: string,
-  path: string,
-  sources: GuardSources,
-): Promise<readonly Finding[]> {
+async function runGuard(root: string, path: string, sources: GuardSources): Promise<GuardReport> {
   let loaded: unknown;
   try {
     loaded = await import(pathToFileURL(join(root, path)).href);
   } catch (error) {
-    return [failed(path, `${path} could not be imported: ${messageOf(error)}`)];
+    return refused(failed(path, `${path} could not be imported: ${messageOf(error)}`));
   }
   const exported = isRecord(loaded) ? loaded['guard'] : undefined;
-  if (!isGuard(exported)) {
-    return [
-      invalid(
-        path,
-        exported === undefined
-          ? `${path} exports no \`guard\`, so a file in ${GUARD_DIR}/ enforces nothing`
-          : `${path} exports a \`guard\` with no summary and no check()`,
-      ),
-    ];
-  }
+  if (!isGuard(exported)) return refused(notAGuard(path, exported));
   let returned: unknown;
   try {
     returned = await exported.check(root, sources);
   } catch (error) {
-    return [failed(path, `${path} ("${exported.summary}") threw: ${messageOf(error)}`)];
+    return refused(failed(path, `${path} ("${exported.summary}") threw: ${messageOf(error)}`));
   }
   if (!Array.isArray(returned)) {
-    return [findingInvalid(path, `check() answered ${typeof returned}, not a list of findings`)];
+    return refused(
+      findingInvalid(path, `check() answered ${typeof returned}, not a list of findings`),
+    );
   }
-  const findings: Finding[] = [];
+  const broken: Finding[] = [];
+  const held: Finding[] = [];
   for (const candidate of returned as readonly unknown[]) {
     // Reading a candidate can throw on its own — a getter that raises, a proxy that refuses — and
     // `findingProblem` is total only for values it can read. Per candidate, so one unreadable
     // entry costs its own line and not the readable findings beside it.
     try {
       const problem = findingProblem(candidate);
-      if (problem !== undefined) findings.push(findingInvalid(path, problem));
-      else findings.push(findingOf(candidate as Record<string, unknown>, path));
+      if (problem !== undefined) broken.push(findingInvalid(path, problem));
+      else held.push(findingOf(candidate as Record<string, unknown>, path));
     } catch (error) {
-      findings.push(findingInvalid(path, `it could not be read: ${messageOf(error)}`));
+      broken.push(findingInvalid(path, `it could not be read: ${messageOf(error)}`));
     }
   }
-  return findings;
+  return exported.severity === 'warning'
+    ? { findings: broken, warnings: held }
+    : { findings: [...broken, ...held], warnings: [] };
 }
 
 /**
@@ -188,15 +213,28 @@ async function runGuard(
  * step, which is what keeps "green" meaning one thing (axiom 5) while the app still gets to make
  * its own convention a build error.
  */
-export const guardFindings = async (
+export const guardReport = async (
   root: string,
   /** Files the step already read (`guardSources`' seed), so no guard reads one a second time. */
   seed: readonly { readonly path: string; readonly source: string }[] = [],
-): Promise<readonly Finding[]> => {
+): Promise<GuardReport> => {
   const findings: Finding[] = [];
+  const warnings: Finding[] = [];
   const sources = guardSources(root, seed);
   for (const path of await guardPaths(root)) {
-    findings.push(...(await runGuard(root, path, sources)));
+    const report = await runGuard(root, path, sources);
+    findings.push(...report.findings);
+    warnings.push(...report.warnings);
   }
-  return findings;
+  return { findings, warnings };
 };
+
+/** The findings that fail the gate; a report-only guard's are `guardReport`'s `warnings`. */
+export const guardFindings = async (
+  root: string,
+  seed: readonly { readonly path: string; readonly source: string }[] = [],
+): Promise<readonly Finding[]> => (await guardReport(root, seed)).findings;
+
+/** A report-only finding as the one line the step lists it on. */
+export const guardWarningLine = (finding: Finding): string =>
+  `${finding.at === undefined ? '' : `${finding.at}: `}${finding.code} ${finding.cause} — fix: ${finding.fix}`;
