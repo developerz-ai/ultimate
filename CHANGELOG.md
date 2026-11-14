@@ -10,16 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- The Redis cache bus never unsubscribes a channel its connection already holds, so a peer's invalidation sent while a node boots is no longer lost (#1132).
-- Carries 31.22.2, which was stamped but never published (its release commit's CI was red): `x dev` holds a stale module pin until the process restarts, so a second save tick never reports "reloaded" over a read still serving the old service (#1130).
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
-| [31.22.2](docs/changelog/31.22.2.md) | 2026-11-14 | Not published — its release commit's CI was red; everything in it shipped in 31.22.3. `x dev` holds a stale module pin until the process restarts, so a second save tick never reports "reloaded" over a read still serving the old service, and `/_x` keeps `X_DEV_RESTART_REQUIRED` until the restart. |
+| [31.22.3](docs/changelog/31.22.3.md) | 2026-11-14 | The Redis cache bus never unsubscribes a channel its connection already holds, so a peer's invalidation sent while a node boots is no longer lost (#1132). |
+| [31.22.2](docs/changelog/31.22.2.md) | 2026-11-14 | `x dev` holds a stale module pin until the process restarts, so a second save tick never reports "reloaded" over a read still serving the old service, and `/_x` keeps `X_DEV_RESTART_REQUIRED` until the restart. |
 | [31.22.1](docs/changelog/31.22.1.md) | 2026-11-14 | `postgresAuditSink({ groupCommit: true })` sends each batch outside any caller's transaction, so one request's rollback no longer loses other requests' audit rows. |
 | [31.22.0](docs/changelog/31.22.0.md) | 2026-11-13 | Agent tooling: the format hook `x new` writes now runs (it read a variable Claude Code never sets); the dev MCP server gains `docs.search`, `db.explain`, `requests.statements` and `verify.narrow`; `x docs` answers task phrasing. |
 | [31.21.0](docs/changelog/31.21.0.md) | 2026-11-13 | `x verify`'s `drift` step warns `X_DB_INDEX_UNDECLARED` for an index in the schema dump that neither the newest migration snapshot nor any entity declares — the shape that hid seven duplicate indexes in production. A warning in 31.x. |
