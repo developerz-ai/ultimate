@@ -1,0 +1,142 @@
+plan: 101-finished-and-self-maintained
+title: "Finished and self-maintained: the last build plan before maintenance-only"
+status: not_started        # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: ""              # executor fills with their git user.name
+owner: sebi
+percent: 0
+current_focus: "Sweep 0: 01-production-hotfixes (patch release). Ask 90-owner-decisions OD0–OD10 in one message before sweep 1."
+slices:
+  - file: 01-production-hotfixes.md
+    tier: 3
+    sweep: "0"
+    status: not_started
+    percent: 0
+  - file: 02-core.md
+    tier: 0
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 03-db-entity-policy.md
+    tier: 1
+    sweep: "1"
+    status: not_started
+    percent: 0
+  - file: 04-auth-http.md
+    tier: 2
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 05-jobs-realtime.md
+    tier: 3
+    sweep: "2"
+    status: not_started
+    percent: 0
+  - file: 06-ai-mail-scraping-ui.md
+    tier: 4
+    sweep: "3"
+    status: not_started
+    percent: 0
+  - file: 07-gate-truth.md
+    tier: 5
+    sweep: "4"
+    status: not_started
+    percent: 0
+  - file: 08-upgrade-without-hands.md
+    tier: 5
+    sweep: "5"
+    status: not_started
+    percent: 0
+  - file: 09-deploy-contract.md
+    tier: 5
+    sweep: "6"
+    status: not_started
+    percent: 0
+  - file: 10-test-determinism.md
+    tier: 5
+    sweep: "7"
+    status: not_started
+    percent: 0
+  - file: 11-compat-and-longevity.md
+    tier: 5
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 12-maintainer-loop.md
+    tier: 5
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 13-shapes-and-declaration.md
+    tier: 5
+    sweep: "9"
+    status: not_started
+    percent: 0
+  - file: 20-audit-rounds.md
+    tier: 0
+    sweep: "A"
+    status: not_started
+    percent: 0
+  - file: 30-infra.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 31-maintainer-platform.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 40-adopter-a.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 41-adopter-b.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 42-adopter-c.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 43-adopter-d.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 44-adopter-e.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 45-adopter-f.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 46-adopter-g.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 47-adopter-h.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 48-adopter-i.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+  - file: 49-adopter-j.md
+    tier: 5
+    sweep: "R"
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Written 2026-11-14 at 31.22.3 from four read-only passes: residual work in this tree, ten adopter repositories, 7–14 days of production evidence from two deployed apps, and a trace of the maintenance loop. Carries every open row of the 2026/11/02 and 2026/11/11 plans (12 step 1 marks them superseded). 90-owner-decisions.md is not a slice. Audit rounds (20) record per-round P0/P1/P2 counts and the read ledger here. Adopter letter mapping is off-tree with the owner."
+last_updated: 2026-11-14
