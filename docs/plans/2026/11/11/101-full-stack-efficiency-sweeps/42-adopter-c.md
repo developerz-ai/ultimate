@@ -18,3 +18,17 @@
 
 ## Done when
 - No script duplicating a CLI command; guards installed; gate green.
+
+## Outcome (R)
+
+`As of 2026-11-13`. On 31.22.0, exact pins (adopter PR #27; earlier #19, #21, #24, #25). Gate: 20 of 21 steps green, `roadmap` skipped.
+
+| Step | Outcome |
+|---|---|
+| 1 | done. All 25 shipped guards present (`x doctor`: no `X_SHIPPED_GUARD_MISSING`); the two report-only repo guards: 0 hits |
+| 2 | done in earlier adopter PRs: none of the three script families exists; every caller goes through `x affected`, `x shot`, `x build`, `x verify` |
+| 3 | done at the measured figure: line floor 68 → 69 (measured 69.03 %). The island still counts as uncovered: [`13`](13-cli-exercise-verify.md) X9 is deferred, and the floor's `why` says so |
+
+Also floored: `exercise`, `contract-diff`, `seo`, `i18n`, `policy`.
+
+Later, not owed here: re-measure the floor once X9 ships.

@@ -17,3 +17,13 @@
 
 ## Done when
 - On the current release, exact pins, no island coverage exclude, gate green.
+
+## Outcome (R)
+
+`As of 2026-11-13`. On 31.22.0, exact pins (adopter PR #63; earlier #57, #58, #61, #62). Gate: 17 of 21 steps green, 4 skipped for lack of inputs (`live`, `job`, `e2e`, `roadmap`).
+
+| Step | Outcome |
+|---|---|
+| 1 | done. Every shipped guard installed (the two report-only repo guards: 0 hits); the dead format hook replaced with the scaffold's |
+| 2 | **owed, framework-blocked.** The island `coverage.exclude` stays: [`13`](13-cli-exercise-verify.md) X9 is deferred, and 31.22.0 still scaffolds the exclude (`SCAFFOLD_COVERAGE_EXCLUDE`) |
+| 3 | done. `exercise`, `contract-diff`, `seo`, `i18n` floored (13 → 17 of 21) |

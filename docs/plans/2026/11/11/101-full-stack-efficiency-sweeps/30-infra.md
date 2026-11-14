@@ -38,3 +38,25 @@ Probe limits, each a finding below: the demo database's statistics were unreadab
 - An agent reads statements, table stats, 48 h of logs and error-tracker issues for both apps with no `kubectl exec` and no superuser.
 - Both apps alert on the seven generated rules and have a dashboard.
 - A dated before/after snapshot pair exists for [`09`](09-jobs.md): framework statements' share of WAL and calls per hour at idle.
+
+## Outcome (R, infrastructure)
+
+`As of 2026-11-13`. Seven infrastructure PRs: six merged, one a draft left for the owner. Each PR carries its own failing-first test in that repository's suite.
+
+| ID | Outcome |
+|---|---|
+| I1 | done. The manifest half (role, ident map, `pg_stat_statements` on the demo cluster) landed in an earlier infrastructure PR; the stats command exits 0 with `--json` against both clusters. Infrastructure PR #2314 corrected the stale docs |
+| I2 | done (#2320). `stats.ts --snapshot` writes a dated JSON under `records/` (gitignored); `--since <file> [--to <file>]` diffs two snapshots into calls, WAL and table writes per hour, and flags resets. Baselines taken for both clusters (568 and 9,589 statements) and handed to the coordinator off-tree |
+| I3 | done (#2314). A read-only LogQL verb (`scripts/obs/logs.ts --app <ns> --since 48h --json`, up to 7 d) through the cluster's service proxy, impersonating a `log-reader` ServiceAccount whose Role is `get` on the log store's proxy only. Measured: 48 h on the demo returned 4,450 lines older than every running pod |
+| I4 | partial (#2317). The chart's generated rules are applied to both apps (11 and 9 rules), after adding the `app.kubernetes.io/instance` label the rules select on. Dead-letter alerting is off on both until the backlog is triaged (the demo's default queue holds 2,086 dead jobs, the other app 34); two rules are off on the second app because hand-written rules already page on the same signals. **Framework gap:** the chart ships no p95-latency and no replication-lag rule, so two of the plan's seven do not exist (slice [`20`](20-ops-defaults.md) O1 dropped replication lag; p95 latency was never written) |
+| I5 | done (#2317). The chart's dashboard, copied byte for byte, one dashboard for both apps |
+| I6 | owed. A requests proposal after a week of I5 data (owner) |
+| I7 | partial (#2315). Incident record under `docs/incidents/` (`records/` is gitignored): a hard reset with no OS shutdown, the same signature as an earlier 2026-11-08 outage; memory, load, heat, power, watchdog and firmware errors ruled out. Open: kernel panic or an external reset. **Owner-owed:** the hosting provider's intervention history |
+| I8 | runbook only (#2318). Dump, restore drill, then `DROP DATABASE`, then a cleanup PR, in the demo stack's README. **Owner-owed:** the drop (irreversible) |
+| I9 | written, not applied. #2319 is a **draft**: the repository auto-merges any ready PR, so marking it ready is the apply to every tenant of the shared cluster. **Owner-owed:** mark it ready |
+| I10 | done (#2320). Ranking over `pg_stat_statements(false)` and joining text only for the top N: 18.0 s and 27,706 temp blocks per run → 20 ms with no temp; the reader's own statements excluded |
+| I11 | done (#2318). The extensions collector runs about 4 times an hour instead of every scrape, on both clusters |
+| I12 | partial (#2318). The ingest probe now resolves the issue it creates. **Owner-owed:** the two existing probe issues need a superuser token to close |
+| I13 | partial (#2316). Startup-probe `initialDelaySeconds` from the measured boot for every role of both apps (2–8 s), so no first-probe `connection refused`. Deferred: rolling the replicator only on its own digest or config change — the image updater repins every container naming the image, and every build is a new digest (42 slot restarts in 48 h) |
+
+Owed for *Done when*: the after-snapshot for [`09`](09-jobs.md) (one day after the last framework release); the two missing generated rules (framework); I6, I8, I9, I12 and I7's cause (owner).

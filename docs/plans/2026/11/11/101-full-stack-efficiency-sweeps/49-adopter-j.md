@@ -20,3 +20,16 @@
 
 ## Done when
 - On the current release; no hand-rolled re-read; gate green.
+
+## Outcome (R)
+
+`As of 2026-11-13`. On 31.22.0, exact pins, deployed (adopter PR #807; earlier #802, 28 → 31.20.0 one hop per commit, worktree off `main`). Gate: 17 of 21 steps green, `live`, `job`, `e2e`, `roadmap` without inputs.
+
+| Step | Outcome |
+|---|---|
+| 1 | done: a worktree off `main`; both owner checkouts untouched |
+| 2 | done (#802), the gate green at each hop |
+| 3 | safety re-read: deleted (114 lines) for core's `visibleInterval` — the check is imperative and lazy-loads its client, so `pollEvery()`'s `useQuery` binding does not fit. Pairs: the 3 task + job pairs (12 tasks) are `cronJob()`. Exclude: stays, [`13`](13-cli-exercise-verify.md) X9 deferred |
+| 4 | done. `x env check` and `FRAMEWORK_ENV`: no app name on a reserved one; no secret rename needed |
+
+Also (#807): `error-declared` installed after 35 classes moved onto `defineError` (statuses unchanged); the two report-only repo guards (0 hits); the dead in-app MCP package deleted.

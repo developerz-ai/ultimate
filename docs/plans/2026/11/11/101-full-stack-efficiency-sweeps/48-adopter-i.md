@@ -14,3 +14,13 @@
 
 ## Done when
 - Current release, no island exclude, gate green.
+
+## Outcome (R)
+
+`As of 2026-11-13`. On 31.22.0, exact pins (adopter PR #40; earlier #34, #35, #38, #39). Gate: 19 of 21 steps green, no findings; `live` and `roadmap` not applicable.
+
+| Step | Outcome |
+|---|---|
+| upgrade | done. All 25 shipped guards present; the two report-only repo guards: 0 hits. Both dead format hooks replaced, the C++ one rewritten the same way |
+| exclude | **owed, framework-blocked.** [`13`](13-cli-exercise-verify.md) X9 deferred; `X_COVERAGE_EXCLUDE_STALE` does not exist; removing the exclude would fail the 95 % floor on files no test can map |
+| floor | done. 13 → 19 steps: `job`, `exercise` (`unprovenMax` 0.3334), `contract-diff`, `seo`, `i18n`, `e2e` |
