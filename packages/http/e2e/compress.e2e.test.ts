@@ -4,6 +4,7 @@
 //   bun test packages/http/e2e/compress.e2e.test.ts
 import { afterAll, describe, expect, test } from 'bun:test';
 import { resetLifecycle } from '@ultimat3/core';
+import { processPrecode } from '../src/compress';
 import { defineHttpConfig } from '../src/config';
 import { stream, textResponse } from '../src/response';
 import type { Route } from '../src/router';
@@ -75,6 +76,10 @@ describe('what leaves the socket', () => {
   });
 
   test('HEAD says what GET sends: the coded length, gzip, no body', async () => {
+    // The precoding the first test scheduled lands when its slowest coder settles: a GET answered
+    // inline (level 6) and a HEAD answered from the store (level 9) then disagree on the length.
+    // Past `idle()` both answers come from one store, so HEAD equals GET by construction.
+    await processPrecode.idle();
     const at = `${handle.url()}/sheet.css`;
     const headers = { 'accept-encoding': 'gzip' };
     const get = await fetch(at, { decompress: false, headers });

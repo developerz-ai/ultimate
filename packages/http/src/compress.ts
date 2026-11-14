@@ -38,7 +38,8 @@ type Coder = (bytes: Uint8Array<ArrayBuffer>) => Uint8Array;
 /**
  * The coder per offered coding: keyed by `etag-form.ts`'s `ContentCoding`, so offering a coding
  * with no coder here is a type error. Past the ceiling the same name is a `CompressionStream`.
- * Null-prototype: a key that reached here unvalidated answers `undefined`, never `Object.prototype`.
+ * Null-prototype: a key that reached here unvalidated answers
+ * `undefined`, never `Object.prototype`.
  */
 const CODERS: Readonly<Record<ContentCoding, Coder>> = Object.assign(Object.create(null), {
   zstd: (bytes) => Bun.zstdCompressSync(bytes, { level: 3 }),
@@ -70,8 +71,12 @@ const SHARED = /(?:^|[\s,])(?:public|s-maxage)(?=$|[\s,=])/i;
 /** The process's coded bodies, used when the caller hands none (`compress-cache.ts`). */
 const processCache = createCompressCache();
 
-/** The process's precoded immutable bodies, used when the caller hands none (`compress-precode.ts`). */
-const processPrecode = createPrecodeStore();
+/**
+ * The process's precoded immutable bodies, used when the caller hands none (`compress-precode.ts`).
+ * Exported for socket tests: a miss answers level 6 inline and schedules the level 9 the store
+ * serves every later hit, so two live answers can straddle that landing — await `idle()` first.
+ */
+export const processPrecode = createPrecodeStore();
 
 const DECLARED_LENGTH = /^\d+$/;
 

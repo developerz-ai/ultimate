@@ -25,12 +25,26 @@ const stamp = (text: string, to: string): string =>
     .replace(/("@ultimat3\/[a-z0-9-]+"\s*:\s*")[^"]*(")/g, `$1${to}$2`);
 
 /**
+ * A pack failure must die HERE, named: the e2e reads one JSON line from this process's stdout, and
+ * every other exit — an unhandled rejection from the copy or the pack, an unchecked `pm pack` exit
+ * read as a garbage tarball path — ends the process before that line, and the gate records the
+ * hook's `(unnamed)` failure with no cause. stderr is inherited into the test's log, so the line
+ * above its failure names the package and the reason. Control characters are stripped: a path or a
+ * tool message must stay one line.
+ */
+function packFailed(name: string, cause: string): never {
+  const line = cause.replaceAll(/[\r\n\t]+/g, ' ').trim();
+  console.error(`upgrade-registry-fixture: packing ${name} failed: ${line}`);
+  process.exit(1);
+}
+
+/**
  * What a workspace's `prepack` does in the checkout, done to the copy: a copy outside the checkout
  * has no `../../scripts`, so its pack runs with `--ignore-scripts` and the hook's one effect — the
  * CLI's `wiki/` (`scripts/pack-cli-wiki.ts`) — is the real function, run over a root whose `wiki`
  * is the checkout's and whose `packages/cli` is the copy.
  */
-function prepack(root: string, copyRoot: string, scripts: unknown): void {
+function prepack(root: string, copyRoot: string, scripts: unknown, name: string): void {
   const hook = (scripts as { readonly prepack?: unknown } | undefined)?.prepack;
   if (typeof hook !== 'string' || !hook.includes('pack-cli-wiki')) return;
   symlinkSync(join(root, 'wiki'), join(copyRoot, 'wiki'));
@@ -39,7 +53,12 @@ function prepack(root: string, copyRoot: string, scripts: unknown): void {
     stderr: 'inherit',
     timeout: 60_000,
   });
-  if (ran.exitCode !== 0) process.exit(1);
+  // packWiki's finding is already on stderr above; naming the package turns it into a diagnosis.
+  // Bun 1.4.4, this repo's floor, answers `signalCode: undefined` on a clean exit, never null:
+  // normalize through `?? null`, or every successful run reads as a kill (this gate's red e2e).
+  if (ran.exitCode !== 0 || (ran.signalCode ?? null) !== null) {
+    packFailed(name, 'pack-cli-wiki refused; its finding is on stderr above');
+  }
 }
 
 /** One workspace as `bun pm pack` ships it, under the stamped version. */
@@ -49,35 +68,54 @@ async function pack(
   work: string,
   to: string,
 ): Promise<Stamped | undefined> {
-  const text = await Bun.file(join(source, 'package.json')).text();
-  const { name, scripts } = JSON.parse(text) as {
-    readonly name: string;
-    readonly scripts?: unknown;
-  };
-  if (!name.startsWith('@ultimat3/')) return undefined;
-  // `<copy root>/packages/<dir>`, the checkout's own shape, so a hook's `packages/cli` is the copy.
-  const copyRoot = join(work, 'copies', name.replace('/', '__'));
-  const copy = join(copyRoot, 'packages', basename(source));
-  cpSync(source, copy, {
-    recursive: true,
-    filter: (path) => !SKIP_COPY.has(path.split('/').at(-1) ?? ''),
-  });
-  await Bun.write(join(copy, 'package.json'), stamp(text, to));
-  const out = join(work, 'tarballs');
-  mkdirSync(out, { recursive: true });
-  prepack(root, copyRoot, scripts);
-  const proc = Bun.spawnSync(
-    [process.execPath, 'pm', 'pack', '--destination', out, '--quiet', '--ignore-scripts'],
-    { cwd: copy, timeout: 60_000 },
-  );
-  const tarball = proc.stdout.toString().trim().split('\n').at(-1) ?? '';
-  const bytes = await Bun.file(tarball).bytes();
-  const integrity = `sha512-${new Bun.CryptoHasher('sha512').update(bytes).digest('base64')}`;
-  return {
-    manifest: JSON.parse(await Bun.file(join(copy, 'package.json')).text()),
-    tarball,
-    integrity,
-  };
+  // Until the manifest is read, only the directory is known: a missing or invalid package.json is
+  // a pack failure too, so it dies in the catch below, named by that directory.
+  let name = basename(source);
+  try {
+    const text = await Bun.file(join(source, 'package.json')).text();
+    const manifest = JSON.parse(text) as {
+      readonly name: string;
+      readonly scripts?: unknown;
+    };
+    name = manifest.name;
+    if (!name.startsWith('@ultimat3/')) return undefined;
+    // `<copy root>/packages/<dir>`, the checkout's own shape: a hook's `packages/cli` is the copy.
+    const copyRoot = join(work, 'copies', name.replace('/', '__'));
+    const copy = join(copyRoot, 'packages', basename(source));
+    cpSync(source, copy, {
+      recursive: true,
+      filter: (path) => !SKIP_COPY.has(path.split('/').at(-1) ?? ''),
+    });
+    await Bun.write(join(copy, 'package.json'), stamp(text, to));
+    const out = join(work, 'tarballs');
+    mkdirSync(out, { recursive: true });
+    prepack(root, copyRoot, manifest.scripts, name);
+    const proc = Bun.spawnSync(
+      [process.execPath, 'pm', 'pack', '--destination', out, '--quiet', '--ignore-scripts'],
+      { cwd: copy, timeout: 60_000 },
+    );
+    const stderr = proc.stderr.toString();
+    // Same bun-1.4.4 quirk as `prepack` above: `signalCode` is `undefined`, not null, on exit 0.
+    if (proc.exitCode !== 0 || (proc.signalCode ?? null) !== null) {
+      packFailed(
+        name,
+        `bun pm pack exit ${String(proc.exitCode)} signal ${String(proc.signalCode)}: ${stderr}`,
+      );
+    }
+    const tarball = proc.stdout.toString().trim().split('\n').at(-1) ?? '';
+    if (tarball === '') {
+      packFailed(name, 'bun pm pack printed no tarball path');
+    }
+    const bytes = await Bun.file(tarball).bytes();
+    const integrity = `sha512-${new Bun.CryptoHasher('sha512').update(bytes).digest('base64')}`;
+    return {
+      manifest: JSON.parse(await Bun.file(join(copy, 'package.json')).text()),
+      tarball,
+      integrity,
+    };
+  } catch (error) {
+    packFailed(name, error instanceof Error ? error.message : String(error));
+  }
 }
 
 const [root = '', from = '', to = '', work = ''] = Bun.argv.slice(2);
