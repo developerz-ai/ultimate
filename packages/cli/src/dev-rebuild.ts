@@ -126,6 +126,11 @@ export function devRebuilder(
   // What the route table was built from: the boot's generation, for the life of this process. Each
   // save is compared with IT, not with the save before — a route added two saves ago is still a 404.
   const mounted = { manifest: state.manifest, findings: state.appFindings };
+  // What this process still holds stale, for the life of it — the same rule as `mounted`. A pinned
+  // module keeps the old instance until a new process, so a LATER rebuild that changed nothing
+  // (the watcher's second event for one write, a no-op save) is still a restart: it reported
+  // "reloaded" over the old read, and an unsupervised `/_x` lost its X_DEV_RESTART_REQUIRED.
+  let held: readonly StalePin[] = [];
   // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
   // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
   return coalesceReloads(
@@ -141,8 +146,11 @@ export function devRebuilder(
       // Awaited one by one: a shared store answers over the network, and a dev save is rare.
       for (const path of await isr.store().paths()) await isr.store().delete(path);
       state.reloads += 1;
-      // Read on EVERY rebuild, so a pin one save reached is never reported against the next save.
-      const stale = takeStalePins();
+      // Read on EVERY rebuild, so a pin one save reached is never reported against the next save:
+      // this save's own pins name it, and only a save that reached none inherits the held ones.
+      const reached = takeStalePins();
+      held = [...held, ...reached.filter((pin) => !held.some((was) => was.pinned === pin.pinned))];
+      const stale = reached.length > 0 ? reached : held;
       // A generation this process cannot mount is a restart named after the saved file — never
       // "reloaded" over a route table built for the generation before it.
       const saved = resolve(options.root, file);
