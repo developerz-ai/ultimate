@@ -37,7 +37,7 @@ export {
 export type { DecimalOptions } from './columns-data';
 export { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 export type { Counter } from './counter';
-export { countersOf, describeCounter } from './counter';
+export { countersOf, countsRow, describeCounter, whereColumns } from './counter';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
 export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
@@ -254,6 +254,7 @@ export type {
   ColumnKind,
   ColumnMap,
   ColumnMeta,
+  CountedIn,
   EnumeratedColumn,
   IdOf,
   IndexDef,
@@ -279,5 +280,3 @@ export type {
 export { COLUMN_KINDS } from './types';
 // `viewFor` stays internal: a view is reached through the entity, as `posts.$view([...])`.
 export type { EntityView } from './view';
-export { countsRow, whereColumns } from './counter';
-export type { CountedIn } from './types';

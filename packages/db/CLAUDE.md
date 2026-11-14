@@ -14,9 +14,10 @@ Tier 1 — it imports `@ultimat3/core` and nothing else. That placement is load-
 | SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
 | Reading a caught value | `renderThrowable()` from core (`checkDb` backs `/readyz`) |
 | Errors | subclass `DbError`; never `throw new Error` in source. A test simulating a database failure throws `dbUnavailable()`; one simulating the caller's body failing throws a bare `Error` on purpose |
-| New code | `bun run new-error-code <CODE> --package db --title '…' --fix '…'` writes `DB_OWNED_ERROR_CODES`, `DB_ERROR_TITLES` and the wiki row together; then add it to `errors.test.ts`'s pinned list. The constructor lives where its imports allow (`migration-errors.ts`, `invariant-errors.ts`, `drift-errors.ts`, `dump-drift.ts`); `src/index.ts` re-exports all |
+| New code | `bun run new-error-code <CODE> --package db --title '…' --fix '…'` writes `DB_OWNED_ERROR_CODES`, `DB_ERROR_TITLES` and the wiki row; then pin it in `errors.test.ts`. Constructors live where imports allow (`migration-errors.ts`, `invariant-errors.ts`, `drift-errors.ts`, `dump-drift.ts`); `src/index.ts` re-exports all |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from core — never `new AsyncLocalStorage`. Three scopes: `transaction.ts`, `attribution.ts`, `expected-loop.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
+| Keyset | `keyset.ts`; SQL `keyset-seek.ts`; null tags `keyset-position.ts` (entity's) |
 | Files | < 200 LOC (the `packages/db/src/**/*.ts` path instruction), one responsibility, `kebab-case.ts`, test beside source |
 
 Pinned public seam — `@ultimat3/auth`, `@ultimat3/entity` and `@ultimat3/jobs` are written against
@@ -262,4 +263,4 @@ Gotchas:
   the roles in `creators` (default: the connected user).
 - `Bun.SQL` is reached lazily inside `connect()` — importing `client.ts` must not open a socket.
 
-Why each rule above is shaped the way it is: [`docs/history/db.md`](../../docs/history/db.md).
+Why: [`docs/history/db.md`](../../docs/history/db.md).

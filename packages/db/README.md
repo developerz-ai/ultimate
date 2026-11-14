@@ -138,13 +138,15 @@ fragments to splice and `page(rows)`, which answers core's `Page`.
 | Precision | selected as `col::text` under `_keyset_<n>`, bound back as `$n::<kind>`: a microsecond survives, a `Date` would floor it and drop rows |
 | The seek | uniform direction: one row comparison, Index Only Scan on a matching index. Mixed: the or-chain |
 | `order by` | the bare columns. `date_trunc('milliseconds', …)` there is a Parallel Seq Scan and a sort (100 ms against 0.2 ms, 300,000 rows); the scaffolded `repo-raw-sql` guard reports it |
-| A null key | `X_KEYSET_NULL_KEY`, on any row of a page, whatever its size |
-| The cursor | core's signed codec; scoped to `scope` plus every key's column, kind and direction. Another read's is `X_CURSOR_INVALID` |
+| A nullable key | `As of 2026-11-14`: `nullable: true`, NULL placed by `nulls: 'first' \| 'last'` (default `asc nulls last`, `desc nulls first`, as the entity driver). Written into `order by`, carried in the cursor as present/absent, seeked by the or-chain. Never the last key |
+| A null key | on an undeclared key, `X_KEYSET_NULL_KEY` on any row of a page, whatever its size; a nullable last key is the same code at `keyset()` |
+| The cursor | core's signed codec; scoped to `scope` plus every key's column, kind and direction (and a nullable key's NULL placement). Another read's is `X_CURSOR_INVALID` |
 | `limit` | a whole number ≥ 1 (`finiteCount`), read as `limit + 1` |
 | `direction`, `kind` | `As of 2026-11-09`: `'asc'`/`'desc'` and the five kinds, exactly — anything else is `X_INVARIANT` at `keyset()`. The `order by` splice is re-derived from the closed set, never the caller's text. Map a request's sort onto the two literals yourself |
 
 Proven on both engines: `keyset.live.test.ts` (Postgres) and `keyset-embedded.test.ts` (PGlite)
-walk four rows inside one millisecond across page boundaries, and assert the plan holds no sort.
+walk four rows inside one millisecond across page boundaries, and assert the plan holds no sort;
+the same suites walk a nullable key under all four direction × placement orders, every row once.
 
 ## Transactions that end badly
 

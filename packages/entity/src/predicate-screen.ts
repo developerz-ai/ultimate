@@ -72,10 +72,16 @@ const screenVia = <Row>(entity: EntityCore<Row>, predicate: Predicate): void => 
   const { target: targetColumn, where } = viaValue(predicate);
   const named = (owner: EntityCore, column: string): void => {
     if (columnFor(owner.$columns, column) === undefined) {
-      throw predicateNodeInvalid(source.$name, `via names ${owner.$name}.${column}, no declared column`);
+      throw predicateNodeInvalid(
+        source.$name,
+        `via names ${owner.$name}.${column}, no declared column`,
+      );
     }
     if (sealedFields(owner).some((field) => field.property === column)) {
-      throw predicateNodeInvalid(source.$name, `via names ${owner.$name}.${column}, a sealed column`);
+      throw predicateNodeInvalid(
+        source.$name,
+        `via names ${owner.$name}.${column}, a sealed column`,
+      );
     }
   };
   named(source, predicate.column);

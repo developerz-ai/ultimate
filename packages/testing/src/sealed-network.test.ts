@@ -247,12 +247,15 @@ describe(testName('unit', 'sealed network · a proxied fetch'), () => {
     ['a string', 'http://user:s3cret@proxy.example.com:3128'],
     ['a URL', new URL('http://user:s3cret@proxy.example.com:3128')],
     ['an object', { url: 'http://user:s3cret@proxy.example.com:3128', headers: {} }],
-  ])('a remote proxy given as %s is refused like a remote dial, its credential unprinted', async (_label, proxy) => {
-    const refusal = await proxied(proxy);
-    expect(refusal?.code).toBe('X_TEST_NETWORK_SEALED');
-    expect(refusal?.cause).toContain('proxy.example.com:3128');
-    expect(JSON.stringify(refusal)).not.toContain('s3cret');
-  });
+  ])(
+    'a remote proxy given as %s is refused like a remote dial, its credential unprinted',
+    async (_label, proxy) => {
+      const refusal = await proxied(proxy);
+      expect(refusal?.code).toBe('X_TEST_NETWORK_SEALED');
+      expect(refusal?.cause).toContain('proxy.example.com:3128');
+      expect(JSON.stringify(refusal)).not.toContain('s3cret');
+    },
+  );
 
   test('an allowed proxy host is judged allowed, not sealed', async () => {
     allowHost('proxy.example.invalid:1');

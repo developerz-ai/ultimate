@@ -6,6 +6,7 @@
 
 import { pageOf } from '@ultimat3/core';
 import type { AggregateFn } from './aggregate';
+import { orMembers } from './predicate-node';
 import type { FilteredWriteOptions, FindManyArgs, Repo, UpsertArgs } from './repo';
 import type { SealedField, SealedSource, SealKeys } from './sealed';
 import {
@@ -94,6 +95,14 @@ const rewrite = async (
   predicate: Predicate,
   keys: SealKeys,
 ): Promise<Predicate> => {
+  // An `or` group's members are this entity's predicates too, rewritten as top-level ones are. A
+  // `via` hop's inner level is the target's and names no sealed column (`predicate-screen.ts`).
+  if (predicate.op === 'or') {
+    const members = await Promise.all(
+      orMembers(predicate).map((member) => rewrite(entity, fields, member, keys)),
+    );
+    return { ...predicate, value: members };
+  }
   const field = fields.find((one) => one.property === predicate.column);
   if (field === undefined) return predicate;
   const { op, value } = predicate;

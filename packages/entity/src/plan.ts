@@ -10,6 +10,7 @@ import { screenPredicates } from './predicate-screen';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { scopedPlan } from './tenancy';
+import { scopeVias } from './via-scope';
 
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
 export const DEFAULT_PAGE_SIZE = 50;
@@ -145,7 +146,12 @@ export const readPlan = <Row>(
   // was declared and unusable — the defect class this repo keeps re-shipping. One refusal, and it
   // names which of the two situations the caller is in.
   if (operation === 'approximateCount') assertEstimable(entity, plan);
-  return scopedPlan(entity.$name, entity.$tenantColumn, operation, plan);
+  // A `via` hop is scoped AFTER the source: its subselect gets its own target's tenant.
+  return scopeVias(
+    entity,
+    scopedPlan(entity.$name, entity.$tenantColumn, operation, plan),
+    operation,
+  );
 };
 
 /**

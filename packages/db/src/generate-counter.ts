@@ -101,7 +101,11 @@ export function recountDriftSql(parent: string, counter: CounterDescriptionLike)
 }
 
 /** `p.key > $after and p.key <= $last`, the half-open window one batch covers; no lower bound first. */
-const windowOf = (counter: CounterDescriptionLike, after: string | null, last: string): SqlFragment => {
+const windowOf = (
+  counter: CounterDescriptionLike,
+  after: string | null,
+  last: string,
+): SqlFragment => {
   const key = raw(`p.${identifier(counter.key).text}`);
   return after === null ? sql`${key} <= ${last}` : sql`${key} > ${after} and ${key} <= ${last}`;
 };
@@ -155,6 +159,8 @@ export function recountBatchSql(
   const update = raw(
     `update ${identifier(parent).text} p set ${identifier(counter.column).text} = ${truth(counter)} where `,
   );
-  const drifted = raw(` and p.${identifier(counter.column).text} is distinct from ${truth(counter)}`);
+  const drifted = raw(
+    ` and p.${identifier(counter.column).text} is distinct from ${truth(counter)}`,
+  );
   return sql`${update}${windowOf(counter, after, last)}${drifted}`;
 }

@@ -91,6 +91,33 @@ const isThisMachine = (hostname: string): boolean => {
   return kind === 'loopback' || kind === 'unspecified';
 };
 
+/**
+ * The proxy a `fetch` init names (`string`, `URL` or `{ url }`, Bun's three forms), credentials
+ * stripped, or `undefined`: with one, the bytes leave this process at the PROXY, whatever the
+ * target says. An unparseable one is left to the real `fetch`, which refuses it itself.
+ */
+const proxyOf = (init: RequestInit | undefined): URL | undefined => {
+  const raw: unknown = init === undefined ? undefined : Reflect.get(init, 'proxy');
+  const value =
+    typeof raw === 'object' && raw !== null && !(raw instanceof URL)
+      ? Reflect.get(raw, 'url')
+      : raw;
+  if (typeof value !== 'string' && !(value instanceof URL)) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  url.username = '';
+  url.password = '';
+  return url;
+};
+
+/** A proxy on this machine (or one this test allowed) is no egress; any other is a remote dial. */
+const proxyPasses = (proxy: URL): boolean =>
+  isThisMachine(proxy.hostname) || isSelfOrigin(proxy.href) || state.allowed.has(proxy.host);
+
 /** The socket dials' gate: the same allow-list, offline state and record as `fetch`. No mocks — a
  *  socket test injects its transport (`connect`, `client`), it does not intercept the dial. */
 const socketRefusal = (url: string, method: string): Error | undefined => {
@@ -189,6 +216,18 @@ export function sealNetwork(): void {
     const passes = isSelfOrigin(url) || (host !== undefined && state.allowed.has(host));
     const allowed = [...state.allowed];
     const original = state.original;
+    // Judged by the PROXY too: an allowed target reached through a remote proxy is a dial to the
+    // proxy. A socket dial, so the fix names a loopback listener as the way out.
+    const proxy = proxyOf(init);
+    if (passes && proxy !== undefined && !proxyPasses(proxy)) {
+      await logBody(probe);
+      throw new NetworkSealedError({
+        url: proxy.origin,
+        method: url.startsWith('https:') ? 'CONNECT' : method,
+        allowed,
+        transport: 'socket',
+      });
+    }
     if (passes) {
       if (original === undefined) throw new NetworkRaceError();
       // `(input, init)` as handed: `tls`, `unix` and `proxy` are Bun's own and no Request holds them.

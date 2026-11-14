@@ -69,6 +69,7 @@ export { rowSecurityDifferences, rowSecurityDrift } from './drift-row-security';
 export type {
   ColumnDescriptionLike,
   CounterDescriptionLike,
+  CounterWhereLike,
   EntityDescriptionLike,
   HistoryDescriptionLike,
   IndexDescriptionLike,
@@ -108,7 +109,13 @@ export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
 export { recordingClient } from './fake';
 export type { GeneratedMigration, GenerateOptions } from './generate';
 export { generateMigration, slugify, snapshotOf } from './generate';
-export { recountDriftSql, recountSql } from './generate-counter';
+export {
+  recountBatchSql,
+  recountDriftBatchSql,
+  recountDriftSql,
+  recountSql,
+  recountWindowSql,
+} from './generate-counter';
 export { ACTOR_SETTING, PURGE_SETTING, REQUEST_SETTING } from './generate-history';
 export type { PartitionMaintenanceOptions } from './generate-partition';
 export { partitionMaintenance } from './generate-partition';
@@ -306,5 +313,3 @@ export type { GeneratableForm } from './ungeneratable';
 export { GENERATABLE_FORMS, ungeneratableStatements } from './ungeneratable';
 export type { UnrenderedDeclaration } from './unrendered';
 export { unrenderedComment, unrenderedOf } from './unrendered';
-export type { CounterWhereLike } from './entity-shape';
-export { recountBatchSql, recountDriftBatchSql, recountWindowSql } from './generate-counter';

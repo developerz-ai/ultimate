@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "91b17d759fbe36fe8d9659eb1d889b571077628708ace77c2c80eee2fcc55892",
+  "buildId": "109db91d2a084bc91c67ab74db9912b3a6535af3f13b6ee7906e232b862df8e4",
   "tiers": {
     "0": [
       "core",
@@ -1970,6 +1970,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_ENTITY_PREDICATE_NODE_INVALID",
+      "owner": "entity",
+      "at": "packages/entity/src/predicate-node.ts"
+    },
+    {
       "code": "X_ENTITY_READ_ONLY",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
@@ -3892,7 +3897,7 @@
     {
       "code": "X_OUTBOUND_PROXY_INVALID",
       "owner": "core",
-      "at": "packages/core/src/outbound-errors.ts"
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_OUTBOUND_REDIRECTED",

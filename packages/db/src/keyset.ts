@@ -44,7 +44,7 @@ export interface Keyset {
 }
 
 const NULL_KEY_FIX =
-  "keyset({ keys: [{ column: sql`coalesce(p.published_at, p.created_at)`, kind: 'timestamptz', direction: 'desc' }, …] })  # or order by a not-null column";
+  "keyset({ keys: [{ column: raw('p.published_at'), kind: 'timestamptz', direction: 'desc', nullable: true }, { column: raw('p.id'), kind: 'uuid', direction: 'desc' }], … })  # declare the key nullable; the last key stays not null";
 
 const DIRECTIONS: ReadonlySet<string> = new Set(['asc', 'desc']);
 const PLACEMENTS: ReadonlySet<string> = new Set(['first', 'last']);
