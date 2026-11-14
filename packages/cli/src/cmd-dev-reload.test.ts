@@ -174,8 +174,12 @@ afterEach(async () => {
   saved = undefined;
   if (edit === undefined) return;
   const settled = new Promise<void>((resolve) => {
-    if (edit.settles === 'reload') onReload = () => resolve();
-    else onRestart = () => resolve();
+    // Only the restore's own file: a reload named after another is an earlier save's second tick.
+    if (edit.settles === 'reload') {
+      onReload = (file) => {
+        if (file === edit.file) resolve();
+      };
+    } else onRestart = () => resolve();
   });
   await Bun.write(join(ROOT, edit.file), FILES[edit.file] ?? '');
   await settled;
@@ -194,10 +198,17 @@ const page = async (path: string): Promise<string> => {
   return (await handle.fetch(new Request(`http://dev.test${path}`))).text();
 };
 
-/** Writes `file` with `from` replaced by `to`, and resolves once the watcher's rebuild landed. */
+/**
+ * Writes `file` with `from` replaced by `to`, and resolves once the watcher's rebuild for it landed.
+ * Its tick is queued after the write, so its rebuild reads it. A reload naming another file is a
+ * late tick of the previous test's restore (seen locally: the `.module.scss` save answered with
+ * `ui-deep.tsx`) — a rebuild that may have started before this write, so it proves nothing.
+ */
 const save = async (file: string, from: string, to: string): Promise<string> => {
   const reloaded = new Promise<string>((resolve) => {
-    onReload = resolve;
+    onReload = (landed) => {
+      if (landed === file) resolve(landed);
+    };
   });
   saved = { file, settles: 'reload' };
   await Bun.write(join(ROOT, file), FILES[file]?.replace(from, to) ?? '');
@@ -337,6 +348,22 @@ describe('unit · x dev serves the save', () => {
       expect(pins.map((pin) => relative(ROOT, pin.pinned))).toEqual([
         'apps/web/app/greet/queries.ts',
       ]);
+      // A second tick that changes nothing — a no-op save, or one write's watcher events landing a
+      // debounce apart (CI run 43542612909) — is still a restart: the read still holds the old
+      // service. It reported "reloaded" until the rebuilder held its pins (`dev-rebuild.ts`).
+      const again = new Promise<readonly StalePin[]>((resolve) => {
+        onRestart = resolve;
+      });
+      await Bun.write(join(ROOT, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
+      const held = await Promise.race([
+        again,
+        new Promise<'reloaded'>((resolve) => {
+          onReload = () => resolve('reloaded');
+        }),
+      ]);
+      expect(
+        held === 'reloaded' ? 'reloaded' : held.map((pin) => relative(ROOT, pin.pinned)),
+      ).toEqual(['apps/web/app/greet/queries.ts']);
       expect(reloaded).toBe(false);
     },
     BOOT_TIMEOUT_MS,
