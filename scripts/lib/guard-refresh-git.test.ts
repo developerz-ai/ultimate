@@ -1,6 +1,7 @@
-// The guard-refresh rule's git half, over a recorded git: which tags bound the ranges (a bump PR's
-// untagged newest section skipped), a tag fetched only when origin holds it and never at depth in a
-// full clone, and an unanswerable tag reported rather than read as clean.
+// The guard-refresh rule's git half, over a recorded git: which tags bound the ranges (a bump
+// PR's untagged newest section and a release never tagged skipped, a tagless origin refused), a
+// tag fetched only when origin holds it and never at depth in a full clone, and an unanswerable
+// tag reported rather than read as clean.
 
 import { describe, expect, test } from 'bun:test';
 import { parseChangelog } from './changelog-sections';
@@ -81,6 +82,59 @@ describe('releaseBounds', () => {
     const bounds = await releaseBounds('/r', CHANGELOG, runner, async () => undefined);
     expect('finding' in bounds && bounds.finding.code).toBe('X_RELEASE_TAG_UNREACHABLE');
     expect('finding' in bounds && bounds.finding.fix).toStartWith('git fetch --no-tags origin ');
+  });
+});
+
+// 31.22.2 was stamped and never tagged (its CI was red); 31.22.3 shipped everything in it. The
+// sections around an untagged release, newest first.
+const SKIPPED = parseChangelog(
+  '## [Unreleased]\n\nx\n\n## 31.4.4 - 2026-11-14\n\nx\n\n## 31.4.3 - 2026-11-14\n\nx\n\n## 31.4.2 - 2026-11-13\n\nx\n\n## 31.4.1 - 2026-11-12\n\nx\n\n## 31.4.0 - 2026-11-11\n\nx\n',
+);
+
+describe('releaseBounds, around a release never tagged', () => {
+  test('an untagged section below the one being cut: the next older tag is the latest', async () => {
+    const { runner } = fakeGit({ tags: new Set(['v31.4.2', 'v31.4.1', 'v31.4.0']) });
+    const probe = async (tag: string) => tag !== 'v31.4.4' && tag !== 'v31.4.3';
+    expect(await releaseBounds('/r', SKIPPED, runner, probe)).toEqual({
+      latest: '31.4.2',
+      previous: '31.4.1',
+    });
+  });
+
+  test('an untagged section below the latest tag: the previous bound is the next older tag', async () => {
+    const { runner } = fakeGit({ tags: new Set(['v31.4.3', 'v31.4.1']) });
+    const probe = async (tag: string) => tag === 'v31.4.3' || tag === 'v31.4.1';
+    expect(await releaseBounds('/r', SKIPPED, runner, probe)).toEqual({
+      latest: '31.4.3',
+      previous: '31.4.1',
+    });
+  });
+
+  test('a clone and an origin holding no release tag at all still refuse', async () => {
+    const { runner } = fakeGit({ tags: new Set() });
+    const asked: string[] = [];
+    const probe = async (tag: string) => {
+      asked.push(tag);
+      return false;
+    };
+    const bounds = await releaseBounds('/r', SKIPPED, runner, probe);
+    expect('finding' in bounds && bounds.finding.code).toBe('X_RELEASE_TAG_UNREACHABLE');
+    // Bounded: a tagless origin is not asked for every version the changelog has ever named.
+    expect(asked).toEqual(['v31.4.4', 'v31.4.3', 'v31.4.2']);
+  });
+
+  test('a latest tag with no tagged release within reach below it refuses, never one range', async () => {
+    const { runner } = fakeGit({ tags: new Set(['v31.4.4']) });
+    const bounds = await releaseBounds('/r', SKIPPED, runner, async (tag) => tag === 'v31.4.4');
+    expect('finding' in bounds && bounds.finding.code).toBe('X_RELEASE_TAG_UNREACHABLE');
+  });
+
+  test('a tag origin cannot answer for, met while walking past an untagged one, still refuses', async () => {
+    const { runner } = fakeGit({ tags: new Set(['v31.4.1', 'v31.4.0']) });
+    const probe = async (tag: string) =>
+      tag === 'v31.4.2' ? undefined : tag !== 'v31.4.4' && tag !== 'v31.4.3';
+    const bounds = await releaseBounds('/r', SKIPPED, runner, probe);
+    expect('finding' in bounds && bounds.finding.cause).toStartWith('v31.4.2 bounds');
   });
 });
 

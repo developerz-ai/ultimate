@@ -19,6 +19,7 @@ import {
 } from './guard-refresh-rows';
 import type { Finding } from './log';
 import { git } from './release-due-git';
+import { MAX_UNTAGGED_SECTIONS, releasedVersions } from './release-tag-walk';
 
 export interface GuardRefreshOptions {
   readonly runner?: GitRunner;
@@ -62,9 +63,32 @@ async function ensureTag(
   return (await local()) ? 'present' : 'unreachable';
 }
 
+type Bound = { readonly version?: string; readonly finding?: Finding };
+
 /**
- * The newest released version origin holds a tag for, and the release below it. On a bump PR the
- * newest section is the version being cut, untagged, so the one below it is the latest.
+ * The first of `versions` with a tag, skipping those origin says it never tagged. A version
+ * nobody can answer for refuses, and so does running out of the untagged allowance.
+ */
+async function firstTagged(
+  root: string,
+  versions: readonly string[],
+  runner: GitRunner,
+  probe: TagProbe,
+): Promise<Bound> {
+  for (const version of versions.slice(0, MAX_UNTAGGED_SECTIONS)) {
+    const state = await ensureTag(root, `v${version}`, runner, probe);
+    if (state === 'present') return { version };
+    if (state === 'unreachable') return { finding: unreachable(`v${version}`) };
+  }
+  // Every section ran out: the oldest release has no earlier one to bound it, which is no gap.
+  if (versions.length < MAX_UNTAGGED_SECTIONS) return {};
+  return { finding: unreachable(`v${versions[0] ?? '0.0.0'}`) };
+}
+
+/**
+ * The newest released version origin holds a tag for, and the newest tagged release below it. A
+ * bump PR's section is untagged, and so is a release stamped but never published: skipped, so the
+ * range runs from the last release an adopter could install — the honest one.
  */
 export async function releaseBounds(
   root: string,
@@ -74,21 +98,16 @@ export async function releaseBounds(
 ): Promise<
   { readonly latest: string; readonly previous?: string } | { readonly finding: Finding }
 > {
-  const released = changelog
-    .filter((section) => section.released && /^\d+\.\d+\.\d+$/.test(section.version))
-    .map((section) => section.version);
-  for (const [index, version] of released.slice(0, 2).entries()) {
-    const state = await ensureTag(root, `v${version}`, runner, probe);
-    if (state === 'absent') continue;
-    if (state === 'unreachable') return { finding: unreachable(`v${version}`) };
-    const previous = released[index + 1];
-    if (previous === undefined) return { latest: version };
-    const below = await ensureTag(root, `v${previous}`, runner, probe);
-    return below === 'present'
-      ? { latest: version, previous }
-      : { finding: unreachable(`v${previous}`) };
-  }
-  return { finding: unreachable(`v${released[0] ?? '0.0.0'}`) };
+  const released = releasedVersions(changelog);
+  const latest = await firstTagged(root, released, runner, probe);
+  if (latest.finding !== undefined) return { finding: latest.finding };
+  if (latest.version === undefined) return { finding: unreachable(`v${released[0] ?? '0.0.0'}`) };
+  const older = released.slice(released.indexOf(latest.version) + 1);
+  const below = await firstTagged(root, older, runner, probe);
+  if (below.finding !== undefined) return { finding: below.finding };
+  return below.version === undefined
+    ? { latest: latest.version }
+    : { latest: latest.version, previous: below.version };
 }
 
 /** The shipped guard modules that import `./guard-<stem>`, read off the working tree. */
