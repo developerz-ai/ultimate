@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- `postgresAuditSink({ groupCommit: true })` sends each batch outside any caller's transaction, so one request's rollback no longer loses other requests' audit rows.
+
 ### Fixed
 
 - `@ultimat3/action`: `postgresAuditSink({ groupCommit: true })` sends each batch outside any transaction. The batch's timer inherited the async context of the write that armed it, so over `dbExecutor()` every other caller's audit rows were written on that write's transaction and lost when it rolled back. Every record in a batch is now stored whatever its own transaction does; an app's `outsideTransaction` wrapper around the executor can go. Without `groupCommit` a write still joins the caller's transaction.
