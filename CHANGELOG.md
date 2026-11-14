@@ -10,39 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Highlights
-
-- A retried job attempt no longer pages: it counts on `jobs_retried_total{job,code}`, and only a dead letter reaches the error tracker, once, as `error`. A job opts its retries back in with `retry: { report: 'every-attempt' }`.
-- A database restart is one log line, not hundreds: the scheduler, worker and outbox loops and the LISTEN redial log when a failure streak opens (and again if its cause changes) and once when it recovers, with the count.
-- `useActionAnswer` reads `null` outside a request, so the `llms.txt` build no longer throws `X_NO_REQUEST` on a page whose `load` reads a form answer.
-- The job retention sweep resumes each batch where the last one stopped instead of re-walking dead index entries.
-- `X_ASSET_RETAIN_UNDECLARED` warns once per build, not on every boot.
-
-### Added
-
-- `RetryPolicy.report?: 'dead-letter' | 'every-attempt'` and the `RetryReport` type in `@ultimat3/jobs`; the `jobs_retried_total{job,code}` counter.
-- `parentContext(ctx)` in `@ultimat3/core` (the context a child was derived inside) and `hasRequest()` in `@ultimat3/http` (is a request in scope, through child contexts).
-
-### Changed
-
-- `useActionAnswer` answers `null` when no request is in scope at all; inside a child context of a request it still throws `X_NO_REQUEST`, so a flash is never silently dropped and its cookie never left set.
-- The job retention sweep keeps a keyset mark per branch between passes (ISO UTC, independent of the session's `DateStyle`), reset daily so a row skipped while locked gets another turn.
-- `jobs.{scheduler,worker,outbox}.tick-failed` / `.tick-recovered` and `db.listen.redial_failed` / `db.listen.redialed` are failure streaks; a failed wake hand-off at shutdown is its own `jobs.loop.hand-off-failed` warning.
-- The undeclared asset-retain warning is remembered per build id and role by a zero-byte marker on the default storage disk; it fails open after 2 s.
-
-### Fixed
-
-- The registry audit workflow retitles its open alarm to the current gap and closes it on a clean run (#1096).
-- `bench.yml` no longer listens for `release` (a `GITHUB_TOKEN` release starts no workflow); a refused pull request prints what the run needs, never the approve-PR switch.
-
-### Security
-
-- The public tree no longer names private repositories or the internal setup mode (#1104); `scripts/private-names.ts` is a public-tree guard over `git ls-files` that proves it read itself and names files, never values.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.23.0](docs/changelog/31.23.0.md) | 2026-11-14 | A retried job attempt no longer pages: it counts on `jobs_retried_total{job,code}`, and only a dead letter reaches the error tracker, once, as `error`. A job opts its retries back in with `retry: { report: 'every-attempt' }`. |
 | [31.22.3](docs/changelog/31.22.3.md) | 2026-11-14 | The Redis cache bus never unsubscribes a channel its connection already holds, so a peer's invalidation sent while a node boots is no longer lost (#1132). |
 | [31.22.2](docs/changelog/31.22.2.md) | 2026-11-14 | `x dev` holds a stale module pin until the process restarts, so a second save tick never reports "reloaded" over a read still serving the old service, and `/_x` keeps `X_DEV_RESTART_REQUIRED` until the restart. |
 | [31.22.1](docs/changelog/31.22.1.md) | 2026-11-14 | `postgresAuditSink({ groupCommit: true })` sends each batch outside any caller's transaction, so one request's rollback no longer loses other requests' audit rows. |
