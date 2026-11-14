@@ -5,7 +5,7 @@
 import { tryUseContext } from '@ultimat3/core';
 import { entityNow } from './clock';
 import { columnName, moneyColumns } from './column';
-import { countersOf, countersTargeting } from './counter';
+import { countersOf, countersTargeting, countsRow } from './counter';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
 import { historyIgnored } from './history';
@@ -56,7 +56,8 @@ export function memoryLifecycle(
       const key = counter.parent.$primaryKey[0] ?? '';
       const move = (row: unknown, delta: number): void => {
         const id = field(row, counter.references);
-        if (row === undefined || id == null || !live(entity, row)) return;
+        if (row === undefined || id == null || !live(entity, row) || !countsRow(counter, row))
+          return;
         const stored = parent?.find(key, id);
         if (stored === undefined) return;
         const count = Number(field(stored, counter.column) ?? 0) + delta;

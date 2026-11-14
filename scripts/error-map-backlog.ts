@@ -116,6 +116,7 @@ export const OFF_SOCKET: Pins = {
     'X_ENTITY_COUNTS_INVALID',
     'X_DRIVER_CAPABILITY_MISSING',
     'X_ENTITY_PARTITION_INVALID',
+    'X_ENTITY_ALL_TRUNCATED',
   ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],

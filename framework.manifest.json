@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "109db91d2a084bc91c67ab74db9912b3a6535af3f13b6ee7906e232b862df8e4",
+  "buildId": "cd633259c340fb1aab86a2b4c2efb61aba15acaa57cf2f31de3d1ca24f257033",
   "tiers": {
     "0": [
       "core",
@@ -1937,7 +1937,7 @@
     {
       "code": "X_ENTITY_ALL_TRUNCATED",
       "owner": "entity",
-      "at": "packages/entity/src/all-truncated.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ENTITY_APPEND_ONLY",

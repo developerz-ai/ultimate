@@ -42,6 +42,14 @@ export const probes = (driver: Driver): Readonly<Record<DriverCapability, () => 
     series: () => repo().series?.({ on: 'at', unit: 'day', timeZone: 'UTC', value: 'count' }),
     upsert: () => repo().upsertAll([PROBE_ROW], { onConflict: ['id'] }),
     matches: () => repo().findMany({ where: [{ column: '$search', op: 'matches', value: 'x' }] }),
+    'predicate:or': () =>
+      table()
+        .andWhereNode({ or: [{ column: 'n', op: 'eq', value: 1 }] })
+        .all(),
+    'predicate:via': () =>
+      table()
+        .andWhereNode({ via: { column: 'id', entity: 'ec_probe', target: 'id' }, where: [] })
+        .all(),
     'aggregate:countBy': () => repo().countBy('label'),
     'aggregate:sum': () => repo().aggregate('sum', 'n'),
     'aggregate:avg': () => repo().aggregate('avg', 'n'),

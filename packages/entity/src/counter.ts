@@ -23,7 +23,12 @@ export interface Counter {
   /** The child's foreign-key property. */
   readonly references: string;
   /** `countedIn: { where }`, compiled once: the memory driver's verdict and the trigger's SQL. */
-  readonly where: { readonly verdict: Verdict; readonly sql: CounterWhereLike } | null;
+  readonly where: {
+    readonly verdict: Verdict;
+    readonly sql: CounterWhereLike;
+    /** The child properties it reads: a patch setting one can move the count. */
+    readonly properties: readonly string[];
+  } | null;
 }
 
 /** The parent column a `countedIn` names, in either spelling, and its predicate thunk. */
@@ -81,7 +86,8 @@ function compileWhere(child: EntityCore, property: string, rule: Expr): Counter[
     rule.kind === 'unique' ? null : rule.toSql((path) => `c.${identifier(physical(path)).text}`);
   if (sql === null) return refuse(`its where (${rule.message}) has no SQL the trigger can hold`);
   const columns = [...new Set(rule.paths.map(physical))];
-  return { verdict: verdictOf(rule), sql: { sql, columns } };
+  const properties = [...new Set(rule.paths.flatMap((path) => path.slice(0, 1)))];
+  return { verdict: verdictOf(rule), sql: { sql, columns }, properties };
 }
 
 /** The counter one child key declares, resolved and checked. `null` when it declares none. */

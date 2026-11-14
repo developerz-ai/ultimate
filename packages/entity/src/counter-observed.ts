@@ -5,7 +5,7 @@
 
 import { currentWriteOrigin, instrument, subscribed } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
-import { type Counter, countersTargeting } from './counter';
+import { type Counter, countersTargeting, countsRow } from './counter';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
 import type { FilteredWriteOptions, Repo, RepoOptions } from './repo';
@@ -29,11 +29,15 @@ const BULK = 'entity.bulk';
 const asRow = (value: unknown): Row | null =>
   typeof value === 'object' && value !== null ? (value as Row) : null;
 
-/** The parent a child row counts into, or `undefined` when it counts nowhere (deleted, no key). */
+/**
+ * The parent a child row counts into, or `undefined` when it counts nowhere (deleted, no key, or
+ * outside the counter's `where`).
+ */
 const countedParent = (counter: Counter, row: unknown): string | undefined => {
   const record = asRow(row);
   if (record === null) return undefined;
   if (counter.child.$softDelete && record[SOFT_DELETE_COLUMN] != null) return undefined;
+  if (!countsRow(counter, record)) return undefined;
   const id = record[counter.references];
   return typeof id === 'string' ? id : undefined;
 };
@@ -50,9 +54,11 @@ const pinnedTo = (
   filter?.[property] ??
   options?.where?.find((each) => each.column === property && each.op === 'eq')?.value;
 
-/** Whether a patch can move a counter: it sets the key, or the soft-delete stamp. */
+/** Whether a patch can move a counter: it sets the key, the soft-delete stamp, or a `where` column. */
 const moves = (counter: Counter, patch: Row): boolean =>
-  counter.references in patch || (counter.child.$softDelete && SOFT_DELETE_COLUMN in patch);
+  counter.references in patch ||
+  (counter.child.$softDelete && SOFT_DELETE_COLUMN in patch) ||
+  (counter.where?.properties.some((property) => property in patch) ?? false);
 
 export interface CounterEcho {
   /** Row writes: each change as `[before, after]`, `null` on the side that did not exist. */

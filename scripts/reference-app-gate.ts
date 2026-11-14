@@ -64,6 +64,8 @@ export interface GateStep {
    * precisely what CI showed: a shard's exit code, no test name, and nothing in the log to find.
    */
   readonly output?: string;
+  /** The step's wall time as the gate printed it: the CI log's only answer to where the minutes went. */
+  readonly durationMs?: number;
 }
 
 const asFinding = (value: unknown): Finding | undefined => {
@@ -79,7 +81,7 @@ const asStep = (value: unknown): GateStep | undefined => {
   if (typeof value !== 'object' || value === null) return undefined;
   const { name, ok, skipped, findings } = value as Record<string, unknown>;
   if (typeof name !== 'string' || typeof ok !== 'boolean') return undefined;
-  const { output } = value as Record<string, unknown>;
+  const { output, durationMs } = value as Record<string, unknown>;
   return {
     name,
     ok,
@@ -89,13 +91,16 @@ const asStep = (value: unknown): GateStep | undefined => {
       .filter((f) => f !== undefined),
     // Absent, never `''`: "captured nothing" and "output dropped" are different states.
     ...(typeof output === 'string' && output.length > 0 ? { output } : {}),
+    ...(typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0
+      ? { durationMs }
+      : {}),
   };
 };
 
 /**
  * The step objects as the gate PRINTED them, before any field is dropped. Every consumer of a
  * `verify --json` table goes through this one reader: `asStep` keeps the four fields the ratchet
- * judges and discards `durationMs`, so a second consumer that wants the timings had re-implemented
+ * judges (and the time `stepLines` prints) and discards the rest, so a second consumer that wants the timings had re-implemented
  * the line scan, the `JSON.parse` guard and the array check beside it — three copies of one
  * decision about what "unreadable" means, free to disagree.
  *
@@ -342,7 +347,9 @@ export const stepLines = (
   for (const step of steps) {
     const mark = step.skipped ? '-' : step.ok ? '✓' : '✗';
     const pinned = step.name in expectedRed ? '  pinned' : '';
-    lines.push(`  ${mark} ${step.name.padEnd(14)}${pinned}`);
+    const time =
+      step.durationMs === undefined ? '' : ` ${(step.durationMs / 1000).toFixed(1).padStart(6)}s`;
+    lines.push(`  ${mark} ${step.name.padEnd(14)}${time}${pinned}`);
     for (const finding of step.findings) lines.push(renderFinding(finding, '      '));
     // Only on a red step, and only when it is NOT pinned: success stays quiet (the pattern
     // `packages/cli/src/output.ts:205-207` sets), and a pinned red is expected, so printing its

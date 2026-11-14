@@ -17,9 +17,12 @@ export const OR_PROPERTY = '$or';
  */
 export const MAX_PREDICATE_DEPTH = 4;
 
+/** A column of `Row`; any string for an untyped level (a hop's inner where), never `never`. */
+export type NodeColumn<Row> = unknown extends Row ? string : Extract<keyof Row, string>;
+
 /** One leaf, as `andWhere` takes it. */
 export interface PredicateLeaf<Row = unknown> {
-  readonly column: Extract<keyof Row, string>;
+  readonly column: NodeColumn<Row>;
   readonly op: Operator;
   readonly value?: unknown;
 }
@@ -35,7 +38,7 @@ export interface PredicateOr<Row = unknown> {
  */
 export interface PredicateVia<Row = unknown> {
   readonly via: {
-    readonly column: Extract<keyof Row, string>;
+    readonly column: NodeColumn<Row>;
     readonly entity: string;
     readonly target: string;
   };

@@ -3,8 +3,8 @@
 // migrated by the migration `x db gen` writes) counts only the children it holds over. The bare
 // thunk keeps working; a predicate the database cannot be told is refused at describe.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { isUltimateError, resetInstrumentation, subscribe } from '@ultimat3/core';
 import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { whereColumns } from './counter';
@@ -126,10 +126,31 @@ describe('counts · where', () => {
     expect(await run(postgresDriver())).toEqual(POSTGRES);
   });
 
-  // Red until `memory-lifecycle.ts`'s `move` asks `countsRow(counter, row)` — a file outside this
-  // slice's set; reported to the coordinator. `bun test --todo` runs it.
-  test.todo('memory answers as Postgres does', async () => {
+  test('memory answers as Postgres does', async () => {
     expect(await run(memoryDriver())).toEqual(POSTGRES);
+  });
+});
+
+describe('counts · where · the parent change is reported only when the count moved', () => {
+  afterEach(() => resetInstrumentation());
+
+  test('an uncounted child is silent; flipping it into the predicate is the parent update', async () => {
+    const db = database(ENTITIES, { driver: memoryDriver() });
+    await db.posts.insert({ id: A });
+    const heard: string[] = [];
+    subscribe('entity.row', ({ payload }) => {
+      if (payload.entity === posts.$name) heard.push(`row ${String(payload.after?.['upCount'])}`);
+    });
+    subscribe('entity.bulk', ({ payload }) => {
+      if (payload.entity === posts.$name) heard.push('bulk');
+    });
+    await db.votes.insert({ id: vote(9), postId: A, otherPostId: null, voteKind: 'down' });
+    expect(heard).toEqual([]);
+    await db.votes.update(vote(9), { voteKind: 'up' });
+    expect(heard).toEqual(['row 1']);
+    // A filtered write that sets only the predicate's column still moves the count.
+    await db.votes.updateWhere({ id: vote(9) }, { voteKind: 'down' });
+    expect(heard).toEqual(['row 1', 'bulk']);
   });
 });
 

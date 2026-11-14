@@ -21,7 +21,14 @@
 // over the same `lastFiredAt`.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { ctxOf, failureStreak, finiteOption, logger, onShutdown } from '@ultimat3/core';
+import {
+  ctxOf,
+  failureFields,
+  failureStreak,
+  finiteOption,
+  logger,
+  onShutdown,
+} from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
@@ -34,7 +41,7 @@ import { soleLeader } from './scheduler-leader';
 import { defaultCronResolver, latestOccurrence, occurrencesIn } from './scheduler-occurrences';
 import type { SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
-import { failureFields, leaderUpkeep } from './scheduler-upkeep';
+import { leaderUpkeep } from './scheduler-upkeep';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
 

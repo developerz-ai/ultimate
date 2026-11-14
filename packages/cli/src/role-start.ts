@@ -29,6 +29,7 @@ import {
   registeredJobs,
 } from '@ultimat3/jobs';
 import type { SyncWs } from '@ultimat3/realtime/server';
+import { loadAppConfig } from './app-config-load';
 import { errorPageHook } from './error-pages';
 import { BadFlagError, RuntimeDriverSplitError } from './errors';
 import {
@@ -44,6 +45,7 @@ import type { RunningRoles, StartRolesOptions } from './role-start-types';
 import { DEV_ROLES } from './role-start-types';
 import { prepareSync, type RunningSync, syncReadsChanges } from './role-sync';
 import { startWorkerWake } from './role-wake';
+import { installRoleBootWarnings } from './runtime-boot-warnings';
 import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
 import { reportUnservedQueues } from './runtime-jobs-unserved';
@@ -287,6 +289,17 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // call and another's HTTP call spend one bucket in one table.
     // A frame of its own over what `startServices` adopted, popped by its own undo — so stopping
     // these roles takes back exactly this install, whatever else stacked over or under it.
+    // Once, before any role serves: which roles core's `bootWarning` concerns, and its per-build
+    // marker store (`runtime-boot-warnings.ts`). Released by the stop, like every frame here.
+    const config = options.root === undefined ? undefined : await loadAppConfig(options.root);
+    const releaseWarnings = installRoleBootWarnings({
+      roles: selected,
+      config,
+      storage: options.runtime.storage,
+      env: options.env,
+      buildId: options.buildId,
+    });
+    started.push(async () => releaseWarnings());
     const limits = rateLimitStoreFor(options);
     const restoreLimits = limits === undefined ? () => undefined : installRateLimitStore(limits);
     started.push(async () => restoreLimits());

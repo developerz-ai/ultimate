@@ -12,6 +12,8 @@ export const UNTHROWN_CODES_FILE = 'packages/cli/src/unthrown-codes.ts';
  * `X_ERROR_CODE_UNTHROWN_STALE`.
  */
 export const UNTHROWN_CODES: ReadonlySet<string> = new Set([
+  // 31.24.0: `.all()` truncation is a log warning in 31.x (`entity.all.truncated` carries the code); it throws on `next`.
+  'X_ENTITY_ALL_TRUNCATED',
   // `x db studio` is planned and unreleased; it exits X_NOT_IMPLEMENTED.
   'X_DB_STUDIO_FAILED',
   // 21.0.0: there is no LiveClient to register (X_REALTIME_UNINSTALLED replaced it).

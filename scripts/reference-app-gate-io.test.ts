@@ -23,6 +23,21 @@ describe('parseSteps', () => {
     ],
   });
 
+  test('keeps each step’s wall time, so CI shows where an app gate’s minutes went', () => {
+    const steps = parseSteps(`${payload}\n`);
+    expect(steps?.map((s) => s.durationMs)).toEqual([1, 2]);
+    const lines = stepLines(
+      [{ name: 'unit', ok: true, skipped: false, findings: [], durationMs: 12_345 }],
+      {},
+    );
+    expect(lines).toEqual(['  ✓ unit             12.3s']);
+  });
+
+  test('a step the gate printed with no time renders no time, never 0.0s', () => {
+    const lines = stepLines([{ name: 'unit', ok: true, skipped: false, findings: [] }], {});
+    expect(lines).toEqual(['  ✓ unit          ']);
+  });
+
   test('reads the step table and keeps each finding’s three lines', () => {
     const steps = parseSteps(`${payload}\n`);
     expect(steps?.map((s) => s.name)).toEqual(['lint', 'drift']);
