@@ -3,6 +3,7 @@
 // is X_BOUNDARY_ROUTE_TO_DB.
 
 import { db, type Post } from '@social-media-clone/db';
+import type { PredicateNode } from '@ultimat3/entity';
 
 /**
  * What the feed renders — DERIVED from the entity, never re-declared. Writing the fields out by
@@ -13,21 +14,23 @@ import { db, type Post } from '@social-media-clone/db';
 export type FeedPost = Post;
 
 /**
- * One page of the PUBLIC feed, newest first: exactly the rows `canSeePost(null, …)` admits — live
- * and `public` — so a page of `limit` is `limit` rows however much of the table is hidden. The
- * service still runs the rule over every row; this `where` is the anonymous half of it, which is
- * all AND and so the database can serve it (the partial `publishedAt desc where audience = public`
- * index on `posts` is this read's access path). A signed-in feed needs the rule's OR — the author,
- * a friend, or public, minus a block set — which the chain cannot say yet, so there is none.
+ * One page of the feed, newest first: exactly the rows `visible` admits — a predicate TREE the
+ * service builds from `canSeePost` (`andWhereNode`), so a page of `limit` is `limit` rows however
+ * much of the table is hidden, and ONE statement whatever the tree holds. The service still runs the
+ * rule over every row; this file only asks.
  *
  * Ordered by `(publishedAt desc, id)` and bounded, and the tail key is not decoration: a live
  * matcher decides a row's position from the sort keys alone, so `publishedAt` on its own is a
  * partial order and two posts written in the same millisecond can swap between evaluations —
  * which makes a bounded page silently drop or repeat one at its boundary.
  */
-export const publicFeedPage = (limit: number): Promise<readonly FeedPost[]> =>
+export const feedPage = (
+  limit: number,
+  visible: PredicateNode<FeedPost>,
+): Promise<readonly FeedPost[]> =>
   db.posts
-    .where({ deletedAt: null, audience: 'public' })
+    .where({ deletedAt: null })
+    .andWhereNode(visible)
     .orderBy('publishedAt', 'desc')
     .orderBy('id')
     .limit(limit)

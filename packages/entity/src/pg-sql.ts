@@ -81,6 +81,7 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
   // `OR_PROPERTY` — neither is a column, and neither must ever be looked up as one.
   if (predicate.op === 'matches') return searchSql(entity, predicate);
   if (predicate.op === 'or') return orSql(entity, predicate);
+  if (predicate.op === 'and') return andSql(entity, predicate);
   if (predicate.op === 'via') return viaSql(entity, predicate);
   const column = columnRef(entity, nullTestPath(entity, predicate));
   const value = predicate.value;
@@ -359,6 +360,12 @@ const viaSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment
   }
   const where = parts.length === 0 ? sql`true` : join(parts, ' and ');
   return sql`${columnRef(entity, predicate.column)} in (select ${columnRef(target, hop.target)} from ${identifier(target.$table)} where ${where})`;
+};
+
+/** `( a and b … )`; no member holds for every row, as an empty conjunction does. */
+const andSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+  const members = orMembers(predicate).map((member) => predicateSql(entity, member));
+  return members.length === 0 ? sql`true` : sql`(${join(members, ' and ')})`;
 };
 
 export const conditions = <Row>(

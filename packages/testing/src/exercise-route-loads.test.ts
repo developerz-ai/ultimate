@@ -2,7 +2,7 @@
 // 2 → 8 under the scale sweep as a handler's does, one read stays flat, an `:id` is bound to a
 // seeded row, a param no seed names is unreached with why, and a guard nobody holds is refused.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import type { NamedActor } from '@ultimat3/policy';
 import { definePermissions, testActor } from '@ultimat3/policy';
@@ -16,7 +16,12 @@ import { subjectsOf } from './exercise-subjects';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
 
-definePermissions(['erl-note:read', 'erl-admin:do']);
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['erl-note:read', 'erl-admin:do']);
+});
 
 const orgs = entity('erl_orgs', { columns: { id: uuid().primaryKey(), name: text({ max: 40 }) } });
 const notes = entity('erl_notes', {

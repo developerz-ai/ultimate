@@ -1,43 +1,25 @@
 // Single responsibility: compose a `scoped()` policy's predicate into a read's source BEFORE the
 // page is cut, so a viewer whose hidden rows precede their visible ones still gets a full page —
 // and keep the JS rule the authority: it runs on every row the narrowed source returns.
-// `ruleCheckOf` hands a page the unchecked rows and the rule apart (`page-window.ts`).
-import type { ScopeCondition, ScopeOperator } from '@ultimat3/policy';
+// `ruleCheckOf` hands a page the unchecked rows and the rule apart (`page-window.ts`). A tree
+// (`or`/`via`) is read by `scope-tree.ts`.
 import { policyScope } from '@ultimat3/policy';
 import { QueryScopeUncomposableError } from './errors';
 import type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
 import { queryRowAdmitted } from './policy-gate';
-import type { FilterOp, QueryShape, SeekKey } from './shape';
+import { filterOf } from './scope-tree';
+import type { QueryShape, SeekKey } from './shape';
 import type { SqlSource, SqlText } from './source';
 import { Builder } from './source';
 
 /**
- * Each scope operator as the `Builder` filter that means it — NULL is `= null` / `!= null`.
- * Null-prototype: `condition.op` comes from an app's policy at runtime, and a `{}` literal read
- * with it answers an `Object.prototype` member for `'constructor'` (`scripts/proto-index.ts`).
- */
-const AS_FILTER: Readonly<Record<ScopeOperator, FilterOp>> = Object.assign(
-  Object.create(null) as Record<ScopeOperator, FilterOp>,
-  {
-    eq: '=',
-    neq: '!=',
-    in: 'in',
-    gt: '>',
-    gte: '>=',
-    lt: '<',
-    lte: '<=',
-    'is-null': '=',
-    'is-not-null': '!=',
-  },
-);
-
-const operand = (condition: ScopeCondition): unknown =>
-  condition.op === 'is-null' || condition.op === 'is-not-null' ? null : condition.value;
-
-/**
  * `source` narrowed by the policy's scope for `subject.actor`, or `source` itself when the policy
- * declares none. The conditions become ordinary `.compare()` filters, so they reach the SQL text,
- * the live matcher's shape and a provider's `RowWindow.filters` exactly as a `.where()` would.
+ * declares none. A condition becomes an ordinary `.compare()` filter, so it reaches the SQL text, the
+ * live matcher's shape and a provider's `RowWindow.filters` exactly as a `.where()` would; an `or`
+ * group or a `via` hop becomes a node (`whereNode`), handed to a provider on `RowWindow.nodes`.
+ *
+ * Refused (`X_QUERY_SCOPE_UNCOMPOSABLE`) rather than guessed: a tree on a LIVE read (the matcher's
+ * shape is flat), and a `via` over a list of rows, which has no statement to push the hop into.
  */
 export function composeScope(
   source: SqlSource<object>,
@@ -45,14 +27,19 @@ export function composeScope(
   subject: QuerySubject,
   surface: QuerySurface,
 ): SqlSource<object> {
-  const conditions = policyScope(policy, subject.actor);
-  if (conditions === undefined) return source;
+  const nodes = policyScope(policy, subject.actor);
+  if (nodes === undefined) return source;
   if (!(source instanceof Builder)) throw new QueryScopeUncomposableError(subject.query);
-  const narrowed = conditions.reduce<Builder<object>>(
-    (builder, condition) =>
-      builder.compare(condition.column, AS_FILTER[condition.op], operand(condition)),
-    source,
-  );
+  const narrowed = nodes.reduce<Builder<object>>((builder, node) => {
+    if (!('column' in node)) return builder.whereNode(node);
+    const filter = filterOf(node);
+    return builder.compare(filter.column, filter.op, filter.value);
+  }, source);
+  const tree = nodes.some((node) => !('column' in node));
+  if (tree && surface === 'live') throw new QueryScopeUncomposableError(subject.query, 'live');
+  if (narrowed.needsProvider && !narrowed.provides) {
+    throw new QueryScopeUncomposableError(subject.query, 'rows');
+  }
   return new RuleChecked(narrowed, policy, subject, surface);
 }
 

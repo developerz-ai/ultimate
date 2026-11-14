@@ -83,6 +83,7 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
   `X_AGGREGATE_MIXED_CURRENCY`. Full rule: `docs/history/entity.md`. **`approximateCount()` is `reltuples`**; a filtered chain, a tenant-scoped or a soft-deleting entity is
   `X_APPROXIMATE_COUNT_FILTERED`; `null` for an unanalysed table.
 - **`series`, views**: `time-bucket.ts` (zone rules, measured), `view-repo.ts` (read-only); `time-bucket.test.ts`, `view-entity.test.ts`.
+- **A predicate TREE rides in `plan.where` as one `Predicate`** whose op is no `Operator` (`'or' | 'and' | 'via'`, `predicate-node.ts`; `andWhereNode` the one door): every seam passes it along, an unaware executor refuses it. **A `via` is scoped through its TARGET's `scopedPlan` in `readPlan`** (`via-scope.ts`, marked; an unmarked hop is refused by both drivers); memory resolves it to an `in` (`memory-via.ts`). `TREE_CHECKS` in the suite.
 - **`json()` / `arrayOf()` are filterable** (`containment.ts`); no jsonpath operator. †
 - **A GIN index is declarable** (`using: 'gin'`); never unique or ordered. †
 

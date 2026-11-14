@@ -44,8 +44,13 @@ afterAll(async () => {
   clearRegistry();
 });
 
-definePermissions(['eau:read']);
-defineRoles({ eauOwner: { grants: ['eau:read'] } });
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['eau:read']);
+  defineRoles({ eauOwner: { grants: ['eau:read'] } });
+});
 const adapter = postgresAuthAdapter();
 
 const eauWhoAmI = action({

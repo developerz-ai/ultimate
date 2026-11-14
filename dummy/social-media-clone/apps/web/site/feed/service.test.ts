@@ -2,11 +2,14 @@
 // know is DROPPED from the feed, silently, and until 2026-08 the lookup was "the first 200 users"
 // with no relation to the page being rendered. On the demo's 8 accounts that never showed; on any
 // data at all it is a feed missing rows nobody can explain. Then the page itself: hidden rows newer
-// than the visible ones must never shorten it, and it is two statements however many are hidden.
+// than the visible ones must never shorten it, and it is two statements however many are hidden —
+// for an anonymous reader and for a signed-in one, whose rule is an OR over their friend and block
+// sets read as ONE predicate tree (`visibleTo`).
 
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { db, driver, seedDemo } from '@social-media-clone/db';
 import { testStatements } from '@ultimat3/testing';
+import { viewerActor } from '../../shared/actor';
 import { canSeePost } from '../../shared/visibility';
 import type { FeedPost } from './repo';
 import { feedForPage, visibleFeed } from './service';
@@ -95,5 +98,55 @@ test('hidden posts newer than every public one never shorten the page — the re
   // The same rows the rule over the whole table would have served first, in the same order.
   const everyPost = await db.posts.orderBy('publishedAt', 'desc').orderBy('id').limit(1_000).all();
   const expected = everyPost.filter((row) => canSeePost(null, row)).slice(0, 2);
+  expect(items.map((item) => item.post.id)).toEqual(expected.map((row) => row.id));
+});
+
+test('a signed-in feed reads its exact page in one statement: mine, public, a friend’s friends-only', async () => {
+  const [me, friend, stranger, blocker] = await Promise.all(
+    ['feed_me', 'feed_friend', 'feed_stranger', 'feed_blocker'].map((handle) =>
+      db.users.insert({
+        handle,
+        email: `${handle}@fixture.example`,
+        displayName: handle,
+        role: 'member',
+      }),
+    ),
+  );
+  if (me === undefined || friend === undefined || stranger === undefined || blocker === undefined) {
+    return expect.unreachable('four users were inserted');
+  }
+  const viewer = viewerActor({
+    id: me.id,
+    role: 'member',
+    friendIds: [friend.id],
+    blockedIds: [blocker.id],
+  });
+  const at = (minute: number) => new Date(Date.UTC(2031, 0, 1, 0, minute));
+  const write = (authorId: string, audience: 'public' | 'friends' | 'private', minute: number) =>
+    db.posts.insert({ authorId, body: `${audience} ${minute}`, audience, publishedAt: at(minute) });
+  // Visible to the viewer, oldest first: a friend's friends-only post, then their own private one.
+  await write(friend.id, 'friends', 0);
+  await write(me.id, 'private', 1);
+  // Newer, and every one hidden from THIS viewer: a block beats public, a stranger's friends-only
+  // post, a friend's private note. The 3x over-fetch read 6 rows for a page of 2 and served none.
+  for (let minute = 10; minute < 13; minute += 1) {
+    await write(blocker.id, 'public', minute);
+    await write(stranger.id, 'friends', minute);
+    await write(friend.id, 'private', minute);
+  }
+
+  let posts = 0;
+  let items: Awaited<ReturnType<typeof feedForPage>> = [];
+  {
+    using statements = await testStatements();
+    items = await feedForPage(viewer, 2);
+    posts = statements.all().filter((each) => each.attribution?.entity === 'posts').length;
+  }
+
+  // The whole visibility rule is in the ONE posts statement — no over-fetch, no second page.
+  expect(posts).toBe(1);
+  const everyPost = await db.posts.orderBy('publishedAt', 'desc').orderBy('id').limit(1_000).all();
+  const expected = everyPost.filter((row) => canSeePost(viewer, row)).slice(0, 2);
+  expect(items.map((item) => item.post.body)).toEqual(['private 1', 'friends 0']);
   expect(items.map((item) => item.post.id)).toEqual(expected.map((row) => row.id));
 });

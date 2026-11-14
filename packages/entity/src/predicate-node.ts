@@ -8,8 +8,9 @@ import { EntityError } from './entity-error';
 import { checkedPredicate, type Operator } from './operator';
 import type { Predicate } from './tenancy';
 
-/** The pseudo-column an `or` group is planned under — never a property, as `$search` is not. */
+/** The pseudo-columns a group is planned under — never a property, as `$search` is not. */
 export const OR_PROPERTY = '$or';
+export const AND_PROPERTY = '$and';
 
 /**
  * How deep a tree may nest, counting every `or` and `via`. A scope is a handful of conditions; a
@@ -32,6 +33,11 @@ export interface PredicateOr<Row = unknown> {
   readonly or: readonly PredicateNode<Row>[];
 }
 
+/** Every member holds — the conjunction an `or` member needs (`friends AND a friend's`). `[]`: all. */
+export interface PredicateAnd<Row = unknown> {
+  readonly and: readonly PredicateNode<Row>[];
+}
+
 /**
  * `column in (select target from entity where …)`: the row's `column` names a row of `entity`
  * matching `where`. `entity` is the target's NAME; its tenant and its soft delete apply inside.
@@ -49,7 +55,17 @@ export interface PredicateVia<Row = unknown> {
 export type PredicateNode<Row = unknown> =
   | PredicateLeaf<Row>
   | PredicateOr<Row>
+  | PredicateAnd<Row>
   | PredicateVia<Row>;
+
+declare const scopedNode: unique symbol;
+
+/**
+ * A node a `scoped()` policy produced, handed over on `@ultimat3/query`'s `RowWindow.nodes`. Typed
+ * against the policy's row where it was declared, so `andWhereNode` takes it as it takes a literal
+ * tree; the brand is what keeps a hand-written untyped node from passing for one.
+ */
+export type ScopedNode = PredicateNode & { readonly [scopedNode]: true };
 
 /** The planned form of a `via`, as `Predicate.value`. `where` is planned against the target. */
 export interface ViaValue {
@@ -59,9 +75,14 @@ export interface ViaValue {
 }
 
 /** The ops a node plans to: never in `OPERATORS`, so `andWhere` cannot name one. */
-export type NodeOperator = 'or' | 'via';
+export type NodeOperator = 'or' | 'and' | 'via';
 
-export const isNodeOp = (op: unknown): op is NodeOperator => op === 'or' || op === 'via';
+export const isNodeOp = (op: unknown): op is NodeOperator =>
+  op === 'or' || op === 'and' || op === 'via';
+
+/** Whether a planned predicate is an `or` or an `and` group — one walk serves both. */
+export const isGroup = (predicate: Predicate): boolean =>
+  predicate.op === 'or' || predicate.op === 'and';
 
 /** The refusal for a tree no driver can answer: its shape, its depth or what a `via` names. */
 export const predicateNodeInvalid = (entityName: string, detail: string): EntityError =>
@@ -81,15 +102,17 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
  */
 export const nodePredicate = (entityName: string, node: unknown, depth = 1): Predicate => {
   if (!isRecord(node)) throw predicateNodeInvalid(entityName, 'a node is not an object');
-  const members = node['or'];
+  const group = node['or'] !== undefined ? 'or' : node['and'] !== undefined ? 'and' : undefined;
   const via = node['via'];
-  if ((members !== undefined || via !== undefined) && depth > MAX_PREDICATE_DEPTH) {
+  if ((group !== undefined || via !== undefined) && depth > MAX_PREDICATE_DEPTH) {
     throw predicateNodeInvalid(entityName, `it nests deeper than ${MAX_PREDICATE_DEPTH} levels`);
   }
-  if (members !== undefined) {
-    if (!Array.isArray(members)) throw predicateNodeInvalid(entityName, '`or` is not a list');
+  if (group !== undefined) {
+    const members = node[group];
+    if (!Array.isArray(members))
+      throw predicateNodeInvalid(entityName, `\`${group}\` is not a list`);
     const planned = members.map((each: unknown) => nodePredicate(entityName, each, depth + 1));
-    return { column: OR_PROPERTY, op: 'or', value: planned };
+    return { column: group === 'or' ? OR_PROPERTY : AND_PROPERTY, op: group, value: planned };
   }
   if (via !== undefined) return viaPredicate(entityName, via, node['where'], depth);
   const column = node['column'];
@@ -118,7 +141,7 @@ const viaPredicate = (
   return { column, op: 'via', value };
 };
 
-/** An `or` predicate's members, as planned. */
+/** A group's members (`or` or `and`), as planned. */
 export const orMembers = (predicate: Predicate): readonly Predicate[] =>
   Array.isArray(predicate.value) ? (predicate.value as readonly Predicate[]) : [];
 

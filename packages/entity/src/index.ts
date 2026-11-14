@@ -121,6 +121,16 @@ export { postgresDriver, postgresRepo } from './pg-driver';
 export { decodeRow } from './pg-row';
 export { postgresTransactor } from './pg-transactor';
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
+export type {
+  NodeColumn,
+  PredicateAnd,
+  PredicateLeaf,
+  PredicateNode,
+  PredicateOr,
+  PredicateVia,
+  ScopedNode,
+} from './predicate-node';
+export { MAX_PREDICATE_DEPTH } from './predicate-node';
 export type { RelatedTable, RelatedTables } from './preload';
 export type { PreloadOptions } from './preload-ceiling';
 export { MAX_PRELOADED_ROWS } from './preload-ceiling';

@@ -32,3 +32,10 @@
 ## Done when
 - The demo's feed read uses `scope` with no over-fetch; its redundant indexes are dropped by a generated migration.
 - Zero `NotImplementedError` in `packages/storage/src`.
+
+## Corrections (2026-11-14, found while executing)
+- E1 lives in `packages/db/src/keyset.ts`; the entity chain already paged nullable keys.
+- E2: the dev warning existed with no code; the guard is `repo-unbounded`, and "error" is the guard with no `severity` line.
+- E4: `history(table, id)` had shipped; the counter mirror is `memory-lifecycle.ts`, not `driver-counters.ts`.
+- P1: OR/`via` cannot compile to one statement without a predicate tree in `entity` (the chain's `where` was a flat AND list); built entity-first. The demo feed's over-fetch was AND-only and was fixed directly.
+- S1: the fix shipped in 31.2 in `cli/src/runtime-storage-boot.ts`; the live proof lives in cli (storage cannot import cli).

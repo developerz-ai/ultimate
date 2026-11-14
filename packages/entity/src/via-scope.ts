@@ -5,7 +5,7 @@
 
 import type { EntityCore } from './entity';
 import { tenancyUnscoped } from './errors';
-import { orMembers, type ViaValue, viaValue } from './predicate-node';
+import { isGroup, orMembers, type ViaValue, viaValue } from './predicate-node';
 import { viaTarget } from './predicate-screen';
 import { getEntity } from './registry';
 import { type Predicate, type QueryPlan, scopedPlan } from './tenancy';
@@ -34,7 +34,7 @@ const scopeLevel = (
   operation: string,
 ): readonly Predicate[] =>
   where.map((predicate) => {
-    if (predicate.op === 'or') {
+    if (isGroup(predicate)) {
       return { ...predicate, value: scopeLevel(source, orMembers(predicate), operation) };
     }
     if (predicate.op !== 'via') return predicate;
@@ -68,4 +68,4 @@ export const scopeVias = <Row>(
   return { ...plan, where: scopeLevel(entity as EntityCore, plan.where, operation) };
 };
 
-const hasNode = (predicate: Predicate): boolean => predicate.op === 'or' || predicate.op === 'via';
+const hasNode = (predicate: Predicate): boolean => isGroup(predicate) || predicate.op === 'via';

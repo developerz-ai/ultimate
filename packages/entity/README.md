@@ -486,6 +486,68 @@ never an empty result. The `fix` names the operator meant: `>`→`gt`, `>=`→`g
 `<=`→`lte`, `=`→`eq`, `!=`/`<>`→`neq`. `isOperator(value)` is the same test, for an op read off
 the wire.
 
+## A predicate tree: `andWhereNode`
+
+`andWhereNode(node)` (`As of 2026-11`) adds one predicate TREE to a chain, AND-ed with the rest —
+the one way to say `or`, an `and` inside it, or a relation hop. One statement either way.
+
+| Node (`PredicateNode<Row>`) | Compiles to |
+|---|---|
+| `{ column, op, value? }` | a leaf, exactly `andWhere(column, op, value)` |
+| `{ or: [...] }` | `( … or … )`; `[]` is `1 = 0` |
+| `{ and: [...] }` | `( … and … )`; `[]` is `true` |
+| `{ via: { column, entity, target }, where: [...] }` | `"column" in (select "target" from <entity's table> where …)` |
+
+```ts
+import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    authorId: uuid(),
+    audience: text({ max: 10 }),
+    publishedAt: timestamp().defaultNow(),
+    deletedAt: timestamp().nullable(),
+  },
+});
+entity('friendships', {
+  columns: { id: uuid().primaryKey(), userId: uuid(), friendId: uuid() },
+});
+const db = database({ posts });
+declare const me: string;
+
+await db.posts
+  .where({ deletedAt: null })
+  .andWhereNode({
+    or: [
+      { column: 'authorId', op: 'eq', value: me },
+      { column: 'audience', op: 'eq', value: 'public' },
+      {
+        via: { column: 'authorId', entity: 'friendships', target: 'friendId' },
+        where: [{ column: 'userId', op: 'eq', value: me }],
+      },
+    ],
+  })
+  .orderBy('publishedAt', 'desc')
+  .limit(20)
+  .all();
+```
+
+- **A hop is planned through its TARGET's tenant guard** (`via-scope.ts`, in `readPlan`): the
+  acting actor's tenant and the target's soft delete apply inside the subselect; outside a request
+  its `where` must name the tenant (`X_TENANCY_UNSCOPED`). An untenanted target behind a tenanted
+  source must declare `shared:`. A hop value no `readPlan` scoped is refused by both drivers.
+- `entity` is a registered entity NAME; `column`, `target` and every inner column must be declared
+  and not sealed; at most `MAX_PREDICATE_DEPTH` (4) levels. Each refusal is
+  `X_ENTITY_PREDICATE_NODE_INVALID`, on the chain line.
+- Leaf columns are typed by the row at the top and inside every group; a hop's inner level is the
+  target's and takes any string. A `ScopedNode` — what `@ultimat3/query` hands a provider on
+  `RowWindow.nodes` — is accepted as is.
+- Memory resolves a hop to an `in` list from its other tables (`memory-via.ts`); Postgres runs the
+  subselect. `entityDriverConformance`'s `TREE_CHECKS` hold both, tenancy included.
+- A `defineDriver` store takes a tree only under `predicate:or` / `predicate:via`, else
+  `X_DRIVER_UNSUPPORTED` before the store is called; nothing in process can judge a hop row by row.
+
 ## Filtering inside a json() or arrayOf() column
 
 ```ts

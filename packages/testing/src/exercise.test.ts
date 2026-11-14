@@ -2,7 +2,7 @@
 // unreached, a call out is refused and counted, a mutated handler changes the outcome, an override
 // wins, an unknown override name refuses, and `off` needs a reason.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { action, t } from '@ultimat3/action';
 import { registerActions } from '@ultimat3/action/loader';
 import { isUltimateError, UltimateError, useContext } from '@ultimat3/core';
@@ -20,10 +20,13 @@ import { defineFactory } from './factories';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
 
-// Declared here, never left to another file: the permission set is one per process, and once
-// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
-// one process, which file was imported first decided whether this one loaded.
-definePermissions(['exp-admin:do', 'exp-note:read', 'exp-note:write']);
+// Declared in `beforeAll`, never at module scope: a worker runs many files in one process, and the
+// registry guard keeps what a file's MODULE scope declared for every later file on that worker —
+// one file's names then turned strict checking on for files that declare none
+// (X_PERMISSION_UNKNOWN). Declared here, they are this file's own, undone at its end.
+beforeAll(() => {
+  definePermissions(['exp-admin:do', 'exp-note:read', 'exp-note:write']);
+});
 
 const orgs = entity('exp_orgs', { columns: { id: uuid().primaryKey(), name: text({ max: 40 }) } });
 const notes = entity('exp_notes', {

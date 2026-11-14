@@ -333,7 +333,11 @@ narrowed source returns; a row it refuses is dropped (`read-scope.test.ts`).
 - A scoped read's cache key is the ACTOR's, whatever `cache.scope` says: the rows are the actor's.
 - An `unenforced` build (`sourceFor(…, { unenforced })`, the shared live window) composes no scope.
 - A `sql` that returns anything but `from()` is `X_QUERY_SCOPE_UNCOMPOSABLE`, never served unscoped.
-- Conditions are a conjunction — no `or` group (`packages/policy/src/scope.ts` says why).
+- An `or`/`and`/`via` node is added with `Builder.whereNode(node)` and handed to a function
+  provider on `RowWindow.nodes`, in `@ultimat3/entity`'s shape: `chain.andWhereNode(node)` puts the
+  whole scope in one statement. `from()` re-applies a node only when no `via` is under it.
+- Refused (`X_QUERY_SCOPE_UNCOMPOSABLE`): a tree on a LIVE read (the matcher patches a flat shape),
+  and a `via` over `from()` given a list of rows (no statement to run the hop in).
 - A rule STRICTER than its scope never ends a listing early: a page's cursor and `hasMore` come
   from the rows the source read, not the rows the rule left. Dropped rows are refilled from up to
   `RULE_REFILL_WINDOWS` (4) further windows; a page the bound cuts short still carries a cursor at
@@ -423,7 +427,7 @@ HMAC-signed, and bound to one query + arguments — a cursor from another query 
 not exported, because a page is the read's own answer rather than an imported helper.
 
 **A function `RowProvider` is handed the window** (`RowWindow`: `after`, `limit`, `order`,
-`filters`; `As of 31.4.3`). `from('posts', (window) => repo.page(window))` pushes the cursor down,
+`filters`; `As of 31.4.3`; `nodes`, a scope's tree, `As of 2026-11`). `from('posts', (window) => repo.page(window))` pushes the cursor down,
 so a provider that reads a bounded window (a repository's top N) reaches every row: called with
 nothing, it served page one's rows to every page and page two came back short. `from()` re-applies
 the filter, order, seek and cut over what comes back, so ignoring the argument is still correct —

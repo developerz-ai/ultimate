@@ -8,7 +8,7 @@ import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import { isOperator, operatorUnknown } from './operator';
-import { orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
+import { isGroup, orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
 import { getEntity } from './registry';
 import { sealedFields } from './sealed';
 import type { Predicate } from './tenancy';
@@ -24,7 +24,7 @@ export const screenPredicates = <Row>(
   where: readonly Predicate[],
 ): void => {
   for (const predicate of where) {
-    if (predicate.op === 'or') {
+    if (isGroup(predicate)) {
       screenPredicates(entity, orMembers(predicate));
       continue;
     }
@@ -93,7 +93,7 @@ const screenVia = <Row>(entity: EntityCore<Row>, predicate: Predicate): void => 
 /** Every real column a level names, through its `or` groups but not into a nested `via`. */
 const leafColumns = (where: readonly Predicate[]): readonly string[] =>
   where.flatMap((predicate) =>
-    predicate.op === 'or'
+    isGroup(predicate)
       ? leafColumns(orMembers(predicate))
       : predicate.op === 'via'
         ? [predicate.column]

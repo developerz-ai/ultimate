@@ -131,3 +131,45 @@ test('hidden posts newer than every public one never shorten an anonymous page â
   expect(sent).toBe(2);
   expect(profile?.posts.map((post) => post.body)).toEqual(['public 1', 'public 0']);
 });
+
+test('a FRIENDâ€™s page is exact too: newer private notes never shorten it, in two statements', async () => {
+  const author = await db.users.insert({
+    handle: 'profile_friend_of',
+    email: 'profile_friend_of@fixture.example',
+    displayName: 'profile_friend_of',
+    role: 'member',
+  });
+  const at = (minute: number) => new Date(Date.UTC(2026, 1, 1, 0, minute));
+  await db.posts.insert({
+    authorId: author.id,
+    body: 'for friends',
+    audience: 'friends',
+    publishedAt: at(0),
+  });
+  await db.posts.insert({
+    authorId: author.id,
+    body: 'for all',
+    audience: 'public',
+    publishedAt: at(1),
+  });
+  for (let minute = 10; minute < 20; minute += 1) {
+    await db.posts.insert({
+      authorId: author.id,
+      body: `note ${minute}`,
+      audience: 'private',
+      publishedAt: at(minute),
+    });
+  }
+  const friend = actor(idOf('user:user'), [author.id]);
+
+  let sent = 0;
+  let profile: Awaited<ReturnType<typeof publicProfile>> = null;
+  {
+    using statements = await testStatements();
+    profile = await publicProfile(friend, 'profile_friend_of', 2);
+    sent = statements.count();
+  }
+
+  expect(sent).toBe(2);
+  expect(profile?.posts.map((post) => post.body)).toEqual(['for all', 'for friends']);
+});

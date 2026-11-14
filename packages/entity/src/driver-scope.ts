@@ -7,7 +7,7 @@ import type { DriverCapability, DriverDefinition, DriverRepo } from './driver-ki
 import { outOfScope, structuralPredicates } from './driver-rows';
 import type { RawFor } from './driver-write-scope';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
-import { orMembers, viaValue } from './predicate-node';
+import { isGroup, orMembers, viaValue } from './predicate-node';
 import type { Tx } from './repo';
 import type { Predicate, QueryPlan } from './tenancy';
 
@@ -30,8 +30,10 @@ export interface DriverScope<Row> {
 /** The node ops a level holds, through every `or` group and into every `via`. */
 const treeOps = (where: readonly Predicate[], found = new Set<string>()): ReadonlySet<string> => {
   for (const predicate of where) {
-    if (predicate.op === 'or') {
-      found.add('or');
+    if (isGroup(predicate)) {
+      // An `and` group is no capability of its own — the plan is a conjunction already — but an
+      // `or` or a `via` under it is.
+      if (predicate.op === 'or') found.add('or');
       treeOps(orMembers(predicate), found);
     } else if (predicate.op === 'via') {
       found.add('via');

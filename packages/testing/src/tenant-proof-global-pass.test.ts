@@ -2,7 +2,7 @@
 // an `entity({ global })` table comes out `global` with the declared reason, and the same query over
 // a tenantless table that declares nothing keeps today's `unproven`.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/action';
 import { entity, text, uuid } from '@ultimat3/entity';
 import { can, definePermissions } from '@ultimat3/policy';
@@ -11,7 +11,12 @@ import { registerQueries } from '@ultimat3/query/loader';
 import { proveOne, resetTenantApp, tpDriver, tpOrgs, tpVaults } from './tenant-proof-fixture';
 import { testName } from './test-types';
 
-definePermissions(['tp:read', 'tp:write']);
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['tp:read', 'tp:write']);
+});
 
 const CATALOG_REASON = 'the plan catalog: the same rows for every org';
 

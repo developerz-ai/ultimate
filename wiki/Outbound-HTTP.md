@@ -70,6 +70,9 @@ re-screen each redirect. All of it is in this one option.
 - **Which proxy, and rotating them, is app code** (axiom 8): a resolver over your own inventory.
 
 ```ts
+import { outbound } from '@ultimat3/core/outbound';
+
+declare const url: string;
 const proxies = ['http://u:p@egress-a:3128', 'http://u:p@egress-b:3128'];
 let next = 0;
 await outbound({

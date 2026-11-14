@@ -2,7 +2,7 @@
 // a changed or deleted row of A's as a write crossing, a canary in an effect as a leak, an echo of
 // B's own input as nothing, `public` skipping only the read half, and an unreached A unproven.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE as ENTITY_CROSS_TENANT_SCOPE } from '@ultimat3/entity';
 import { allow, can, definePermissions } from '@ultimat3/policy';
@@ -13,10 +13,13 @@ import type { LegAnswer, TenantAttack } from './tenant-proof';
 import { CROSS_TENANT_SCOPE, proveTenant, publicReason, withoutCrossTenant } from './tenant-proof';
 import { testName } from './test-types';
 
-// Declared here, never left to another file: the permission set is one per process, and once
-// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
-// one process, which file was imported first decided whether this one loaded.
-definePermissions(['post:read']);
+// Declared in `beforeAll`, never at module scope: a worker runs many files in one process, and the
+// registry guard keeps what a file's MODULE scope declared for every later file on that worker —
+// one file's names then turned strict checking on for files that declare none
+// (X_PERMISSION_UNKNOWN). Declared here, they are this file's own, undone at its end.
+beforeAll(() => {
+  definePermissions(['post:read']);
+});
 
 const POST = 'aaaaaaaa-0000-7000-8000-000000000001';
 const FILE = 'aaaaaaaa-0000-7000-8000-000000000002';

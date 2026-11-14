@@ -2,7 +2,7 @@
 // (a string, or an array holding it) become the primitive's tenant — symmetric with the input's
 // re-homed `orgId`, so a membership-fact policy can pass in every tenant the pass seeds.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { action, t } from '@ultimat3/action';
 import { registerActions } from '@ultimat3/action/loader';
 import type { Actor, ActorFactMap } from '@ultimat3/core';
@@ -15,7 +15,12 @@ import type { ExerciseRecord } from './exercise-report';
 import type { SeedWriter } from './seed-graph-plan';
 import { testName } from './test-types';
 
-definePermissions(['eaf:write']);
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['eaf:write']);
+});
 
 const DECLARED = '00000000-0000-4000-8000-0000000000aa';
 const OTHER = '00000000-0000-4000-8000-0000000000bb';

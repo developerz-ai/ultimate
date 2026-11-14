@@ -7,7 +7,7 @@ import { valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { matchesPredicate } from './memory-match';
 import type { MemoryTables } from './memory-same-tenant';
-import { orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
+import { isGroup, orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
 import { viaTarget } from './predicate-screen';
 import type { Predicate, QueryPlan } from './tenancy';
 import { isScopedVia } from './via-scope';
@@ -41,7 +41,7 @@ const resolveLevel = (
   tables: MemoryTables,
 ): readonly Predicate[] =>
   where.map((predicate): Predicate => {
-    if (predicate.op === 'or') {
+    if (isGroup(predicate)) {
       return { ...predicate, value: resolveLevel(source, orMembers(predicate), tables) };
     }
     if (predicate.op !== 'via') return predicate;
@@ -73,6 +73,6 @@ export const resolveMemoryVias = <Row>(
   plan: QueryPlan,
   tables: MemoryTables,
 ): QueryPlan => {
-  const nodes = plan.where.some((predicate) => predicate.op === 'or' || predicate.op === 'via');
+  const nodes = plan.where.some((predicate) => isGroup(predicate) || predicate.op === 'via');
   return nodes ? { ...plan, where: resolveLevel(entity as EntityCore, plan.where, tables) } : plan;
 };

@@ -8,9 +8,7 @@ import { type PgliteClient, pgliteClient } from '@ultimat3/db';
 import type { ExerciseRecord, TenantFinding } from './exercise-report';
 import { proveOne, resetTenantApp, tenantlessRows, tpFiles } from './tenant-proof-fixture';
 import { tenantProofFindings } from './tenant-proof-report';
-import { overwrittenDocs, proveSql, releaseSql, useSql } from './tenant-proof-sql-fixture';
-import './tenant-proof-holes-fixture';
-import './tenant-proof-sweep-fixture';
+import type * as SqlFixture from './tenant-proof-sql-fixture';
 import { testName } from './test-types';
 
 /** The findings of a crossed record — an empty list for any other verdict, which fails the caller. */
@@ -31,6 +29,17 @@ const expectCrossed = (record: ExerciseRecord, name: string, kind: ExerciseRecor
 /** The ids of tp_files rows a write moved to `url` — the rows the finding must name. */
 const renamedTo = async (url: string): Promise<readonly unknown[]> =>
   (await tenantlessRows(tpFiles)).filter((row) => row['url'] === url).map((row) => row['id']);
+
+// The planted-hole fixtures declare `tp:read`/`tp:write` as they load, so they load HERE, never as
+// a static import: the registry guard keeps what a file's module graph declared for every later
+// file on a shared worker, and these names turned strict checking on for files that declare none
+// (X_PERMISSION_UNKNOWN). Loaded in `beforeAll`, the declarations are this file's own.
+let sql: typeof SqlFixture;
+beforeAll(async () => {
+  sql = await import('./tenant-proof-sql-fixture');
+  await import('./tenant-proof-holes-fixture');
+  await import('./tenant-proof-sweep-fixture');
+});
 
 beforeEach(resetTenantApp);
 
@@ -169,17 +178,17 @@ describe(testName('unit', 'tenant proof: raw SQL, on PGlite'), () => {
   let pglite: PgliteClient | undefined;
   beforeAll(async () => {
     pglite = pgliteClient();
-    await useSql(pglite);
+    await sql.useSql(pglite);
   }, PGLITE_MS);
   afterAll(async () => {
-    releaseSql();
+    sql.releaseSql();
     await pglite?.close();
   });
 
   test(
     'a raw-SQL read by input id leaks',
     async () => {
-      const findings = expectCrossed(await proveSql('tpsRawRead', 1), 'tpsRawRead', 'action');
+      const findings = expectCrossed(await sql.proveSql('tpsRawRead', 1), 'tpsRawRead', 'action');
       expect(findings).toContainEqual(
         expect.objectContaining({ code: 'X_TENANT_LEAK', path: 'output.body' }),
       );
@@ -190,10 +199,10 @@ describe(testName('unit', 'tenant proof: raw SQL, on PGlite'), () => {
   test(
     'a raw-SQL update by input id is crossed, naming the table and the row',
     async () => {
-      const findings = expectCrossed(await proveSql('tpsRawWrite', 2), 'tpsRawWrite', 'action');
+      const findings = expectCrossed(await sql.proveSql('tpsRawWrite', 2), 'tpsRawWrite', 'action');
       // The scale sweep calls each reached primitive again in tenants of its own, so their own rows
       // are renamed too: A's row is the one the finding names, and it is among them.
-      const overwritten = (await overwrittenDocs()).map(String);
+      const overwritten = (await sql.overwrittenDocs()).map(String);
       const crossed = findings.find((one) => one.code === 'X_TENANT_WRITE_CROSSED');
       expect(crossed).toMatchObject({ table: 'tps_docs' });
       expect(overwritten).toContain(String(crossed?.id));
@@ -204,7 +213,7 @@ describe(testName('unit', 'tenant proof: raw SQL, on PGlite'), () => {
   test(
     'the same row through the scoped repository is proven',
     async () => {
-      const record = await proveSql('tpsScopedRead', 3);
+      const record = await sql.proveSql('tpsScopedRead', 3);
       expect(record.outcome).toBe('reached');
       expect(record.tenant).toEqual({ verdict: 'proven' });
     },

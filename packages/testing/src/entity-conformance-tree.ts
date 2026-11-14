@@ -136,25 +136,15 @@ export const TREE_CHECKS: readonly EntityDriverCheck[] = [
         or: [
           { column: 'authorId', op: 'eq', value: ME },
           { column: 'audience', op: 'eq', value: 'public' },
-          { or: [{ column: 'audience', op: 'eq', value: 'friends' }, friendsOfMe] },
+          { and: [{ column: 'audience', op: 'eq', value: 'friends' }, friendsOfMe] },
         ],
       } as const;
       const read = await inOrg(ORG, () => db.posts.andWhereNode(rule).all());
-      // `friends OR friend-of-me` is wider than the demo's AND; the next level narrows it.
-      expect(bodies(read)).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
-      const exact = await inOrg(ORG, () =>
-        db.posts
-          .andWhereNode({
-            or: [
-              { column: 'authorId', op: 'eq', value: ME },
-              { column: 'audience', op: 'eq', value: 'public' },
-              { via: friendsOfMe.via, where: friendsOfMe.where },
-            ],
-          })
-          .andWhere('audience', 'neq', 'private')
-          .all(),
-      );
-      expect(bodies(exact)).toEqual(['p2', 'p4']);
+      // p1 mine, p4 public, p2 a friend's friends-only post. Not p3 (STRANGER is a friend only in
+      // OTHER_ORG), not p5 (that friendship ended), not p6 (another org's post).
+      expect(bodies(read)).toEqual(['p1', 'p2', 'p4']);
+      const counted = await inOrg(ORG, () => db.posts.andWhereNode(rule).count());
+      expect(counted).toBe(3);
     },
     ['predicate:or', 'predicate:via'],
   ),

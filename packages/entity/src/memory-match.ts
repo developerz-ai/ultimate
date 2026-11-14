@@ -145,6 +145,9 @@ export const matchesPredicate = <Row>(
   if (predicate.op === 'or') {
     return orMembers(predicate).some((member) => matchesPredicate(entity, row, member));
   }
+  if (predicate.op === 'and') {
+    return orMembers(predicate).every((member) => matchesPredicate(entity, row, member));
+  }
   // A hop needs the target's rows, which one row does not carry: the memory driver resolves it to
   // an `in` list first (`memory-via.ts`), and a store held in process cannot answer one at all.
   if (predicate.op === 'via') {

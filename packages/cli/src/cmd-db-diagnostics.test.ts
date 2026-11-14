@@ -2,14 +2,14 @@
 // database, the spec row the parser and `x help` read, and `X_DB_LOCK_TIMEOUT`'s fix resolving to
 // it. The renderings themselves are `db-diagnostics.test.ts`'s.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 // why: `node:fs` — Bun has no temp-directory API.
 import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { driverError } from '@ultimat3/db';
+import { driverError, setDbClient } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand } from './cmd-db';
 import { renderHelp } from './cmd-help';
@@ -36,6 +36,12 @@ async function appRoot(): Promise<string> {
   await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }
+
+// `startDb` installs the app's client as the process's `db()` and the command closes it without
+// putting the previous one back (`db-diagnostics.ts`). On a shared worker the next file's `db()`
+// then reached a closed PGlite whose directory this file deleted (X_DB_UNAVAILABLE, mkdir
+// `.x/pgdata`). Back to lazy construction, which is what every file starts from.
+afterEach(() => setDbClient(undefined));
 
 /** A WASM compile plus an initdb — a hang detector, not a budget. */
 const PGLITE_BOOT_MS = 120_000;

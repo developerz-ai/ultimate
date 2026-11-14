@@ -6,10 +6,11 @@
 // re-exports it. Reaching for the re-export crossed site/ -> app/ (X_BOUNDARY_SITE_TO_APP) to get
 // at a leaf both surfaces may already import.
 
-import type { Actor } from '../../shared/actor';
+import { AUDIENCES, type Audience, isVisibleAudience } from '@social-media-clone/domain';
+import { type Actor, isBlocked, isFriend, isSelf } from '../../shared/actor';
 import { canSeePost } from '../../shared/visibility';
 import type { Post, User } from './repo';
-import { postsByAuthor, publicPostsByAuthor, userByHandle } from './repo';
+import { postsByAuthor, userByHandle } from './repo';
 
 export interface ProfileView {
   readonly user: User;
@@ -17,19 +18,22 @@ export interface ProfileView {
 }
 
 /**
- * A SIGNED-IN viewer's read is bounded and over-fetched: their rule is an OR over friend and block
- * sets that no read here can hand down yet, so the filter runs after the read and asking for exactly
- * `limit` rows would return fewer whenever anything is hidden. The multiplier is small and fixed —
- * an unbounded "keep reading until full" loop is how a profile becomes a table scan for the one
- * author whose posts are all private. An anonymous reader's rule is all AND: read exactly.
+ * The audiences `canSeePost` admits `viewer` on `authorId`'s page — the rule's SQL projection for
+ * ONE author, where friendship and blocks are facts about that pair, so the OR the feed needs is a
+ * list here. A block is no audience at all; the author sees every one of their own.
  */
-const OVERFETCH = 3;
+const audiencesFor = (viewer: Actor | null, authorId: string): readonly Audience[] => {
+  if (isBlocked(viewer, authorId)) return [];
+  if (isSelf(viewer, authorId)) return AUDIENCES;
+  return AUDIENCES.filter((audience) => isVisibleAudience(audience, isFriend(viewer, authorId)));
+};
 
 /**
  * A profile as one viewer may see it. `viewer === null` is an anonymous reader, and that is a
  * decision written down rather than the absence of one: the audience ladder answers `public` and
  * nothing else for them, so a friends-only post, a private note and a soft-deleted row are all
- * absent from `posts` — the read asks for live public rows, and `canSeePost` still judges each.
+ * absent from `posts` — the read asks for the audiences the viewer may see, and `canSeePost` still
+ * judges each row it returns. Every viewer's page is exact: two statements, never an over-fetch.
  */
 export const publicProfile = async (
   viewer: Actor | null,
@@ -50,10 +54,7 @@ export const publicProfile = async (
   // suspension is not something a stranger can probe for.
   if (user.suspended) return null;
 
-  const rows =
-    viewer === null
-      ? await publicPostsByAuthor(user.id, limit)
-      : await postsByAuthor(user.id, limit * OVERFETCH);
+  const rows = await postsByAuthor(user.id, audiencesFor(viewer, user.id), limit);
   const posts: Post[] = [];
   for (const post of rows) {
     if (posts.length >= limit) break;

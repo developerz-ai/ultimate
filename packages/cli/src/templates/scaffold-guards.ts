@@ -128,7 +128,9 @@ const ALSO_CURRENT: Readonly<Record<string, () => readonly GeneratedFile[]>> = {
 export const shippedGuardSources = (name: string): readonly string[] => {
   const current = shippedGuardSource(name);
   if (current === undefined) return [];
-  const earlier = ALSO_CURRENT[name]?.().find((file) => file.path === `guards/${name}.ts`);
+  const earlier = (Object.hasOwn(ALSO_CURRENT, name) ? ALSO_CURRENT[name] : undefined)?.().find(
+    (file) => file.path === `guards/${name}.ts`,
+  );
   return typeof earlier?.contents === 'string' ? [current, earlier.contents] : [current];
 };
 
