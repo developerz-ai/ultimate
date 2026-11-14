@@ -271,6 +271,21 @@ an on-disk data directory, an `initdb` each — ~3 s against ~1 s restored, meas
 77 `cli` test files boot one (~256 local core-s). The change is `@ultimat3/db`'s `pgliteClient`
 plus `runtime-queue.ts`'s `startDb`.
 
+## Unit parts at one worker per core, timings carried over, 2026-11-14
+
+On main 2026-11-14 (runs 43542607182, 43562415694) the three `gate (unit-N)` jobs took 254–338 s,
+two of them past the 5-minute target in each run; `unit` alone was 200–276 s, printed as
+"3 workers (budget 3.9 GB)" on the 4-core 16 GB runner.
+
+| Change | Why |
+|---|---|
+| `gate` job `env: ULTIMATE_TEST_MEMORY_BUDGET: 5g` — 4 workers on the runner | the default budget is a quarter of RAM, for a laptop shared with an editor and other gates (`test-workers.ts`); a runner is the part's alone. 5 GiB is 4 × `WORKER_BYTES`, so the cores bound the width. `packages (1/3)` has run `cli` at 4 isolated workers on the same runner since 2026-11-05 |
+| unit parts restore `.x/test-timings.json` (newest `test-timings-*`), upload theirs, `verify` merges and saves | the gate passes `--timings` and Bun starts a batch's slowest files first from it, but a checkout has no `.x/`: every batch began in sorted order and waited on the slow `scripts/*` files that sort last. Modelled on unit-2's 1289 files: ~46 s of batch tails at 3 workers, ~5 s longest-first. Order only — shard and batch membership stay a pure function of the sorted list |
+
+Expected: unit-2 276 s → ~190–230 s, the part under 5 minutes. Estimated, not yet measured on a
+runner; the first run's step table (`4 workers (budget 5.0 GB)`, the `unit` ms) is the proof.
+Held by `scripts/ci-workflow-shape-unit-speed.test.ts`, which runs the merge step.
+
 ## Fault drills, 2026-11-06
 
 `fault-drills` asks one question no other job can: does the reference app keep the framework's

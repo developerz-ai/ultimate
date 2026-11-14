@@ -2,7 +2,7 @@
 // disk the app never declared, publish every hashed file this build serves — before the role
 // binds, so before `/readyz` can say ready — and hand back the reader the asset routes miss into.
 
-import type { AppConfig, AssetsRetainConfig, BuildOnceStore } from '@ultimat3/core';
+import type { AppConfig, AssetsRetainConfig } from '@ultimat3/core';
 import {
   bootWarning,
   ConfigInvalidError,
@@ -17,7 +17,7 @@ import { publishBuildAssets } from './retained-assets';
 import { retainedPrefix } from './retained-assets-layout';
 import type { RetainedAssets } from './retained-assets-read';
 import { retainedAssets } from './retained-assets-read';
-import { warnOncePerBuild } from './retained-assets-warned';
+import { retainedBuildOnce } from './runtime-boot-warnings';
 import { siteAssetTable } from './site-assets';
 import type { StyleBundle } from './style-bundle';
 import type { FrameworkScript } from './worker-bundle';
@@ -89,30 +89,6 @@ const LOCAL_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test'])
 
 /** This file is the web role's boot alone (`serve-web.ts`): the role half of the warned key. */
 const WEB_ROLE = 'web';
-const RETAIN_UNDECLARED = 'X_ASSET_RETAIN_UNDECLARED';
-
-/**
- * Core's `bootWarning({ once: 'build' })` memory, on the disk every pod of a deploy may share
- * (`warnOncePerBuild`). The retain warning keeps the marker it always had, `<prefix>/warned/<role>/`;
- * any other code is `<role>~<code>`, its own directory, so neither silences nor prunes the other.
- */
-export function retainedBuildOnce(input: {
-  readonly storage: Storage;
-  readonly prefix: string;
-  readonly buildId: string;
-}): BuildOnceStore {
-  return (claim, say) =>
-    warnOncePerBuild(
-      {
-        disk: () => input.storage.disk(),
-        prefix: input.prefix,
-        role: claim.code === RETAIN_UNDECLARED ? claim.role : `${claim.role}~${claim.code}`,
-        buildId: input.buildId,
-      },
-      say,
-    );
-}
-
 /**
  * Once per build id for the web role, not per boot (`retainedBuildOnce`). With no `app.config.ts`
  * there is no app name to scope the marker by, so that boot says it every time.

@@ -71,13 +71,13 @@ export async function recountInBatches(
   let after: string | null = null;
   for (;;) {
     const from: string | null = after;
-    const last = await withTransaction(
-      async (tx) => {
+    const last: string | null = await withTransaction(
+      async (tx): Promise<string | null> => {
         await setLocal(tx, { [CROSS_TENANT_SETTING]: 'on' });
         const [window] = await tx.query<{ last: string | null }>(
           recountWindowSql(parent, counter, from, size),
         );
-        const end = window?.last ?? null;
+        const end: string | null = window?.last ?? null;
         if (end === null) return null;
         const found = await tx.query<DriftRow>(recountDriftBatchSql(parent, counter, from, end));
         if (options.write && found.length > 0) {
