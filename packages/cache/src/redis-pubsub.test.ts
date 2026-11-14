@@ -70,8 +70,11 @@ class FakeSubscriber implements RedisSubscriberLike {
     const set = this.server.live.get(channel) ?? new Set();
     set.add(this);
     this.server.live.set(channel, set);
+    await this.answer;
     return set.size;
   }
+  /** Set by a test to hold a SUBSCRIBE's reply AFTER the server applied it, until it resolves. */
+  answer: Promise<unknown> | undefined;
   /** Every `CLIENT SETNAME` this connection was sent, in order. */
   readonly names: string[] = [];
   send(command: string, args: string[]): Promise<unknown> {
@@ -79,9 +82,12 @@ class FakeSubscriber implements RedisSubscriberLike {
     if (command === 'CLIENT' && args[0] === 'SETNAME') this.names.push(args[1] ?? '');
     return Promise.resolve('OK');
   }
+  /** Every channel an UNSUBSCRIBE made the server forget while this connection held it. */
+  readonly forgotten: string[] = [];
   unsubscribe(channel: string): Promise<void> {
     if (this.local.size === 0) throw NOT_SUBSCRIBER_MODE;
     this.local.delete(channel);
+    if (this.server.live.get(channel)?.has(this) === true) this.forgotten.push(channel);
     this.server.live.get(channel)?.delete(this);
     return Promise.resolve();
   }
@@ -307,6 +313,56 @@ describe('redisPubSub', () => {
     await bus.publish('a', 'a1');
     await bus.publish('b', 'b1');
     expect(heard).toEqual(['a1', 'b1']);
+  });
+
+  // Live flake 'a dropped subscription is restored' (CI run 43546649352): at boot the publisher's
+  // connect woke the hop's subscribe retry, which queued behind the subscriber's connect resubscribe
+  // that had already covered its channel — and UNSUBSCRIBEd it. Until its SUBSCRIBE, the server
+  // listed the replica with no subscription and a peer's bust reached no one.
+  test('a subscribe queued behind a resubscribe that covered its channel sends nothing', async () => {
+    const { subscriber, bus } = await pair();
+    const heard: string[] = [];
+    subscriber.drop();
+    subscriber.connect();
+    // Its channel is in the map before the resubscribe reads it; its own step runs after.
+    await bus.subscribe('x.cache.invalidate', (payload) => heard.push(payload));
+    await settle();
+
+    expect(subscriber.forgotten).toEqual([]);
+    await bus.publish('x.cache.invalidate', 'once');
+    expect(heard).toEqual(['once']);
+  });
+
+  test('a channel unsubscribed and subscribed again on one connection is subscribed again', async () => {
+    const { server, bus } = await pair();
+    const heard: string[] = [];
+    const first = await bus.subscribe('x.cache.invalidate', () => undefined);
+    first.unsubscribe();
+    await settle();
+    expect(server.live.get('x.cache.invalidate')?.size ?? 0).toBe(0);
+
+    await bus.subscribe('x.cache.invalidate', (payload) => heard.push(payload));
+    await bus.publish('x.cache.invalidate', 'back');
+    expect(heard).toEqual(['back']);
+  });
+
+  test('a SUBSCRIBE answered by a connection that then dropped is subscribed again', async () => {
+    const { subscriber, bus } = await pair();
+    const heard: string[] = [];
+    const answer = Promise.withResolvers<undefined>();
+    subscriber.answer = answer.promise;
+    const landed = bus.subscribe('x.cache.invalidate', (payload) => heard.push(payload));
+    await settle();
+    // The server applied it, then lost the connection before its reply reached the hop.
+    subscriber.drop();
+    subscriber.connect();
+    subscriber.answer = undefined;
+    answer.resolve(undefined);
+    await landed;
+    await settle();
+
+    await bus.publish('x.cache.invalidate', 'heard');
+    expect(heard).toEqual(['heard']);
   });
 
   // Live flake 'a dropped subscription is restored': after `CLIENT KILL` the reconnect's SUBSCRIBE

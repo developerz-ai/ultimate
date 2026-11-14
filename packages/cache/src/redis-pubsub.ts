@@ -186,13 +186,25 @@ export function redisPubSub(options: RedisPubSubOptions): InvalidationBus {
   };
 
   /**
+   * The channels THIS connection is subscribed to, replaced on every connect: a new connection
+   * holds none, whatever the client still keeps. A set only the lane writes.
+   */
+  let onConnection = new Set<string>();
+
+  /**
    * `channel` held by exactly one `dispatch`: UNSUBSCRIBE first, because Bun keeps a listener the
-   * server forgot. In the lane this is idempotent, so a `subscribe` queued behind a resubscribe
-   * that already covered its channel registers nothing twice.
+   * server forgot. A channel this connection already holds is left alone: a boot `subscribe` queued
+   * behind the first connect's resubscribe (woken by the publisher's connect) used to UNSUBSCRIBE
+   * and SUBSCRIBE it again, and a bust published between the two reached no one (measured: 184 of
+   * 300 boots, and `CLIENT LIST TYPE pubsub` no longer listed the replica in that gap).
    */
   const subscribeOnce = async (channel: string): Promise<void> => {
+    const on = onConnection;
+    if (on.has(channel)) return;
     await unsubscribeQuietly(channel);
     await bounded('SUBSCRIBE', () => subscriber.subscribe(channel, dispatch));
+    // A connect mid-SUBSCRIBE replaced `onConnection`: that answer was the dead connection's.
+    on.add(channel);
   };
 
   /** The pending retry's canceller; a reconnect or `close` drops it. */
@@ -225,6 +237,7 @@ export function redisPubSub(options: RedisPubSubOptions): InvalidationBus {
 
   // The first connect too: whatever the hop could not publish or subscribe before it is owed now.
   subscriber.onconnect = () => {
+    onConnection = new Set();
     cancelRetry?.();
     cancelRetry = undefined;
     if (!closed) void inLane(() => resubscribe(1));
@@ -270,7 +283,12 @@ export function redisPubSub(options: RedisPubSubOptions): InvalidationBus {
           held.delete(handler);
           if (held.size > 0 || handlers.get(subject) !== held) return;
           handlers.delete(subject);
-          if (!closed) void inLane(() => unsubscribeQuietly(subject));
+          if (!closed) {
+            void inLane(() => {
+              onConnection.delete(subject);
+              return unsubscribeQuietly(subject);
+            });
+          }
         },
       };
     },
