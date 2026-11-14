@@ -153,7 +153,9 @@ const closerShell = (closer?.run ?? '')
 describe('unit · the alarm is retitled while dirty and closed once clean', () => {
   test('an open issue is retitled to the current summary before it is commented on', () => {
     const edit = at(`gh issue edit "$existing" --title "registry: $summary"`);
-    expect(edit).toBeGreaterThan(at('if [ -n "$existing" ]; then'));
+    const branch = at('if [ -n "$existing" ]; then');
+    expect(branch).toBeGreaterThanOrEqual(0);
+    expect(edit).toBeGreaterThan(branch);
     expect(edit).toBeLessThan(at('gh issue comment "$existing"'));
   });
 
@@ -175,7 +177,9 @@ describe('unit · the alarm is retitled while dirty and closed once clean', () =
 
   test('the closing step runs before the badge step, and the badge never fires on success', () => {
     const index = steps.indexOf(closer as Step);
-    expect(index).toBeGreaterThan(steps.indexOf(issue as Step));
+    const opener = steps.indexOf(issue as Step);
+    expect(opener).toBeGreaterThanOrEqual(0);
+    expect(index).toBeGreaterThan(opener);
     expect(index).toBeLessThan(steps.length - 1);
     expect(steps.at(-1)?.if).toBe("steps.audit.outcome == 'failure'");
   });

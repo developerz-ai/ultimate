@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
+  NOT_A_TREE,
   privateNameFindings,
   privateNameReport,
   REQUIRED_ENV,
@@ -135,12 +136,27 @@ describe('private-names · a listed name in the tree', () => {
     expect(result.summary).toBe('private-names: checked 2 names across 5 files');
   });
 
-  test('a tree git cannot list is refused, never a clean scan of nothing', async () => {
+  test('a tree holding the guard that git cannot list is refused, never a clean scan of nothing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-bare-'));
     roots.push(root);
+    await Bun.write(join(root, SELF), '// the guard\n');
     await expect(scanPrivateNames(root, EMPTY)).rejects.toMatchObject({
       code: 'X_PRIVATE_NAME',
     });
+  });
+
+  // The host checks' own fixtures plant a few files in a temp directory that is no repository and
+  // holds no guard: there is no public tree to vouch for, so the guard says it skipped.
+  test('a planted directory that is neither a git tree nor holds the guard is a skip', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-planted-'));
+    roots.push(root);
+    await Bun.write(join(root, 'a.md'), `${MODE}\nquimtel\n`);
+    expect(await scanPrivateNames(root, EMPTY)).toBeUndefined();
+    const result = await run(root);
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(NOT_A_TREE);
+    const required = await privateNameReport(root, { [REQUIRED_ENV]: '1', [ENV_NAME]: 'quimtel' });
+    expect(required.ok).toBe(true);
   });
 
   test('a tree in which the guard did not read itself is refused, never a clean scan', async () => {

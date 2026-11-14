@@ -294,5 +294,8 @@
  * walk): `MIGRATE_CEILING`'s 2, `core/src/session-refusal.ts` and `http/src/authenticated-actor.ts`.
  * why: a revoked or expired session closes its live socket and no longer 401s public routes.
  * Nothing else moved.
+ * raised 1494 → 1496, measured 1496 (2026-11-14, plan 101b sweep 0, the test's own walk): the
+ * same two new jobs files as `MIGRATE_CEILING` — `execute-report.ts` and `failure-streak.ts`. No
+ * existing module newly reached.
  */
-export const SERVING_ROLE_CEILING = 1494;
+export const SERVING_ROLE_CEILING = 1496;

@@ -152,6 +152,6 @@ describe('collectLlmsPages', () => {
       environment: 'production',
       scope,
     });
-    expect(pages.get('/contact')?.map((record) => record.meta.title)).toEqual(['Contact']);
+    expect(pages.get('/contact')?.map((record) => record.meta?.title)).toEqual(['Contact']);
   });
 });

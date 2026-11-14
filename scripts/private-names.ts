@@ -12,8 +12,9 @@
 //
 // THE SCAN PROVES ITSELF. It reads `git ls-files` (cached, plus untracked files git does not
 // ignore, so a new page is caught before its commit), counts the files it read, and refuses a run
-// that did not read this file: a scan of the wrong tree, or of nothing, is never a green. `.dz/` is
-// the platform's own, rewritten whole by it, and is not read. CHANGELOG.md, docs/changelog/,
+// that did not read this file: a scan of the wrong tree, or of nothing, is never a green. A root
+// that is no git tree and holds no copy of this file (a gate test's planted directory) is a skip
+// that says so: there is no public tree there. `.dz/` is the platform's own and is not read. CHANGELOG.md, docs/changelog/,
 // docs/history/ and docs/plans/ are records: an adopter name there stands, but the setup mode and a
 // private repository do not.
 //
@@ -123,11 +124,22 @@ const refuse = (cause: string): ScriptError =>
     fix: 'git ls-files scripts/private-names.ts   # run from the repository root, then: bun run private-names --json',
   });
 
-/** Every listed file outside the platform's own; the setup mode is checked even with no secret. */
-export async function scanPrivateNames(root: string, deny: DenyList): Promise<PrivateNameScan> {
+/** The summary of a root that is no repository and holds no guard: nothing to vouch for. */
+export const NOT_A_TREE = `private-names: skipped, not a git work tree and no ${SELF} in it`;
+
+/**
+ * Every listed file outside the platform's own; the setup mode is checked even with no secret.
+ * `undefined` for a root git cannot list that does not hold this guard either: a directory a
+ * gate test planted, not a public tree. A root that holds the guard and cannot be listed is
+ * refused, so this repository can never scan nothing and pass.
+ */
+export async function scanPrivateNames(
+  root: string,
+  deny: DenyList,
+): Promise<PrivateNameScan | undefined> {
   const listed = Bun.spawnSync(['git', ...LIST_FILES, '-z'], { cwd: root, timeout: 30_000 });
-  // A tree git cannot list would scan nothing and pass: that is a refusal, never a green.
   if (listed.exitCode !== 0) {
+    if (!(await Bun.file(`${root}/${SELF}`).exists())) return undefined;
     throw refuse(
       `git ls-files failed in ${root}, so no tracked file was read and a clean run would prove nothing`,
     );
@@ -218,7 +230,8 @@ export function privateNameFinding(found: PrivateNameHit): Finding {
   };
 }
 
-export function privateNameResult(scan: PrivateNameScan): ScriptResult {
+export function privateNameResult(scan: PrivateNameScan | undefined): ScriptResult {
+  if (scan === undefined) return { ok: true, script: SCRIPT, summary: NOT_A_TREE, findings: [] };
   const findings = scan.hits.map(privateNameFinding);
   const lists = [
     ...(scan.names === 0 ? [] : [`${scan.names} names`]),

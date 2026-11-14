@@ -254,5 +254,9 @@
  * (`docs.search`, `db.explain`, `requests.statements`, `verify.narrow`), `dev-schema-describe.ts`
  * (`schema.describe {entity}`) and `explain-sql.ts` (the EXPLAIN screen). No existing module newly
  * reached; nothing serving-only.
+ * raised 1693 → 1696, measured 1696 (2026-11-14, plan 101b sweep 0, the test's own walk): the two
+ * new jobs files on `MIGRATE_CEILING` and `cli/src/retained-assets-warned.ts` (the undeclared-retain
+ * warning once per build, not per boot), reached through `retained-assets-boot.ts`. No existing
+ * module newly reached.
  */
-export const WEB_ROLE_CEILING = 1693;
+export const WEB_ROLE_CEILING = 1696;

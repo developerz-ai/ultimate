@@ -327,9 +327,12 @@ describe('public API lock · additive or breaking', () => {
 
 describe('public API lock · a format-1 lock', () => {
   const git = async (dir: string, ...args: string[]): Promise<void> => {
-    const ran = await run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
-      cwd: dir,
-    });
+    const ran = await run(
+      ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'tag.gpgsign=false', ...args],
+      {
+        cwd: dir,
+      },
+    );
     if (!ran.ok) expect.unreachable(`git ${args.join(' ')} must succeed in ${dir}: ${ran.output}`);
   };
 

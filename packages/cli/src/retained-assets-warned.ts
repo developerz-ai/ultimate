@@ -2,6 +2,7 @@
 // disk the role's pods share remembers that some process of this build already said it. Fail
 // open — a disk that refuses or stalls costs a duplicate line, never a lost one or a held boot.
 
+import { finiteCount } from '@ultimat3/core';
 import type { StorageDriver } from '@ultimat3/storage';
 
 /** How long the marker may hold a boot: a warning never delays readiness past this. */
@@ -56,9 +57,16 @@ async function claim(input: WarnOnceInput): Promise<boolean> {
  * once per build per simultaneous boot, never once per boot.
  */
 export async function warnOncePerBuild(input: WarnOnceInput, warn: () => void): Promise<void> {
+  // Checked up front (`X_INVARIANT`): `setTimeout` fires a `NaN` at once, as `publishBuildAssets`.
+  const ms = finiteCount(
+    'warnOncePerBuild',
+    'deadlineMs',
+    input.deadlineMs ?? WARNED_MARKER_DEADLINE_MS,
+    1,
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<'deadline'>((resolve) => {
-    timer = setTimeout(() => resolve('deadline'), input.deadlineMs ?? WARNED_MARKER_DEADLINE_MS);
+    timer = setTimeout(() => resolve('deadline'), ms);
   });
   // The marker is memory, not correctness: any failure of the disk says the warning instead.
   const said = await Promise.race([claim(input).catch(() => true), deadline]).finally(() =>

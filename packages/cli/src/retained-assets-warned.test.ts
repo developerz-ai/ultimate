@@ -3,8 +3,9 @@
 // beats a lost one), and the markers are pruned to the newest few builds.
 
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from '@ultimat3/storage';
-import { memoryStorageDriver } from '@ultimat3/storage';
+import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
 import { WARNED_BUILDS_KEPT, warnedPrefix, warnOncePerBuild } from './retained-assets-warned';
 
 const PREFIX = 'x-build-assets/app/production';
@@ -40,9 +41,9 @@ describe('warnOncePerBuild', () => {
     };
     expect(await said(unwritable, 'b1')).toBe(1);
     let count = 0;
-    const unnamed = () => {
-      throw new TypeError('no default disk');
-    };
+    // A storage asked for a disk it never declared refuses with its own coded error.
+    const storage = defineStorage({ disks: { uploads: memoryStorageDriver() } });
+    const unnamed = () => storage.disk('assets');
     await warnOncePerBuild({ disk: unnamed, prefix: PREFIX, role: 'web', buildId: 'b1' }, () => {
       count += 1;
     });
@@ -55,6 +56,16 @@ describe('warnOncePerBuild', () => {
       exists: () => new Promise<boolean>(() => undefined),
     };
     expect(await said(stalled, 'b1', 'web', 10)).toBe(1);
+  });
+
+  test('a deadline that is not a positive finite count is refused, not fired at once', async () => {
+    let caught: unknown;
+    try {
+      await said(memoryStorageDriver(), 'b1', 'web', Number.NaN);
+    } catch (error) {
+      caught = error;
+    }
+    expect(isUltimateError(caught) && caught.code).toBe('X_INVARIANT');
   });
 
   test('markers are pruned to the newest builds, so a deploy a day leaves no growing pile', async () => {

@@ -297,8 +297,13 @@
  * session" rule (`isSessionRefusal`) on the core barrel, and the http `auth` stage reading a thrown
  * session refusal as anonymous instead of a 401 on every public route. Two new files; no existing
  * module newly reached.
+ * raised 952 → 954, measured 954 (2026-11-14, plan 101b sweep 0, the test's own walk):
+ * `jobs/src/execute-report.ts` (a retried attempt counted, not paged) and
+ * `jobs/src/failure-streak.ts` (one line opens a polling loop's failure streak, one closes it),
+ * both reached through `execute.ts`/`scheduler.ts` on the jobs barrel. Two new files; no existing
+ * module newly reached.
  */
-export const MIGRATE_CEILING = 952;
+export const MIGRATE_CEILING = 954;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';
