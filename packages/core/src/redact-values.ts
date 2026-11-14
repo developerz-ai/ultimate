@@ -22,16 +22,25 @@ export class RedactPatternUnsafeError extends UltimateError {
 
 const matchers: RedactValueMatcher[] = [];
 
-/** An unbounded quantifier at `index`: `*`, `+` or `{n,}` / `{n,m}` with no upper bound given. */
-function unboundedAt(source: string, index: number): boolean {
+/**
+ * A REPEATING quantifier at `index`: `*`, `+`, or a brace count whose upper bound exceeds one —
+ * `{2}`, `{2,}`, `{2,40}`. A bounded count is no defence: `(a+){2,40}b` took 2 s on 44 characters.
+ * Only `?`, `{0,1}` and `{1}` are non-repeating.
+ */
+function repeatingAt(source: string, index: number): boolean {
   const char = source[index];
   if (char === '*' || char === '+') return true;
-  return char === '{' && /^\{\d+,\}/.test(source.slice(index));
+  if (char !== '{') return false;
+  const count = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(index));
+  if (count === null) return false;
+  const [, low, comma, high] = count;
+  const upper = comma === undefined ? Number(low) : high === '' ? Infinity : Number(high);
+  return upper > 1;
 }
 
 /**
- * Whether an unboundedly-quantified group itself contains an unbounded quantifier — `(a+)+`,
- * `(\w+\s?)*`, `((ab)*c)+`: the shape that backtracks exponentially on a near-miss. A scan, not a
+ * Whether a repeated group itself contains a repeating quantifier — `(a+)+`, `(\w+\s?)*`,
+ * `((ab)*c)+`, `(a+){2,40}`: the shape that backtracks exponentially on a near-miss. A scan, not a
  * proof: overlapping alternation (`(a|a)*`) passes. It refuses the obvious, at registration, where
  * the alternative was a log line that never finishes rendering.
  */
@@ -55,7 +64,7 @@ export function hasNestedQuantifier(source: string): boolean {
     } else if (char === ')') {
       closedQuantified = groups.pop() ?? false;
       if (closedQuantified && groups.length > 0) groups[groups.length - 1] = true;
-    } else if (unboundedAt(source, index)) {
+    } else if (repeatingAt(source, index)) {
       if (closedQuantified) return true;
       if (groups.length > 0) groups[groups.length - 1] = true;
     } else {
@@ -71,7 +80,7 @@ function refusal(matcher: RedactValueMatcher): string | undefined {
   if (!pattern.flags.includes('g')) return 'has no g flag, so only its first match is replaced';
   if (pattern.flags.includes('y')) return 'is sticky (y), so it matches only at a value’s start';
   if (hasNestedQuantifier(pattern.source)) {
-    return 'nests an unbounded quantifier inside another, which backtracks exponentially';
+    return 'repeats a group that holds a repeating quantifier, which backtracks exponentially';
   }
   if (new RegExp(pattern.source, pattern.flags.replace('g', '')).test('')) {
     return 'matches the empty string, so its replacement lands between every character';

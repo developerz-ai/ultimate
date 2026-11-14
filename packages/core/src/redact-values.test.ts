@@ -44,6 +44,8 @@ describe('redactValues · registration screen', () => {
     ['((ab)*c)+'],
     ['(x{2,})+'],
     ['(?:[a-z]+\\.)*rvnested'],
+    ['(a+){2,40}b'],
+    ['(.*a){12}'],
   ])('a nested unbounded quantifier is refused at registration: /%s/g', (source) => {
     expect(() => redactValues([{ pattern: new RegExp(source, 'g'), replace: '[k]' }])).toThrow(
       RedactPatternUnsafeError,
@@ -71,10 +73,12 @@ describe('redactValues · registration screen', () => {
       { pattern: /rvok_(?:[a-z]|[0-9])+/g, replace: '[ok]' },
       { pattern: /rvclass_[(+)*]{3}/g, replace: '[cls]' },
       { pattern: /rvgroup_(?:ab)+\d{2,8}/g, replace: '[grp]' },
+      { pattern: /rvopt_(?:x+)?(?:y{2,3}){0,1}z/g, replace: '[opt]' },
     ]);
     expect(redactedValue('a rvok_x9z b rvok_q')).toBe('a [ok] b [ok]');
     expect(redactedValue('rvclass_(+)')).toBe('[cls]');
     expect(redactedValue('rvgroup_abab42')).toBe('[grp]');
+    expect(redactedValue('rvopt_xxyyz')).toBe('[opt]');
   });
 });
 

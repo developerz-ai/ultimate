@@ -455,6 +455,34 @@ describe('what is owed to the bus, settled by two callers at once', () => {
     }
   });
 
+  test('one refused settle is one failure, however many reconnects joined it', async () => {
+    const recovered: (Record<string, unknown> | undefined)[] = [];
+    const info = spyOn(logger, 'info').mockImplementation((line, meta) => {
+      if (line === 'cache.broadcast.deferred-recovered') recovered.push(meta);
+    });
+    try {
+      const bus = heldBus();
+      await bus.refusedBust('1');
+      bus.reconnect();
+      await bus.turns();
+      // Three more reconnects while that settle's publish is in flight: joiners, not new runs.
+      bus.reconnect();
+      bus.reconnect();
+      bus.reconnect();
+      await bus.turns();
+      bus.sends.at(-1)?.refuse();
+      await bus.turns();
+
+      bus.reconnect();
+      await bus.turns();
+      bus.sends.at(-1)?.accept();
+      await bus.turns();
+      expect(recovered).toEqual([{ failures: 1 }]);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   test('a flush-all refused mid-settle is still owed', async () => {
     const bus = heldBus();
     await bus.refusedBust(...Array.from({ length: MAX_DEFERRED_TAGS + 1 }, (_, id) => `${id}`));

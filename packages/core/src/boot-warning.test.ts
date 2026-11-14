@@ -116,6 +116,27 @@ describe('unit · bootWarning', () => {
     expect(after.lines).toEqual([]);
   });
 
+  // Two boots in one process stop in any order: each release removes its own frame, never
+  // reverting the slot under a boot still serving or restoring one already stopped.
+  test('boots released out of order keep the live boot’s context', async () => {
+    const a = recorder();
+    const b = recorder();
+    const releaseA = installBootWarnings({ roles: ['worker'], log: a.log });
+    const releaseB = installBootWarnings({ roles: ['web'], log: b.log });
+    try {
+      releaseA();
+      expect(await bootWarning({ ...SPEC, roles: ['web'] })).toBe(true);
+      expect(b.lines).toHaveLength(1);
+      releaseB();
+      // Both released: neither A's stopped context nor B's is current — the environment's role.
+      expect(await bootWarning({ ...SPEC, roles: ['worker'] }, { log: a.log })).toBe(false);
+      expect(a.lines).toEqual([]);
+    } finally {
+      releaseA();
+      releaseB();
+    }
+  });
+
   const refused: readonly [string, Readonly<Record<string, unknown>>][] = [
     ['a code that is not X_SCREAMING_SNAKE', { code: 'cache-local' }],
     ['no roles', { roles: [] }],

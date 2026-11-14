@@ -3,6 +3,7 @@
 // in all five roles on every boot; a line a role cannot act on is noise that buries the one it can.
 // The per-build memory is a slot the boot fills (cli's storage marker): core cannot reach a disk.
 
+import { adapterSlot } from './adapter-slot';
 import { assertCoded } from './assert';
 import { renderCauseValue } from './error-render';
 import { logger } from './logger';
@@ -47,18 +48,14 @@ export interface BootWarningContext {
 const ONCE: ReadonlySet<unknown> = new Set(['process', 'build']);
 const SCREAMING_SNAKE = /^X(?:_[A-Z0-9]+)+$/;
 
-/** A stack, `installLogSink`'s shape: each release restores what it replaced. */
-let installed: BootWarningContext = {};
+/** A stack of frames, each removed by its own release: boots may stop in any order. */
+const installed = adapterSlot<BootWarningContext>(() => ({}));
 /** Codes said under `once: 'process'` (or `build` with no store) by this process. */
 const SAID = new Set<string>();
 
-/** The boot's half: the booting roles and the build store. Returns the release. */
+/** The boot's half: the booting roles and the build store. Returns the release of THIS frame. */
 export function installBootWarnings(context: BootWarningContext): () => void {
-  const previous = installed;
-  installed = context;
-  return () => {
-    installed = previous;
-  };
+  return installed.install(context);
 }
 
 /** Whether any booting role is one the warning names. */
@@ -112,10 +109,11 @@ export async function bootWarning(
   context?: BootWarningContext,
 ): Promise<boolean> {
   check(spec);
-  const booting = context?.roles ?? installed.roles ?? [resolveRole()];
+  const frame = installed.current();
+  const booting = context?.roles ?? frame.roles ?? [resolveRole()];
   const role = booting.find((candidate) => spec.roles.includes(candidate));
   if (role === undefined) return false;
-  const log = context?.log ?? installed.log ?? logger;
+  const log = context?.log ?? frame.log ?? logger;
   const fields: Record<string, unknown> = { code: spec.code };
   for (const [key, value] of Object.entries(spec.fields ?? {})) {
     if (key !== 'code') fields[key] = value;
@@ -125,7 +123,7 @@ export async function bootWarning(
     said = true;
     log.warn(spec.message, fields);
   };
-  const store = context?.buildOnce ?? installed.buildOnce;
+  const store = context?.buildOnce ?? frame.buildOnce;
   if (spec.once === 'build' && store !== undefined) {
     await store({ code: spec.code, role }, say);
     return said;

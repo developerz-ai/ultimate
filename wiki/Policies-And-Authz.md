@@ -177,7 +177,7 @@ policyScope(seePost, actor); // the tree, frozen at every depth, or undefined fo
 - **A `via` cannot cross tenants.** Its subselect is planned through the TARGET's tenant guard, the
   acting actor's tenant and the target's soft delete applied inside; outside a request its `where`
   must name the tenant, as a read of that table must. An untenanted target behind a tenanted source
-  must declare `shared:`, else `X_TENANCY_UNSCOPED`.
+  must declare `shared:` or `global:`, else `X_TENANCY_UNSCOPED`.
 - **A query read composes it**, `As of 31.11.0`: a `query({ policy: seePost, sql })` whose `sql`
   returns `from()` gets each condition as a filter and each `or`/`and`/`via` node on
   `RowWindow.nodes`, which a repository provider hands to `.andWhereNode(node)` —

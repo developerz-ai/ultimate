@@ -6,7 +6,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
-import { recountBatchSql, recountDriftBatchSql, recountWindowSql } from './generate-counter';
+import {
+  recountBatchSql,
+  recountDriftBatchSql,
+  recountLockSql,
+  recountWindowSql,
+} from './generate-counter';
 import { raw, sql } from './sql';
 import { statementsOf } from './statement-split';
 
@@ -130,6 +135,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
       );
       const last = window?.last ?? null;
       if (last === null) break;
+      await client.query(recountLockSql(POSTS, counter, after, last));
       const rows = await client.query<{ key: string }>(
         recountDriftBatchSql(POSTS, counter, after, last),
       );

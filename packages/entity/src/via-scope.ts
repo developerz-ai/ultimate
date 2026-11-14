@@ -18,13 +18,15 @@ export const isScopedVia = (value: unknown): boolean =>
   typeof value === 'object' && value !== null && scoped.has(value as ViaValue);
 
 /**
- * An untenanted target behind a tenanted source must say why it belongs to no tenant (`shared:`),
- * the same declaration a reference into it needs. Otherwise the hop is an unscoped read reached
- * from inside a tenant, and it is refused as one.
+ * An untenanted target behind a tenanted source must say why it belongs to no tenant — `shared:`
+ * (it hangs off a tenant's row) or `global:` (it is every tenant's alike), the two stances
+ * `describe.ts`'s `assertShared` accepts. Otherwise the hop is an unscoped read reached from inside
+ * a tenant, and it is refused as one.
  */
 const assertReachable = (source: EntityCore, target: EntityCore, operation: string): void => {
   if (source.$tenantColumn === null || target.$tenantColumn !== null) return;
-  if (getEntity(target.$name)?.describe().shared !== undefined) return;
+  const described = getEntity(target.$name)?.describe();
+  if (described?.shared !== undefined || described?.global !== undefined) return;
   throw tenancyUnscoped(target.$name, `${operation} via ${source.$name}`);
 };
 

@@ -536,7 +536,8 @@ await db.posts
 - **A hop is planned through its TARGET's tenant guard** (`via-scope.ts`, in `readPlan`): the
   acting actor's tenant and the target's soft delete apply inside the subselect; outside a request
   its `where` must name the tenant (`X_TENANCY_UNSCOPED`). An untenanted target behind a tenanted
-  source must declare `shared:`. A hop value no `readPlan` scoped is refused by both drivers.
+  source must declare `shared:` or `global:`. A hop value no `readPlan` scoped is refused by both
+  drivers.
 - `entity` is a registered entity NAME; `column`, `target` and every inner column must be declared
   and not sealed; at most `MAX_PREDICATE_DEPTH` (4) levels. Each refusal is
   `X_ENTITY_PREDICATE_NODE_INVALID`, on the chain line.

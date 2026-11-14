@@ -113,6 +113,7 @@ export {
   recountBatchSql,
   recountDriftBatchSql,
   recountDriftSql,
+  recountLockSql,
   recountSql,
   recountWindowSql,
 } from './generate-counter';

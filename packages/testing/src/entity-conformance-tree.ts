@@ -54,7 +54,15 @@ const FRIEND = idAt('c2');
 const STRANGER = idAt('c3');
 const EX = idAt('c4');
 
-const tables = { posts, friendships, handles, badges };
+/** Untenanted and the same for every tenant (`global:`): a catalog any org may hop into. */
+const staff = remember(
+  entity('ec_tree_staff', {
+    columns: { id: uuid().primaryKey(), userId: uuid() },
+    global: 'the platform staff roster, the same for every org',
+  }),
+);
+
+const tables = { posts, friendships, handles, badges, staff };
 type Tree = Database<typeof tables>;
 
 /** Seeded as a script would, naming every tenant: the table's own answer. */
@@ -76,6 +84,7 @@ const seed = async (db: Tree): Promise<void> => {
   await friend(3, EX, ORG, new Date('2026-01-01T00:00:00.000Z'));
   await db.handles.insert({ id: idAt('f1'), userId: FRIEND });
   await db.badges.insert({ id: idAt('f2'), userId: FRIEND, kind: 'gold' });
+  await db.staff.insert({ id: idAt('f3'), userId: STRANGER });
 };
 
 const bodies = (rows: readonly { readonly body: string }[]): readonly string[] =>
@@ -150,7 +159,7 @@ export const TREE_CHECKS: readonly EntityDriverCheck[] = [
   ),
   checkOver(
     tables,
-    'a hop into an untenanted table is refused unless it declares shared:',
+    'a hop into an untenanted table is refused unless it declares shared: or global:',
     async (db) => {
       await seed(db);
       const into = (name: string) =>
@@ -164,6 +173,8 @@ export const TREE_CHECKS: readonly EntityDriverCheck[] = [
         'X_TENANCY_UNSCOPED',
       );
       expect(bodies(await inOrg(ORG, () => into('ec_tree_badges')))).toEqual(['p2']);
+      // A global catalog reads alike for every org: STRANGER's ORG posts, never OTHER_ORG's.
+      expect(bodies(await inOrg(ORG, () => into('ec_tree_staff')))).toEqual(['p3', 'p4']);
     },
     ['predicate:via'],
   ),

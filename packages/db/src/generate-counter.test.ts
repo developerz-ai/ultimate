@@ -7,6 +7,7 @@ import {
   counterTrigger,
   recountBatchSql,
   recountDriftBatchSql,
+  recountLockSql,
   recountSql,
   recountWindowSql,
 } from './generate-counter';
@@ -69,5 +70,13 @@ describe('counter · recount by key range', () => {
     expect(repair.text).toContain('p."id" <= $1');
     expect(repair.text).not.toContain('>');
     expect(repair.values).toEqual(['z']);
+  });
+
+  test('the window is locked first, in key order, the way a counter trigger locks a parent', () => {
+    const lock = recountLockSql('posts', plain, 'a', 'z');
+    expect(lock.text).toBe(
+      'select 1 from "posts" p where p."id" > $1 and p."id" <= $2 order by p."id" for no key update',
+    );
+    expect(lock.values).toEqual(['a', 'z']);
   });
 });

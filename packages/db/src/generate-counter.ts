@@ -79,8 +79,9 @@ const truth = (counter: CounterDescriptionLike): string =>
 
 /**
  * Sets every drifted counter to the truth. A migration adding a counter runs it once, so a table
- * that already holds rows starts true. `x db recount --write` repairs by key range instead
- * (`recountBatchSql`), one transaction per window.
+ * that already holds rows starts true. Migration-only: it locks nothing first, so it is not safe
+ * beside live writers — `x db recount --write` repairs by key range instead (`recountLockSql`,
+ * then `recountBatchSql`), one transaction per window.
  */
 export function recountSql(parent: string, counter: CounterDescriptionLike): string {
   return (
@@ -130,6 +131,25 @@ export function recountWindowSql(
   return sql`select max(w."key") as "last" from (${keys}) w`;
 }
 
+/**
+ * Locks one window's parent rows, in key order, as a counter's trigger locks a parent (`for no key
+ * update`, `pg-lock.ts`'s mode). Sent FIRST in the window's transaction: a writer whose trigger
+ * already holds a row commits before this returns, and the drift read and repair that follow, each
+ * its own statement under READ COMMITTED, take a snapshot that counts it; a writer arriving later
+ * waits in its trigger and moves the repaired count by one. An UPDATE alone re-checks a row it
+ * waited on but keeps its statement's snapshot for `count(*)` — and writes a stale count.
+ */
+export function recountLockSql(
+  parent: string,
+  counter: CounterDescriptionLike,
+  after: string | null,
+  last: string,
+): SqlFragment {
+  const from = raw(`select 1 from ${identifier(parent).text} p where `);
+  const order = raw(` order by p.${identifier(counter.key).text} for no key update`);
+  return sql`${from}${windowOf(counter, after, last)}${order}`;
+}
+
 /** The drifted rows of one window, for the report: key, stored and true count. */
 export function recountDriftBatchSql(
   parent: string,
@@ -149,7 +169,10 @@ export function recountDriftBatchSql(
   return sql`${select}${windowOf(counter, after, last)}${drifted}`;
 }
 
-/** Sets every drifted counter of one window to the truth: one statement, one batch. */
+/**
+ * Sets every drifted counter of one window to the truth: one statement, one batch — only after
+ * `recountLockSql` in the same transaction, or a concurrent writer's count is lost.
+ */
 export function recountBatchSql(
   parent: string,
   counter: CounterDescriptionLike,

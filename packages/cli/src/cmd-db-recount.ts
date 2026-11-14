@@ -8,6 +8,7 @@ import {
   CROSS_TENANT_SETTING,
   recountBatchSql,
   recountDriftBatchSql,
+  recountLockSql,
   recountWindowSql,
   setLocal,
   withTransaction,
@@ -50,8 +51,8 @@ export interface RecountReport {
 }
 
 /**
- * The sweep: windows of `batch` parent keys in key order. Each transaction reads its window's
- * drift and, with `write`, repairs it; cross-tenant, because a counter is every tenant's and under
+ * The sweep: windows of `batch` parent keys in key order. Each transaction locks its window's
+ * parent rows, then reads their drift and, with `write`, repairs it; cross-tenant, because a counter is every tenant's and under
  * forced row security an unset tenant would match no row. A dry run writes nothing.
  *
  * Batched directly rather than through `@ultimat3/jobs`' `backfill()`: that factory DECLARES a job
@@ -79,6 +80,9 @@ export async function recountInBatches(
         );
         const end: string | null = window?.last ?? null;
         if (end === null) return null;
+        // Lock first, read after: the drift read and the repair then each see every writer that
+        // held one of these rows (`recountLockSql`).
+        await tx.query(recountLockSql(parent, counter, from, end));
         const found = await tx.query<DriftRow>(recountDriftBatchSql(parent, counter, from, end));
         if (options.write && found.length > 0) {
           await tx.execute(recountBatchSql(parent, counter, from, end));

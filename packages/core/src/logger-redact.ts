@@ -125,9 +125,9 @@ export function redactKeys(keys: Iterable<string>): void {
 /**
  * Mark VALUES as secret everywhere: every match of each `pattern` becomes its `replace`, in every
  * string a log line, the monitor envelope or an error's rendering carries. The key list cannot see
- * an account number inside a message; this can. Each pattern needs `g`; one with a nested
- * unbounded quantifier, `y`, or an empty match is refused (`X_REDACT_PATTERN_UNSAFE`) and the
- * whole list with it. Call once at boot, beside `defineEnv`. The framework registers none.
+ * an account number inside a message; this can. Each pattern needs `g`; one repeating a group
+ * that holds a repeating quantifier, `y`, or an empty match is refused (`X_REDACT_PATTERN_UNSAFE`)
+ * and the whole list with it. Call once at boot, beside `defineEnv`. The framework registers none.
  */
 export function redactValues(list: readonly RedactValueMatcher[]): void {
   addValueMatchers(list);

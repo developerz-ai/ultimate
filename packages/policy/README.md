@@ -174,7 +174,7 @@ policyScope(seePost, actor); // the tree, frozen at every depth, or `undefined` 
 - **Refused, never guessed** (`X_QUERY_SCOPE_UNCOMPOSABLE`): an `or`/`via` scope on a LIVE read (the
   matcher patches a flat shape) and a `via` over `from()` given a list of rows.
 - **A `via` cannot cross tenants.** Its subselect is planned through the target's own tenant guard;
-  an untenanted target behind a tenanted source must declare `shared:` (`X_TENANCY_UNSCOPED`).
+  an untenanted target behind a tenanted source must declare `shared:` or `global:` (`X_TENANCY_UNSCOPED`).
 - **A scope belongs to the clause it is declared on.** `and`/`or`/`not` over a scoped policy carry
   none: the conjunction of children's scopes is not the scope of `or`. Scope the outermost policy.
 - **Not tenancy.** Tenant isolation is the entity layer's (`where({ orgId })`, the tenancy guard);

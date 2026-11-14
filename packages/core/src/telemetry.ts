@@ -11,6 +11,7 @@ import { isUltimateError } from './errors';
 import { isSpanId, isTraceId, spanId as newSpanId, traceId as newTraceId } from './ids';
 import { instrument, subscribed } from './instrument';
 import { installTraceHeaders } from './outbound-headers';
+import { redactedValue } from './redact-values';
 import { defaultSampler, resetDefaultSampler, type Sampler } from './sampler';
 
 export type SpanKind = 'internal' | 'server' | 'client' | 'producer' | 'consumer';
@@ -309,7 +310,8 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
       // `withSpan`'s catch — around `cache.invalidate`, `db.<verb>` and every HTTP and job span.
       // A throw here substitutes the tracer's own TypeError for the caller's real failure and
       // leaves the span it was annotating unended.
-      const message = renderThrowable(error);
+      // Redacted by value: the event and the status leave the box through every OTLP exporter.
+      const message = redactedValue(renderThrowable(error));
       if (sampled) {
         pushEvent({
           name: 'exception',
@@ -321,7 +323,7 @@ export function startSpan(initialName: string, options?: StartSpanOptions): Span
       return span;
     },
     setStatus(code, message) {
-      status = { code, message };
+      status = { code, message: message === undefined ? message : redactedValue(message) };
       return span;
     },
     updateName(next) {
