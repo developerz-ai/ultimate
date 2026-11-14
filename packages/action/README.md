@@ -912,8 +912,12 @@ to `maxDelayMs` (or until `maxRecords` are queued) and writes the batch as ONE
 `insert … select … from jsonb_to_recordset($1)`; each `write()` resolves or rejects with its own
 batch, so a failed statement is `X_AUDIT_SINK_FAILED` (or `X_QUERY_AUDIT_SINK_FAILED`) on every
 call it carried — none succeeds silently. The queue flushes on drain, in the `inflight` phase,
-before the pool closes. A sink of your own with a `writeMany(records)` gets the same through
-`batchedAuditSink(sink, { maxRecords, maxDelayMs })` from `@ultimat3/action/adapter`.
+before the pool closes. A batch carries other requests' records, so it is sent **outside any
+transaction**: one caller's rollback never takes the rest of its batch with it, and a record is
+kept whatever its own transaction does — an audit row records the attempt. Unbatched, a write
+joins the caller's open transaction, as it always has. A sink of your own with a
+`writeMany(records)` gets the batching through `batchedAuditSink(sink, { maxRecords, maxDelayMs })`
+from `@ultimat3/action/adapter` — and sends outside the ambient transaction itself.
 
 `x_audit` carries the framework's own facts as columns — the action, the surface, the outcome,
 the actor, the correlation ids, the idempotency key — and the parsed `input` as `jsonb`, redacted

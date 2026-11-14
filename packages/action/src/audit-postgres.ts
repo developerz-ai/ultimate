@@ -9,6 +9,7 @@ import type { AuditRecord } from './audit';
 import type { BatchAuditSink, BatchedAuditSink, BatchedAuditSinkOptions } from './audit-batch';
 import { batchedAuditSink } from './audit-batch';
 import { rowOf } from './audit-postgres-row';
+import { outsideTransactions } from './tx-scope';
 
 /**
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, and
@@ -125,6 +126,12 @@ export interface PostgresAuditSinkOptions {
    * Group commit: concurrent writes share one `SQL_AUDIT_INSERT_MANY`, and each `write()` still
    * settles with its own batch (`batchedAuditSink`). `true` takes the defaults; an object sets
    * `maxRecords` / `maxDelayMs`. Absent: one insert per record, as before.
+   *
+   * **A batch is sent outside any transaction** (`outsideTransactions`, in `tx-scope.ts`), so
+   * every record in it is stored even when the transaction of the write that armed it rolls back.
+   * Without that, the timer inherited the arming write's async context, and `dbExecutor()` sent
+   * OTHER callers' records on that transaction's connection, to be rolled back with it.
+   * Unbatched, a write joins the caller's transaction, as it always has.
    */
   readonly groupCommit?: boolean | BatchedAuditSinkOptions | undefined;
 }
@@ -162,7 +169,9 @@ export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAu
 export function postgresAuditSink(
   options: PostgresAuditSinkOptions,
 ): PostgresAuditSink | BatchedAuditSink {
-  const exec = options.executor;
+  const group = options.groupCommit;
+  const grouped = group !== undefined && group !== false;
+  const exec = grouped ? outsideTransactions(options.executor) : options.executor;
   const sink: PostgresAuditSink = {
     async write(record: AuditRecord): Promise<void> {
       await exec.query(SQL_AUDIT_INSERT, Object.values(rowOf(record)));
@@ -172,7 +181,6 @@ export function postgresAuditSink(
       await exec.query(SQL_AUDIT_INSERT_MANY, [JSON.stringify(records.map(rowOf))]);
     },
   };
-  const group = options.groupCommit;
-  if (group === undefined || group === false) return sink;
+  if (!grouped) return sink;
   return batchedAuditSink(sink, group === true ? {} : group);
 }
