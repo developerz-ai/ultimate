@@ -3,6 +3,7 @@
 // when that is and the wake is live — and three things that cut a wait short: work arriving
 // (`enqueue-signal.ts`), a slot coming free, a row this worker handed back becoming due.
 
+import { logger, renderThrowable } from '@ultimat3/core';
 import { onEnqueued, wakeIsLive } from './enqueue-signal';
 import {
   createIdleBackoff,
@@ -23,6 +24,8 @@ export interface ClaimLoopOptions {
   readonly onError: (error: unknown) => void;
   /** A pass came back: what closes a streak `onError` opened (`failure-streak.ts`). */
   readonly onPassed?: () => void;
+  /** The loop (re)started: a streak a stopped run left open is forgotten. */
+  readonly onStart?: () => void;
   /**
    * The driver's fleet-wide announcement (`JobDriver.wake`). Without one no other process hears of
    * an enqueue, so the loop never rests past its poll; with one, a row this loop handed back
@@ -207,7 +210,14 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
    * every resting loop re-read its horizon. Failure is the poll's to cover: logged, not thrown.
    */
   const handOff = (): void => {
-    options.wake?.().catch(options.onError);
+    // Its own line, never `onError`: that is the claim pass's failure streak, and a stopping loop's
+    // NOTIFY failing is not a pass that failed.
+    options.wake?.().catch((error: unknown) => {
+      logger.warn('jobs.loop.hand-off-failed', {
+        subject: options.subject,
+        error: renderThrowable(error),
+      });
+    });
   };
 
   return {
@@ -215,6 +225,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       if (active) return;
       active = true;
       ended = false;
+      options.onStart?.();
       delayMs = floor;
       unsubscribe = onEnqueued(wake);
       arm();

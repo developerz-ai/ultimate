@@ -11,10 +11,12 @@ import {
   type Logger,
   liveClock,
   traceId as newTraceId,
+  parentContext,
   type Role,
   readCookie,
   runWithContext,
   type ServiceBag,
+  tryUseContext,
   useContext,
   uuidV7,
   withChildContext,
@@ -334,6 +336,19 @@ const ambientContext = (): RequestContext => useContext() as unknown as RequestC
 export const assertInRequest = (member: string, ctx = ambientContext()): RequestContext => {
   if ((ctx.requestHeaders as Headers | undefined) === undefined) throw noRequest(member);
   return ctx;
+};
+
+/**
+ * Whether an HTTP request is behind the ambient context: the context itself, or any it was derived
+ * inside (`parentContext`). A child does not carry the request's headers, so a reader still
+ * refuses there (`X_NO_REQUEST`); this only tells "no request at all" (a job, a task, the build's
+ * `llms.txt` pass) from "a request this scope cannot read", for a reader whose answer is `null`.
+ */
+export const hasRequest = (): boolean => {
+  for (let ctx = tryUseContext(); ctx !== undefined; ctx = parentContext(ctx)) {
+    if (Reflect.get(ctx, 'requestHeaders') !== undefined) return true;
+  }
+  return false;
 };
 
 /**

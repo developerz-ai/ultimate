@@ -2,7 +2,7 @@
 // browser hands back, answers once, and only for the action it was asked about.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor, withChildContext } from '@ultimat3/core';
 import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -111,7 +111,17 @@ describe('useActionAnswer', () => {
     expect(runWithContext(job, () => useActionAnswer('createPost'))).toBeNull();
   });
 
-  test('with no context at all, the read still refuses: only "no request" is null', () => {
-    expect(() => useActionAnswer()).toThrow(expect.objectContaining({ code: 'X_NO_CONTEXT' }));
+  test('with no context at all there is no request either: null', () => {
+    expect(useActionAnswer()).toBeNull();
+  });
+
+  test('a child of a request is still the request: it refuses, and the flash is kept', () => {
+    const ctx = withCookie(JSON.stringify(refusal));
+    const read = () =>
+      runWithContext(asCtx(ctx), () =>
+        withChildContext({ actor: userActor({ id: 'u1' }) }, () => useActionAnswer('createPost')),
+      );
+    expect(read).toThrow(expect.objectContaining({ code: 'X_NO_REQUEST' }));
+    expect(ctx.headers.getSetCookie()).toEqual([]);
   });
 });

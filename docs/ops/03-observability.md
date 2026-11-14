@@ -171,6 +171,9 @@ reads the command next to the failure instead of a stack trace.
 
 A loop that fails every tick — a database restart — logs a streak, not a line per tick: one
 `error` line when it opens, one `info` line with `failures` (the count) when a tick passes again.
+A failure with a different cause (another `X_*` code, or another message when uncoded) is logged
+again, its line carrying the streak it ends as `previous: { code \| error, failures }`. A restarted
+loop starts with no streak.
 
 | Loop | Opens | Closes |
 |---|---|---|

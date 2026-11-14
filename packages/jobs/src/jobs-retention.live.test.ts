@@ -256,6 +256,42 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
     expect(first).toBeGreaterThan(0);
     expect(Math.max(...walked)).toBeLessThanOrEqual(first * 2);
   }, 60_000);
+  // A mark crosses sessions: the pool hands each batch whichever connection is free, and a
+  // connection's DateStyle is its own (a pooler, an operator's `ALTER ROLE … SET datestyle`). A
+  // mark written as `timestamptz::text` under `SQL, DMY` and read back under `SQL, MDY` is a
+  // different instant, or no date at all. Pinned at the 25th, so a swap cannot pass silently.
+  test('a mark one session wrote reads back as the same instant on a session styled otherwise', async () => {
+    await executor.query('truncate x_jobs, x_job_steps', []);
+    await executor.query(
+      `insert into x_jobs (id, name, input, idempotency_key, run_id, state, updated_at)
+       select gen_random_uuid(), 'mail.send', '{}'::jsonb, 'styled' || g, gen_random_uuid(),
+              'done', timestamptz '2026-01-25 12:00:00.123456+00' - g * interval '1 second'
+         from generate_series(1, 30) g`,
+      [],
+    );
+    using dmy = await client.reserve();
+    using mdy = await client.reserve();
+    await dmy.query({ text: "set datestyle = 'SQL, DMY'", values: [] });
+    await dmy.query({ text: "set timezone = 'Asia/Kathmandu'", values: [] });
+    await mdy.query({ text: "set datestyle = 'SQL, MDY'", values: [] });
+    let turn = 0;
+    const alternating: PgExecutor = {
+      query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> => {
+        const session = turn % 2 === 0 ? dmy : mdy;
+        turn += 1;
+        return session.query<R>({ text, values });
+      },
+    };
+    const target = jobsPurgeTarget({
+      executor: alternating,
+      doneRetentionMs: 14 * DAY_MS,
+      deadRetentionMs: 90 * DAY_MS,
+      batchSize: 10,
+    });
+
+    expect(await target.purgeExpired(Date.now())).toBe(30);
+    expect(await count('x_jobs')).toBe(0);
+  });
 });
 
 type PlanNode = Record<string, unknown> & { readonly Plans?: readonly PlanNode[] };

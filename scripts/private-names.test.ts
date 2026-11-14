@@ -218,12 +218,20 @@ describe('private-names · the public tree, every file and records too', () => {
     expect(render(result, true).toLowerCase()).not.toContain(MODE);
   });
 
-  test('.dz/ is the platform`s own and is not read for either class', async () => {
-    const root = await tree({ '.dz/briefs/a.md': `${MODE} zorblax-co/vault\n` });
-    const result = await run(root, 'zorblax-co/vault');
-    expect(result.ok).toBe(true);
+  test('.dz/ is hand-edited platform config: every rule applies there', async () => {
+    const root = await tree({
+      '.dz/briefs/x.md': `the ${MODE}\n`,
+      '.dz/briefs/y.md': 'see zorblax-co/vault#3\n',
+      '.dz/briefs/z.md': 'quimtel\n',
+    });
+    const result = await run(root, 'quimtel\nzorblax-co/vault');
+    expect(result.findings?.map((finding) => [finding.at, finding.cause])).toEqual([
+      ['.dz/briefs/x.md:1', expect.stringContaining('setup mode')],
+      ['.dz/briefs/y.md:1', expect.stringContaining('repository entry 1 of')],
+      ['.dz/briefs/z.md:1', expect.stringContaining('entry 1')],
+    ]);
     expect(result.summary).toBe(
-      `private-names: checked 1 repositories across 1 files; ${SKIP_NOTE}`,
+      'private-names: checked 1 names and 1 repositories across 4 files, 3 carry one',
     );
   });
 

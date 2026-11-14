@@ -86,10 +86,12 @@ jobs:
           git commit -m "chore(bench): re-measure first hour and http-hello (run ${GITHUB_RUN_ID})"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
           # Refused — `GitHub Actions is not permitted to create or approve pull requests` — when the
-          # repository (or its organisation) does not allow Actions to open pull requests; no
-          # `permissions:` key can grant that. Both 2026-11 runs measured, pushed and died here.
+          # repository or its organisation does not let Actions create pull requests; no
+          # `permissions:` key can grant that. Both 2026-11 runs measured, pushed and died here. The
+          # refusal names no approve flag as the fix: that switch also lets any workflow's token
+          # approve a pull request, which is a review branch protection then cannot tell apart.
           if ! gh pr create --head "$BRANCH" --title 'chore(bench): re-measured figures' \
             --body "Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. \`bun run scripts/bench-claims.ts\` says which prose to update."; then
-            echo "::error::no pull request for ${BRANCH} (pushed): allow Actions to open pull requests — gh api -X PUT \"repos/${GITHUB_REPOSITORY}/actions/permissions/workflow\" -F can_approve_pull_request_reviews=true — then gh pr create --head ${BRANCH} --fill"
+            echo "::error::no pull request for ${BRANCH} (pushed): this run needs GitHub Actions allowed to create pull requests, in the repository's and the organisation's Actions settings. Cost: a bot can then open pull requests, so required reviews must come from CODEOWNERS, which the bot cannot satisfy. Until then open it by hand: gh pr create --head ${BRANCH} --fill"
             exit 1
           fi

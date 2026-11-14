@@ -1038,6 +1038,7 @@ on the system clock. Their callers are the boot (reading
 | Name | What |
 |---|---|
 | `CompletionBound` | what bounds a `runToCompletion` scope, when its caller owns a ceiling |
+| `parentContext(ctx)` | the context `ctx` was derived inside (`withChildContext`, `runToCompletion`), or `undefined`. Held weakly by the child. How `@ultimat3/http`'s `hasRequest()` finds a request a child does not carry |
 | `MAX_TIMER_MS` | the longest delay a timer holds, 2,147,483,647 ms: past it `setTimeout` arms ~1 ms |
 | `hostDecision(url, allowHosts)`, `hostMatches`, `ANY_HOST` | may a browser or scraper request leave. A wildcard (`'*'`, `'*.example.com'`) never admits an address inside the network nor `localhost`/`*.localhost` (loopback by name, and sent around an egress proxy by Chrome); an exact rule — `'localhost'`, `'127.0.0.1'` — does |
 | `jsonbRefusal(text)` | why `jsonb` would refuse this `JSON.stringify` output, or `undefined`. Names the class of thing, never the text |

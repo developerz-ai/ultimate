@@ -14,9 +14,9 @@
 // ignore, so a new page is caught before its commit), counts the files it read, and refuses a run
 // that did not read this file: a scan of the wrong tree, or of nothing, is never a green. A root
 // that is no git tree and holds no copy of this file (a gate test's planted directory) is a skip
-// that says so: there is no public tree there. `.dz/` is the platform's own and is not read. CHANGELOG.md, docs/changelog/,
-// docs/history/ and docs/plans/ are records: an adopter name there stands, but the setup mode and a
-// private repository do not.
+// that says so: there is no public tree there. Every listed file is read. CHANGELOG.md,
+// docs/changelog/, docs/history/ and docs/plans/ are records: an adopter name there stands, but the
+// setup mode and a private repository do not. `.dz/` is hand-edited platform config: every rule.
 //
 // UNSET SKIPS THE NAMES, and says so; the setup mode is still checked. A fork's pull request cannot
 // read the secret and receives an empty string. With ULTIMATE_PRIVATE_NAMES_REQUIRED=1, which
@@ -57,9 +57,6 @@ export const SKIP_NOTE = `skipped names, ${ENV_NAME} is unset`;
 
 /** Records whose history stands: an adopter name in them is never rewritten. */
 const RECORDS = ['CHANGELOG.md', 'docs/changelog/', 'docs/history/', 'docs/plans/'];
-
-/** The platform's own directory, rewritten whole by it: out of this repository's hands. */
-const PLATFORM_OWNED = ['.dz/'];
 
 export interface PrivateNameHit {
   /** The tracked file, or `undefined` when its own path carries a value and may not be printed. */
@@ -128,7 +125,7 @@ const refuse = (cause: string): ScriptError =>
 export const NOT_A_TREE = `private-names: skipped, not a git work tree and no ${SELF} in it`;
 
 /**
- * Every listed file outside the platform's own; the setup mode is checked even with no secret.
+ * Every listed file; the setup mode is checked even with no secret.
  * `undefined` for a root git cannot list that does not hold this guard either: a directory a
  * gate test planted, not a public tree. A root that holds the guard and cannot be listed is
  * refused, so this repository can never scan nothing and pass.
@@ -148,7 +145,7 @@ export async function scanPrivateNames(
     .toString()
     .split('\0')
     .map((path, at) => ({ path, position: at + 1 }))
-    .filter(({ path }) => path.length > 0 && !PLATFORM_OWNED.some((dir) => path.startsWith(dir)));
+    .filter(({ path }) => path.length > 0);
   const repositories = repositoryMatchers(deny.repositories);
   const hits: PrivateNameHit[] = [];
   let readSelf = false;

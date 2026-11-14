@@ -284,4 +284,50 @@ describe('a re-dial streak in the log', () => {
       release();
     }
   });
+
+  test('a refusal with a new cause is news: logged, with the streak it ends', async () => {
+    const lines: { event: string; previous?: unknown }[] = [];
+    const release = installLogSink((line) => {
+      const parsed = JSON.parse(line) as { msg?: string; previous?: unknown };
+      if (parsed.msg?.startsWith('db.listen.') === true) {
+        lines.push({
+          event: parsed.msg,
+          ...(parsed.previous === undefined ? {} : { previous: parsed.previous }),
+        });
+      }
+    });
+    try {
+      const first = fakePool();
+      const second = fakePool();
+      second.refuse = true;
+      let current = first;
+      const timers = manualTimers();
+      const listeners = poolListeners(() => current, timers.schedule);
+      await listeners.listen('x_jobs_wake', () => undefined);
+
+      current = second;
+      listeners.redial();
+      await turn();
+      timers.fire();
+      await turn();
+      // The server is back, but the role lost its grant: a different failure, every attempt.
+      current = {
+        listen: () => Promise.reject(new TypeError('permission denied for database')),
+      } as unknown as FakePool;
+      timers.fire();
+      await turn();
+      timers.fire();
+      await turn();
+
+      expect(lines).toEqual([
+        { event: 'db.listen.redial_failed' },
+        {
+          event: 'db.listen.redial_failed',
+          previous: { code: 'X_DB_UNAVAILABLE', failures: 2 },
+        },
+      ]);
+    } finally {
+      release();
+    }
+  });
 });

@@ -308,6 +308,18 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
 }
 
 /**
+ * Each derived context's parent, keyed weakly by the CHILD: an entry lives exactly as long as the
+ * child does, so a parent is never held past the last child still pointing at it. Core knows no
+ * layer's fields; a layer above (http's request frame) finds what a child was derived inside here.
+ */
+const parents = new WeakMap<Ctx, Ctx>();
+
+/** The context `ctx` was derived inside (`withChildContext`, `runToCompletion`), or `undefined`. */
+export function parentContext(ctx: Ctx): Ctx | undefined {
+  return parents.get(ctx);
+}
+
+/**
  * The one build of a child context, narrowing (`withChildContext`) or not (`runToCompletion`): the
  * caller decides the two members that say how long this work may run, everything else is the rule.
  */
@@ -323,7 +335,7 @@ function derivedContext(
   const carried = Object.fromEntries(
     Object.entries(parent.services).filter(([name]) => !isManagedService(name)),
   );
-  return ctxOf({
+  const child = ctxOf({
     requestId: parent.requestId,
     traceId: patch.traceId ?? parent.traceId,
     actor: patch.actor ?? parent.actor,
@@ -337,6 +349,8 @@ function derivedContext(
     signal: lifetime.signal,
     services: { ...carried, ...(patch.services ?? {}) },
   });
+  parents.set(child, parent);
+  return child;
 }
 
 /**

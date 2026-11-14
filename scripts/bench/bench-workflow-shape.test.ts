@@ -1,5 +1,5 @@
 // The shape of `.github/workflows/bench.yml` that keeps its weekly figures arriving: triggers that
-// actually fire, and a pull-request step whose refusal names the repository setting to flip. Reads
+// actually fire, and a pull-request step whose refusal names what it needs and what that costs. Reads
 // the REAL workflow — each assertion is one a quiet edit to it would break with nothing red.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
@@ -43,14 +43,17 @@ describe('unit · bench.yml fires on triggers that can fire', () => {
   });
 });
 
-describe('unit · a refused pull request names the setting that refused it', () => {
+describe('unit · a refused pull request names what it needs and what that costs', () => {
   test('gh pr create is guarded, and its failure prints the exact fix and fails the run', () => {
     expect(pr?.if).toBe(`\${{ always() }}`);
     expect(prShell).toContain('if ! gh pr create');
-    expect(prShell).toContain(
-      `gh api -X PUT \\"repos/\${GITHUB_REPOSITORY}/actions/permissions/workflow\\" -F can_approve_pull_request_reviews=true`,
-    );
     expect(prShell).toContain('::error::');
+    expect(prShell).toContain('needs GitHub Actions allowed to create pull requests');
+    expect(prShell).toContain('required reviews must come from CODEOWNERS');
+    expect(prShell).toContain(`gh pr create --head \${BRANCH} --fill`);
+    // The approve switch also lets any workflow's token approve a pull request, defeating a
+    // one-review branch protection: it is never the printed remedy.
+    expect(prShell).not.toContain('can_approve_pull_request_reviews');
     expect(prShell).toContain('exit 1');
     expect(prShell).not.toContain('|| true');
   });

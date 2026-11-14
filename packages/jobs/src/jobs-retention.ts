@@ -50,7 +50,9 @@ import {
  * a walk from the index's START stepped over every row the earlier batches deleted, a heap visit
  * each, and the last batch of a pass, or the first of the next, read most of the heap to delete
  * nothing (3,534 blocks, 47.6 ms, production 2026-11-14). `>=`, not `>`: rows that share the mark's
- * instant are re-read, never lost. Null starts at the index's first entry. A range the planner
+ * instant are re-read, never lost. Null starts at the index's first entry. A mark is ISO 8601 in UTC
+ * to the microsecond, never `timestamptz::text`: that renders in the SESSION's DateStyle and zone,
+ * and the next batch may run on a connection styled otherwise (`SQL, DMY` read as `MDY`). A range the planner
  * knows is small may be read as one bitmap scan: what it reads is then the batch itself.
  */
 export const SQL_JOBS_RETENTION_BATCH = `
@@ -95,8 +97,10 @@ with done_rows as (
 )
 select (select count(*) from gone)::int as removed,
        (select coalesce(json_agg(run_id), '[]'::json) from held)::text as held,
-       (select max(updated_at) from doomed where done)::text as done_after,
-       (select max(updated_at) from doomed where not done)::text as ended_after
+       to_char((select max(updated_at) from doomed where done) at time zone 'UTC',
+               'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as done_after,
+       to_char((select max(updated_at) from doomed where not done) at time zone 'UTC',
+               'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as ended_after
 `.trim();
 
 /**

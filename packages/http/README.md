@@ -550,6 +550,7 @@ export const choosePreferences = action({
 | clearing | **`deleteCookie(name, { path, domain })` is the one way**: empty value, `Max-Age=0`, the `Path`/`Domain` (and `Partitioned`) the cookie was set with. `setCookie` with `maxAge: 0`, or an `expires` at or before `ctx.now()`, is `X_COOKIE_INVALID` naming `deleteCookie` |
 | an invalid cookie | `X_COOKIE_INVALID` (core) before anything is appended: a non-token name, `__Host-` without `Secure`, a pair over 4096 octets |
 | off HTTP | `X_NO_REQUEST` in a job, a task or an impersonated child context; `X_NO_CONTEXT` outside any |
+| is there a request | `hasRequest()`: `true` in a request and in any context derived inside one (where readers still refuse), `false` in a job, a task or no context. For a reader whose honest answer off HTTP is `null` (`useActionAnswer`) |
 | by hand | refused: `bun run set-cookie-literals` fails the build on a `Set-Cookie` attribute spelled in a literal anywhere but `packages/core/src/cookie.ts` (`X_SET_COOKIE_HAND_BUILT`) |
 
 ## Rendering a shared document

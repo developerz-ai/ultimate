@@ -2,8 +2,7 @@
 // projection (`native-answer.ts`) and read once by the page that follows (`useActionAnswer`). Both
 // halves live here so the wire shape has one owner: the writer and the reader cannot drift.
 
-import { isUltimateError } from '@ultimat3/core';
-import { deleteCookie, setCookie, useRequestCookie } from '@ultimat3/http';
+import { deleteCookie, hasRequest, setCookie, useRequestCookie } from '@ultimat3/http';
 import type { SchemaIssueParams } from '@ultimat3/schema';
 import { issueRuleFacts } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -92,18 +91,12 @@ export function parseActionAnswer(raw: string | null): ActionAnswer | null {
 }
 
 /**
- * The flash cookie of the request in scope. Outside a request (the `llms.txt` collector running a
- * `load`, a job, a task) there is no browser and so no answer: `null`. Only `X_NO_REQUEST` folds:
- * no context at all is still a refusal, since that is a call site bug, not an absent request.
+ * The flash cookie of the request in scope. With no request at all (the `llms.txt` pass running a
+ * `load`, a job, a task) nobody submitted a form: `null`. A scope derived inside a request is still
+ * that request, so it refuses (`X_NO_REQUEST`) rather than answer `null` and leave the flash set.
  */
-function answerCookie(): string | null {
-  try {
-    return useRequestCookie(ACTION_ANSWER_COOKIE);
-  } catch (error) {
-    if (isUltimateError(error) && error.code === 'X_NO_REQUEST') return null;
-    throw error;
-  }
-}
+const answerCookie = (): string | null =>
+  hasRequest() ? useRequestCookie(ACTION_ANSWER_COOKIE) : null;
 
 /**
  * The answer the last native form submission left, read ONCE: the cookie is cleared on read.

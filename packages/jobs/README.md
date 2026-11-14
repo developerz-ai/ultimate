@@ -1218,7 +1218,8 @@ The memory store (`memoryOutboxStore`, `x dev` and tests) **drops** a published 
 the audit trail this map is not. A relay pass that throws is logged as `jobs.outbox.tick-failed`
 and the loop re-arms: an unobserved rejection would end the process with rows still staged. A run
 of failing passes — a database restart — is ONE `tick-failed` line, then one
-`jobs.outbox.tick-recovered` carrying `failures`, the count; the worker (`jobs.worker.tick-*`) and
+`jobs.outbox.tick-recovered` carrying `failures`, the count (a new cause mid-streak is a new
+`tick-failed` line, with the streak it ends as `previous`); the worker (`jobs.worker.tick-*`) and
 the scheduler (`jobs.scheduler.tick-*`) log their loops the same way (`failure-streak.ts`).
 
 `relay.stop()` is **async and joins the pass in flight** — `await` it before closing the database,

@@ -75,3 +75,53 @@ describe('a failure streak', () => {
     ]);
   });
 });
+
+describe('a streak whose cause changes', () => {
+  const missingColumn = (): UltimateError =>
+    new UltimateError({
+      code: 'X_DB_QUERY_FAILED',
+      cause: 'column does not exist',
+      fix: 'migrate',
+    });
+
+  test('a new code closes the old streak with its count and is logged as its own failure', () => {
+    const streak = failureStreak('jobs.scheduler.tick-failed', 'jobs.scheduler.tick-recovered');
+    for (let tick = 0; tick < 3; tick += 1) streak.failed(down());
+    for (let tick = 0; tick < 4; tick += 1) streak.failed(missingColumn());
+    streak.passed();
+
+    expect(lines.map((line) => line.event)).toEqual([
+      'jobs.scheduler.tick-failed',
+      'jobs.scheduler.tick-failed',
+      'jobs.scheduler.tick-recovered',
+    ]);
+    expect(lines[1]?.fields).toMatchObject({
+      code: 'X_DB_QUERY_FAILED',
+      previous: { code: 'X_DB_UNAVAILABLE', failures: 3 },
+    });
+    expect(lines[2]?.fields).toMatchObject({ failures: 4 });
+  });
+
+  test('an uncoded failure changes cause when its message does', () => {
+    const streak = failureStreak('jobs.worker.tick-failed', 'jobs.worker.tick-recovered');
+    streak.failed(new TypeError('connection reset'));
+    streak.failed(new TypeError('connection reset'));
+    streak.failed(new TypeError('relation "x_jobs" does not exist'));
+    expect(lines.map((line) => line.fields['previous'])).toEqual([
+      undefined,
+      { error: 'TypeError: connection reset', failures: 2 },
+    ]);
+  });
+
+  test('reset() forgets an open streak: a restarted loop opens its own', () => {
+    const streak = failureStreak('jobs.worker.tick-failed', 'jobs.worker.tick-recovered');
+    streak.failed(down());
+    streak.reset();
+    streak.passed();
+    streak.failed(down());
+    expect(lines.map((line) => line.event)).toEqual([
+      'jobs.worker.tick-failed',
+      'jobs.worker.tick-failed',
+    ]);
+  });
+});

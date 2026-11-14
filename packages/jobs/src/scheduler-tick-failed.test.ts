@@ -72,4 +72,23 @@ describe('a scheduler through a database restart', () => {
     const ticks = events.filter((event) => event.startsWith('jobs.scheduler.tick-'));
     expect(ticks).toEqual(['jobs.scheduler.tick-failed', 'jobs.scheduler.tick-recovered']);
   });
+
+  test("a restarted scheduler opens its own streak: a stopped run's is not carried over", async () => {
+    const restart = restartingLeader();
+    const scheduler = jobScheduler({
+      driver: memoryJobDriver(),
+      tasks: [],
+      tickIntervalMs: 10,
+      leader: restart.leader,
+    });
+    scheduler.start();
+    await time.advance(100, 10);
+    await time.settles(scheduler.stop(), 100);
+    scheduler.start();
+    await time.advance(100, 10);
+    await time.settles(scheduler.stop(), 100);
+
+    const ticks = events.filter((event) => event.startsWith('jobs.scheduler.tick-'));
+    expect(ticks).toEqual(['jobs.scheduler.tick-failed', 'jobs.scheduler.tick-failed']);
+  });
 });

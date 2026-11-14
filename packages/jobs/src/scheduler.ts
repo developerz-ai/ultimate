@@ -471,6 +471,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       // about to release, and stack a second shutdown hook on the one still running.
       if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
+      tickFailures.reset();
       // TWO hooks, for the two phases. `accept` stops dispatching and returns — an occurrence
       // enqueued during the drain is work nothing in this process is left to run, and every hook
       // behind this one still has the whole budget. `close` waits the round out and hands the

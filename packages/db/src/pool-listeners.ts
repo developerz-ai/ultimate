@@ -2,7 +2,13 @@
 // them across a retired pool. `Bun.SQL` re-dials a session whose backend died, but `close()` ends it
 // for good, so a retirement would leave `startQueueWake` reporting live on a session that is gone.
 
-import { backoffDelay, logger, renderThrowable, type Scheduler } from '@ultimat3/core';
+import {
+  backoffDelay,
+  isUltimateError,
+  logger,
+  renderThrowable,
+  type Scheduler,
+} from '@ultimat3/core';
 import type { BunSqlDriver } from './bun-sql';
 import { DbError, driverError } from './errors';
 import { assertListenChannel, type DbSubscription, listenUnsupported } from './listen';
@@ -37,9 +43,23 @@ interface Held {
   /**
    * Refused dials since this session last held, across retirements: a restart is ONE streak — one
    * line when it opens, one when a dial lands (`db.listen.redialed`, with the count), never a line
-   * per attempt. Local until core ships a limiter for it.
+   * per attempt; a refusal with a different cause (`causeOf`) logs again, naming the one it ends.
+   * Local until core ships a limiter for it.
    */
   failures: number;
+  cause: FailureCause | undefined;
+}
+
+interface FailureCause {
+  readonly key: string;
+  readonly label: Readonly<Record<string, string>>;
+}
+
+/** What makes two refusals the same one: the code, or, uncoded, the rendered message. */
+function causeOf(error: unknown): FailureCause {
+  if (isUltimateError(error)) return { key: `code:${error.code}`, label: { code: error.code } };
+  const message = renderThrowable(error);
+  return { key: `error:${message}`, label: { error: message } };
 }
 
 export function poolListeners(
@@ -82,16 +102,24 @@ export function poolListeners(
           logger.info('db.listen.redialed', { channel: entry.channel, failures: entry.failures });
         }
         entry.failures = 0;
+        entry.cause = undefined;
       },
       (error: unknown) => {
         if (overtaken()) return;
-        entry.failures += 1;
-        if (entry.failures === 1) {
+        const cause = causeOf(error);
+        if (entry.cause?.key === cause.key) entry.failures += 1;
+        else {
+          const ended = entry.cause;
           logger.warn('db.listen.redial_failed', {
             channel: entry.channel,
             attempt,
             error: renderThrowable(error),
+            ...(ended === undefined
+              ? {}
+              : { previous: { ...ended.label, failures: entry.failures } }),
           });
+          entry.failures = 1;
+          entry.cause = cause;
         }
         // Equal jitter: a fleet that lost its database together must not re-dial it together.
         const wait = backoffDelay({
@@ -117,6 +145,7 @@ export function poolListeners(
         cancelRetry: () => undefined,
         ended: false,
         failures: 0,
+        cause: undefined,
       };
       held.add(entry);
       try {
