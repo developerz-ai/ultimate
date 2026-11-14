@@ -1,8 +1,7 @@
 /**
  * The open database transaction, as this package needs it — **the only** file here that imports
- * `@ultimat3/db` (`tx-scope.test.ts` holds that). When is a write durable (`openCommitScope`, the
- * cache bust), and is a transaction really OPEN, on which client (`liveTransaction`, idempotency).
- * And a scope whose writes are never kept (`inRolledBackScope`, the contract step's exercise).
+ * `@ultimat3/db` (`tx-scope.test.ts`): when a write is durable, whether a transaction is OPEN and on
+ * which client, a scope whose writes are never kept, and an executor that never joins one.
  */
 
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
@@ -13,12 +12,22 @@ import {
   currentTx,
   dbClientInstalled,
   liveTxConnection,
+  outsideTransaction,
   withTransaction,
 } from '@ultimat3/db';
 import { memoryJournal, memoryTransactor } from '@ultimat3/entity';
 
 /** The mark a keyed run puts on the open root: its COMMIT carries the settle, abort or no abort. */
 export const carrySettleOnCommit = (): void => completeTransaction();
+
+/**
+ * `executor` with every statement sent outside any transaction on the caller's async context, so
+ * `dbExecutor()` reads the pool. For a statement whose rows belong to MORE than its caller — a
+ * group-committed audit batch carries other requests' records — and must not roll back with it.
+ */
+export const outsideTransactions = (executor: PgExecutor): PgExecutor => ({
+  query: (text, values) => outsideTransaction(() => executor.query(text, values)),
+});
 
 /** The half of a transaction a deferred effect needs. `@ultimat3/db`'s `DbTx` satisfies it. */
 export interface CommitScope {

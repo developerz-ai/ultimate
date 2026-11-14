@@ -86,6 +86,10 @@ const single =
  * **Flushes on drain**: an `inflight`-phase shutdown hook, which runs after in-flight requests end
  * and before the `close` phase shuts the pool the sink writes through. `postgresAuditSink({
  * groupCommit: true })` is this over the Postgres sink; a custom sink with a `writeMany` wraps here.
+ *
+ * A batch is sent in the async context of the write that armed it — its timer's, or its own when
+ * the batch fills — so a sink that reads ambient state (a transaction) must send outside it, as
+ * `postgresAuditSink` does: otherwise every record rides the arming caller's transaction.
  */
 export function batchedAuditSink(
   sink: BatchAuditSink,
