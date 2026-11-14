@@ -11,6 +11,7 @@ import { publishBuildAssets } from './retained-assets';
 import { retainedPrefix } from './retained-assets-layout';
 import type { RetainedAssets } from './retained-assets-read';
 import { retainedAssets } from './retained-assets-read';
+import { warnOncePerBuild } from './retained-assets-warned';
 import { siteAssetTable } from './site-assets';
 import type { StyleBundle } from './style-bundle';
 import type { FrameworkScript } from './worker-bundle';
@@ -80,13 +81,32 @@ export class AssetRetainUndeclaredError extends UltimateError {
 /** Where a boot has no rolling deploy to survive: a laptop, a test run. */
 const LOCAL_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test']);
 
-function warnUndeclared(input: RetainBootInput): void {
+/** This file is the web role's boot alone (`serve-web.ts`): the role half of the warned key. */
+const WEB_ROLE = 'web';
+
+/**
+ * Once per build id for the web role, not per boot: the marker sits on the app's default disk,
+ * the one place every pod of a deploy may share (`warnOncePerBuild`). With no `app.config.ts`
+ * there is no app name to scope it by, so that boot says it every time.
+ */
+async function warnUndeclared(input: RetainBootInput): Promise<void> {
   if (LOCAL_ENVIRONMENTS.has(input.environment) || buildAssetsOf(input).length === 0) return;
   const warning = new AssetRetainUndeclaredError({
     environment: input.environment,
     disks: input.storage.diskNames,
   });
-  (input.log ?? logger).warn(warning.format(), { code: warning.code, ...warning.meta });
+  const warn = (): void =>
+    (input.log ?? logger).warn(warning.format(), { code: warning.code, ...warning.meta });
+  if (input.config === undefined) return warn();
+  await warnOncePerBuild(
+    {
+      disk: () => input.storage.disk(),
+      prefix: retainedPrefix(input.config.name, input.environment),
+      role: WEB_ROLE,
+      buildId: input.buildId,
+    },
+    warn,
+  );
 }
 
 export interface RetainBootInput extends BuiltSurface {
@@ -109,7 +129,7 @@ export interface RetainedBoot {
 
 /**
  * `undefined` when the app declared no window — and, outside development and test, one
- * `X_ASSET_RETAIN_UNDECLARED` warning naming the edit (`warnUndeclared`). A misnamed disk refuses
+ * `X_ASSET_RETAIN_UNDECLARED` warning per build naming the edit (`warnUndeclared`). A misnamed disk refuses
  * the boot: it is the app's config, wrong, and every pod of the deploy would otherwise run without
  * the window it asked for.
  * A disk that refuses a write does NOT: `publishBuildAssets` logs it and the pod serves, reading
@@ -119,7 +139,7 @@ export interface RetainedBoot {
 export async function retainBuildAssets(input: RetainBootInput): Promise<RetainedBoot | undefined> {
   const retain = retainOf(input.config);
   if (input.config === undefined || retain === undefined) {
-    warnUndeclared(input);
+    await warnUndeclared(input);
     return undefined;
   }
   const names = input.storage.diskNames;

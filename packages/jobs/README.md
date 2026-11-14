@@ -668,7 +668,10 @@ deletes `done` rows past the first window and `dead`, `failed` and `cancelled` r
 second, each with its `x_job_steps` once no row of the run still stands. A pass runs at most
 `maxBatches` (50) batches of `batchSize` (1,000) rows, `skip locked`; a batch is one statement, plus a
 follow-up when a row it could not see deleted still shared a run (two sweeps that split a run settle
-its steps after both commit). After the batches, one more statement removes up to `batchSize` step
+its steps after both commit). Each batch walks its partial index (`x_jobs_done_idx`,
+`x_jobs_ended_idx`) from the newest row the batch before it deleted — a keyset, kept across passes
+and forgotten once a day — so it never re-reads the index entries earlier deletes left for vacuum
+(`As of 2026-11-14`: a walk from the start read most of the heap to delete nothing). After the batches, one more statement removes up to `batchSize` step
 records whose run has no row left, what a sweep that died before its follow-up stranded. A live row is never deleted, nor one an
 unpublished `x_outbox` row or a `running` `x_backfills` row still names. The windows come from
 `app.config.ts` (`jobs.doneRetentionMs`, 14 days, and `jobs.deadRetentionMs`, 90 days).
@@ -1081,7 +1084,7 @@ there, as before. A manual `stop()` aborts nothing: it waits for the work it hol
 |---|---|---|---|
 | the body returning | `completed` | — | `ok` |
 | `step.sleep` / `step.waitForEvent` | `suspended` | no | not counted |
-| the body throwing, attempts left | `retried` | yes | `failed` |
+| the body throwing, attempts left | `retried` | yes | `failed` (and `jobs_retried_total{job,code}`) |
 | the body throwing, none left or `terminal` | `dead-lettered` | yes | `dead` |
 | the same, on a job declaring `retry.deadLetter: false` | `dropped` — the row is `failed` | yes | `failed` |
 | the worker's drain (`X_DRAINING` on `ctx.signal`) | `interrupted` | **no** | not counted |
@@ -1213,7 +1216,10 @@ What the lease buys, precisely:
 The memory store (`memoryOutboxStore`, `x dev` and tests) **drops** a published row —
 `retained()` is the relay's backlog, not a running total; the pg store keeps `published_at` as
 the audit trail this map is not. A relay pass that throws is logged as `jobs.outbox.tick-failed`
-and the loop re-arms: an unobserved rejection would end the process with rows still staged.
+and the loop re-arms: an unobserved rejection would end the process with rows still staged. A run
+of failing passes — a database restart — is ONE `tick-failed` line, then one
+`jobs.outbox.tick-recovered` carrying `failures`, the count; the worker (`jobs.worker.tick-*`) and
+the scheduler (`jobs.scheduler.tick-*`) log their loops the same way (`failure-streak.ts`).
 
 `relay.stop()` is **async and joins the pass in flight** — `await` it before closing the database,
 the way `worker.stop()` and `scheduler.stop()` are awaited. A pass is a publish followed by a
@@ -1839,6 +1845,7 @@ aborts the attempt — `steps.ts` then refuses every write. `ack` and `nack` are
 | `queue_depth{queue}` | gauge | how much work is waiting: the backlog alert's series. It reads 0 while a fleet holds every job it has, so nothing scales on it |
 | `queue_demand{queue}` | gauge | what serving workers must hold: running on one, or due and claimable. The chart's worker HPA reads it. `JobDriver.demand()`, asked only when `stats()` shows work, required of every driver; Redis has no worker registry, so it counts every running row. A draining worker publishes 0 |
 | `jobs_total{queue,outcome}` | counter | is any of it succeeding |
+| `jobs_retried_total{job,code}` | counter | which job retries, and on what — `code` is the thrown `X_*`, `uncoded` without one. A retry is counted here and **never** reported to the error tracker; a dead letter (or a drop) is, once, as an `error`. A job whose first failure is worth a human declares `retry: { report: 'every-attempt' }` — its retries reach the tracker too, as `warning`s |
 | `queue_oldest_ready_seconds{queue}` | gauge | *"page if the oldest job in `payments` is older than 5 minutes"* |
 | `queue_dead_jobs{queue}` | gauge | a dead-letter queue that filled overnight and stopped growing — a counter's rate is flat there |
 

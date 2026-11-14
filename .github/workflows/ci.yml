@@ -605,7 +605,7 @@ jobs:
           APP: ${{ matrix.app }}
         run: bun run scripts/reference-app-gate.ts --app "$APP"
 
-  # The end-to-end promise, proved for real and proved as the PLATFORM consumes it: a dz-runner box
+  # The end-to-end promise, proved for real and proved as the PLATFORM consumes it: a platform box
   # is an Ubuntu VM with bun and git, no docker and no services, and on a freshly scaffolded app it
   # runs the app's own `bun run setup && bun run verify`. This job runs those two scripts — the ones `x new`
   # writes, spawned as a box spawns them — and holds the FIRST `bun run verify` to green with no waiver

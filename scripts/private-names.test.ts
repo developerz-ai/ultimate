@@ -1,5 +1,6 @@
 // `scripts/private-names.ts` on fixture git trees: invented names through the environment, a hit
-// reported by file:line and the entry's index, and never the name itself on stdout or in --json.
+// reported by file:line and the entry's index, and never the name itself on stdout or in --json;
+// then the same guard over this repository's own public tree.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no temporary-directory primitive.
@@ -11,31 +12,38 @@ import { join } from 'node:path';
 import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
-  ENV_NAME,
-  namesFromEnv,
   privateNameFindings,
   privateNameReport,
   REQUIRED_ENV,
+  SELF,
   SKIP_NOTE,
   scanPrivateNames,
-  tokenMatch,
 } from './private-names';
+import { ENV_NAME } from './private-names-match';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const NAMES = 'zorblax.io\nquimtel';
+/** Built from parts, as the guard builds it: this file never carries the name whole. */
+const MODE = ['dz', 'runner'].join('-');
+const EMPTY = { names: [], repositories: [] } as const;
 const roots: string[] = [];
 afterAll(async () => {
   for (const root of roots) await rm(root, { recursive: true, force: true });
 });
 
-/** A git tree holding `tracked` in the index and `untracked` beside it. */
+/**
+ * A git tree holding `tracked` in the index and `untracked` beside it, plus a stand-in for the
+ * guard itself unless `self` is false: the guard refuses a tree in which it did not read itself.
+ */
 async function tree(
-  tracked: Readonly<Record<string, string>>,
+  given: Readonly<Record<string, string>>,
   untracked: Readonly<Record<string, string>> = {},
+  self = true,
 ): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-'));
   roots.push(root);
+  const tracked = self ? { [SELF]: '// the guard\n', ...given } : given;
   for (const [path, text] of Object.entries({ ...tracked, ...untracked })) {
     await Bun.write(join(root, path), text);
   }
@@ -95,7 +103,7 @@ describe('private-names · a listed name in the tree', () => {
       logged.push(line),
     );
     expect(findings.map((finding) => finding.at)).toEqual(['a.md:1']);
-    expect(logged).toEqual(['private-names: checked 2 names across 1 files, 1 carry one']);
+    expect(logged).toEqual(['private-names: checked 2 names across 2 files, 1 carry one']);
   });
 
   test('a listed name inside a longer token passes', async () => {
@@ -115,7 +123,7 @@ describe('private-names · a listed name in the tree', () => {
     expect(out).toContain('git ls-files');
   });
 
-  test('CHANGELOG.md, docs/changelog/, docs/history/ and docs/plans/ are records and pass', async () => {
+  test('CHANGELOG.md, docs/changelog/, docs/history/ and docs/plans/ keep adopter names', async () => {
     const root = await tree({
       'CHANGELOG.md': 'quimtel\n',
       'docs/changelog/1.0.0.md': 'quimtel\n',
@@ -124,14 +132,22 @@ describe('private-names · a listed name in the tree', () => {
     });
     const result = await run(root);
     expect(result.ok).toBe(true);
-    expect(result.summary).toContain('checked 2 names across 0 files');
+    expect(result.summary).toBe('private-names: checked 2 names across 5 files');
   });
 
   test('a tree git cannot list is refused, never a clean scan of nothing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-bare-'));
     roots.push(root);
-    await expect(scanPrivateNames(root, ['quimtel'])).rejects.toMatchObject({
+    await expect(scanPrivateNames(root, EMPTY)).rejects.toMatchObject({
       code: 'X_PRIVATE_NAME',
+    });
+  });
+
+  test('a tree in which the guard did not read itself is refused, never a clean scan', async () => {
+    const root = await tree({ 'a.md': 'fine\n' }, {}, false);
+    await expect(scanPrivateNames(root, EMPTY)).rejects.toMatchObject({
+      code: 'X_PRIVATE_NAME',
+      cause: expect.stringContaining(SELF),
     });
   });
 
@@ -149,23 +165,72 @@ describe('private-names · a listed name in the tree', () => {
   });
 });
 
+describe('private-names · the public tree, every file and records too', () => {
+  test('the setup mode is refused with no secret at all, in a record as anywhere', async () => {
+    const root = await tree({
+      'ci.yml': `# a ${MODE.toUpperCase()} box\n`,
+      'docs/plans/2026/a.md': `x\nthe ${MODE}\n`,
+      'fine.md': 'a bare VM\n',
+    });
+    const result = await privateNameReport(root, {});
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => finding.at)).toEqual([
+      'ci.yml:1',
+      'docs/plans/2026/a.md:2',
+    ]);
+    const out = render(result, true).toLowerCase();
+    expect(out).not.toContain(MODE);
+    expect(out).toContain('setup mode');
+  });
+
+  test('a private repository from the secret is refused in a record, by index, never by name', async () => {
+    const root = await tree({
+      'docs/plans/2026/status.yml': 'evidence: ["#1", "zorblax-co/vault#1633"]\n',
+      'docs/history/a.md': 'zorblax-co/vault-tools is another repository\n',
+    });
+    const result = await run(root, `quimtel\nZorblax-Co/Vault`);
+    expect(result.findings?.map((finding) => [finding.at, finding.cause])).toEqual([
+      ['docs/plans/2026/status.yml:1', expect.stringContaining('repository entry 1 of')],
+    ]);
+    expect(render(result, true).toLowerCase()).not.toContain('zorblax');
+  });
+
+  test('a path carrying the setup mode is refused and never printed', async () => {
+    const root = await tree({ [`docs/${MODE}/a.md`]: 'fine\n' });
+    const result = await privateNameReport(root, {});
+    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_PRIVATE_NAME']);
+    expect(render(result, true).toLowerCase()).not.toContain(MODE);
+  });
+
+  test('.dz/ is the platform`s own and is not read for either class', async () => {
+    const root = await tree({ '.dz/briefs/a.md': `${MODE} zorblax-co/vault\n` });
+    const result = await run(root, 'zorblax-co/vault');
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe('private-names: checked 1 names across 1 files');
+  });
+});
+
 describe('private-names · unset is a skip, never a scan', () => {
   test.each([
     ['unset', undefined],
     ['empty', ''],
     ['whitespace', ' \n\t, \n'],
-  ])('%s: exit 0 with the skip note and no "checked" line', async (_label, raw) => {
-    const root = await tree({ 'a.md': 'quimtel\n' });
-    const result = await run(root, raw);
-    expect(result.ok).toBe(true);
-    expect(result.summary).toBe(SKIP_NOTE);
-    expect(render(result, false)).not.toContain('checked');
-    const logged: string[] = [];
-    expect(
-      await privateNameFindings(root, { [ENV_NAME]: raw }, (line) => logged.push(line)),
-    ).toEqual([]);
-    expect(logged).toEqual([SKIP_NOTE]);
-  });
+  ])(
+    '%s: exit 0, the names skipped and said so, the public tree still read',
+    async (_label, raw) => {
+      const root = await tree({ 'a.md': 'quimtel\n' });
+      const result = await run(root, raw);
+      expect(result.ok).toBe(true);
+      const unset = `private-names: checked the setup mode across 2 files; ${SKIP_NOTE}`;
+      expect(result.summary).toBe(unset);
+      expect(render(result, false)).not.toContain('names across');
+      const logged: string[] = [];
+      expect(
+        await privateNameFindings(root, { [ENV_NAME]: raw }, (line) => logged.push(line)),
+      ).toEqual([]);
+      expect(logged).toEqual([unset]);
+    },
+  );
 
   test('the required flag with the secret missing is red, never a skip', async () => {
     const root = await tree({ 'a.md': 'fine\n' });
@@ -173,7 +238,7 @@ describe('private-names · unset is a skip, never a scan', () => {
       const result = await privateNameReport(root, { [REQUIRED_ENV]: '1', [ENV_NAME]: raw });
       expect(result.ok).toBe(false);
       expect(result.findings?.map((finding) => finding.code)).toEqual(['X_PRIVATE_NAMES_UNSET']);
-      expect(result.summary).not.toBe(SKIP_NOTE);
+      expect(result.summary).not.toContain(SKIP_NOTE);
     }
   });
 
@@ -187,20 +252,7 @@ describe('private-names · unset is a skip, never a scan', () => {
     const root = await tree({ 'a.md': 'quimtel\n' });
     const result = await privateNameReport(root, { ...env, [ENV_NAME]: '' });
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe(SKIP_NOTE);
-  });
-
-  test('comma- or newline-separated, trimmed and lowercased', () => {
-    expect(namesFromEnv({ [ENV_NAME]: ' Quimtel ,zorblax.io\n\n' })).toEqual([
-      'quimtel',
-      'zorblax.io',
-    ]);
-  });
-
-  test('a token matches exactly, or as a subdomain of a dotted entry', () => {
-    expect(tokenMatch('quimtel', ['quimtel'])).toBe(1);
-    expect(tokenMatch('a.zorblax.io', ['quimtel', 'zorblax.io'])).toBe(2);
-    expect(tokenMatch('a.quimtel', ['quimtel'])).toBeUndefined();
+    expect(result.summary).toEndWith(SKIP_NOTE);
   });
 });
 
@@ -218,7 +270,12 @@ describe('private-names · the list lives in a secret, never in the tree', () =>
       timeout: 10_000,
     }).stdout.toString();
     const named = files.split('\n').filter((path) => /private-names/i.test(path));
-    expect(named).toEqual(['scripts/private-names.test.ts', 'scripts/private-names.ts']);
+    expect(named).toEqual([
+      'scripts/private-names-match.test.ts',
+      'scripts/private-names-match.ts',
+      'scripts/private-names.test.ts',
+      'scripts/private-names.ts',
+    ]);
   });
 
   test('the script run with the variable unset prints the skip note and exits 0', () => {
@@ -229,5 +286,18 @@ describe('private-names · the list lives in a secret, never in the tree', () =>
     });
     expect(run.exitCode).toBe(0);
     expect(run.stdout.toString()).toContain(SKIP_NOTE);
+  });
+});
+
+describe('private-names · this repository`s own public tree', () => {
+  // The guard over the real `git ls-files`, no secret: what any contributor's `bun test` proves.
+  test('carries no setup mode, and the guard read itself among every file', async () => {
+    const result = await privateNameReport(repoRoot(), {});
+    expect(result.findings ?? []).toEqual([]);
+    expect(result.ok).toBe(true);
+    const files = Number((result.data as { readonly files?: unknown } | undefined)?.files);
+    // Thousands of files: a scan that silently read a handful would be a pass that proves nothing.
+    expect(files).toBeGreaterThan(1000);
+    expect(result.summary).toContain(`across ${files} files`);
   });
 });

@@ -51,10 +51,9 @@ describe('unit · create-ultimate', () => {
 });
 
 /**
- * The invocation `developerz-ai/developerz.ai` shells out with, token for token
- * (`apps/runner/src/modes/setup/generator.ts`, where `binary` and the argv array are two separate
- * lines). It is the only production caller of this package, and it runs UNATTENDED on a customer's
- * box: nobody reads the output and nothing retries with different flags.
+ * The invocation the developerz.ai platform shells out with, token for token. It is the only
+ * production caller of this package, and it runs UNATTENDED on a customer's box: nobody reads the
+ * output and nothing retries with different flags.
  *
  * Both flags are load-bearing, and until 2026-09-11 no test in this repository typed either one.
  * `--force`, because the target is a clone that already exists — without it `x new` refuses with

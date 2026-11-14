@@ -198,7 +198,8 @@ A `<form method="post">` (scripting off, or the client router's submit) to an ac
 `X_UNAUTHENTICATED`, which keeps the sign-in redirect — to
 `refusal(refusal)`, else a `Referer` on this host. The outcome rides in a one-read flash cookie:
 the action, and for a refusal its `code` and each issue's `path`/`rule`/`params`, never a value.
-The next page reads it once, in `load`, with `useActionAnswer(action | name?)`. A `fetch`, the typed
+The next page reads it once, in `load`, with `useActionAnswer(action | name?)` — `null` outside a
+request (the `llms.txt` build runs `load` with none), never `X_NO_REQUEST`. A `fetch`, the typed
 client, MCP and `.job()` are answered exactly as before. A `page.tsx` form posting to an action
 with no `native` is an `X_NATIVE_FORM_UNANSWERED` warning on `main` at `x verify` (the
 `manifest` step), a refusal planned for `next`.

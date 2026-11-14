@@ -10,7 +10,7 @@ import { probeFor } from './doctor-probe';
 
 describe('unit · x doctor · the embedded database rule', () => {
   // The bare-VM hole, and the reason it stayed open: `probeDatabase` answers `null` with no
-  // DATABASE_URL, so the one configuration a dz-runner box actually has was the one configuration
+  // DATABASE_URL, so the one configuration a bare VM actually has was the one configuration
   // `x doctor` said nothing about. `bin/setup` reported it instead, four commands later.
   test('a selected-but-unresolvable embedded database is red, in @ultimat3/db own words', () => {
     const found = embeddedDatabaseFinding({ selected: true, resolved: false });

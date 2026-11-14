@@ -297,7 +297,13 @@ export { refreshView } from './refresh-view';
 export type { ReindexDefinition } from './reindex';
 export { reindex } from './reindex';
 export type { IntervalScheduler } from './renewal-timer';
-export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
+export type {
+  BackoffStrategy,
+  Random,
+  RetryDecision,
+  RetryPolicy,
+  RetryReport,
+} from './retry';
 export {
   backoffDelayMs,
   DEFAULT_RETRY,

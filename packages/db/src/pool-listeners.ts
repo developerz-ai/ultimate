@@ -34,6 +34,12 @@ interface Held {
   dial: number;
   cancelRetry: () => void;
   ended: boolean;
+  /**
+   * Refused dials since this session last held, across retirements: a restart is ONE streak — one
+   * line when it opens, one when a dial lands (`db.listen.redialed`, with the count), never a line
+   * per attempt. Local until core ships a limiter for it.
+   */
+  failures: number;
 }
 
 export function poolListeners(
@@ -67,16 +73,26 @@ export function poolListeners(
     // `async` so a pool that cannot be built (`currentPool` throws) lands in the retry too.
     void (async () => dialOn(entry))().then(
       (session) => {
-        if (overtaken()) void end(session);
-        else entry.session = session;
+        if (overtaken()) {
+          void end(session);
+          return;
+        }
+        entry.session = session;
+        if (entry.failures > 0) {
+          logger.info('db.listen.redialed', { channel: entry.channel, failures: entry.failures });
+        }
+        entry.failures = 0;
       },
       (error: unknown) => {
         if (overtaken()) return;
-        logger.warn('db.listen.redial_failed', {
-          channel: entry.channel,
-          attempt,
-          error: renderThrowable(error),
-        });
+        entry.failures += 1;
+        if (entry.failures === 1) {
+          logger.warn('db.listen.redial_failed', {
+            channel: entry.channel,
+            attempt,
+            error: renderThrowable(error),
+          });
+        }
         // Equal jitter: a fleet that lost its database together must not re-dial it together.
         const wait = backoffDelay({
           attempt,
@@ -100,6 +116,7 @@ export function poolListeners(
         dial: 0,
         cancelRetry: () => undefined,
         ended: false,
+        failures: 0,
       };
       held.add(entry);
       try {

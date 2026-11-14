@@ -246,6 +246,7 @@ export const syncCrm = job({
 | a **`terminal`** thrown code | stops on the attempt that failed, before `attempts` is reached — the same code run again is the same answer, and the attempts left are a queue slot, a provider bill, or three more wrong passwords at a site that locks the account after three. `lastError` records `— not retried: this code is classified terminal`, so an early stop is never silent | the code's `retry` classification, `registerErrorRetry({ X_YOUR_CODE: 'terminal' })`. An **unclassified** code is unaffected |
 | a **`retry-after`** thrown code | the responder's `meta.retryAfterSeconds` replaces the delay, clamped by `maxDelay` — never the attempt count | same |
 | attempts exhausted | moves to dead-letter with the full step trace | `x jobs retry <id>` replays from the failed step |
+| `retry.report` | what reaches the error tracker. `'dead-letter'` (default): only an attempt nobody recovered from, once, as `error`; a retry is counted on `jobs_retried_total{job,code}` and never pages. `'every-attempt'`: each retried attempt is reported too, as `warning` — for the job whose first failure already needs a human. Per job, never a global switch (`As of 2026-11-14`) | `executeJob` (`execute-report.ts`) |
 
 A job over a tenant, queue or global cap, or over a `'wait'` concurrency cap, is **deferred, never dropped** — it stays queued with a later `runAt`. `whenBusy: 'fail'` is the one declared exception. `'wait'` holds the cap and states no order: a later enqueue can start first.
 
@@ -873,7 +874,8 @@ Draining a worker mid-job does **not** finish the current step (`As of 2026-09-0
 | `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference#x-db) |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
-| Metrics | `queue_depth{queue}`, `queue_demand{queue}` (what the worker HPA reads), `jobs_total{queue,outcome}`, `job_leases_lost_total{queue}` → [Observability](Observability) |
+| Metrics | `queue_depth{queue}`, `queue_demand{queue}` (what the worker HPA reads), `jobs_total{queue,outcome}`, `jobs_retried_total{job,code}` (one per retried attempt; `code` is the thrown `X_*`, or `uncoded`), `job_leases_lost_total{queue}` → [Observability](Observability) |
+| Loop failures | a database restart fails every tick: one line opens the streak, one closes it with the count — `jobs.scheduler.tick-failed` / `-recovered`, `jobs.worker.tick-failed` / `-recovered`, `jobs.outbox.tick-failed` / `-recovered` |
 
 Every command supports `--json`. See [CLI reference](CLI-Reference).
 

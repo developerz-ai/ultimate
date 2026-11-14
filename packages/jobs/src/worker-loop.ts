@@ -21,6 +21,8 @@ export interface ClaimLoopOptions {
   /** One pass. It reports what it found through `passed()`, so a manual `tick()` counts too. */
   readonly round: () => Promise<unknown>;
   readonly onError: (error: unknown) => void;
+  /** A pass came back: what closes a streak `onError` opened (`failure-streak.ts`). */
+  readonly onPassed?: () => void;
   /**
    * The driver's fleet-wide announcement (`JobDriver.wake`). Without one no other process hears of
    * an enqueue, so the loop never rests past its poll; with one, a row this loop handed back
@@ -152,6 +154,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     passing = true;
     void options
       .round()
+      .then(() => options.onPassed?.())
       .catch((error: unknown) => {
         // A failed pass never reached `passed()`, so the wait in hand is whatever cut the last
         // one short — 0 after a wake — and re-arming on it is a loop that spins for as long as

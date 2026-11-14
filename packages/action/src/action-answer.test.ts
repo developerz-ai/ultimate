@@ -2,7 +2,7 @@
 // browser hands back, answers once, and only for the action it was asked about.
 
 import { describe, expect, test } from 'bun:test';
-import { runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -103,5 +103,15 @@ describe('useActionAnswer', () => {
     expect(runWithContext(asCtx(ctx), () => useActionAnswer('deletePost'))).toBeNull();
     expect(ctx.headers.getSetCookie()).toEqual([]);
     expect(runWithContext(asCtx(ctx), () => useActionAnswer('createPost'))).toEqual(refusal);
+  });
+
+  test('outside a request there is no answer: null, not X_NO_REQUEST', () => {
+    const job = ctxOf({ role: 'web', locale: 'en' });
+    expect(runWithContext(job, () => useActionAnswer())).toBeNull();
+    expect(runWithContext(job, () => useActionAnswer('createPost'))).toBeNull();
+  });
+
+  test('with no context at all, the read still refuses: only "no request" is null', () => {
+    expect(() => useActionAnswer()).toThrow(expect.objectContaining({ code: 'X_NO_CONTEXT' }));
   });
 });

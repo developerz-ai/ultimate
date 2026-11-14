@@ -97,7 +97,7 @@ describe('pg · the queue DDL', () => {
   });
 
   test('each retention branch seeks its own partial index', async () => {
-    const shown = await plan(SQL_JOBS_RETENTION_BATCH, [14 * DAY_MS, 90 * DAY_MS, 100]);
+    const shown = await plan(SQL_JOBS_RETENTION_BATCH, [14 * DAY_MS, 90 * DAY_MS, 100, null, null]);
     expect(shown).toContain('using x_jobs_done_idx on x_jobs');
     expect(shown).toContain('using x_jobs_ended_idx on x_jobs');
   });

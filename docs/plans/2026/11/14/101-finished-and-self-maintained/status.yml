@@ -1,11 +1,11 @@
 plan: 101-finished-and-self-maintained
 title: "Finished and self-maintained: the last build plan before maintenance-only"
-status: not_started        # not_started | in_progress | blocked | complete | superseded
+status: in_progress        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
-worked_by: ""              # executor fills with their git user.name
+worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 0
-current_focus: "Sweep 0: 01-production-hotfixes (patch release). Ask 90-owner-decisions OD0–OD10 in one message before sweep 1."
+current_focus: "Sweep 0: 01-production-hotfixes, 5 workers. OD0–OD10 answered 2026-11-14 (see 90)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3

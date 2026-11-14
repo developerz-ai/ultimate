@@ -18,8 +18,9 @@ on:
     - cron: '17 6 * * *'
   workflow_dispatch:
 
-# Resolves npm and may open an issue, provisioning its own `registry-drift` label first. It never
-# publishes, and it holds no `id-token`, so it cannot be a path to the registry even if compromised.
+# Resolves npm and may open, retitle or close an issue, provisioning its own `registry-drift` label
+# first. It never publishes, and it holds no `id-token`, so it cannot be a path to the registry even
+# if compromised.
 permissions:
   contents: read
   issues: write
@@ -76,10 +77,28 @@ jobs:
           summary="$(jq -r '.summary' audit.json)"
           body="$(jq -r '"**" + .summary + "**\n\n" + ([.findings[] | "- `" + .code + "` " + (.at // "") + " — " + .cause + "\n  - fix: `" + .fix + "`"] | join("\n"))' audit.json)"
           if [ -n "$existing" ]; then
+            # Retitled to today's gap: a title frozen at the first morning's count misstates the
+            # issue for as long as it stays open.
+            gh issue edit "$existing" --title "registry: $summary"
             gh issue comment "$existing" --body "$body"
           else
             gh issue create --label registry-drift --title "registry: $summary" --body "$body"
           fi
+
+      # The alarm's other half: the run that proves npm agrees closes it. An issue only a human
+      # closes outlives the gap it named, and a stale alarm is one everyone learns to ignore.
+      - name: close the alarm once the registry agrees
+        if: steps.audit.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          summary="$(jq -r '.summary' audit.json)"
+          # Captured, never piped into the loop: the default shell has no `pipefail`, so a failed
+          # list piped into `while` would close nothing and still end green.
+          open="$(gh issue list --label registry-drift --state open --json number --jq '.[].number')"
+          for number in $open; do
+            gh issue close "$number" --reason completed --comment "Clean run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}: $summary"
+          done
 
       - name: fail the run so the badge is honest
         if: steps.audit.outcome == 'failure'

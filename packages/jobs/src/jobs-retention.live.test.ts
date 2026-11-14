@@ -99,6 +99,8 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
       14 * DAY_MS,
       90 * DAY_MS,
       1,
+      null,
+      null,
     ]);
     expect(Number(batchA[0]?.removed)).toBe(1);
 
@@ -146,9 +148,9 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
       return rows.map((row) => Object.values(row).join('')).join('\n');
     };
     const held = JSON.stringify([crypto.randomUUID(), crypto.randomUUID()]);
-    expect(await plan(SQL_JOBS_RETENTION_BATCH, [14 * DAY_MS, 90 * DAY_MS, 1000])).toMatch(
-      /Index Scan using x_jobs_run_idx on x_jobs l\s+\([^)]*\)\s+Index Cond: \(run_id = /,
-    );
+    expect(
+      await plan(SQL_JOBS_RETENTION_BATCH, [14 * DAY_MS, 90 * DAY_MS, 1000, null, null]),
+    ).toMatch(/Index Scan using x_jobs_run_idx on x_jobs l\s+\([^)]*\)\s+Index Cond: \(run_id = /);
     expect(await plan(SQL_JOBS_RETENTION_STEPS, [held])).toContain(
       'Index Scan using x_jobs_run_idx on x_jobs j',
     );
@@ -173,9 +175,118 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
     await executor.query('analyze x_jobs', []);
     const rows = await executor.query<Record<string, unknown>>(
       `explain ${SQL_JOBS_RETENTION_BATCH}`,
-      [14 * DAY_MS, 90 * DAY_MS, 1000],
+      [14 * DAY_MS, 90 * DAY_MS, 1000, null, null],
     );
     const plan = rows.map((row) => Object.values(row).join('')).join('\n');
     expect(plan).toContain('Index Scan using x_jobs_done_idx on x_jobs');
   }, 60_000);
+
+  // A delete leaves its index entry until vacuum. A walk from the index's start stepped over every
+  // row the pass had already deleted — a heap visit each — so the last batch read the most to
+  // delete the least (3,534 blocks in production). Each batch here is measured as it would run
+  // (`explain analyze` inside a rolled-back transaction, on the target's own session), then run.
+  test('each batch seeks past the rows the batch before deleted, so its work does not grow', async () => {
+    await executor.query('truncate x_jobs, x_job_steps', []);
+    await executor.query(
+      `insert into x_jobs (id, name, input, idempotency_key, run_id, state, updated_at)
+       select gen_random_uuid(), 'mail.send', jsonb_build_object('body', repeat('x', 300)),
+              'young' || g, gen_random_uuid(), 'done',
+              now() - (g % 13) * interval '1 day' - interval '1 hour'
+         from generate_series(1, 30000) g`,
+      [],
+    );
+    await executor.query(
+      `insert into x_jobs (id, name, input, idempotency_key, run_id, state, updated_at)
+       select gen_random_uuid(), 'mail.send', '{}'::jsonb, 'old' || g, gen_random_uuid(), 'done',
+              now() - interval '20 days' - g * interval '1 second'
+         from generate_series(1, 2500) g`,
+      [],
+    );
+    await executor.query('analyze x_jobs', []);
+    // An open snapshot elsewhere — a long transaction, a standby's feedback — the production case:
+    // until it ends no deleted row is dead to everyone, so no scan may skip its entry unread.
+    using snapshot = await client.reserve();
+    await snapshot.query({ text: 'begin isolation level repeatable read', values: [] });
+    await snapshot.query({ text: 'select 1', values: [] });
+    using session = await client.reserve();
+    const on = <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+      session.query<R>({ text, values });
+    const batches: PlanNode[][] = [];
+    const measured: PgExecutor = {
+      query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> => {
+        if (text === SQL_JOBS_RETENTION_BATCH) {
+          await on('begin', []);
+          const rows = await on<Record<string, unknown>>(
+            `explain (analyze, buffers, format json) ${text}`,
+            values,
+          );
+          await on('rollback', []);
+          batches.push(planNodes(rows));
+        }
+        return await on<R>(text, values);
+      },
+    };
+    const target = jobsPurgeTarget({
+      executor: measured,
+      doneRetentionMs: 14 * DAY_MS,
+      deadRetentionMs: 90 * DAY_MS,
+      batchSize: 500,
+    });
+
+    const removed = await target.purgeExpired(Date.now());
+    await snapshot.query({ text: 'rollback', values: [] });
+    expect(removed).toBe(2500);
+
+    // Five full batches and the short one that ends the pass.
+    expect(batches).toHaveLength(6);
+    for (const nodes of batches) {
+      const heapWalks = nodes.filter(
+        (node) => node['Relation Name'] === 'x_jobs' && node['Node Type'] === 'Seq Scan',
+      );
+      expect(heapWalks).toEqual([]);
+    }
+    // A backlog past the batch is walked in order and cut at `limit`, never read whole and sorted.
+    expect(
+      batches[0]?.some(
+        (node) => node['Node Type'] === 'Index Scan' && node['Index Name'] === 'x_jobs_done_idx',
+      ),
+    ).toBe(true);
+    const walked = batches.map(doneBranchBlocks);
+    const first = walked[0] ?? 0;
+    expect(first).toBeGreaterThan(0);
+    expect(Math.max(...walked)).toBeLessThanOrEqual(first * 2);
+  }, 60_000);
 });
+
+type PlanNode = Record<string, unknown> & { readonly Plans?: readonly PlanNode[] };
+
+/** Every node of an `explain (format json)` answer, flattened. */
+function planNodes(rows: readonly Record<string, unknown>[]): PlanNode[] {
+  const nodes: PlanNode[] = [];
+  const walk = (node: PlanNode): void => {
+    nodes.push(node);
+    for (const child of node.Plans ?? []) walk(child);
+  };
+  const raw = rows[0]?.['QUERY PLAN'];
+  const document = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { Plan: PlanNode }[];
+  for (const entry of document) walk(entry.Plan);
+  return nodes;
+}
+
+/**
+ * Shared blocks, hit or read, the done branch spent finding its rows: an ordered walk of
+ * `x_jobs_done_idx`, or — when the planner knows the range is small — a bitmap read of the whole
+ * range, which is the batch. Either way the count is the branch's, not the delete's.
+ */
+function doneBranchBlocks(nodes: readonly PlanNode[]): number {
+  const blocks = (node: PlanNode): number =>
+    Number(node['Shared Hit Blocks'] ?? 0) + Number(node['Shared Read Blocks'] ?? 0);
+  return nodes
+    .filter(
+      (node) =>
+        (node['Node Type'] === 'Index Scan' && node['Index Name'] === 'x_jobs_done_idx') ||
+        (node['Node Type'] === 'Bitmap Heap Scan' &&
+          String(node['Recheck Cond'] ?? '').includes("state = 'done'")),
+    )
+    .reduce((sum, node) => sum + blocks(node), 0);
+}

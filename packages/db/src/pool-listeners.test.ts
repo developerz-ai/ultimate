@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Scheduler } from '@ultimat3/core';
+import { installLogSink } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
 import { poolListeners } from './pool-listeners';
 
@@ -223,5 +224,64 @@ describe('poolListeners across a retired pool', () => {
     listeners.redial();
     await turn();
     expect(pool.channels).toEqual([]);
+  });
+});
+
+// A database restart refuses every re-dial until it is back. Logged once when the streak opens and
+// once when a dial lands, with the count — never a line per attempt (~60 identical lines for one
+// restart, production 2026-11-14).
+describe('a re-dial streak in the log', () => {
+  test('one line for the first refusal, one for the recovery, the count between', async () => {
+    const events: { event: string; failures?: number }[] = [];
+    const release = installLogSink((line) => {
+      const parsed = JSON.parse(line) as { msg?: string; failures?: number };
+      if (parsed.msg?.startsWith('db.listen.') === true) {
+        events.push({
+          event: parsed.msg,
+          ...(parsed.failures === undefined ? {} : { failures: parsed.failures }),
+        });
+      }
+    });
+    try {
+      const first = fakePool();
+      const second = fakePool();
+      second.refuse = true;
+      let current = first;
+      const timers = manualTimers();
+      const listeners = poolListeners(() => current, timers.schedule);
+      await listeners.listen('x_jobs_wake', () => undefined);
+
+      current = second;
+      listeners.redial();
+      await turn();
+      for (let attempt = 0; attempt < 9; attempt += 1) {
+        timers.fire();
+        await turn();
+      }
+      // A second retirement inside the same outage is the same streak, not news.
+      listeners.redial();
+      await turn();
+      expect(events).toEqual([{ event: 'db.listen.redial_failed' }]);
+
+      second.refuse = false;
+      timers.fire();
+      await turn();
+      expect(events).toEqual([
+        { event: 'db.listen.redial_failed' },
+        { event: 'db.listen.redialed', failures: 11 },
+      ]);
+
+      // Healthy again: the next outage opens a streak of its own.
+      second.refuse = true;
+      listeners.redial();
+      await turn();
+      expect(events.map((entry) => entry.event)).toEqual([
+        'db.listen.redial_failed',
+        'db.listen.redialed',
+        'db.listen.redial_failed',
+      ]);
+    } finally {
+      release();
+    }
   });
 });

@@ -3,6 +3,7 @@
 // writes `llms.txt` after that scope closed, when a `load` reading the app's query cannot answer.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { useActionAnswer } from '@ultimat3/action';
 import type { RouteConfig } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { siteLlms } from './site-llms';
@@ -135,5 +136,22 @@ describe('collectLlmsPages', () => {
     });
     expect(asked).toBe(0);
     expect(pages.get('/posts/:slug')?.map((record) => record.path)).toEqual(['/posts/a']);
+  });
+
+  test('a page whose load reads an action answer collects: no request, so no answer', async () => {
+    route('apps/web/site/contact/page.tsx', {
+      load: () => Promise.resolve({ answer: useActionAnswer('sendMessage') }),
+      meta: ({ data }: { data: { answer: unknown } }) => ({
+        title: data.answer === null ? 'Contact' : 'Sent',
+        description: 'write to us',
+      }),
+    } as unknown as Partial<RouteConfig>);
+    const pages = await collectLlmsPages({
+      baseUrl: BASE,
+      defaultLocale: 'en',
+      environment: 'production',
+      scope,
+    });
+    expect(pages.get('/contact')?.map((record) => record.meta.title)).toEqual(['Contact']);
   });
 });

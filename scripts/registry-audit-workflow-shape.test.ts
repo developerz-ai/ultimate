@@ -1,8 +1,8 @@
 // The shape of `.github/workflows/registry-audit.yml` that keeps its daily alarm loud and single:
 // the issue step provisions its own `registry-drift` label BEFORE its first `gh issue` call,
 // reads a failed create as already-exists only when an exact-label `gh api` lookup confirms, and
-// dies loudly otherwise. Reads the REAL workflow — each assertion is one a quiet edit to it would
-// break with nothing red.
+// dies loudly otherwise; an open alarm is retitled while dirty and closed by the first clean run.
+// Reads the REAL workflow — each assertion is one a quiet edit to it would break with nothing red.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { ROW_COMMANDS } from './health';
@@ -138,5 +138,45 @@ describe('unit · one open alarm at a time', () => {
     expect(at(`gh issue create --label ${label}`)).toBeGreaterThan(
       at('gh issue comment "$existing"'),
     );
+  });
+});
+
+// The alarm follows the registry both ways: a dirty run retitles the open issue to TODAY's gap (a
+// title frozen at the first morning's count misstates every later one), and a clean run closes it.
+// Before this, the workflow could only open or comment, so an alarm outlived the gap it named.
+const closer = steps.find((step) => step.run?.includes('gh issue close'));
+const closerShell = (closer?.run ?? '')
+  .split('\n')
+  .filter((line) => !/^\s*#/.test(line))
+  .join('\n');
+
+describe('unit · the alarm is retitled while dirty and closed once clean', () => {
+  test('an open issue is retitled to the current summary before it is commented on', () => {
+    const edit = at(`gh issue edit "$existing" --title "registry: $summary"`);
+    expect(edit).toBeGreaterThan(at('if [ -n "$existing" ]; then'));
+    expect(edit).toBeLessThan(at('gh issue comment "$existing"'));
+  });
+
+  test('a clean run, and only a clean run, closes every open alarm with the run that proved it', () => {
+    expect(closer).toBeDefined();
+    expect(closer?.if).toBe("steps.audit.outcome == 'success'");
+    expect(closer?.['continue-on-error']).toBeUndefined();
+    expect(closerShell).toContain(
+      `open="$(gh issue list --label ${label} --state open --json number --jq '.[].number')"`,
+    );
+    expect(closerShell).toContain('for number in $open; do');
+    expect(closerShell).toContain('gh issue close "$number" --reason completed --comment');
+    expect(closerShell).toContain(`actions/runs/\${GITHUB_RUN_ID}`);
+    // The list is captured, never piped into the loop: without `pipefail` a failed list would
+    // pipe nothing, the loop would close nothing, and the step would still be green.
+    expect(closerShell).not.toContain('| while');
+    expect(closerShell).not.toContain('|| true');
+  });
+
+  test('the closing step runs before the badge step, and the badge never fires on success', () => {
+    const index = steps.indexOf(closer as Step);
+    expect(index).toBeGreaterThan(steps.indexOf(issue as Step));
+    expect(index).toBeLessThan(steps.length - 1);
+    expect(steps.at(-1)?.if).toBe("steps.audit.outcome == 'failure'");
   });
 });

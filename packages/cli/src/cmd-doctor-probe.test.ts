@@ -282,7 +282,7 @@ describe('unit · x doctor probes the whole surface x dev binds', () => {
   });
 
   // The bare-VM hole, and the reason it stayed open: `database()` answers `null` with no
-  // DATABASE_URL, so the one configuration a dz-runner box actually has was the one configuration
+  // DATABASE_URL, so the one configuration a bare VM actually has was the one configuration
   // `x doctor` said nothing about. `bin/setup` reported it instead, four commands later, as an
   // `x db migrate` failure.
   test('a bare VM whose optional peer never installed is red, in @ultimat3/db own words', async () => {
