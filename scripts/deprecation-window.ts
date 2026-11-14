@@ -20,6 +20,7 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { recordedException, WINDOW_OPENS_AT_MAJOR } from './lib/major-window';
 import { git } from './lib/release-due-git';
+import { MAX_UNTAGGED_SECTIONS, releasedVersions } from './lib/release-tag-walk';
 import { repoRoot } from './lib/run';
 import { listWorkspaces, publishOrder } from './lib/workspaces';
 import { remoteTagProbe, type TagProbe } from './registry-audit';
@@ -51,20 +52,19 @@ const unreachable = (tag: string): Finding => ({
 
 /**
  * The tag to compare against: the newest released changelog section that origin holds a tag
- * for. On a bump PR the newest section is the version being cut, untagged, so the one below it is
- * the base. `inert` when that base is below `WINDOW_OPENS_AT_MAJOR`.
+ * for. On a bump PR the newest section is the version being cut, untagged, and a release stamped
+ * but never published is untagged too: both passed over, within `MAX_UNTAGGED_SECTIONS`. `inert`
+ * when that base is below `WINDOW_OPENS_AT_MAJOR`.
  */
 async function baseTag(
   root: string,
   changelog: Changelog,
   probe: TagProbe,
 ): Promise<{ readonly tag: string } | { readonly inert: true } | { readonly finding: Finding }> {
-  const released = changelog
-    .filter((section) => section.released && /^\d+\.\d+\.\d+$/.test(section.version))
-    .slice(0, 2);
-  for (const section of released) {
-    if (Number.parseInt(section.version, 10) < WINDOW_OPENS_AT_MAJOR) return { inert: true };
-    const tag = `v${section.version}`;
+  const released = releasedVersions(changelog).slice(0, MAX_UNTAGGED_SECTIONS);
+  for (const version of released) {
+    if (Number.parseInt(version, 10) < WINDOW_OPENS_AT_MAJOR) return { inert: true };
+    const tag = `v${version}`;
     if ((await git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}`], root)).ok) {
       return { tag };
     }
@@ -80,7 +80,7 @@ async function baseTag(
     return fetched.ok ? { tag } : { finding: unreachable(tag) };
   }
   const newest = released[0];
-  return newest === undefined ? { inert: true } : { finding: unreachable(`v${newest.version}`) };
+  return newest === undefined ? { inert: true } : { finding: unreachable(`v${newest}`) };
 }
 
 /** Whether `local`, exported as `name` from `barrel` at `tag`, was marked `@deprecated` there. */

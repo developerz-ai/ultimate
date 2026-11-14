@@ -175,4 +175,37 @@ describe('unit · deprecation-window · against a release tag', () => {
     expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_UNDEPRECATED_REMOVAL']);
     expect(findings[0]?.cause).toContain('v31.0.0');
   });
+
+  // 31.22.2 was stamped and never tagged (its CI was red); the bump to 31.22.3 sits above it.
+  test('a release stamped but never tagged is passed over for the tagged one below it', async () => {
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
+    await write({
+      'packages/core/src/index.ts': 'export const b = 2;\n',
+      'docs/changelog/31.0.1.md': '## 31.0.1 - 2026-11-17\n\n- y\n',
+      'docs/changelog/31.0.2.md': '## 31.0.2 - 2026-11-18\n\n- z\n',
+    });
+    const findings = await deprecationWindowFindings(dir, options);
+    expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_UNDEPRECATED_REMOVAL']);
+    expect(findings[0]?.cause).toContain('v31.0.0');
+  });
+
+  test('more untagged releases than a bump and a skipped one is a tagless origin, refused', async () => {
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
+    await write({
+      'packages/core/src/index.ts': 'export const b = 2;\n',
+      'docs/changelog/31.0.1.md': '## 31.0.1 - 2026-11-17\n\n- x\n',
+      'docs/changelog/31.0.2.md': '## 31.0.2 - 2026-11-18\n\n- y\n',
+      'docs/changelog/31.0.3.md': '## 31.0.3 - 2026-11-19\n\n- z\n',
+    });
+    const findings = await deprecationWindowFindings(dir, options);
+    expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_TAG_UNREACHABLE']);
+  });
+
+  test('an origin holding no release tag within reach is a refusal, never a pass', async () => {
+    const { dir, write } = await released('31.0.0', 'export const a = 1;\n');
+    await git(['tag', '-d', 'v31.0.0'], dir);
+    await write({ 'packages/core/src/index.ts': 'export const b = 2;\n' });
+    const findings = await deprecationWindowFindings(dir, options);
+    expect(findings.map((one) => one.code)).toEqual(['X_RELEASE_TAG_UNREACHABLE']);
+  });
 });
