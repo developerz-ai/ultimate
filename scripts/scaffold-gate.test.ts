@@ -1,5 +1,5 @@
 // The scaffold job ran `x verify` behind a `budgets` waiver and a fix-follow loop, so the question
-// it answered was "can a scaffold be repaired into a gate?" — not the one a dz-runner box asks,
+// it answered was "can a scaffold be repaired into a gate?" — not the one a platform box asks,
 // which is `bun run setup && bun run verify`, once, green. These pin that the replacement runs the app's own
 // two scripts and that it has no allowance left to hide behind.
 

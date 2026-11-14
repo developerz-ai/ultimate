@@ -255,6 +255,7 @@ export {
   abandonment,
   ctxOf,
   hasContext,
+  parentContext,
   runToCompletion,
   runWithContext,
   throwIfAborted,

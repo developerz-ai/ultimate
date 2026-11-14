@@ -10,7 +10,6 @@ import {
   failureStack,
   logger,
   renderThrowable,
-  reportError,
   runWithContext,
   useContext,
   withChildContext,
@@ -22,6 +21,7 @@ import { claimOf } from './driver';
 import { JobAbortedError } from './errors';
 import { eventBus } from './events';
 import { callerActor, callerServices, callerSignal, drainedBy } from './execute-ctx';
+import { reportAttemptFailure } from './execute-report';
 import type { JobExecution } from './execute-result';
 import type { UnwindSettleOptions } from './execute-unwind';
 import { unwindAndSettle } from './execute-unwind';
@@ -396,25 +396,9 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       ...(stop === undefined ? {} : { stop }),
       error: message,
     });
-    // This package's ONE error-reporting call site, and it is here rather than in the loop because
-    // this is the only frame that still holds the thrown value — the loop sees a message string.
-    // A retry is a failure the framework recovered from, so it is a `warning`; a dead letter is
-    // one nobody recovered from. A job driven by `@ultimat3/testing`'s fixture takes this path
-    // too, which is the point: one execution path means one place a failed job becomes visible.
-    reportError(error, {
-      source: 'job',
-      severity: decision.retry ? 'warning' : 'error',
-      scope: {
-        operation: handle.name,
-        extra: {
-          jobId: claimed.id,
-          runId: claimed.runId,
-          attempt: claimed.attempt,
-          retry: decision.retry,
-          ...(stop === undefined ? {} : { stop }),
-        },
-      },
-    });
+    // A retry is counted and a dead letter is reported (`execute-report.ts`); a job driven by
+    // `@ultimat3/testing`'s fixture takes this path too — one place a failed job becomes visible.
+    reportAttemptFailure({ handle, claimed, error, retry: decision.retry, stop });
     // After the row is settled, and only by the worker whose settle landed: a run this worker no
     // longer owns is not this worker's ending to announce. Under the body's own scope, so the
     // hook's tenant-scoped writes — "mark this connection broken" — are the job's tenant's.

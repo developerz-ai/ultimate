@@ -265,17 +265,13 @@ describe('the worker counts what it finished', () => {
     expect([...new Set(labels)].sort()).toEqual(['outcome', 'queue']);
   });
 
-  test('an attempt that will be retried counts as failed and reports a warning', async () => {
+  test('an attempt that will be retried counts as failed and reaches no tracker', async () => {
     await runOne({ attempts: 3, fail: true });
 
     expect(outcomeOf('default', 'failed')).toBe(1);
     expect(outcomeOf('default', 'dead')).toBeUndefined();
-    const event = reporter.events[0] as ErrorReport;
-    expect(event.source).toBe('job');
-    // Recovered from, so not a page: the queue will run it again.
-    expect(event.severity).toBe('warning');
-    expect(event.scope.operation).toBe('countedJob');
-    expect(event.cause).toContain('the dependency is down');
+    // Recovered from, so not a page: the queue will run it again (`execute-report.ts`).
+    expect(reporter.events).toEqual([]);
   });
 
   test('an exhausted job counts as dead and is reported as an error, not a warning', async () => {

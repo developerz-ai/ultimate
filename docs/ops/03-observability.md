@@ -33,6 +33,7 @@ exactly one emitter:
 | `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s. The queue's GLOBAL backlog: every worker publishes the same number, so aggregate with `max`, never `sum`. The backlog alert's series; the worker no longer scales on it |
 | `queue_demand` | gauge | `queue` | the worker, beside `queue_depth`, and only when `stats()` shows work: running on a serving worker plus due rows on an unpaused queue. What the worker HPA reads. Every serving worker publishes the same number and a draining one 0, so aggregate with `max by (queue)`, never `sum` |
 | `jobs_total` | counter | `queue`, `outcome` (`ok`\|`failed`\|`dead`) | the worker's outcome path |
+| `jobs_retried_total` | counter | `job`, `code` (the thrown `X_*`, or `uncoded`) | `executeJob`, once per attempt that failed and went back to the queue (`packages/jobs/src/execute-report.ts`). Where a retry is counted: it never reaches the error tracker unless its job opts in |
 | `job_leases_lost_total` | counter | `queue` | the worker's lease heartbeat, once per job whose window lapsed |
 | `breaker_transitions_total` | counter | `name`, `to` (`closed`\|`open`\|`half-open`) | `@ultimat3/core`'s `breaker()`, once per state change — the AI gateway's per-provider breakers (`ai.<provider>`) and the replica router's (`db.replica`) included. A rising `to="open"` is a dependency down |
 | `queue_oldest_ready_seconds` | gauge | `queue` | the worker, beside `queue_depth` — how long the oldest waiting job has waited (`packages/jobs/src/metrics.ts`) |
@@ -67,7 +68,8 @@ is answered by importing everything and logged as `X_ROLE_LOAD_INCOMPLETE`: the 
 every job, and costs what the web role costs until the `fix:` is applied.
 
 Labels are deliberately low-cardinality: the route **pattern** and the status **class**, never a
-concrete path, a user id or a job name. A label an attacker chooses is a label that decides how
+concrete path or a user id. The one series with a job name is `jobs_retried_total{job,code}`, bounded by the app's job
+registry, never by input. A label an attacker chooses is a label that decides how
 much memory your monitoring stack allocates.
 
 **Read this before enabling autoscaling.** [`docker/helm/values.yaml`](../../docker/helm/values.yaml)
@@ -165,8 +167,21 @@ reads the command next to the failure instead of a stack trace.
 | Surface | Call site | Reported |
 |---|---|---|
 | HTTP | the `error-map` stage of the pipeline | `status >= 500` only. A 404 or a 422 is the caller's mistake and the problem document already said so |
-| jobs | `executeJob`'s failure path | a retry as `warning`, a dead letter as `error`. `x jobs retry <id>` re-enters the same path; `jobs` has no `run` subcommand |
+| jobs | `executeJob`'s failure path | a dead letter (or a drop) once, as `error`. A retry is **not** reported — the queue recovers from it, and a tracker opens an issue per event (`As of 2026-11-14`): it is counted on `jobs_retried_total{job,code}` instead. A job whose first failure is worth a human declares `retry: { report: 'every-attempt' }`, and its retries are reported as `warning`. `x jobs retry <id>` re-enters the same path; `jobs` has no `run` subcommand |
 | realtime | the sync node's frame handler and its detached presence writes | everything that is not a client fault (`X_TOPIC_FORBIDDEN`, `X_SUBSCRIPTION_LIMIT`, `X_PROTOCOL_VERSION`, `X_LIVE_QUERY_UNKNOWN`, `X_CURSOR_STALE`, `X_REBASE_CONFLICT`, `X_FORBIDDEN`, `X_UNAUTHENTICATED`) |
+
+A loop that fails every tick — a database restart — logs a streak, not a line per tick: one
+`error` line when it opens, one `info` line with `failures` (the count) when a tick passes again.
+A failure with a different cause (another `X_*` code, or another message when uncoded) is logged
+again, its line carrying the streak it ends as `previous: { code \| error, failures }`. A restarted
+loop starts with no streak.
+
+| Loop | Opens | Closes |
+|---|---|---|
+| the scheduler's round | `jobs.scheduler.tick-failed` | `jobs.scheduler.tick-recovered` |
+| the worker's claim pass | `jobs.worker.tick-failed` | `jobs.worker.tick-recovered` |
+| the outbox relay's pass | `jobs.outbox.tick-failed` | `jobs.outbox.tick-recovered` |
+| a `LISTEN` session's re-dial | `db.listen.redial_failed` (`warn`) | `db.listen.redialed` |
 
 The default reporter is a **no-op**, so an unconfigured app and every test pay nothing and page
 nobody. There is no `x serve` command — a container runs the scaffolded `apps/web/server.ts`,

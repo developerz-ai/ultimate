@@ -27,6 +27,7 @@ import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import { signalEnqueued } from './enqueue-signal';
+import { failureStreak } from './failure-streak';
 import { instrumentedFire } from './job-instrument';
 import { enqueuedAttempts } from './retry';
 import type { LeaderElection } from './scheduler-leader';
@@ -373,12 +374,13 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
    * a guard. Cron accuracy does not pay for it: an occurrence is computed from the clock, so a
    * few ms of drift between rounds moves nothing.
    */
+  // A restart fails every round until it ends: one line opens the streak, one closes it.
+  const tickFailures = failureStreak('jobs.scheduler.tick-failed', 'jobs.scheduler.tick-recovered');
   const schedule = (): void => {
     timer = setTimeout(() => {
       void tick()
-        .catch((error: unknown) => {
-          logger.error('jobs.scheduler.tick-failed', failureFields(error));
-        })
+        .then(() => tickFailures.passed())
+        .catch((error: unknown) => tickFailures.failed(error))
         .finally(() => {
           if (state === 'running') schedule();
         });
@@ -469,6 +471,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       // about to release, and stack a second shutdown hook on the one still running.
       if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
+      tickFailures.reset();
       // TWO hooks, for the two phases. `accept` stops dispatching and returns — an occurrence
       // enqueued during the drain is work nothing in this process is left to run, and every hook
       // behind this one still has the whole budget. `close` waits the round out and hands the

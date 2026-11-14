@@ -14,6 +14,7 @@ import {
   useContext,
   userActor,
   uuidV7,
+  withChildContext,
 } from '@ultimat3/core';
 import { localeConfig } from '@ultimat3/i18n';
 import { timeConfig } from '@ultimat3/time';
@@ -22,6 +23,7 @@ import {
   actorView,
   asCtx,
   elapsedMs,
+  hasRequest,
   requestContext,
   useRequestContext,
   useRequestCookie,
@@ -126,6 +128,27 @@ describe('asCtx', () => {
       config,
     });
     expect(Object.is(asCtx(ctx), ctx)).toBe(true);
+  });
+});
+
+describe('hasRequest', () => {
+  const request = () =>
+    requestContext({ url: new URL('https://example.com/x'), method: 'get', role: 'web', config });
+
+  test('true in a request, and in a child derived inside one', () => {
+    expect(runWithContext(asCtx(request()), () => hasRequest())).toBe(true);
+    const inChild = runWithContext(asCtx(request()), () =>
+      withChildContext({ actor: userActor({ id: 'u1' }) }, () =>
+        withChildContext({ locale: 'es' }, () => hasRequest()),
+      ),
+    );
+    expect(inChild).toBe(true);
+  });
+
+  test('false under a plain context, a child of one, and no context at all', () => {
+    expect(runWithContext(ctxOf({}), () => hasRequest())).toBe(false);
+    expect(runWithContext(ctxOf({}), () => withChildContext({}, () => hasRequest()))).toBe(false);
+    expect(hasRequest()).toBe(false);
   });
 });
 

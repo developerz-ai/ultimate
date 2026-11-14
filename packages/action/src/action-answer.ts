@@ -2,7 +2,7 @@
 // projection (`native-answer.ts`) and read once by the page that follows (`useActionAnswer`). Both
 // halves live here so the wire shape has one owner: the writer and the reader cannot drift.
 
-import { deleteCookie, setCookie, useRequestCookie } from '@ultimat3/http';
+import { deleteCookie, hasRequest, setCookie, useRequestCookie } from '@ultimat3/http';
 import type { SchemaIssueParams } from '@ultimat3/schema';
 import { issueRuleFacts } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -91,14 +91,23 @@ export function parseActionAnswer(raw: string | null): ActionAnswer | null {
 }
 
 /**
+ * The flash cookie of the request in scope. With no request at all (the `llms.txt` pass running a
+ * `load`, a job, a task) nobody submitted a form: `null`. A scope derived inside a request is still
+ * that request, so it refuses (`X_NO_REQUEST`) rather than answer `null` and leave the flash set.
+ */
+const answerCookie = (): string | null =>
+  hasRequest() ? useRequestCookie(ACTION_ANSWER_COOKIE) : null;
+
+/**
  * The answer the last native form submission left, read ONCE: the cookie is cleared on read.
  * Call it from a route's `load` — a header after a stream's first flush is refused. Given an
  * action, only that action's answer: two forms on one page do not read each other's outcome. A
  * page that may not import the action (`app/` → `api/`) names it: `'createPost' satisfies keyof
- * Api['actions']`. `null` on a `static`/`isr` page, which is rendered as nobody and sees no cookie.
+ * Api['actions']`. `null` on a `static`/`isr` page, which is rendered as nobody and sees no cookie,
+ * and `null` outside a request: nobody submitted a form there.
  */
 export function useActionAnswer(target?: AnyAction | string): ActionAnswer | null {
-  const answer = parseActionAnswer(useRequestCookie(ACTION_ANSWER_COOKIE));
+  const answer = parseActionAnswer(answerCookie());
   if (answer === null) return null;
   const name = typeof target === 'string' || target === undefined ? target : actionName(target);
   if (name !== undefined && answer.action !== name) return null;

@@ -4,6 +4,8 @@ import { frozenClock } from './clock';
 import {
   ctxOf,
   hasContext,
+  parentContext,
+  runToCompletion,
   runWithContext,
   throwIfAborted,
   tryUseContext,
@@ -367,6 +369,21 @@ describe("a child scope's signal composes the parent's", () => {
       withChildContext({ locale: 'de' }, () => {
         expect(useContext().signal).toBe(request.signal);
       });
+    });
+  });
+});
+
+describe('parentContext', () => {
+  test('a derived context names the one it was derived inside; a root context names none', () => {
+    const root = ctxOf({});
+    expect(parentContext(root)).toBeUndefined();
+    runWithContext(root, () => {
+      withChildContext({ actor: userActor({ id: 'u1' }) }, () => {
+        const child = useContext();
+        expect(parentContext(child)).toBe(root);
+        withChildContext({ locale: 'es' }, () => expect(parentContext(useContext())).toBe(child));
+      });
+      runToCompletion(() => expect(parentContext(useContext())).toBe(root));
     });
   });
 });

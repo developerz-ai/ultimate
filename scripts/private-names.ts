@@ -1,20 +1,29 @@
 #!/usr/bin/env bun
-// Enforce, as a build error, that no tracked file or path names a private adopter: the names come
-// from the ULTIMATE_PRIVATE_NAMES secret, never from a committed file, and a finding prints the
-// file:line and the entry's 1-based index, never the name or the text it matched.
+// Enforce, as a build error, that the public tree names nothing private: no tracked file or path
+// carries the internal setup mode's name or an entry of the ULTIMATE_PRIVATE_NAMES or
+// ULTIMATE_PRIVATE_REPOS secrets (an adopter, or a private repository a reader cannot open). A
+// finding prints the file:line and what it matched by class and 1-based index, never the value.
 //
 // WHY THE LIST IS A SECRET. A committed list, plain or hashed, publishes the names it guards (a
 // short name hashes back by brute force). CI logs are public, and Actions masks a secret's whole
-// value, not each line of it, so the output carries indices only.
+// value, not each line of it, so the output carries indices only. The setup mode is the one value
+// the guard knows itself, built from parts so this file never carries it whole: it is already in
+// the history, and the guard buys that the tree stops carrying it again.
 //
-// UNSET IS A SKIP, and says so: a fork's pull request cannot read the secret and receives an empty
-// string. The skip note and the "checked" line never appear together, so a skip cannot read as a
-// scan. The one exception is EXPLICIT: with ULTIMATE_PRIVATE_NAMES_REQUIRED=1, which ci.yml sets
-// beside the secret on the step that runs `boundaries` on a push to main, an empty secret is red,
-// since the guard would otherwise pass forever while scanning nothing. Never inferred from the
-// event: a unit job on the same push runs this guard with no secret and must skip. Untracked files
-// git does not ignore are scanned too, so a new page is caught before its commit. CHANGELOG.md,
-// docs/history/ and docs/plans/ are records and are not scanned.
+// THE SCAN PROVES ITSELF. It reads `git ls-files` (cached, plus untracked files git does not
+// ignore, so a new page is caught before its commit), counts the files it read, and refuses a run
+// that did not read this file: a scan of the wrong tree, or of nothing, is never a green. A root
+// that is no git tree and holds no copy of this file (a gate test's planted directory) is a skip
+// that says so: there is no public tree there. Every listed file is read. CHANGELOG.md,
+// docs/changelog/, docs/history/ and docs/plans/ are records: an adopter name there stands, but the
+// setup mode and a private repository do not. `.dz/` is hand-edited platform config: every rule.
+//
+// UNSET SKIPS THE NAMES, and says so; the setup mode is still checked. A fork's pull request cannot
+// read the secret and receives an empty string. With ULTIMATE_PRIVATE_NAMES_REQUIRED=1, which
+// ci.yml sets beside the secret on the step that runs `boundaries` on a push to main, an empty
+// names secret is red, since the names would otherwise pass forever unchecked; the repositories
+// secret is optional there too. Never inferred from the event: a unit job on the same push runs
+// this guard with no secret and must skip. Matchers: `private-names-match.ts`.
 //
 //   bun run private-names  ·  bun run scripts/private-names.ts [--json]
 
@@ -26,64 +35,42 @@ import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
+import type { DenyList, LineHit } from './private-names-match';
+import {
+  denyListFromEnv,
+  ENV_NAME,
+  entriesOf,
+  lineHit,
+  REPOS_ENV,
+  repositoryMatchers,
+} from './private-names-match';
 
 const SCRIPT = 'private-names';
 
-/** The one variable the names are read from. */
-export const ENV_NAME = 'ULTIMATE_PRIVATE_NAMES';
+/** This file, repo-relative: the scan must have read it, or it read the wrong tree. */
+export const SELF = 'scripts/private-names.ts';
 
 /** Set to `1` on the one CI step that must scan: there an empty secret is red, not a skip. */
 export const REQUIRED_ENV = 'ULTIMATE_PRIVATE_NAMES_REQUIRED';
 
-export const SKIP_NOTE = `private-names: skipped, ${ENV_NAME} is unset`;
+export const SKIP_NOTE = `skipped names, ${ENV_NAME} is unset`;
 
-/** Records whose history stands: the scrub never rewrites them. */
-const EXCLUDED = ['CHANGELOG.md', 'docs/changelog/', 'docs/history/', 'docs/plans/'];
-
-/** Letters, digits, `.` and `-` make a token; a name matches a WHOLE token, never part of one. */
-const TOKEN = /[a-z0-9.-]+/g;
-
-/** Newline- or comma-separated, trimmed, lowercased; unset, empty and whitespace are all none. */
-export function namesFromEnv(env: Readonly<Record<string, string | undefined>>): readonly string[] {
-  return (env[ENV_NAME] ?? '')
-    .split(/[\n,]/)
-    .map((name) => name.trim().toLowerCase())
-    .filter((name) => name.length > 0);
-}
-
-/**
- * The 1-based index of the entry a token is, or undefined. A token loses a leading or trailing `.`
- * or `-` first (a sentence's full stop), and a dotted entry also matches as a subdomain
- * (`www.<entry>`), since a domain's host part is still the name.
- */
-export function tokenMatch(raw: string, names: readonly string[]): number | undefined {
-  const word = raw.replace(/^[.-]+|[.-]+$/g, '');
-  for (const [index, name] of names.entries()) {
-    if (word === name || (name.includes('.') && word.endsWith(`.${name}`))) return index + 1;
-  }
-  return undefined;
-}
-
-const firstMatch = (text: string, names: readonly string[]): number | undefined => {
-  for (const [token] of text.toLowerCase().matchAll(TOKEN)) {
-    const index = tokenMatch(token, names);
-    if (index !== undefined) return index;
-  }
-  return undefined;
-};
+/** Records whose history stands: an adopter name in them is never rewritten. */
+const RECORDS = ['CHANGELOG.md', 'docs/changelog/', 'docs/history/', 'docs/plans/'];
 
 export interface PrivateNameHit {
-  /** The tracked file, or `undefined` when its own path carries a name and may not be printed. */
+  /** The tracked file, or `undefined` when its own path carries a value and may not be printed. */
   readonly file: string | undefined;
   /** Its 1-based position in `git ls-files`, which locates a file whose path cannot be printed. */
   readonly position: number;
   /** 0 for a hit in the path itself. */
   readonly line: number;
-  readonly index: number;
+  readonly hit: LineHit;
 }
 
 export interface PrivateNameScan {
   readonly names: number;
+  readonly repositories: number;
   readonly files: number;
   readonly hits: readonly PrivateNameHit[];
 }
@@ -93,61 +80,96 @@ const isBinary = (bytes: Uint8Array): boolean => bytes.subarray(0, 8000).include
 /** Files read at once: enough to keep the disk busy, few enough to hold no tree in memory. */
 const BATCH = 64;
 
-/** One tracked file's hits: its path, then each line. A binary or deleted file has no lines. */
+interface FileScan {
+  readonly hits: readonly PrivateNameHit[];
+  /** Whether its text was read: false for a binary file or one the work tree deleted. */
+  readonly read: boolean;
+}
+
+/** One listed file's hits: its path, then each line. */
 async function scanFile(
   root: string,
   path: string,
   position: number,
   names: readonly string[],
-): Promise<readonly PrivateNameHit[]> {
+  repositories: readonly RegExp[],
+): Promise<FileScan> {
   const hits: PrivateNameHit[] = [];
-  const pathIndex = firstMatch(path, names);
-  const file = pathIndex === undefined ? path : undefined;
-  if (pathIndex !== undefined) hits.push({ file, position, line: 0, index: pathIndex });
+  const own = RECORDS.some((prefix) => path.startsWith(prefix)) ? [] : names;
+  const pathHit = lineHit(path, own, repositories);
+  const file = pathHit === undefined ? path : undefined;
+  if (pathHit !== undefined) hits.push({ file, position, line: 0, hit: pathHit });
   const handle = Bun.file(`${root}/${path}`);
   // A path the index holds but the work tree deleted has no lines to read.
-  if (!(await handle.exists())) return hits;
+  if (!(await handle.exists())) return { hits, read: false };
   const bytes = await handle.bytes();
-  if (isBinary(bytes)) return hits;
+  if (isBinary(bytes)) return { hits, read: false };
   for (const [line, text] of new TextDecoder().decode(bytes).split('\n').entries()) {
-    const index = firstMatch(text, names);
-    if (index !== undefined) hits.push({ file, position, line: line + 1, index });
+    const hit = lineHit(text, own, repositories);
+    if (hit !== undefined) hits.push({ file, position, line: line + 1, hit });
   }
-  return hits;
+  return { hits, read: true };
 }
 
 /** Tracked files and the untracked ones git does not ignore: what the next commit can carry. */
 const LIST_FILES = ['ls-files', '--cached', '--others', '--exclude-standard'] as const;
 
-/** Every tracked or addable file outside the records; `undefined` when skipped. */
+const refuse = (cause: string): ScriptError =>
+  new ScriptError({
+    code: 'X_PRIVATE_NAME',
+    cause,
+    fix: 'git ls-files scripts/private-names.ts   # run from the repository root, then: bun run private-names --json',
+  });
+
+/** The summary of a root that is no repository and holds no guard: nothing to vouch for. */
+export const NOT_A_TREE = `private-names: skipped, not a git work tree and no ${SELF} in it`;
+
+/**
+ * Every listed file; the setup mode is checked even with no secret.
+ * `undefined` for a root git cannot list that does not hold this guard either: a directory a
+ * gate test planted, not a public tree. A root that holds the guard and cannot be listed is
+ * refused, so this repository can never scan nothing and pass.
+ */
 export async function scanPrivateNames(
   root: string,
-  names: readonly string[],
+  deny: DenyList,
 ): Promise<PrivateNameScan | undefined> {
-  if (names.length === 0) return undefined;
   const listed = Bun.spawnSync(['git', ...LIST_FILES, '-z'], { cwd: root, timeout: 30_000 });
-  // A tree git cannot list would scan nothing and pass: that is a refusal, never a green.
   if (listed.exitCode !== 0) {
-    throw new ScriptError({
-      code: 'X_PRIVATE_NAME',
-      cause: `git ls-files failed in ${root}, so no tracked file was read and a clean run would prove nothing`,
-      fix: 'git ls-files   # run from the repository root, then: bun run private-names --json',
-    });
+    if (!(await Bun.file(`${root}/${SELF}`).exists())) return undefined;
+    throw refuse(
+      `git ls-files failed in ${root}, so no tracked file was read and a clean run would prove nothing`,
+    );
   }
   const scanned = listed.stdout
     .toString()
     .split('\0')
     .map((path, at) => ({ path, position: at + 1 }))
-    .filter(({ path }) => path.length > 0 && !EXCLUDED.some((prefix) => path.startsWith(prefix)));
+    .filter(({ path }) => path.length > 0);
+  const repositories = repositoryMatchers(deny.repositories);
   const hits: PrivateNameHit[] = [];
+  let readSelf = false;
   for (let at = 0; at < scanned.length; at += BATCH) {
     const batch = scanned.slice(at, at + BATCH);
     const found = await Promise.all(
-      batch.map(({ path, position }) => scanFile(root, path, position, names)),
+      batch.map(({ path, position }) => scanFile(root, path, position, deny.names, repositories)),
     );
-    hits.push(...found.flat());
+    for (const [index, scan] of found.entries()) {
+      if (batch[index]?.path === SELF && scan.read) readSelf = true;
+      hits.push(...scan.hits);
+    }
   }
-  return { names: names.length, files: scanned.length, hits };
+  if (!readSelf) {
+    throw refuse(
+      `the scan of ${root} never read ${SELF}, so it read some other tree (or none) and a clean run would prove nothing`,
+    );
+  }
+  return {
+    names: deny.names.length,
+    repositories: deny.repositories.length,
+    files: scanned.length,
+    hits,
+  };
 }
 
 const LOCATE = (position: number): string => `git ${LIST_FILES.join(' ')} | sed -n '${position}p'`;
@@ -168,43 +190,74 @@ const UNSET_FINDING: Finding = {
   fix: `gh secret set ULTIMATE_PRIVATE_NAMES   # an admin, pasting the off-tree list (one name per line) at its prompt; then re-run the workflow`,
 };
 
-export function privateNameFinding(hit: PrivateNameHit): Finding {
+/** What the matched value is, by class and index: never the value itself. */
+function carries(hit: LineHit): string {
+  if (hit.kind === 'setup-mode') {
+    return `the internal setup mode's name (built from parts in ${SELF}), which says how our own machines are laid out`;
+  }
+  return hit.kind === 'repository'
+    ? `repository entry ${hit.index} of ${ENV_NAME} then ${REPOS_ENV} (\`/\` entries, in that order), a private repository a reader cannot open`
+    : `entry ${hit.index} of ${ENV_NAME}, a private adopter name the public tree must not hold`;
+}
+
+const REWRITE: Record<LineHit['kind'], string> = {
+  'setup-mode': 'say what the machine is ("a bare VM") without the mode\'s name',
+  repository: 'drop the reference, or say "the infrastructure repository" without its name',
+  name: 'replace the name with "one adopter" or an example.com fixture, keeping any figure',
+};
+
+export function privateNameFinding(found: PrivateNameHit): Finding {
   const where =
-    hit.file === undefined
-      ? `tracked path ${hit.position} (${LOCATE(hit.position)})${hit.line === 0 ? '' : `, line ${hit.line}`}`
-      : `${hit.file}:${hit.line}`;
-  const subject = hit.line === 0 ? 'its path' : 'that line';
+    found.file === undefined
+      ? `tracked path ${found.position} (${LOCATE(found.position)})${found.line === 0 ? '' : `, line ${found.line}`}`
+      : `${found.file}:${found.line}`;
+  const subject = found.line === 0 ? 'its path' : 'that line';
+  const show =
+    found.file === undefined
+      ? LOCATE(found.position)
+      : `grep -n '' ${renderFixShellArg(found.file, '<file>')} | sed -n '${String(found.line)}p'`;
   return {
     code: 'X_PRIVATE_NAME',
     at: where,
-    cause: `${where}: ${subject} carries entry ${hit.index} of ${ENV_NAME}, a private adopter name the public tree must not hold`,
+    cause: `${where}: ${subject} carries ${carries(found.hit)}`,
     fix:
-      hit.line === 0
-        ? `${LOCATE(hit.position)}   # prints the path: git mv it to one without the name, then: bun run private-names --json`
-        : `${hit.file === undefined ? LOCATE(hit.position) : `grep -n '' ${renderFixShellArg(hit.file, '<file>')} | sed -n '${String(hit.line)}p'`}   # at line ${hit.line}, replace the name with "one adopter" or an example.com fixture, keeping any figure; then: bun run private-names --json`,
+      found.line === 0
+        ? `${LOCATE(found.position)}   # prints the path: git mv it to one without the value, then: bun run private-names --json`
+        : `${show}   # at line ${found.line}, ${REWRITE[found.hit.kind]}; then: bun run private-names --json`,
   };
 }
 
 export function privateNameResult(scan: PrivateNameScan | undefined): ScriptResult {
-  if (scan === undefined) return { ok: true, script: SCRIPT, summary: SKIP_NOTE, findings: [] };
+  if (scan === undefined) return { ok: true, script: SCRIPT, summary: NOT_A_TREE, findings: [] };
   const findings = scan.hits.map(privateNameFinding);
-  const checked = `private-names: checked ${scan.names} names across ${scan.files} files`;
+  const lists = [
+    ...(scan.names === 0 ? [] : [`${scan.names} names`]),
+    ...(scan.repositories === 0 ? [] : [`${scan.repositories} repositories`]),
+  ];
+  const what = lists.length === 0 ? 'the setup mode' : lists.join(' and ');
+  const skipped = scan.names === 0 ? `; ${SKIP_NOTE}` : '';
+  const checked = `private-names: checked ${what} across ${scan.files} files${skipped}`;
   return {
     ok: findings.length === 0,
     script: SCRIPT,
     summary: findings.length === 0 ? checked : `${checked}, ${findings.length} carry one`,
     findings,
-    data: { names: scan.names, files: scan.files, hits: scan.hits.length },
+    data: {
+      names: scan.names,
+      repositories: scan.repositories,
+      files: scan.files,
+      hits: scan.hits.length,
+    },
   };
 }
 
-/** The verdict for one environment: the names it carries, scanned under `root`. */
+/** The verdict for one environment: the deny-list it carries, scanned under `root`. */
 export async function privateNameReport(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<ScriptResult> {
-  const names = namesFromEnv(env);
-  if (names.length === 0 && namesRequired(env)) {
+  // The flag keys on the names secret alone: the repositories one is optional everywhere.
+  if (entriesOf(env[ENV_NAME]).length === 0 && namesRequired(env)) {
     return {
       ok: false,
       script: SCRIPT,
@@ -212,13 +265,13 @@ export async function privateNameReport(
       findings: [UNSET_FINDING],
     };
   }
-  return privateNameResult(await scanPrivateNames(root, names));
+  return privateNameResult(await scanPrivateNames(root, denyListFromEnv(env)));
 }
 
 /**
  * The rule as a host check: `scripts/verify.ts` runs it on the gate's `boundaries` step. The
- * summary goes to stderr, so the gate's log says whether it scanned or skipped: a CI run's proof
- * that the secret arrived is the "checked" line there.
+ * summary goes to stderr, so the gate's log says what it scanned: a CI run's proof that the secret
+ * arrived is the "checked N names" line there.
  */
 export async function privateNameFindings(
   root: string,

@@ -31,7 +31,17 @@ export interface RetryPolicy {
   readonly jitter?: JitterMode;
   /** Default true: an exhausted job is parked, never dropped. */
   readonly deadLetter?: boolean;
+  /**
+   * What reaches the error tracker. `'dead-letter'` (the default): only an attempt nobody
+   * recovered from — a retry is counted in `jobs_retried_total{job,code}` and never pages.
+   * `'every-attempt'`: a retried attempt is reported too, as a `warning` — for the job whose FIRST
+   * failure is already worth a human, declared on that job and never as a global switch.
+   */
+  readonly report?: RetryReport;
 }
+
+/** `RetryPolicy.report`: what of a failing job reaches the error tracker. */
+export type RetryReport = 'dead-letter' | 'every-attempt';
 
 export const DEFAULT_RETRY = {
   attempts: 3,

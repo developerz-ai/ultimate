@@ -28,3 +28,12 @@
 
 ## Done when
 - Every row has an answer or its default recorded here with a date.
+
+## Answers (2026-11-14)
+The owner set the whole plan as one goal with full access ("do full work, full access, mint tokens, infra, db"). Recorded:
+
+| # | Answer |
+|---|---|
+| OD0 | 8 agents per sweep, PRs up to ~200 files, with the replacement review |
+| OD1 | authorised for the whole plan: releases, demo rollouts, production evidence, PRs in other repositories (S1–S5) |
+| OD2–OD10 | the recommendation column, as written |

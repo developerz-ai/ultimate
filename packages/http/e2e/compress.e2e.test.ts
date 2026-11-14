@@ -77,8 +77,16 @@ describe('what leaves the socket', () => {
   test('HEAD says what GET sends: the coded length, gzip, no body', async () => {
     const at = `${handle.url()}/sheet.css`;
     const headers = { 'accept-encoding': 'gzip' };
-    const get = await fetch(at, { decompress: false, headers });
-    const wire = (await get.arrayBuffer()).byteLength;
+    // An immutable asset is recoded once in the background at gzip 9; until that lands a GET sends
+    // the inline level-6 coding. Under load the recode landed between a GET and its HEAD, so wait
+    // for the settled coding first: both must then describe the same bytes.
+    const settled = Bun.gzipSync(new TextEncoder().encode(STYLESHEET), { level: 9 }).byteLength;
+    const sent = async (): Promise<number> =>
+      (await (await fetch(at, { decompress: false, headers })).arrayBuffer()).byteLength;
+    let wire = await sent();
+    // Each round trip is an event-loop turn the background coder can land in: no wall-clock wait.
+    for (let tries = 0; wire !== settled && tries < 2_000; tries += 1) wire = await sent();
+    expect(wire).toBe(settled);
     const head = await fetch(at, { method: 'HEAD', decompress: false, headers });
     expect(head.headers.get('content-encoding')).toBe('gzip');
     expect(head.headers.get('content-length')).toBe(String(wire));

@@ -3,9 +3,18 @@
 // holds when the body ignores it: a step from the timed-out attempt never reaches the store.
 // Fake time (`fake-time-fixture.ts`) fires the deadline: no wait here is the runner's to decide.
 
-import { afterAll, describe, expect, spyOn, test } from 'bun:test';
-import type { Ctx } from '@ultimat3/core';
-import { ctxOf, logger } from '@ultimat3/core';
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import type { Ctx, ErrorReport } from '@ultimat3/core';
+import {
+  collectMetrics,
+  ctxOf,
+  logger,
+  memoryErrorReporter,
+  resetErrorReporting,
+  resetMetrics,
+  UltimateError,
+} from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -14,6 +23,7 @@ import type { JobExecution } from './execute-result';
 import { useFakeTime } from './fake-time-fixture';
 import type { AnyJobHandle, JobRunArgs } from './job';
 import { job, resetJobs } from './job';
+import type { RetryPolicy } from './retry';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -59,6 +69,7 @@ async function claimOne(
     readonly timeout?: string;
     /** Fails settlement the way a pool timeout does: the body already ran, `ack` did not land. */
     readonly ackFails?: () => Error;
+    readonly retry?: RetryPolicy;
     run(args: JobRunArgs<{ n: number }>): Promise<unknown>;
   },
   onNack?: (nack: NackOptions) => void,
@@ -69,7 +80,7 @@ async function claimOne(
     name: 'cancellable',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `cancellable:${n}`,
-    retry: { attempts: 3, jitter: 'none' },
+    retry: options.retry ?? { attempts: 3, jitter: 'none' },
     ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
     run: options.run,
   });
@@ -305,5 +316,95 @@ describe('a timed-out job is cancelled, not orphaned', () => {
       status: 'completed',
       output: 'ok',
     });
+  });
+});
+
+// The tracker pages on what nobody recovered from. A retry is the queue doing its job: it is a
+// count on a dashboard, never an issue — one expected retry opened six issues in production.
+describe('a retried attempt is counted, not reported', () => {
+  const reporter = memoryErrorReporter();
+
+  beforeEach(() => {
+    resetMetrics();
+    resetErrorReporting();
+    reporter.reset();
+    installErrorReporter(reporter);
+  });
+
+  afterEach(() => {
+    resetErrorReporting();
+  });
+
+  const retried = (job: string, code: string): number | undefined =>
+    collectMetrics()
+      .metrics.find((metric) => metric.descriptor.name === 'jobs_retried_total')
+      ?.points.find((point) => point.attributes['job'] === job && point.attributes['code'] === code)
+      ?.value;
+
+  const downstream = (): UltimateError =>
+    new UltimateError({
+      code: 'X_TEST_DOWNSTREAM',
+      cause: 'the dependency is down',
+      fix: 'wait for the dependency',
+    });
+
+  test('a retry reaches no tracker and increments jobs_retried_total by job and code', async () => {
+    const harness = await claimOne({
+      run: async () => {
+        throw downstream();
+      },
+    });
+
+    const execution = await harness.execute();
+
+    expect(execution.outcome).toBe('retried');
+    expect(reporter.events).toEqual([]);
+    expect(retried('cancellable', 'X_TEST_DOWNSTREAM')).toBe(1);
+  });
+
+  test('an uncoded retry counts under code "uncoded"', async () => {
+    const harness = await claimOne({
+      // Input to the body under test, not a verdict: a failure with no `X_*` code.
+      run: () => Promise.reject(new TypeError('the dependency is down')),
+    });
+
+    await harness.execute();
+
+    expect(reporter.events).toEqual([]);
+    expect(retried('cancellable', 'uncoded')).toBe(1);
+  });
+
+  test('a dead letter after the last retry reports once, as an error, and is not counted', async () => {
+    const harness = await claimOne({
+      retry: { attempts: 1, jitter: 'none' },
+      run: async () => {
+        throw downstream();
+      },
+    });
+
+    const execution = await harness.execute();
+
+    expect(execution.outcome).toBe('dead-lettered');
+    expect(reporter.events).toHaveLength(1);
+    const event = reporter.events[0] as ErrorReport;
+    expect(event.severity).toBe('error');
+    expect(event.scope.operation).toBe('cancellable');
+    expect(retried('cancellable', 'X_TEST_DOWNSTREAM')).toBeUndefined();
+  });
+
+  test('a job declaring retry.report "every-attempt" reports its retry as a warning', async () => {
+    const harness = await claimOne({
+      retry: { attempts: 3, jitter: 'none', report: 'every-attempt' },
+      run: async () => {
+        throw downstream();
+      },
+    });
+
+    await harness.execute();
+
+    expect(reporter.events).toHaveLength(1);
+    expect((reporter.events[0] as ErrorReport).severity).toBe('warning');
+    // Opting into the tracker never takes the count away.
+    expect(retried('cancellable', 'X_TEST_DOWNSTREAM')).toBe(1);
   });
 });

@@ -122,7 +122,7 @@ every router fetch is `cache: 'no-cache'` — the browser's HTTP cache never ans
 
 `As of 2026-10-29` (29.1.0). A route modal used to appear only once its document had arrived and
 been swapped in — 376 ms of nothing on a phone profile for a 60 KB peek in the consumer that asked
-(tesote/bank-integrations, a run board opening `/runs/:id/peek`).
+(a run board opening `/runs/:id/peek`).
 
 **Why a meta and not a link attribute.** Presentation stays the route's declaration (a link
 attribute is a second one two links could disagree on, and a redirect has no link). The server

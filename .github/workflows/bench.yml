@@ -13,8 +13,9 @@ on:
   schedule:
     # Weekly, Monday early UTC — away from the daily registry audit at 06:17.
     - cron: '41 4 * * 1'
-  release:
-    types: [published]
+  # No `release` trigger: release-tag.yml creates every Release with GITHUB_TOKEN, and an event that
+  # token raises starts no workflow run, so `release: published` never fired once here. Weekly is
+  # the cadence; a figure wanted sooner is `gh workflow run bench.yml --ref main`.
   workflow_dispatch:
 
 # `contents: write` + `pull-requests: write`: the branch and the pull request with the new JSON. No
@@ -84,5 +85,13 @@ jobs:
           git add scripts/bench/results
           git commit -m "chore(bench): re-measure first hour and http-hello (run ${GITHUB_RUN_ID})"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
-          gh pr create --head "$BRANCH" --title 'chore(bench): re-measured figures' \
-            --body "Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. \`bun run scripts/bench-claims.ts\` says which prose to update."
+          # Refused — `GitHub Actions is not permitted to create or approve pull requests` — when the
+          # repository or its organisation does not let Actions create pull requests; no
+          # `permissions:` key can grant that. Both 2026-11 runs measured, pushed and died here. The
+          # refusal names no approve flag as the fix: that switch also lets any workflow's token
+          # approve a pull request, which is a review branch protection then cannot tell apart.
+          if ! gh pr create --head "$BRANCH" --title 'chore(bench): re-measured figures' \
+            --body "Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. \`bun run scripts/bench-claims.ts\` says which prose to update."; then
+            echo "::error::no pull request for ${BRANCH} (pushed): this run needs GitHub Actions allowed to create pull requests, in the repository's and the organisation's Actions settings. Cost: a bot can then open pull requests, so required reviews must come from CODEOWNERS, which the bot cannot satisfy. Until then open it by hand: gh pr create --head ${BRANCH} --fill"
+            exit 1
+          fi

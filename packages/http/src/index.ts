@@ -36,6 +36,7 @@ export {
   actorView,
   asCtx,
   elapsedMs,
+  hasRequest,
   requestContext,
   useRequestBodyBytes,
   useRequestContext,

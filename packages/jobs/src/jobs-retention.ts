@@ -42,11 +42,24 @@ import {
  * `held` is a LATERAL probe with a `limit`, not an `exists`: the planner flattens an `exists` into
  * a semi-join and, at a 1,000-row batch, hashes the whole of `x_jobs` for it; the lateral form is one
  * `x_jobs_run_idx` lookup per deleted run (EXPLAIN, 63,000 rows, 2026-10-17).
+ *
+ * Each branch is a KEYSET walk, the claim's shape: it seeks from `$4` (done) / `$5` (ended), the
+ * newest `updated_at` the previous batch deleted from it, answered back as `done_after` /
+ * `ended_after`. A delete leaves its index entry until vacuum, and while any snapshot older than the
+ * delete is open (a long transaction, a standby's feedback) no scan may skip that entry unread — so
+ * a walk from the index's START stepped over every row the earlier batches deleted, a heap visit
+ * each, and the last batch of a pass, or the first of the next, read most of the heap to delete
+ * nothing (3,534 blocks, 47.6 ms, production 2026-11-14). `>=`, not `>`: rows that share the mark's
+ * instant are re-read, never lost. Null starts at the index's first entry. A mark is ISO 8601 in UTC
+ * to the microsecond, never `timestamptz::text`: that renders in the SESSION's DateStyle and zone,
+ * and the next batch may run on a connection styled otherwise (`SQL, DMY` read as `MDY`). A range the planner
+ * knows is small may be read as one bitmap scan: what it reads is then the batch itself.
  */
 export const SQL_JOBS_RETENTION_BATCH = `
 with done_rows as (
-  select j.id, j.run_id, j.updated_at from x_jobs j
+  select j.id, j.run_id, j.updated_at, true as done from x_jobs j
    where j.state = 'done'
+     and j.updated_at >= coalesce($4::timestamptz, '-infinity'::timestamptz)
      and j.updated_at < statement_timestamp() - ($1::bigint * interval '1 millisecond')
      and not exists (select 1 from x_outbox o where o.id = j.id and o.published_at is null)
      and not exists (select 1 from x_backfills b where b.run_id = j.run_id and b.status = 'running')
@@ -54,8 +67,9 @@ with done_rows as (
    limit $3
      for update of j skip locked
 ), ended_rows as (
-  select j.id, j.run_id, j.updated_at from x_jobs j
+  select j.id, j.run_id, j.updated_at, false as done from x_jobs j
    where j.state in ('failed', 'dead', 'cancelled')
+     and j.updated_at >= coalesce($5::timestamptz, '-infinity'::timestamptz)
      and j.updated_at < statement_timestamp() - ($2::bigint * interval '1 millisecond')
      and not exists (select 1 from x_outbox o where o.id = j.id and o.published_at is null)
      and not exists (select 1 from x_backfills b where b.run_id = j.run_id and b.status = 'running')
@@ -63,7 +77,8 @@ with done_rows as (
    limit $3
      for update of j skip locked
 ), doomed as (
-  select id, run_id from (select * from done_rows union all select * from ended_rows) d
+  select id, run_id, updated_at, done
+    from (select * from done_rows union all select * from ended_rows) d
    order by updated_at
    limit $3
 ), gone as (
@@ -81,7 +96,11 @@ with done_rows as (
      and s.run_id not in (select run_id from held)
 )
 select (select count(*) from gone)::int as removed,
-       (select coalesce(json_agg(run_id), '[]'::json) from held)::text as held
+       (select coalesce(json_agg(run_id), '[]'::json) from held)::text as held,
+       to_char((select max(updated_at) from doomed where done) at time zone 'UTC',
+               'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as done_after,
+       to_char((select max(updated_at) from doomed where not done) at time zone 'UTC',
+               'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as ended_after
 `.trim();
 
 /**
@@ -148,18 +167,40 @@ export interface JobsRetentionOptions extends PurgeBatching {
 
 const SUBJECT = 'jobsPurgeTarget';
 
+/** Where each branch's next batch seeks from: the newest `updated_at` it deleted, as text. */
+interface RetentionMarks {
+  done: string | null;
+  ended: string | null;
+}
+
+interface BatchRow {
+  readonly removed: number | string;
+  readonly held: string | null;
+  readonly done_after: string | null;
+  readonly ended_after: string | null;
+}
+
 /** `x_jobs` as a purge target, batched (`purge-batches.ts`). */
 export function jobsPurgeTarget(options: JobsRetentionOptions): PurgeTarget {
   const done = finiteCount(SUBJECT, 'doneRetentionMs', options.doneRetentionMs, 1);
   const dead = finiteCount(SUBJECT, 'deadRetentionMs', options.deadRetentionMs, 1);
   const bounds = purgeBatching(SUBJECT, options);
-  const orphansDue = upkeepCadence();
+  const upkeepDue = upkeepCadence();
+  // Kept across passes, so the next hour does not re-walk this one's deletes either. Below a mark
+  // stand only rows a batch skipped — locked, or vetoed by the outbox or a backfill — and the
+  // daily upkeep forgets the marks so those get their turn: a day late at worst, never lost.
+  const marks: RetentionMarks = { done: null, ended: null };
   return {
     name: 'x_jobs',
     // The count is `x_jobs` rows, the target's name; orphaned step records are its upkeep.
     purgeExpired: async (nowMs): Promise<number> => {
-      const removed = await purgeInBatches(jobsBatch(options.executor, done, dead), bounds);
-      if (orphansDue(nowMs)) {
+      const upkeep = upkeepDue(nowMs);
+      if (upkeep) {
+        marks.done = null;
+        marks.ended = null;
+      }
+      const removed = await purgeInBatches(jobsBatch(options.executor, done, dead, marks), bounds);
+      if (upkeep) {
         await options.executor.query(SQL_JOBS_RETENTION_ORPHANS, [
           Math.min(done, dead),
           bounds.batch,
@@ -170,15 +211,29 @@ export function jobsPurgeTarget(options: JobsRetentionOptions): PurgeTarget {
   };
 }
 
-/** One batch of `SQL_JOBS_RETENTION_BATCH`, then the held runs' steps if it answered any. */
-function jobsBatch(executor: PgExecutor, done: number, dead: number): PurgeBatch {
+/**
+ * One batch of `SQL_JOBS_RETENTION_BATCH` from `marks`, moving them on; then the held runs' steps
+ * if it answered any. A branch that deleted nothing keeps its mark.
+ */
+function jobsBatch(
+  executor: PgExecutor,
+  done: number,
+  dead: number,
+  marks: RetentionMarks,
+): PurgeBatch {
   return async (size) => {
-    const rows = await executor.query<{ removed: number | string; held: string | null }>(
-      SQL_JOBS_RETENTION_BATCH,
-      [done, dead, size],
-    );
-    const held = rows[0]?.held ?? '[]';
+    const rows = await executor.query<BatchRow>(SQL_JOBS_RETENTION_BATCH, [
+      done,
+      dead,
+      size,
+      marks.done,
+      marks.ended,
+    ]);
+    const row = rows[0];
+    marks.done = row?.done_after ?? marks.done;
+    marks.ended = row?.ended_after ?? marks.ended;
+    const held = row?.held ?? '[]';
     if (held !== '[]') await executor.query(SQL_JOBS_RETENTION_STEPS, [held]);
-    return Number(rows[0]?.removed ?? 0);
+    return Number(row?.removed ?? 0);
   };
 }

@@ -19,6 +19,7 @@ import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobExecution } from './execute-result';
+import { streakHooks } from './failure-streak';
 import { registeredJobs } from './job';
 import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
@@ -307,9 +308,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     queues,
     round,
     wake: options.driver.wake?.bind(options.driver), // a hand-back this loop stopped before
-    onError: (error) => {
-      logger.error('jobs.worker.tick-failed', { workerId, error: renderThrowable(error) });
-    },
+    ...streakHooks('jobs.worker.tick-failed', 'jobs.worker.tick-recovered', { workerId }),
   });
 
   /**

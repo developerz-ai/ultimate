@@ -23,7 +23,17 @@ afterAll(async () => {
 
 const must = async (args: readonly string[], cwd: string): Promise<string> => {
   const out = await git(
-    ['-c', 'user.email=t@example.test', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args],
+    [
+      '-c',
+      'user.email=t@example.test',
+      '-c',
+      'user.name=t',
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'tag.gpgsign=false',
+      ...args,
+    ],
     cwd,
   );
   expect(out.ok, out.output).toBe(true);

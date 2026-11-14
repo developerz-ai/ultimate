@@ -35,7 +35,7 @@ Pre-PR: `bug-hunter` + `architecture-reviewer` read-only over the diff (high-sta
 
 ## Sweep 12c — the customer's issues, before the tag (added 2026-10-07)
 The readiness gate below asks for zero open `bug` issues, and the large customer the release is for
-(tesote/bank-integrations) filed 15 issues while building and deploying on 23.0.0 (#669–#683). Any of
+filed 15 issues while building and deploying on 23.0.0 (#669–#683). Any of
 them that needs a break must land in 25.0.0, not 26, so they go before the tag: one PR, four workers
 by area — realtime (#672, #680, #681, #682), jobs and runtime (#669, #673, #676, #677), dev tooling
 and env (#674, #675, #678, #679, #683), auth and the reference app (#670, #671, #689 — the last is the

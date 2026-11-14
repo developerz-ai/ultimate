@@ -1449,7 +1449,7 @@ Moved here from `packages/realtime/CLAUDE.md` for room (2026-10-02), verbatim:
 
 ## 2026-10-22 — equal is structural, a publisher's bulk write is its own, a late tick is not silence
 
-Found by an app (`tesote/bank-integrations`, its `/runs` table flickered whole after every
+Found by an adopter's app (its `/runs` table flickered whole after every
 sync-node roll). Three rules, each pinned by a failing-first test:
 
 - **The record store compares columns STRUCTURALLY** (`sameJson` in `json.ts`, the one
@@ -1469,7 +1469,7 @@ sync-node roll). Three rules, each pinned by a failing-first test:
 
 ## 2026-10-29 — a read hook answers what moved, once, and only to whom it moved
 
-Measured on bank-integrations' panel (Ultimate 29.1.0), which had worked around all three in app
+Measured on that adopter's panel (Ultimate 29.1.0), which had worked around all three in app
 code — `throttle.ts` (a board redrawn per record, ten a second, on a phone), `stableRuns` and
 `sameData` (new arrays of the same rows defeating Solid's `===`).
 `bun run scripts/bench/record-store-bench.ts` replays the load; before → after:

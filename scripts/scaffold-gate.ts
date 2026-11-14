@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // A freshly scaffolded app's OWN `bun run setup && bun run verify`, run as CI's check — the two
-// commands a dz-runner box runs on an Ubuntu VM with bun and git and nothing else, and the contract the
+// commands a platform box runs on an Ubuntu VM with bun and git and nothing else, and the contract the
 // platform depends on. Nothing here re-spells them: the scripts under test are the ones `x new`
 // wrote, so a change to either is measured on the next push rather than discovered on a box.
 //

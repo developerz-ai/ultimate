@@ -3,11 +3,16 @@
 // loop's timers are the test's own, so a wait is a number asserted on, never time slept through.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { installLogSink } from '@ultimat3/core';
 import { setWakeLive, signalEnqueued } from './enqueue-signal';
+import { DriverUnavailableError } from './errors';
 import type { ClaimLoop, LoopTimers } from './worker-loop';
 import { createClaimLoop } from './worker-loop';
 
 const FLOOR_MS = 250;
+
+const dbDown = (): DriverUnavailableError =>
+  new DriverUnavailableError({ driver: 'pg', cause: 'down', fix: 'wait' });
 
 /** Every wait the loop armed, in order, and the one in hand — fired by the test, never by time. */
 function manualTimers(): LoopTimers & { readonly waits: number[]; fire(): void } {
@@ -115,5 +120,37 @@ describe('the claim loop during an outage', () => {
     timers.fire();
     await settled();
     expect(timers.waits.at(-1)).toBe(FLOOR_MS);
+  });
+});
+
+// A hand-off is a NOTIFY a stopping loop sends for a due time it will not keep. Its failure is its
+// own line: routed through `onError` it opened the claim pass's failure streak at every stop.
+describe('a hand-off whose wake fails', () => {
+  test('is logged as its own line and never reaches onError', async () => {
+    const lines: string[] = [];
+    const releaseLogSink = installLogSink((line) => {
+      lines.push(String((JSON.parse(line) as { msg?: string }).msg));
+    });
+    try {
+      const errors: unknown[] = [];
+      const own = createClaimLoop({
+        subject: 'the test loop',
+        floorMs: FLOOR_MS,
+        queues: ['default'],
+        round: () => Promise.resolve(),
+        onError: (error) => errors.push(error),
+        wake: () => Promise.reject(dbDown()),
+        timers: manualTimers(),
+      });
+      own.start();
+      own.dueIn(1_000);
+      own.stop();
+      await settled();
+
+      expect(errors).toEqual([]);
+      expect(lines).toContain('jobs.loop.hand-off-failed');
+    } finally {
+      releaseLogSink();
+    }
   });
 });

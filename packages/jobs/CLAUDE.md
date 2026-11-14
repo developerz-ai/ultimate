@@ -210,6 +210,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
+| `execute-report.ts` | a failed attempt's visibility: a dead letter to the tracker, a retry to `jobs_retried_total` (tracker only under `retry.report: 'every-attempt'`) |
+| `failure-streak.ts` | a polling loop's failures as a streak: one line opens it, one closes it with the count (scheduler, worker, relay) |
 | `execute.ts` (+`-result.ts`) / `run-deadline.ts` | `executeJob`: one claimed job run and settled; its deadline: cancel, then fail |
 | `heartbeat.ts` / `job-lease.ts` | one claimed job's lease: the renewal interval and the loss it reports; `args.lease`, the body's view of it |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |

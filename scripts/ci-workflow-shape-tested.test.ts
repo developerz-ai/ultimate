@@ -202,17 +202,23 @@ describe('unit · ci.yml · the private-names wiring #970 added survives the reu
     expect(steps[0]?.env?.['ULTIMATE_PRIVATE_NAMES']).toBe(
       expr("contains(matrix.only, 'boundaries') && secrets.ULTIMATE_PRIVATE_NAMES || ''"),
     );
+    // The repositories secret rides the same step under the same gate, and no flag requires it.
+    expect(steps[0]?.env?.['ULTIMATE_PRIVATE_REPOS']).toBe(
+      expr("contains(matrix.only, 'boundaries') && secrets.ULTIMATE_PRIVATE_REPOS || ''"),
+    );
     expect(steps[0]?.env?.['ULTIMATE_PRIVATE_NAMES_REQUIRED']).toBe(
       expr(
         "contains(matrix.only, 'boundaries') && github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || ''",
       ),
     );
-    // The secret's VALUE reaches the boundaries part alone; `tested` reads only whether it is set.
+    // Each secret's VALUE reaches the boundaries part alone; `tested` reads only whether NAMES is set.
     const elsewhere = Object.entries(ci.jobs ?? {}).filter(
       ([name, target]) =>
         JSON.stringify(name === 'gate' ? { ...target, steps: [] } : target)
           .replaceAll("secrets.ULTIMATE_PRIVATE_NAMES != ''", '')
-          .match(/secrets\.ULTIMATE_PRIVATE_NAMES|ULTIMATE_PRIVATE_NAMES_REQUIRED/) !== null,
+          .match(
+            /secrets\.ULTIMATE_PRIVATE_(NAMES|REPOS)|ULTIMATE_PRIVATE_NAMES_REQUIRED|ULTIMATE_PRIVATE_REPOS/,
+          ) !== null,
     );
     expect(elsewhere).toEqual([]);
   });

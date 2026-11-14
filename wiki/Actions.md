@@ -165,6 +165,7 @@ export const load = async (): Promise<{ readonly answer: ActionAnswer | null }> 
 | `useActionAnswer(createPost)` answers only that action's outcome — or by name, `useActionAnswer('createPost' satisfies keyof Api['actions'])`, from a page that may not import the action; `useActionAnswer()` any | two forms on one page |
 | a cookie that is not one this package wrote reads as `null` | it arrives from the browser: parsed, bounded, never trusted |
 | `static` / `isr` pages read `null` | a shared document is rendered as nobody, with no inbound cookie |
+| outside a request (the `llms.txt` build runs `load` with none) reads `null`, never `X_NO_REQUEST` | no request, no answer |
 | translate on `code` and `issues[].rule` with `t()` | the flash carries no prose, so no locale |
 | field values are not carried back | a password or a card number does not belong in a cookie; the form re-renders empty, or the page keeps a draft |
 

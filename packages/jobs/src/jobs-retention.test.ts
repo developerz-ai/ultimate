@@ -18,7 +18,10 @@ function recording(): { readonly executor: PgExecutor; readonly sent: string[] }
   const executor: PgExecutor = {
     query: <R>(text: string): Promise<readonly R[]> => {
       sent.push(text);
-      const rows = text === SQL_JOBS_RETENTION_BATCH ? [{ removed: 0, held: '[]' }] : [];
+      const rows =
+        text === SQL_JOBS_RETENTION_BATCH
+          ? [{ removed: 0, held: '[]', done_after: null, ended_after: null }]
+          : [];
       return Promise.resolve(rows as unknown as readonly R[]);
     },
   };
@@ -50,5 +53,64 @@ describe('the orphan step pass', () => {
     await target.purgeExpired(T0);
     await target.purgeExpired(T0 - HOUR_MS);
     expect(orphanPasses(sent)).toBe(1);
+  });
+});
+
+describe('the keyset between batches', () => {
+  /** A batch executor answering scripted rows, recording each batch's `$4`/`$5`. */
+  function scripted(answers: readonly { removed: number; done_after: string | null }[]): {
+    readonly executor: PgExecutor;
+    readonly seeks: (readonly unknown[])[];
+  } {
+    const seeks: (readonly unknown[])[] = [];
+    let next = 0;
+    const executor: PgExecutor = {
+      query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> => {
+        if (text !== SQL_JOBS_RETENTION_BATCH) return Promise.resolve([]);
+        seeks.push(values.slice(3));
+        const answer = answers[next] ?? { removed: 0, done_after: null };
+        next += 1;
+        const row = { ...answer, held: '[]', ended_after: null };
+        return Promise.resolve([row] as unknown as readonly R[]);
+      },
+    };
+    return { executor, seeks };
+  }
+
+  test('each batch seeks from the newest row the batch before deleted, across passes', async () => {
+    const { executor, seeks } = scripted([
+      { removed: 2, done_after: 't1' },
+      { removed: 1, done_after: 't2' },
+      { removed: 0, done_after: null },
+    ]);
+    const target = jobsPurgeTarget({
+      executor,
+      doneRetentionMs: 1,
+      deadRetentionMs: 1,
+      batchSize: 2,
+    });
+    await target.purgeExpired(T0);
+    await target.purgeExpired(T0 + HOUR_MS);
+    await target.purgeExpired(T0 + 2 * HOUR_MS);
+    // A batch that deleted nothing from a branch keeps that branch's mark.
+    expect(seeks).toEqual([
+      [null, null],
+      ['t1', null],
+      ['t2', null],
+      ['t2', null],
+    ]);
+  });
+
+  test('the daily upkeep forgets the marks, so a row skipped below one gets its turn', async () => {
+    const { executor, seeks } = scripted([{ removed: 1, done_after: 't1' }]);
+    const target = jobsPurgeTarget({ executor, doneRetentionMs: 1, deadRetentionMs: 1 });
+    await target.purgeExpired(T0);
+    await target.purgeExpired(T0 + HOUR_MS);
+    await target.purgeExpired(T0 + PURGE_UPKEEP_EVERY_MS);
+    expect(seeks).toEqual([
+      [null, null],
+      ['t1', null],
+      [null, null],
+    ]);
   });
 });

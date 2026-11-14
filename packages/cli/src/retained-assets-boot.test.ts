@@ -14,6 +14,7 @@ import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
 import { buildAssetsOf, retainBuildAssets } from './retained-assets-boot';
 import { manifestKey, retainedFileKey, retainedPrefix } from './retained-assets-layout';
+import { warnedPrefix } from './retained-assets-warned';
 import { SITE_ASSETS_SOURCE } from './site-assets';
 import { styleBundleOf } from './style-bundle';
 
@@ -53,7 +54,8 @@ describe('retainBuildAssets', () => {
     expect(
       await retainBuildAssets({ ...surface, config: defineConfig({ name: 'app' }), storage }),
     ).toBe(undefined);
-    expect(disk.objects().size).toBe(0);
+    // No file and no manifest: the one object is the marker that this build already warned.
+    expect([...disk.objects().keys()]).toEqual([`${warnedPrefix(PREFIX, 'web')}b1`]);
   });
 
   test('undeclared outside development and test: one coded warning naming the edit', async () => {
@@ -91,6 +93,36 @@ describe('retainBuildAssets', () => {
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }
+  });
+
+  test('undeclared: one warning per build id fleet-wide, however many times its pods boot', async () => {
+    // One disk the pods share: what lets the second boot, in another process, see the first.
+    const shared = memoryStorageDriver();
+    const config = defineConfig({ name: 'app' });
+    const boot = async (buildId: string) => {
+      const storage = defineStorage({ disks: { assets: shared } });
+      const codes: unknown[] = [];
+      const log = {
+        warn: (_: string, fields: Readonly<Record<string, unknown>>) =>
+          void codes.push(fields['code']),
+        error: () => undefined,
+      };
+      await retainBuildAssets({
+        ...surface,
+        buildId,
+        environment: 'production',
+        config,
+        storage,
+        log,
+      });
+      return codes;
+    };
+    expect(await boot('b1')).toEqual(['X_ASSET_RETAIN_UNDECLARED']);
+    expect(await boot('b1')).toEqual([]);
+    expect(await boot('b1')).toEqual([]);
+    // The next deploy is a new build: its operator hears it once too.
+    expect(await boot('b2')).toEqual(['X_ASSET_RETAIN_UNDECLARED']);
+    expect(await boot('b2')).toEqual([]);
   });
 
   test('a disk the app did not declare is X_CONFIG_INVALID naming the ones it did', async () => {
