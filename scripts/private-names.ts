@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Enforce, as a build error, that the public tree names nothing private: no tracked file or path
-// carries the internal setup mode's name or an entry of the ULTIMATE_PRIVATE_NAMES secret (an
-// adopter, or a private repository a reader cannot open). A finding prints the file:line and what
-// it matched by class and 1-based index, never the value. Matchers: `private-names-match.ts`.
+// carries the internal setup mode's name or an entry of the ULTIMATE_PRIVATE_NAMES or
+// ULTIMATE_PRIVATE_REPOS secrets (an adopter, or a private repository a reader cannot open). A
+// finding prints the file:line and what it matched by class and 1-based index, never the value.
 //
 // WHY THE LIST IS A SECRET. A committed list, plain or hashed, publishes the names it guards (a
 // short name hashes back by brute force). CI logs are public, and Actions masks a secret's whole
@@ -20,8 +20,9 @@
 // UNSET SKIPS THE NAMES, and says so; the setup mode is still checked. A fork's pull request cannot
 // read the secret and receives an empty string. With ULTIMATE_PRIVATE_NAMES_REQUIRED=1, which
 // ci.yml sets beside the secret on the step that runs `boundaries` on a push to main, an empty
-// secret is red, since the names would otherwise pass forever unchecked. Never inferred from the
-// event: a unit job on the same push runs this guard with no secret and must skip.
+// names secret is red, since the names would otherwise pass forever unchecked; the repositories
+// secret is optional there too. Never inferred from the event: a unit job on the same push runs
+// this guard with no secret and must skip. Matchers: `private-names-match.ts`.
 //
 //   bun run private-names  ·  bun run scripts/private-names.ts [--json]
 
@@ -34,7 +35,14 @@ import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import type { DenyList, LineHit } from './private-names-match';
-import { denyListFromEnv, ENV_NAME, lineHit, repositoryMatchers } from './private-names-match';
+import {
+  denyListFromEnv,
+  ENV_NAME,
+  entriesOf,
+  lineHit,
+  REPOS_ENV,
+  repositoryMatchers,
+} from './private-names-match';
 
 const SCRIPT = 'private-names';
 
@@ -64,6 +72,7 @@ export interface PrivateNameHit {
 
 export interface PrivateNameScan {
   readonly names: number;
+  readonly repositories: number;
   readonly files: number;
   readonly hits: readonly PrivateNameHit[];
 }
@@ -111,7 +120,7 @@ const refuse = (cause: string): ScriptError =>
   new ScriptError({
     code: 'X_PRIVATE_NAME',
     cause,
-    fix: `git ls-files ${SELF}   # run from the repository root, then: bun run private-names --json`,
+    fix: 'git ls-files scripts/private-names.ts   # run from the repository root, then: bun run private-names --json',
   });
 
 /** Every listed file outside the platform's own; the setup mode is checked even with no secret. */
@@ -146,8 +155,12 @@ export async function scanPrivateNames(root: string, deny: DenyList): Promise<Pr
       `the scan of ${root} never read ${SELF}, so it read some other tree (or none) and a clean run would prove nothing`,
     );
   }
-  const names = deny.names.length + deny.repositories.length;
-  return { names, files: scanned.length, hits };
+  return {
+    names: deny.names.length,
+    repositories: deny.repositories.length,
+    files: scanned.length,
+    hits,
+  };
 }
 
 const LOCATE = (position: number): string => `git ${LIST_FILES.join(' ')} | sed -n '${position}p'`;
@@ -169,14 +182,14 @@ const UNSET_FINDING: Finding = {
 };
 
 /** What the matched value is, by class and index: never the value itself. */
-const CARRIES: Record<LineHit['kind'], (hit: LineHit) => string> = {
-  'setup-mode': () =>
-    `the internal setup mode's name (built from parts in ${SELF}), which says how our own machines are laid out`,
-  repository: (hit) =>
-    `repository entry ${'index' in hit ? hit.index : 0} of ${ENV_NAME}, a private repository a reader cannot open`,
-  name: (hit) =>
-    `entry ${'index' in hit ? hit.index : 0} of ${ENV_NAME}, a private adopter name the public tree must not hold`,
-};
+function carries(hit: LineHit): string {
+  if (hit.kind === 'setup-mode') {
+    return `the internal setup mode's name (built from parts in ${SELF}), which says how our own machines are laid out`;
+  }
+  return hit.kind === 'repository'
+    ? `repository entry ${hit.index} of ${ENV_NAME} then ${REPOS_ENV} (\`/\` entries, in that order), a private repository a reader cannot open`
+    : `entry ${hit.index} of ${ENV_NAME}, a private adopter name the public tree must not hold`;
+}
 
 const REWRITE: Record<LineHit['kind'], string> = {
   'setup-mode': 'say what the machine is ("a bare VM") without the mode\'s name',
@@ -197,7 +210,7 @@ export function privateNameFinding(found: PrivateNameHit): Finding {
   return {
     code: 'X_PRIVATE_NAME',
     at: where,
-    cause: `${where}: ${subject} carries ${CARRIES[found.hit.kind](found.hit)}`,
+    cause: `${where}: ${subject} carries ${carries(found.hit)}`,
     fix:
       found.line === 0
         ? `${LOCATE(found.position)}   # prints the path: git mv it to one without the value, then: bun run private-names --json`
@@ -207,16 +220,24 @@ export function privateNameFinding(found: PrivateNameHit): Finding {
 
 export function privateNameResult(scan: PrivateNameScan): ScriptResult {
   const findings = scan.hits.map(privateNameFinding);
-  const checked =
-    scan.names === 0
-      ? `private-names: checked the setup mode across ${scan.files} files; ${SKIP_NOTE}`
-      : `private-names: checked ${scan.names} names across ${scan.files} files`;
+  const lists = [
+    ...(scan.names === 0 ? [] : [`${scan.names} names`]),
+    ...(scan.repositories === 0 ? [] : [`${scan.repositories} repositories`]),
+  ];
+  const what = lists.length === 0 ? 'the setup mode' : lists.join(' and ');
+  const skipped = scan.names === 0 ? `; ${SKIP_NOTE}` : '';
+  const checked = `private-names: checked ${what} across ${scan.files} files${skipped}`;
   return {
     ok: findings.length === 0,
     script: SCRIPT,
     summary: findings.length === 0 ? checked : `${checked}, ${findings.length} carry one`,
     findings,
-    data: { names: scan.names, files: scan.files, hits: scan.hits.length },
+    data: {
+      names: scan.names,
+      repositories: scan.repositories,
+      files: scan.files,
+      hits: scan.hits.length,
+    },
   };
 }
 
@@ -225,8 +246,8 @@ export async function privateNameReport(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<ScriptResult> {
-  const deny = denyListFromEnv(env);
-  if (deny.names.length + deny.repositories.length === 0 && namesRequired(env)) {
+  // The flag keys on the names secret alone: the repositories one is optional everywhere.
+  if (entriesOf(env[ENV_NAME]).length === 0 && namesRequired(env)) {
     return {
       ok: false,
       script: SCRIPT,
@@ -234,7 +255,7 @@ export async function privateNameReport(
       findings: [UNSET_FINDING],
     };
   }
-  return privateNameResult(await scanPrivateNames(root, deny));
+  return privateNameResult(await scanPrivateNames(root, denyListFromEnv(env)));
 }
 
 /**

@@ -1,10 +1,16 @@
 // What the public-tree guard (`scripts/private-names.ts`) refuses, as pure matchers over one line:
 // the internal setup mode's name, built from parts so this file never carries it whole, and the
-// entries of the ULTIMATE_PRIVATE_NAMES secret — an adopter name (a whole token) or, with a `/`,
-// a private repository (`owner/name`, a reader cannot open it).
+// entries of the ULTIMATE_PRIVATE_NAMES and ULTIMATE_PRIVATE_REPOS secrets — an adopter name (a
+// whole token) or, with a `/`, a private repository (`owner/name`, a reader cannot open it).
 
-/** The one variable the deny-list is read from. */
+/** The adopter-names secret: the one the REQUIRED flag keys on. */
 export const ENV_NAME = 'ULTIMATE_PRIVATE_NAMES';
+
+/**
+ * The private-repositories secret, optional. Its own variable because a secret cannot be read
+ * back: appending to the names one would mean overwriting, and losing, the entries already there.
+ */
+export const REPOS_ENV = 'ULTIMATE_PRIVATE_REPOS';
 
 /**
  * The internal setup mode that once wrote agent, skill and script text here. Assembled from parts:
@@ -14,18 +20,26 @@ export const ENV_NAME = 'ULTIMATE_PRIVATE_NAMES';
  */
 const SETUP_MODE = new RegExp(`(?<![a-z0-9])${['dz', 'runner'].join('[-_ ]?')}(?![a-z0-9])`);
 
-/** The secret, parsed: adopter names and private repositories, both trimmed and lowercased. */
+/** The secrets, parsed: adopter names and private repositories, trimmed and lowercased. */
 export interface DenyList {
   readonly names: readonly string[];
   readonly repositories: readonly string[];
 }
 
-/** Newline- or comma-separated; an entry holding a `/` is a repository. Unset is none of either. */
-export function denyListFromEnv(env: Readonly<Record<string, string | undefined>>): DenyList {
-  const entries = (env[ENV_NAME] ?? '')
+/** One secret's entries: newline- or comma-separated; unset, empty and whitespace are none. */
+export function entriesOf(raw: string | undefined): readonly string[] {
+  return (raw ?? '')
     .split(/[\n,]/)
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Both secrets, the names one first; an entry holding a `/` is a repository whichever secret it
+ * came from, so an index counts across the two in that order.
+ */
+export function denyListFromEnv(env: Readonly<Record<string, string | undefined>>): DenyList {
+  const entries = [...entriesOf(env[ENV_NAME]), ...entriesOf(env[REPOS_ENV])];
   return {
     names: entries.filter((entry) => !entry.includes('/')),
     repositories: entries.filter((entry) => entry.includes('/')),

@@ -430,11 +430,13 @@ jobs:
           PART: ${{ matrix.part }}
           ONLY: ${{ matrix.only }}
           SHARD: ${{ matrix.shard }}
-          # The private adopter names `scripts/private-names.ts` refuses, handed only to the part that
-          # runs `boundaries`. A secret, so no committed file holds the list; a fork's PR reads it
-          # empty and skips. The REQUIRED flag, set on that part on a push to main only, makes an
-          # empty secret red (`X_PRIVATE_NAMES_UNSET`); every other step reaching the guard skips.
+          # The private adopter names and repositories `scripts/private-names.ts` refuses, handed only
+          # to the part that runs `boundaries`. Secrets, so no committed file holds either list; a
+          # fork's PR reads them empty and skips. The REQUIRED flag, set on that part on a push to
+          # main only, makes an empty names secret red (`X_PRIVATE_NAMES_UNSET`); the repositories
+          # one is optional; every other step reaching the guard skips.
           ULTIMATE_PRIVATE_NAMES: ${{ contains(matrix.only, 'boundaries') && secrets.ULTIMATE_PRIVATE_NAMES || '' }}
+          ULTIMATE_PRIVATE_REPOS: ${{ contains(matrix.only, 'boundaries') && secrets.ULTIMATE_PRIVATE_REPOS || '' }}
           ULTIMATE_PRIVATE_NAMES_REQUIRED: ${{ contains(matrix.only, 'boundaries') && github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '' }}
         run: |
           parts="$RUNNER_TEMP/parts"

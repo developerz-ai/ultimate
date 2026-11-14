@@ -1,7 +1,6 @@
 // A polling loop's failures as a STREAK: one `error` line when the first tick fails, nothing for
-// the ticks after it, one `info` line carrying the count when a tick passes again. A database
-// restart failed every tick of the scheduler, the worker and the relay, and each wrote a line per
-// tick — 154 identical lines for one restart, which buried the one that said why.
+// the ticks after it, one `info` line carrying the count when a tick passes again — a database
+// restart wrote 154 identical lines, burying the one that said why.
 // Local until core ships a limiter for it; the call sites are the only thing that would change.
 
 import { logger } from '@ultimat3/core';

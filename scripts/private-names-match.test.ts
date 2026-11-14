@@ -7,6 +7,7 @@ import {
   ENV_NAME,
   lineHit,
   nameMatch,
+  REPOS_ENV,
   repositoryMatchers,
   tokenMatch,
 } from './private-names-match';
@@ -21,6 +22,18 @@ describe('private-names-match · the secret', () => {
       repositories: ['zorblax-co/vault'],
     });
     expect(denyListFromEnv({})).toEqual({ names: [], repositories: [] });
+  });
+
+  test('both secrets are read: the names one first, each entry classified by its `/`', () => {
+    const env = { [ENV_NAME]: 'quimtel\nzorblax-co/vault', [REPOS_ENV]: 'Quimtel/Ops.site\nstray' };
+    expect(denyListFromEnv(env)).toEqual({
+      names: ['quimtel', 'stray'],
+      repositories: ['zorblax-co/vault', 'quimtel/ops.site'],
+    });
+    expect(denyListFromEnv({ [REPOS_ENV]: 'quimtel/ops.site' })).toEqual({
+      names: [],
+      repositories: ['quimtel/ops.site'],
+    });
   });
 });
 

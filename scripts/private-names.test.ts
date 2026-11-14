@@ -19,7 +19,7 @@ import {
   SKIP_NOTE,
   scanPrivateNames,
 } from './private-names';
-import { ENV_NAME } from './private-names-match';
+import { ENV_NAME, REPOS_ENV } from './private-names-match';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
@@ -206,7 +206,33 @@ describe('private-names · the public tree, every file and records too', () => {
     const root = await tree({ '.dz/briefs/a.md': `${MODE} zorblax-co/vault\n` });
     const result = await run(root, 'zorblax-co/vault');
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe('private-names: checked 1 names across 1 files');
+    expect(result.summary).toBe(
+      `private-names: checked 1 repositories across 1 files; ${SKIP_NOTE}`,
+    );
+  });
+
+  test('the repositories secret alone refuses a repository, and says the names were skipped', async () => {
+    const root = await tree({
+      'docs/history/a.md': 'see zorblax-co/vault#12\n',
+      'b.md': 'quimtel\n',
+    });
+    const result = await privateNameReport(root, { [REPOS_ENV]: 'zorblax-co/vault' });
+    expect(result.findings?.map((finding) => [finding.at, finding.cause])).toEqual([
+      ['docs/history/a.md:1', expect.stringContaining(`repository entry 1 of ${ENV_NAME}`)],
+    ]);
+    expect(result.summary).toBe(
+      `private-names: checked 1 repositories across 3 files; ${SKIP_NOTE}, 1 carry one`,
+    );
+    expect(render(result, true).toLowerCase()).not.toContain('zorblax');
+  });
+
+  test('both secrets together: names and repositories counted apart', async () => {
+    const root = await tree({ 'a.md': 'fine\n' });
+    const result = await privateNameReport(root, {
+      [ENV_NAME]: 'quimtel',
+      [REPOS_ENV]: 'zorblax-co/vault\nquimtel/ops',
+    });
+    expect(result.summary).toBe('private-names: checked 1 names and 2 repositories across 2 files');
   });
 });
 
@@ -232,10 +258,18 @@ describe('private-names · unset is a skip, never a scan', () => {
     },
   );
 
-  test('the required flag with the secret missing is red, never a skip', async () => {
+  test('the required flag with the names secret missing is red, the repositories one or not', async () => {
     const root = await tree({ 'a.md': 'fine\n' });
-    for (const raw of [undefined, '', ' \n']) {
-      const result = await privateNameReport(root, { [REQUIRED_ENV]: '1', [ENV_NAME]: raw });
+    for (const [raw, repos] of [
+      [undefined, undefined],
+      ['', 'zorblax-co/vault'],
+      [' \n', ''],
+    ] as const) {
+      const result = await privateNameReport(root, {
+        [REQUIRED_ENV]: '1',
+        [ENV_NAME]: raw,
+        [REPOS_ENV]: repos,
+      });
       expect(result.ok).toBe(false);
       expect(result.findings?.map((finding) => finding.code)).toEqual(['X_PRIVATE_NAMES_UNSET']);
       expect(result.summary).not.toContain(SKIP_NOTE);
