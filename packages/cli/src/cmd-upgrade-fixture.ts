@@ -59,6 +59,13 @@ export const git = async (cwd: string, ...args: readonly string[]): Promise<stri
     )
   ).stdout;
 
+/** An empty temp directory, owned here so `removeFixtures` (this file's `rmSync`) removes it. */
+export const emptyFixture = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'ultimate-upgrade-noapp-'));
+  dirs.push(dir);
+  return dir;
+};
+
 const GUARD = 'guards/no-raw-colors.ts';
 
 /** An app with pins, committed; `{ repository: false }` writes the same tree and never runs git. */
