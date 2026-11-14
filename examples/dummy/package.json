@@ -24,14 +24,14 @@
     "manifest": "x manifest --json"
   },
   "devDependencies": {
-    "@ultimat3/cache": "31.22.0",
-    "@ultimat3/entity": "31.22.0",
-    "@ultimat3/testing": "31.22.0",
+    "@ultimat3/cache": "31.22.1",
+    "@ultimat3/entity": "31.22.1",
+    "@ultimat3/testing": "31.22.1",
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@ultimat3/cli": "31.22.0",
-    "@ultimat3/core": "31.22.0",
+    "@ultimat3/cli": "31.22.1",
+    "@ultimat3/core": "31.22.1",
     "solid-js": "1.9.17"
   }
 }
