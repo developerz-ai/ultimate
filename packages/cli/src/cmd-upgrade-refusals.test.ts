@@ -2,14 +2,10 @@
 // no hop (`--dry-run`, at latest) say so without spawning a gate.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import {
-  dirs,
+  emptyFixture,
   fixture,
   fixtureWithoutApp,
   git,
@@ -146,8 +142,7 @@ describe('unit · x upgrade, the states with no hop', () => {
   });
 
   test('no manifest with pins at or above the cwd refuses by its own code', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ultimate-upgrade-noapp-'));
-    dirs.push(dir);
+    const dir = emptyFixture();
     const { output } = await run(dir, recording().runner);
     expect(output.findings?.[0]?.code).toBe('X_UPGRADE_PIN_UNREADABLE');
     expect(output.findings?.[0]?.fix).toContain('x upgrade --json');
