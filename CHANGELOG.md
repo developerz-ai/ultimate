@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- `x dev` holds a stale module pin until the process restarts, so a second save tick never reports "reloaded" over a read still serving the old service, and `/_x` keeps `X_DEV_RESTART_REQUIRED` until the restart.
+
 Nothing yet.
 
 ## Releases
