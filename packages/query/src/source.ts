@@ -61,7 +61,8 @@ export interface RowWindow {
   readonly limit: number | null;
   readonly order: readonly OrderKey[];
   readonly filters: readonly Filter[];
-  readonly nodes: readonly ScopedNode[];
+  /** Scope trees (`or` / `via`) a provider must apply with `.andWhereNode()`; absent when none. */
+  readonly nodes?: readonly ScopedNode[];
 }
 
 /**
