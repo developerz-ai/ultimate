@@ -68,7 +68,8 @@ is answered by importing everything and logged as `X_ROLE_LOAD_INCOMPLETE`: the 
 every job, and costs what the web role costs until the `fix:` is applied.
 
 Labels are deliberately low-cardinality: the route **pattern** and the status **class**, never a
-concrete path, a user id or a job name. A label an attacker chooses is a label that decides how
+concrete path or a user id. The one series with a job name is `jobs_retried_total{job,code}`, bounded by the app's job
+registry, never by input. A label an attacker chooses is a label that decides how
 much memory your monitoring stack allocates.
 
 **Read this before enabling autoscaling.** [`docker/helm/values.yaml`](../../docker/helm/values.yaml)

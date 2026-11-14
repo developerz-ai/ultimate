@@ -211,7 +211,7 @@ Recorders: `recordRequest({ method, route, status, durationMs })`, `recordConnec
 
 Beside them, `@ultimat3/jobs` declares its own: `jobs_retried_total{job,code}` (counter, `{attempt}`) — one per attempt that failed and went back to the queue, `code` the thrown `X_*` or `uncoded`. A retry is counted there and **not** sent to the `ErrorReporter`; a dead letter is, once, as `error`. A job opts its retries into the reporter, as `warning`, with `retry: { report: 'every-attempt' }` ([Jobs](Jobs-And-Workflows#concurrency-rate-limits-queues-retry)). A polling loop that fails every tick logs one line when the streak opens and one with the count when it closes: `jobs.{scheduler,worker,outbox}.tick-failed` / `.tick-recovered`, and `db.listen.redial_failed` / `db.listen.redialed`.
 
-All five are wired `As of 2026-08`, each in the package that owns the event:
+All five recorders are wired `As of 2026-08`, each in the package that owns the event:
 
 | Recorder | Called from | Note |
 |---|---|---|
