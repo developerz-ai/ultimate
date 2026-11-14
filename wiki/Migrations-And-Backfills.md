@@ -537,7 +537,7 @@ Position in the plan is **necessary and not sufficient**: `docker compose up -d`
 
 ### `x db recount` — a counter, repaired
 
-`x db recount <entity>.<column>` compares a `countedIn` counter with the count of child rows and lists the drifted rows; `--write` sets them in one cross-tenant transaction. A counter drifts only while its trigger was missing (`X_LIFECYCLE_TRIGGER_MISSING`). As of 2026-11 the repair is one statement, not a paced `backfill()` pass.
+`x db recount <entity>.<column>` compares a `countedIn` counter with the count of child rows — under its `where`, when it declares one — and lists the drifted rows; `--write` sets them. A counter drifts only while its trigger was missing (`X_LIFECYCLE_TRIGGER_MISSING`). The parent is walked in key-range windows of 1,000 rows, one cross-tenant transaction each, so a big table never holds one long lock; the dry run reads the same windows and writes nothing. Batched in the command itself, not through `backfill()`: that factory declares a job for a worker, and a recount names its counter at run time. As of 31.23.
 
 ### `x g backfill` — the generator
 

@@ -113,6 +113,26 @@ export const shippedGuardSource = (name: string): string | undefined => {
 };
 
 /**
+ * A shipped guard's earlier form that still counts as current for an app holding it: the template
+ * moved for NEW apps only. `repo-unbounded` became failing in 31.23; an app scaffolded before keeps
+ * its report-only copy, and `x doctor` must not call that copy stale.
+ */
+const ALSO_CURRENT: Readonly<Record<string, () => readonly GeneratedFile[]>> = {
+  'repo-unbounded': () => repoUnboundedGuardFiles('warning'),
+};
+
+/**
+ * Every rule-file text that reads as current for a shipped guard — the template first, then any
+ * earlier form an existing app is allowed to keep. Empty when the name was never shipped.
+ */
+export const shippedGuardSources = (name: string): readonly string[] => {
+  const current = shippedGuardSource(name);
+  if (current === undefined) return [];
+  const earlier = ALSO_CURRENT[name]?.().find((file) => file.path === `guards/${name}.ts`);
+  return typeof earlier?.contents === 'string' ? [current, earlier.contents] : [current];
+};
+
+/**
  * Every guard `x new` ships, each with its test. One module per guard, because an app deletes a
  * rule it does not want by deleting one file — and a guard the app then writes for itself is
  * `x g guard <name>`, the same shape.

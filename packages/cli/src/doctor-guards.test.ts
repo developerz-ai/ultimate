@@ -21,6 +21,7 @@ import {
 } from './doctor-guards';
 import { generate } from './generate-files';
 import { SHIPPED_GUARD_NAMES, scaffoldGuardFiles, shippedGuardFiles } from './templates';
+import { repoUnboundedGuardFiles } from './templates/guard-repo-unbounded';
 
 describe('unit · x doctor · shipped guards the app does not hold', () => {
   test('an app with no guards/ lacks every one, each with the command that adds it', () => {
@@ -126,6 +127,21 @@ describe('unit · x doctor · a shipped guard the app holds in an older or edite
         { path: 'guards/bare-error.ts', source: crlf },
       ]),
     ).toEqual([]);
+  });
+
+  test("an older app's report-only repo-unbounded copy is current, not listed as differing", () => {
+    const reportOnly = repoUnboundedGuardFiles('warning')[0]?.contents;
+    expect(String(reportOnly)).toContain("severity: 'warning',");
+    expect(
+      differingShippedGuards([
+        { path: 'guards/repo-unbounded.ts', source: String(reportOnly) },
+        { path: 'guards/repo-unbounded.ts', source: template('repo-unbounded') },
+      ]),
+    ).toEqual([]);
+    const edited = `${String(reportOnly)}\n// edited\n`;
+    expect(differingShippedGuards([{ path: 'guards/repo-unbounded.ts', source: edited }])).toEqual([
+      { name: 'repo-unbounded', refresh: 'x g guard repo-unbounded --force' },
+    ]);
   });
 
   test("the app's own guards are never compared: there is no template to differ from", () => {
