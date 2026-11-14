@@ -14,3 +14,7 @@
 
 ## Done when
 - Exact pins on the current release; gate green.
+
+## Outcome (R)
+
+`As of 2026-11-13`. On 31.22.0, exact pins on all 20 `@ultimat3/*` dependencies, no caret (adopter PR #59; earlier #53, #54, #57, #58). Still spec only: no app config, so `x doctor` answers `X_NOT_IN_APP`, and the 31.22.0 repo guards wait for the first primitive. Its own gate green; the native build step fails only on a host without the windowing dev libraries, green on CI.

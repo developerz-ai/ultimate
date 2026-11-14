@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
-percent: 60
-current_focus: "Sweep 19b done (unreleased): agent tooling — a format hook that runs, four dev MCP tools, task-phrased x docs, report-only repo guards; step 5 scaffold re-run owed. Sweep 17b done (unreleased): cli and scripts wall-clock waits to zero, so every package is pinned at zero; the rerun seam covers every framework registry; run() reports its deadline on Windows. Owed on 17: a week of the flaky CI job catching nothing, and a measurably faster unit step. Next: the framework gaps sweep 18 recorded (A2, A5, A9, A12)"
+percent: 89
+current_focus: "Sweep R done but one: nine of ten adopters on 31.22.0 (A, B, C, D, F, G, H, I, J); adopter E on 31.20.0 with its final round in flight (page-window bug, keyset, three N+1s, one typed-handle slice). Infrastructure: 6 of 7 PRs merged, the idle_in_transaction draft and I6/I8/I12/I7 owner-owed. Owed from R: adopter H drops its audit shim once 31.22.1 ships (#1127) and moves to lockKeys in its own two-release PR; island coverage excludes (A, I) wait on 13 X9; framework gaps surfaced: nullable keyset keys, settle-all mapBounded, global-read tenant proofs, memoPerRequest forget, chart p95-latency and replication-lag rules. Next: 31.22.1, then the framework gaps sweep 18 recorded (A2, A5, A9, A12)"
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -109,64 +109,64 @@ slices:
     percent: 60
   - file: 30-infra.md
     tier: 5
-    sweep: "R"             # other repositories, one agent per repository
-    status: not_started
-    percent: 0
+    sweep: "R"             # 6 of 7 PRs merged: I1–I3, I5, I10, I11 done; I4 partial (chart lacks p95-latency and replication-lag rules), I7 cause open (provider history), I13 replicator-only rolls deferred; owner-owed: I6, I8 drop, I9 draft #2319, I12 two probe issues; 09 after-snapshot owed
+    status: in_progress
+    percent: 75
   - file: 40-adopter-a.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0, floor 17/21; owed: island coverage exclude, blocked on 13 X9
+    status: in_progress
+    percent: 85
   - file: 41-adopter-b.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0, steps 2–4 done, step 5 proven; owed: error-declared (78 classes), owner deletes two set-aside data dirs
+    status: in_progress
+    percent: 90
   - file: 42-adopter-c.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0; scripts gone, 25 guards, coverage floor at the measured 69 (re-measure when 13 X9 ships)
+    status: complete
+    percent: 100
   - file: 43-adopter-d.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0, exact pins; spec only, no app yet
+    status: complete
+    percent: 100
   - file: 44-adopter-e.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # on 31.20.0; E11 done, E3/E7/E16 partial; final round in flight: page-window bug (E5), keyset (E4), three N+1s, one typed-handle slice (E1); owed E2, E6, E8–E10, E12–E15, row security
+    status: in_progress
+    percent: 30
   - file: 45-adopter-f.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # revived despite OD9: 19 → 31.22.0, typed handle, 25 guards
+    status: complete
+    percent: 100
   - file: 46-adopter-g.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0; steps 1, 3, 6, 7 closed; owed: error-declared (185), framework gaps: nullable keyset keys, settle-all mapBounded, global-read tenant proofs; gate-parity never shipped
+    status: in_progress
+    percent: 70
   - file: 47-adopter-h.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0; steps 1, 2, 5 done, 3 and 6 closed in writing; owed: drop the outsideTransactions shim after 31.22.1 (#1127), lockKeys migration PR (two-release deploy), error-declared (218), memoPerRequest gap
+    status: in_progress
+    percent: 70
   - file: 48-adopter-i.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 31.22.0, floor 19/21; owed: island coverage exclude, blocked on 13 X9
+    status: in_progress
+    percent: 85
   - file: 49-adopter-j.md
     tier: 5
-    sweep: "R"
-    status: not_started
-    percent: 0
+    sweep: "R"             # 28 → 31.22.0, re-read deleted, cronJob, error-declared installed; exclude stays on 13 X9
+    status: complete
+    percent: 100
   - file: 90-owner-decisions.md
     tier: 0
     sweep: "0"             # asked once before sweep 5b; defaults recorded in the file
     status: complete
     percent: 100
 evidence: []
-notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a, 13b, 15, 16, 17a, 17b, 18 and 19b implemented (31.5.0–31.22.0; 17b and 19b unreleased). Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
+notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a, 13b, 15, 16, 17a, 17b, 18 and 19b implemented (31.5.0–31.22.0; 17b and 19b released in 31.22.0). Sweep R: one PR per adopter repository on 31.22.0 (adopter E on 31.20.0, final round in flight) and seven infrastructure PRs. Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
 last_updated: 2026-11-13

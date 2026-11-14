@@ -40,3 +40,28 @@
 - `repo-raw-sql` baseline strictly lower in every PR; row security on.
 - No hand keyset, safety re-read, form-answer, upload pair or sweep pair left.
 - Gate green locally through `x verify --parts`.
+
+## Outcome (R, in flight)
+
+`As of 2026-11-13`. On 31.20.0, exact pins, deployed (adopter PRs #474, #476, #477, #481, #486, #488, #489; #490–#492 are unrelated maintenance, #493 open and unrelated). **The final round is in flight:** the page-window bug (E5), keyset (E4), three N+1s (E16) and one typed-handle slice (E1).
+
+| ID | Outcome |
+|---|---|
+| E1 | owed. Row security off (`X_DB_ROW_SECURITY_OFF`: 715 raw statements name tenant tables); `repo-raw-sql` not installed; the first typed-handle slice is in the final round |
+| E2 | owed. `X_EXERCISE_SEED_FAILED` on three tables (unique constraints need factory defaults); 155 of 487 primitives unproven (0.3183), no `exercise` floor |
+| E3 | partial. The statement counts the audit named are no longer reported; two reads remain `X_STATEMENTS_OVER_BUDGET` (441 and 111) |
+| E4 | in flight (final round) |
+| E5 | in flight (final round) |
+| E6 | owed |
+| E7 | partial (#477). Five forms flagged `X_NATIVE_FORM_UNANSWERED` declare `native: nativeForm(…)`; the app's own form-answer wrapper is not deleted |
+| E8 | owed. Candidates noted, not converted: each carries the app's own hashing and evidence logic |
+| E9 | owed |
+| E10 | owed |
+| E11 | done by the upgrade: #474 moved to 31.8.0, which carries the [`01`](01-hotfix-patch.md) asset bucket; no app change. Not re-measured with a one-address load run |
+| E12 | owed (not measured in this round) |
+| E13 | owed (not measured in this round) |
+| E14 | owed. Startup-probe delays set from the measured boot (web 8 s, sync 5 s) in [`30`](30-infra.md) I13; the idle heap, the preflight warnings and the boot gap untouched |
+| E15 | owed |
+| E16 | partial. 14 per-row reads fixed or declared bounded (#486, #488: one calendar read per term instead of one per year, 5 → 1 statements); three more in the final round |
+
+Also adopted: `assets.retain` on the uploads disk (#477); `mountOver` for 47 islands and `maxPage` on 14 paged queries (#481); `unbounded-fanout` with two sites on `mapBounded` (#486); the framework's `isSessionRefusal` (#489, authenticator audited: not vulnerable).
