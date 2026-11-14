@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -37,8 +37,9 @@ describe('unit · x upgrade, the refusals', () => {
   });
 
   test('a directory that is no repository refuses, and the fix makes it one', async () => {
-    const dir = await fixture();
-    rmSync(join(dir, '.git'), { recursive: true, force: true });
+    // Never a repository, rather than one removed: `rmSync` of a `.git` git's maintenance daemon is
+    // still unlinking a lock in can return with HEAD and refs left behind (`cmd-upgrade-fixture.ts`).
+    const dir = await fixture({}, { repository: false });
     const { runner, spawned } = recording();
     const { output } = await run(dir, runner);
     expect(spawned).toEqual([]);

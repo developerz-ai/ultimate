@@ -23,12 +23,49 @@ export const removeFixtures = (): void => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 };
 
+/**
+ * Git as every fixture spawn runs it, the product's own included (`recording`): steered at no other
+ * repository by an inherited `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, never walking up into the
+ * temp root, so a `TMPDIR` inside some checkout cannot answer for a fixture that has no `.git`.
+ */
+const GIT_ENV: Readonly<Record<string, string | undefined>> = {
+  GIT_DIR: undefined,
+  GIT_WORK_TREE: undefined,
+  GIT_INDEX_FILE: undefined,
+  GIT_CEILING_DIRECTORIES: tmpdir(),
+};
+
+/**
+ * `maintenance.auto=false`: from git 2.56 the `maintenance run --auto --detach` a commit starts hands
+ * `.git/objects/maintenance.lock` to its daemon (`daemonize()`'s `reassign_tempfile_ownership`),
+ * which unlinks it AFTER `git commit` has returned. A Bun 1.4.4 `rmSync(…, { recursive, force })`
+ * meeting that vanished entry stops silently and keeps every later sibling — on CI `HEAD`, `refs/`
+ * and `config`, a repository where the test had removed one (run 43546649352).
+ */
 export const git = async (cwd: string, ...args: readonly string[]): Promise<string> =>
-  (await exec(['git', '-c', 'user.name=t', '-c', 'user.email=t@t.t', ...args], { cwd })).stdout;
+  (
+    await exec(
+      [
+        'git',
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@t.t',
+        '-c',
+        'maintenance.auto=false',
+        ...args,
+      ],
+      { cwd, env: GIT_ENV },
+    )
+  ).stdout;
 
 const GUARD = 'guards/no-raw-colors.ts';
 
-export const fixture = async (files: Readonly<Record<string, string>> = {}): Promise<string> => {
+/** An app with pins, committed; `{ repository: false }` writes the same tree and never runs git. */
+export const fixture = async (
+  files: Readonly<Record<string, string>> = {},
+  options: { readonly repository?: boolean } = {},
+): Promise<string> => {
   const dir = mkdtempSync(join(tmpdir(), 'ultimate-upgrade-'));
   dirs.push(dir);
   const all: Readonly<Record<string, string>> = {
@@ -56,6 +93,7 @@ export const fixture = async (files: Readonly<Record<string, string>> = {}): Pro
     ...files,
   };
   await Promise.all(Object.entries(all).map(([path, text]) => Bun.write(join(dir, path), text)));
+  if (options.repository === false) return dir;
   await git(dir, 'init', '-q');
   await git(dir, 'add', '-A');
   await git(dir, 'commit', '-qm', 'init');
@@ -176,7 +214,8 @@ const generated = async (cwd: string, name: string): Promise<string> => {
 export const recording = (script: Script = {}): { runner: Runner; spawned: string[] } => {
   const spawned: string[] = [];
   const runner: Runner = async (command, options) => {
-    if (command[0] === 'git') return exec(command, options);
+    if (command[0] === 'git')
+      return exec(command, { ...options, env: { ...options.env, ...GIT_ENV } });
     expect(command[0]).toBe(process.execPath);
     const args = command.slice(1);
     const only = args[2] === '--only' ? ` --only ${args[3] ?? ''}` : '';
