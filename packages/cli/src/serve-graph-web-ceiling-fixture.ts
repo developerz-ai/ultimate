@@ -258,5 +258,7 @@
  * new jobs files on `MIGRATE_CEILING` and `cli/src/retained-assets-warned.ts` (the undeclared-retain
  * warning once per build, not per boot), reached through `retained-assets-boot.ts`. No existing
  * module newly reached.
+ * raised 1696 → 1705, measured 1705 (2026-11-14, plan 101b sweep 1, metafile walk against
+ * origin/main): the same new modules as `SERVING_ROLE_CEILING`; `jobs/src/failure-streak.ts` left.
  */
-export const WEB_ROLE_CEILING = 1696;
+export const WEB_ROLE_CEILING = 1705;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "cd633259c340fb1aab86a2b4c2efb61aba15acaa57cf2f31de3d1ca24f257033",
+  "buildId": "b7c41f4c56a62851a610b524daa01b9a34d7149c5a5de471171034baa6c7444b",
   "tiers": {
     "0": [
       "core",
@@ -1972,7 +1972,7 @@
     {
       "code": "X_ENTITY_PREDICATE_NODE_INVALID",
       "owner": "entity",
-      "at": "packages/entity/src/predicate-node.ts"
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ENTITY_READ_ONLY",
