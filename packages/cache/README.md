@@ -72,7 +72,15 @@ interface Org { readonly id: string; readonly name: string }
 declare const db: { readonly orgs: { find(id: string): Promise<Org> } };
 
 export const loadOrg = memoPerRequest((id: string) => db.orgs.find(id), (id) => id);
+
+// After a write in the same request: the next loadOrg(id) reads the source again.
+export function renamed(id: string): void {
+  loadOrg.forget(id);
+}
 ```
+
+**`.forget(...args)` drops one entry.** It takes the call's own arguments, so the key is still
+derived in one place, and gives the entry's bytes back to the bound. A no-op outside a ctx.
 
 **Cached values: JSON + `Date` + `bigint` + `Map` + `Set` — the same shape from every tier.**
 Every tier (the memo and the LRU included) stores the value as text through one codec

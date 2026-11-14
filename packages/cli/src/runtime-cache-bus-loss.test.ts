@@ -423,6 +423,38 @@ describe('what is owed to the bus, settled by two callers at once', () => {
     ]);
   });
 
+  test('a settle refused on every reconnect is one line, and one more when it lands', async () => {
+    const recovered: (Record<string, unknown> | undefined)[] = [];
+    const info = spyOn(logger, 'info').mockImplementation((line, meta) => {
+      if (line === 'cache.broadcast.deferred-recovered') recovered.push(meta);
+    });
+    try {
+      const bus = heldBus();
+      await bus.refusedBust('1');
+      // A flapping bus: every reconnect's settle is refused, for the same reason.
+      for (let flap = 0; flap < 5; flap += 1) {
+        bus.reconnect();
+        await bus.turns();
+        bus.sends.at(-1)?.refuse();
+        await bus.turns();
+      }
+      const failed = warnings.filter(
+        (warning) => warning.line === 'cache.broadcast.deferred-failed',
+      );
+      expect(failed).toHaveLength(1);
+      expect(failed[0]?.meta?.['error']).toContain('the bus refused the publish');
+      expect(recovered).toEqual([]);
+
+      bus.reconnect();
+      await bus.turns();
+      bus.sends.at(-1)?.accept();
+      await bus.turns();
+      expect(recovered).toEqual([{ failures: 5 }]);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   test('a flush-all refused mid-settle is still owed', async () => {
     const bus = heldBus();
     await bus.refusedBust(...Array.from({ length: MAX_DEFERRED_TAGS + 1 }, (_, id) => `${id}`));

@@ -15,6 +15,9 @@ export type {
   OutboundFetch,
   OutboundInit,
   OutboundMethod,
+  OutboundProxy,
+  OutboundProxyInit,
+  OutboundProxyTarget,
   OutboundRequest,
   OutboundStreamAnswer,
 } from './outbound-types';

@@ -21,8 +21,8 @@ export const config = defineRoute({
   offline: 'runtime',
   budget: { js: '0kb' },
   // A null viewer: anonymous. The audience ladder answers `public` and nothing else, so a
-  // friends-only post, a private note and a soft-deleted row are all absent from this list
-  // WITHOUT a `where` clause saying so — the policy is the only place that decides.
+  // friends-only post, a private note and a soft-deleted row are all absent from this list: the
+  // read asks for live public rows, and `canSeePost` still decides every one it returns.
   load: async () => ({ items: await feedForPage(null, 20) }),
   meta: () => ({
     title: t('site.feed.title'),

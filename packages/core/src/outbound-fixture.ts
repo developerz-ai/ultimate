@@ -94,11 +94,18 @@ export function recordingFetch(
   };
 }
 
-/** A fetch that only ends when its signal aborts, rejecting with the signal's reason. */
+/**
+ * A fetch that only ends when its signal aborts, rejecting with the signal's reason — at once when
+ * it arrives aborted, as the platform's does (a missed `abort` event would hang the case).
+ */
 export const hangingFetch: OutboundFetch = (_url, init) =>
   new Promise<Response>((_resolve, reject) => {
     const signal = init.signal;
     if (signal === null || signal === undefined) return;
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
     signal.addEventListener('abort', () => reject(signal.reason), { once: true });
   });
 
@@ -114,5 +121,88 @@ export function recordedSleep(): {
       slept.push(ms);
       return Promise.resolve();
     },
+  };
+}
+
+/** A loopback HTTP proxy that answers `CONNECT` only, routing each target host through `route`. */
+export interface ConnectProxy {
+  /** `http://127.0.0.1:<port>`, no credentials. */
+  readonly origin: string;
+  /** Every `CONNECT` target (`host:port`) asked for, in order. */
+  readonly targets: readonly string[];
+  /** Every `Proxy-Authorization` value a `CONNECT` carried. */
+  readonly authorizations: readonly string[];
+  stop(): void;
+}
+
+interface TunnelState {
+  head: string;
+  upstream: Awaited<ReturnType<typeof Bun.connect>> | undefined;
+  open: boolean;
+}
+
+/**
+ * Tunnels bytes both ways once the `CONNECT` head arrives; anything else is answered 400. `route`
+ * maps a target host (the pinned address) to the loopback host that stands in for it.
+ */
+export function connectProxy(route: (host: string) => string): ConnectProxy {
+  const targets: string[] = [];
+  const authorizations: string[] = [];
+  const listener = Bun.listen<TunnelState>({
+    hostname: '127.0.0.1',
+    port: 0,
+    socket: {
+      open(socket) {
+        socket.data = { head: '', upstream: undefined, open: false };
+      },
+      async data(socket, chunk) {
+        if (socket.data.open) {
+          socket.data.upstream?.write(chunk);
+          return;
+        }
+        socket.data.head += new TextDecoder().decode(chunk);
+        const end = socket.data.head.indexOf('\r\n\r\n');
+        if (end < 0) return;
+        const [line = '', ...fields] = socket.data.head.slice(0, end).split('\r\n');
+        const [method, target = ''] = line.split(' ');
+        if (method !== 'CONNECT') {
+          socket.end('HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n');
+          return;
+        }
+        targets.push(target);
+        for (const field of fields) {
+          const [name = '', ...value] = field.split(':');
+          if (name.toLowerCase() === 'proxy-authorization')
+            authorizations.push(value.join(':').trim());
+        }
+        const at = target.lastIndexOf(':');
+        socket.data.upstream = await Bun.connect({
+          hostname: route(target.slice(0, at).replace(/^\[|\]$/g, '')),
+          port: Number(target.slice(at + 1)),
+          socket: {
+            data: (_upstream, bytes) => {
+              socket.write(bytes);
+            },
+            close: () => {
+              socket.end();
+            },
+            error: () => {
+              socket.end();
+            },
+          },
+        });
+        socket.data.open = true;
+        socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      },
+      close(socket) {
+        socket.data.upstream?.end();
+      },
+    },
+  });
+  return {
+    origin: `http://127.0.0.1:${String(listener.port)}`,
+    targets,
+    authorizations,
+    stop: () => listener.stop(true),
   };
 }

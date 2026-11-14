@@ -14,6 +14,8 @@ import {
   recordDefinedError,
 } from './error-status-declared';
 import { isUltimateError, UltimateError } from './errors';
+import { problemMetaRefusal, recordProblemMeta } from './problem-meta-declared';
+import { registerPublicCause } from './public-cause';
 
 /** A line written once, or computed from the throw's params. */
 export type ErrorText<P> = string | ((params: P) => string);
@@ -29,6 +31,13 @@ interface ErrorSpecFields<P> {
   readonly docs?: string | undefined;
   readonly retry?: ErrorRetry | undefined;
   readonly meta?: ((params: P) => Readonly<Record<string, unknown>>) | undefined;
+  /**
+   * The `meta` keys a problem document for this code carries — the `registerProblemMeta` row,
+   * declared here instead. Every other key stays operator-only. Needs `status`.
+   */
+  readonly problemMeta?: readonly string[] | undefined;
+  /** A 5xx whose `cause` a caller may read (`hasPublicCause`); hidden by default. Needs a 5xx. */
+  readonly publicCause?: true | undefined;
 }
 
 /**
@@ -106,6 +115,26 @@ function recordSite(code: string): void {
 const text = <P>(value: ErrorText<P>, params: P): string =>
   typeof value === 'function' ? value(params) : value;
 
+/** The problem-document half: keys and a public cause ride a document, so they need a status. */
+function problemRefusalOf<P>(spec: DefineErrorSpec<P>): UltimateError | undefined {
+  const { code, problemMeta, publicCause } = spec;
+  if (problemMeta === undefined && publicCause === undefined) return undefined;
+  if (spec.status === undefined) {
+    return invalid(
+      code,
+      'gives problemMeta or publicCause with offSocket: no document carries either',
+    );
+  }
+  if (publicCause !== undefined && (publicCause !== true || spec.status < 500)) {
+    return invalid(code, 'gives publicCause under status 500: only a 5xx document hides its cause');
+  }
+  if (problemMeta === undefined) return undefined;
+  const refusal = Array.isArray(problemMeta)
+    ? problemMetaRefusal(code, problemMeta)
+    : 'is not a key list';
+  return refusal === undefined ? undefined : invalid(code, `gives problemMeta that ${refusal}`);
+}
+
 /** Every refusal, before any table is written: a refused declaration leaves no half behind. */
 function refusalOf<P>(spec: DefineErrorSpec<P>): UltimateError | undefined {
   const { code } = spec;
@@ -143,7 +172,7 @@ function refusalOf<P>(spec: DefineErrorSpec<P>): UltimateError | undefined {
   if ((defined !== undefined || status !== undefined) && status !== spec.status) {
     return duplicate(code, status === undefined ? 'off-socket' : `with the status ${status}`);
   }
-  return undefined;
+  return problemRefusalOf(spec);
 }
 
 /**
@@ -158,6 +187,8 @@ function refusalOf<P>(spec: DefineErrorSpec<P>): UltimateError | undefined {
  *   status: 404,
  *   cause: (p) => `no post ${p.ref} in the actor's organisation`,
  *   fix: 'x queries show postById --json, then pass an id it returns',
+ *   meta: (p) => ({ ref: p.ref }),
+ *   problemMeta: ['ref'], // optional: which meta keys the problem document carries
  * });
  * throw new PostNotFound({ ref });
  * ```
@@ -174,6 +205,8 @@ export function defineError<P = undefined>(spec: DefineErrorSpec<P>): DefinedErr
   }
   if (spec.status !== undefined) declareAppErrorStatus(code, spec.status);
   recordDefinedError(code, spec.status);
+  if (spec.problemMeta !== undefined) recordProblemMeta(code, spec.problemMeta);
+  if (spec.publicCause === true) registerPublicCause(code);
   recordSite(code);
 
   class Defined extends UltimateError {

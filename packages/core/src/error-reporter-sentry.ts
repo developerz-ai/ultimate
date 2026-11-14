@@ -17,7 +17,9 @@ import {
 import { type CodedErrorInit, UltimateError } from './errors';
 import { traceId } from './ids';
 import { logger, redactFields } from './logger';
+import { redactedValue } from './redact-values';
 import { sentryFrames } from './sentry-frames';
+import { frameworkVersion } from './version';
 
 export type { SentryReporterOptions } from './error-reporter-sentry-hooks';
 
@@ -121,6 +123,9 @@ function payloadOf(
       code: report.code,
       source: report.source,
       service_version: report.resource.serviceVersion,
+      // Bounded by construction: one value per deploy. `release` is the app's build, so this is
+      // the only field that says which framework release an event came from.
+      framework_version: frameworkVersion(),
       ...(report.scope.role === undefined ? {} : { role: report.scope.role }),
     },
     ...(report.scope.traceId === undefined
@@ -140,11 +145,12 @@ function payloadOf(
       ...redactFields(report.scope.extra ?? {}),
       // The whole point of reporting the framework's contract instead of a message: whoever is
       // paged reads the runnable fix next to the failure.
-      fix: report.fix,
+      // A fix interpolates the failing value as often as a cause does: same value redaction.
+      fix: redactedValue(report.fix),
       docs: report.docs,
       ...(report.scope.requestId === undefined ? {} : { requestId: report.scope.requestId }),
       ...(report.scope.actorId === undefined ? {} : { actorId: report.scope.actorId }),
-      ...(report.stack === undefined ? {} : { stack: report.stack }),
+      ...(report.stack === undefined ? {} : { stack: redactedValue(report.stack) }),
       // Under its own key, so no name an error author picks can collide with one above.
       ...(report.meta === undefined ? {} : { meta: redactFields(report.meta) }),
     },
@@ -157,7 +163,8 @@ function exceptionOf(report: ErrorReport): Record<string, unknown> {
   const frames = sentryFrames(report.stack);
   return {
     type: report.code,
-    value: `${report.title} — ${report.cause}`,
+    // The cause is the string most likely to carry a value the app declared secret by shape.
+    value: redactedValue(`${report.title} — ${report.cause}`),
     // `extra.stack` keeps the raw string for one release beside these (31.6.0); a monitor rule
     // reading it has that long to move.
     ...(frames.length === 0 ? {} : { stacktrace: { frames } }),

@@ -203,6 +203,7 @@ X_ENTITY_TENANT_UNDECLARED: a child of a tenant-owned table has no tenant
 |---|---|
 | `orgId: uuid().tenant()`, then `x db gen '<table> tenant'` | the rows belong to an org. A table that already holds rows backfills the column: `x g backfill <name> --feature <slice>` |
 | `entity('<name>', { shared: '<why>' })` | the rows belong to no org — a price list, a catalog. A blank reason is refused at `entity()`; a `shared` entity is not walked through ([Entities](Entities-And-Migrations#shape)) |
+| `entity('<name>', { global: '<why>' })` | the rows belong to no org and reference none — a plan catalog, a stream cursor. Not a fix for this finding: a table that hangs off a tenant's row is `shared` or tenant-owned, so a `global` one with such a reference is still reported. It turns a read over it from `unproven` into `global` ([below](#the-dynamic-tenant-proof)) |
 
 Reported in the `exercise` step, not `policy`: the policy step asks whether a permission exists. Source: `packages/cli/src/exercise-static.ts`.
 
@@ -231,6 +232,7 @@ X_TENANT_LEAK: another tenant's row reached a call's output or effect
 | `public` | the policy admits an anonymous caller: what it returns, anyone may read. The read half is skipped; a crossed **write** is still red |
 | `public`, as a declared sweep | a job that reads every org on purpose says so with `crossTenant(reason, fn)`, and its input names no org's rows. The proof sees the scope and quotes the reason; the read half is skipped, a crossed **write** is still red. The same scope in an action or a query, or in a job handed A's id, is still `X_TENANT_LEAK` |
 | `public`, as a tenantless job | a job declaring `tenant: 'none'` whose input names none of A's rows — a nightly cleanup across every org, input `{ occurrenceMs }`. No org and no id of B's choosing reaches its run, so B's run is A's run: what it writes it writes for every enqueuer. The **write** half is skipped, the read half kept. Handed one of A's ids it is crossed as ever; an action or a query handed no id still crosses, since B's org runs it |
+| `global` | a query whose every statement read an `entity('<name>', { global: '<why>' })` table — a plan catalog the same for every org. No row of A's exists to come back, so the reasons are quoted; a crossed **write** is still red. One other entity, or one hand-written statement, and it stays `unproven` |
 | `unproven` | A's own call was not reached (that record is already red as `X_CONTRACT_EXERCISE_UNREACHED`), or a query answered A none of A's rows — B's empty answer then proves nothing |
 
 B holds the role A held, minus `tenancy:cross`. **Not checked**: a `route` `load` and a `task`

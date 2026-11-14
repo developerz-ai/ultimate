@@ -9,24 +9,27 @@
 import type { Actor } from '../../shared/actor';
 import { canSeePost } from '../../shared/visibility';
 import type { Post, User } from './repo';
-import { postsByAuthor, userByHandle } from './repo';
+import { postsByAuthor, publicPostsByAuthor, userByHandle } from './repo';
 
 export interface ProfileView {
   readonly user: User;
   readonly posts: readonly Post[];
 }
 
-/** Bounded, and over-fetched: the filter runs after the read, so asking for exactly `limit` rows
- * would return fewer than `limit` whenever anything is hidden. The multiplier is small and fixed —
+/**
+ * A SIGNED-IN viewer's read is bounded and over-fetched: their rule is an OR over friend and block
+ * sets that no read here can hand down yet, so the filter runs after the read and asking for exactly
+ * `limit` rows would return fewer whenever anything is hidden. The multiplier is small and fixed —
  * an unbounded "keep reading until full" loop is how a profile becomes a table scan for the one
- * author whose posts are all private. */
+ * author whose posts are all private. An anonymous reader's rule is all AND: read exactly.
+ */
 const OVERFETCH = 3;
 
 /**
  * A profile as one viewer may see it. `viewer === null` is an anonymous reader, and that is a
  * decision written down rather than the absence of one: the audience ladder answers `public` and
  * nothing else for them, so a friends-only post, a private note and a soft-deleted row are all
- * absent from `posts` WITHOUT a `where` clause saying so.
+ * absent from `posts` — the read asks for live public rows, and `canSeePost` still judges each.
  */
 export const publicProfile = async (
   viewer: Actor | null,
@@ -47,7 +50,10 @@ export const publicProfile = async (
   // suspension is not something a stranger can probe for.
   if (user.suspended) return null;
 
-  const rows = await postsByAuthor(user.id, limit * OVERFETCH);
+  const rows =
+    viewer === null
+      ? await publicPostsByAuthor(user.id, limit)
+      : await postsByAuthor(user.id, limit * OVERFETCH);
   const posts: Post[] = [];
   for (const post of rows) {
     if (posts.length >= limit) break;

@@ -285,6 +285,44 @@ describe('a re-dial streak in the log', () => {
     }
   });
 
+  test('the opening line is actionable: the channel, the attempt, the code and its fix', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const release = installLogSink((line) => {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (String(parsed['msg']).startsWith('db.listen.')) lines.push(parsed);
+    });
+    try {
+      const second = fakePool();
+      second.refuse = true;
+      let current = fakePool();
+      const timers = manualTimers();
+      const listeners = poolListeners(() => current, timers.schedule);
+      await listeners.listen('x_jobs_wake', () => undefined);
+      current = second;
+      listeners.redial();
+      await turn();
+      second.refuse = false;
+      timers.fire();
+      await turn();
+
+      expect(lines[0]).toMatchObject({
+        msg: 'db.listen.redial_failed',
+        level: 'warn',
+        channel: 'x_jobs_wake',
+        attempt: 1,
+        code: 'X_DB_UNAVAILABLE',
+        fix: expect.any(String),
+      });
+      expect(lines[1]).toMatchObject({
+        msg: 'db.listen.redialed',
+        channel: 'x_jobs_wake',
+        failures: 1,
+      });
+    } finally {
+      release();
+    }
+  });
+
   test('a refusal with a new cause is news: logged, with the streak it ends', async () => {
     const lines: { event: string; previous?: unknown }[] = [];
     const release = installLogSink((line) => {

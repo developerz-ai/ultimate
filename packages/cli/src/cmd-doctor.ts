@@ -17,6 +17,7 @@ import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-poole
 import { doctorPort, portFindings } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { probeFor } from './doctor-probe';
+import { redundantIndexesProbe, withRedundantIndexes } from './doctor-redundant-indexes';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import { sealedKeyFindings } from './doctor-sealed';
 import { typescriptFindings } from './doctor-typescript';
@@ -168,10 +169,15 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
     covered,
     probe.root === undefined ? NOTHING_MISSING : chartAlertsProbe(probe.root),
   );
+  // The fourth: implicit indexes another already serves (`doctor-redundant-indexes.ts`).
+  const indexed = withRedundantIndexes(
+    charted,
+    probe.root === undefined ? undefined : await redundantIndexesProbe(probe.root),
+  );
   // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
   const reminded = withPoolerReport(
     withRollingReminder(
-      charted,
+      indexed,
       probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
     ),
     pooler,

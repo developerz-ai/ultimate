@@ -439,6 +439,7 @@ seeded row that moved across a B leg is `X_TENANT_WRITE_CROSSED`. Both are red i
 | `crossed` | any `TenantFinding` (`code`, `leg: 'before' \| 'after'`, `path` or `table` + `id`) |
 | `unproven` | A's own call was not `reached` |
 | `public` | the policy admits an anonymous caller: read half skipped, write half kept |
+| `global` | a query whose every statement was a repository read of an `entity({ global })` table: no row of A's to miss, write half kept |
 | `unproven` | a query whose A answer held none of A's rows |
 | `proven` | otherwise |
 

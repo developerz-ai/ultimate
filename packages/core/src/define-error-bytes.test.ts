@@ -86,9 +86,11 @@ describe('the browser chunk that declares an app code and throws it', () => {
 
   // measured: 6,507 B (2026-11-11, Bun 1.4.4), against 12,019 B through the barrel. why: the
   // class, the registry lookup, the retry and status tables and `defineError` itself — the next
-  // half kilobyte above the measurement.
-  test('stays under 7,168 B minified (6,507 B as of 2026-11-11)', async () => {
+  // half kilobyte above the measurement. Raised 2026-11-14 by the measured +1,217 B (6,558 →
+  // 7,775 B): `problemMeta:` and `publicCause:` declared in the one call — the key rule, the app
+  // meta table and the public-cause set, refused all-or-nothing (`problem-meta-declared.ts`).
+  test('stays under 8,192 B minified (7,775 B as of 2026-11-14)', async () => {
     const minified = await chunk('island-min', ISLAND, true);
-    expect(new TextEncoder().encode(minified).length).toBeLessThan(7_168);
+    expect(new TextEncoder().encode(minified).length).toBeLessThan(8_192);
   }, 60_000);
 });

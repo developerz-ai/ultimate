@@ -113,12 +113,43 @@ const literalCodeIn = (text: string, open: number): boolean => {
   return false;
 };
 
-const finding = (file: SourceFile, line: number, what: string): Finding => ({
-  code: CODE,
-  cause: \`\${file.path}:\${line} \${what} — the title, the HTTP status and the class are then declared apart, and a code with no status answers 500 and hides its cause\`,
-  fix: \`rewrite it in \${file.path} as defineError({ code, title, status, cause, fix }) from @ultimat3/core/page (offSocket: true for a code no response carries), then: x verify\`,
-  at: file.path,
-});
+/** The first literal code in a span: the one a finding's fix declares. */
+const CODE_LITERAL = /\\b(?:code|'code'|"code")\\s*:\\s*['"\`](X(?:_[A-Z0-9]+)+)['"\`]/;
+const CLASS_NAME = /\\bclass\\s+([A-Za-z_$][\\w$]*)\\s*$/;
+/** Where the next declaration starts, so a span never reads the following class's code. */
+const NEXT_DECLARATION = /\\b(?:class|new)\\s/g;
+
+const codeIn = (text: string, from: number): string | undefined => {
+  NEXT_DECLARATION.lastIndex = from + 1;
+  const next = NEXT_DECLARATION.exec(text);
+  return CODE_LITERAL.exec(text.slice(from, next === null ? text.length : next.index))?.[1];
+};
+
+/** The code's own words, the binding a class-less finding's fix declares: X_POST_GONE → PostGone. */
+const bindingOf = (code: string): string =>
+  code
+    .slice(2)
+    .split('_')
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join('');
+
+/** What a finding can name of the class it replaces; a placeholder for whatever it cannot read. */
+interface Declared {
+  readonly name?: string | undefined;
+  readonly code?: string | undefined;
+}
+
+const finding = (file: SourceFile, line: number, what: string, declared: Declared): Finding => {
+  const name =
+    declared.name ?? (declared.code === undefined ? '<ErrorName>' : bindingOf(declared.code));
+  const code = \`'\${declared.code ?? 'X_<CODE>'}'\`;
+  return {
+    code: CODE,
+    cause: \`\${file.path}:\${line} \${what} — the title, the HTTP status and the class are then declared apart, and a code with no status answers 500 and hides its cause\`,
+    fix: \`rewrite it in \${file.path} as one call per class, from @ultimat3/core/page: export const \${name} = defineError({ code: \${code}, title, status, cause, fix, problemMeta: ['<meta key>'] }) — it replaces the class and its registerErrorStatus / registerProblemMeta rows (offSocket: true instead of status for a code no response carries; publicCause: true for a 5xx whose cause a caller may read; drop problemMeta when its meta stays operator-only), then: x verify\`,
+    at: file.path,
+  };
+};
 
 const barrelFinding = (file: SourceFile, line: number): Finding => ({
   code: CODE,
@@ -150,24 +181,30 @@ export function undeclaredErrors(files: readonly SourceFile[]): readonly Finding
   for (const file of files) {
     const text = blank(file.source);
     const names = nameSource(classNames(text));
-    const push = (index: number, what: string): void => {
+    const push = (index: number, what: string, declared: Declared): void => {
       const line = lineOf(text, index);
-      found.push({ path: file.path, line, finding: finding(file, line, what) });
+      found.push({ path: file.path, line, finding: finding(file, line, what, declared) });
     };
     for (const line of barrelDefineErrorLines(text)) {
       found.push({ path: file.path, line, finding: barrelFinding(file, line) });
     }
     for (const match of text.matchAll(new RegExp(\`\\\\bextends\\\\s+(?:\${names})\\\\b\`, 'g'))) {
-      push(match.index, 'subclasses UltimateError by hand');
+      const name = CLASS_NAME.exec(text.slice(0, match.index))?.[1];
+      push(match.index, 'subclasses UltimateError by hand', {
+        name,
+        code: codeIn(text, match.index),
+      });
     }
     for (const match of text.matchAll(new RegExp(\`\\\\bnew\\\\s+(?:\${names})\\\\s*\\\\(\\\\s*\`, 'g'))) {
       const at = match.index + match[0].length;
       // Anything but an object literal hides its code from this read: a value built elsewhere,
       // Object.assign over a literal. A re-raise is written as a literal, with code: err.code.
       if (text[at] !== '{')
-        push(match.index, 'builds new UltimateError from a value this guard cannot read');
+        push(match.index, 'builds new UltimateError from a value this guard cannot read', {});
       else if (literalCodeIn(text, at))
-        push(match.index, 'builds new UltimateError with a literal code');
+        push(match.index, 'builds new UltimateError with a literal code', {
+          code: codeIn(text, at),
+        });
     }
   }
   return found

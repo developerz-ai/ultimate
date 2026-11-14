@@ -12,14 +12,19 @@ import {
   tenancyUnscoped,
 } from './errors';
 import type { Operator } from './operator';
+import type { NodeOperator } from './predicate-node';
 import type { ColumnMap } from './types';
 
 /** The vocabulary is `OPERATORS` (`operator.ts`) — one list, and this type is derived from it. */
 export type { Operator } from './operator';
 
+/**
+ * One conjunct of a plan. `op` is an `Operator`, or a NODE (`predicate-node.ts`): an `or` group
+ * under the `$or` pseudo-column, or a `via` hop on a real column — built by `andWhereNode` only.
+ */
 export interface Predicate {
   readonly column: string;
-  readonly op: Operator;
+  readonly op: Operator | NodeOperator;
   readonly value?: unknown;
 }
 

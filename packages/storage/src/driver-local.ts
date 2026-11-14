@@ -210,7 +210,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
       async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
         const safe = safeKey(key);
-        refuseUnsupportedPut(putOptions);
+        refuseUnsupportedPut(DRIVER_NAME, putOptions);
         assertPutOptions(DRIVER_NAME, putOptions);
         assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
         const bytes = await toBytes(body, {

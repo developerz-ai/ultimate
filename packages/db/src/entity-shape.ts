@@ -233,6 +233,18 @@ export interface CounterDescriptionLike {
   readonly references: string;
   /** The child's soft-delete column: a stamped row is not counted. `null` when it has none. */
   readonly softDelete: string | null;
+  /** `countedIn: { where }`: only a child row this predicate holds over is counted. Absent: all. */
+  readonly where?: CounterWhereLike | undefined;
+}
+
+/**
+ * A counter's predicate, compiled once by `@ultimat3/entity`. `sql` names the child's columns
+ * qualified by the alias `c` (`c."kind" = 'up'`), which the trigger and the recount both give the
+ * child row; `columns` are the physical columns it reads, so a change to one fires the trigger.
+ */
+export interface CounterWhereLike {
+  readonly sql: string;
+  readonly columns: readonly string[];
 }
 
 /** `retain: { after, on }`, with `on` physical. */

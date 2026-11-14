@@ -1,6 +1,7 @@
 // The `repo-unbounded` guard as `x new` would emit it, run through the gate's own seam: a handle
 // chain in a repo ending in `.all()` with no `.limit(n)` is refused at the chain's first line with
 // the bounded call to write; a limit, a `.one()`, a `// why:`, a service and a test are silent.
+// A new app gets it as an error; the report-only form apps scaffolded before 31.23 hold stays.
 
 import { describe, expect, test } from 'bun:test';
 import { repoUnboundedGuardFiles } from './guard-repo-unbounded';
@@ -55,11 +56,20 @@ describe('unit · shipped guard · repo-unbounded', () => {
     expect(findings).toEqual([]);
   });
 
-  test('it is report only: a hit is a warning on the step, never a failure', async () => {
+  test('a new app refuses: x new and x g guard write it as an error on the step', async () => {
     const report = await shippedGuardReport('repo-unbounded', { [REPO]: HIT });
-    expect(report.findings).toEqual([]);
-    expect(report.warnings.map((finding) => finding.at)).toEqual([`${REPO}:1`]);
+    expect(report.warnings).toEqual([]);
+    expect(report.findings.map((finding) => finding.at)).toEqual([`${REPO}:1`]);
     const rule = repoUnboundedGuardFiles().find((file) => file.path === 'guards/repo-unbounded.ts');
+    // `severity` absent IS the error: 'warning' is the only value a guard may export (`guards.ts`).
+    expect(String(rule?.contents)).not.toContain('severity');
+  });
+
+  test('the report-only form an existing app holds is still one template away', () => {
+    const rule = repoUnboundedGuardFiles('warning').find(
+      (file) => file.path === 'guards/repo-unbounded.ts',
+    );
     expect(String(rule?.contents)).toContain("severity: 'warning',");
+    expect(String(rule?.contents)).toContain('REPORT ONLY');
   });
 });

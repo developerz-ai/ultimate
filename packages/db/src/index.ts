@@ -306,3 +306,5 @@ export type { GeneratableForm } from './ungeneratable';
 export { GENERATABLE_FORMS, ungeneratableStatements } from './ungeneratable';
 export type { UnrenderedDeclaration } from './unrendered';
 export { unrenderedComment, unrenderedOf } from './unrendered';
+export type { CounterWhereLike } from './entity-shape';
+export { recountBatchSql, recountDriftBatchSql, recountWindowSql } from './generate-counter';

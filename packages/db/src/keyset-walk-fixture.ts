@@ -87,3 +87,62 @@ export async function firstPagePlan(client: DbClient): Promise<string> {
   const rows = await client.query<{ 'QUERY PLAN': string }>(statement);
   return rows.map((row) => row['QUERY PLAN']).join('\n');
 }
+
+export const NULLABLE_TABLE = 'keyset_walk_nullable';
+
+/** Three NULLs and a duplicated value: only the tiebreak orders rows inside either group. */
+const NULLABLE_SEEDED: readonly (readonly [number, string | null])[] = [
+  [1, null],
+  [2, '2026-01-01T00:00:00.000001Z'],
+  [3, null],
+  [4, '2026-01-01T00:00:00.000001Z'],
+  [5, null],
+  [6, '2026-01-02T00:00:00Z'],
+];
+
+/** Each order's rows by id, derived by hand from `NULLABLE_SEEDED` — never by the server. */
+export const NULLABLE_ORDERS: readonly (readonly ['asc' | 'desc', 'first' | 'last', number[]])[] = [
+  ['desc', 'first', [5, 3, 1, 6, 4, 2]],
+  ['desc', 'last', [6, 4, 2, 5, 3, 1]],
+  ['asc', 'last', [2, 4, 6, 1, 3, 5]],
+  ['asc', 'first', [1, 3, 5, 2, 4, 6]],
+];
+
+export async function seedNullableTable(client: DbClient): Promise<void> {
+  await client.execute(raw(`drop table if exists ${NULLABLE_TABLE}`));
+  await client.execute(
+    raw(
+      `create table ${NULLABLE_TABLE} (id integer not null primary key, published_at timestamptz)`,
+    ),
+  );
+  for (const [id, at] of NULLABLE_SEEDED) {
+    await client.execute(
+      sql`insert into ${raw(NULLABLE_TABLE)} (id, published_at) values (${id}::integer, ${at}::timestamptz)`,
+    );
+  }
+}
+
+/** Every row of the nullable table, page by page, under one direction and NULL placement. */
+export async function walkNullable(
+  client: DbClient,
+  direction: 'asc' | 'desc',
+  nulls: 'first' | 'last',
+  limit: number,
+): Promise<number[]> {
+  const keys: readonly KeysetKey[] = [
+    { column: raw('n.published_at'), kind: 'timestamptz', direction, nullable: true, nulls },
+    { column: raw('n.id'), kind: 'integer', direction },
+  ];
+  const seen: number[] = [];
+  let after: string | null = null;
+  for (let turn = 0; turn < 10; turn += 1) {
+    const page = keyset({ scope: 'nullable.walk', keys, after, limit });
+    const statement = sql`select n.id, ${page.select} from ${raw(NULLABLE_TABLE)} n
+        where ${page.where} order by ${page.orderBy} limit ${page.limit}`;
+    const result = page.page(await client.query<{ id: number }>(statement));
+    seen.push(...result.rows.map((row) => row.id));
+    if (!result.hasMore) return seen;
+    after = result.nextCursor;
+  }
+  return expect.unreachable('the nullable walk never reached its last page');
+}

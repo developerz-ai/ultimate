@@ -22,7 +22,7 @@ import {
   snapshotOf,
   unrenderedOf,
 } from '@ultimat3/db';
-import { describeEntities } from '@ultimat3/entity';
+import { describeEntities, registeredEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';
 import {
@@ -32,6 +32,7 @@ import {
 } from './drift-replica-identity';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { Finding } from './output';
+import { settledDescriptions } from './redundant-indexes';
 import { appRowSecurity, type RowSecurityWanted, rowSecurityFindings } from './row-security-wanted';
 import { diffDeclaredSchema, type SchemaDifference } from './schema-diff';
 
@@ -53,7 +54,11 @@ export type DeclaredEntities = (
 export const appEntities: DeclaredEntities = async (root) => {
   const app = await loadApp(root);
   if (app.findings.length > 0) return undefined;
-  return describeEntities();
+  // What `x db gen` diffed (`settledDescriptions`): a covered index `--drop-redundant` dropped is
+  // still described by its entity, and reading the raw registry would report it as unmigrated.
+  const current = declaredSchema(await readMigrations(root));
+  if (current === undefined) return describeEntities();
+  return settledDescriptions(registeredEntities(), current, false);
 };
 
 /**

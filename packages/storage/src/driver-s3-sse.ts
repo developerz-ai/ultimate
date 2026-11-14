@@ -1,29 +1,40 @@
-// Single responsibility: the one `put()` option the s3 disk cannot honour, refused by name with the
-// bucket-wide command that does the job instead.
+// Single responsibility: per-object server-side encryption on the s3 disk — `serverSideEncryption`
+// as the `x-amz-server-side-encryption*` headers of the signed PUT, screened before a byte moves.
+// `Bun.S3Client` has no field for it, so an SSE put always rides the signed wire.
 
-import { NotImplementedError, renderFixLiteral, renderFixShellArg } from '@ultimat3/core';
-import type { PutOptions } from './driver';
+import { assert, describeValue } from '@ultimat3/core';
+import { HEADER_VALUE, type PutOptions } from './driver';
+
+const ALGORITHMS: readonly string[] = ['AES256', 'aws:kms'];
 
 /**
- * Everything `put()` may be handed that this driver cannot honour, refused before a byte moves.
- * A typed refusal at the call site is the whole point: `serverSideEncryption` exists on
- * `PutOptions` so that "this disk cannot prove per-object encryption" is something an engineer
- * meets while writing the call, not while answering a security review.
+ * The headers `serverSideEncryption` becomes; none without it. What the provider would answer with
+ * a 400 — an algorithm it does not know, a key id beside `AES256`, a key id that cannot travel as a
+ * header — is refused here instead, so a refused write is never mistaken for a lost one.
  */
-export function refuseUnsupportedPut(bucket: string, putOptions?: PutOptions): void {
-  const sse = putOptions?.serverSideEncryption;
-  if (sse === undefined) return;
-  // The key id is the caller's own option, spliced into single-quoted JSON: `renderFixLiteral`
-  // escapes the `"` and `\` JSON needs, and a `'` — the one byte live inside single quotes — makes
-  // it the placeholder rather than ending the argument (plan 101 row S12).
-  const keyId = sse.kmsKeyId?.includes("'") === false ? sse.kmsKeyId : undefined;
-  const bucketArg = renderFixShellArg(bucket, "'<bucket>'");
-  throw new NotImplementedError({
-    cause:
-      'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption) is not implemented by this driver — set it bucket-wide with the command in fix, then drop serverSideEncryption from put()',
-    fix:
-      sse.algorithm === 'aws:kms'
-        ? `aws s3api put-bucket-encryption --bucket ${bucketArg} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":${renderFixLiteral(keyId, '"<key-arn>"')}},"BucketKeyEnabled":true}]}'`
-        : `aws s3api put-bucket-encryption --bucket ${bucketArg} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'`,
-  });
+export function sseHeaders(options: PutOptions): Record<string, string> {
+  const sse = options.serverSideEncryption;
+  if (sse === undefined) return {};
+  const algorithm: unknown = sse.algorithm;
+  assert(
+    typeof algorithm === 'string' && ALGORITHMS.includes(algorithm),
+    `put() on the s3 disk was given a serverSideEncryption algorithm the provider does not take (${describeValue(algorithm)})`,
+    "put(key, body, { serverSideEncryption: { algorithm: 'AES256' } }) — or algorithm: 'aws:kms'",
+  );
+  const keyId: unknown = sse.kmsKeyId;
+  if (keyId === undefined) return { 'x-amz-server-side-encryption': algorithm };
+  assert(
+    algorithm === 'aws:kms',
+    'put() on the s3 disk was given serverSideEncryption.kmsKeyId with AES256, which takes no key',
+    "put(key, body, { serverSideEncryption: { algorithm: 'aws:kms', kmsKeyId } }) — or drop kmsKeyId for AES256",
+  );
+  assert(
+    typeof keyId === 'string' && keyId !== '' && HEADER_VALUE.test(keyId),
+    `put() on the s3 disk was given a serverSideEncryption.kmsKeyId that cannot travel as a header (${describeValue(keyId)})`,
+    "put(key, body, { serverSideEncryption: { algorithm: 'aws:kms', kmsKeyId: 'arn:aws:kms:<region>:<account>:key/<id>' } }) — or omit kmsKeyId for the bucket's default key",
+  );
+  return {
+    'x-amz-server-side-encryption': algorithm,
+    'x-amz-server-side-encryption-aws-kms-key-id': keyId,
+  };
 }

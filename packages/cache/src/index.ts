@@ -58,6 +58,7 @@ export { estimateBytes, LruCache, lruTier } from './lru';
 export { MEMO_MAX_BYTES, memoTier } from './memo';
 export type { MemoFlights } from './memo-flights';
 export { memoFlights } from './memo-flights';
+export type { MemoizedPerRequest } from './memo-per-request';
 export { memoPerRequest } from './memo-per-request';
 export type { CloudflarePurgeOptions } from './purge-cloudflare';
 export { CLOUDFLARE_API_URL, cloudflarePurgeDriver } from './purge-cloudflare';

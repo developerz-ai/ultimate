@@ -3,13 +3,16 @@
 // integer of the entity the key points at, and projected for `@ultimat3/db` (which emits the
 // trigger) and for the memory driver (which mirrors it).
 
-import type { CounterDescriptionLike } from '@ultimat3/db';
-import { bindingOf, columnName } from './column';
+import type { CounterDescriptionLike, CounterWhereLike } from '@ultimat3/db';
+import { identifier } from '@ultimat3/db';
+import { bindingOf, columnName, moneyColumns } from './column';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
 import { EntityError } from './errors';
+import { type Expr, type InvariantColumns, invariantColumns, type Row } from './expr';
+import { type Verdict, verdictOf } from './expr-verdict';
 import { getEntity, registeredEntities, registryGeneration } from './registry';
-import type { AnyColumn } from './types';
+import type { AnyColumn, ColumnMap, CountedIn } from './types';
 
 /** One resolved counter: both entities, both properties. */
 export interface Counter {
@@ -19,20 +22,74 @@ export interface Counter {
   readonly child: EntityCore;
   /** The child's foreign-key property. */
   readonly references: string;
+  /** `countedIn: { where }`, compiled once: the memory driver's verdict and the trigger's SQL. */
+  readonly where: { readonly verdict: Verdict; readonly sql: CounterWhereLike } | null;
 }
 
-const countsInvalid = (entity: string, property: string, reason: string): EntityError =>
+/** The parent column a `countedIn` names, in either spelling, and its predicate thunk. */
+const targetOf = (declared: CountedIn) =>
+  typeof declared === 'function'
+    ? { to: declared, where: undefined }
+    : { to: declared.to, where: declared.where };
+
+const countsInvalid = (
+  entity: string,
+  property: string,
+  reason: string,
+  fix = `x db gen "count"   # after ${property}: uuid().references(() => <parent>.id, { countedIn: () => <parent>.<count> }) in entity('${entity}'), where <count> is integer().default(0)`,
+): EntityError =>
   new EntityError({
     code: 'X_ENTITY_COUNTS_INVALID',
     cause: `${entity}.${property} declares countedIn, and ${reason}`,
-    fix: `x db gen "count"   # after ${property}: uuid().references(() => <parent>.id, { countedIn: () => <parent>.<count> }) in entity('${entity}'), where <count> is integer().default(0)`,
+    fix,
   });
+
+/**
+ * The `c` an invariant is written against, for an entity already declared — what a
+ * `countedIn: { where }` thunk builds its predicate from: `() => whereColumns(likes).kind.eq('up')`.
+ */
+export const whereColumns = <C extends ColumnMap>(entity: {
+  readonly $name: string;
+  readonly $columns: C;
+}): InvariantColumns<C> => invariantColumns(entity.$name, entity.$columns);
+
+/**
+ * A `where` compiled once against the CHILD: SQL over the child aliased `c` (the trigger and the
+ * recount both give it that alias) and the physical columns it reads. A predicate with no SQL
+ * (a JS function) or a `unique` is refused: the trigger would count by a rule memory does not hold.
+ */
+function compileWhere(child: EntityCore, property: string, rule: Expr): Counter['where'] {
+  const refuse = (reason: string): never => {
+    throw countsInvalid(
+      child.$name,
+      property,
+      reason,
+      `references(() => <parent>.id, { countedIn: { to: () => <parent>.<count>, where: () => whereColumns(${child.$name}).<column>.eq(<value>) } }) in entity('${child.$name}') — a predicate in the invariant language, never a function — then: x db gen "count"`,
+    );
+  };
+  const physical = (path: readonly string[]): string => {
+    const [name, part] = path;
+    const column = name === undefined ? undefined : child.$columns[name];
+    if (name === undefined || column === undefined) {
+      return refuse(`its where names ${path.join('.')}, no column of ${child.$name}`);
+    }
+    if (part === undefined) return columnName(name, column.$meta);
+    const parts = moneyColumns(name, column.$meta);
+    return part === 'minor' ? parts.minor : parts.currency;
+  };
+  const sql =
+    rule.kind === 'unique' ? null : rule.toSql((path) => `c.${identifier(physical(path)).text}`);
+  if (sql === null) return refuse(`its where (${rule.message}) has no SQL the trigger can hold`);
+  const columns = [...new Set(rule.paths.map(physical))];
+  return { verdict: verdictOf(rule), sql: { sql, columns } };
+}
 
 /** The counter one child key declares, resolved and checked. `null` when it declares none. */
 export function counterOf(child: EntityCore, property: string, column: AnyColumn): Counter | null {
-  const target = column.$meta.countedIn;
-  if (target === undefined) return null;
-  const counting = target();
+  const declared = column.$meta.countedIn;
+  if (declared === undefined) return null;
+  const target = targetOf(declared);
+  const counting = target.to();
   const binding = bindingOf(counting);
   const parent = binding === undefined ? undefined : getEntity(binding.table)?.core;
   if (binding === undefined || parent === undefined) {
@@ -59,8 +116,18 @@ export function counterOf(child: EntityCore, property: string, column: AnyColumn
       `it is no foreign key to ${parent.$name}'s single primary key, so it cannot count into it`,
     );
   }
-  return { parent, column: binding.property, child, references: property };
+  const where = target.where === undefined ? null : compileWhere(child, property, target.where());
+  return { parent, column: binding.property, child, references: property, where };
 }
+
+/**
+ * Whether a child row (property-keyed, as a repository holds it) is counted by `counter`'s predicate:
+ * only a TRUE verdict counts — a NULL operand is unknown, and a SQL `where` drops it. The key and
+ * the soft-delete stamp are the caller's to check, as the trigger checks them first.
+ */
+export const countsRow = (counter: Counter, row: unknown): boolean =>
+  counter.where === null ||
+  (typeof row === 'object' && row !== null && counter.where.verdict(row as Row) === true);
 
 let cached: { readonly generation: number; readonly counters: readonly Counter[] } | undefined;
 
@@ -105,5 +172,6 @@ export function describeCounter(counter: Counter): CounterDescriptionLike {
     table: counter.child.$table,
     references: physical(counter.child, counter.references),
     softDelete: counter.child.$softDelete ? physical(counter.child, SOFT_DELETE_COLUMN) : null,
+    ...(counter.where === null ? {} : { where: counter.where.sql }),
   };
 }

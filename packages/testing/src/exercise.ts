@@ -57,8 +57,14 @@ import { deferredMayStayNull, pairGraph, seedPass, tenantPair } from './seed-gra
 import type { SeedGraph, SeedWriter } from './seed-graph-plan';
 import type { SeedEntity } from './seed-graph-shape';
 import { tenantTaint } from './tenant-canary';
-import type { LegAnswer } from './tenant-proof';
-import { proveTenant, publicReason, withoutCrossTenant } from './tenant-proof';
+import type { ControlAnswer, LegAnswer } from './tenant-proof';
+import {
+  globalEntities,
+  proveTenant,
+  publicReason,
+  readsOf,
+  withoutCrossTenant,
+} from './tenant-proof';
 
 export interface ExercisePassOptions {
   readonly entities: readonly SeedEntity[];
@@ -143,6 +149,9 @@ interface Prepared {
   readonly ceiling: ExerciseStatementCeiling | undefined;
 }
 
+/** A's control as the tenant proof reads it, plus the input its last call was reached with. */
+type Controlled = ControlAnswer & { readonly input: unknown };
+
 /** Thrown out of 39's loop by a bind that failed: the record is the entry's, never the loop's. */
 class BindThrew {
   constructor(readonly error: unknown) {}
@@ -152,11 +161,7 @@ class BindThrew {
  * A's positive control: 39's loop, as the pass has always run it. The room records each CALL
  * alone: an override's input runs between calls, and what it sends is never this primitive's.
  */
-async function control(
-  run: Prepared,
-  room: ExerciseRoom,
-  sampler: Sampler,
-): Promise<{ readonly record: ExerciseRecord; readonly output: unknown; readonly input: unknown }> {
+async function control(run: Prepared, room: ExerciseRoom, sampler: Sampler): Promise<Controlled> {
   const { subject, key, actor, tenant, declaredRuns, lookups, bindInput } = run;
   const { kind, name } = subject;
   let binds = 0;
@@ -221,7 +226,7 @@ async function control(
       ms: Math.round(performance.now() - started),
       ...inputThrew(name, key, error.error),
     };
-    return { record, output, input: lastInput };
+    return { record, output, input: lastInput, reads: readsOf(segments) };
   }
   const ms = Math.round(performance.now() - started);
   const observed = mergeObserved(segments);
@@ -246,7 +251,7 @@ async function control(
     ...(defect === undefined ? {} : { defect }),
     ...(statementCeiling === undefined ? {} : { statementCeiling }),
   };
-  return { record, output, input: lastInput };
+  return { record, output, input: lastInput, reads: readsOf(segments) };
 }
 
 /** One B leg: B's actor, A's ids, a queue of its own. What it answered and every effect it had. */
@@ -367,6 +372,7 @@ async function exerciseOne(
     read: kind === 'query',
     sweep: kind === 'job',
     tenantless: seat?.kind === 'none',
+    globals: globalEntities(options.entities),
     attack: () => attack(subject, key, input, intruder, other, room),
     control: async () => {
       const done = await control(run, room, sampler);

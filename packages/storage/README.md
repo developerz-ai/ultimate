@@ -289,13 +289,15 @@ lock — on S3 it is per version and set by the request. The local refusal is in
 
 ## Server-side encryption, storage classes, lifecycle
 
-`PutOptions.serverSideEncryption` exists so the gap is visible **at the type level**, and every
-shipped driver refuses it (`X_NOT_IMPLEMENTED`) with the out-of-band command in the `fix`.
-`Bun.S3Client` exposes `acl`, `storageClass` and `type` and nothing for
-`x-amz-server-side-encryption*`; a local disk writes plain files. A typed refusal an engineer
-meets at the call site beats a silent absence discovered during a security review.
+`PutOptions.serverSideEncryption` is per-object encryption, honoured where the disk can honour it:
 
-Encryption at rest is therefore a **bucket default**, and so are bucket lifecycle rules, storage
+| Disk | `put(key, body, { serverSideEncryption })` |
+|---|---|
+| `s3Driver` | **sent**, on one signed PUT (`Bun.S3Client` has no field for it): `x-amz-server-side-encryption: AES256` or `aws:kms`, plus `x-amz-server-side-encryption-aws-kms-key-id` when `kmsKeyId` is given (absent: the bucket's default key). An unknown algorithm, a `kmsKeyId` with `AES256`, or a key id that cannot travel as a header is `X_INVARIANT` before a byte moves |
+| `localDriver`, `memoryStorageDriver` | **refused**, `X_INVARIANT` (the put-option refusal `assertPutOptions` makes): plain bytes on disk or in a `Map` are not encrypted at rest, and recording the request would answer a security review with a field the disk never honoured |
+
+`putStream` takes none (it needs the bytes up front). A **bucket default** is still the rule for
+everything written without the option — and so are bucket lifecycle rules, storage
 classes and cross-region replication: all four are bucket-side configuration and belong to
 terraform, not to the framework (axiom 7 — zero platform primitives). Ultimate half-building any of
 them would be a second place to look for the same setting.
@@ -596,7 +598,6 @@ name is not found.
 | `X_STORAGE_READ_FAILED` | the disk REFUSED a `get`/`stat`/`exists`/`stream` or the read half of a `copy` — a denied `s3:GetObject`, a throttle, an unreadable file. An **absent** object is still `X_STORAGE_NOT_FOUND`, including one deleted between the existence check and the read |
 | `X_STORAGE_RANGE_UNSATISFIABLE` | `get(key, { range })` whose first byte is at or past the object's size — the 416 |
 | `X_STORAGE_KEY_CONFLICT` | local and memory disks (never s3): the key's path is another key's directory, or the reverse (`a` and `a/b`) |
-| `X_NOT_IMPLEMENTED` | `serverSideEncryption` on any driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, a source no built-in decoder reads, or a `variantKey` format no variant can carry |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |

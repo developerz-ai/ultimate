@@ -13,22 +13,16 @@ import {
   renderCauseValue,
 } from '@ultimat3/core';
 import { DbError } from './errors';
+import { decodePart, encodePart } from './keyset-position';
+import { CASTS, type KeysetKey, type KeysetPosition, nullsOf, orderOf, seek } from './keyset-seek';
 import { join, raw, type SqlFragment, sql } from './sql';
 
-/** The kinds a position can be bound back as, each with its own cast. A closed list. */
-export type KeysetKind = 'timestamptz' | 'uuid' | 'text' | 'integer' | 'bigint';
-
-export interface KeysetKey {
-  /** The ordered expression as written in the statement: `raw('p.created_at')`, or a `sql` one. */
-  readonly column: SqlFragment;
-  readonly kind: KeysetKind;
-  readonly direction: 'asc' | 'desc';
-}
+export type { KeysetKey, KeysetKind } from './keyset-seek';
 
 export interface KeysetOptions {
   /** This read and its arguments: a cursor from another scope is `X_CURSOR_INVALID`. */
   readonly scope: string;
-  /** The order, last key the tiebreak. Every key must be not null on every row. */
+  /** The order, last key the tiebreak. A key not declared `nullable` must be not null on every row. */
   readonly keys: readonly KeysetKey[];
   /** The previous page's `nextCursor`; `null` for the first page. */
   readonly after: string | null;
@@ -49,18 +43,11 @@ export interface Keyset {
   page<Row extends object>(rows: readonly Row[]): Page<KeysetRow<Row>>;
 }
 
-const CASTS: ReadonlyMap<KeysetKind, string> = new Map<KeysetKind, string>([
-  ['timestamptz', 'timestamptz'],
-  ['uuid', 'uuid'],
-  ['text', 'text'],
-  ['integer', 'integer'],
-  ['bigint', 'bigint'],
-]);
-
 const NULL_KEY_FIX =
   "keyset({ keys: [{ column: sql`coalesce(p.published_at, p.created_at)`, kind: 'timestamptz', direction: 'desc' }, …] })  # or order by a not-null column";
 
 const DIRECTIONS: ReadonlySet<string> = new Set(['asc', 'desc']);
+const PLACEMENTS: ReadonlySet<string> = new Set(['first', 'last']);
 
 /**
  * A direction and a kind are spliced as SQL text, and a sort read off a query string arrives typed
@@ -78,6 +65,26 @@ const assertKey = (key: KeysetKey, at: number): void => {
     `keyset() key ${String(at)} has kind ${renderCauseValue(key.kind)}, which has no cast to bind a position back with`,
     "keyset({ keys: [{ column: raw('p.created_at'), kind: 'timestamptz', … }] })   # one of: timestamptz, uuid, text, integer, bigint",
   );
+  assert(
+    key.nulls === undefined || (key.nullable === true && PLACEMENTS.has(key.nulls)),
+    `keyset() key ${String(at)} has nulls ${renderCauseValue(key.nulls)}${key.nullable === true ? '' : ' without nullable: true'}; NULL placement is spliced into SQL and only a nullable key has one`,
+    "keyset({ keys: [{ column: raw('p.published_at'), kind: 'timestamptz', direction: 'desc', nullable: true, nulls: 'last' }, …] })   # nulls: 'first' | 'last'",
+  );
+};
+
+/**
+ * The last key breaks every tie, so it must be not null: two rows NULL on it are tied forever and
+ * one of them falls between pages. Refused at construction, before a row is read.
+ */
+const assertTiebreak = (keys: readonly KeysetKey[]): void => {
+  const last = keys.at(-1);
+  if (last?.nullable !== true) return;
+  throw new DbError({
+    code: 'X_KEYSET_NULL_KEY',
+    cause: `keyset() key ${String(keys.length - 1)} (${last.column.text}) is the final tiebreak and is declared nullable: rows NULL on it tie with no order between them`,
+    fix: "keyset({ keys: [{ column: raw('p.published_at'), kind: 'timestamptz', direction: 'desc', nullable: true }, { column: raw('p.id'), kind: 'uuid', direction: 'desc' }], … })   # end on a not-null unique key",
+    meta: { key: keys.length - 1 },
+  });
 };
 
 const aliasOf = (index: number): string => `_keyset_${String(index)}`;
@@ -85,67 +92,42 @@ const aliasOf = (index: number): string => `_keyset_${String(index)}`;
 /**
  * The scope the cursor is signed under: the caller's, plus the order itself — so a cursor minted
  * under `desc` cannot seek an `asc` read, nor a `uuid` key be bound back as `text`. Hashed: the
- * key expressions are the statement's, not the client's to read.
+ * key expressions are the statement's, not the client's to read. A nullable key adds its NULL
+ * placement; a not-null key's scope is unchanged, so a cursor minted before nullable keys pages on.
  */
 const scopeOf = (scope: string, keys: readonly KeysetKey[]): string => {
   const order = keys
     .map(
       (key) =>
-        `${key.column.text}${JSON.stringify(key.column.values.map(String))} ${key.kind} ${key.direction}`,
+        `${key.column.text}${JSON.stringify(key.column.values.map(String))} ${key.kind} ${key.direction}${key.nullable === true ? ` nulls ${nullsOf(key)}` : ''}`,
     )
     .join(',');
   const digest = new Bun.CryptoHasher('sha256').update(`${scope}|${order}`).digest('hex');
   return `keyset:${digest.slice(0, 16)}`;
 };
 
-const bind = (key: KeysetKey, text: string): SqlFragment =>
-  sql`${text}::${raw(CASTS.get(key.kind) ?? 'text')}`;
-
-/** The splice re-derived from the closed set, as `entity/src/pg-sql.ts` does: never the caller's text. */
-const orderOf = (key: KeysetKey): SqlFragment => raw(key.direction === 'desc' ? 'desc' : 'asc');
-
-const past = (key: KeysetKey, value: SqlFragment): SqlFragment =>
-  sql`${key.column} ${raw(key.direction === 'desc' ? '<' : '>')} ${value}`;
-
-/**
- * Uniform direction is ONE row comparison, the shape Postgres pushes into a multicolumn index as
- * an Index Cond. A mixed order has none, so it is the or-chain — the same split as the entity
- * driver's `seekSql`. No null branch in either: `page` refuses a null key before it is a cursor.
- */
-const seek = (keys: readonly KeysetKey[], position: readonly string[]): SqlFragment => {
-  const binds = (): SqlFragment[] => keys.map((key, index) => bind(key, position[index] ?? ''));
-  const [first] = keys;
-  if (first === undefined) return sql`true`;
-  if (keys.length === 1) return past(first, bind(first, position[0] ?? ''));
-  if (keys.every((key) => key.direction === first.direction)) {
-    const op = raw(first.direction === 'desc' ? '<' : '>');
-    return sql`(${join(keys.map((key) => key.column))}) ${op} (${join(binds())})`;
-  }
-  const terms = keys.map((key, index) => {
-    const equal = keys
-      .slice(0, index)
-      .map((prior, at) => sql`${prior.column} = ${bind(prior, position[at] ?? '')}`);
-    const term = past(key, bind(key, position[index] ?? ''));
-    return equal.length === 0 ? term : sql`(${join([...equal, term], ' and ')})`;
-  });
-  return sql`(${join(terms, ' or ')})`;
-};
-
-const positionOf = (cursor: string, scope: string, keys: readonly KeysetKey[]): string[] => {
+const positionOf = (cursor: string, scope: string, keys: readonly KeysetKey[]): KeysetPosition => {
   const { key } = decodeCursor(cursor, scope);
-  if (key.length !== keys.length || !key.every((part) => typeof part === 'string')) {
+  if (key.length !== keys.length) {
     throw new CursorInvalidError(
       `it carries ${key.length} key values, this order needs ${keys.length}`,
     );
   }
-  return key as string[];
+  return keys.map((spec, at) => {
+    const value = decodePart(spec, key[at]);
+    if (value === undefined) {
+      throw new CursorInvalidError(`key value ${String(at)} is not a position this order can seek`);
+    }
+    return value;
+  });
 };
 
-/** Every key of `row`, as the text the server answered — refused when one is null. */
-const keyText = (row: object, keys: readonly KeysetKey[], index: number): string[] =>
+/** Every key of `row`, as the text the server answered — refused when an undeclared one is null. */
+const keyText = (row: object, keys: readonly KeysetKey[], index: number): (string | null)[] =>
   keys.map((key, at) => {
     const value: unknown = Reflect.get(row, aliasOf(at));
     if (typeof value === 'string') return value;
+    if (value === null && key.nullable === true) return null;
     if (value === null) {
       throw new DbError({
         code: 'X_KEYSET_NULL_KEY',
@@ -183,6 +165,7 @@ export function keyset(options: KeysetOptions): Keyset {
     "keyset({ scope: 'posts.feed', … })   # one name per read, plus its filter arguments",
   );
   keys.forEach(assertKey);
+  assertTiebreak(keys);
   const limit = finiteCount('keyset', 'limit', options.limit, 1);
   const scope = scopeOf(options.scope, keys);
   const where =
@@ -190,7 +173,7 @@ export function keyset(options: KeysetOptions): Keyset {
   return {
     select: join(keys.map((key, at) => sql`${key.column}::text as ${raw(`"${aliasOf(at)}"`)}`)),
     where,
-    orderBy: join(keys.map((key) => sql`${key.column} ${orderOf(key)}`)),
+    orderBy: join(keys.map(orderOf)),
     limit: sql`${limit + 1}`,
     page<Row extends object>(rows: readonly Row[]): Page<KeysetRow<Row>> {
       const positions = rows.map((row, index) => keyText(row, keys, index));
@@ -199,7 +182,11 @@ export function keyset(options: KeysetOptions): Keyset {
       const last = positions[limit - 1];
       const next =
         rows.length > limit && last !== undefined
-          ? encodeCursor({ scope, key: last, id: '' })
+          ? encodeCursor({
+              scope,
+              key: last.map((value, at) => encodePart(keys[at], value)),
+              id: '',
+            })
           : null;
       return pageOf(kept, next);
     },

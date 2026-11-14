@@ -29,6 +29,7 @@ import type { AppConfig, CacheTierName } from '@ultimat3/core';
 import {
   backoffDelay,
   defineConfig,
+  failureStreak,
   finiteCount,
   isOutageMilestone,
   logger,
@@ -313,10 +314,19 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
     })();
     return settling;
   };
+  // A flapping bus refuses the settle of every reconnect: one line per cause, one when it lands.
+  const settleFailures = failureStreak({
+    event: 'cache.broadcast.deferred-failed',
+    recoveredEvent: 'cache.broadcast.deferred-recovered',
+    level: 'warn',
+  });
   const settleQuietly = (): void => {
-    void settle().catch((error: unknown) => {
-      logger.warn('cache.broadcast.deferred-failed', { error: broadcastErrorText(error) });
-    });
+    void settle().then(
+      () => settleFailures.passed(),
+      (error: unknown) => {
+        settleFailures.failed(error);
+      },
+    );
   };
 
   registerInvalidationBroadcast(async (wireTags) => {

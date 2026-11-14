@@ -2,6 +2,8 @@
 // and the copy that leaves the process. What `toProblem` does with the answer is
 // `error-facts.test.ts`'s — this file never builds a document.
 import { afterEach, describe, expect, test } from 'bun:test';
+import { defineError, errorCodeSnapshot } from '@ultimat3/core';
+import { appErrorStatusSnapshot } from '@ultimat3/core/internal/error-status';
 import {
   MAX_PROBLEM_META_BYTES,
   problemMetaKeysFor,
@@ -59,6 +61,31 @@ describe('registerProblemMeta', () => {
     expect(() => registerProblemMeta({ X_APP: ['a', 'b'] })).not.toThrow();
     expect(() => registerProblemMeta({ X_APP: ['b', 'a'] })).toThrow('already declared');
     expect(problemMetaKeysFor('X_APP')).toEqual(['a', 'b']);
+  });
+
+  // `defineError({ problemMeta })` writes core's app table; this package's reader and writer use it.
+  test('keys declared by defineError are answered here, and a different list is refused here', () => {
+    const restoreCodes = errorCodeSnapshot();
+    const restoreStatus = appErrorStatusSnapshot();
+    try {
+      defineError({
+        code: 'X_HTTP_TEST_DEFINED_META',
+        title: 'busy',
+        status: 409,
+        cause: 'c',
+        fix: 'x',
+        problemMeta: ['sessionId'],
+      });
+      expect(problemMetaKeysFor('X_HTTP_TEST_DEFINED_META')).toEqual(['sessionId']);
+      expect(() => registerProblemMeta({ X_HTTP_TEST_DEFINED_META: ['state'] })).toThrow(
+        'already declared as [sessionId]',
+      );
+      resetProblemMeta();
+      expect(problemMetaKeysFor('X_HTTP_TEST_DEFINED_META')).toBeUndefined();
+    } finally {
+      restoreCodes();
+      restoreStatus();
+    }
   });
 });
 

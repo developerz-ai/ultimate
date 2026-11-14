@@ -4,6 +4,7 @@
 
 import type { MetricAttributes, MetricPoint, ReadableMetric } from './metrics';
 import { collectMetrics, type HistogramPoint, type MetricCollection } from './metrics';
+import { frameworkVersion } from './version';
 
 export const METRICS_PATH = '/metrics';
 
@@ -88,7 +89,7 @@ export function metricsText(collection: MetricCollection = collectMetrics()): st
   const lines = [
     '# HELP target_info the service these metrics describe',
     '# TYPE target_info gauge',
-    `target_info{service_name="${escapeLabel(serviceName)}",service_version="${escapeLabel(serviceVersion)}"} 1`,
+    `target_info{service_name="${escapeLabel(serviceName)}",service_version="${escapeLabel(serviceVersion)}",framework_version="${escapeLabel(frameworkVersion())}"} 1`,
     ...collection.metrics.flatMap(metricLines),
   ];
   return `${lines.join('\n')}\n`;

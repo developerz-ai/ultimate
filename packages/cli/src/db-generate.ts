@@ -13,13 +13,14 @@ import {
   ROLLING_UNSAFE_MARKER,
   snapshotJson,
 } from '@ultimat3/db';
-import { describeEntities } from '@ultimat3/entity';
+import { registeredEntities } from '@ultimat3/entity';
 import { describeQueries } from '@ultimat3/query';
 import { loadApp } from './app-load';
 import { replicaIdentityTables } from './db-subscribes';
 import { reconcileSchemaHash, writeSchemaHash } from './drift';
 import { hashFileName, MIGRATIONS_DIR, readMigrations, snapshotFileName } from './migrations';
 import type { Finding } from './output';
+import { settledDescriptions } from './redundant-indexes';
 import { appRowSecurity, type RowSecurityWanted } from './row-security-wanted';
 
 export interface GenerateMigrationOptions {
@@ -28,6 +29,12 @@ export interface GenerateMigrationOptions {
   readonly allowDestructive?: boolean | undefined;
   /** `x db gen "…" --rolling-unsafe`. A drop never retired, for an app that stops before it starts. */
   readonly rollingUnsafe?: boolean | undefined;
+  /**
+   * `x db gen "…" --drop-redundant`. Each implicit index another already leads with
+   * (`RegistryEntry.coveredIndexes`) is left out of the diff, so the follow-up drops it
+   * concurrently. Never a default; once dropped, a plain run does not rebuild it.
+   */
+  readonly dropRedundant?: boolean | undefined;
   /** `database.rowSecurity` and the tenant columns. The app's own unless a test injects one. */
   readonly rowSecurity?: RowSecurityWanted | undefined;
 }
@@ -89,7 +96,7 @@ export function migrationSql(migration: GeneratedMigration): string {
  * snapshot is what it diffs against (`declaredSchema`), so `x db gen` answers the same in CI, on a
  * laptop with no Postgres running, and against a database three migrations behind.
  *
- * An app that would not load generates nothing. `describeEntities()` is the registry a failed
+ * An app that would not load generates nothing. `registeredEntities()` is the registry a failed
  * import leaves short, and a diff against a short registry is a migration that drops the tables
  * whose module happened to throw — the one destructive edit no `--allow-destructive` was asked for.
  */
@@ -112,7 +119,11 @@ export async function generateAppMigration(
     throw migrationSnapshotMissing(id, join(MIGRATIONS_DIR, snapshotFileName(id)));
   }
 
-  const entities = describeEntities();
+  const entities = settledDescriptions(
+    registeredEntities(),
+    current,
+    options.dropRedundant === true,
+  );
   // Read AFTER the findings check above, never before: a module that would not import leaves the
   // registry short, and every `subscribes:` name whose entity lives in that module would then look
   // like a typo. The refusal below is only sound over a whole registry.

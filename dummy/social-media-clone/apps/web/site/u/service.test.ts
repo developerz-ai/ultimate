@@ -1,13 +1,15 @@
 // unit — against the demo seed, which exists precisely because it carries every visibility case:
 // a friends-only post, a public post by a blocked author, a soft-deleted row and a private note.
 //
-// Read-only on purpose. These are the cases where a leak is silent: nothing throws when a
-// friends-only post appears on an anonymous page, it just appears.
+// Read-only on the seed's rows. These are the cases where a leak is silent: nothing throws when a
+// friends-only post appears on an anonymous page, it just appears. The last test writes an author
+// of its own, to show hidden posts never shorten an anonymous page.
 
-import { expect, test } from 'bun:test';
-import { db, seedDemo } from '@social-media-clone/db';
+import { afterAll, expect, test } from 'bun:test';
+import { db, driver, seedDemo } from '@social-media-clone/db';
 import { userId } from '@social-media-clone/domain';
 import { seedId } from '@ultimat3/entity';
+import { testStatements } from '@ultimat3/testing';
 import type { Actor } from '../../shared/actor';
 import { viewerActor } from '../../shared/actor';
 import { publicProfile } from './service';
@@ -23,6 +25,12 @@ const actor = (
 
 await seedDemo();
 
+// The author and posts the last test writes are this file's alone, and the store is process-wide: a
+// second load of this file (`bun test --rerun-each`) would insert the same handle again.
+afterAll(() => {
+  driver.reset?.();
+});
+
 const bodiesOf = async (viewer: Actor | null, handle: string): Promise<readonly string[]> => {
   const profile = await publicProfile(viewer, handle);
   expect(profile).not.toBeNull();
@@ -32,8 +40,8 @@ const bodiesOf = async (viewer: Actor | null, handle: string): Promise<readonly 
 test('an ANONYMOUS reader of /u/ada does not see her friends-audience post', async () => {
   const bodies = await bodiesOf(null, 'ada');
 
-  // The audience ladder answers `public` and nothing else for a null viewer — and it does so
-  // without a `where audience = 'public'` anywhere, which is the whole point.
+  // The audience ladder answers `public` and nothing else for a null viewer. The read asks for
+  // live public rows, and `canSeePost` still decides every one of them.
   expect(bodies.some((body) => body.startsWith('Visibility here is relational'))).toBe(true);
   expect(bodies.some((body) => body.startsWith('Friends-only'))).toBe(false);
 });
@@ -83,4 +91,43 @@ test('a SUSPENDED account has no public profile — the same answer as a handle 
     await db.users.update(idOf('user:kenji'), { suspended: false });
   }
   expect(await publicProfile(null, 'kenji')).not.toBeNull();
+});
+
+test('hidden posts newer than every public one never shorten an anonymous page — it reads exactly it', async () => {
+  const author = await db.users.insert({
+    handle: 'profile_hider',
+    email: 'profile_hider@fixture.example',
+    displayName: 'profile_hider',
+    role: 'member',
+  });
+  const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute));
+  // Two public posts, then ten the anonymous rule hides, all newer: the 3x over-fetch this replaced
+  // read 6 rows for a page of 2, every one of them hidden, and served none.
+  for (const minute of [0, 1]) {
+    await db.posts.insert({
+      authorId: author.id,
+      body: `public ${minute}`,
+      publishedAt: at(minute),
+    });
+  }
+  for (let index = 0; index < 10; index += 1) {
+    await db.posts.insert({
+      authorId: author.id,
+      body: `hidden ${index}`,
+      audience: index % 2 === 0 ? 'friends' : 'private',
+      publishedAt: at(10 + index),
+    });
+  }
+
+  let sent = 0;
+  let profile: Awaited<ReturnType<typeof publicProfile>> = null;
+  {
+    using statements = await testStatements();
+    profile = await publicProfile(null, 'profile_hider', 2);
+    sent = statements.count();
+  }
+
+  // The account and its page: two statements, whatever share of the timeline is hidden.
+  expect(sent).toBe(2);
+  expect(profile?.posts.map((post) => post.body)).toEqual(['public 1', 'public 0']);
 });

@@ -85,6 +85,19 @@ export {
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay, jitterStatedDelay } from './backoff';
 export type {
+  BootWarningContext,
+  BootWarningLog,
+  BootWarningOnce,
+  BootWarningSpec,
+  BuildOnceStore,
+} from './boot-warning';
+export {
+  bootRolesConcerned,
+  bootWarning,
+  installBootWarnings,
+  resetBootWarnings,
+} from './boot-warning';
+export type {
   Breaker,
   BreakerOptions,
   BreakerState,
@@ -501,6 +514,7 @@ export type {
   QueryReadEvent,
   ReadableMetric,
   ReadableSpan,
+  RedactValueMatcher,
   RenderHoleEvent,
   RenderPageEvent,
   ReportErrorOptions,
@@ -592,6 +606,7 @@ export {
   parseTraceparent,
   queueDepth,
   REDACTED,
+  RedactPatternUnsafeError,
   recordConnection,
   recordFailureFact,
   recordFailureInput,
@@ -600,6 +615,7 @@ export {
   recordQueueDepth,
   recordRequest,
   redactKeys,
+  redactValues,
   reportError,
   requestDuration,
   requests,
@@ -851,9 +867,14 @@ export {
   resetMeasurementActor,
 } from './measurement-actor';
 export { nearestName } from './nearest-name';
-// An outage said on failures 1, 2, 4, 8, … and once when it ends.
-export type { OutageLog, OutageLogOptions } from './outage-log';
-export { isOutageMilestone, outageLog } from './outage-log';
+// An outage said on failures 1, 2, 4, 8, … — or once per cause, a streak — and once when it ends.
+export type {
+  FailureStreak,
+  FailureStreakOptions,
+  OutageLog,
+  OutageLogOptions,
+} from './outage-log';
+export { failureFields, failureStreak, isOutageMilestone, outageLog } from './outage-log';
 /** The message pwa's `sw.js` posts and realtime's outbox listens for. */
 export { OUTBOX_DRAIN_MESSAGE } from './outbox-drain';
 /** The `<meta name>`s render writes and the page client, realtime and pwa read. */
@@ -879,6 +900,13 @@ export type { ProbeDatabaseEntropy } from './probe-database';
 export { probeDatabaseName } from './probe-database';
 export type { ProbeDatabaseSweepOptions } from './probe-database-sweep';
 export { sweepProbeDatabases, sweepStaleProbeDatabases } from './probe-database-sweep';
+export {
+  declaredProblemMeta,
+  metaKeyRefusal,
+  problemMetaRefusal,
+  recordProblemMeta,
+  resetDeclaredProblemMeta,
+} from './problem-meta-declared';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
 export { startProcessMetrics } from './process-metrics';
 export { hasPublicCause, registerPublicCause, resetPublicCauses } from './public-cause';

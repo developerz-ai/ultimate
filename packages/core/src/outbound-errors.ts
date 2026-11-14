@@ -1,4 +1,4 @@
-// Single responsibility: the ten refusals `outbound()` can end on, each built from the call's
+// Single responsibility: the eleven refusals `outbound()` can end on, each built from the call's
 // redacted label. Never a query string, never a header: a cause reaches a log store and a
 // problem document, and a signed URL's query is the credential.
 
@@ -7,7 +7,7 @@ import { registerErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
 
 /**
- * The ten codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
+ * The eleven codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
  * table rides every browser page, and these are server-only (axiom 6). The transport faults are
  * retryable, a stated delay is `retry-after`, and every answer the same request gets again is
  * terminal — unclassified, `retry()` would replay a 401 three times.
@@ -23,6 +23,7 @@ registerErrorRetry({
   X_OUTBOUND_REDIRECTED: 'terminal',
   X_OUTBOUND_RETRY_UNSAFE: 'terminal',
   X_OUTBOUND_BODY_INVALID: 'terminal',
+  X_OUTBOUND_PROXY_INVALID: 'terminal',
 });
 
 /** What a failure may say about the call: who, how, and where, never the query or a header. */
@@ -66,11 +67,14 @@ export function outboundTimeout(
 }
 
 /**
- * A transport failure in its own words with every query string cut (`?…`): a runtime's message
- * may quote the URL it was dialling, and the query is where a signed URL keeps its credential.
+ * A transport failure in its own words with every query string cut (`?…`) and every URL's
+ * userinfo cut (`//…@`): a runtime's message may quote the URL it was dialling, a signed URL keeps
+ * its credential in the query, and a proxy URL keeps it before the `@`.
  */
-const transportText = (error: unknown): string =>
-  renderThrowable(error).replaceAll(/\?[^\s"'`)]*/g, '?…');
+export const transportText = (error: unknown): string =>
+  renderThrowable(error)
+    .replaceAll(/\?[^\s"'`)]*/g, '?…')
+    .replaceAll(/\/\/[^\s"'`/?#@]*@/g, '//…@');
 
 /** The refusals that say the CALLER's bound ran out, not the vendor: a breaker hears nothing. */
 const CALLER_BOUND = new WeakSet<UltimateError>();
@@ -189,5 +193,24 @@ export function outboundBodyInvalid(site: OutboundSite, issues: readonly string[
     cause: `${siteLabel(site)} answered a body its schema refused at ${issues.join(', ') || 'the root'}`,
     fix: `answer.json(schema)   # edit that schema for ${site.vendor}, or ask the vendor whether the response changed`,
     meta: { ...siteMeta(site), issues },
+  });
+}
+
+/**
+ * The proxy a hop was given cannot be used: not a URL, a scheme Bun's `fetch` does not tunnel
+ * through, or a resolver that threw. `reason` names the shape and the scheme, never the URL: a
+ * proxy URL carries its credential.
+ */
+export function outboundProxyInvalid(
+  site: OutboundSite,
+  reason: string,
+  error?: unknown,
+): UltimateError {
+  return new UltimateError({
+    code: 'X_OUTBOUND_PROXY_INVALID',
+    cause: `${siteLabel(site)} was refused before dialling: ${reason}`,
+    fix: `outbound({ url, vendor: '${site.vendor}', dial, proxy: 'http://<user>:<password>@<proxy-host>:<port>' })   # an http: or https: proxy URL, or a resolver answering one (or undefined to dial direct)`,
+    meta: { ...siteMeta(site), reason },
+    ...(error === undefined ? {} : { sourceError: error }),
   });
 }

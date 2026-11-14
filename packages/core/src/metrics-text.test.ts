@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { counter, gauge, histogram, resetMetrics } from './metrics';
 import { METRICS_CONTENT_TYPE, metricsText } from './metrics-text';
 import { recordQueueDepth, recordRequest, SCALING_METRICS } from './runtime-metrics';
+import { frameworkVersion } from './version';
 
 afterEach(() => {
   resetMetrics();
@@ -18,6 +19,13 @@ describe('metricsText', () => {
     expect(text).toContain('text_requests_total{route="/posts"} 3');
     expect(text).toContain('text_connections 12');
     expect(text).toContain('target_info{service_name="ultimate",service_version=');
+  });
+
+  test('target_info carries framework_version beside the service identity', () => {
+    const info = metricsText()
+      .split('\n')
+      .find((line) => line.startsWith('target_info{'));
+    expect(info).toContain(`,framework_version="${frameworkVersion()}"} 1`);
   });
 
   test('HELP escapes only backslash and newline — a quote is literal there', () => {

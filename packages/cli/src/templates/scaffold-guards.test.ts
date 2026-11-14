@@ -190,6 +190,13 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
     expect(findings).toEqual([]);
   }, 30_000);
 
+  test('a bare .all() in a repo FAILS a new app: X_REPO_UNBOUNDED is not report-only there', async () => {
+    const findings = await findingsWith({
+      'apps/web/app/post/repo-tags.ts': 'export const every = () => db.tags.all();\n',
+    });
+    expect(codes(findings)).toContain('X_REPO_UNBOUNDED');
+  }, 30_000);
+
   test('a bare throw in a repo is X_BARE_ERROR', async () => {
     // Assembled from tokens, never written out: `scripts/test-bare-error.ts` reads a bare throw
     // in a test file as that test stating its own verdict — and this one is the SUBJECT's source,

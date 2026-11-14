@@ -4,7 +4,7 @@
 // `dev: true`. The only production-shaped decisions live here: which role, which port, and which
 // interface — every one by default, because a container is reached through a port mapping.
 
-import { assertNoDevSecretsOutsideLocal, logger } from '@ultimat3/core';
+import { assertNoDevSecretsOutsideLocal, frameworkVersion, logger } from '@ultimat3/core';
 import { assertNoSchemaDrift, checkDrift, migrate } from '@ultimat3/db';
 import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
@@ -218,6 +218,9 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
     // `nats(connecting)` on a role that only publishes is a served pod with the bus down;
     // `ultimate bus` is logged with `nats(up)` when the dial lands.
     bus: app.bus,
+    // `buildId` is the app's; this is which framework release booted it — the same fact the
+    // monitor's `framework_version` tag and `target_info`'s label carry.
+    frameworkVersion: frameworkVersion(),
   });
   await hold();
   return app;

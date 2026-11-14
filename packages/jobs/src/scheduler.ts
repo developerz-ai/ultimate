@@ -21,13 +21,12 @@
 // over the same `lastFiredAt`.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { ctxOf, finiteOption, logger, onShutdown } from '@ultimat3/core';
+import { ctxOf, failureStreak, finiteOption, logger, onShutdown } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import { signalEnqueued } from './enqueue-signal';
-import { failureStreak } from './failure-streak';
 import { instrumentedFire } from './job-instrument';
 import { enqueuedAttempts } from './retry';
 import type { LeaderElection } from './scheduler-leader';
@@ -375,12 +374,17 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
    * few ms of drift between rounds moves nothing.
    */
   // A restart fails every round until it ends: one line opens the streak, one closes it.
-  const tickFailures = failureStreak('jobs.scheduler.tick-failed', 'jobs.scheduler.tick-recovered');
+  const tickFailures = failureStreak({
+    event: 'jobs.scheduler.tick-failed',
+    recoveredEvent: 'jobs.scheduler.tick-recovered',
+  });
   const schedule = (): void => {
     timer = setTimeout(() => {
       void tick()
         .then(() => tickFailures.passed())
-        .catch((error: unknown) => tickFailures.failed(error))
+        .catch((error: unknown) => {
+          tickFailures.failed(error);
+        })
         .finally(() => {
           if (state === 'running') schedule();
         });

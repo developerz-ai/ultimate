@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "11609885cd1a01a01539bf72f4be8dfae46c93277e964e599fcb0ab150df9fab",
+  "buildId": "91b17d759fbe36fe8d9659eb1d889b571077628708ace77c2c80eee2fcc55892",
   "tiers": {
     "0": [
       "core",
@@ -1933,6 +1933,11 @@
       "code": "X_E2E_SERVICE_WORKER_ABSENT",
       "owner": "testing",
       "at": "packages/testing/src/e2e-error-codes.ts"
+    },
+    {
+      "code": "X_ENTITY_ALL_TRUNCATED",
+      "owner": "entity",
+      "at": "packages/entity/src/all-truncated.ts"
     },
     {
       "code": "X_ENTITY_APPEND_ONLY",
@@ -3885,6 +3890,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_OUTBOUND_PROXY_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/outbound-errors.ts"
+    },
+    {
       "code": "X_OUTBOUND_REDIRECTED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -4503,6 +4513,11 @@
       "code": "X_RECORD_REJECTED",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_REDACT_PATTERN_UNSAFE",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_REFERENCE_APP_NO_FLOOR",

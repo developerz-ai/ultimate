@@ -18,7 +18,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
 // temporary directory is.
 import { tmpdir } from 'node:os';
-import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/core';
+import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { acceptSignedPart } from './accept-part';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
@@ -165,14 +165,16 @@ describe('delete is idempotent for an ABSENT key and for nothing else', () => {
 });
 
 describe('put refuses what its disk cannot honour', () => {
-  test('server-side encryption is refused by BOTH, so it is one rule and not two', async () => {
+  test('server-side encryption: SENT by s3, refused by the local disk before a byte moves', async () => {
     const sse = { serverSideEncryption: { algorithm: 'AES256' } } as const;
-    // Core's one constructor of the code on every disk — never a storage wrapper beside it.
-    for (const disk of [local, s3]) {
-      const refused = await catchError(() => disk.put(KEY, bytesOf('x'), sse));
-      expect(refused).toBeUltimateError('X_NOT_IMPLEMENTED');
-      expect(refused).toBeInstanceOf(NotImplementedError);
-    }
+    // KNOWN DIVERGENCE, pinned: a plain file is not encrypted at rest, so the local disk refuses
+    // the option (the put-option refusal every other one gets) rather than storing a claim.
+    const refused = await catchError(() => local.put(KEY, bytesOf('x'), sse));
+    expect(refused).toBeUltimateError('X_INVARIANT');
+    expect(await local.exists(KEY)).toBe(false);
+    const signedS3 = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
+    await signedS3.put(KEY, bytesOf('x'), sse);
+    expect(fake.headersOf.get(KEY)?.['x-amz-server-side-encryption']).toBe('AES256');
   });
 
   test('metadata and cacheControl are STORED by both; only the local disk reads them back', async () => {

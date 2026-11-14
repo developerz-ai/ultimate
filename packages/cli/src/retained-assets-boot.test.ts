@@ -12,7 +12,7 @@ import { defineConfig, isUltimateError } from '@ultimat3/core';
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
-import { buildAssetsOf, retainBuildAssets } from './retained-assets-boot';
+import { buildAssetsOf, retainBuildAssets, retainedBuildOnce } from './retained-assets-boot';
 import { manifestKey, retainedFileKey, retainedPrefix } from './retained-assets-layout';
 import { warnedPrefix } from './retained-assets-warned';
 import { SITE_ASSETS_SOURCE } from './site-assets';
@@ -158,5 +158,23 @@ describe('retainBuildAssets', () => {
     expect((await reader?.read(request('/islands/chunk-2b2b2b2b.js')))?.status).toBe(200);
     const logo = await reader?.read(request(urls[4] ?? ''));
     expect(logo?.headers.get('content-type')).toBe('image/svg+xml');
+  });
+
+  // The store core's `bootWarning({ once: 'build' })` asks: the retain warning keeps the marker it
+  // always had; any other code gets its own directory, so it never silences the retain line.
+  test('the build-once store keeps the retain marker where it was, and gives other codes their own', async () => {
+    const disk = memoryStorageDriver();
+    const storage = defineStorage({ disks: { assets: disk } });
+    const store = retainedBuildOnce({ storage, prefix: PREFIX, buildId: 'b9' });
+    const said: string[] = [];
+    const ask = (code: string) => store({ code, role: 'web' }, () => void said.push(code));
+    await ask('X_ASSET_RETAIN_UNDECLARED');
+    await ask('X_ASSET_RETAIN_UNDECLARED');
+    await ask('X_APP_OTHER');
+    await ask('X_APP_OTHER');
+    expect(said).toEqual(['X_ASSET_RETAIN_UNDECLARED', 'X_APP_OTHER']);
+    expect([...disk.objects().keys()].sort()).toEqual(
+      [`${warnedPrefix(PREFIX, 'web')}b9`, `${warnedPrefix(PREFIX, 'web~X_APP_OTHER')}b9`].sort(),
+    );
   });
 });

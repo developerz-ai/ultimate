@@ -1,11 +1,12 @@
 // Single responsibility: the two s3 calls `Bun.S3Client` cannot make — a PUT carrying user
-// metadata, `Cache-Control` and Object Lock headers, and the `?retention` / `?legal-hold` reads
+// metadata, `Cache-Control`, server-side encryption and Object Lock headers, and the `?retention` / `?legal-hold` reads
 // behind `retentionOf` — over the signed wire in `driver-s3-signed.ts`, answered in this package's
 // vocabulary. A plain `put()` never comes here: it stays on the Bun client.
 
 import { assert, describeValue } from '@ultimat3/core';
 import { DEFAULT_CONTENT_TYPE, HEADER_VALUE, type PutOptions } from './driver';
 import { type S3Refusal, type S3WireOptions, sendSigned, xmlField } from './driver-s3-signed';
+import { sseHeaders } from './driver-s3-sse';
 import { isRetentionMode, type ObjectLock } from './object-lock';
 
 /** RFC 9110 `token` — the only bytes an `x-amz-meta-<name>` header name may carry. */
@@ -16,6 +17,7 @@ export function needsSignedPut(options: PutOptions | undefined): boolean {
   return (
     options?.metadata !== undefined ||
     options?.cacheControl !== undefined ||
+    options?.serverSideEncryption !== undefined ||
     options?.retention !== undefined ||
     options?.legalHold !== undefined
   );
@@ -35,6 +37,7 @@ export function putHeaders(bytes: Uint8Array, options: PutOptions): Record<strin
 export function objectHeaders(options: PutOptions): Record<string, string> {
   const headers: Record<string, string> = {
     'content-type': options.contentType ?? DEFAULT_CONTENT_TYPE,
+    ...sseHeaders(options),
   };
   if (options.cacheControl !== undefined) {
     assert(

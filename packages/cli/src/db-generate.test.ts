@@ -327,3 +327,48 @@ test('the same list is structured under --json, field for field', () => {
 // from `meta.default !== undefined` and spreads the value beside it, so the flag never arrives
 // without an expression — and a test whose mutation (`unrendered: []`) it cannot notice is not a
 // test. The threading is a build error instead: `GeneratedFiles.unrendered` is required.
+
+// `--drop-redundant`: a join table's foreign-key index the primary key already leads with is
+// described (so plain `x db gen` drops nothing) and listed as covered. Asked for, it is dropped in
+// the concurrent follow-up — and stays dropped: the next plain generation does not build it again.
+test('--drop-redundant drops a covered index once, and plain generation never rebuilds it', async () => {
+  const dir = tempRoot();
+  try {
+    clearRegistry();
+    const tags = entity('db_gen_redundant_tags', { columns: { id: uuid().primaryKey() } });
+    entity('db_gen_redundant_links', {
+      columns: {
+        tagId: uuid().references(() => tags.id),
+        otherId: uuid(),
+      },
+      primaryKey: ['tagId', 'otherId'],
+    });
+    const covered = 'db_gen_redundant_links_tag_id_idx';
+    // The test clock is frozen, so ids share one stamp and sort by name: a < b < c.
+    const first = await generateAppMigration(dir, { name: 'a initial' });
+    expect(first.migration?.up).toContain(covered);
+
+    // Never by default: the same registry, no flag, generates no migration.
+    expect((await generateAppMigration(dir, { name: 'b plain' })).migration).toBeUndefined();
+
+    const dropped = await generateAppMigration(dir, {
+      name: 'c drop redundant',
+      dropRedundant: true,
+    });
+    // A diff that is ONLY a concurrent drop is that one non-transactional migration.
+    expect(dropped.migration?.up).toContain('-- transaction: false');
+    expect(dropped.migration?.up).toContain(`drop index concurrently if exists "${covered}"`);
+    const migrations = await readMigrations(dir);
+    const indexes = declaredSchema(migrations)?.tables.flatMap((table) =>
+      table.indexes.map((index) => index.name),
+    );
+    expect(indexes).not.toContain(covered);
+
+    const again = await generateAppMigration(dir, { name: 'd plain again' });
+    expect(again.migration).toBeUndefined();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    clearRegistry();
+    registerFixtureEntity();
+  }
+});

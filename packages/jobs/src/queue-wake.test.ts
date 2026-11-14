@@ -105,17 +105,23 @@ const settle = async (): Promise<void> => {
   for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
 };
 
-const lines: { event: string; level: string; fix?: string }[] = [];
+const lines: { event: string; level: string; fix?: string; failures?: number }[] = [];
 let releaseLogSink: () => void = () => undefined;
 
 beforeEach(() => {
   lines.length = 0;
   releaseLogSink = installLogSink((line, level) => {
-    const parsed = JSON.parse(line) as { msg?: string; event?: string; fix?: string };
+    const parsed = JSON.parse(line) as {
+      msg?: string;
+      event?: string;
+      fix?: string;
+      failures?: number;
+    };
     lines.push({
       event: parsed.msg ?? parsed.event ?? line,
       level,
       ...(parsed.fix === undefined ? {} : { fix: parsed.fix }),
+      ...(parsed.failures === undefined ? {} : { failures: parsed.failures }),
     });
   });
 });
@@ -193,11 +199,16 @@ describe('the cross-process wake', () => {
     script.fire();
     await settle();
     expect(script.pending()).toEqual([2_000]);
-    expect(logged('jobs.wake.listen-failed')).toHaveLength(2);
+    // The same refusal twice is one streak: one line, not one per retry.
+    expect(logged('jobs.wake.listen-failed')).toHaveLength(1);
+    expect(logged('jobs.wake.listen-recovered')).toEqual([]);
 
     script.fire();
     await settle();
     expect(script.listens).toEqual([JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL]);
+    expect(logged('jobs.wake.listen-recovered')).toEqual([
+      { event: 'jobs.wake.listen-recovered', level: 'info', failures: 2 },
+    ]);
     script.notify(JOBS_WAKE_CHANNEL, '');
     script.notify(OUTBOX_WAKE_CHANNEL, '');
     expect(wakeIsLive()).toBe(true);
@@ -270,6 +281,22 @@ describe('the cross-process wake', () => {
     script.notify(JOBS_WAKE_CHANNEL, 'default');
     script.notify(OUTBOX_WAKE_CHANNEL, '');
     expect(wakeIsLive()).toBe(true);
+    await wake.stop();
+  });
+
+  test('a probe refused on every retry is one line, and one more when a probe lands', async () => {
+    // Each probe asks both channels: six refusals are three refused probes.
+    const script = scripted({ probeFailures: 6 });
+    const wake = startQueueWake({ ...script, random: () => 1 });
+    await settle();
+    for (let retry = 0; retry < 3; retry += 1) {
+      script.fire();
+      await settle();
+    }
+    expect(logged('jobs.wake.probe-failed')).toHaveLength(1);
+    expect(logged('jobs.wake.probe-recovered')).toEqual([
+      { event: 'jobs.wake.probe-recovered', level: 'info', failures: 3 },
+    ]);
     await wake.stop();
   });
 

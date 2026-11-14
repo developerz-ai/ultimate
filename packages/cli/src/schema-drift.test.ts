@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { EntityDescriptionLike, SchemaDescription, TableDescription } from '@ultimat3/db';
+import { clearRegistry, entity, uuid } from '@ultimat3/entity';
+import { generateAppMigration } from './db-generate';
 import { replicaIdentityTables } from './db-subscribes';
 import { MIGRATIONS_DIR, snapshotFileName } from './migrations';
 import type { Finding } from './output';
@@ -384,6 +386,32 @@ describe('unit · a retired column is on the record by design', () => {
       await commit(root, '0001_init', recorded(true));
       const findings = await checkSnapshotDrift(root, supplied(posts()));
       expect(findings.map((each) => each.code)).toEqual(['X_DB_SCHEMA_UNDECLARED']);
+    });
+  });
+});
+
+// `x db gen --drop-redundant` leaves a covered index out of the next snapshot while the entity
+// still describes it (so an app that never asks drops nothing). The drift check reads the same
+// settled descriptions the generator diffed — or every app that opted in is red on `drift`.
+describe('unit · a covered index --drop-redundant dropped', () => {
+  test('is not missing-index drift, before the drop or after it', async () => {
+    await withRoot(async (root) => {
+      clearRegistry();
+      try {
+        const tags = entity('drift_redundant_tags', { columns: { id: uuid().primaryKey() } });
+        entity('drift_redundant_links', {
+          columns: { tagId: uuid().references(() => tags.id), otherId: uuid() },
+          primaryKey: ['tagId', 'otherId'],
+        });
+        // The test clock is frozen, so ids share one stamp and sort by name: a < b.
+        await generateAppMigration(root, { name: 'a initial' });
+        expect(await checkSnapshotDrift(root)).toEqual([]);
+        const dropped = await generateAppMigration(root, { name: 'b drop', dropRedundant: true });
+        expect(dropped.migration?.up).toContain('drop index concurrently');
+        expect(await checkSnapshotDrift(root)).toEqual([]);
+      } finally {
+        clearRegistry();
+      }
     });
   });
 });

@@ -13,20 +13,21 @@ import { db, type Post } from '@social-media-clone/db';
 export type FeedPost = Post;
 
 /**
- * One page of the feed, newest first.
+ * One page of the PUBLIC feed, newest first: exactly the rows `canSeePost(null, …)` admits — live
+ * and `public` — so a page of `limit` is `limit` rows however much of the table is hidden. The
+ * service still runs the rule over every row; this `where` is the anonymous half of it, which is
+ * all AND and so the database can serve it (the partial `publishedAt desc where audience = public`
+ * index on `posts` is this read's access path). A signed-in feed needs the rule's OR — the author,
+ * a friend, or public, minus a block set — which the chain cannot say yet, so there is none.
  *
  * Ordered by `(publishedAt desc, id)` and bounded, and the tail key is not decoration: a live
  * matcher decides a row's position from the sort keys alone, so `publishedAt` on its own is a
  * partial order and two posts written in the same millisecond can swap between evaluations —
  * which makes a bounded page silently drop or repeat one at its boundary.
- *
- * Visibility is NOT filtered here. `canSeePost` decides it per row, in `service.ts`, because the
- * answer depends on the viewer's friend and block sets rather than on anything in the row. A
- * `where` clause here would be a second, weaker copy of that rule.
  */
-export const feedPage = (limit: number): Promise<readonly FeedPost[]> =>
+export const publicFeedPage = (limit: number): Promise<readonly FeedPost[]> =>
   db.posts
-    .where({ deletedAt: null })
+    .where({ deletedAt: null, audience: 'public' })
     .orderBy('publishedAt', 'desc')
     .orderBy('id')
     .limit(limit)
@@ -34,7 +35,7 @@ export const feedPage = (limit: number): Promise<readonly FeedPost[]> =>
 
 export const byId = (id: string): Promise<FeedPost | null> => db.posts.where({ id }).one();
 
-/** Ceiling on one feed's author lookup. A page over-fetches 3x, so this is far above any page. */
+/** Ceiling on one feed's author lookup: one author per row at most, so far above any page. */
 const AUTHORS_MAX = 200;
 
 /**

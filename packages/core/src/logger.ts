@@ -9,10 +9,12 @@ import { renderCauseValue } from './error-render';
 import { subscribed } from './instrument';
 import { publishRecord } from './logger-record';
 import { INVALID_DATE, type LogFields, redactFields, redactionGeneration } from './logger-redact';
+import { redactedValue } from './redact-values';
 
 // The redaction half lives in `logger-redact.ts`; every caller keeps importing it from here.
 export type { LogFields } from './logger-redact';
-export { isRedactedKey, redactFields, redactKeys } from './logger-redact';
+export { isRedactedKey, redactFields, redactKeys, redactValues } from './logger-redact';
+export type { RedactValueMatcher } from './redact-values';
 // Re-exported, not redefined: `secret.ts` owns the placeholder because a `Secret` has to render
 // it without importing the logger, and two constants spelled the same is one rename from a leak.
 export { REDACTED } from './secret';
@@ -325,8 +327,10 @@ function current(bound: Bound): Readonly<Record<string, unknown>> {
 function derive(level: LogLevel, bound: Bound, clock: Clock, writer: LogSink): Logger {
   const threshold = LEVEL_WEIGHT[level];
 
-  function emit(lineLevel: LogLevel, message: string, fields?: LogFields): void {
+  function emit(lineLevel: LogLevel, raw: string, fields?: LogFields): void {
     if (LEVEL_WEIGHT[lineLevel] < threshold) return;
+    // The message is a string a caller interpolated: the one leaf `redactFields` never sees.
+    const message = redactedValue(raw);
     const context = contextFields();
     const caller = {
       ...current(bound),

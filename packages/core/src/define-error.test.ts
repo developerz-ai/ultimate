@@ -12,6 +12,12 @@ import {
   resetAppErrorStatus,
 } from './error-status-declared';
 import { isUltimateError, UltimateError } from './errors';
+import {
+  declaredProblemMeta,
+  recordProblemMeta,
+  resetDeclaredProblemMeta,
+} from './problem-meta-declared';
+import { hasPublicCause, resetPublicCauses } from './public-cause';
 
 let restoreCodes: () => void = () => {};
 let restoreStatus: () => void = () => {};
@@ -26,6 +32,8 @@ afterEach(() => {
   restoreCodes();
   restoreStatus();
   resetErrorRetry(retries);
+  resetDeclaredProblemMeta();
+  resetPublicCauses();
 });
 
 const refusal = (run: () => unknown): UltimateError => {
@@ -288,6 +296,84 @@ describe('unit · defineError', () => {
         defineError({ code: 'X_DEFINE_TEST_RESET', title: 'r', status: 409, cause: 'c', fix: 'x' }),
       ).code,
     ).toBe('X_ERROR_CODE_DUPLICATE');
+  });
+});
+
+// The problem-meta half of the declaration: what was `registerErrorStatus` + `registerProblemMeta`
+// beside a hand-written class is now two fields of the one call, refused all-or-nothing.
+describe('unit · defineError · problemMeta and publicCause', () => {
+  test('one call declares the meta keys a document carries and a public 5xx cause', () => {
+    defineError({
+      code: 'X_DEFINE_TEST_BUSY',
+      title: 'busy',
+      status: 409,
+      cause: 'c',
+      fix: 'x',
+      problemMeta: ['sessionId', 'state'],
+    });
+    expect(declaredProblemMeta('X_DEFINE_TEST_BUSY')).toEqual(['sessionId', 'state']);
+    expect(hasPublicCause('X_DEFINE_TEST_BUSY')).toBe(false);
+    defineError({
+      code: 'X_DEFINE_TEST_UPSTREAM',
+      title: 'upstream',
+      status: 503,
+      cause: 'c',
+      fix: 'x',
+      publicCause: true,
+    });
+    expect(hasPublicCause('X_DEFINE_TEST_UPSTREAM')).toBe(true);
+    expect(declaredProblemMeta('X_DEFINE_TEST_UPSTREAM')).toBeUndefined();
+  });
+
+  test('the same declaration twice, keys included, is still a no-op', () => {
+    const spec = {
+      code: 'X_DEFINE_TEST_TWICE',
+      title: 't',
+      status: 409,
+      cause: 'c',
+      fix: 'x',
+      problemMeta: ['id'],
+    } as const;
+    defineError(spec);
+    expect(() => defineError(spec)).not.toThrow();
+  });
+
+  const refusedCases: readonly [string, Readonly<Record<string, unknown>>, string][] = [
+    ['a key that is not one', { status: 409, problemMeta: ['issues'] }, 'top level'],
+    ['an empty key list', { status: 409, problemMeta: [] }, 'the key list is empty'],
+    ['keys on an off-socket code', { offSocket: true, problemMeta: ['id'] }, 'offSocket'],
+    ['a public cause on an off-socket code', { offSocket: true, publicCause: true }, 'offSocket'],
+    ['a public cause on a 4xx', { status: 404, publicCause: true }, '5xx'],
+  ];
+  for (const [what, extra, says] of refusedCases) {
+    test(`${what} is X_ERROR_DECLARATION_INVALID, and writes nothing`, () => {
+      const code = 'X_DEFINE_TEST_META_REFUSED';
+      const error = refusal(() =>
+        defineError({ code, title: 't', cause: 'c', fix: 'x', ...extra } as never),
+      );
+      expect(error.code).toBe('X_ERROR_DECLARATION_INVALID');
+      expect(error.cause).toContain(says);
+      expect(hasErrorCode(code)).toBe(false);
+      expect(appErrorStatus(code)).toBeUndefined();
+      expect(declaredProblemMeta(code)).toBeUndefined();
+      expect(hasPublicCause(code)).toBe(false);
+    });
+  }
+
+  test('keys that disagree with an earlier declaration are refused before the title is written', () => {
+    recordProblemMeta('X_DEFINE_TEST_DISAGREE', ['sessionId']);
+    const error = refusal(() =>
+      defineError({
+        code: 'X_DEFINE_TEST_DISAGREE',
+        title: 't',
+        status: 409,
+        cause: 'c',
+        fix: 'x',
+        problemMeta: ['other'],
+      }),
+    );
+    expect(error.cause).toContain('already declared as [sessionId]');
+    expect(hasErrorCode('X_DEFINE_TEST_DISAGREE')).toBe(false);
   });
 });
 

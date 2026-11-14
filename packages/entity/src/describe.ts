@@ -41,6 +41,8 @@ export interface DescribeInput<Row> {
   readonly retired?: readonly string[] | undefined;
   /** `entity({ shared: '<why>' })` — projected only when declared. */
   readonly shared?: string | undefined;
+  /** `entity({ global: '<why>' })` — projected only when declared. */
+  readonly global?: string | undefined;
   /** `entity({ scan: '<why>' })` — projected only when declared. */
   readonly scan?: string | undefined;
   /** `entity({ readOnly: '<why>' })` — projected only when declared. */
@@ -197,30 +199,46 @@ export const assertNotRetired = (
   }
 };
 
+/** The two tenantless reasons, each a stance: `shared` hangs off a tenant's row, `global` off none. */
+export interface TenantlessReasons {
+  readonly shared: string | undefined;
+  readonly global: string | undefined;
+}
+
 /**
- * `shared` is a reason, so a blank one is no reason: refused where it was written, never read as a
- * declaration someone took. On an entity WITH a tenant column it states a reason for nothing — the
- * stance `sameTenantOf` takes on a `crossTenant` reason for an edge that cannot be same-tenant.
+ * `shared` and `global` are reasons, so a blank one is no reason: refused where it was written,
+ * never read as a declaration someone took. On an entity WITH a tenant column either states a
+ * reason for nothing — the stance `sameTenantOf` takes on a `crossTenant` reason for an edge that
+ * cannot be same-tenant — and both on one entity are two meanings for one row.
  */
 export const assertShared = (
   entityName: string,
   table: string,
-  shared: string | undefined,
+  reasons: TenantlessReasons,
   tenantColumn: string | null,
 ): void => {
-  if (shared === undefined) return;
-  if (shared.trim() === '') {
+  if (reasons.shared !== undefined && reasons.global !== undefined) {
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entityName} declares both shared and global: a row that hangs off a tenant's row (shared) is not a row every tenant reads alike (global)`,
+      fix: `entity('${entityName}', { … }) — keep shared if it references a tenant-owned table, global if it references none; remove the other`,
+    });
+  }
+  const option = reasons.shared === undefined ? 'global' : 'shared';
+  const reason = reasons.shared ?? reasons.global;
+  if (reason === undefined) return;
+  if (reason.trim() === '') {
     throw new EntityError({
       code: 'X_ENTITY_TENANT_UNDECLARED',
-      cause: `${entityName} declares shared with no reason: a blank reason says nothing about why its rows belong to no tenant`,
-      fix: `entity('${entityName}', { shared: '<why it belongs to no tenant>' }) — or drop shared, add orgId: uuid().tenant() to its columns, then x db gen "${table} tenant"`,
+      cause: `${entityName} declares ${option} with no reason: a blank reason says nothing about why its rows belong to no tenant`,
+      fix: `entity('${entityName}', { ${option}: '<why it belongs to no tenant>' }) — or drop ${option}, add orgId: uuid().tenant() to its columns, then x db gen "${table} tenant"`,
     });
   }
   if (tenantColumn !== null) {
     throw new EntityError({
       code: 'X_INVARIANT_VIOLATED',
-      cause: `${entityName} declares shared and has the tenant column ${tenantColumn}: its rows belong to a tenant, so the reason explains nothing`,
-      fix: `entity('${entityName}', { … }) — with the shared option removed`,
+      cause: `${entityName} declares ${option} and has the tenant column ${tenantColumn}: its rows belong to a tenant, so the reason explains nothing`,
+      fix: `entity('${entityName}', { … }) — with the ${option} option removed`,
     });
   }
 };
@@ -385,6 +403,7 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     ...((input.retired ?? []).length === 0 ? {} : { retired: input.retired }),
     // Absent unless declared, like `appendOnly`: no entity that never said it moves the hash.
     ...(input.shared === undefined ? {} : { shared: input.shared }),
+    ...(input.global === undefined ? {} : { global: input.global }),
     ...(input.scan === undefined ? {} : { scan: input.scan }),
     ...(input.readOnly === undefined ? {} : { readOnly: input.readOnly }),
     // Absent on every table, so no entity that never said `view` moves the hash.

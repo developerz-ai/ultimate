@@ -8,8 +8,12 @@ import {
   DESCENDING,
   firstPagePlan,
   KEYSET_TABLE,
+  NULLABLE_ORDERS,
+  NULLABLE_TABLE,
   seedKeysetTable,
+  seedNullableTable,
   walkKeyset,
+  walkNullable,
 } from './keyset-walk-fixture';
 import { raw } from './sql';
 
@@ -22,10 +26,12 @@ describe.skipIf(!hasPostgres)('live · postgres · keyset()', () => {
   beforeAll(async () => {
     client = postgresClient({ url: adminUrl ?? '' });
     await seedKeysetTable(client, 50_000);
+    await seedNullableTable(client);
   });
 
   afterAll(async () => {
     await client.execute(raw(`drop table if exists ${KEYSET_TABLE}`));
+    await client.execute(raw(`drop table if exists ${NULLABLE_TABLE}`));
     await client.close();
   });
 
@@ -47,4 +53,13 @@ describe.skipIf(!hasPostgres)('live · postgres · keyset()', () => {
     expect(plan).toContain(`Index Only Scan using ${KEYSET_TABLE}_order`);
     expect(plan).not.toContain('Sort');
   });
+
+  test.each(NULLABLE_ORDERS)(
+    'a nullable key, %s nulls %s, visits every row exactly once at every page size',
+    async (direction, nulls, expected) => {
+      for (const limit of [1, 2, 4]) {
+        expect(await walkNullable(client, direction, nulls, limit)).toEqual(expected);
+      }
+    },
+  );
 });

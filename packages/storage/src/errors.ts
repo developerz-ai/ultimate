@@ -45,8 +45,10 @@ export const STORAGE_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. The drivers throw core's own `NotImplementedError`
- * and this package keeps no title for it — one code, one owner, one title, or the two copies drift apart in silence.
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s, and this package keeps no title for it — one code, one
+ * owner, one title, or the two copies drift apart in silence. No shipped driver raises it any more
+ * (`serverSideEncryption` is sent by s3 and refused as `X_INVARIANT` by local/memory, 2026-11); it
+ * stays in the list because `StorageErrorCode` is public, and narrowing it is a break.
  * `X_IMAGE_UNSUPPORTED` / `X_IMAGE_DECODE_FAILED` are core's too and surface unwrapped (`image.ts`).
  * `X_ENV_MISSING` is core's for the same reason: an unset `STORAGE_SIGNING_SECRET` outside
  * development is a missing environment variable, not a storage concept needing its own code.

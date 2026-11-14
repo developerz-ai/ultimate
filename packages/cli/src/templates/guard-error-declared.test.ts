@@ -21,7 +21,10 @@ describe('unit · shipped guard · error-declared', () => {
     );
     expect(findings.map((finding) => finding.code)).toEqual([CODE]);
     expect(findings[0]?.cause).toContain(`${ERRORS}:3`);
-    expect(findings[0]?.fix).toContain('defineError({ code, title, status, cause, fix })');
+    // One pasteable call per class: its name, its code, and the problem-meta rows folded in.
+    expect(findings[0]?.fix).toContain(
+      "export const PostNotFound = defineError({ code: 'X_POST_NOT_FOUND', title, status, cause, fix, problemMeta: [",
+    );
     expect(findings[0]?.at).toBe(ERRORS);
   });
 
@@ -34,6 +37,13 @@ describe('unit · shipped guard · error-declared', () => {
     );
     expect(findings).toHaveLength(2);
     expect(findings[1]?.cause).toContain(`${ERRORS}:2`);
+    // No class to name: the binding is the code's own words, so two findings are two commands.
+    expect(findings[0]?.fix).toContain(
+      "export const PostNotFound = defineError({ code: 'X_POST_NOT_FOUND', title,",
+    );
+    expect(findings[1]?.fix).toContain(
+      "export const PostGone = defineError({ code: 'X_POST_GONE',",
+    );
   });
 
   test('a re-raise passing err.code, a defineError and a comment are silent', async () => {

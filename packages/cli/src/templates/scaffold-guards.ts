@@ -25,8 +25,9 @@
 // about the TAB: an island polls with `visibleInterval()`, which a hidden tab and a lost session stop.
 // One is about the QUESTION: a destructive act asks through `ConfirmDialog`, never `confirm(`.
 // One is about the POOL: a database call per row runs through `mapBounded`, never all at once.
-// Two more are about the REPO, REPORT ONLY (`severity: 'warning'`) until the apps are clean of
-// them: an `await` per turn of a loop, and a `.all()` that says no bound.
+// Two more are about the REPO: an `await` per turn of a loop, REPORT ONLY (`severity: 'warning'`)
+// until the apps are clean of it, and a `.all()` that says no bound — failing the gate in an app
+// scaffolded from 31.23 on, while an older app keeps the report-only copy it was given.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
@@ -80,7 +81,7 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['raw-z-index', rawZIndexGuardFiles],
   ['repo-await-in-loop', repoAwaitInLoopGuardFiles],
   ['repo-raw-sql', repoRawSqlGuardFiles],
-  ['repo-unbounded', repoUnboundedGuardFiles],
+  ['repo-unbounded', () => repoUnboundedGuardFiles('error')],
   ['semantic-interactive', semanticInteractiveGuardFiles],
   ['unbounded-fanout', unboundedFanoutGuardFiles],
   ['undeclared-custom-property', undeclaredCustomPropertyGuardFiles],

@@ -24,6 +24,7 @@ import {
 } from './error-reporter-sentry';
 import { UltimateError } from './errors';
 import { REDACTED } from './logger';
+import { frameworkVersion, readPackageVersion, VERSION_MANIFEST } from './version';
 
 afterEach(() => {
   resetErrorReporting();
@@ -127,6 +128,22 @@ describe('sentryEnvelope', () => {
         },
       ],
     });
+  });
+
+  test('framework_version: every event is tagged with the stamped framework version', () => {
+    // The release tag is the APP's build; mapping an event to a framework release used to mean
+    // reading the app's lockfile by hand. The tag is the manifest's version, through the one reader.
+    const stamped = readPackageVersion(VERSION_MANIFEST);
+    for (const severity of ['warning', 'error', 'fatal'] as const) {
+      const built = { ...report(), severity };
+      const envelope = sentryEnvelope(built, {
+        dsn: 'https://k@h.example/1',
+        eventId: 'f'.repeat(32),
+      });
+      const payload = JSON.parse(envelope.split('\n')[2] as string) as Record<string, unknown>;
+      expect((payload['tags'] as Record<string, unknown>)['framework_version']).toBe(stamped);
+    }
+    expect(frameworkVersion()).toBe(stamped);
   });
 
   test('the envelope names its group: the fingerprint is monitorFingerprint(report), [code]', () => {

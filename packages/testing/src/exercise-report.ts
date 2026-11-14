@@ -61,6 +61,8 @@ export type TenantProof =
   | { readonly verdict: 'proven' }
   /** The policy admits anonymous: read half skipped, write half kept and clean. */
   | { readonly verdict: 'public'; readonly reason: string }
+  /** A read touching only `entity({ global })` entities: no row of A's to miss, write half kept. */
+  | { readonly verdict: 'global'; readonly reason: string }
   /** A's positive control was not reached, so B's clean answer proves nothing. */
   | { readonly verdict: 'unproven'; readonly reason: string }
   | { readonly verdict: 'crossed'; readonly findings: readonly TenantFinding[] };
@@ -195,6 +197,11 @@ export interface Observed {
   readonly payloads: readonly EffectPayload[];
   /** Each statement shape and how often, the `expectedQueryLoop` ones told apart. */
   readonly shapes: readonly StatementTally[];
+  /**
+   * Every entity a statement was attributed to, first seen first; `null` once one carried none —
+   * hand-written SQL reads tables nobody can name. Optional: a merged or hand-built one may omit it.
+   */
+  readonly reads?: readonly string[] | null;
 }
 
 /** What `observe` hands back: what the call did, and its value or what it threw. */
@@ -241,12 +248,16 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   let subject: string | undefined;
   const rows: string[] = [];
   const shapes = new Map<string, { count: number; unexpected: number; expected?: string }>();
+  const reads = new Set<string>();
+  let unattributed = false;
   const sent = new Map<string, { primitives: Set<string>; scan?: string }>();
   // Every observer below returns at once unless the sender is the observed call: the bus delivers
   // synchronously in the sender's context (`instrument`), so `owns()` reads the sender's marker.
   const counting = (event: DbStatementEvent): void => {
     if (!owns()) return;
     statements += 1;
+    if (event.attribution === undefined) unattributed = true;
+    else reads.add(event.attribution.entity);
     const fingerprint = statementFingerprint(event);
     const shape = shapes.get(fingerprint) ?? { count: 0, unexpected: 0 };
     shape.count += 1;
@@ -280,6 +291,8 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
     subject = name;
     statements = 0;
     shapes.clear();
+    reads.clear();
+    unattributed = false;
     rows.length = 0;
     calls.length = 0;
     mail.clear();
@@ -332,7 +345,8 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
     ];
     subject = undefined;
     const tallies = [...shapes].map(([fingerprint, shape]) => ({ fingerprint, ...shape }));
-    return { statements, effects, refusedHosts, payloads, shapes: tallies };
+    const read = unattributed ? null : [...reads];
+    return { statements, effects, refusedHosts, payloads, shapes: tallies, reads: read };
   };
 
   return {

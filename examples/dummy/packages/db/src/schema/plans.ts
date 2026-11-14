@@ -8,6 +8,8 @@ import { BILLING_CURRENCIES, PLAN_CODES } from '@postly/domain';
 import { entity, enumerated, integer, invariant, money } from '@ultimat3/entity';
 
 export const plans = entity('plans', {
+  /** No tenant column, and it references none: a read of it alone is the exercise's `global`. */
+  global: 'the billing catalog: every org reads the same plans and prices',
   columns: {
     code: enumerated(PLAN_CODES),
     currency: enumerated(BILLING_CURRENCIES),

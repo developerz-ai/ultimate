@@ -3,14 +3,13 @@
 // `site/u/service.ts` sits beside the profile: it lived in `app/posts/`, and the static page
 // reaching for it was X_BOUNDARY_SITE_TO_APP, dragging `app/`'s policy module across the line.
 //
-// Visibility is applied HERE rather than in SQL, and that is the design rather than an oversight:
-// who may read a post depends on the viewer's friend and block sets, which are a graph, not a
-// column. A `where` clause would be a second, weaker copy of `canSeePost` — and the two would
-// drift the first time either changed.
+// Visibility is decided by `canSeePost`, run over every row read. The read itself asks the database
+// for the rows that rule admits an ANONYMOUS viewer (live and public, `repo.ts`), so the page is
+// exact: the rule stays the authority and the `where` only keeps the page from coming back short.
 
 import type { Actor } from '../../shared/actor';
 import { canSeePost } from '../../shared/visibility';
-import { authorsByIds, type FeedPost, feedPage } from './repo';
+import { authorsByIds, type FeedPost, publicFeedPage } from './repo';
 
 /** What a rendered feed row needs. Derived from the post; the author is joined in by name. */
 export interface FeedItem {
@@ -43,23 +42,20 @@ export const visibleFeed = (
 };
 
 /**
- * The feed a page renders: two statements, in this order, and the order is the point. The page is
- * read first so the author lookup can name the ids that page actually holds — the read this
+ * The public feed a page renders: two statements, in this order, and the order is the point. The
+ * page is read first so the author lookup can name the ids that page actually holds — the read this
  * replaced asked for "some 200 users" before it knew which ones it needed.
  *
  * It wraps `visibleFeed` so a ROUTE never imports `db` — a page reaching the database directly is
  * X_BOUNDARY_ROUTE_TO_DB, and it is how N+1 queries end up inside a <head> computation.
  *
- * Over-fetches deliberately: the page size is what the viewer ends up seeing, but the filter runs
- * after the read, so asking for exactly `limit` rows would return fewer than `limit` whenever
- * anything is hidden. The multiplier is bounded and small — an unbounded "keep reading until full"
- * loop is how a feed becomes a table scan for the one viewer who blocked everybody.
+ * Reads exactly `limit` rows. It used to read `limit * 3` and filter after, which still served a
+ * short page — or none — whenever the newest hidden posts outnumbered the multiplier. `viewer` is
+ * `null` by type: the anonymous rule is all AND and the database serves it; a signed-in viewer's is
+ * an OR over their friend and block sets, which no read here can hand down yet.
  */
-export const feedForPage = async (
-  viewer: Actor | null,
-  limit: number,
-): Promise<readonly FeedItem[]> => {
-  const rows = await feedPage(limit * 3);
+export const feedForPage = async (viewer: null, limit: number): Promise<readonly FeedItem[]> => {
+  const rows = await publicFeedPage(limit);
   const authors = await authorsByIds(rows.map((post) => post.authorId));
   return visibleFeed(viewer, limit, (id) => authors.get(id), rows);
 };
