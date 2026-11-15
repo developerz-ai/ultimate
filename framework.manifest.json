@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2cdd4058aa5c06973049309dc5b033c64c20606c750864d6d162b210d392dc30",
+  "buildId": "0a67297daa5c75d12fcbd5c68bf6a94611ac3a4e418ebbe19b2fd0de23bbc8fe",
   "tiers": {
     "0": [
       "core",
@@ -2553,6 +2553,11 @@
       "code": "X_GUARD_FINDING_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GUARD_FORMS_ARCHIVE_FAILED",
+      "owner": "scripts",
+      "at": "scripts/lib/guard-refresh-archive.ts"
     },
     {
       "code": "X_GUARD_INVALID",
@@ -6508,6 +6513,11 @@
       "code": "X_UPGRADE_INSTALL_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_LOCKED",
+      "owner": "cli",
+      "at": "packages/cli/src/upgrade-lock.ts"
     },
     {
       "code": "X_UPGRADE_MIXED_PINS",
