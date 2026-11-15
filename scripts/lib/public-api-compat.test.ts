@@ -286,19 +286,24 @@ describe('public-api-compat · declarations', () => {
 describe('public-api-compat · inherited members', () => {
   const BEFORE = 'interface Target extends Arm { readonly browser : B ; }';
   const PARENT = 'inherits interface Arm { readonly page : P ; readonly clock : C ; }';
+  /** `member` as the first one of the declaration's body: spliced after its opening brace. */
+  const withMember = (source: string, member: string): string => {
+    const open = source.indexOf('{') + 1;
+    return `${source.slice(0, open)} ${member}${source.slice(open)}`;
+  };
 
   test('a member its `extends` parent already requires, re-declared the same, is no new requirement', () => {
-    const after = `${BEFORE.replace('{', '{ readonly page : P ;')}\n${PARENT}`;
+    const after = `${withMember(BEFORE, 'readonly page : P ;')}\n${PARENT}`;
     expect(verdict(`${BEFORE}\n${PARENT}`, after)).toBe(
       'compatible: `page` re-declared as its parent `Arm` requires it',
     );
   });
 
   test('re-declared with another type, or required and in no parent, is still a break', () => {
-    expect(verdict(BEFORE, `${BEFORE.replace('{', '{ readonly page : Q ;')}\n${PARENT}`)).toBe(
+    expect(verdict(BEFORE, `${withMember(BEFORE, 'readonly page : Q ;')}\n${PARENT}`)).toBe(
       'break: required member `page` was added',
     );
-    expect(verdict(BEFORE, BEFORE.replace('{', '{ readonly page : P ;'))).toBe(
+    expect(verdict(BEFORE, withMember(BEFORE, 'readonly page : P ;'))).toBe(
       'break: required member `page` was added',
     );
   });
