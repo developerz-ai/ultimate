@@ -317,8 +317,10 @@
  * 503 on `/healthz`), `jobs/src/{scheduler-known,scheduler-dispatch}.ts` (the leader's watermark
  * memory, split from `scheduler.ts`), `jobs/src/inspect-unsupported.ts` (the operator-verb guard)
  * and `db/src/{table-autovacuum,table-storage-drift}.ts` (declared autovacuum, drift split out).
+ * raised 973 → 974, measured 974 (2026-11-15, same sweep, review fix): `jobs/src/limiter-frame.ts`,
+ * the worker's visibility timeout, heartbeat and schedule handed to the limiter gate around a run.
  */
-export const MIGRATE_CEILING = 973;
+export const MIGRATE_CEILING = 974;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

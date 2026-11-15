@@ -266,5 +266,8 @@
  * raised 1706 → 1718, measured 1718 (2026-11-15, plan 101b sweep 2, metafile walk against origin/main):
  * the ten on `MIGRATE_CEILING`, plus `realtime/src/replicator-heartbeat.ts` (the replicator's loop
  * heartbeat) and `auth/src/member-invite.ts` (`defineMemberInvite` on the auth barrel).
+ * raised 1718 → 1720, measured 1720 (2026-11-15, same sweep, review fixes): `jobs/src/limiter-frame.ts`
+ * (on `MIGRATE_CEILING`) and `auth/src/member-invite-marks.ts` (the `joined`/`revoked` marks that
+ * make a racing revoke win).
  */
-export const WEB_ROLE_CEILING = 1718;
+export const WEB_ROLE_CEILING = 1720;
