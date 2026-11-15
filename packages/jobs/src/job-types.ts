@@ -193,6 +193,8 @@ export interface JobHandle<I = unknown> {
   readonly name: string;
   readonly queue: string;
   readonly retry: RetryPolicy;
+  /** The named budget this job spends (`job({ limiter })`), or `undefined`. */
+  readonly limiter: JobLimiter | undefined;
   /** The declared cap, resolved: the plain number, or a keyed declaration's `limit`. */
   readonly concurrency: number | undefined;
   /**

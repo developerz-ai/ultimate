@@ -229,6 +229,7 @@ describe('describe', () => {
         idempotent: true,
         concurrency: null,
         onSettled: false,
+        limiter: null,
       },
       {
         name: 'notifySubscribers',
@@ -239,6 +240,7 @@ describe('describe', () => {
         idempotent: true,
         concurrency: null,
         onSettled: false,
+        limiter: null,
       },
     ]);
   });

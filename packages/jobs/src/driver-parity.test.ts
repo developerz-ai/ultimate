@@ -158,7 +158,7 @@ describe('introspect.list answers newest first', () => {
 
     const executor = recordingExecutor();
     await postgresJobDriver({ executor }).introspect?.list();
-    expect(executor.sql.join('\n')).toContain('order by created_at desc');
+    expect(executor.sql.join('\n')).toContain('order by x_jobs.created_at desc');
   });
 
   test('a limit keeps the newest rows, not the oldest', async () => {

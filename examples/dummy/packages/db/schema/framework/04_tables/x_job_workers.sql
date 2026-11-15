@@ -12,4 +12,4 @@ create table "x_job_workers" (
   "draining_at" timestamp with time zone,
   "build" text,
   constraint "x_job_workers_pkey" PRIMARY KEY (id)
-);
+) with (autovacuum_vacuum_threshold=20, autovacuum_vacuum_scale_factor=0, autovacuum_analyze_threshold=20, autovacuum_analyze_scale_factor=0);

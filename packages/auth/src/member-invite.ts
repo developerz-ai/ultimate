@@ -78,17 +78,11 @@ const tenantOf = (orgId: string): string => {
   throw authForbidden('member invite', 'it names no tenant, so accepting it would join nothing');
 };
 
-/** Consume never mails: a sender that is called is a defect, and says so instead of mailing. */
-const noMail: MailSender = {
-  send: () =>
-    Promise.reject(
-      new AuthError({
-        code: 'X_NOT_IMPLEMENTED',
-        cause: 'a member-invite consume tried to send mail, which only invite does',
-        fix: 'flow.invite(auth, mail, { orgId, email, locale })   # the one call that mails',
-      }),
-    ),
-};
+/**
+ * The sender accept's runtime carries: `consumeVerification` reads the store and the clock and
+ * never the sender, so there is nothing for this one to do — and nothing for it to throw either.
+ */
+const consumeOnly: MailSender = { send: async () => {} };
 
 /** Declare the flow once, at module scope. Registers its verification purpose. */
 export function defineMemberInvite(input: DefineMemberInviteInput): MemberInviteFlow {
@@ -141,7 +135,7 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
         );
       }
       // Keyed on THIS account's address: a link forwarded to another account finds no row.
-      await purpose.consume(runtime(auth, noMail), {
+      await purpose.consume(runtime(auth, consumeOnly), {
         identifier: storeKey(accept.orgId, user.email),
         token: accept.token,
       });

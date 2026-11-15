@@ -168,6 +168,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     retry: { ...DEFAULT_RETRY, ...definition.retry },
     concurrency: concurrency.limit,
     whenBusy: concurrency.whenBusy,
+    limiter: definition.limiter,
     maxPending,
     timeoutMs:
       definition.timeout === undefined

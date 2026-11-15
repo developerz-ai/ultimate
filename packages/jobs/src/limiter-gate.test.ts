@@ -16,6 +16,7 @@ import { memoryLeaseStore } from './leases';
 import type { JobLimiter } from './limiter';
 import { limiter, resetLimiters } from './limiter';
 import { LIMITER_CONCURRENCY_RETRY_SECONDS, limiterGate, limiterLeaseKey } from './limiter-gate';
+import { assertConcurrencyEnforceable } from './worker-fleet-slots';
 
 const clock = frozenClock('2026-11-14T00:00:00Z');
 
@@ -199,5 +200,40 @@ describe('job({ limiter })', () => {
     } finally {
       uninstall();
     }
+  });
+});
+
+describe('a job declaring a limiter', () => {
+  const declare = () =>
+    job({
+      name: 'limited-probe',
+      tenant: 'none',
+      input: t.object({}),
+      idempotencyKey: () => 'k',
+      retry: { attempts: 1 },
+      limiter: limiter('vendor', { rate: { limit: 5, windowMs: 1_000 }, concurrency: 2 }),
+      run: async () => undefined,
+    });
+
+  test('is refused at worker boot on a driver with no lease store', () => {
+    declare();
+    const { leases: _leases, ...leaseless } = memoryJobDriver({ clock });
+    let caught: unknown;
+    try {
+      assertConcurrencyEnforceable({ ...leaseless, name: 'leaseless' });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isUltimateError(caught) ? caught.code : caught).toBe('X_JOB_CONCURRENCY_UNENFORCEABLE');
+    expect(isUltimateError(caught) ? caught.cause : '').toContain('limited-probe');
+    expect(() => assertConcurrencyEnforceable(memoryJobDriver({ clock }))).not.toThrow();
+  });
+
+  test('describes it — name, rate, concurrency — on its manifest row', () => {
+    expect(declare().describe().limiter).toEqual({
+      name: 'vendor',
+      rate: { limit: 5, windowMs: 1_000 },
+      concurrency: 2,
+    });
   });
 });

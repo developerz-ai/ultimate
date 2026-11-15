@@ -1583,3 +1583,11 @@ client's row (slice 29, Redis outage).
   so the drain and lease guarantees hold. The step runner fences on a separate `ended` signal,
   aborted however the attempt ended, so a step a body never awaited is still refused — as "had
   already ended", not as a cancellation. Work that must outlive any attempt: `runToCompletion`.
+
+## Moved out 2026-11-14 (plan 101 sweep 2, the `CLAUDE.md` ceiling)
+
+Verbatim from `packages/jobs/CLAUDE.md`, "Rules — the driver and SQL", to make room for the named
+`limiter()`'s file row.
+
+- **The claim SEEKS** (`SQL_CLAIM`); correct only because a claim autocommits. It hands each row its steps; an IDLE loop's claim (`SQL_CLAIM_IDLE`, `onEmpty`) also says when the next row is due, and the loop rests on it, ≤ 60 s, in 2 s slices that re-read the wake (`worker-idle.test.ts`).
+- A `step.run` output past a DECLARED `stepOutputMax` (JSON bytes) is `X_STEP_OUTPUT_TOO_LARGE`, terminal. Undeclared, past `STEP_OUTPUT_MAX_BYTES` (256 KiB) it is logged once per job and step (`jobs.step.output-too-large`, same code) and stored — refusal by default waits for `next`. A waited event is not measured — its payload is the publisher's.

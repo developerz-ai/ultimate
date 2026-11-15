@@ -392,7 +392,9 @@ describe('the pg driver`s introspection', () => {
   test('deadLetters reads the dead state newest-first, defaulting to 100', async () => {
     const executor = executorFor({ 'from x_jobs': [row({ state: 'dead' })] });
     const dead = await driverWith(executor).introspect?.deadLetters();
-    expect(executor.calls[0]?.sql).toContain("where state = 'dead' order by updated_at desc");
+    expect(executor.calls[0]?.sql).toContain(
+      "where state = 'dead' order by x_jobs.updated_at desc",
+    );
     expect(executor.calls[0]?.params).toEqual([100]);
     expect(dead?.[0]?.state).toBe('dead');
   });

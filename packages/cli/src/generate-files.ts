@@ -32,6 +32,7 @@ import { helmDashboardFiles } from './templates/chart-dashboard';
 import { cronJobFiles } from './templates/generate-cron-job';
 import { purgeFiles } from './templates/generate-purge';
 import { webhookReceiverFiles } from './templates/generate-webhook-receiver';
+import { inviteFiles } from './templates/invite';
 import { helmMonitoringFiles } from './templates/scaffold-helm-alerts';
 import { oidcSignInFiles } from './templates/sign-in-oidc';
 import { passwordSignInFiles } from './templates/sign-in-password';
@@ -276,6 +277,15 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           : oidcSignInFiles(signIn.provider, shape),
       );
     }
+    case 'invite':
+      // The invite's own files only; the grant, the exercise entries and the API listing are
+      // `generate-invite.ts`'s follow-ups, read off the app's disk.
+      return dedupe(
+        inviteFiles({
+          locales: options.locales ?? ['en'],
+          ...(options.catalogModule === undefined ? {} : { catalogModule: options.catalogModule }),
+        }),
+      );
     case 'app':
     case 'package': {
       // `run` reads the scope off the root manifest (`generate-workspace.ts`); a direct caller

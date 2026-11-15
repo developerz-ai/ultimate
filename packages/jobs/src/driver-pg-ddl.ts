@@ -31,7 +31,7 @@ export interface AutovacuumParameters {
   readonly autovacuum_analyze_scale_factor: number;
 }
 
-/** A table bounded by what it names (tasks, live workers), so a fixed count of dead rows is the trigger. */
+/** A table bounded by what it names (tasks, live workers): a fixed count of dead rows triggers. */
 const BOUNDED: AutovacuumParameters = {
   autovacuum_vacuum_threshold: 20,
   autovacuum_vacuum_scale_factor: 0,
@@ -303,7 +303,9 @@ alter table x_jobs add column if not exists expires_at timestamptz;
 -- The keyset a paged listing seeks by. Newest first, id as the tiebreak, so a page is an index
 -- range and never a sort of the whole table. Not a copy of the primary key order to drop: every
 -- immediate enqueue asks it which rows its queue created in the current wake slot (notifyJobReady
--- in driver-pg-wake-sql.ts), and without it that question is a scan of x_jobs per enqueue.
+-- in driver-pg-wake-sql.ts), and without it that question is a scan of x_jobs per enqueue. Kept
+-- after an audit of every statement (statement-plans.live.test.ts fails on an index nothing reads):
+-- the paged list had ordered by the epoch output column of the same name and never used it.
 create index if not exists x_jobs_created_idx on x_jobs (created_at desc, id desc);
 
 -- The ended half of the retention sweep, and the dead-letter list. Partial over the three terminal
@@ -413,6 +415,6 @@ create table if not exists x_job_counters (
 
 create index if not exists x_job_counters_age_idx on x_job_counters (bucket_ms, bucket_start);
 
--- The small hot tables vacuum on a count of dead rows, not a fifth of the table (HOT_TABLE_AUTOVACUUM).
+-- The small hot tables vacuum on a count of dead rows, not a fifth of each (HOT_TABLE_AUTOVACUUM).
 ${autovacuumAlters()}
 `.trim();

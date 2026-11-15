@@ -77,6 +77,8 @@ describe('unit · x cache bust and clear', () => {
     const result = await command.run(ctxFor(appRoot(), ['cache', 'bust', 'post:42']));
     expect(asked).toEqual([['post:42']]);
     expect(closed()).toBe(1);
+    // The findings first: on a shared worker a red `ok` alone named no cause.
+    expect(result.findings ?? []).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.data).toMatchObject({
       tags: ['post:42'],

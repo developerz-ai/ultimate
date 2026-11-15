@@ -11,6 +11,7 @@ import { ConcurrencyUnenforceableError } from './errors-concurrency';
 import { getJob, registeredJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { jobLeaseKey } from './leases';
+import { LimiterUnenforceableError } from './limiter-errors';
 import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
 const noop = (): void => undefined;
@@ -53,18 +54,29 @@ const slotHolder = (workerId: string, jobId: string): string => `${workerId}:${j
 const heldByRun = (holder: string, jobId: string): boolean => holder.endsWith(`:${jobId}`);
 
 /**
- * The boot refusal: a driver with no lease store can only hold a cap per PROCESS, plain or keyed,
- * so the fleet would run `concurrency x replicas`. Refused rather than logged — a declared
+ * The boot refusal: a driver with no lease store can only hold a cap per PROCESS — plain, keyed,
+ * or a named `limiter()` — so the fleet would run `concurrency x replicas`. Refused rather than logged — a declared
  * guarantee that silently does nothing is what axiom 3 exists to make impossible.
  */
 export function assertConcurrencyEnforceable(driver: JobDriver): void {
   if (driver.leases !== undefined) return;
   const capped = registeredJobs().filter((handle) => handle.concurrency !== undefined);
-  if (capped.length === 0) return;
-  throw new ConcurrencyUnenforceableError({
-    driver: driver.name,
-    jobs: capped.map((handle) => handle.name),
-  });
+  if (capped.length > 0) {
+    throw new ConcurrencyUnenforceableError({
+      driver: driver.name,
+      jobs: capped.map((handle) => handle.name),
+    });
+  }
+  // A named `limiter()` counts in the same store, so it is refused here too — at boot, not at the
+  // first run, where the gate's own refusal would spend an attempt per job to say the same thing.
+  const limited = registeredJobs().find((handle) => handle.limiter !== undefined);
+  if (limited?.limiter !== undefined) {
+    throw new LimiterUnenforceableError({
+      limiter: limited.limiter.name,
+      job: limited.name,
+      driver: driver.name,
+    });
+  }
 }
 
 export interface FleetSlots {

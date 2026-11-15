@@ -66,9 +66,9 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - Drivers: `JobDriver` + optional `introspect`/`backfills`/`leases`; `redisJobDriver`
   (`@ultimat3/jobs/redis`) is one Lua script per operation — a change lands in memory, pg AND Lua. †
 - **`demand` is the seventh method, required**; a draining worker's `queue_demand` goes to 0.
-- **The claim SEEKS** (`SQL_CLAIM`); correct only because a claim autocommits. It hands each row its steps; an IDLE loop's claim (`SQL_CLAIM_IDLE`, `onEmpty`) also says when the next row is due, and the loop rests on it, ≤ 60 s, in 2 s slices that re-read the wake (`worker-idle.test.ts`).
+- **The claim SEEKS** (`SQL_CLAIM`); an IDLE claim (`SQL_CLAIM_IDLE`) dates the next due row. Full rule: `docs/history/jobs.md`.
 - Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm` (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Full rule: `docs/history/jobs.md`.
-- A `step.run` output past a DECLARED `stepOutputMax` (JSON bytes) is `X_STEP_OUTPUT_TOO_LARGE`, terminal. Undeclared, past `STEP_OUTPUT_MAX_BYTES` (256 KiB) it is logged once per job and step (`jobs.step.output-too-large`, same code) and stored — refusal by default waits for `next`. A waited event is not measured — its payload is the publisher's.
+- **A `step.run` output past `stepOutputMax`** is `X_STEP_OUTPUT_TOO_LARGE`, terminal; undeclared, past 256 KiB it is logged and stored. Full rule: `docs/history/jobs.md`.
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 - **Debounce, expiry, backlog are driver contract** (`job-driver-checks-enqueue.ts`,
   `-debounce.ts`, all three drivers): `onConflict: 'replace'` is its own statement
@@ -85,7 +85,7 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - **`WorkerOptions.concurrency` is read by OWN key** (`worker-slots.test.ts`); `maxInFlight` BEFORE
   the claim, its count back with the lease, before the `kick` (history).
 - **`job.concurrency` is enforced by `JobDriver.leases`** (one row per held slot in `x_job_leases`);
-  `limits.ts` is the per-process fast path. No lease store + a declared `concurrency` makes `start()`
+  `limits.ts` is the per-process fast path. No lease store + a declared `concurrency` or `limiter` makes `start()`
   throw `X_JOB_CONCURRENCY_UNENFORCEABLE`.
 - **`concurrency` is resolved ONCE** (`concurrency.ts`): a number, or `{ key, limit, whenBusy }` per key. Full rule: `docs/history/jobs.md`.
 - **`whenBusy: 'fail'` refuses only on EVIDENCE another run holds the key**
@@ -108,8 +108,7 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
   teardown's wait is bounded on SIGTERM (`drain-wait.ts`), unbounded on `stop()`; one teardown, joined.
 - **A deploy lets a running job FINISH**: SIGTERM only stops claiming; `X_DRAINING` at
   `deadlineAt − margin`; settles `interrupted`. †
-- **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`) — which is how `job({ limiter })`
-  defers: the gate throws it before the body, never at claim.
+- **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`).
 - **The drain waits out the claim round it races** — `tick()` registers its round in `rounds`
   synchronously with its guard.
 - **A fleet slot is HELD, not owned**: a lost one CANCELS the run (`X_JOB_SLOT_LOST`). †
@@ -231,8 +230,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `scheduler-known.ts` / `scheduler-dispatch.ts` | what the leader remembers of each watermark (an idle round reads nothing, a cold one ONE `watermarks` read); one occurrence fired |
-| `limits.ts` | per-tenant / per-queue / global concurrency + rate |
-| `limiter.ts` / `limiter-gate.ts` / `limiter-errors.ts` | `limiter(name, { rate, concurrency })`, a named fleet budget: the declaration; the gate `job({ limiter })` runs its body through (fast path, `limiter:<name>:*` lease rows, `X_RATE_LIMITED` refusal); its three refusals, all borrowed shipped codes |
+| `limits.ts` / `limiter*.ts` | per-process caps; `limiter()`: a named fleet budget |
 | `events.ts` / `-cursor.ts` | memory bus; the wait cursor, both buses |
 | `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume, resolve-step |

@@ -1587,7 +1587,8 @@ export const refundCharge = job({ /* … */ limiter: vendorApi, async run({ inpu
 | a run over either is **deferred, uncounted** | the gate throws `X_RATE_LIMITED` with `retryAfterSeconds` (when the oldest start lapses; 1 s for a full concurrency cap) — `executeJob`'s `rateLimitDeferralMs`, so a backlog waits and is never dead-lettered for waiting |
 | the per-process fast path refuses a concurrency this heap alone already fills, with no round trip | `limits.ts`' `concurrencyLimiter({ perQueue })`, keyed by the limiter's name. Never the rate: a window is time, and the store keeps its own |
 | whole numbers ≥ 1, `rate.limit` ≤ `MAX_LIMITER_RATE` (1,000), a name of `[a-z0-9._-]`, one set of numbers per name | `X_JOB_DECLARATION_INVALID` at `limiter()`; a non-`limiter()` value at `job()` |
-| a driver with no `leases` | `X_JOB_CONCURRENCY_UNENFORCEABLE` when the run starts (a counted failure) — never a per-process budget |
+| a driver with no `leases` | `X_JOB_CONCURRENCY_UNENFORCEABLE` — `jobWorker().start()` refuses to boot (`assertConcurrencyEnforceable`); the gate refuses the run too, for a body run outside a worker. Never a per-process budget |
+| `describe().limiter` | `{ name, rate: { limit, windowMs } \| null, concurrency \| null }`, or `null` for a job that spends none |
 
 The gate wraps the BODY, so a refusal happens before the first `step.run` and replays nothing.
 Every attempt is a start: a retried run spends the rate again. A slot lost mid-run (its renewal
