@@ -1,8 +1,7 @@
-// Single responsibility: the predicate TREE — `or` groups and `via` relation hops — as an author
-// writes it, and its compilation into ordinary plan predicates. A node rides in `plan.where` as one
-// `Predicate` whose `op` is not an `Operator`, so every seam that passes predicates along keeps
-// working, and any executor that does not know the node meets an op it refuses rather than a
-// filter it silently drops.
+// Single responsibility: the predicate TREE (`or`/`and` groups, `via` hops) as an author writes it,
+// compiled into ordinary plan predicates. A node rides in `plan.where` as one `Predicate` whose `op`
+// is not an `Operator`, so an executor that does not know it refuses the op rather than silently
+// dropping the filter.
 
 import { EntityError } from './entity-error';
 import { checkedPredicate, type Operator } from './operator';

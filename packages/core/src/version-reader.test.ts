@@ -4,6 +4,7 @@
 // version fact to keep in step with the Sentry tag, the boot line and `target_info`.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no path-resolution API of its own; `Bun.Glob` scans but does not resolve.
 import { resolve } from 'node:path';
 import { Glob } from 'bun';
 

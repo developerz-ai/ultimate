@@ -1,7 +1,6 @@
-// Single responsibility: one attempt's hops — dial the URL as `dial` says (screened and pinned, or
-// as named), and under `redirect: 'follow'` take each 3xx by hand, re-screening the next address
-// and dropping credentials at an origin change; a proxy, when asked for, is chosen per hop AFTER
-// the screen, so the tunnel opens to the approved address. The platform's own `follow` dials a hop itself,
+// Single responsibility: one attempt's hops — dial as `dial` says (screened and pinned, or named),
+// under `redirect: 'follow'` take each 3xx by hand, re-screening and dropping credentials at an
+// origin change, and choose a proxy per hop AFTER the screen. The platform's own `follow` dials
 // unscreened: measured, a default redirect from a screened name reached loopback.
 
 import type { DialResolve } from './outbound-dial';

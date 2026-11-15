@@ -1,8 +1,7 @@
-// Single responsibility: refuse, at plan time, a predicate no driver can answer — so the refusal
-// never depends on whether a table holds rows. Memory judged an operator only against a row, and
-// answered `[]` for an unknown one on an empty table where Postgres refused; a whole money value
-// compared as one column is the same shape: Postgres has no column to compare it with. A predicate
-// TREE (`predicate-node.ts`) is screened level by level, each against the entity it is about.
+// Single responsibility: refuse, at plan time, a predicate no driver can answer, so the refusal
+// never depends on whether a table holds rows (memory once answered `[]` where Postgres refused;
+// a whole money value has no column to compare). A predicate TREE is screened level by level,
+// each against the entity it is about.
 
 import { columnFor } from './column';
 import type { EntityCore } from './entity';

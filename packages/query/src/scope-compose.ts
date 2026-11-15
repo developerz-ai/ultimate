@@ -1,8 +1,7 @@
 // Single responsibility: compose a `scoped()` policy's predicate into a read's source BEFORE the
-// page is cut, so a viewer whose hidden rows precede their visible ones still gets a full page —
-// and keep the JS rule the authority: it runs on every row the narrowed source returns.
-// `ruleCheckOf` hands a page the unchecked rows and the rule apart (`page-window.ts`). A tree
-// (`or`/`via`) is read by `scope-tree.ts`.
+// page is cut, so hidden rows never shorten a page — the JS rule stays the authority on every row
+// the narrowed source returns (`ruleCheckOf`, `page-window.ts`). A tree (`or`/`via`) is read by
+// `scope-tree.ts`.
 import { policyScope } from '@ultimat3/policy';
 import { QueryScopeUncomposableError } from './errors';
 import type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';

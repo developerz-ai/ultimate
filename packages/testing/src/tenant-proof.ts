@@ -1,8 +1,7 @@
-// The tenant proof, one primitive at a time: tenant B calls with A's ids before A's own call and
-// again after it, and the call is crossed if anything of A's — a canary, an id B was not handed —
-// came back in the output or an effect, or if one of A's rows changed. Order B, A, B: a deleting
-// action would leave B nothing to reach, and the second B catches a cache entry A filled. A read
-// touching only `entity({ global })` entities has no row of A's to return: `global`, not unproven.
+// The tenant proof, one primitive at a time: tenant B calls with A's ids before and after A's own
+// call; crossed if anything of A's (a canary, an id B was not handed) comes back or one of A's rows
+// changes. B, A, B: a deleting action would leave B nothing, the second B catches A's cache fill. A
+// read touching only `entity({ global })` entities has no row of A's: `global`, not unproven.
 
 import type { Actor } from '@ultimat3/core';
 import type { Policy } from '@ultimat3/policy';
