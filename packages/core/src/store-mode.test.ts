@@ -64,4 +64,41 @@ describe('storeMode', () => {
       expect(storeMode({ NODE_ENV: 'test' })).toBe('database');
     });
   });
+
+  // Two declarations in flight that are not nested restored out of order: A set database, B set
+  // memory, A ended and put back nothing, B ended and put back A's — the process stayed `database`
+  // after both returned. One process has one answer, so the second is refused while the first runs.
+  test('a declaration that overlaps another, not inside it, is refused; the first is unharmed', async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = withStoreMode('database', async () => {
+      await held;
+      return storeMode({ NODE_ENV: 'test' });
+    });
+    const second = await withStoreMode('memory', async () => 'ran').catch(
+      (error: unknown) => error,
+    );
+    expect(second).toMatchObject({ code: 'X_INVARIANT' });
+    release();
+    expect(await first).toBe('database');
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
+  });
+
+  test('two nested declarations side by side inside one are refused too', async () => {
+    await withStoreMode('database', async () => {
+      let release = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const one = withStoreMode('memory', () => held);
+      const two = await withStoreMode('memory', async () => 'ran').catch((error: unknown) => error);
+      expect(two).toMatchObject({ code: 'X_INVARIANT' });
+      release();
+      await one;
+      expect(storeMode({ NODE_ENV: 'test' })).toBe('database');
+    });
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
+  });
 });
