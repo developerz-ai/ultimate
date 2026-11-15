@@ -9,12 +9,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { loadVersion } from '../packages/cli/src/version-loader';
 import {
   RENDER_LOCK_FILE,
   renderCheck,
   renderedChanges,
+  renderedFiles,
   renderLockText,
-  renderScaffold,
 } from './template-codemods-render';
 
 const dirs: string[] = [];
@@ -31,8 +32,12 @@ describe('unit · template-codemods, the rendered scaffold', () => {
     expect(renderedChanges(lock, lock)).toEqual([]);
   });
 
-  test('the release version is masked: a bump moves no rendered hash', () => {
-    expect(renderScaffold('31.28.0')).toEqual(renderScaffold('31.29.0'));
+  test('the release version is masked: no rendered file carries the stamp a bump moves', () => {
+    const version = loadVersion();
+    const files = Object.entries(renderedFiles());
+    // Non-vacuity: the pins really are rendered, so the mask had something to take out.
+    expect(files.some(([, text]) => text.includes('"0.0.0"'))).toBe(true);
+    expect(files.filter(([, text]) => text.includes(version)).map(([key]) => key)).toEqual([]);
   });
 
   test('a tag with no lock is a notice; a working lock not today’s render is stale', async () => {

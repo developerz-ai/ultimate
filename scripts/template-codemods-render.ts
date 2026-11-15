@@ -27,17 +27,30 @@ const VARIANTS: readonly {
 const hash = (text: string): string =>
   new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16);
 
-/** `<variant>:<path>` to the hash of what that variant of `x new` writes there. */
-export function renderScaffold(version: string = loadVersion()): Readonly<Record<string, string>> {
+/**
+ * What `x new` writes, every variant, with the version it prints masked: the version the templates
+ * read is the CLI's own stamp (`loadVersion()`), so that is the one to mask — never a caller's.
+ */
+export function renderedFiles(): Readonly<Record<string, string>> {
+  const version = loadVersion();
   const out: Record<string, string> = {};
   for (const variant of VARIANTS) {
     for (const file of variant.plan()) {
       const bytes =
         typeof file.contents === 'string' ? file.contents : new TextDecoder().decode(file.contents);
-      out[`${variant.key}:${file.path}`] = hash(bytes.replaceAll(version, '0.0.0'));
+      out[`${variant.key}:${file.path}`] = bytes.replaceAll(version, '0.0.0');
     }
   }
-  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return out;
+}
+
+/** `<variant>:<path>` to the hash of what that variant of `x new` writes there. */
+export function renderScaffold(): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    Object.entries(renderedFiles())
+      .map(([key, text]) => [key, hash(text)] as const)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
 }
 
 /** The rendered paths whose hash differs between two locks, a file added or gone included. */
