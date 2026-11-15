@@ -71,7 +71,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a page of jobs across one mil
     (await rowsOf(sql, 1, cursor))[0];
 
   /** One page of `limit` rows, in the order the statement answers them. */
-  const rowsOf = (sql: string, limit: number, cursor?: PageRow): Promise<PageRow[]> =>
+  const rowsOf = (sql: string, limit: number, cursor?: PageRow): Promise<readonly PageRow[]> =>
     client.query<PageRow>({
       text: sql,
       values: [
