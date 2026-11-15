@@ -1,8 +1,8 @@
 // The three ways a boot meets the framework schema (plan 101, s1-con #5): `applyLockedSchema` runs
 // the DDL in ONE transaction behind the migration advisory lock with a bounded `lock_timeout`, then
-// stamps the build; `verifySchema` runs no DDL and refuses a database this build was never applied
-// to; `ensureSchema` reads the stamp and applies only when this build is absent from it. Which boot
-// takes which is `runtime-queue.ts`'s `SchemaMode`.
+// stamps the build; `verifySchema` (`framework-schema-verify.ts`) runs none; `ensureSchema` reads
+// the stamp and applies only when this build is absent from it. Which boot takes which is
+// `runtime-queue.ts`'s `SchemaMode`.
 
 import { frameworkVersion, logger } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
@@ -16,7 +16,6 @@ import {
 } from '@ultimat3/db';
 import { applyFrameworkSchema } from './framework-schema';
 import {
-  FrameworkSchemaUnappliedError,
   frameworkSchemaHash,
   nextStamp,
   parseStamp,
@@ -25,13 +24,14 @@ import {
   stampVerdict,
 } from './framework-schema-stamp';
 
-const thisBuild = (): StampEntry => ({
+/** This process's build, as the stamp records one. */
+export const thisBuild = (): StampEntry => ({
   version: frameworkVersion(),
   schema: frameworkSchemaHash(),
 });
 
 /** The stamp as the catalog holds it; `null` when the relation or its comment is absent. */
-async function readStamp(client: DbClient): Promise<string | null> {
+export async function readStamp(client: DbClient): Promise<string | null> {
   const rows = await client.query<{ readonly stamp: string | null }>(
     raw(`select obj_description(to_regclass('${STAMP_RELATION}'), 'pg_class') as stamp`),
   );
@@ -63,18 +63,6 @@ export async function applyLockedSchema(client: DbClient): Promise<void> {
 }
 
 /**
- * One catalog read. A build absent from the stamp is refused with the command that applies it; a
- * fleet straddling a major is reported once and served — refusing it would crash-loop the old pods
- * of every rolling deploy across a breaking release.
- */
-export async function verifySchema(client: DbClient): Promise<void> {
-  const mine = thisBuild();
-  const verdict = stampVerdict(parseStamp(await readStamp(client)), mine);
-  if (!verdict.applied) throw new FrameworkSchemaUnappliedError({ mine, newest: verdict.newest });
-  reportSkew(mine, verdict.skew);
-}
-
-/**
  * A CLI command's boot — `x db backfill`, `x jobs`, `x auth`: no DDL when this build's stamp is
  * already there, the locked apply when it is not.
  *
@@ -100,7 +88,7 @@ export async function ensureSchema(client: DbClient): Promise<void> {
  * A fleet straddling a major is reported once and served — refusing it would crash-loop the old
  * pods of every rolling deploy across a breaking release.
  */
-function reportSkew(mine: StampEntry, skew: StampEntry | undefined): void {
+export function reportSkew(mine: StampEntry, skew: StampEntry | undefined): void {
   if (skew === undefined) return;
   logger.warn('ultimate framework major skew', {
     cause: `this process runs ${mine.version} and the database's framework schema was last applied by ${skew.version}: a fleet across a major boundary is mid-rollout or half rolled back`,

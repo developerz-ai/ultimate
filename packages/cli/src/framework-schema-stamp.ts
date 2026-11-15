@@ -54,6 +54,22 @@ export function nextStamp(previous: string | null | undefined, mine: StampEntry)
 
 const majorOf = (version: string): string => version.split('.')[0] ?? version;
 
+/**
+ * A newest build whose major is numerically above this one's: a database a later breaking release
+ * migrated. A serving role of the older build does not wait on it — no migrate of this build is
+ * coming in that rollout — and is refused at once.
+ */
+export function aheadByMajor(newest: StampEntry | undefined, mine: StampEntry): boolean {
+  if (newest === undefined) return false;
+  const theirs = Number(majorOf(newest.version));
+  const ours = Number(majorOf(mine.version));
+  return Number.isFinite(theirs) && Number.isFinite(ours) && theirs > ours;
+}
+
+/** Whether `newest` is another major than this build, in either direction — the skew gauge's fact. */
+export const otherMajor = (newest: StampEntry | undefined, mine: StampEntry): boolean =>
+  newest !== undefined && majorOf(newest.version) !== majorOf(mine.version);
+
 export type StampVerdict =
   | { readonly applied: true; readonly skew?: StampEntry }
   | { readonly applied: false; readonly newest?: StampEntry };
@@ -68,14 +84,27 @@ export function stampVerdict(entries: readonly StampEntry[], mine: StampEntry): 
   if (!entries.some((entry) => entry.schema === mine.schema)) {
     return newest === undefined ? { applied: false } : { applied: false, newest };
   }
-  return newest !== undefined && majorOf(newest.version) !== majorOf(mine.version)
+  return newest !== undefined && otherMajor(newest, mine)
     ? { applied: true, skew: newest }
     : { applied: true };
 }
 
+/** The variable that bounds a serving role's wait for the migrate step (`framework-schema-wait.ts`). */
+export const SCHEMA_WAIT_ENV = 'ULTIMATE_SCHEMA_WAIT_MS';
+
 /** A serving role over a database its build's framework tables were never applied to. */
 export class FrameworkSchemaUnappliedError extends UltimateError {
-  constructor(input: { readonly mine: StampEntry; readonly newest: StampEntry | undefined }) {
+  constructor(input: {
+    readonly mine: StampEntry;
+    readonly newest: StampEntry | undefined;
+    /** How long the role waited for the migrate step before this refusal; absent when it did not. */
+    readonly waitedMs?: number;
+  }) {
+    const ahead = aheadByMajor(input.newest, input.mine);
+    const waited =
+      input.waitedMs === undefined
+        ? ''
+        : `. This role waited ${String(Math.round(input.waitedMs))}ms (${SCHEMA_WAIT_ENV}) for it`;
     super({
       code: 'X_FRAMEWORK_SCHEMA_UNAPPLIED',
       cause:
@@ -84,12 +113,18 @@ export class FrameworkSchemaUnappliedError extends UltimateError {
           input.newest === undefined
             ? `${STAMP_RELATION} carries no stamp, so no ROLE=migrate of this release ran`
             : `the newest applied build is ${input.newest.version} (${input.newest.schema})`
-        }. A serving role verifies and never runs DDL: the migrate step must run first`,
+        }${
+          ahead
+            ? ', a newer major: this role refuses without waiting, since no migrate of this build is coming'
+            : ''
+        }. A serving role verifies and never runs DDL: the migrate step must run first${waited}`,
       fix: 'x db migrate',
       meta: {
         version: input.mine.version,
         schema: input.mine.schema,
         ...(input.newest === undefined ? {} : { newest: { ...input.newest } }),
+        ...(ahead ? { aheadByMajor: true } : {}),
+        ...(input.waitedMs === undefined ? {} : { waitedMs: Math.round(input.waitedMs) }),
       },
     });
   }

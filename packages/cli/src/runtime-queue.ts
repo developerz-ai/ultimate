@@ -33,7 +33,7 @@ import {
   resetJobsFacade,
   setJobsFacade,
 } from '@ultimat3/jobs';
-import { applyLockedSchema, ensureSchema, verifySchema } from './framework-schema-apply';
+import { applyLockedSchema, ensureSchema } from './framework-schema-apply';
 import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -142,9 +142,29 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
  */
 export type SchemaMode = 'apply' | 'ensure' | 'verify';
 
-async function applySchema(client: DevDbClient, mode: SchemaMode): Promise<void> {
-  if (mode === 'verify') await verifySchema(client);
-  else if (mode === 'ensure') await ensureSchema(client);
+/** The boot's own facts `'verify'` reads: how long to wait, and what this image ships. */
+interface SchemaBoot {
+  readonly root: string;
+  /** The env the boot was HANDED — `ULTIMATE_SCHEMA_WAIT_MS` from it, never from `process.env`. */
+  readonly env: ReplicaEnv;
+}
+
+async function applySchema(client: DevDbClient, mode: SchemaMode, boot: SchemaBoot): Promise<void> {
+  // The deadline first: a malformed one is refused before any read, not after a wait.
+  if (mode === 'verify') {
+    // Behind `await import()`: `ROLE=migrate` and every CLI command reach this module and never
+    // verify, so the wait, the ledger verdict and the migrations reader stay off their graphs.
+    const [{ verifySchema }, { schemaWaitMsFromEnv }, { readMigrations }] = await Promise.all([
+      import('./framework-schema-verify'),
+      import('./framework-schema-wait'),
+      import('./migrations'),
+    ]);
+    const deadlineMs = schemaWaitMsFromEnv(boot.env);
+    // The image's own migrations — the files `ROLE=migrate` of this same image applies — so a role
+    // of release N over release N-1's ledger waits, instead of failing on its first new column.
+    const shipped = (await readMigrations(boot.root)).map((migration) => migration.id);
+    await verifySchema(client, { deadlineMs, shipped });
+  } else if (mode === 'ensure') await ensureSchema(client);
   else await applyLockedSchema(client);
 }
 /**
@@ -182,8 +202,9 @@ async function startJobs(
   replica: PostgresClient | undefined,
   overrides: RuntimeOverrides | undefined,
   schema: SchemaMode,
+  boot: SchemaBoot,
 ): Promise<RunningQueue> {
-  await applySchema(client, schema);
+  await applySchema(client, schema, boot);
   // Bound to `client`, never the ambient `db()`: the queue and the idempotency reservations stay
   // on the boot's pool whatever transaction is open.
   const executor = dbExecutor(() => client);
@@ -313,7 +334,7 @@ export async function startQueue(
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
     // fails at boot rather than on some later query.
     await db.ping();
-    return await startJobs(db, replica, overrides, schema);
+    return await startJobs(db, replica, overrides, schema, { root: services.root, env });
   } catch (error) {
     // `db.ping()` or `startJobs` is where a broken database is supposed to fail. Without this,
     // the caller exits holding the PGlite lock and the ambient accessors, and nothing is left to

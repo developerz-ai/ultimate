@@ -24,6 +24,7 @@ import type { RunningServices } from './runtime-services';
 import { releaseOrThrow, startServices } from './runtime-services';
 import type { BootTimeline } from './serve-boot-phases';
 import { bootTimeline } from './serve-boot-phases';
+import { type BootProbe, openBootProbe } from './serve-boot-probe';
 import { bootWarningConcerns, warnAtBoot } from './serve-boot-warnings';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
@@ -102,11 +103,27 @@ export async function bootServing(boot: {
   // tables first, and this boot only verifies the stamp it left (`framework-schema-apply.ts`).
   // The embedded database has no migrate step to have run, so it applies its own.
   const schema = services.db.mode === 'external' ? 'verify' : 'apply';
+  // The web or sync role's own port answers its probes from here — alive, not ready — so a pod
+  // that waits on the migrate step (`verify`, inside `startServices`) is never restarted by a
+  // startup probe knocking on a closed socket. The role's listener takes the port in `bootRoles`.
+  const probe = openBootProbe({
+    role: boot.role,
+    port: options.port ?? portFromEnv(options.env),
+    hostname: containerBinding(options.env, options.hostname).hostname,
+    ...(tls === undefined ? {} : { tls }),
+  });
+  if (probe !== undefined) boot.acquired.push(() => probe.stop());
   // The role decides whether this boot waits for the bus: only `sync` and the replicator do.
   const runtime = await startServices(services, options.env, options.runtime, schema, [boot.role]);
   boot.acquired.push(() => runtime.stop());
   timeline.phase('services');
-  return bootRoles({ ...boot, runtime, timeline, ...(tls === undefined ? {} : { tls }) });
+  return bootRoles({
+    ...boot,
+    runtime,
+    timeline,
+    ...(tls === undefined ? {} : { tls }),
+    ...(probe === undefined ? {} : { probe }),
+  });
 }
 
 /**
@@ -143,6 +160,8 @@ async function bootRoles(boot: {
   readonly timeline: BootTimeline;
   /** `TLS_CERT`/`TLS_KEY`, read by `bootServing`; the web role's listener serves TLS with it. */
   readonly tls?: ListenerTls;
+  /** The boot's holder of this role's port (`serve-boot-probe.ts`), freed just before it binds. */
+  readonly probe?: BootProbe;
 }): Promise<ServedApp> {
   const { options, role, runtime, acquired, metrics, timeline } = boot;
   // Before the app's modules, because importing one may register a `close` hook, and that phase
@@ -222,6 +241,8 @@ async function bootRoles(boot: {
   const health = await loadHealthConfig(options.root);
   if (health?.readiness !== undefined) configureLifecycle({ readiness: health.readiness });
   const replicaOverride = replicaOverrides(options.runtime, runtime.services.db, options.env);
+  // The instant before the role binds the same port: synchronous, so the port is free on return.
+  boot.probe?.stop();
   const running = await startRoles({
     roles: [role],
     port,
