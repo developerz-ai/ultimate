@@ -89,8 +89,6 @@ export interface InboundProvider {
   door(inbound: WebhookInbound): Promise<InboundDoor>;
   /** The raw RFC 5322 bytes: from the row (SES), or the provider's API (Resend). */
   mime(row: InboundRow, maxBytes: number): Promise<Uint8Array>;
-  /** The door's own body ceiling: the provider knows how large its notification gets. */
-  readonly maxBodyBytes: number;
 }
 
 export interface InboundAttachmentOptions {
@@ -115,7 +113,14 @@ export interface InboundMailDefinition {
   readonly name: string;
   /** Absolute, outside `/api` and `/_x` — jobs' `webhookReceiver()` rule. */
   readonly path: string;
-  readonly provider: InboundProvider;
+  /**
+   * A thunk, built on the first delivery and kept: a provider's credentials are environment only
+   * the receiving role holds, and every role imports this declaration. A throw (`X_CONFIG_INVALID`
+   * for an unset secret) answers that delivery and is asked again on the next one.
+   */
+  readonly provider: () => InboundProvider;
+  /** The webhook body's ceiling, enforced while it streams. Default 1 MiB (SNS caps at 256 KiB). */
+  readonly maxBodyBytes?: number | undefined;
   /** `'none'`, or the org a message belongs to, from its verified envelope recipients. */
   readonly tenant: 'none' | ((recipients: readonly string[]) => string | undefined);
   /** At least once per message: key your own writes on `message.eventId`. */

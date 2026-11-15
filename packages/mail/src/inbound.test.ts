@@ -272,7 +272,7 @@ describe('inboundMail — the declaration', () => {
     const receiver = inboundMail({
       name: `inbound.test.${crypto.randomUUID()}`,
       path: '/hooks/mail/inbound',
-      provider: ses(),
+      provider: ses,
       tenant: 'none',
       handle: async () => undefined,
     });
@@ -290,7 +290,7 @@ describe('inboundMail — the declaration', () => {
       inboundMail({
         name: `inbound.test.${crypto.randomUUID()}`,
         path: '/hooks/mail/inbound',
-        provider: ses(),
+        provider: ses,
         tenant: 'none',
         handle: async () => undefined,
         ...extra,
@@ -299,6 +299,23 @@ describe('inboundMail — the declaration', () => {
       thrown = error;
     }
     expect(isUltimateError(thrown)).toBe(true);
+  });
+
+  test('the provider is built on first delivery, never at declaration', () => {
+    let calls = 0;
+    const receiver = inboundMail({
+      name: `inbound.test.${crypto.randomUUID()}`,
+      path: '/hooks/mail/lazy',
+      provider: () => {
+        calls += 1;
+        // Unset env in a role that never receives: refused only if a delivery asks.
+        return sesInbound({ topicArns: [] });
+      },
+      tenant: 'none',
+      handle: async () => undefined,
+    });
+    expect(calls).toBe(0);
+    expect(receiver.routes()).toHaveLength(1);
   });
 
   test('a provider refuses its own config at construction', () => {

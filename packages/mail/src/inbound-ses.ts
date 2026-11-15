@@ -22,8 +22,6 @@ export interface SesInboundOptions {
   readonly confirmSubscriptions?: boolean | undefined;
   /** Default `DEFAULT_SNS_TOLERANCE_MS`. */
   readonly toleranceMs?: number | undefined;
-  /** The door's body ceiling. Default 1 MiB: SES puts at most 150 KB of content in an SNS action. */
-  readonly maxBodyBytes?: number | undefined;
   readonly clock?: Clock | undefined;
   readonly fetchCertificate?: SnsCertificateFetch | undefined;
   readonly fetch?: MailFetch | undefined;
@@ -103,19 +101,14 @@ export function sesInbound(options: SesInboundOptions): InboundProvider {
     options.toleranceMs ?? DEFAULT_SNS_TOLERANCE_MS,
     1,
   );
-  const maxBodyBytes = finiteCount(
-    'sesInbound',
-    'maxBodyBytes',
-    options.maxBodyBytes ?? 1_048_576,
-    1,
-  );
   // ONE verifier: the delivery receiver proves the SNS signature over these exact bytes (and owns
   // the SubscriptionConfirmation protocol); only then is the same body read for its `Message`.
   const verifier = sesEventReceiver({
     topicArns: [...topicArns],
     confirmSubscriptions: options.confirmSubscriptions,
     toleranceMs,
-    maxBytes: maxBodyBytes,
+    // The route already read the body under `inboundMail({ maxBodyBytes })`; one ceiling, not two.
+    maxBytes: Number.MAX_SAFE_INTEGER,
     clock: options.clock,
     fetchCertificate: options.fetchCertificate,
     fetch: options.fetch,
@@ -123,7 +116,6 @@ export function sesInbound(options: SesInboundOptions): InboundProvider {
 
   return {
     name: 'ses',
-    maxBodyBytes,
     async door(inbound: WebhookInbound): Promise<InboundDoor> {
       const outcome = await verifier.receive(inbound.request());
       if (outcome.type === 'subscription') {

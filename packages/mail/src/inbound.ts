@@ -6,7 +6,7 @@ export {
   DEFAULT_INBOUND_PREFIX,
   INBOUND_ATTACHMENT_TYPES,
 } from './inbound-attachments';
-export { inboundMail } from './inbound-mail';
+export { DEFAULT_INBOUND_BODY_BYTES, inboundMail } from './inbound-mail';
 export type { ResendInboundOptions } from './inbound-resend';
 export { resendInbound } from './inbound-resend';
 export type { SesInboundOptions } from './inbound-ses';

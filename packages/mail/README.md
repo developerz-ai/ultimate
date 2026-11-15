@@ -212,11 +212,16 @@ declare const env: Record<string, string>;
 export const supportInbox = inboundMail({
   name: 'support.inbound',
   path: '/hooks/mail/inbound',
-  provider: sesInbound({ topicArns: [env['SES_INBOUND_TOPIC_ARN'] ?? ''] }),
+  // A thunk, built on the first delivery: the worker and the scheduler import this too.
+  provider: () => sesInbound({ topicArns: [env['SES_INBOUND_TOPIC_ARN'] ?? ''] }),
   tenant: 'none',
   handle: async ({ message }) => ({ from: message.from?.address, files: message.attachments.length }),
 });
 ```
+
+`provider` is a thunk, called on the first delivery and kept: a provider refuses a missing secret
+when it is BUILT (`X_CONFIG_INVALID`), and a role that never receives must still boot. The door's
+body ceiling is `maxBodyBytes` (default 1 MiB).
 
 | Provider | Door proves | The job reads the MIME from |
 |---|---|---|

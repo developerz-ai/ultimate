@@ -119,10 +119,12 @@ import { inboundMail, resendInbound } from '@ultimat3/mail/inbound';
 export const supportInbox = inboundMail({
   name: 'support.inbound',
   path: '/hooks/mail/inbound',
-  provider: resendInbound({
-    secret: Bun.env['RESEND_INBOUND_SECRET'] ?? '',
-    apiKey: Bun.env['RESEND_API_KEY'] ?? '',
-  }),
+  // A thunk, built on the first delivery: every role imports this, only the web role receives.
+  provider: () =>
+    resendInbound({
+      secret: Bun.env['RESEND_INBOUND_SECRET'] ?? '',
+      apiKey: Bun.env['RESEND_API_KEY'] ?? '',
+    }),
   tenant: 'none',
   handle: async ({ message }) => ({ subject: message.subject }),
 });

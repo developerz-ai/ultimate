@@ -30,8 +30,6 @@ export interface ResendInboundOptions {
   readonly apiKey: string;
   /** Default `DEFAULT_SVIX_TOLERANCE_MS`. */
   readonly toleranceMs?: number | undefined;
-  /** The door's body ceiling. Default 256 KiB: the webhook carries metadata, never the body. */
-  readonly maxBodyBytes?: number | undefined;
   readonly clock?: Clock | undefined;
   /** Both GETs. Default: the platform fetch, through core's `outbound()`. */
   readonly fetch?: MailFetch | undefined;
@@ -77,18 +75,11 @@ export function resendInbound(options: ResendInboundOptions): InboundProvider {
     options.toleranceMs ?? DEFAULT_SVIX_TOLERANCE_MS,
     1,
   );
-  const maxBodyBytes = finiteCount(
-    'resendInbound',
-    'maxBodyBytes',
-    options.maxBodyBytes ?? 262_144,
-    1,
-  );
   let key: Promise<CryptoKey> | undefined;
   const deps = { fetch: options.fetch, resolve: options.resolve };
 
   return {
     name: 'resend',
-    maxBodyBytes,
     async door(inbound: WebhookInbound): Promise<InboundDoor> {
       let body: string;
       try {
