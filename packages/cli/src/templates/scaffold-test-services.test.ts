@@ -6,7 +6,9 @@ import { names } from './naming';
 import {
   TEST_COMPOSE_PATH,
   TEST_ENV_PATH,
+  TEST_PORT_SPREAD,
   TEST_PORTS,
+  testPorts,
   testServicesFiles,
 } from './scaffold-test-services';
 
@@ -84,10 +86,34 @@ describe('unit · the scaffolded test stack is fast and silent', () => {
     const published = Object.values(services()).map((service) =>
       Number(service.ports[0]?.split(':')[1]),
     );
-    expect(published.sort()).toEqual(Object.values(TEST_PORTS).sort());
-    for (const port of Object.values(TEST_PORTS)) expect(env).toContain(`127.0.0.1:${port}`);
+    const ports = testPorts(names('shop'));
+    expect(published.sort()).toEqual(Object.values(ports).sort());
+    for (const port of Object.values(ports)) expect(env).toContain(`127.0.0.1:${port}`);
     expect(env).toContain(
-      `TEST_DATABASE_URL=postgres://shop:shop-test@127.0.0.1:${TEST_PORTS.postgres}/`,
+      `TEST_DATABASE_URL=postgres://shop:shop-test@127.0.0.1:${ports.postgres}/`,
     );
+  });
+
+  // Two scaffolds on one machine shared 55432, and the second app's live suites ran against the
+  // first app's container (28P01). Each app's ports are its own, stable, inside its service's band.
+  test('each app gets its own ports, stable across runs, inside each service band', () => {
+    const shop = testPorts(names('shop'));
+    const ledger = testPorts(names('ledger-demo'));
+    expect(testPorts(names('shop'))).toEqual(shop);
+    // Pinned: dummy/docs-site's committed stack was generated from these, so a change to the
+    // derivation is a regenerate of every tracked app's stack, never a silent move.
+    expect(testPorts(names('docs-site'))).toEqual({
+      postgres: 55838,
+      redis: 56785,
+      nats: 54628,
+      s3: 59406,
+    });
+    expect(shop.postgres).not.toBe(ledger.postgres);
+    for (const ports of [shop, ledger]) {
+      for (const key of Object.keys(TEST_PORTS) as (keyof typeof TEST_PORTS)[]) {
+        expect(ports[key] - TEST_PORTS[key]).toBeGreaterThanOrEqual(0);
+        expect(ports[key] - TEST_PORTS[key]).toBeLessThan(TEST_PORT_SPREAD);
+      }
+    }
   });
 });

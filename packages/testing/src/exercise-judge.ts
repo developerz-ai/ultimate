@@ -4,12 +4,13 @@
 
 import type { ExerciseVerdict } from '@ultimat3/core';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
-import { exerciseEntryKey } from './define-exercise';
+import type { ExerciseOverrides } from './define-exercise';
+import { exerciseEntryKey, overrideFor } from './define-exercise';
 import { driftOverrideLine } from './exercise-drift-hint';
 import type { Sampler } from './exercise-input';
 import { idStem } from './exercise-input';
 import { type OverrideHint, overrideLine } from './exercise-override-line';
-import type { Observed } from './exercise-report';
+import type { ExerciseRecord, Observed } from './exercise-report';
 import type { Subject } from './exercise-subjects';
 
 /**
@@ -77,4 +78,14 @@ export function judged(
     return unreached(codeOf(run.verdict.error) ?? 'X_CONTRACT_DEFECT', run.verdict.defect);
   }
   return unreached(codeOf(run.lastError), reasonOf(run.lastError));
+}
+
+/** A reach with nothing to prove carries its entry's `empty` reason, when the entry gives one. */
+export function withEmptyWhy(record: ExerciseRecord, overrides: ExerciseOverrides | undefined) {
+  if (record.outcome !== 'reached' || record.statements > 0 || record.effects.length > 0) {
+    return record;
+  }
+  const entry = overrideFor(overrides, record.kind, record.name);
+  const why = entry === undefined || 'off' in entry ? undefined : entry.empty;
+  return why === undefined ? record : { ...record, empty: why.trim() };
 }

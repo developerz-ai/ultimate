@@ -107,6 +107,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/render": "^${version}",
     "@ultimat3/schema": "^${version}",
     "@ultimat3/seo": "^${version}",
+    "@ultimat3/storage": "^${version}",
     "@ultimat3/ui": "^${version}",
     "solid-js": "${SOLID_VERSION}"
   },
@@ -320,12 +321,6 @@ const bunfig = (): string => `[test]
 root = "."
 # Frozen clock, seeded RNG, sealed network — nondeterminism in a test is a bug.
 preload = ["@ultimat3/testing/preload"]
-# An island is mounted from a BUILT chunk that \`mountIsland\` writes to a temp .mjs, so
-# \`bun test --coverage\` reports that file: two minified lines, under a name no source has. Bun
-# does not remap a pre-built module through its sourcemap (measured on 1.4.0, and the build does
-# emit one), so the row can only ever be noise — the island's own .island.tsx is not what it
-# describes. Ignoring it removes the phantom; it hides no line any test was covering.
-coveragePathIgnorePatterns = ["**/*.mjs"]
 `;
 
 const scssTypes =
@@ -393,7 +388,7 @@ export function repoFiles(
     { path: 'biome.json', contents: biome() },
     { path: 'bunfig.toml', contents: bunfig() },
     { path: 'app.config.ts', contents: appConfig(app) },
-    { path: VERIFY_FLOOR_FILE, contents: verifyFloor(example) },
+    { path: VERIFY_FLOOR_FILE, contents: verifyFloor({ jobs: example, pages: true }) },
     { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
     // Every text file LF whatever `core.autocrlf` says — a Windows checkout is otherwise CRLF.

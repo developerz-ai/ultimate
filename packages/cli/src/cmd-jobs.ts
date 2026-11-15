@@ -1,6 +1,6 @@
 // `x jobs list|show|retry|cancel|delete|promote|resolve-step|pause|resume` — introspect and
 // recover the job queue, bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP
-// report identically; `drain` is planned (`cmd-planned.ts`): Postgres is the one durable driver.
+// report identically.
 // CLI wiring only: the driver-injected logic is `jobs-report.ts`, the `--json` shapes
 // `jobs-json.ts`, the table `jobs-table.ts`, the queue `jobs-driver.ts` — shared with `x db`.
 
@@ -18,7 +18,6 @@ import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { runResolveStep } from './cmd-jobs-resolve';
 import { jobsSpec } from './cmd-jobs-spec';
-import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, JobUnknownError, MissingPositionalError } from './errors';
 import { withJobDriver } from './jobs-driver';
@@ -258,11 +257,6 @@ export const jobsCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('jobs', ctx.cwd).dir;
     const sub = ctx.args.subcommand ?? 'list';
-    // BEFORE `withJobDriver`, which boots the source queue: the answer needs no server, so a box
-    // whose database is down gets it rather than the boot failure of a queue never to be used —
-    // and nothing is leased. 24.x's `--to`/`--dry-run` are deleted, so the parser refuses them
-    // (`X_CLI_BAD_FLAG`); only a bare `x jobs drain` reaches this answer.
-    if (sub === 'drain') throw plannedSubcommand('jobs', 'drain');
     // A TRACE is the queue row projected through the job's own declaration — its concurrency key,
     // its retry schedule — and a declaration exists in this process only once the app is loaded.
     // Unloaded, `show` answered `concurrencyKey: null` and `retryDelaysMs: []` for every job of

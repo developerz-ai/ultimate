@@ -32,6 +32,10 @@ export const CLI_OUTBOUND_ALLOWLIST = Object.freeze<Record<string, string>>({
   'cli.github.com':
     'where to install `gh`, printed in the X_GH_UNAVAILABLE fix — the person follows it, x does not',
   'biomejs.dev': 'the `$schema` URL in a scaffolded biome.json — the editor reads it, x never does',
+  'dl.google.com':
+    'the Chrome .deb in the X_VERIFY_E2E_BROWSER_MISSING fix (`verify-e2e.ts`, `mcp-errors.ts`): an install command the person runs — printed, never fetched by x',
+  'fcm.googleapis.com':
+    "`x exercise`'s stand-in push endpoint (`exercise-push-device.ts`): a host `pushHostAllowed` lists, under a path no browser hands out; the sealed exercise captures the send and never dials it",
   'your.domain':
     'a placeholder in the X_ISR fix line telling the author to set APP_URL to their own origin — printed, never fetched',
 });

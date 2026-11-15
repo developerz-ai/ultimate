@@ -43,6 +43,16 @@ export async function mapBounded<T, R>(
   fn: (item: T, index: number, signal: AbortSignal) => R | Promise<R>,
   options: MapBoundedOptions & { readonly settle?: 'first' | undefined },
 ): Promise<R[]>;
+/**
+ * A value typed `MapBoundedOptions` itself — the 31.23 call shape, before `settle` split the
+ * overloads. Its `settle` is not known statically, so neither answer is: narrow with
+ * `settle: 'first'` or `'all'` at the call for an exact result type.
+ */
+export async function mapBounded<T, R>(
+  items: readonly T[],
+  fn: (item: T, index: number, signal: AbortSignal) => R | Promise<R>,
+  options: MapBoundedOptions,
+): Promise<R[] | PromiseSettledResult<R>[]>;
 export async function mapBounded<T, R>(
   items: readonly T[],
   fn: (item: T, index: number, signal: AbortSignal) => R | Promise<R>,

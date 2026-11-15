@@ -7,7 +7,7 @@ import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import { defineConfig, isUltimateError } from '@ultimat3/core';
 import { installedRateLimitStore } from '@ultimat3/http';
 import { resetRateLimitStore } from '@ultimat3/http/adapter';
-import { resetWebPush, webPushRuntime } from '@ultimat3/pwa';
+import { pushToActor, resetWebPush, webPushRuntime } from '@ultimat3/pwa';
 import { defineStorage, disk, memoryStorageDriver, resetStorage, storage } from '@ultimat3/storage';
 import { installExerciseServices } from './exercise-services';
 
@@ -86,6 +86,30 @@ describe('unit · the services x exercise installs', () => {
     expect(answered.status).toBe(201);
     release();
     expect(codeOf(() => webPushRuntime('exercise'))).toBe('X_PWA_PUSH_UNCONFIGURED');
+  });
+
+  // A notifier's push reaches a device in the pass: every actor holds one stand-in subscription, as
+  // the memory mail driver accepts every address — so a pusher that sends nothing is told apart.
+  test('an actor with no stored device still receives one push, encrypted and captured', async () => {
+    const empty: PgExecutor = { query: async () => [] };
+    const release = await installExerciseServices({
+      config: pushApp(),
+      env: {},
+      executor: empty,
+    });
+    try {
+      const report = await pushToActor('actor-1', {
+        titleKey: 'push.title',
+        bodyKey: 'push.body',
+        url: '/',
+      });
+      expect(report).toEqual({ delivered: 1, removed: 0, refused: 0 });
+      const [device] = await webPushRuntime('exercise').store.listFor('actor-1');
+      expect(device?.actorId).toBe('actor-1');
+      expect(new URL(device?.endpoint ?? '').hostname).toBe('fcm.googleapis.com');
+    } finally {
+      release();
+    }
   });
 
   // Push is selected last; a refused key pair must not strand the disk and the store before it.

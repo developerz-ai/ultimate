@@ -3,16 +3,11 @@
 // never enumerated, and a GitOps roll that never ran `x deploy` is checked the same way.
 
 import type { Clock } from '@ultimat3/core';
-import {
-  BUILD_ID_HEADER,
-  renderCauseValue,
-  renderThrowable,
-  systemClock,
-  UltimateError,
-} from '@ultimat3/core';
+import { renderCauseValue, renderThrowable, systemClock, UltimateError } from '@ultimat3/core';
 import { deadlineSignal } from '@ultimat3/core/outbound';
 import type { QueueDemand, WorkerRecord } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
+import { takeSample } from './cmd-deploy-verify-sample';
 import type { CommandContext } from './command';
 import { failed, ok } from './command';
 import type { WaitOutcome } from './deploy-verify-findings';
@@ -112,40 +107,6 @@ const realDeps: DeployVerifyDeps = {
     (await import('./deploy-verify-queues')).openQueue(url, env, statementTimeoutMs),
   expire: expireAfter,
 };
-
-interface Answered {
-  readonly status: number | null;
-  readonly build: string | null;
-  readonly cached: boolean;
-  readonly failure?: string;
-}
-
-/**
- * One `GET /readyz` on a connection of its own, so the load balancer chooses again: a kept-alive
- * socket would ask one pod the same question for the whole window. A redirect is an answer to tally,
- * never to follow: another host's `/readyz` says nothing about this origin.
- */
-async function takeSample(origin: string, limitMs: number): Promise<Answered> {
-  try {
-    const response = await fetch(`${origin}/readyz`, {
-      keepalive: false,
-      redirect: 'manual',
-      // Past a CDN or a caching proxy: the question is the fleet, never a stored copy of it.
-      headers: { 'cache-control': 'no-cache', pragma: 'no-cache' },
-      signal: AbortSignal.timeout(limitMs),
-    });
-    await response.body?.cancel();
-    const header = response.headers.get(BUILD_ID_HEADER);
-    const age = Number(response.headers.get('age') ?? '0');
-    return {
-      status: response.status,
-      build: header === null || header === '' ? null : header,
-      cached: Number.isNaN(age) || age > 0,
-    };
-  } catch (error) {
-    return { status: null, build: null, cached: false, failure: renderThrowable(error) };
-  }
-}
 
 /** The least time a database read gets, and the floor of its server-side `statement_timeout`. */
 const READ_FLOOR_MS = 1_000;

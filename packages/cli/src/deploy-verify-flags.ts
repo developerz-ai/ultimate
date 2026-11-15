@@ -48,9 +48,16 @@ function parsedOrNaN(raw: string): number {
  * The origin, and only that: `/readyz` lives at the root, so a path would be silently dropped, and
  * credentials would ride into every log line that names the URL. The cause never echoes the value.
  */
-function readOrigin(raw: string | undefined): string {
+export function readOrigin(
+  raw: string | undefined,
+  // The command the refusal names, and a runnable invocation of it: `x status` reads `--url` too.
+  asker: { readonly command: string; readonly example: string } = {
+    command: VERIFY_COMMAND,
+    example: EXAMPLE,
+  },
+): string {
   const refuse = (reason: string): BadFlagError =>
-    new BadFlagError({ flag: 'url', command: VERIFY_COMMAND, reason, fix: EXAMPLE });
+    new BadFlagError({ flag: 'url', command: asker.command, reason, fix: asker.example });
   if (raw === undefined) throw refuse('it is required: the origin the load balancer answers on');
   const parsed = URL.canParse(raw) ? new URL(raw) : undefined;
   if (parsed === undefined || !['http:', 'https:'].includes(parsed.protocol)) {

@@ -56,8 +56,9 @@ const babel = () => {
 };
 
 interface CacheEntry {
-  /** `contentHash` of the source the code was compiled from. */
+  /** `contentHash` of the source the code was compiled from, and the flag it was compiled under. */
   readonly hash: string;
+  readonly retainLines: boolean;
   readonly code: string;
 }
 
@@ -88,11 +89,20 @@ export function clearIslandTransformCache(): void {
  *
  * The output is still TypeScript — Babel PARSES the annotations here and does not strip them,
  * which is why the plugin declares `loader: 'ts'` and lets Bun remove them.
+ *
+ * `retainLines` is a coverage build's alone (`solidJsxPluginFor`): Babel then keeps each source
+ * line at its own line number, so the island chunk's map names lines the file really holds there
+ * (`coverage-remap.ts`). Never on a shipped build — it is a layout, and a layout is bytes.
  */
-export async function transformIslandTsx(source: string, path: string): Promise<string> {
+export async function transformIslandTsx(
+  source: string,
+  path: string,
+  options: { readonly retainLines?: boolean } = {},
+): Promise<string> {
+  const retainLines = options.retainLines === true;
   const hash = contentHash(source);
   const hit = cache.get(path);
-  if (hit !== undefined && hit.hash === hash) return hit.code;
+  if (hit !== undefined && hit.hash === hash && hit.retainLines === retainLines) return hit.code;
 
   // Babel installs its own `prepareStackTrace` on the first TRANSFORM — not on import, which is
   // where this guard was first put — and leaving it installed makes `Error.captureStackTrace`
@@ -114,6 +124,7 @@ export async function transformIslandTsx(source: string, path: string): Promise<
       // have one must not change what its islands compile to.
       babelrc: false,
       configFile: false,
+      retainLines,
       parserOpts: { plugins: [...PARSER_PLUGINS] },
       presets: [[solidPreset, PRESET_OPTIONS]],
     });
@@ -131,14 +142,14 @@ export async function transformIslandTsx(source: string, path: string): Promise<
       logs: 'the Solid JSX transform emitted no code',
     });
   }
-  cache.set(path, { hash, code });
+  cache.set(path, { hash, retainLines, code });
   return code;
 }
 
 /**
- * The plugin `island-bundle.ts` hands `Bun.build`. It carries no state of its own, so one frozen
- * descriptor serves every concurrent island build — `Bun.build` calls `setup` once per build with
- * that build's own builder.
+ * The plugin `island-bundle.ts` hands `Bun.build`. It carries no state of its own, so one
+ * descriptor per `retainLines` serves every concurrent island build — `Bun.build` calls `setup`
+ * once per build with that build's own builder.
  *
  * `.tsx`, NOT `.island.tsx`. The narrow filter looks like axiom 6 and is the opposite of it: an
  * island that imports a plain `.tsx` component — the most ordinary thing an author does, and what
@@ -149,12 +160,18 @@ export async function transformIslandTsx(source: string, path: string): Promise<
  * names its island by SPECIFIER and never imports one. So `.tsx` here already means exactly the
  * set that ships to a browser — the filter never had to do that work.
  */
-export const solidJsxPlugin: BunPlugin = {
+export const solidJsxPluginFor = (retainLines: boolean): BunPlugin => ({
   name: 'ultimate-island-solid',
   setup(build): void {
     build.onLoad({ filter: /\.tsx$/ }, async ({ path }) => ({
-      contents: await transformIslandTsx(await Bun.file(path).text(), path),
+      contents: await transformIslandTsx(await Bun.file(path).text(), path, { retainLines }),
       loader: 'ts',
     }));
   },
-};
+});
+
+/** The shipped build's transform. */
+export const solidJsxPlugin: BunPlugin = solidJsxPluginFor(false);
+
+/** A coverage build's (`buildIslands({ coverage: true })`): the same compile, lines kept. */
+export const solidJsxCoveragePlugin: BunPlugin = solidJsxPluginFor(true);

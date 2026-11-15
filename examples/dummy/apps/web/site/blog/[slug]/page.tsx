@@ -19,6 +19,7 @@ import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
 import { queries } from '../../../shared/client';
 import { blogHref, toCardPost } from '../../../shared/entities';
+import { memberName } from '../../../shared/member-name';
 import { oneRow } from '../../../shared/rows';
 import { tag } from '../../../shared/tags';
 import { anonymousViewer } from '../../../shared/viewer';
@@ -74,7 +75,7 @@ export const config = defineRoute({
               description: data.excerpt,
               ...(data.coverUrl === null ? {} : { image: data.coverUrl }),
               datePublished: data.publishedAt.toISOString(),
-              author: { name: data.authorName },
+              author: { name: memberName(t, data.authorName) },
             }),
           ]),
     ],
@@ -97,7 +98,7 @@ export function Page(props: { readonly data: BlogPost }): JSX.Element {
         <header class={styles.header}>
           <h1>{props.data.title}</h1>
           <p class={styles.meta}>
-            {t('site.blog.by', { name: props.data.authorName })}
+            {t('site.blog.by', { name: memberName(t, props.data.authorName) })}
             <Show when={props.data.publishedAt}>
               {(publishedAt) => (
                 <DateTime value={publishedAt()} timeZone={viewer().zone} dateStyle="long" />

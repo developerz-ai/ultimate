@@ -207,6 +207,7 @@ function startWeb(
         dev: binding.dev,
         buildId: options.buildId,
         hostname: binding.hostname,
+        ...(options.tls === undefined ? {} : { tls: options.tls }),
         signInPath: options.signInPath ?? null,
         // One declaration, never half of one: `defineHttpConfig` refuses `trustProxy` without hops.
         ...(hops === null ? {} : { trustProxy: true, trustedProxyHops: hops }),
@@ -223,6 +224,9 @@ function startWeb(
         // document that carries an island, so `script-src 'self'` meant no island booted anywhere
         // the policy is enforced — every container, and never `x dev`, where it is report-only.
         security: {
+          // A dev listener on TLS sends no HSTS: browsers pin it per HOST, so a two-year policy
+          // from `https://localhost:3000` would force every other localhost port onto https.
+          ...(binding.dev && options.tls !== undefined ? { hsts: null } : {}),
           csp: {
             extend: {
               'style-src': inlineStyleSources(options.inlineStyles ?? []),

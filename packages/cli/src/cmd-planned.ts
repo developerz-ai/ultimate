@@ -1,5 +1,5 @@
 // The commands the design docs specify and this build does not yet implement. They are in the
-// registry on purpose: `x status` exiting X_CLI_UNKNOWN_COMMAND says "you typed something that
+// registry on purpose: `x branch` exiting X_CLI_UNKNOWN_COMMAND says "you typed something that
 // does not exist", which is false and sends an agent looking for a typo. X_NOT_IMPLEMENTED plus a
 // fix naming the closest shipped command says the true thing, and `x help` lists them honestly.
 
@@ -30,12 +30,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     fix: 'x db branch list --json   # the database half: list, create <name>, delete <name>',
   },
   {
-    name: 'status',
-    summary: 'role health and the build-ID distribution of connected clients',
-    usage: 'x status [--json]',
-    fix: 'x doctor --json',
-  },
-  {
     name: 'ai',
     summary: 'eval scores, semantic-cache stats, vector reindex',
     usage: 'x ai [eval <name>|cache|reindex] [--json]',
@@ -46,8 +40,8 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
   // What is planned is a GENERATOR — the one thing a process that exits can contribute, since a
   // registration has to land in the app's own source to survive the run — and a generator that
   // emits the one call is not a second path any more than `x g route` is a second way to declare a
-  // route (axiom 1). The whole table is shaped this way: `x status` beside `x doctor`, `x cache`
-  // beside the `/_x` panel. What changed is only that the `fix:` is now true.
+  // route (axiom 1). The whole table is shaped this way: `x branch` beside `x db branch`, `x ai`
+  // beside `x test eval`. What changed is only that the `fix:` is now true.
   {
     name: 'money',
     summary: 'extend the currency table',
@@ -79,44 +73,16 @@ export interface PlannedSubcommand {
 
 /**
  * A subcommand of a shipped command that this build does not implement. Same promise as the table
- * above, one level down: `x db studio` stays in `x db`'s subcommand list, so the parser accepts it
- * and `x help db` still lists it, and it exits X_NOT_IMPLEMENTED naming what to run instead.
+ * above, one level down: the subcommand stays in its command's list, so the parser accepts it and
+ * `x help <command>` lists it, and it exits X_NOT_IMPLEMENTED naming what to run instead.
  *
- * `studio` is here because the migration engine is `@ultimat3/db`'s and only that. It used to
- * shell out to `bunx drizzle-kit studio` — a second schema tool, fetched unpinned at run time,
- * declared in no `package.json` — while every other `x db` subcommand went through the framework's
- * own ledger. One subcommand is not worth a second engine.
+ * Empty, `As of 2026-11-15` (plan 101-finished-and-self-maintained G6). `x token grant`,
+ * `x cache stats`, `x db studio` and `x jobs drain` left the registry rather than stay planned:
+ * a key's scopes are never widened, hit rates are aggregated by no process, the `/_x` db panel is
+ * the one schema browser, and Postgres is the one durable job driver. Each reason is its row in
+ * `wiki/Known-Gaps.md`; the parser now refuses each, with the same exit code.
  */
-export const PLANNED_SUBCOMMANDS: readonly PlannedSubcommand[] = [
-  // A key's scopes are fixed when it is issued — `AuthApiKeyRecord.scopes` is "never widened" and
-  // `ApiKeyStore` has no update — so a grant is a NEW key with the wider set and a revoke of the old.
-  {
-    command: 'token',
-    subcommand: 'grant',
-    fix: 'x token create --scopes post:read,post:write --json   # a key with the wider set; then x token revoke <old-id>',
-  },
-  // Hit rates live in the serving processes' tiers, and a CLI process has served nothing: the
-  // number is the running server's, which `/_x` already reads in that process.
-  {
-    command: 'cache',
-    subcommand: 'stats',
-    fix: 'x dev   # then the cache panel at /_x',
-  },
-  {
-    command: 'db',
-    subcommand: 'studio',
-    fix: 'x dev   # then the db panel at /_x: schema, rows, and a guarded SQL console',
-  },
-  // Planned because Postgres is the one durable job driver: there is nowhere to drain to. The two
-  // `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method, so a drain
-  // leased the production batch for five minutes, failed each enqueue and nacked it back. 25.0.0
-  // deleted both stubs and the unreachable drain body; a real second driver writes a new one.
-  {
-    command: 'jobs',
-    subcommand: 'drain',
-    fix: 'x jobs list --json   # the queue as it stands; Postgres is the only durable driver, so there is nowhere to drain to',
-  },
-];
+export const PLANNED_SUBCOMMANDS: readonly PlannedSubcommand[] = [];
 
 /**
  * Thrown by the owning command, so the subcommand fails exactly where it would have run. Returns

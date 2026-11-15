@@ -161,10 +161,4 @@ describe('unit · x token list and revoke', () => {
     const again = await command.run(ctxFor(root, ['token', 'revoke', key.id]));
     expect(again).toMatchObject({ ok: true, data: { revoked: false } });
   });
-
-  test('grant is planned: a key never widens, so the fix issues a wider one', async () => {
-    const { command } = fixture();
-    const failure = command.run(ctxFor(appRoot(), ['token', 'grant']));
-    await expect(failure).rejects.toBeUltimateError('X_NOT_IMPLEMENTED');
-  });
 });

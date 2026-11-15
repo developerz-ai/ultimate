@@ -8,6 +8,7 @@ import { rename, rm } from 'node:fs/promises';
 // why: Bun ships no path joiner.
 import { basename, dirname, join } from 'node:path';
 import { evictCacheFiles } from '@ultimat3/core';
+import type { PgliteDriver } from './pglite';
 import { PGLITE_PACKAGE } from './pglite-package';
 
 /** Bumped when the file layout below changes, so an old file is a miss rather than a misread. */
@@ -108,7 +109,12 @@ export async function readSnapshot(file: string, key: string): Promise<Blob | un
  * Best effort: a cache that cannot be written (a read-only checkout, a full disk) costs the next
  * boot an `initdb`, which is what it cost before there was a cache.
  */
-export async function writeSnapshot(file: string, key: string, blob: Blob): Promise<void> {
+export async function writeSnapshot(
+  file: string,
+  key: string,
+  blob: Blob,
+  keepPrevious = 1,
+): Promise<void> {
   memo.set(key, blob);
   const body = new Uint8Array(await blob.arrayBuffer());
   const temp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -121,16 +127,84 @@ export async function writeSnapshot(file: string, key: string, blob: Blob): Prom
   }
   // One file per PGlite version, and nothing else ever removes an old version's (#738): keep this
   // one and the newest previous one, which a second checkout on the older PGlite may be reading.
+  // A caller-keyed cache (`dataSnapshot`, below) keeps its own count in a directory of its own.
   // A reader loads the whole file in one read and takes a missing one as a miss, so no lock.
   await evictCacheFiles({
     dir: dirname(file),
     current: basename(file),
     matches: isSnapshot,
     temporary: isSnapshotTemp,
+    keepPrevious,
   });
 }
 
 export async function discardSnapshot(file: string, key: string): Promise<void> {
   memo.delete(key);
   await rm(file, { force: true }).catch(() => undefined);
+}
+
+// A CALLER-keyed snapshot of an in-memory database's whole data directory — a scratch database the
+// caller migrated, restored on the next boot naming the same key. In this file, not its own: a
+// lazy `import()` of a second module made Bun wrap every shared module in `__esm` init stubs, +740 B
+// in the browser rpc chunk that reaches this barrel (`client-bundle.test.ts`).
+
+/** `PgliteOptions.dataSnapshot`: where the caller's snapshots live, and which one this boot is. */
+export interface PgliteDataSnapshot {
+  /** A directory of this cache's own: its files are evicted newest-`keep` first. */
+  readonly dir: string;
+  /** What produced the state, hashed by the caller (schema, migrations). Never a TTL. */
+  readonly key: string;
+  /** Snapshots besides the one just written to keep. Default 2. */
+  readonly keep?: number | undefined;
+}
+
+/** The file and memo key of `snapshot` under the installed PGlite `version`. */
+export function dataSnapshotAt(
+  snapshot: PgliteDataSnapshot,
+  version: string,
+): { readonly file: string; readonly key: string } {
+  const key = `${snapshotKey(version)}-${snapshot.key}`;
+  return { file: snapshotFile(snapshot.dir, key), key };
+}
+
+/**
+ * Where `snapshot` lives, or `undefined`: none asked, a boot on disk (a directory is its own
+ * snapshot), or a PGlite that cannot name its version — a cache that must not outlive an upgrade.
+ */
+export async function dataSnapshotFor(
+  snapshot: PgliteDataSnapshot | undefined,
+  inMemory: boolean,
+  version: () => Promise<string | undefined>,
+): Promise<{ readonly file: string; readonly key: string } | undefined> {
+  if (snapshot === undefined || !inMemory) return undefined;
+  const named = await version();
+  return named === undefined ? undefined : dataSnapshotAt(snapshot, named);
+}
+
+/** The drivers a boot restored from a caller's snapshot: they hold its state already. */
+const restored = new WeakSet<PgliteDriver>();
+
+export const markRestored = (driver: PgliteDriver): void => {
+  restored.add(driver);
+};
+
+export const wasRestored = (driver: PgliteDriver): boolean => restored.has(driver);
+
+/**
+ * The driver's data directory, written under `at` — unless it was restored from that very file, or
+ * the driver cannot dump. Best effort, as the post-`initdb` cache is: a write that fails costs the
+ * next boot a migration, which is what it cost before.
+ */
+export async function saveDataSnapshot(
+  driver: PgliteDriver,
+  at: { readonly file: string; readonly key: string } | undefined,
+  keep: number | undefined,
+): Promise<boolean> {
+  if (at === undefined || wasRestored(driver) || driver.dumpDataDir === undefined) return false;
+  try {
+    await writeSnapshot(at.file, at.key, await driver.dumpDataDir('none'), keep ?? 2);
+    return true;
+  } catch {
+    return false;
+  }
 }

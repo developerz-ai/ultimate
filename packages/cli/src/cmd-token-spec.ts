@@ -3,8 +3,11 @@
 
 import type { CommandSpec } from './parse';
 
-/** `grant` stays listed and answers X_NOT_IMPLEMENTED (`PLANNED_SUBCOMMANDS`): a key's scopes are fixed. */
-export const TOKEN_SUBCOMMANDS = ['create', 'list', 'revoke', 'grant'] as const;
+/**
+ * No `grant`: a key's scopes are fixed when it is issued, so a wider set is a new key and a revoke
+ * of the old (`wiki/Known-Gaps.md`). It was planned until 31.x; the parser now refuses it.
+ */
+export const TOKEN_SUBCOMMANDS = ['create', 'list', 'revoke'] as const;
 
 /** The longest lifetime `--days` takes: ten years is "no expiry" said out loud. */
 export const TOKEN_MAX_DAYS = 3_650;

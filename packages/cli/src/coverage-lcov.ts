@@ -65,6 +65,12 @@ export interface FileCoverage {
   readonly miss: readonly number[];
   readonly funcsFound: number;
   readonly funcsHit: number;
+  /**
+   * Reached only through an island's built chunk (`coverage-remap.ts`): its lines are the ones the
+   * chunk's map names, not Bun's line set for the source. Folded under a direct record, never
+   * beside it (`mergeFileCoverage`).
+   */
+  readonly chunkOnly?: true;
 }
 
 export const fileCoverageOf = (record: LcovRecord): FileCoverage => {
@@ -93,6 +99,21 @@ export const fileCoverageOf = (record: LcovRecord): FileCoverage => {
  */
 export function mergeFileCoverage(parts: readonly FileCoverage[]): FileCoverage {
   if (parts.length === 1) return parts[0] as FileCoverage;
+  // A chunk-only part names a smaller line set, so beside a direct record it would drop every
+  // miss the direct one lists outside it. The direct line set wins, as in one run: the chunk only
+  // turns its misses into hits. Only when NO part loaded the file are chunk parts folded alone.
+  const direct = parts.filter((part) => part.chunkOnly !== true);
+  if (direct.length > 0 && direct.length < parts.length) {
+    const base = mergeFileCoverage(direct);
+    const ran = new Set(parts.flatMap((part) => (part.chunkOnly === true ? part.hit : [])));
+    const turned = base.miss.filter((line) => ran.has(line));
+    if (turned.length === 0) return base;
+    return {
+      ...base,
+      hit: [...base.hit, ...turned].sort((a, b) => a - b),
+      miss: base.miss.filter((line) => !ran.has(line)),
+    };
+  }
   const hit = new Set<number>();
   for (const part of parts) for (const line of part.hit) hit.add(line);
   const missIn = parts.map((part) => new Set(part.miss));
@@ -104,6 +125,7 @@ export function mergeFileCoverage(parts: readonly FileCoverage[]): FileCoverage 
     miss: miss.sort((a, b) => a - b),
     funcsFound: Math.max(0, ...parts.map((part) => part.funcsFound)),
     funcsHit: Math.max(0, ...parts.map((part) => part.funcsHit)),
+    ...(direct.length === 0 ? { chunkOnly: true as const } : {}),
   };
 }
 
@@ -166,16 +188,32 @@ export function decodeLines(text: string): readonly number[] {
   return lines;
 }
 
-/** A file's facts as they cross `--json`: hit runs, miss runs, `[funcsFound, funcsHit]`. */
+/**
+ * A file's facts as they cross `--json`: hit runs, miss runs, `[funcsFound, funcsHit]`, and
+ * `c: 1` on a chunk-only record. Absent `c` is a direct record — every part written before it.
+ */
 export type CoverageWire = Readonly<
-  Record<string, { readonly h: string; readonly m: string; readonly f: readonly [number, number] }>
+  Record<
+    string,
+    {
+      readonly h: string;
+      readonly m: string;
+      readonly f: readonly [number, number];
+      readonly c?: 1;
+    }
+  >
 >;
 
 export const encodeCoverage = (map: CoverageMap): CoverageWire =>
   Object.fromEntries(
     Object.entries(map).map(([file, one]) => [
       file,
-      { h: encodeLines(one.hit), m: encodeLines(one.miss), f: [one.funcsFound, one.funcsHit] },
+      {
+        h: encodeLines(one.hit),
+        m: encodeLines(one.miss),
+        f: [one.funcsFound, one.funcsHit],
+        ...(one.chunkOnly === true ? { c: 1 as const } : {}),
+      },
     ]),
   );
 
@@ -185,11 +223,17 @@ export function decodeCoverage(value: unknown): CoverageMap | undefined {
   const out = new Map<string, FileCoverage>();
   for (const [file, raw] of Object.entries(value)) {
     if (typeof raw !== 'object' || raw === null) return undefined;
-    const { h, m, f } = raw as { h?: unknown; m?: unknown; f?: unknown };
+    const { h, m, f, c } = raw as { h?: unknown; m?: unknown; f?: unknown; c?: unknown };
     if (typeof h !== 'string' || typeof m !== 'string' || !Array.isArray(f)) return undefined;
     const [found, hit] = f as unknown[];
     if (typeof found !== 'number' || typeof hit !== 'number') return undefined;
-    out.set(file, { hit: decodeLines(h), miss: decodeLines(m), funcsFound: found, funcsHit: hit });
+    out.set(file, {
+      hit: decodeLines(h),
+      miss: decodeLines(m),
+      funcsFound: found,
+      funcsHit: hit,
+      ...(c === 1 ? { chunkOnly: true as const } : {}),
+    });
   }
   return Object.fromEntries(out);
 }

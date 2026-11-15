@@ -14,7 +14,10 @@ export interface DtsTree {
   readonly specifiers: ReadonlyMap<string, string>;
 }
 
-/** name → that name's normalised declaration, then a `local …` line per local type it names. */
+/**
+ * name → that name's normalised declaration, then a `local …` line per local type it names, then
+ * an `inherits …` line per ancestor interface (shape only: `public-api-surface.ts` never hashes it).
+ */
 export type SymbolTexts = Readonly<Record<string, string>>;
 
 export const digest = (text: string): string =>
@@ -101,6 +104,58 @@ export function symbolReader(tree: DtsTree): (file: string) => SymbolTexts {
     return foreign(file, binding.from, binding.imported);
   };
 
+  /** The interfaces an `interface … extends A, B<…> {` line names, by their first word. */
+  const parentsOf = (line: string): string[] => {
+    const words = line.split(' ');
+    const from = words.indexOf('extends');
+    const open = words.indexOf('{');
+    if (words[0] !== 'interface' || from === -1 || (open !== -1 && open < from)) return [];
+    const names: string[] = [];
+    let depth = 0;
+    let expecting = true;
+    for (const word of words.slice(from + 1, open === -1 ? undefined : open)) {
+      if (depth === 0 && expecting && /^[\w$]+$/.test(word)) names.push(word);
+      expecting = depth === 0 && word === ',';
+      if (word === '<') depth += 1;
+      else if (word === '>') depth -= 1;
+    }
+    return names;
+  };
+
+  /**
+   * One `inherits <declaration>` line per ancestor interface, followed through imports. Read by the
+   * shape, never by the hash (`public-api-surface.ts`): a parent is judged as its own symbol, and
+   * this only lets a member re-declared from it be told from a new requirement.
+   */
+  const inheritsOf = (
+    file: string,
+    module: DtsModule,
+    line: string,
+    seen: Set<string>,
+  ): string[] => {
+    const out: string[] = [];
+    for (const parent of parentsOf(line)) {
+      if (seen.has(parent)) continue;
+      seen.add(parent);
+      const [head = '', ...rest] = textOf(file, module, parent).split('\n');
+      if (!head.startsWith('interface ')) continue;
+      out.push(`inherits ${head}`);
+      const carried = rest.filter((one) => one.startsWith('inherits '));
+      if (carried.length > 0) out.push(...carried);
+      else if (module.declarations.some((one) => one.name === parent)) {
+        out.push(...inheritsOf(file, module, head, seen));
+      }
+    }
+    return out;
+  };
+
+  /** `textOf`, with the `inherits` lines of an interface's ancestors after it. */
+  const withParents = (file: string, module: DtsModule, local: string): string => {
+    const text = textOf(file, module, local);
+    const lines = inheritsOf(file, module, text.split('\n')[0] ?? '', new Set([local]));
+    return lines.length === 0 ? text : [text, ...lines].join('\n');
+  };
+
   const exportsOf = (file: string): ReadonlyMap<string, string> => {
     const done = exported.get(file);
     if (done !== undefined) return done;
@@ -118,9 +173,9 @@ export function symbolReader(tree: DtsTree): (file: string) => SymbolTexts {
       if (target !== undefined) for (const [name, text] of exportsOf(target)) out.set(name, text);
     }
     for (const one of module.declarations) {
-      if (one.exported) out.set(one.name, textOf(file, module, one.name));
+      if (one.exported) out.set(one.name, withParents(file, module, one.name));
     }
-    for (const spec of module.lists) out.set(spec.name, textOf(file, module, spec.local));
+    for (const spec of module.lists) out.set(spec.name, withParents(file, module, spec.local));
     for (const spec of module.reexports) out.set(spec.name, foreign(file, spec.from, spec.local));
     visiting.delete(file);
     exported.set(file, out);

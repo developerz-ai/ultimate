@@ -17,6 +17,7 @@ import {
   vanishedSuiteFinding,
 } from './verify-floor';
 import { inCi, judgeSkips } from './verify-skip-ceiling';
+import { appliesReason, ranNothingReason, skipLines } from './verify-skip-reason';
 import { stalledOutput, stepTimeoutFinding } from './verify-stalled';
 import type {
   CoverageNumbers,
@@ -26,6 +27,7 @@ import type {
   VerifyStepName,
 } from './verify-step';
 import { GATE_COMMAND } from './verify-step';
+import { judgeUnrun, skipWhy } from './verify-strict';
 import { resetTestDiscovery } from './verify-tests';
 
 /**
@@ -51,6 +53,8 @@ export async function runVerify(
   // Per step: the numbers a judged run measured, or — under `--shard`, which cannot judge — the
   // `facts` its slice covered, for `x verify merge` to fold.
   const coverage = new Map<string, JsonValue>();
+  // Per step that ran no check: why, in words — `data.skipReasons` and one human line each.
+  const unrun = new Map<string, string>();
   // One per run: a step's tag is `<step>@<run>`, so two gates on one machine never kill each
   // other's children.
   const runId = crypto.randomUUID().slice(0, 8);
@@ -63,6 +67,7 @@ export async function runVerify(
     }
     const ran = await runStep(step, stepCtx, floor, runId);
     byName.set(step.name, ran.result);
+    if (ran.unrun !== undefined) unrun.set(step.name, ran.unrun);
     if (ran.coverage !== undefined) {
       coverage.set(step.name, { facts: encodeCoverage(ran.coverage) });
     } else if (ran.measured !== undefined) {
@@ -129,6 +134,19 @@ export async function runVerify(
   // WALL time, not the sum of step times: with steps overlapping, the sum overstates what a run
   // costs, and the wall clock is the number a CI job waits on.
   const totalMs = Math.round(performance.now() - began);
+  // In declared order, like the table. Not strict: the skipped steps no `skip` why excuses are a
+  // WARNING, never red — an existing app meets this on `main` (X_BREAKING_ON_MAIN); `next` flips it.
+  const skipReasons = Object.fromEntries(
+    results.flatMap((step) => {
+      const reason = unrun.get(step.name);
+      return reason === undefined ? [] : [[step.name, reason] as const];
+    }),
+  );
+  const unwaived =
+    floor?.strict === true
+      ? []
+      : skippedSteps.filter((name) => unrun.has(name) && skipWhy(floor, name) === undefined);
+  const lines = skipLines(skipReasons, unwaived);
   const summary = verifySummary({
     results,
     failed: failedSteps,
@@ -143,12 +161,15 @@ export async function runVerify(
     // user-facing string outside `messages.ts` for a fact `--json` was already carrying twice.
     summary: only === undefined ? summary : msg('cli.verify.notAGateRun', { summary }),
     steps: results,
+    ...(lines.length === 0 ? {} : { lines }),
     // `skipped` is a list beside `failed` and not a count, because the two answer the same kind of
     // question — *which* steps, not how many — and a caller ratcheting on coverage needs the names.
     data: {
       failed: failedSteps,
       skipped: skippedSteps,
       durationMs: totalMs,
+      ...(unrun.size === 0 ? {} : { skipReasons }),
+      ...(unwaived.length === 0 ? {} : { unwaived }),
       // A BOOLEAN beside the banner, so a reader of `--json` never has to substring-match a
       // summary line to learn that this run checked one thing.
       // `only` is always the LIST, in declared order — one name is a list of one.
@@ -227,6 +248,8 @@ async function runStep(
   readonly result: StepResult;
   readonly coverage?: CoverageMap;
   readonly measured?: CoverageNumbers;
+  /** Why the step ran no check, when it ran none: a skip, a vanished suite, or strict red. */
+  readonly unrun?: string;
 }> {
   const command = ctx.command ?? GATE_COMMAND;
   // Inside the step's own failure, like a throwing `run`: an `applies` that threw escaped every
@@ -251,14 +274,19 @@ async function runStep(
     // about. Recorded as failed and NOT as skipped, so every reader of a step table sees it:
     // the summary, `data.failed`, and the reference-app gate's own red list.
     const required = floorRequires(floor, step.name);
+    const reason = appliesReason(step.name);
+    // Strict: a step no floor line requires and no `skip` why excuses is red the same way.
+    const strict = judgeUnrun(floor, step.name, reason, required, command);
+    const red = required || strict.length > 0;
     return {
       result: {
         name: step.name,
-        ok: !required,
+        ok: !red,
         durationMs: 0,
-        skipped: !required,
-        findings: required ? [vanishedSuiteFinding(step.name, command)] : [],
+        skipped: !red,
+        findings: required ? [vanishedSuiteFinding(step.name, command)] : strict,
       },
+      unrun: reason,
     };
   }
   const started = performance.now();
@@ -296,23 +324,35 @@ async function runStep(
   // with no files at all — the run just had to finish before it could be seen. Appended to the
   // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
   const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
+  const unrun = nothingRan ? ranNothingReason(tests) : undefined;
+  const strict = unrun === undefined ? [] : judgeUnrun(floor, step.name, unrun, required, command);
+  // A `skip` why over a suite that RAN tests is stale: said on the step, never red. Only on counts
+  // a whole run holds — a shard's slice is `x verify merge`'s to judge on the sum, and a step that
+  // spawned nothing (`--changed`) proves nothing either way.
+  const staleWhy =
+    tests !== undefined &&
+    tests.ran > 0 &&
+    outcome.shard === undefined &&
+    skipWhy(floor, step.name) !== undefined
+      ? [msg('cli.verify.waiverStale', { step: step.name })]
+      : [];
   // A mostly skipped suite, judged where the verdict is: CI, and only a whole run (a shard's
   // share is judged by `x verify merge`, on the sum). A laptop without services stays a dev loop.
   const skips =
     outcome.shard === undefined && inCi(ctx.env ?? Bun.env)
       ? judgeSkips(step.name, tests, floor?.skipCeiling)
       : { findings: [], warnings: [] };
-  const warnings = [...(outcome.warnings ?? []), ...skips.warnings];
+  const warnings = [...(outcome.warnings ?? []), ...skips.warnings, ...staleWhy];
   return {
     result: {
       name: step.name,
-      ok: outcome.ok && vanished.length === 0 && skips.findings.length === 0,
+      ok: outcome.ok && vanished.length === 0 && strict.length === 0 && skips.findings.length === 0,
       durationMs: Math.round(performance.now() - started),
       // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
       // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
       // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
-      skipped: nothingRan && !required,
-      findings: [...outcome.findings, ...vanished, ...skips.findings],
+      skipped: nothingRan && !required && strict.length === 0,
+      findings: [...outcome.findings, ...vanished, ...strict, ...skips.findings],
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
       ...(warnings.length === 0 ? {} : { warnings }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
@@ -325,6 +365,7 @@ async function runStep(
     },
     ...(outcome.coverage === undefined ? {} : { coverage: outcome.coverage }),
     ...(outcome.measured === undefined ? {} : { measured: outcome.measured }),
+    ...(unrun === undefined ? {} : { unrun }),
   };
 }
 

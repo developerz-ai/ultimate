@@ -127,11 +127,14 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'query', name: 'invoice-feed', feature: 'invoice', live: true },
   { kind: 'job', name: 'sweep-invoices', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
   { kind: 'backfill', name: 'reindex-invoices', feature: 'invoice' },
-  // The three factory generators, each into a slice of its own: none reads a table, so each must
+  // Three factory generators, each into a slice of its own: none reads a table, so each must
   // compile in a feature with no entity — `ops` has none, which is the case that proves it.
   { kind: 'cron-job', name: 'nightly-report', feature: 'ops' },
   { kind: 'purge', name: 'purge-retained', feature: 'ops' },
   { kind: 'webhook-receiver', name: 'billing-events', feature: 'ops' },
+  // The two that DO read a table: the resource's own, as `x g` reads its entity.ts off the disk.
+  { kind: 'export-rows', name: 'export-invoices', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
+  { kind: 'import-rows', name: 'import-invoices', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
   { kind: 'task', name: 'nightly-sweep', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
   // The other shape both templates have: a feature whose entity names no tenant column, so the
   // job/task must not assume one — compiled here beside the tenant-scoped pair above, exactly as

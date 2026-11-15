@@ -11,6 +11,7 @@ import type { Env } from './runtime-bindings';
 import type { LiveFeed } from './runtime-live-feed';
 import type { RuntimeOverrides } from './runtime-overrides';
 import type { RunningServices } from './runtime-services';
+import type { ListenerTls } from './serve-env-tls';
 import type { WebBinding } from './web-binding';
 
 /** The roles `x dev` starts when `--role` names none, in boot order. */
@@ -33,6 +34,12 @@ export interface StartRolesOptions {
    * probe, which is the same failure in four costumes.
    */
   readonly http?: WebBinding;
+  /**
+   * The web role's certificate and key, PEM: its listener serves TLS. Absent is plaintext, the
+   * default — `x dev --tls` and `TLS_CERT`/`TLS_KEY` are the two callers. Never the `sync` node or
+   * the metrics endpoint: the sync socket is served on the web port too (`role-sync`).
+   */
+  readonly tls?: ListenerTls;
   /**
    * The app's `auth.signInPath`. Threaded rather than read from the config here because
    * `startRoles` takes plain values — a test starts a web role with no `app.config.ts` at all.

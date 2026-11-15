@@ -223,6 +223,16 @@ describe('unit · the CI workflow x new writes · the gate in parts', () => {
     );
   });
 
+  // ubuntu-latest ships Chrome, so the e2e part runs the browser suite rather than skipping it —
+  // and a runner without one (a `CI_RUNNER` label) is red with the fix, never a green skip.
+  test('the part that runs e2e requires the browser, and only that part', () => {
+    const e2e = verifyPlan(DEFAULT_PLAN_PARTS).filter((part) => part.only.includes('e2e'));
+    expect(e2e.map((part) => part.part)).toEqual(['e2e']);
+    const browser = steps().find((step) => step.run?.includes('E2E_BROWSER_REQUIRED=1'));
+    expect(browser?.if).toBe("contains(matrix.only, 'e2e')");
+    expect(browser?.run).toContain('>> "$GITHUB_ENV"');
+  });
+
   test('every part hands the verdict its document, red or green, under its own name', () => {
     const upload = steps().find((step) => step.uses?.startsWith('actions/upload-artifact@'));
     expect(upload?.with?.['name']).toBe(`verify-part-${expr('matrix.part')}`);

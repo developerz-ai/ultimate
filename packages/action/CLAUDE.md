@@ -195,9 +195,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | `As of 2026-11-09`, Bun 1.4.4, one entry over the working tree |
+  | Entry | `As of 2026-11-15`, Bun 1.4.4, one entry over the working tree |
   |---|---|
-  | `rpc` | 24,473 B, pinned ≤ 25,000 (`client-bundle.test.ts`); 29,972 B while it read core's barrel |
+  | `rpc` | 24,655 B, pinned ≤ 25,000 (`client-bundle.test.ts`); 29,972 B while it read core's barrel; 25,395 B while `@ultimat3/db` held a dynamic `import()` (Bun wraps every module of a graph holding one in lazy-init code) |
   | `rpc` + `clientFlight` from `@ultimat3/core/page` | 32,929 B (38,416 B from the barrel) |
 
 - `isTransientFailure`'s inversion, the client graph's import rule, `sideEffects`: still rules, in

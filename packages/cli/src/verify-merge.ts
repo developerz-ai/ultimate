@@ -23,14 +23,18 @@ import { decodeCoverage, mergeCoverage } from './coverage-lcov';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import type { TestCounts } from './test-counts';
+import { deferredBrowserFinding } from './verify-e2e';
 import type { VerifyFloor } from './verify-floor';
 import { floorRequires, skippedSuiteFinding } from './verify-floor';
+import { foldSkipReasons, readPartSkipReasons } from './verify-merge-skips';
 import type { PartStep } from './verify-part-step';
 import { readPartStep } from './verify-part-step';
 import { verifySummary } from './verify-run';
 import { corpusHash } from './verify-shard';
 import { judgeSkips } from './verify-skip-ceiling';
+import { ranNothingReason, skipLines } from './verify-skip-reason';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
+import { judgeUnrun, skipWhy } from './verify-strict';
 
 /**
  * A part handed to `x verify merge` that is not an `x verify --json` document. `command` is the
@@ -55,6 +59,8 @@ export interface VerifyPart {
   readonly steps: readonly PartStep[];
   /** step → what this part's slice of it covered and did not judge (`data.coverage.<step>.facts`). */
   readonly coverage?: Readonly<Record<string, CoverageMap>>;
+  /** step → why it ran no check in this part (`data.skipReasons`). */
+  readonly skipReasons?: Readonly<Record<string, string>>;
 }
 
 /** Findings a step earns from the parts TOGETHER, which no one part could raise. */
@@ -121,11 +127,13 @@ export function parsePart(file: string, text: string, command: string = GATE_COM
     }
     coverage.set(step, map);
   }
+  const skipReasons = readPartSkipReasons(data);
   return {
     file,
     durationMs: typeof data['durationMs'] === 'number' ? data['durationMs'] : 0,
     steps,
     ...(coverage.size === 0 ? {} : { coverage: Object.fromEntries(coverage) }),
+    ...(skipReasons === undefined ? {} : { skipReasons }),
   };
 }
 
@@ -257,6 +265,7 @@ function mergeStep(
   floor: VerifyFloor | undefined,
   kinds: Gaps,
   rider: MergeRiders[string] | undefined,
+  command: string,
 ): StepResult {
   const gap = kinds.present;
   if (entries.length === 0) {
@@ -323,6 +332,15 @@ function mergeStep(
   const nothingRan = sharded.length > 0 && tests !== undefined && tests.ran === 0;
   const required = floorRequires(floor, name);
   const floorGap = nothingRan && required ? [skippedSuiteFinding(name, tests.skipped)] : [];
+  // The browser the e2e shards deferred, on the same sum, ahead of the floor's re-run fix.
+  const browser =
+    name === 'e2e' && floorGap.length > 0
+      ? deferredBrowserFinding(steps.flatMap((step) => step.warnings ?? []))
+      : undefined;
+  // Strict, on the same sum: each shard deferred it, exactly as it deferred the floor.
+  const strict = nothingRan
+    ? judgeUnrun(floor, name, ranNothingReason(tests), required, command)
+    : [];
   // The ceiling on the SUM, always: a merge is the CI verdict, and one shard's skips say nothing.
   const skips =
     sharded.length > 0
@@ -332,7 +350,9 @@ function mergeStep(
   const findings = [
     ...steps.flatMap((step) => step.findings),
     ...gaps,
+    ...(browser === undefined ? [] : [browser]),
     ...floorGap,
+    ...strict,
     ...skips.findings,
     ...riding,
   ];
@@ -343,17 +363,25 @@ function mergeStep(
     ...(rider?.output === undefined ? [] : [rider.output]),
   ].join('\n');
   // Every part's advice, once each and in the order the parts reported it.
+  // A `skip` why over a split step the shards together ran: each slice deferred it to the sum.
+  const staleWhy =
+    sharded.length > 0 && tests !== undefined && tests.ran > 0 && skipWhy(floor, name) !== undefined
+      ? [msg('cli.verify.waiverStale', { step: name })]
+      : [];
   const warnings = [
-    ...new Set([...steps.flatMap((step) => step.warnings ?? []), ...skips.warnings]),
+    ...new Set([...steps.flatMap((step) => step.warnings ?? []), ...skips.warnings, ...staleWhy]),
   ];
   const skipped =
-    sharded.length > 0 ? nothingRan && !required : steps.every((step) => step.skipped);
+    sharded.length > 0
+      ? nothingRan && !required && strict.length === 0
+      : steps.every((step) => step.skipped);
   return {
     name,
     ok:
       steps.every((step) => step.ok) &&
       gaps.length === 0 &&
       floorGap.length === 0 &&
+      strict.length === 0 &&
       skips.findings.length === 0 &&
       riding.length === 0,
     // The slowest job: the parts ran side by side, and wall time is what a CI run waits on.
@@ -397,6 +425,7 @@ export function mergeParts(
       options.riders !== undefined && Object.hasOwn(options.riders, name)
         ? options.riders[name]
         : undefined,
+      options.command ?? GATE_COMMAND,
     ),
   );
   const failed = steps.filter((step) => !step.ok).map((step) => step.name);
@@ -404,17 +433,22 @@ export function mergeParts(
   const durationMs = Math.max(0, ...parts.map((part) => part.durationMs));
   const ok = failed.length === 0 && unknown.length === 0;
   const summary = verifySummary({ results: steps, failed, skipped, totalMs: durationMs });
+  const unrun = foldSkipReasons(steps, parts, floor);
+  const lines = skipLines(unrun.reasons, unrun.unwaived);
   return {
     ok,
     command: 'verify',
     summary: msg('cli.verify.merged', { parts: parts.length, summary }),
     steps,
+    ...(lines.length === 0 ? {} : { lines }),
     ...(unknown.length === 0 ? {} : { findings: unknown }),
     data: {
       failed,
       skipped,
       durationMs,
       merged: { parts: parts.map((part) => part.file) },
+      ...(Object.keys(unrun.reasons).length === 0 ? {} : { skipReasons: unrun.reasons }),
+      ...(unrun.unwaived.length === 0 ? {} : { unwaived: unrun.unwaived }),
     },
     exitCode: ok ? 0 : 1,
   };

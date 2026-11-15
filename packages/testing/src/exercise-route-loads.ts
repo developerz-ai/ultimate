@@ -16,8 +16,16 @@ import type {
   ProofMs,
 } from './exercise-report';
 import { withExerciseRequest } from './exercise-request';
+import {
+  entryActor,
+  entryActorChoice,
+  entryParams,
+  entrySearch,
+  liveEntry,
+  routeEntryFor,
+} from './exercise-route-override';
 import type { RouteLoadSubject, RouteParamsValue } from './exercise-route-subjects';
-import { chooseRouteActor, routeParams, routeUrl } from './exercise-route-subjects';
+import { routeParams, routeUrl } from './exercise-route-subjects';
 import type { StatementCeilingProof } from './exercise-statement-ceiling';
 import { judgeStatementCeiling } from './exercise-statement-ceiling';
 import { actorRowsOf, seated } from './exercise-sweeps';
@@ -32,13 +40,15 @@ export interface RouteLoadRecord {
   readonly kind: 'route';
   readonly name: string;
   readonly file: string;
-  readonly outcome: 'reached' | 'refused' | 'unreached';
+  readonly outcome: 'reached' | 'refused' | 'unreached' | 'off';
   readonly code?: string;
   readonly reason?: string;
   readonly statements: number;
   readonly effects: readonly ExerciseEffect[];
   readonly ms: number;
   readonly statementCeiling?: StatementCeilingProof;
+  /** Reached with no statement and no effect, and the entry says why that is right. */
+  readonly empty?: string;
   readonly plans?: PlanProof;
   readonly scale?: ScaleProof;
   readonly proofMs?: ProofMs;
@@ -57,31 +67,51 @@ export interface RouteCallOptions {
 /** The page's data, resolved as a render resolves it, in a request as `actor`. */
 export const callRoute = (
   route: RouteLoadSubject,
-  params: RouteParamsValue,
+  call: RouteCallInput,
   actor: Actor | null,
 ): Promise<unknown> =>
   withExerciseRequest(routeLabel(route.path), actor, () =>
-    route.load({ params, url: routeUrl(route.path, params) }),
+    route.load({ params: call.params, url: `${routeUrl(route.path, call.params)}${call.search}` }),
   );
 
-/** Who loads `route` in `tenant` of `graph`, and with which params — or none. */
+/** What one load is handed: its params and the query string its URL carries (`''`, or `?…`). */
+export interface RouteCallInput {
+  readonly params: RouteParamsValue;
+  readonly search: string;
+}
+
+/**
+ * Who loads `route` in `tenant` of `graph`, and with which params — or none. The route's
+ * `defineExercise` entry speaks first (`exercise-route-override.ts`); the pass picks the rest.
+ */
 export async function routeCall(
   route: RouteLoadSubject,
   options: RouteCallOptions,
   graph: SeedGraph,
   tenant: string,
 ): Promise<
-  | { readonly actor: Actor | null; readonly params: RouteParamsValue }
+  | ({ readonly actor: Actor | null } & RouteCallInput)
   | { readonly refused?: true; readonly reason: string }
 > {
-  const chosen = chooseRouteActor(route.permission, options.roles, tenant);
+  const entry = liveEntry(routeEntryFor(options.overrides, route.path));
+  const label = routeLabel(route.path);
+  const chosen = entryActorChoice(entry, route.permission, options.roles, tenant);
   if (chosen.kind === 'refused') return { refused: true, reason: chosen.reason };
-  const actor = seated(chosen.actor, tenant, actorRowsOf(options, graph));
+  const base = seated(chosen.actor, tenant, actorRowsOf(options, graph));
+  // A user, as a request's actor always is: its `x_users` row before any call.
+  await seatActorUsers([base]);
+  const resolved = await entryActor(label, entry, base);
+  if (resolved.kind === 'threw') return { reason: resolved.reason };
+  const actor = resolved.value;
+  if (actor !== base) await seatActorUsers([actor]);
+  const search = await entrySearch(label, entry, actor);
+  if (search.kind === 'threw') return { reason: search.reason };
+  const declared = await entryParams(label, entry, actor);
+  if (declared?.kind === 'threw') return { reason: declared.reason };
+  if (declared !== undefined) return { actor, params: declared.value, search: search.value };
   const params = await routeParams(route, graph, options.entities, { tenant, actorId: actor?.id });
   if (params.kind === 'none') return { reason: params.reason };
-  // A user, as a request's actor always is: its `x_users` row before the call.
-  await seatActorUsers([actor]);
-  return { actor, params: params.params };
+  return { actor, params: params.params, search: search.value };
 }
 
 const unreachedBy = (seen: Observation<unknown>) => {
@@ -107,6 +137,10 @@ export async function exerciseRouteLoad(
 ): Promise<RouteLoadRecord> {
   const none = { kind: 'route' as const, name: route.path, file: route.file };
   const empty = { ...none, statements: 0, effects: [], ms: 0 };
+  const entry = routeEntryFor(options.overrides, route.path);
+  if (entry !== undefined && 'off' in entry) {
+    return { ...empty, outcome: 'off', reason: entry.off.trim() };
+  }
   const call = await routeCall(route, options, at.graph, at.tenant);
   if ('reason' in call) {
     return {
@@ -117,25 +151,28 @@ export async function exerciseRouteLoad(
   }
   const started = performance.now();
   const seen = await at.room.observe(routeLabel(route.path), () =>
-    callRoute(route, call.params, call.actor),
+    callRoute(route, call, call.actor),
   );
   const ms = Math.round(performance.now() - started);
   const { observed } = seen;
   const ran = { ...none, statements: observed.statements, effects: observed.effects, ms };
-  const statementCeiling = judgeStatementCeiling([observed]);
+  const statementCeiling = judgeStatementCeiling([observed], liveEntry(entry).statements);
   const failed = unreachedBy(seen);
+  const why = liveEntry(entry).empty;
+  const vacuous = failed === undefined && ran.statements === 0 && ran.effects.length === 0;
   return {
     ...ran,
     ...(failed ?? { outcome: 'reached' as const }),
+    ...(vacuous && why !== undefined ? { empty: why.trim() } : {}),
     ...(statementCeiling === undefined ? {} : { statementCeiling }),
   };
 }
 
-/** The route as the scale sweep calls it: `input` is the params `routeCall` bound at each size. */
+/** The route as the scale sweep calls it: `input` is what `routeCall` bound at each size. */
 export const routeScaleSubject = (route: RouteLoadSubject): ScaleSubject => ({
   name: routeLabel(route.path),
   call: async (input, actor) => {
-    await callRoute(route, input as RouteParamsValue, actor);
+    await callRoute(route, input as RouteCallInput, actor);
     return {};
   },
 });
@@ -172,7 +209,9 @@ export async function routeSizedCall(
   const route = routes.find((one) => routeLabel(one.path) === at.label);
   if (route === undefined) return undefined;
   const call = await routeCall(route, options, at.graph, at.tenant);
-  return 'reason' in call ? undefined : { actor: call.actor, input: call.params };
+  return 'reason' in call
+    ? undefined
+    : { actor: call.actor, input: { params: call.params, search: call.search } };
 }
 
 /** The sweeps' key for a record of either kind: a route's label, else the primitive's own. */

@@ -171,16 +171,18 @@ describe('logs.tail reads the dev log off disk', () => {
     await rm(join(STATE, 'dev.log'), { force: true });
     const { text, isError } = resultOf(await call('logs.tail'));
     expect(isError).toBe(true);
-    expect(text).toContain('X_NOT_IMPLEMENTED');
+    expect(text).toContain('X_DEV_LOG_ABSENT');
     // `x dev` writes `dev.log` itself now (`dev-log.ts`): a redirect would race its own tee.
     expect(text).toMatch(/fix:\s+x dev$/m);
   });
 
-  test('a per-role tail names the role’s own file and its own fix', async () => {
+  test('a per-role tail with no log at all is refused with the command that writes one', async () => {
     const { text, isError } = resultOf(await call('logs.tail', { role: 'worker' }));
     expect(isError).toBe(true);
-    expect(text).toContain(join(STATE, 'logs', 'worker.log'));
-    expect(text).toContain('x dev --role worker');
+    expect(text).toContain('X_DEV_LOG_ABSENT');
+    expect(text).toContain(join(STATE, 'dev.log'));
+    // `x dev` writes the log a role filter reads; a hand redirect races its own tee.
+    expect(text).toMatch(/fix:\s+x dev$/m);
   });
 
   test('the tail is the LAST n lines, and the trailing newline is not one of them', async () => {
@@ -188,6 +190,35 @@ describe('logs.tail reads the dev log off disk', () => {
     expect(resultOf(await call('logs.tail', { lines: 2 })).text).toBe('three\nfour');
     // The default is 100, so a four-line log comes back whole rather than truncated.
     expect(resultOf(await call('logs.tail')).text).toBe('one\ntwo\nthree\nfour');
+  });
+
+  // `x dev` runs every role in one process and one log: each line written inside a request or a
+  // job carries its context's `role` (`context.ts`), so a role's tail is dev.log's lines of it.
+  test('with no logs/<role>.log, a role’s tail is the dev log’s lines tagged with that role', async () => {
+    const lines = [
+      { msg: 'boot' },
+      { msg: 'job one', role: 'worker' },
+      { msg: 'GET /', role: 'web' },
+      'not json',
+      { msg: 'job two', role: 'worker' },
+      { msg: 'odd', role: 7 },
+    ].map((line) => (typeof line === 'string' ? line : JSON.stringify(line)));
+    await Bun.write(join(STATE, 'dev.log'), `${lines.join('\n')}\n`);
+    try {
+      const worker = resultOf(await call('logs.tail', { role: 'worker' }));
+      expect(worker.isError).toBe(false);
+      expect(worker.text.split('\n').map((line) => JSON.parse(line).msg)).toEqual([
+        'job one',
+        'job two',
+      ]);
+      expect(resultOf(await call('logs.tail', { role: 'worker', lines: 1 })).text).toContain(
+        'job two',
+      );
+      // A role that wrote nothing is an empty tail, never another role's lines.
+      expect(resultOf(await call('logs.tail', { role: 'scheduler' })).text).toBe('');
+    } finally {
+      await Bun.write(join(STATE, 'dev.log'), 'one\ntwo\nthree\nfour\n');
+    }
   });
 
   test('a role’s log is read from logs/<role>.log, never from dev.log', async () => {

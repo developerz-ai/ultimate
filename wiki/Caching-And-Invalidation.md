@@ -239,7 +239,7 @@ Ships since **31.17.0** (`graph`, `bust`, `clear`); `stats` is still **planned**
 | `x cache graph --tag post --json` | the blast radius of one tag |
 | `x cache bust <tag> --json` | the real fanout for one tag — the app's own tiers booted as a role boots them, then `invalidateTags`: shared tiers dropped, the edge purged, the bus told — and the invalidation report |
 | `x cache clear --json` | the same bust over every tag the app's modules declare |
-| `x cache stats` | **planned** — hit rates live in the serving processes; `x dev` then the `/_x` cache panel |
+| hit rates | not a command: `stats` left `x cache` `As of 2026-11-15` — each serving process emits `cache.hit` / `cache.miss` on its own bus and nothing aggregates them ([Known gaps](Known-Gaps#not-built-yet)) |
 
 From code: `invalidateTags([...])` from `@ultimat3/cache`, the call `x cache bust` makes.
 

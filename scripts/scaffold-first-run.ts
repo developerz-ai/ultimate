@@ -22,6 +22,7 @@
 // why: Bun exposes no path-join or path-resolve primitive.
 import { join, resolve } from 'node:path';
 import { GENERATORS, quoteArg } from '@ultimat3/cli';
+import { READS_A_TABLE } from '../packages/cli/src/generate-feature-required';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { nextCommandsIn } from './bench/first-hour-next';
 import { parseScriptArgs } from './lib/args';
@@ -63,10 +64,11 @@ export interface FirstRunStep {
 export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/g, '-')}`;
 
 /**
- * `x g query` and `x g backfill` read a table and never create one (`X_FEATURE_REQUIRED`), so both
- * run into the slice `x g resource` wrote: first in `GENERATORS`, which a test here holds.
+ * A generator that reads a table and never creates one (`X_FEATURE_REQUIRED`: `query`, `backfill`,
+ * `export-rows`, `import-rows`) runs into the slice `x g resource` wrote — first in `GENERATORS`,
+ * which a test here holds. The CLI's own list, never a copy here: a copy fell behind once.
  */
-const READ_A_SLICE: ReadonlySet<string> = new Set(['query', 'backfill']);
+const READ_A_SLICE: ReadonlySet<string> = READS_A_TABLE;
 const RESOURCE_SLICE = generatorName('resource');
 const SOLO_SLICE = 'smoke-solo';
 

@@ -147,8 +147,8 @@ export interface CommandCatalog {
  * one is a defect; a doc page may legitimately *say* a command is planned, and a rule that refused
  * that would delete `wiki/CLI-Reference.md`'s planned table one true row at a time.
  *
- * `allowPlanned` covers `PLANNED_SUBCOMMANDS` as well as `PLANNED_COMMANDS` — `x db studio` is the
- * single entry in the first table, and four pages name it as planned.
+ * `allowPlanned` covers `PLANNED_SUBCOMMANDS` as well as `PLANNED_COMMANDS`. The subcommand table is
+ * empty `As of 2026-11-15`; the rule stays so the next planned subcommand needs no second one.
  */
 export interface CitationRules {
   readonly allowPlanned?: boolean;

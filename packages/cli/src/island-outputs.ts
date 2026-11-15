@@ -41,6 +41,7 @@ export async function builtOutputs(
   files: readonly string[],
   artifacts: readonly Bun.BuildArtifact[],
   sourcePaths: Map<string, SourcePaths>,
+  keepMaps = false,
 ): Promise<readonly BuiltOutput[]> {
   const byStem = new Map(files.map((file) => [withoutExtension(file), file]));
   const maps = new Map<string, string>();
@@ -66,6 +67,8 @@ export async function builtOutputs(
       path: key,
       ...(file === undefined ? {} : { file }),
       code: stripDebugId(await artifact.text()),
+      // A coverage build's only: `mountIsland` records it, and nothing ships or serves it.
+      ...(keepMaps && map !== undefined ? { map } : {}),
     });
   }
   return outputs;
@@ -120,6 +123,7 @@ export function entryChunks(
       ...stableChunk(file, entry.identity, entry.code),
       imports: closure(entry.imports),
       sources: withOwnFile(file, sources.get(entry.path) ?? []),
+      ...(entry.map === undefined ? {} : { map: entry.map }),
     });
   }
   return chunks;
@@ -143,6 +147,7 @@ export function sharedChunks(
         .map((chunk) => chunk.file)
         .sort(),
       sources: sources.get(one.path) ?? [],
+      ...(one.map === undefined ? {} : { map: one.map }),
     });
   }
   return out.sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));

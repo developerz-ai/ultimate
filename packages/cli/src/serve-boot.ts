@@ -27,6 +27,7 @@ import { bootTimeline } from './serve-boot-phases';
 import { bootWarningConcerns, warnAtBoot } from './serve-boot-warnings';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
+import { type ListenerTls, tlsFromEnv } from './serve-env-tls';
 import { adoptPrebuiltStyles, reportBootBuilds, watchBootBuilds } from './serve-prebuilt';
 import type { ServedApp, ServeOptions } from './serve-types';
 
@@ -92,6 +93,8 @@ export async function bootServing(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options } = boot;
+  // Before any service starts: a half-declared pair is refused while there is nothing to unwind.
+  const tls = boot.role === 'web' ? await tlsFromEnv(options.env) : undefined;
   // One `boot.phase` line as each step ends, so a slow boot names its slow step (U12).
   const timeline = bootTimeline(boot.role, options.runtime?.clock);
   const services = resolveServices(options.root, options.env);
@@ -103,7 +106,7 @@ export async function bootServing(boot: {
   const runtime = await startServices(services, options.env, options.runtime, schema, [boot.role]);
   boot.acquired.push(() => runtime.stop());
   timeline.phase('services');
-  return bootRoles({ ...boot, runtime, timeline });
+  return bootRoles({ ...boot, runtime, timeline, ...(tls === undefined ? {} : { tls }) });
 }
 
 /**
@@ -138,6 +141,8 @@ async function bootRoles(boot: {
   /** The scrape listener `serveApp` opened before any of this work; `startRoles` adopts it. */
   readonly metrics: MetricsEndpoint;
   readonly timeline: BootTimeline;
+  /** `TLS_CERT`/`TLS_KEY`, read by `bootServing`; the web role's listener serves TLS with it. */
+  readonly tls?: ListenerTls;
 }): Promise<ServedApp> {
   const { options, role, runtime, acquired, metrics, timeline } = boot;
   // Before the app's modules, because importing one may register a `close` hook, and that phase
@@ -239,6 +244,7 @@ async function bootRoles(boot: {
     // process and `x dev` cannot answer a browser differently.
     root: options.root,
     http: containerBinding(options.env, options.hostname),
+    ...(boot.tls === undefined ? {} : { tls: boot.tls }),
     // `app.config.ts`'s drain section: the readiness grace the chart's grace period is sized for.
     ...(drain === undefined ? {} : { drain }),
     // The read-replica scope rides in FRONT of whatever the host supplied, or the host's own value

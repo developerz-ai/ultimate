@@ -254,7 +254,8 @@ describe('the catalog is the registry, never a copy of it', () => {
     // If this ever goes false the command shipped, and the check stops reporting it — which is
     // exactly what should happen.
     expect(real.planned.size).toBeGreaterThan(0);
-    expect(real.plannedSubcommands.has('db studio')).toBe(true);
+    // `x db studio` left the registry `As of 2026-11-15`: no longer a planned subcommand either.
+    expect(real.plannedSubcommands.has('db studio')).toBe(false);
   });
 
   test('`x jobs cancel` resolves against the real registry, because it now exists', async () => {

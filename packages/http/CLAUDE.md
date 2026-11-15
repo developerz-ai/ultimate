@@ -2,6 +2,8 @@
 
 Owned request lifecycle over `Bun.serve`. Tier 2.
 
+`‡`: full rule in [`docs/history/http.md`](../../docs/history/http.md).
+
 ## Boundary
 
 - May import: `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`, `@ultimat3/time`, `@ultimat3/db`
@@ -12,13 +14,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules — configuration
 
-- **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `trustedProxyHops`) → `X_CONFIG_INVALID` (borrowed). Full rule: `docs/history/http.md`.
+- **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `trustedProxyHops`) → `X_CONFIG_INVALID` (borrowed). ‡
 - **`MAX_PROXY_HOPS` is exported** — `@ultimat3/cli`'s `trustedHopsFromEnv` imports it; one ceiling.
 - Route `meta.auth` is required. Never default a route to public.
 - **An app declares its half of `HttpConfig` through `configureHttp()`**, and the boot lays its own
   facts over it. `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>` — derived, so a
   boot-owned key (`port`, `hostname`, `dev`, `buildId`, `signInPath`, `trustProxy`,
-  `trustedProxyHops`, `rateLimit.scope`) is a type error where an app writes it. `mergeHttpConfig`
+  `trustedProxyHops`, `tls`, `rateLimit.scope`) is a type error where an app writes it. `mergeHttpConfig`
   merges `security.csp.extend` per directive. `type-pins.ts` refuses a key on `HttpConfig` missing
   from `HttpConfigInput`.
 - **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role); the deleted
@@ -29,7 +31,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A `security.csp.extend` entry must emit only the directive it names**
   (`X_CSP_DIRECTIVE_INVALID`); `buildCsp` builds through a `Map`.
 - **The security headers are built once per `(SecurityConfig, https)`** (`responseSecurityHeaders`, a
-  `WeakMap`); a config is never mutated after `defineHttpConfig`. HSTS only when `ctx.https` is affirmed.
+  `WeakMap`); a config is never mutated after `defineHttpConfig`. HSTS only when `ctx.https` is affirmed (a direct `tls` listener affirms it).
 - **A `content-security-policy` the handler set is kept**: the `response` stage APPENDS the app's
   policy beside it (two policies, both enforced), so a handler can narrow — `sandbox` on a served
   upload — and never widen. Every other security header is set over the handler's (`stages-csp.test.ts`).
@@ -45,7 +47,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A request's registered services are LAZY and bound to the authenticated actor**
   (`request-services.ts`, `installServices: false` + `bindRequestServices`): built on first read,
   rebuilt only if actor, locale or tz changed. `request-services.test.ts`.
-- **A shared document renders in `withAnonymousRequest(ctx, url, fn)`**. Full rule: `docs/history/http.md`.
+- **A shared document renders in `withAnonymousRequest(ctx, url, fn)`**. ‡
 - **A member's saved locale and zone apply, re-resolved after `auth`**
   (`resolvePreferences`; cookie beats a saved locale, a saved zone beats the cookie).
   `member-preferences.test.ts`.
@@ -58,8 +60,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A route may
   REPLACE it with `meta.authenticate` (never run beside it): `bearerMount` sets it so a session
   cookie authenticates nothing on `/v1/*`.
-- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage (outside it: `X_ROUTE_NOT_FOUND`); the token allowance is spent once, in the authenticator; a declared `rateLimit` REPLACES `default`, a route's own and the tenant allowance stay; a successor `Link` is rewritten or removed (`bearer-mount-wire.test.ts`). Full rule: `docs/history/http.md`.
-- **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
+- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage (outside it: `X_ROUTE_NOT_FOUND`); the token allowance is spent once, in the authenticator; a declared `rateLimit` REPLACES `default`, a route's own and the tenant allowance stay; a successor `Link` is rewritten or removed (`bearer-mount-wire.test.ts`). ‡
+- **A dev-only disclosure (overlay, Server-Timing, /_x, dev MCP token) goes to `callerLocality`'s local caller only**; `hooks.devNotices` only in the overlay branch.
 - **A dev 4xx asks `hooks.errorPage` first; a 5xx is always the overlay** (#492): the app's file
   when it has one, else the overlay. Production asks for every status (`stages-error-page.test.ts`).
 
@@ -79,8 +81,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   the boot's `csp.extend` of that origin exactly. `security.hsts` merges key by key.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's
   `parseTraceparent`). `x-request-id` is gated on `trustProxy`; `traceparent` deliberately is not.
-- **Every proxy-supplied header goes through `forwardedElement(header, hops)`**, the entry at `entries.length - hops`, never `[0]`, except `x-forwarded-proto` (`forwardedProto`). `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared, and is never an actor. Full rule: `docs/history/http.md`.
-- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never lengthened. Full rule: `docs/history/http.md`.
+- **Every proxy-supplied header goes through `forwardedElement(header, hops)`**, the entry at `entries.length - hops`, never `[0]`, except `x-forwarded-proto` (`forwardedProto`). `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared, and is never an actor. ‡
+- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never lengthened. ‡
 - **`admit` is the second stage and refuses before ANY work**: past `maxInflight` (1000) is
   `X_OVERLOADED` with `retry-after`, counted by core's `inflightCount()`. **A DRAINING process
   serves** with `connection: close`; only `lifecycleState() === 'stopped'` answers `X_DRAINING`
@@ -135,7 +137,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
-- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is coded ONCE in the background at br 11 / zstd 19 / gzip 9 (`compress-precode.ts`, 2 keys at a time; a coder that throws is logged, never unhandled), and later hits are lookups. Full rule: `docs/history/http.md`.
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is coded ONCE in the background at br 11 / zstd 19 / gzip 9 (`compress-precode.ts`, 2 keys at a time; a coder that throws is logged, never unhandled), and later hits are lookups. ‡
 
 ## Rules — errors and the problem document
 
@@ -159,7 +161,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A rejected value is a log FIELD, never the message** — the `error-map` line's message is the code alone.
 - **A rejected BODY names only what the framework chose**: `bodyInvalid`'s `issues` are a fixed
   vocabulary; what the caller sent rides in `meta`; the parser's message goes through `renderThrowable`.
-- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document** (`auth-redirect.ts`, in `error-map` before the overlay), in the routed locale. Full rule: `docs/history/http.md`.
+- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document** (`auth-redirect.ts`, in `error-map` before the overlay), in the routed locale. ‡
 - **A pathname in a `fix:` goes through `renderFixShellArg`** (`routeNotFound`). **A `code` is gated by
   core's `FRAMEWORK_CODE`** before `x errors explain <code>`, else `x errors list --json`. **A supplied
   `fix:` is taken only from a branded error** (`isUltimateError`).
@@ -245,6 +247,8 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `health-disclosure.ts` | WHO `/healthz` and `/readyz` tell the detail to: `healthDetailPeers`, its screen, the trusted-proxy half. Body rule and peer match are core's |
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `request-facts.ts` | `RequestFacts`, any token resolver's frozen 2nd arg; address = `ctx.ip` |
+| `config-tls.ts` | the listener's TLS: both PEMs or neither |
+| `local-caller.ts` | `callerLocality`: direct loopback, no relay header |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 | `compress.ts` | the `compress` stage's rule: which answers leave coded |
 | `compress-precode.ts` | the immutable-asset precoder: background br/zstd/gzip once per key, `pick` by `accept-encoding` |

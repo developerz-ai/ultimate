@@ -115,14 +115,11 @@ describe('unit · x cache bust and clear', () => {
     expect(closed()).toBe(1);
   });
 
-  test('bust with no tag, and stats, refuse before anything boots', async () => {
+  test('bust with no tag refuses before anything boots', async () => {
     const { command, asked } = fake({ peers: true });
     const root = appRoot();
     await expect(command.run(ctxFor(root, ['cache', 'bust']))).rejects.toBeUltimateError(
       'X_CLI_BAD_FLAG',
-    );
-    await expect(command.run(ctxFor(root, ['cache', 'stats']))).rejects.toBeUltimateError(
-      'X_NOT_IMPLEMENTED',
     );
     expect(asked).toEqual([]);
   });

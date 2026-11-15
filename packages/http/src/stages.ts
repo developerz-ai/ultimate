@@ -27,6 +27,7 @@ import {
 import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
 import { type LagSampler, processLagSampler } from './lag-shed';
+import { callerLocality } from './local-caller';
 import { acceptLanguageConsulted, dropVary, routeLocalePrefix } from './locale-prefix';
 import { compose, type Middleware } from './middleware';
 import { navigationGate, redirectForRouter } from './navigation';
@@ -303,6 +304,11 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     'error-map': async (request, ctx) => {
       const error = ctx.error;
       const facts = factsOf(error);
+      // Every dev disclosure below — the overlay, an unclassified 5xx's own text in the problem
+      // document — is for THIS machine (`callerLocality`): a LAN peer on `x dev --host`, or a relay
+      // in front of a loopback socket, is answered as a production visitor is.
+      const local =
+        config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
       // This package's ONE error-reporting call site, and it is the framework's own — `onError`
       // below stays the APP's sink. 5xx only: a 404 or a 422 is the caller's mistake, the problem
       // document already told them, and a monitor that also holds those is a log nobody reads.
@@ -377,10 +383,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         // has no file for: in dev the diagnostic beats the framework's generic page.
         // A throw from the hook is caught by `recoverWith` and degrades to the problem document.
         const override =
-          config.dev && facts.status >= 500
-            ? undefined
-            : await hooks.errorPage?.(facts.status, ctx);
-        if (config.dev && override === undefined) {
+          local && facts.status >= 500 ? undefined : await hooks.errorPage?.(facts.status, ctx);
+        if (local && override === undefined) {
           // Asked for inside the branch, never above it: the overlay is the only surface a notice
           // has, so a production process — or an agent that asked for json — must not pay a
           // diagnostic's per-request cost to produce findings nothing will render.
@@ -414,9 +418,9 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         requestId: ctx.requestId,
         headers: retryAfter,
         // The one call site that can see the config, so it is the one that may reveal an
-        // unclassified 500's own text. Every other `problem()` in this package is a degraded
-        // path and stays opaque by default.
-        dev: config.dev,
+        // unclassified 500's own text — to a local caller only. Every other `problem()` in this
+        // package is a degraded path and stays opaque by default.
+        dev: local,
       });
     },
 
@@ -450,10 +454,13 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // A handler's CSP and `no-referrer` are kept — it may only narrow (`response.ts`).
       applySecurityHeaders(response, config.security, ctx.https);
       // One reading, two readers: the header and the slow line can never disagree. The breakdown
-      // is `x dev`'s only — a statement's duration is a timing oracle (`request-timings.ts`).
+      // is `x dev`'s only, and its LOCAL caller's (`callerLocality`) — a statement's duration is
+      // a timing oracle (`request-timings.ts`), and `x dev --host` puts the process on a LAN.
       const totalMs = elapsedMs(ctx);
-      const timings = config.dev ? requestTimings(ctx) : undefined;
-      response.headers.set('server-timing', serverTimingValue(totalMs, timings, config.dev));
+      const breakdown =
+        config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
+      const timings = breakdown ? requestTimings(ctx) : undefined;
+      response.headers.set('server-timing', serverTimingValue(totalMs, timings, breakdown));
       logSlowRequest(ctx, {
         status: response.status,
         route: ctx.route?.path ?? UNMATCHED_ROUTE,

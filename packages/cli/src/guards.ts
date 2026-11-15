@@ -13,6 +13,9 @@ import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/cor
 import { fixProblem } from './error-contract';
 import { type GuardSources, guardSources } from './guard-sources';
 import type { Finding } from './output';
+import { readVerifyFloor } from './verify-floor';
+import type { GuardBaseline } from './verify-guard-baseline';
+import { judgeGuardBaseline, orphanedBaselineFindings } from './verify-guard-baseline';
 
 /** The directory IS the registration. An app-side list is a list an app can forget to add to. */
 export const GUARD_DIR = 'guards';
@@ -167,7 +170,12 @@ export interface GuardReport {
 const refused = (finding: Finding): GuardReport => ({ findings: [finding], warnings: [] });
 
 /** One guard: import it, run it, and hold what it returns to the contract. Never throws. */
-async function runGuard(root: string, path: string, sources: GuardSources): Promise<GuardReport> {
+async function runGuard(
+  root: string,
+  path: string,
+  sources: GuardSources,
+  baseline: GuardBaseline | undefined,
+): Promise<GuardReport> {
   let loaded: unknown;
   try {
     loaded = await import(pathToFileURL(join(root, path)).href);
@@ -201,9 +209,11 @@ async function runGuard(root: string, path: string, sources: GuardSources): Prom
       broken.push(findingInvalid(path, `it could not be read: ${messageOf(error)}`));
     }
   }
-  return exported.severity === 'warning'
-    ? { findings: broken, warnings: held }
-    : { findings: [...broken, ...held], warnings: [] };
+  if (exported.severity === 'warning') return { findings: broken, warnings: held };
+  // A gating guard under its `guardBaseline` (`verify-guard-baseline.ts`): a broken finding is
+  // never counted against it — the contract fails either way.
+  const judged = judgeGuardBaseline(path, held, baseline);
+  return { findings: [...broken, ...judged.findings], warnings: judged.notices };
 }
 
 /**
@@ -221,11 +231,16 @@ export const guardReport = async (
   const findings: Finding[] = [];
   const warnings: Finding[] = [];
   const sources = guardSources(root, seed);
-  for (const path of await guardPaths(root)) {
-    const report = await runGuard(root, path, sources);
+  // Read here, not passed in: every caller of this seam — the step, `x upgrade`'s measuring run —
+  // judges the same committed counts, and a floor problem is the `manifest` step's to report.
+  const baseline = (await readVerifyFloor(root))?.guardBaseline;
+  const paths = await guardPaths(root);
+  for (const path of paths) {
+    const report = await runGuard(root, path, sources, baseline);
     findings.push(...report.findings);
     warnings.push(...report.warnings);
   }
+  findings.push(...orphanedBaselineFindings(paths, baseline));
   return { findings, warnings };
 };
 

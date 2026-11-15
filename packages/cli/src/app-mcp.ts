@@ -12,9 +12,9 @@
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; each candidate is joined to root.
 import { join } from 'node:path';
-import { logger } from '@ultimat3/core';
+import { logger, peerAddressClass } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { jsonResponse, originListed, selfOrigin } from '@ultimat3/http';
+import { callerLocality, jsonResponse, originListed, selfOrigin } from '@ultimat3/http';
 import {
   type AppMcp,
   assertIncludeCurrent,
@@ -198,6 +198,20 @@ function mountEndpoints(files: readonly MountFile[]): AppMcpMount {
   return { routes, path: paths[0] ?? null, paths, warning };
 }
 
+/**
+ * Where the endpoint's facts say the caller is. `ctx.ip`, except a RELAYED loopback answer: a LAN
+ * socket forging `x-forwarded-for: 127.0.0.1` past a declared hop, or a tunnel on this machine,
+ * resolves to 127.0.0.1 — and the scaffold honours its development token from loopback. Those
+ * callers are handed `::` (unspecified: never loopback, one shared failure bucket, as they already
+ * shared 127.0.0.1's), by http's one rule (`callerLocality`) that `/_x` and the overlay ask too.
+ */
+const RELAYED_LOOPBACK_ADDRESS = '::';
+
+export function mcpCallerAddress(ip: string | null, headers: Headers): string | null {
+  if (ip === null || peerAddressClass(ip) !== 'loopback') return ip;
+  return callerLocality({ ip, headers }) === 'local' ? ip : RELAYED_LOOPBACK_ADDRESS;
+}
+
 type Descriptor = NonNullable<AppMcp['route']>;
 
 /** One endpoint's `POST` and, when it declared `oauth`, its RFC 9728 metadata `GET`s. */
@@ -238,7 +252,7 @@ function endpointRoutes(route: Descriptor, path: string, index: number): readonl
       handler: (request, ctx) =>
         route.handle(request.raw, {
           origin: selfOrigin(ctx.url, ctx.https),
-          address: ctx.ip ?? undefined,
+          address: mcpCallerAddress(ctx.ip ?? null, request.raw.headers) ?? undefined,
           // A browser `Origin` is proven the way CSRF proves it: this origin, or one listed exactly.
           listed: (origin) => originListed(ctx.config.cors, origin),
         }),

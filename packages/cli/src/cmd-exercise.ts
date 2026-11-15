@@ -30,7 +30,6 @@ import { devActors } from './dev-policy';
 import { withExerciseDatabase, withExerciseProcess } from './exercise-database';
 import {
   crashFindingLines,
-  EXERCISE_REPORT_FILE,
   exerciseFindings,
   exercisePhaseLine,
   exerciseReport,
@@ -39,10 +38,13 @@ import {
 } from './exercise-findings';
 import { exerciseFloorVerdict } from './exercise-floor-verdict';
 import { readExerciseOverrides } from './exercise-overrides';
+import { EXERCISE_APP_URL, servedInProcess } from './exercise-route-api';
 import { emptyReachWarnings, routeLoadWarnings } from './exercise-routes';
+import { readExerciseShard, shardReportFile } from './exercise-shard-flag';
 import { entityTenantFindings } from './exercise-static';
 import { subjectFindings, subjectProofFindings } from './exercise-subject';
 import { readIntFlag } from './flag-number';
+import { withAppUrl } from './measure-scope';
 import { msg } from './messages';
 import { withOfflinePorts } from './offline-ports';
 import type { CommandResult, JsonValue } from './output';
@@ -71,6 +73,8 @@ export const exerciseCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('exercise', ctx.cwd).dir;
     const seed = readSeed(ctx);
+    // Read before anything loads: a refused split runs nothing.
+    readExerciseShard(ctx.args, ctx.args.positionals[0]);
     return withExerciseProcess(root, ctx.env, () => exercise(ctx, root, seed));
   },
 };
@@ -83,7 +87,10 @@ async function exercise(
   const loaded = await loadApp(root);
   // `runtime.ts`'s ports, as a boot reads them — an `auditSink` declared there is what lets an
   // `audit: true` primitive run — through `offline-ports.ts`, so the pass reaches no real backend.
-  return withOfflinePorts(root, () => exercisePass(ctx, root, seed, loaded));
+  // `APP_URL` named when the env names none: a load's typed client is answered in process.
+  return withAppUrl(EXERCISE_APP_URL, () =>
+    withOfflinePorts(root, () => exercisePass(ctx, root, seed, loaded)),
+  );
 }
 
 async function exercisePass(
@@ -93,14 +100,16 @@ async function exercisePass(
   loaded: Awaited<ReturnType<typeof loadApp>>,
 ): Promise<CommandResult> {
   const only = ctx.args.positionals[0];
+  const shard = readExerciseShard(ctx.args, only);
+  // The pass-wide halves — static findings, the subject proof — are the first slice's alone.
+  const whole = only === undefined && (shard === undefined || shard.index === 1);
   const overrides = await readExerciseOverrides(root);
   const cores = registeredEntityCores();
   const entities: readonly SeedEntity[] = Object.values(cores);
   // Static before any row: a subject whose plan is refused is not proved, it is reported.
-  const subjectStatic =
-    only === undefined ? subjectFindings(registeredSubjects(), registeredEntities()) : [];
+  const subjectStatic = whole ? subjectFindings(registeredSubjects(), registeredEntities()) : [];
   const proved = registeredSubjects().filter(
-    (subject) => only === undefined && !subjectStatic.some((f) => f.at === subject.entity),
+    (subject) => whole && !subjectStatic.some((f) => f.at === subject.entity),
   );
   let pass: ExercisePhaseMs | undefined;
   let routes: readonly RouteLoadRecord[] = [];
@@ -112,9 +121,11 @@ async function exercisePass(
       ...(seed === undefined ? {} : { seed }),
       ...(overrides === undefined ? {} : { overrides }),
       ...(only === undefined ? {} : { only }),
+      ...(shard === undefined ? {} : { shard }),
       roles: exerciseRoles,
       // Every `app/` and `site/` route's `load`, after the primitives: a page read is measured too.
-      ...(only === undefined ? { routes: routeSubjects } : {}),
+      // Served by the app's own API in process: a load reading its typed client is measured too.
+      ...(only === undefined ? { routes: servedInProcess(routeSubjects) } : {}),
       onPhases: (ms) => {
         pass = ms;
       },
@@ -142,7 +153,7 @@ async function exercisePass(
   // `x.verify.json`'s `exercise` key: red where the app opted in, a warning line where it has not.
   // A whole-pass floor, so never judged on a `<name>` run's slice: 1 of 1 unproven is no ratio.
   const floor =
-    only === undefined
+    only === undefined && shard === undefined
       ? exerciseFloorVerdict(records, (await readVerifyFloor(root))?.exercise)
       : { findings: [], warnings: [] };
   // Warnings, never red on `main`: no floor key opts a page read in yet (`exercise-routes.ts`).
@@ -155,12 +166,13 @@ async function exercisePass(
   const document = warnings.length === 0 ? report : { ...report, warnings };
   // The whole pass, not a one-primitive run's slice of it, is what the file is for — but a
   // one-primitive run is still a fact worth keeping, so it is written either way.
-  await Bun.write(join(root, EXERCISE_REPORT_FILE), `${JSON.stringify(document, null, 2)}\n`);
+  const reportFile = shardReportFile(shard);
+  await Bun.write(join(root, reportFile), `${JSON.stringify(document, null, 2)}\n`);
   const findings = [
     ...loaded.findings,
     // The static half of the tenant proof (`exercise-static.ts`): the pass's own question,
     // asked of the declarations before any row is written.
-    ...(only === undefined ? entityTenantFindings(describeEntities()) : []),
+    ...(whole ? entityTenantFindings(describeEntities()) : []),
     ...subjectStatic,
     ...subjectProofs,
     // The fix pastes into the file the app has, or hands it the file it lacks.
@@ -173,7 +185,7 @@ async function exercisePass(
     summary:
       records.length === 0
         ? msg('cli.exercise.none')
-        : msg('cli.exercise.summary', { ...report.counts, file: EXERCISE_REPORT_FILE }),
+        : msg('cli.exercise.summary', { ...report.counts, file: reportFile }),
     lines: [
       ...renderExerciseTable(records),
       ...(phases === undefined ? [] : [exercisePhaseLine(phases)]),

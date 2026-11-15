@@ -5,10 +5,12 @@
 
 import { CLIENT_MESSAGES } from './messages-client';
 import { DB_MESSAGES } from './messages-db';
+import { FLOOR_MESSAGES } from './messages-floor';
 import { GATE_MESSAGES } from './messages-gate';
 import { OPS_MESSAGES } from './messages-ops';
 import { REPRO_MESSAGES } from './messages-repro';
 import { SHOT_MESSAGES } from './messages-shot';
+import { STATUS_MESSAGES } from './messages-status';
 import { UPGRADE_MESSAGES } from './messages-upgrade';
 
 const CATALOG = {
@@ -73,6 +75,12 @@ const CATALOG = {
   'cli.dev.roles': '  roles {roles}',
   'cli.dev.panels': '  panels {panels}',
   'cli.dev.introspect': '  introspect {url}',
+  'cli.dev.introspectUnreachable':
+    '  introspect none on {url} — /_x answers loopback only; x dev --host 0.0.0.0 keeps loopback bound beside it',
+  'cli.dev.tls':
+    '  tls cert {path} — trust it once: curl --cacert {path}, or add it to the OS keychain',
+  'cli.profile.done': 'profiled {route}: {runs} run(s), {samples} sample(s), status {status}',
+  'cli.profile.frame': '  {percent}%  {name}  {at}',
   'cli.dev.manifest': '  manifest {path}',
   'cli.dev.mcp': '  mcp POST {path}',
   // `x stop` (`cmd-stop.ts`): the lock's holder, and only it.
@@ -110,6 +118,10 @@ const CATALOG = {
   // `x doctor`'s warnings: beside the verdict on `main`, red on `next` (`doctor-warnings.ts`).
   'cli.doctor.warnings': '{count} warning(s) — not in the verdict until the next major:',
   'cli.doctor.warning': '  {code}: {cause} — fix: {fix}',
+  // `x doctor`'s browser report (`doctor-browser.ts`): the e2e driver's Chrome, or how to get one.
+  'cli.doctor.browserFound': 'e2e browser: {path}',
+  'cli.doctor.browserMissing':
+    'e2e browser: none found, so every e2eTest skips — install one: {install}',
   'cli.docs.code': '{code} is an error code — x errors explain answers it',
   'cli.docs.exports': 'exports: {list}',
   'cli.docs.installed': 'installed: {list}',
@@ -280,6 +292,13 @@ const CATALOG = {
   'cli.secrets.dropped':
     'dropped retired master key {kid} from {path} — {count} retired key(s) still declared',
   'cli.secrets.ring': 'retired master key(s) that still open sealed values: {kids}',
+  // `verify-live.ts`: the `live` step's warnings about the test stack it found, started or could not.
+  'cli.verify.services.started':
+    'this run started {services} ({command}) — left running for the next run; stop it with {stop}',
+  'cli.verify.services.unavailable': '{code}: {cause} — fix: {fix}',
+  // `upgrade-report.ts`: a guard the tree breaks, kept at its measured count (`upgrade-guards.ts`).
+  'cli.upgrade.guardBaselined':
+    'guard installed at its baseline: guards/{name}.ts reports {count} finding(s), now "guardBaseline" in x.verify.json — fix them and lower it, it only falls',
   ...CLIENT_MESSAGES,
   ...REPRO_MESSAGES,
   ...DB_MESSAGES,
@@ -287,6 +306,8 @@ const CATALOG = {
   ...UPGRADE_MESSAGES,
   ...GATE_MESSAGES,
   ...OPS_MESSAGES,
+  ...FLOOR_MESSAGES,
+  ...STATUS_MESSAGES,
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

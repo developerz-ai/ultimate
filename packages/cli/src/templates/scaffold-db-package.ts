@@ -13,6 +13,7 @@ import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { dbClientFiles } from './scaffold-db-client';
 import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shape';
+import { liveSuiteFiles } from './scaffold-suites';
 
 const DESCRIPTION = 'Entity re-exports and SQL migrations, no business logic';
 
@@ -231,4 +232,6 @@ export const dbPackageFiles = (app: NameSet, example: boolean): readonly Generat
   { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
   { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
   { path: 'packages/db/src/seed.test.ts', contents: dbSeedTest(app, example) },
+  // The production driver against a real Postgres: the `live` step every scaffold runs.
+  ...liveSuiteFiles(),
 ];

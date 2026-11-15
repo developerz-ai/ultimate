@@ -8,6 +8,7 @@ import { doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
 import { appUrlFindings } from './doctor-app-url';
 import { authStorageFindings } from './doctor-auth';
+import { browserProbe, browserWarnings, withBrowserReport } from './doctor-browser';
 import { chartAlertsProbe, NOTHING_MISSING, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
@@ -184,9 +185,11 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
   );
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
   // A missing shipped guard among them (`X_SHIPPED_GUARD_MISSING`): a warning, so exit stays.
-  return withDoctorWarnings(reminded, [
+  const browser = await browserProbe(probe.root);
+  return withDoctorWarnings(withBrowserReport(reminded, browser), [
     ...(await doctorWarnings(probe)),
     ...missingGuardWarnings(guardEntries),
+    ...browserWarnings(browser),
   ]);
 }
 

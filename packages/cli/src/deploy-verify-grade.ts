@@ -2,6 +2,7 @@
 // graded per queue. No socket, no database, no clock — `cmd-deploy-verify.ts` owns the waiting.
 
 import type { WorkerRecord } from '@ultimat3/jobs';
+import { printableBuild } from './cmd-deploy-verify-sample';
 
 /** One `GET /readyz`. A `null` status is a sample nothing answered: refused, reset, timed out. */
 export interface Sample {
@@ -116,16 +117,22 @@ export function failureOf(tally: SampleTally, build: string): SampleFailure {
   return namedNone && tally.unstamped > 0 ? 'X_DEPLOY_BUILD_UNSTAMPED' : 'X_DEPLOY_BUILD_MISMATCH';
 }
 
-/** The tally as `--json` reports it. The window's bookkeeping stays out. */
+/**
+ * The tally as `--json` reports it. The window's bookkeeping stays out. A build name is the
+ * server's own bytes, so it is printed through `printableBuild`; the tally itself stays raw, which
+ * is what the grade matched on.
+ */
 export const tallyToJson = (tally: SampleTally) => ({
   total: tally.total,
   good: tally.good,
-  byBuild: { ...tally.byBuild },
+  byBuild: Object.fromEntries(
+    Object.entries(tally.byBuild).map(([name, count]) => [printableBuild(name), count]),
+  ),
   byStatus: { ...tally.byStatus },
   /** Each build's share of every sample, to three places: a stuck roll reads as its old share. */
   share: Object.fromEntries(
     Object.entries(tally.byBuild).map(([name, count]) => [
-      name,
+      printableBuild(name),
       Math.round((count / Math.max(1, tally.total)) * 1000) / 1000,
     ]),
   ),

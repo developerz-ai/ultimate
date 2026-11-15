@@ -7,6 +7,7 @@
 import { join } from 'node:path';
 import type { DbClient, LinkedExtensions, Migration } from '@ultimat3/db';
 import { DbError, linkPgliteExtensions, pgliteClient, postgresClient, raw } from '@ultimat3/db';
+import { reapScratch, stampScratch } from './db-replay-scratch-reap';
 import { migrationExtensions } from './migration-extensions';
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -69,9 +70,12 @@ async function withPostgresScratch<T>(
   const database = scratchName();
   const admin = postgresClient({ url: adminUrl });
   try {
+    // A killed run's working database, stamped and old, goes first (`db-replay-scratch-reap.ts`).
+    await reapScratch(admin);
     // `template0`: the server's `template1` may carry objects an operator put there, and they
     // would be dumped as the app's.
     await admin.execute(raw(`create database ${database} template template0`));
+    await stampScratch(admin, database);
     const target = new URL(adminUrl);
     target.pathname = `/${database}`;
     const client = postgresClient({ url: target.toString() });

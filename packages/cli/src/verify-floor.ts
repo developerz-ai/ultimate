@@ -16,9 +16,13 @@ import { EXERCISE_FIELD, readExerciseFloor } from './exercise-floor';
 import type { Finding } from './output';
 import type { StepTimeouts } from './verify-deadline';
 import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
+import type { GuardBaseline } from './verify-guard-baseline';
+import { GUARD_BASELINE_FIELD, readGuardBaseline } from './verify-guard-baseline';
 import type { SkipCeiling } from './verify-skip-ceiling';
 import { readSkipCeiling, SKIP_CEILING_FIELD } from './verify-skip-ceiling';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
+import type { SkipReasons } from './verify-strict';
+import { readStrict, SKIP_FIELD, STRICT_FIELD } from './verify-strict';
 
 /** Hand-written and committed, beside the generated `x.manifest.json` the same gate reads. */
 export const VERIFY_FLOOR_FILE = 'x.verify.json';
@@ -82,6 +86,15 @@ export interface VerifyFloor {
    * naming the figure to write, never red: an app that has not opted in stays green on `main`.
    */
   readonly exercise?: ExerciseFloor;
+  /**
+   * Every one of the 21 steps must run a check or carry a `skip` why (`verify-strict.ts`): red is
+   * `X_VERIFY_STRICT_UNRUN`. Absent or `false` is a warning naming the steps that ran none.
+   */
+  readonly strict?: boolean;
+  /** Step → the written reason it runs no check in this repository (`verify-strict.ts`). */
+  readonly skip?: SkipReasons;
+  /** Guard → the findings it may still report as notices (`verify-guard-baseline.ts`). */
+  readonly guardBaseline?: GuardBaseline;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
@@ -202,6 +215,8 @@ export function parseVerifyFloor(
   const rolling = readRollingSince(record);
   const skips = readSkipCeiling(record, declared);
   const exercise = readExerciseFloor(record);
+  const strict = readStrict(record, declared);
+  const guards = readGuardBaseline(record);
   const rest = {
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
@@ -211,7 +226,11 @@ export function parseVerifyFloor(
     ...(rolling.since === undefined ? {} : { rollingSince: rolling.since }),
     ...(skips.ceiling === undefined ? {} : { skipCeiling: skips.ceiling }),
     ...(exercise.floor === undefined ? {} : { exercise: exercise.floor }),
+    ...(strict.strict === undefined ? {} : { strict: strict.strict }),
+    ...(strict.skip === undefined ? {} : { skip: strict.skip }),
+    ...(guards.baseline === undefined ? {} : { guardBaseline: guards.baseline }),
   };
+  const later = [...strict.problems, ...guards.problems];
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
     return {
@@ -227,6 +246,7 @@ export function parseVerifyFloor(
         ...rolling.problems,
         ...skips.problems,
         ...exercise.problems,
+        ...later,
       ],
     };
   }
@@ -248,6 +268,7 @@ export function parseVerifyFloor(
       ...rolling.problems,
       ...skips.problems,
       ...exercise.problems,
+      ...later,
     ],
   };
 }
@@ -329,6 +350,12 @@ export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly F
  * problem this file can report that is not about `steps` at all.
  */
 const fixFor = (problem: string): string => {
+  if (problem.includes(`"${STRICT_FIELD}"`))
+    return `x verify --json   # then set "${STRICT_FIELD}" in ${VERIFY_FLOOR_FILE} to true or false`;
+  if (problem.startsWith(`"${SKIP_FIELD}"`))
+    return `x verify --json   # then write "${SKIP_FIELD}" in ${VERIFY_FLOOR_FILE} as { "e2e": "<why>" } — a step it runs and "steps" does not list, a written reason`;
+  if (problem.includes(`"${GUARD_BASELINE_FIELD}"`))
+    return `x verify --only boundaries --json   # then write "${GUARD_BASELINE_FIELD}" in ${VERIFY_FLOOR_FILE} as { "<guard>": 3 } — a file in guards/, a whole number of findings`;
   if (problem.includes(`"${BUDGET_FIELD}"`))
     return `x verify --json   # then set "${BUDGET_FIELD}" in ${VERIFY_FLOOR_FILE} to a positive whole number of bytes, or drop the key for the ${AGENTS_MD_MAX_BYTES}B default`;
   if (problem.includes(`"${TYPECHECK_BIN_FIELD}"`))

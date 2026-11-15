@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from './errors';
+import type { MapBoundedOptions } from './map-bounded';
 import { mapBounded } from './map-bounded';
 
 /** A promise the test settles by hand, so "in flight" is a fact rather than a timing guess. */
@@ -270,6 +271,23 @@ describe('mapBounded', () => {
 
     test('an empty list answers []', async () => {
       expect(await mapBounded([], () => 1, { width: 2, settle: 'all' })).toEqual([]);
+    });
+  });
+
+  // The type IS the assertion here (`scripts/test-typecheck-gate.ts` compiles this file): 31.23's
+  // call shape — options held in a value typed `MapBoundedOptions` — matched no overload in 31.24
+  // (TS2769), and this stops compiling if the overload for it goes.
+  describe('a value typed MapBoundedOptions, the 31.23 call shape', () => {
+    test('compiles, answers in input order, and a literal settle keeps its exact type', async () => {
+      const options: MapBoundedOptions = { width: 2 };
+      const wide: number[] | PromiseSettledResult<number>[] = await mapBounded(
+        [1, 2],
+        async (n) => n * 10,
+        options,
+      );
+      expect(wide).toEqual([10, 20]);
+      const exact: number[] = await mapBounded([3], (n) => n, { width: 1 });
+      expect(exact).toEqual([3]);
     });
   });
 });

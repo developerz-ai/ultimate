@@ -10,6 +10,7 @@ import {
   tryResolveEnvironment,
 } from '@ultimat3/core';
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from './body-ceiling';
+import { type HttpTls, resolveHttpTls } from './config-tls';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
 import {
@@ -57,6 +58,11 @@ export interface HttpConfig {
    * `0` when nothing is trusted.
    */
   readonly trustedProxyHops: number;
+  /**
+   * The listener's certificate and key, PEM. Absent — the key itself, never `undefined` — is a
+   * plaintext listener, the default: a container terminates TLS at its ingress.
+   */
+  readonly tls?: HttpTls;
   /**
    * Read Envoy's `x-forwarded-client-cert` into `ctx.peer`. Its OWN declaration, `false` until an
    * app makes it: `trustProxy` says the proxy appends to `x-forwarded-for`, which is no promise
@@ -120,6 +126,8 @@ export interface HttpConfigInput {
   readonly signInPath?: string | null;
   readonly trustProxy?: boolean;
   readonly trustedProxyHops?: number;
+  /** Both halves or neither (`resolveHttpTls`); the boot reads them from `TLS_CERT`/`TLS_KEY`. */
+  readonly tls?: HttpTls;
   readonly trustClientCertHeader?: boolean;
   readonly healthDetailPeers?: readonly string[];
   readonly bodyLimitBytes?: number;
@@ -309,6 +317,7 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     signInPath: input.signInPath ?? null,
     trustProxy,
     trustedProxyHops,
+    ...resolveHttpTls(input.tls),
     trustClientCertHeader: input.trustClientCertHeader === true,
     healthDetailPeers: assertHealthDetailPeers(
       input.healthDetailPeers === undefined ? DEFAULT_HEALTH_DETAIL_PEERS : input.healthDetailPeers,

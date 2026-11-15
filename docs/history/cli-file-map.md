@@ -234,3 +234,119 @@ an app's `guards/*.ts`, discovered, run on `boundaries`, held to the error contr
 ## `island-{bundle,groups,outputs,build-pool,group-cache,cache-inputs,store,sources,runtime}.ts` / `island-realtime*.ts` / `solid-loader.ts` (moved 2026-11-15)
 
 - islands, named by their final bytes (#1075): one `Bun.build` per route group — islands on exactly the same routes split together, every other alone; groups read from `page.tsx` sources, known before rendering (`islands.sharedChunks` = one group). A group's output is reused from `.x/cache/islands/` while every file it read (Sass partials too), directory listing it resolved in and lockfile/tsconfig/`package.json` hash unchanged (`reuse: false` for a determinism test). `islands.vendorSolid` (`island-vendor.ts`, off: regressed every tracked app) builds Solid once (`vendor-solid.<hash>.js`) for every island; `island-link-check.ts` refuses a merged bundle whose import names bind nothing (#1075's smoke)
+
+## `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `transport-values.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` / `browser-import-chain.ts` / `browser-barrel-cut.ts` (moved 2026-11-15)
+
+`boundaries`, built in: one browser transport; a server barrel below an island is cut at its first hop unless the browser entry exports every name taken (`meta.chain`; `x fix boundary` lists it, rule `browser-server-barrel`); never a `guards/` file
+
+## `verify-seeds.ts` / `verify-seeds-probe.ts` (moved 2026-11-15)
+
+`unit` runs the seeds in a child on ONE scratch database — `x exercise`'s (`withExerciseDatabase`): framework schema + migrations, installed as `db()`, so `register()` and entity rows agree; a refused row keeps the entity's code and fix, an uncoded throw is `X_SEED_FAILED`
+
+## `cmd-mcp.ts` / `mcp-host*.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-test-{output,run}.ts` (moved 2026-11-15)
+
+`x mcp serve`: 23 tools, two transports, stdout only JSON-RPC under stdio (`cmd-mcp-stdio.test.ts`); `tests.run`/`verify.run` ARE `x test`/`x verify`, `ULTIMATE_ENV` unset in children (`mcp-host.parity.test.ts`)
+
+## `app-load-prebuilt.ts` / `build-registry.ts` / `build-registry-background.ts` (moved 2026-11-15)
+
+every serving role boots from the prebuilt registry (`node_modules/.cache/ultimate/registry`, `x build`), format 3: the whole app, and the worker/scheduler subset under a stamp; an older format or `X_PREBUILT_REGISTRY_STALE` → scan
+
+## `workspace-external-deps.ts` · `tsconfig-aliases.ts` · `error-codes-package.ts` (moved 2026-11-15)
+
+`package-shape`: a registry import neither the workspace nor the root declares (`X_WORKSPACE_EXTERNAL_DEP_UNDECLARED`); fix `bun add <pkg> --cwd <workspace>`. The step family's codes and titles, split out of `error-codes.ts`
+
+## `generate-grants.ts` (moved 2026-11-15)
+
+a written `policy.ts` grants the set the run wrote — its LAST `definePermissions([...])` (`:read` → member, else admin), never a permission already in the file; the slice path only when nothing reads; in `apps/web/shared/roles.ts`
+
+## `dev-rebuild-remount.ts` / `dev-rebuild-schema.ts` (moved 2026-11-15)
+
+a save that changes what `x dev` mounted or its load findings is a restart, naming what moved; entities ahead of migrations are `X_DB_DRIFT` (`x db gen "…" && x db migrate`), skipped after a failed load
+
+## `load-findings.ts` (moved 2026-11-15)
+
+a module-load failure is reported once, by `manifest`; while red, each step that loads the app is wrapped in `blockedByLoad`: `skipped: load failed (see manifest)`. Under `--only` without `manifest` it carries the findings itself
+
+## `runtime-overrides.ts` / `runtime-ports.ts` / `runtime-port-bindings.ts` (moved 2026-11-15)
+
+`runtime.ts`: a field per `ADAPTER_PORTS` row, installed by ONE loop or read where used; unbound row = build error. Plus `routes`. `docs/history/cli-adapter-ports.md`
+
+## `shot-route.ts` / `shot-run.ts` / `shot-gpu.ts` (moved 2026-11-15)
+
+`x shot`'s route argument (`readRoute`, `shotSlug`); one capture (`runShot`); the page's `navigator.gpu` adapter (`verdict.gpu`, never gating). `cmd-shot.ts` re-exports the first two
+
+## `verify-contract-diff.ts` (moved 2026-11-15)
+
+`contract-diff`: baseline `x.manifest.json` at HEAD; in CI at the merge base with `origin/$GITHUB_BASE_REF` (the ref when shallow; HEAD + notice when unfetched); outside git, the file on disk + notice
+
+## `ci-log.ts` (moved 2026-11-15)
+
+`x ci`'s log reader: undoes `##[…]` markers, `::error` annotations and `<comment>` fences; `fix` stays clean, provenance is `source: 'ci-log'` + `meta.job` + `output.ts`'s `[from=ci-log …]` head marker
+
+## `error-unthrown.ts` / `unthrown-codes.ts` (moved 2026-11-15)
+
+host check: a registered code nothing throws is listed in `UNTHROWN_CODES` (a row's wording waives nothing); a listed code thrown again is `X_ERROR_CODE_UNTHROWN_STALE`
+
+## `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` (moved 2026-11-15)
+
+a printed fix, executed: each row breaks a scaffold, asserts the code, runs the line; `typeErrors()` asserts the app still typechecks
+
+## `i18n-registration.ts` / `i18n-audit.ts` / `admin-catalog-keys.ts` (moved 2026-11-15)
+
+`i18n`; a mounted admin's keys are `AdminApp.catalogKeys()`, asked of every app catalog — never re-derived here (`X_CATALOG_MISSING_KEYS`)
+
+## `local-cli.ts` / `local-cli-handoff.ts` (moved 2026-11-15)
+
+a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`)
+
+## `fix-sequence.ts` (moved 2026-11-15)
+
+`errors`: a `fix:` that defers its edit (`# after …`/`# once …`), only says re-run, or runs `x g … --force` is `X_ERROR_FIX_INVALID`; ratcheted per file (`FIX_SEQUENCE_BASELINE`)
+
+## `verify-strict.ts` / `verify-skip-reason.ts` / `verify-guard-baseline.ts` (moved 2026-11-15)
+
+`strict` + `skip` (an unexcused zero-check step is `X_VERIFY_STRICT_UNRUN`; not strict, a warning); every zero-check step's reason (`data.skipReasons`); `guardBaseline` per guard (`X_GUARD_OVER_BASELINE`, `X_GUARD_BASELINE_STALE`)
+
+## `asset-route-meta.ts` (moved 2026-11-15)
+
+the ONE writer of an asset route's `tags: ['assets']` + `rateLimit: 'assets'`; the test walks `examples/dummy`'s built table and refuses an `assets.*` route on `default`
+
+## `page-navigation.ts` (moved 2026-11-15)
+
+the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing
+
+## `app-load-batch.ts` / `app-load-register.ts` (moved 2026-11-15)
+
+one hook module per app module, each registered before the next evaluates: serial order kept, top-level await isolated; registration state
+
+## `runtime-jobs.ts` (queues) (moved 2026-11-15)
+
+`jobs.queues` ∪ registered; `WORKER_QUEUES` = the EXACT set, each in that union or `X_WORKER_QUEUE_UNKNOWN`; `-unserved.ts`: what no live worker serves
+
+## `runtime-isr.ts` (moved 2026-11-15)
+
+the ISR controller both boots serve through, ATTACHED to `invalidateTags` and released on stop (`attachedIsr`); `appRoutes` without one builds and attaches its own
+
+## `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` (moved 2026-11-15)
+
+boot warnings: unsealed MFA secrets (web role, `x auth seal-mfa`), a per-process idempotency store after the app loaded
+
+## `cmd-generate.ts` / `generate-files.ts` / `generate-kinds.ts` / `generate-write.ts` (moved 2026-11-15)
+
+argv → pure file list → writes (conflict-checked, `merge: 'json'` / `'if-absent'`, `policy.ts` appended)
+
+## `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` (moved 2026-11-15)
+
+the `errors` step: every `fix:` names a runnable command, call or existing file; `*FIXES` tables are throw sites
+
+## `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` (moved 2026-11-15)
+
+`x dev`: every role in one process, `/_x`, the watcher; one save = one generation, and the boot is the first: `buildGeneration` builds the manifest and the islands at once
+
+## `runtime-cache-bus.ts` (moved 2026-11-15)
+
+which bus carries cache/ISR invalidations: transport if it crosses processes, else Redis pub/sub on `REDIS_URL`, else in-process; one `cache.broadcast` boot line
+
+## `page-speculation.ts` (moved 2026-11-15)
+
+Speculation Rules for documents WITHOUT the router (`navigation.speculation`): an allow-list of pure-read pages

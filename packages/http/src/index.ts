@@ -92,6 +92,8 @@ export {
 } from './hooks';
 export { acceptsHtml } from './html-render';
 export { socketIdleTimeoutSeconds } from './idle-timeout';
+export type { CallerLocality } from './local-caller';
+export { callerLocality, RELAY_HEADERS } from './local-caller';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
 export { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
 export type { RequestAddress } from './locale-prefix';

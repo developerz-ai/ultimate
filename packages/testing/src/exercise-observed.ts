@@ -11,6 +11,7 @@ const countKey = (effect: ExerciseEffect): string | undefined => {
   if (effect.kind === 'row') return `row\u0000${effect.entity}\u0000${effect.op}`;
   if (effect.kind === 'mail') return `mail\u0000${effect.mail}`;
   if (effect.kind === 'enqueue') return `enqueue\u0000${effect.job}`;
+  if (effect.kind === 'push') return `push\u0000${effect.host}`;
   return undefined;
 };
 
@@ -21,6 +22,8 @@ const added = (one: ExerciseEffect, other: ExerciseEffect): ExerciseEffect => {
   if (one.kind === 'enqueue' && other.kind === 'enqueue') {
     return { ...one, count: one.count + other.count };
   }
+  if (one.kind === 'push' && other.kind === 'push')
+    return { ...one, count: one.count + other.count };
   return one;
 };
 

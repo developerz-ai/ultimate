@@ -86,4 +86,18 @@ describe('public-api-breaks · the diff', () => {
     expect(next.version).toBe('1.1.0');
     expect(next.entries['@a/b']).toEqual({ x: x.after, w: w.before, y, z });
   });
+
+  test('--write leaves no shapeless entry: a held one no tag shaped is marked unrecorded', () => {
+    const bare = { '@a/b': { w: { hash: w.before.hash }, y: { hash: y.hash } } };
+    const { breaks } = diffApi(bare, tree);
+    const next = nextLock(bare, tree, '1.1.0', breaks);
+    const shapeless = Object.values(next.entries).flatMap((names) =>
+      Object.entries(names).filter(([, symbol]) => symbol.shape === undefined),
+    );
+    expect(shapeless).toEqual([]);
+    expect(next.entries['@a/b']?.['w']).toEqual({
+      hash: w.before.hash,
+      shape: { kind: 'unrecorded' },
+    });
+  });
 });

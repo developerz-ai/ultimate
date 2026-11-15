@@ -17,20 +17,17 @@ export const JOBS_SUBCOMMANDS = [
   'resolve-step',
   'pause',
   'resume',
-  'drain',
 ] as const;
 
 export const jobsSpec: CommandSpec = {
   name: 'jobs',
-  // Never ENDING in "(planned)": that suffix is how `x help` and the planned-table tests tell a
-  // planned COMMAND from a shipped one, and `x jobs` ships — only its `drain` does not.
   summary:
-    'list, show, retry, cancel, delete and promote jobs; resolve a step; pause and resume a queue (drain is planned)',
+    'list, show, retry, cancel, delete and promote jobs; resolve a step; pause and resume a queue',
   usage:
-    'x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|resolve-step <id> <step>|pause <queue>|resume <queue>|drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--ran|--not-ran] [--output json] [--json]',
+    'x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|resolve-step <id> <step>|pause <queue>|resume <queue>] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--ran|--not-ran] [--output json] [--json]',
   requiresApp: true,
   subcommands: JOBS_SUBCOMMANDS,
-  // The bare `x jobs` lists; it never retries, cancels or drains anything.
+  // The bare `x jobs` lists; it never retries, cancels or pauses anything.
   defaultSubcommand: 'list',
   flags: [
     { name: 'queue', type: 'string', summary: 'filter by queue name' },

@@ -5,7 +5,7 @@
 
 import type { Environment } from '@ultimat3/core';
 import { ENVIRONMENT_KEY, resolveEnvironment, UltimateError } from '@ultimat3/core';
-import type { DbClient } from '@ultimat3/db';
+import type { DbClient, Migration } from '@ultimat3/db';
 import { dbExecutor, migrate, raw, setDbClient } from '@ultimat3/db';
 import {
   captureDeterminism,
@@ -14,9 +14,10 @@ import {
   testSealKeyEnv,
 } from '@ultimat3/testing';
 import { loadAppConfig } from './app-config-load';
-import { chooseReplayEngine, withScratchDatabase } from './db-replay-engine';
+import { chooseReplayEngine } from './db-replay-engine';
+import { withPreparedScratch } from './db-replay-engine-prepared';
 import { installExerciseServices } from './exercise-services';
-import { applyFrameworkSchema } from './framework-schema';
+import { applyFrameworkSchema, FRAMEWORK_SCHEMA, schemaStatements } from './framework-schema';
 import { readMigrations } from './migrations';
 import { resolveServices } from './runtime-bindings';
 
@@ -90,9 +91,35 @@ export async function withExerciseProcess<T>(
 }
 
 /**
+ * What decides a prepared scratch database: every framework statement, every migration's id and
+ * text, and the extensions they link — hashed, so a new migration (or a framework release that
+ * changes a table) is a new key and a miss. PGlite's own version is `@ultimat3/db`'s to add.
+ */
+export function exerciseSchemaKey(
+  migrations: readonly Migration[],
+  extensions: readonly string[],
+): string {
+  const hasher = new Bun.CryptoHasher('sha256');
+  const part = (text: string): void => {
+    hasher.update(`${String(text.length)}:${text}\u0000`);
+  };
+  for (const entry of FRAMEWORK_SCHEMA)
+    for (const statement of schemaStatements(entry.ddl)) part(statement);
+  part('--migrations--');
+  for (const migration of migrations) {
+    part(migration.id);
+    part(migration.up);
+  }
+  part('--extensions--');
+  for (const name of extensions) part(name);
+  return hasher.digest('hex');
+}
+
+/**
  * Framework tables, then every migration — the order every real boot runs them in — then `work`
  * with the client installed. Released either way: a command that exits holding an installed
- * client would hand the next caller in this process a closed pool.
+ * client would hand the next caller in this process a closed pool. The migrated state is kept
+ * under the app's state dir (`db-replay-engine-prepared.ts`), so a second run restores it.
  */
 export async function withExerciseDatabase<T>(
   root: string,
@@ -102,9 +129,15 @@ export async function withExerciseDatabase<T>(
   const migrations = await readMigrations(root);
   const engine = await chooseReplayEngine(migrations, env);
   const { stateDir } = resolveServices(root, env);
-  return withScratchDatabase(engine, stateDir, async (client) => {
-    await applyFrameworkSchema((statement) => client.execute(raw(statement)));
-    await migrate({ migrations, client });
+  const extensions = engine.kind === 'embedded' ? engine.extensions : engine.requires;
+  const preparation = {
+    key: exerciseSchemaKey(migrations, extensions),
+    prepare: async (client: DbClient) => {
+      await applyFrameworkSchema((statement) => client.execute(raw(statement)));
+      await migrate({ migrations, client });
+    },
+  };
+  return withPreparedScratch(engine, stateDir, preparation, async (client) => {
     setDbClient(client);
     // What a server's boot installs beside its database, over this one: a primitive that reads a
     // disk, a shared rate limit or the push runtime runs, rather than needing `{ off }`.

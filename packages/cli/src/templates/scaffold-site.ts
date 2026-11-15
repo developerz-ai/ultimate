@@ -6,6 +6,7 @@
 
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
+import { e2eSuiteFiles } from './scaffold-suites';
 
 // Plain strings for the framework lines, never template literals: the workspace-dependency scanner
 // blanks a string's contents but not a nested template's, so a template here would bill the CLI
@@ -305,9 +306,11 @@ unitTest('it ships zero JS and declares the metadata a search result renders', a
 });
 `;
 
-/** The landing page, its stylesheet and its test. */
+/** The landing page, its stylesheet, its test and its e2e suite. */
 export const siteFiles = (app: NameSet): readonly GeneratedFile[] => [
   { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
   { path: 'apps/web/site/page.module.scss', contents: siteStyle() },
   { path: 'apps/web/site/page.test.ts', contents: sitePageTest(app) },
+  // The same page in a real browser: the `e2e` step every scaffold with a page runs.
+  ...e2eSuiteFiles(),
 ];

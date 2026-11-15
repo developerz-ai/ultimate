@@ -17,7 +17,7 @@ import { entity, uuid } from '@ultimat3/entity';
 // test that wanted the general harness.
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { REQUIRED_BUN } from './app-root';
-import { DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
+import { dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { SCHEMA_DUMP_DIR } from './db-schema-dump';
 import { checkSourceDrift, schemaHash } from './drift';
@@ -247,26 +247,6 @@ describe('unit · x db gen', () => {
   test('--allow-destructive parses, because X_MIGRATION_IRREVERSIBLE tells you to run it', () => {
     const args = parseArgs(['db', 'gen', 'drop it', '--allow-destructive'], SPECS);
     expect(flagBool(args, 'allow-destructive')).toBe(true);
-  });
-});
-
-describe('unit · x db studio is planned, not a second engine', () => {
-  test('it exits X_NOT_IMPLEMENTED with a fix that runs today', async () => {
-    const root = await appRoot();
-    try {
-      const failure: unknown = await dbCommand.run(ctxFor(['db', 'studio'], root)).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(failure).toBeUltimateError('X_NOT_IMPLEMENTED');
-      expect((failure as { fix: string }).fix).toContain('x dev');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test('it stays in the subcommand list, so the parser reaches it', () => {
-    expect(DB_SUBCOMMANDS).toContain('studio');
   });
 });
 

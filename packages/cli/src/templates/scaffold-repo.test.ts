@@ -163,21 +163,16 @@ describe('unit · the tsconfig.json x new writes', () => {
 
 describe('unit · the bunfig.toml x new writes', () => {
   /**
-   * `bun test --coverage` in a scaffolded app reported a two-line minified `.mjs` in the system
-   * temp directory: the BUILT island chunk `@ultimat3/testing`'s `mountIsland` imports. Bun does
-   * not remap a pre-built module through its sourcemap — measured on 1.4.0, and
-   * `island-bundle.ts` does emit one — so the row names a file no author has and the island's own
-   * `.island.tsx` never appears. Only the noise is fixed here; a `mountIslandSource` lane is a
-   * separate change.
-   *
-   * Asserted on the PARSED config: a reformat of the template must not be able to make this pass
-   * while the key is gone, and a comment mentioning the pattern must not be able to either.
+   * The built island chunk a mount imports used to be ignored (`**\/*.mjs`): Bun reported it as a
+   * two-line minified file no author has. A coverage build now credits the chunk's lines to its
+   * `.island.tsx` through the chunk's source map, so the island IS measured — and an ignore left
+   * here would hide the very lines that remap exists to count. Asserted on the PARSED config.
    */
-  test('coverage ignores the built island chunk a mount imports', () => {
+  test('coverage ignores no built chunk: an island is measured through its own source', () => {
     const config = Bun.TOML.parse(emitted('bunfig.toml')) as {
       readonly test?: Readonly<Record<string, unknown>>;
     };
-    expect(config.test?.['coveragePathIgnorePatterns']).toEqual(['**/*.mjs']);
+    expect(config.test?.['coveragePathIgnorePatterns']).toBeUndefined();
   });
 
   // The key is worthless if the file it sits in is not the one Bun reads, and the preload it

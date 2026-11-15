@@ -3,8 +3,11 @@
 
 import type { CommandSpec } from './parse';
 
-/** `stats` stays listed and answers X_NOT_IMPLEMENTED (`PLANNED_SUBCOMMANDS`): hits live in a server. */
-export const CACHE_SUBCOMMANDS = ['graph', 'bust', 'clear', 'stats'] as const;
+/**
+ * No `stats`: hits and misses are `cache.hit`/`cache.miss` events inside each serving process, and
+ * nothing aggregates them for a CLI process to read (`wiki/Known-Gaps.md`).
+ */
+export const CACHE_SUBCOMMANDS = ['graph', 'bust', 'clear'] as const;
 
 export const cacheSpec: CommandSpec = {
   name: 'cache',

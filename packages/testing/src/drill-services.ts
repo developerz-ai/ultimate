@@ -6,13 +6,13 @@ import { DrillServiceMissingError } from './drill-errors';
 import type { DrillServiceUrls } from './drill-fleet';
 import type { Drill } from './drills';
 import { drillService } from './drills';
+import { TEST_SERVICE_ENV } from './test-types-services';
 
-/** The variables the test services are published under (`docker/test-services.env`). */
-export const DRILL_SERVICE_ENV = {
-  postgres: 'TEST_DATABASE_URL',
-  redis: 'TEST_REDIS_URL',
-  nats: 'TEST_NATS_URL',
-} as const;
+/**
+ * The variables the test services are published under (`docker/test-services.env`): the same map a
+ * typed test's `{ needs }` reads, never a second copy of it.
+ */
+export const DRILL_SERVICE_ENV = TEST_SERVICE_ENV;
 
 /** What the app's config says it uses, beyond the Postgres every drill needs. */
 export interface DrillDeclarations {

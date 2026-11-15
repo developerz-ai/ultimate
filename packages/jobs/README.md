@@ -1006,6 +1006,10 @@ export const vendorEvents = webhookReceiver({
 | `.routes()` is set on the job handle in place, never on a copy | `isJobHandle` proves the object `job()` built, so `defineApi({ jobs })` registers it like any job |
 | the path is absolute and outside `/api` and `/_x` | `X_WEBHOOK_RECEIVER_INVALID` at declaration, beside a missing `verify`/`handle` or a bad `maxBytes` |
 
+A factory built over it names its shapes from here, never re-derived: `WebhookInbound` (what
+`verify` is handed), `ReceivedEvent` / `ReceivedEventFacts` (the recorded event), and
+`WebhookHandleArgs` (what `handle` is handed).
+
 ## Double-entry postings are jobs too
 
 `ledger({ name, tenant, book })` is a factory over `job()`. Its input is a posting — `{ key,

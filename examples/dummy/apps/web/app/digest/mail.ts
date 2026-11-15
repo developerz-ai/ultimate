@@ -8,6 +8,7 @@
  */
 
 import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
+import { memberName } from '../../shared/member-name';
 import { MemberView } from '../orgs/entity';
 
 /**
@@ -30,8 +31,8 @@ export const digestEmail = defineMail<DigestData>({
   id: 'digest.daily',
   subject: 'digest.subject',
   input: DigestData,
-  template: ({ data }) => [
-    blocks.heading('digest.greeting', { name: data.member.name }),
+  template: ({ data, t: translate }) => [
+    blocks.heading('digest.greeting', { name: memberName(translate, data.member.name) }),
     blocks.paragraph('digest.intro', { count: data.posts.length, org: data.org }),
     // Already localised by the job, so it is a value the renderer prints rather than a key it
     // has to format — a date without an explicit zone has no correct rendering here.

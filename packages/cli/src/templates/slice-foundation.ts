@@ -29,9 +29,9 @@ const notFoundCode = (feature: NameSet): string =>
  * The emitted `fix:` cites `x queries list`, and which command it cites is the whole point: a
  * scaffolded app runs the same `errors` step this repo does, so a fix naming a command the build
  * does not ship writes a fresh X_ERROR_FIX_INVALID into the app on every `x g action`. It cited
- * `x db studio`, which is in `PLANNED_SUBCOMMANDS` and exits X_NOT_IMPLEMENTED — the generator was
- * breaking the one rule it exists to demonstrate. `x queries list` ships, and a read is where a
- * caller gets an id that exists.
+ * `x db studio`, then planned and exiting X_NOT_IMPLEMENTED (it left the registry 2026-11-15) —
+ * the generator was breaking the one rule it exists to demonstrate. `x queries list` ships, and a
+ * read is where a caller gets an id that exists.
  */
 const errorsSource = (feature: NameSet): string => {
   const errorCode = notFoundCode(feature);

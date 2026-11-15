@@ -8,10 +8,10 @@ import { describeApiKey, issueApiKey, postgresAuthAdapter, revokeApiKey } from '
 import { type Clock, systemClock, tryResolveEnvironment } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { plannedSubcommand } from './cmd-planned';
-import { TOKEN_MAX_DAYS, tokenSpec } from './cmd-token-spec';
+import { TOKEN_MAX_DAYS, TOKEN_SUBCOMMANDS, tokenSpec } from './cmd-token-spec';
 import type { CliCommand, CommandContext } from './command';
 import { ok } from './command';
-import { BadFlagError, MissingPositionalError } from './errors';
+import { BadFlagError, MissingPositionalError, MissingSubcommandError } from './errors';
 import { parseIntFlag } from './flag-number';
 import { readsAsProduction } from './mcp-db-target';
 import { msg } from './messages';
@@ -166,7 +166,11 @@ export const tokenCommandOver = (open: OpenToken, clock: Clock = systemClock): C
     if (sub === 'create') return create(ctx, open, root, clock);
     if (sub === 'list') return list(ctx, open, root);
     if (sub === 'revoke') return revoke(ctx, open, root, clock);
-    throw plannedSubcommand('token', sub ?? 'grant');
+    // The parser refuses a bare `x token` (no default: `create` writes a credential); this covers
+    // a `ParsedArgs` built by hand.
+    if (sub === undefined)
+      throw new MissingSubcommandError({ command: 'token', known: TOKEN_SUBCOMMANDS });
+    throw plannedSubcommand('token', sub);
   },
 });
 

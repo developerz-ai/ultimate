@@ -15,7 +15,7 @@ import { rebaselineCoverage, statedCoverage } from './upgrade-coverage';
 import { documentIn } from './upgrade-document';
 import type { HopExerciseFloor } from './upgrade-exercise-floor';
 import { ratchetExerciseFloor } from './upgrade-exercise-floor';
-import type { WithheldGuard } from './upgrade-guards';
+import type { BaselinedGuard, WithheldGuard } from './upgrade-guards';
 import { installMissingGuards } from './upgrade-guards';
 import { parseJson } from './upgrade-registry';
 
@@ -101,6 +101,11 @@ export interface HopGuards {
   readonly installed: readonly string[];
   /** Not written, with how many findings each would have added (`upgrade-guards.ts`). */
   readonly withheld: readonly WithheldGuard[];
+  /**
+   * Also in `installed`: kept at its measured count, `guardBaseline` in `x.verify.json`. Absent
+   * when none, so `--json` of a hop that baselined nothing is unchanged.
+   */
+  readonly baselined?: readonly BaselinedGuard[];
 }
 
 /**

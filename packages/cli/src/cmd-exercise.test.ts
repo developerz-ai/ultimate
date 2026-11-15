@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { action, resetActions, t } from '@ultimat3/action';
+import { action, resetActions, rpc, t } from '@ultimat3/action';
 import { registerActions } from '@ultimat3/action/loader';
 import { registeredJobs, resetJobs, restoreJobs } from '@ultimat3/jobs';
 import {
@@ -32,12 +32,15 @@ import { processRoot } from './process-root-fixture';
 
 const ROOT = processRoot(join(import.meta.dir, '..', '.exercise-fixture'));
 
-const contextFor = (positionals: readonly string[] = []): CommandContext => ({
+const contextFor = (
+  positionals: readonly string[] = [],
+  flags: Readonly<Record<string, string>> = {},
+): CommandContext => ({
   args: {
     command: 'exercise',
     subcommand: undefined,
     positionals,
-    flags: new Map<string, FlagValue>([['seed', '7']]),
+    flags: new Map<string, FlagValue>([['seed', '7'], ...Object.entries(flags)]),
     json: true,
     help: false,
     passthrough: [],
@@ -57,16 +60,19 @@ const contextFor = (positionals: readonly string[] = []): CommandContext => ({
 
 let broken = false;
 
+/** `cxWorks`, held so a page's typed client can name its shape. */
+const cxWorks = action({
+  input: t.object({ title: t.string.min(1).max(20) }),
+  output: t.object({ ok: t.boolean }),
+  policy: can('cx:write'),
+  handle: async () => ({ ok: true }),
+});
+
 const register = (): void => {
   definePermissions(['cx:write'] as const);
   defineRoles({ writer: { grants: ['cx:write'] } });
   registerActions({
-    cxWorks: action({
-      input: t.object({ title: t.string.min(1).max(20) }),
-      output: t.object({ ok: t.boolean }),
-      policy: can('cx:write'),
-      handle: async () => ({ ok: true }),
-    }),
+    cxWorks,
     cxToggle: action({
       input: t.object({}),
       output: t.object({ ok: t.boolean }),
@@ -254,5 +260,54 @@ describe('unit · x exercise', () => {
       ['/cx/ok', 'reached'],
     ]);
     expect(written.warnings?.some((w) => w.includes('apps/web/app/cx/broken/page.tsx'))).toBe(true);
+  }, 60_000);
+
+  test('--shard i/n runs a disjoint slice per process, each in its own report', async () => {
+    const shard = async (at: string) => {
+      const result = await exerciseCommand.run(contextFor([], { shard: at }));
+      const file = join(ROOT, '.x', `exercise.${at.replace('/', '-of-')}.json`);
+      const written: unknown = await Bun.file(file).json();
+      expect(written).toEqual(JSON.parse(JSON.stringify(result.data)));
+      return Object.keys(outcomes(result.data));
+    };
+    const first = await shard('1/2');
+    const second = await shard('2/2');
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect([...first, ...second].sort()).toEqual(['cxToggle', 'cxWorks']);
+  }, 60_000);
+
+  test('--shard beside a <name>, or not i/n, is refused before anything runs', async () => {
+    const codeOf = (ctx: CommandContext) =>
+      exerciseCommand.run(ctx).then(
+        () => 'ran',
+        (error: unknown) => (error as { readonly code?: string }).code ?? 'uncoded',
+      );
+    expect(await codeOf(contextFor(['cxWorks'], { shard: '1/2' }))).toBe('X_VERIFY_SHARD_INVALID');
+    expect(await codeOf(contextFor([], { shard: '3/2' }))).toBe('X_VERIFY_SHARD_INVALID');
+  });
+
+  // A page's load reads through the app's own typed client over APP_URL: answered in process.
+  test("a route load calling the app's own API is answered in process, as its actor", async () => {
+    const api = rpc<{ cxWorks: typeof cxWorks }>({
+      get baseUrl() {
+        return process.env['APP_URL'] ?? '';
+      },
+    });
+    registerRoute({
+      file: 'apps/web/app/cx/self/page.tsx',
+      config: defineRoute({
+        render: 'ssr',
+        offline: 'network-only',
+        hydrate: 'never',
+        budget: { js: '0kb' },
+        load: async () => api.cxWorks({ title: 'from the page' }),
+        meta: () => ({ title: 'a page', description: 'a page under test' }),
+      }),
+    });
+    const result = await exerciseCommand.run(contextFor());
+    const routes = (result.data as { routes?: readonly { name: string; outcome: string }[] })
+      .routes;
+    expect(routes?.map((r) => [r.name, r.outcome])).toEqual([['/cx/self', 'reached']]);
   }, 60_000);
 });

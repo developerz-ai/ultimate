@@ -17,7 +17,14 @@ export const blocks = entity('blocks', {
    * but "who has blocked me" is the half a viewer's own feed needs, and without this it is a scan
    * on every request — the query that runs most often is the one the primary key does not serve.
    */
-  indexes: [{ on: ['blockedId'] }],
+  indexes: [
+    { on: ['blockedId'] },
+    /**
+     * /friends' newest-first page of who I blocked (`friends/repo.ts`): the primary key serves the
+     * `blockerId` lookup but not its `createdAt desc` order, so the bounded read sorted every row.
+     */
+    { on: ['blockerId', 'createdAt', 'blockedId'], order: 'desc' },
+  ],
 });
 
 export type Block = typeof blocks.$row;

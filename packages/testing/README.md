@@ -40,6 +40,9 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive, the tenant proof's verdict on its `tenant`. What `x exercise` runs |
 | `exercise-route-subjects.ts` · `exercise-route-loads.ts` | `routeLoadSubjects()` — every `app/`/`site/` file route with a `load`; handed to `runExercisePass({ …, routes, onRoutes })`, each load runs after the primitives in a tenant pair of its own (an `:id` bound to a seeded row, else the route's `prerender()` sample), one `RouteLoadRecord` each with the statement ceiling, scale and plan proofs |
 | `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity>, factories?: { <entity name>: defineFactory(…) }, setup?: () => mockFetch(…) \| cassette(…) })` — an app's overrides (the second argument names the entity whose rows are the actors, and the factories that build a table no generated row satisfies — a cross-column `satisfies` — keyed by entity name, unknown ones `X_DECLARATION_UNKNOWN`), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs. An entry's `statements: { max, why }` moves that primitive's statement ceiling (a blank `why` is `X_CONTRACT_EXERCISE_UNDECLARED`, `max` a whole count ≥ 1) |
+| `define-exercise-routes.ts` · `exercise-route-override.ts` | `defineExercise(…, { routes: { '<pattern>': { params?, search?, actor?, statements?, empty? } \| { off } } })` — a route load's entry, keyed by its URL pattern: `params`/`search` (values or functions) and an `actor` function (of the seated actor: the app's request-boundary resolution, facts and all) run in the load's own request before the observed call; `off` makes the record `off`; an unknown pattern is `X_DECLARATION_UNKNOWN` before a row; a blank reason `X_CONTRACT_EXERCISE_UNDECLARED`. `empty: '<why>'` on any entry rides the record as `empty` |
+| `exercise-shard.ts` | `runExercisePass({ …, shard: { index, total } })` — the `index`-th of `total` disjoint slices (primitives, then routes, by registry position); ignored beside `only` |
+| `exercise-report.ts` (push) | `{ kind: 'push', host, count }`: each `outbound.request` with vendor `push` the observed call made — a pusher that sends nothing leaves none |
 | `exercise-setup.ts` | `withExerciseSetup(room, setup)`: the app's `setup` run inside the sealed room before the first row, its handle disposed before the room restores the network; an `allowHost` in it is `X_EXERCISE_SETUP_UNSEALED`. Types `ExerciseSetup`, `ExerciseSetupHandle` |
 | `exercise-actor.ts` · `exercise-input.ts` · `exercise-report.ts` | the first `x policy explain` actor the policy allows, minted in the primitive's tenant · the input: override, then a seeded id by field stem, then the minimal draw (`@ultimat3/schema/sample`, loaded dynamically) · the room one run executes in (network sealed, mail captured, clock frozen) and its record |
 | `exercise-override-line.ts` | `overrideLine`, the entry an unreached record says to paste: valid TS — the actor the pass ran as (`testActor(name, { roles, permissions }).actor`, `null` signed out, left out when the entry declares one) and each id field bound to the seeded row the pass used; an id it could not bind is the string `UNBOUND_ID` |
@@ -78,6 +81,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `fixture-island.ts` | `mountIsland()` — build an island, import its chunk, run its `mount`. The BUILDER is a parameter |
+| `fixture-island-coverage.ts` | `ISLAND_COVERAGE_ENV` — under `x verify`'s coverage run, each mounted chunk's source map is recorded so its lines count for the island's source |
 | `island-dom.ts` | the micro-DOM `mountIsland` drives: what compiled Solid touches, and nothing else |
 | `island-selector.ts` | the selector grammar `find`/`all` read — compounds and two combinators — and the refusal for the rest |
 | `island-observers.ts` | `ResizeObserver`, recording; `deliverResize` is the test's hand on the browser's layout |
@@ -321,7 +325,7 @@ there is no flag on the fixture and no code to silence.
 | `contractTest` | OpenAPI diff vs the committed spec, MCP exposure | `contract` |
 | `liveTest` | exactly what each subscriber receives | `live` |
 | `jobTest` | step sequence, retries, idempotency | `job` |
-| `e2eTest` | a browser driver; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass. Every one audits the page's accessibility tree; the only exception is `{ a11y: { allow: [{ role, selector, because }] } }` ([Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-accessibility-audit)) | `e2e` |
+| `e2eTest` | a browser driver; with none registered it SKIPS, and a step that ran nothing is reported SKIPPED, never passed; with `e2e` in `x.verify.json` it is red — `X_VERIFY_E2E_BROWSER_MISSING`, whose fix installs a browser, when this machine has none. `hasE2eDriver()` says which state a harness is in. Every one audits the page's accessibility tree; the only exception is `{ a11y: { allow: [{ role, selector, because }] } }` ([Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#the-accessibility-audit)) | `e2e` |
 | `evalTest` | LLM output scoring against a threshold | `eval` |
 
 Each takes an optional `{ timeoutMs }` after the body — `unitTest(name, body, { timeoutMs: 30_000 })`,
@@ -1397,3 +1401,39 @@ X_TEST_MODULE_MOCK_UNRESTORABLE: a mocked module could not be put back at the fi
 "/app/a.test.ts" mocked "/app/vendor.ts", whose real module failed to load (…)
   fix: x test unit --isolate   # or hand the mocked dependency to the code under test as a parameter
 ```
+
+## A test that needs a real server
+
+Declared, never hand-rolled: `{ needs: [...] }` on any typed registrar (`unitTest`, `contractTest`,
+`liveTest`, `jobTest`, `e2eTest`, `evalTest`) names the services the test talks to. Each is read
+from the variable `docker/test-services.env` publishes it under — set, the test runs; unset or
+blank, it is **skipped**, and its reported name carries the service, the variable and the command
+that starts them. An app needs no Postgres runner or `describe.skipIf` of its own.
+
+| `needs` | Variable |
+|---|---|
+| `postgres` | `TEST_DATABASE_URL` |
+| `redis` | `TEST_REDIS_URL` |
+| `nats` | `TEST_NATS_URL` |
+
+The map is `TEST_SERVICE_ENV` and the start command `TEST_SERVICES_START`, both exported with the
+`TestService` type — the same map `x drill` reads its services from.
+
+```ts
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest(
+  'a uuid[] column decodes from the real driver',
+  async () => {
+    const url = Bun.env['TEST_DATABASE_URL'];
+    expect(url).toBeDefined();
+  },
+  { needs: ['postgres'] },
+);
+```
+
+Unset, the line reads `unit · a uuid[] column decodes from the real driver (needs postgres
+(TEST_DATABASE_URL) unset: docker compose -f docker/docker-compose.test.yml up -d --wait && set -a
+&& . docker/test-services.env && set +a)`. A skip is never a pass: a step whose every test skipped
+is `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it, and under `CI` the `skipCeiling`
+judges how many may skip.

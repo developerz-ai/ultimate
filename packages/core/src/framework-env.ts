@@ -53,7 +53,7 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('cli', 'APP_URL', 'SITE_ORIGIN', 'SYNC_URL', 'HOST', 'PORT', 'METRICS_PORT'),
   ...contract('cli', 'NODE_ENV', 'TRUSTED_PROXY_HOPS', 'WORKER_QUEUES', 'SENTRY_DSN'),
   ...contract('cli', 'S3_ENDPOINT', 'S3_BUCKET', 'S3_REGION', 'S3_FORCE_PATH_STYLE'),
-  ...contract('cli', 'SCRAPE_CDP_URL'),
+  ...contract('cli', 'SCRAPE_CDP_URL', 'TLS_CERT', 'TLS_KEY'),
   ...toggles('cli', 'OTEL_SDK_DISABLED'),
   ...internal('cli', 'ULTIMATE_SEED_TIER', 'ULTIMATE_STATE_DIR', 'ULTIMATE_BUILD_CAPTURE'),
   ...internal('cli', 'ULTIMATE_DEV_CHILD', 'ULTIMATE_DEV_SUPERVISOR_PID', 'X_ENV'),
