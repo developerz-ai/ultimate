@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d05a64334af2d51a5f8a927017b79aae753c1a428a7d3203fd1b0ef246249400",
+  "buildId": "e40efdee5db826c50cf1c010f2e5c7d7928e08dc3f2a4f9b49b325cb5302166d",
   "tiers": {
     "0": [
       "core",
@@ -1600,6 +1600,16 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_DEV_LOG_ABSENT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_PEER_REFUSED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_DEV_RESTART_REQUIRED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2495,6 +2505,11 @@
       "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
+      "code": "X_GUARD_BASELINE_STALE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_GUARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2513,6 +2528,11 @@
       "code": "X_GUARD_LOAD_FAILED",
       "owner": "scripts",
       "at": "scripts/lib/guard-load.ts"
+    },
+    {
+      "code": "X_GUARD_OVER_BASELINE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_GUARDS_DOC_DRIFT",
@@ -4160,6 +4180,11 @@
       "at": "scripts/production-apps.ts"
     },
     {
+      "code": "X_PROFILE_ROUTE_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_PROTO_CHAIN_INDEX",
       "owner": "scripts",
       "at": "scripts/proto-index.ts"
@@ -4823,6 +4848,11 @@
       "code": "X_ROUTE_UNNORMALIZED",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ROWS_SLICE_ENTITY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_RPC_FAILED",
@@ -6155,6 +6185,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_SERVICES_UNAVAILABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -6455,6 +6490,11 @@
       "at": "packages/auth/src/errors.ts"
     },
     {
+      "code": "X_VERIFY_E2E_BROWSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_VERIFY_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -6493,6 +6533,11 @@
       "code": "X_VERIFY_STEP_UNFLOORED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-doctor.ts"
+    },
+    {
+      "code": "X_VERIFY_STRICT_UNRUN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_VERIFY_SUITE_VANISHED",

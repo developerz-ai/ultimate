@@ -402,6 +402,16 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only drift --json   # each X_DB_INDEX_UNDECLARED warning names the index: its DROP INDEX CONCURRENTLY IF EXISTS "<name>"; goes in a new hand-written migration (-- transaction: false), or declare it in the entity\'s indexes: [...] and x db gen "<change>"',
   X_SHIPPED_GUARD_MISSING:
     "x doctor --json   # each X_SHIPPED_GUARD_MISSING warning's fix is the command that writes its guard, then x verify --only boundaries --json",
+  X_TEST_SERVICES_UNAVAILABLE: 'docker compose -f docker/docker-compose.test.yml up -d --wait',
+  X_VERIFY_E2E_BROWSER_MISSING:
+    'curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo apt-get install -y /tmp/google-chrome.deb',
+  X_VERIFY_STRICT_UNRUN: 'x verify --only <step> --json',
+  X_GUARD_OVER_BASELINE: 'x verify --only boundaries --json',
+  X_GUARD_BASELINE_STALE: 'x verify --only boundaries --json',
+  X_DEV_LOG_ABSENT: 'x dev',
+  X_DEV_PEER_REFUSED: 'curl -sS -H \'accept: application/json\' http://localhost:3000/_x',
+  X_PROFILE_ROUTE_FAILED: 'x routes --json',
+  X_ROWS_SLICE_ENTITY: 'x g job <name> --feature <f>',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
