@@ -206,7 +206,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver-pg.ts` | default driver, and `postgresLeader` |
 | `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80, exported for the framework schema's drift check), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`) as `tableStorage()` declarations in `JOBS_STORAGE`, which drift checks. Its comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
-| `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled` |
+| `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, started only inside its debt's grace (else left owed) |
 | `retry.ts` | the dead-letter decision; this package's option names over core's `backoffDelay`, no curve |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |

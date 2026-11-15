@@ -275,6 +275,136 @@ describe('defineMemberInvite — revoke', () => {
   });
 });
 
+describe('defineMemberInvite — revoke removes only what an invite granted', () => {
+  test('a member who never joined through an invite is not removed', async () => {
+    const w = await world([['founder', 'org-x']]);
+    const f = flow();
+    await createSession(w.auth.sessions, { userId: 'founder' });
+    // A pending invite to the founder's own address, then withdrawn: still not a way to remove them.
+    await inviteToken(w, f, 'org-x', 'founder@corp.test');
+    const revoked = await f.revoke(w.auth, {
+      orgId: 'org-x',
+      email: 'founder@corp.test',
+      reason: 'probe',
+    });
+    expect(revoked).toEqual({ memberRemoved: false, sessionsRevoked: 0 });
+    const founder = await w.adapter.findUserById('founder');
+    expect(founder?.orgId).toBe('org-x');
+    expect(founder?.roles).toEqual(['member']);
+    expect(await w.adapter.listSessions('founder')).toHaveLength(1);
+  });
+
+  test('a member already in the org who redeems an invite there gains no removability', async () => {
+    const w = await world([['founder', 'org-x']]);
+    const f = flow();
+    const token = await inviteToken(w, f, 'org-x', 'founder@corp.test');
+    await f.accept(w.auth, { orgId: 'org-x', userId: 'founder', token });
+    const revoked = await f.revoke(w.auth, {
+      orgId: 'org-x',
+      email: 'founder@corp.test',
+      reason: 'probe',
+    });
+    expect(revoked.memberRemoved).toBe(false);
+    expect((await w.adapter.findUserById('founder'))?.orgId).toBe('org-x');
+  });
+});
+
+/**
+ * The adapter, with `revoke` run INSIDE one accept: the first time `when` matches a store call,
+ * the revoke runs before that call answers — the interleaving two requests produce in production.
+ */
+const interleaved = async (
+  when: (method: 'take' | 'put', purpose: string) => boolean,
+): Promise<{ auth: Auth; adapter: MemoryAuthAdapter; f: MemberInviteFlow }> => {
+  const base = await world([['ada', null]]);
+  const f = flow();
+  let fired = false;
+  let auth: Auth | undefined;
+  const fire = async (method: 'take' | 'put', purpose: string): Promise<void> => {
+    if (fired || auth === undefined || !when(method, purpose)) return;
+    fired = true;
+    await f.revoke(auth, { orgId: 'org-x', email: 'ada@corp.test', reason: 'raced' });
+  };
+  const adapter = new Proxy(base.adapter, {
+    get(target, property) {
+      if (property === 'takeVerification') {
+        return async (purpose: string, identifier: string, hash: string) => {
+          const taken = await target.takeVerification(purpose, identifier, hash);
+          await fire('take', purpose);
+          return taken;
+        };
+      }
+      if (property === 'putVerification') {
+        return async (record: Parameters<MemoryAuthAdapter['putVerification']>[0]) => {
+          await target.putVerification(record);
+          await fire('put', record.purpose);
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  auth = defineAuth({ adapter, clock: base.clock });
+  return { auth, adapter: base.adapter, f };
+};
+
+describe('defineMemberInvite — accept and revoke racing', () => {
+  test('a revoke landing after the consume and before the join wins: nobody joins', async () => {
+    let consumed = false;
+    const { auth, adapter, f } = await interleaved((method, purpose) => {
+      // The accept's own consume of the invite row is the first take on the bare purpose.
+      if (method === 'take' && !purpose.includes(':') && !consumed) consumed = true;
+      return consumed;
+    });
+    const token = (
+      await f.invite(auth, mailbox().mail, { orgId: 'org-x', email: 'ada@corp.test', locale: 'en' })
+    ).token;
+    const error = await caught(() => f.accept(auth, { orgId: 'org-x', userId: 'ada', token }));
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
+    const ada = await adapter.findUserById('ada');
+    expect(ada?.orgId).toBeNull();
+    expect(ada?.roles).toEqual([]);
+  });
+
+  test('a revoke landing after the join mark and before the check wins too', async () => {
+    const { auth, adapter, f } = await interleaved(
+      (method, purpose) => method === 'put' && purpose.endsWith(':joined'),
+    );
+    const token = (
+      await f.invite(auth, mailbox().mail, { orgId: 'org-x', email: 'ada@corp.test', locale: 'en' })
+    ).token;
+    const error = await caught(() => f.accept(auth, { orgId: 'org-x', userId: 'ada', token }));
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
+    expect((await adapter.findUserById('ada'))?.orgId).toBeNull();
+  });
+});
+
+describe('defineMemberInvite — one refusal per purpose', () => {
+  test('a disabled account is refused in the very words a bad token is, under any name', async () => {
+    const w = await world([['ada', null]]);
+    const f = defineMemberInvite({
+      name: `team-invite-${++flows}`,
+      template: 'auth.team-invite',
+      ttlMs: TTL,
+    });
+    const token = await inviteToken(w, f, 'org-x', 'ada@corp.test');
+    const badToken = await caught(() =>
+      f.accept(w.auth, { orgId: 'org-x', userId: 'ada', token: 'not-the-token' }),
+    );
+    await w.adapter.updateUser('ada', { disabledAt: new Date(START) });
+    const disabled = await caught(() => f.accept(w.auth, { orgId: 'org-x', userId: 'ada', token }));
+    const unknown = await caught(() =>
+      f.accept(w.auth, { orgId: 'org-x', userId: 'nobody', token }),
+    );
+    expect(badToken?.cause).toContain(f.purpose);
+    for (const refusal of [disabled, unknown]) {
+      expect(refusal?.code).toBe(badToken?.code);
+      expect(refusal?.cause).toBe(badToken?.cause);
+      expect(refusal?.fix).toBe(badToken?.fix);
+    }
+  });
+});
+
 describe('defineMemberInvite — input', () => {
   test('an invite naming no tenant is refused before a link is minted', async () => {
     const w = await world();

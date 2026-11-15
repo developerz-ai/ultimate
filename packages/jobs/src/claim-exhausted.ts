@@ -3,12 +3,14 @@
 // `jobs_total` count and the job's `onSettled`. AT LEAST ONCE: the burial of a hooked job records
 // its debt in the claim's own write, this telling pays it, and a dead burier's is re-driven.
 
-import type { Ctx } from '@ultimat3/core';
+import type { Clock, Ctx } from '@ultimat3/core';
 import { logger, recordJob, renderThrowable } from '@ultimat3/core';
+import { nowMs } from './clock';
 import type { ClaimOptions, JobDriver, JobRecord } from './driver';
 import type { AnyJobHandle } from './job';
 import { getJob, registeredJobs } from './job';
 import { JOB_OUTCOME_LABELS } from './metrics';
+import { SETTLE_GRACE_FACTOR } from './settle-redrive';
 import { announceSettled } from './settled';
 
 /** What a claim is told of the jobs: the row carries neither policy, the registry holds both. */
@@ -39,6 +41,8 @@ export interface AnnounceExhaustedOptions {
    * of a hooked job, and a telling pays it. With no `settleDebt`, nothing is paid or re-driven.
    */
   readonly driver?: Pick<JobDriver, 'settleDebt'>;
+  /** What the tellings measure their time on — the worker's clock. */
+  readonly clock?: Clock;
 }
 
 /** What one pass buried, by how each row ended — what the worker's own counters take. */
@@ -53,11 +57,19 @@ export interface ExhaustedCounts {
  * `onExhausted`. A row buried `failed` is a job declaring `retry.deadLetter: false`
  * (`ClaimOptions.dropExhausted`) — `dropped`, as its own nack would have ended it. Never rejects:
  * `announceSettled` owns a hook's failure, and a `context()` that throws is logged and left owed.
+ *
+ * The claim stamped every buried row's debt at once, and the leader counts one LOST a grace
+ * (`onSettledTimeout` × `SETTLE_GRACE_FACTOR`) after that stamp. The tellings run one after
+ * another, so a row is started only while its hook — bounded by `onSettledTimeout`, every try
+ * included — still ends inside that grace: the re-drive's own rule (`settle-redrive.ts`). A row
+ * past it is left owed, and told once by the leader, never by both at the same time.
  */
 export async function announceExhausted(
   options: AnnounceExhaustedOptions,
 ): Promise<ExhaustedCounts> {
   let dropped = 0;
+  // Read before the first hook: the claim's stamp is already behind it, never ahead.
+  const buriedAt = nowMs(options.clock);
   for (const record of options.exhausted) {
     const error = record.lastError ?? '';
     const outcome = record.state === 'failed' ? 'dropped' : 'dead-lettered';
@@ -77,6 +89,15 @@ export async function announceExhausted(
     });
     const handle = getJob(record.name);
     if (handle === undefined) continue;
+    const ceiling = handle.onSettledTimeoutMs;
+    if (nowMs(options.clock) - buriedAt + ceiling > ceiling * SETTLE_GRACE_FACTOR) {
+      logger.warn('jobs.claim.exhausted-left-owed', {
+        workerId: options.workerId,
+        job: record.name,
+        jobId: record.id,
+      });
+      continue;
+    }
     let ctx: Ctx;
     try {
       ctx = options.context();

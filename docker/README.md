@@ -17,9 +17,9 @@ binary); it contains no app, so it serves no role. See its header.
 |---|---|---|---|---|
 | `web` | RPS | `:3000` | `:9090` | `/readyz` + `/healthz` on `:3000` |
 | `sync` | concurrent websockets | `:3001` | `:9090` | `/readyz` + `/healthz` on `:3001` |
-| `worker` | queue depth | — | `:9090` | liveness on `/metrics` |
-| `scheduler` | fixed 1 — leader election is an expiring **row**, never `pg_try_advisory_lock`: that grant belongs to the session, not to the process — a pooled node can neither renew it nor prove it still holds one | — | `:9090` | liveness on `/metrics` |
-| `replicator` | 1 per database | — | `:9090` | liveness on `/metrics` |
+| `worker` | queue depth | — | `:9090` | liveness on `/healthz` |
+| `scheduler` | fixed 1 — leader election is an expiring **row**, never `pg_try_advisory_lock`: that grant belongs to the session, not to the process — a pooled node can neither renew it nor prove it still holds one | — | `:9090` | liveness on `/healthz` |
+| `replicator` | 1 per database | — | `:9090` | liveness on `/healthz` |
 | `migrate` | run-once, pre-deploy | — | — | none — it exits |
 
 **`sync` ships off** in `helm/values.yaml` and at zero replicas in `docker-compose.prod.yml`: it needs

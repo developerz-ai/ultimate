@@ -71,9 +71,10 @@ x-image: &image
 # The image's own HEALTHCHECK fetches \`/readyz\` on $PORT, and only \`web\` and \`sync\` open an HTTP
 # socket — every other role gets the scrape listener and nothing else. A service that inherits that
 # probe is fetching a port it never binds: it reports \`unhealthy\` for its whole life and anything
-# gated on it never starts. Probes follow the role here, exactly as they do in \`docker/helm\`.
+# gated on it never starts. Probes follow the role here, exactly as they do in \`docker/helm\`:
+# \`/healthz\`, the one path on the scrape listener that reads the loops' heartbeats.
 x-metrics-probe: &metrics-probe
-  test: ['CMD', 'bun', '--eval', "fetch('http://127.0.0.1:'+(process.env.METRICS_PORT||9090)+'/metrics').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+  test: ['CMD', 'bun', '--eval', "fetch('http://127.0.0.1:'+(process.env.METRICS_PORT||9090)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
   interval: 10s
   timeout: 3s
   start_period: 30s

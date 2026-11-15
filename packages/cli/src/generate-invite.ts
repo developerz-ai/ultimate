@@ -58,7 +58,8 @@ const MAIL_PACKAGE = '@ultimat3/mail';
 
 /**
  * The root manifest with `@ultimat3/mail` declared at the range the app already holds
- * `@ultimat3/auth` at — the invite mails, and `x new` declares no mail. `undefined` when it is
+ * `@ultimat3/auth` at — the invite mails. `x new` declares it from this release on; the edit is for an
+ * app scaffolded before that. `undefined` when it is
  * declared already, or the manifest is not one this can read; `package-shape` then names the line.
  */
 async function mailDependency(root: string): Promise<string | undefined> {

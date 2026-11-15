@@ -73,8 +73,10 @@ describe('unit · x g invite', () => {
     expect(ran.codes).toEqual([]);
     expect(ran.files).toEqual(expect.arrayContaining(planned.files));
     expect(ran.files).toEqual(
-      expect.arrayContaining(['package.json', 'apps/web/shared/roles.ts', 'apps/web/exercise.ts']),
+      expect.arrayContaining(['apps/web/shared/roles.ts', 'apps/web/exercise.ts']),
     );
+    // `x new` already declares mail, so the manifest is left exactly as it was.
+    expect(ran.files).not.toContain('package.json');
     expect(await Bun.file(join(root, 'package.json')).text()).toContain('"@ultimat3/mail"');
     expect(await Bun.file(join(root, 'apps/web/shared/roles.ts')).text()).toContain(
       "'member:invite'",
@@ -83,6 +85,24 @@ describe('unit · x g invite', () => {
     for (const name of ['inviteMember', 'acceptInvite', 'revokeInvite']) {
       expect(exercise).toContain(`${name}: { off:`);
     }
+  });
+
+  test('an app scaffolded before x new declared mail gains it, at the auth range', async () => {
+    const path = join(root, 'package.json');
+    const manifest = JSON.parse(await Bun.file(path).text()) as {
+      dependencies: Record<string, string>;
+    };
+    const range = manifest.dependencies['@ultimat3/auth'];
+    delete manifest.dependencies['@ultimat3/mail'];
+    await Bun.write(path, `${JSON.stringify(manifest, null, 2)}\n`);
+    const planned = await run('g', 'invite', '--dry-run');
+    expect(planned.files).toContain('package.json');
+    const ran = await run('g', 'invite');
+    expect(ran.files).toContain('package.json');
+    const after = JSON.parse(await Bun.file(path).text()) as {
+      dependencies: Record<string, string>;
+    };
+    expect(after.dependencies['@ultimat3/mail']).toBe(range);
   });
 
   test('a second run is a conflict and writes nothing', async () => {

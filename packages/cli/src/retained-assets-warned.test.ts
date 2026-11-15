@@ -2,11 +2,15 @@
 // marker is the memory, a disk that refuses or stalls says the warning anyway (a duplicate line
 // beats a lost one), and the markers are pruned to the newest few builds.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from '@ultimat3/storage';
-import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
+import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { WARNED_BUILDS_KEPT, warnedPrefix, warnOncePerBuild } from './retained-assets-warned';
+
+// `defineStorage` is process state: left defined, the next file on a shared worker reads this
+// file's disks as its app's (`exercise-services.test.ts`: "an app that defined no storage").
+afterAll(() => resetStorage());
 
 const PREFIX = 'x-build-assets/app/production';
 

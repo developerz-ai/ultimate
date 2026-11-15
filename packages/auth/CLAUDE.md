@@ -187,7 +187,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity`; `checkWorkloadToken`, the verdict form |
 | `jwt-bearer-resolver.ts` | an external bearer JWT → `{ actor, scopes } \| null` |
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
-| `member-invite.ts` | `defineMemberInvite`: a verification purpose keyed on (tenant, address), accept into `orgId` via `updatePrivileges`, revoke = link + membership + sessions |
+| `member-invite.ts` / `member-invite-marks.ts` | `defineMemberInvite`: a verification purpose keyed on (tenant, address), accept into `orgId` via `updatePrivileges`; revoke = link, plus membership + sessions only where a `joined` mark proves an invite granted it. The `joined`/`revoked` marks make a racing revoke win without a transaction |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
 | `mfa-replay-postgres.ts` | the shared replay guard: the claim and the sweep. Its DDL is in `tables.ts` |
 | `mfa-secret.ts` | the TOTP secret at rest: seal on write, open on read, the one-shot that seals older rows |

@@ -31,6 +31,7 @@ const moduleSource =
 // \`defineMemberInvite\` binds each link to ONE org and ONE address, single-use and expiring; the
 // actions beside this file are the app's policy over it.
 import { defineMemberInvite, type MailSender } from '@ultimat3/auth';
+import { EnvMissingError } from '@ultimat3/core';
 import { setRedirect, useRequestHeader } from '@ultimat3/http';
 import { blocks, defineMail, send, t } from '@ultimat3/mail';
 
@@ -63,6 +64,23 @@ export const inviteMailer: MailSender = {
   },
 };
 
+/**
+ * The origin a mailed link is built on: \`APP_URL\`, declared. Never the request's own — that is
+ * the \`Host\` header, which the caller writes, so a link built from it is a phishing link sent
+ * from this app's own address. With none declared there is no link to mail.
+ */
+export const appOrigin = (env: Readonly<Record<string, string | undefined>> = Bun.env): URL => {
+  const declared = (env.APP_URL ?? '').trim();
+  if (declared === '') {
+    throw new EnvMissingError({
+      cause: 'APP_URL is not set, so there is no declared origin to build the invite link from',
+      fix: 'export APP_URL=http://localhost:3000   # the origin this app is served from',
+      meta: { key: 'APP_URL' },
+    });
+  }
+  return new URL(declared);
+};
+
 /** The accept page's absolute URL, carrying the org and the token: accept needs both. */
 export const inviteLink =
   (origin: URL, orgId: string) =>
@@ -92,7 +110,13 @@ declare module '@ultimat3/policy' {
 
 export const invitePermissions = definePermissions(['member:invite']);
 
-/** The org is the actor's own, never an input: the tenancy rule is that the actor HAS one. */
+/**
+ * The org is the actor's own, never an input: the tenancy rule is that the actor HAS one. It also
+ * gates \`revokeInvite\`, which removes an address that joined through an invite — and only such an
+ * address (\`defineMemberInvite\`'s revoke never touches a member who did not). Who may remove
+ * whom beyond that — an owner nobody may remove, a seat that must stay filled — is this app's:
+ * give \`revokeInvite\` its own rule here, \`can<{ email: string }>('member:invite', …)\`.
+ */
 export const canInvite = can(
   'member:invite',
   ({ actor }) => actor !== null && typeof actor.orgId === 'string' && actor.orgId !== '',
@@ -104,28 +128,26 @@ const inviteMemberSource =
 // again for the same address is the resend — the new link replaces the old one.
 import { action, t } from '@ultimat3/action';
 import { authForbidden } from '@ultimat3/auth';
-import { useRequestContext } from '@ultimat3/http';
 import { appAuth } from '../auth';
-import { INVITES_PATH, inviteLink, inviteMailer, landAt, memberInvite } from '../invite';
+import { appOrigin, INVITES_PATH, inviteLink, inviteMailer, landAt, memberInvite } from '../invite';
 import { canInvite } from '../policy';
 
 export const inviteMember = action({
   input: t.object({ email: t.email }),
   output: t.object({ ok: t.boolean, next: t.string }),
   policy: canInvite,
-  // A mailed link is built from the request's own origin, which a tool call does not have.
+  // Mailing a person is a browser operation here; an app that wants it as a tool exposes it.
   mcp: { expose: false },
   async handle({ input, ctx }) {
     const orgId = ctx.actor.orgId;
     if (typeof orgId !== 'string' || orgId === '') {
       throw authForbidden('POST inviteMember', 'the actor belongs to no org');
     }
-    const request = useRequestContext('inviteMember');
     await memberInvite.invite(appAuth(), inviteMailer, {
       orgId,
       email: input.email,
       locale: ctx.locale,
-      link: inviteLink(request.url, orgId),
+      link: inviteLink(appOrigin(), orgId),
     });
     return { ok: true, next: landAt(INVITES_PATH) };
   },

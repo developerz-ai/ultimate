@@ -7,10 +7,10 @@ import { logger } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import type { Auth } from './auth';
 import { normaliseEmail } from './email';
-import { AuthError, authForbidden, authWriteFailed } from './errors';
+import { authForbidden, authWriteFailed } from './errors';
+import { putMark, takeMark } from './member-invite-marks';
 import { type UpdatePrivilegesResult, updatePrivileges } from './privileges';
 import type { IssuedSession } from './session';
-import { randomToken, sha256Hex } from './tokens';
 import {
   defineVerificationPurpose,
   type IssuedVerification,
@@ -118,15 +118,19 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
     },
 
     async accept(auth, accept) {
+      const consume = (identifier: string) =>
+        purpose.consume(runtime(auth, consumeOnly), { identifier, token: accept.token });
+      // The refusal a bad token gets, word for word, asked of the verification door itself under a
+      // key no invite can have (`storeKey` only ever writes strings): one factory, so a renamed
+      // purpose cannot make an unknown account read differently from a wrong link.
+      const refuse = async (): Promise<never> => {
+        await consume(JSON.stringify([accept.orgId, null]));
+        // Reached only by a store that answered a row for a key nothing wrote: it broke the seam.
+        throw authWriteFailed('takeVerification', 'x_verifications');
+      };
       const user = await auth.adapter.findUserById(accept.userId);
-      // The same refusal a bad token gets: which accounts exist is not this caller's to learn.
-      if (user === null || user.disabledAt !== null) {
-        throw new AuthError({
-          code: 'X_UNAUTHENTICATED',
-          cause: 'the member-invite token is unknown, already used, expired or does not match',
-          fix: 'request a new link — member-invite tokens are single-use',
-        });
-      }
+      // Which accounts exist, and which are disabled, is not this caller's to learn.
+      if (user === null || user.disabledAt !== null) return await refuse();
       // Checked BEFORE the consume, so the refusal leaves the link live for after the move.
       if (user.orgId !== null && user.orgId !== accept.orgId) {
         throw authForbidden(
@@ -135,11 +139,28 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
         );
       }
       // Keyed on THIS account's address: a link forwarded to another account finds no row.
-      await purpose.consume(runtime(auth, consumeOnly), {
-        identifier: storeKey(accept.orgId, user.email),
-        token: accept.token,
-      });
-      return updatePrivileges(auth, user.id, joinPatch(user, accept, auth), accept.session);
+      const key = storeKey(accept.orgId, user.email);
+      await consume(key);
+      // Already a member of this org: the link is spent and nothing was granted, so there is
+      // nothing for a revoke to take back — no `joined` mark, which is what keeps a founder who
+      // redeems an invite to their own org out of revoke's reach.
+      if (user.orgId === accept.orgId) return updatePrivileges(auth, user.id, {}, accept.session);
+      // Marked BEFORE the grant and checked AFTER it; revoke marks before it reads. Whichever of
+      // the two lands second sees the other's mark, so a revoke racing this accept always wins.
+      await putMark(auth.adapter, auth.clock, purpose.name, 'joined', key);
+      const joined = await updatePrivileges(
+        auth,
+        user.id,
+        joinPatch(user, accept, auth),
+        accept.session,
+      );
+      if (await takeMark(auth.adapter, purpose.name, 'revoked', key)) {
+        await takeMark(auth.adapter, purpose.name, 'joined', key);
+        // As if the revoke had landed after: out of the org, every session ended, link refused.
+        await removeMember(auth, user.id);
+        return await refuse();
+      }
+      return joined;
     },
 
     async revoke(auth, revoke) {
@@ -148,32 +169,32 @@ export function defineMemberInvite(input: DefineMemberInviteInput): MemberInvite
         scope: revoke.orgId,
         reason: revoke.reason,
       });
-      const now = auth.clock.now();
-      // No delete on the seam: the upsert replaces the live row with one whose token nobody holds.
-      await auth.adapter.putVerification({
-        id: randomToken(12),
-        purpose: purpose.name,
-        identifier: storeKey(revoke.orgId, revoke.email),
-        tokenHash: sha256Hex(randomToken(32)),
-        expiresAt: now,
-        consumedAt: null,
-        createdAt: now,
-      });
+      const key = storeKey(revoke.orgId, revoke.email);
+      // Over the invite's own row: a pending link dies, and an accept in flight finds the mark.
+      await putMark(auth.adapter, auth.clock, purpose.name, 'revoked', key);
+      // Only what an invite granted is taken back: no `joined` mark, no removal — a member who
+      // arrived any other way (the org's founder, a seeded admin) is the app's to remove.
+      if (!(await takeMark(auth.adapter, purpose.name, 'joined', key))) {
+        return { memberRemoved: false, sessionsRevoked: 0 };
+      }
       const user = await auth.adapter.findUserByEmail(normaliseEmail(revoke.email));
       if (user === null || user.orgId !== revoke.orgId) {
         return { memberRemoved: false, sessionsRevoked: 0 };
       }
-      // A role is held in a tenant: one kept after removal is a grant waiting for the next join.
-      const removed = await auth.adapter.updateUser(user.id, {
-        orgId: null,
-        roles: [],
-        permissions: [],
-      });
-      if (removed === null) throw authWriteFailed('updateUser', 'x_users');
-      const sessionsRevoked = await auth.adapter.deleteSessionsForUser(user.id);
-      return { memberRemoved: true, sessionsRevoked };
+      return { memberRemoved: true, sessionsRevoked: await removeMember(auth, user.id) };
     },
   };
+}
+
+/** Out of the org, with no role kept: a role is held in a tenant. Answers the sessions it ended. */
+async function removeMember(auth: Auth, userId: string): Promise<number> {
+  const removed = await auth.adapter.updateUser(userId, {
+    orgId: null,
+    roles: [],
+    permissions: [],
+  });
+  if (removed === null) throw authWriteFailed('updateUser', 'x_users');
+  return await auth.adapter.deleteSessionsForUser(userId);
 }
 
 /** Re-accepting into the tenant already held changes nothing but the spent link. */

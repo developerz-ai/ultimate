@@ -48,7 +48,7 @@ const silent = { send: async () => {} };`;
 export const inviteModuleTest =
   (): string => `// The invite link is absolute and carries both halves accept needs; the flow is the one declared.
 import { expect, unitTest } from '@ultimat3/testing';
-import { INVITE_ACCEPT_PATH, INVITE_TTL_MS, inviteLink, memberInvite } from './invite';
+import { appOrigin, INVITE_ACCEPT_PATH, INVITE_TTL_MS, inviteLink, memberInvite } from './invite';
 
 unitTest('the mailed link is the accept page, carrying the org and the token', () => {
   const link = new URL(inviteLink(new URL('https://app.test/x'), 'org-1')('a-token'));
@@ -56,6 +56,14 @@ unitTest('the mailed link is the accept page, carrying the org and the token', (
   expect(link.pathname).toBe(INVITE_ACCEPT_PATH);
   expect(link.searchParams.get('orgId')).toBe('org-1');
   expect(link.searchParams.get('token')).toBe('a-token');
+});
+
+unitTest('the origin is APP_URL, and with none declared there is no link to mail', () => {
+  expect(appOrigin({ APP_URL: 'https://app.example/' }).origin).toBe('https://app.example');
+  expect(() => appOrigin({})).toThrow(expect.objectContaining({ code: 'X_ENV_MISSING' }));
+  expect(() => appOrigin({ APP_URL: ' ' })).toThrow(
+    expect.objectContaining({ code: 'X_ENV_MISSING' }),
+  );
 });
 
 unitTest('an invite is the declared member-invite purpose and lives a week', () => {
@@ -89,13 +97,41 @@ unitTest('an actor without member:invite is refused', async () => {
   expect(refused).toBeUltimateError('X_FORBIDDEN');
 });
 
-unitTest('an inviter mails a link into their own org', async ({ mail, runJobs }) => {
+/** \`APP_URL\` set for one test, and put back after it. */
+const withAppUrl = async (value: string | undefined, run: () => Promise<void>): Promise<void> => {
+  const before = Bun.env.APP_URL;
+  if (value === undefined) delete Bun.env.APP_URL;
+  else Bun.env.APP_URL = value;
+  try {
+    await run();
+  } finally {
+    if (before === undefined) delete Bun.env.APP_URL;
+    else Bun.env.APP_URL = before;
+  }
+};
+
+unitTest('an inviter mails a link on the declared origin', async ({ mail, runJobs }) => {
   const inviter = testActor('inviter', { orgId: ORG, permissions: ['member:invite'] }).actor;
-  const { output } = await post({ email: 'Ada@Example.com' }, inviter);
-  expect(output.ok).toBe(true);
+  await withAppUrl('https://invites.example', async () => {
+    // The request arrives on another host: the caller writes \`Host\`, so it never names the link.
+    const { output } = await post({ email: 'Ada@Example.com' }, inviter);
+    expect(output.ok).toBe(true);
+  });
   await runJobs.drain();
   const sent = mail.lastTo('ada@example.com');
-  expect(sent?.message.html).toContain(\`\${INVITE_ACCEPT_PATH}?orgId=\${ORG}\`);
+  const link = \`https://invites.example\${INVITE_ACCEPT_PATH}?orgId=\${ORG}\`;
+  expect(sent?.message.html).toContain(link);
+  expect(sent?.message.html).not.toContain('app.test');
+});
+
+unitTest('with no APP_URL declared nothing is mailed', async ({ mail, runJobs }) => {
+  const inviter = testActor('inviter', { orgId: ORG, permissions: ['member:invite'] }).actor;
+  await withAppUrl(undefined, async () => {
+    const refused = await post({ email: 'nobody@example.com' }, inviter).catch((e: unknown) => e);
+    expect(refused).toBeUltimateError('X_ENV_MISSING');
+  });
+  await runJobs.drain();
+  expect(mail.lastTo('nobody@example.com')).toBeUndefined();
 });
 `;
 

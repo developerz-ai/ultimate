@@ -189,8 +189,14 @@ in values.yaml, where the two numbers would drift.
     httpGet: { path: /readyz, port: metrics }
     periodSeconds: 5
     {{- end }}
+  {{- /*
+  Liveness is `/healthz`, never `/metrics`: the scrape path answers 200 for as long as the listener is
+  up, and `/healthz` is the one path on it that reads the loops' heartbeats (livenessPayload(),
+  packages/cli/src/metrics-endpoint.ts) — 503 once a claim loop, the scheduler or the replicator
+  stops stamping, so a wedged loop is restarted rather than scraped forever.
+  */}}
   livenessProbe:
-    httpGet: { path: /metrics, port: metrics }
+    httpGet: { path: /healthz, port: metrics }
     periodSeconds: 15
     failureThreshold: 4
   {{- /*

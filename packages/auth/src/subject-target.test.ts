@@ -42,6 +42,17 @@ beforeAll(async () => {
       [`v-${email}`, email],
     );
   }
+  // An invite's key carries the address last; a lookalike that only a `like` wildcard would match
+  // (`m_` against `me`) belongs to somebody else and stays.
+  for (const [id, identifier] of [
+    ['i-me', JSON.stringify(['00000000-0000-7000-8000-0000000000aa', 'me@x.test'])],
+    ['i-lookalike', JSON.stringify(['00000000-0000-7000-8000-0000000000aa', 'm_@x.test'])],
+  ] as const) {
+    await executor.query(
+      `insert into x_verifications (id, purpose, identifier, token_hash, expires_at) values ($1, 'member-invite', $2, 'h', now())`,
+      [id, identifier],
+    );
+  }
 }, PGLITE_BOOT_MS);
 
 afterAll(async () => {
@@ -60,7 +71,7 @@ describe('authSubjectTarget', () => {
     expect(JSON.stringify(page.rows)).not.toContain('x1.k');
   });
 
-  test('erases the user, their sessions and verifications, and nobody else', async () => {
+  test('erases the user, their sessions, verifications and invites, and nobody else', async () => {
     expect(await target.erase(ref, 10)).toBe(1);
     expect(await count(`select count(*) as n from x_users where id = '${ME}'`)).toBe(0);
     expect(await count(`select count(*) as n from x_sessions where user_id = '${ME}'`)).toBe(0);
@@ -68,7 +79,11 @@ describe('authSubjectTarget', () => {
       await count(`select count(*) as n from x_verifications where identifier = 'me@x.test'`),
     ).toBe(0);
     expect(await count('select count(*) as n from x_users')).toBe(1);
-    expect(await count('select count(*) as n from x_verifications')).toBe(1);
+    expect(await count(`select count(*) as n from x_verifications where id = 'i-me'`)).toBe(0);
+    expect(await count(`select count(*) as n from x_verifications where id = 'i-lookalike'`)).toBe(
+      1,
+    );
+    expect(await count('select count(*) as n from x_verifications')).toBe(2);
     // A replay finds nothing left: the batch loop ends on a short answer.
     expect(await target.erase(ref, 10)).toBe(0);
   });

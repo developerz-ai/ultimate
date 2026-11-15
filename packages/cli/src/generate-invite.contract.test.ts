@@ -55,7 +55,7 @@ describe('contract · x g invite passes the app own first run', () => {
     const files = await invited();
     // The follow-ups: the permission reaches a role, every action is turned off in the pass.
     expect(text(files, 'apps/web/shared/roles.ts')).toContain("'member:invite'");
-    // The invite mails, and `x new` declares no mail: the root manifest gains it.
+    // The invite mails: the root manifest declares it (`x new` writes it; an older app gains it).
     expect(text(files, 'package.json')).toContain('"@ultimat3/mail"');
     const exercise = text(files, 'apps/web/exercise.ts');
     for (const action of ['inviteMember', 'acceptInvite', 'revokeInvite']) {

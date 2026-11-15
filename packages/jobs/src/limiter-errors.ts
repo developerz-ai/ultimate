@@ -14,7 +14,7 @@ export class LimiterDeclarationInvalidError extends UltimateError {
     super({
       code: 'X_JOB_DECLARATION_INVALID',
       cause: `limiter "${input.limiter}" declares ${input.field} ${renderCauseValue(input.declared)}, ${input.why}`,
-      fix: `declare limiter('${input.limiter}', { rate: { limit: 10, windowMs: 1_000 }, concurrency: 4 }) ONCE at module scope — whole numbers of at least 1, either member or both — and import that value into every job({ limiter }) that spends it`,
+      fix: `export const budget = limiter('${input.limiter}', { rate: { limit: 10, windowMs: 1_000 }, concurrency: 4 }); — once, at module scope, whole numbers of at least 1, either member or both; import that value into every job({ limiter }) that spends it`,
       meta: { limiter: input.limiter, field: input.field },
     });
   }
@@ -42,7 +42,7 @@ export class LimiterRefusedError extends UltimateError {
     super({
       code: 'X_RATE_LIMITED',
       cause: `job "${input.job}" spends limiter "${input.limiter}", which ${what} across the fleet; the run is deferred ${input.retryAfterSeconds}s with its attempt uncounted`,
-      fix: `nothing to do: the run waits for the budget — or raise rate/concurrency in limiter('${input.limiter}', { … }) where it is declared`,
+      fix: `limiter('${input.limiter}', { rate: { limit: 20, windowMs: 1_000 } }) — raise rate or concurrency where it is declared, or leave it: the run waits for the budget`,
       meta: {
         limiter: input.limiter,
         job: input.job,
@@ -63,7 +63,7 @@ export class LimiterUnenforceableError extends UltimateError {
     super({
       code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
       cause: `job "${input.job}" spends limiter "${input.limiter}" and the "${input.driver}" jobs driver has no lease store, so the budget would hold per process and the fleet would spend it once per replica`,
-      fix: `drop the jobs: field from apps/<app>/runtime.ts so the boot installs postgresJobDriver() over DATABASE_URL — the pg driver is the one with a lease store — or remove limiter from job("${input.job}")`,
+      fix: `jobs: postgresJobDriver() in apps/<app>/runtime.ts, or no jobs: field at all (the boot installs it over DATABASE_URL) — the driver with a lease store; else remove limiter from job("${input.job}")`,
       meta: { limiter: input.limiter, job: input.job, driver: input.driver },
     });
   }
