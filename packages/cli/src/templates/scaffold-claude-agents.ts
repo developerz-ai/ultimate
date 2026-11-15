@@ -100,7 +100,7 @@ renders. A change outside that set is a collision — report it, do not make it.
 | Generate, then edit | \`bunx x g <kind> <name> --feature <slice>\` for every one of them — a hand-written primitive is missing from every registry that projects it |
 | One authz object | the policy decides; a route or a UI that re-checks is a second answer that will drift |
 | Data through the repo | an action calls \`repo.ts\`, never the database |
-| Errors are instructions | never \`throw new Error\` — declare each code once with \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core/page\`: a stable \`X_SCREAMING_SNAKE\` code, a cause and a \`fix:\` a caller can actually run. \`guards/error-declared.ts\` refuses a handwritten \`UltimateError\` subclass |
+| Errors are instructions | never \`throw new Error\` — declare each code once with \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core/page\`: a stable \`X_SCREAMING_SNAKE\` code, a cause and a \`fix:\` a caller can actually run. the \`error-declared\` guard refuses a handwritten \`UltimateError\` subclass |
 | Jobs run at least once | a handler must be idempotent — an upsert or a statement whose second run changes nothing, never \`count + 1\` |
 | Tasks name a time zone | a cron schedule with an ambient zone is a different time twice a year |
 | No \`any\` | \`unknown\` plus a schema parse |
@@ -137,8 +137,8 @@ calls. A change outside that set is a collision — report it, do not make it.
 | Animate transform and opacity | nothing else composites: a \`top\`, a \`width\` or a \`box-shadow\` costs a layout pass every frame, and \`transition: all\` animates properties nobody chose. \`tokens.duration()\` / \`tokens.easing()\` are the values |
 | An island declares its states | a sibling \`<name>.island.states.ts\`, so \`bunx x shot --island <name> --json\` can photograph the failures nobody can click to |
 
-Every one of the last five is a build error, not a preference — \`guards/\` holds them and \`bunx x verify\`'s
-\`boundaries\` step runs them. Read the guard rather than guessing at the rule.
+Every one of the last five is a build error, not a preference — a guard the framework ships, run by
+\`bunx x verify\`'s \`boundaries\` step. Read the guard's finding rather than guessing at the rule.
 
 Inspect before you change: \`bunx x routes --json\`, \`bunx x i18n check\` for catalog gaps, and
 \`bunx x shot <route> --json\` when you need to see what you built.

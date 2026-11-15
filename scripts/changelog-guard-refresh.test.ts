@@ -13,16 +13,16 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('the guard-refresh rule, on this repo', () => {
   // The twelve guard templates 31.4.1 changed (`git diff --name-only v31.4.0 v31.4.1 --
-  // packages/cli/src/templates/`), and the page's rows naming them. Strip every `x g guard` line
-  // and the same tree is red — so the green is the rows, not a rule that read nothing.
-  test('every guard template the last release changed is named with its x g guard refresh', async () => {
+  // packages/cli/src/templates/`), and the page's rows naming them. Strip every `x g guard` (and
+  // `x upgrade`) line and the same tree is red — so the green is the rows, not a rule that read nothing.
+  test('every guard template the last release changed is named with x upgrade or its x g guard refresh', async () => {
     const root = repoRoot();
     const changelog = await loadChangelog(root);
     const upgrading = await Bun.file(`${root}/${UPGRADING_PATH}`).text();
     expect(await guardRefreshFindings(root, changelog, upgrading)).toEqual([]);
     const stripped = upgrading
       .split('\n')
-      .filter((line) => !line.includes('x g guard'))
+      .filter((line) => !line.includes('x g guard') && !line.includes('x upgrade'))
       .join('\n');
     const red = await guardRefreshFindings(root, changelog, stripped);
     const latest = changelog.find((section) => section.released)?.version;

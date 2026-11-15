@@ -4,7 +4,7 @@
 // gate needs nothing listening, exactly as the `drift` step does not.
 
 import type { Environment } from '@ultimat3/core';
-import { ENVIRONMENT_KEY, resolveEnvironment, UltimateError } from '@ultimat3/core';
+import { ENVIRONMENT_KEY, resolveEnvironment, UltimateError, withStoreMode } from '@ultimat3/core';
 import type { DbClient, Migration } from '@ultimat3/db';
 import { dbExecutor, migrate, raw, setDbClient } from '@ultimat3/db';
 import {
@@ -59,6 +59,8 @@ const PINNED = [ENVIRONMENT_KEY, 'NODE_ENV'] as const;
  * no `ULTIMATE_SECRETS_KEY`, and every row sealed here dies with the scratch database). Every
  * variable is put back as found: a command that exits must not leave the next one a test process.
  *
+ * Core's `storeMode` is declared `database` for the length of `work` (`withStoreMode`).
+ *
  * The frozen clock too, and FIRST — as `bun test`'s preload freezes it before any module loads. The
  * scratch database is PGlite, whose Postgres arms its timers off `Date.now()`: booted on the real
  * clock and frozen under later (the pass's room), its 10 s idle-stats timer was re-armed at
@@ -80,7 +82,10 @@ export async function withExerciseProcess<T>(
   if (!clock.installed) installDeterminism();
   Object.assign(process.env, added);
   try {
-    return await work();
+    // A test process ON a database: the scratch one `withExerciseDatabase` installs. A store an
+    // app picks at load by core's `storeMode` (an api key, a device token) is that database's, or
+    // every reach writing it sends no statement and proves nothing. `bun test` stays `memory`.
+    return await withStoreMode('database', work);
   } finally {
     restoreCapturedDeterminism(clock);
     for (const [key, value] of previous) {

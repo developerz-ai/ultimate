@@ -65,7 +65,7 @@ x version              # CLI version
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x docs "<question>"` | framework docs and this wiki, offline, from the install — the first lookup | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
-| `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate, the section to read | shipped |
+| `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the release's codemods, the gate, the section to read · `x upgrade codemods` | shipped |
 | `x token create\|list\|revoke` | MCP and API tokens in the app's `x_api_keys`: issue one with exact scopes (plaintext shown once), list an owner's, revoke one · `grant` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x config show [--section <key>]` | the resolved `app.config.ts`, defaults merged, credentials redacted | shipped |
 | `x logs tail [--lines n] [--role <role>]` | the last lines of `.x/dev.log`, or one role's (its `.x/logs/<role>.log`, else its lines of the dev log) — the `logs.tail` MCP tool's reader | shipped |
@@ -356,7 +356,7 @@ The boot guard is generated, app-owned: `apps/web/runtime.ts` calls `assertSignI
 
 **`x g chart-dashboard`** (`As of 2026-11`) is the same backfill for the chart's Grafana dashboard: `docker/helm/dashboards/ultimate-app.json` (one column of panels over the series the framework declares — requests, latency by route, statements, pool, jobs, realtime, the process) and `templates/dashboard-configmap.yaml`, which ships it as a ConfigMap a Grafana sidecar provisions by label — plus the `dashboard:` block `values.yaml` lacks, `enabled: false` (`x new`'s chart writes the same three). The same rules as `chart-alerts`: only what is missing, `--force` rewrites, no `<name>`, `X_CHART_MISSING` with no chart. **`--print`** writes nothing and needs no chart: the dashboard JSON, to import into a Grafana outside Kubernetes (`--json`: `data.dashboard`).
 
-`x g guard <name>` writes `guards/<name>.ts` and its test. A name the framework ships a guard under — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`, `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql` and every other name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) — writes THAT guard, which is how an app adopts one it does not hold; any other name writes the blank template. `x doctor` lists the shipped ones missing, and the held ones that differ from the current template ([Interface rules](Interface-Rules#stylesheets)).
+`x g guard <name>` writes `guards/<name>.ts` and its test: the app's own convention, from the blank template. Every name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) already runs on `boundaries` from the installed framework; how one reports is a row in `guards/shipped.json` (`"error"`, `"warning"`, `"off"`). `x doctor` lists the copies of shipped guards an app still holds (`.data.guards.vendored`), and `x upgrade` migrates them ([Interface rules](Interface-Rules)).
 
 **`x g cron-job` · `x g purge` · `x g webhook-receiver`** (`As of 31.17.0`) scaffold a primitive *factory*'s one declaration — each a factory over `job()`, never a ninth primitive — with its tests, into the feature's slice, listed in `apps/web/api/index.ts`'s `jobs:`. None reads a table, so a slice with no `entity.ts` is fine.
 
@@ -1556,6 +1556,12 @@ pass, as the memory mail driver accepts every address, so a notifier's `webPush(
 and sends to the captured push service, and the record carries `{ kind: 'push', host, count }`. A
 pusher that sends nothing leaves no effect: its job is an empty reach, not a delivered push.
 
+**A storage write is an effect** (`As of 2026-11-15`). An object the call puts, copies or deletes
+through a `defineStorage` disk is `{ kind: 'storage', disk, op, count }` on its record, so an upload
+or export that stores only an object is no empty reach. A read is none, nor is a write the driver
+refused. A multipart session (`grantMultipart`, `abortUpload`) is not counted yet: its calls are not
+on the event bus.
+
 **`--shard i/n`** (`As of 2026-11-15`) runs the i-th of n disjoint slices of the pass — primitives,
 then routes, by their position in the registry — on its own scratch database, and writes
 `.x/exercise.<i>-of-<n>.json` (never `.x/exercise.json`). Run the n slices as n processes. Each
@@ -1716,6 +1722,7 @@ Every test leftover the framework knows of, cleared (`As of 27.3.0`): the migrat
 
 ```bash
 x upgrade [--to <version>] [--dry-run] [--json]
+x upgrade codemods --from <version> [--to <version>] [--dry-run] [--json]
 ```
 
 One major per run, so each hop's gate attributes its red to that hop. `As of 30.0.0`.
@@ -1729,9 +1736,9 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 | 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
 | 4 | write exact pins, raise the Bun floor | — |
 | 5 | `bun install` | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
-| 6 | the installed CLI: `x manifest`, `x doctor --json`, each missing guard (`x g guard <name>`, kept only when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
+| 6 | the installed CLI: `x upgrade codemods --from <from> --to <to>` (below), then `x manifest`, `x doctor --json`, each missing guard (`x g guard <name>`, kept only when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
 
-A dry run refuses exactly what the real run would, then stops before step 4. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
+A dry run refuses exactly what the real run would, then stops before step 4 — after previewing this CLI's codemods for the span, written nowhere. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
 `--to`: an exact release in the next major. Over a mixed set a run moves the LOWEST pins one major: `^19` beside `^29` is told `--to 20.x.y`, that hop rewrites only the pins at or below it (a pin above is never moved backwards) and names its walkthrough, `next` names the following hop, and the last one levels the set. A straggler jump straight to the highest major is `X_UPGRADE_HOP_TOO_WIDE`: it skipped every walkthrough between.
 
@@ -1754,7 +1761,19 @@ A dry run refuses exactly what the real run would, then stops before step 4. It 
 | `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
 | `exercise` | `{ reported, ok, findings[] }` from the hop's own `x exercise --json`, listed (and printed) before the gate's findings; each `fix` pastes as written. `reported: false`: the hop's CLI answered no exercise document — unknown, never a finding |
 | `verify` | `{ ok, summary, failed[], findings[] }`, each finding `{ step?, code, cause, fix, at? }` |
+| `codemods` | `As of 2026-11-15`: `{ from, to, dryRun, source, applied[] }`, each `applied[]` a codemod that ran: `{ id, since, summary, changed[], skipped[] }`; a `skipped[]` entry is `{ path, reason, diff? }`, a file the codemod would not overwrite (the app edited it), with the template's change as a unified diff to make by hand. `source: installed` — the hop's own CLI applied its list; `driver` — that CLI predates codemods, so this one applied its own. An app already at its target reruns every codemod up to the release it is on (`from: 0.0.0`): each is idempotent, so a done one changes nothing and an app still holding an old template's copy is carried across. `null`: no app |
+| `superseded[]` | `As of 2026-11-15`: a workaround the hop's framework made unnecessary, read after the codemods — `{ code: X_SUPERSEDED_WORKAROUND, cause, fix, at }`. A warning, never the verdict |
 | `then` | the next thing to do, in a sentence naming the commands |
+
+**Codemods.** A file `x new` wrote is the app's; when a release changes the template, a codemod (`packages/cli/src/codemods/<id>.ts`, `since` = the release whose template change it carries) moves the app's copy. The hop runs every codemod whose `since` lies after `from` and at or before `to`, in version then id order, before any gate stage, and leaves the edits uncommitted beside the pins. Mechanical or nothing: a file the app edited is listed in `skipped[]` with its diff and never overwritten. `x upgrade codemods --from <version>` runs the same list by hand — for a hop an older CLI drove, which applied none:
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--from` | string | required | the release the app came from (its old `@ultimat3/cli` pin); `X_CLI_BAD_FLAG` when absent or not `major.minor.patch` |
+| `--to` | string | this CLI's version | the last release whose codemods run |
+| `--dry-run` | boolean | off | report what would change; write nothing |
+
+`data.codemods` is the same shape as the hop's, without `source`. A second run changes nothing.
 
 `null` for `guards`, `manifest`, `exercise` and `verify` means no gate ran: a dry run, already there, or no app.
 
@@ -2025,6 +2044,7 @@ command rather than quoting the line. `docs` is `ERROR_DOCS_URL`, the same URL f
 x repro <jobId|requestId|traceId|fingerprint> [--write] [--verify] [--json]
 x repro --list [--code X_…] [--json]
 x repro --from <file> [--write] [--verify] [--json]
+x repro <id> --bundle [--json]   |   x repro --from <file> --bundle [--json]
 ```
 
 A production failure becomes a failing test. `As of 2026-11`.
@@ -2040,6 +2060,26 @@ the masked fields and the captured build — a fault in the database or a differ
 green. Masked input (`.sensitive()`, secret-named keys) and masked columns are stood in for from
 the schema. `--list` reads the bundles with each group's count and last sighting. An id nothing
 holds is `X_REPRO_UNKNOWN`; a request id with capture off is `X_REPRO_CAPTURE_OFF`.
+
+**`--bundle` carries the failure to an issue** (`As of 2026-11`): one JSON file,
+`repro/bundle-<id>.json`, deterministic bytes, meant to be read before it is attached — its
+`readFirst` lines say what is in it. Never with `--write`/`--verify` (`X_CLI_BAD_FLAG`).
+
+| Section | Holds |
+|---|---|
+| `framework` | every installed `@ultimat3/*` package and the versions found of it, the CLI's, Bun's, the platform |
+| `error` | the code, the cause, the stack's `at …` frames — from the job row, the error group's sample, or a `--from` file's `error` |
+| `schema.entities` | the declarations of the entities whose rows the call read — never the whole app |
+| `subject` | the failure, as `x repro --from` reads it back: input masked by the primitive's `.sensitive()` schema and core's `captureValue`, read rows minus sealed columns; a row of an undeclared entity dropped (`dropped`, `truncated: true`) |
+| `masked` / `scrubbed` | the masked paths; the env var NAMES whose values were found, the count of hostnames |
+| `reproducer` | the test, against the scaffold's `apps/web/api` and the `@app/db` placeholder |
+
+Replaced everywhere: the app root (`.`), the home directory (`~`), every env value of the process
+and the app's `.env*` files (`[env:NAME]`; 6+ characters, any length under a secret name),
+every hostname in `app.config.ts` or an env URL (`[host]`); in a cause or frame, any other
+absolute file path (`<abs>/<file>`). `bunx create-ultimate repro <bundle.json>` opens it into a
+scratch app (`repro-<id>/`), the reproducer under `repro/`, linked to the framework checkout the
+command runs in (or `--framework <checkout>`) through `file:` overrides.
 
 ## x docs
 

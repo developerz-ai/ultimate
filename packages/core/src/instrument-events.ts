@@ -144,6 +144,15 @@ export interface StorageEvent extends TimedEvent {
   readonly bytes?: number | undefined;
 }
 
+/**
+ * One change to a multipart upload session on a resolved disk: opened, a part stored, assembled
+ * into the object at `key`, or dropped with its parts. Signing a part URL or listing parts changes
+ * nothing and is no event. `bytes` is the part's, or the assembled object's.
+ */
+export interface StorageMultipartEvent extends StorageEvent {
+  readonly op: 'create' | 'part' | 'complete' | 'abort';
+}
+
 export interface CacheLookupEvent {
   readonly tier: string;
   readonly key: string;
@@ -207,6 +216,7 @@ export interface FrameworkEventMap {
   'storage.copy': StorageEvent;
   'storage.delete': StorageEvent;
   'storage.list': StorageEvent;
+  'storage.multipart': StorageMultipartEvent;
   'cache.hit': CacheLookupEvent;
   'cache.miss': CacheLookupEvent;
   'cache.invalidate': CacheInvalidateEvent;
@@ -259,6 +269,7 @@ export const INSTRUMENT_EVENTS = Object.freeze({
   'storage.copy': { span: 'client', owner: '@ultimat3/storage' },
   'storage.delete': { span: 'client', owner: '@ultimat3/storage' },
   'storage.list': { span: 'client', owner: '@ultimat3/storage' },
+  'storage.multipart': { span: 'client', owner: '@ultimat3/storage' },
   'cache.hit': { span: 'event', owner: '@ultimat3/cache' },
   'cache.miss': { span: 'event', owner: '@ultimat3/cache' },
   'cache.invalidate': { span: 'internal', owner: '@ultimat3/cache' },

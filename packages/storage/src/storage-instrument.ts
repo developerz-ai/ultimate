@@ -5,6 +5,8 @@
 import type { StorageEvent } from '@ultimat3/core';
 import { instrument, subscribed, withSpan } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
+import type { MultipartCapability } from './multipart';
+import { instrumentedMultipart } from './storage-instrument-multipart';
 
 type StorageVerb = 'put' | 'get' | 'stat' | 'copy' | 'delete' | 'list';
 
@@ -48,8 +50,8 @@ function report(name: `storage.${StorageVerb}`, event: StorageEvent): void {
 }
 
 /**
- * The driver, every contract method wrapped and every other member (a test disk's `objects()`,
- * `multipart`, `registerAs`) passed through bound to the driver. The driver's calls to its OWN
+ * The driver, every contract method wrapped — `multipart`'s session changes too — and every other
+ * member (a test disk's `objects()`, `registerAs`) passed through bound to the driver. The driver's calls to its OWN
  * methods stay unwrapped: one caller's call is one event.
  *
  * A wrapper is reused only while the driver still holds the method it wraps. A cache keyed on the
@@ -64,6 +66,18 @@ export function instrumentedDisk(disk: string, driver: StorageDriver): StorageDr
   const unwrapped = new WeakMap<object, unknown>();
   const raw = (value: unknown): unknown =>
     typeof value === 'function' ? (unwrapped.get(value) ?? value) : value;
+  // The capability's session changes are reported too (`storage-instrument-multipart.ts`): one view
+  // per capability object, so `disk.multipart` is the same object on every read until replaced.
+  let multipart:
+    | { readonly raw: MultipartCapability; readonly view: MultipartCapability }
+    | undefined;
+  const multipartView = (raw: MultipartCapability | undefined): MultipartCapability | undefined => {
+    if (raw === undefined) return undefined;
+    if (multipart?.raw !== raw) {
+      multipart = { raw, view: instrumentedMultipart(disk, driver.name, raw) };
+    }
+    return multipart.view;
+  };
   const view: StorageDriver = new Proxy(driver, {
     // Only a write ON the disk patches the driver. An object inheriting from the disk
     // (`Object.create(disk)`) reaches this trap as `receiver` and keeps the member as its own;
@@ -80,6 +94,7 @@ export function instrumentedDisk(disk: string, driver: StorageDriver): StorageDr
       ),
     get(target, property) {
       const value: unknown = Reflect.get(target, property, target);
+      if (property === 'multipart') return multipartView(target.multipart);
       if (typeof value !== 'function') return value;
       const known = wrapped.get(property);
       if (known?.method === value) return known.bound;

@@ -54,7 +54,7 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | Every `e2eTest` is audited | `e2e-a11y*.ts`, `ax-node.ts`; no switch, `allow` needs a `because` † |
 | The exercise pass runs what is registered | `exercise.ts` (`runExercisePass`): every action, query, job once, own tenant pair; overrides only via `defineExercise` † |
 | A route `load` is exercised like a read | `exercise-route-loads.ts`: after the primitives, own tenant pair, swept and planned with them; its record is `RouteLoadRecord`, never in `records`; the crash proof's runs pace on the frozen clock (`exercise-crash.ts`) |
-| Route entries, push | `defineExercise(…, { routes })` (`define-exercise-routes.ts`); a push is a `push` effect (`exercise-report.ts`) |
+| Route entries, push, storage | `defineExercise(…, { routes })` (`define-exercise-routes.ts`); a push is a `push` effect (`exercise-report.ts`), a disk write a `storage` one (`exercise-room-storage.ts`) |
 | An override `input` is awaited, as the call's actor | `exercise-override-input.ts`: inside the call's own request — the one way to a signed input † |
 | A passkey test signs for real | `softAuthenticator` is `@ultimat3/auth/soft-authenticator`'s, never re-exported here (one value, one path: `flight-copies`) and never a second one (auth's own suites need it, and auth cannot import testing) |
 | A reached job is crash-proven | `exercise-crash.ts`: only `diverged` is red (`X_JOB_CRASH_DIVERGED`) † |

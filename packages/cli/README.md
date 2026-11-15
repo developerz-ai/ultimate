@@ -43,6 +43,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x i18n check\|add\|sync` | catalogs: gaps, a new locale, key sync | all three of i18n's own error fixes name it |
 | `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one |
 | `x repro <id> [--write] [--verify]` / `--list` / `--from` | a dead job or a captured 5xx as a red test in `repro/` | `--verify` answers `{ reproduced, code, fingerprint }`; a mismatch is `X_REPRO_NOT_REPRODUCED`, never a crash |
+| `x repro <id> --bundle` | the failure as one redacted `repro/bundle-<id>.json` for an issue | secrets masked, env values / hostnames / paths replaced; `bunx create-ultimate repro <file>` opens it |
 | `x docs "<question>"` | the framework docs and the wiki, offline | answered from the installed packages and the `wiki/` this tarball ships (`prepack`: `scripts/pack-cli-wiki.ts`), never the network; `x docs Upgrading#<anchor>` prints one whole section |
 | `x graph [--from a --to b]` / `x impact <file\|primitive\|entity>` | the app as one typed graph (`@ultimat3/manifest`'s `buildGraph` over the loaded app, its module graph and `.x/exercise.json`) · what an edit reaches | every edge `declared`, `import` or `observed`; a miss is `X_GRAPH_NODE_UNKNOWN` with the nearest three; `x affected` in an app root adds `data.tests` by import closure ([details](../../wiki/CLI-Reference.md#x-graph--x-impact)) |
 | `x client vendor <name>` / `x client customer --out <dir>` | one OpenAPI compiler (`openapi-compile.ts`), two emitters: a vendor's document into `apps/web/clients/<name>/` (`outbound()` + `t`), or the app's published document into a client with no framework import | every generated file is stamped with its source and body hash; `drift` raises `X_CLIENT_STALE` / `X_CLIENT_EDITED` ([flags](../../wiki/CLI-Reference.md#x-client)) |
@@ -180,10 +181,17 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 `X_GUARD_FINDING_INVALID`). A guard that exports `severity: 'warning'` is **report-only** (`As of
 31.22`): its findings ride the step as `warnings` — in `--json` and on the step line, never a
 failure — so a rule ships to every app before the apps are clean of it; a finding that breaks the
-contract fails either way. `repo-await-in-loop` and `repo-unbounded` ship that way. `x g guard
-<name>` scaffolds one with its test — the shipped guard of that name where there is one (`x new`
-writes all twenty-five), the blank template otherwise — and `x doctor` warns of each shipped one an
-app does not hold (`X_SHIPPED_GUARD_MISSING`, beside the verdict, never in it).
+contract fails either way. `repo-await-in-loop` ships that way. `x g guard <name>` scaffolds the
+app's own with its test.
+
+The twenty-six shipped guards (`SHIPPED_GUARD_NAMES`) run **built in**, from the installed CLI,
+never from a copy (`guards-built-in.ts`, `As of 2026-11`): `x new` writes only
+`guards/shipped.json`, `{ "severity": { "<guard>": "error" | "warning" | "off" } }`, and its
+presence is the opt-in. Absent (a legacy app), a shipped guard the app holds a copy of runs that
+copy and one it does not reports only; a copy is one `X_GUARD_VENDORED` warning, on `boundaries`
+and in `x doctor`, fix `x upgrade` — whose `vendored-guards` codemod deletes each identical copy and
+keeps an edit as a row or as `guards/app-<name>.ts`. A built-in is held by `guardBaseline` under
+its name like any guard.
 
 ## Layout
 
@@ -200,6 +208,8 @@ app does not hold (`X_SHIPPED_GUARD_MISSING`, beside the verdict, never in it).
 | `generate-kinds.ts` | which generators exist, and how a command line names one |
 | `guards.ts` | the app's own conventions: `guards/` discovered, run, and held to the error contract |
 | `guard-sources.ts` | one walk, one read and one Sass compile per file per gate run, shared by every guard |
+| `guards-built-in.ts` | the shipped guards, run from the installed CLI: `guards/shipped.json`, the plan, the module under `.x/cache/guards/` |
+| `codemods/vendored-guards.ts` | `x upgrade`'s migration off vendored copies: identical deleted, an edit kept as config or an app guard |
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `app-load.ts` | import an app's modules so the framework registries hold it |

@@ -144,6 +144,23 @@ describe('logger · redaction by key', () => {
     'cardPin',
     'pinCode',
     'pin_hash',
+    // Sweep 5's repro-bundle review: a PIN under ANY owner, as a whole word or segment, and the
+    // other one-time secrets by name. `ADMIN_PIN` and `adminPin` were readable.
+    'ADMIN_PIN',
+    'adminPin',
+    'admin-pin',
+    'devicePinCode',
+    'KIOSK_PIN_NUMBER',
+    'parentalPinHash',
+    'PINCode',
+    'passcode',
+    'devicePasscode',
+    'SCREEN_PASSCODE',
+    'passcodeHash',
+    'smsOtp',
+    'OTP',
+    'totpSecret',
+    'MFA_SECRET_KEY',
   ])('a compound credential name is redacted: %s', (key) => {
     expect(isRedactedKey(key)).toBe(true);
     const { logger, lines } = capture();
@@ -221,6 +238,18 @@ describe('logger · redaction by key', () => {
     'cookiePath',
     'privateKeyId',
     'cvvLength',
+    // The PIN segment rule's other direction: `pin` inside a word, or a PIN's own metadata.
+    'mapping',
+    'spinnerColor',
+    'isPinnedPost',
+    'pinnedAt',
+    'PINNED_TABS',
+    'pinLength',
+    'pinAttempts',
+    'pinyin',
+    'passcodeLength',
+    'hotspot',
+    'backspin',
   ])('an ordinary name stays readable: %s', (key) => {
     expect(isRedactedKey(key)).toBe(false);
   });

@@ -9,7 +9,7 @@
         "@electric-sql/pglite": "0.5.11",
         "@types/bun": "1.4.4",
         "lefthook": "2.2.2",
-        "solid-js": "1.9.17",
+        "solid-js": "1.9.18",
         "typescript": "^7.0.2",
       },
     },
@@ -38,7 +38,7 @@
         "@ultimat3/schema": "31.27.0",
         "@ultimat3/seo": "31.27.0",
         "@ultimat3/ui": "31.27.0",
-        "solid-js": "1.9.17",
+        "solid-js": "1.9.18",
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
@@ -119,7 +119,7 @@
         "@ultimat3/realtime": "31.27.0",
         "@ultimat3/render": "31.27.0",
         "@ultimat3/ui": "31.27.0",
-        "solid-js": "1.9.17",
+        "solid-js": "1.9.18",
       },
       "devDependencies": {
         "@biomejs/biome": "2.6.3",
@@ -179,7 +179,7 @@
       "dependencies": {
         "@ultimat3/cli": "31.27.0",
         "@ultimat3/core": "31.27.0",
-        "solid-js": "1.9.17",
+        "solid-js": "1.9.18",
       },
       "devDependencies": {
         "@ultimat3/cache": "31.27.0",
@@ -236,7 +236,7 @@
         "@ultimat3/testing": "31.27.0",
         "@ultimat3/time": "31.27.0",
         "@ultimat3/ui": "31.27.0",
-        "solid-js": "1.9.17",
+        "solid-js": "1.9.18",
       },
     },
     "examples/dummy/packages/core": {
@@ -297,7 +297,7 @@
         "@postly/i18n": "0.0.1",
         "@ultimat3/money": "31.27.0",
         "@ultimat3/ui": "31.27.0",
-        "solid-js": "1.9.17",
+        "solid-js": "1.9.18",
       },
     },
     "packages/action": {
@@ -334,6 +334,9 @@
         "@ultimat3/render": "31.27.0",
         "@ultimat3/schema": "31.27.0",
         "@ultimat3/ui": "31.27.0",
+      },
+      "peerDependencies": {
+        "solid-js": "^1.9.18",
       },
     },
     "packages/ai": {
@@ -659,6 +662,9 @@
         "@ultimat3/seo": "31.27.0",
         "@ultimat3/time": "31.27.0",
       },
+      "peerDependencies": {
+        "solid-js": "^1.9.18",
+      },
     },
     "packages/time": {
       "name": "@ultimat3/time",
@@ -679,7 +685,7 @@
         "@ultimat3/time": "31.27.0",
       },
       "peerDependencies": {
-        "solid-js": "^1.9.0",
+        "solid-js": "^1.9.18",
       },
     },
   },
@@ -1044,7 +1050,7 @@
 
     "social-media-clone": ["social-media-clone@workspace:dummy/social-media-clone"],
 
-    "solid-js": ["solid-js@1.9.17", "", { "dependencies": { "csstype": "^3.1.0", "seroval": "~1.6.8", "seroval-plugins": "~1.6.8" } }, "sha512-4GAmLOWPfNV8H9Jfn2LSFTpNEG6jiOKPiwd5lnLGQtehHaX6l3TOLzJqQ7mqwB/3k1Yy3zyumFVopmc/tm34ow=="],
+    "solid-js": ["solid-js@1.9.18", "", { "dependencies": { "csstype": "^3.1.0", "seroval": "~1.6.11", "seroval-plugins": "~1.6.8" } }, "sha512-CHGO5YFk6Y9m/1YSxVtKnXfrW7JD3Tmof8HmR4z6TmCPsS8efo8LnzIR8CQh3cUvffqYm6DWyBFfk8dQw1CNQQ=="],
 
     "source-map-js": ["source-map-js@1.2.2", "", {}, "sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw=="],
 

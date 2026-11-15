@@ -48,7 +48,7 @@ export const TYPESCRIPT_VERSION = '^7.0.2';
  * that installed an older runtime than the compiler targets drifted as a buried literal (1.9.14
  * beside the repository's 1.9.15). `scaffold-repo.test.ts` holds it equal to the root manifest's.
  */
-const SOLID_VERSION = '1.9.17';
+const SOLID_VERSION = '1.9.18';
 
 // `engines.bun` is `REQUIRED_BUN`, the floor the SHIPPED `x` enforces
 // (`packages/cli/src/app-root.ts`), and not a second literal. It was one: `>=1.3.0`, a whole minor
@@ -356,6 +356,7 @@ packages/*/dist/
 /coverage/
 playwright-report/
 test-results/
+repro/bundle-*.json
 `;
 
 // Values, not declarations — the declaration is `envSchema` and `.env.example` is its projection.

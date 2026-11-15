@@ -27,6 +27,23 @@ interface ScopeInput {
   readonly buildId: string;
 }
 
+const originOf = (url: string | undefined): string | undefined =>
+  url !== undefined && URL.canParse(url) ? new URL(url).origin : undefined;
+
+/**
+ * Whether `url` is the app's own: the build's origin, or the `APP_URL` its typed client posts to
+ * (read at the call — `withAppUrl` may set it after the scope is built). Any other host is a call
+ * out the page makes in production too — a CMS, a vendor API — and reaches the network: answered by
+ * the app's pipeline it was a 404, and the route was filed unmeasured for a fetch it never made.
+ */
+function ownedBy(origin: string): (url: string) => boolean {
+  return (url) => {
+    const target = originOf(url);
+    if (target === undefined) return false;
+    return target === originOf(origin) || target === originOf(process.env['APP_URL'] || undefined);
+  };
+}
+
 function inProcessRunner(input: ScopeInput, actor: Actor | null): <T>(fn: () => T) => T {
   // No rate limit: every request here is this build's own render, and a limiter would need a
   // deployment scope a build does not have (`X_RATE_LIMIT_SCOPE_UNSET`).
@@ -46,7 +63,9 @@ function inProcessRunner(input: ScopeInput, actor: Actor | null): <T>(fn: () => 
   const dispatch = (url: string, init: RequestInit): Promise<Response> =>
     pipeline.handle(new Request(url, init), { role: 'web' });
   const request: Ctx = ctx;
-  return <T>(fn: () => T): T => withInProcessFetch(dispatch, () => runWithContext(request, fn));
+  const owns = ownedBy(input.origin);
+  return <T>(fn: () => T): T =>
+    withInProcessFetch(dispatch, () => runWithContext(request, fn), owns);
 }
 
 /** A measurement scope's input: the app at `root`, whose `runtime.ts` the build honours. */
@@ -56,8 +75,9 @@ interface MeasureInput extends ScopeInput {
 
 /**
  * The scope for `origin`. The pipeline is the app's API table and nothing else: a page's data
- * comes from its actions and queries, and a route the render reaches that is not one of them
- * answers 404 — which the render reports, and the route is filed unmeasured with that reason.
+ * comes from its actions and queries, and a route on the app's origin the render reaches that is
+ * not one of them answers 404 — which the render reports, and the route is filed unmeasured with
+ * that reason. Another host's url is not the app's (`ownedBy`), and reaches the network.
  * For a render that is WEIGHED and discarded only: its output is never published.
  */
 export async function measureScope(input: MeasureInput): Promise<MeasureScope> {

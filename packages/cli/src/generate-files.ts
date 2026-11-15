@@ -8,6 +8,7 @@ import type { Generator } from './generate-kinds';
 import { assertLiveSupported, assertSurfaceSupported, GENERATORS } from './generate-kinds';
 import type { SignInMode } from './generate-sign-in-mode';
 import { dedupe } from './generate-write';
+import { refuseShippedGuardName } from './guards-built-in-refusal';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile, Surface } from './templates';
 import {
@@ -24,7 +25,6 @@ import {
   queryFiles,
   resourceFiles,
   routeFiles,
-  shippedGuardFiles,
   taskFiles,
 } from './templates';
 import { adminCatalogFiles } from './templates/admin-catalog';
@@ -265,11 +265,12 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       return dedupe(islandFiles(options.name, { dir: options.at ?? `${surfaceDir}/${feature}` }));
     // No `--at`, no surface, no feature: `guards/` is the one directory the gate discovers, and a
     // guard that lived anywhere else would need an app-side registration to be found.
-    // A name the framework ships a guard under gets THAT guard — how an app adopts one it does
-    // not have (`x doctor` names them). Any other name is the app's own convention, from the blank
-    // template.
+    // A name the framework ships a guard under is refused: that guard already runs, built in, and
+    // installing the framework is the one way to get it (`guards-built-in-refusal.ts`). Any other
+    // name is the app's own convention, from the blank template.
     case 'guard':
-      return dedupe(shippedGuardFiles(kebab(options.name)) ?? guardFiles(options.name));
+      refuseShippedGuardName(kebab(options.name));
+      return dedupe(guardFiles(options.name));
     case 'admin:page':
       // A default permission, never none: an empty list is `X_ADMIN_PAGE_UNGUARDED` on sight.
       return dedupe(

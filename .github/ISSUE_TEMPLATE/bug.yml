@@ -27,12 +27,30 @@ body:
       required: true
 
   - type: textarea
+    id: bundle
+    attributes:
+      label: Repro bundle
+      description: |
+        For a dead job or a captured 5xx, run `x repro <jobId|requestId|fingerprint> --bundle` in your
+        app and attach the `repro/bundle-<id>.json` it writes (drag it into this box). It holds the
+        installed `@ultimat3/*` versions, the declarations of the entities the failing call read, its
+        input and those rows, the error code, cause and stack frames, and the test that replays it.
+        Secret-named keys, `.sensitive()` fields and sealed columns are masked; env values, hostnames
+        from `app.config.ts`, your home directory and absolute paths are replaced. **Read the whole
+        file before you attach it** — it is everything that leaves your machine; edit out anything
+        you still do not want to send. A maintainer opens it with `bunx create-ultimate repro <file>`.
+        `none` when the failure is not a job or a request.
+      placeholder: drag repro/bundle-<id>.json here, or write none
+    validations:
+      required: true
+
+  - type: textarea
     id: reproduce
     attributes:
       label: Reproduce
-      description: Smallest sequence of `x` commands that shows it.
+      description: Without a bundle, the smallest sequence of `x` commands that shows it.
       value: |
-        1. bunx create-ultimate repro && cd repro
+        1. bunx create-ultimate scratch && cd scratch
         2. x g ...
         3. x verify
     validations:

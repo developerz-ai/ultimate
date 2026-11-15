@@ -1,7 +1,7 @@
-// Single responsibility: `changelog-check`'s GUARD-REFRESH rule, pure. A shipped guard template
-// that changed between two releases reaches an app only through `x g guard <name> --force` (the
-// app's `guards/` copy is its own; `x upgrade` never rewrites it), so wiki/Upgrading.md must say
-// so, per guard, in a row naming that release. 31.4.0 and 31.4.1 changed twelve and said nothing.
+// Single responsibility: `changelog-check`'s GUARD-CHANGE rule, pure. A shipped guard that changed
+// between two releases runs in every app on its next install (built in since 31.28.0) and may report
+// what it never did, so wiki/Upgrading.md names it, per guard, in a row naming that release and
+// `x upgrade` (`x g guard` in a row before 31.28.0). 31.4.0 and 31.4.1 changed twelve, said nothing.
 
 export const GUARD_TEMPLATE_DIR = 'packages/cli/src/templates';
 export const GUARD_REFRESH_PAGE = 'wiki/Upgrading.md';
@@ -64,7 +64,8 @@ export function pageUnits(page: string): readonly PageUnit[] {
   return units;
 }
 
-const REFRESH = /\bx g guard\b/;
+/** `x upgrade` migrates a vendored copy; `x g guard … --force` was the refresh before 31.28.0. */
+const REFRESH = /\bx (?:upgrade|g guard)\b/;
 
 /** `X.Y.Z` order, numerically: every version this rule reads is a release, never a prerelease. */
 export const compareVersions = (a: string, b: string): number => {
@@ -88,7 +89,7 @@ const namesRange = (text: string, change: GuardChange): boolean =>
 const namesGuard = (text: string, guard: string): boolean =>
   new RegExp(`(?<![\\w-])${guard}(?![\\w-])`).test(text);
 
-/** The guards of `change` no unit names together with `x g guard` and a version of the range. */
+/** The guards of `change` no unit names together with `x upgrade` and a version of the range. */
 export function unstatedGuards(change: GuardChange, page: string): readonly string[] {
   const units = pageUnits(page).filter(
     (unit) => REFRESH.test(unit.text) && namesRange(unit.text, change),

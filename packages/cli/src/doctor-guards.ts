@@ -1,58 +1,25 @@
-// `x doctor`'s guard listing: the shipped guards this app's `guards/` does not hold, and the ones
-// it holds in a form that is not the current template — each with the command that writes it.
-// Never in the VERDICT: every shipped guard is the app's copy ("delete this file to drop the
-// rule"), so a missing one is a warning beside it (`data.warnings`) and an edited one a listing.
+// `x doctor`'s guard listing: the copies of shipped guards this app's `guards/` still holds. Every
+// shipped guard runs from the installed framework (`guards-built-in.ts`), so none is ever missing;
+// a copy runs in its place and never receives a fix, so each is listed with `x upgrade`, which
+// migrates them (`codemods/vendored-guards.ts`). Never in the VERDICT: a warning beside it.
 
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { GUARD_DIR, guardPaths } from './guards';
+import { vendoredPath, vendoredWarning } from './guards-built-in';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { SHIPPED_GUARD_NAMES, shippedGuardSources } from './templates/scaffold-guards';
 
-export interface MissingGuard {
+/** The one command that migrates every copy. */
+export const MIGRATE_GUARDS = 'x upgrade';
+
+/** A shipped guard the app holds a copy of. */
+export interface VendoredGuard {
   readonly name: string;
-  /** The command that writes it, with its test. Then `x verify` says what it finds. */
-  readonly add: string;
+  /** The copy is a current template, so the migration deletes it; otherwise it is the app's edit. */
+  readonly identical: boolean;
 }
-
-/** The rule, pure: which shipped names have no file among the guards an app holds. */
-export function missingShippedGuards(present: readonly string[]): readonly MissingGuard[] {
-  const held = new Set(present.map((path) => path.replace(/\.tsx?$/, '')));
-  return SHIPPED_GUARD_NAMES.filter((name) => !held.has(`${GUARD_DIR}/${name}`)).map((name) => ({
-    name,
-    add: `x g guard ${name}`,
-  }));
-}
-
-export const MISSING_GUARD = 'X_SHIPPED_GUARD_MISSING';
-
-/**
- * A missing shipped guard as a WARNING, one per guard: the gate does not hold this app to that
- * rule, and "no findings — environment is shippable" alone said nothing of it. A warning and not a
- * finding, so on `main` an adopter's doctor keeps its exit status (`doctor-warnings.ts`).
- */
-export function missingGuardWarnings(entries: readonly GuardListingEntry[]): readonly Finding[] {
-  return entries
-    .filter((entry): entry is MissingGuard => 'add' in entry)
-    .map(({ name, add }) => ({
-      code: MISSING_GUARD,
-      cause: `${GUARD_DIR}/${name}.ts is not in this app, so x verify does not hold it to the shipped ${name} rule`,
-      fix: `${add} && x verify --only boundaries --json`,
-      docs: ERROR_DOCS_URL,
-      at: `${GUARD_DIR}/${name}.ts`,
-    }));
-}
-
-export interface DifferingGuard {
-  readonly name: string;
-  /** Rewrites the guard and its test from the current template. Review the diff, then keep it. */
-  readonly refresh: string;
-}
-
-/** One line of the listing: a shipped guard the app lacks, or holds in another form. */
-export type GuardListingEntry = MissingGuard | DifferingGuard;
 
 /** A guard file as the app holds it, path relative to the app root. */
 export interface HeldGuard {
@@ -61,62 +28,63 @@ export interface HeldGuard {
 }
 
 /** A checkout on Windows may write CRLF; the rule is the same text either way. */
-const sameText = (a: string, b: string): boolean =>
+export const sameText = (a: string, b: string): boolean =>
   a.replaceAll('\r\n', '\n') === b.replaceAll('\r\n', '\n');
 
 /**
- * The rule, pure: which held guards carry a shipped name and are not that guard's current
- * template. A guard with a name the framework never shipped is the app's own, and has no template.
+ * The rule, pure: which held guards carry a shipped name, and whether each is a current form of
+ * it (`shippedGuardSources`). A guard with a name the framework never shipped is the app's own.
  */
-export function differingShippedGuards(held: readonly HeldGuard[]): readonly DifferingGuard[] {
-  const differing: DifferingGuard[] = [];
-  for (const { path, source } of held) {
-    const name = path.slice(`${GUARD_DIR}/`.length).replace(/\.tsx?$/, '');
-    // An earlier form a shipped guard still accepts (`shippedGuardSources`) is current too.
-    const templates = shippedGuardSources(name);
-    if (templates.length === 0 || templates.some((template) => sameText(source, template)))
-      continue;
-    differing.push({ name, refresh: `x g guard ${name} --force` });
+export function vendoredShippedGuards(held: readonly HeldGuard[]): readonly VendoredGuard[] {
+  const paths = held.map(({ path }) => path);
+  const vendored: VendoredGuard[] = [];
+  for (const name of SHIPPED_GUARD_NAMES) {
+    const path = vendoredPath(paths, name);
+    const source = held.find((guard) => guard.path === path)?.source;
+    if (source === undefined) continue;
+    const identical = shippedGuardSources(name).some((template) => sameText(source, template));
+    vendored.push({ name, identical });
   }
-  return differing;
+  return vendored;
 }
 
 /** The I/O half: the same enumeration the `boundaries` step runs, so the two cannot disagree. */
-export async function shippedGuardsProbe(root: string): Promise<readonly GuardListingEntry[]> {
-  const paths = await guardPaths(root);
+export async function shippedGuardsProbe(root: string): Promise<readonly VendoredGuard[]> {
+  const paths = (await guardPaths(root)).filter((path) => path.startsWith(`${GUARD_DIR}/`));
   const held = await Promise.all(
     paths.map(async (path) => ({ path, source: await Bun.file(join(root, path)).text() })),
   );
-  const entries: GuardListingEntry[] = [
-    ...missingShippedGuards(paths),
-    ...differingShippedGuards(held),
-  ];
-  return entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return vendoredShippedGuards(held);
 }
 
 /**
- * The listing, on a result `x doctor` already decided: `data.guards` for a machine; for a person,
- * a line per differing guard — a missing one's command is its warning's line, never printed twice.
- * `ok`, the summary and the findings are returned as they came.
+ * The copies as ONE warning — the code the `boundaries` step lists too — so on `main` an
+ * adopter's doctor keeps its exit status (`doctor-warnings.ts`). Empty when the app holds none.
+ */
+export function vendoredGuardWarnings(entries: readonly VendoredGuard[]): readonly Finding[] {
+  return entries.length === 0 ? [] : [vendoredWarning(entries.map(({ name }) => name))];
+}
+
+/**
+ * The listing, on a result `x doctor` already decided: `data.guards` for a machine — `missing`
+ * always empty now, `differs` the edited copies, `vendored` every copy — and for a person, one
+ * line and the command. `ok`, the summary and the findings are returned as they came.
  */
 export function withGuardListing(
   result: CommandResult,
-  entries: readonly GuardListingEntry[],
+  entries: readonly VendoredGuard[],
 ): CommandResult {
   const data = typeof result.data === 'object' && result.data !== null ? result.data : {};
-  const missing = entries.filter((entry): entry is MissingGuard => 'add' in entry);
-  const differs = entries.filter((entry): entry is DifferingGuard => 'refresh' in entry);
-  const lines = [
-    ...(differs.length === 0
+  const lines =
+    entries.length === 0
       ? []
-      : [
-          msg('cli.doctor.guardsDiffer', { count: differs.length }),
-          ...differs.map(({ refresh }) => `  ${refresh}`),
-        ]),
-  ];
+      : [msg('cli.doctor.guardsDiffer', { count: entries.length }), `  ${MIGRATE_GUARDS}`];
   const guards: JsonValue = {
-    missing: missing.map(({ name, add }) => ({ name, add })),
-    differs: differs.map(({ name, refresh }) => ({ name, refresh })),
+    missing: [],
+    differs: entries
+      .filter(({ identical }) => !identical)
+      .map(({ name }) => ({ name, refresh: MIGRATE_GUARDS })),
+    vendored: entries.map(({ name }) => name),
   };
   return {
     ...result,

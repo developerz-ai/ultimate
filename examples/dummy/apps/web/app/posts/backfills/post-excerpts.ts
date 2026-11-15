@@ -14,9 +14,12 @@ import { CROSS_TENANT_SCOPE, type ReadBuilder } from '@ultimat3/entity';
 import { type BackfillBatch, backfill } from '@ultimat3/jobs';
 
 /**
- * The rows this pass visits: posts whose excerpt is still blank, and only those. Narrowing
- * `source` to the rows that are actually behind is what lets `count` below converge — a source
- * matching every row would re-normalise for ever and could never answer "how many are left".
+ * The rows this pass visits: posts whose excerpt is still blank and whose body has text to cut one
+ * from, and only those. A post with no body — one restored by `posts.import`, whose file carries
+ * none — has nothing to derive: visited, its excerpt stayed blank, `count` still matched it, and
+ * every pass after an import ended `X_BACKFILL_STALLED`. Narrowing `source` to the rows that are
+ * actually behind is what lets `count` below converge — a source matching every row would
+ * re-normalise for ever and could never answer "how many are left".
  *
  * A sweep over the whole table belongs to no one org, so the declaration is `tenant: 'none'` —
  * which STRIPS the org from the run rather than inheriting the worker's, and `backfillPass` opens
@@ -31,7 +34,9 @@ const behind = (ctx: Ctx): ReadBuilder<Post> => {
     'post-excerpts: this pass spans every tenant and its actor holds no tenancy:cross',
     'x db backfill post-excerpts --write --json',
   );
-  return db.posts.andWhere('excerpt', 'eq', '');
+  // A body of whitespace alone would still cut to a blank excerpt and stall the same way; no write
+  // path makes one (the import format carries no body), and the predicate cannot say "trimmed".
+  return db.posts.andWhere('excerpt', 'eq', '').andWhere('body', 'neq', '');
 };
 
 /**

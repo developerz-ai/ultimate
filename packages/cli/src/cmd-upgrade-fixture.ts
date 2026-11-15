@@ -189,7 +189,21 @@ interface Script {
   readonly generateCode?: number;
   /** `x verify --only unit`'s stdout. */
   readonly unit?: string;
+  /** The installed `x upgrade codemods`' stdout and exit code; default: none ran. */
+  readonly codemods?: string;
+  readonly codemodsCode?: number;
 }
+
+/** What an installed CLI with the engine answers when no codemod lies in the span. */
+export const codemodsDocument = (
+  applied: readonly unknown[] = [],
+  span: { readonly from: string; readonly to: string } = { from: '19.4.0', to: '20.1.0' },
+): string =>
+  JSON.stringify({
+    ok: true,
+    command: 'upgrade',
+    data: { codemods: { ...span, dryRun: false, applied } },
+  });
 
 /** `boundaries`, as the installed CLI reports it: one finding per break of each guard on disk. */
 const boundariesDocument = async (cwd: string, script: Script): Promise<string> => {
@@ -261,6 +275,8 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
         );
       case 'x doctor':
         return answer(command, script.doctor ?? DOCTOR);
+      case 'x upgrade':
+        return answer(command, script.codemods ?? codemodsDocument(), script.codemodsCode ?? 0);
       case 'x exercise':
         return answer(command, script.exercise ?? EXERCISE_GREEN, script.exerciseCode ?? 0);
       case 'x verify':
@@ -296,6 +312,9 @@ interface Output {
     readonly proof: string;
     readonly scripts: readonly { name: string; ok: boolean | null; code?: number }[];
     readonly then: string;
+    /** `HopCodemods` or null; each test reads the fields it asserts on. */
+    readonly codemods?: unknown;
+    readonly superseded?: unknown;
     readonly section: { title: string; url: string } | null;
     readonly pins: readonly { file: string; name: string; from: string; to: string }[];
     readonly bun: {

@@ -6,7 +6,8 @@
 // seam, `postgresDriver()` deliberately leaves it undefined (packages/entity/src/database.ts:20).
 
 import { expect, test } from 'bun:test';
-import { selectDriver } from './client';
+import { withStoreMode } from '@ultimat3/core';
+import { selectDriver, storesInPostgres } from './client';
 
 const PG = 'postgres://demo:demo@db:5432/social-media-clone';
 
@@ -41,4 +42,21 @@ test('an empty DATABASE_URL is unset — .env.development ships exactly that', (
 test('development and test keep the embedded store, so a fresh clone boots with no database', () => {
   expect(typeof selectDriver({ NODE_ENV: 'development' }).reset).toBe('function');
   expect(typeof selectDriver({}).reset).toBe('function');
+});
+
+// `x exercise` is a test process ON a migrated scratch database and declares so through core's
+// `withStoreMode`: the entity driver, the auth adapter and the OAuth store all read this one
+// predicate, so a pass's sign-in and consent writes reach that database and are counted.
+test('a test process that declared the database stores in Postgres; x dev and bun test do not', async () => {
+  expect(storesInPostgres({ NODE_ENV: 'test' })).toBe(false);
+  expect(storesInPostgres({ NODE_ENV: 'development' })).toBe(false);
+  expect(storesInPostgres({ NODE_ENV: 'production', DATABASE_URL: PG })).toBe(true);
+  const declared = await withStoreMode('database', async () => ({
+    test: storesInPostgres({ NODE_ENV: 'test' }),
+    development: storesInPostgres({ NODE_ENV: 'development' }),
+    // The embedded test arm, not Postgres: the app seeds at import, before the pass's client is
+    // installed, and `testDriver()` follows that client once it is.
+    driverSeeds: typeof selectDriver({ NODE_ENV: 'test' }).reset,
+  }));
+  expect(declared).toEqual({ test: true, development: false, driverSeeds: 'function' });
 });

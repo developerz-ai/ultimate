@@ -30,13 +30,16 @@ const isJobFailure = (value: unknown): value is JobFailure =>
   typeof value['name'] === 'string' &&
   Array.isArray(value['steps']);
 
-/** `--from <file>`: a bundle `x repro <id> --json` printed (`data.bundle` or `data.failure`), or one bare. */
+/** `--from <file>`: what `x repro <id> --json` printed (`data.bundle`/`data.failure`), a repro bundle, or bare. */
 export async function subjectFromFile(path: string): Promise<ReproSubject> {
   const file = Bun.file(path);
   if (!(await file.exists())) throw new ReproUnknownError({ id: path });
   const parsed: unknown = await file.json();
   const data = isJsonObject(parsed) && isJsonObject(parsed['data']) ? parsed['data'] : parsed;
-  const inner = isJsonObject(data) ? (data['bundle'] ?? data['failure'] ?? data) : data;
+  // `subject` is a repro bundle's (`x repro --bundle`): the redacted failure, read back as-is.
+  const inner = isJsonObject(data)
+    ? (data['bundle'] ?? data['failure'] ?? data['subject'] ?? data)
+    : data;
   if (isBundle(inner)) return { kind: 'request', bundle: inner };
   if (isJobFailure(inner)) return { kind: 'job', failure: inner };
   throw new ReproUnknownError({ id: path });

@@ -53,7 +53,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
 | named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
-| which store backs a seam — `storeMode(env)`: `memory` under `test`, `database` everywhere else | `store-mode.ts` |
+| which store backs a seam — `storeMode(env)`: `memory` under `test`, `database` everywhere else; `withStoreMode(mode, work)` declares the answer for a process that knows better (`x exercise`: a test process on its scratch database) | `store-mode.ts` |
 | the boot refusal of a shipped dev signing secret outside development/test — `X_CURSOR_SECRET_DEV` | `dev-secrets.ts` |
 | a value that cannot be printed by accident | `secret.ts` |
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |

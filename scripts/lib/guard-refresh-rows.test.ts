@@ -63,6 +63,12 @@ describe('the rule', () => {
     ]);
   });
 
+  test('from 31.28.0 the row names x upgrade, which migrates a vendored copy: green', () => {
+    const page =
+      '| **31.4.1** changed `bare-error` and `raw-fetch`: each reports more | `x upgrade` |\n';
+    expect(unstatedGuards(RELEASED, page)).toEqual([]);
+  });
+
   test('the row names the guards, x g guard and the release: green', () => {
     const page =
       '| **31.4.1** changed `bare-error` and `raw-fetch` | `x g guard <name> --force` per name |\n';

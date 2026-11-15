@@ -72,7 +72,7 @@ A rule marked `†` has its full text in [`docs/history/storage-rules.md`](../..
 | `upload-scanner*.ts` / `upload-scan.ts` | the `uploadScanner` port + memory (EICAR) reference; `promoteAttachment` scans a per-attempt copy |
 | `image-warm.ts` | `warmVariants`: a stored image's variants written ahead of `/media`, under its keys, the revision off the bytes read; core's spec, so a warmed variant is the one a miss would store |
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
-| `storage-instrument.ts` | each resolved disk: `storage.<verb>` bus event + client span |
+| `storage-instrument.ts` / `storage-instrument-multipart.ts` | each resolved disk: `storage.<verb>` bus event + client span; its `multipart` session changes as `storage.multipart` (`op`) |
 | `grant.ts` | `grantUpload` — the ONE way a presigned PUT is minted; the client never names a key |
 | `accept.ts` | `acceptSignedUpload` / `readSignedObject` — the two decisions a `/_storage` route is made of |
 | `attachment.ts` | `pending/` → row promotion, `sweepOrphans` and `deleteVariants` |

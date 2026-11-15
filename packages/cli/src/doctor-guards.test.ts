@@ -1,6 +1,6 @@
-// The listing `x doctor` adds for an app that predates a shipped guard: it has to name every
-// guard the app lacks with a command that really writes it, and it must never turn a deliberate
-// deletion into a failure.
+// The listing `x doctor` adds for an app that still holds copies of shipped guards: every shipped
+// guard runs built in, so none is ever "missing"; each copy is named — identical or edited — with
+// the one command that migrates them, and never turns the doctor red.
 
 import { describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API; `mkdtemp`/`rm` own a throwaway app root's lifetime.
@@ -12,211 +12,106 @@ import { join } from 'node:path';
 import { reportDoctor } from './cmd-doctor';
 import { probe } from './cmd-doctor-fixture';
 import {
-  differingShippedGuards,
-  MISSING_GUARD,
-  missingGuardWarnings,
-  missingShippedGuards,
+  MIGRATE_GUARDS,
   shippedGuardsProbe,
+  vendoredGuardWarnings,
+  vendoredShippedGuards,
   withGuardListing,
 } from './doctor-guards';
-import { generate } from './generate-files';
-import { SHIPPED_GUARD_NAMES, scaffoldGuardFiles, shippedGuardFiles } from './templates';
+import { GUARD_VENDORED_CODE } from './guards-built-in';
 import { repoUnboundedGuardFiles } from './templates/guard-repo-unbounded';
+import { SHIPPED_GUARD_NAMES, shippedGuardSource } from './templates/scaffold-guards';
 
-describe('unit · x doctor · shipped guards the app does not hold', () => {
-  test('an app with no guards/ lacks every one, each with the command that adds it', () => {
-    const missing = missingShippedGuards([]);
-    expect(missing.map((guard) => guard.name)).toEqual([...SHIPPED_GUARD_NAMES]);
-    expect(missing.find((guard) => guard.name === 'raw-length')?.add).toBe('x g guard raw-length');
-  });
+const template = (name: string): string => shippedGuardSource(name) ?? '';
 
-  test("a guard the app holds is not listed, and its own guards are not the framework's business", () => {
-    const present = ['guards/raw-length.ts', 'guards/raw-colour.tsx', 'guards/migration-safety.ts'];
-    const names = missingShippedGuards(present).map((guard) => guard.name);
-    expect(names).not.toContain('raw-length');
-    expect(names).not.toContain('raw-colour');
-    expect(names).toHaveLength(SHIPPED_GUARD_NAMES.length - 2);
-  });
-
-  // The command is only an instruction if running it clears the line it came from.
-  test('every `add` line is a generator call that writes exactly the guard it names', () => {
-    for (const { name, add } of missingShippedGuards([])) {
-      const [, verb, kind, argument] = add.split(' ');
-      expect([verb, kind, argument]).toEqual(['g', 'guard', name]);
-      expect(generate({ kind: 'guard', name }).map((file) => file.path)).toContain(
-        `guards/${name}.ts`,
-      );
+describe('unit · x doctor · copies of shipped guards', () => {
+  test('an app with no guards/ holds no copy, and nothing is missing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-doctor-guards-'));
+    try {
+      expect(await shippedGuardsProbe(root)).toEqual([]);
+      const result = await reportDoctor(probe({ root }));
+      expect(result.data).toMatchObject({ guards: { missing: [], differs: [], vendored: [] } });
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test('a copy is named, identical or edited; the app’s own guards never are', () => {
+    expect(
+      vendoredShippedGuards([
+        { path: 'guards/raw-length.ts', source: template('raw-length') },
+        { path: 'guards/bare-error.ts', source: `${template('bare-error')}// edit\n` },
+        { path: 'guards/migration-safety.ts', source: 'export {};' },
+      ]),
+    ).toEqual([
+      { name: 'bare-error', identical: false },
+      { name: 'raw-length', identical: true },
+    ]);
+  });
+
+  test('a current template is identical whatever line endings the checkout wrote', () => {
+    const crlf = template('bare-error').replaceAll('\n', '\r\n');
+    expect(vendoredShippedGuards([{ path: 'guards/bare-error.ts', source: crlf }])).toEqual([
+      { name: 'bare-error', identical: true },
+    ]);
+  });
+
+  test("an older app's report-only repo-unbounded copy is a current form, not an edit", () => {
+    const reportOnly = String(repoUnboundedGuardFiles('warning')[0]?.contents);
+    expect(reportOnly).toContain("severity: 'warning',");
+    expect(
+      vendoredShippedGuards([{ path: 'guards/repo-unbounded.ts', source: reportOnly }]),
+    ).toEqual([{ name: 'repo-unbounded', identical: true }]);
   });
 
   test('the probe reads the directory the gate reads, and never counts a test as a guard', async () => {
     const root = await mkdtemp(join(tmpdir(), 'x-doctor-guards-'));
     try {
-      for (const file of scaffoldGuardFiles()) {
-        if (!file.path.startsWith('guards/raw-length'))
-          await Bun.write(join(root, file.path), file.contents);
-      }
-      // Only the TEST of the missing one is present: that is not the guard.
-      await Bun.write(join(root, 'guards/raw-length.test.ts'), '');
-      expect(await shippedGuardsProbe(root)).toEqual([
-        { name: 'raw-length', add: 'x g guard raw-length' },
-      ]);
+      await Bun.write(join(root, 'guards/raw-length.ts'), template('raw-length'));
+      await Bun.write(join(root, 'guards/focus-visible.test.ts'), '');
+      expect(await shippedGuardsProbe(root)).toEqual([{ name: 'raw-length', identical: true }]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  // A listing, never a finding: the verdict, the summary and the findings are what they were.
   test('the listing rides beside the verdict and never moves it', () => {
-    const clean = {
-      ok: true,
-      command: 'doctor',
-      summary: 'clean',
-      findings: [],
-      data: { count: 0 },
-    };
-    const missing = missingShippedGuards(
-      SHIPPED_GUARD_NAMES.filter((name) => name !== 'raw-length').map(
-        (name) => `guards/${name}.ts`,
-      ),
-    );
-    const listed = withGuardListing(clean, missing);
-    expect([listed.ok, listed.summary, listed.findings]).toEqual([true, 'clean', []]);
-    expect(listed.data).toEqual({
-      count: 0,
-      guards: { missing: [{ name: 'raw-length', add: 'x g guard raw-length' }], differs: [] },
-    });
-    // The printed command is the warning's line now (`missingGuardWarnings`), never twice.
-    expect(listed.lines).toBeUndefined();
-  });
-
-  test('an app holding every shipped guard gets an empty list and no extra line', () => {
     const red = { ok: false, command: 'doctor', summary: '1 finding(s)', data: { count: 1 } };
-    const listed = withGuardListing(red, []);
-    expect(listed.ok).toBe(false);
-    expect(listed.lines).toBeUndefined();
-    expect(listed.data).toEqual({ count: 1, guards: { missing: [], differs: [] } });
-  });
-});
-
-// Owner decision 8 (#648): shipped guards stay copies the app owns, so a fix to one never reached
-// an app that already held it — `x doctor` said nothing, because it only listed what was MISSING.
-// It now also lists a held shipped guard that is not the current template, with the command that
-// rewrites it. Still a listing: an app may have edited its copy on purpose.
-describe('unit · x doctor · a shipped guard the app holds in an older or edited form', () => {
-  const template = (name: string): string => {
-    const contents = shippedGuardFiles(name)?.find(
-      (file) => file.path === `guards/${name}.ts`,
-    )?.contents;
-    return typeof contents === 'string' ? contents : '';
-  };
-
-  test('a copy that is not the current template is listed, with the command that rewrites it', () => {
-    const stale = `${template('raw-length')}\n// an older rule\n`;
-    expect(differingShippedGuards([{ path: 'guards/raw-length.ts', source: stale }])).toEqual([
-      { name: 'raw-length', refresh: 'x g guard raw-length --force' },
+    const listed = withGuardListing(red, [
+      { name: 'raw-length', identical: true },
+      { name: 'bare-error', identical: false },
     ]);
-  });
-
-  test('the current template is not listed, whatever line endings the checkout wrote', () => {
-    const crlf = template('bare-error').replaceAll('\n', '\r\n');
-    expect(template('bare-error').length).toBeGreaterThan(0);
-    expect(
-      differingShippedGuards([
-        { path: 'guards/raw-length.ts', source: template('raw-length') },
-        { path: 'guards/bare-error.ts', source: crlf },
-      ]),
-    ).toEqual([]);
-  });
-
-  test("an older app's report-only repo-unbounded copy is current, not listed as differing", () => {
-    const reportOnly = repoUnboundedGuardFiles('warning')[0]?.contents;
-    expect(String(reportOnly)).toContain("severity: 'warning',");
-    expect(
-      differingShippedGuards([
-        { path: 'guards/repo-unbounded.ts', source: String(reportOnly) },
-        { path: 'guards/repo-unbounded.ts', source: template('repo-unbounded') },
-      ]),
-    ).toEqual([]);
-    const edited = `${String(reportOnly)}\n// edited\n`;
-    expect(differingShippedGuards([{ path: 'guards/repo-unbounded.ts', source: edited }])).toEqual([
-      { name: 'repo-unbounded', refresh: 'x g guard repo-unbounded --force' },
-    ]);
-  });
-
-  test("the app's own guards are never compared: there is no template to differ from", () => {
-    expect(
-      differingShippedGuards([{ path: 'guards/migration-safety.ts', source: 'export {};' }]),
-    ).toEqual([]);
-  });
-
-  test('the probe lists the missing and the differing guards together', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'x-doctor-guards-'));
-    try {
-      for (const file of scaffoldGuardFiles()) {
-        if (file.path.startsWith('guards/focus-visible')) continue;
-        const edited = file.path === 'guards/raw-length.ts' ? `${file.contents}// edit\n` : null;
-        await Bun.write(join(root, file.path), edited ?? file.contents);
-      }
-      expect(await shippedGuardsProbe(root)).toEqual([
-        { name: 'focus-visible', add: 'x g guard focus-visible' },
-        { name: 'raw-length', refresh: 'x g guard raw-length --force' },
-      ]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test('the listing carries both halves, JSON and printed alike', () => {
-    const listed = withGuardListing({ ok: true, command: 'doctor', summary: 'clean' }, [
-      { name: 'raw-length', refresh: 'x g guard raw-length --force' },
-    ]);
+    expect([listed.ok, listed.summary]).toEqual([false, '1 finding(s)']);
     expect(listed.data).toEqual({
+      count: 1,
       guards: {
         missing: [],
-        differs: [{ name: 'raw-length', refresh: 'x g guard raw-length --force' }],
+        differs: [{ name: 'bare-error', refresh: MIGRATE_GUARDS }],
+        vendored: ['raw-length', 'bare-error'],
       },
     });
-    expect(listed.lines?.[0]).toContain('1 shipped guard(s) differ');
-    expect(listed.lines?.at(-1)).toBe('  x g guard raw-length --force');
+    expect(listed.lines?.[0]).toContain('2 shipped guard(s) are copies');
+    expect(listed.lines?.at(-1)).toBe(`  ${MIGRATE_GUARDS}`);
+    expect(withGuardListing(red, []).lines).toBeUndefined();
   });
-});
 
-// Plan 101 19b Y9: the listing alone let `x doctor` print "no findings — environment is shippable"
-// over an app missing a shipped guard. Each one is now a warning — code, cause, fix — in
-// `data.warnings`, beside the verdict and never in it: on `main` an adopter's doctor stays green.
-describe('unit · x doctor · a missing shipped guard is a warning', () => {
-  test('one warning per missing guard, naming its file and the command that writes it', () => {
-    const [warning, ...rest] = missingGuardWarnings([
-      { name: 'raw-length', add: 'x g guard raw-length' },
-    ]);
+  test('every copy is one warning, whose fix is the migration', () => {
+    expect(vendoredGuardWarnings([])).toEqual([]);
+    const [warning, ...rest] = vendoredGuardWarnings([{ name: 'raw-length', identical: true }]);
     expect(rest).toEqual([]);
-    expect(warning?.code).toBe(MISSING_GUARD);
-    expect(warning?.at).toBe('guards/raw-length.ts');
-    expect(warning?.cause).toContain('raw-length');
-    expect(warning?.fix).toStartWith('x g guard raw-length');
+    expect(warning?.code).toBe(GUARD_VENDORED_CODE);
+    expect(warning?.fix).toStartWith(MIGRATE_GUARDS);
   });
 
-  test('a guard held in another form is not a warning: an edit may be the decision', () => {
-    expect(
-      missingGuardWarnings([{ name: 'raw-length', refresh: 'x g guard raw-length --force' }]),
-    ).toEqual([]);
-  });
-
-  test('the doctor stays ok and says so, with each missing guard in data.warnings', async () => {
+  test('the doctor stays ok, the copies in data.warnings', async () => {
     const root = await mkdtemp(join(tmpdir(), 'x-doctor-guards-'));
     try {
-      for (const file of scaffoldGuardFiles()) {
-        if (!file.path.startsWith('guards/raw-length'))
-          await Bun.write(join(root, file.path), file.contents);
+      for (const name of SHIPPED_GUARD_NAMES) {
+        await Bun.write(join(root, `guards/${name}.ts`), template(name));
       }
       const result = await reportDoctor(probe({ root }));
       expect([result.ok, result.findings]).toEqual([true, []]);
-      expect(result.data).toMatchObject({
-        warnings: [{ code: MISSING_GUARD, at: 'guards/raw-length.ts' }],
-        guards: { missing: [{ name: 'raw-length', add: 'x g guard raw-length' }] },
-      });
-      expect(result.lines?.some((line) => line.includes('x g guard raw-length'))).toBe(true);
+      expect(result.data).toMatchObject({ warnings: [{ code: GUARD_VENDORED_CODE }] });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

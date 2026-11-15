@@ -1,7 +1,8 @@
-// The shape of `.github/workflows/security-channel.yml` that keeps its daily alarm honest: only a
-// literal `true` passes, the label is provisioned before any `gh issue` call, `issues: write` is the
-// only permission, and nothing is checked out. Each rule is a pure check over the workflow's text,
-// run on the REAL file and on a mutated copy, so a quiet edit that breaks one goes red here.
+// The shape of `.github/workflows/security-channel.yml` that keeps its daily alarms honest. `check`:
+// only a literal `true` passes, the label is provisioned before any `gh issue` call, `issues: write`
+// is its only permission, and nothing is checked out. `floors`: the advisory script's red survives
+// `tee`, the lockfile follows the raised manifests, and the job can propose but never publish. Each
+// rule is a pure check over the workflow's text, run on the REAL file and on a mutated copy.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
@@ -14,6 +15,7 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 interface Step {
   readonly uses?: string;
   readonly run?: string;
+  readonly with?: Readonly<Record<string, unknown>>;
 }
 
 interface Workflow {
@@ -33,19 +35,22 @@ const shellOf = (steps: readonly Step[]): string =>
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
 
+const FLOORS_PERMISSIONS = { contents: 'write', 'pull-requests': 'write', issues: 'write' };
+
 /** Every rule the workflow breaks, by name; empty is the shape held. */
 function shapeGaps(text: string): readonly string[] {
   const workflow = Bun.YAML.parse(text) as Workflow;
   const gaps: string[] = [];
-  const jobs = Object.values(workflow.jobs ?? {});
-  const steps = jobs.flatMap((job) => job.steps ?? []);
+  const check = workflow.jobs?.['check'];
+  const steps = check?.steps ?? [];
   const shell = shellOf(steps);
   const at = (needle: string): number => shell.indexOf(needle);
 
-  if (JSON.stringify(workflow.permissions) !== JSON.stringify({ issues: 'write' })) {
-    gaps.push('permissions');
+  // Each job holds its own: a workflow-wide grant would hand `check` the `floors` job's writes.
+  if (JSON.stringify(workflow.permissions) !== '{}') gaps.push('permissions');
+  if (JSON.stringify(check?.permissions) !== JSON.stringify({ issues: 'write' })) {
+    gaps.push('job-permissions');
   }
-  if (jobs.some((job) => job.permissions !== undefined)) gaps.push('job-permissions');
   if (steps.some((step) => step.uses !== undefined)) gaps.push('checkout');
   if (!Object.keys(workflow.on ?? {}).includes('schedule')) gaps.push('schedule');
 
@@ -63,6 +68,35 @@ function shapeGaps(text: string): readonly string[] {
   // The alarm path ends red, so the run's badge says what the issue says.
   if (!/gh issue create[^\n]*\n\s*fi\s*\n\s*exit 1\s*$/.test(shell.trimEnd()))
     gaps.push('exit-red');
+  return [...gaps, ...floorsGaps(workflow)];
+}
+
+/** The advisory job's rules: it proposes a raise and alarms on the rest, and it never publishes. */
+function floorsGaps(workflow: Workflow): readonly string[] {
+  const floors = workflow.jobs?.['floors'];
+  const steps = floors?.steps ?? [];
+  const shell = shellOf(steps);
+  const gaps: string[] = [];
+  if (JSON.stringify(floors?.permissions) !== JSON.stringify(FLOORS_PERMISSIONS)) {
+    gaps.push('floors-permissions');
+  }
+  const checkout = steps.find((step) => step.uses?.startsWith('actions/checkout@') === true);
+  if (checkout?.with?.['persist-credentials'] !== false) gaps.push('floors-credentials');
+  if (
+    !/set -o pipefail\s*\n\s*bun run scripts\/advisory-floors\.ts --write --json \| tee/.test(shell)
+  ) {
+    gaps.push('floors-pipefail');
+  }
+  const install = shell.indexOf('bun install');
+  const add = shell.indexOf('git add');
+  if (install === -1 || add === -1 || install > add || !/git add [^\n]*bun\.lock/.test(shell)) {
+    gaps.push('floors-lockfile');
+  }
+  if (/npm publish|bun publish/.test(shell)) gaps.push('floors-publish');
+  const label = shell.indexOf('gh label create security-advisory');
+  const issue = shell.indexOf('gh issue');
+  if (label === -1 || issue === -1 || label > issue) gaps.push('floors-label-first');
+  if (steps.at(-1)?.run?.trim() !== 'exit 1') gaps.push('floors-exit-red');
   return gaps;
 }
 
@@ -92,16 +126,22 @@ describe('a mutated copy goes red on the rule it breaks', () => {
     );
   });
 
-  test('a second permission', () => {
+  test('a second permission on the channel check', () => {
     expect(
-      shapeGaps(mutate('  issues: write\n', '  issues: write\n  contents: write\n')),
-    ).toContain('permissions');
+      shapeGaps(mutate('      issues: write\n', '      issues: write\n      contents: write\n')),
+    ).toContain('job-permissions');
+  });
+
+  test('a workflow-wide grant', () => {
+    expect(shapeGaps(mutate('permissions: {}\n', 'permissions:\n  issues: write\n'))).toContain(
+      'permissions',
+    );
   });
 
   test('a checkout step', () => {
     const withCheckout = mutate(
-      '    steps:\n',
-      '    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n',
+      '    timeout-minutes: 5\n    steps:\n',
+      '    timeout-minutes: 5\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n',
     );
     expect(shapeGaps(withCheckout)).toContain('checkout');
   });
@@ -117,6 +157,63 @@ describe('a mutated copy goes red on the rule it breaks', () => {
   });
 
   test('the alarm path no longer fails the run', () => {
-    expect(shapeGaps(real.replace(/exit 1\s*$/, 'exit 0\n'))).toContain('exit-red');
+    const quiet = mutate(
+      '            gh issue create --label security-channel --title "security: the private vulnerability channel is closed" --body "$body"\n          fi\n          exit 1\n',
+      '            gh issue create --label security-channel --title "security: the private vulnerability channel is closed" --body "$body"\n          fi\n          exit 0\n',
+    );
+    expect(shapeGaps(quiet)).toContain('exit-red');
+  });
+
+  test('the advisory job gains the publish token', () => {
+    expect(
+      shapeGaps(
+        mutate(
+          '      issues: write\n    runs-on: ubuntu-latest\n    # One packument',
+          '      issues: write\n      id-token: write\n    runs-on: ubuntu-latest\n    # One packument',
+        ),
+      ),
+    ).toContain('floors-permissions');
+  });
+
+  test('the advisory checkout keeps the token in .git/config', () => {
+    const persisted = real.replace(
+      /persist-credentials: false\n(?![\s\S]*persist-credentials)/,
+      'persist-credentials: true\n',
+    );
+    expect(persisted).not.toBe(real);
+    expect(shapeGaps(persisted)).toContain('floors-credentials');
+  });
+
+  test('the advisory step loses pipefail, so tee decides its exit', () => {
+    expect(
+      shapeGaps(
+        mutate(
+          '          set -o pipefail\n          bun run scripts/advisory-floors.ts',
+          '          bun run scripts/advisory-floors.ts',
+        ),
+      ),
+    ).toContain('floors-pipefail');
+  });
+
+  test('the raised manifests are committed without the lockfile', () => {
+    expect(
+      shapeGaps(
+        mutate('git add packages/*/package.json bun.lock', 'git add packages/*/package.json'),
+      ),
+    ).toContain('floors-lockfile');
+  });
+
+  test('the advisory job publishes', () => {
+    expect(
+      shapeGaps(
+        mutate('          bun install\n', '          bun install\n          npm publish -ws\n'),
+      ),
+    ).toContain('floors-publish');
+  });
+
+  test('the advisory run no longer ends red', () => {
+    expect(shapeGaps(real.replace(/run: exit 1\s*$/, 'run: exit 0\n'))).toContain(
+      'floors-exit-red',
+    );
   });
 });

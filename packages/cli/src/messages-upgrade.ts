@@ -58,4 +58,17 @@ export const UPGRADE_MESSAGES = {
     'read the section, close each finding by its fix, re-check with x verify --json, commit this hop to {to}, then re-run x upgrade --json for the next one',
   'cli.upgrade.then.walk':
     'review the diff and commit this hop to {to}, then re-run x upgrade --json to take the next one, {next}',
+  // `upgrade-report.ts` / `cmd-upgrade-codemods.ts`: the codemods a hop applied, and what they left.
+  'cli.upgrade.codemods.done':
+    '{count} codemod(s) after {from} up to {to}: {changed} file(s) changed, {skipped} left for you',
+  'cli.upgrade.codemods.dryRun':
+    '{count} codemod(s) after {from} up to {to} would change {changed} file(s) and leave {skipped} for you; nothing written',
+  'cli.upgrade.codemod':
+    'codemod {id} ({since}): {changed} changed, {skipped} left for you — {summary}',
+  'cli.upgrade.codemod.changed': '  changed: {path}',
+  'cli.upgrade.codemod.skipped': '  left for you: {path} — {reason}',
+  'cli.upgrade.codemods.fromDriver':
+    'the installed CLI applies no codemods of its own, so this CLI applied its list',
+  // `upgrade-report.ts`: a workaround the hop's framework made unnecessary (`doctor-superseded.ts`).
+  'cli.upgrade.superseded': 'superseded workaround{at}: {cause} — fix: {fix}',
 } as const;

@@ -38,6 +38,8 @@ const withApp = async (
 ): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), 'x-guards-baseline-'));
   try {
+    // The one pin the shipped `runtime-pin` asks of every app, so only the case's guard speaks.
+    await Bun.write(join(root, 'package.json'), JSON.stringify({ engines: { bun: '1.4.4' } }));
     for (const [name, contents] of Object.entries(guards)) {
       await Bun.write(join(root, GUARD_DIR, name), contents);
     }

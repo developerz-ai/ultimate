@@ -3,7 +3,7 @@
 // while every repository read the embedded Postgres. One answer, decided once.
 
 import { describe, expect, test } from 'bun:test';
-import { STORE_MODES, storeMode } from './store-mode';
+import { STORE_MODES, storeMode, withStoreMode } from './store-mode';
 
 describe('storeMode', () => {
   test('`bun test` is memory: no database client is installed there', () => {
@@ -32,5 +32,36 @@ describe('storeMode', () => {
 
   test('names exactly two modes', () => {
     expect(STORE_MODES).toEqual(['memory', 'database']);
+  });
+
+  // `x exercise` is a test process ON a migrated scratch database: an app store chosen at module
+  // load by `storeMode` sat in memory there, so a reach writing an api key or a device token sent
+  // no statement and its proofs proved nothing. The pass declares the mode; the env stays `test`.
+  test('a declared mode answers for the length of the work, then the environment again', async () => {
+    const env = { NODE_ENV: 'test' };
+    const seen = await withStoreMode('database', async () => {
+      await Promise.resolve();
+      return storeMode(env);
+    });
+    expect(seen).toBe('database');
+    expect(storeMode(env)).toBe('memory');
+  });
+
+  test('a work that throws still hands the environment its answer back', async () => {
+    const refusal = { refused: true };
+    const thrown = await withStoreMode('database', () => Promise.reject(refusal)).catch(
+      (error: unknown) => error,
+    );
+    expect(thrown).toBe(refusal);
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
+  });
+
+  test('nested declarations restore the outer one', async () => {
+    await withStoreMode('database', async () => {
+      await withStoreMode('memory', async () => {
+        expect(storeMode({})).toBe('memory');
+      });
+      expect(storeMode({ NODE_ENV: 'test' })).toBe('database');
+    });
   });
 });

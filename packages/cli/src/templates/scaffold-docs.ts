@@ -42,33 +42,35 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
-| Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal it can express; reported, not refused: an \`await\` per loop turn outside \`expectedQueryLoop('<why>', fn)\`, a bare \`.all()\` (it stops at 50 rows: say \`.limit(n)\`) | \`guards/repo-raw-sql.ts\`, \`guards/repo-await-in-loop.ts\`, \`guards/repo-unbounded.ts\` |
-| Fan-out | a database call per element of a list runs through \`mapBounded(rows, fn, { width })\` from \`@ultimat3/core\` — never \`Promise.all(rows.map(async …))\`, one statement per row at once; a \`// why:\` on the line admits a list bounded where it is built | \`guards/unbounded-fanout.ts\` |
-| Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`guards/raw-fetch.ts\` |
-| Polling | an island re-reads a query on a timer with \`useQuery(ref, input, { poll: pollEvery(ms) })\` (\`@ultimat3/realtime\`), anything else with \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` — no call while the tab is hidden, none after a lost session — never a bare \`setInterval(\`; a \`// why:\` on the line admits a tick that is not a read | \`guards/raw-interval.ts\` |
-| Confirmation | a destructive act asks through \`ConfirmDialog\` from \`@ultimat3/ui\` — Cancel focused, a native post, stays open on a refusal — never \`confirm(\`; a \`// why:\` on the line admits a call that is not that question | \`guards/native-confirm.ts\` |
-| Errors | never \`throw new Error\` — declare each code once, \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core/page\`, and throw its class; never a handwritten \`UltimateError\` subclass | \`guards/bare-error.ts\`, \`guards/error-declared.ts\` |
+| Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal it can express; reported, not refused: an \`await\` per loop turn outside \`expectedQueryLoop('<why>', fn)\`, a bare \`.all()\` (it stops at 50 rows: say \`.limit(n)\`) | \`repo-raw-sql\`, \`repo-await-in-loop\`, \`repo-unbounded\` |
+| Fan-out | a database call per element of a list runs through \`mapBounded(rows, fn, { width })\` from \`@ultimat3/core\` — never \`Promise.all(rows.map(async …))\`, one statement per row at once; a \`// why:\` on the line admits a list bounded where it is built | \`unbounded-fanout\` |
+| Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`raw-fetch\` |
+| Runtime | every Bun pin — \`packageManager\`, \`.bun-version\`, CI's \`bun-version:\`, the image's \`FROM oven/bun:\` — names the version \`engines.bun\` declares, and an image builds on a digest | \`runtime-pin\` |
+| Polling | an island re-reads a query on a timer with \`useQuery(ref, input, { poll: pollEvery(ms) })\` (\`@ultimat3/realtime\`), anything else with \`visibleInterval(run, ms)\` from \`@ultimat3/core/page\` — no call while the tab is hidden, none after a lost session — never a bare \`setInterval(\`; a \`// why:\` on the line admits a tick that is not a read | \`raw-interval\` |
+| Confirmation | a destructive act asks through \`ConfirmDialog\` from \`@ultimat3/ui\` — Cancel focused, a native post, stays open on a refusal — never \`confirm(\`; a \`// why:\` on the line admits a call that is not that question | \`native-confirm\` |
+| Errors | never \`throw new Error\` — declare each code once, \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core/page\`, and throw its class; never a handwritten \`UltimateError\` subclass | \`bare-error\`, \`error-declared\` |
 | Money | \`{ minor, currency }\`, never a float — \`money()\` on the column | the type: \`price: 19.99\` is TS2322, \`number\` is not \`MoneyInput\` |
-| Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |
-| Strings | every user-facing string goes through \`t()\` | \`guards/untranslated-string.ts\` |
-| Colour | semantic tokens only, never a raw hex | \`guards/raw-colour.ts\` |
-| Lengths | a length is a token or \`rem()\`, never a raw \`px\` | \`guards/raw-length.ts\` |
-| Breakpoints | a viewport query names a breakpoint rung (\`respond-up\`, \`respond-down\`, \`respond-between\`), never a width | \`guards/raw-breakpoint.ts\` |
-| Layers | a \`z-index\` is a named layer, never a number | \`guards/raw-z-index.ts\` |
-| Shadows | a shadow comes off the shadow scale, never a hand-written offset and blur | \`guards/raw-shadow.ts\` |
-| Timing | a duration and an easing curve come off the motion scale, never a literal | \`guards/raw-motion.ts\` |
-| Classes | a class a component reads off its stylesheet is one that sheet compiles | \`guards/undefined-style-class.ts\` |
-| Properties | a custom property a stylesheet reads is one the app declares | \`guards/undeclared-custom-property.ts\` |
-| Interaction | a click is answered by a control — never a \`<div onClick>\`, and never a \`role=\` where the native tag exists | \`guards/semantic-interactive.ts\` |
-| Focus | \`outline: none\` replaces the ring in the same rule or the one beside it, or it does not remove it | \`guards/focus-visible.ts\` |
-| Images | every image carries width + height or an aspect-ratio, and the priority one is never \`loading="lazy"\` | \`guards/image-dimensions.ts\` |
-| Motion | animate \`transform\` and \`opacity\` — never a layout property, never \`transition: all\` | \`guards/animated-layout-property.ts\` |
-| Islands | every \`*.island.tsx\` has a sibling \`*.island.states.ts\`, so \`bunx x shot --island\` can photograph its failures | \`guards/island-without-states.ts\` |
-| Island mounts | a \`mount\` replaces its server markup through \`mountOver\`, so a render that throws shows the server's HTML, not a blank box | \`guards/island-mount-clears.ts\` |
+| Time | store UTC, format with an explicit IANA time zone | \`unzoned-date\` |
+| Strings | every user-facing string goes through \`t()\` | \`untranslated-string\` |
+| Colour | semantic tokens only, never a raw hex | \`raw-colour\` |
+| Lengths | a length is a token or \`rem()\`, never a raw \`px\` | \`raw-length\` |
+| Breakpoints | a viewport query names a breakpoint rung (\`respond-up\`, \`respond-down\`, \`respond-between\`), never a width | \`raw-breakpoint\` |
+| Layers | a \`z-index\` is a named layer, never a number | \`raw-z-index\` |
+| Shadows | a shadow comes off the shadow scale, never a hand-written offset and blur | \`raw-shadow\` |
+| Timing | a duration and an easing curve come off the motion scale, never a literal | \`raw-motion\` |
+| Classes | a class a component reads off its stylesheet is one that sheet compiles | \`undefined-style-class\` |
+| Properties | a custom property a stylesheet reads is one the app declares | \`undeclared-custom-property\` |
+| Interaction | a click is answered by a control — never a \`<div onClick>\`, and never a \`role=\` where the native tag exists | \`semantic-interactive\` |
+| Focus | \`outline: none\` replaces the ring in the same rule or the one beside it, or it does not remove it | \`focus-visible\` |
+| Images | every image carries width + height or an aspect-ratio, and the priority one is never \`loading="lazy"\` | \`image-dimensions\` |
+| Motion | animate \`transform\` and \`opacity\` — never a layout property, never \`transition: all\` | \`animated-layout-property\` |
+| Islands | every \`*.island.tsx\` has a sibling \`*.island.states.ts\`, so \`bunx x shot --island\` can photograph its failures | \`island-without-states\` |
+| Island mounts | a \`mount\` replaces its server markup through \`mountOver\`, so a render that throws shows the server's HTML, not a blank box | \`island-mount-clears\` |
 | Size | one file, one job — ${LINE_CEILING} lines of reviewable logic, and split past it | \`X_FILE_TOO_LONG\` |
 
-\`guards/\` is yours: each file is one rule, discovered by \`bunx x verify\` and run inside its
-\`boundaries\` step. Delete one to drop the rule, and \`bunx x g guard <name>\` writes the next.
+Each lowercase name is a guard the framework ships, run on \`bunx x verify\`'s \`boundaries\` step
+from the installed version. \`guards/shipped.json\` sets one's severity (\`"warning"\`, \`"off"\`);
+\`bunx x g guard <name>\` writes this app's own into \`guards/\`.
 
 The last five rows are about what this app is like to USE, and each is decidable from the file
 alone — which is why they are those five and not the many that are not. A role is a promise:

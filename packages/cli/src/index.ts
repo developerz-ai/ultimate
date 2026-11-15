@@ -112,6 +112,14 @@ export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export type { PwaArtifacts } from './pwa-artifacts';
 export { loadPwaArtifacts } from './pwa-artifacts';
 export { cliVersion, SPECS } from './registry';
+// `create-ultimate repro`'s three facts, so the opener restates none of them.
+export { BUNDLE_FORMAT } from './repro-archive';
+export { ReproBundleInvalidError } from './repro-errors';
+export {
+  frameworkCheckoutFrom,
+  frameworkOverrides,
+  isFrameworkCheckout,
+} from './repro-framework';
 export type { RunningRoles, WebBinding } from './role-start';
 export { DEV_BINDING, DEV_ROLES, startRoles } from './role-start';
 // `shotCommand`, `prCommand` and `ciCommand` are deliberately NOT re-exported here. They reach
@@ -153,6 +161,7 @@ export { writeSiteSeo } from './site-seo-write';
 export { eachSourceFile, isGenerated, isTest, SOURCE_GLOBS } from './source-files';
 export type { SkippedRoute, StaticReport } from './static-report';
 export { parseStaticReport } from './static-report';
+export { PLACEHOLDER_DB_MODULE } from './templates/scaffold-db-client';
 export type { MigratedDatabaseOptions } from './test-database';
 export { migratedDatabase } from './test-database';
 export { filesIn, testArgs } from './test-shards';

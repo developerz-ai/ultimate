@@ -62,5 +62,8 @@
     "@ultimat3/render": "31.27.0",
     "@ultimat3/schema": "31.27.0",
     "@ultimat3/ui": "31.27.0"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.18"
   }
 }

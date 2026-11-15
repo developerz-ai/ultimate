@@ -63,7 +63,8 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `app-boundaries.ts` (workspaces) | `@<scope>/<app>/<rest>` resolves onto `apps/<app>/<rest>` when that is an app source, so the surface rules hold across app workspaces |
 | `app-transport.ts` / `browser-{transport,import-chain,barrel-cut}.ts` / `transport-{calls,values}.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport; a server barrel below an island is cut at its first hop † |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, run on `boundaries`; ONE shared walk (`GuardSources`) † |
-| `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`x new`, `x g guard`, `doctor-guards.ts`) † |
+| `guards-built-in.ts` / `guards-built-in-refusal.ts` | shipped guards run from the installed CLI, never a copy; `guards/shipped.json` is the opt-in and the severities; `x g guard <shipped>` is `X_GUARD_BUILT_IN` |
+| `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`guards-built-in.ts`, `doctor-guards.ts`, `codemods/vendored-guards.ts`) † |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file † |
 | `fix-sequence.ts` | `errors`: a deferring, re-run-only or `--force` fix is `X_ERROR_FIX_INVALID`, ratcheted per file † |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize` ‡ |
@@ -195,6 +196,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `cmd-docs.ts` / `docs-sources.ts` / `docs-section.ts` | `x docs`: the app's and the CLI's `@ultimat3` docs; `Page#anchor` prints a section † |
 | `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | the one writer of `.env.production`; compose pre-flight (`X_DEPLOY_ENV_MISSING`) † |
 | `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; no `requiresApp` † |
+| `codemods/` / `cmd-upgrade-codemods.ts` / `upgrade-gate-codemods.ts` | a template change an app keeps, carried by a codemod (`codemod.ts`, the ONE list `codemods/index.ts`); the hop's installed CLI applies them before its gate; `scripts/template-codemods.ts` refuses a template change with none |
 | `cmd-deploy-verify.ts` / `deploy-verify-*.ts` / `cmd-status*.ts` | `x deploy verify`: the wait, the verdict, lazy sources † · `x status` |
 
 ## Adding a command

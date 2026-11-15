@@ -84,6 +84,7 @@ const redactedKeys = new Set<string>([
  *   `credentialId`, `jwtIssuer`, `cookieName`, `privateKeyId` name a credential, not hold one.
  * - card verification codes (`cvv`, `cvc2`) as a suffix, and a `pin` only as the WHOLE word
  *   behind an owner qualifier — three letters inside `spinner`, `shipping` or `pinned` are not one.
+ *   Any other owner (`ADMIN_PIN`, `adminPin`) is `PIN_SEGMENT`'s, below; a `passcode` as a suffix.
  *
  * Built from constant alternatives with no nested quantifier, so there is no input it backtracks on.
  */
@@ -96,7 +97,7 @@ const verdicts = new Map<string, boolean>();
 /** Exported for its own work-count test only (`logger-redact.test.ts`); never on the barrel. */
 export const CREDENTIAL_NAME = new RegExp(
   [
-    'passw(?:or)?d|passphrase',
+    'passw(?:or)?d|passphrase|passcodes?(?:hash(?:es)?)?$',
     'secrets?$',
     '(?:api|private|signing|encryption|master|hmac|secrets?|access|retired)keys?$|accesskeyid$',
     '(?:token|key)hash(?:es)?$',
@@ -112,6 +113,22 @@ export const CREDENTIAL_NAME = new RegExp(
     '^(?:card|atm|security|account|user|wallet)?pin(?:code|number)?(?:hash(?:es)?)?$',
   ].join('|'),
 );
+
+/**
+ * A PIN by SEGMENT, which the joined form above cannot see: `ADMIN_PIN` and `adminPin` are
+ * `adminpin`, and no list of owners is complete. Asked of the key split at camel humps, `_` and
+ * `-` (`admin_pin`), so `pin` is matched only as a whole word — the last one, or before `code` /
+ * `number` / `hash` — and `spinner`, `mapping`, `pinned` and `pinLength` stay readable.
+ */
+const PIN_SEGMENT = /(?:^|_)pin(?:_(?:code|number))?(?:_hash(?:es)?)?$/;
+
+/** `adminPin` / `ADMIN_PIN` / `PINCode` / `admin-pin` → `admin_pin` / `pin_code`: one word per segment. */
+const segmented = (key: string): string =>
+  key
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/-/g, '_')
+    .toLowerCase();
 
 /** Mark keys as secret everywhere. `defineEnv()` calls this for every `secret: true` var. */
 export function redactKeys(keys: Iterable<string>): void {
@@ -155,7 +172,10 @@ export function isRedactedKey(key: string): boolean {
   const known = verdicts.get(key);
   if (known !== undefined) return known;
   const lower = key.toLowerCase();
-  const verdict = redactedKeys.has(lower) || CREDENTIAL_NAME.test(lower.replace(/[_-]/g, ''));
+  const verdict =
+    redactedKeys.has(lower) ||
+    CREDENTIAL_NAME.test(lower.replace(/[_-]/g, '')) ||
+    PIN_SEGMENT.test(segmented(key));
   // Insertion order is age, so the first key is the oldest: FIFO, no bookkeeping per hit. Bounded
   // because a key is caller data — a request body's own keys reach `redactFields`.
   if (verdicts.size >= REDACTION_MEMO_SIZE) verdicts.delete(verdicts.keys().next().value ?? '');

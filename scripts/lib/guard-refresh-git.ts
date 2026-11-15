@@ -144,15 +144,15 @@ const rangeName = (change: GuardChange): string =>
 /** The finding for one range's unstated guards; its fix opens with the diff that lists them. */
 export function guardRefreshFinding(gap: GuardRefreshGap): Finding {
   const { change, missing } = gap;
-  const target = change.to ?? `the version after ${change.from}`;
+  const target = change.to ?? `the release after ${change.from}`;
   // Literal paths and one quoted tag per position: the fix-line rules read these statically.
   return {
     code: 'X_DOC_GUARD_REFRESH_UNSTATED',
-    cause: `${GUARD_REFRESH_PAGE} names no \`x g guard\` refresh for ${missing.length} shipped guard template(s) that changed in ${rangeName(change)}: ${missing.join(', ')} — an app's guards/ copy is its own, so without the row it keeps the old rule`,
+    cause: `${GUARD_REFRESH_PAGE} names no row for ${missing.length} shipped guard template(s) that changed in ${rangeName(change)}: ${missing.join(', ')} — every app runs the new rule on its next install and may meet findings it never had, while an app still holding a copy in guards/ keeps the old one until x upgrade migrates it`,
     fix:
       change.to === undefined
-        ? `git diff --name-only ${quoteArg(`v${change.from}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, x g guard NAME --force and the version ${target}; rerun: bun run changelog-check --json`
-        : `git diff --name-only ${quoteArg(`v${change.from}`)} ${quoteArg(`v${change.to}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, x g guard NAME --force and the version ${target}; rerun: bun run changelog-check --json`,
+        ? `git diff --name-only ${quoteArg(`v${change.from}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, what it now reports, x upgrade and ${target}; rerun: bun run changelog-check --json`
+        : `git diff --name-only ${quoteArg(`v${change.from}`)} ${quoteArg(`v${change.to}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, what it now reports, x upgrade and ${target}; rerun: bun run changelog-check --json`,
     at: GUARD_REFRESH_PAGE,
   };
 }

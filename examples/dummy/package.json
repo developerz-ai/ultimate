@@ -32,6 +32,6 @@
   "dependencies": {
     "@ultimat3/cli": "31.27.0",
     "@ultimat3/core": "31.27.0",
-    "solid-js": "1.9.17"
+    "solid-js": "1.9.18"
   }
 }

@@ -7,6 +7,7 @@
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { versionAtLeast } from './app-root';
+import { runUpgradeCodemods } from './cmd-upgrade-codemods';
 import { upgradeSpec } from './cmd-upgrade-spec';
 import type { CliCommand, CommandContext } from './command';
 import { failed, ok } from './command';
@@ -22,11 +23,13 @@ import { applyAgentsLink, planAgentsLink } from './upgrade-agents-link';
 import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import { editBunSites, floorOf, isBunSite } from './upgrade-bun-floor';
 import { repoScripts, runHopGate, runRepoScripts } from './upgrade-gate';
+import { atTargetCodemods, previewCodemods } from './upgrade-gate-codemods';
 import { readManifests, readPins, rewritePins } from './upgrade-pins';
 import { planHop, releaseOf } from './upgrade-plan';
 import { publishedVersions, releaseBunRange } from './upgrade-registry';
 import type { PlannedWrites } from './upgrade-report';
 import { humanLines, NO_WRITES, report, thenLine } from './upgrade-report';
+import { codemodLines } from './upgrade-report-codemods';
 import { findUpgradeRoot } from './upgrade-root';
 import { elapsedLabel, HEARTBEAT_MS } from './verify-progress';
 import { writeErrorLine } from './write-line';
@@ -156,6 +159,7 @@ export const createUpgradeCommand = (
 ): CliCommand => ({
   spec: upgradeSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
+    if (ctx.args.subcommand === 'codemods') return runUpgradeCodemods(ctx);
     const { dir: root, app } = await findUpgradeRoot(ctx.cwd);
     const to = readTarget(ctx);
     const dryRun = flagBool(ctx.args, 'dry-run');
@@ -169,6 +173,9 @@ export const createUpgradeCommand = (
 
     if (hop.atTarget) {
       const then = thenLine({ hop, dryRun, app, gate: undefined, scripts: [] });
+      const carried = app
+        ? await atTargetCodemods({ runner: ctx.runner, root, to: hop.to, dryRun })
+        : undefined;
       const summary =
         hop.next === null
           ? msg('cli.upgrade.atLatest', { version: hop.to })
@@ -187,9 +194,11 @@ export const createUpgradeCommand = (
           scripts: [],
           then,
           typescript,
+          ...carried,
         }),
         lines: [
           ...typescript.map((lag) => msg('cli.upgrade.typescript', { ...lag })),
+          ...codemodLines(carried?.codemods ?? null),
           msg('cli.upgrade.then', { then }),
         ],
       });
@@ -228,6 +237,8 @@ export const createUpgradeCommand = (
     if (dryRun) {
       const named = scriptNames.map((name) => ({ name, ok: null }));
       const then = thenLine({ hop, dryRun: true, app, gate: undefined, scripts: named });
+      // This CLI's list, written nowhere: the hop itself applies the installed release's.
+      const preview = app ? await previewCodemods(root, hop.from, hop.to) : undefined;
       return ok('upgrade', msg('cli.upgrade.dryRun', { from: hop.from, to: hop.to }), {
         data: report({
           ...shared,
@@ -236,6 +247,7 @@ export const createUpgradeCommand = (
           gate: undefined,
           scripts: named,
           then,
+          ...preview,
         }),
         lines: humanLines({
           hop,
@@ -245,6 +257,7 @@ export const createUpgradeCommand = (
           then,
           agentsMd,
           typescript,
+          ...preview,
         }),
       });
     }
@@ -277,6 +290,7 @@ export const createUpgradeCommand = (
         runner: ctx.runner,
         root,
         onStage: stageReached,
+        codemods: { from: hop.from, to: hop.to },
         ...(bunMoved === undefined ? {} : { bunMoved }),
       });
       return { gate: hopGate, scripts: [] };

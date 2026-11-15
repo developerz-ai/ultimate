@@ -102,7 +102,7 @@
     "@electric-sql/pglite": "0.5.11",
     "@types/bun": "1.4.4",
     "lefthook": "2.2.2",
-    "solid-js": "1.9.17",
+    "solid-js": "1.9.18",
     "typescript": "^7.0.2"
   },
   "engines": {

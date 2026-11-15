@@ -23,4 +23,6 @@ export const UNTHROWN_CODES: ReadonlySet<string> = new Set([
   'X_PWA_SYNC_INCOMPLETE',
   // 24.0.0: `x test --worker` was deleted; `x verify --only unit --shard i/n` is the one split.
   'X_TEST_SHARD_FAILED',
+  // 31.28.0: shipped guards run built in, so none is ever missing (X_GUARD_VENDORED names copies).
+  'X_SHIPPED_GUARD_MISSING',
 ]);

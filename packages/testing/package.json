@@ -68,5 +68,8 @@
     "@ultimat3/scraping": "31.27.0",
     "@ultimat3/seo": "31.27.0",
     "@ultimat3/time": "31.27.0"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.18"
   }
 }

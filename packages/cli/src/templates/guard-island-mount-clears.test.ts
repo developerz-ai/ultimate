@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { islandFiles } from './island';
 import { names } from './naming';
 import { formIslandFiles } from './resource-form-island';
-import { scaffoldGuardFiles, shippedGuardFiles } from './scaffold-guards';
+import { SHIPPED_GUARD_NAMES, shippedGuardFiles } from './scaffold-guards';
 import { shellFiles } from './scaffold-shell';
 import { shippedGuardFindings } from './shipped-guard-fixture';
 
@@ -92,9 +92,8 @@ describe('unit · shipped guard · island-mount-clears', () => {
     expect(await shippedGuardFindings('island-mount-clears', files)).toEqual([]);
   });
 
-  test('x new writes it, with its own test', () => {
-    const paths = scaffoldGuardFiles().map((file) => file.path);
-    expect(paths).toContain('guards/island-mount-clears.ts');
+  test('every app runs it built in, and it carries its own test', () => {
+    expect(SHIPPED_GUARD_NAMES).toContain('island-mount-clears');
     expect(shippedGuardFiles('island-mount-clears')?.map((file) => file.path)).toEqual([
       'guards/island-mount-clears.ts',
       'guards/island-mount-clears.test.ts',

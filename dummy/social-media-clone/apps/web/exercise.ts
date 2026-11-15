@@ -43,10 +43,29 @@ const ownHandle = async (): Promise<{ handle: string }> => {
   return { handle: viewer?.handle ?? 'exercise-nobody' };
 };
 
+/**
+ * An unread notification of the viewer's own, for `markNotificationsRead` to mark: the draw's `ids`
+ * is the empty batch, which returns before any write. Its own `actorId` — the row needs one, and
+ * the viewer is the one user the pass is sure of.
+ */
+const ownUnread = async (): Promise<{ ids: string[] }> => {
+  const viewer = useContext().actor.id;
+  const row = await db.notifications.insert({
+    userId: viewer,
+    kind: 'message',
+    actorId: viewer,
+    subjectId: null,
+    readAt: null,
+  });
+  return { ids: [row.id] };
+};
+
 export const exercise = defineExercise(
   {
     approveConnection: { input: consentRequest },
     denyConnection: { input: consentRequest },
+    markNotificationsRead: { input: ownUnread },
+    health: { empty: "answers this process's role: a readiness probe reads and writes nothing" },
     // `instant` is a bare string (`tasks/instant.ts`): the draw's `sample` is no instant at all.
     sweepOrphanMedia: { actor: null, input: () => ({ before: '2026-01-01T00:00:00.000Z' }) },
 
@@ -71,8 +90,6 @@ export const exercise = defineExercise(
       // A consent screen reads the authorization request in its URL: one a client just sent.
       '/oauth/consent': {
         search: async () => (await consentRequest()).request,
-        empty:
-          'the pass names no DATABASE_URL, so the OAuth store is in memory: the read sends no SQL',
       },
       '/signin': { empty: 'reads only the last refused sign-in from its own request: no row' },
       '/signup': { empty: 'reads only the last refused sign-up from its own request: no row' },

@@ -9,6 +9,8 @@ import { expectedSeqScanReason, statementFingerprint } from '@ultimat3/db';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import type { ExerciseDefect } from './exercise-defect';
 import { roomMail } from './exercise-room-mail';
+import type { StorageWrite } from './exercise-room-storage';
+import { roomStorage } from './exercise-room-storage';
 import type { StatementCeilingProof } from './exercise-statement-ceiling';
 import { routeMatches } from './mock-route';
 import type { PlanProof, SentStatement } from './plan-sweep';
@@ -36,7 +38,14 @@ export type ExerciseEffect =
     }
   | { readonly kind: 'enqueue'; readonly job: string; readonly count: number }
   /** Web Push messages sent to `host`'s push service: a notifier that pushes nothing has none. */
-  | { readonly kind: 'push'; readonly host: string; readonly count: number };
+  | { readonly kind: 'push'; readonly host: string; readonly count: number }
+  /** Objects `disk` was written, copied into or deleted from, or an upload session it changed. */
+  | {
+      readonly kind: 'storage';
+      readonly disk: string;
+      readonly op: StorageWrite;
+      readonly count: number;
+    };
 
 export type ExerciseOutcome = 'reached' | 'refused' | 'unreached' | 'off';
 
@@ -299,6 +308,8 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   const offPushes = subscribe('outbound.request', (event) => {
     if (owns() && event.payload.vendor === 'push') pushes.push(event.payload.host);
   });
+  // A disk write: `storage.<verb>` is reported in the writer's own context, after its await.
+  const objects = roomStorage(owns);
 
   const begin = (name: string | undefined): object => {
     subject = name;
@@ -309,6 +320,7 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
     rows.length = 0;
     calls.length = 0;
     pushes.length = 0;
+    objects.clear();
     mail.clear();
     marker = {};
     return marker;
@@ -336,6 +348,7 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
         }),
       ),
       ...[...tally(pushes)].map(([host, count]): ExerciseEffect => ({ kind: 'push', host, count })),
+      ...objects.effects(),
     ];
     const refusedHosts = calls.filter(refused).map((c) => hostOf(c.url));
     const payloads: EffectPayload[] = [
@@ -381,6 +394,7 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
       try {
         mail[Symbol.dispose]();
       } finally {
+        objects.off();
         offPushes();
         offDials();
         offRows();

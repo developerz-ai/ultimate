@@ -1,21 +1,24 @@
 // `x repro <id>` — a production failure becomes a failing test. A dead job (its row, its steps) or
 // a captured 5xx (`x_failures`, when `failureCapture` is on) is read, `--write` puts the replay in
-// `repro/`, and `--verify` runs it: `{ reproduced, code, fingerprint }`. `--list` shows what is held.
-// CLI wiring only: the reads are `repro-bundle.ts`, the sources `repro-job.ts`/`repro-request.ts`.
+// `repro/`, `--verify` runs it, `--list` shows what is held, `--bundle` writes the redacted archive
+// an issue carries. CLI wiring only: reads `repro-bundle.ts`, archive `repro-archive-write.ts`.
 
 import { postgresErrorGroupsStore } from '@ultimat3/admin/error-groups';
+import { renderFixShellArg } from '@ultimat3/core';
 import { postgresFailureStore } from '@ultimat3/db';
 import { loadAppConfig } from './app-config-load';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { reproSpec } from './cmd-repro-spec';
 import type { CliCommand, CommandContext } from './command';
-import { MissingPositionalError } from './errors';
+import { BadFlagError, MissingPositionalError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
+import { errorFromFile, errorFromStore } from './repro-archive-collect';
+import { writeBundle } from './repro-archive-write';
 import type { ReproSubject } from './repro-bundle';
 import { resolveSubject, subjectFromFile } from './repro-bundle';
 import { ReproNotReproducedError } from './repro-errors';
@@ -162,13 +165,28 @@ export const reproCommand: CliCommand = {
         example: 'x repro --list --json',
       });
     }
+    const bundle = flagBool(ctx.args, 'bundle');
+    if (bundle && (flagBool(ctx.args, 'write') || flagBool(ctx.args, 'verify'))) {
+      throw new BadFlagError({
+        flag: 'bundle',
+        command: 'repro',
+        reason: 'a bundle is written for an issue, and --write/--verify run the test in this app',
+        fix: `x repro ${id === undefined ? '--from <file>' : renderFixShellArg(id, '<id>')} --bundle`,
+      });
+    }
     // The app's declarations are what mask a job's input and what a written test replays against.
     await loadApp(root);
-    if (from !== undefined) return answer(root, ctx, id ?? from, await subjectFromFile(from));
+    if (from !== undefined) {
+      const subject = await subjectFromFile(from);
+      if (bundle) return writeBundle(root, ctx, subject, await errorFromFile(from));
+      return answer(root, ctx, id ?? from, subject);
+    }
     const captureOn = (await loadAppConfig(root))?.failureCapture.enabled === true;
     return withJobDriver(root, ctx, async (driver) => {
       if (id === undefined) return list(ctx);
-      return answer(root, ctx, id, await resolveSubject(driver, id, captureOn));
+      const subject = await resolveSubject(driver, id, captureOn);
+      if (bundle) return writeBundle(root, ctx, subject, await errorFromStore(driver, subject));
+      return answer(root, ctx, id, subject);
     });
   },
 };

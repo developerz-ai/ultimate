@@ -98,6 +98,7 @@ export type {
   RenderPageEvent,
   StatementAttribution,
   StorageEvent,
+  StorageMultipartEvent,
   TimedEvent,
 } from '../instrument-events';
 export { INSTRUMENT_EVENTS } from '../instrument-events';

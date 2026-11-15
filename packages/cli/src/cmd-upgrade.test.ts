@@ -22,7 +22,7 @@ import { SPECS } from './registry';
 afterEach(removeFixtures);
 
 describe('unit · x upgrade, the walk', () => {
-  test('order is registry, pins, install, manifest, doctor, guards, exercise, verify', async () => {
+  test('order is registry, pins, install, codemods, manifest, doctor, guards, exercise, verify', async () => {
     const dir = await fixture();
     const { runner, spawned } = recording();
     const { code, output } = await run(dir, runner);
@@ -30,6 +30,7 @@ describe('unit · x upgrade, the walk', () => {
       'pm view',
       'pm view',
       'install',
+      'x upgrade',
       'x manifest',
       'x doctor',
       'x verify --only boundaries',
@@ -279,6 +280,7 @@ describe('unit · x upgrade, on stderr while it runs', () => {
     expect(result.ok).toBe(true);
     expect(stages.map((line) => JSON.parse(line).upgrade)).toEqual([
       'install',
+      'codemods',
       'manifest',
       'doctor',
       'guards',

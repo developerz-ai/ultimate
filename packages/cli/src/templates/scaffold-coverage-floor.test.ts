@@ -10,6 +10,7 @@ import { COVERAGE_BAR } from '../coverage-floor';
 import { hasExecutableCode, TEST_FILE } from '../coverage-source';
 import { parseVerifyFloor, VERIFY_FLOOR_FILE } from '../verify-floor';
 import { ownerOf } from '../verify-tests';
+import { SHIPPED_GUARD_NAMES } from './scaffold-guards';
 import { SCAFFOLD_COVERAGE_EXCLUDE } from './scaffold-verify-floor';
 
 const emitted = (path: string, example: boolean): string => {
@@ -161,12 +162,11 @@ describe('AGENTS.md', () => {
     expect(emitted('apps/web/shared/shell.test.ts', true)).toContain('renderView(Shell, {');
   });
 
-  test('names every stylesheet guard the scaffold ships, each beside the file that refuses', () => {
-    const guards = planNewApp({ name: 'demo-app', example: true })
-      .map((file) => file.path)
-      .filter((path) => /^guards\/[a-z-]+\.ts$/.test(path));
-    expect(guards.length).toBeGreaterThan(10);
-    for (const guard of guards) expect(agents).toContain(`\`${guard}\``);
+  test('names every shipped guard, each beside the rule it refuses', () => {
+    expect(SHIPPED_GUARD_NAMES.length).toBeGreaterThan(10);
+    for (const name of SHIPPED_GUARD_NAMES) expect(agents).toContain(`\`${name}\``);
+    // Built in, never copied: AGENTS.md names no guards/<name>.ts file a new app does not hold.
+    expect(agents).not.toMatch(/guards\/[a-z-]+\.ts/);
   });
 });
 
