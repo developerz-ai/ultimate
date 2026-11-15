@@ -109,7 +109,7 @@ pays for the control plane.
 Rehearse a runbook's failure before it is needed: `x drill <name> --json` (`x drill --list --json`
 names each) boots the app's roles on a scratch database with the test services up and plays one
 fault — a blackholed or restarting Postgres, a dead Redis or NATS, a killed or drained worker, a
-drained web role — red on any framework contract that did not hold, each finding with its `X_*`
+drained web role, the roles started before migrate — red on any framework contract that did not hold, each finding with its `X_*`
 code. One node per role on one host: a multi-node bus, a real standby, S3 and a CDN are not drilled
 ([Known gaps](../../wiki/Known-Gaps.md)).
 

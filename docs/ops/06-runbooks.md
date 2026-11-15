@@ -161,6 +161,7 @@ one line, and the code's `meta.waitedMs` says how long. Alert:
 | the migrate Job failed | [a migration failed mid-deploy](#a-migration-failed-mid-deploy) — fix the migration, the roles follow |
 | no migrate ran: an applier that drops Helm hooks, a compose `up` without the `run --rm migrate` step, a PaaS with no release phase | run it once against the same database: `x db migrate --json`, or the image with `ROLE=migrate`. Then wire the order: [deploy contract](./07-deploy-contract.md#order-migrate-before-roles) |
 | the cause names a newer major as the newest applied build | an old-major role over a database a newer release migrated: roll forward to that release (`x deploy --image <newer> --json`), never migrate the old one over it |
+| rehearsing it | `x drill roll-before-migrate --json` plays this failure on a scratch database for `web`, `worker` and `scheduler` ([deploy contract](./07-deploy-contract.md#failures-their-alert-and-their-runbook)) |
 | `ultimate framework major skew` in the logs, no refusal | a fleet across a major mid-rollout or mid-rollback; it serves. Finish the rollout: `kubectl rollout status deployment --selector app.kubernetes.io/component=web` |
 
 ## A credential leaked

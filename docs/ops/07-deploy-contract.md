@@ -132,5 +132,9 @@ first.
 | the replicator stops consuming its slot | WAL grows on the database | [`UltimateReplicationSlotRetention`](./06-runbooks.md#ultimatereplicationslotretention); the volume, [`UltimateVolumeNearFull`](./06-runbooks.md#ultimatevolumenearfull) | [the replication slot is accumulating WAL](./06-runbooks.md#the-replication-slot-is-accumulating-wal) |
 | open tabs 404 their assets after a deploy | `X_ASSET_RETAIN_UNDECLARED` at web boot | none | [Deployment](../../wiki/Deployment.md#hashed-assets-across-a-deploy--assetsretain) |
 
-Rehearse the order before it is needed: `x drill --list --json` names each fault `x drill` plays.
-**Lands in this sweep:** a drill that rolls the roles before migrate.
+Rehearse the order before it is needed: `x drill roll-before-migrate --json` starts `web`,
+`worker` and `scheduler` on a scratch database before its migrate, then runs migrate, and holds
+`roles-wait`, `serves-after-migrate` and `one-wait-line`. Per role, the evidence is
+`.data.drills[].evidence.rollout.roles[]`: `{ role, exit, ready, waitLines, logTail }`; a property
+that did not hold is `X_DRILL_FAILED`. `sync` and the replicator are not played — they need a bus
+or a logical-replication Postgres. `x drill --list --json` names every drill.
