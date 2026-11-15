@@ -387,12 +387,12 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_SHIPPED_GUARD_MISSING:
     "x doctor --json   # each X_SHIPPED_GUARD_MISSING warning's fix is the command that writes its guard, then x verify --only boundaries --json",
   X_DEV_LOG_ABSENT:
-    'x dev --json   # x dev writes the dev log as it boots; then: x logs tail --json',
+    'x dev --json   # the dev server writes the dev log as it boots; then: x logs tail --json',
   X_DEV_PEER_REFUSED:
-    'x doctor --json   # /_x answers a loopback peer only: open it on the machine x dev runs on, or forward the port with ssh -L',
+    'x doctor --json   # /_x answers a loopback peer only: open it on the machine the dev server runs on, or forward the port with ssh -L',
   X_PROFILE_ROUTE_FAILED: 'x routes --json',
   X_ROWS_SLICE_ENTITY:
-    'x help g --json   # then x g job with the name and --feature the finding names, and declare exportRows/importRows in it over the table that entity.ts declares',
+    'x help g --json   # then generate a job with the name and feature the finding names, and declare exportRows/importRows in it over the table that entity.ts declares',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
