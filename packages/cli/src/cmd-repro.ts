@@ -166,6 +166,15 @@ export const reproCommand: CliCommand = {
       });
     }
     const bundle = flagBool(ctx.args, 'bundle');
+    const includeRows = flagBool(ctx.args, 'include-rows');
+    if (includeRows && !bundle) {
+      throw new BadFlagError({
+        flag: 'include-rows',
+        command: 'repro',
+        reason: 'it chooses what a bundle carries, and no --bundle was asked for',
+        fix: `x repro ${id === undefined ? '--from <file>' : renderFixShellArg(id, '<id>')} --bundle --include-rows`,
+      });
+    }
     if (bundle && (flagBool(ctx.args, 'write') || flagBool(ctx.args, 'verify'))) {
       throw new BadFlagError({
         flag: 'bundle',
@@ -178,14 +187,19 @@ export const reproCommand: CliCommand = {
     await loadApp(root);
     if (from !== undefined) {
       const subject = await subjectFromFile(from);
-      if (bundle) return writeBundle(root, ctx, subject, await errorFromFile(from));
+      if (bundle) {
+        return writeBundle(root, ctx, subject, await errorFromFile(from), { includeRows });
+      }
       return answer(root, ctx, id ?? from, subject);
     }
     const captureOn = (await loadAppConfig(root))?.failureCapture.enabled === true;
     return withJobDriver(root, ctx, async (driver) => {
       if (id === undefined) return list(ctx);
       const subject = await resolveSubject(driver, id, captureOn);
-      if (bundle) return writeBundle(root, ctx, subject, await errorFromStore(driver, subject));
+      if (bundle) {
+        const error = await errorFromStore(driver, subject);
+        return writeBundle(root, ctx, subject, error, { includeRows });
+      }
       return answer(root, ctx, id, subject);
     });
   },

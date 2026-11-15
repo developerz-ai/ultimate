@@ -1,40 +1,93 @@
-// The scrubber's edges: a short flag value is left alone but a short secret is not, a host is a
-// whole name, a Windows root is found in either separator, and an HTTP path in a cause survives
-// while a file path does not.
+// The scrubber's edges: which env values it hides (secret-named, URLs, dotenv files) and which it
+// leaves (a process var like NODE_ENV), a URL's credentials in every encoding, query values,
+// emails and IPs, a host only as a whole name and never as a path segment, and paths made relative.
 
 import { describe, expect, test } from 'bun:test';
+import type { ScrubSources } from './repro-scrub';
 import { hostOf, scrubberFor } from './repro-scrub';
 
-const scrubber = () =>
-  scrubberFor({
-    root: 'C:\\work\\shop',
-    homes: ['/home/ada'],
-    env: [
-      ['PORT', '3000'],
-      ['ADMIN_PIN', '4821'],
-      ['REDIS_URL', 'redis://cache.corp.test:6379'],
-    ],
-    hosts: ['box'],
-  });
+const SOURCES: ScrubSources = {
+  root: 'C:\\work\\shop',
+  homes: ['/home/ada'],
+  env: [
+    { name: 'PORT', value: '3000', from: 'process' },
+    { name: 'NODE_ENV', value: 'production', from: 'process' },
+    { name: 'ADMIN_PIN', value: '4821', from: 'process' },
+    { name: 'STRIPE_KEY', value: 'sk_live_abc123', from: 'process' },
+    { name: 'REDIS_URL', value: 'redis://cache.corp.test:6379', from: 'process' },
+    {
+      name: 'DATABASE_URL',
+      value: 'postgres://app%40corp:p%40ss-9@db.corp.test/d',
+      from: 'process',
+    },
+    { name: 'FEATURE_LABEL', value: 'quarterly-launch', from: 'dotenv' },
+  ],
+  hosts: ['box', 'core'],
+};
 
 describe('scrubberFor', () => {
-  test('a flag-length value stays, a secret-named one of any length does not', () => {
-    const scrub = scrubber();
-    expect(scrub.value({ port: 'on 3000', pin: 'pin 4821' })).toEqual({
-      port: 'on 3000',
+  test('a secret-named value of any length, an env URL and a dotenv value are hidden', () => {
+    const scrub = scrubberFor(SOURCES);
+    expect(
+      scrub.value({ pin: 'pin 4821', key: 'sk_live_abc123', label: 'quarterly-launch' }),
+    ).toEqual({
       pin: 'pin [env:ADMIN_PIN]',
+      key: '[env:STRIPE_KEY]',
+      label: '[env:FEATURE_LABEL]',
     });
-    expect(scrub.report().env).toEqual(['ADMIN_PIN']);
+    expect(scrub.report().env).toEqual(['ADMIN_PIN', 'FEATURE_LABEL', 'STRIPE_KEY']);
   });
 
-  test('a host is replaced as a whole name, any case, and an env URL names one', () => {
-    const scrub = scrubber();
+  test('a process value that names no secret stays: NODE_ENV=production rewrites nothing', () => {
+    const scrub = scrubberFor(SOURCES);
+    expect(scrub.value({ production: 'on production, port 3000' })).toEqual({
+      production: 'on production, port 3000',
+    });
+    expect(scrub.report().env).toEqual([]);
+  });
+
+  test("an env URL's user and password are hidden raw, decoded and as Basic auth", () => {
+    const scrub = scrubberFor(SOURCES);
+    const basic = btoa('app@corp:p@ss-9');
+    const text = `u=app@corp p=p@ss-9 raw=p%40ss-9 Authorization: Basic ${basic} k=${btoa('sk_live_abc123')}`;
+    const out = String(scrub.value(text));
+    for (const leaked of ['app@corp', 'p@ss-9', 'p%40ss-9', basic, btoa('sk_live_abc123')]) {
+      expect(out).not.toContain(leaked);
+    }
+  });
+
+  test('any URL loses its credentials and its query values, in data and in a frame', () => {
+    const scrub = scrubberFor(SOURCES);
+    const url = 'https://u:pw@api.vendor.test/v1?token=abc&page=2#top';
+    expect(scrub.value(url)).toBe(
+      'https://[cred]@api.vendor.test/v1?token=[redacted]&page=[redacted]#top',
+    );
+    expect(scrub.location(`fetch ${url} failed`)).toBe(
+      'fetch https://[cred]@api.vendor.test/v1?token=[redacted]&page=[redacted]#top failed',
+    );
+  });
+
+  test('an email and an IPv4 or IPv6 address are replaced; times and versions are not', () => {
+    const scrub = scrubberFor(SOURCES);
+    expect(
+      scrub.value('mail ada.l+x@example.org from 10.0.0.12 and fe80::1 or 2001:db8::8a2e:370:7334'),
+    ).toBe('mail [email] from [ip] and [ip] or [ip]');
+    expect(scrub.value('at 12:30:45 on 31.27.0 via Code::Add')).toBe(
+      'at 12:30:45 on 31.27.0 via Code::Add',
+    );
+  });
+
+  test('a host is replaced as a whole name, any case, never after a single / or an @', () => {
+    const scrub = scrubberFor(SOURCES);
     expect(scrub.value('BOX checkbox Cache.Corp.Test')).toBe('[host] checkbox [host]');
-    expect(scrub.report().hosts).toBe(2);
+    expect(scrub.value("import '@ultimat3/core' from /srv/core")).toBe(
+      "import '@ultimat3/core' from /srv/core",
+    );
+    expect(scrub.value('https://core/x')).toBe('https://[host]/x');
   });
 
   test('a Windows root in either separator, and the home directory', () => {
-    const scrub = scrubber();
+    const scrub = scrubberFor(SOURCES);
     expect(
       scrub.location('at x (C:\\work\\shop\\apps\\a.ts:1:2) at y (C:/work/shop/b.ts:3:4)'),
     ).toBe('at x (.\\apps\\a.ts:1:2) at y (./b.ts:3:4)');
@@ -42,7 +95,7 @@ describe('scrubberFor', () => {
   });
 
   test('a location keeps an HTTP path and cuts a file path or a system root', () => {
-    const scrub = scrubber();
+    const scrub = scrubberFor(SOURCES);
     expect(scrub.location('POST /api/posts failed')).toBe('POST /api/posts failed');
     expect(scrub.location('open /etc/secrets failed')).toBe('open <abs>/secrets failed');
     expect(scrub.location('at f (/srv/app/node_modules/@ultimat3/core/src/a.ts:1:1)')).toBe(

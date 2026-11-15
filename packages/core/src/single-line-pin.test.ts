@@ -50,7 +50,19 @@ describe('schema and core escape a hostile cause identically', () => {
   test('every control character both must escape is escaped the same way', () => {
     // `\u2028`/`\u2029` included: they end a line for a JS parser and several log viewers while
     // splitting on `\n` never sees them, which is exactly the kind of gap a drifted copy opens.
-    const controls = ['\n', '\r', '\t', '\b', '\f', '\x00', '\x1b', '\x7f', '\u2028', '\u2029'];
+    const controls = [
+      '\n',
+      '\r',
+      '\t',
+      '\b',
+      '\f',
+      '\x00',
+      '\x1b',
+      '\x7f',
+      '\u009b',
+      '\u2028',
+      '\u2029',
+    ];
     for (const control of controls) {
       const cause = `a${control}b`;
       const core = new UltimateError({ code: 'X_INVARIANT', cause, fix: 'x doctor --json' });

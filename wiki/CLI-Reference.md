@@ -2044,7 +2044,7 @@ command rather than quoting the line. `docs` is `ERROR_DOCS_URL`, the same URL f
 x repro <jobId|requestId|traceId|fingerprint> [--write] [--verify] [--json]
 x repro --list [--code X_…] [--json]
 x repro --from <file> [--write] [--verify] [--json]
-x repro <id> --bundle [--json]   |   x repro --from <file> --bundle [--json]
+x repro <id> --bundle [--include-rows] [--json]   |   x repro --from <file> --bundle [--include-rows] [--json]
 ```
 
 A production failure becomes a failing test. `As of 2026-11`.
@@ -2062,24 +2062,38 @@ the schema. `--list` reads the bundles with each group's count and last sighting
 holds is `X_REPRO_UNKNOWN`; a request id with capture off is `X_REPRO_CAPTURE_OFF`.
 
 **`--bundle` carries the failure to an issue** (`As of 2026-11`): one JSON file,
-`repro/bundle-<id>.json`, deterministic bytes, meant to be read before it is attached — its
-`readFirst` lines say what is in it. Never with `--write`/`--verify` (`X_CLI_BAD_FLAG`).
+`repro/bundle-<id>.json` (the scaffold's `.gitignore` keeps it out of a commit), deterministic
+bytes, meant to be read before it is attached — its `readFirst` lines say what is in it and what
+is not found. Never with `--write`/`--verify`; `--include-rows` without `--bundle` is refused
+(`X_CLI_BAD_FLAG`).
 
 | Section | Holds |
 |---|---|
 | `framework` | every installed `@ultimat3/*` package and the versions found of it, the CLI's, Bun's, the platform |
-| `error` | the code, the cause, the stack's `at …` frames — from the job row, the error group's sample, or a `--from` file's `error` |
+| `error` | the code, the cause, the stack's `at …` frames — from the job row, a `--from` file's `error`, or the error group's sample only when that sample is this request's own |
 | `schema.entities` | the declarations of the entities whose rows the call read — never the whole app |
-| `subject` | the failure, as `x repro --from` reads it back: input masked by the primitive's `.sensitive()` schema and core's `captureValue`, read rows minus sealed columns; a row of an undeclared entity dropped (`dropped`, `truncated: true`) |
+| `subject` | the failure, as `x repro --from` reads it back. Always: input masked by the primitive's `.sensitive()` schema and core's `captureValue`, rows minus sealed columns, a row of an undeclared entity dropped (`dropped`, `truncated: true`). By default also: every value that is not a key — input leaves, row columns other than the primary key, a declared reference or an `…Id`, step outputs — is `[redacted]` (a step's number `0`), listed as masked so the replay stands it in from the schema; the actor's org is a placeholder uuid everywhere it appears |
 | `masked` / `scrubbed` | the masked paths; the env var NAMES whose values were found, the count of hostnames |
-| `reproducer` | the test, against the scaffold's `apps/web/api` and the `@app/db` placeholder |
+| `reproducer` | the test, rendered from `subject` alone, against the scaffold's `apps/web/api` and the `@app/db` placeholder |
 
-Replaced everywhere: the app root (`.`), the home directory (`~`), every env value of the process
-and the app's `.env*` files (`[env:NAME]`; 6+ characters, any length under a secret name),
-every hostname in `app.config.ts` or an env URL (`[host]`); in a cause or frame, any other
-absolute file path (`<abs>/<file>`). `bunx create-ultimate repro <bundle.json>` opens it into a
-scratch app (`repro-<id>/`), the reproducer under `repro/`, linked to the framework checkout the
-command runs in (or `--framework <checkout>`) through `file:` overrides.
+| Flag | Does |
+|---|---|
+| `--include-rows` | real values for those non-key fields, and the real org — read them before sending. Secrets, `.sensitive()` fields and sealed columns stay masked |
+
+Replaced everywhere (never in the primitive's name, the code or the reproducer's imports): the app
+root (`.`), the home directory (`~`), an env value that is secret-named, a URL or from the app's
+`.env*` files (`[env:NAME]`; 6+ characters, any length under a secret name) — and an env URL's
+user and password raw, URL-decoded and base64 (a Basic header) —, every hostname in
+`app.config.ts` or an env URL (`[host]`), any URL's userinfo (`[cred]@`) and query values
+(`?k=[redacted]`), emails (`[email]`), IPv4/IPv6 addresses (`[ip]`); in a cause or frame, any other
+absolute file path (`<abs>/<file>`). **Not found**: a value this machine never knew — a
+production-only secret, a customer's name in a cause.
+
+**A bundle is untrusted input.** `bunx create-ultimate repro <bundle.json>` reads only its
+`subject`, checked field by field (`X_REPRO_BUNDLE_INVALID` otherwise, control characters
+included), and renders the test from it; the bundle's own `reproducer` text never reaches disk.
+It opens into a scratch app (`repro-<id>/`), the test under `repro/`, linked to the framework
+checkout the command runs in (or `--framework <checkout>`) through `file:` overrides.
 
 ## x docs
 

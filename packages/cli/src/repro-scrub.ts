@@ -1,16 +1,23 @@
-// Single responsibility: what a repro bundle may say about the MACHINE it was made on. The app root,
-// the home directory, every env value (the process's and the app's dotenv files') and every hostname
-// the config or an env URL names are replaced by a token; a frame's absolute path is made relative.
+// Single responsibility: what a repro bundle may say about the MACHINE and the people on it. The app
+// root, home, secret-named / URL / dotenv env values (and a URL's credentials in every encoding),
+// config hostnames, any URL's userinfo and query values, emails and IPs become tokens; a frame's
+// absolute path is made relative. A value it was never told about is NOT found: say so to the user.
 
 import { isRedactedKey } from '@ultimat3/core';
+
+export interface ScrubEnv {
+  readonly name: string;
+  readonly value: string | undefined;
+  /** `process`: hidden only when secret-named or a URL. `dotenv`: an app file's, always hidden. */
+  readonly from: 'process' | 'dotenv';
+}
 
 export interface ScrubSources {
   /** The app root, absolute. Becomes `.`. */
   readonly root: string;
   /** Every spelling of the home directory known here. Each becomes `~`. */
   readonly homes: readonly string[];
-  /** The env values to hide, by name: the process env and every dotenv file's, duplicates kept. */
-  readonly env: readonly (readonly [name: string, value: string | undefined])[];
+  readonly env: readonly ScrubEnv[];
   /** Hostnames named by the config (and the machine's own); each becomes `[host]`. */
   readonly hosts: readonly string[];
 }
@@ -35,23 +42,53 @@ interface Needle {
   readonly replace: string;
   readonly env?: string;
   readonly host?: true;
+  /** Matched as a whole token only: a URL's user `app` must not eat the `app` in `apps/`. */
+  readonly word?: true;
 }
 
-/** Shorter than this, a value is a flag (`true`, `3000`) that would match everywhere and hide nothing. */
+/** Shorter than this, a dotenv value is a flag (`true`, `3000`) that would match everywhere. */
 const MIN_ENV_VALUE = 6;
-/** A secret-NAMED var hides from this length: a four-digit PIN is still a credential. */
+/** A secret-NAMED var, or a URL's credential, hides from this length: a PIN is still a credential. */
 const MIN_SECRET_VALUE = 3;
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]']);
 
-/** The hostname inside an env value or config string that is a URL or a DSN, else `undefined`. */
-export function hostOf(text: string): string | undefined {
+const parseUrl = (text: string): URL | undefined => {
   if (!text.includes('://')) return undefined;
   try {
-    const host = new URL(text.trim()).hostname.toLowerCase();
-    return host === '' || LOOPBACK.has(host) ? undefined : host;
+    return new URL(text.trim());
   } catch {
     return undefined;
   }
+};
+
+/** The hostname inside an env value or config string that is a URL or a DSN, else `undefined`. */
+export function hostOf(text: string): string | undefined {
+  const host = parseUrl(text)?.hostname.toLowerCase();
+  return host === undefined || host === '' || LOOPBACK.has(host) ? undefined : host;
+}
+
+const decoded = (text: string): string => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
+
+/** Every spelling a credential travels in: as written, URL-decoded, and base64 (a Basic header). */
+function credentialSpellings(value: string): string[] {
+  const url = parseUrl(value);
+  if (url === undefined || (url.username === '' && url.password === '')) return [btoa(value)];
+  const user = decoded(url.username);
+  const pass = decoded(url.password);
+  return [
+    url.username,
+    url.password,
+    user,
+    pass,
+    btoa(`${user}:${pass}`),
+    btoa(`${url.username}:${url.password}`),
+  ];
 }
 
 /** Both separators of a path, so a Windows root pasted either way is found. */
@@ -67,13 +104,22 @@ function needlesOf(sources: ScrubSources): { paths: Needle[]; values: Needle[] }
   ];
   const values: Needle[] = [];
   const hosts = new Set(sources.hosts.map((host) => host.toLowerCase()));
-  for (const [name, value] of sources.env) {
-    if (value === undefined) continue;
+  for (const { name, value, from } of sources.env) {
+    if (value === undefined || value.trim() === '') continue;
     const host = hostOf(value);
     if (host !== undefined) hosts.add(host);
-    const min = isRedactedKey(name) ? MIN_SECRET_VALUE : MIN_ENV_VALUE;
+    const secret = isRedactedKey(name);
+    const hidden = secret || host !== undefined || from === 'dotenv';
+    if (!hidden) continue;
+    const min = secret ? MIN_SECRET_VALUE : MIN_ENV_VALUE;
     if (value.trim().length >= min)
       values.push({ find: value, replace: `[env:${name}]`, env: name });
+    if (!secret && host === undefined) continue;
+    for (const find of credentialSpellings(value)) {
+      if (find.length >= MIN_SECRET_VALUE) {
+        values.push({ find, replace: `[env:${name}]`, env: name, word: true });
+      }
+    }
   }
   for (const host of hosts) {
     if (host.length > 2 && !LOOPBACK.has(host))
@@ -85,6 +131,27 @@ function needlesOf(sources: ScrubSources): { paths: Needle[]; values: Needle[] }
 }
 
 const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A URL in prose: its scheme, then everything up to a space, a quote or a bracket. */
+const URL_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`<>()]+/gi;
+/** Any URL's userinfo and query VALUES: credentials and tokens ride in both. */
+function withoutUrlSecrets(text: string): string {
+  return text.replace(URL_TEXT, (url) =>
+    url
+      .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, '$1[cred]@')
+      .replace(/\?[^#]*/, (query) => query.replace(/=[^&]*/g, '=[redacted]')),
+  );
+}
+
+const EMAIL = /(?<![\w.%+-])[\w.%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?![\w-])/gi;
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)';
+const IPV4 = new RegExp(`(?<![\\w.])(?:${OCTET}\\.){3}${OCTET}(?![\\w.])`, 'g');
+const H = '[0-9a-f]{1,4}';
+/** Eight groups, or a `::` with a group on at least one side: never a clock time or `A::b` in a word. */
+const IPV6 = new RegExp(
+  `(?<![\\w:.])(?:(?:${H}:){7}${H}|(?:${H}:){1,7}:(?:${H}(?::${H}){0,5})?|::${H}(?::${H}){0,6})(?![\\w:])`,
+  'gi',
+);
 
 /** The first segment of a path that is the machine's, whatever its extension. */
 const SYSTEM_ROOT =
@@ -104,25 +171,44 @@ function relativePath(path: string, separator: '/' | '\\'): string {
   return `<abs>/${last}`;
 }
 
+/**
+ * A host is a whole name, and only where a host stands: `checkbox` keeps its `box`, and a host
+ * after one `/` (a path segment, a package scope's tail) or after a bare `@` is not one. After a
+ * URL's `//` or this file's own `[cred]@` it is.
+ */
+const hostPattern = (host: string): RegExp =>
+  new RegExp(`(?<![\\w.-])(?<!(?:^|[^/])/)(?<!(?:^|[^\\]])@)${literal(host)}(?![\\w-])`, 'gi');
+
 export function scrubberFor(sources: ScrubSources): Scrubber {
   const { paths, values } = needlesOf(sources);
   const hitEnv = new Set<string>();
   const hitHosts = new Set<string>();
-  const text = (input: string): string => {
-    let out = input;
-    for (const needle of paths) out = out.replaceAll(needle.find, needle.replace);
-    for (const needle of values) {
-      // A host is a whole name: the machine called `box` must not turn `checkbox` into `check[host]`.
+  const replaceAll = (out: string, needles: readonly Needle[]): string => {
+    let next = out;
+    for (const needle of needles) {
       const pattern =
         needle.host === true
-          ? new RegExp(`(?<![\\w.-])${literal(needle.find)}(?![\\w-])`, 'gi')
-          : new RegExp(literal(needle.find), 'g');
-      if (!pattern.test(out)) continue;
-      out = out.replace(pattern, needle.replace);
+          ? hostPattern(needle.find)
+          : needle.word === true
+            ? new RegExp(`(?<![\\w%+-])${literal(needle.find)}(?![\\w%+-])`, 'g')
+            : new RegExp(literal(needle.find), 'g');
+      if (!pattern.test(next)) continue;
+      next = next.replace(pattern, needle.replace);
       if (needle.env !== undefined) hitEnv.add(needle.env);
       if (needle.host === true) hitHosts.add(needle.find);
     }
-    return out;
+    return next;
+  };
+  const envNeedles = values.filter((needle) => needle.host !== true);
+  const hostNeedles = values.filter((needle) => needle.host === true);
+  const text = (input: string): string => {
+    let out = input;
+    for (const needle of paths) out = out.replaceAll(needle.find, needle.replace);
+    out = withoutUrlSecrets(replaceAll(out, envNeedles));
+    return replaceAll(out, hostNeedles)
+      .replace(EMAIL, '[email]')
+      .replace(IPV4, '[ip]')
+      .replace(IPV6, '[ip]');
   };
   const value = (input: unknown, depth = 0): unknown => {
     if (typeof input === 'string') return text(input);

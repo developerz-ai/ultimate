@@ -7,7 +7,7 @@ export const reproSpec: CommandSpec = {
   name: 'repro',
   summary: 'a dead job or a captured 5xx, as a failing test: x repro <id> --write --verify',
   usage:
-    'x repro <jobId|requestId|traceId|fingerprint> [--write] [--verify] | x repro <id> --bundle | x repro --list [--code X_…] | x repro --from <file> [--write] [--verify] [--bundle] [--json]',
+    'x repro <jobId|requestId|traceId|fingerprint> [--write] [--verify] | x repro <id> --bundle [--include-rows] | x repro --list [--code X_…] | x repro --from <file> [--write] [--verify] [--bundle [--include-rows]] [--json]',
   requiresApp: true,
   flags: [
     {
@@ -25,6 +25,12 @@ export const reproSpec: CommandSpec = {
       type: 'boolean',
       summary:
         'write repro/bundle-<id>.json: the redacted failure, versions, schema and test, for an issue',
+    },
+    {
+      name: 'include-rows',
+      type: 'boolean',
+      summary:
+        'bundle: real values for non-key input, row and step fields (default: stand-ins); secrets stay masked',
     },
     { name: 'list', type: 'boolean', summary: 'the captured bundles, newest first' },
     { name: 'code', type: 'string', summary: 'list: only bundles of this X_* code' },

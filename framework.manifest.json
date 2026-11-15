@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0098cd355e339f96bfc226ece0866621e9b943a1b4e1e6b8d340feb41b3382fc",
+  "buildId": "2cdd4058aa5c06973049309dc5b033c64c20606c750864d6d162b210d392dc30",
   "tiers": {
     "0": [
       "core",
@@ -6468,6 +6468,11 @@
       "code": "X_UNREACHABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_CODEMODS_PENDING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_UPGRADE_DIRTY_TREE",

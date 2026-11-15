@@ -454,6 +454,12 @@ describe('singleLine', () => {
     expect(singleLine('a\x7fb')).toBe('a\\u007fb');
   });
 
+  test('a C1 control is escaped — U+009B is a one-byte CSI a terminal obeys', () => {
+    expect(singleLine('a\u009b2Jb')).toBe('a\\u009b2Jb');
+    expect(singleLine('a\u0085b')).toBe('a\\u0085b');
+    expect(singleLine('a\u00a0b')).toBe('a\u00a0b');
+  });
+
   test('U+2028 and U+2029 are escaped — splitting on a newline never sees them', () => {
     expect(singleLine('a\u2028b')).toBe('a\\u2028b');
     expect(singleLine('a\u2029b')).toBe('a\\u2029b');

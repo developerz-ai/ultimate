@@ -32,8 +32,10 @@ bunx create-ultimate repro bundle-req1.json --framework ../ultimate
 ```
 
 A bug's `x repro <id> --bundle` file, opened into a scratch app `repro-<id>/`: the `x new` scaffold
-(no example slice), the reproducer under `repro/` importing the scratch app's db package, the bundle
-as `repro/bundle.json`. With a framework checkout — `--framework <path>`, or the one cwd is inside —
+(no example slice), the test under `repro/` importing the scratch app's db package, the bundle as
+`repro/bundle.json`. **A bundle is untrusted input** — an issue attachment from anyone: only its
+`subject` is read, checked field by field, and the test is rendered from it; the bundle's own
+`reproducer` text is never written or run. With a framework checkout — `--framework <path>`, or the one cwd is inside —
 every `@ultimat3/*` is a `file:` override onto its source. `repro` with no file is still an app named
 `repro`. A file that is no `x-repro-bundle/1` bundle is `X_REPRO_BUNDLE_INVALID`; a directory that exists is `X_CLI_BAD_FLAG`.
 It takes `--dir` (the parent, default cwd), `--framework` (the checkout to link; none found → the

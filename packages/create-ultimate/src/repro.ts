@@ -1,6 +1,7 @@
-// `create-ultimate repro <bundle.json>`: a bug's `x repro --bundle` file, opened into a scratch app —
-// the scaffold `x new` writes, the bundle's reproducer under `repro/`, the bundle beside it, and,
-// given a framework checkout, every `@ultimat3/*` linked to that checkout's source (`file:`).
+// `create-ultimate repro <bundle.json>`: a bug's `x repro --bundle` file, opened into a scratch app.
+// The bundle is a stranger's data: only its `subject` is read (parsed field by field) and the test
+// is REBUILT from it — the bundle's own `reproducer` text never reaches disk. Given a framework
+// checkout, every `@ultimat3/*` is linked to that checkout's source (`file:`).
 
 // why: Bun has no synchronous existence check for a directory.
 import { existsSync } from 'node:fs';
@@ -10,13 +11,14 @@ import type { CommandResult, CommandSpec } from '@ultimat3/cli';
 import {
   BadFlagError,
   BUNDLE_FORMAT,
+  bundleReproducer,
   flagString,
   frameworkCheckoutFrom,
   frameworkOverrides,
   isFrameworkCheckout,
   msg,
-  PLACEHOLDER_DB_MODULE,
   parseArgs,
+  parseReproSubject,
   quoteArg,
   ReproBundleInvalidError,
   writeNewApp,
@@ -36,66 +38,49 @@ export const reproSpec: CommandSpec = {
   ],
 };
 
-interface Bundle {
-  readonly id: string;
-  readonly code: string;
-  readonly name: string;
-  readonly versions: string;
-  readonly file: string;
-  readonly source: string;
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const refuse = (path: string, reason: string): ReproBundleInvalidError =>
-  new ReproBundleInvalidError({ path, reason });
-
-/** The bundle's facts this opener needs, or a refusal naming what is missing. */
-async function readBundle(path: string): Promise<Bundle> {
-  if (!(await Bun.file(path).exists())) throw refuse(path, 'no file is there');
+/** The bundle's subject, checked, and the versions it was made on (prose only, never code). */
+async function readBundle(path: string) {
+  if (!(await Bun.file(path).exists())) {
+    throw new ReproBundleInvalidError({ path, reason: 'no file is there' });
+  }
   const parsed: unknown = await Bun.file(path)
     .json()
     .catch(() => undefined);
   if (!isRecord(parsed) || parsed['format'] !== BUNDLE_FORMAT) {
-    throw refuse(path, `its format is not ${BUNDLE_FORMAT}`);
+    throw new ReproBundleInvalidError({ path, reason: `its format is not ${BUNDLE_FORMAT}` });
   }
-  const { reproducer, subject, framework } = parsed;
-  const source = isRecord(reproducer) ? reproducer['source'] : undefined;
-  const file = isRecord(reproducer) ? reproducer['file'] : undefined;
-  const lines = Array.isArray(source) ? source.filter((line) => typeof line === 'string') : [];
-  // The file name is written into the scratch app: one segment under `repro/`, nothing that climbs.
-  if (
-    typeof file !== 'string' ||
-    !/^repro\/[a-z0-9.-]+\.test\.ts$/.test(file) ||
-    lines.length === 0
-  ) {
-    throw refuse(path, 'it carries no reproducer test under repro/');
+  const subject = parseReproSubject(parsed['subject']);
+  if (subject === undefined) {
+    throw new ReproBundleInvalidError({
+      path,
+      reason: 'its subject is not a failure x repro reads',
+    });
   }
+  const framework = parsed['framework'];
   const packages =
     isRecord(framework) && isRecord(framework['packages']) ? framework['packages'] : {};
-  const versions = [...new Set(Object.values(packages).flat())].join(', ') || 'unknown versions';
-  return {
-    id: typeof parsed['id'] === 'string' ? parsed['id'] : 'unnamed',
-    code: typeof parsed['code'] === 'string' ? parsed['code'] : 'an uncoded failure',
-    name:
-      isRecord(subject) && typeof subject['name'] === 'string'
-        ? subject['name']
-        : 'the failing primitive',
-    versions,
-    file,
-    source: lines.join('\n'),
-  };
+  const versions = [...new Set(Object.values(packages).flat())]
+    .filter((version): version is string => typeof version === 'string')
+    .filter((version) => /^[\w.+-]{1,40}$/.test(version))
+    .join(', ');
+  return { subject, versions: versions || 'unknown versions' };
 }
 
 export async function openRepro(argv: readonly string[], cwd: string): Promise<CommandResult> {
   const args = parseArgs(argv, [reproSpec]);
   const bundlePath = resolve(cwd, args.positionals[0] ?? '');
-  const bundle = await readBundle(bundlePath);
+  const { subject, versions } = await readBundle(bundlePath);
   const dirFlag = flagString(args, 'dir');
   const parent = dirFlag === undefined ? cwd : isAbsolute(dirFlag) ? dirFlag : join(cwd, dirFlag);
+  const id =
+    subject.kind === 'job'
+      ? subject.failure.jobId
+      : (subject.bundle.requestId ?? subject.bundle.id);
   const short =
-    bundle.id
+    id
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '')
       .slice(0, 12) || 'unnamed';
@@ -121,10 +106,8 @@ export async function openRepro(argv: readonly string[], cwd: string): Promise<C
     });
   }
   await writeNewApp(dir, { name, example: false });
-  await Bun.write(
-    join(dir, bundle.file),
-    bundle.source.replaceAll(`'${PLACEHOLDER_DB_MODULE}'`, `'@${name}/db'`),
-  );
+  const reproducer = bundleReproducer(subject, `@${name}/db`);
+  await Bun.write(join(dir, reproducer.file), reproducer.source.join('\n'));
   await Bun.write(join(dir, 'repro', 'bundle.json'), Bun.file(bundlePath));
   const lines: string[] = [];
   if (checkout === undefined) lines.push(msg('cli.repro.openedRegistry'));
@@ -135,17 +118,20 @@ export async function openRepro(argv: readonly string[], cwd: string): Promise<C
     const prior = isRecord(base['overrides']) ? base['overrides'] : {};
     const overrides = { ...prior, ...(await frameworkOverrides(checkout)) };
     await Bun.write(pkgPath, `${JSON.stringify({ ...base, overrides }, null, 2)}\n`);
-    lines.push(
-      msg('cli.repro.openedFramework', { framework: checkout, versions: bundle.versions }),
-    );
+    lines.push(msg('cli.repro.openedFramework', { framework: checkout, versions }));
   }
-  lines.push(msg('cli.repro.openedStandIn', { name: bundle.name }));
-  lines.push(msg('cli.repro.openedNext', { dir: quoteArg(dir), file: bundle.file }));
+  const failing = subject.kind === 'job' ? subject.failure : subject.bundle;
+  lines.push(msg('cli.repro.openedStandIn', { name: failing.name }));
+  lines.push(msg('cli.repro.openedNext', { dir: quoteArg(dir), file: reproducer.file }));
   return {
     ok: true,
     command: 'repro',
-    summary: msg('cli.repro.opened', { code: bundle.code, bundle: bundlePath, dir }),
+    summary: msg('cli.repro.opened', {
+      code: failing.code ?? 'an uncoded failure',
+      bundle: bundlePath,
+      dir,
+    }),
     lines,
-    data: { dir, file: bundle.file, framework: checkout ?? null, bundle: bundlePath },
+    data: { dir, file: reproducer.file, framework: checkout ?? null, bundle: bundlePath },
   };
 }

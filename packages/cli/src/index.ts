@@ -112,14 +112,15 @@ export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export type { PwaArtifacts } from './pwa-artifacts';
 export { loadPwaArtifacts } from './pwa-artifacts';
 export { cliVersion, SPECS } from './registry';
-// `create-ultimate repro`'s three facts, so the opener restates none of them.
-export { BUNDLE_FORMAT } from './repro-archive';
+// What `create-ultimate repro` opens a bundle with, so the opener restates none of it.
+export { BUNDLE_FORMAT, bundleReproducer } from './repro-archive';
 export { ReproBundleInvalidError } from './repro-errors';
 export {
   frameworkCheckoutFrom,
   frameworkOverrides,
   isFrameworkCheckout,
 } from './repro-framework';
+export { parseReproSubject } from './repro-parse';
 export type { RunningRoles, WebBinding } from './role-start';
 export { DEV_BINDING, DEV_ROLES, startRoles } from './role-start';
 // `shotCommand`, `prCommand` and `ciCommand` are deliberately NOT re-exported here. They reach

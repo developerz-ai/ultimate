@@ -90,7 +90,14 @@ export async function scrubSourcesOf(
   return {
     root,
     homes,
-    env: [...(await dotenvValues(root)), ...Object.entries(env)],
+    env: [
+      ...(await dotenvValues(root)).map(([name, value]) => ({
+        name,
+        value,
+        from: 'dotenv' as const,
+      })),
+      ...Object.entries(env).map(([name, value]) => ({ name, value, from: 'process' as const })),
+    ],
     hosts: [...hosts],
   };
 }
@@ -120,7 +127,23 @@ export async function errorFromStore(
   const group = await postgresErrorGroupsStore()
     .get(subject.bundle.fingerprint)
     .catch(() => undefined);
-  return { cause: group?.sample?.cause ?? null, stack: group?.sample?.stack ?? null };
+  return sampleFacts(group?.sample, subject.bundle.requestId);
+}
+
+/**
+ * The error group's sample is its LATEST failure, not necessarily this one: its cause and stack
+ * are this subject's only when the sample's request is the subject's own. Otherwise, nothing.
+ */
+export function sampleFacts(
+  sample:
+    | { readonly requestId: string | null; readonly cause: string; readonly stack: string | null }
+    | undefined,
+  requestId: string | null,
+): ReproErrorFacts {
+  if (sample === undefined || requestId === null || sample.requestId !== requestId) {
+    return { cause: null, stack: null };
+  }
+  return { cause: sample.cause, stack: sample.stack };
 }
 
 /** The registries `loadApp` filled: what the redaction asks by name. */

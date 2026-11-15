@@ -11,7 +11,7 @@ import type { ReproErrorFacts } from './repro-archive';
 import { bundleFileOf, reproArchive } from './repro-archive';
 import { installedFramework, registryLookups, scrubSourcesOf } from './repro-archive-collect';
 import type { ReproSubject } from './repro-bundle';
-import type { ReproLookups } from './repro-redact';
+import type { RedactOptions, ReproLookups } from './repro-redact';
 import { redactSubject } from './repro-redact';
 import { scrubberFor } from './repro-scrub';
 import { loadVersion } from './version-loader';
@@ -21,9 +21,10 @@ export async function writeBundle(
   ctx: CommandContext,
   subject: ReproSubject,
   error: ReproErrorFacts,
+  options: RedactOptions,
   lookups: ReproLookups = registryLookups,
 ): Promise<CommandResult> {
-  const redacted = redactSubject(subject, lookups);
+  const redacted = redactSubject(subject, lookups, options);
   const scrubber = scrubberFor(await scrubSourcesOf(root, ctx.env));
   const { document, scrubbed } = reproArchive({
     ...redacted,
@@ -53,6 +54,7 @@ export async function writeBundle(
       masked: [...redacted.masked],
       dropped: [...redacted.dropped],
       scrubbed: { env: [...scrubbed.env], hosts: scrubbed.hosts },
+      includeRows: options.includeRows,
     } satisfies Record<string, JsonValue>,
   };
 }

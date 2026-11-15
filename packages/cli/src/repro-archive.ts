@@ -19,11 +19,14 @@ export const BUNDLE_FORMAT = 'x-repro-bundle/1';
 export const READ_FIRST: readonly string[] = [
   'Read this whole file before you attach it to an issue: it is everything that leaves your machine.',
   'It holds: the installed @ultimat3/* versions, the declarations of the entities the failing call read,',
-  'its input and the rows it read (secret-named keys, .sensitive() fields, sealed columns masked),',
-  'the error code, cause and stack frames, and the test that replays it (reproducer).',
-  'Replaced before writing: the app root (.), the home directory (~), every env value ([env:NAME]),',
-  'every hostname from app.config.ts or an env URL ([host]), and other absolute paths (<abs>/file).',
-  'Edit any value you still do not want to send; the reproducer reads only `subject`.',
+  'the error code, cause and stack frames, the test that replays it (reproducer), and the failing call',
+  '(subject): its keys and ids as they were; every other input, row and step value a [redacted] stand-in',
+  'the replay fills, the actor org a placeholder. With --include-rows those values are real: read them.',
+  'Always masked: secret-named keys, .sensitive() fields, sealed columns. Replaced: the app root (.), home',
+  '(~), secret-named / URL / dotenv env values ([env:NAME]), config and env-URL hostnames ([host]), URL',
+  'credentials and query values, emails ([email]), IP addresses ([ip]), other absolute paths (<abs>/file).',
+  'NOT found: a value this machine never knew — a production-only secret, a customer name in a cause.',
+  'Edit any value you still do not want to send. Opening a bundle never runs code from it.',
   'A maintainer opens it with: bunx create-ultimate repro <this file>',
 ];
 
@@ -72,21 +75,20 @@ const framesOf = (stack: string | null, scrubber: Scrubber): string[] =>
     .map((line) => scrubber.location(line));
 
 /**
- * The reproducer, written against the scratch app `create-ultimate repro` makes: the scaffold's
- * API index for registrations and the placeholder db package it renames on open.
+ * The reproducer, rendered from a subject alone — never from a bundle's own `reproducer` text,
+ * which a stranger could have written — against the scaffold's API index and `dbPackage` (the
+ * placeholder in a bundle; the scratch app's own when `create-ultimate repro` opens one).
  */
-function reproducerOf(subject: ReproSubject): { file: string; source: string[] } {
+export function bundleReproducer(
+  subject: ReproSubject,
+  dbPackage: string = PLACEHOLDER_DB_MODULE,
+): { file: string; source: string[] } {
   const id = subjectIdOf(subject);
   const imports = [`../${API_INDEX.replace(/\/index\.ts$/, '')}`];
   const source =
     subject.kind === 'job'
       ? jobTestSource(subject.failure, { id, imports })
-      : requestTestSource(subject.bundle, {
-          id,
-          imports,
-          build: null,
-          dbPackage: PLACEHOLDER_DB_MODULE,
-        });
+      : requestTestSource(subject.bundle, { id, imports, build: null, dbPackage });
   return { file: reproFile(subject), source: source.split('\n') };
 }
 
@@ -95,33 +97,60 @@ export interface ReproArchive {
   readonly scrubbed: ScrubReport;
 }
 
+/**
+ * The fields the replay looks a primitive up by, kept OUT of the scrubber: a scrubbed `name` or
+ * `primitive` (a dotenv value that happens to be `createPost`) is a bundle that replays nothing,
+ * and none of them is data. Blanked before the scrub, put back after it.
+ */
+function scrubbedSubject(subject: ReproSubject, scrubber: Scrubber): ReproSubject {
+  if (subject.kind === 'job') {
+    const { name, code, step, jobId } = subject.failure;
+    const blank = { ...subject.failure, name: '', code: null, step: null, jobId: '' };
+    const clean = scrubber.value(blank) as typeof blank;
+    return { kind: 'job', failure: { ...clean, name, code, step, jobId } };
+  }
+  const { primitive, name, code, fingerprint, id } = subject.bundle;
+  const blank = { ...subject.bundle, name: '', code: '', fingerprint: '', id: '' };
+  const clean = scrubber.value(blank) as typeof blank;
+  return { kind: 'request', bundle: { ...clean, primitive, name, code, fingerprint, id } };
+}
+
 export function reproArchive(input: ReproArchiveInput): ReproArchive {
   const { subject, scrubber } = input;
   // The subject is scrubbed BEFORE the reproducer is rendered from it, so the test's literal holds
-  // the same tokens the `subject` section does.
-  const clean = scrubber.value(subject) as ReproSubject;
-  const draft = {
-    format: BUNDLE_FORMAT,
-    readFirst: READ_FIRST,
-    kind: clean.kind,
-    id: subjectIdOf(clean),
-    code: clean.kind === 'job' ? clean.failure.code : clean.bundle.code,
-    fingerprint: clean.kind === 'job' ? null : clean.bundle.fingerprint,
-    framework: input.framework,
+  // the same tokens the `subject` section does; the reproducer is then never scrubbed again — its
+  // import lines are the scratch app's, and nothing in it came from anywhere but the subject.
+  const clean = scrubbedSubject(subject, scrubber);
+  const code = clean.kind === 'job' ? clean.failure.code : clean.bundle.code;
+  const data = scrubber.value({
     error: {
-      code: clean.kind === 'job' ? clean.failure.code : clean.bundle.code,
       cause: input.error.cause === null ? null : scrubber.location(input.error.cause),
       frames: framesOf(input.error.stack, scrubber),
     },
     schema: { entities: input.entities },
     masked: input.masked,
     dropped: input.dropped,
-    subject: clean.kind === 'job' ? clean.failure : clean.bundle,
-    reproducer: reproducerOf(clean),
+  }) as {
+    error: { cause: string | null; frames: string[] };
+    schema: unknown;
+    masked: unknown;
+    dropped: unknown;
   };
-  const document = scrubber.value(draft);
-  return {
-    document: { ...(document as object), scrubbed: scrubber.report() },
+  const document = {
+    format: BUNDLE_FORMAT,
+    readFirst: READ_FIRST,
+    kind: clean.kind,
+    id: subjectIdOf(clean),
+    code,
+    fingerprint: clean.kind === 'job' ? null : clean.bundle.fingerprint,
+    framework: input.framework,
+    error: { code, ...data.error },
+    schema: data.schema,
+    masked: data.masked,
+    dropped: data.dropped,
+    subject: clean.kind === 'job' ? clean.failure : clean.bundle,
+    reproducer: bundleReproducer(clean),
     scrubbed: scrubber.report(),
   };
+  return { document, scrubbed: scrubber.report() };
 }

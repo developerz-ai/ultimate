@@ -10,6 +10,7 @@ import { inspectJob } from '@ultimat3/jobs';
 import type { JobFailure } from '@ultimat3/testing';
 import { ReproCaptureOffError, ReproUnknownError } from './repro-errors';
 import { jobFailureOf } from './repro-job';
+import { parseReproSubject } from './repro-parse';
 
 export type ReproSubject =
   | { readonly kind: 'job'; readonly failure: JobFailure }
@@ -17,18 +18,6 @@ export type ReproSubject =
 
 /** A uuid in any spelling `x_jobs.id` accepts — `cmd-jobs.ts`' rule, so no statement is wasted. */
 const JOB_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
-
-const isBundle = (value: unknown): value is FailureBundle =>
-  isJsonObject(value) &&
-  typeof value['name'] === 'string' &&
-  (value['primitive'] === 'action' || value['primitive'] === 'query') &&
-  Array.isArray(value['reads']);
-
-const isJobFailure = (value: unknown): value is JobFailure =>
-  isJsonObject(value) &&
-  typeof value['jobId'] === 'string' &&
-  typeof value['name'] === 'string' &&
-  Array.isArray(value['steps']);
 
 /** `--from <file>`: what `x repro <id> --json` printed (`data.bundle`/`data.failure`), a repro bundle, or bare. */
 export async function subjectFromFile(path: string): Promise<ReproSubject> {
@@ -40,8 +29,8 @@ export async function subjectFromFile(path: string): Promise<ReproSubject> {
   const inner = isJsonObject(data)
     ? (data['bundle'] ?? data['failure'] ?? data['subject'] ?? data)
     : data;
-  if (isBundle(inner)) return { kind: 'request', bundle: inner };
-  if (isJobFailure(inner)) return { kind: 'job', failure: inner };
+  const subject = parseReproSubject(inner);
+  if (subject !== undefined) return subject;
   throw new ReproUnknownError({ id: path });
 }
 
