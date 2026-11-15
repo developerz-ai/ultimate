@@ -39,9 +39,11 @@ describe('one framework-version reader', () => {
   test('no packages/*/src file reads a framework manifest except the two readers', async () => {
     const offenders: string[] = [];
     const seen = new Set<string>();
-    for await (const path of new Glob('*/src/**/*.ts').scan({ cwd: PACKAGES })) {
+    for await (const scanned of new Glob('*/src/**/*.ts').scan({ cwd: PACKAGES })) {
+      // Windows scans with `\`; the reader set and the fixture filter speak `/`.
+      const path = scanned.replaceAll('\\', '/');
       if (/\.(?:test|[a-z]+\.test)\.ts$/.test(path) || path.includes('/fixtures/')) continue;
-      const text = await Bun.file(resolve(PACKAGES, path)).text();
+      const text = await Bun.file(resolve(PACKAGES, scanned)).text();
       if (!readsOwnManifest(text)) continue;
       seen.add(path);
       if (!READERS.has(path)) offenders.push(path);
