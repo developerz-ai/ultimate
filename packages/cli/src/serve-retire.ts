@@ -27,7 +27,7 @@ export interface WorkerRetireOptions {
 }
 
 export interface WorkerRetire {
-  /** The worker the boot started (`null` when it started none) — a signal before this waits. */
+  /** The worker the boot started (`null` when it started none) — a signal before this drains. */
   adopt(worker: RetiringWorker | null): void;
   /** Give the listener back: a boot that failed, or a hold that is over. */
   disarm(): void;
@@ -39,7 +39,7 @@ const NOTHING: WorkerRetire = Object.freeze({ adopt: () => undefined, disarm: ()
  * Listen for `RETIRE_SIGNAL` NOW, before the boot: Bun's default for an unhandled SIGUSR2 ends the
  * process — except as PID 1 (a container's ENTRYPOINT), where the kernel DROPS a signal with no
  * listener, so a `preStop` that lands before this line runs is lost. The chart's preStop therefore
- * re-sends it every 5 s until PID 1 is gone; this listener waits for the worker and then retires it.
+ * re-sends it every 5 s until PID 1 is gone; before the boot hands a worker over it drains at once.
  * One retire per process; a second signal joins it.
  *
  * Exits rather than holds, decided 2026-10-07: the `preStop` has no channel back but PID 1 itself,
@@ -56,6 +56,7 @@ export function armWorkerRetire(options: WorkerRetireOptions = {}): WorkerRetire
   const adopted = new Promise<RetiringWorker | null>((resolve) => {
     adopt = resolve;
   });
+  let handedOver = false;
   let retiring = false;
 
   const retire = async (): Promise<void> => {
@@ -96,12 +97,24 @@ export function armWorkerRetire(options: WorkerRetireOptions = {}): WorkerRetire
     // At the signal, before the worker is awaited or stopped: the app's `isRetiring()` is how its
     // own code (a heartbeat, a status row) sees a retire that `isDraining()` only shows at the end.
     markRetiring();
+    // Before the boot handed a worker over, nothing here holds a job — and a boot waiting on the
+    // migrate step may not reach one for minutes. Drain NOW: its `accept` phase ends the schema
+    // wait, and `holdWhileBooting` exits `drainExitCode()`. Waiting for `adopt` sat the pod out to
+    // the wait's deadline and exited it 1, a crash, on every rollout over a failed migrate.
+    if (!handedOver) {
+      logger.info('jobs.worker.retired', { signal: RETIRE_SIGNAL, before: 'boot' });
+      void finish(RETIRE_SIGNAL);
+      return;
+    }
     // Never rejects: `retire` catches its own failure and always reaches the drain.
     void retire();
   };
   signals.on(RETIRE_SIGNAL, listener);
   return {
-    adopt: (worker) => adopt(worker),
+    adopt: (worker) => {
+      handedOver = true;
+      adopt(worker);
+    },
     disarm: () => signals.off(RETIRE_SIGNAL, listener),
   };
 }

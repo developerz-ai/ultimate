@@ -11,6 +11,7 @@ import {
   frozenClock,
   installLogSink,
   isDraining,
+  recordFrameworkSchema,
   resetLifecycle,
   UltimateError,
 } from '@ultimat3/core';
@@ -256,7 +257,7 @@ describe("unit · a serving role waits for the app's own migrations", () => {
     expect(error.fix).toBe('x db migrate');
   });
 
-  test('no ledger at all is behind, never a crash on 42P01', async () => {
+  test('no ledger at all is behind, never a crash on 42P01: the stamp is read on its own', async () => {
     const { state, client } = database(stamped, undefined);
     const error = await refusalOf(
       verifySchema(client, { deadlineMs: 0, clock: frozenClock(), shipped }),
@@ -264,7 +265,8 @@ describe("unit · a serving role waits for the app's own migrations", () => {
     expect(error.code).toBe('X_APP_MIGRATIONS_UNAPPLIED');
     expect(error.meta?.['ledger']).toBe(false);
     expect(error.meta?.['missing']).toEqual([...shipped]);
-    expect(state.reads).toBe(1);
+    // The joint statement fails 42P01, then the stamp alone: the only case with a second read.
+    expect(state.reads).toBe(2);
   });
 
   test('the framework stamp is judged first, from the same statement', async () => {
@@ -337,5 +339,45 @@ describe('unit · the schema gauges a waiting role publishes', () => {
     expect(gaugeValue('framework_schema_major_skew')).toBe(1);
     await refusalOf(verifySchema(client, { deadlineMs: 0, clock: frozenClock() }));
     expect(gaugeValue('framework_schema_major_skew')).toBe(0);
+  });
+
+  /** The gauge at each sleep of a wait, after it was set to 1 so an unrecorded read cannot pass. */
+  async function gaugeDuringWait(
+    client: DbClient,
+    shipped: readonly string[],
+    land: () => void,
+  ): Promise<(number | undefined)[]> {
+    recordFrameworkSchema({ applied: true, majorSkew: false });
+    const clock = frozenClock();
+    const during: (number | undefined)[] = [];
+    const watching: SleepClock = {
+      ...clock,
+      sleep: async (ms, signal) => {
+        during.push(gaugeValue('framework_schema_applied'));
+        if (during.length === 2) land();
+        await clock.sleep(ms, signal);
+      },
+    };
+    await verifySchema(client, { deadlineMs: 600_000, clock: watching, shipped });
+    return during;
+  }
+
+  test('no ledger at all: the stamp is still read and the gauge says unapplied', async () => {
+    const { state, client } = database(null, undefined);
+    const during = await gaugeDuringWait(client, ['0001_init'], () => {
+      state.stamp = nextStamp(null, mine);
+      state.applied = ['0001_init'];
+    });
+    expect(during).toEqual([0, 0]);
+    expect(gaugeValue('framework_schema_applied')).toBe(1);
+  });
+
+  test('stamp current, app migrations pending: the gauge says unapplied for the whole wait', async () => {
+    const { state, client } = database(nextStamp(null, mine), []);
+    const during = await gaugeDuringWait(client, ['0001_init'], () => {
+      state.applied = ['0001_init'];
+    });
+    expect(during).toEqual([0, 0]);
+    expect(gaugeValue('framework_schema_applied')).toBe(1);
   });
 });

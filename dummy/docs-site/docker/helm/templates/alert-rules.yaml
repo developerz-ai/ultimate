@@ -242,7 +242,7 @@ spec:
           labels:
             severity: {{ $r.severity | default "critical" }}
           annotations:
-            summary: "A role's build has no framework schema applied: the migrate step has not run"
+            summary: "A role is waiting: its build's framework schema or app migrations are not applied (x db migrate)"
             runbook_url: {{ printf "%s#ultimateschemaunapplied" $base | quote }}
         {{- end }}
         {{- $r := index $rules "UltimateVersionSkew" | default dict }}

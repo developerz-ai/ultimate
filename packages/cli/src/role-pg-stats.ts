@@ -14,8 +14,7 @@ export function startRolePgStats(
   intervalMs?: number,
 ): (() => Promise<void>) | null {
   if (!roles.includes('scheduler') || mode !== 'external') return null;
-  const stop = startPgStatsGauges(executor, intervalMs);
-  return async () => {
-    stop();
-  };
+  // The stop itself, never wrapped: it awaits the round in flight, and a wrapper that dropped
+  // that promise let the role's unwind close the pool under a sampling query.
+  return startPgStatsGauges(executor, intervalMs);
 }

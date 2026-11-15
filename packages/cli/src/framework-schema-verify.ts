@@ -1,6 +1,6 @@
-// A serving role's boot over an external database: no DDL, one catalog read per attempt — the
-// framework stamp and the app's `x_migrations` ledger in one statement — and the wait for the
-// migrate step when either is behind this build (`framework-schema-wait.ts`).
+// A serving role's boot over an external database: no DDL, one statement per attempt once a
+// migrate has run — the framework stamp and the app's `x_migrations` ledger together — and the
+// wait for the migrate step when either is behind this build (`framework-schema-wait.ts`).
 
 import { recordFrameworkSchema } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
@@ -29,15 +29,16 @@ export interface VerifySchemaOptions extends SchemaWaitOptions {
 }
 
 interface BootRead {
-  /** `undefined` when the statement could not read it: the ledger it shares a statement with is absent. */
-  readonly stamp: string | null | undefined;
+  readonly stamp: string | null;
   /** `undefined` when `x_migrations` does not exist. */
   readonly applied: readonly string[] | undefined;
 }
 
 /**
- * ONE statement. A missing ledger fails the whole of it (`42P01`), so the stamp is unread then —
- * and moot: a build that ships migrations is behind a database no migrate step has run on.
+ * ONE statement on every database a migrate step has touched: the stamp and the ledger together.
+ * A missing ledger fails the whole of it (`42P01`) — Postgres resolves a relation when it PARSES,
+ * so no `case when to_regclass(…)` guard can name a table that may not exist — and only then is
+ * the stamp read alone: a second statement on a database no migrate has ever run on, never after.
  */
 async function readBoot(client: DbClient, withLedger: boolean): Promise<BootRead> {
   if (!withLedger) return { stamp: await readStamp(client), applied: [] };
@@ -50,8 +51,8 @@ async function readBoot(client: DbClient, withLedger: boolean): Promise<BootRead
     );
     return { stamp: rows[0]?.stamp ?? null, applied: parseAppliedIds(rows[0]?.applied) };
   } catch (error) {
-    if (isLedgerMissing(error)) return { stamp: undefined, applied: undefined };
-    throw error;
+    if (!isLedgerMissing(error)) throw error;
+    return { stamp: await readStamp(client), applied: undefined };
   }
 }
 
@@ -61,33 +62,30 @@ interface Served {
 }
 
 function judge(read: BootRead, mine: StampEntry, shipped: readonly string[]): SchemaCheck<Served> {
-  let skew: StampEntry | undefined;
-  if (read.stamp !== undefined) {
-    const framework = stampVerdict(parseStamp(read.stamp), mine);
-    // Every read, each round of a wait included: the gauges are what the rollout's alerts read,
-    // scraped off the metrics listener `serveApp` opened before this boot began.
-    recordFrameworkSchema({
-      applied: framework.applied,
-      majorSkew: framework.applied
-        ? framework.skew !== undefined
-        : otherMajor(framework.newest, mine),
-    });
-    if (!framework.applied) {
-      const { newest } = framework;
-      return {
-        ready: false,
-        atOnce: aheadByMajor(newest, mine),
-        refuse: (waitedMs) =>
-          new FrameworkSchemaUnappliedError({
-            mine,
-            newest,
-            ...(waitedMs === undefined ? {} : { waitedMs }),
-          }),
-      };
-    }
-    skew = framework.skew;
-  }
+  const framework = stampVerdict(parseStamp(read.stamp), mine);
   const app = appMigrationsVerdict(shipped, read.applied);
+  // Every read, each round of a wait included, scraped off the metrics listener `serveApp` opened
+  // before this boot began. `applied` is 0 while the role waits for EITHER half: what the alert
+  // reads is "this role is not serving because its schema is not applied".
+  recordFrameworkSchema({
+    applied: framework.applied && app.missing.length === 0,
+    majorSkew: framework.applied
+      ? framework.skew !== undefined
+      : otherMajor(framework.newest, mine),
+  });
+  if (!framework.applied) {
+    const { newest } = framework;
+    return {
+      ready: false,
+      atOnce: aheadByMajor(newest, mine),
+      refuse: (waitedMs) =>
+        new FrameworkSchemaUnappliedError({
+          mine,
+          newest,
+          ...(waitedMs === undefined ? {} : { waitedMs }),
+        }),
+    };
+  }
   if (app.missing.length > 0) {
     return {
       ready: false,
@@ -99,7 +97,7 @@ function judge(read: BootRead, mine: StampEntry, shipped: readonly string[]): Sc
         }),
     };
   }
-  return { ready: true, value: { skew, unknown: app.unknown } };
+  return { ready: true, value: { skew: framework.skew, unknown: app.unknown } };
 }
 
 /**

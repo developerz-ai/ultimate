@@ -155,17 +155,32 @@ describe('unit · armWorkerRetire', () => {
     held.finish();
   });
 
-  test('a signal during boot waits for the worker, then retires it', async () => {
+  test('a signal during boot, before any worker is handed over, drains at once', async () => {
+    // A boot with no worker holds no jobs, and one waiting on the migrate step may never get one:
+    // waiting for `adopt` sat the pod through the schema wait and exited it 1 at the deadline.
+    resetLifecycle();
     const signals = fakeSignals();
     const held = heldWorker();
-    const retire = armWorkerRetire({ platform: 'linux', signals, drain: () => Promise.resolve() });
-    signals.raise(RETIRE_SIGNAL);
-    await tick();
-    expect(held.events).toEqual([]);
-    retire.adopt(held.worker);
-    await tick();
-    expect(held.events).toEqual([`stop:${RETIRE_SIGNAL}`]);
-    held.finish();
+    const retire = armWorkerRetire({
+      platform: 'linux',
+      signals,
+      drain: (signal) => {
+        held.events.push(`drain:${signal}`);
+        return Promise.resolve();
+      },
+    });
+    try {
+      signals.raise(RETIRE_SIGNAL);
+      await tick();
+      expect(held.events).toEqual([`drain:${RETIRE_SIGNAL}`]);
+      expect(isRetiring()).toBe(true);
+      // A worker the boot hands over after the drain began is the drain's, not a second retire's.
+      retire.adopt(held.worker);
+      await tick();
+      expect(held.events).toEqual([`drain:${RETIRE_SIGNAL}`]);
+    } finally {
+      resetLifecycle();
+    }
   });
 
   test('a retire that fails still drains: a worker that stopped claiming must not hold the pod', async () => {

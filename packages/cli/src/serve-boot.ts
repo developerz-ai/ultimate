@@ -94,6 +94,10 @@ export async function bootServing(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options } = boot;
+  // The role's own grace FIRST, before the services: the schema wait runs inside them, and a worker
+  // SIGTERMed mid-wait sat through web's readiness grace. `app.config.ts`'s `drain` section is
+  // applied over this once the app is loaded (`bootRoles`).
+  configureLifecycle(lifecycleForRole(boot.role, undefined));
   // Before any service starts: a half-declared pair is refused while there is nothing to unwind.
   const tls = boot.role === 'web' ? await tlsFromEnv(options.env) : undefined;
   // One `boot.phase` line as each step ends, so a slow boot names its slow step (U12).

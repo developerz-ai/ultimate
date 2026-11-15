@@ -80,7 +80,8 @@ export const DEPLOY_ALERTS: readonly ChartAlert[] = [
       `count by (${s.by}, ${s.component}) (${s.series('framework_schema_applied')} == 0) > 0`,
     for: '10m',
     severity: 'critical',
-    summary: "A role's build has no framework schema applied: the migrate step has not run",
+    summary:
+      "A role is waiting: its build's framework schema or app migrations are not applied (x db migrate)",
   }),
   rule({
     alert: 'UltimateVersionSkew',

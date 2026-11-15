@@ -63,16 +63,15 @@ describe('unit · the verify boot', () => {
   );
 
   test(
-    'a database no migrate ever ran on, deadline 0: refused on the first read, naming the ledger',
+    'a database no migrate ever ran on, deadline 0: refused at once, the stamp read past the 42P01',
     async () => {
       const handed = { [SCHEMA_WAIT_ENV]: '0' };
       const error = await refusal(
         startQueue(resolveServices(root, {}), undefined, handed, 'verify'),
       );
-      // One statement reads the stamp and the ledger; with no ledger it reads neither, and a build
-      // that ships a migration is behind whatever the stamp says. The fix is the same command.
-      expect(error.code).toBe('X_APP_MIGRATIONS_UNAPPLIED');
-      expect(error.meta?.['ledger']).toBe(false);
+      // The joint statement fails on the missing ledger on a real server; the stamp is then read
+      // alone, so the refusal is the framework's, judged first — never a raw 42P01.
+      expect(error.code).toBe('X_FRAMEWORK_SCHEMA_UNAPPLIED');
       expect(error.fix).toBe('x db migrate');
     },
     BOOT_MS,

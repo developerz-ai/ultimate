@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { markListening, resetLifecycle } from '@ultimat3/core';
+import { selfSignedCertificate } from './dev-tls';
 import { openBootProbe } from './serve-boot-probe';
 
 /** A port the kernel just handed out and took back: free, and not 0, which opens no probe. */
@@ -64,5 +65,45 @@ describe('unit · the boot probe listener', () => {
       expect(openBootProbe({ role, port: freePort(), hostname: '127.0.0.1' })).toBeUndefined();
     }
     expect(openBootProbe({ role: 'web', port: 0, hostname: '127.0.0.1' })).toBeUndefined();
+  });
+
+  test('a TLS pair OpenSSL refuses is X_CONFIG_INVALID naming both variables, never the bytes', () => {
+    const KEY_BYTES = 'SECRETKEYBYTES';
+    const pairs = [
+      { cert: 'not a pem', key: 'not a pem' },
+      {
+        cert: '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n',
+        key: `-----BEGIN PRIVATE KEY-----\n${KEY_BYTES}\n-----END PRIVATE KEY-----\n`,
+      },
+    ];
+    for (const tls of pairs) {
+      let refused: unknown;
+      try {
+        stops.push(
+          openBootProbe({ role: 'web', port: freePort(), hostname: '127.0.0.1', tls })?.stop ??
+            (() => {}),
+        );
+      } catch (error) {
+        refused = error;
+      }
+      expect(refused).toMatchObject({ code: 'X_CONFIG_INVALID' });
+      const text = JSON.stringify(refused) + String(refused);
+      expect(text).toContain('TLS_CERT');
+      expect(text).toContain('TLS_KEY');
+      expect(text).not.toContain(KEY_BYTES);
+      expect(text).not.toContain('not a pem');
+    }
+  });
+
+  test('a valid pair serves the probe over TLS', async () => {
+    const tls = await selfSignedCertificate({ names: ['127.0.0.1'], now: new Date() });
+    const port = freePort();
+    const probe = openBootProbe({ role: 'web', port, hostname: '127.0.0.1', tls });
+    if (probe === undefined) return expect.unreachable('the web role opened a probe');
+    stops.push(() => probe.stop());
+    const healthz = await fetch(`https://127.0.0.1:${String(port)}/healthz`, {
+      tls: { rejectUnauthorized: false },
+    });
+    expect(healthz.status).toBe(200);
   });
 });

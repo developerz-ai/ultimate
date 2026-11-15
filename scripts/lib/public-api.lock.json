@@ -7410,7 +7410,7 @@
       "DrillRoleProcess": {"hash":"a4de27dca1446f0a","shape":{"kind":"members","head":"f68d5332","members":{"exited":"f7bf3eb7","log":"4025f8b6","origin":"1fb0a448","readyz":"1fb0a448","respawn":"6c20bfe0","role":"a354f1a7","signal":"050d9e15"}}},
       "DrillRollout": {"hash":"dfb6fc20460b8018","shape":{"kind":"members","head":"556c7eb8","members":{"exitCode":"8a524555","migrate":"6c20bfe0","watched":"e8e0051f"}}},
       "DrillRolloutEvidence": {"hash":"1cb402635cf73f57","shape":{"kind":"members","head":"cb00327c","members":{"roles":"efac4e8b"}}},
-      "DrillRolloutOptions": {"hash":"4be6c9cea28fb81c","shape":{"kind":"members","head":"02170b86","members":{"budgets":"c5acdd3b","drill":"62e17439","fleet":"221db815","holdMs":"?5d7469a7","probe":"?743ddff9","readyTimeoutMs":"4e57c805","sleep":"?8f142133"}}},
+      "DrillRolloutOptions": {"hash":"eb5bae130c95a56e","shape":{"kind":"members","head":"02170b86","members":{"budgets":"c5acdd3b","drill":"62e17439","fleet":"221db815","holdMs":"?5d7469a7","now":"?106ecfbd","probe":"?743ddff9","readyTimeoutMs":"4e57c805","sleep":"?8f142133"}}},
       "DrillRolloutRole": {"hash":"8834e1eb9a1840ee","shape":{"kind":"members","head":"7f9a1b7f","members":{"exit":"4a7123ef","logTail":"1fb0a448","ready":"a001763a","role":"1fb0a448","waitLines":"4e57c805"}}},
       "DrillService": {"hash":"07f52834ef264f91","shape":{"kind":"literals","head":"d1f4dbb4","values":["264c0424","54d2e07e","840b960b"]}},
       "DrillServiceMissingError": {"hash":"8b6e1fe6e8bda47f","shape":{"kind":"class","head":"4a51d7a7","members":{},"ctor":["{drill=1fb0a448,gap=37307166}"]}},

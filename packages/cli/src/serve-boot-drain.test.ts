@@ -105,6 +105,41 @@ describe('unit · the drain each role runs', () => {
       await worker.stop();
     }
   }, 120_000);
+
+  test("the role's grace is set BEFORE the services: a worker drained mid-schema-wait has none", async () => {
+    await rm(ROOT, { recursive: true, force: true });
+    await Bun.write(
+      join(ROOT, 'package.json'),
+      JSON.stringify({ name: 'serve-drain-fixture', version: '1.0.0' }),
+    );
+    await Bun.write(
+      join(ROOT, 'app.config.ts'),
+      "import { defineConfig } from '@ultimat3/core';\n" +
+        "export const config = defineConfig({ name: 'serve-drain-fixture' });\n",
+    );
+    configureLifecycle({ readinessGraceMs: 7_000 });
+    // Refused inside `startServices` — where the schema wait runs — before any later boot step.
+    const env = {
+      NODE_ENV: 'test',
+      ULTIMATE_STATE_DIR: join(ROOT, '.x'),
+      DATABASE_POOL_MAX: 'many',
+    };
+    const outcome = await serveApp({
+      root: ROOT,
+      env,
+      role: 'worker',
+      port: 0,
+      metricsPort: 0,
+    }).then(
+      async (app) => {
+        await app.stop();
+        return 'booted';
+      },
+      () => 'refused',
+    );
+    expect(outcome).toBe('refused');
+    expect(readinessGraceMs()).toBe(0);
+  }, 120_000);
 });
 
 /**

@@ -164,4 +164,28 @@ describeLive('live · a role started before its migrate step', () => {
     },
     TIMEOUT_MS,
   );
+
+  test(
+    'SIGUSR2 mid-wait (the preStop retire) drains and exits 0 now, never at the deadline',
+    async () => {
+      await writeFixture();
+      await admin(`drop database if exists ${DB} with (force)`);
+      await admin(`create database ${DB}`);
+      const worker = spawnRole('worker', { app: freePort(), metrics: freePort() });
+      const until = watch(worker.stdout, worker.stderr);
+      try {
+        await until('ultimate schema waiting');
+        const sentAt = performance.now();
+        worker.kill('SIGUSR2');
+        expect(await worker.exited).toBe(0);
+        // The wait's deadline is 90s (`spawnRole`): exiting long before it is the retire's doing.
+        expect(performance.now() - sentAt).toBeLessThan(30_000);
+      } finally {
+        worker.kill('SIGKILL');
+        await worker.exited;
+        await admin(`drop database if exists ${DB} with (force)`);
+      }
+    },
+    TIMEOUT_MS,
+  );
 });

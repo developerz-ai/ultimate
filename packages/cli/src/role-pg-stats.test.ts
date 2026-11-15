@@ -43,4 +43,28 @@ describe('unit · the scheduler pg stats sampler', () => {
     const { executor } = counting();
     expect(startRolePgStats(['web', 'worker'], 'external', executor, 20)).toBeNull();
   });
+
+  test('stop() waits out the sampling round in flight, so the pool never closes under it', async () => {
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const executor: PgExecutor = {
+      query: async <R>() => {
+        await held;
+        return [] as R[];
+      },
+    };
+    const stop = startRolePgStats(['scheduler'], 'external', executor, 60_000);
+    if (stop === null) return expect.unreachable('the scheduler started the sampler');
+    let stopped = false;
+    const stopping = stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(10);
+    expect(stopped).toBe(false);
+    release?.();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
 });
