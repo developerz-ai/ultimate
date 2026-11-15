@@ -50,13 +50,13 @@ export const SCRAPE_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s: `recover.ts`, `cdp-target.ts` and `html-target.ts`
- * throw it as core's own `NotImplementedError`, never a constructor of this package's. `X_ENV_MISSING` is core's too: a
- * declared secret with no value in the environment is a missing environment variable, not a
- * scraping concept needing its own code. No title is kept here for either — one code, one owner,
- * or the two copies drift.
+ * `X_ENV_MISSING` is `@ultimat3/core`'s: a declared secret with no value in the environment is a
+ * missing environment variable, not a scraping concept needing its own code. No title is kept here
+ * — one code, one owner, or the two copies drift. `X_NOT_IMPLEMENTED` left this list on
+ * 2026-11-15: no port method is refused any more (`port-complete.test.ts`), so nothing here
+ * raises it.
  */
-export const SCRAPE_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ENV_MISSING'] as const;
+export const SCRAPE_BORROWED_ERROR_CODES = ['X_ENV_MISSING'] as const;
 
 export const SCRAPE_ERROR_CODES = [
   ...SCRAPE_OWNED_ERROR_CODES,

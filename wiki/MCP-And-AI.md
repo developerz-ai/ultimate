@@ -639,7 +639,8 @@ export const summarize = llm({
 | Caching | semantic cache from [Caching and invalidation](Caching-And-Invalidation) |
 | Provider prompt caching | the provider keeps a request's stable prefix; on by default for `agent()`, off for `llm()` → [Agents](Agents#provider-prompt-caching) |
 | Tracing | one OTel span per call with model, tokens, cache hit, prompt version |
-| Fallback | ordered provider list per model; the provider that answered is on the span as `gen_ai.provider.name`, never silent. A refusal names a more capable model for the declaration to adopt — models are never swapped at runtime |
+| Fallback | ordered provider list per model; the provider that answered is on the span as `gen_ai.provider.name`, never silent. Across models only through a declared `fallbackModels` chain → [Model fallback](#model-fallback-fallbackmodels). A refusal names a more capable model for the declaration to adopt — never an automatic swap |
+| Provider parameters | `providerOptions: { openai: { top_p: 0.9 } }` — one bag per wire, keys screened → [Provider parameters](#provider-parameters-provideroptions) |
 | Money | `Money = { minor, currency }` — never a float → [Money](Money) |
 
 **A stream is the same action over a different transport, with one difference that is forced rather than chosen: there is no repair turn.** The non-streaming call retries once on a parse failure; a stream cannot, because the tokens are already on the reader's screen and a second answer is two answers to one question. So a stream yields **unvalidated** text increments plus one final `done` carrying the value that did satisfy `output`, and a schema disagreement is `X_LLM_STREAM_INVALID` naming the non-streaming call as the fix. A structured schema wants the non-streaming call.
@@ -663,6 +664,104 @@ and usage records are `JsonView`; a model's proposed edit against the original i
 → [UI components](UI-Components).
 
 Long or multi-call chains are `job`s with steps, so a model call that fails on step 4 retries step 4 only. See [Jobs and workflows](Jobs-And-Workflows).
+
+### Model fallback: `fallbackModels`
+
+**A second model is asked only when the first fails with a declared class, and only because the
+declaration named it.** `As of 2026-11`.
+
+```ts
+import { definePrompt, llm, t } from '@ultimat3/ai';
+import { allow } from '@ultimat3/policy';
+
+const digestPrompt = definePrompt<{ postId: string }>({
+  id: 'digest',
+  version: '1.0.0',
+  template: 'Summarise post {{postId}} in one sentence.',
+});
+
+export const digest = llm({
+  model: 'claude-sonnet-5-5',
+  fallbackModels: ['gpt-5.6-terra'], // tried in order; each one registerModel-ed
+  providerOptions: { openai: { top_p: 0.9 } }, // read only by a chat-completions provider
+  input: t.object({ postId: t.uuid }),
+  output: t.object({ summary: t.string }),
+  prompt: digestPrompt,
+  vars: ({ input }) => ({ postId: input.postId }),
+  policy: allow(),
+});
+```
+
+| Falls over (`MODEL_FALLBACK_ON`) | Read from |
+|---|---|
+| `rate_limited` | 429 |
+| `overloaded` | 529 |
+| `timeout` | 408, 504, `ETIMEDOUT` |
+| `unavailable` | any other 5xx, a refused or dropped socket, every provider's breaker open |
+
+Never on a 4xx, a refusal, a truncation, a budget refusal, an abort, or a model no provider lists:
+each fails the same way on every model. The verdict is reached after the gateway's provider retries
+for that model ran out, and only when **every** failure had a class.
+
+| Rule | Detail |
+|---|---|
+| billed per attempt | each model reserves its own estimate and settles on its own; the run meter (`meteredRun`, `meta.billed`) counts a failed model as an `unsettled` attempt, never as free |
+| one trace | the caller's span is the one parent; each model is an `ai.model.attempt` child with `gen_ai.request.model`, `ultimate.llm.fallback.index` and, on failure, `ultimate.llm.fallback.reason`. A call with no chain opens none |
+| visible | `GenerateResult.fallbacks` lists each failed model, its class and cause |
+| streams | fall over only before the first chunk reaches the reader; after it, the failure is thrown as it stands |
+| the chain | screened before any request: an unregistered id is `X_AI_MODEL_UNKNOWN`, a repeated one `X_AI_REQUEST_INVALID` |
+| all fail | one `X_AI_PROVIDER_UNAVAILABLE` naming every model, `a → b` |
+| `retry.timeBudgetMs` | one clock for the whole chain; a call that ran out of time does not fall over |
+
+### Provider parameters: `providerOptions`
+
+**A wire parameter the framework does not model passes through one typed bag per wire, screened
+key by key before any request.** The keys are the wire's own names. `As of 2026-11`.
+
+| Wire | Keys (`PROVIDER_OPTION_KEYS`) |
+|---|---|
+| `anthropic` | `metadata` (`{ user_id }`), `service_tier` (`'auto'`, `'standard_only'`) |
+| `openai` | `frequency_penalty`, `presence_penalty` (-2 to 2), `top_p` (0 to 1), `user`, `parallel_tool_calls`, `service_tier` (`'auto'`, `'default'`, `'flex'`, `'priority'`) |
+
+An unknown wire, an unknown key, a wrong type or an out-of-range number is `X_AI_REQUEST_INVALID`:
+at declaration on `llm()`, in the gateway for a raw `generate`/`stream`, and in each body builder for
+a direct provider call. Each provider sends its own wire's bag only, so one request may carry both
+when its `fallbackModels` cross formats. The bag is part of the response cache key. A key the
+framework sets itself (`temperature`, `seed`, `max_tokens`, `tools`, …) is not in the table.
+
+## Prompt caching on your own endpoint
+
+**An endpoint the built-in table does not name gets no cache mark until its provider declares
+one.** A self-hosted or company gateway speaking the OpenAI format says how it is told on its own
+provider, never in a process-wide registry: the provider already is the wire and the host. `As of
+2026-11`.
+
+```ts
+import { openAiProvider } from '@ultimat3/ai';
+
+export const internalProvider = openAiProvider({
+  baseUrl: 'https://llm.internal.example/v1',
+  models: ['family/large'],
+  promptCache: { rules: [{ model: 'family/', marks: 'parts', session: 'x-session-id' }] },
+});
+```
+
+| Step | What decides the marks for one request |
+|---|---|
+| 1. the provider's rows | `promptCache.rules`, first match by model-id prefix (`''` is every model) |
+| 2. the built-in table | `PROMPT_CACHE_RULES`: any Anthropic Messages endpoint, `openrouter.ai`, `api.openai.com` → [Agents](Agents#provider-prompt-caching) |
+| 3. nothing | no mark and no session field: a field a self-hosted server has never heard of can be a 400 |
+
+| Row field | `openAiProvider()` | `anthropicProvider()` |
+|---|---|---|
+| `marks` | `'parts'` (stable system part + the tail message's last part) or `'none'` | `'blocks'` or `'none'` |
+| `session` | `'x-session-id'` header, `'prompt_cache_key'` body field, or `'none'` | `'none'` only |
+
+A row the wire cannot speak — `blocks` on chat-completions, `parts` or a session on the Messages
+wire, a row that is not `{ model, marks, session }` — is `X_AI_REQUEST_INVALID` when the provider
+is built, never a 400 on every hinted call. The rows only say *how*; *whether* a call asks is still
+`promptCache` on the declaration (`agent()` `'auto'`, `llm()` `'off'`), and the budget reserves the
+cache-write rate exactly where a mark is sent.
 
 ## Agents, hives and agent jobs → [Agents](Agents)
 

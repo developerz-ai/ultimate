@@ -11,6 +11,8 @@
  */
 
 import { useT } from '@postly/i18n';
+import { assertCoded, useContext } from '@ultimat3/core';
+import { isEnabled } from '@ultimat3/flags';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
 import {
@@ -29,6 +31,7 @@ import type { JSX } from 'solid-js';
 import { useActor } from '../../../shared/actor';
 import { memberQueries } from '../../../shared/client';
 import { Layout, updateBannerIsland } from '../../layout';
+import { runHealthEnabled } from './health-flag';
 import { healthRange } from './health-range';
 import type { RunHealthRow } from './health-view';
 import { eventTrend, failureHalves, heatRows, successPercent } from './health-view';
@@ -59,6 +62,13 @@ export const config = defineRoute({
   // full load and keeps the old sheets, so a page is never left unstyled.
   budget: { js: '33.1kb' },
   load: async ({ url }): Promise<RunHealthData> => {
+    // The kill switch first: switched off, the page does not exist and neither read is sent.
+    assertCoded(
+      isEnabled(runHealthEnabled.key, useContext().actor),
+      'X_NOT_FOUND',
+      `/runs/health is switched off: the ${runHealthEnabled.key} flag answers false for this actor`,
+      `applyFlagSnapshot({ '${runHealthEnabled.key}': { default: true } })   # from @ultimat3/flags`,
+    );
     const actor = useActor();
     const now = new Date();
     const range = healthRange(url, { timeZone: actor.member.tz, now, label: (id) => id });

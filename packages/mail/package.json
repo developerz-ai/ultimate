@@ -25,7 +25,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./adapter": "./src/adapter.ts",
-    "./events": "./src/events.ts"
+    "./events": "./src/events.ts",
+    "./inbound": "./src/inbound.ts"
   },
   "files": [
     "src",
@@ -47,6 +48,7 @@
     "@ultimat3/i18n": "31.24.0",
     "@ultimat3/jobs": "31.24.0",
     "@ultimat3/schema": "31.24.0",
+    "@ultimat3/storage": "31.24.0",
     "@ultimat3/time": "31.24.0"
   }
 }

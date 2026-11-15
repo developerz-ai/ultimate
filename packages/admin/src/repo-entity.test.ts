@@ -323,3 +323,30 @@ describe('unit · adminEntitiesOf', () => {
     expect(adminEntitiesOf(mixed).map((found) => found.$name)).toEqual(['admin_repo_notes']);
   });
 });
+
+describe('unit · the full-text verb', () => {
+  test('offered only when the entity declares a search vector', () => {
+    const articles = entity('admin_repo_articles', {
+      columns: { id: uuid().primaryKey(), title: text({ max: 80 }).searchable() },
+    });
+    const own = database({ articles }, { driver: memoryDriver() });
+    expect(adminRepoFor(articles, own.articles).search).toBeFunction();
+    expect(repo.search).toBeUndefined();
+  });
+
+  test('the memory driver refuses it by name, which is what search falls back on', async () => {
+    const essays = entity('admin_repo_essays', {
+      columns: { id: uuid().primaryKey(), title: text({ max: 80 }).searchable() },
+    });
+    const own = adminRepoFor(essays, database({ essays }, { driver: memoryDriver() }).essays);
+    // A predicate is judged per row, so the refusal needs one to judge.
+    await own.create({ title: 'x' });
+    const asked = own.search?.({
+      term: 'x',
+      where: [],
+      sort: { field: 'id', direction: 'desc' },
+      limit: 5,
+    });
+    await expect(asked).rejects.toMatchObject({ code: 'X_SEARCH_IN_MEMORY' });
+  });
+});

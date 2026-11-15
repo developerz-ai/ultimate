@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpPageLike, CdpPdfOptions } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import { cdpTarget } from './cdp-target';
 import { fakePage } from './driver-fake';
 import type { ScrapePage } from './page';
@@ -25,6 +26,7 @@ const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> =>
 async function cdpPage(): Promise<{ readonly page: ScrapePage; readonly asked: CdpPdfOptions[] }> {
   const asked: CdpPdfOptions[] = [];
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => 'https://app.test/invoice/1',
     goto: () => Promise.resolve(undefined),
     content: () => Promise.resolve(''),
@@ -45,6 +47,7 @@ async function cdpPage(): Promise<{ readonly page: ScrapePage; readonly asked: C
   const target = await cdpTarget({
     page,
     browser: {
+      ...stubCookieJar(),
       newPage: () => Promise.resolve(page),
       target: () => fakeBrowserTarget().target,
       setCookie: () => Promise.resolve(),

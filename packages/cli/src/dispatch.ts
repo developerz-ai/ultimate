@@ -5,7 +5,7 @@
 // why: a synchronous bin probe at the one place a result is rendered; Bun has no path helpers.
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { setLogStream } from '@ultimat3/core';
+import { currentLogStream, setLogStream } from '@ultimat3/core';
 import { requireAppRoot, requireBunVersion } from './app-root';
 import { createHelpCommand } from './cmd-help';
 import { plannedCommandError, plannedCommandFor } from './cmd-planned';
@@ -166,6 +166,9 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     ...(options.invocation === undefined ? {} : { invocation: options.invocation }),
   };
 
+  // Put back in the `finally`: the stream is process-wide, so a dispatch that left `stderr` behind
+  // moved every later line of an embedding process — the next test file's, on a shared worker.
+  const callerStream = currentLogStream();
   try {
     // `--json` means fd 1 carries ONE document, and every command that boots an app logs through
     // core's module-scope `logger`, whose default writer is stdout: `x db migrate --json` printed
@@ -197,5 +200,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     const result = errorResult(args.command, error);
     sinkFor(result, options)(render(result, args.json, false, reader));
     return 1;
+  } finally {
+    setLogStream(callerStream);
   }
 }

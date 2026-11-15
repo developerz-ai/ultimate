@@ -105,6 +105,7 @@ export { SEMCONV, SEMCONV_METRICS, SEMCONV_VALUES } from '../instrument-semconv'
 export { callerStack, captureStatementStacks, resetStatementStacks } from '../instrument-stacks';
 export type { LogFields, Logger, LoggerOptions, LogLevel, RedactValueMatcher } from '../logger';
 export {
+  currentLogStream,
   isRedactedKey,
   LOG_LEVELS,
   logger,

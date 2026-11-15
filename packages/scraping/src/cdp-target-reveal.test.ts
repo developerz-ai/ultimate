@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import { cdpTarget } from './cdp-target';
 import { pageOverTarget } from './page-over-target';
 
@@ -26,6 +27,7 @@ const recordingPage = (): { readonly page: CdpPageLike; readonly evaluated: stri
     hitTarget: true,
   };
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => 'https://shop.test/o',
     goto: () => Promise.resolve(undefined),
     content: () => Promise.resolve(''),
@@ -49,6 +51,7 @@ const recordingPage = (): { readonly page: CdpPageLike; readonly evaluated: stri
 
 const pageOver = async (page: CdpPageLike) => {
   const browser: CdpBrowserLike = {
+    ...stubCookieJar(),
     newPage: () => Promise.resolve(page),
     target: () => fakeBrowserTarget().target,
     close: () => Promise.resolve(),

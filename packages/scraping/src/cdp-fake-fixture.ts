@@ -65,18 +65,19 @@ export interface FakeCdpPageInit {
   /**
    * What the accessibility tree answers, BY SELECTOR — the nodes `Accessibility.getPartialAXTree`
    * would compute for each match, in document order. Canned rather than derived from the markup,
-   * deliberately: a fake that read `role=` off the tag would be the offline driver's refusal
-   * re-implemented as a lie, and the point of this session is to exercise `cdp-a11y.ts`'s four
-   * protocol calls and its parse, not to compute a role.
+   * deliberately: the point of this session is to exercise `cdp-a11y.ts`'s four protocol calls and
+   * its parse, not to compute a role — the offline drivers' mapping is `html-a11y.ts`'s.
    */
   readonly accessibility?: Readonly<Record<string, readonly AxNode[]>>;
+  /** `blob:` URL → its contents: what the page's own `fetch` of a script-made download reads. */
+  readonly blobs?: Readonly<Record<string, string>>;
 }
 
 type Handlers = Map<string, ((payload: unknown) => void)[]>;
 
 export interface FakeCdpBrowser
   extends CdpBrowserLike,
-    Pick<FakeBrowserTarget, 'emitTargetRequest' | 'browserFetch'> {
+    Pick<FakeBrowserTarget, 'emitTargetRequest' | 'emitDownload' | 'browserFetch'> {
   /** Fire a request event, as a real browser would when the page fetches a subresource. */
   emitRequest(url: string, resourceType: string): void;
   /**
@@ -291,6 +292,11 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
         return JSON.stringify(storage);
       }
       if (expression.includes('navigator.userAgent')) return init.userAgent ?? 'fake-agent';
+      const blob = /fetch\(("blob:[^"]*")\)/.exec(expression)?.[1];
+      if (blob !== undefined) {
+        const contents = init.blobs?.[JSON.parse(blob) as string];
+        return contents === undefined ? undefined : btoa(contents);
+      }
       return await evaluateIn(pageDocument, expression);
     },
     click: (selector: string) => {
@@ -371,6 +377,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     newPage: () => Promise.resolve(page),
     target: () => browserTarget.target,
     emitTargetRequest: (...args) => browserTarget.emitTargetRequest(...args),
+    emitDownload: (download) => browserTarget.emitDownload(download),
     browserFetch: browserTarget.browserFetch,
     cookies: () => Promise.resolve(cookies),
     setCookie: (...next: readonly unknown[]) => {

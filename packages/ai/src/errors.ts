@@ -5,6 +5,7 @@ import { UltimateError } from '@ultimat3/core';
 // The codes, their titles and the single registration call are `./error-codes`, imported here for
 // that side effect.
 import './error-codes';
+import type { ModelFallback, ModelFallbackClass } from './model-fallback';
 
 // No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
 // which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
@@ -15,6 +16,9 @@ import './error-codes';
 
 /** Every configured provider refused or errored. Carries what each one said. */
 export class AiProviderUnavailableError extends UltimateError {
+  readonly fallback: ModelFallbackClass | undefined;
+  readonly fellOver: readonly ModelFallback[] | undefined;
+
   constructor(input: {
     model: string;
     attempts: readonly string[];
@@ -26,6 +30,13 @@ export class AiProviderUnavailableError extends UltimateError {
      * classification, so the retry vocabulary stays in one file.
      */
     readonly unserved?: boolean;
+    /**
+     * The declared class this failure falls over on (`./model-fallback`), set by the retry loop only
+     * when EVERY collected failure had one. Absent: the next model in a chain is not asked.
+     */
+    readonly fallback?: ModelFallbackClass | undefined;
+    /** Set when a whole `fallbackModels` chain failed: each model's attempt, for the run meter. */
+    readonly fellOver?: readonly ModelFallback[] | undefined;
   }) {
     super({
       code: 'X_AI_PROVIDER_UNAVAILABLE',
@@ -33,6 +44,8 @@ export class AiProviderUnavailableError extends UltimateError {
       fix: 'check ai.providers in app.config.ts and the provider API key env var',
       retry: input.unserved === true ? 'terminal' : undefined,
     });
+    this.fallback = input.fallback;
+    this.fellOver = input.fellOver;
   }
 }
 

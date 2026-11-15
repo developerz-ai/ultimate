@@ -481,8 +481,14 @@ Reads are audited too, and on both branches: `adminDetail` keys its entry on the
 `adminList` and `adminSearch` key theirs on the table (`entityId: null`), and a refusal is an
 entry of its own. `AdminSearchResult.audit` carries one entry per resource the call decided
 about — searched or refused — so a jump box that walked every readable entity leaves a trace.
-Search is the entity's `contains` per text field — case-insensitive, the `ilike` a `gin_trgm_ops`
-index serves — at most three statements per resource, resources read four at a time.
+Search asks an entity that declares `.searchable()` columns through its vector first —
+`search_tsv`, the GIN index, one statement, `matchedField: 'search_tsv'` — then fills a short page
+with the entity's `contains` per text field — case-insensitive, the `ilike` a `gin_trgm_ops` index
+serves — so a whole word and a prefix ("ali" → "Alice") both find the row. At most 1 + 3
+statements per resource, resources read four at a time, the row scope on every one. Hits are in
+the resource's `defaultSort`, not ranked. A custom `repo:` opts in with `search(query)`
+(`AdminRepo.search`, optional); the memory driver refuses a vector match (`X_SEARCH_IN_MEMORY`),
+so there `contains` alone answers.
 
 ## AI-first
 

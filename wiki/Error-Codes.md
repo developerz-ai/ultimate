@@ -773,6 +773,8 @@ No secret and no signature reaches a `cause`, a `fix` or a `meta`, and a URL is 
 | `X_MAIL_KEY_MISSING` | a mail rendered a key or slot with no value in its locale | send() resolved a catalog key the locale does not define, a catalog value still holding a placeholder, or a {slot} with no value, so nothing left | `x i18n sync <locale>` — then translate the keys in meta.keys |
 | `X_MAIL_PREVIEW_INVALID` | a mail's declared preview fails its own input schema | defineMail was given a preview the mail's input schema refuses, so the one render a person checks a template by is of data the mail can never be sent | `x mail preview <id> --json` — names the field; then correct preview in the defineMail call to match input |
 | `X_MAIL_PREVIEW_MISSING` | this mail declares no preview | x mail preview, or a render of every declared preview, was asked for a mail whose defineMail declares no preview data | `x mail preview <id> --json` — then add preview: { ... } to that mail's defineMail call, shaped like its input |
+| `X_MAIL_INBOUND_MALFORMED` | an inbound message is not MIME this parser reads | the provider delivered a message whose MIME structure is broken, truncated or uses a form the in-tree parser refuses | `x jobs list --state dead --json` — the dead row names the problem; answer the sender out of band |
+| `X_MAIL_INBOUND_TOO_LARGE` | an inbound message crosses a declared bound | an inbound message is larger, deeper, or carries more parts or attachments than inboundMail({ limits }) allows | `inboundMail({ limits: { maxBytes: 20_971_520 } })` — raise only the bound named in meta.limit |
 
 ## Notifications
 

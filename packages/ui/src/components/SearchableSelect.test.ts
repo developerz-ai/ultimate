@@ -134,7 +134,7 @@ describe('SearchableSelect under a real Solid runtime', () => {
       one(withAttr(nodes(), 'role', 'combobox'), 'role="combobox"');
     // The field's ref, as Solid would hand it once the swap rendered it.
     attachRef(one(withAttr(nodesOf(output), 'role', 'combobox'), 'role="combobox"'), field);
-    return { nodes, combobox, focused, form, validity, dispose: () => dispose() };
+    return { nodes, combobox, field, focused, form, validity, dispose: () => dispose() };
   };
 
   test('after the effect: a combobox, focus kept on the swap, the value posted hidden', async () => {
@@ -217,6 +217,48 @@ describe('SearchableSelect under a real Solid runtime', () => {
     fire(view.combobox(), 'onInput', { currentTarget: { value: 'ber' } });
     fire(view.combobox(), 'onKeyDown', keydown('Enter'));
     expect(view.validity.at(-1)).toBe('');
+    view.dispose();
+  });
+
+  test('an open listbox is named by the label that names the field, minting it an id if bare', () => {
+    const view = mount({ name: 'tz', options: ZONES });
+    const label = new FakeElement('label');
+    const named = new FakeElement('label', { id: 'tz-label' });
+    Object.assign(view.field, { labels: [named, label] });
+    const listbox = (): RenderNode => one(withAttr(view.nodes(), 'role', 'listbox'), 'listbox');
+    // Closed it is `hidden`, out of the tree: nothing to name, and no id is minted for it.
+    expect(listbox().props['aria-labelledby']).toBeUndefined();
+    fire(view.combobox(), 'onKeyDown', keydown('ArrowDown'));
+    const ids = String(listbox().props['aria-labelledby']).split(' ');
+    expect(ids[0]).toBe('tz-label');
+    expect(ids[1]).toBe(label.getAttribute('id') ?? expect.unreachable('the bare label got no id'));
+    view.dispose();
+  });
+
+  test('an aria-label names the listbox itself, and no label is touched', () => {
+    const view = mount({ name: 'tz', options: ZONES, 'aria-label': 'Time zone' });
+    const label = new FakeElement('label');
+    Object.assign(view.field, { labels: [label] });
+    fire(view.combobox(), 'onKeyDown', keydown('ArrowDown'));
+    const listbox = one(withAttr(view.nodes(), 'role', 'listbox'), 'listbox');
+    expect(listbox.props['aria-label']).toBe('Time zone');
+    expect(listbox.props['aria-labelledby']).toBeUndefined();
+    expect(label.getAttribute('id')).toBeNull();
+    view.dispose();
+  });
+
+  test('an option is named by its label alone; its description describes it', () => {
+    const options = [{ value: 'utc', label: 'UTC', description: 'Coordinated Universal Time' }];
+    const view = mount({ name: 'tz', options, 'aria-label': 'Zone' });
+    fire(view.combobox(), 'onKeyDown', keydown('ArrowDown'));
+    const option = one(withAttr(view.nodes(), 'role', 'option'), 'option');
+    const label = one(withAttr(view.nodes(), 'id', String(option.props['aria-labelledby'])), 'l');
+    const description = one(
+      withAttr(view.nodes(), 'id', String(option.props['aria-describedby'])),
+      'description',
+    );
+    expect(label.props['children']).toBe('UTC');
+    expect(description.props['children']).toBe('Coordinated Universal Time');
     view.dispose();
   });
 

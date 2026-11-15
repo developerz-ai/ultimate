@@ -16,6 +16,8 @@ import {
   tryUseContext,
 } from '@ultimat3/core';
 import { AiProviderUnavailableError } from './errors';
+import type { ModelFallbackClass } from './model-fallback';
+import { transportFallbackClass } from './model-fallback';
 import type { ModelId } from './models';
 import type { GenerateResult, Provider } from './provider';
 
@@ -112,20 +114,37 @@ export interface AttemptInput {
   readonly random: Random | undefined;
   readonly gateOf: (provider: Provider) => Breaker | undefined;
   readonly call: (provider: Provider) => Promise<GenerateResult>;
+  /** When the whole call began — a `fallbackModels` chain shares one `timeBudgetMs`. */
+  readonly startedAt?: number;
 }
 
 /**
  * Try every provider that serves the model, retrying each on a retryable failure with full-jitter
- * backoff, skipping one whose breaker is open — no call, no sleep. Fallback is across PROVIDERS
- * serving one model, never across models: a silent model swap changes what answered and what it
- * cost. The provider that answered is stamped onto the result.
+ * backoff, skipping one whose breaker is open — no call, no sleep. This loop falls back across
+ * PROVIDERS serving one model, never across models: a model swap is only ever the request's own
+ * declared `fallbackModels` (`./model-fallback`), which this loop's thrown verdict feeds. The
+ * provider that answered is stamped onto the result.
  */
 export async function attemptProviders(input: AttemptInput): Promise<GenerateResult> {
   const { model, retry } = input;
   const failures: string[] = [];
+  // The model chain's verdict (`./model-fallback`): the first declared class seen, and whether
+  // EVERY failure had one — a single deterministic answer means the next model is not asked.
+  let fallback: ModelFallbackClass | undefined;
+  let classed = true;
+  const classify = (reason: ModelFallbackClass | undefined): void => {
+    if (reason === undefined) classed = false;
+    else fallback ??= reason;
+  };
+  const unavailable = (): AiProviderUnavailableError =>
+    new AiProviderUnavailableError({
+      model,
+      attempts: failures,
+      fallback: classed ? fallback : undefined,
+    });
   // Read once, and only compared when a budget is set: core's `retryLoop` rule — a wait that would
-  // end past `timeBudgetMs` is never started, across every provider of this call.
-  const startedAt = systemClock.monotonic();
+  // end past `timeBudgetMs` is never started, across every provider (and model) of this call.
+  const startedAt = input.startedAt ?? systemClock.monotonic();
   const overruns = (delayMs: number): boolean =>
     retry.timeBudgetMs !== undefined &&
     systemClock.monotonic() - startedAt + delayMs > retry.timeBudgetMs;
@@ -141,6 +160,7 @@ export async function attemptProviders(input: AttemptInput): Promise<GenerateRes
     const ticket = gate?.admit();
     if (gate !== undefined && ticket === undefined) {
       failures.push(`${provider.name}: breaker open`);
+      classify('unavailable');
       continue;
     }
     for (let attempt = 1; attempt <= retry.attempts; attempt += 1) {
@@ -162,6 +182,7 @@ export async function attemptProviders(input: AttemptInput): Promise<GenerateRes
         // `renderThrowable`: this line becomes a `cause`, and a renderer that throws would replace
         // the coded refusal with a `TypeError`. It bounds a provider's 1 MB body too.
         failures.push(`${provider.name}#${attempt}: ${renderThrowable(error)}`);
+        classify(transportFallbackClass(error));
         if (!isRetryable(error)) {
           // A 400 is the provider answering: it is up, and a 400 never opens its breaker.
           gate?.succeeded(ticket);
@@ -174,13 +195,15 @@ export async function attemptProviders(input: AttemptInput): Promise<GenerateRes
         const delayMs = backoffMs(retry, attempt, input.random);
         if (overruns(delayMs)) {
           exhausted(gate, ticket);
-          throw new AiProviderUnavailableError({ model, attempts: failures });
+          // The call's time is spent: the next model would only spend more of it.
+          classed = false;
+          throw unavailable();
         }
         await input.sleep(delayMs);
       }
     }
   }
-  throw new AiProviderUnavailableError({ model, attempts: failures });
+  throw unavailable();
 }
 
 /**
@@ -209,6 +232,7 @@ export function admittedProvider(
   throw new AiProviderUnavailableError({
     model,
     attempts: candidates.map((p) => `${p.name}: breaker open`),
+    fallback: 'unavailable',
   });
 }
 

@@ -104,30 +104,25 @@ export interface CdpPageLike {
   /**
    * The browser's own network condition — `Network.emulateNetworkConditions` under CDP.
    *
-   * OPTIONAL, read defensively, for `CdpRequestLike.method` and `CdpBrowserLike.cookies`' reason:
-   * this file is the shape of somebody ELSE's object, and a provider SDK or a launcher that
-   * predates the method must still satisfy the port. It does not go unwired by being optional —
-   * `cdp-target.ts` refuses BY NAME with `X_NOT_IMPLEMENTED` and a fix when a launcher lacks it,
-   * exactly as `cookies()` does, so the gap is a coded refusal rather than a silent no-op.
-   *
-   * Required instead would cost every existing launcher, every provider SDK and every test double
-   * a type error for a capability the port cannot make them have.
+   * REQUIRED, like every verb `ScrapeTarget` forwards to: until 2026-11-15 this and six siblings
+   * were optional and `cdp-target.ts` refused each by name at the CALL when a launcher lacked it —
+   * a port method the driver could not honour, found on the first run that reached the verb
+   * rather than at the build. Every puppeteer-core this package supports carries all of them, so a
+   * launcher without one is now a type error at `localBrowser({ launcher })`.
    */
-  setOfflineMode?(enabled: boolean): Promise<void>;
+  setOfflineMode(enabled: boolean): Promise<void>;
   /**
    * The browser's own media features — `Emulation.setEmulatedMedia` under CDP. `prefers-color-scheme`
    * is the one this package sets; the array shape is the library's and is restated, not narrowed,
    * because this file is the shape of somebody ELSE's object.
    *
-   * OPTIONAL, read defensively, for `setOfflineMode`'s reason: a provider SDK or a launcher that
-   * predates the method must still satisfy the port. It does not go unwired by being optional —
-   * `cdp-target.ts` refuses BY NAME with `X_NOT_IMPLEMENTED` and a fix when a launcher lacks it.
+   * REQUIRED, for `setOfflineMode`'s reason.
    *
    * `name` stays a bare `string`. A union of the features this package sets would be this file
    * naming somebody else's vocabulary, and a launcher accepting more would then fail to satisfy
    * the port for no reason — the argument `on(event: string, …)` already makes.
    */
-  emulateMediaFeatures?(
+  emulateMediaFeatures(
     features: readonly { readonly name: string; readonly value: string }[],
   ): Promise<void>;
   /**
@@ -142,33 +137,29 @@ export interface CdpPageLike {
    * the library's own types for them.
    */
   on(event: string, handler: (payload: unknown) => void): unknown;
-  /**
-   * OPTIONAL, read defensively, for `setOfflineMode`'s reason: a provider SDK or a launcher that
-   * predates the member must still satisfy the port. `cdp-target.ts` refuses BY NAME with
-   * `X_NOT_IMPLEMENTED` when a launcher lacks it — a chord on a page with no keyboard is a coded
-   * refusal, never a silent no-op that leaves a command palette closed and a test green.
-   */
-  readonly keyboard?: CdpKeyboardLike | undefined;
-  /** `page.focus(selector)`. OPTIONAL for `keyboard`'s reason, and refused by name when absent. */
-  focus?(selector: string): Promise<void>;
+  /** REQUIRED, for `setOfflineMode`'s reason: a chord on a page with no keyboard cannot be sent. */
+  readonly keyboard: CdpKeyboardLike;
+  /** `page.focus(selector)`. REQUIRED, for `setOfflineMode`'s reason. */
+  focus(selector: string): Promise<void>;
   /**
    * `page.evaluateOnNewDocument(expression)`: a script the browser runs in EVERY document this
    * page navigates to, before any of the document's own scripts — `Page.addScriptToEvaluateOnNewDocument`
    * under CDP. It is the only moment that beats an inlined boot script, which is what a
    * storage-seeded theme choice needs (`ScrapePage.prepare`). The string form, for `evaluate`'s
-   * reason. OPTIONAL for `keyboard`'s reason, and refused by name when absent.
+   * reason. REQUIRED, for `setOfflineMode`'s reason.
    */
-  evaluateOnNewDocument?(expression: string): Promise<unknown>;
+  evaluateOnNewDocument(expression: string): Promise<unknown>;
   /**
    * A raw protocol session, for the one read this package makes that the library has no method
-   * for: the accessibility tree (`Accessibility.getPartialAXTree`). OPTIONAL for `keyboard`'s
-   * reason, and refused by name when absent.
+   * for: the accessibility tree (`Accessibility.getPartialAXTree`). REQUIRED, for
+   * `setOfflineMode`'s reason.
    */
-  createCDPSession?(): Promise<CdpSessionLike>;
+  createCDPSession(): Promise<CdpSessionLike>;
   /**
    * `page.authenticate(credentials)`: answers the PROXY's own auth challenge. It is the only way a
    * launched browser dials a credentialed exit — `--proxy-server` takes no userinfo, and one
-   * written there would sit in the process list. OPTIONAL for `keyboard`'s reason; a credentialed
+   * written there would sit in the process list. OPTIONAL — unlike the verbs above, no
+   * `ScrapeTarget` member forwards to it; a credentialed
    * exit on a launcher without it is `X_SCRAPE_EGRESS_UNSUPPORTED`, never a direct connection.
    */
   authenticate?(credentials: {
@@ -212,9 +203,12 @@ export interface CdpBrowserLike {
    * browser a scraped site controls is advisory. A launcher without it does not compile.
    */
   target(): CdpBrowserTargetLike;
-  /** Present on a browser that owns a cookie jar. Absent ones answer `X_NOT_IMPLEMENTED`. */
-  cookies?(): Promise<unknown>;
-  setCookie?(...cookies: readonly unknown[]): Promise<void>;
+  /**
+   * The browser's cookie jar. REQUIRED, for `CdpPageLike.setOfflineMode`'s reason: `cookies()`,
+   * `session()` and `restore()` read or write it, and an absent jar was a refusal at the call.
+   */
+  cookies(): Promise<unknown>;
+  setCookie(...cookies: readonly unknown[]): Promise<void>;
   /** Ends the browser. For an attached session this is what stops the REMOTE half. */
   close(): Promise<void>;
   /** Drops the local connection and leaves the remote browser running. */

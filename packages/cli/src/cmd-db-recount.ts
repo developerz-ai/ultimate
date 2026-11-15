@@ -6,11 +6,14 @@
 import { finiteCount } from '@ultimat3/core';
 import type { CounterDescriptionLike, DbClient } from '@ultimat3/db';
 import {
+  baseClient,
   CROSS_TENANT_SETTING,
+  dbClientInstalled,
   recountBatchSql,
   recountDriftBatchSql,
   recountLockSql,
   recountWindowSql,
+  setDbClient,
   setLocal,
   withTransaction,
 } from '@ultimat3/db';
@@ -153,6 +156,9 @@ async function recount(ctx: CommandContext, root: string): Promise<CommandResult
       });
     }
   }
+  // `startDb` installs its client as the process's `db()`, and this command closes it: what was
+  // there before goes back (`undefined`: lazy construction), as `db-diagnostics.ts` does.
+  const previous = dbClientInstalled() ? baseClient() : undefined;
   const started = startDb(services, ctx.env);
   try {
     const report = await recountInBatches(started.client, parent.$table, counter, { write });
@@ -186,6 +192,7 @@ async function recount(ctx: CommandContext, root: string): Promise<CommandResult
       },
     };
   } finally {
+    setDbClient(previous);
     await started.client.close();
     await started.replica?.close();
   }

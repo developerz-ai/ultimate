@@ -294,10 +294,17 @@ drives all six through a frame on all three drivers. The one thing an offline dr
 NAVIGATE a frame: a recorded frame is one static document, so a click inside one moves nothing
 (and, in particular, never moves the parent).
 
-**`page.offline()` is set on a browser or refused by name.** The offline drivers answer
-`X_NOT_IMPLEMENTED` rather than resolving: patching `fetch` in a test process cannot reach a
-browser's own requests, so a driver that quietly answered "done" would let "a like taken offline is
-queued" pass against an app that was online for the whole test.
+**`page.offline()` cuts a network on every driver, never a resolved no-op.** The browser driver
+sets the browser's own condition; the offline drivers fail every navigation while it is set
+(`X_SCRAPE_BROWSER_UNREACHABLE`, what a browser's failed navigation carries). Patching `fetch` in a
+test process cannot reach a browser's own requests, and a driver that quietly answered "done" would
+let "a like taken offline is queued" pass against an app that was online for the whole test.
+
+**No page verb is `X_NOT_IMPLEMENTED` on any driver.** `download()` takes the bytes off the wire
+(`cdp-download.ts`, local and remote alike); `accessibility()` offline is the HTML-AAM mapping of
+the markup (`html-a11y.ts`) and lives on `ScrapePage` only — `ScrapeFrame` and `ScrapeFrameTarget`
+(`FrameRef.target`) carry no page-wide verb. `CdpPageLike`/`CdpBrowserLike` require every verb the
+target forwards to. `port-complete.test.ts` calls every port member on every driver.
 
 **`page.colorScheme()` sets the INPUT to a theme decision, never its outcome.** An attribute on the
 document — `data-theme`, `class="dark"` — is the outcome, and the component owns it: one that
@@ -495,8 +502,9 @@ interface MyOptions {
   readonly endpoint: string;
 }
 
-// Implement `ScrapeTarget` — twelve methods, all driver-blind — and the vocabulary above it,
-// actionability and frame re-resolution included, comes from `pageOverTarget` unchanged.
+// Implement `ScrapeTarget` — every member, all driver-blind; a frame is a `ScrapeFrameTarget` —
+// and the vocabulary above it, actionability and frame re-resolution included, comes from
+// `pageOverTarget` unchanged.
 declare function myTarget(options: MyOptions, init: SessionInit): Promise<ScrapeTarget>;
 declare function myHttp(target: ScrapeTarget, init: SessionInit): ScrapeHttp;
 

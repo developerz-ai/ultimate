@@ -1,13 +1,14 @@
 // `ScrapeTarget` over a real browser, through the structural CDP port. Everything driver-specific
 // in this package lives here and in `driver-cdp.ts`; the vocabulary above it does not change.
 
-import { isUltimateError, NotImplementedError } from '@ultimat3/core';
+import { isUltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
 import { browserRecord } from './browser-record';
 import { axNodesFor } from './cdp-a11y';
 import type { CdpArmInit } from './cdp-arm';
 import { arm, armBrowser } from './cdp-arm';
+import { downloadCatcher } from './cdp-download';
 import type { CdpBrowserLike, CdpFrameLike } from './cdp-port';
 import {
   clearExpression,
@@ -30,6 +31,7 @@ import type {
   PdfOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
+  ScrapeFrameTarget,
   ScrapeTarget,
 } from './target';
 
@@ -51,34 +53,30 @@ const cookieSchema = t.array(
 ) as unknown as StandardSchemaV1<unknown, ScrapeCookie[]>;
 
 /**
- * The failures `guard()` must NOT re-label. Two codes, each because a SECOND attempt reaches the
- * identical answer — never because the error looked coded.
+ * The failures `guard()` must NOT re-label: `X_VALIDATION_FAILED`, because a SECOND attempt
+ * reaches the identical answer — never because the error looked coded. The browser ANSWERED, and
+ * the answer did not match the shape this driver reads it with; the page is what it is, and
+ * attempt five reads the same DOM.
  *
- * | Code | Why a retry cannot change it |
- * |---|---|
- * | `X_NOT_IMPLEMENTED` | a fact about the launcher's own shape. A browser cannot produce it; only this file's own `NotImplementedError` refusals can, and the method is still missing on attempt five |
- * | `X_VALIDATION_FAILED` | the browser ANSWERED, and the answer did not match the shape this driver reads it with. The page is what it is; attempt five reads the same DOM |
- *
- * Both were re-labelled `X_SCRAPE_BROWSER_UNREACHABLE`, which `errors.ts` registers `retryable`,
- * so each spent the whole retry policy — five browser launches, five arrivals at a login — while
- * telling the operator the browser went away about a browser that was answering perfectly.
+ * It was re-labelled `X_SCRAPE_BROWSER_UNREACHABLE`, which `errors.ts` registers `retryable`, so it
+ * spent the whole retry policy — five browser launches, five arrivals at a login — while telling
+ * the operator the browser went away about a browser that was answering perfectly.
+ * `X_NOT_IMPLEMENTED` sat here too until 2026-11-15, for this file's refusals of a launcher that
+ * lacked a method; `CdpPageLike` now requires every one, so nothing here raises it.
  *
  * Every OTHER coded error stays wrapped, deliberately. `thrown instanceof UltimateError` is the
  * naive version of this check and it is wrong: an `X_SCRAPE_TIMEOUT` raised while the socket was
  * already dead would then arrive unwrapped, and "the browser went away mid-run" is the frame that
  * makes a disconnect legible — which is the whole reason this wrapper exists.
  *
- * The half this package cannot close: both codes belong to `@ultimat3/core`/`@ultimat3/schema` and
- * NEITHER is classified, so `classifyThrown` reads them as unclassified and the job's attempt
+ * The half this package cannot close: the code belongs to `@ultimat3/schema` and is NOT
+ * classified, so `classifyThrown` reads them as unclassified and the job's attempt
  * count still governs. Passing them through stops the wrong TITLE and the false `retryable`
  * claim; making them terminal is a `registerErrorRetry` beside the code that declares it.
  *
  * `isUltimateError`, not `instanceof`: the brand survives a duplicated module instance.
  */
-const PASSED_THROUGH_CODES: ReadonlySet<string> = new Set([
-  'X_NOT_IMPLEMENTED',
-  'X_VALIDATION_FAILED',
-]);
+const PASSED_THROUGH_CODES: ReadonlySet<string> = new Set(['X_VALIDATION_FAILED']);
 
 const isStructuralRefusal = (thrown: unknown): boolean =>
   isUltimateError(thrown) && PASSED_THROUGH_CODES.has(thrown.code);
@@ -108,7 +106,8 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
   const pageErrors = boundedRing<PageError>();
   const crashed: { value: string | undefined } = { value: undefined };
   await arm(init, { network, console: console_, pageErrors, crashed });
-  await armBrowser(init, network);
+  const downloads = downloadCatcher({ page: init.page, clock: init.clock });
+  await downloads.arm(await armBrowser(init, network, downloads.capture));
   let pendingStorage: SessionSnapshot | undefined;
 
   const originOf = (url: string): string => {
@@ -158,8 +157,9 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     }
   };
 
-  const frameTarget = (frame: CdpFrameLike, parent: ScrapeTarget): ScrapeTarget => ({
-    ...parent,
+  // The FRAME's verbs and nothing else: `ScrapeFrameTarget` has no page-wide member, so nothing
+  // here can answer for the parent document by being inherited from it.
+  const frameTarget = (frame: CdpFrameLike, parent: ScrapeTarget): ScrapeFrameTarget => ({
     url: () => frame.url(),
     content: () => guard('content', () => frame.content()),
     query: (selector, options) =>
@@ -191,26 +191,14 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('focus', async () => {
         await frame.evaluate(focusExpression(selector));
       }),
-    // `Accessibility.getPartialAXTree` is addressed by backend node id and `DOM.querySelectorAll`
-    // by a document's node id, so a frame read needs the frame's own document — a second
-    // `DOM.getDocument` scoped by frame id that `cdp-a11y.ts` does not perform. Refused by name
-    // rather than answered from the PARENT document, which is what the spread alone would do.
-    accessibility: (_selector, _max): Promise<readonly AxNode[]> =>
-      Promise.reject(
-        new NotImplementedError({
-          cause:
-            'accessibility() on a frame of the puppeteer driver is not implemented by this driver',
-          fix: 'read the accessibility tree through the page — page.accessibility(selector) — which covers the top-level document only',
-        }),
-      ),
   });
 
   const target: ScrapeTarget = {
     driver: CDP_DRIVER,
     console: console_,
     network,
-    // Shared with every frame target below, through the spread: an exception is the PAGE's, and a
-    // per-frame ring would hide a throw from an iframe behind whichever handle the caller held.
+    // The PAGE's alone: an exception is the page's, and a per-frame ring would hide a throw from an
+    // iframe behind whichever handle the caller held — so no frame target carries one.
     pageErrors,
     url: () => init.page.url(),
     goto: (url: string, options: GotoOptions) =>
@@ -242,12 +230,6 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       const { modifiers, key } = parseKeyChord(chord);
       await guard('press', async () => {
         const keyboard = init.page.keyboard;
-        if (keyboard === undefined) {
-          throw new NotImplementedError({
-            cause: 'press() on a CDP page with no keyboard is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes page.keyboard, or dispatch the key from the app under test instead of the browser',
-          });
-        }
         // Down in the order written, the key, then up in REVERSE — the order a hand releases
         // them, and the order the browser's own `press` with modifiers performs. `.call`-free:
         // `keyboard` is read as an object and its methods are called through it.
@@ -261,27 +243,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     },
     focus: (selector: string): Promise<void> =>
       guard('focus', async () => {
-        const focus = init.page.focus;
-        if (typeof focus !== 'function') {
-          throw new NotImplementedError({
-            cause: 'focus() on a CDP page with no focus() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes page.focus(), or click the element instead',
-          });
-        }
-        // `.call`, for `setColorScheme`'s reason: the member is read off the object.
-        await focus.call(init.page, selector);
+        await init.page.focus(selector);
       }),
     accessibility: (selector: string, max: number): Promise<readonly AxNode[]> =>
       guard('accessibility', async () => {
-        const createSession = init.page.createCDPSession;
-        if (typeof createSession !== 'function') {
-          throw new NotImplementedError({
-            cause:
-              'accessibility() on a CDP page with no createCDPSession() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes page.createCDPSession(), or assert on the markup with page.query() — which reads attributes, not what the browser computed',
-          });
-        }
-        const session = await createSession.call(init.page);
+        const session = await init.page.createCDPSession();
         try {
           return await axNodesFor(session, selector, max);
         } finally {
@@ -290,46 +256,15 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       }),
     setOfflineMode: (enabled: boolean): Promise<void> =>
       guard('setOfflineMode', async () => {
-        const source = init.page as { setOfflineMode?: (value: boolean) => Promise<void> };
-        if (typeof source.setOfflineMode !== 'function') {
-          throw new NotImplementedError({
-            cause:
-              'setOfflineMode() on a CDP page with no setOfflineMode() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes page.setOfflineMode(), or drive the condition from the app under test instead of the browser',
-          });
-        }
-        await source.setOfflineMode(enabled);
+        await init.page.setOfflineMode(enabled);
       }),
     setColorScheme: (scheme: ColorScheme): Promise<void> =>
       guard('setColorScheme', async () => {
-        // `CdpPageLike` already declares the member optional, so it is READ, never re-declared in
-        // a local cast: a second copy of somebody else's shape is a copy that can drift from the
-        // seam it is standing in for (axiom 2). `setOfflineMode` above still casts and is the
-        // older spelling.
-        const emulate = init.page.emulateMediaFeatures;
-        if (typeof emulate !== 'function') {
-          throw new NotImplementedError({
-            cause:
-              'setColorScheme() on a CDP page with no emulateMediaFeatures() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes page.emulateMediaFeatures(), or have the page under test set its own theme',
-          });
-        }
-        // `.call`, because the member is read off the object: an unbound method loses `this` and
-        // puppeteer's own `Page` needs it.
-        await emulate.call(init.page, colorSchemeFeatures(scheme));
+        await init.page.emulateMediaFeatures(colorSchemeFeatures(scheme));
       }),
     prepare: (expression: string): Promise<void> =>
       guard('prepare', async () => {
-        // Read off the object and called through it, for `setColorScheme`'s reason.
-        const evaluateOnNewDocument = init.page.evaluateOnNewDocument;
-        if (typeof evaluateOnNewDocument !== 'function') {
-          throw new NotImplementedError({
-            cause:
-              'prepare() on a CDP page with no evaluateOnNewDocument() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes page.evaluateOnNewDocument(), or seed the state from the app under test instead of the browser',
-          });
-        }
-        await evaluateOnNewDocument.call(init.page, expression);
+        await init.page.evaluateOnNewDocument(expression);
       }),
     screenshot: (options: CaptureOptions) =>
       guard('screenshot', async () => {
@@ -348,32 +283,14 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
           : shot;
       }),
     pdf: (options: PdfOptions) => guard('pdf', () => init.page.pdf(printOptionsOf(options))),
-    cookies: () =>
-      guard('cookies', async () => {
-        const source = init.browser as { cookies?: () => Promise<unknown> };
-        if (typeof source.cookies !== 'function') {
-          throw new NotImplementedError({
-            cause:
-              'cookies() on a CDP browser with no cookies() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes browser.cookies(), or read them with page.evaluate("document.cookie")',
-          });
-        }
-        return parse(cookieSchema, await source.cookies());
-      }),
-    // Honest stub: correct types and one labelled `X_NOT_IMPLEMENTED`. A real one needs
-    // `Browser.setDownloadBehavior` over a raw CDP session plus a directory watch, and a
-    // half-written version that silently returned empty bytes is worse than this line.
-    //
-    // REJECTS rather than throws: the method is typed `Promise<ScrapeDownloadFile>` and every
-    // caller of a promise-typed method handles its failure with `.catch()` or an `await` inside a
-    // `try` — a synchronous `throw` jumps over the first of those entirely.
-    download: (_options): Promise<ScrapeDownloadFile> =>
-      Promise.reject(
-        new NotImplementedError({
-          cause: 'download() on the puppeteer driver is not implemented by this driver',
-          fix: 'fetch the file inside the page — page.evaluate("fetch(url).then(r => r.text())") — or run this scrape on fixtureBrowser(), whose download() is complete',
-        }),
-      ),
+    cookies: () => guard('cookies', async () => parse(cookieSchema, await init.browser.cookies())),
+    // OUTSIDE `guard()`, after `live()`: the wait ends in `X_SCRAPE_DOWNLOAD_TIMEOUT`, a refusal
+    // about the trigger and not about the browser, which `guard()` would re-label unreachable.
+    // `async`, so a crashed page REJECTS rather than throwing past a caller's `.catch()`.
+    download: async (options): Promise<ScrapeDownloadFile> => {
+      live();
+      return await downloads.next(options.timeoutMs, init.page.url());
+    },
     frames: () =>
       guard('frames', () =>
         Promise.resolve(
@@ -398,16 +315,6 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         } catch {
           origin = '';
         }
-        // Refused, never `[]`: the HTTP leg reads its cookies from here on every request and
-        // `persistSession` stores what this answers, so an empty jar went out logged-out and was
-        // saved as the session — both silently, while every other missing port method refuses.
-        if (typeof init.browser.cookies !== 'function') {
-          throw new NotImplementedError({
-            cause:
-              'session() on a CDP browser with no cookies() method is not implemented by this driver',
-            fix: 'upgrade the launcher to a puppeteer-core that exposes browser.cookies() — the HTTP leg and a persisted session both read the jar through it',
-          });
-        }
         const jar = parse(cookieSchema, await init.browser.cookies());
         return {
           cookies: jar,
@@ -424,15 +331,6 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         // Two halves, because they belong to two different moments: cookies are the browser's and
         // can be put back now, storage is an ORIGIN's and cannot exist until one is loaded.
         if (session.cookies.length > 0) {
-          // Refused rather than skipped: a restore that dropped the cookies opened the session
-          // logged-out while the run believed it restored one.
-          if (typeof init.browser.setCookie !== 'function') {
-            throw new NotImplementedError({
-              cause:
-                'restore() of cookies on a CDP browser with no setCookie() method is not implemented by this driver',
-              fix: 'upgrade the launcher to a puppeteer-core that exposes browser.setCookie(), or set auth: { reuse: false } on the scrape() definition so no session is restored',
-            });
-          }
           await init.browser.setCookie(...session.cookies);
         }
         pendingStorage = Object.keys(session.storage).length > 0 ? session : undefined;

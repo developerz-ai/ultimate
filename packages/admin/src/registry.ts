@@ -95,6 +95,12 @@ export interface AdminEntity {
    * fixture has none: never a form input, and every update carries the version the admin read.
    */
   readonly $version?: string | null;
+  /**
+   * The generated `tsvector` its `.searchable()` columns derive, `null` with none. Optional only
+   * because a hand-built fixture has none. The admin reads the COLUMN alone: it names a full-text
+   * hit's `matchedField`, and its presence is what makes `adminRepoFor` offer `search`.
+   */
+  readonly $search?: { readonly column: string } | null;
   /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
   $describe(): AdminEntityDescription;
 }
@@ -119,6 +125,11 @@ export interface AdminTableRead {
   andWhere(column: string, op: Operator, value?: unknown): AdminTableRead;
   orderBy(column: string, direction?: 'asc' | 'desc'): AdminTableRead;
   limit(rows: number): AdminTableRead;
+  /**
+   * The entity's full-text match — legal only on an entity whose `$search` is not `null`.
+   * Optional so a hand-built table still satisfies this surface; `database()`'s always has it.
+   */
+  search?(term: string): AdminTableRead;
   all(): Promise<readonly AdminRow[]>;
   one(): Promise<AdminRow | null>;
   count(): Promise<number>;
@@ -218,8 +229,23 @@ export interface AdminListQuery {
   readonly before?: KeysetBound;
 }
 
+/** One full-text read: the search box's term over the resource's row scope, first page only. */
+export interface AdminSearchQuery {
+  /** User text. Bound as a parameter and parsed by `websearch_to_tsquery`, never a tsquery. */
+  readonly term: string;
+  readonly where: readonly AdminFilter[];
+  readonly sort: AdminSort;
+  readonly limit: number;
+}
+
 export interface AdminRepo<Row> {
   list(query: AdminListQuery): Promise<readonly Row[]>;
+  /**
+   * The entity's declared full-text index (`search_tsv`, GIN), when it has one. Optional: a custom
+   * `repo:` without it is searched by `contains` alone. The memory driver rejects it
+   * `X_SEARCH_IN_MEMORY`, which `adminSearch` answers with the `contains` loop.
+   */
+  search?(query: AdminSearchQuery): Promise<readonly Row[]>;
   find(id: string): Promise<Row | null>;
   create(input: Readonly<Record<string, unknown>>): Promise<Row>;
   update(id: string, patch: Readonly<Record<string, unknown>>): Promise<Row>;

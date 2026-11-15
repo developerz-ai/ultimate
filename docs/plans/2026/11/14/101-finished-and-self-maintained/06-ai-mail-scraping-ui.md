@@ -4,16 +4,16 @@
 
 ## Files to change
 - `packages/ai/src/gateway.ts:270` — A1. Fallback across providers belongs to `generate` alone; no cross-model fallback, provider parameters not passed through. Two adopters wrote their own routing (4,533 and ~1,950 LOC).
-- `packages/ai/src/` prompt cache — A2. No rule for a custom host.
+- `packages/ai/src/` prompt cache — A2. **Falsified 2026-11-15**: shipped in 31.23.0 as provider rows (`openAiProvider({ baseUrl, promptCache: { rules } })`, `prompt-cache.ts` `promptCacheRule`); the gap note predates it.
 - `packages/mail/src/` — M1. Delivery events only (`*-event-receiver.ts`); no inbound. The one mail-using app parses inbound itself.
 - `packages/scraping/src/cdp-target.ts:200-430` (11), `html-target.ts:370,393` — S1. `NotImplementedError` on the port.
 - `packages/ui/src/` — U1. a11y roles deferred (2026/11/11 slice 15 T3); touch-drag proofs (2026/11/02 slice 38).
-- `packages/admin/src/` — U2. `search_tsv` (2026/11/11 slice 15 D1).
+- `packages/admin/src/` — U2. `search_tsv` (2026/11/11 slice 15 D1). Ranked order deferred: `ts_rank` is a computed value the keyset cursor cannot carry (`packages/entity/src/query.ts:93`), and the memory driver refuses `matches` by design; sweep 3 ships the tsv path ordered by the resource's default sort, substring fill kept.
 - `packages/notify/src/`, `packages/pwa/src/`, `packages/flags/src/` — N1. Imported by 0, 0 and 0 of 10 apps.
 
 ## Steps
 1. A1: `fallbackModels` on the model reference — an ordered list tried on a declared error class, billed per attempt, one trace. Provider parameters pass through a typed `providerOptions` bag validated per provider. Follow `packages/ai/src/llm.ts`; no second gateway.
-2. A2: `registerPromptCacheRule(host, rule)`.
+2. A2: done before this sweep (31.23.0). A host-keyed registry would be a second path (`docs/history/ai.md`, "a row on the provider, not a second switch"); sweep 3 adds only the wiki section.
 3. Media generation stays deferred: still one app ([`90`](90-owner-decisions.md) OD7).
 4. M1: `inboundMail()` — a factory over the webhook-receiver action: provider signature check, parse to a typed message, attachments to `storage` through the upload path. Parsing is in-tree, no new dependency unless `docs/idea/18-build-vs-wrap.md`'s bar is met and stated in the PR.
 5. S1: for each stub, implement it on the CDP target or remove the method from the port for every target. A port method one target cannot honour is a second path. Three apps add a browser dependency beside `scraping`; record in `wiki/` which of their uses the port now covers.

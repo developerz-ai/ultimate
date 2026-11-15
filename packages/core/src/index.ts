@@ -552,6 +552,7 @@ export {
   configureTelemetry,
   connections,
   counter,
+  currentLogStream,
   currentSampler,
   currentSpan,
   currentSpanContext,

@@ -71,15 +71,6 @@ export interface ScrapeFrame {
    */
   press(chord: string): Promise<void>;
   /**
-   * What a screen reader is told about each match — the browser's computed role and name, after
-   * ARIA and label association, which `query()` cannot answer from attributes. At most
-   * `options.max` (default `DEFAULT_ACCESSIBILITY_MAX`) nodes, in document order. Refused with
-   * `X_NOT_IMPLEMENTED` on a driver with no accessibility engine — an offline driver, or a frame
-   * of the real one — never answered from the markup: a `<div onclick>` computing no role IS the
-   * finding, and a fake reading `role=` off the tag would hide it.
-   */
-  accessibility(selector: string, options?: AccessibilityOptions): Promise<readonly AxNode[]>;
-  /**
    * Every match, as SNAPSHOTS — `visible`, `enabled` and (on a driver with a layout engine) the
    * box and hit-target, which `values()` projects away.
    *
@@ -145,10 +136,21 @@ export interface ScrapePage extends ScrapeFrame {
    */
   activity(): void;
   /**
+   * What a screen reader is told about each match — role and name after ARIA and label
+   * association, which `query()` cannot answer from attributes. At most `options.max` (default
+   * `DEFAULT_ACCESSIBILITY_MAX`) nodes, in document order. A browser answers what it computed; the
+   * offline drivers answer the HTML-AAM mapping of the markup (`html-a11y.ts`), never `role=` read
+   * alone: a `<div onclick>` maps to no role and no name on every driver, and that IS the finding.
+   * On the PAGE only — the read is addressed by the top document's nodes, so a `ScrapeFrame` has
+   * no such method and asking one does not compile.
+   */
+  accessibility(selector: string, options?: AccessibilityOptions): Promise<readonly AxNode[]>;
+  /**
    * Cut the BROWSER's network, or restore it — what a PWA's offline behaviour has to be tested
-   * against. Refused with `X_NOT_IMPLEMENTED` on a driver that has no browser: patching `fetch`
-   * in the test process cannot reach a browser's own requests, so a driver that quietly answered
-   * "done" would let an offline assertion pass against an app that never went offline.
+   * against. Never a resolved no-op: the browser driver sets the browser's own condition, and the
+   * offline drivers cut their own navigations (`X_SCRAPE_BROWSER_UNREACHABLE` while set, the code
+   * a browser's failed navigation carries). Patching `fetch` in the test process cannot reach a
+   * browser's requests, which is why this exists at all.
    */
   offline(enabled: boolean): Promise<void>;
   /**
@@ -160,10 +162,9 @@ export interface ScrapePage extends ScrapeFrame {
    * and the component owns that — one honouring `'system'` overwrites or deletes it on mount, and
    * the picture then shows the theme the component chose rather than the one that was asked for.
    *
-   * ACCEPTED on every driver, unlike `offline()`: the offline drivers evaluate no CSS, but they
-   * answer different deterministic bytes per scheme, so the one thing a preference could be wrong
-   * about is still under test. `X_NOT_IMPLEMENTED` is reserved for a LAUNCHER that lacks the
-   * method, which is a fact about the build rather than about the driver.
+   * ACCEPTED on every driver: the offline drivers evaluate no CSS, but they answer different
+   * deterministic bytes per scheme, so the one thing a preference could be wrong about is still
+   * under test. A launcher without the method does not compile (`CdpPageLike`).
    */
   colorScheme(scheme: ColorScheme): Promise<void>;
   /**
@@ -174,8 +175,7 @@ export interface ScrapePage extends ScrapeFrame {
    * late. Same string discipline as `evaluate()`: an expression, never a closure.
    *
    * ACCEPTED on every driver, for `colorScheme()`'s reason: the offline drivers run no scripts,
-   * so nothing there could be wrong about it. `X_NOT_IMPLEMENTED` is reserved for a LAUNCHER
-   * that lacks the method, which is a fact about the build rather than about the driver.
+   * so nothing there could be wrong about it. A launcher without the method does not compile.
    */
   prepare(expression: string): Promise<void>;
   /**

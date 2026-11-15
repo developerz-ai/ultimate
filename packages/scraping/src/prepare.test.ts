@@ -31,27 +31,6 @@ describe('unit · the CDP forward', () => {
     // browser keeps a new-document script for the page's lifetime, as puppeteer does.
     expect(browser.prepared).toEqual([SEED]);
   });
-
-  // The half that keeps OPTIONAL from meaning UNWIRED, exactly as `setColorScheme` is refused: a
-  // launcher predating the method must fail by name, or a theme asked for is silently the default.
-  test('a launcher with no evaluateOnNewDocument is X_NOT_IMPLEMENTED, named and fixable', async () => {
-    const browser = fakeCdpBrowser({ url: URL, html: HTML });
-    const rich = await browser.newPage();
-    const { evaluateOnNewDocument: _dropped, ...page } = rich as typeof rich & {
-      evaluateOnNewDocument?: unknown;
-    };
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: frozenClock() });
-
-    let thrown: { code?: string; fix?: string } = {};
-    try {
-      await target.prepare(SEED);
-    } catch (caught) {
-      thrown = caught as { code?: string; fix?: string };
-    }
-    expect(thrown.code).toBe('X_NOT_IMPLEMENTED');
-    expect(thrown.fix).toContain('evaluateOnNewDocument');
-    expect(browser.prepared).toEqual([]);
-  });
 });
 
 describe('unit · the offline drivers', () => {

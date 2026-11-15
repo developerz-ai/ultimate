@@ -196,6 +196,54 @@ export const resend = resendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET']
 | `sesEventReceiver` | SNS: the topic is in `topicArns`, the cert URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 (RSA-SHA1) or 2 (RSA-SHA256) over AWS's canonical string, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
 | `resendEventReceiver` | Svix: HMAC-SHA256 over `svix-id.svix-timestamp.body` under the `whsec_` secret, constant-time, any `v1,` entry, within `toleranceMs` (5 min) |
 
+### Inbound mail
+
+`As of 2026-11-15`. Imported from **`@ultimat3/mail/inbound`**, never the barrel. `inboundMail()` is
+a factory over jobs' `webhookReceiver()` (itself a factory over `job`): declaring it in
+`defineApi({ jobs })` mounts its `POST` route. The door verifies the provider's signature over the
+exact bytes, reads the envelope and queues a durable row; the job reads the raw MIME, parses it under
+`limits`, stores the attachments and calls `handle` with ONE typed `InboundMessage`.
+
+```ts
+import { inboundMail, sesInbound } from '@ultimat3/mail/inbound';
+
+declare const env: Record<string, string>;
+
+export const supportInbox = inboundMail({
+  name: 'support.inbound',
+  path: '/hooks/mail/inbound',
+  provider: sesInbound({ topicArns: [env['SES_INBOUND_TOPIC_ARN'] ?? ''] }),
+  tenant: 'none',
+  handle: async ({ message }) => ({ from: message.from?.address, files: message.attachments.length }),
+});
+```
+
+| Provider | Door proves | The job reads the MIME from |
+|---|---|---|
+| `sesInbound({ topicArns })` | SNS, through `sesEventReceiver` (one verifier); a `SubscriptionConfirmation` is that receiver's | the notification's `content` (receipt rule SNS action, `BASE64` or `UTF8`); none is `X_MAIL_INBOUND_MALFORMED` `content-missing` |
+| `resendInbound({ secret, apiKey })` | Svix over the `email.received` body; any other type answers 200 and queues nothing | `GET /emails/receiving/:id` with the key, then `raw.download_url` WITHOUT it (a public dial) |
+
+| `InboundMessage` field | |
+|---|---|
+| `eventId` | the provider's message id: the dedupe key, and the attachment folder (hashed) |
+| `recipients` | the verified envelope — Bcc included; `tenant(recipients)` picks the org from these |
+| `from` · `to` · `cc` · `replyTo` | `{ address, name }`, RFC 2047 decoded |
+| `subject` · `date` · `messageId` · `headers` | decoded; `headers` ordered, `Received` repeats |
+| `text` · `html` | the inline bodies, charset-decoded |
+| `attachments` | `stored: true` + `key`/`contentType`/`checksum`, or `stored: false` + `refusal` (storage's code, or `'disabled'`) |
+| `verdicts` | SES spam/virus/SPF/DKIM/DMARC, as SES spells them; deciding on them is the app's |
+
+| Bound (`limits`) | Default | Over it |
+|---|---|---|
+| `maxBytes` · `maxParts` · `maxDepth` · `maxAttachments` · `maxHeaderBytes` | 10 MiB · 100 · 8 · 20 · 64 KiB | `X_MAIL_INBOUND_TOO_LARGE`, refused whole |
+
+Attachments go through storage's `validateUpload` (size, allowlist, magic-byte sniff) and `put`, at
+`<prefix>/<sha256(eventId)>/<index>` (`org/<id>/…` when tenanted), so a retry rewrites the same
+keys. Default allowlist `INBOUND_ATTACHMENT_TYPES`: images, documents, `text/plain`, `text/csv` —
+never HTML or SVG. A file the policy refuses arrives `stored: false`; the message still arrives.
+`attachments: false` stores nothing. Unscanned: run the app's `uploadScanner` over `key` if you
+need a verdict.
+
 ## No framework mails
 
 The package ships none (v31). Every mail is an app's own `defineMail`; `@ultimat3/auth` sends
@@ -230,6 +278,8 @@ locale, so a miss a `send` would refuse is red at the gate. No preview: `X_MAIL_
 | `X_MAIL_EVENT_UNVERIFIED` | a delivery notification failed its signature check — `meta.reason` names which (`unsigned`, `signature`, `stale`, `topic`, `certificate-url`, `signature-version`); answer 401 |
 | `X_MAIL_EVENT_INVALID` | authentic or not, the body is not the provider's notification shape (`meta.problem`); answer 400 |
 | `X_MAIL_EVENT_PROVIDER_UNREACHABLE` | the SNS certificate or confirm URL did not answer; answer 503 so SNS redelivers |
+| `X_MAIL_INBOUND_MALFORMED` | the message is not MIME the parser reads (`meta.problem`); terminal, the dead-letter row is the record — except `raw-unavailable`, which retries |
+| `X_MAIL_INBOUND_TOO_LARGE` | the message crossed `limits.<meta.limit>`; raise it only for mail you expect |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help — and so does `error.retry`, which is what `sendMailJob` acts on: `terminal` dead-letters a 550 or a rejected credential at attempt 1 instead of sending it four more times |
 
 ### Error classes

@@ -89,7 +89,7 @@ class — stay on `.`.
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
 | hooks | `.` | `useQuery` (and `pollEvery` for its `poll`), `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useRecordChanges`, `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime`, `resetPageRealtime` (tests) |
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
-| channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
+| channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types; `registeredChannels`, and `clearChannels` / `restoreChannels(snapshot)` (tests — `@ultimat3/testing`'s file boundary restores the snapshot) |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden, nor is one taking `useQuery` / `useRecord` in an app that declares no `persist: true` entity |
 | offline | `.` | `pageOutbox`, `localOutbox`, `listenForDrain`; the durable store is `./adapter`'s |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |

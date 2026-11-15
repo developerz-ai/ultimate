@@ -1,10 +1,13 @@
 // /runs/health, rendered as a member with its two reads answered here: every chart-kit piece is
 // in the page, named in the request's locale, and no label is a missing key; the window picker's
-// URL reaches the read as `since`/`until`.
+// URL reaches the read as `since`/`until`; switched off by its flag, the page is a 404 that reads
+// nothing.
 import { useT } from '@postly/i18n';
 import { ctxOf, runWithContext } from '@ultimat3/core';
+import { applyFlagSnapshot } from '@ultimat3/flags';
 import { expect, renderRoute, unitTest } from '@ultimat3/testing';
 import { DEFAULT_DEMO_MEMBER, demoActorFor } from '../../auth/demo-actor';
+import { runHealthEnabled } from './health-flag';
 import * as page from './page';
 
 const SITE = '00000000-0000-4000-8000-0000000000d1';
@@ -88,4 +91,21 @@ unitTest('load reads the runs of the window the URL names, in the member’s zon
   const health = new URL(seen.find((url) => url.includes('/_x/query/run-health')) ?? '');
   expect(health.searchParams.get('since')).toBe('2026-11-02T14:00:00.000Z');
   expect(health.searchParams.get('until')).toBe('2026-11-03T14:00:00.000Z');
+});
+
+unitTest('switched off, the route is a 404 and asks the server for nothing', async () => {
+  const seen: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL | Request) => {
+    seen.push(String(url));
+    return Promise.resolve(Response.json([]));
+  }) as typeof fetch;
+  applyFlagSnapshot({ [runHealthEnabled.key]: { default: false } });
+  try {
+    await expect(renderRoute(page, request)).rejects.toMatchObject({ code: 'X_NOT_FOUND' });
+  } finally {
+    applyFlagSnapshot({ [runHealthEnabled.key]: { default: true } });
+    globalThis.fetch = realFetch;
+  }
+  expect(seen).toEqual([]);
 });

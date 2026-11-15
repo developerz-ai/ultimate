@@ -107,6 +107,48 @@ an hour later is not refused by the signature window. Declaring it is its regist
 mounts its route. `api/` holds no route file.
 `SES_CONFIGURATION_SET` names the SES configuration set sent on every message (`ConfigurationSetName`) — the set whose event destination publishes to that SNS topic.
 
+## Inbound mail: `@ultimat3/mail/inbound`
+
+`As of 2026-11-15`. Rule: received email is `inboundMail()`, a factory over
+[`webhookReceiver()`](Jobs-And-Workflows#inbound-webhooks) — never a ninth primitive, never a route
+file. Declared in `defineApi({ jobs })`, the boot mounts its `POST path`.
+
+```ts
+import { inboundMail, resendInbound } from '@ultimat3/mail/inbound';
+
+export const supportInbox = inboundMail({
+  name: 'support.inbound',
+  path: '/hooks/mail/inbound',
+  provider: resendInbound({
+    secret: Bun.env['RESEND_INBOUND_SECRET'] ?? '',
+    apiKey: Bun.env['RESEND_API_KEY'] ?? '',
+  }),
+  tenant: 'none',
+  handle: async ({ message }) => ({ subject: message.subject }),
+});
+```
+
+| Step | Where | What |
+|---|---|---|
+| verify | the door | the provider's signature over the exact bytes — before any parse. SNS via `sesEventReceiver`'s verifier, Svix via `resendEventReceiver`'s. A forgery is `X_MAIL_EVENT_UNVERIFIED` (401) and queues nothing |
+| queue | the door | the verified envelope (`recipients`, and SES's `content` or Resend's email id), `.sensitive()` |
+| fetch | the job | SES: the row's `content`. Resend: `GET /emails/receiving/:id` with the API key, then the signed `raw.download_url` without it |
+| parse | the job | in-tree, bounded MIME: multipart trees, base64 / quoted-printable, RFC 2047 words, RFC 2231 filenames, address groups |
+| store | the job | each attachment through storage's `validateUpload` (size, allowlist, sniff) and `put`, at a key derived from the message id |
+| handle | the job | your function, with one `InboundMessage`, at least once per `eventId` |
+
+| Bound | Default | Refusal |
+|---|---|---|
+| `limits.maxBytes` | 10 MiB | `X_MAIL_INBOUND_TOO_LARGE` (`meta.limit`) — refused whole, never truncated |
+| `limits.maxParts` · `maxDepth` | 100 · 8 | the same |
+| `limits.maxAttachments` · `maxHeaderBytes` | 20 · 64 KiB | the same |
+| unreadable MIME | — | `X_MAIL_INBOUND_MALFORMED` (`meta.problem`), terminal |
+
+An attachment the upload policy refuses (HTML, SVG, a type the sniff contradicts) arrives
+`stored: false` with storage's code; the message is still delivered. `attachments: { disk, policy,
+prefix }` overrides each part; `attachments: false` stores nothing. SES's spam/virus/SPF/DKIM/DMARC
+verdicts ride on `message.verdicts` — what to do about a `FAIL` is the app's decision.
+
 ## Previews
 
 `As of 2026-11-06`. `defineMail({ preview })` declares the data a template is checked by: a value,

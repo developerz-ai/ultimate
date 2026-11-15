@@ -147,6 +147,7 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/jobs#subjectExport',
       '@ultimat3/jobs#webhook',
       '@ultimat3/jobs#webhookReceiver',
+      '@ultimat3/mail#inboundMail',
       '@ultimat3/mcp#mcpConfirmations',
       '@ultimat3/notify#notifier',
       '@ultimat3/notify#pushRegister',

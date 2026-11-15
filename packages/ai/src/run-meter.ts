@@ -10,6 +10,8 @@ import { addUsage } from './agent-usage';
 import type { Billed } from './billed';
 import { BILLED_META, billedCall, billedOf } from './billed';
 import { addMoney } from './cost';
+import type { ModelFallback } from './model-fallback';
+import { attemptsOf } from './model-fallback';
 import type { GenerateResult } from './provider';
 import { ZERO_USAGE } from './wire';
 
@@ -60,6 +62,16 @@ export function runMeter(): RunMeter {
   let carried: Billed | undefined;
   const counted = new WeakSet<object>();
 
+  /** Each failed model of a chain: its bill when it carried one, else one unsettled attempt. */
+  const fellOver = (attempts: readonly ModelFallback[] | undefined): void => {
+    for (const attempt of attempts ?? []) {
+      const bill = attempt.billed ?? UNSETTLED_CALL;
+      if (attempt.billed === undefined) unsettled += 1;
+      else carried = carried === undefined ? bill : sum(carried, bill);
+      parent?.report(bill);
+    }
+  };
+
   const absorb = (error: unknown): void => {
     const billed = billedOf(error);
     if (billed === undefined || typeof error !== 'object' || error === null) return;
@@ -96,11 +108,18 @@ export function runMeter(): RunMeter {
         calls += 1;
         own = addUsage(own, result);
         parent?.report(billedCall(result.usage, result.costExact ?? result.cost));
+        // A `fallbackModels` chain's failed models were attempts too: each counted, never free.
+        fellOver(result.fallbacks);
         return result;
       } catch (error) {
         // The provider answered and billed, then the answer could not be used: settled after all.
         const bill = billedOf(error);
-        if (bill !== undefined) {
+        const chain = attemptsOf(error);
+        if (chain !== undefined) {
+          // A whole chain failed: one attempt per model, not the one call this looked like.
+          unsettled -= 1;
+          fellOver(chain);
+        } else if (bill !== undefined) {
           unsettled -= 1;
           absorb(error);
           parent?.report(bill);

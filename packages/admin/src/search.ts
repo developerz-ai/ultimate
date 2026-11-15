@@ -1,38 +1,23 @@
-// Cross-entity search, derived: every resource's text fields are the index. No separate
-// search config to drift from the entities, and no result an actor could not have opened —
-// the same `admin:read` + `<entity>:read` pair gates the hit and the detail page it links to.
+// Cross-entity search, derived: an entity's declared full-text index, then its text fields, are
+// the index (`search-resource.ts`). No separate search config to drift from the entities, and no
+// result an actor could not have opened — `admin:read` + `<entity>:read` gate hit and detail alike.
 
 import { finiteCount, mapBounded } from '@ultimat3/core';
-import { expectedQueryLoop } from '@ultimat3/db';
 import { type AuditEntry, deniedDraft } from './audit';
-import type { AdminActor } from './authz';
 import { adminDenied } from './authz';
 import type { CrudCtx } from './crud';
 import { decideOperation } from './crud';
-import { rowWhere } from './list-scope';
-import type { AdminFilter } from './registry';
-import { rowId } from './registry';
-import { labelOf } from './relations';
-import { type AdminResource, repoOf } from './resource';
+import type { AdminResource } from './resource';
+import { type AdminSearchHit, searchResource } from './search-resource';
 
-/** Per resource, and per field within it. Search is a jump box, not a report. */
-const MAX_FIELDS_PER_RESOURCE = 3;
+export type { AdminSearchHit } from './search-resource';
+
 const DEFAULT_LIMIT_PER_RESOURCE = 5;
 /**
  * Resources read at once. Independent reads, so their latencies overlap rather than add — and a
  * bound, so an admin of fifty resources never holds fifty pool connections for one keystroke.
  */
 const SEARCH_WIDTH = 4;
-
-export interface AdminSearchHit {
-  readonly entity: string;
-  readonly id: string;
-  /** The row's label-field value. Already a string; the view does not format it. */
-  readonly label: string;
-  readonly matchedField: string;
-  /** Mount-relative link to the detail page. */
-  readonly href: string;
-}
 
 export interface AdminSearchResult {
   readonly term: string;
@@ -55,59 +40,6 @@ export interface AdminSearchInput {
   readonly resources: readonly AdminResource[];
   readonly ctx: CrudCtx;
   readonly limitPerResource?: number;
-}
-
-/**
- * One `contains` per searchable field rather than one query with an OR: the admin's query IR is a
- * conjunction by design, and each field's `contains` is the entity's case-insensitive `ilike` —
- * served by that column's `gin_trgm_ops` index where the app declared one (`X_QUERY_UNINDEXED`
- * names the declaration where it did not), which one OR across columns could not use.
- *
- * That argument is declared to the runtime and not only to the reader — `expectedQueryLoop`
- * carries it onto every statement the loop issues, so a statement diagnostic reports the loops
- * nobody argued for and never this one. At most `MAX_FIELDS_PER_RESOURCE` queries, and the scope
- * ends with the loop: anything the repo does afterwards is judged normally.
- */
-async function searchResource(
-  resource: AdminResource,
-  actor: AdminActor,
-  term: string,
-  limit: number,
-): Promise<readonly AdminSearchHit[]> {
-  const repo = repoOf(resource);
-  // The resource's row scope rides every lookup: a hit is a row, and a row this actor's `rows`
-  // leaves out is not one they may be told exists.
-  const visible = rowWhere(resource, actor);
-  const fields = resource.searchFields.slice(0, MAX_FIELDS_PER_RESOURCE);
-  const seen = new Set<string>();
-  const hits: AdminSearchHit[] = [];
-
-  return expectedQueryLoop(
-    'admin search runs one indexed lookup per text field, which beats one unindexed OR',
-    async () => {
-      for (const field of fields) {
-        const where: readonly AdminFilter[] = [
-          ...visible,
-          { field: field.name, op: 'contains', value: term },
-        ];
-        const rows = await repo.list({ where, sort: resource.defaultSort, limit });
-        for (const row of rows) {
-          const id = rowId(row, resource.idField);
-          if (id === '' || seen.has(id)) continue;
-          seen.add(id);
-          hits.push({
-            entity: resource.name,
-            id,
-            label: labelOf(row, resource),
-            matchedField: field.name,
-            href: `${resource.path}/${id}`,
-          });
-          if (hits.length >= limit) return hits;
-        }
-      }
-      return hits;
-    },
-  );
 }
 
 const SKIPPED_FORBIDDEN = 'admin.search.skipped.forbidden';

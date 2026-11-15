@@ -28,12 +28,13 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 - **A `/_x` source reads a registry through its DESCRIPTOR TYPE, never as an untyped bag** — `import type { RouteDescriptor }` beside the dynamic `import()`; `dev/published-keys.test.ts` walks what the registries EMIT. A route fact carries `mount` (`{ by, permissions }` or `null`).
 - **A fact `/_x` cannot know is absent or `null` — never a value that happens to be constant.** `JobDescriptor.idempotent` is published *because* `job()` refuses a definition without a key. `DbPanelData.drift` is `null` when nothing wired the check, because drift is the entities against the DATABASE and `[]` claims a match nobody verified.
 - **The routes are in the framework's ONE route list, as mounted routes** — `route-config.ts` calls `registerMountedRoutes` at `defineAdmin`, so `describePages()` (`x routes`, `/_x`, `sw.js`, the manifest) lists each with `mount: { by: 'defineAdmin', permissions }` and `routeEntries()` holds none. `AdminApp.describe()` (`describe.ts`) is what the manifest's `admin` section records: filters, sorts, scopes, `rowScoped`, routes.
-- **The admin's stylesheets are claimed for `app/`** (`stylesheet-scope.ts`, `claimStylesheets`). `stylesheet-scope.test.ts`.
+- **The admin's stylesheets are claimed for `app/`** (`claimStylesheets` in `stylesheet-scope(.test).ts`).
 - **Importing this package declares NO permission.** `defineAdmin()` calls `declareAdminPermissions`, which registers `ADMIN_PERMISSIONS` plus what the mount derives (`policy-bridge.test.ts`).
 - **One bridge per foreign package.** `policy-bridge.ts` → `evaluate`/`definePermissions`; `route-config.ts` → `defineRoute`/`registerMountedRoutes` (+ `claim-route.ts`, the `@ultimat3/http` bridge); `mcp.ts` → `defineAppMcp`; `dev/data.ts` → introspection, dynamically. A test declares its own fixtures' permissions and calls `defineAdmin()` in `beforeAll`, never at module scope.
 - **One entity surface** (`registry.ts`) — the admin reads what `entity()` actually exposes: `$name`, `$primaryKey`, `$columns[c].$meta`, `$schema`, `$describe()`. It is a structural subset so a new column kind still derives, and `RegisteredEntity` is the `tsc`-checked proof that a real `entity()` result satisfies it — never a comment claiming it does.
 - **One flattener.** `entity-columns.ts` is the only file that reads `$meta` or calls `$describe()`; everything downstream takes `AdminColumnFacts`. Money stays one property (the admin renders rows, not tables), a FK target comes back resolved from `$describe()`, and only a **generated** default (`uuid`, `now`) is read-only — `.default('free')` is a starting value.
-- **A deliberate query loop declares itself** — `expectedQueryLoop()` from `@ultimat3/db`, with a `reason` (`search.ts`, `batch.ts`, `relations.ts`). Never a comment pragma, never an exempt list; an undeclared loop is an N+1.
+- **A deliberate query loop declares itself** — `expectedQueryLoop()` from `@ultimat3/db`, with a `reason` (`search-resource.ts`, `batch.ts`, `relations.ts`), never a pragma or exempt list.
+- **Search: vector, then `contains`** (`search-resource.ts`): `AdminRepo.search` iff `$search`; only `X_SEARCH_IN_MEMORY` falls back.
 - **The timeline panel renders the detector's verdicts** (`DevSources.statementLoops()`), never a second count; none wired is `null`, never `[]`.
 - **This catalog is the framework's one opt-OUT MCP surface, deliberately**: `mcp-tools.ts` does not call `isMcpExposed` — every tool is already gated on an admin permission. `mcp: { expose: false }` withdraws one. A *second* exception anywhere is the bug.
 - **A dev panel catches only the error that means "not wired".** `DevSourceUnavailableError` and nothing wider — in `panel-live`, `panel-db`, `panel-timeline` and `panel-cache` alike (`dev/panel-degrade.test.ts`). Everything else reaches `panelPayload`, which renders its code and its fix.
@@ -105,8 +106,7 @@ Why each rule is shaped the way it is: [`docs/history/admin.md`](../../docs/hist
 
 ## Commands
 
-From the repo root — the seal-key preload is the root's, so `bun test --filter` from this
-directory fails on the first sealed column:
+From the repo root (the seal-key preload is the root's):
 
 ```bash
 bun test ./packages/admin/

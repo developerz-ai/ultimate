@@ -5,7 +5,7 @@
 
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
-import { ariaBool, useId } from '../a11y';
+import { ariaBool, labelIds, useId } from '../a11y';
 import { cx } from '../cx';
 import { DEBOUNCE_DEFAULT_MS, debounce } from '../debounce';
 import { UI_KEYS } from '../i18n-keys';
@@ -222,6 +222,13 @@ export function SearchableSelect(props: SearchableSelectProps): JSX.Element {
       role="listbox"
       class={styles['listbox']}
       aria-label={props['aria-label']}
+      // Open, it is in the tree and needs a name: the field's own labels, by reference. Closed it
+      // is `hidden`, so nothing is read and no id is minted for it.
+      aria-labelledby={
+        props['aria-label'] === undefined && open()
+          ? labelIds(input, () => useId('searchable-select-label'))
+          : undefined
+      }
       aria-multiselectable={many() ? 'true' : undefined}
       hidden={!open()}
     >
@@ -241,14 +248,25 @@ export function SearchableSelect(props: SearchableSelectProps): JSX.Element {
             class={styles['option']}
             aria-selected={chosen().includes(row.option.value) ? 'true' : 'false'}
             aria-disabled={row.option.disabled === true ? 'true' : undefined}
+            // With a description its name is the label alone; the description describes it.
+            aria-labelledby={
+              row.option.description === undefined ? undefined : `${base}-row-${index}-label`
+            }
+            aria-describedby={
+              row.option.description === undefined ? undefined : `${base}-row-${index}-desc`
+            }
             data-active={index === active() ? 'true' : undefined}
             data-value={row.option.value}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => keys.pickRow(index)}
           >
-            <span class={styles['optionLabel']}>{row.option.label}</span>
+            <span class={styles['optionLabel']} id={`${base}-row-${index}-label`}>
+              {row.option.label}
+            </span>
             {row.option.description === undefined ? null : (
-              <span class={styles['description']}>{row.option.description}</span>
+              <span class={styles['description']} id={`${base}-row-${index}-desc`}>
+                {row.option.description}
+              </span>
             )}
           </div>
         </>

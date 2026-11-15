@@ -89,13 +89,13 @@ One interface, three drivers, no driver type in it.
 | `frame(nameOrSelector)` | re-resolves on every call; nothing hands out a stale handle |
 | `screenshot` | `{ fullPage }` or `{ clip }`, never both |
 | `pdf` | the print layout: `format` (`a4`, `letter`, …) or `widthMm` + `heightMm`, `marginMm`, `printBackground`, `preferCssPageSize`, `headerHtml` / `footerHtml`. Two sizes, half a size or a size beside `preferCssPageSize` is `X_SCRAPE_PDF_OPTIONS_INVALID` (422), before any driver |
-| `download({ timeout })` | whatever the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT` |
+| `download({ timeout })` | whatever the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT`. Off the wire on the browser driver, never a download directory — see [The port is complete](#the-port-is-complete) |
 | `cookies` / `session` | the handoff to the HTTP leg, as a value you can inspect |
 | `query(selector)` | every match as a snapshot — tag, attributes, text, **and `visible`**. The one definition of "visible" in the framework; nothing else may compute it |
 | `offline(enabled)` | the browser's own offline mode. **Not** `@ultimat3/testing`'s sealed network, which patches `fetch` in the *test process* and a browser's requests never traverse — a test built on that would pass against a fully online app |
 | `focus(selector, { timeout })` | waits for `actionable`, then moves focus — the setup for a `press()` |
 | `press(chord)` | `'Meta+K'`, `'Escape'`, `'Shift+Tab'` on whatever holds focus. Modifiers are `Meta`, `Control`, `Alt`, `Shift` in the browser's own spelling; `'Ctrl+K'` is `X_SCRAPE_KEY_INVALID` on **every** driver, offline included — the parse is the one thing an offline driver can be wrong about, so it runs there too, then stops |
-| `accessibility(selector, { max })` | what a screen reader is told about each match — the browser's **computed** role and name, after ARIA and label association, at most `max` (default 25) nodes. Refused with `X_NOT_IMPLEMENTED` on the offline drivers and on a frame of the real one, never answered from `role=` on the tag: a `<div onclick>` computing no role *is* the finding |
+| `accessibility(selector, { max })` | what a screen reader is told about each match — role and name after ARIA and label association, at most `max` (default 25) nodes. The browser driver answers what Chrome computed; the offline drivers answer the HTML-AAM mapping of the markup, never `role=` read alone: a `<div onclick>` maps to no role *on every driver*, and that *is* the finding. On the page only — `ScrapeFrame` has no such method |
 | `console()` / `network()` | bounded rings, 200 entries each |
 | `pageErrors()` / `pageErrorsDropped()` | uncaught exceptions, a **third** ring — not console lines |
 | `activity()` | tells the wedge watchdog the run is working on a channel this page cannot see — your own CDP session, a long warm-up. Every verb above already reports; this touches the idle clock only and counts no usage. On every driver |
@@ -158,9 +158,24 @@ Response bodies are counted **as they arrive**, capped at `DEFAULT_HTTP_MAX_BYTE
 | `fixtureBrowser(dir)` | committed page recordings | none |
 | `fakeBrowser(pages)` | inline pages, for a unit test | none |
 
-**The launcher is passed in, never imported.** `CdpLauncherLike` is two methods — `launch` and `connect` — so `puppeteer`, `puppeteer-core` or anything with the same shape satisfies it, and this package declares no browser dependency at all. A launcher with no `launch` is `X_SCRAPE_REMOTE_REQUIRED`, not a crash. The browser it hands back must expose `target().createCDPSession()` — puppeteer's does — because `allowHosts` is enforced at the browser too, on every tab a scraped page opens; a session needs `cookies()` (and `setCookie()` to restore one), refused by name as `X_NOT_IMPLEMENTED` when absent rather than read as an empty jar.
+**The launcher is passed in, never imported.** `CdpLauncherLike` is two methods — `launch` and `connect` — so `puppeteer`, `puppeteer-core` or anything with the same shape satisfies it, and this package declares no browser dependency at all. A launcher with no `launch` is `X_SCRAPE_REMOTE_REQUIRED`, not a crash. The browser it hands back must expose `target().createCDPSession()` — puppeteer's does — because `allowHosts` is enforced at the browser too, on every tab a scraped page opens; its pages and the browser must carry every verb the page forwards to — a launcher missing one does not compile (see [The port is complete](#the-port-is-complete)).
 
 `driver-parity.test.ts` runs one suite against all three and pins the single honest divergence: the offline drivers have no layout engine, so `ElementSnapshot.box` and `hitTarget` are absent rather than faked.
+
+## The port is complete
+
+**Every page verb answers on every driver; none is `X_NOT_IMPLEMENTED`** (`As of 2026-11-15`). Thirteen refusals came out of `cdp-target.ts` and `html-target.ts`: a port method one driver cannot honour is a second path, so each one was implemented there or taken off the type. `port-complete.test.ts` calls every `ScrapeTarget` member on the offline and the browser driver, keyed by the port's own members — a member added without a row does not compile.
+
+| Verb | Browser driver | Offline drivers |
+|---|---|---|
+| `download()` | the file's bytes off the wire: the browser-level `Fetch` pause at the Response stage, named by `Browser.downloadWillBegin`; Chrome's own copy is denied. Works on `remoteBrowser()`, whose disk is not yours. A script-made `blob:` download is read through the page | the recorded `downloads` entry the click armed |
+| `offline(enabled)` | the browser's own network condition | every navigation — `goto`, a link's click — fails `X_SCRAPE_BROWSER_UNREACHABLE` while set, the code a browser's failed navigation carries. No JS runs, so an assertion on what the app's offline code renders fails rather than passing |
+| `accessibility()` | what the browser computed | the HTML-AAM mapping of the markup: explicit `role`, else the implicit one; the name from `aria-labelledby`, `aria-label`, `<label for>`, `alt`, content, `title`, `placeholder`. CSS and script are not seen. A `<div onclick>` answers no role and no name on both |
+| `press` / `focus` / `colorScheme` / `prepare` / `cookies` / `session` | `CdpPageLike` and `CdpBrowserLike` **require** `keyboard`, `focus`, `createCDPSession`, `setOfflineMode`, `emulateMediaFeatures`, `evaluateOnNewDocument`, `cookies`, `setCookie`: a launcher missing one is a compile error at `localBrowser({ launcher })`, no longer a refusal on the first run that reached the verb | unchanged |
+
+**A frame has no page-wide verb.** `page.frame(…)` returns a `ScrapeFrame` without `accessibility()`, and `FrameRef.target` is `ScrapeFrameTarget` — the frame verbs only. Asking a frame for a capture, the cookie jar or the accessibility read does not compile; it used to answer for the parent document, or refuse at runtime.
+
+**What a browser dependency beside `scraping` still buys.** A direct `puppeteer` import for a download, an offline toggle, a keyboard chord, an accessibility read, an init script, a theme, cookies or a frame's form is now a page verb, on every driver, with `allowHosts`, robots, pacing, redaction and the wedge watchdog applied. What the port does not cover, and a direct import still does: request/response bodies of subresources, a download Chrome makes from an HTML response with no `Content-Disposition`, file uploads, and multiple tabs.
 
 ## The silent-green alarm
 

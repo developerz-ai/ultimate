@@ -87,6 +87,10 @@ export class FakeElement extends Listeners {
     return Object.hasOwn(this.attrs, name) ? (this.attrs[name] ?? null) : null;
   }
 
+  setAttribute(name: string, value: string): void {
+    this.attrs[name] = value;
+  }
+
   append(...children: readonly FakeElement[]): FakeElement {
     for (const child of children) {
       child.parent = this;

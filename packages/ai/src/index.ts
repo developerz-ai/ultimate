@@ -142,6 +142,8 @@ export type { LlmAction, LlmBudget, LlmCall, LlmDef, LlmVarsArgs } from './llm';
 export { LlmTextChunk, llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
+export type { ModelFallback, ModelFallbackClass } from './model-fallback';
+export { MODEL_FALLBACK_ON } from './model-fallback';
 export type { ModelSource } from './model-resolve';
 export type {
   ContentKind,
@@ -215,6 +217,12 @@ export {
   parseMessage,
   STREAM_ONLY_MAX_TOKENS,
 } from './provider';
+export type {
+  AnthropicProviderOptions,
+  OpenAiProviderOptions,
+  ProviderOptions,
+} from './provider-options';
+export { PROVIDER_OPTION_KEYS } from './provider-options';
 export type {
   AssembledContext,
   Chunk,

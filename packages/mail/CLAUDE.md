@@ -1,6 +1,6 @@
 # @ultimat3/mail — agent notes
 
-**Tier 4** (`scripts/lib/tiers.ts`). May import `core`, `schema`, `i18n`, `time`, `money`, `jobs`; never `auth`, `http`, `ui`, `render`. **Zero external deps** — no nodemailer, no MJML, no CSS library.
+**Tier 4** (`scripts/lib/tiers.ts`). May import `core`, `schema`, `i18n`, `time`, `money`, `jobs`, `storage` (inbound attachments); never `auth`, `http`, `ui`, `render`. **Zero external deps** — no nodemailer, no MJML, no CSS library.
 
 ## Boundary
 
@@ -29,6 +29,10 @@
 | `resend-signature.ts` | Svix verification: HMAC over `id.timestamp.body`, constant-time, then the window |
 | `resend-event-receiver.ts` | `resendEventReceiver` + the Resend payload → events |
 | `events.ts` | the `@ultimat3/mail/events` subpath: the receivers, kept off the barrel |
+| `inbound.ts` · `inbound-mail.ts` | `@ultimat3/mail/inbound` · `inboundMail()`, a factory over jobs' `webhookReceiver()` |
+| `inbound-ses.ts` · `inbound-resend.ts` | the two providers: door (verify, then envelope → row) + the raw MIME for the job |
+| `inbound-message.ts` · `inbound-attachments.ts` · `inbound-types.ts` | row → `InboundMessage`; attachments via storage's `validateUpload` + `put`; the shapes |
+| `mime-parse*.ts` | the bounded inbound MIME parser (tree, decodes, headers, addresses, `X_MAIL_INBOUND_*`) |
 | `smtp-client.ts` | the conversation: greeting → EHLO → STARTTLS → AUTH → envelope → DATA |
 | `smtp-protocol.ts` | pure protocol: reply framing, capabilities, AUTH payloads, dot-stuffing |
 | `smtp-socket.ts` | the one production `SmtpStream`, over `Bun.connect` |
@@ -237,6 +241,11 @@
   no private key is committed. The DER was checked once against openssl (`openssl verify`, and
   `openssl x509 -pubkey` gave the SPKI `x509-spki.ts` extracts).
 - **`send()` refuses on the renderer's record, never on the bytes** (`X_MAIL_KEY_MISSING`, terminal, before the transform). A `⟦` may be user data. `recordingTranslator` (`@ultimat3/i18n`) selects through `selectMessageKey`, the selector `t()` uses, because `has()` says yes for a plural family read without a `count`, where `t()` renders `⟦key⟧`. A catalog value that is a marker is a miss: it is what `x i18n sync` seeds, so the refusal's fix must not turn it into a delivery. Templates get the recording `t` too. `renderMessage` drops `misses` (previews show the brackets); nothing on `MailMessage` carries them.
+
+- **Inbound mail verifies with the delivery receivers' verifiers, never a copy** (`As of 2026-11-15`):
+  SES's door IS `sesEventReceiver.receive` (signature + subscription protocol), then the same bytes
+  are read for `Message`; Resend's is `verifySvix`. A forgery is `X_MAIL_EVENT_UNVERIFIED`. The job
+  parses the MIME, never the door; every parse/bound refusal is `X_MAIL_INBOUND_MALFORMED`/`_TOO_LARGE`.
 
 ## Commands
 

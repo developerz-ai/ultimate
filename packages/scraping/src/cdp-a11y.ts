@@ -1,8 +1,8 @@
 // The accessibility tree, read over a raw CDP session — the one read in this package the browser
-// library has no page method for, and the one no HTML parse can reproduce: `role` and `name` here
-// are what the BROWSER computed for a screen reader, after ARIA, after the label association,
-// after `aria-hidden` pruned the subtree. A `<div onclick>` answers no role and no name, which is
-// the finding; a fake reading `role=` off the markup would answer the attribute and miss it.
+// library has no page method for: `role` and `name` here are what the BROWSER computed for a
+// screen reader, after ARIA, the label association, CSS and script — the parts the offline
+// drivers' HTML-AAM mapping (`html-a11y.ts`) cannot see. A `<div onclick>` answers no role and no
+// name, which is the finding; a fake reading `role=` off the markup alone would miss it.
 //
 // Four protocol calls per read, each parsed with a schema and never cast: the answers are
 // somebody else's wire shapes, and a build that renames a field must refuse loudly

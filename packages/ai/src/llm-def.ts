@@ -11,6 +11,7 @@ import type { ModelId } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { PromptCacheOption } from './prompt-cache';
 import type { StopReason, TokenUsage } from './provider';
+import type { ProviderOptions } from './provider-options';
 
 /** Per-call ceilings, checked before the provider is reached. Never truncates — refuses. */
 export interface LlmBudget {
@@ -35,6 +36,14 @@ export interface LlmDef<
    * travels with it; this one is the deployment decision, so it wins.
    */
   readonly model?: ModelId;
+  /**
+   * Tried in order when the model fails with a declared class (`MODEL_FALLBACK_ON`: rate limited,
+   * overloaded, timed out, unavailable) — never on a 400, a refusal or a budget. Each attempt is
+   * reserved and billed; a streamed call falls over only before its first chunk.
+   */
+  readonly fallbackModels?: readonly ModelId[];
+  /** Wire parameters the framework does not model, one bag per wire, screened at declaration. */
+  readonly providerOptions?: ProviderOptions;
   readonly input: TInput;
   readonly output: TOutput;
   readonly prompt: Prompt<V>;

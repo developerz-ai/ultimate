@@ -26,7 +26,7 @@ export { type PresenceEvent, type PresenceOp, readPresence } from './channel-pre
 // The client half of a channel an island holds — no entity, no policy (`channel-ref.ts`).
 export { type ChannelHandle, channelRef, type Topic, topic } from './channel-ref';
 // The process's channel table: what a hub serves by default. `describeChannels` is `./server`'s.
-export { clearChannels, registeredChannels } from './channel-registry';
+export { clearChannels, registeredChannels, restoreChannels } from './channel-registry';
 export type {
   ChannelAdopt,
   ChannelEventsFrame,

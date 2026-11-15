@@ -6,7 +6,7 @@ import { userActor } from '@ultimat3/core';
 import { ChannelHub } from './channel';
 import { channel } from './channel-decl';
 import { describeChannels } from './channel-describe';
-import { clearChannels, getChannel, registeredChannels } from './channel-registry';
+import { clearChannels, getChannel, registeredChannels, restoreChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import { OPEN_POLICY } from './policy-fake-fixture';
 import { SocketRegistry, SyncSocket } from './socket';
@@ -74,5 +74,31 @@ describe('the channel registry', () => {
         }),
       ),
     ).toBe('registry-zeta.r1');
+  });
+});
+
+// The test restore `@ultimat3/testing`'s file boundary calls: exactly the snapshot again, so a
+// channel one file declared in its body cannot refuse the next file's own declaration of the name.
+describe('restoreChannels', () => {
+  test('puts back exactly what registeredChannels() answered, dropping what came after', () => {
+    const before = registeredChannels();
+    const later = channel('registry-later', {
+      params: [],
+      catchUp: { name: 'laterRead' },
+      policy: OPEN_POLICY,
+    });
+    expect(getChannel('registry-later')).toBe(later);
+    restoreChannels(before);
+    expect(getChannel('registry-later')).toBeUndefined();
+    expect(registeredChannels()).toEqual(before);
+    // The name is free again: a fresh declaration of it is not a duplicate.
+    expect(() =>
+      channel('registry-later', {
+        params: [],
+        catchUp: { name: 'laterRead' },
+        policy: OPEN_POLICY,
+      }),
+    ).not.toThrow();
+    restoreChannels(before);
   });
 });

@@ -13,6 +13,7 @@ import type {
   AdminListQuery,
   AdminRepo,
   AdminRow,
+  AdminSearchQuery,
   AdminTable,
   AdminTableRead,
 } from './registry';
@@ -105,6 +106,7 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
   const idColumn = Object.hasOwn(entity.$columns, idField) ? entity.$columns[idField] : undefined;
   const typed = typedBy(entity);
   const columns = adminColumnsOf(entity);
+  const searchOf = table.search;
   /**
    * `AdminRepo` carries `id: string` — a URL param, untyped by nature. The primary key column's
    * OWN `$parse` is what earns the crossing: `/posts/nope` is judged here, at the door, instead
@@ -159,6 +161,19 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
         },
       );
     },
+    // Offered only when the entity declares a vector: the handle refuses `.search()` on one that
+    // does not (`X_SEARCH_UNDECLARED`), and an absent verb is how `adminSearch` knows to skip it.
+    ...(entity.$search === undefined || entity.$search === null || searchOf === undefined
+      ? {}
+      : {
+          search: async (query: AdminSearchQuery): Promise<readonly AdminRow[]> => {
+            const { field, direction } = query.sort;
+            const read = filtered(searchOf.call(table, query.term), query.where, typed);
+            // The id breaks ties, as on a list page; named once when it IS the sort.
+            const sorted = field === idField ? read : read.orderBy(field, direction);
+            return [...(await sorted.orderBy(idField, direction).limit(query.limit).all())];
+          },
+        }),
     // `async`, so a refused id arrives as a rejection: these return promises, and a caller that
     // chains `.catch()` instead of `await`ing would never see a synchronous throw.
     find: async (id) => {
