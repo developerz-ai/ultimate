@@ -83,6 +83,11 @@ export function setLogStream(stream: 'stdout' | 'stderr'): void {
   logStream = stream;
 }
 
+/** The stream `setLogStream` last chose: what a caller that sets it for a span puts back after. */
+export function currentLogStream(): 'stdout' | 'stderr' {
+  return logStream;
+}
+
 /** What `installLogSink` installs: one complete JSON line, and the level it was written at. */
 export type LogSink = (line: string, level: LogLevel) => void;
 

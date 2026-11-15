@@ -8,16 +8,21 @@ import { frozenClock } from '@ultimat3/core';
 import { browserRecord } from './browser-record';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import { cdpTarget } from './cdp-target';
 import type { SessionSnapshot } from './session-state';
 
 const ORIGIN = 'https://shop.test';
 
 /** A page on `ORIGIN` that RUNS each evaluated expression against its own `localStorage`. */
-const storagePage = (): { readonly page: CdpPageLike; readonly stored: Map<string, string> } => {
+const storagePage = (): {
+  readonly page: CdpPageLike;
+  readonly stored: Map<string, string>;
+} => {
   const stored = new Map<string, string>();
   const localStorage = { setItem: (key: string, value: string) => stored.set(key, value) };
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => `${ORIGIN}/account`,
     goto: () => Promise.resolve(undefined),
     content: () => Promise.resolve(''),
@@ -42,6 +47,7 @@ describe('unit · restore() writes every stored key back, whatever it is called'
   test('a key spelled __proto__ is restored as a key, beside an ordinary one', async () => {
     const { page, stored } = storagePage();
     const browser: CdpBrowserLike = {
+      ...stubCookieJar(),
       newPage: () => Promise.resolve(page),
       target: () => fakeBrowserTarget().target,
       close: () => Promise.resolve(),

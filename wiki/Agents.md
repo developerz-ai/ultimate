@@ -414,11 +414,8 @@ export const kbAgent = agent({
 | `openAiProvider()` | any other `baseUrl` | any | none | nowhere |
 
 **Your own endpoint is a row on its provider**, read before the table, first match by model prefix
-(`As of 2026-11`): `openAiProvider({ …, promptCache: { rules: [{ model: 'anthropic/', marks: 'parts', session: 'x-session-id' }] } })`
-for a company gateway fronting a marking family; `anthropicProvider({ …, promptCache: { rules: [{ model: '', marks: 'none', session: 'none' }] } })`
-for a proxy that rejects `cache_control`. The budget's estimate follows the row. A mark or session
-carrier the wire cannot speak — `parts` or a session on the Messages wire, `blocks` on
-chat-completions — is `X_AI_REQUEST_INVALID` when the provider is built.
+(`As of 2026-11`): the rule shapes, the order and the refusal are in
+[MCP and AI](MCP-And-AI#prompt-caching-on-your-own-endpoint). The budget's estimate follows the row.
 
 | Rule | Detail |
 |---|---|

@@ -10,21 +10,26 @@ import { addUsage } from './agent-usage';
 import type { Billed } from './billed';
 import { BILLED_META, billedCall, billedOf } from './billed';
 import { addMoney } from './cost';
+import type { ModelFallback } from './model-fallback';
+import { withAttemptSink } from './model-fallback';
 import type { GenerateResult } from './provider';
 import { ZERO_USAGE } from './wire';
 
 export interface RunMeter {
   /**
-   * Await one provider call. Until it reports usage it is UNSETTLED: an abort, a deadline or a
-   * transport failure leaves it that way, and its bill cannot be known from here.
+   * Run and await one provider call. Until it reports usage it is UNSETTLED: an abort, a deadline
+   * or a transport failure leaves it that way, and its bill cannot be known from here. A thunk, so
+   * the call STARTS inside this meter: a `fallbackModels` chain in it reports each model it falls
+   * over from to this meter alone (`withAttemptSink`), however many calls share a thrown object.
    */
-  call(work: Promise<GenerateResult>): Promise<GenerateResult>;
+  call(work: () => Promise<GenerateResult>): Promise<GenerateResult>;
   /** The run so far, re-priced from the summed usage — `undefined` before the first answer. */
   total(): AgentRunUsage | undefined;
   /** The run's bill, or `undefined` when no provider call was ever started. */
   billed(): Billed | undefined;
   /**
-   * What runs UNDERNEATH this one were billed — a tool that itself calls `llm()` or an `agent()`.
+   * What was billed at ANOTHER model's price, added and never re-priced: runs underneath this one —
+   * a tool that itself calls `llm()` or an `agent()` — and answers a `fallbackModels` model gave.
    * Their failures are read by the model as tool results and never thrown here, so this is the
    * only way that spend reaches the run that caused it.
    */
@@ -60,6 +65,18 @@ export function runMeter(): RunMeter {
   let carried: Billed | undefined;
   const counted = new WeakSet<object>();
 
+  /**
+   * A model a chain fell over from, as it happens — an attempt too, never free: its bill when its
+   * failure carried one, else one unsettled call. The model that ends the walk is the call's own
+   * answer or throw, counted below.
+   */
+  const fellOver = (attempt: ModelFallback): void => {
+    const bill = attempt.billed ?? UNSETTLED_CALL;
+    if (attempt.billed === undefined) unsettled += 1;
+    else carried = carried === undefined ? bill : sum(carried, bill);
+    parent?.report(bill);
+  };
+
   const absorb = (error: unknown): void => {
     const billed = billedOf(error);
     if (billed === undefined || typeof error !== 'object' || error === null) return;
@@ -91,11 +108,17 @@ export function runMeter(): RunMeter {
     async call(work) {
       unsettled += 1;
       try {
-        const result = await work;
+        const result = await withAttemptSink(fellOver, work);
         unsettled -= 1;
-        calls += 1;
-        own = addUsage(own, result);
-        parent?.report(billedCall(result.usage, result.costExact ?? result.cost));
+        if (fellOverTo(result)) {
+          // Answered by a `fallbackModels` model: billed at ITS price, apart — `own` is re-priced
+          // as one model, and summing a fallback's tokens into it charged them at the primary's.
+          report(billedCall(result.usage, result.costExact ?? result.cost));
+        } else {
+          calls += 1;
+          own = addUsage(own, result);
+          parent?.report(billedCall(result.usage, result.costExact ?? result.cost));
+        }
         return result;
       } catch (error) {
         // The provider answered and billed, then the answer could not be used: settled after all.
@@ -152,6 +175,9 @@ export async function meteredRun<T>(
     throw meter.fail(error);
   }
 }
+
+/** Answered on a fallback, not the model asked for. */
+const fellOverTo = (result: GenerateResult): boolean => (result.fallbacks?.length ?? 0) > 0;
 
 /** One started call that never reported usage: counted, never priced. */
 const UNSETTLED_CALL: Billed = {

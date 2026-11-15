@@ -82,6 +82,8 @@ export function TreeSelectNode(props: TreeSelectNodeProps): JSX.Element {
     <li
       class={styles['item']}
       role="treeitem"
+      // Its OWN name: name-from-content would read every open child and the loading text too.
+      aria-label={props.node.label}
       data-tree-id={id}
       aria-level={props.state(id)?.level}
       aria-setsize={props.state(id)?.setsize}

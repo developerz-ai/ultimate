@@ -209,6 +209,7 @@ export {
   type AdminMatchingResult,
   type AdminRepo,
   type AdminRow,
+  type AdminSearchQuery,
   type AdminSort,
   type AdminTable,
   type AdminTableRead,

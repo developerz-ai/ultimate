@@ -6,7 +6,7 @@ import type { Span, SpanAttributes } from '@ultimat3/core';
 import { SEMCONV } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
-import { runTotal } from './agent-usage';
+import { pricedOn, runTotal } from './agent-usage';
 import { LlmTruncatedError } from './answer-errors';
 import { LlmRefusedError, LlmStreamInvalidError } from './errors';
 import type { Gateway } from './gateway';
@@ -60,7 +60,7 @@ export async function streamedAnswer<
   meter: RunMeter,
 ): Promise<InferOutput<TOutput>> {
   const { output } = def;
-  const result = await meter.call(streamOneTurn(gateway, request, sink));
+  const result = await meter.call(() => streamOneTurn(gateway, request, sink));
   span.setAttributes({ 'ultimate.llm.attempts': 1, ...answerAttributes(result) });
   await observeCall(def, meter, result, 1, undefined);
   if (result.stopReason === 'refusal') {
@@ -110,7 +110,7 @@ export async function observeCall<
     cost: result.cost,
     ...(result.costExact === undefined ? {} : { costExact: result.costExact }),
     ...(repairOf === undefined ? {} : { repairOf }),
-    run: runTotal(result.model, undefined, meter.total()),
+    run: runTotal(pricedOn(result), undefined, meter.total(), meter.below()),
   });
 }
 

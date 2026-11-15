@@ -36,7 +36,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   realtime: 43,
   render: 48,
   schema: 7,
-  scraping: 52,
+  scraping: 39,
   // 173 → 174: the `commits-only` finding in `changelog-check.ts`, one more fix: line in that file.
   // why: the edit it names is to write release notes into the release's docs/changelog/X.Y.Z.md,
   // which no command in this repo performs, so the line cannot open with a command — the sibling

@@ -12,6 +12,7 @@ import { toOpenAiMessages, toOpenAiTools, toolChoiceFor } from './openai-message
 import type { PromptCacheRule, ProviderCacheRow } from './prompt-cache';
 import { OPENAI_CACHE_KEY_MAX, promptCacheRule, SESSION_KEY_MAX } from './prompt-cache';
 import type { GenerateRequest } from './provider';
+import { providerOptionsBody } from './provider-options';
 import { samplingBody } from './sampling';
 
 type CacheRule = Pick<PromptCacheRule, 'marks' | 'session'>;
@@ -31,8 +32,9 @@ export interface ChatCompletionBodyInput {
 
 /**
  * The body. What is deliberately absent is as load-bearing as what is present:
- *   - no `top_p` / `presence_penalty`, and `temperature` / `seed` only for a model whose row takes
- *     them (`ModelSpec.sampling`): a sampling knob on a reasoning model in this family is a 400.
+ *   - no `top_p` / `presence_penalty` of the framework's choosing, and `temperature` / `seed` only
+ *     for a model whose row takes them (`ModelSpec.sampling`): a sampling knob on a reasoning model
+ *     in this family is a 400. `providerOptions.openai` sends them when the APP asks, screened.
  *   - no `response_format`. The output schema is projected into the `respond` tool by `llm()`, and
  *     that projection is the framework's ONE structured-output path — see the README.
  *   - `max_completion_tokens`, never the deprecated `max_tokens`, which current reasoning models
@@ -51,6 +53,8 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
     max_completion_tokens: Math.min(request.maxTokens, spec.maxOutput),
     ...reasoningFields(model, request.effort, request.thinking),
     ...samplingBody('openai', model, request),
+    // The app's explicit wire parameters, screened; no key collides with a field set above.
+    ...providerOptionsBody('openai', request.providerOptions),
   };
   if (request.tools !== undefined && request.tools.length > 0) {
     body['tools'] = toOpenAiTools(request.tools);

@@ -7,7 +7,13 @@
 import type { SleepClock } from '@ultimat3/core';
 import { resolveDialHost } from '@ultimat3/core/outbound';
 import { type BrowserDialScreen, browserDialRefusal } from './browser-dial';
-import type { CdpBrowserLike, CdpPageLike, CdpRequestLike } from './cdp-port';
+import type {
+  CdpBrowserLike,
+  CdpBrowserSessionLike,
+  CdpPageLike,
+  CdpRequestLike,
+  CdpSessionLike,
+} from './cdp-port';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
 import type { HostResolve } from './pinned-host';
@@ -249,6 +255,22 @@ const asPaused = (payload: unknown): PausedRequest | undefined => {
 };
 
 /**
+ * What `armBrowser` asks about a response before releasing it — `cdp-download.ts`'s capture.
+ * Answers `true` when it released the response ITSELF (fulfilled or failed it), so this file must
+ * not continue it a second time.
+ */
+export type ResponseHook = (paused: unknown, session: CdpSessionLike) => Promise<boolean>;
+
+/** The request id of a RESPONSE-stage pause — one carrying a status — or nothing. */
+const responseStage = (payload: unknown): string | undefined => {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const { requestId, responseStatusCode } = payload as Record<string, unknown>;
+  return typeof requestId === 'string' && typeof responseStatusCode === 'number'
+    ? requestId
+    : undefined;
+};
+
+/**
  * `allowHosts` and `block` on EVERY target the browser opens. Page-level interception (`arm`)
  * covers the one page this package created; a popup — `window.open`, a `target=_blank` link — is
  * a new target it never sees, and on Chrome 150 a scraped page's `window.open` to an off-list host
@@ -266,10 +288,26 @@ export async function armBrowser(
     readonly clock: SleepClock;
   },
   network: NetworkRing,
-): Promise<void> {
+  responses?: ResponseHook,
+): Promise<CdpBrowserSessionLike> {
   const screen = dialScreen(init);
   const session = await init.browser.target().createCDPSession();
   session.on('Fetch.requestPaused', (payload) => {
+    // A RESPONSE-stage pause is a request this handler already released at the request stage;
+    // it is asked of the hook (a download's body is readable only now) and released, never judged.
+    const responseOf = responseStage(payload);
+    if (responseOf !== undefined) {
+      const release = (): void => {
+        session.send('Fetch.continueRequest', { requestId: responseOf }).catch(() => undefined);
+      };
+      (responses === undefined ? Promise.resolve(false) : responses(payload, session)).then(
+        (released) => {
+          if (!released) release();
+        },
+        release,
+      );
+      return;
+    }
     const paused = asPaused(payload);
     if (paused === undefined) return;
     const type = asResourceType(paused.resourceType.toLowerCase());
@@ -296,5 +334,15 @@ export async function armBrowser(
       () => refuse('host'),
     );
   });
-  await session.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+  await session.send('Fetch.enable', {
+    patterns: [
+      { urlPattern: '*' },
+      // Documents only: a download is a navigation Chrome turns into a file, and pausing every
+      // subresource's response too would cost each image and script a round trip for nothing.
+      ...(responses === undefined
+        ? []
+        : [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }]),
+    ],
+  });
+  return session;
 }

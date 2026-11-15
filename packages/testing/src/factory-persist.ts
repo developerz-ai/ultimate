@@ -34,6 +34,9 @@ export function clearPersister(): void {
 
 export const persisterInstalled = (): boolean => current !== undefined;
 
+/** The installed persister itself: what the registry guard's file boundary hands back. */
+export const installedPersister = (): Persister | undefined => current;
+
 /** Install for one run and hand back what was there: the factory lint's own throwaway writer. */
 export function swapPersister(next: Persister | undefined): Persister | undefined {
   const previous = current;

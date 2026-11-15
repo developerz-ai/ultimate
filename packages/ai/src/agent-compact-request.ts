@@ -67,7 +67,8 @@ function writerRequest(
   messages: readonly AiMessage[],
 ): GenerateRequest {
   if (writer === base.model) return { ...base, messages, maxTokens };
-  const { effort: _effort, thinking: _thinking, ...rest } = base;
+  // Nor the run model's fallback chain: a separate writer is its own choice, and may be in it.
+  const { effort: _effort, thinking: _thinking, fallbackModels: _chain, ...rest } = base;
   return { ...rest, model: writer, messages, maxTokens };
 }
 

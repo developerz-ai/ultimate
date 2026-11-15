@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpScreenshotOptions } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import { cdpTarget } from './cdp-target';
 import { scrapeTimeout } from './error-throws';
 
@@ -21,9 +22,6 @@ const caught = async (promise: Promise<unknown>): Promise<unknown> => {
     return thrown;
   }
 };
-
-const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> =>
-  ((await caught(promise)) as { code?: string }).code;
 
 const SNAPSHOT = {
   tag: 'a',
@@ -83,6 +81,7 @@ const rich = (
     },
   };
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => url,
     goto: (next: string) => {
       url = next;
@@ -138,6 +137,7 @@ const rich = (
     },
   };
   const browser: CdpBrowserLike = {
+    ...stubCookieJar(),
     newPage: () => Promise.resolve(page),
     target: () => fakeBrowserTarget().target,
     close: () => Promise.resolve(),
@@ -245,24 +245,6 @@ describe('unit · capture', () => {
     const fixture = rich();
     expect([...(await (await targetOver(fixture)).pdf({}))]).toEqual([4, 5]);
   });
-
-  test('download() is an honest X_NOT_IMPLEMENTED, never empty bytes', async () => {
-    const target = await targetOver(rich());
-    expect(await codeOf(target.download({ timeoutMs: 1_000 }))).toBe('X_NOT_IMPLEMENTED');
-  });
-
-  test('download() REJECTS — a `.catch()` on it is reached, never jumped over', async () => {
-    // The method is typed `Promise<ScrapeDownloadFile>` and `page-over-target.ts` forwards it in a
-    // non-async arrow, so a synchronous `throw` here escapes past `page.download().catch(…)` and
-    // lands in whatever encloses the call — an artifact writer's `catch` never runs.
-    const target = await targetOver(rich());
-    let caught: unknown;
-    const settled = target.download({ timeoutMs: 1_000 }).catch((thrown: unknown) => {
-      caught = thrown;
-    });
-    await settled;
-    expect((caught as { code?: string } | undefined)?.code).toBe('X_NOT_IMPLEMENTED');
-  });
 });
 
 describe('unit · cookies and session', () => {
@@ -272,20 +254,6 @@ describe('unit · cookies and session', () => {
     expect(await target.cookies()).toEqual([
       { name: 'sid', value: '', domain: 'shop.test', path: '/', httpOnly: true, secure: true },
     ]);
-  });
-
-  test('a browser with NO cookies() refuses PERMANENTLY — the code survives guard()', async () => {
-    // `guard()` used to re-label this deliberate X_NOT_IMPLEMENTED as X_SCRAPE_BROWSER_UNREACHABLE,
-    // which is registered `retryable`: a launcher that structurally lacks `browser.cookies()` then
-    // spent every attempt in the retry policy on a method that is still missing, and told the
-    // operator the browser went away while the browser was answering fine.
-    const target = await targetOver(rich());
-    const thrown = await caught(target.cookies());
-    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
-    expect((thrown as { retry?: string }).retry).toBe('terminal');
-    expect((thrown as { cause?: string }).cause).toContain(
-      'cookies() on a CDP browser with no cookies() method',
-    );
   });
 
   test('session() reads cookies, storage, agent and origin', async () => {
@@ -299,32 +267,6 @@ describe('unit · cookies and session', () => {
       userAgent: 'fake-agent',
       origin: 'https://shop.test',
     });
-  });
-
-  // A jar-less browser answered `cookies: []`, so the HTTP leg went out logged-out and a persisted
-  // session held no cookies — both silently. Every other missing port method refuses by name.
-  test('session() on a browser with NO cookies() refuses, terminal, by name', async () => {
-    const thrown = await caught((await targetOver(rich())).session());
-    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
-    expect((thrown as { retry?: string }).retry).toBe('terminal');
-    expect((thrown as { cause?: string }).cause).toContain('session()');
-  });
-
-  test('restore() of cookies on a browser with NO setCookie() refuses rather than dropping them', async () => {
-    const target = await targetOver(rich({ cookies: true }));
-    const thrown = await caught(
-      target.restore({
-        cookies: [
-          { name: 'sid', value: 'x', domain: 'shop.test', path: '/', httpOnly: true, secure: true },
-        ],
-        headers: {},
-        storage: {},
-        userAgent: '',
-        origin: 'https://shop.test',
-      }),
-    );
-    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
-    expect((thrown as { cause?: string }).cause).toContain('setCookie()');
   });
 
   test('restore() of a session with no cookies needs no setCookie()', async () => {

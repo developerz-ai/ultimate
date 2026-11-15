@@ -156,6 +156,7 @@ function frameOver(
     async press(chord): Promise<void> {
       await (await resolve()).press(chord);
     },
+    // Through `resolve()`, so a FRAME handle reads the frame's own document.
     async accessibility(selector, options?: AccessibilityOptions): Promise<readonly AxNode[]> {
       // Screened, never `??`-defaulted alone: `NaN` is not nullish, and `slice(0, NaN)` is
       // `slice(0, 0)` — an empty answer that reads as "nothing matched" (`finiteCount`, core).

@@ -16,17 +16,23 @@ export type {
 export { burnSession, ensureAuthenticated, restorableSession, scrapePrompt } from './auth';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
+export { DEFAULT_MAX_DOWNLOAD_BYTES } from './cdp-download-read';
 export type {
   CdpBrowserLike,
   CdpBrowserSessionLike,
   CdpBrowserTargetLike,
+  CdpBrowserVerb,
   CdpFrameLike,
   CdpKeyboardLike,
   CdpLauncherLike,
   CdpPageLike,
+  CdpPageVerb,
   CdpPdfOptions,
   CdpScreenshotOptions,
   CdpSessionLike,
+  CompleteCdpBrowser,
+  CompleteCdpPage,
+  CompleteLauncher,
 } from './cdp-port';
 export type { CdpResolution, CdpResolver, CdpResolverRequest } from './cdp-resolver';
 export { snapshotExpression } from './cdp-snapshot';

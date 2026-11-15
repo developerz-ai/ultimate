@@ -21,6 +21,9 @@
       "path": "../schema"
     },
     {
+      "path": "../storage"
+    },
+    {
       "path": "../time"
     }
   ]

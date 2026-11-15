@@ -184,7 +184,10 @@ export const config = defineRoute({
   // (+27 B, also the run console's). Raised 242kb → 242.4kb.
   // measured: 248244 B (2026-11-14, plan 101 sweep 1; x build --target static, against 248,085
   // at origin/main) — why: the run console +159 B (129,479 B), two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`). Raised 242.4kb → 242.5kb.
-  budget: { js: '242.5kb' },
+  // measured: 248388 B (2026-11-15, plan 101 sweep 3; x build --target static) — why: the run
+  // console +144 B (129,623 B), the ui catalog's pointer-capture take-back in its drag and the
+  // named scroll region a Table now carries. Raised 242.5kb → 242.6kb.
+  budget: { js: '242.6kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

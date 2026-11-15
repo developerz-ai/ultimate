@@ -6,11 +6,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
-// why: `node:process`, and unavoidable: the assertion below is about which of the process's OWN
-// streams core's default log writer reaches, so the writers it targets are what this test has to
-// intercept.
-import process from 'node:process';
-import { installLogSink, logger, setLogStream } from '@ultimat3/core';
+import { currentLogStream, setLogStream } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { PLANNED_COMMANDS } from './cmd-planned';
 import { dispatch, sinkFor } from './dispatch';
@@ -209,44 +205,34 @@ describe('unit · the dispatcher owns fd 1', () => {
     expect(out).toEqual(['banner']);
   });
 
-  test('--json moves the boot logger off stdout, for every command', async () => {
-    const out: string[] = [];
-    const err: string[] = [];
-    const stdout = process.stdout.write.bind(process.stdout);
-    const stderr = process.stderr.write.bind(process.stderr);
-    const probe = (): void => {
-      process.stdout.write = (chunk: unknown): boolean => {
-        out.push(String(chunk));
-        return true;
-      };
-      process.stderr.write = (chunk: unknown): boolean => {
-        err.push(String(chunk));
-        return true;
-      };
-      // The streams themselves are the subject here, so the test preload's sink is lifted.
-      const releaseLogSink = installLogSink(undefined);
-      try {
-        logger.info('ultimate migrate applied');
-      } finally {
-        releaseLogSink();
-        process.stdout.write = stdout;
-        process.stderr.write = stderr;
-      }
+  test('--json moves the boot logger off stdout while the command runs, for every command', async () => {
+    const seen: string[] = [];
+    // The sink is written INSIDE the dispatch: what it reads is the stream the command logged to.
+    const during = async (argv: readonly string[]): Promise<void> => {
+      await dispatch({
+        argv,
+        cwd: import.meta.dir,
+        env: {},
+        bunVersion: REQUIRED_BUN,
+        write: () => seen.push(currentLogStream()),
+      });
     };
-    try {
-      // `x help` boots nothing, which is the point: the decision is the DISPATCHER's and is taken
-      // for all thirty commands, not remembered by each one that happens to open a database.
-      await run(['help', '--json']);
-      probe();
-      expect(out).toEqual([]);
-      expect(err.join('')).toContain('ultimate migrate applied');
+    // `x help` boots nothing, which is the point: the decision is the DISPATCHER's and is taken
+    // for all thirty commands, not remembered by each one that happens to open a database.
+    await during(['help', '--json']);
+    await during(['help']);
+    expect(seen).toEqual(['stderr', 'stdout']);
+  });
 
-      // No `setLogStream('stdout')` here, deliberately: the dispatcher RESETS the stream on every
-      // run, and this call standing in for it is what hid a JSON dispatch leaving stderr behind
-      // for the next non-JSON one.
+  // The stream is process-wide: a `--json` dispatch that left `stderr` behind moved every later
+  // log line of the process — the next test FILE's included, on a shared (isolate-off) worker.
+  test('a dispatch puts the log stream back the way it found it, both ways', async () => {
+    try {
+      await run(['help', '--json']);
+      expect(currentLogStream()).toBe('stdout');
+      setLogStream('stderr');
       await run(['help']);
-      probe();
-      expect(out.join('')).toContain('ultimate migrate applied');
+      expect(currentLogStream()).toBe('stderr');
     } finally {
       setLogStream('stdout');
     }

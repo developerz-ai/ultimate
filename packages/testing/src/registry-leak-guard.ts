@@ -8,8 +8,10 @@ import { knownTags, registeredTiers } from '@ultimat3/cache';
 import { configureLocales } from '@ultimat3/i18n';
 import { captureAdminMounts, restoreAdminMounts } from './admin-mount-boundary';
 import { isAppRoot } from './app-root';
+import { captureDeclarationTables, restoreDeclarationTables } from './declaration-boundary';
 import { captureDriverStores, restoreDriverStores } from './driver-store-boundary';
 import { RegistryLeakError } from './errors';
+import { installedPersister, swapPersister } from './factory-persist';
 import { runBoundaryHooks, runFileBoundary } from './file-boundary';
 import { type ImportGraph, importGraphReader } from './import-graph';
 import { ownEnvironment } from './registry-environment';
@@ -167,6 +169,8 @@ export function installRegistryLeakGuard(): void {
         before: RegistrySample | undefined;
         readonly snapshot: ProcessRegistrySnapshot;
         readonly admins: ReturnType<typeof captureAdminMounts>;
+        readonly tables: ReturnType<typeof captureDeclarationTables>;
+        readonly persister: ReturnType<typeof installedPersister>;
       }
     | undefined;
   const leaks: RegistryLeak[] = [];
@@ -232,6 +236,12 @@ export function installRegistryLeakGuard(): void {
     // whose drift step then read its fixture app as "a store that owns its own schema".
     restoreDriverStores(preloadStores);
     restoreAdminMounts(current.admins);
+    // The framework repository's own suites only: in an app these tables hold what `loadApp()`
+    // registered once for the worker's life (routes, the authenticator, storage, channels), and a
+    // module the cache will not evaluate again cannot put them back for the next file.
+    if (!inApp) restoreDeclarationTables(current.tables);
+    // A preload's `usePersister` is in every body's start; a file's own `factoryWorld()` is not.
+    swapPersister(current.persister);
     accumulated = mergeSnapshots(accumulated, restored);
     lastBoundary = restored;
     current = undefined;
@@ -281,6 +291,8 @@ export function installRegistryLeakGuard(): void {
       before: undefined,
       snapshot: narrowed(live, accumulated),
       admins: captureAdminMounts(),
+      tables: captureDeclarationTables(),
+      persister: installedPersister(),
     };
     pending = undefined;
   };

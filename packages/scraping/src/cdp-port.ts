@@ -104,14 +104,11 @@ export interface CdpPageLike {
   /**
    * The browser's own network condition — `Network.emulateNetworkConditions` under CDP.
    *
-   * OPTIONAL, read defensively, for `CdpRequestLike.method` and `CdpBrowserLike.cookies`' reason:
-   * this file is the shape of somebody ELSE's object, and a provider SDK or a launcher that
-   * predates the method must still satisfy the port. It does not go unwired by being optional —
-   * `cdp-target.ts` refuses BY NAME with `X_NOT_IMPLEMENTED` and a fix when a launcher lacks it,
-   * exactly as `cookies()` does, so the gap is a coded refusal rather than a silent no-op.
-   *
-   * Required instead would cost every existing launcher, every provider SDK and every test double
-   * a type error for a capability the port cannot make them have.
+   * OPTIONAL in this type, because this file is the shape of somebody ELSE's object and a provider
+   * SDK or an older launcher must still satisfy it. Optional is not unwired: `cdp-complete.ts`
+   * checks every verb `ScrapeTarget` forwards to when the session OPENS, and a page missing one is
+   * `X_SCRAPE_LAUNCHER_INCOMPLETE` naming it — never a refusal at the call, on whichever run first
+   * reached the verb. `CompleteCdpPage` below is the same shape with each one required.
    */
   setOfflineMode?(enabled: boolean): Promise<void>;
   /**
@@ -119,9 +116,7 @@ export interface CdpPageLike {
    * is the one this package sets; the array shape is the library's and is restated, not narrowed,
    * because this file is the shape of somebody ELSE's object.
    *
-   * OPTIONAL, read defensively, for `setOfflineMode`'s reason: a provider SDK or a launcher that
-   * predates the method must still satisfy the port. It does not go unwired by being optional —
-   * `cdp-target.ts` refuses BY NAME with `X_NOT_IMPLEMENTED` and a fix when a launcher lacks it.
+   * OPTIONAL, checked at open, for `setOfflineMode`'s reason.
    *
    * `name` stays a bare `string`. A union of the features this package sets would be this file
    * naming somebody else's vocabulary, and a launcher accepting more would then fail to satisfy
@@ -142,33 +137,29 @@ export interface CdpPageLike {
    * the library's own types for them.
    */
   on(event: string, handler: (payload: unknown) => void): unknown;
-  /**
-   * OPTIONAL, read defensively, for `setOfflineMode`'s reason: a provider SDK or a launcher that
-   * predates the member must still satisfy the port. `cdp-target.ts` refuses BY NAME with
-   * `X_NOT_IMPLEMENTED` when a launcher lacks it — a chord on a page with no keyboard is a coded
-   * refusal, never a silent no-op that leaves a command palette closed and a test green.
-   */
+  /** OPTIONAL, checked at open, for `setOfflineMode`'s reason. */
   readonly keyboard?: CdpKeyboardLike | undefined;
-  /** `page.focus(selector)`. OPTIONAL for `keyboard`'s reason, and refused by name when absent. */
+  /** `page.focus(selector)`. OPTIONAL, checked at open, for `setOfflineMode`'s reason. */
   focus?(selector: string): Promise<void>;
   /**
    * `page.evaluateOnNewDocument(expression)`: a script the browser runs in EVERY document this
    * page navigates to, before any of the document's own scripts — `Page.addScriptToEvaluateOnNewDocument`
    * under CDP. It is the only moment that beats an inlined boot script, which is what a
    * storage-seeded theme choice needs (`ScrapePage.prepare`). The string form, for `evaluate`'s
-   * reason. OPTIONAL for `keyboard`'s reason, and refused by name when absent.
+   * reason. OPTIONAL, checked at open, for `setOfflineMode`'s reason.
    */
   evaluateOnNewDocument?(expression: string): Promise<unknown>;
   /**
    * A raw protocol session, for the one read this package makes that the library has no method
-   * for: the accessibility tree (`Accessibility.getPartialAXTree`). OPTIONAL for `keyboard`'s
-   * reason, and refused by name when absent.
+   * for: the accessibility tree (`Accessibility.getPartialAXTree`). OPTIONAL, checked at open, for
+   * `setOfflineMode`'s reason.
    */
   createCDPSession?(): Promise<CdpSessionLike>;
   /**
    * `page.authenticate(credentials)`: answers the PROXY's own auth challenge. It is the only way a
    * launched browser dials a credentialed exit — `--proxy-server` takes no userinfo, and one
-   * written there would sit in the process list. OPTIONAL for `keyboard`'s reason; a credentialed
+   * written there would sit in the process list. OPTIONAL and NOT checked at open — no
+   * `ScrapeTarget` member forwards to it; a credentialed
    * exit on a launcher without it is `X_SCRAPE_EGRESS_UNSUPPORTED`, never a direct connection.
    */
   authenticate?(credentials: {
@@ -212,7 +203,10 @@ export interface CdpBrowserLike {
    * browser a scraped site controls is advisory. A launcher without it does not compile.
    */
   target(): CdpBrowserTargetLike;
-  /** Present on a browser that owns a cookie jar. Absent ones answer `X_NOT_IMPLEMENTED`. */
+  /**
+   * The browser's cookie jar — `cookies()`, `session()` and `restore()` read or write it. OPTIONAL,
+   * checked at open, for `CdpPageLike.setOfflineMode`'s reason.
+   */
   cookies?(): Promise<unknown>;
   setCookie?(...cookies: readonly unknown[]): Promise<void>;
   /** Ends the browser. For an attached session this is what stops the REMOTE half. */
@@ -230,4 +224,37 @@ export interface CdpBrowserLike {
 export interface CdpLauncherLike {
   launch?(options: Record<string, unknown>): Promise<CdpBrowserLike>;
   connect?(options: Record<string, unknown>): Promise<CdpBrowserLike>;
+}
+
+/** The page verbs `ScrapeTarget` forwards to — required, where `CdpPageLike` leaves them optional. */
+export type CdpPageVerb =
+  | 'keyboard'
+  | 'focus'
+  | 'evaluateOnNewDocument'
+  | 'createCDPSession'
+  | 'setOfflineMode'
+  | 'emulateMediaFeatures';
+
+/** The browser's jar, required for the same reason. */
+export type CdpBrowserVerb = 'cookies' | 'setCookie';
+
+/** A page carrying every verb the target forwards to — what `cdp-complete.ts` proves at open. */
+export type CompleteCdpPage = CdpPageLike &
+  Required<Pick<CdpPageLike, Exclude<CdpPageVerb, 'keyboard'>>> & {
+    // Spelled out: `Required` drops the `?` and keeps the declared `| undefined`.
+    readonly keyboard: CdpKeyboardLike;
+  };
+
+/** A browser whose pages are complete and whose jar is present. */
+export type CompleteCdpBrowser = Omit<CdpBrowserLike, 'newPage'> &
+  Required<Pick<CdpBrowserLike, CdpBrowserVerb>> & { newPage(): Promise<CompleteCdpPage> };
+
+/**
+ * A launcher every one of whose browsers is complete. The built-in launchers (`fakeCdpLauncher`)
+ * are declared as this, so a verb they drop is a compile error here and not a refusal at open; an
+ * app's own `puppeteer` is accepted as `CdpLauncherLike` and checked when the session opens.
+ */
+export interface CompleteLauncher extends CdpLauncherLike {
+  launch?(options: Record<string, unknown>): Promise<CompleteCdpBrowser>;
+  connect?(options: Record<string, unknown>): Promise<CompleteCdpBrowser>;
 }

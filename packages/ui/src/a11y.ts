@@ -57,6 +57,31 @@ export function resetUseIdCounter(): void {
   islandScope = undefined;
 }
 
+/** What `labelIds` reads of a control: its `labels`, each with an attribute surface. */
+export interface LabelledControl {
+  readonly labels?: ArrayLike<Pick<Element, 'getAttribute' | 'setAttribute'>> | null | undefined;
+}
+
+/**
+ * The ids of the `<label>`s that name `control`, space-separated, for a popup it owns (a listbox)
+ * to be named by the SAME labels through `aria-labelledby` — a reference, never a copied string. A
+ * label with no id is given one by `mint`, the one write. `undefined` when nothing labels it.
+ */
+export function labelIds(
+  control: LabelledControl | undefined,
+  mint: () => string,
+): string | undefined {
+  const labels = Array.from(control?.labels ?? []);
+  const ids = labels.map((label) => {
+    const own = label.getAttribute('id');
+    if (own !== null && own !== '') return own;
+    const id = mint();
+    label.setAttribute('id', id);
+    return id;
+  });
+  return ids.length === 0 ? undefined : ids.join(' ');
+}
+
 /**
  * `aria-busy`, `aria-checked`, `aria-disabled`, `aria-expanded`, `aria-invalid`,
  * `aria-pressed` and `aria-selected` are ENUMERATED attributes, not boolean ones: their

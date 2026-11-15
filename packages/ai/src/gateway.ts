@@ -5,10 +5,8 @@
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
 import type { Breaker, Random, RetryPolicy } from '@ultimat3/core';
-import { fingerprint, finiteCount, finiteOption, logger, renderThrowable } from '@ultimat3/core';
+import { finiteCount, finiteOption, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import type { Billed } from './billed';
-import { billedOf } from './billed';
 import type { BudgetKeys, BudgetLimits, BudgetReservation, BudgetStore } from './budget';
 import {
   assertFiniteLimits,
@@ -24,12 +22,14 @@ import {
   providerBreakers,
   streamVerdict,
 } from './gateway-providers';
+import { abortedBy, ceilingOf, freeOf, promptCacheKey, settleFailure } from './gateway-settle';
+import { generateOverModels, modelChain, streamOverModels } from './model-fallback';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
+import { screenProviderOptions } from './provider-options';
 import type { SamplingWire } from './sampling';
 import { sentBillOf, streamBillOf } from './stream-bill';
-import { ZERO_USAGE } from './wire';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as
@@ -54,6 +54,7 @@ export const DEFAULT_GATEWAY_RETRY: RetryPolicy = {
 
 export type { GatewayBreakerOption } from './gateway-providers';
 export { backoffMs, DEFAULT_GATEWAY_BREAKER, isRetryable } from './gateway-providers';
+export { promptCacheKey } from './gateway-settle';
 
 export interface ProviderGatewayInput {
   /** Tried in order for a given model. First provider that lists the model wins. */
@@ -82,6 +83,12 @@ export interface ProviderGatewayInput {
    * after the cooldown answers. Per process. `(provider) => breaker({ … })` to choose your own, `'off'` declines.
    */
   readonly breaker?: GatewayBreakerOption | undefined;
+  /**
+   * The clock `retry.timeBudgetMs` is read from. Injectable for the reason `sleep` and `random`
+   * are: a budget that only real time can spend is a rule no unit test can hold. Production
+   * passes none (`systemClock`).
+   */
+  readonly clock?: { monotonic(): number } | undefined;
 }
 
 export interface Gateway {
@@ -126,6 +133,7 @@ class GatewayImpl implements Gateway {
   /** Left `undefined` rather than defaulted, so `backoffDelay` owns the one fallback to `Math.random`. */
   private readonly random: Random | undefined;
   private readonly gateOf: (provider: Provider) => Breaker | undefined;
+  private readonly monotonic: () => number;
 
   get defaultModel(): ModelId | undefined {
     return this.config.defaultModel;
@@ -153,6 +161,8 @@ class GatewayImpl implements Gateway {
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
     this.gateOf = providerBreakers(config.breaker);
+    const clock = config.clock;
+    this.monotonic = clock === undefined ? () => systemClock.monotonic() : () => clock.monotonic();
   }
 
   /**
@@ -179,10 +189,39 @@ class GatewayImpl implements Gateway {
     return (await ledger.report()).cost;
   }
 
-  async generate(request: GenerateRequest): Promise<GenerateResult> {
+  /**
+   * The request, screened before a reservation or a socket — the ceiling, the wire bag, every model
+   * of the chain registered — with the primary model resolved, and the chain to walk.
+   */
+  private prepared(request: GenerateRequest): {
+    readonly resolved: GenerateRequest;
+    readonly chain: readonly ModelId[];
+  } {
     const model = resolveModel('gateway', request.model, this.config.defaultModel);
-    const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
+    const maxTokens = ceilingOf(request);
+    screenProviderOptions(request.providerOptions);
+    return {
+      resolved: { ...request, model, maxTokens },
+      chain: modelChain(model, request.fallbackModels),
+    };
+  }
 
+  async generate(request: GenerateRequest): Promise<GenerateResult> {
+    const { resolved, chain } = this.prepared(request);
+    // One clock for the chain: `retry.timeBudgetMs` bounds the call, every model included.
+    const startedAt = this.monotonic();
+    return generateOverModels(chain, (model, index) =>
+      this.generateModel({ ...resolved, model }, startedAt, index > 0),
+    );
+  }
+
+  /** One model of the chain: cache, reservation, the provider loop, the record. */
+  private async generateModel(
+    resolved: GenerateRequest,
+    startedAt: number,
+    continuing: boolean,
+  ): Promise<GenerateResult> {
+    const model = resolveModel('gateway', resolved.model);
     const cacheKey = promptCacheKey(resolved);
     const cached = await this.config.cache?.get(cacheKey);
     if (cached !== undefined) {
@@ -212,6 +251,9 @@ class GatewayImpl implements Gateway {
         random: this.random,
         gateOf: this.gateOf,
         call: (provider) => provider.generate(resolved),
+        startedAt,
+        monotonic: this.monotonic,
+        continuing,
       });
     } catch (error) {
       // A call that never landed must not go on holding its reservation — and one that DID land
@@ -252,8 +294,17 @@ class GatewayImpl implements Gateway {
   }
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    const model = resolveModel('gateway', request.model, this.config.defaultModel);
-    const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
+    const { resolved, chain } = this.prepared(request);
+    // A chain falls over only before the first chunk (`streamOverModels`); after it, never — nor
+    // once `retry.timeBudgetMs` is spent: one clock for the call, as `generate` keeps it.
+    const startedAt = this.monotonic();
+    const budget = this.retry.timeBudgetMs;
+    const spent = (): boolean => budget !== undefined && this.monotonic() - startedAt > budget;
+    yield* streamOverModels(chain, (model) => this.streamModel({ ...resolved, model }), spent);
+  }
+
+  private async *streamModel(resolved: GenerateRequest): AsyncIterable<StreamChunk> {
+    const model = resolveModel('gateway', resolved.model);
 
     // Routed BEFORE the reservation, not after it. `providerFor` throws for a registered model no
     // configured provider serves — an ordinary boot misconfiguration — and a debit taken first has
@@ -268,7 +319,9 @@ class GatewayImpl implements Gateway {
     // open and no chunk has been delivered for a retry to hide behind. So `providerFor` picks the
     // single provider serving this model and that call stands or throws; `attempt`'s backoff and
     // its fallback across providers belong to `generate` alone. A caller that wants either uses
-    // `generate`, or reconnects itself and knows what it has already shown.
+    // `generate`, or reconnects itself and knows what it has already shown. A declared
+    // `fallbackModels` chain is the one exception, and only before the first chunk is delivered
+    // (`streamOverModels`): a throw from the first pull handed the consumer nothing to duplicate.
     const { provider, ticket } = admittedProvider(model, this.config.providers, this.gateOf);
     const gate = this.gateOf(provider);
     let answered = false;
@@ -351,71 +404,4 @@ class GatewayImpl implements Gateway {
       (p) => p.models.includes(model) && p.marksPromptCache?.(model) === true,
     );
   }
-}
-
-/**
- * A failed call's reservation: reconciled against its bill when the failure carries one — else
- * against `running`, what a stream's wire reported before it stopped — else given back.
- */
-async function settleFailure(
-  ledger: BudgetLedger | undefined,
-  reservation: BudgetReservation | undefined,
-  error: unknown,
-  running?: Billed,
-): Promise<void> {
-  const billed = billedOf(error) ?? running;
-  if (billed === undefined) return ledger?.release(reservation);
-  await ledger?.record(billed.usage, billed.cost, reservation);
-}
-
-/** The caller's abort — its signal, or the `AbortError` a fetch raises for it. */
-function abortedBy(request: GenerateRequest, error: unknown): boolean {
-  if (request.signal?.aborted === true) return true;
-  return error instanceof Error && error.name === 'AbortError';
-}
-
-/** The stored answer as a hit delivers it: no token spent, no money, in the currency it named. */
-const freeOf = (stored: GenerateResult): GenerateResult => ({
-  ...stored,
-  usage: ZERO_USAGE,
-  cost: { ...stored.cost, minor: 0 },
-  ...(stored.costExact === undefined ? {} : { costExact: { ...stored.costExact, minor: 0 } }),
-});
-
-/**
- * The request's completion ceiling, screened at the one seam every model call in an app passes
- * through — `llm()`, `agent()`, an eval, a judge and a hand-built `generate()` alike.
- *
- * It is not the request that a `NaN` here breaks, and that is why it is refused before anything
- * else happens: `maxTokens` IS the pre-flight estimate, `want > remaining` is false for a `NaN`
- * want, and `BudgetLedger.debit` then writes it onto the ambient ledger and the per-process
- * `BudgetStore`. Both counters are `NaN` from then on, so every later comparison against them is
- * false too — one unscreened declaration turns off every actor and org ceiling in the process,
- * permanently, and reports nothing. Screened before the reservation, so the ledger never sees it.
- */
-function ceilingOf(request: GenerateRequest): number {
-  return finiteCount('the AI gateway', 'maxTokens', request.maxTokens, 1);
-}
-
-/**
- * Cache key. Every field that changes the answer is in it — a key that ignores `effort` or
- * `system` would serve one prompt's answer for another — and each tool WHOLE: every `llm()` tool
- * is named `respond`, so a key over names alone served an answer shaped for an old `output` schema
- * after the schema changed. Core's `fingerprint`, so key order never splits one request in two and
- * the width is the one every other sharing key in the framework has.
- */
-export function promptCacheKey(request: GenerateRequest): string {
-  return fingerprint({
-    model: request.model,
-    system: request.system ?? '',
-    messages: request.messages,
-    maxTokens: request.maxTokens,
-    effort: request.effort ?? 'high',
-    thinking: request.thinking ?? 'adaptive',
-    tools: request.tools ?? [],
-    stop: request.stopSequences ?? [],
-    // Only when asked for: an absent knob must leave every key written before it existed as it was.
-    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-    ...(request.seed === undefined ? {} : { seed: request.seed }),
-  });
 }

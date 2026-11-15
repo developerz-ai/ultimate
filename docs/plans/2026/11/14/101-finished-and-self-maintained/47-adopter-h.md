@@ -9,7 +9,7 @@ Agent-driven content factory over MCP, in production. As of 2026-11-14: framewor
 | Item | Where | Replacement |
 |---|---|---|
 | own LLM route + retry, ~1,950 LOC | `packages/gateway/src/llm/route.ts`, `retry.ts` | [`06`](06-ai-mail-scraping-ui.md) A1 |
-| prompt cache for a custom host | `docs/roadmap/ultimate-gaps.md:40` | [`06`](06-ai-mail-scraping-ui.md) A2 |
+| prompt cache for a custom host | `docs/roadmap/ultimate-gaps.md:40` | `openAiProvider({ promptCache: { rules } })` (31.23.0) — delete the workaround |
 | SSRF guard duplicating the public dial, 168 LOC | `packages/gateway/src/media/url-guard.ts:1-3` | `outbound({ dial: 'public' })` |
 | says `x token` is unimplemented | `apps/web/app/api-keys/mint-cli.ts:1` | `x token` (shipped) |
 | real-Postgres runner | `scripts/dev/pg-tests.ts:1-9` | [`07`](07-gate-truth.md) G3 |

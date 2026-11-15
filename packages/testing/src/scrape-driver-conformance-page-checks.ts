@@ -98,14 +98,10 @@ export const SCRAPE_PAGE_CHECKS: readonly ScrapeDriverCheck[] = [
     },
   },
   {
-    name: 'offline(true) cuts the browser off or is refused X_NOT_IMPLEMENTED — never a no-op',
+    name: 'offline(true) cuts the browser off — answered by every driver, never a no-op',
     async run({ page }) {
       await page.goto(SCRAPE_CONFORMANCE_URLS.orders);
-      const refused = await codeOf(() => page.offline(true));
-      if (refused !== undefined) {
-        expect(refused).toBe('X_NOT_IMPLEMENTED');
-        return;
-      }
+      expect(await codeOf(() => page.offline(true))).toBeUndefined();
       // Set: then the browser must actually fail a navigation, or a test proved nothing offline.
       expect(await codeOf(() => page.goto(SCRAPE_CONFORMANCE_URLS.second))).not.toBeUndefined();
       await page.offline(false);

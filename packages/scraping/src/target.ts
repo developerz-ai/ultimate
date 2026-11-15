@@ -134,6 +134,11 @@ export type PdfOptions = CaptureOptions & PdfLayout;
  * should be re-deriving per driver. NO COUNT: this comment said "Twelve methods" while the
  * interface carried seventeen, and a number in prose is wrong the moment the next member lands.
  * `ScrapeTarget` itself is the list.
+ *
+ * No member here is refused by any target in this package (`port-complete.test.ts` calls every one
+ * on every driver): a member one target cannot honour is a second path, and the answer to it is
+ * implementing it there, never `X_NOT_IMPLEMENTED` at runtime. A FRAME target implements every
+ * member too: the verbs addressing a document read the frame's own, and the rest are the page's.
  */
 export interface ScrapeTarget {
   /** `puppeteer` | `fixture` | `fake`. Appears in every error cause raised against it. */
@@ -173,29 +178,29 @@ export interface ScrapeTarget {
   /**
    * A key chord — `'Meta+K'`, `'Escape'`, `'Shift+Tab'` — pressed on whatever holds focus. The
    * PAGE's keyboard, on a frame target too: a browser has one keyboard, and the focused element
-   * is what decides which document hears it. REQUIRED here where `CdpPageLike.keyboard` is
-   * optional, for `setOfflineMode`'s reason: the asymmetry is the enforcement. A driver with no
-   * keyboard still PARSES the chord (`key-chord.ts`) and then resolves — the refusal an offline
-   * driver can give is the one it does give.
+   * is what decides which document hears it. REQUIRED; a launcher whose page has no `keyboard`
+   * is refused when the session opens (`cdp-complete.ts`). A driver with no keyboard still PARSES
+   * the chord (`key-chord.ts`) and then resolves — the refusal an offline driver can give is the
+   * one it does give.
    */
   press(chord: string): Promise<void>;
   /** Moves focus to the first match. Refused when nothing matches. */
   focus(selector: string): Promise<void>;
   /**
-   * The accessibility node of every match, bounded by `max` — the browser's own computed role and
-   * name, which no HTML parse can reproduce. REQUIRED for `press`'s reason, and a driver with no
-   * accessibility engine answers `X_NOT_IMPLEMENTED`, never an invented role: a fake that read
-   * `role="button"` off the markup would pass a test against a `<div onclick>` a reader cannot
-   * reach, which is the exact defect this read exists to catch.
+   * The accessibility node of every match, bounded by `max` — what a screen reader is told, about
+   * THIS target's document: a frame target reads the frame's. A browser answers what it COMPUTED
+   * (`cdp-a11y.ts`); the offline drivers answer the HTML-AAM mapping of the markup (`html-a11y.ts`)
+   * — ARIA, the element's implicit role, label association — and never `role=` alone: a
+   * `<div onclick>` maps to no role and no name on both, which is the finding.
    */
   accessibility(selector: string, max: number): Promise<readonly AxNode[]>;
   /**
-   * The browser goes offline, or comes back. REQUIRED on this port where it is optional on
-   * `CdpPageLike`, and the asymmetry is the enforcement: a driver author gets a type error naming
-   * this member, and the two honest implementations are "set it on the browser" and "refuse by
-   * name". A driver with no browser (`fake`, `fixture`) has no network to cut, so it answers
-   * `X_NOT_IMPLEMENTED` — never a resolved promise, which would let an offline-behaviour test go
-   * green against an app that was online the whole time.
+   * The browser goes offline, or comes back. Never a resolved no-op, which would let an
+   * offline-behaviour test go green against an app that was online the whole time: the browser
+   * driver sets it on the browser, and the offline drivers cut their OWN network — every
+   * navigation fails while it is set, exactly as a browser's does (`html-target.ts`). What they
+   * cannot do is run the app's offline code, so an assertion on what that code renders fails
+   * there rather than passing.
    */
   setOfflineMode(enabled: boolean): Promise<void>;
   /**
@@ -207,29 +212,25 @@ export interface ScrapeTarget {
    * attribute on mount, so a harness that set it is silently overruled and every theme converges
    * on one picture — measured, and byte-identical, in issue #338.
    *
-   * REQUIRED here where `CdpPageLike.emulateMediaFeatures` is optional, for `setOfflineMode`'s
-   * reason: the asymmetry is the enforcement, and a driver author gets a type error naming this
-   * member rather than a silent no-op. A launcher without the method is `X_NOT_IMPLEMENTED`.
+   * REQUIRED; a launcher without `emulateMediaFeatures` is refused when the session opens
+   * (`cdp-complete.ts`), never at the call.
    *
    * A DRIVER WITH NO CSS ENGINE ACCEPTS IT, which is the one place this parts company with
    * `setOfflineMode`, and the line between them is which side of a capture the verb is on. An
-   * offline ASSERTION is reachable on a driver that answers content, so a resolved
-   * `setOfflineMode` would let it pass against an app that never went offline. A colour preference
-   * has no such assertion: the only thing it could be wrong about is a picture, and the offline
+   * offline ASSERTION is reachable on a driver that answers content, so `setOfflineMode` cuts the
+   * offline driver's own navigations. A colour preference has no such assertion: the only thing
+   * it could be wrong about is a picture, and the offline
    * drivers answer different deterministic bytes per scheme — exactly as they do per `clip` —
    * so a driver that dropped the preference fails a test rather than passing every one.
    */
   setColorScheme(scheme: ColorScheme): Promise<void>;
   /**
    * A script every document this target navigates to runs BEFORE its own — the browser's
-   * `evaluateOnNewDocument`. REQUIRED here where `CdpPageLike.evaluateOnNewDocument` is optional,
-   * for `setOfflineMode`'s reason: the asymmetry is the enforcement, and a launcher without the
-   * method is `X_NOT_IMPLEMENTED`.
+   * `evaluateOnNewDocument`. REQUIRED; a launcher without it is refused when the session opens.
    *
-   * A DRIVER WITH NO JS ENGINE ACCEPTS IT, for `setColorScheme`'s reason and not
-   * `setOfflineMode`'s: the offline drivers execute nothing, so there is no document script for
-   * the expression to run ahead of and no assertion a resolved promise could let through — a
-   * seeded `localStorage` key is the INPUT to a boot script this driver never runs. Refusing
+   * A DRIVER WITH NO JS ENGINE ACCEPTS IT, for `setColorScheme`'s reason: the offline drivers
+   * execute nothing, so there is no document script for the expression to run ahead of and no
+   * assertion a resolved promise could let through — a seeded `localStorage` key is the INPUT to a boot script this driver never runs. Refusing
    * would make `x shot` and every `ui.*` tool untestable on a machine with no Chrome, and the
    * outcome it would protect does not exist here. The call is still checked for a closed target.
    */
@@ -237,7 +238,14 @@ export interface ScrapeTarget {
   screenshot(options: CaptureOptions): Promise<Uint8Array>;
   pdf(options: PdfOptions): Promise<Uint8Array>;
   cookies(): Promise<readonly ScrapeCookie[]>;
-  /** Whatever the last click/navigation produced as a file, or a `X_SCRAPE_DOWNLOAD_TIMEOUT`. */
+  /**
+   * The file the LAST trigger — a click, a key, a navigation — produced: the newest one begun since
+   * it, older ones cleared, or `X_SCRAPE_DOWNLOAD_TIMEOUT`. A file from an earlier trigger, or
+   * one that landed after its own `download()` timed out, never answers a later one. The browser
+   * driver takes the bytes off the WIRE (`cdp-download.ts`), never a download directory, so it
+   * answers the same on a launched browser and on a remote one whose disk is not ours — and never
+   * buffers past `BrowserOptions.maxDownloadBytes`.
+   */
   download(options: { readonly timeoutMs: number }): Promise<ScrapeDownloadFile>;
   frames(): Promise<readonly FrameRef[]>;
   /**

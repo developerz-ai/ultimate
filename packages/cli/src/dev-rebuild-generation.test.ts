@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Manifest } from '@ultimat3/manifest';
+import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import type { AppManifest } from './app-manifest';
 import { buildGeneration } from './dev-rebuild';
 import type { IslandBundle } from './island-bundle';
@@ -49,6 +50,9 @@ describe('buildGeneration', () => {
   });
 
   test("the island build's realtime answer is read only once the app load has settled", async () => {
+    // The answer is read off the entity registry, and `undefined` is its EMPTY answer: stated here,
+    // since on a shared worker an earlier file's module-scope entities are still registered.
+    using _empty = { [Symbol.dispose]: isolateEntityRegistry() };
     const load = deferred<AppManifest>();
     const steps: string[] = [];
     const generation = buildGeneration('/app', {

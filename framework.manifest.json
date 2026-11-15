@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "32b74d6b2f8617f62bc8fc16d7d91d37c020a89fe1409673758b76a77397dbe5",
+  "buildId": "806a2795244e50a37bc0f7aedabfdb162c0015f831468f1f9e95f0b2eeba70ce",
   "tiers": {
     "0": [
       "core",
@@ -3160,6 +3160,16 @@
       "at": "packages/mail/src/errors.ts"
     },
     {
+      "code": "X_MAIL_INBOUND_MALFORMED",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_INBOUND_TOO_LARGE",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
       "code": "X_MAIL_KEY_MISSING",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
@@ -4970,6 +4980,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_FRAME_OUT_OF_PROCESS",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_HOST_BLOCKED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
@@ -4986,6 +5001,11 @@
     },
     {
       "code": "X_SCRAPE_LAUNCH_ARGS_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_LAUNCHER_INCOMPLETE",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

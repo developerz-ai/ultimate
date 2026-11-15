@@ -195,4 +195,8 @@ export const TIER_4_ERROR_STATUS = {
   X_CDP_TIMEOUT: 504,
   // @ultimat3/scraping — every pdf() render slot stayed busy past the queue deadline
   X_SCRAPE_PDF_BUSY: 503,
+  // @ultimat3/mail — an inbound message is not MIME this parser reads
+  X_MAIL_INBOUND_MALFORMED: 422,
+  // @ultimat3/mail — an inbound message crosses a declared bound
+  X_MAIL_INBOUND_TOO_LARGE: 413,
 } satisfies Readonly<Record<string, number>>;

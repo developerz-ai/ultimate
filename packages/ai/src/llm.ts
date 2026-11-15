@@ -37,12 +37,14 @@ import type { LlmBudget, LlmDef } from './llm-def';
 import { llmReport } from './llm-instrument';
 import type { LlmStreamChunk } from './llm-stream';
 import { currentLlmSink, llmStream, withLlmSink } from './llm-stream';
+import { declaredFallbacks } from './model-fallback';
 import { modelForCall } from './model-resolve';
 import { moreCapableThan } from './models';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { isTruncated } from './provider';
+import { screenProviderOptions } from './provider-options';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
@@ -113,6 +115,8 @@ export function llm<
   // a call that cannot answer.
   finiteCount('llm', 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
   const sampling = screenSampling('llm', def);
+  // Screened here too, so a bag the wire would refuse fails the boot, not the first request.
+  screenProviderOptions(def.providerOptions);
   const built = action<TInput, TOutput, typeof LlmTextChunk>({
     input: def.input,
     output: def.output,
@@ -255,6 +259,8 @@ async function generate<
         ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
         ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
         ...sampling,
+        ...declaredFallbacks(model, def.fallbackModels),
+        ...(def.providerOptions === undefined ? {} : { providerOptions: def.providerOptions }),
         // The caller's own signal, forwarded to the transport exactly as `agent()` does — and
         // inherited by `streamedAnswer` from this same `base`. Without it a disconnected caller left
         // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
@@ -285,7 +291,7 @@ async function generate<
         let issues = 'no output';
         let rejected: readonly string[] | undefined;
         for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-          const result = await meter.call(gateway.generate({ ...request, messages }));
+          const result = await meter.call(() => gateway.generate({ ...request, messages }));
           span.setAttributes({ 'ultimate.llm.attempts': attempt, ...answerAttributes(result) });
           await observeCall(def, meter, result, attempt, rejected);
           // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial

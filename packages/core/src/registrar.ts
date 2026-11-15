@@ -98,6 +98,7 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'subjectExport', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'webhook', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'webhookReceiver', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'inboundMail', pkg: '@ultimat3/mail', kind: 'job' },
       { factory: 'mcpConfirmations', pkg: '@ultimat3/mcp', kind: 'action' },
       { factory: 'notifier', pkg: '@ultimat3/notify', kind: 'job' },
       { factory: 'pushRegister', pkg: '@ultimat3/notify', kind: 'action' },

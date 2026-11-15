@@ -45,8 +45,8 @@ export {
 } from './cdp-browser';
 export type { E2eBrowserLease, RunEndHook } from './cdp-browser-lease';
 export { closeE2eBrowsersAtRunEnd, leaseE2eBrowser } from './cdp-browser-lease';
-export type { CdpE2eTabOptions, E2eTab } from './cdp-e2e-page';
-export { cdpE2eTab } from './cdp-e2e-page';
+export type { CdpE2eTabOptions, E2eTab, TouchPoint } from './cdp-e2e-page';
+export { cdpE2eTab, PRESS_KEYS } from './cdp-e2e-page';
 export type { CdpE2eSessionOptions, E2eSession } from './cdp-e2e-session';
 export { cdpE2eSession } from './cdp-e2e-session';
 // The exercise pass (plan 101 / 40, phase 2): an app's per-primitive overrides — 39's

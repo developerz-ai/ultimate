@@ -49,12 +49,18 @@ export function Menu(props: MenuProps): JSX.Element {
 
   // Disabled items are excluded from BOTH answers — the list arrows walk and the one item that
   // carries the tab stop — because `focus()` on a disabled button silently does nothing.
-  const onKeyDown = rovingTabindex(
+  const roving = rovingTabindex(
     () =>
       list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)),
     { orientation: 'vertical', dir: ui.dir },
   );
   const tabStop = (): number => tabStopIndex(props.items);
+  // APG menu button: Tab closes the menu and is NOT prevented — the trap hands focus back to the
+  // trigger as the menu unmounts, and the browser's own Tab carries on from there.
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === 'Tab') props.onOpenChange(false);
+    else roving(event);
+  };
 
   rt.createEffect(() => {
     if (!props.open || typeof document === 'undefined') return;
@@ -85,11 +91,20 @@ export function Menu(props: MenuProps): JSX.Element {
         root = el;
       }}
     >
+      {/*
+        Getters, so the trigger is built ONCE (`Popover`'s rule): a snapshot of `props.open` read
+        here rebuilt the trigger on every open and close, and the node the trap hands focus back to
+        on close was the one just thrown away — focus landed on <body>.
+      */}
       {props.trigger({
         id: `${menuId}-trigger`,
         'aria-haspopup': 'menu',
-        'aria-expanded': props.open,
-        'aria-controls': props.open ? menuId : undefined,
+        get 'aria-expanded'() {
+          return props.open;
+        },
+        get 'aria-controls'() {
+          return props.open ? menuId : undefined;
+        },
       })}
       {props.open ? (
         <div

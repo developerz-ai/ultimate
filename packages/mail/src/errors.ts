@@ -29,6 +29,8 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_KEY_MISSING',
   'X_MAIL_PREVIEW_INVALID',
   'X_MAIL_PREVIEW_MISSING',
+  'X_MAIL_INBOUND_MALFORMED',
+  'X_MAIL_INBOUND_TOO_LARGE',
 ] as const;
 
 export type MailErrorCode = (typeof MAIL_ERROR_CODES)[number];
@@ -50,6 +52,8 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_KEY_MISSING: 'a mail rendered a key or slot with no value in its locale',
   X_MAIL_PREVIEW_INVALID: "a mail's declared preview fails its own input schema",
   X_MAIL_PREVIEW_MISSING: 'this mail declares no preview',
+  X_MAIL_INBOUND_MALFORMED: 'an inbound message is not MIME this parser reads',
+  X_MAIL_INBOUND_TOO_LARGE: 'an inbound message crosses a declared bound',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -75,6 +79,9 @@ registerErrorCodes(
 export const MAIL_ERROR_RETRY = {
   X_MAIL_SEND_FAILED: 'retryable',
   X_MAIL_KEY_MISSING: 'terminal',
+  // Terminal as a class; `raw-unavailable` alone is retryable, per instance (`mime-parse-errors.ts`).
+  X_MAIL_INBOUND_MALFORMED: 'terminal',
+  X_MAIL_INBOUND_TOO_LARGE: 'terminal',
 } as const satisfies Readonly<Partial<Record<MailErrorCode, ErrorRetry>>>;
 
 registerErrorRetry(MAIL_ERROR_RETRY);

@@ -82,7 +82,11 @@ export const config = defineRoute({
   // and `publicCause` in the code's one declaration (the meta key rule, the app meta table and the
   // public-cause set, refused all-or-nothing; +1,221 B), and two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`) (+159 B). Raised
   // 108.8kb → 110.1kb.
-  budget: { js: '110.1kb' },
+  // measured: 112847 B (2026-11-15, plan 101 sweep 3; x build --target static) — why: the board
+  // island +144 B (79,025 B): the drag takes back the pointer capture the browser drops when a card
+  // moves columns (a cross-column drag cancelled half way) and cancels when it cannot. Raised
+  // 110.1kb → 110.3kb.
+  budget: { js: '110.3kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

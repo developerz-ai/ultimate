@@ -8,14 +8,16 @@
 //
 // Precedent: `packages/storage/src/driver-s3-fixture.ts` ships the same way.
 
+import type { AxBySelector, FakeAxFrame } from './cdp-fake-a11y-fixture';
+import { fakeAxSession } from './cdp-fake-a11y-fixture';
 import type { FakeBrowserTarget } from './cdp-fake-target-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type {
-  CdpBrowserLike,
   CdpFrameLike,
-  CdpLauncherLike,
-  CdpPageLike,
   CdpSessionLike,
+  CompleteCdpBrowser,
+  CompleteCdpPage,
+  CompleteLauncher,
 } from './cdp-port';
 import { COLOR_SCHEME_FEATURE } from './color-scheme';
 import { queryHtml } from './html-query';
@@ -44,6 +46,10 @@ const clearedSelectorOf = (expression: string): string | undefined => {
 export interface FakeCdpFrameInit {
   readonly url: string;
   readonly html: string;
+  /** What the frame's accessibility tree answers, by selector — `accessibility` below, per frame. */
+  readonly accessibility?: AxBySelector;
+  /** A cross-site frame under site isolation: in `page.frames()`, absent from the page's tree. */
+  readonly outOfProcess?: boolean;
 }
 
 export interface FakeCdpPageInit {
@@ -65,18 +71,19 @@ export interface FakeCdpPageInit {
   /**
    * What the accessibility tree answers, BY SELECTOR — the nodes `Accessibility.getPartialAXTree`
    * would compute for each match, in document order. Canned rather than derived from the markup,
-   * deliberately: a fake that read `role=` off the tag would be the offline driver's refusal
-   * re-implemented as a lie, and the point of this session is to exercise `cdp-a11y.ts`'s four
-   * protocol calls and its parse, not to compute a role.
+   * deliberately: the point of this session is to exercise `cdp-a11y.ts`'s four protocol calls and
+   * its parse, not to compute a role — the offline drivers' mapping is `html-a11y.ts`'s.
    */
   readonly accessibility?: Readonly<Record<string, readonly AxNode[]>>;
+  /** `blob:` URL → its contents: what the page's own `fetch` of a script-made download reads. */
+  readonly blobs?: Readonly<Record<string, string>>;
 }
 
 type Handlers = Map<string, ((payload: unknown) => void)[]>;
 
 export interface FakeCdpBrowser
-  extends CdpBrowserLike,
-    Pick<FakeBrowserTarget, 'emitTargetRequest' | 'browserFetch'> {
+  extends CompleteCdpBrowser,
+    Pick<FakeBrowserTarget, 'emitTargetRequest' | 'emitDownload' | 'browserFetch'> {
   /** Fire a request event, as a real browser would when the page fetches a subresource. */
   emitRequest(url: string, resourceType: string): void;
   /**
@@ -164,70 +171,23 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
   const axBySelector = init.accessibility ?? {};
   const browserTarget = fakeBrowserTarget();
 
-  /**
-   * A raw session answering the four commands `cdp-a11y.ts` sends, in CDP's own wire shapes —
-   * `{ value }` wrappers, a `properties` list — so the parse in that file is what is under test.
-   * Node ids are minted per `querySelectorAll` and looked up on the way back, which is how the
-   * real protocol addresses nodes too.
-   */
-  const cdpSession = (): CdpSessionLike => {
-    const byNodeId = new Map<number, AxNode>();
-    const wrap = (value: string | boolean | undefined): { value?: string | boolean } =>
-      value === undefined ? {} : { value };
-    return {
-      send: (method: string, params?: Record<string, unknown>) => {
-        if (method === 'DOM.getDocument') return Promise.resolve({ root: { nodeId: 1 } });
-        if (method === 'DOM.querySelectorAll') {
-          const selector = typeof params?.['selector'] === 'string' ? params['selector'] : '';
-          const nodes = Object.hasOwn(axBySelector, selector) ? (axBySelector[selector] ?? []) : [];
-          const nodeIds = nodes.map((node, index) => {
-            const nodeId = 100 + byNodeId.size + index;
-            byNodeId.set(nodeId, node);
-            return nodeId;
-          });
-          return Promise.resolve({ nodeIds });
-        }
-        if (method === 'DOM.describeNode') {
-          const nodeId = typeof params?.['nodeId'] === 'number' ? params['nodeId'] : 0;
-          return Promise.resolve({ node: { backendNodeId: nodeId * 10 } });
-        }
-        if (method === 'Accessibility.getPartialAXTree') {
-          const backend =
-            typeof params?.['backendNodeId'] === 'number' ? params['backendNodeId'] : 0;
-          const node = byNodeId.get(backend / 10);
-          if (node === undefined) return Promise.resolve({ nodes: [] });
-          const properties = [
-            ...(node.focused === undefined ? [] : [{ name: 'focused', value: wrap(node.focused) }]),
-            ...(node.disabled === undefined
-              ? []
-              : [{ name: 'disabled', value: wrap(node.disabled) }]),
-          ];
-          return Promise.resolve({
-            nodes: [
-              {
-                nodeId: `ax-${String(backend)}`,
-                ignored: node.ignored,
-                role: { type: 'role', ...wrap(node.role) },
-                name: { type: 'computedString', ...wrap(node.name) },
-                ...(node.description === undefined
-                  ? {}
-                  : { description: { type: 'computedString', value: node.description } }),
-                ...(node.value === undefined
-                  ? {}
-                  : { value: { type: 'string', value: node.value } }),
-                properties,
-              },
-            ],
-          });
-        }
-        return Promise.resolve({});
-      },
-      detach: () => {
+  const axFrames: readonly FakeAxFrame[] = Object.entries(init.frames ?? {}).map(
+    ([name, frame]) => ({
+      name,
+      url: frame.url,
+      accessibility: frame.accessibility ?? {},
+      outOfProcess: frame.outOfProcess === true,
+    }),
+  );
+  const cdpSession = (): CdpSessionLike =>
+    fakeAxSession(
+      axBySelector,
+      () => url,
+      axFrames,
+      () => {
         sessions.detached += 1;
-        return Promise.resolve();
       },
-    };
-  };
+    );
 
   const documentOf = (read: () => string): FakeDocument => ({ html: read, typed: new Map() });
   const pageDocument = documentOf(() => html);
@@ -259,23 +219,39 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     target.typed.set(keyFor(selector, first), value);
   };
 
-  const frames: readonly CdpFrameLike[] = Object.entries(init.frames ?? {}).map(([name, frame]) => {
-    const frameDocument = documentOf(() => frame.html);
-    return {
-      name: () => name,
-      url: () => frame.url,
-      content: () => Promise.resolve(frame.html),
-      evaluate: (expression: string) => evaluateIn(frameDocument, expression),
-      click: () => Promise.resolve(),
-      type: (selector: string, text: string) => typeIn(frameDocument, selector, text),
-      select: async (selector: string, ...values: string[]): Promise<string[]> => {
-        await selectIn(frameDocument, selector, values[0] ?? '');
-        return [...values];
-      },
-    };
-  });
+  const children: readonly CdpFrameLike[] = Object.entries(init.frames ?? {}).map(
+    ([name, frame]) => {
+      const frameDocument = documentOf(() => frame.html);
+      return {
+        name: () => name,
+        url: () => frame.url,
+        content: () => Promise.resolve(frame.html),
+        evaluate: (expression: string) => evaluateIn(frameDocument, expression),
+        click: () => Promise.resolve(),
+        type: (selector: string, text: string) => typeIn(frameDocument, selector, text),
+        select: async (selector: string, ...values: string[]): Promise<string[]> => {
+          await selectIn(frameDocument, selector, values[0] ?? '');
+          return [...values];
+        },
+      };
+    },
+  );
 
-  const page: CdpPageLike = {
+  // The page's own document as a frame, the way puppeteer's `page.mainFrame()` is one.
+  const mainFrame: CdpFrameLike = {
+    name: () => '',
+    url: () => url,
+    content: () => Promise.resolve(html),
+    evaluate: (expression: string) => evaluateIn(pageDocument, expression),
+    click: () => Promise.resolve(),
+    type: (selector: string, text: string) => typeIn(pageDocument, selector, text),
+    select: async (selector: string, ...values: string[]): Promise<string[]> => {
+      await selectIn(pageDocument, selector, values[0] ?? '');
+      return [...values];
+    },
+  };
+
+  const page: CompleteCdpPage = {
     url: () => url,
     goto: (next: string) => {
       url = next;
@@ -291,6 +267,11 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
         return JSON.stringify(storage);
       }
       if (expression.includes('navigator.userAgent')) return init.userAgent ?? 'fake-agent';
+      const blob = /fetch\(("blob:[^"]*")\)/.exec(expression)?.[1];
+      if (blob !== undefined) {
+        const contents = init.blobs?.[JSON.parse(blob) as string];
+        return contents === undefined ? undefined : btoa(contents);
+      }
       return await evaluateIn(pageDocument, expression);
     },
     click: (selector: string) => {
@@ -360,7 +341,9 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
       handlers.set(event, listeners);
       return undefined;
     },
-    frames: (): readonly CdpFrameLike[] => frames,
+    // The MAIN frame first, then the children — puppeteer's own order, which a frame lookup and
+    // the accessibility read's twin ordinal both have to survive.
+    frames: (): readonly CdpFrameLike[] => [mainFrame, ...children],
     close: () => {
       closed = true;
       return Promise.resolve();
@@ -371,6 +354,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     newPage: () => Promise.resolve(page),
     target: () => browserTarget.target,
     emitTargetRequest: (...args) => browserTarget.emitTargetRequest(...args),
+    emitDownload: (download) => browserTarget.emitDownload(download),
     browserFetch: browserTarget.browserFetch,
     cookies: () => Promise.resolve(cookies),
     setCookie: (...next: readonly unknown[]) => {
@@ -416,7 +400,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
 }
 
 /** A launcher over `fakeCdpBrowser`, for `localBrowser({ launcher })` in a test. */
-export function fakeCdpLauncher(init: FakeCdpPageInit): CdpLauncherLike & {
+export function fakeCdpLauncher(init: FakeCdpPageInit): CompleteLauncher & {
   readonly browser: FakeCdpBrowser;
 } {
   const browser = fakeCdpBrowser(init);

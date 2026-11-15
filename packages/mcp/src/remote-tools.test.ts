@@ -17,7 +17,8 @@ import type { AnyMcpTool } from './registry';
 import { textResult } from './registry';
 import { mcpClient } from './remote-client';
 import { writeToolsLock } from './remote-lock';
-import { delimit, mcpTools } from './remote-tools';
+import type { DeclaredMcpServer } from './remote-tools';
+import { declaredMcpServers, delimit, mcpTools, restoreDeclaredMcpServers } from './remote-tools';
 import { mcpServer } from './server';
 import { mcpHttpRoute } from './transport-http';
 
@@ -335,5 +336,24 @@ describe('mcpTools()', () => {
       'notifications/initialized s1',
       'tools/list s1',
     ]);
+  });
+});
+
+// The test restore `@ultimat3/testing`'s file boundary calls: `mcpTools()` declares at module
+// scope, so one file's server named in `x mcp lock` must not answer for the next file's app.
+describe('restoreDeclaredMcpServers', () => {
+  test('puts back exactly the snapshot, dropping a server declared after it', () => {
+    const before = new Map(declaredMcpServers());
+    const late: DeclaredMcpServer = {
+      name: 'restore-late',
+      url: URL,
+      allow: ['search'],
+      client: mcpClient({ name: 'restore-late', url: URL }),
+    };
+    restoreDeclaredMcpServers(new Map([...before, ['restore-late', late]]));
+    expect(declaredMcpServers().get('restore-late')).toBe(late);
+    restoreDeclaredMcpServers(before);
+    expect(declaredMcpServers().has('restore-late')).toBe(false);
+    expect([...declaredMcpServers()]).toEqual([...before]);
   });
 });

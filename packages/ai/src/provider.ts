@@ -7,11 +7,13 @@ import type { Money } from '@ultimat3/money';
 import type { AiMediaBlock } from './content-blocks';
 import { blockText, mediaTokenEstimate } from './content-blocks';
 import { costOf } from './cost';
+import type { ModelFallback } from './model-fallback';
 import { resolveModel } from './model-resolve';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec } from './models';
 import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
 import { systemText } from './prompt-cache';
+import type { ProviderOptions } from './provider-options';
 import type { SamplingWire } from './sampling';
 import type { LlmTool, LlmToolCall } from './tools';
 
@@ -57,6 +59,15 @@ export function messageText(message: AiMessage): string {
 
 export interface GenerateRequest {
   readonly model?: ModelId;
+  /**
+   * Tried in order, by the gateway alone, when `model` fails with a declared class
+   * (`MODEL_FALLBACK_ON`: rate limited, overloaded, unavailable, timed out) — never on a 400, a
+   * refusal or a budget. Each attempt is reserved and billed on its own. Not in `promptCacheKey`:
+   * each model's answer is cached under its own model.
+   */
+  readonly fallbackModels?: readonly ModelId[];
+  /** Wire parameters the framework does not model, one bag per wire (`./provider-options`). */
+  readonly providerOptions?: ProviderOptions;
   /** One string, or a stable part and a per-run part (`./prompt-cache`) — two blocks on the wire. */
   readonly system?: SystemPrompt;
   /**
@@ -148,6 +159,11 @@ export interface GenerateResult {
    * an app wrote may not state it, and its `cost` is summed in its place.
    */
   readonly costExact?: Money;
+  /**
+   * The models of a `fallbackModels` chain that failed before this one answered, in order — stamped
+   * by the gateway. Each was reserved and settled on the ledger; the run meter counts each one.
+   */
+  readonly fallbacks?: readonly ModelFallback[];
 }
 
 /** One streamed increment. `done` carries the assembled result. */

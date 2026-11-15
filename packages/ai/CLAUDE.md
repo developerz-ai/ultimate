@@ -22,7 +22,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
 | `provider.ts` | `Provider` interface, the request half; re-exports the Anthropic names |
 | `anthropic-provider.ts` | `anthropicProvider()`, its stream-only rule (`requiresStreaming`) and message parse |
-| `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling. A fixture that needs a tool call uses `scriptedProvider`, never a hand-rolled `Provider` |
+| `echo-provider.ts` | `echoProvider()`, the deterministic double. A fixture that needs a tool call uses `scriptedProvider`, never a hand-rolled `Provider` |
 | `scripted-provider.ts` | `scriptedProvider()`, the scripted double that calls tools, and `X_AI_SCRIPT_EXHAUSTED`: one call past the script is refused, never answered with the last turn again |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
 | `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `error-codes.ts` |
@@ -33,7 +33,8 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `openai-messages.ts` | the format mapping's request half: `AiMessage` blocks → OpenAI messages, `LlmTool` → functions, `tool_choice` |
 | `openai-body.ts` | one chat-completions body, and the per-model reasoning mapping |
 | `openai-wire.ts` / `openai-wire-stream.ts` | its response half: one completion and the field readers; `ChatCompletionStream` (fragmented tool calls, trailing usage, `[DONE]`) |
-| `gateway.ts` | routing, cache, budget wiring |
+| `gateway.ts` / `gateway-settle.ts` | routing, cache, budget wiring; a failed settle, the cache key |
+| `model-fallback.ts` / `provider-options.ts` | `MODEL_FALLBACK_ON`, the chain walk; the `providerOptions` screen |
 | `gateway-providers.ts` | the retry loop across providers, `backoffMs`, `isRetryable`, the breakers |
 | `budget.ts` / `budget-store.ts` | token ledgers per request/actor/org, ALS carrier; the `BudgetStore` contract and `memoryBudgetStore()` |
 | `prompt.ts` | `definePrompt`, `promptHash`, version registry |
@@ -142,9 +143,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   (`chunksRead()` false: JSON, MCP, `.job()`) it is the ordinary call, repair turn included.
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
   `vars()` is `X_AI_PROMPT_SECRET` regardless.
-- **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
-  is stamped by the gateway. Server-side `fallbacks` (beta) are never sent. Media generation:
-  absent, awaiting an owner decision (OD8).
+- **Across models ONLY by a declared `fallbackModels` (`llm()`, `agent()`), on
+  `MODEL_FALLBACK_ON`**: billed per attempt, a span per model, a stream before its first chunk.
+  Server-side `fallbacks` never sent. Media: absent (OD8). Full rule: `docs/history/ai.md`.
 - **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks every fence closer
   a fenced value wrote, in the ASSEMBLED prompt — never deletes, never touches a template's own.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
@@ -284,5 +285,3 @@ docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17
 TEST_DATABASE_URL=postgres://postgres:ultimate@localhost:5432/postgres \
   bun test ./packages/ai/src/pg-vector.live.test.ts
 ```
-
-Why each rule above is shaped the way it is: [`docs/history/ai.md`](../../docs/history/ai.md).

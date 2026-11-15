@@ -87,6 +87,16 @@ export function declaredMcpServers(): ReadonlyMap<string, DeclaredMcpServer> {
   return DECLARED;
 }
 
+/**
+ * Test seam: exactly `servers` again — a copy of what `declaredMcpServers()` answered earlier. A
+ * REPLACE, never a reset: `mcpTools()` runs at module scope, once per process. `@ultimat3/testing`'s
+ * file boundary is the caller.
+ */
+export function restoreDeclaredMcpServers(servers: ReadonlyMap<string, DeclaredMcpServer>): void {
+  DECLARED.clear();
+  for (const [name, server] of servers) DECLARED.set(name, server);
+}
+
 export function mcpTools(def: McpToolsDef): McpTools {
   const maxChars = finiteCount('mcpTools', 'maxResultChars', def.maxResultChars ?? 20_000, 1);
   const reverifyMs = finiteCount(

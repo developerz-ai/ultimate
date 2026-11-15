@@ -35,19 +35,15 @@ const refuse =
     Promise.reject(new FixtureUnavailableError({ name, needs }));
 
 /**
- * `offline()`/`online()` FORWARD, `As of 2026-08-27`. They refused until then on a reason the tree
- * contradicted on the day it was written: this file said `CdpPageLike`
- * (`packages/scraping/src/cdp-port.ts`) "declares twelve methods and none of them is
- * `setOfflineMode`". It declares it at line 71 — optional, guarded, with a coded
- * `X_NOT_IMPLEMENTED` in `cdp-target.ts` for a launcher that lacks it — and `page-over-target.ts`
- * exposes it as `ScrapePage.offline()`. All of that landed in **the same commit as the comment**
- * (#351), so the refusal was never true, and it is the reason issue #390 records a real browser
- * check as out of reach.
+ * `offline()`/`online()` FORWARD, `As of 2026-08-27`, to `ScrapePage.offline()`
+ * (`page-over-target.ts`), which reaches `CdpPageLike.setOfflineMode` — checked when the session
+ * opens (scraping's `cdp-complete.ts`), so a driver that lacks it is refused there, never at the
+ * first `offline()`. Issue #390 recorded a real browser check as out of reach on a refusal that
+ * was never true (#351).
  *
- * Optional on `E2eBrowserPage` rather than required, for the reason `CdpPageLike` gives about the
- * same method: this port is the shape of somebody ELSE's object, and a six-line test double must
- * still satisfy it. Absent, the refusal stands — and now it names the method the double is missing
- * rather than a capability the framework does not have.
+ * Optional on `E2eBrowserPage` all the same: this port is the shape of somebody ELSE's object, and
+ * a six-line test double must still satisfy it. Absent, the fixture refuses by name — naming the
+ * method the double is missing rather than a capability the framework does not have.
  */
 const networkFixtures = (browser: E2eBrowserPage): Pick<E2eFixtures, 'offline' | 'online'> => {
   const setOffline = browser.offline?.bind(browser);

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "80e939d3d77dbbd1",
+  "buildId": "bbe2ec88c7b2020c",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -539,7 +539,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "110.1kb"
+        "js": "110.3kb"
       }
     },
     {
@@ -578,7 +578,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "242.5kb"
+        "js": "242.6kb"
       }
     },
     {
@@ -600,7 +600,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "106.2kb"
+        "js": "106.8kb"
       }
     }
   ],
@@ -7752,6 +7752,42 @@
       "queue": "default",
       "retry": {
         "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "contact.support-inbox",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "orgId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "topic": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload": {
+            "description": "any JSON value, nested at most 256 levels deep",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "eventId",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
         "backoff": "exponential"
       },
       "steps": []

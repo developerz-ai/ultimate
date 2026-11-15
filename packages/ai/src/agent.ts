@@ -48,15 +48,17 @@ import type { ToolRun } from './agent-tools';
 import { DEFAULT_TOOL_CONCURRENCY, toolTurn } from './agent-tools';
 import { assistantTurn, repairTurn } from './agent-transcript';
 import { assertAnswerable, observeTurn } from './agent-turn';
-import { runTotal } from './agent-usage';
+import { pricedOn, runTotal } from './agent-usage';
 import { budgetKeysFor, currentBudget, withBudget } from './budget';
 import { AgentMaxTurnsError, AgentToolUnexposedError, LlmOutputInvalidError } from './errors';
 import { answerAttributes } from './llm-answer';
 import { reportedCall } from './llm-instrument';
+import { declaredFallbacks } from './model-fallback';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest } from './provider';
 import { estimateCost } from './provider';
+import { screenProviderOptions } from './provider-options';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
@@ -102,6 +104,8 @@ export function agent<
   // This declaration's identity for `.run()` / `.continue()` sessions (`claimAgentSession`).
   const owner = {};
   const sampling = screenSampling(SUBJECT, def);
+  // A bag the wire would refuse fails the boot, not the first turn — `llm()`'s screen.
+  screenProviderOptions(def.providerOptions);
   const compact = screenCompact(def.compact, bounds.maxTokens);
   const toolConcurrency = finiteCount(
     SUBJECT,
@@ -245,6 +249,9 @@ async function run<
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
       ...sampling,
+      // Every turn walks the same chain; the run's own model is never one of its fallbacks.
+      ...declaredFallbacks(model, def.fallbackModels),
+      ...(def.providerOptions === undefined ? {} : { providerOptions: def.providerOptions }),
       tools: [...adapted.offered, respond.tool],
       // The caller's own signal, forwarded to the transport. A disconnect has to reach the socket,
       // not just the top of the next turn: a provider call already in flight is the expensive one.
@@ -293,7 +300,7 @@ async function run<
       send: (request) => {
         assertCost(request);
         // `reportedCall`: each turn is one model call, so each is one `ai.llm` (`llm-instrument.ts`).
-        const answered = reportedCall(request.model ?? model, gateway.generate(request));
+        const answered = () => reportedCall(request.model ?? model, gateway.generate(request));
         return deadline.guard(meter.call(answered)).catch((error: unknown) => {
           // The caller left mid-call: the aborted socket reads as a provider failure, which is
           // RETRYABLE. Say what happened instead.
@@ -376,7 +383,7 @@ async function run<
           cost: result.cost,
           ...(result.costExact === undefined ? {} : { costExact: result.costExact }),
           ...(rejected === undefined ? {} : { repairOf: rejected }),
-          run: runTotal(result.model, prior?.usage, meter.total(), meter.below()),
+          run: runTotal(pricedOn(result), prior?.usage, meter.total(), meter.below()),
         });
         if (result.text !== '') emit({ type: 'text', turn, text: result.text });
         // Before a tool runs and before the answer is read (`X_LLM_REFUSED`, `X_LLM_TRUNCATED`).
@@ -394,7 +401,7 @@ async function run<
         if (parsed.issues === undefined) {
           // Kept only for `.run()` / `.continue()`: a plain call leaves nothing behind.
           if (session !== undefined) {
-            const usage = runTotal(result.model, prior?.usage, meter.total(), meter.below());
+            const usage = runTotal(pricedOn(result), prior?.usage, meter.total(), meter.below());
             session.finished = {
               transcript: sealTranscript(binding, {
                 messages: [...messages, assistantTurn(result)],

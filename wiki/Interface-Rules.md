@@ -150,6 +150,9 @@ can see.
 | An icon with no `label` is decorative and hidden | `Icon` emits `aria-hidden="true"` unless given one |
 | A live region exists before the message does | `AppShell` renders both `liveRegionAttrs` regions into the server response |
 | One announcement path per message: `announce()` for a state change with no surface, a toast for a notification | **judgement** — two paths make a screen reader read it twice |
+| A listbox, option, menuitem or treeitem is named, and by its OWN name: a tree branch never by its loading text, an option never by its description (`aria-describedby`), an open listbox by the field's own `<label>`s | `components/a11y-roles.test.ts`; Chrome's accessibility tree in `ui-a11y-roles.e2e.test.ts` |
+| Nothing a Tab lands on is a nameless box: a `Table`'s scroll stop is a region named with its caption | `components/a11y-roles.test.ts` (every component that sets a `tabindex`) |
+| Tab or Escape from an open `Menu` closes it, focus back on the trigger (the APG menu button) | `components/a11y-roles.test.ts`, `ui-a11y-roles.e2e.test.ts` |
 | Text meets 4.5:1 and the focus ring 3:1, in **both** themes | `packages/ui/src/tokens/contrast.test.ts`, `x verify`'s `unit` step. Shipped pairings only |
 
 **No ARIA is better than bad ARIA** — the WAI-ARIA Authoring Practices Guide's own line, and the
@@ -237,6 +240,8 @@ them: [Testing](Testing#seeing-what-you-built).
 | A drag is Pointer Events with capture from a handle; never HTML5 drag events | `drag/pointer-drag.ts` is the one gesture; `ui-drag.e2e.test.ts` (keyboard, pointer, rtl) |
 | A drop is a request: `onMove` once, the row held until it settles, a rejection restores and is announced | `sort-controller.test.ts`, `drag-interaction.test.ts` |
 | Reordering works by keyboard alone and with scripting off | Space/arrows/Esc in `drag-interaction.test.ts`; the per-row `<form>` in `posts/board/page.test.ts` |
+| Only the handle and a separator refuse the browser's pan, so a phone page still scrolls from a card's body | a REAL finger (`E2eTab.touchDrag`) in `ui-drag-touch.e2e.test.ts`: the handle moves a card across columns, the separator resizes, a body drag scrolls and is cancelled with no lift |
+| A drag survives its row moving lists under the pointer | `pointer-drag.ts` takes back a capture the move released; `pointer-drag-bind.test.ts`, and the finger drag above |
 | A business rule on a drop is `canDrop`, never a fork | **judgement** — the one seam the components take |
 | Text a model or member wrote renders as a tree, never HTML; only http/https/mailto/relative links | `viewers-no-html.test.ts`, `markdown-parse.test.ts`, no alert under CSP in `ui-viewers.e2e.test.ts` |
 | A remote image in a body is a link to its alt unless `resolveImage` reserves its box | `viewers.test.ts` |

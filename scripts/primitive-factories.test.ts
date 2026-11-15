@@ -229,6 +229,7 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/jobs.subjectExport:job',
       '@ultimat3/jobs.webhook:job',
       '@ultimat3/jobs.webhookReceiver:job',
+      '@ultimat3/mail.inboundMail:job',
       '@ultimat3/mcp.mcpConfirmations:action',
       '@ultimat3/notify.notifier:job',
       '@ultimat3/notify.pushRegister:action',

@@ -3,8 +3,8 @@
 // condition, the init scripts, the socket and request log. Launching is `cdp-launch.ts` and the
 // wire is `cdp-connection.ts`.
 //
-// FIVE methods, which is the whole reason this exists next to `@ultimat3/scraping` rather than
-// through it: `ScrapePage` is a full scraping surface whose intended implementation is
+// A handful of methods — and a real finger (`touchDrag`) and key (`press`) — which is why this sits
+// next to `@ultimat3/scraping` rather than going through it: `ScrapePage` is a full scraping surface whose intended implementation is
 // `puppeteer-core`, and an e2e driver needs none of it.
 
 import type { CdpConnection } from '@ultimat3/scraping/cdp';
@@ -70,6 +70,19 @@ export interface E2eTab extends E2eBrowserPage {
    * dispatches straight at the element and can never see that.
    */
   pointerClick(selector: string): Promise<void>;
+  /**
+   * A REAL finger (`Input.dispatchTouchEvent`, touch emulation on for the tab the first time): a
+   * start at `from`, `steps` moves to `to`, an end, in viewport CSS px. Trusted input, so the
+   * browser hit-tests it, honours `touch-action`, and may take it for a scroll and send
+   * `pointercancel` — what a page-dispatched touch PointerEvent can never show (no active pointer).
+   */
+  touchDrag(from: TouchPoint, to: TouchPoint, steps?: number): Promise<void>;
+  /**
+   * A REAL key press (`Input.dispatchKeyEvent`, down then up) at whatever has focus, so its default
+   * action runs: Tab moves focus, which a dispatched `KeyboardEvent` never does. A name in
+   * `PRESS_KEYS` or one printable character.
+   */
+  press(key: string): Promise<void>;
   /** Required on a tab: the audit of every `e2eTest` reads it (`e2e-a11y-run.ts`). */
   accessibilityTree(request: AxTreeRequest): Promise<readonly AxTreeNode[]>;
   /** Reload and wait for the load, at the url the tab already had. */
@@ -80,6 +93,52 @@ export interface E2eTab extends E2eBrowserPage {
   indexedDbNames(): Promise<readonly string[]>;
   close(): Promise<void>;
 }
+
+/** A viewport point in CSS px, as `getBoundingClientRect()` answers it. */
+export interface TouchPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Named keys `press()` knows, with the Windows virtual key code Chrome routes them by. */
+export const PRESS_KEYS: Readonly<Record<string, number>> = {
+  Tab: 9,
+  Enter: 13,
+  Escape: 27,
+  ' ': 32,
+  PageUp: 33,
+  PageDown: 34,
+  End: 35,
+  Home: 36,
+  ArrowLeft: 37,
+  ArrowUp: 38,
+  ArrowRight: 39,
+  ArrowDown: 40,
+  Backspace: 8,
+  Delete: 46,
+};
+
+/** The key code of a printable character: its upper-case code point for a letter or digit. */
+const charCode = (key: string): number | undefined =>
+  key.length === 1 && /[a-z0-9]/i.test(key) ? key.toUpperCase().charCodeAt(0) : undefined;
+
+/**
+ * The text a key TYPES, as puppeteer's key table has it. A key with text goes down as `keyDown`
+ * carrying it, so Chrome raises the character event — what makes Enter submit a focused button's
+ * form. A key with none (Tab, the arrows) goes down as `rawKeyDown`.
+ */
+const typedText = (key: string): string | undefined =>
+  key === 'Enter' ? '\r' : key.length === 1 ? key : undefined;
+
+/** `KeyboardEvent.code`: `KeyA`, `Digit7`, `Space`; a named key is its own code. */
+const keyCodeName = (key: string): string =>
+  key === ' '
+    ? 'Space'
+    : /^[a-z]$/i.test(key)
+      ? `Key${key.toUpperCase()}`
+      : /^[0-9]$/.test(key)
+        ? `Digit${key}`
+        : key;
 
 export interface CdpE2eTabOptions {
   readonly connection: CdpConnection;
@@ -135,6 +194,8 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
   // url is tracked here. Seeded with the tab's own starting url rather than '' so a `reload()`
   // before any `goto()` navigates somewhere real.
   let current = 'about:blank';
+  // Touch emulation is per tab and stays on: switched on by the first `touchDrag`, once.
+  let touchOn = false;
 
   const evaluateRaw = (expression: string) =>
     send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
@@ -303,6 +364,55 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
           sessionId,
         );
       }
+    },
+    async touchDrag(from: TouchPoint, to: TouchPoint, steps = 5): Promise<void> {
+      if (!Number.isInteger(steps) || steps < 1) {
+        throw new CdpCallFailedError({
+          method: `touchDrag(steps: ${String(steps)})`,
+          detail: 'steps is the number of moves, a whole number of at least 1',
+        });
+      }
+      if (!touchOn) {
+        await send(
+          'Emulation.setTouchEmulationEnabled',
+          { enabled: true, maxTouchPoints: 1 },
+          sessionId,
+        );
+        touchOn = true;
+      }
+      const touch = (type: string, points: readonly TouchPoint[]) =>
+        send(
+          'Input.dispatchTouchEvent',
+          { type, touchPoints: points.map((p) => ({ x: p.x, y: p.y })) },
+          sessionId,
+        );
+      await touch('touchStart', [from]);
+      for (let step = 1; step <= steps; step += 1) {
+        const at = (a: number, b: number): number => a + ((b - a) * step) / steps;
+        await touch('touchMove', [{ x: at(from.x, to.x), y: at(from.y, to.y) }]);
+      }
+      await touch('touchEnd', []);
+    },
+    async press(key: string): Promise<void> {
+      const code = (Object.hasOwn(PRESS_KEYS, key) ? PRESS_KEYS[key] : undefined) ?? charCode(key);
+      if (code === undefined) {
+        throw new CdpCallFailedError({
+          method: `press(${key})`,
+          detail: `not a key press() knows: one of ${Object.keys(PRESS_KEYS).join(', ')}, or one letter or digit`,
+        });
+      }
+      const text = typedText(key);
+      const common = { key, code: keyCodeName(key), windowsVirtualKeyCode: code };
+      await send(
+        'Input.dispatchKeyEvent',
+        {
+          type: text === undefined ? 'rawKeyDown' : 'keyDown',
+          ...common,
+          ...(text === undefined ? {} : { text }),
+        },
+        sessionId,
+      );
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', ...common }, sessionId);
     },
     offline: (enabled: boolean) => options.offline(enabled),
     async accessibilityTree(request: AxTreeRequest): Promise<readonly AxTreeNode[]> {

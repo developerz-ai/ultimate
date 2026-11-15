@@ -6,10 +6,10 @@
 // the exact failure an offline driver exists to prevent.
 
 import type { SleepClock } from '@ultimat3/core';
-import { NotImplementedError } from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
 import type { ColorScheme } from './color-scheme';
 import { browserUnreachable, downloadTimeout, fixtureMissing, fixtureStale } from './error-throws';
+import { htmlAccessibility } from './html-a11y';
 import { queryHtml } from './html-query';
 import { markupRequests } from './html-requests';
 import type { InterceptRules } from './intercept';
@@ -155,6 +155,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   // a value this driver invents — and it is what keeps an unframed picture's bytes unchanged.
   let colorScheme: ColorScheme | null = null;
   let closed = false;
+  // `page.offline(true)`: every navigation fails until it is cleared, as in a browser.
+  let offline = false;
   let session: SessionSnapshot = init.session ?? {
     ...EMPTY_SESSION,
     cookies: init.cookies ?? [],
@@ -261,6 +263,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   /** Relative specifiers resolve against the current page, exactly as a browser resolves them. */
   const navigate = async (url: string): Promise<void> => {
     live();
+    if (offline) throw browserUnreachable(`${init.driver} goto ${url}`, 'the browser is offline');
     let absolute: string;
     try {
       absolute = new URL(url, page.url === 'about:blank' ? undefined : page.url).toString();
@@ -281,7 +284,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   /**
    * A frame target: the parent's, with every verb that touches a DOCUMENT re-pointed at this
    * frame's. `...base` is what makes the spread dangerous — a verb nobody overrides silently acts
-   * on the parent — so the act-verbs are listed here even where the body is one line.
+   * on the parent — so the document verbs are listed here even where the body is one line.
    *
    * `click` navigates NOTHING, and that is a real limit rather than an oversight: a
    * `PageRecording.frames` entry is one static document, so there is no second frame document for
@@ -302,7 +305,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
         if (element === undefined) throw fixtureMissing(`${url} ${selector}`, init.source);
         const download =
           recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');
-        if (download !== undefined) armed = download;
+        // Every click re-arms, a non-download one to nothing: the file is the LAST click's.
+        armed = download;
       },
       type: (selector, text) => typeIn(document, selector, text),
       clear: (selector) => setIn(document, selector, ''),
@@ -312,6 +316,11 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       async focus(selector: string): Promise<void> {
         const element = await atIn(document, selector, 0);
         if (element === undefined) throw fixtureMissing(`${url} ${selector}`, init.source);
+      },
+      // The frame's OWN markup, for `click`'s reason: the parent's would describe the wrong form.
+      async accessibility(selector: string, max: number): Promise<readonly AxNode[]> {
+        live();
+        return await htmlAccessibility(html, selector, max);
       },
       frames: () => Promise.resolve([]),
     };
@@ -334,7 +343,9 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       if (element === undefined) throw fixtureMissing(`${page.url} ${selector}`, init.source);
       const download =
         recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');
-      if (download !== undefined) armed = download;
+      // Every click re-arms, a non-download one to nothing: the file is the LAST click's, as on
+      // the browser driver (`cdp-download.ts`'s trigger mark).
+      armed = download;
       const href =
         element.attrs['data-goto'] ?? (element.tag === 'a' ? element.attrs['href'] : undefined);
       if (href !== undefined && href !== '') await navigate(href);
@@ -353,6 +364,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     press(chord: string): Promise<void> {
       live();
       parseKeyChord(chord);
+      // A key is a trigger on the browser driver, so it disarms here too: no recorded key makes a file.
+      armed = undefined;
       return Promise.resolve();
     },
     /** The selector must exist, as `click` requires — a focus on nothing is a fixture gap. */
@@ -361,16 +374,13 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       if (element === undefined) throw fixtureMissing(`${page.url} ${selector}`, init.source);
     },
     /**
-     * REFUSED, and `async` so it REJECTS. No accessibility engine runs here, and the honest
-     * alternative — reading `role=` and `aria-label=` off the markup — is the defect the read
-     * exists to catch: a `<div onclick>` has no computed role, and a fake that answered the
-     * attribute would pass every test against the element a screen reader cannot reach.
+     * The HTML-AAM mapping of the markup (`html-a11y.ts`) — ARIA, the implicit role, label
+     * association — never `role=` read alone. What it cannot see is CSS and script: a role a
+     * stylesheet hides or a script adds is a test for `localBrowser()`/`remoteBrowser()`.
      */
-    async accessibility(_selector: string, _max: number): Promise<readonly AxNode[]> {
-      throw new NotImplementedError({
-        cause: `accessibility() on the ${init.driver} driver is not implemented by this driver`,
-        fix: 'run this assertion on localBrowser()/remoteBrowser(), whose accessibility() reads the tree the browser computed — an offline driver parses markup and computes no role',
-      });
+    async accessibility(selector: string, max: number): Promise<readonly AxNode[]> {
+      live();
+      return await htmlAccessibility(page.html, selector, max);
     },
     evaluate(expression: string): Promise<unknown> {
       live();
@@ -382,26 +392,25 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       return Promise.resolve(JSON.parse(answer) as unknown);
     },
     /**
-     * REFUSED, and `async` so it REJECTS. There is no browser here and no service worker, so
-     * there is no network to cut — and a resolved promise would let "a like taken offline is
-     * queued" pass against an app that was online for the whole test. That is the exact shape of
-     * lie `packages/testing`'s `fetch` patch already tells about a browser's own requests.
+     * CUTS this driver's own network, never a resolved no-op: while set, every navigation — a
+     * `goto`, a link's click — fails with the code a browser's failed navigation carries under the
+     * real driver (`X_SCRAPE_BROWSER_UNREACHABLE`), so an offline test that navigates fails here
+     * too. The app's own offline code never runs on a driver with no JS engine, so an assertion on
+     * what it renders fails rather than passing — the lie a resolved promise used to tell.
      */
-    // `async`, so the refusal REJECTS: the method is typed `Promise<void>` and a synchronous
-    // `throw` from one jumps straight over `page.offline(true).catch(…)` at every caller.
-    async setOfflineMode(_enabled: boolean): Promise<void> {
-      throw new NotImplementedError({
-        cause: `setOfflineMode() on the ${init.driver} driver is not implemented by this driver`,
-        fix: 'run this assertion on localBrowser()/remoteBrowser(), whose setOfflineMode() reaches a real browser — an offline driver has no network to cut, so it cannot prove an offline behaviour',
-      });
+    // `async`, so a closed target REJECTS rather than escaping `page.offline(true).catch(…)`.
+    async setOfflineMode(enabled: boolean): Promise<void> {
+      live();
+      offline = enabled;
     },
     /**
-     * ACCEPTED and recorded, where `setOfflineMode` refuses — and the line between them is which
-     * side of a capture the verb is on, not whether this driver has a browser.
+     * ACCEPTED and recorded — the line between this and `setOfflineMode`, which cuts navigations,
+     * is which side of a capture the verb is on, not whether this driver has a browser.
      *
-     * `setOfflineMode` is refused because an offline ASSERTION is reachable here: this driver
-     * answers content, so `expect(page).toShow('queued')` would go green against an app that was
-     * online the whole time. A colour preference has no such assertion to pass. Nothing here
+     * `setOfflineMode` must CUT something because an offline ASSERTION is reachable here: this
+     * driver answers content, so a resolved no-op would let `expect(page).toShow('queued')` go
+     * green against an app that was online the whole time. A colour preference has no such
+     * assertion to pass. Nothing here
      * evaluates CSS, and the only thing a preference could be wrong ABOUT is a picture — which on
      * this driver is `FAKE_PNG`, a constant that claims nothing about a theme, exactly as `pdf()`
      * answers `FAKE_PDF` rather than refusing.
@@ -422,7 +431,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       return Promise.resolve();
     },
     /**
-     * ACCEPTED, for `setColorScheme`'s reason and not `setOfflineMode`'s. This driver parses
+     * ACCEPTED, for `setColorScheme`'s reason. This driver parses
      * markup and executes none of it, so there is no document script for the expression to run
      * ahead of — and no assertion a resolved promise could let through: what a prepared script
      * seeds is the INPUT to a boot this driver never runs. Refusing would cost `x shot` and every

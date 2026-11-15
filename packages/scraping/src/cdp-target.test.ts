@@ -4,9 +4,10 @@
 // event payloads, so the offline drivers cannot pin any of them.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock, NotImplementedError } from '@ultimat3/core';
+import { frozenClock } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import { cdpTarget } from './cdp-target';
 import { DEFAULT_RING_CAPACITY } from './rings';
 import type { SessionSnapshot } from './session-state';
@@ -24,6 +25,7 @@ const recorder = (start = 'about:blank'): Recorder => {
   const handlers = new Map<string, ((payload: unknown) => void)[]>();
   let url = start;
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => url,
     goto: (next: string) => {
       calls.push(`goto ${next}`);
@@ -53,6 +55,7 @@ const recorder = (start = 'about:blank'): Recorder => {
   return {
     page,
     browser: {
+      ...stubCookieJar(),
       newPage: () => Promise.resolve(page),
       target: () => fakeBrowserTarget().target,
       setCookie: () => Promise.resolve(),
@@ -417,33 +420,7 @@ describe('unit · the browser`s own keys are read, never refused by name', () =>
   });
 });
 
-/**
- * A launcher with no `setOfflineMode` is refused BY NAME, not silently accepted. `CdpPageLike`
- * declares it optional — this file is the shape of somebody else's object — and this is the half
- * that keeps optional from meaning unwired, exactly as `cookies()` is refused today.
- */
-describe('unit · setOfflineMode on a launcher that does not have it', () => {
-  test('X_NOT_IMPLEMENTED, with a fix naming the upgrade — and NOT re-labelled retryable', async () => {
-    const rec = recorder('https://shop.test/o');
-    const target = await cdpTarget({
-      page: rec.page,
-      browser: rec.browser,
-      rules: { allowHosts: ['shop.test'] },
-      clock: frozenClock(),
-    });
-    let thrown: { code?: string; fix?: string } = {};
-    try {
-      await target.setOfflineMode(true);
-    } catch (caught) {
-      thrown = caught as { code?: string; fix?: string };
-    }
-    // `guard()` passes this through: `X_SCRAPE_BROWSER_UNREACHABLE` is registered retryable, and
-    // the method is still missing on attempt five.
-    expect(thrown.code).toBe('X_NOT_IMPLEMENTED');
-    expect(thrown).toBeInstanceOf(NotImplementedError);
-    expect(thrown.fix).toContain('puppeteer-core');
-  });
-
+describe('unit · setOfflineMode reaches the launcher', () => {
   test('a launcher that HAS it is handed the value, unchanged', async () => {
     const rec = recorder('https://shop.test/o');
     const seen: boolean[] = [];

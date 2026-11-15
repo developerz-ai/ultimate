@@ -390,14 +390,14 @@ describe('component keyboard and form wiring', () => {
     expect(seen).toEqual(['plain', 'post-1']);
   });
 
-  // --- finding: a duplicate accessible name ------------------------------------------------------
+  // --- finding: a focusable box with no name (2026/11/11 slice 15 T3, deferred) ---------------
 
-  test('Table names itself once, through its caption', () => {
+  test('Table: the scroll stop is named, and the table is still named by its caption', () => {
     const nodes = renderNodes(Table, { caption: 'Rows', children: null });
     const scroller = one(byTag(nodes, 'section'), '<section>');
-    // `aria-label` OVERRIDES the caption rather than adding to it, so the scroll box and the table
-    // inside it were announced under the same name.
-    expect(scroller.props['aria-label']).toBeUndefined();
+    // A <section> with no name is generic: Tab landed on it and a screen reader said nothing.
+    // The name sits on the box, never on the <table>, so the caption still names the table.
+    expect(scroller.props['aria-label']).toBe('Rows');
     expect(scroller.props['tabindex']).toBe('0');
     expect(one(byTag(nodes, 'caption'), '<caption>').props['children']).toBe('Rows');
   });

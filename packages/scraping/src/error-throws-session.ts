@@ -1,6 +1,6 @@
-// The failure modes of a SESSION a service is built on: an exit the driver cannot dial, and a
-// prompt answered over the event bus. Split from `error-throws.ts`, which stands at its size
-// ceiling; the codes themselves stay declared in `errors.ts` — one registry, one place.
+// The failure modes of a SESSION a service is built on: an exit the driver cannot dial, a
+// prompt answered over the event bus, a launcher missing a verb, a frame out of reach. Split from
+// `error-throws.ts` (at its size ceiling); the codes stay declared in `errors.ts` — one registry.
 
 import { ScrapeError } from './errors';
 import { endpointLabel } from './url-secrets';
@@ -108,4 +108,28 @@ export const hostResolvesInward = (url: string, hostname: string, kind: string):
     } — a wildcard admits public addresses only`,
     fix: `name the host exactly on the scrape() definition — allowHosts: [${JSON.stringify(hostname)}] — if it is meant to be reached inside your network`,
     meta: { url, host: hostname, addressClass: kind },
+  });
+
+/**
+ * The launcher's page or browser is missing a method `ScrapeTarget` forwards to. Raised when the
+ * session OPENS (`cdp-complete.ts`), before any verb — never on whichever run first reaches it.
+ */
+export const launcherIncomplete = (driver: string, missing: readonly string[]): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_LAUNCHER_INCOMPLETE',
+    cause: `the ${driver} driver's launcher hands back a page or browser with no ${missing.join(', ')} — every page verb forwards to one of them`,
+    fix: 'bun add puppeteer-core@latest   # then localBrowser({ launcher: puppeteer }) — a current puppeteer-core carries every one',
+    meta: { driver, missing: missing.join(',') },
+  });
+
+/**
+ * An accessibility read through a frame that site isolation put in its own renderer: the page's
+ * protocol session holds no node of that document, so there is nothing to compute it from.
+ */
+export const frameOutOfProcess = (driver: string, frame: string): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_FRAME_OUT_OF_PROCESS',
+    cause: `${driver} frame ${frame} renders in another process (a cross-site iframe under site isolation), so the page session cannot read its accessibility tree`,
+    fix: "localBrowser({ launcher, options: { args: ['--disable-site-isolation-trials'] } })   # keeps a cross-site frame in the page's process; or read it with page.query()",
+    meta: { driver, frame },
   });

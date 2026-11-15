@@ -1,13 +1,20 @@
 // A declared preview is a test: rendered in every locale by the `i18n` step, a key one locale
 // lacks is a finding, and so is a preview a function hands back that its schema refuses.
 
-import { afterAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
-import { blocks, defineMail, resetMails, t } from '@ultimat3/mail';
+import { blocks, defineMail, registeredMails, restoreMails, t } from '@ultimat3/mail';
 import { mailPreviewFindings } from './mail-preview-findings';
 
+// The findings cover EVERY registered mail, so the premise is an empty registry, stated here and
+// handed back after — a `resetMails()` took an earlier file's module-scope mails from every later
+// file, and on a shared worker another file's mails were this one's extra findings.
+const inherited = registeredMails();
+beforeAll(() => {
+  restoreMails([]);
+});
 afterAll(() => {
-  resetMails();
+  restoreMails(inherited);
 });
 
 test('every declared preview in every locale: a locale missing a key and a bad preview are red', () => {

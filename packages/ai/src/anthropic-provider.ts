@@ -18,6 +18,7 @@ import { promptCacheRule } from './prompt-cache';
 import { anthropicPrompt } from './prompt-cache-blocks';
 import { screenCacheRows } from './prompt-cache-rows';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
+import { providerOptionsBody } from './provider-options';
 import { samplingBody } from './sampling';
 import { readSse } from './sse';
 import { trackSent, trackStreamBill } from './stream-bill';
@@ -78,7 +79,8 @@ export function anthropicProvider(input: AnthropicProviderInput): AnthropicProvi
  * The real Messages API shape. The request-surface rules are encoded rather than documented,
  * because getting them wrong is a 400:
  *   - `top_p`/`top_k` are never sent, and `temperature` only to a model whose row takes it
- *     (`ModelSpec.sampling`): a reasoning model rejects all three.
+ *     (`ModelSpec.sampling`): a reasoning model rejects all three. `providerOptions.anthropic`
+ *     is the one pass-through, and its keys are a closed, screened set (`./provider-options`).
  *   - `thinking.budget_tokens` is REJECTED. Use `output_config.effort`.
  *   - `effort` and adaptive thinking are per-model, and ./models owns which model takes which.
  */
@@ -204,6 +206,8 @@ export class AnthropicProvider implements Provider {
       messages: prompt.messages,
       ...reasoningBody(model, request.effort, request.thinking),
       ...samplingBody('anthropic', model, request),
+      // The app's explicit wire parameters, screened; no key collides with a field set above.
+      ...providerOptionsBody('anthropic', request.providerOptions),
     };
     if (prompt.system !== undefined) body['system'] = prompt.system;
     if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;

@@ -47,11 +47,14 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_PDF_ROUTE_INVALID',
   'X_SCRAPE_PDF_ROUTE_FAILED',
   'X_SCRAPE_PDF_BUSY',
+  'X_SCRAPE_LAUNCHER_INCOMPLETE',
+  'X_SCRAPE_FRAME_OUT_OF_PROCESS',
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s: `recover.ts`, `cdp-target.ts` and `html-target.ts`
- * throw it as core's own `NotImplementedError`, never a constructor of this package's. `X_ENV_MISSING` is core's too: a
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s, listed because it shipped in this exported list and a
+ * code never leaves one. Nothing in this package raises it any more: since 2026-11-15 every port
+ * method answers on every driver (`port-complete.test.ts`). `X_ENV_MISSING` is core's too: a
  * declared secret with no value in the environment is a missing environment variable, not a
  * scraping concept needing its own code. No title is kept here for either — one code, one owner,
  * or the two copies drift.
@@ -109,6 +112,10 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_PDF_ROUTE_INVALID: 'a pdf() route is not a path on this app',
   X_SCRAPE_PDF_ROUTE_FAILED: 'the route pdf() printed answered an error status',
   X_SCRAPE_PDF_BUSY: 'every pdf() render slot stayed busy past the queue deadline',
+  X_SCRAPE_LAUNCHER_INCOMPLETE:
+    "the launcher's page or browser lacks a method the driver forwards to",
+  X_SCRAPE_FRAME_OUT_OF_PROCESS:
+    'the frame runs in another renderer process the page session cannot read',
 };
 
 // One unconditional call, so a second package claiming one of these codes throws
@@ -198,6 +205,12 @@ export const SCRAPE_ERROR_RETRY = {
   X_SCRAPE_FIXTURE_MISSING: 'terminal',
   X_SCRAPE_FIXTURE_STALE: 'terminal',
   X_SCRAPE_REMOTE_REQUIRED: 'terminal',
+  // A fact about the launcher's shape, checked when the session opens: attempt 2 launches the same
+  // library and finds the same method missing. The repair is an upgrade, so a human decides.
+  X_SCRAPE_LAUNCHER_INCOMPLETE: 'terminal',
+  // Site isolation put the frame in its own process, and that is the browser's configuration —
+  // attempt 2 lays the same page out the same way. The repair is a launch flag.
+  X_SCRAPE_FRAME_OUT_OF_PROCESS: 'terminal',
   X_SCRAPE_RECOVER_REFUSED: 'terminal',
   X_SCRAPE_SECRET_EXPOSED: 'terminal',
   // THE hard rule of this package. A site that locks an account after three wrong attempts turns

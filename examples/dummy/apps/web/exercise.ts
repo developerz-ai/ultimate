@@ -223,6 +223,9 @@ export const exercise = defineExercise(
     revokeRunKey: { off: 'revokes an x_api_keys row: framework schema, not an entity to seed' },
     'runs.sync': { off: 'queued only by startRun, which writes the runs row its events reference' },
     'posts.published.webhook': { off: 'delivers to a receiver URL: a real call out, sealed' },
+    'contact.support-inbox': {
+      off: 'reads the message from Resend’s API: a real call out, sealed',
+    },
     // The draw's `sample` type and filename are refused by the upload policy before it signs.
     grantAvatarUpload: {
       input: (drawn) => ({ ...drawn, filename: 'me.png', contentType: 'image/png', size: 1024 }),

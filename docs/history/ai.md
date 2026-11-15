@@ -954,7 +954,9 @@ The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
   `vars()` is `X_AI_PROMPT_SECRET` regardless. The `llm.redacted` span attribute records it.
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
-  is stamped by the gateway and put on the span as `llm.provider`.
+  is stamped by the gateway and put on the span as `llm.provider`. *Superseded 2026-11-15:* across
+  models through a declared `fallbackModels` — see
+  [Model fallback and provider parameters](#model-fallback-and-provider-parameters-2026-11-15-plan-101-slice-06-a1).
 - Server-side `fallbacks` (beta) are never sent — the stable `2023-06-01` surface only.
 - **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks, in the ASSEMBLED
   prompt, every fence closer a fenced value wrote any character of (never per value: two slots can
@@ -1196,3 +1198,69 @@ One `remoteEmbedder()` for every vendor; vectors L2-normalised; a wrong width is
 ## Provider prompt caching, as it stood (moved 2026-11-12, sweep 11)
 
 One switch (`GenerateRequest.promptCache`), `promptCacheRule`: provider rows, then `PROMPT_CACHE_RULES`, then nothing. An app's own endpoint is a row ON ITS PROVIDER (`promptCache: { rules }`, `ProviderCacheRow`, first match wins), screened at construction against the wire (`prompt-cache-rows.ts`, `X_AI_REQUEST_INVALID`); `agent()` defaults `'auto'`, `llm()` `'off'`.
+
+## Model fallback and provider parameters (2026-11-15, plan 101 slice 06 A1)
+
+**What changed.** The rule was "fallback is across PROVIDERS serving one model, never across
+models", and the stream comment said fallback "belongs to `generate` alone". The reason was sound
+for an *automatic* swap: it changes what answered, what it cost and which eval baseline the answer
+belongs to, and no one asked for it. Two adopters then wrote their own routing layers (about 4,500
+and 1,950 LOC) to get exactly that swap, outside the gateway, so outside its budget, breaker and
+meter. The gateway refusing the job had not stopped the swap. It had only made the swap unbilled
+and untraced. So the swap moved in, on terms that keep the original objection answered:
+
+- **Declared, never automatic.** Only a request's own `fallbackModels` (on `llm()`, `agent()` or a
+  raw `GenerateRequest`) is walked. Absent, nothing changed: no attempt span, nothing stamped. The
+  refusal's `alternative` is still a fix line for the declaration, never a runtime swap.
+- **Visible.** `GenerateResult.fallbacks` names each failed model, its class and cause. The
+  caller's span is the one parent, with an `ai.model.attempt` child per model
+  (`gen_ai.request.model`, `ultimate.llm.fallback.index`, `ultimate.llm.fallback.reason`).
+- **Billed per attempt.** Each model reserves its own estimate and settles on its own ledger
+  entry. The run meter counts a failed model as an `unsettled` attempt: it was started and its bill
+  is unknown, the same rule as any transport failure. It is never counted as free. An answer from a fallback model is
+  billed at **its** price, apart (`RunMeter.below`, `pricedOn`), because a run's own usage is
+  re-priced as one model and summing a fallback's tokens into it charged them at the primary's
+  rate. A chain whose LAST model fails outside the class still counts every model, and the error
+  is thrown as it stands. Each model a chain falls over FROM is reported, as it happens, to the run
+  meter of the call in flight: `RunMeter.call` takes a thunk, so the call starts inside the meter's
+  async context (`withAttemptSink`). A first cut kept the earlier attempts in a `WeakMap` keyed on
+  the thrown error. A concurrency audit (2026-11-15) showed one object can reject two calls at once
+  (`signal.reason` under one aborted signal), and the attempts went to whichever meter caught it
+  first. Ambient per call, nothing is keyed on a value the call does not own.
+
+**The class (`MODEL_FALLBACK_ON`).** A failure falls over only when it is a fact about the model's
+hosts at this moment, never about the request: `rate_limited` (429), `overloaded` (529), `timeout`
+(408, 504, `ETIMEDOUT`), `unavailable` (any other 5xx, a refused, dropped or unopenable socket,
+every provider's breaker open). The verdict comes after the provider retry loop for that model ran
+out, and only when **every** collected failure had a class. One 400 among them means the request
+is the problem, and the next model is not asked. 409 and 425 are left out on purpose. Core's
+`isRetryableStatus` retries them on the SAME host, because a concurrent writer or an early-data
+handshake can resolve there. Neither says anything about the model, and the next model would meet
+the same conflict. Also never: a refusal or a truncation (an answer), a budget refusal, an abort,
+a model no provider lists (`app.config.ts`), and running out of `retry.timeBudgetMs`. That budget
+is one clock for the whole chain. It is checked before every call after the call's first (the next
+provider, the next model's first call), not only before a backoff wait. The same audit found a
+model whose last attempt spent the budget still handed the call to the next model. A stream
+checks it before falling over. The clock is injectable (`providerGateway({ clock })`), like
+`sleep` and `random`.
+
+**Streams fall over only before the first chunk.** The old argument was that a handshake retry
+"cannot be told from replaying tokens the consumer already read". That holds once a chunk is out.
+A throw from the FIRST pull handed the consumer nothing, so nothing can be duplicated. After the
+first chunk the failure is thrown as it stands. Provider fallback on a stream is unchanged: the
+first admitted provider per model.
+
+**`providerOptions` is keyed by WIRE, not by provider name.** A provider name is the app's string,
+so a bag keyed by it cannot be typed or checked before a request. A wire (`anthropic`, `openai`) is
+the framework's closed set, so each bag is a typed interface and the key table is typed against it.
+A key added to one without the other is a type error. The keys are the wire's own names
+(`top_p`, `service_tier`), never a translated set, the same rule as content blocks. An unknown wire,
+an unknown key, a wrong type or an out-of-range number is `X_AI_REQUEST_INVALID`. It is checked at
+declaration (`llm()`, `agent()`), in the gateway for a raw call, and in each body builder for a
+direct provider call. Each provider sends only its own wire's bag, so one request may carry both
+when its chain crosses formats. A bag for a wire no configured provider speaks is not refused for
+the same reason. The bag is in the response cache key (it changes the answer); `fallbackModels` is
+not (each model's answer is cached under its own model). A run's own model inside its declared
+chain is left out of the chain rather than refused (`declaredFallbacks`): `agent()`'s per-run
+`model()` may pick one of them. A raw request naming a model twice is refused.
+

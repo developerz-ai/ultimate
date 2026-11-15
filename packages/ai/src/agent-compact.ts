@@ -195,7 +195,9 @@ export function compactor(input: CompactorInput): Compactor {
       // Its own meter, inside the run's: the bill reaches the run as a nested call's does — on the
       // same ledger, in `tokensPerRun` and `costPerRun`, priced at the summary model's own rates.
       result = await input.deadline.guard(
-        runMeter().call(reportedCall(request.model ?? writer, input.gateway.generate(request))),
+        runMeter().call(() =>
+          reportedCall(request.model ?? writer, input.gateway.generate(request)),
+        ),
       );
     } catch (error) {
       throwIfAborted(input.ctx);

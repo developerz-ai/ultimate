@@ -33,3 +33,13 @@ export function registeredChannels(): readonly Channel[] {
 export function clearChannels(): void {
   channels.clear();
 }
+
+/**
+ * Test seam: exactly `declared` again — what `registeredChannels()` answered earlier. A REPLACE,
+ * never a reset: a module-scope `channel()` evaluates once per process, so a cleared one is gone
+ * for every later file. `@ultimat3/testing`'s file boundary is the caller.
+ */
+export function restoreChannels(declared: readonly Channel[]): void {
+  channels.clear();
+  for (const each of declared) channels.set(each.name, each);
+}

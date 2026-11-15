@@ -9,6 +9,7 @@ import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import type { SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';
 
@@ -21,6 +22,7 @@ interface Broken {
 const brokenLauncher = (broken: Broken): CdpLauncherLike & { readonly closes: () => number } => {
   let closes = 0;
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => 'about:blank',
     goto: () => Promise.resolve(undefined),
     content: () => Promise.resolve(''),
@@ -37,6 +39,7 @@ const brokenLauncher = (broken: Broken): CdpLauncherLike & { readonly closes: ()
     close: () => Promise.resolve(),
   };
   const browser: CdpBrowserLike = {
+    ...stubCookieJar(),
     newPage: () =>
       broken.newPage === true ? Promise.reject(new Error('tab limit')) : Promise.resolve(page),
     target: () => fakeBrowserTarget().target,

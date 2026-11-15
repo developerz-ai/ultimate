@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock, structuredLogger } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
+import { stubCookieJar, stubPageVerbs } from './cdp-port-stubs-fixture';
 import { remoteBrowser } from './driver-cdp';
 
 /** A remote browser whose `evaluate`, once `wedge()` is called, settles only when it is closed. */
@@ -17,6 +18,7 @@ const wedgingLauncher = (): CdpLauncherLike & {
   let closes = 0;
   const blocked: ((thrown: unknown) => void)[] = [];
   const page: CdpPageLike = {
+    ...stubPageVerbs(),
     url: () => 'https://shop.test/',
     goto: () => Promise.resolve(undefined),
     content: () => Promise.resolve(''),
@@ -37,6 +39,7 @@ const wedgingLauncher = (): CdpLauncherLike & {
     close: () => Promise.resolve(),
   };
   const browser: CdpBrowserLike = {
+    ...stubCookieJar(),
     newPage: () => Promise.resolve(page),
     target: () => fakeBrowserTarget().target,
     setCookie: () => Promise.resolve(),

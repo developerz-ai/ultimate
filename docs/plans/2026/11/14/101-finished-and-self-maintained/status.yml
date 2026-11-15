@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 17
-current_focus: "Sweep 2 (04 + 05 + test-isolation root fix) on feat/sweep-2-auth-jobs-realtime; sweep 1 shipped as 31.24.0 (#1141, #1142)."
+percent: 33
+current_focus: "Sweep 3 (06 + sweep-2 isolation followups) on feat/sweep-3-ai-mail-scraping-ui; sweep 2 shipped as 31.25.0 (#1143, #1144). 05 production 7-day scan check is owed by slice 30."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -25,13 +25,13 @@ slices:
   - file: 04-auth-http.md
     tier: 2
     sweep: "2"
-    status: in_progress
-    percent: 10
+    status: complete
+    percent: 100
   - file: 05-jobs-realtime.md
     tier: 3
     sweep: "2"
-    status: in_progress
-    percent: 10
+    status: complete
+    percent: 100
   - file: 06-ai-mail-scraping-ui.md
     tier: 4
     sweep: "3"

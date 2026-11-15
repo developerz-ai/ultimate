@@ -41,6 +41,7 @@ import * as postCharge from '../app/billing/jobs/post-charge';
 import * as settleUpgrade from '../app/billing/jobs/settle-upgrade';
 import * as contactSales from '../app/contact/actions/contact-sales';
 import * as sendSalesReceipt from '../app/contact/jobs/send-sales-receipt';
+import * as supportInbox from '../app/contact/jobs/support-inbox';
 import * as deliverDigest from '../app/digest/jobs/deliver-digest';
 import * as sendDigest from '../app/digest/jobs/send-digest';
 import * as openErrorIssue from '../app/errors/jobs/open-error-issue';
@@ -229,6 +230,7 @@ export const api = defineApi({
     sendDigest,
     deliverDigest,
     sendSalesReceipt,
+    supportInbox,
     syncConnection,
     printStatement,
     warmAvatar,

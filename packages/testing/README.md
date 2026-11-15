@@ -345,6 +345,13 @@ It registers `page` and nothing else. `budget`, `signIn` and `deploy` keep refus
 browser's own network state and a second build id are not things a page port can answer for, and a
 fixture that silently no-opped would make the assertion after it read as proof.
 
+**Real input, `As of 2026-11`.** A raw-CDP tab (`cdpE2eTab`, the `E2eTab` the framework implements)
+sends trusted input the page cannot forge: `tab.touchDrag(from, to, steps)` is a finger
+(`Input.dispatchTouchEvent`, touch emulation on once per tab) and `tab.press(key)` a key
+(`Input.dispatchKeyEvent`, so Tab really moves focus) — a key from `PRESS_KEYS`, a letter or a digit.
+A touch `PointerEvent` dispatched from page script is refused by `setPointerCapture`, so a drag
+proven that way proves nothing; `TouchPoint` is the `{ x, y }` both ends take.
+
 **A browser call that is never answered says why.** `X_CDP_TIMEOUT` from the connection carries
 `meta.reading` — `target-gone` (session detached, target destroyed or crashed), `lost-in-transport`
 (`meta.framesDropped` frames arrived unparseable after the call) or `no-answer` — beside

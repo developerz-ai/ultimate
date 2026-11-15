@@ -70,33 +70,12 @@ describe('unit · the CDP driver', () => {
     expect(browser.colorScheme).toBeNull();
   });
 
-  // The half that keeps OPTIONAL from meaning UNWIRED, exactly as `setOfflineMode` is refused: a
-  // launcher predating the method must fail by name, because a silently resolved promise is how
-  // this whole issue shipped — four pictures reported, two delivered.
-  test('a launcher with no emulateMediaFeatures is X_NOT_IMPLEMENTED, named and fixable', async () => {
-    const browser = fakeCdpBrowser({ url: URL, html: '<p>hi</p>' });
-    const rich = await browser.newPage();
-    const { emulateMediaFeatures: _dropped, ...page } = rich as typeof rich & {
-      emulateMediaFeatures?: unknown;
-    };
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: frozenClock() });
-
-    let thrown: { code?: string; fix?: string } = {};
-    try {
-      await target.setColorScheme('dark');
-    } catch (caught) {
-      thrown = caught as { code?: string; fix?: string };
-    }
-    expect(thrown.code).toBe('X_NOT_IMPLEMENTED');
-    expect(thrown.fix).toContain('emulateMediaFeatures');
-  });
-
   // The port's shape is a LIST, and a caller setting another feature beside the scheme must not
   // have the scheme overwritten by position.
   test('the feature is found by name, never by position', async () => {
     const browser = fakeCdpBrowser({ url: URL, html: '<p>hi</p>' });
     const page = await browser.newPage();
-    await page.emulateMediaFeatures?.([
+    await page.emulateMediaFeatures([
       { name: 'prefers-reduced-motion', value: 'reduce' },
       { name: COLOR_SCHEME_FEATURE, value: 'light' },
     ]);

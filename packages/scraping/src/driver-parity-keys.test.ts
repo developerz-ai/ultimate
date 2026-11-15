@@ -1,7 +1,7 @@
 // The REAL driver's half of keyboard and accessibility parity: `press`, `focus` and `accessibility`
 // on `localBrowser` over an injected CDP browser. `scrapeDriverConformance` (`@ultimat3/testing`)
 // holds the offline drivers to the same vocabulary and cannot reach this subject — the CDP fake is
-// this package's own. The offline refusals are pinned in `html-target.test.ts`.
+// this package's own. The offline drivers' HTML-AAM answers are pinned in `html-a11y.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, structuredLogger } from '@ultimat3/core';
@@ -17,7 +17,7 @@ const HTML_A = `<html><body>
   <div id="fake-button" onclick="go()">Looks clickable</div>
 </body></html>`;
 
-/** What the browser WOULD compute — canned, because a fake cannot compute a role honestly. */
+/** What the browser WOULD compute — canned, so what is under test is `cdp-a11y.ts`'s parse. */
 const AX: Readonly<Record<string, readonly AxNode[]>> = {
   '#go': [{ role: 'button', name: 'Run search', ignored: false, focused: false }],
   '#fake-button': [{ role: '', name: '', ignored: false }],
@@ -115,12 +115,11 @@ describe('unit · focus() and press() on the real driver', () => {
 });
 
 /**
- * THE divergence, pinned: the real driver answers what the browser computed, and an offline driver
- * REFUSES rather than reading `role=` off the markup. `#fake-button` is why — a `<div onclick>`
- * computes no role and no name, and that emptiness is the finding a fake reading attributes would
- * invent its way past.
+ * The real driver answers what the browser computed. `#fake-button` is why the read exists — a
+ * `<div onclick>` computes no role and no name, and the offline drivers' HTML-AAM mapping answers
+ * the same emptiness (`html-a11y.test.ts`) rather than inventing a role from the markup.
  */
-describe('unit · accessibility() is answered by the browser or refused by name', () => {
+describe('unit · accessibility() is answered by the browser', () => {
   test('the real driver answers the computed role and name, and the div that has none', async () => {
     const injected = launcher();
     const session = await open(localBrowser({ launcher: injected }));
