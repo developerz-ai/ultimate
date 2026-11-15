@@ -48,6 +48,27 @@ test('${name} starts anonymous and leaves an authenticator configured', () => {
 });
 `;
 
+/** What `loadApp()` does: configures on first call, once per worker life, behind the module cache. */
+const LOAD_ONCE = `import { configureAuthenticator } from '${HOOKS}';
+
+let loaded = false;
+export const loadOnce = (): void => {
+  if (loaded) return;
+  loaded = true;
+  configureAuthenticator(async () => null);
+};
+`;
+
+const authenticatorReader = (name: string): string => `import { expect, test } from 'bun:test';
+import { configuredAuthenticator } from '${HOOKS}';
+import { loadOnce } from './load-once';
+
+test('${name} still sees the authenticator the app loaded once', () => {
+  loadOnce();
+  expect(configuredAuthenticator()).toBeDefined();
+});
+`;
+
 const STORAGE = join(PACKAGES, 'storage', 'src', 'index.ts');
 
 const storageDefiner = (name: string): string => `import { expect, test } from 'bun:test';
@@ -107,6 +128,17 @@ describe('module-scope declaration tables, in one process', () => {
     const { output, exitCode } = await runFixtures({
       'one.test.ts': authenticatorSetter('one'),
       'two.test.ts': authenticatorSetter('two'),
+    });
+    expect(output).toContain('2 pass');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
+  test('inside an app, what loaded once for the worker survives into the next file', async () => {
+    const { output, exitCode } = await runFixtures({
+      'app.config.ts': 'export {};\n',
+      'load-once.ts': LOAD_ONCE,
+      'one.test.ts': authenticatorReader('one'),
+      'two.test.ts': authenticatorReader('two'),
     });
     expect(output).toContain('2 pass');
     expect(exitCode).toBe(0);

@@ -236,7 +236,10 @@ export function installRegistryLeakGuard(): void {
     // whose drift step then read its fixture app as "a store that owns its own schema".
     restoreDriverStores(preloadStores);
     restoreAdminMounts(current.admins);
-    restoreDeclarationTables(current.tables);
+    // The framework repository's own suites only: in an app these tables hold what `loadApp()`
+    // registered once for the worker's life (routes, the authenticator, storage, channels), and a
+    // module the cache will not evaluate again cannot put them back for the next file.
+    if (!inApp) restoreDeclarationTables(current.tables);
     // A preload's `usePersister` is in every body's start; a file's own `factoryWorld()` is not.
     swapPersister(current.persister);
     accumulated = mergeSnapshots(accumulated, restored);
