@@ -54,14 +54,18 @@ const B = 'file:apps/web/lib/b.ts';
 describe('x graph', () => {
   test("the whole graph carries the app's import edge and counts its files", async () => {
     const result = await graphCommand.run(ctxOf(graphCommand, []));
-    expect(result.data).toMatchObject({
-      edges: [
-        { from: A, to: B, rel: 'imports', provenance: 'import' },
-        { from: 'test:apps/web/lib/b.test.ts', to: B, rel: 'imports', provenance: 'import' },
-      ],
-      opaque: [],
-    });
-    expect(result.summary).toContain('2 edge(s) (import)');
+    // The IMPORT edges, read from this fixture's files. Declared edges come from the process's
+    // registries, and `@ultimat3/realtime`'s channel registry publishes no restore: on a shared
+    // worker an earlier file's `channel('org-posts')` is still declared and draws its own edges.
+    const data = result.data as { edges: readonly { provenance: string }[]; opaque: unknown };
+    expect(data.edges.filter((edge) => edge.provenance === 'import')).toEqual([
+      { from: A, to: B, rel: 'imports', provenance: 'import' },
+      { from: 'test:apps/web/lib/b.test.ts', to: B, rel: 'imports', provenance: 'import' },
+    ]);
+    expect(data.opaque).toEqual([]);
+    // Counted over every edge the graph holds, declared ones included (see above).
+    expect(result.summary).toContain(`${data.edges.length} edge(s)`);
+    expect(result.summary).toMatch(/\bimport\)/);
     expect(result.lines).toContain('  file: 3');
     expect(result.lines).toContain('  test: 1');
   });

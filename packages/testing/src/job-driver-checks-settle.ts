@@ -2,6 +2,7 @@
 // hook owes it, the hook's return clears the debt under that claim, and a debt a crash left is
 // taken once per grace — and a row the CLAIM settles (a final-attempt burial, an expiry) owes it
 // too, named by `ClaimOptions.settleOwed`. A driver with no `settleDebt` fails here.
+//
 // Type-only imports: the barrel never loads `@ultimat3/jobs`.
 
 import { expect } from 'bun:test';

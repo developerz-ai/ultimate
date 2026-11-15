@@ -1,15 +1,25 @@
 // A read after a bust must see the bust. The fence stops a stale load's fill; these pin that it also
 // stops the join, by key and by tag, including while the overtaken load is settling.
 
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import * as fenceModule from './fence';
 import { markInvalidated } from './fence';
 import { isolateGraph } from './graph';
 import { invalidateTags } from './invalidate';
-import { tag } from './tags';
+import { declareTags, isolateDeclaredTags, tag } from './tags';
 import * as leadingModule from './tier-leading';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
 import { cacheStack } from './tiers';
+
+// `invalidateTags` checks its tags against the declared set, which is process state: on a shared
+// worker an earlier file's import of an app left that app's entity tags declared, and `k3feed`
+// was X_CACHE_TAG_UNKNOWN. The tag this file busts is declared here and the set handed back.
+let restoreTags: () => void = () => undefined;
+beforeAll(() => {
+  restoreTags = isolateDeclaredTags();
+  declareTags(['k3feed']);
+});
+afterAll(() => restoreTags());
 
 /** Minimal, in-memory `CacheTier` that records every call it receives. */
 function fakeTier(name: CacheTier['name'], calls: string[]): CacheTier {

@@ -13,7 +13,12 @@ import { from } from './source';
 
 // The signing secret is process state: configured here and left, the next file on a shared
 // worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
-afterAll(() => resetCursorSigning());
+afterAll(() => {
+  resetCursorSigning();
+  // `bigFeed` and its siblings stay registered after the last test otherwise: a later file's
+  // `x routes` and `x manifest` listed a `feed:read` read its fixture app never declared.
+  resetQueries();
+});
 
 interface Ranked {
   readonly id: number;

@@ -2,7 +2,7 @@
 // resolved to `undefined`, or a second copy quietly winning the table, would split a kind's
 // primitives across two registries and drop half of them with nothing raised.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   ADAPTER_PORT_NAMES,
   ADAPTER_PORTS,
@@ -21,6 +21,17 @@ import {
 const noop: ModuleRegistrar = () => [];
 
 const asQuery = (name: string): RegisteredPrimitive => ({ kind: 'query', name });
+
+// The registrars are announced ONCE, as each owning package is imported: cleared here and left,
+// every later file on a shared worker is X_REGISTRAR_MISSING (`prerender-actor.test.ts`, every
+// `x build` measurement). What this file found goes back after it.
+const announced = PRIMITIVE_KINDS.filter(hasPrimitiveRegistrar).map(
+  (kind) => [kind, primitiveRegistrar(kind)] as const,
+);
+afterAll(() => {
+  resetPrimitiveRegistrars();
+  for (const [kind, registrar] of announced) registerPrimitiveRegistrar(kind, registrar);
+});
 
 beforeEach(() => {
   resetPrimitiveRegistrars();

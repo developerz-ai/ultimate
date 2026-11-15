@@ -82,7 +82,11 @@ describe('unit · the tables a live query declares it is patched from', () => {
   });
 
   test('an app whose reads declare none asks for no ALTER at all', () => {
-    expect(replicaIdentityTables([declared('publicPosts', null)], new Set(['posts']))).toEqual([]);
+    // No params channel either, said here: the default reads `@ultimat3/realtime`'s process-wide
+    // channel registry, which an earlier file on a shared worker left holding a `posts` channel.
+    expect(replicaIdentityTables([declared('publicPosts', null)], new Set(['posts']), [])).toEqual(
+      [],
+    );
   });
 
   /**

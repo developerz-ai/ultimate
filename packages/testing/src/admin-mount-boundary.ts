@@ -1,10 +1,11 @@
-// The admins `defineAdmin()` mounted, put back at the file boundary to what the file inherited.
-// ~50 admin suites mount one and never clear it, and the `i18n` step audits the keys of EVERY
-// mounted admin — so on a shared worker one file's admin was a later file's X_CATALOG_MISSING_KEYS.
-// Read off the global symbol `@ultimat3/admin` keeps them on, never imported: `testing` is tier 5
-// beside `admin`, and an app with no admin must not load one to have its mounts restored.
+// The admins `defineAdmin()` mounted, put back at the file boundary to what the file inherited:
+// ~50 admin suites mount one and never clear it, and the `i18n` step audits EVERY mounted admin,
+// so on a shared worker one file's admin was a later file's X_CATALOG_MISSING_KEYS.
 
-/** `@ultimat3/admin`'s `ADMIN_MOUNTS`, restated as `@ultimat3/cli`'s `runtime-admin.ts` does. */
+/**
+ * `@ultimat3/admin`'s `ADMIN_MOUNTS`, restated as `@ultimat3/cli`'s `runtime-admin.ts` does —
+ * never imported: `testing` is tier 5 beside `admin`, and an app with no admin must not load one.
+ */
 const ADMIN_MOUNTS = Symbol.for('ultimate.admin.mounts');
 
 type Mounted = readonly (readonly [string, unknown])[];

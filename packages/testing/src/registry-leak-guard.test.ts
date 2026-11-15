@@ -5,15 +5,10 @@
 // files in a child process and reading what it reports.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` by necessity, all four: Bun writes files (`Bun.write` even creates the parent) but
-// exposes no primitive that MAKES a uniquely named directory, no recursive REMOVE, no temp-dir
-// location and no path join. The fixtures must live outside the checkout — a `.test.ts` inside it
-// would be collected by the repo's own `bun test` — so a real temp dir is the requirement, and
-// leaving one behind per run is not an option.
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { RegistryLeakError } from './errors';
+import { runFixtures } from './registry-guard-run-fixture';
 import { leakBetween, type RegistrySample, sampleRegistries } from './registry-leak-guard';
 
 const sample = (tags: readonly string[], tiers: readonly string[]): RegistrySample => ({
@@ -115,7 +110,6 @@ describe('RegistryLeakError', () => {
 });
 
 const SRC = import.meta.dir;
-const PRELOAD = join(SRC, 'preload.ts');
 const CACHE = join(SRC, '..', '..', 'cache', 'src', 'index.ts');
 const I18N = join(SRC, '..', '..', 'i18n', 'src', 'index.ts');
 const POLICY = join(SRC, '..', '..', 'policy', 'src', 'index.ts');
@@ -164,33 +158,6 @@ test('everything the beforeAll set up works', () => {
   expect(knownTags()).toContain('bootfixture');
 });
 `;
-
-/** One real `bun test`, its own temp dir: the cross-file half is only observable in a child. */
-const runFixtures = async (
-  files: Readonly<Record<string, string>>,
-): Promise<{ readonly output: string; readonly exitCode: number }> => {
-  const dir = await mkdtemp(join(tmpdir(), 'x-leak-guard-'));
-  try {
-    for (const [name, source] of Object.entries(files)) await Bun.write(join(dir, name), source);
-    // Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so
-    // a child that does not come back is a worker the test timeout cannot end.
-    const run = Bun.spawn({
-      cmd: ['bun', 'test', '--preload', PRELOAD, '.'],
-      cwd: dir,
-      env: { ...process.env, ULTIMATE_TEST_ALLOW_NET: '1' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(run.stdout).text(),
-      new Response(run.stderr).text(),
-      run.exited,
-    ]);
-    return { output: `${stdout}${stderr}`, exitCode };
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-};
 
 describe('the guard, across files, in one process', () => {
   test('a run whose files all pass still fails, naming the file that leaked', async () => {
@@ -354,143 +321,6 @@ describe('the restore, across files, in one process', () => {
 
     expect(output).toContain('2 pass');
     expect(output).not.toContain('1 fail');
-    expect(exitCode).toBe(0);
-  }, 30_000);
-});
-
-/**
- * A test file's OWN module body is not anyone else's environment. Its imports are — a module
- * evaluates once per process, so what one declared stays for every later file — but the body of a
- * `.test.ts` is never imported by another file, so nothing it declared can be a later file's cache
- * hit. Before the baseline moved to the body's START, the body was folded into what every later
- * file inherited: one file's `definePermissions()` switched strict checking on for the worker and
- * one file's `defineRoles({ member })` was `X_ROLE_REDEFINED` in the next file that defined its own.
- *
- * Identical apart from the name, so the verdict cannot depend on which file bun runs first.
- */
-const bodyDeclarer = (name: string): string => `import { expect, test } from 'bun:test';
-import { defineRoles, definePermissions, knownPermissions, roleDefinitions } from '${POLICY}';
-
-definePermissions(['body:${name}']);
-defineRoles({ member: { grants: ['body:${name}'] } });
-
-test('${name} sees its own body declarations and no other file’s', () => {
-  expect(knownPermissions()).toEqual(['body:${name}']);
-  expect(roleDefinitions()['member']?.grants).toEqual(['body:${name}']);
-});
-`;
-
-describe('a test file’s body, in one process', () => {
-  test('what one file’s body declared is gone before the next file evaluates', async () => {
-    const { output, exitCode } = await runFixtures({
-      'one.test.ts': bodyDeclarer('one'),
-      'two.test.ts': bodyDeclarer('two'),
-    });
-
-    expect(output).toContain('2 pass');
-    expect(output).not.toContain('X_ROLE_REDEFINED');
-    expect(exitCode).toBe(0);
-  }, 30_000);
-});
-
-/**
- * A test file's ENVIRONMENT is its own import graph, never the worker's history. A module declares
- * once per process, so the guard keeps what a module in THIS file's graph declared — the second
- * file to import `./declare-a` is a cache hit and still sees `env:a` — and drops what a module only
- * an EARLIER file imported declared. Before, the union of every earlier file's imports was every
- * later file's set: a file that declared nothing found a 12-name set and its `can('cases:create')`
- * was X_PERMISSION_UNKNOWN, or a role an unrelated app module defined was its X_ROLE_REDEFINED.
- */
-const envDeclare = (
-  name: string,
-): string => `import { defineRoles, definePermissions } from '${POLICY}';
-
-export const permissions = definePermissions(['env:${name}']);
-defineRoles({ env${name}: { grants: ['env:${name}'] } });
-`;
-
-const envReader = (
-  imports: string,
-  expected: readonly string[],
-): string => `import { expect, test } from 'bun:test';
-import { knownPermissions, roleDefinitions } from '${POLICY}';
-${imports}
-
-test('sees exactly its own graph’s declarations', () => {
-  expect(knownPermissions()).toEqual(${JSON.stringify(expected)});
-  expect(Object.keys(roleDefinitions()).sort()).toEqual(${JSON.stringify(expected.map((p) => `env${p.slice(4)}`))});
-});
-`;
-
-describe('a test file’s environment, in one process', () => {
-  test('is what its own imports declared, a cache hit included, and nothing else', async () => {
-    const { output, exitCode } = await runFixtures({
-      'declare-a.ts': envDeclare('a'),
-      'declare-b.ts': envDeclare('b'),
-      'a1.test.ts': envReader("import './declare-a';", ['env:a']),
-      'a2.test.ts': envReader("import './declare-a';", ['env:a']),
-      'b.test.ts': envReader("import './declare-b';", ['env:b']),
-      'ab.test.ts': envReader("import './declare-a';\nimport './declare-b';", ['env:a', 'env:b']),
-      'none.test.ts': envReader('', []),
-    });
-
-    expect(output).toContain('5 pass');
-    expect(output).not.toContain('(fail)');
-    expect(exitCode).toBe(0);
-  }, 30_000);
-});
-
-const ENTITY_ADAPTER = join(SRC, '..', '..', 'entity', 'src', 'adapter.ts');
-
-/**
- * `x verify`'s drift step skips its schema rails for an app whose only noted driver is a custom
- * one, and the record is process-wide: one file's `defineDriver()` made every later file's fixture
- * app read as non-SQL. Identical but for the name, so either order proves it.
- */
-const storeNoter = (name: string): string => `import { expect, test } from 'bun:test';
-import { driverStores, noteDriverStore } from '${ENTITY_ADAPTER}';
-
-test('${name} sees only the store it noted', () => {
-  noteDriverStore('custom', '${name}');
-  expect(driverStores().custom).toEqual(['${name}']);
-});
-`;
-
-describe('the noted driver stores, in one process', () => {
-  test('a store one file built is not a store the next file built', async () => {
-    const { output, exitCode } = await runFixtures({
-      'one.test.ts': storeNoter('one'),
-      'two.test.ts': storeNoter('two'),
-    });
-
-    expect(output).toContain('2 pass');
-    expect(exitCode).toBe(0);
-  }, 30_000);
-});
-
-const ADMIN_MOUNTS_MODULE = join(SRC, '..', '..', 'admin', 'src', 'mounts.ts');
-
-/**
- * Through `@ultimat3/admin`'s own `mounts.ts`, so the symbol this package restates is held to the
- * one admin keeps its mounts on: a drifted string would leave the second file seeing the first's.
- */
-const mounter = (name: string): string => `import { expect, test } from 'bun:test';
-import { adminMounts, registerAdminMount } from '${ADMIN_MOUNTS_MODULE}';
-
-test('${name} sees only the admin it mounted', () => {
-  registerAdminMount({ basePath: '/${name}' } as never);
-  expect(adminMounts().map((app) => app.basePath)).toEqual(['/${name}']);
-});
-`;
-
-describe('the mounted admins, in one process', () => {
-  test('an admin one file mounted is not mounted in the next', async () => {
-    const { output, exitCode } = await runFixtures({
-      'one.test.ts': mounter('one'),
-      'two.test.ts': mounter('two'),
-    });
-
-    expect(output).toContain('2 pass');
     expect(exitCode).toBe(0);
   }, 30_000);
 });

@@ -8,6 +8,9 @@ import {
   JobIntrospectionUnsupportedError,
   MAX_JOB_PAGE,
   memoryJobDriver,
+  registeredJobs,
+  resetJobs,
+  restoreJobs,
 } from '@ultimat3/jobs';
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminRow } from '../registry';
@@ -18,12 +21,19 @@ import { jobsOperator } from './operator';
 
 let seeded: Seeded;
 
+// The queues listed are the ones the REGISTERED jobs name, and the registry is process state: on a
+// shared worker an earlier file's import of the reference app left its `digest` job declared for
+// good. Only this file's jobs is the premise, so it is stated, and what was there goes back.
+const inherited = registeredJobs();
+
 beforeAll(async () => {
+  resetJobs();
   seeded = await seedQueue();
 });
 
 afterAll(() => {
   resetJobDriver();
+  restoreJobs(inherited);
 });
 
 const rows: readonly AdminRow[] = [

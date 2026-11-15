@@ -8,6 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { resetActions } from '@ultimat3/action';
 import type { DevPanel, PanelPayload, TimelinePanelData } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
@@ -20,6 +21,7 @@ import {
   withSpan,
 } from '@ultimat3/core';
 import type { MailMessage, MemoryMailDriver, SendResult, SentMail } from '@ultimat3/mail';
+import { resetQueries } from '@ultimat3/query';
 import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
@@ -441,8 +443,11 @@ describe('unit · x dev mounts the dashboard', () => {
   });
 
   test('the policy matrix comes from the app registries, so it is empty before the app loads', async () => {
-    // Registries are process-global and this file registers nothing: the honest answer for an app
-    // with no gated primitive is no cells, and it must be an answer rather than a refusal.
+    // Registries are process-global and this file registers nothing — but an earlier file on a
+    // shared worker may have left its actions and queries registered, so the premise is stated.
+    // The honest answer for an app with no gated primitive is no cells, an answer and no refusal.
+    resetActions();
+    resetQueries();
     expect(await devSources(inputFor()).policyMatrix()).toEqual([]);
   });
 

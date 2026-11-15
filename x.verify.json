@@ -1,6 +1,6 @@
 {
   "agentsMdMaxBytes": 16384,
-  "isolate": false,
+  "isolate": true,
   "stepTimeoutMs": {
     "unit": 1500000
   },

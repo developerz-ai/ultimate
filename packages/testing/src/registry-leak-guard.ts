@@ -5,6 +5,7 @@
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
+import { configureLocales } from '@ultimat3/i18n';
 import { captureAdminMounts, restoreAdminMounts } from './admin-mount-boundary';
 import { isAppRoot } from './app-root';
 import { captureDriverStores, restoreDriverStores } from './driver-store-boundary';
@@ -39,14 +40,14 @@ import { frameworkDeclarationRegistries } from './rerun-registries';
  * "Idiomatic to leave filled" says nothing about a file that calls `clear*()`/`reset*()` and takes
  * a module-scope declaration from every file after it — a module evaluates once per process, so the
  * next file's own `import` is a cache hit that declares nothing. That is what `registry-snapshot.ts`
- * repairs, and it repairs SIX registries out of the set that has one:
+ * repairs, and it repairs SEVEN registries out of the set that has one:
  *
  *   | registry | reset export | owner | in the snapshot? |
  *   |---|---|---|---|
  *   | locales / catalogs | `resetCatalogs` | `@ultimat3/i18n` | yes |
  *   | permissions / roles | `restorePermissions` / `restoreRoles` | `@ultimat3/policy` | yes |
  *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
- *   | jobs | `resetJobs` / `restoreJobs` | `@ultimat3/jobs` | **no** — isolated per test |
+ *   | jobs | `resetJobs` / `restoreJobs` | `@ultimat3/jobs` | yes (2026-11) |
  *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
  *   | measurement actor | `resetMeasurementActor` | `@ultimat3/core` | yes |
  *   | actions | `resetActions` | `@ultimat3/action` | **no** |
@@ -165,7 +166,6 @@ export function installRegistryLeakGuard(): void {
         /** Unset until the body ends: a body that threw is restored, never judged for tags. */
         before: RegistrySample | undefined;
         readonly snapshot: ProcessRegistrySnapshot;
-        readonly stores: ReturnType<typeof captureDriverStores>;
         readonly admins: ReturnType<typeof captureAdminMounts>;
       }
     | undefined;
@@ -185,6 +185,7 @@ export function installRegistryLeakGuard(): void {
   // What the last boundary put back: a name live at a body's start and absent here was declared
   // by a module THIS file's load evaluated for the first time — its own, whatever the graph says.
   let lastBoundary = atPreload;
+  const preloadStores = captureDriverStores();
   const graphOf = importGraphReader();
   let graph: ImportGraph | undefined;
 
@@ -223,9 +224,13 @@ export function installRegistryLeakGuard(): void {
       ...merged,
       locales: declaredLazily ? live.locales : current.snapshot.locales,
       tasks: current.snapshot.tasks,
+      jobs: current.snapshot.jobs,
     };
     restoreProcessRegistries(restored);
-    restoreDriverStores(current.stores);
+    // To the PRELOAD's notes, never the body's start: a store is noted as its driver is built,
+    // and a fixture module that builds one at import noted it for every later file on the worker —
+    // whose drift step then read its fixture app as "a store that owns its own schema".
+    restoreDriverStores(preloadStores);
     restoreAdminMounts(current.admins);
     accumulated = mergeSnapshots(accumulated, restored);
     lastBoundary = restored;
@@ -252,8 +257,13 @@ export function installRegistryLeakGuard(): void {
         ...fresh(Object.keys(live.roles), Object.keys(lastBoundary.roles)),
       ]),
     };
-    const own = { ...inherited, ...ownEnvironment(inherited, graph, kept) };
+    // The locale config likewise: an earlier file's import that narrowed it (an app's
+    // `defineCatalogs()`) is no environment of this one — unless THIS load moved it.
+    const movedNow = JSON.stringify(live.locales) !== JSON.stringify(lastBoundary.locales);
+    const locales = movedNow ? live.locales : atPreload.locales;
+    const own = { ...inherited, ...ownEnvironment(inherited, graph, kept), locales };
     restorePolicyRegistries(own);
+    configureLocales(locales);
     return own;
   };
 
@@ -270,7 +280,6 @@ export function installRegistryLeakGuard(): void {
       file: pending,
       before: undefined,
       snapshot: narrowed(live, accumulated),
-      stores: captureDriverStores(),
       admins: captureAdminMounts(),
     };
     pending = undefined;

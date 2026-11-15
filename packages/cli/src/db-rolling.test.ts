@@ -166,6 +166,9 @@ describe('x verify · the rolling rail', () => {
   test('it runs in the drift step', async () => {
     const root = await appWith({ '0002_drop.sql': DROP }, '0');
     await Bun.write(join(root, APP_CONFIG_FILE), 'export const config = {};\n');
+    // One module, so the load reads an app rather than X_APP_EMPTY — which `loadApp` decides from
+    // the PROCESS's registries, so it held here only while an earlier file's primitives were left.
+    await Bun.write(join(root, 'apps/web/shared/tokens.ts'), 'export const tokens = {};\n');
     const drift = VERIFY_STEPS.find((step) => step.name === 'drift');
     const outcome = await drift?.run({ root, env: {} } as never);
     expect(JSON.stringify(outcome?.findings)).toContain('X_MIGRATION_ROLLING_UNSAFE');

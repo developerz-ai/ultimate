@@ -318,6 +318,9 @@ describe('the drift step · an index nothing declares', () => {
       join(app, 'packages/db/schema/05_indexes/posts.sql'),
       'CREATE INDEX posts_extra_idx ON public.posts USING btree (a);\n',
     );
+    // One module, so the load reads an app rather than X_APP_EMPTY — which `loadApp` decides from
+    // the PROCESS's registries, so it held here only while an earlier file's primitives were left.
+    await Bun.write(join(app, 'apps/web/shared/tokens.ts'), 'export const tokens = {};\n');
     const drift = VERIFY_STEPS.find((step) => step.name === 'drift');
     if (drift === undefined) return expect.unreachable('no drift step');
     const outcome = await drift.run({ root: app, runner: exec });

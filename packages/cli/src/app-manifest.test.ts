@@ -14,6 +14,7 @@ import { resetCatalogs } from '@ultimat3/i18n';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
 import { resetQueries } from '@ultimat3/query';
+import { clearChannels } from '@ultimat3/realtime';
 import { clearRoutes } from '@ultimat3/render';
 import { loadApp, resetAppLoad } from './app-load';
 import { appManifest } from './app-manifest';
@@ -123,6 +124,9 @@ const resetRegistries = (): void => {
   resetQueries();
   clearEntities();
   clearRoutes();
+  // A channel's permissions are derived into `manifest.permissions` too, and an earlier file on a
+  // shared worker left its `channel('org-posts')` (`feed:read`) declared.
+  clearChannels();
   resetJobs();
   resetTasks();
   clearPermissions();
