@@ -201,6 +201,19 @@ describe('logger · redaction by key', () => {
     'GH_PAT',
     'githubPat',
     'passwords',
+    // Review of sweep 5: `password` is matched ANYWHERE, so a numbered or suffixed form a form
+    // library writes (Django's `password1`/`new_password2`) is never plaintext. Fail closed.
+    'password1',
+    'password2',
+    'new_password1',
+    'new_password2',
+    'passwordConfirm',
+    'password_confirm',
+    'passwordRepeat',
+    'passwordNew',
+    'passwordAgain',
+    'passwordPlain',
+    'DB_PWD',
   ])('a compound credential name is redacted: %s', (key) => {
     expect(isRedactedKey(key)).toBe(true);
     const { logger, lines } = capture();
@@ -312,6 +325,15 @@ describe('logger · redaction by key', () => {
     'sidebar',
     'pattern',
     'patch',
+    // The named exceptions, and no others: a password's metadata, and the shell's own directories.
+    'passwordMaxLength',
+    'password_length',
+    'passwordSet',
+    'isPasswordSet',
+    'PWD',
+    'pwd',
+    'OLDPWD',
+    'oldPwd',
   ])('an ordinary name stays readable: %s', (key) => {
     expect(isRedactedKey(key)).toBe(false);
   });

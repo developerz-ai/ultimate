@@ -62,9 +62,10 @@ const redactedKeys = new Set<string>([
  * snake and the header spelling. It names what BEARS a credential and nothing wider, because a
  * redacted field is one an operator cannot correlate on:
  *
- * - `password` as the LAST word (`currentPassword`, `passwordHash`, `passwordConfirmation`) and
- *   `passphrase` anywhere; a password's metadata (`passwordPolicy`, `passwordChangedAt`, `hasPassword`)
- *   stays readable. `pass` / `pwd` as a service's credential (`SMTP_PASS`, `dbPwd`, `pgpass`).
+ * - `password` / `passphrase` ANYWHERE — `password1`, `new_password2`, `passwordConfirm` are all
+ *   plaintext — except the named metadata: a `has`/`is` prefix, and a `policy`, `minLength`,
+ *   `maxLength`, `length`, `changedAt` or `set` suffix. `pass` / `pwd` as a service's credential
+ *   (`SMTP_PASS`, `dbPwd`, `pgpass`); the shell's own `PWD` / `OLDPWD` stay readable.
  * - `secret` as the LAST word (`mfaSecret`, `webhookSecret`, `appSecrets`, `secretAccessKey`), so
  *   `clientSecretEnv` and `secretsPath` — a variable name and a path — stay readable.
  * - a `token` is a bearer UNLESS its qualifier says it is not: fail closed, with the exceptions
@@ -99,8 +100,8 @@ const verdicts = new Map<string, boolean>();
 /** Exported for its own work-count test only (`logger-redact.test.ts`); never on the barrel. */
 export const CREDENTIAL_NAME = new RegExp(
   [
-    '(?<!^(?:has|is))passw(?:or)?ds?(?:hash(?:es)?|confirmation|digest)?$|passphrase',
-    'passcodes?(?:hash(?:es)?)?$|pwd$',
+    '(?<!^(?:has|is))passw(?:or)?d(?!(?:policy|minlength|maxlength|length|changedat|set)$)|passphrase',
+    'passcodes?(?:hash(?:es)?)?$|(?<!^(?:old)?)pwd$',
     '^(?:db|pg|smtp|mail|redis|mysql|ldap|ftp|sftp|proxy|admin|root|user|api|imap|amqp|mongo)?pass$',
     'secrets?$|secretkeybase$',
     '(?:api|private|signing|encryption|master|hmac|secrets?|access|retired|tls|ssl|client|license|app|stripe)keys?$|accesskeyid$',

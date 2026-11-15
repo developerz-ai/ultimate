@@ -78,7 +78,9 @@ const decoded = (text: string): string => {
 /** Every spelling a credential travels in: as written, URL-decoded, and base64 (a Basic header). */
 function credentialSpellings(value: string): string[] {
   const url = parseUrl(value);
-  if (url === undefined || (url.username === '' && url.password === '')) return [btoa(value)];
+  if (url === undefined || (url.username === '' && url.password === '')) {
+    return base64Of([value]);
+  }
   const user = decoded(url.username);
   const pass = decoded(url.password);
   return [
@@ -86,9 +88,25 @@ function credentialSpellings(value: string): string[] {
     url.password,
     user,
     pass,
-    btoa(`${user}:${pass}`),
-    btoa(`${url.username}:${url.password}`),
+    ...base64Of([`${user}:${pass}`, `${url.username}:${url.password}`]),
   ];
+}
+
+/**
+ * Base64 of each text's UTF-8 bytes — what a Basic header holds; `btoa` alone throws past Latin-1
+ * (`pässwörd€`) and took `x repro --bundle` down with it. A spelling that cannot be built is
+ * skipped, never the scrub.
+ */
+function base64Of(texts: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const text of texts) {
+    try {
+      out.push(btoa(String.fromCharCode(...new TextEncoder().encode(text))));
+    } catch {
+      // One spelling fewer: the raw and decoded values are still needles.
+    }
+  }
+  return out;
 }
 
 /** Both separators of a path, so a Windows root pasted either way is found. */
@@ -104,16 +122,17 @@ function needlesOf(sources: ScrubSources): { paths: Needle[]; values: Needle[] }
   ];
   const values: Needle[] = [];
   const hosts = new Set(sources.hosts.map((host) => host.toLowerCase()));
-  for (const { name, value, from } of sources.env) {
-    if (value === undefined || value.trim() === '') continue;
+  for (const { name, value: raw, from } of sources.env) {
+    // Trimmed first: a dotenv `TOKEN="abc\n"` is held by the app, and reaches a log, as `abc`.
+    const value = raw?.trim();
+    if (value === undefined || value === '') continue;
     const host = hostOf(value);
     if (host !== undefined) hosts.add(host);
     const secret = isRedactedKey(name);
     const hidden = secret || host !== undefined || from === 'dotenv';
     if (!hidden) continue;
     const min = secret ? MIN_SECRET_VALUE : MIN_ENV_VALUE;
-    if (value.trim().length >= min)
-      values.push({ find: value, replace: `[env:${name}]`, env: name });
+    if (value.length >= min) values.push({ find: value, replace: `[env:${name}]`, env: name });
     if (!secret && host === undefined) continue;
     for (const find of credentialSpellings(value)) {
       if (find.length >= MIN_SECRET_VALUE) {

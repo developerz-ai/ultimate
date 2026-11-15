@@ -2,6 +2,8 @@
 // must hide and what the framework is, assemble the one JSON document and write it under `repro/`.
 // The parts are `repro-redact.ts`, `repro-archive-collect.ts`, `repro-scrub.ts`, `repro-archive.ts`.
 
+// why: Bun has no rename or unlink; an atomic write needs both.
+import { rename, rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import type { CommandContext } from './command';
@@ -15,6 +17,40 @@ import type { RedactOptions, ReproLookups } from './repro-redact';
 import { redactSubject } from './repro-redact';
 import { scrubberFor } from './repro-scrub';
 import { loadVersion } from './version-loader';
+
+/** The three file operations an atomic write needs; the system's by default, a recorder in tests. */
+export interface AtomicIo {
+  write(path: string, text: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  remove(path: string): Promise<void>;
+}
+
+const systemIo: AtomicIo = {
+  write: async (path, text) => {
+    await Bun.write(path, text);
+  },
+  rename: (from, to) => rename(from, to),
+  remove: (path) => rm(path, { force: true }),
+};
+
+/**
+ * `text` at `path` or nothing new: a temp file beside it, renamed over it (`core`'s
+ * `writeOwnerOnlyFile` shape). A kill mid-write leaves the temp file, never a truncated bundle.
+ */
+export async function writeAtomically(
+  path: string,
+  text: string,
+  io: AtomicIo = systemIo,
+): Promise<void> {
+  const temp = `${path}.${crypto.randomUUID()}.tmp`;
+  try {
+    await io.write(temp, text);
+    await io.rename(temp, path);
+  } catch (error) {
+    await io.remove(temp);
+    throw error;
+  }
+}
 
 export async function writeBundle(
   root: string,
@@ -38,7 +74,7 @@ export async function writeBundle(
     scrubber,
   });
   const file = bundleFileOf(subject);
-  await Bun.write(join(root, file), `${JSON.stringify(document, null, 2)}\n`);
+  await writeAtomically(join(root, file), `${JSON.stringify(document, null, 2)}\n`);
   return {
     ok: true,
     command: 'repro',

@@ -25,7 +25,35 @@ const SOURCES: ScrubSources = {
   hosts: ['box', 'core'],
 };
 
+/** Base64 of the UTF-8 bytes — what a Basic header holds for a password outside Latin-1. */
+const utf8Base64 = (text: string): string =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+
 describe('scrubberFor', () => {
+  test('a value outside Latin-1 builds a scrubber, hidden raw and as UTF-8 base64', () => {
+    const scrub = scrubberFor({
+      ...SOURCES,
+      env: [
+        { name: 'SMTP_PASSWORD', value: 'pässwörd€', from: 'process' },
+        { name: 'MAIL_URL', value: 'smtp://u:p%C3%A4ss%E2%82%AC@mail.corp.test', from: 'process' },
+      ],
+    });
+    const out = String(
+      scrub.value(`a pässwörd€ b ${utf8Base64('pässwörd€')} c päss€ d ${utf8Base64('u:päss€')}`),
+    );
+    for (const leaked of ['pässwörd€', utf8Base64('pässwörd€'), 'päss€', utf8Base64('u:päss€')]) {
+      expect(out).not.toContain(leaked);
+    }
+  });
+
+  test('a value with surrounding whitespace is found as the app holds it, trimmed', () => {
+    const scrub = scrubberFor({
+      ...SOURCES,
+      env: [{ name: 'API_TOKEN', value: 'tok_abcdef123\n', from: 'dotenv' }],
+    });
+    expect(scrub.value('sent tok_abcdef123 twice')).toBe('sent [env:API_TOKEN] twice');
+  });
+
   test('a secret-named value of any length, an env URL and a dotenv value are hidden', () => {
     const scrub = scrubberFor(SOURCES);
     expect(

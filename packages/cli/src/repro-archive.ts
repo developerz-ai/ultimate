@@ -57,12 +57,17 @@ export interface ReproArchiveInput {
 export const subjectIdOf = (subject: ReproSubject): string =>
   subject.kind === 'job' ? subject.failure.jobId : (subject.bundle.requestId ?? subject.bundle.id);
 
-/** Where the bundle lands in the app: beside the written repro tests, named by the subject. */
+/**
+ * Where the bundle lands in the app: beside the written repro tests, named by the WHOLE subject id
+ * (an id past 48 characters keeps its first and last 24). Never its first 12 alone: those are a
+ * UUIDv7's millisecond, so two failures of one millisecond overwrote each other. The written test's
+ * name (`reproFile`) is left as it is: apps commit those, and a rename would duplicate them.
+ */
 export function bundleFileOf(subject: ReproSubject): string {
-  const short = subjectIdOf(subject)
+  const id = subjectIdOf(subject)
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 12);
+    .replace(/[^a-z0-9]/g, '');
+  const short = id.length > 48 ? `${id.slice(0, 24)}${id.slice(-24)}` : id;
   return `repro/bundle-${short || 'unnamed'}.json`;
 }
 
