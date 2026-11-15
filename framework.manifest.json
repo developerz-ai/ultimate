@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0a67297daa5c75d12fcbd5c68bf6a94611ac3a4e418ebbe19b2fd0de23bbc8fe",
+  "buildId": "364002dbd9c805efe693186c065b3e1b19e14c7575d554ca58497260f28020a8",
   "tiers": {
     "0": [
       "core",
@@ -6497,7 +6497,7 @@
     {
       "code": "X_UPGRADE_FIXTURE_UNBUILT",
       "owner": "scripts",
-      "at": "scripts/upgrade-fixtures-findings.ts"
+      "at": "scripts/upgrade-fixtures-cache.ts"
     },
     {
       "code": "X_UPGRADE_GATE_UNREADABLE",
