@@ -201,6 +201,7 @@ export {
   resolveJobStep,
   resumeQueue,
 } from './inspect-operator';
+export { JobIntrospectionUnsupportedError, requireIntrospection } from './inspect-unsupported';
 export type {
   BulkFilter,
   BulkResult,
@@ -250,6 +251,14 @@ export type { Lease, LimitConfig, Limiter, LimitSnapshot, RateLimit } from './li
 export { concurrencyLimiter, NO_TENANT } from './limits';
 export type { HeldLock, WithLockOptions } from './lock';
 export { withLock } from './lock';
+export type { LoopHeartbeat, LoopHeartbeatOptions, StaleLoop } from './loop-heartbeat';
+export {
+  LIVENESS_FLOOR_MS,
+  LIVENESS_TICK_MULTIPLE,
+  livenessBoundMs,
+  loopHeartbeat,
+  staleLoops,
+} from './loop-heartbeat';
 export { queueDemand, recordQueueDemand } from './metrics';
 export type {
   EnqueueOptions,

@@ -2,6 +2,7 @@
 // `dbDiagnostics()` and renders one table per answered section. Facts, never a verdict: exit 0
 // whatever they say, and the one failure is a connection that never opens (`X_DB_UNAVAILABLE`).
 
+import { baseClient, dbClientInstalled, setDbClient } from '@ultimat3/db';
 import {
   type DbDiagnostics,
   type DiagnosticSection,
@@ -88,6 +89,10 @@ export async function runDiagnostics(ctx: CommandContext, root: string): Promise
       });
     }
   }
+  // `startDb` installs its client as the process's `db()`, and this command closes it: what was
+  // there before goes back, or every later `db()` in an embedding process reaches a dead pool.
+  // `undefined` when nothing was installed, which restores lazy construction rather than building it.
+  const previous = dbClientInstalled() ? baseClient() : undefined;
   const started = startDb(services, ctx.env);
   try {
     // Embedded, the probe IS the boot — a WASM compile and an initdb, 12.6 s cold under coverage —
@@ -107,6 +112,7 @@ export async function runDiagnostics(ctx: CommandContext, root: string): Promise
       data: diagnosticsJson(report),
     };
   } finally {
+    setDbClient(previous);
     await started.client.close();
     await started.replica?.close();
   }

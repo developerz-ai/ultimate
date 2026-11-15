@@ -13,13 +13,12 @@ import {
   renderThrowable,
   uuidV7,
 } from '@ultimat3/core';
-import { announceExhausted } from './claim-exhausted';
+import { announceExhausted, burialPolicy } from './claim-exhausted';
 import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobExecution } from './execute-result';
-import { registeredJobs } from './job';
 import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
 import { tickStreak } from './tick-streak';
@@ -150,26 +149,21 @@ export function jobWorker(options: WorkerOptions): Worker {
     // and the turn). It re-reads `claiming()` per ask: a `stop()` mid-pass stops claiming now.
     const claimOne = async (ask: ClaimAsk): Promise<ClaimAnswer> => {
       const admitted = new Map<string, number>();
-      // A lease that lapsed on a row's final attempt is settled by the claim itself and handed to
-      // `onExhausted`, never out as work: this round is the only thing that can count it, log it
-      // and tell the job. `dropExhausted` is the policy the row does not carry.
+      // A final attempt's lapsed lease is settled by the claim itself, handed to `onExhausted` and
+      // told by this round alone; `burialPolicy()` is what the row does not carry.
       const buried: JobRecord[] = [];
       const claimed = await options.driver.claim({
         ...ask,
         visibilityTimeoutMs,
         workerId,
-        dropExhausted: registeredJobs()
-          .filter((handle) => handle.retry.deadLetter === false)
-          .map((handle) => handle.name),
+        ...burialPolicy(),
         onExhausted: (dead) => buried.push(...dead),
         ...(loop.wantsDue() ? { onEmpty: loop.nextDue } : {}), // idle: rest until the next is due
       });
       if (claimed.length > 0) found = true;
       if (buried.length > 0) {
         found = true;
-        tally.buried(
-          await announceExhausted({ exhausted: buried, workerId, context: options.context }),
-        );
+        tally.buried(await announceExhausted({ ...options, exhausted: buried, workerId }));
       }
 
       for (const [index, job] of claimed.entries()) {

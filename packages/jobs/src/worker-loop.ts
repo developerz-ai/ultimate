@@ -11,7 +11,9 @@ import {
   IDLE_REST_MAX_MS,
   REST_SLICE_MS,
   restAfter,
+  WOKEN_IDLE_POLL_CEILING_MS,
 } from './idle-backoff';
+import { loopHeartbeat } from './loop-heartbeat';
 
 export interface ClaimLoopOptions {
   readonly subject: string;
@@ -110,6 +112,14 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     ...(options.ceilingMs === undefined ? {} : { ceilingMs: options.ceilingMs }),
   });
   const timers = options.timers ?? REAL_TIMERS;
+  /**
+   * Stamped by every timer fire — a rest slice too — and held open by every pass: a claim that
+   * never returns, or a timer never re-armed, is a wedge the role's liveness answers 503 on. The
+   * tick is the longest wait this loop arms unsliced: its declared ceiling, else the woken poll's.
+   */
+  // `ceilingMs` is screened finite by `createIdleBackoff` above, the tick again by `loopHeartbeat`.
+  const ceiling = options.ceilingMs === undefined ? WOKEN_IDLE_POLL_CEILING_MS : options.ceilingMs;
+  const heartbeat = loopHeartbeat(options.subject, { tickMs: Math.max(floor, ceiling) });
   let delayMs = floor;
   /** The wait in hand is a REST (`passed`'s due time, wake live): armed in slices. */
   let resting = false;
@@ -143,6 +153,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     timer = timers.set(
       () => {
         timer = undefined;
+        heartbeat.stamp();
         if (slice && wakeIsLive()) {
           armIn(ms - REST_SLICE_MS);
           return;
@@ -155,6 +166,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
 
   const pass = (): void => {
     passing = true;
+    const leave = heartbeat.enter();
     void options
       .round()
       .then(() => options.onPassed?.())
@@ -168,6 +180,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       })
       .finally(() => {
         passing = false;
+        leave();
         if (!active) return;
         if (again) delayMs = 0;
         again = false;
@@ -226,6 +239,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
       active = true;
       ended = false;
       options.onStart?.();
+      heartbeat.start();
       delayMs = floor;
       unsubscribe = onEnqueued(wake);
       arm();
@@ -233,6 +247,7 @@ export function createClaimLoop(options: ClaimLoopOptions): ClaimLoop {
     stop() {
       ended = ended || active;
       active = false;
+      heartbeat.stop(); // a draining worker is not a wedged one
       again = false;
       backlog = false;
       if (timer !== undefined) timers.clear(timer);

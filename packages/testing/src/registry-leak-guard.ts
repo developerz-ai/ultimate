@@ -109,7 +109,10 @@ const repoRelative = (path: string): string => {
  */
 const BASELINE_HOOK = '__ultimateRegistryLeakBaseline';
 
-/** Appended: the baseline is the file's whole module scope, its body's declarations included. */
+/**
+ * Appended: the TAG baseline is the file's whole module scope, its body's declarations included.
+ * The RESTORE baseline is not — it is taken at `BODY_START_HOOK`, below.
+ */
 const SAMPLE_BASELINE = `\n;globalThis[${JSON.stringify(BASELINE_HOOK)}]?.();\n`;
 
 /**
@@ -117,6 +120,14 @@ const SAMPLE_BASELINE = `\n;globalThis[${JSON.stringify(BASELINE_HOOK)}]?.();\n`
  * and before its body (measured on Bun 1.4.4) — the start of the window in which the BODY declares
  * (`rerun-declarations.ts`). On line 1 with no newline, so every line number a stack trace or a
  * coverage report names is the file's own.
+ *
+ * It is also where the RESTORE snapshot is taken, and why there rather than after the body: the
+ * imports are the file's environment — a cached module never declares again, so what it declared
+ * has to outlive the file — but a `.test.ts` body is imported by no other file, so nothing it
+ * declared is anyone's cache hit. Sampled after the body (until 2026-11), every test file's
+ * module-scope `definePermissions()` / `defineRoles()` was folded into what each later file on the
+ * worker inherited: strict permission checking switched on for files that declared nothing, and
+ * `X_ROLE_REDEFINED` in the next file that defined the same role its own way.
  */
 const BODY_START_HOOK = '__ultimateBodyStart';
 const SAMPLE_BODY_START = `;globalThis[${JSON.stringify(BODY_START_HOOK)}]?.();`;
@@ -146,7 +157,8 @@ export function installRegistryLeakGuard(): void {
   let current:
     | {
         readonly file: string;
-        readonly before: RegistrySample;
+        /** Unset until the body ends: a body that threw is restored, never judged for tags. */
+        before: RegistrySample | undefined;
         readonly snapshot: ProcessRegistrySnapshot;
       }
     | undefined;
@@ -160,11 +172,15 @@ export function installRegistryLeakGuard(): void {
 
   const close = (): void => {
     if (current === undefined) return;
-    const leak = leakBetween(current.file, current.before, sampleRegistries());
+    const leak =
+      current.before === undefined
+        ? undefined
+        : leakBetween(current.file, current.before, sampleRegistries());
     if (leak !== undefined) leaks.push(leak);
     // The repair, at the only point it is safe: the file is over and the next one has not
     // evaluated yet, so what goes back is exactly what that file inherited — module-scope
-    // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys.
+    // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys —
+    // and the file's own BODY excluded (`BODY_START_HOOK`).
     //
     // In an APP, declarations are put back as a UNION with what the process holds now (22.7,
     // shared worker): an app module a test imported lazily declared its permissions and roles once,
@@ -195,16 +211,20 @@ export function installRegistryLeakGuard(): void {
     current = undefined;
   };
 
-  // Called by the statement appended below, once per test file, from that file's own module scope:
-  // everything the file's MODULE graph registered is its environment — importing an app module is
-  // how an app declares its tags — and everything after this point is the file's own to undo.
-  hookHost[BODY_START_HOOK] = () => reruns.bodyStart();
-  hookHost[BASELINE_HOOK] = () => {
-    reruns.bodyEnd();
+  // Both called from the file's own source, once per test file. At the body's START everything
+  // the file's IMPORT graph registered is its environment, and is what the boundary restores to.
+  // At the body's END everything the module scope registered is the TAG baseline — importing an
+  // app module is how an app declares its tags — and everything after it is the file's to undo.
+  hookHost[BODY_START_HOOK] = () => {
+    reruns.bodyStart();
     if (pending === undefined) return;
     accumulated = mergeSnapshots(accumulated, captureProcessRegistries());
-    current = { file: pending, before: sampleRegistries(), snapshot: accumulated };
+    current = { file: pending, before: undefined, snapshot: accumulated };
     pending = undefined;
+  };
+  hookHost[BASELINE_HOOK] = () => {
+    reruns.bodyEnd();
+    if (current !== undefined && current.before === undefined) current.before = sampleRegistries();
   };
 
   // The only signal Bun gives a preload for "a new test file starts": its hooks carry no file. A

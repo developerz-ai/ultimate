@@ -8,7 +8,13 @@
 import { assert, logger, onShutdown } from '@ultimat3/core';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import { onStaged, signalEnqueued, wakeIsLive } from './enqueue-signal';
-import { createIdleBackoff, REST_SLICE_MS, restAfter } from './idle-backoff';
+import {
+  createIdleBackoff,
+  REST_SLICE_MS,
+  restAfter,
+  WOKEN_IDLE_POLL_CEILING_MS,
+} from './idle-backoff';
+import { loopHeartbeat } from './loop-heartbeat';
 import type { OutboxDeps } from './outbox';
 import { publishClaimed } from './outbox-relay-publish';
 import { tickStreak } from './tick-streak';
@@ -89,6 +95,14 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
     floorMs: intervalMs,
     ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
   });
+  /**
+   * Stamped by every timer fire — a rest slice too — and held open by every pass (`loop-heartbeat.ts`):
+   * a claim that never returns is a wedge the role's `/healthz` answers 503 on. `idlePollMaxMs` is
+   * screened finite by `createIdleBackoff` above, the tick again by `loopHeartbeat`.
+   */
+  const ceiling =
+    options.idlePollMaxMs === undefined ? WOKEN_IDLE_POLL_CEILING_MS : options.idlePollMaxMs;
+  const heartbeat = loopHeartbeat('outboxRelay', { tickMs: Math.max(intervalMs, ceiling) });
   /** What the next `arm()` waits. */
   let delayMs = intervalMs;
   /** The wait is a REST on a due time (`restAfter`): armed in slices that re-read the wake. */
@@ -153,6 +167,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
    * with the whole budget still in hand, which is what a wait parked here costs them.
    */
   const stopAccepting = (): void => {
+    heartbeat.stop(); // a draining relay is not a wedged one
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
     unsubscribe?.();
@@ -213,6 +228,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
       // running — the first pair's unregisters are held in a single slot and would be dropped.
       if (state === 'draining') return;
       state = 'running';
+      heartbeat.start();
       // TWO hooks, for the two phases — the shape `worker.ts` and `scheduler.ts` hold. This loop
       // had NONE: on SIGTERM it went on claiming and publishing through every phase, stamping
       // leases on rows nothing on this pod would run, and `RunningRoles.stop()` was the only thing
@@ -233,6 +249,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
         const slice = resting && ms > REST_SLICE_MS;
         timer = setTimeout(
           () => {
+            heartbeat.stamp();
             // A rest re-reads the wake per slice: a session lost mid-rest polls again.
             if (slice && wakeIsLive()) {
               arm(ms - REST_SLICE_MS);
@@ -254,6 +271,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
         // the event loop when the timer was cleared must not open a claim behind the drain.
         if (running || state !== 'running') return;
         running = true;
+        const leave = heartbeat.enter();
         // `.catch` before `.finally`, the shape every other loop in this package uses. `tick()`
         // guards each publish but not `store.claim()` — one pool timeout during a failover
         // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
@@ -272,6 +290,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
           })
           .finally(() => {
             running = false;
+            leave();
             pass = undefined;
             if (state !== 'running') return;
             if (again) delayMs = 0;

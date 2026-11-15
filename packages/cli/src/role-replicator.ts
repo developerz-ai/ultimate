@@ -10,6 +10,7 @@ import {
   renderThrowable,
 } from '@ultimat3/core';
 import { describeEntities } from '@ultimat3/entity';
+import { loopHeartbeat } from '@ultimat3/jobs';
 import { ReplicatorSlotHeldError } from '@ultimat3/realtime';
 import type { Replicator, ReplicatorOptions, Transport } from '@ultimat3/realtime/server';
 import {
@@ -107,6 +108,13 @@ const noEntitiesRefusal = (dev: boolean): BadFlagError | ConfigInvalidError =>
         meta: { role: 'replicator' },
       });
 
+/**
+ * The replicator's tick for its heartbeat: the feed's status interval (10 s), the longest a live
+ * walsender stays silent. Event-driven — a quiet feed is healthy — so only a change held open past
+ * the bound (`livenessBoundMs`) is a wedge: a publish that never returns.
+ */
+const REPLICATOR_TICK_MS = 10_000;
+
 /** The name `/readyz` reports the replicator under. */
 export const REPLICATOR_READINESS_CHECK = 'replicator';
 
@@ -174,10 +182,15 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   const selection = selectChangeFeed(options.env, { entities });
   const slot = selection.slot ?? '';
   const key = replicatorLockKey(slot);
+  const heartbeat = loopHeartbeat('realtime.replicator', {
+    tickMs: REPLICATOR_TICK_MS,
+    periodic: false,
+  });
   const replicator = (options.create ?? changeFeedReplicator)({
     feed: selection.feed,
     transport: options.transport,
     lock: selection.lock,
+    heartbeat,
   });
   // `start()` answers `false` for the one condition that is not this process's fault: another
   // process holds the lock. A dev boot has nothing to fail over to, so it is terminal there, with
@@ -192,6 +205,7 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
     cancelStandby = standBy(replicator, key);
   }
   const unregister = watchReplicatorReadiness(replicator);
+  heartbeat.start(); // judged by `/healthz` on the scrape port (`runtime-liveness.ts`)
   return {
     replicator,
     slot,
@@ -201,6 +215,7 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
       // ask for a slot after the role that wanted it has gone.
       cancelStandby();
       unregister();
+      heartbeat.stop();
       await replicator.stop();
     },
   };

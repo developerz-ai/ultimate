@@ -54,8 +54,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
   (`claimOf(claimed)`); read `heartbeat` as `held === false`. †
 - **A driver's semantics are pinned beside the pg statement** (`driver-parity*.test.ts`);
   `driver-*-fixture.ts` scenarios run on memory AND Postgres.
-- **The claim BURIES a lease that lapsed on the final attempt** (`dead`, or `failed` under
-  `dropExhausted`); the worker calls `announceExhausted`. †
+- **The claim BURIES a lease that lapsed on the final attempt** (`dead`/`failed`, and owes a
+  hooked job's `onSettled`, per `burialPolicy()`); `announceExhausted` tells and pays. †
 - **`cancel` is fenced on `LIVE_STATES`.** **`requeue`** refuses (`X_JOB_NOT_FOUND`, not requeueable,
   duplicate), then ONE statement. **`enqueue` inserts twice at most.** **`BulkResult.remaining` is
   what a second call would move.**
@@ -200,7 +200,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `errors-concurrency.ts` | every concurrency refusal's class; codes stay in `error-codes.ts` |
 | `worker-key-busy.ts` | one run refused by its key: settled `failed`, body never run |
 | `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
-| `scheduler-pg.ts` | `postgresSchedulerState` (the durable watermark, the atomic fire) + `postgresLeaseLeader` |
+| `scheduler-pg.ts` | `postgresSchedulerState` (the durable watermark, `SQL_SCHEDULER_STATE_ALL`, the atomic fire) + `postgresLeaseLeader` |
 | `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
@@ -229,21 +229,24 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `purge.ts` | `purge()` — a factory over `job()`: the retention sweep and its target seam |
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
+| `scheduler-known.ts` / `scheduler-dispatch.ts` | what the leader remembers of each watermark (an idle round reads nothing, a cold one ONE `watermarks` read); one occurrence fired |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` / `-cursor.ts` | memory bus; the wait cursor, both buses |
 | `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
-| `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume |
+| `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume, resolve-step |
+| `inspect-unsupported.ts` | `requireIntrospection`: every verb's guard, `X_JOB_INTROSPECTION_UNSUPPORTED` (redis ships no `introspect`) |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
 | `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |
 | `progress.ts` / `settled.ts` / `redact-input.ts` | the progress throttle; the `onSettled` runner; a payload as an operator reads it |
 | `settled-types.ts` / `driver-settle.ts` / `settle-redrive.ts` / `scheduler-upkeep.ts` | what `onSettled` is handed; the settle fence and the `onSettled` debt contract; the leader's re-drive of lost debts; the leader's cadence (counter fold, re-drive) |
 | `driver-memory-settle.ts` / `driver-pg-settle-debt.ts` / `driver-redis-settle.ts` | the `onSettled` debt per driver: a map, `x_jobs.settle_owed`, the `owed` ZSET — held equal by `@ultimat3/testing`'s `SETTLE_DEBT_CHECKS` |
-| `scheduler-state.ts` | `SchedulerState`, `fire`, the memory watermark |
+| `scheduler-state.ts` | `SchedulerState`, `fire`, `readWatermarks` (one read a round), the memory watermark |
 | `scheduler-leader.ts` / `scheduler-occurrences.ts` | `LeaderElection` + `soleLeader`; which occurrences fall in a window |
 | `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share, and the rest (`restAfter`); the two wake signals and `wakeIsLive` |
 | `queue-wake.ts` / `driver-pg-wake-sql.ts` | the `LISTEN` session and its proof; which statement notifies |
-| `worker-loop.ts` | the claim loop's timer: wake, `again`, the kicks |
+| `worker-loop.ts` | the claim loop's timer: wake, `again`, the kicks, its heartbeat stamps |
+| `loop-heartbeat.ts` | a long-running loop's heartbeat (`loopHeartbeat`, `staleLoops`): the bound the cli's `/healthz` on `METRICS_PORT` answers 503 past |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
 | `errors-tenant.ts` | `JobTenantMismatchError` |
 | `errors-steps.ts` / `errors-saga.ts` / `step-resolve.ts` | step, saga + `once` refusals; `resolveStep` |

@@ -8,7 +8,6 @@ import {
   BUILD_ID_HEADER,
   finiteCount,
   type HealthPayload,
-  healthzPayload,
   logger,
   METRICS_CONTENT_TYPE,
   METRICS_PATH,
@@ -20,6 +19,7 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { neighbouringPort, PORT_RANGE, syncPortFor } from './flag-number';
+import { livenessPayload } from './runtime-liveness';
 import { quoteArg } from './shell-quote';
 
 /**
@@ -211,7 +211,8 @@ export interface MetricsEndpoint {
 
 /**
  * `/healthz` and `/readyz` for the roles whose only socket this is — `worker`, `scheduler`,
- * `replicator` — so the replicator's readiness check (`role-replicator.ts`) is read by a probe.
+ * `replicator` — so the replicator's readiness check (`role-replicator.ts`) is read by a probe, and
+ * `/healthz` is their LIVENESS: 503 once any running loop's heartbeat is past its bound.
  * The verdict only, never the report: this port is unauthenticated, and check names are topology.
  */
 function healthResponse(payload: HealthPayload, role: string, buildId: string | null): Response {
@@ -262,7 +263,8 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
       fetch(request: Request): Response {
         const url = new URL(request.url);
         const role = options.role ?? 'unknown';
-        if (url.pathname === '/healthz') return healthResponse(healthzPayload(), role, buildId);
+        // Liveness reads the loops' heartbeats (`runtime-liveness.ts`): the probe a wedge fails.
+        if (url.pathname === '/healthz') return healthResponse(livenessPayload(), role, buildId);
         if (url.pathname === '/readyz') {
           return healthResponse(
             readyzPayload({ deep: url.searchParams.get('deep') === '1' }),

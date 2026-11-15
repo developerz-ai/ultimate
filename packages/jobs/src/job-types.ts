@@ -9,6 +9,7 @@ import type { JobDescriptor } from './describe';
 import type { EnqueueResult } from './driver';
 import type { EnqueueManyOptions } from './job-enqueue-many';
 import type { JobLease } from './job-lease';
+import type { JobLimiter } from './limiter';
 import type { EnqueueOptions } from './outbox';
 import type { ProgressFn } from './progress';
 import type { RetryPolicy } from './retry';
@@ -96,6 +97,12 @@ export interface JobDefinition<I, R = unknown> {
    * while nothing read it, which is exactly what axiom 3 exists to prevent.
    */
   readonly concurrency?: JobConcurrency<I>;
+  /**
+   * A named budget this job SPENDS, shared with every job naming the same value: declare
+   * `limiter('stripe', { rate, concurrency })` once at module scope and import it. Fleet-wide, in
+   * `JobDriver.leases`; a run over it is deferred (`X_RATE_LIMITED`) with its attempt uncounted.
+   */
+  readonly limiter?: JobLimiter;
   readonly timeout?: DurationInput;
   /**
    * Back-pressure: an enqueue of this job onto a queue already holding this many rows waiting to

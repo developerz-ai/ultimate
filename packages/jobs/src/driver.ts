@@ -213,6 +213,12 @@ export interface ClaimOptions {
    */
   readonly dropExhausted?: readonly string[];
   /**
+   * Job NAMES that declare `onSettled`. A row of one the claim settles — buried or expired — owes
+   * its hook (`SettleBy.owesSettle`), recorded in the burial's own write: the worker told of it
+   * may die before telling, and the leader then re-drives it (`settle-redrive.ts`).
+   */
+  readonly settleOwed?: readonly string[];
+  /**
    * Told, when the pass claimed and buried NOTHING, how long until a row of these queues can next
    * become claimable — the earliest `runAt` of a waiting row and `visibleAt` of a held lease, over
    * the queues not paused — in ms from the driver's own clock (never an instant: the database's

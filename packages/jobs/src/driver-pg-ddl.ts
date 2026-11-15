@@ -23,6 +23,56 @@ import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
  */
 export const JOBS_TABLE_STORAGE: TableStorage = tableStorage('x_jobs', { fillfactor: 80 });
 
+/** One table's autovacuum triggers, as Postgres' own storage parameter names. */
+export interface AutovacuumParameters {
+  readonly autovacuum_vacuum_threshold: number;
+  readonly autovacuum_vacuum_scale_factor: number;
+  readonly autovacuum_analyze_threshold: number;
+  readonly autovacuum_analyze_scale_factor: number;
+}
+
+/** A table bounded by what it names (tasks, live workers), so a fixed count of dead rows is the trigger. */
+const BOUNDED: AutovacuumParameters = {
+  autovacuum_vacuum_threshold: 20,
+  autovacuum_vacuum_scale_factor: 0,
+  autovacuum_analyze_threshold: 20,
+  autovacuum_analyze_scale_factor: 0,
+};
+
+/**
+ * The small, hot tables' autovacuum triggers. Postgres waits for 50 dead rows plus 20% of the table:
+ * more dead rows than `x_scheduler_state` (a row per task, rewritten every fire) or `x_job_workers`
+ * (a row per worker, rewritten every heartbeat) hold live ones, so every read of them stepped over a
+ * table mostly dead (25% dead on a 43-row table, production 2026-11-14). `x_outbox` keeps published
+ * rows for the retention window and is read through a partial index of the few unpublished ones,
+ * which every stage, claim and mark churns: 2% of the table, not 20%.
+ *
+ * Applied by `alter table ... set` at the end of `SQL_JOBS_TABLE`, every apply, so a table an earlier
+ * boot made reaches it and a hand `reset` is undone by the next boot. Not part of `tableStorage()`
+ * (`@ultimat3/db`), which states only fillfactor and persistence: drift does not report a reset
+ * between two boots.
+ */
+export const HOT_TABLE_AUTOVACUUM: Readonly<Record<string, AutovacuumParameters>> = {
+  x_outbox: {
+    autovacuum_vacuum_threshold: 100,
+    autovacuum_vacuum_scale_factor: 0.02,
+    autovacuum_analyze_threshold: 100,
+    autovacuum_analyze_scale_factor: 0.02,
+  },
+  x_job_workers: BOUNDED,
+  x_scheduler_state: BOUNDED,
+};
+
+const autovacuumAlters = (): string =>
+  Object.entries(HOT_TABLE_AUTOVACUUM)
+    .map(
+      ([table, parameters]) =>
+        `alter table ${table} set (${Object.entries(parameters)
+          .map(([name, value]) => `${name} = ${String(value)}`)
+          .join(', ')});`,
+    )
+    .join('\n\n');
+
 export const SQL_JOBS_TABLE = `
 ${tableDdl(
   JOBS_TABLE_STORAGE,
@@ -362,4 +412,7 @@ create table if not exists x_job_counters (
 );
 
 create index if not exists x_job_counters_age_idx on x_job_counters (bucket_ms, bucket_start);
+
+-- The small hot tables vacuum on a count of dead rows, not a fifth of the table (HOT_TABLE_AUTOVACUUM).
+${autovacuumAlters()}
 `.trim();

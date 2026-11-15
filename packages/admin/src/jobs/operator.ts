@@ -2,12 +2,12 @@
 // boot installs it after `defineAdmin()` has run, and `x dev` swaps it — and its operator surface.
 // A process with no driver, or one that ships no operator surface, is refused with the fix.
 
-import { NotImplementedError } from '@ultimat3/core';
 import {
   DriverUnavailableError,
   type JobDriver,
   type JobIntrospection,
   jobDriver,
+  requireIntrospection,
 } from '@ultimat3/jobs';
 
 export interface JobsOperator {
@@ -24,11 +24,6 @@ export function jobsOperator(): JobsOperator {
       fix: 'run the app through x dev or the container entry, which install the queue — or in a test: installJobDriver(memoryJobDriver()) from @ultimat3/jobs/adapter',
     });
   }
-  if (driver.introspect === undefined) {
-    throw new NotImplementedError({
-      cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'export const runtime = { jobs: postgresJobDriver() }   # apps/<app>/runtime.ts — or delete that line so the boot installs it; the pg and memory drivers implement introspect',
-    });
-  }
-  return { driver, introspect: driver.introspect };
+  // Jobs' own guard: one refusal (X_JOB_INTROSPECTION_UNSUPPORTED) for every operator surface.
+  return { driver, introspect: requireIntrospection(driver) };
 }

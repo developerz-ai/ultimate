@@ -19,6 +19,15 @@ import type { SchedulerState } from './scheduler-state';
 import { fireThroughDriver } from './scheduler-state';
 
 /**
+ * Every named task's watermark, one statement. A sequential scan of a table this small is the
+ * cheap plan, so the saving is the COUNT: one a cold round, where it was one a task. $1 the names.
+ */
+export const SQL_SCHEDULER_STATE_ALL = `
+select task_name, (extract(epoch from last_fired_at) * 1000)::bigint as last_fired_at
+  from x_scheduler_state where task_name = any($1::text[])
+`.trim();
+
+/**
  * `x_scheduler_state`, one row per task. The watermark is what makes "missed" a decidable
  * question at all: `catchUp`, `maxCatchUp` and `run-once` are all relative to it, so a scheduler
  * whose watermark dies with its process has none of them — it takes the arming branch on every
@@ -33,6 +42,13 @@ export function postgresSchedulerState(executor: PgExecutor): SchedulerState {
       );
       const value = rows[0]?.last_fired_at;
       return value === null || value === undefined ? undefined : Number(value);
+    },
+    async watermarks(taskNames) {
+      const rows = await executor.query<{ task_name: string; last_fired_at: number | string }>(
+        SQL_SCHEDULER_STATE_ALL,
+        [[...taskNames]],
+      );
+      return new Map(rows.map((row) => [row.task_name, Number(row.last_fired_at)] as const));
     },
     async markFired(taskName, occurrenceMs) {
       await executor.query(SQL_SCHEDULER_STATE_MARK, [taskName, occurrenceMs]);

@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { driverError, setDbClient } from '@ultimat3/db';
+import { baseClient, type DbClient, driverError, setDbClient } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand } from './cmd-db';
 import { renderHelp } from './cmd-help';
@@ -37,11 +37,19 @@ async function appRoot(): Promise<string> {
   return dir;
 }
 
-// `startDb` installs the app's client as the process's `db()` and the command closes it without
-// putting the previous one back (`db-diagnostics.ts`). On a shared worker the next file's `db()`
-// then reached a closed PGlite whose directory this file deleted (X_DB_UNAVAILABLE, mkdir
-// `.x/pgdata`). Back to lazy construction, which is what every file starts from.
+// `startDb` installs the app's client as the process's `db()`; the command puts the previous one
+// back when it closes its own (`db-diagnostics.ts`). Before it did, the next file's `db()` on a
+// shared worker reached a closed PGlite whose directory this file deleted (X_DB_UNAVAILABLE, mkdir
+// `.x/pgdata`). The sentinel the first test installs goes too: lazy construction, as every file
+// starts from.
 afterEach(() => setDbClient(undefined));
+
+/** What the process held before the command: never asked, only compared by identity. */
+const sentinel = {
+  query: () => Promise.reject(new Error('the sentinel client must never be asked')),
+  execute: () => Promise.reject(new Error('the sentinel client must never be asked')),
+  close: () => Promise.resolve(),
+} as unknown as DbClient;
 
 /** A WASM compile plus an initdb — a hang detector, not a budget. */
 const PGLITE_BOOT_MS = 120_000;
@@ -55,8 +63,12 @@ describe('unit · x db diagnostics', () => {
     '--json carries seven sections, slowQueries unavailable on the embedded database, exit 0',
     async () => {
       const root = await appRoot();
+      setDbClient(sentinel);
       try {
         const result = await dbCommand.run(ctxFor(['db', 'diagnostics', '--json'], root));
+        // The command's client is closed by now: leaving it as `db()` hands every later caller in
+        // the process a dead pool. Folded into this test rather than its own: one PGlite boot.
+        expect(baseClient()).toBe(sentinel);
         const body = JSON.parse(renderJson(result)) as {
           readonly ok: boolean;
           readonly data: Readonly<Record<string, { readonly available: boolean }>>;

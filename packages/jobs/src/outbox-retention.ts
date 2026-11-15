@@ -15,6 +15,10 @@ import { countedBatch, type PurgeBatching, purgeBatching, purgeInBatches } from 
  * The cutoff is the JOB's clock (`$1`): `SQL_OUTBOX_MARK_PUBLISHED` stamps `published_at` from the
  * relay's clock, so measuring it against the server's `now()` is the two-clock mismatch
  * `PurgeTarget.purgeExpired` warns about.
+ *
+ * The delete takes the batch as an ARRAY of ids, a `x_outbox_pkey` probe each. As `in (select ...)`
+ * the planner joined the batch against the whole table — a sequential scan of every published row
+ * the retention window keeps, to delete a batch of them (`statement-plans.live.test.ts`).
  */
 export const SQL_OUTBOX_RETENTION_BATCH = `
 with doomed as (
@@ -25,7 +29,7 @@ with doomed as (
    limit $3
      for update skip locked
 ), gone as (
-  delete from x_outbox where id in (select id from doomed) returning 1
+  delete from x_outbox where id = any(array(select id from doomed)) returning 1
 )
 select count(*)::int as removed from gone
 `.trim();

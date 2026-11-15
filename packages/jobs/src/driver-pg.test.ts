@@ -40,7 +40,7 @@ function recordingExecutor(rows: readonly unknown[] = []): PgExecutor & {
 }
 
 describe('pg driver', () => {
-  test('claim passes the queue list, limit, worker id, visibility timeout and dropped names in order', async () => {
+  test('claim passes the queue list, limit, worker id, visibility timeout, dropped and hooked names in order', async () => {
     const executor = recordingExecutor();
     const driver = postgresJobDriver({ executor });
     await driver.claim({
@@ -49,6 +49,7 @@ describe('pg driver', () => {
       visibilityTimeoutMs: 30_000,
       workerId: 'worker-a',
       dropExhausted: ['unkept'],
+      settleOwed: ['hooked'],
     });
     expect(executor.calls[0]?.sql).toBe(SQL_CLAIM);
     expect(executor.calls[0]?.params).toEqual([
@@ -57,6 +58,7 @@ describe('pg driver', () => {
       'worker-a',
       30_000,
       ['unkept'],
+      ['hooked'],
     ]);
   });
 

@@ -26,22 +26,23 @@ import { nowMs } from './clock';
 import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
-import { signalEnqueued } from './enqueue-signal';
-import { instrumentedFire } from './job-instrument';
-import { enqueuedAttempts } from './retry';
+import type { DispatchedOccurrence } from './scheduler-dispatch';
+import { dispatchOccurrence } from './scheduler-dispatch';
+import { taskMemory } from './scheduler-known';
 import type { LeaderElection } from './scheduler-leader';
 import { soleLeader } from './scheduler-leader';
 import { defaultCronResolver, latestOccurrence, occurrencesIn } from './scheduler-occurrences';
 import type { SchedulerState } from './scheduler-state';
-import { memorySchedulerState } from './scheduler-state';
+import { memorySchedulerState, readWatermarks } from './scheduler-state';
 import { leaderUpkeep } from './scheduler-upkeep';
-import type { TaskHandle, TaskJobResult } from './task';
+import type { TaskHandle } from './task';
 import { registeredTasks } from './task';
 import { tickStreak } from './tick-streak';
 
 /** Resolves the next fire time. Injected so scheduling logic is testable without a cron impl. */
 export type CronResolver = (cron: string, options: { tz: string; from: Date }) => Date;
 
+export type { DispatchedOccurrence } from './scheduler-dispatch';
 export {
   COUNTER_ROLLUP_IDLE_INTERVAL_MS,
   COUNTER_ROLLUP_INTERVAL_MS,
@@ -66,13 +67,6 @@ export interface SchedulerOptions {
   readonly drainOnShutdown?: boolean;
   /** What a re-driven `onSettled` is scoped from (`settle-redrive.ts`). Default `ctxOf()`. */
   readonly context?: () => Ctx;
-}
-
-export interface DispatchedOccurrence {
-  readonly task: string;
-  readonly occurrenceMs: number;
-  readonly jobs: readonly TaskJobResult[];
-  readonly catchUp: boolean;
 }
 
 export interface Scheduler {
@@ -109,21 +103,12 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
   let standbyUntil = Number.NEGATIVE_INFINITY;
   const renewEveryMs = Number.isFinite(leader.renewEveryMs) ? Math.max(0, leader.renewEveryMs) : 0;
   /**
-   * What this node knows of each task while it leads: the watermark it last read or wrote, the
-   * first occurrence after it, and — for a task found paused — when to look again. It is what
-   * makes an idle round FREE: `nextDueAt > now` for every task is a map walk, where it was a
-   * `lastFiredAt` read and a cron resolution per task per second. Cleared whenever leadership is
-   * (re)gained or lost; a fire the store refuses as already-fired drops the task's entry.
+   * What this node knows of each task while it leads (`scheduler-known.ts`). It is what makes an
+   * idle round FREE: a map walk, where it was a `lastFiredAt` read and a cron resolution per task
+   * per second. Cleared whenever leadership is (re)gained or lost; a fire attempted drops the
+   * task's entry until the fire's outcome says where the watermark is.
    */
-  const known = new Map<
-    string,
-    {
-      readonly handle: TaskHandle;
-      readonly last: number;
-      readonly nextDueAt: number;
-      pausedUntil: number;
-    }
-  >();
+  const known = taskMemory((handle, last) => nextRunFor(handle, new Date(last)).getTime());
   /** The drain's state, keyed on the same four values the worker's is. */
   let state: 'idle' | 'running' | 'draining' | 'stopped' = 'idle';
   /** The dispatch round in flight — what a second caller joins and what `stop()` waits out. */
@@ -144,61 +129,19 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
   const latestOccurrenceBy = (handle: TaskHandle, after: number, until: number): number =>
     latestOccurrence(nextRunFor, handle, after, until);
 
-  const dispatch = async (
+  const dispatch = (
     handle: TaskHandle,
     occurrenceMs: number,
     catchUp: boolean,
     watermarkMs?: number,
-  ): Promise<DispatchedOccurrence | undefined> => {
-    // The occurrence, not `at`: a catch-up dispatch runs long after the instant it fires for,
-    // and the payload has to describe the occurrence the email/report claims to be about.
-    const requests = handle.entries(occurrenceMs).map(([handleForJob, input]) => {
-      // The facade's refusal, at the one enqueue that does not go through it: an empty key.
-      handleForJob.concurrencyKeyFor(input);
-      return {
-        name: handleForJob.name,
-        queue: handleForJob.queue,
-        input,
-        // Occurrence-scoped key: belt to the watermark's braces across a deploy that still has
-        // the old two-step fire in flight.
-        idempotencyKey: `${handle.name}:${occurrenceMs}:${handleForJob.idempotencyKeyFor(input)}`,
-        maxAttempts: enqueuedAttempts(handleForJob.retry, handleForJob.compensates),
-        runAt: occurrenceMs,
-      };
-    });
-    // Jobs and watermark in ONE step (`SchedulerState.fire`). `undefined` is an occurrence some
-    // other dispatcher already fired: nothing was queued, and nothing is reported as dispatched.
-    // Under the fire's producer span, which stamps each request's `traceparent` (`job-instrument.ts`).
-    const results = await instrumentedFire(handle.name, requests, (jobs) =>
-      schedulerState.fire(options.driver, {
-        task: handle.name,
-        occurrenceMs,
-        ...(watermarkMs === undefined ? {} : { watermarkMs }),
-        jobs,
-      }),
+  ): Promise<DispatchedOccurrence | undefined> =>
+    dispatchOccurrence(
+      { driver: options.driver, state: schedulerState, firing: known.forget },
+      handle,
+      occurrenceMs,
+      catchUp,
+      watermarkMs,
     );
-    if (results === undefined) {
-      logger.info('jobs.scheduler.already-fired', {
-        task: handle.name,
-        occurrence: new Date(occurrenceMs).toISOString(),
-      });
-      return undefined;
-    }
-    // A worker in this process that has backed off starts its next pass now.
-    signalEnqueued();
-    const jobs: TaskJobResult[] = requests.map((request, index) => ({
-      job: request.name,
-      result: results[index] ?? { id: '', runId: '', deduped: true },
-    }));
-    // An on-time fire is routine, one line per task per occurrence (88% of a scheduler pod's
-    // lines in production): `debug`, as the sibling per-unit events are. A catch-up is news.
-    const occurrence = new Date(occurrenceMs).toISOString();
-    const fields = { task: handle.name, occurrence, tz: handle.tz, catchUp, jobs: jobs.length };
-    // info: a catch-up fire is a rare outcome — the scheduler was down or behind for an occurrence.
-    if (catchUp) logger.info('jobs.scheduler.dispatched', fields);
-    else logger.debug('jobs.scheduler.dispatched', fields);
-    return { task: handle.name, occurrenceMs, jobs, catchUp };
-  };
 
   /** The drain's one question: may this scheduler still dispatch an occurrence? */
   const dispatching = (): boolean => state !== 'draining' && state !== 'stopped';
@@ -249,14 +192,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       if (occurrence !== undefined) dispatched.push(occurrence);
       return occurrence !== undefined;
     };
-    const remember = (handle: TaskHandle, last: number): void => {
-      known.set(handle.name, {
-        handle,
-        last,
-        nextDueAt: nextRunFor(handle, new Date(last)).getTime(),
-        pausedUntil: Number.NEGATIVE_INFINITY,
-      });
-    };
+    const remember = known.remember;
     const operator = options.driver.introspect;
     // The counters' fold and the `onSettled` re-drive are the leader's (`scheduler-upkeep.ts`).
     await upkeep.run(at);
@@ -267,16 +203,33 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       return paused.has(name);
     };
 
+    // Every watermark this round has to learn, in ONE read: a cold round (a boot, a new leader)
+    // was a `lastFiredAt` per task — 43 sequential scans a round on a 43-task app. A read that
+    // fails costs those tasks this round, logged once; their watermarks are untouched.
+    const cold = tasks.filter(
+      (handle) => !known.idle(handle, at) && known.last(handle) === undefined,
+    );
+    let read: ReadonlyMap<string, number> | undefined;
+    try {
+      read = await readWatermarks(
+        schedulerState,
+        cold.map((handle) => handle.name),
+      );
+    } catch (error) {
+      logger.error('jobs.scheduler.state-read-failed', {
+        tasks: cold.length,
+        ...failureFields(error),
+      });
+    }
+    const readThisRound = new Set(cold.map((handle) => handle.name));
+
     for (const handle of tasks) {
       // Re-read per task, not once on entry: a `stop()` between two tasks means stop now, not
       // at the next round. A task not reached simply fires next time — its `lastFiredAt` is
       // untouched — while the occurrence this round already began is the one `stop()` waits for.
       if (!dispatching()) break;
       // Nothing due and nothing to learn: the idle path, and it touches no store.
-      const seen = known.get(handle.name);
-      if (seen !== undefined && seen.handle === handle) {
-        if (seen.nextDueAt > at || seen.pausedUntil > at) continue;
-      }
+      if (known.idle(handle, at)) continue;
       // The lease, on the same rule and for the same reason the drain state is re-read: it expires
       // on a wall clock in the middle of this walk, not between rounds.
       if (!(await stillLeading())) break;
@@ -285,11 +238,14 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       // round, until a deploy. Logged and skipped; its watermark is untouched, so it retries next
       // round.
       try {
-        const remembered = known.get(handle.name);
+        const remembered = known.last(handle);
+        // Not remembered and not in this round's read: the read failed, so this task waits.
+        if (remembered === undefined && read === undefined) continue;
         const last =
-          remembered !== undefined && remembered.handle === handle
-            ? remembered.last
-            : await schedulerState.lastFiredAt(handle.name);
+          remembered ??
+          (readThisRound.has(handle.name)
+            ? read?.get(handle.name)
+            : await schedulerState.lastFiredAt(handle.name));
         if (last === undefined) {
           // First sight of this task: arm it, never fire retroactively for all of history.
           const armed = nextRunFor(handle, new Date(at)).getTime() - 1;
@@ -306,12 +262,11 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
         // when it is due, so a pause holds for the very next occurrence; a task found paused is
         // looked at again after `PAUSE_RECHECK_MS`, not every round.
         if (await isPaused(handle.name)) {
-          const entry = known.get(handle.name);
-          if (entry !== undefined) entry.pausedUntil = at + PAUSE_RECHECK_MS;
+          known.pause(handle.name, at + PAUSE_RECHECK_MS);
           continue;
         }
-        // Whatever happens below moves the watermark, or should have: read it again next time.
-        known.delete(handle.name);
+        // Whatever is FIRED below moves the watermark, or should have: `dispatch` forgets the task
+        // as the fire is attempted, and only an outcome it reports remembers it again.
 
         if (handle.catchUp === 'skip') {
           // The real latest occurrence, never `due`'s last element: that one is `maxCatchUp` steps

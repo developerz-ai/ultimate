@@ -20,6 +20,7 @@ import { encodeResync, RESYNC_SUBJECT } from './replication-resync';
 import { type DeadlineOutcome, withinStopDeadline } from './replicator-deadline';
 import { encodeEnvelope } from './replicator-envelope';
 import { handOver } from './replicator-handover';
+import { heldBy, type PassHeartbeat } from './replicator-heartbeat';
 import { busAway, fencedOut, PUBLISH_RETRY_DELAYS_MS } from './replicator-publish';
 import { connectionLost, RedialCurve } from './replicator-reconnect';
 import { ResyncDebt } from './replicator-resync';
@@ -52,6 +53,8 @@ export interface ReplicatorOptions {
   readonly rng?: Rng;
   /** The timer a restart waits on. Injected so a test proves the takeover loop without sleeping. */
   readonly schedule?: Scheduler;
+  /** Each change handled is a pass held open on it: the role's liveness sees a wedged publish. */
+  readonly heartbeat?: PassHeartbeat;
 }
 
 export interface ReplicatorStats {
@@ -295,7 +298,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     // A restart resumes where THIS process got to. `options.from` is where the first run began;
     // handing it to the second would have the feed re-deliver everything published since.
     const from = lastLsn ?? resumeFrom;
-    const onChange = changeHandler(run);
+    const onChange = heldBy(options.heartbeat, changeHandler(run));
     // A recreated slot is a NEW timeline: no old position may drop its changes or resume it.
     const onResync = (reason: string): void => {
       resync.owe(reason);

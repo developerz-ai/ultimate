@@ -175,6 +175,15 @@ export type { HandleDirectory } from './login-identity';
 export { normaliseHandle } from './login-identity';
 export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 export type {
+  AcceptInviteInput,
+  DefineMemberInviteInput,
+  InviteMemberInput,
+  MemberInviteFlow,
+  RevokedInvite,
+  RevokeInviteInput,
+} from './member-invite';
+export { defineMemberInvite } from './member-invite';
+export type {
   EnrolTotpInput,
   MemoryTotpReplayGuard,
   RecoveryCodeSet,

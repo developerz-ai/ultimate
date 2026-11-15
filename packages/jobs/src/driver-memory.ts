@@ -281,11 +281,16 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
 
       const out: ClaimedJob[] = [];
       const buried: JobRecord[] = [];
+      // `$6` of the statement: a burial of a hooked job owes its `onSettled`, in the same write.
+      const owes = (record: JobRecord) => ({
+        owesSettle: claimOptions.settleOwed?.includes(record.name) === true,
+      });
       for (const record of claimable) {
         // Past its `expiresAt`, a waiting row is worthless: settled `failed` and reported, never
         // run — `SQL_CLAIM`'s expiry arm, buried beside the exhausted rows below.
         if (enqueuing.expired(record, at)) {
           settle(record.id, { state: 'failed', lastError: JOB_EXPIRED }, 'stack');
+          settleDebt.settled(record.id, owes(record), 'failed');
           operator.counters.add(record.name, 'failed', 0, at);
           const failed = jobs.get(record.id);
           if (failed !== undefined) buried.push(failed);
@@ -302,6 +307,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
           // `$5` of the statement: a job declaring `retry.deadLetter: false` is dropped.
           const state = claimOptions.dropExhausted?.includes(record.name) ? 'failed' : 'dead';
           settle(record.id, { state, lastError: LEASE_LAPSED_FINAL_ATTEMPT }, 'stack');
+          settleDebt.settled(record.id, owes(record), state);
           operator.counters.add(record.name, state, 0, at);
           const dead = jobs.get(record.id);
           if (dead !== undefined) buried.push(dead);

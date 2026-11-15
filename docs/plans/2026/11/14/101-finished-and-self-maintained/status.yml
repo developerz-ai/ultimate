@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 8
-current_focus: "Sweep 1 (02 + 03 + P1 predicate tree + CI speed) on feat/sweep-1-core-db-entity; sweep 0 shipped as 31.23.0."
+percent: 17
+current_focus: "Sweep 2 (04 + 05 + test-isolation root fix) on feat/sweep-2-auth-jobs-realtime; sweep 1 shipped as 31.24.0 (#1141, #1142)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -15,23 +15,23 @@ slices:
   - file: 02-core.md
     tier: 0
     sweep: "1"
-    status: in_progress
-    percent: 80
+    status: complete
+    percent: 100
   - file: 03-db-entity-policy.md
     tier: 1
     sweep: "1"
-    status: in_progress
-    percent: 80
+    status: complete
+    percent: 100
   - file: 04-auth-http.md
     tier: 2
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 10
   - file: 05-jobs-realtime.md
     tier: 3
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 10
   - file: 06-ai-mail-scraping-ui.md
     tier: 4
     sweep: "3"
@@ -138,6 +138,7 @@ slices:
     status: not_started
     percent: 0
 evidence:
+  - "sweep 1: #1141 merged (245 files, 9 workers; security + concurrency + 2 bug-hunter passes, 13 confirmed findings fixed); release 31.24.0 (#1142) (2026-11-14)"
   - "sweep 0: #1138 merged; 31.23.0 released (#1139) — registry-audit: 31/31 publishable packages are on npm at 31.23.0, every one attested; demo /readyz 200, /llms.txt 200 (2026-11-14)"
   - "sweep 0 corrections: H3 premise false (sweep used the partial index; cost was dead index entries); H7 failures already fixed on main (#1036, #1060); bench release trigger never fired (GITHUB_TOKEN); released as a minor (additive API)" 
 notes: "Written 2026-11-14 at 31.22.3 from four read-only passes: residual work in this tree, ten adopter repositories, 7–14 days of production evidence from two deployed apps, and a trace of the maintenance loop. Carries every open row of the 2026/11/02 and 2026/11/11 plans (12 step 1 marks them superseded). 90-owner-decisions.md is not a slice. Audit rounds (20) record per-round P0/P1/P2 counts and the read ledger here. Adopter letter mapping is off-tree with the owner."

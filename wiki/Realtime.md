@@ -599,7 +599,23 @@ arrived meanwhile after it. A dropped `events` frame is ephemeral by design and 
 already repairs the same drop, as it has since 2026-08: the subscriber is marked desynced, and the
 next change re-snapshots it.
 
-What it is **not**: a multi-node result — neither run crossed NATS, so this is **per-node recovery**, not fanout. Not a throughput figure either: no requests/sec, no message rate, no sustained-load number. Per-node socket capacity in the tables above this section is still a target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
+What it is **not**: a multi-node result — neither run crossed NATS, so this is **per-node recovery**, not fanout; the cross-node claims are the next section's, proven by a test and not by this benchmark. Not a throughput figure either: no requests/sec, no message rate, no sustained-load number. Per-node socket capacity in the tables above this section is still a target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
+
+## Across nodes, over a real bus
+
+`As of 2026-11-14`, proven by `bun test ./packages/realtime/src/multi-node.live.test.ts` (needs `TEST_NATS_URL`): two `sync` nodes, each on its own NATS connection and its own port, the replicator on a third, pages on real websockets through `LiveClient`. Loss and duplication are read off the frames each page received, never off its state.
+
+| Claim | What the suite does |
+|---|---|
+| An event published on one node reaches a member on another, in publish order | 50 `publishEvent` calls through node A's hub, the member seated on node B: all 50, in order |
+| A replicated change reaches every node's pages, each in lsn order | 40 commits, a page on each node: one snapshot each, then 40 patches, none at or below the position already held |
+| A page whose node dies resumes on a survivor **from its cursor** — no loss, no duplicate | node A's sockets ended with no `reconnect` frame and its bus dropped mid-stream; the page redials node B once, and B replays its retained window: still one snapshot in total, each of the 60 commits exactly once |
+| A node restarted empty serves the returning page one snapshot, and the stream goes on from it | the page's cursor names a window the new node never held: one snapshot holding what was written while it was down, then patches above it |
+| A node that misses changes on the bus detects it and re-serves its pages **with no later write** | only that node's bus is cut (a relay); 20 commits go past it, then nothing. On reconnect (`live.bus_reconnected`) every window is re-read at once and its pages re-snapshotted |
+
+The last row was a defect the suite found: a bus reconnect or a replicator resync marked every window and repaired it only on the next change the node heard, so a quiet query showed its pre-outage rows until a write or the idle sweep (`idleTimeoutMs / 4`, 30 s by default). Both now repair at once (`sync-bus-handlers.ts`, `sync-bus-repair.test.ts`). A gap seen on a message needed no change: that message's delivery reaches every stale window.
+
+Delivery is at most once on the bus and exactly once to the page: a lost bus message is a gap the node detects (`SeqGapDetector`, or the reconnect itself) and answers with a snapshot, and a patch at or below the cursor is refused by the window's lsn guard. The "kill" is in-process — listener stopped with its sockets, node stopped, bus closed, no drain — which is what a `SIGKILL` leaves the page and the bus to find. **Still targets, not results:** cross-node fanout throughput and per-node socket capacity; nothing here measures a rate.
 
 ## `sync` drain
 

@@ -4,10 +4,11 @@
 // and never able to change what the queue recorded: a hook that keeps throwing is logged and
 // reported under `X_JOB_ON_SETTLED_FAILED`, and the row stays where it was put.
 //
-// AT LEAST ONCE per settlement across a crash (J11): the settle records the debt in its own write
-// (`SettleBy.owesSettle`), the hook's return clears it, and the scheduler leader re-drives a debt
-// a dead worker left (`settle-redrive.ts`, `redriven: true`) — a completion only when its body
-// returned `undefined`, since a result is never stored. Write the hook to be repeated.
+// AT LEAST ONCE per settlement across a crash (J11): the settle — or the claim's burial — records
+// the debt in its own write (`SettleBy.owesSettle`, `ClaimOptions.settleOwed`), the hook's return
+// clears it, and the scheduler leader re-drives a debt a dead worker left (`settle-redrive.ts`,
+// `redriven: true`) — a completion only when its body returned `undefined`, since a result is
+// never stored. Write the hook to be repeated.
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import {

@@ -147,4 +147,6 @@ export const TIER_3_ERROR_STATUS = {
   X_LIVE_ORDER_COLLATION: 500,
   // @ultimat3/jobs — an enqueue past the job's declared maxPending backlog was refused
   X_JOB_BACKLOG_FULL: 429,
+  // @ultimat3/jobs — the jobs driver has no operator surface
+  X_JOB_INTROSPECTION_UNSUPPORTED: 501,
 } satisfies Readonly<Record<string, number>>;

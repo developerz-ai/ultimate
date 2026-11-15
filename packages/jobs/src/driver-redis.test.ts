@@ -227,6 +227,7 @@ describe('redisJobDriver', () => {
       visibilityTimeoutMs: 30_000,
       workerId: 'w1',
       dropExhausted: ['quiet.job'],
+      settleOwed: ['mail.send', 'hooked.job'],
       onExhausted: (dead) => reported.push(dead.map((each) => `${each.id}:${each.state}`)),
     });
     expect(claimed).toEqual([
@@ -260,6 +261,9 @@ describe('redisJobDriver', () => {
       '0', // no `onEmpty`: the script computes no horizon
       '1',
       'quiet.job',
+      '2',
+      'mail.send',
+      'hooked.job',
       'default',
       'other',
     ]);

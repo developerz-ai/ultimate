@@ -52,7 +52,7 @@ Four mechanisms an app used to rebuild around the queue, each one field `As of 2
 | Ask | Spelling | What happens |
 |---|---|---|
 | debounce | `enqueue(input, { onConflict: 'replace', runAt })` | a row of the job still WAITING (`ready`/`delayed`) under the same idempotency key takes the new `input` and `runAt` in one statement per driver (`SQL_ENQUEUE_REPLACE`); a running or suspended holder is past replacing. Answered `deduped: true` with the holder's ids either way. The holder takes the newer request's `expiresAt` too, or loses its own when the newer names none. Fenced by request order (`x_jobs.debounced_id`, the request's uuidV7): a replace no newer than the input a row of the key holds — live or finished — moves nothing and starts no run, so an outbox row published again after a relay crash never puts old input back |
-| expiry | `enqueue(input, { expiresAt })` | epoch ms past which the work is worthless: the claim that finds the row waiting after then settles it `failed`, `lastError` `JOB_EXPIRED` (`'expired'`), and reports it beside the burials (`ClaimOptions.onExhausted`), so its `onSettled` hears `dropped` — at most once, as the claim records no debt. Only a row never claimed (`attempt` 0) expires: a started run — a retry waiting out its backoff included — is never expired. `x jobs retry` clears it. Lazy: no index, no sweep |
+| expiry | `enqueue(input, { expiresAt })` | epoch ms past which the work is worthless: the claim that finds the row waiting after then settles it `failed`, `lastError` `JOB_EXPIRED` (`'expired'`), and reports it beside the burials (`ClaimOptions.onExhausted`), so its `onSettled` hears `dropped` — at least once: the claim records the debt in the same write. Only a row never claimed (`attempt` 0) expires: a started run — a retry waiting out its backoff included — is never expired. `x jobs retry` clears it. Lazy: no index, no sweep |
 | back-pressure | `job({ maxPending })` | an enqueue onto a queue already holding that many `ready`/`delayed` rows is `X_JOB_BACKLOG_FULL`, a 429 (`JobBacklogFullError`); a batch that would cross it is refused whole. One capped count first (`JobDriver.backlog`), plus the rows the caller's own transaction already staged for that queue (a key staged twice counts once). An enqueue that adds no row — a dedupe, or a replace onto the key's live holder (`JobDriver.holds`, asked only once full) — is never refused. Soft across producers: concurrent ones can overshoot by their number, and committed rows the relay has not published yet are not counted. A driver without `backlog` refuses a job declaring it at enqueue (`X_INVARIANT`) |
 | a long body | `run({ lease })` | `lease.renew()` renews now and answers whether the attempt still holds the row — `false` once the lease is lost or the attempt's settle is sent; `lease.lost()`; `lease.signal` aborts on either. Call `renew()` between the chunks of a section longer than the visibility timeout — the renewal timer cannot fire inside it. A lock that outlives one job is `withLock()` |
 
@@ -1362,6 +1362,10 @@ that connection goes back to it, so every node reads itself as leader. The lease
 expiry and needs no connection affinity. `acquire()` is also the renewal, called every round, which
 is how a demoted node finds out.
 
+What a round costs the watermark table: nothing while idle (the leader remembers each watermark),
+ONE `watermarks(names)` read on a cold round — a boot or a new leader — and one fenced fire per
+occurrence. A hand-written `SchedulerState` without `watermarks` is asked `lastFiredAt` per task.
+
 ```ts
 import { type AnyJobHandle, task } from '@ultimat3/jobs';
 
@@ -1436,6 +1440,17 @@ The rest. An idle loop's claim (`SQL_CLAIM_IDLE`, `SQL_OUTBOX_CLAIM_IDLE`) answe
 | a resumed queue | `resumeQueue` announces the queue; a paused queue's rows are never a due time |
 
 A busy loop sends the plain claim: the horizon arm is planned on every call (~0.5 ms), so it is asked for only once a pass has come back empty.
+
+### Loop liveness
+
+A process that answers is not a loop that turns. Each long-running loop holds a `loopHeartbeat(name, { tickMs, periodic? })` while it runs: stamped on every timer fire (a rest slice too), held open by every pass. `staleLoops()` lists the running loops past their bound — `livenessBoundMs(tickMs)` = `LIVENESS_TICK_MULTIPLE` (3) ticks, never under `LIVENESS_FLOOR_MS` (120 s, twice `IDLE_REST_MAX_MS`, so a resting worker is never killed for resting). The cli's `/healthz` on `METRICS_PORT` answers 503 on any (`packages/cli/src/runtime-liveness.ts`).
+
+| Loop | Heartbeat | Tick | Wedge it catches |
+|---|---|---|---|
+| `worker` claim loop (`worker-loop.ts`) | `jobWorker`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim that never returns (`held`), a timer never re-armed (`silent`) |
+| `replicator` (cli `role-replicator.ts`) | `realtime.replicator`, event-driven | 10 s, the feed's status interval | a change whose publish never returns (`held`); a quiet feed is healthy |
+
+A stopped or draining loop is not judged: `stop()` releases its heartbeat.
 
 ### The wake
 
@@ -1804,7 +1819,7 @@ export const syncAccountWatched = job({
 | the same, the body returned `undefined`, and the worker died before its hook returned — re-driven by the scheduler leader | `completed` | `redriven: true`, `reason: 'lost'`, `input`, `result: undefined` — the value it returned | `done` |
 | any ending below, its worker dead before the hook returned — re-driven | the same `outcome` | the same fields read off the row, plus `redriven: true`, `reason: 'lost'` | the same |
 | failed for good, parked in the dead-letter queue | `dead-lettered` | `input` (or `undefined`: the stored payload no longer parses), `error`, `code` | `dead` |
-| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker, at most once: the claim records no debt | `dead` |
+| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker; the claim records the debt in the burial's write, so a burier that dies first is re-driven | `dead` |
 | failed for good on `retry.deadLetter: false` | `dropped` | the same | `failed` |
 | `whenBusy: 'fail'` over a busy key — the body never ran | `refused` | the same, `code: 'X_JOB_KEY_BUSY'` | `failed` |
 
@@ -1818,7 +1833,7 @@ export const syncAccountWatched = job({
 | Guarantee | Stated plainly |
 |---|---|
 | when | AFTER the row is settled, by the worker whose settle landed, under the job's declared tenant; `settled.ctx` is that context |
-| how often | **at least once** per ending a worker settles, across a crash — but at most once for a completion whose body **returned a value**, since a result is never stored and a re-drive could not hand it over (at least once for those too is planned for `next`), and for a row the claim settles itself (a final-attempt burial, an expiry: `claim-exhausted.ts` records no debt). The settle records the debt in its own write (`x_jobs.settle_owed`); the hook's return pays it, its last failed try too. A debt older than `onSettledTimeout` × 3 (`SETTLE_GRACE_FACTOR`) is a dead worker's: the scheduler leader re-drives it, ≤ 50 a pass, every minute after a find and every 5 min after none, with `redriven: true, reason: 'lost'`. A pass starts no hook it could not finish inside the grace its take bought (`onSettledTimeout` × 2 into the pass) and stops between rows once its node stops leading or drains — a drain hands the lock back first; the rest stay owed for the next pass. Every driver records it; a custom driver without `settleDebt` runs the hook at most once |
+| how often | **at least once** per ending a worker settles, across a crash — but at most once for a completion whose body **returned a value**, since a result is never stored and a re-drive could not hand it over (at least once for those too is planned for `next`). The settle records the debt in its own write (`x_jobs.settle_owed`) — the claim too, for a row it settles itself (a final-attempt burial, an expiry), named by `ClaimOptions.settleOwed` (`burialPolicy()`); the hook's return pays it, its last failed try too. A debt older than `onSettledTimeout` × 3 (`SETTLE_GRACE_FACTOR`) is a dead worker's: the scheduler leader re-drives it, ≤ 50 a pass, every minute after a find and every 5 min after none, with `redriven: true, reason: 'lost'`. A pass starts no hook it could not finish inside the grace its take bought (`onSettledTimeout` × 2 into the pass) and stops between rows once its node stops leading or drains — a drain hands the lock back first; the rest stay owed for the next pass. Every driver records it; a custom driver without `settleDebt` runs the hook at most once |
 | inside one process | `ON_SETTLED_ATTEMPTS` (3) tries, back to back. A hook that threw halfway is run again from the top, so write it idempotent |
 | a hook that keeps throwing | logged `jobs.on-settled.failed` and reported as `X_JOB_ON_SETTLED_FAILED`. The row, the outcome, the counters and `JobExecution` are untouched |
 | `result` | the value itself, in the worker's process — never stored, never serialised. `JobExecution.result` carries the same value to a caller driving a run by hand |
@@ -1829,6 +1844,11 @@ export const syncAccountWatched = job({
 `inspectQueues`, `inspectJob` (per-step trace, the redacted `input`, the failure's `stack`, the
 last `progress`), `inspectDeadLetters`, `retryFromStep`, `cancelJob`, `removeJob`, `promoteJob`,
 `pauseQueue`, `resumeQueue`, `inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
+
+Every one but `inspectQueues` and `inspectManifest` passes `requireIntrospection(driver)`: the
+driver's `introspect`, or `JobIntrospectionUnsupportedError` (`X_JOB_INTROSPECTION_UNSUPPORTED`)
+naming it — the redis driver ships none (no pause, registry or counters), the pg and memory drivers
+every member. `/_x` reads its operator surface through the same guard.
 
 `inspectJob`'s `input` masks every `.sensitive()` field of the job's own `input:` schema, then every
 `redactKeys` key. A job this process has not registered — its declaration deleted or renamed —
@@ -1915,6 +1935,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `JobDuplicateError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
 | `JobKeyBusyError` | `X_JOB_KEY_BUSY` | `src/errors-concurrency.ts` |
 | `JobNotCancellableError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
+| `JobIntrospectionUnsupportedError` | `X_JOB_INTROSPECTION_UNSUPPORTED` | `src/inspect-unsupported.ts` |
 | `JobNotFoundError` | `X_JOB_NOT_FOUND` | `src/errors-requeue.ts` |
 | `JobNotRequeueableError` (`./adapter`) | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |
 | `JobRowStatusUnknownError` (`./adapter`) | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |

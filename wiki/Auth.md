@@ -218,6 +218,29 @@ const approved = await verifyPasskeyEvidence(evidence, { rpId: 'example.com', or
 | service-to-service | `verifyWorkloadToken` reads a Kubernetes service-account token, a SPIFFE JWT-SVID or a cloud IMDS token (they are all one JWT); `actorFromService` gives a `kind: 'service'` actor. The returned `WorkloadToken` carries `raw`, the whole decoded payload, read only after every check held. mTLS is the mesh's job |
 | an external issuer's bearer (`As of 2026-11`) | `jwtBearerResolver({ keys, issuers, audience, requiredScope?, accept?, actorOf })` — `apiKeyResolver`'s twin for JWTs, the `resolveToken` a bearer mount and `defineAppMcp()` take. `keys` is a thunk read when a token arrives (no discovery at import); `accept(raw)` is the app's own claim check after the signature; `actorOf(token)` builds the actor. Every refusal — signature, issuer, audience, expiry, scope, `accept`, and a key set that cannot be read — is `null` plus one `auth.jwt_bearer.refused` log line naming the check, never a claim's value. The mount answers that `null` as `401 X_UNAUTHENTICATED` |
 
+## Member invites
+
+`As of 2026-11-14`. `defineMemberInvite({ name?, template, ttlMs })` declares the flow once, at
+module scope, over a verification purpose (default name `member-invite`) and the user's one
+`orgId`. It ships the structural half; who may invite, seat limits and the roles an invite offers
+are the app's `policy` and the app's wrapper action.
+
+| Call | What the framework guarantees |
+|---|---|
+| `flow.invite(auth, mail, { orgId, email, locale, link?, data? })` | a single-use token, hashed at rest, living `ttlMs`, keyed on the **pair** (tenant, normalised address) and mailed to the address. Re-inviting the pair is the resend: it supersedes the earlier link, so one live link per pair. A blank `orgId` is `X_FORBIDDEN` before anything is written. `link` must carry `orgId`: accept needs it |
+| `flow.accept(auth, { orgId, token, userId, roles?, session? })` | the token is consumed under (that tenant, **the signed-in account's own address**), so a link aimed at another tenant or forwarded to another account finds no row and stays live for its invitee. Success sets `orgId`, replaces `roles` with what the wrapper passed (default none), clears direct `permissions`, stamps `emailVerifiedAt` (the link proved the inbox), and rotates `session` through `updatePrivileges` — set the returned `cookie` |
+| `flow.revoke(auth, { orgId, email, reason })` | logs `auth.revocation` first, kills the pending link, and — when the address had already joined **this** tenant — removes the membership (`orgId`, `roles`, `permissions` cleared) and every session that account holds. A member of another tenant is never touched |
+
+| Refusal | Code |
+|---|---|
+| expired, already used, superseded, revoked, another tenant's, another account's, unknown or disabled account | `X_UNAUTHENTICATED` — one code and one cause for all of them, as every mailed credential: telling them apart tells a caller which address has a live invite |
+| the account is a member of another tenant | `X_FORBIDDEN`, checked before the consume so the link survives a move. Membership is one tenant per account (`x_users.org_id`); moving is the app's own `updatePrivileges` call |
+
+The flow is functions, not actions: `@ultimat3/auth` is tier 2 and cannot import
+`@ultimat3/action`. Wrap each call in the app's own `action()` with the app's policy — the shape
+`x g sign-in` writes for `login()`. Proof: `bun test ./packages/auth/src/member-invite.test.ts`,
+including a seeded property test that an invite for tenant X never yields membership in Y.
+
 ## Authorization server
 
 `As of 2026-11`. `authorizationServer({ issuer, store, consentPath, lifetimes, scopes, registration?, grants?, resources? })`

@@ -2,13 +2,14 @@
 // object so `x jobs ... --json` and the MCP tool share one shape — an agent debugging a stuck
 // queue reads exactly what the dashboard renders.
 
-import { NotImplementedError, REDACTED } from '@ultimat3/core';
+import { REDACTED } from '@ultimat3/core';
 import { maskSensitive } from '@ultimat3/schema';
 import type { BackfillProgress } from './backfill-inspect';
 import { backfillForRun } from './backfill-inspect';
 import type { WhenBusy } from './concurrency';
 import type { JobDriver, JobRecord, QueueStats } from './driver';
 import { CancelUnsupportedError, JobNotCancellableError } from './errors';
+import { requireIntrospection } from './inspect-unsupported';
 import type { JobFilter, JobProgress } from './introspection';
 import type { AnyJobHandle } from './job';
 import { registeredJobs } from './job';
@@ -112,16 +113,6 @@ export interface JobTrace {
 
 const iso = (ms: number | undefined): string | null =>
   ms === undefined ? null : new Date(ms).toISOString();
-
-function requireIntrospection(driver: JobDriver): NonNullable<JobDriver['introspect']> {
-  if (driver.introspect === undefined) {
-    throw new NotImplementedError({
-      cause: `introspection for the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — only the pg driver implements introspect — then: x jobs list --json',
-    });
-  }
-  return driver.introspect;
-}
 
 function concurrencyKeyOf(handle: AnyJobHandle | undefined, record: JobRecord): string | null {
   if (handle === undefined || handle.whenBusy === undefined) return null;
