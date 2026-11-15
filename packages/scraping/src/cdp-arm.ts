@@ -254,8 +254,12 @@ const asPaused = (payload: unknown): PausedRequest | undefined => {
   };
 };
 
-/** What `armBrowser` asks about a response before releasing it — `cdp-download.ts`'s capture. */
-export type ResponseHook = (paused: unknown, session: CdpSessionLike) => Promise<void>;
+/**
+ * What `armBrowser` asks about a response before releasing it — `cdp-download.ts`'s capture.
+ * Answers `true` when it released the response ITSELF (fulfilled or failed it), so this file must
+ * not continue it a second time.
+ */
+export type ResponseHook = (paused: unknown, session: CdpSessionLike) => Promise<boolean>;
 
 /** The request id of a RESPONSE-stage pause — one carrying a status — or nothing. */
 const responseStage = (payload: unknown): string | undefined => {
@@ -296,8 +300,10 @@ export async function armBrowser(
       const release = (): void => {
         session.send('Fetch.continueRequest', { requestId: responseOf }).catch(() => undefined);
       };
-      (responses === undefined ? Promise.resolve() : responses(payload, session)).then(
-        release,
+      (responses === undefined ? Promise.resolve(false) : responses(payload, session)).then(
+        (released) => {
+          if (!released) release();
+        },
         release,
       );
       return;

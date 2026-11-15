@@ -123,6 +123,26 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
     expect((caught as { code?: string } | undefined)?.code).toBe('X_SCRAPE_BROWSER_UNREACHABLE');
   });
 
+  test("the file is the LAST click's: a later click that downloads nothing disarms it", async () => {
+    // The browser driver's rule (`cdp-download.ts`): a click is a trigger, and a file from an
+    // earlier one is not handed to `download()` after a later one.
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<button id="export">Export</button><button id="other">Other</button>',
+      downloads: { '#export': 'orders.csv:id,1' },
+    });
+    await target.click('#export');
+    await target.click('#other');
+    expect(await codeOf(() => target.download({ timeoutMs: 10 }))).toBe(
+      'X_SCRAPE_DOWNLOAD_TIMEOUT',
+    );
+    await target.click('#export');
+    await target.press('Escape');
+    expect(await codeOf(() => target.download({ timeoutMs: 10 }))).toBe(
+      'X_SCRAPE_DOWNLOAD_TIMEOUT',
+    );
+  });
+
   test('a recorded download still arms', async () => {
     const target = targetOver({
       url: PAGE_URL,

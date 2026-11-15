@@ -14,7 +14,10 @@ import { frameOutOfProcess } from './error-throws-session';
 export interface FrameAddress {
   readonly name: string;
   readonly url: string;
-  /** Its index among the page's frames with the SAME name and URL, in the library's order. */
+  /**
+   * Its index among the page's frames with the SAME name and URL, in the library's order — which
+   * lists the MAIN frame first, as `Page.getFrameTree`'s root is first here.
+   */
   readonly ordinal: number;
 }
 
@@ -42,7 +45,7 @@ const describedSchema = t.object({
 });
 const pushedSchema = t.object({ nodeIds: t.array(t.number) });
 
-/** Every frame below `raw`, depth first — the order the library lists them in. */
+/** Every frame below `raw`, depth first. */
 const below = (raw: unknown): FrameInfo[] =>
   (parse(treeNode, raw).childFrames ?? []).flatMap((child) => [
     parse(treeNode, child).frame,
@@ -51,13 +54,17 @@ const below = (raw: unknown): FrameInfo[] =>
 
 /** The root of `frame`'s document in the page session, or `X_SCRAPE_FRAME_OUT_OF_PROCESS`. */
 export function frameDocument(driver: string, frame: FrameAddress): AxRoot {
-  return async (session) => {
+  return async (session, document) => {
     const { frameTree } = parse(treeSchema, await session.send('Page.getFrameTree'));
-    const twins = below(frameTree).filter(
+    // The root first, then depth first: the order `page.frames()` lists them in, main included.
+    const main = parse(treeNode, frameTree).frame;
+    const twins = [main, ...below(frameTree)].filter(
       (candidate) => (candidate.name ?? '') === frame.name && candidate.url === frame.url,
     );
     const found = twins[frame.ordinal];
     if (found === undefined) throw frameOutOfProcess(driver, frame.name || frame.url);
+    // The main frame has no `<iframe>` owner: its document IS the page's.
+    if (found === main) return document;
     const owner = parse(
       ownerSchema,
       await session.send('DOM.getFrameOwner', { frameId: found.id }),

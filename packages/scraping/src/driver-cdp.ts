@@ -46,6 +46,12 @@ export interface BrowserOptions {
   readonly options?: Record<string, unknown> | undefined;
   /** How long a graceful `close()` may take before the process is killed. */
   readonly graceMs?: number | undefined;
+  /**
+   * The largest file `page.download()` takes off the wire, in bytes — `DEFAULT_MAX_DOWNLOAD_BYTES`
+   * (25 MiB) when absent. Larger is never buffered: a declared length over it is left to Chrome,
+   * an undeclared one is abandoned at the cap (`cdp-download.ts`).
+   */
+  readonly maxDownloadBytes?: number | undefined;
 }
 
 export interface LocalBrowserOptions extends BrowserOptions {
@@ -89,6 +95,7 @@ async function opened(
   init: SessionInit,
   wiring: SessionWiring,
   ended: () => unknown,
+  maxDownloadBytes: number | undefined,
 ): Promise<ScrapeTarget> {
   try {
     // `cdpTarget` checks the page and browser for every verb it forwards to before arming anything;
@@ -117,6 +124,7 @@ async function opened(
       // HTTP leg's rule, for the same reason (`browser-dial.ts`).
       proxied: wiring.proxy !== undefined,
       ended,
+      maxDownloadBytes,
     });
     if (init.restore !== undefined) await target.restore(init.restore);
     return target;
@@ -155,7 +163,7 @@ async function sessionOver(
   // Late-bound: the target is built before the guard that can end it. Until the guard exists no
   // fire can have happened, so a failure inside `opened()` keeps its own label.
   let ended = (): unknown => undefined;
-  const target = await opened(browser, init, wiring, () => ended());
+  const target = await opened(browser, init, wiring, () => ended(), options.maxDownloadBytes);
   const guard = createWedgeGuard({
     clock: init.clock,
     what: `scrape "${init.name}"`,

@@ -6,6 +6,8 @@
 // table below is the elements whose mapping needs neither, and every other element answers no
 // role — the answer a `<div onclick>` must get, which is the defect this read finds.
 
+import type { NameContext } from './html-a11y-context';
+import { nameContexts } from './html-a11y-context';
 import { queryHtml } from './html-query';
 import type { AxNode, ElementSnapshot } from './target';
 
@@ -114,10 +116,13 @@ const labelFor = async (html: string, element: ElementSnapshot): Promise<string 
   return nonEmpty(labels.map((label) => label.text).join(' '));
 };
 
+const NO_CONTEXT: NameContext = { label: undefined, alts: [] };
+
 const nativeName = async (
   html: string,
   element: ElementSnapshot,
   role: string,
+  context: NameContext,
 ): Promise<string | undefined> => {
   const { tag, attrs } = element;
   const type = (own(attrs, 'type') ?? '').toLowerCase();
@@ -129,10 +134,15 @@ const nativeName = async (
     return nonEmpty(own(attrs, 'value')) ?? fallback;
   }
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
-    const label = await labelFor(html, element);
+    // `<label for>` first, then the label the control sits INSIDE — both are HTML's label
+    // association (accname §4.3.2 D), and the wrapping form is the commoner one.
+    const label = (await labelFor(html, element)) ?? nonEmpty(context.label);
     if (label !== undefined) return label;
   }
-  return NAMED_FROM_CONTENT.has(role) ? nonEmpty(element.text) : undefined;
+  // Content includes a descendant image's `alt`: `<a href="/"><img alt="Home"></a>` is "Home".
+  return NAMED_FROM_CONTENT.has(role)
+    ? nonEmpty([element.text, ...context.alts].join(' '))
+    : undefined;
 };
 
 /** The accessible name, in the order accname walks the sources. `''` when nothing names it. */
@@ -140,6 +150,7 @@ export async function nameOf(
   html: string,
   element: ElementSnapshot,
   role: string,
+  context: NameContext = NO_CONTEXT,
 ): Promise<string> {
   const { attrs } = element;
   const labelledBy = nonEmpty(own(attrs, 'aria-labelledby'));
@@ -153,7 +164,7 @@ export async function nameOf(
   }
   const label = nonEmpty(own(attrs, 'aria-label'));
   if (label !== undefined) return label;
-  const native = await nativeName(html, element, role);
+  const native = await nativeName(html, element, role, context);
   if (native !== undefined) return native;
   const title = nonEmpty(own(attrs, 'title'));
   if (title !== undefined) return title;
@@ -173,13 +184,15 @@ export async function htmlAccessibility(
   max: number,
 ): Promise<readonly AxNode[]> {
   const out: AxNode[] = [];
-  for (const element of (await queryHtml(html, selector)).slice(0, max)) {
+  // Same pass order as `queryHtml`, so entry `index` describes the same match.
+  const contexts = await nameContexts(html, selector);
+  for (const [index, element] of (await queryHtml(html, selector)).slice(0, max).entries()) {
     if (!element.visible) {
       out.push({ role: '', name: '', ignored: true });
       continue;
     }
     const role = roleOf(element);
-    const name = await nameOf(html, element, role);
+    const name = await nameOf(html, element, role, contexts[index] ?? NO_CONTEXT);
     const disabled =
       !element.enabled &&
       (DISABLEABLE.has(element.tag) || own(element.attrs, 'aria-disabled') !== undefined);

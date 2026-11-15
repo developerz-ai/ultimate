@@ -53,6 +53,7 @@ const axAnswer = (node: AxNode | undefined, backend: number): unknown => {
 
 export function fakeAxSession(
   page: AxBySelector,
+  pageUrl: () => string,
   frames: readonly FakeAxFrame[],
   onDetach: () => void,
 ): CdpSessionLike {
@@ -64,7 +65,7 @@ export function fakeAxSession(
     'DOM.getDocument': () => ({ root: { nodeId: 1 } }),
     'Page.getFrameTree': () => ({
       frameTree: {
-        frame: { id: 'main', name: '', url: 'about:main' },
+        frame: { id: 'main', name: '', url: pageUrl() },
         childFrames: frames.flatMap((frame, index) =>
           frame.outOfProcess
             ? []

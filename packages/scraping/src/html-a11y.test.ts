@@ -60,6 +60,21 @@ describe('unit · name, in accname order', () => {
   });
 });
 
+describe('unit · names from ancestors and descendants', () => {
+  test('a control wrapped in its <label>, and a link whose content is an <img alt>', async () => {
+    const html = '<label>Email <input id="e" type="email"></label><a href="/"><img alt="Home"></a>';
+    expect(await read(html, 'input,a', 10)).toEqual([
+      { role: 'textbox', name: 'Email', ignored: false },
+      { role: 'link', name: 'Home', ignored: false },
+    ]);
+  });
+
+  test('a <label for> still wins over the label the control sits in', async () => {
+    const html = '<label for="q">Search</label><label>Outer <input id="q"></label>';
+    expect((await read(html, '#q'))[0]?.name).toBe('Search');
+  });
+});
+
 describe('unit · state and bounds', () => {
   test('a hidden node is ignored with nothing computed; a disabled control says so', async () => {
     const html = `<button id="h" aria-hidden="true">Hidden</button><button id="d" disabled>Off</button>`;

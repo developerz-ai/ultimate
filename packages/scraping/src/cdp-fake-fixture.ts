@@ -180,9 +180,14 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     }),
   );
   const cdpSession = (): CdpSessionLike =>
-    fakeAxSession(axBySelector, axFrames, () => {
-      sessions.detached += 1;
-    });
+    fakeAxSession(
+      axBySelector,
+      () => url,
+      axFrames,
+      () => {
+        sessions.detached += 1;
+      },
+    );
 
   const documentOf = (read: () => string): FakeDocument => ({ html: read, typed: new Map() });
   const pageDocument = documentOf(() => html);
@@ -214,21 +219,37 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     target.typed.set(keyFor(selector, first), value);
   };
 
-  const frames: readonly CdpFrameLike[] = Object.entries(init.frames ?? {}).map(([name, frame]) => {
-    const frameDocument = documentOf(() => frame.html);
-    return {
-      name: () => name,
-      url: () => frame.url,
-      content: () => Promise.resolve(frame.html),
-      evaluate: (expression: string) => evaluateIn(frameDocument, expression),
-      click: () => Promise.resolve(),
-      type: (selector: string, text: string) => typeIn(frameDocument, selector, text),
-      select: async (selector: string, ...values: string[]): Promise<string[]> => {
-        await selectIn(frameDocument, selector, values[0] ?? '');
-        return [...values];
-      },
-    };
-  });
+  const children: readonly CdpFrameLike[] = Object.entries(init.frames ?? {}).map(
+    ([name, frame]) => {
+      const frameDocument = documentOf(() => frame.html);
+      return {
+        name: () => name,
+        url: () => frame.url,
+        content: () => Promise.resolve(frame.html),
+        evaluate: (expression: string) => evaluateIn(frameDocument, expression),
+        click: () => Promise.resolve(),
+        type: (selector: string, text: string) => typeIn(frameDocument, selector, text),
+        select: async (selector: string, ...values: string[]): Promise<string[]> => {
+          await selectIn(frameDocument, selector, values[0] ?? '');
+          return [...values];
+        },
+      };
+    },
+  );
+
+  // The page's own document as a frame, the way puppeteer's `page.mainFrame()` is one.
+  const mainFrame: CdpFrameLike = {
+    name: () => '',
+    url: () => url,
+    content: () => Promise.resolve(html),
+    evaluate: (expression: string) => evaluateIn(pageDocument, expression),
+    click: () => Promise.resolve(),
+    type: (selector: string, text: string) => typeIn(pageDocument, selector, text),
+    select: async (selector: string, ...values: string[]): Promise<string[]> => {
+      await selectIn(pageDocument, selector, values[0] ?? '');
+      return [...values];
+    },
+  };
 
   const page: CompleteCdpPage = {
     url: () => url,
@@ -320,7 +341,9 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
       handlers.set(event, listeners);
       return undefined;
     },
-    frames: (): readonly CdpFrameLike[] => frames,
+    // The MAIN frame first, then the children — puppeteer's own order, which a frame lookup and
+    // the accessibility read's twin ordinal both have to survive.
+    frames: (): readonly CdpFrameLike[] => [mainFrame, ...children],
     close: () => {
       closed = true;
       return Promise.resolve();

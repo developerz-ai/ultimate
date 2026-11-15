@@ -16,6 +16,7 @@ export type {
 export { burnSession, ensureAuthenticated, restorableSession, scrapePrompt } from './auth';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
+export { DEFAULT_MAX_DOWNLOAD_BYTES } from './cdp-download-read';
 export type {
   CdpBrowserLike,
   CdpBrowserSessionLike,

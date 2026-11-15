@@ -95,6 +95,14 @@ const isStructuralRefusal = (thrown: unknown): boolean =>
  * of three drivers a bound the other two ignore, which is precisely the divergence
  * `driver-parity.test.ts` exists to refuse. `DEFAULT_RING_CAPACITY` is the one bound.
  */
+/**
+ * The verbs that start a download in a browser: a click, a key, a navigation. Each one marks the
+ * download catcher, so `download()` answers the file THIS trigger produced. A read never marks,
+ * nor does `evaluate` — a `document.title` read between a click and its `download()` would
+ * otherwise drop the click's file.
+ */
+const TRIGGER_VERBS: ReadonlySet<string> = new Set(['click', 'press', 'goto']);
+
 export interface CdpTargetInit extends CdpArmInit {
   /**
    * Any launcher's page and browser — checked here, before anything is armed, for every verb the
@@ -110,6 +118,8 @@ export interface CdpTargetInit extends CdpArmInit {
    * consequence. Labelled `X_SCRAPE_BROWSER_UNREACHABLE` it hides the cause and its fix.
    */
   readonly ended?: (() => unknown) | undefined;
+  /** `BrowserOptions.maxDownloadBytes`: the cap on a file `download()` buffers. */
+  readonly maxDownloadBytes?: number | undefined;
 }
 
 export async function cdpTarget(given: CdpTargetInit): Promise<ScrapeTarget> {
@@ -121,7 +131,11 @@ export async function cdpTarget(given: CdpTargetInit): Promise<ScrapeTarget> {
   const pageErrors = boundedRing<PageError>();
   const crashed: { value: string | undefined } = { value: undefined };
   await arm(init, { network, console: console_, pageErrors, crashed });
-  const downloads = downloadCatcher({ page: init.page, clock: init.clock });
+  const downloads = downloadCatcher({
+    page: init.page,
+    clock: init.clock,
+    maxBytes: init.maxDownloadBytes,
+  });
   await downloads.arm(await armBrowser(init, network, downloads.capture));
   let pendingStorage: SessionSnapshot | undefined;
 
@@ -161,6 +175,8 @@ export async function cdpTarget(given: CdpTargetInit): Promise<ScrapeTarget> {
 
   const guard = async <T>(what: string, run: () => Promise<T>): Promise<T> => {
     live();
+    // Before the act, so a download it starts is stamped after this mark (`cdp-download.ts`).
+    if (TRIGGER_VERBS.has(what)) downloads.mark();
     try {
       return await run();
     } catch (thrown) {

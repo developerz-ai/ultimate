@@ -239,9 +239,12 @@ export interface ScrapeTarget {
   pdf(options: PdfOptions): Promise<Uint8Array>;
   cookies(): Promise<readonly ScrapeCookie[]>;
   /**
-   * Whatever the last click/navigation produced as a file, or a `X_SCRAPE_DOWNLOAD_TIMEOUT`. The
-   * browser driver takes the bytes off the WIRE (`cdp-download.ts`), never a download directory,
-   * so it answers the same on a launched browser and on a remote one whose disk is not ours.
+   * The file the LAST trigger — a click, a key, a navigation — produced: the newest one begun since
+   * it, older ones cleared, or `X_SCRAPE_DOWNLOAD_TIMEOUT`. A file from an earlier trigger, or
+   * one that landed after its own `download()` timed out, never answers a later one. The browser
+   * driver takes the bytes off the WIRE (`cdp-download.ts`), never a download directory, so it
+   * answers the same on a launched browser and on a remote one whose disk is not ours — and never
+   * buffers past `BrowserOptions.maxDownloadBytes`.
    */
   download(options: { readonly timeoutMs: number }): Promise<ScrapeDownloadFile>;
   frames(): Promise<readonly FrameRef[]>;

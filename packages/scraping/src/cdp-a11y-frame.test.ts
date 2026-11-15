@@ -32,7 +32,8 @@ const open = async (outOfProcess = false) => {
     rules: { allowHosts: ['shop.test', 'idp.test'] },
     clock: frozenClock(),
   });
-  const frame = (await target.frames())[0]?.target;
+  // By name: the main frame is listed first, as puppeteer lists it.
+  const frame = (await target.frames()).find((ref) => ref.name === 'idp')?.target;
   if (frame === undefined) throw expect.unreachable('the fake answered no frame');
   return { browser, target, frame };
 };
@@ -58,6 +59,40 @@ describe('unit · a frame reads its own accessibility tree', () => {
     expect(thrown.fix).toContain('--disable-site-isolation-trials');
     // The refusal path detaches the session too.
     expect(browser.sessions.detached).toBe(browser.sessions.created);
+  });
+});
+
+describe('unit · the MAIN frame, which the library lists first', () => {
+  test("a handle on the main frame reads the page's own document", async () => {
+    const { target } = await open();
+    const main = (await target.frames())[0];
+    expect(main?.name).toBe('');
+    expect(await main?.target.accessibility('#go', 5)).toEqual([
+      { role: 'link', name: 'Parent', ignored: false },
+    ]);
+  });
+
+  test('a child counts its twins with the main frame in the list, never one off', async () => {
+    const session: CdpSessionLike = {
+      send: (method) =>
+        method === 'Page.getFrameTree'
+          ? Promise.resolve({
+              frameTree: {
+                frame: { id: 'main', url: 'https://shop.test/' },
+                childFrames: [{ frame: { id: 'kid', name: '', url: 'https://shop.test/' } }],
+              },
+            })
+          : method === 'DOM.getFrameOwner'
+            ? Promise.resolve({ backendNodeId: 40 })
+            : method === 'DOM.describeNode'
+              ? Promise.resolve({ node: { contentDocument: { backendNodeId: 41 } } })
+              : Promise.resolve({ nodeIds: [88] }),
+      detach: () => Promise.resolve(),
+    };
+    const address = { name: '', url: 'https://shop.test/' };
+    // Ordinal 0 is the main frame — its document is the page's (node 1); ordinal 1 is the child.
+    expect(await frameDocument('puppeteer', { ...address, ordinal: 0 })(session, 1)).toBe(1);
+    expect(await frameDocument('puppeteer', { ...address, ordinal: 1 })(session, 1)).toBe(88);
   });
 });
 

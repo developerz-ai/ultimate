@@ -301,7 +301,8 @@ test process cannot reach a browser's own requests, and a driver that quietly an
 let "a like taken offline is queued" pass against an app that was online for the whole test.
 
 **No page verb is `X_NOT_IMPLEMENTED` on any driver.** `download()` takes the bytes off the wire
-(`cdp-download.ts`, local and remote alike); `accessibility()` offline is the HTML-AAM mapping of
+(`cdp-download.ts`, local and remote alike), never past `localBrowser({ maxDownloadBytes })`
+(`DEFAULT_MAX_DOWNLOAD_BYTES`, 25 MiB), and answers the LAST trigger's file only; `accessibility()` offline is the HTML-AAM mapping of
 the markup (`html-a11y.ts`), and on a frame handle it reads the frame's document on every driver
 (`cdp-a11y-frame.ts`; a cross-site frame under site isolation is `X_SCRAPE_FRAME_OUT_OF_PROCESS`).
 A launcher missing a verb the target forwards to is `X_SCRAPE_LAUNCHER_INCOMPLETE` when the session

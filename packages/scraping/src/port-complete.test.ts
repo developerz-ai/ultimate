@@ -184,7 +184,8 @@ describe('unit · every ScrapeTarget member answers on every target', () => {
   test("the document members, on a frame's own target — accessibility included", async () => {
     for (const subject of await subjects()) {
       await subject.target.goto(URL_A, { timeoutMs: 1_000 });
-      const [frame] = await subject.target.frames();
+      // By name: a browser lists the MAIN frame first, and the offline drivers do not list it.
+      const frame = (await subject.target.frames()).find((ref) => ref.name === 'login');
       if (frame === undefined) throw expect.unreachable(`${subject.name} answered no frame`);
       // `#user` exists only in the frame, so a verb that reached the PARENT document fails here.
       const inFrame = documentCalls('#user', 'textbox');

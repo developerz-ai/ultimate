@@ -134,7 +134,10 @@ export interface ScrapePage extends ScrapeFrame {
    * Refused once a secret was typed, for `screenshot()`'s reason.
    */
   pdf(options?: PdfRequest): Promise<Uint8Array>;
-  /** The file the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT`. */
+  /**
+   * The file the last click, key or navigation produced — the newest since it, older ones cleared —
+   * or `X_SCRAPE_DOWNLOAD_TIMEOUT`. Never a file an earlier trigger made.
+   */
   download(options?: DownloadRequest): Promise<ScrapeDownloadFile>;
   cookies(): Promise<readonly ScrapeCookie[]>;
   /**

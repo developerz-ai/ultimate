@@ -112,3 +112,15 @@ isolation is in another renderer: absent from the page session's tree, and its t
 reached through the library's session shape. It is refused as `X_SCRAPE_FRAME_OUT_OF_PROCESS`;
 `--disable-site-isolation-trials` keeps such a frame in process (measured). An earlier cut removed
 the method from `ScrapeFrame` instead — a compile break, withdrawn for the reason above.
+
+**Two download fixes, the same day.** The first cut queued up to eight finished files and handed out
+the oldest: a download nobody asked for, or one that landed after its `download()` timed out, then
+answered the NEXT trigger — off by one from there on. Now a click, key or navigation marks the
+catcher (`cdp-target.ts`'s `TRIGGER_VERBS`; never `evaluate`, so a read between a click and its
+`download()` keeps the click's file); files begun before the mark are dropped, and `download()`
+takes the newest, clearing the rest. The offline drivers agree: every click re-arms, to nothing
+when it downloads nothing. And the first cut read every non-page document body whole
+(`Fetch.getResponseBody`), uncapped, even with no `download()` pending — a page with
+`<iframe src="/big.bin">` could exhaust the worker. Now a declared length over `maxDownloadBytes`
+is never read, an undeclared one is read only for an attachment, streamed with a running count and
+failed at the cap, and the held bodies are bounded by bytes as well as count (`cdp-download-read.ts`).

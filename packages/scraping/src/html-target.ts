@@ -305,7 +305,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
         if (element === undefined) throw fixtureMissing(`${url} ${selector}`, init.source);
         const download =
           recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');
-        if (download !== undefined) armed = download;
+        // Every click re-arms, a non-download one to nothing: the file is the LAST click's.
+        armed = download;
       },
       type: (selector, text) => typeIn(document, selector, text),
       clear: (selector) => setIn(document, selector, ''),
@@ -342,7 +343,9 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       if (element === undefined) throw fixtureMissing(`${page.url} ${selector}`, init.source);
       const download =
         recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');
-      if (download !== undefined) armed = download;
+      // Every click re-arms, a non-download one to nothing: the file is the LAST click's, as on
+      // the browser driver (`cdp-download.ts`'s trigger mark).
+      armed = download;
       const href =
         element.attrs['data-goto'] ?? (element.tag === 'a' ? element.attrs['href'] : undefined);
       if (href !== undefined && href !== '') await navigate(href);
@@ -361,6 +364,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     press(chord: string): Promise<void> {
       live();
       parseKeyChord(chord);
+      // A key is a trigger on the browser driver, so it disarms here too: no recorded key makes a file.
+      armed = undefined;
       return Promise.resolve();
     },
     /** The selector must exist, as `click` requires — a focus on nothing is a fixture gap. */

@@ -15,6 +15,8 @@ export interface FakeDownload {
   readonly contentType?: string;
   /** `Content-Disposition`; absent is a `<a download>` link, which sends none. */
   readonly disposition?: string;
+  /** `Content-Length`: the body's own length when absent, `'none'` for a chunked response. */
+  readonly length?: number | 'none';
 }
 
 export interface FakeBrowserTarget {
@@ -36,6 +38,10 @@ export interface FakeBrowserTarget {
     readonly responseStage: boolean;
     /** What `Browser.setDownloadBehavior` was last sent, or `undefined`. */
     readonly downloadBehavior: Readonly<Record<string, unknown>> | undefined;
+    /** URLs whose response the driver fulfilled with a body it read. */
+    readonly fulfilled: readonly string[];
+    /** Body bytes the driver pulled through `IO.read`, all streams together. */
+    readonly bytesRead: number;
   };
 }
 
@@ -48,7 +54,10 @@ export function fakeBrowserTarget(
   const listeners = new Map<string, ((payload: unknown) => void)[]>();
   const byId = new Map<string, string>();
   const bodies = new Map<string, string>();
-  const released = new Map<string, () => void>();
+  const released = new Map<string, (begun: boolean) => void>();
+  const streams = new Map<string, { body: string; at: number }>();
+  const fulfilled: string[] = [];
+  let bytesRead = 0;
   const continued: string[] = [];
   const failed: string[] = [];
   let enabled = false;
@@ -71,17 +80,37 @@ export function fakeBrowserTarget(
       }
       if (method === 'Browser.setDownloadBehavior') downloadBehavior = { ...params };
       const id = typeof params?.['requestId'] === 'string' ? params['requestId'] : '';
-      if (method === 'Fetch.getResponseBody') {
+      if (method === 'Fetch.takeResponseBodyAsStream') {
         const body = bodies.get(id);
-        return body === undefined
-          ? Promise.reject(new Error('No data found for resource with given identifier'))
-          : Promise.resolve({ body: btoa(body), base64Encoded: true });
+        if (body === undefined) return Promise.reject(new Error('No data found for resource'));
+        streams.set(`stream-${id}`, { body, at: 0 });
+        return Promise.resolve({ stream: `stream-${id}` });
       }
-      if (method === 'Fetch.continueRequest') {
-        continued.push(byId.get(id) ?? id);
-        released.get(id)?.();
+      if (method === 'IO.read') {
+        const handle = typeof params?.['handle'] === 'string' ? params['handle'] : '';
+        const size = typeof params?.['size'] === 'number' ? params['size'] : 1024;
+        const stream = streams.get(handle);
+        if (stream === undefined) return Promise.reject(new Error('Invalid stream handle'));
+        const data = stream.body.slice(stream.at, stream.at + size);
+        stream.at += data.length;
+        bytesRead += data.length;
+        return Promise.resolve({
+          data: btoa(data),
+          base64Encoded: true,
+          eof: stream.at >= stream.body.length,
+        });
       }
-      if (method === 'Fetch.failRequest') failed.push(byId.get(id) ?? id);
+      if (method === 'IO.close') {
+        streams.delete(typeof params?.['handle'] === 'string' ? params['handle'] : '');
+      }
+      if (method === 'Fetch.continueRequest' || method === 'Fetch.fulfillRequest') {
+        (method === 'Fetch.continueRequest' ? continued : fulfilled).push(byId.get(id) ?? id);
+        released.get(id)?.(true);
+      }
+      if (method === 'Fetch.failRequest') {
+        failed.push(byId.get(id) ?? id);
+        released.get(id)?.(false);
+      }
       return Promise.resolve({});
     },
     detach: () => Promise.resolve(),
@@ -115,9 +144,10 @@ export function fakeBrowserTarget(
       const requestId = `interception-${String(byId.size + 1)}`;
       byId.set(requestId, download.url);
       bodies.set(requestId, download.body);
+      // A released response becomes a download; a FAILED one never reaches the download manager.
       const done = new Promise<void>((resolve) => {
-        released.set(requestId, () => {
-          begin();
+        released.set(requestId, (begun) => {
+          if (begun) begin();
           resolve();
         });
       });
@@ -131,6 +161,9 @@ export function fakeBrowserTarget(
           ...(download.disposition === undefined
             ? []
             : [{ name: 'Content-Disposition', value: download.disposition }]),
+          ...(download.length === 'none'
+            ? []
+            : [{ name: 'Content-Length', value: String(download.length ?? download.body.length) }]),
         ],
       });
       await done;
@@ -147,6 +180,10 @@ export function fakeBrowserTarget(
       },
       get downloadBehavior(): Readonly<Record<string, unknown>> | undefined {
         return downloadBehavior;
+      },
+      fulfilled,
+      get bytesRead(): number {
+        return bytesRead;
       },
     },
   };
