@@ -2,4 +2,6 @@
 
 CREATE INDEX blocks_blocked_id_idx ON public.blocks USING btree (blocked_id);
 
+CREATE INDEX blocks_blocker_id_created_at_blocked_id_08493ec4_idx ON public.blocks USING btree (blocker_id DESC, created_at DESC, blocked_id DESC);
+
 CREATE INDEX blocks_blocker_id_idx ON public.blocks USING btree (blocker_id);

@@ -85,10 +85,31 @@ describe('unit · x logs tail', () => {
     expect(opened).toBe(0);
   });
 
+  // `x dev` runs every role in one process and one log; a line inside a request or a job carries
+  // its context's `role`. The MCP tool answers the same lines (`mcp-host-logs.ts`'s `readLogTail`).
+  test('--role with no role log reads that role’s lines of .x/dev.log', async () => {
+    const root = appRoot();
+    mkdirSync(join(root, '.x'), { recursive: true });
+    const lines = [
+      { msg: 'boot' },
+      { msg: 'job.done', role: 'worker' },
+      { msg: 'GET /', role: 'web' },
+    ].map((line) => JSON.stringify(line));
+    writeFileSync(join(root, '.x', 'dev.log'), `${lines.join('\n')}\n`);
+    const result = await logsCommand.run(ctxFor(root, ['logs', 'tail', '--role', 'worker']));
+    expect(result.data).toMatchObject({
+      path: join(root, '.x', 'dev.log'),
+      role: 'worker',
+      lines: [lines[1]],
+    });
+  });
+
   test('no log yet answers the process that writes it', async () => {
     const root = appRoot();
-    const failure = await logsCommand.run(ctxFor(root, ['logs'])).catch((error: unknown) => error);
-    expect(failure).toBeUltimateError('X_NOT_IMPLEMENTED');
-    expect((failure as { fix: string }).fix).toBe('x dev');
+    for (const argv of [['logs'], ['logs', 'tail', '--role', 'worker']]) {
+      const failure = await logsCommand.run(ctxFor(root, argv)).catch((error: unknown) => error);
+      expect(failure).toBeUltimateError('X_DEV_LOG_ABSENT');
+      expect((failure as { fix: string }).fix).toBe('x dev');
+    }
   });
 });

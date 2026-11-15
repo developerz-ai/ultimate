@@ -1,13 +1,13 @@
 // What a declaration's shape holds: members keyed by name (quotes, modifiers and accessors read
-// through), signatures with no name as opaque keys, parameter unions as sets — and no shape at all
-// for a declaration this cannot read, so its change stays a break.
+// through), signatures with no name as opaque keys, parameter unions as sets, literal sets, values
+// and classes — and for anything else its own text plus the shapes of the locals it names.
 
 import { describe, expect, test } from 'bun:test';
 import { shapeOf } from './public-api-shape';
 
 const membersOf = (text: string): Readonly<Record<string, string>> => {
   const shape = shapeOf(text);
-  if (shape?.kind !== 'members') return expect.unreachable(`${text} must have members`);
+  if (shape.kind !== 'members') return expect.unreachable(`${text} must have members`);
   return shape.members;
 };
 
@@ -61,19 +61,47 @@ describe('public-api-shape · functions', () => {
   });
 });
 
-describe('public-api-shape · none', () => {
-  test('a class, an enum, a union alias, a value const and overloads have no shape', () => {
+describe('public-api-shape · every declaration has a shape', () => {
+  test('a literal union, `keyof typeof` a local object and a literal tuple are literal sets', () => {
     for (const text of [
-      'class A { x : 1 ; }',
-      'enum E { A = 0 }',
-      'type Mode = "a" | "b"',
-      'const KIND : "sub"',
-      'const f : ( ( a : 1 ) => void ) | null',
-      'function f ( a : 1 ) : void\nfunction f ( a : 2 ) : void',
-      'external ./x Y',
+      'type Mode = "a" | "b" | - 1',
+      'type Code = keyof typeof T\nlocal const T : { readonly A : "x" ; readonly B : "y" ; }',
+      'const NAMES : readonly [ "a" , "b" ]',
     ]) {
-      expect(shapeOf(text)).toBeUndefined();
+      expect(shapeOf(text).kind).toBe('literals');
     }
+    const one = shapeOf('type Mode = "a" | "b"');
+    expect(one).toEqual(shapeOf('type Mode = "b" | "a"'));
+  });
+
+  test('a const typed as an object is a value; a class keeps members and its constructor', () => {
+    expect(shapeOf('const S : { readonly A : 1 ; }').kind).toBe('value');
+    const shape = shapeOf(
+      'class E extends B { static readonly code = "X" ; private secret ; readonly at : number ; constructor ( init : { a : 1 ; b ? : 2 ; } ) ; }',
+    );
+    if (shape.kind !== 'class') return expect.unreachable('a class has a class shape');
+    expect(Object.keys(shape.members).sort()).toEqual(['at', 'static code']);
+    expect(shape.ctor?.[0]?.startsWith('{a=')).toBe(true);
+  });
+
+  test('a type alias ending in `& { … }` is members', () => {
+    expect(shapeOf('type O = RequestInit & { readonly a ? : 1 ; }').kind).toBe('members');
+    expect(shapeOf('type O = A & { a : 1 ; } | B').kind).toBe('declaration');
+  });
+
+  test('anything else is a declaration, keyed by its first word, with its locals shaped', () => {
+    expect(shapeOf('enum E { A = 0 }')).toMatchObject({ kind: 'declaration', keyword: 'enum' });
+    expect(shapeOf('const KIND : "sub"')).toMatchObject({ kind: 'declaration', keyword: 'const' });
+    expect(shapeOf('external ./x Y')).toMatchObject({ keyword: 'external' });
+    expect(shapeOf('function f ( a : 1 ) : void\nfunction f ( a : 2 ) : void').kind).toBe(
+      'overloads',
+    );
+    expect(shapeOf('const a : 1\nconst a : 2')).toMatchObject({ keyword: 'overloaded const' });
+    const spec = shapeOf(
+      'type S = F & ( { a : 1 ; } | { b : 1 ; } )\nlocal interface F { c : 1 ; }',
+    );
+    if (spec.kind !== 'declaration') return expect.unreachable('an intersection is a declaration');
+    expect(spec.locals?.['F']?.shape?.kind).toBe('members');
   });
 
   test('local lines after the declaration still leave it a shape', () => {

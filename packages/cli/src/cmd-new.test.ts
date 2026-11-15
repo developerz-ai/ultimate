@@ -297,13 +297,6 @@ describe('unit · x new · the suite floor the app is gated on', () => {
       }
     }
   });
-
-  // `e2eTest` is `test.skip` until an app registers a browser driver, so the scaffolded
-  // `page.e2e.test.ts` runs zero tests — a floor naming `e2e` would fail `x verify` on the
-  // scaffold's own placeholder rather than on anything the author did.
-  test('it does not pin e2e, whose scaffolded test skips itself until a driver exists', () => {
-    expect(parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, true)).steps).not.toContain('e2e');
-  });
 });
 
 // `registerActions` and `registerQueries` run on the framework's own module scan; NOTHING registers

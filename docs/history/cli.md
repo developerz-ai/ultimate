@@ -1494,7 +1494,7 @@ closest **shipped** command. `X_CLI_UNKNOWN_COMMAND` would say "you typed someth
 exist", which is false and sends an agent hunting a typo. `cmd-planned.test.ts` enforces both
 halves: every row is reachable through the parser, and no `fix` points at another planned command.
 
-`PLANNED_SUBCOMMANDS` is the same promise one level down, and `x db studio` is its only entry.
+`PLANNED_SUBCOMMANDS` is the same promise one level down, and `x db studio` is its only entry (until 2026-11-15, when it and the three after it left the registry and the table emptied).
 A subcommand stays in its command's `subcommands` list — the parser reaches it, `x help db` lists
 it — and the owning `run` does `throw plannedSubcommand('db', 'studio')`. Dropping it from the list
 instead would answer `X_CLI_UNKNOWN_SUBCOMMAND`, which is the same lie the table above closes.
@@ -1813,3 +1813,10 @@ The two new rows in full, as wave 4b wrote them:
 
 - `templates/scaffold-mcp-{json,endpoint,admin}.ts`: `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`), the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`, `apps/admin/mcp.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names.
 - `generate-exercise.ts` / `exercise-entry-edit.ts` / `templates/action-exercise.ts`: a written contract test reads `target.contract({ exercise })`, and its entry (`userActor({ id: 'member', orgId, permissions: [grant] })`, the draw's `orgId` bound under a tenancy rule) is inserted into `apps/web/exercise.ts` — created from `x new`'s when absent; `x new` bakes its own in (`withDeclaredExercises`). `exercise-entry-edit.ts` is the ONE editor of that file (`x g sign-in`'s `off` entries go through it too): masked source, Biome's expanded shape, imports in Biome's order, read back. A file that is not one `export const exercise = defineExercise({ … })` is `X_EXERCISE_FILE_UNEDITABLE`, the entry to paste in its `fix:`.
+
+## Moved out 2026-11-15 (sweep 4, the `CLAUDE.md` ceiling)
+
+| Rule | Detail |
+|---|---|
+| stdout / stderr | `write-line.ts`'s `writeLine` / `writeErrorLine` — synchronous fd writes, never `process.stdout.write` (truncates at the pipe buffer before `process.exit`). A `CommandResult` with `stream: 'stderr'` goes to fd 2 (`x mcp serve --transport stdio`) |
+| Missing input | `MissingPositionalError` (its `example` is a real invocation); a bare subcommand is refused unless the spec DECLARES `defaultSubcommand` (`MissingSubcommandError`); `--help` short-circuits both |

@@ -33,8 +33,17 @@ export const posts = entity('posts', {
     invariant('post_media_count_non_negative', c.mediaCount.atLeast(0)),
   ],
   indexes: [
-    // The author's profile timeline.
-    { on: ['authorId', 'publishedAt'], order: 'desc' },
+    /**
+     * The author's profile timeline as it is read (`postsByAuthor`, `site/u/repo.ts`): live rows,
+     * `publishedAt desc` then `id asc`. Partial on `deletedAt` like the feed's, so the dashboard's
+     * per-author count and sum (`dashboard/repo.ts`) are bounded by `authorId` rather than walking
+     * the feed index — on a small table the planner preferred that walk over a full-table index.
+     */
+    {
+      on: ['authorId', 'publishedAt', 'id'],
+      orders: [null, 'desc', 'asc'],
+      where: (c) => c.deletedAt.isNull(),
+    },
     /**
      * The public feed's exact access path. Partial on the two things every read of it asserts, so
      * the index holds only rows the query can actually return.
@@ -43,6 +52,26 @@ export const posts = entity('posts', {
       on: ['publishedAt'],
       order: 'desc',
       where: (c) => c.audience.eq('public'),
+    },
+    /**
+     * The feed page as it is read (`feedPage`, `site/feed/repo.ts`): live rows, `publishedAt desc`
+     * then `id asc` — the tiebreak a live matcher needs. One direction per key, because the order
+     * is mixed and `order:` can only say one. The plan sweep found the bounded read sorting every
+     * live post (`X_QUERY_SORT_UNSERVED`, /dashboard).
+     */
+    {
+      on: ['publishedAt', 'id'],
+      orders: ['desc', 'asc'],
+      where: (c) => c.deletedAt.isNull(),
+    },
+    /**
+     * The same page narrowed to one audience (/feed). `audience` is a bound parameter, so the
+     * literal-predicate index above serves no generic plan; equality first, then the page's order.
+     */
+    {
+      on: ['audience', 'publishedAt', 'id'],
+      orders: [null, 'desc', 'asc'],
+      where: (c) => c.deletedAt.isNull(),
     },
   ],
 });

@@ -321,6 +321,12 @@ const buildServer = (options: ServerOptions): ServerHandle => {
         // and its 128 MiB default refused every larger signed upload. `maxRequestBodyBytes` is
         // the ceiling, enforced coded in `admit` and on the stream (`body-ceiling.ts`).
         maxRequestBodySize: BUN_MAX_REQUEST_BODY_SIZE,
+        // Only when declared, so a plaintext listener's options are the ones it always had. Bun
+        // then builds each request's URL as `https:`, which is what `ctx.https` reads with no
+        // trusted proxy — the socket's own fact, no header consulted that was not before.
+        ...(config.tls === undefined
+          ? {}
+          : { tls: { cert: config.tls.cert, key: config.tls.key } }),
         routes: {
           ...nativeRoutes(),
           // Health endpoints answer outside the pipeline on purpose: a draining or

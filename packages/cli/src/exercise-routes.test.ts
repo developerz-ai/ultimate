@@ -75,7 +75,27 @@ describe('unit · routeLoadWarnings', () => {
   });
 });
 
+describe('unit · routeLoadWarnings · empty and off', () => {
+  test('a load reached with no statement and no effect is X_EXERCISE_EMPTY_REACH, with the paste', () => {
+    const [line, ...rest] = routeLoadWarnings([route({ statements: 0 })]);
+    expect(rest).toEqual([]);
+    expect(line).toStartWith(
+      'route /messages (apps/web/app/messages/page.tsx) · X_EXERCISE_EMPTY_REACH',
+    );
+    expect(line).toContain(`routes: { "/messages": { empty: '<why it reads nothing>' } }`);
+  });
+
+  test('one whose entry says why, and one declared off, say nothing', () => {
+    expect(routeLoadWarnings([route({ statements: 0, empty: 'a static page' })])).toEqual([]);
+    expect(routeLoadWarnings([route({ outcome: 'off', reason: 'its e2e test' })])).toEqual([]);
+  });
+});
+
 describe('unit · emptyReachWarnings', () => {
+  test('a primitive whose entry says why its reach is empty is not named', () => {
+    expect(emptyReachWarnings([primitive('health', { empty: 'answers a constant' })])).toEqual([]);
+  });
+
   test('reached with no statement and no effect is named; one with either is not', () => {
     const [line, ...rest] = emptyReachWarnings([
       primitive('health'),

@@ -28,7 +28,8 @@ export const logsSpec: CommandSpec = {
     {
       name: 'role',
       type: 'string',
-      summary: 'read .x/logs/<role>.log instead of the dev log (web, worker, scheduler, sync, …)',
+      summary:
+        'one role (web, worker, scheduler, sync, …): its .x/logs/<role>.log, else its lines of the dev log',
     },
   ],
 };

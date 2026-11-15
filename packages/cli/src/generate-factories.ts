@@ -27,7 +27,7 @@ export const FACTORY_GENERATORS: readonly FactoryGenerator[] = [
   { factory: 'agent', none: MODEL },
   {
     factory: 'agentJob',
-    none: 'wraps an action the app already declares, and which one is a choice x g cannot read off the disk; deferred (plan 101 U6) until x g takes the action to wrap',
+    none: 'wraps one action the app already declares, and that action decides the rest: its input schema is the job input, the org field `tenant` reads off it, and the input a generated test enqueues — x g takes no --action to name it and reads no action file, so the one call it could emit would wrap nothing; paste agentJob(<action>, { name, tenant }) beside the action',
   },
   { factory: 'backfill', generator: 'backfill' },
   {
@@ -39,15 +39,9 @@ export const FACTORY_GENERATORS: readonly FactoryGenerator[] = [
     factory: 'deviceSocket',
     none: 'a websocket mount speaking the app’s own device protocol; the protocol is the whole of the declaration, and only the app knows it',
   },
-  {
-    factory: 'exportRows',
-    none: 'reads one table through the app’s typed handle into a storage disk; deferred (plan 101 U6) until x g can refuse a slice whose table is not the scaffolded one under its own code',
-  },
+  { factory: 'exportRows', generator: 'export-rows' },
   { factory: 'hive', none: MODEL },
-  {
-    factory: 'importRows',
-    none: 'writes an uploaded file into one table through the app’s typed handle; deferred (plan 101 U6) on the same refusal exportRows waits for',
-  },
+  { factory: 'importRows', generator: 'import-rows' },
   {
     factory: 'ledger',
     none: 'the attempt table a webhook() delivery writes, declared once beside that webhook — it has no meaning without one, so it ships with it',
@@ -96,7 +90,7 @@ export const FACTORY_GENERATORS: readonly FactoryGenerator[] = [
   },
   {
     factory: 'rollup',
-    none: 'counts a source table into a destination entity by bucket; deferred (plan 101 U6) until x g plants the destination entity and its migration beside it',
+    none: 'counts a source table into a DESTINATION entity by bucket, with that entity’s key columns as the upsert key — two tables, one of them new, so the declaration is an entity, a migration (x db gen) and the call, never one call; x g entity <name>-daily writes the destination, then the rollup is pasted beside it',
   },
   {
     factory: 'scrape',
@@ -120,7 +114,7 @@ export const FACTORY_GENERATORS: readonly FactoryGenerator[] = [
   },
   {
     factory: 'webhook',
-    none: 'one signed delivery to an endpoint the app stores, with its ledger; deferred (plan 101 U6) until x g plants the endpoint table and the ledger it needs',
+    none: 'one signed delivery to an endpoint the app stores, read per attempt with its secret, plus the ledger() table every attempt is written to — the endpoint and event tables are the app’s own schema and the ledger is a migration, so the declaration is two tables and the call, never one call',
   },
   { factory: 'webhookReceiver', generator: 'webhook-receiver' },
   {

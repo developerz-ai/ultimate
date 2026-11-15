@@ -107,6 +107,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/render": "^${version}",
     "@ultimat3/schema": "^${version}",
     "@ultimat3/seo": "^${version}",
+    "@ultimat3/storage": "^${version}",
     "@ultimat3/ui": "^${version}",
     "solid-js": "${SOLID_VERSION}"
   },
@@ -393,7 +394,7 @@ export function repoFiles(
     { path: 'biome.json', contents: biome() },
     { path: 'bunfig.toml', contents: bunfig() },
     { path: 'app.config.ts', contents: appConfig(app) },
-    { path: VERIFY_FLOOR_FILE, contents: verifyFloor(example) },
+    { path: VERIFY_FLOOR_FILE, contents: verifyFloor({ jobs: example, pages: true }) },
     { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
     // Every text file LF whatever `core.autocrlf` says — a Windows checkout is otherwise CRLF.

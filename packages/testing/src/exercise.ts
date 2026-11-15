@@ -12,9 +12,9 @@
 
 import type { Actor, ExerciseAttempt, ExerciseVerdict } from '@ultimat3/core';
 import { runExercise, subscribe } from '@ultimat3/core';
-import { LIVE_STATES, registeredJobs } from '@ultimat3/jobs';
 import type { ExerciseOverride, ExerciseOverrides } from './define-exercise';
 import { assertOverridesKnown, overrideFor, unknownDeclaration } from './define-exercise';
+import { assertRoutesKnown } from './define-exercise-routes';
 import type { RoleGrants } from './exercise-actor';
 import { chooseActor } from './exercise-actor';
 import { seatActorUsers } from './exercise-actor-user';
@@ -22,20 +22,13 @@ import { proveCrash } from './exercise-crash';
 import { defectDetail } from './exercise-defect';
 import type { IdLookup, Sampler } from './exercise-input';
 import { bindIds, drawInput, loadSampler, namesActorEntity, seededIds } from './exercise-input';
-import { ambientJobRows } from './exercise-job-run';
-import { judged, labelFor } from './exercise-judge';
+import { judged, labelFor, withEmptyWhy } from './exercise-judge';
 import { mergeObserved } from './exercise-observed';
 import type { OverrideInput } from './exercise-override-input';
 import { inputThrew, overrideInput } from './exercise-override-input';
 import { actorHintOf, type OverrideHint, seededIn } from './exercise-override-line';
-import type {
-  EffectPayload,
-  ExerciseEffect,
-  ExercisePhaseMs,
-  ExerciseRecord,
-  ExerciseRoom,
-  Observed,
-} from './exercise-report';
+import { enqueued, queuedIds, queuedPayloads } from './exercise-queued';
+import type { ExercisePhaseMs, ExerciseRecord, ExerciseRoom, Observed } from './exercise-report';
 import { openExerciseRoom } from './exercise-report';
 import type { RouteLoadRecord } from './exercise-route-loads';
 import {
@@ -47,6 +40,8 @@ import {
 } from './exercise-route-loads';
 import type { RouteLoadSubject } from './exercise-route-subjects';
 import { withExerciseSetup } from './exercise-setup';
+import type { ExerciseShard } from './exercise-shard';
+import { inShard } from './exercise-shard';
 import type { ExerciseStatementCeiling } from './exercise-statement-ceiling';
 import { judgeStatementCeiling } from './exercise-statement-ceiling';
 import type { Subject } from './exercise-subjects';
@@ -88,48 +83,14 @@ export interface ExercisePassOptions {
   readonly routes?: readonly RouteLoadSubject[];
   /** Told once, as the pass returns: each route load's record, the sweeps' proofs on it. */
   readonly onRoutes?: (records: readonly RouteLoadRecord[]) => void;
+  /** One of n slices of the whole pass (`exercise-shard.ts`); ignored beside `only`. */
+  readonly shard?: ExerciseShard;
 }
 
 const isOff = (overrides: ExerciseOverrides | undefined, subject: Subject): boolean => {
   const override = overrideFor(overrides, subject.kind, subject.name);
   return override !== undefined && 'off' in override;
 };
-
-/** The ids of every row the call's queue holds now: what an attempt adds is the call's. */
-const queuedIds = async (): Promise<ReadonlySet<string>> =>
-  new Set((await ambientJobRows()).map((record) => record.id));
-
-/**
- * Jobs the primitive queued — rows an ATTEMPT added (`mine`), still live — its own job excepted.
- * Never run: a job's children are left queued as an action's are (`exercise-job-run.ts`). A row
- * the override's input added between calls is on the same queue, so the call can find it, and is
- * not in `mine`: the input's enqueue is never the primitive's.
- */
-async function enqueued(subject: Subject, mine: ReadonlySet<string>) {
-  const counts = new Map<string, number>();
-  for (const record of await ambientJobRows()) {
-    if (!mine.has(record.id) || !LIVE_STATES.has(record.state)) continue;
-    if (subject.kind === 'job' && record.name === subject.name) continue;
-    counts.set(record.name, (counts.get(record.name) ?? 0) + 1);
-  }
-  const order = registeredJobs().map((handle) => handle.name);
-  return [...counts]
-    .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
-    .map(([job, count]): ExerciseEffect => ({ kind: 'enqueue', job, count }));
-}
-
-/**
- * Every job a B leg's queue holds or ran, with its input — the subject's own job excepted, whose
- * input is what B was handed. Read off the leg's own queue, page by page.
- */
-async function queuedPayloads(subject: Subject): Promise<readonly EffectPayload[]> {
-  return (await ambientJobRows())
-    .filter((record) => !(subject.kind === 'job' && record.name === subject.name))
-    .map((record, i) => ({
-      path: `effect.enqueue[${i}]`,
-      value: { job: record.name, input: record.input },
-    }));
-}
 
 /** Everything one primitive's calls share: who acts in each tenant, and how ids are bound. */
 interface Prepared {
@@ -403,18 +364,30 @@ export async function runExercisePass(
   });
   const known = new Set(subjects.map((subject) => subject.name));
   assertOverridesKnown(options.overrides, subjects);
+  // Judged only where the route table was handed over: an `only` run never reads one.
+  if (options.routes !== undefined && options.only === undefined) {
+    assertRoutesKnown(
+      options.overrides,
+      options.routes.map((route) => route.path),
+    );
+  }
   const label = labelFor(subjects);
   if (options.only !== undefined && !known.has(options.only)) {
     throw unknownDeclaration([options.only], known, 'x exercise');
   }
-  const chosen = subjects.filter((s) => options.only === undefined || s.name === options.only);
+  const shard = options.only === undefined ? options.shard : undefined;
+  const chosen = subjects.filter((s, i) =>
+    options.only === undefined ? inShard(i, shard) : s.name === options.only,
+  );
   const sampler = await loadSampler();
   // Not `Math.random`: the frozen RNG answers the same sequence in every process.
   const passSeed = options.seed ?? (crypto.getRandomValues(new Uint32Array(1))[0] as number);
   // The app's setup runs inside the seal, before the first row: its routes answer every call.
   const room = await withExerciseSetup(await openExerciseRoom(), options.overrides?.setup);
   const live = chosen.filter((subject) => !isOff(options.overrides, subject));
-  const routes = options.only === undefined ? (options.routes ?? []) : [];
+  const routes = (options.only === undefined ? (options.routes ?? []) : []).filter((_, i) =>
+    inShard(subjects.length + i, shard),
+  );
   const records: ExerciseRecord[] = [];
   let routeRecords: readonly RouteLoadRecord[] = [];
   let graph: SeedGraph;
@@ -481,5 +454,5 @@ export async function runExercisePass(
   options.onPhases?.({ seed, primitives, ...swept.ms });
   const split = splitRouteRecords(swept.records);
   options.onRoutes?.(split.routes);
-  return split.primitives;
+  return split.primitives.map((record) => withEmptyWhy(record, options.overrides));
 }

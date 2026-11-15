@@ -5,6 +5,7 @@
 
 import { basename, join } from 'node:path';
 import { onFileBoundary } from './file-boundary';
+import { islandCoverageDir, recordChunkMap } from './fixture-island-coverage';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
 import { islandMountMissing, islandNotBuilt } from './island-errors';
 import { installGlobals } from './island-globals';
@@ -22,12 +23,19 @@ export interface IslandChunkLike {
    * is why `shared` below is written beside it before it is imported.
    */
   readonly code: string;
+  /**
+   * The chunk's external source map, as text. Optional: under a coverage run the fixture records
+   * it (`fixture-island-coverage.ts`) so the chunk's lines count for the island's own source.
+   */
+  readonly map?: string;
 }
 
 /** A module two or more islands import, served beside them under its own name. */
 export interface SharedChunkLike {
   readonly url: string;
   readonly code: string;
+  /** Its source map, recorded the same way as an entry's. */
+  readonly map?: string;
 }
 
 export interface IslandBundleLike {
@@ -46,7 +54,14 @@ export interface IslandBundleLike {
  */
 export type IslandBuilder = (
   root: string,
-  options?: { readonly only?: string },
+  options?: {
+    readonly only?: string;
+    /**
+     * Asked only under a coverage run: a build whose lines a map can name — whitespace kept, a
+     * map on every chunk. A builder that ignores it still mounts; its chunk just credits nothing.
+     */
+    readonly coverage?: boolean;
+  },
 ) => Promise<IslandBundleLike>;
 
 export interface MountIslandOptions {
@@ -201,7 +216,11 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   // `bun test`, fixed in 1.4.0, and asking for the island we actually want walks around it while
   // being the faster and more honest call regardless. A builder that ignores the argument still
   // works: the `find` below is unchanged.
-  const bundle = await options.build(options.root, { only: options.file });
+  const coverage = islandCoverageDir();
+  const bundle = await options.build(options.root, {
+    only: options.file,
+    ...(coverage === undefined ? {} : { coverage: true }),
+  });
   const chunk = bundle.chunks.find((each) => each.file === options.file);
   if (chunk === undefined) {
     throw islandNotBuilt(
@@ -240,9 +259,15 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     // bytes at the same name.
     for (const shared of bundle.shared ?? []) {
       await Bun.write(join(scratch, basename(shared.url)), shared.code);
+      if (coverage !== undefined && shared.map !== undefined) {
+        await recordChunkMap(coverage, basename(shared.url), shared.map);
+      }
     }
     const path = modulePathFor(scratch, chunk.code);
     await Bun.write(path, chunk.code);
+    if (coverage !== undefined && chunk.map !== undefined) {
+      await recordChunkMap(coverage, basename(path), chunk.map);
+    }
     // By `file:` URL, never the bare path: Bun on macOS caches a directory's entries on its first
     // resolution, and a bare-path import of a file written there afterwards is "Cannot find module"
     // (#704, Bun 1.4.0 arm64). The per-mount directory already avoids it; the URL form holds even

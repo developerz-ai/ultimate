@@ -5,16 +5,22 @@
 
 import type { ExerciseActorOptions, ExerciseOffOptions } from '@ultimat3/action';
 import { finiteCount, renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import type { RouteExerciseOverride } from './define-exercise-routes';
+import { checkEmptyWhy, routeEntries } from './define-exercise-routes';
 import type { ExerciseSetup } from './exercise-setup';
 import type { ExerciseStatementCeiling } from './exercise-statement-ceiling';
 import type { SeedFactory } from './seed-graph-plan';
 
 /**
  * 39's option type — `{ actor, input?, runs? }` or `{ off: '<reason>' }` — and the pass's own
- * `statements: { max, why }`: the ceiling one call is held to, `STATEMENTS_MAX` when omitted.
+ * `statements: { max, why }`: the ceiling one call is held to, `STATEMENTS_MAX` when omitted; and
+ * `empty: '<why>'`: why a reach with no statement and no effect is right (`X_EXERCISE_EMPTY_REACH`).
  */
 export type ExerciseOverride =
-  | (ExerciseActorOptions & { readonly statements?: ExerciseStatementCeiling })
+  | (ExerciseActorOptions & {
+      readonly statements?: ExerciseStatementCeiling;
+      readonly empty?: string;
+    })
   | ExerciseOffOptions;
 
 /**
@@ -32,6 +38,8 @@ export interface ExerciseOverrides {
   readonly factories?: Readonly<Record<string, SeedFactory>>;
   /** The app's hooks, run once each, in order, inside the pass's sealed room (`exercise-setup.ts`). */
   readonly setup?: ExerciseSetup | readonly ExerciseSetup[];
+  /** Each route load's entry, by URL pattern (`define-exercise-routes.ts`). */
+  readonly routes?: ReadonlyMap<string, RouteExerciseOverride>;
 }
 
 /** The three kinds an entry may be qualified by. */
@@ -77,6 +85,11 @@ export interface ExerciseAppOptions {
    * disposed in reverse; one that throws disposes those that already ran.
    */
   readonly setup?: ExerciseSetup | readonly ExerciseSetup[];
+  /**
+   * By URL pattern (`x routes`), what a route's `load` runs with: `params`, `actor`, `statements`,
+   * `empty` or `off` (`define-exercise-routes.ts`). An unknown pattern is refused when the pass runs.
+   */
+  readonly routes?: Readonly<Record<string, RouteExerciseOverride>>;
 }
 
 /** `X_CONTRACT_EXERCISE_UNDECLARED`, 39's code for the same silence: an `off` with no reason. */
@@ -113,6 +126,14 @@ export function defineExercise(
   for (const [name, override] of Object.entries(overrides)) {
     if ('off' in override && override.off.trim().length === 0) throw blankReason(name);
     checkCeiling(name, override);
+    if (!('off' in override)) {
+      const at = renderFixLiteral(name, '<name>');
+      checkEmptyWhy(
+        name,
+        override.empty,
+        `defineExercise({ ${at}: { empty: '<why it reads nothing>' } })`,
+      );
+    }
     entries.set(name, override);
   }
   return Object.freeze({
@@ -125,6 +146,7 @@ export function defineExercise(
         : { actorEntity: app.actor.$name }),
     ...(app.factories === undefined ? {} : { factories: app.factories }),
     ...(app.setup === undefined ? {} : { setup: app.setup }),
+    ...(app.routes === undefined ? {} : { routes: routeEntries(app.routes) }),
   });
 }
 

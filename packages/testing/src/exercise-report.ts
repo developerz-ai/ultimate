@@ -34,7 +34,9 @@ export type ExerciseEffect =
       readonly host: string;
       readonly refused: boolean;
     }
-  | { readonly kind: 'enqueue'; readonly job: string; readonly count: number };
+  | { readonly kind: 'enqueue'; readonly job: string; readonly count: number }
+  /** Web Push messages sent to `host`'s push service: a notifier that pushes nothing has none. */
+  | { readonly kind: 'push'; readonly host: string; readonly count: number };
 
 export type ExerciseOutcome = 'reached' | 'refused' | 'unreached' | 'off';
 
@@ -123,6 +125,11 @@ export interface ExerciseRecord {
    * whose `tenant(input)` names one fixed org (`exercise-subjects.ts`'s `fixedTenant`).
    */
   readonly fix?: string;
+  /**
+   * On a reached one with no statement and no effect: the entry's `empty` reason, why that reach
+   * is right. Absent, the reach is `X_EXERCISE_EMPTY_REACH` — its proofs prove nothing.
+   */
+  readonly empty?: string;
   /** On every record that ran — absent only on `off` and `refused`. The fields above are A's. */
   readonly tenant?: TenantProof;
   /** On a reached job only: its control's input, killed at every step boundary. */
@@ -286,6 +293,12 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
   const offDials = onDial((call) => {
     if (owns()) calls.push(call);
   });
+  // A push travels through an injected fetch (the pass's push stand-in), never a dial: what tells
+  // of it is `outbound()`'s own event, vendor `push`, which every send emits whatever answers it.
+  const pushes: string[] = [];
+  const offPushes = subscribe('outbound.request', (event) => {
+    if (owns() && event.payload.vendor === 'push') pushes.push(event.payload.host);
+  });
 
   const begin = (name: string | undefined): object => {
     subject = name;
@@ -295,6 +308,7 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
     unattributed = false;
     rows.length = 0;
     calls.length = 0;
+    pushes.length = 0;
     mail.clear();
     marker = {};
     return marker;
@@ -321,6 +335,7 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
           refused: refused(call),
         }),
       ),
+      ...[...tally(pushes)].map(([host, count]): ExerciseEffect => ({ kind: 'push', host, count })),
     ];
     const refusedHosts = calls.filter(refused).map((c) => hostOf(c.url));
     const payloads: EffectPayload[] = [
@@ -366,6 +381,7 @@ export async function openExerciseRoom(): Promise<ExerciseRoom> {
       try {
         mail[Symbol.dispose]();
       } finally {
+        offPushes();
         offDials();
         offRows();
         offStatements();

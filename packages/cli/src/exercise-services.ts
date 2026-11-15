@@ -13,6 +13,7 @@ import {
   memoryStorageDriver,
   resetStorage,
 } from '@ultimat3/storage';
+import { withStandInDevice } from './exercise-push-device';
 import type { Env } from './runtime-bindings';
 import { selectWebPush } from './runtime-push';
 
@@ -55,7 +56,8 @@ async function installPush(inputs: ExerciseServiceInputs): Promise<() => void> {
   if (selection === undefined) return () => undefined;
   const { installWebPush, postgresPushSubscriptionStore } = await import('@ultimat3/pwa');
   return installWebPush({
-    store: postgresPushSubscriptionStore({ executor: inputs.executor }),
+    // Every actor holds a device (`exercise-push-device.ts`): a sent push is an effect the room sees.
+    store: withStandInDevice(postgresPushSubscriptionStore({ executor: inputs.executor })),
     keys: selection.resolved.keys,
     subject: selection.subject,
     pushHosts: selection.pushHosts,

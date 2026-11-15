@@ -210,7 +210,7 @@ is `X_MCP_TOOL_UNSAFE` at boot, and an unmarked tool is metered as a write.
 declaration surface: a scope name → the TOOL NAMES it covers, however each one reached the
 catalog — a projected action, a projected query, or a key in `tools`. It lives here, not
 beside the action, because a scope is a capability of the CONNECTION's token — what
-`x token grant <scope>` names — not a fact about the operation; the policy beside the action
+`x token create --scopes <a,b>` issues — not a fact about the operation; the policy beside the action
 stays the only rule that reads the input. A name this server does not project is
 `X_MCP_SCOPE_UNKNOWN` at boot; one tool claimed by two scopes is `X_MCP_SCOPE_CONFLICT`.
 

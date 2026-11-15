@@ -18,6 +18,7 @@ import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devPanels } from './dev-dashboard';
 import { createInvalidationLog } from './dev-dashboard-invalidations';
 import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
+import { dialableUrl } from './dev-host';
 import { createStatementLedger } from './dev-n-plus-one';
 import type { DevState } from './dev-rebuild';
 import { buildGeneration, devRebuilder } from './dev-rebuild';
@@ -40,6 +41,7 @@ import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
 import { releaseOrThrow, startServices } from './runtime-services';
 import { metricsPortFor, releaseBoot } from './serve';
+import type { ListenerTls } from './serve-env-tls';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
 
 export interface DevServer {
@@ -71,6 +73,13 @@ export interface DevServer {
 export interface StartDevOptions {
   readonly root: string;
   readonly port: number;
+  /**
+   * The interface every socket binds (`WebBinding` is one decision): `x dev --host`. Absent is
+   * loopback. `/_x` answers a loopback peer and Host whatever this says (`hostRefusal`).
+   */
+  readonly hostname?: string;
+  /** `x dev --tls`: the generated local pair (`dev-tls.ts`); the web listener serves https. */
+  readonly tls?: ListenerTls;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly roles?: readonly Role[];
   readonly onReload?: (file: string, durationMs: number) => void;
@@ -279,6 +288,9 @@ async function bootDev(
   const running = await startRoles({
     roles: options.roles ?? DEV_ROLES,
     port: options.port,
+    // Dev-mode whatever the interface: a wider bind is still a development process.
+    ...(options.hostname === undefined ? {} : { http: { dev: true, hostname: options.hostname } }),
+    ...(options.tls === undefined ? {} : { tls: options.tls }),
     // `serve.ts`'s expression, called rather than restated: `METRICS_PORT` was read in the
     // container and ignored here, so the scrape port an operator moved was the one port `x dev`
     // could not move — and the second `x dev` on a box died binding the hardcoded 9090.
@@ -319,7 +331,8 @@ async function bootDev(
   const watcher = watchTree({ root: options.root, onChange: rebuild });
 
   server = {
-    url: running.url ?? `http://localhost:${options.port}`,
+    // Dialable, never Bun's `http://0.0.0.0:<port>`: the lock, `x shot` and `/_x` read this.
+    url: dialableUrl(running.url ?? `http://localhost:${options.port}`),
     services,
     roles: running.roles,
     mcp: mcpPath,

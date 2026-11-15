@@ -237,7 +237,7 @@ describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot',
     {
       name: 'scaffold-smoke',
       root: `${expr('runner.temp')}/${expr('matrix.app')}`,
-      before: 'scaffold-gate.ts',
+      before: 'scaffold-smoke-steps.ts',
       scaffold: true,
     },
   ];
@@ -314,8 +314,8 @@ describe('unit · ci.yml · scaffold-smoke opens the app it scaffolded', () => {
     // The resource it asks for is the one the sweep generates, and its table exists only once the
     // second `bin/setup` has applied that migration.
     expect(at('scripts/scaffold-first-run.ts')[0]).toBeLessThan(walk ?? -1);
-    expect(at('scripts/scaffold-gate.ts').at(-1)).toBeLessThan(walk ?? -1);
-    expect(at('scripts/scaffold-gate.ts')).toHaveLength(2);
+    expect(at('scripts/scaffold-smoke-steps.ts').at(-1)).toBeLessThan(walk ?? -1);
+    expect(at('scripts/scaffold-smoke-steps.ts')).toHaveLength(2);
   });
 
   // A shape `x new` accepts is one a stranger can pick, so it gates on a runner of its own: a

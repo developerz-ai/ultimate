@@ -30,6 +30,8 @@ import {
 import { adminCatalogFiles } from './templates/admin-catalog';
 import { helmDashboardFiles } from './templates/chart-dashboard';
 import { cronJobFiles } from './templates/generate-cron-job';
+import { exportRowsFiles } from './templates/generate-export-rows';
+import { importRowsFiles } from './templates/generate-import-rows';
 import { purgeFiles } from './templates/generate-purge';
 import { webhookReceiverFiles } from './templates/generate-webhook-receiver';
 import { inviteFiles } from './templates/invite';
@@ -200,14 +202,30 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
         }),
       );
-    // A primitive factory's one call, in the feature's slice. None reads the slice: each declares
-    // no table of its own, so it compiles in a feature that has no entity yet.
+    // A primitive factory's one call, in the feature's slice. These three read no slice: each
+    // declares no table of its own, so it compiles in a feature that has no entity yet.
     case 'cron-job':
       return dedupe(cronJobFiles(options.name, target));
     case 'purge':
       return dedupe(purgeFiles(options.name, target));
     case 'webhook-receiver':
       return dedupe(webhookReceiverFiles(options.name, target));
+    // These two DO read the slice: each moves its own scaffolded table through storage, so a slice
+    // shaped otherwise is refused, and one with no entity has it planted — `backfill`'s rule.
+    case 'export-rows':
+    case 'import-rows': {
+      const rows = {
+        ...target,
+        ...(options.locales === undefined ? {} : { locales: options.locales }),
+        ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
+        ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
+      };
+      return dedupe(
+        options.kind === 'export-rows'
+          ? exportRowsFiles(options.name, rows)
+          : importRowsFiles(options.name, rows),
+      );
+    }
     case 'entity':
       // With the labels the admin reads for it: the entity is an admin screen once it is in the
       // handle, whether or not a resource was generated around it.

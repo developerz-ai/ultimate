@@ -27,6 +27,7 @@ import { loadAppConfig } from './app-config-load';
 import type { IslandResolve } from './document-options';
 import { IslandBuildFailedError } from './errors';
 import { boundedMap } from './island-build-pool';
+import type { BuildIslandsOptions } from './island-bundle-options';
 import {
   environmentDigest,
   inputDigester,
@@ -61,8 +62,10 @@ import { islandStylesPlugin, stylesheetsOf } from './island-styles';
 import type { Vendors } from './island-vendor';
 import { loadingVendor, vendorBuilder, vendorExternalPlugin, vendorShared } from './island-vendor';
 import { hasPathSegment } from './path-segments';
-import { solidJsxPlugin } from './solid-loader';
+import { solidJsxCoveragePlugin, solidJsxPlugin } from './solid-loader';
 
+// `dev-rebuild.ts` names the options type here, where it lived before the split.
+export type { BuildIslandsOptions } from './island-bundle-options';
 export { ISLAND_BASE_PATH } from './island-outputs';
 
 /**
@@ -92,6 +95,8 @@ export interface IslandChunk {
   readonly imports: readonly string[];
   /** The files on disk it was built from (`island-sources.ts`). Absent on a chunk not built here. */
   readonly sources?: SourcePaths;
+  /** The external source map — a coverage build's only (`BuildIslandsOptions.coverage`). */
+  readonly map?: string;
   /**
    * Absent unless the island's graph reaches `@ultimat3/realtime`: then whether it has page state
    * to restore or only follows the socket (`island-realtime-state.ts`). On the chunk, so the
@@ -109,6 +114,7 @@ export interface SharedChunk {
   /** The islands (app-root-relative) that load it — for a finding that names what an author edits. */
   readonly importers: readonly string[];
   readonly sources?: SourcePaths;
+  readonly map?: string;
 }
 
 export interface IslandBundle {
@@ -188,7 +194,9 @@ async function buildAll(
       // `[dir]` keeps two islands sharing a filename apart and maps an output back to its island;
       // a chunk's Bun hash is only a placeholder — `island-link.ts` renames every one by its bytes.
       naming: { entry: '[dir]/[name].[ext]', chunk: 'chunk-[hash].[ext]' },
-      minify: true,
+      // A coverage build keeps the lines its map names, and only them: identifiers and syntax are
+      // minified as shipped, so the code a test mounts is the shipped code laid out on lines.
+      minify: context.coverage ? { whitespace: false, syntax: true, identifiers: true } : true,
       // A build with no `plugins` is a build with no JSX transform: `Bun.plugin` installs into the
       // RUNTIME's loader and `Bun.build` walks its own graph, so render's `.tsx` loader never sees
       // an island. The app's tsconfig says `jsx: "preserve"`, which makes the bundler fall back to
@@ -212,7 +220,7 @@ async function buildAll(
           : [islandRealtimePlugin(root, runtime, follows, live.length === files.length)]),
         solidDedupePlugin(root),
         ...frameworkDedupePlugins(root),
-        solidJsxPlugin,
+        context.coverage ? solidJsxCoveragePlugin : solidJsxPlugin,
         context.styles,
       ],
       // The third one, and it is a `define` rather than the plugin this used to be: Bun selects
@@ -256,7 +264,9 @@ async function buildAll(
   }
   await refuseDuplicatedModules(files.join(', '), built.metafile, context.io);
   const sources = new Map<string, SourcePaths>();
-  const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
+  const linked = linkOutputs(
+    await builtOutputs(root, files, built.outputs, sources, context.coverage),
+  );
   const entries = loadingRuntime(entryChunks(files, linked, sources), live, runtime).map(
     (chunk): IslandChunk => {
       const kind = kinds.get(chunk.file);
@@ -318,47 +328,8 @@ interface BuildContext {
   readonly io: ModuleIdentityIo;
   /** Solid as one shared output (`island-vendor.ts`); `undefined` bundles it into each build. */
   readonly vendors: Vendors | undefined;
-}
-
-export interface BuildIslandsOptions {
-  /**
-   * Build ONE island, named app-root-relative — the whole option surface. A test that mounts a
-   * single island otherwise pays every OTHER island's Babel pass and `Bun.build` on every file,
-   * and the reference app is the one that feels it.
-   *
-   * Optional, and it must stay optional: `buildIslands` is on `@ultimat3/cli`'s public surface and
-   * `@ultimat3/testing`'s `IslandBuilder` satisfies it STRUCTURALLY as `(root: string) => …`, which
-   * is what keeps the `cli -> testing` edge pointing the one legal way.
-   */
-  readonly only?: string;
-  /**
-   * One split build over every island (`app.config.ts`'s `islands.sharedChunks`, off by default),
-   * or one build per route group (`island-groups.ts`). Passed, it overrides the app's config — the
-   * seam a test asks both questions of one fixture through.
-   */
-  readonly sharedChunks?: boolean;
-  /**
-   * Reuse a group's output from `.x/cache/islands/` while every file it read is unchanged
-   * (`island-group-cache.ts`) — on by default. `false` is the seam a determinism test builds
-   * through: a reused byte string proves nothing about the bundler that emitted it.
-   */
-  readonly reuse?: boolean;
-  /**
-   * Whether the app persists records (`appPersistsRecords`), asked only by a group one of whose
-   * islands reaches realtime, and once per call. `x dev` builds islands BESIDE the app load
-   * (`buildGeneration`), so it passes the answer the registry gives once the load settles; read
-   * any earlier it is the empty registry's `undefined`, and every reader islands is held. Absent,
-   * the registry is read as it stands: the caller loaded the app first.
-   */
-  readonly persists?: () => Promise<boolean | undefined>;
-  /**
-   * Solid as ONE shared output every island imports (`island-vendor.ts`), off by default. Measured
-   * As of 2026-11-12 (Bun 1.4.4, solid-js 1.9.17): each island inlines a tree-shaken ~14 kB of
-   * Solid, the whole vendor is 48,083 B, so every Solid route of the three tracked apps grew
-   * +33,572…+38,769 B with it on; it pays only where a page renders four or more Solid islands
-   * that are built apart.
-   */
-  readonly vendorSolid?: boolean;
+  /** `BuildIslandsOptions.coverage`. */
+  readonly coverage: boolean;
 }
 
 /** The `islands` block off the one loader (`app-config-load.ts`) — both off with no config file. */
@@ -388,6 +359,7 @@ export async function buildIslands(
     styles: islandStylesPlugin(),
     io: memoizedIo(hostIo()),
     vendors: vendorSolid ? vendorBuilder(root, ISLAND_BASE_PATH) : undefined,
+    coverage: options.coverage === true,
   };
   let asked: Promise<boolean | undefined> | undefined;
   const persistsOnce = (): Promise<boolean | undefined> => {
@@ -401,7 +373,7 @@ export async function buildIslands(
   const everyIsland =
     files.length > 0 && (options.sharedChunks ?? configured?.sharedChunks ?? false);
   const groups = everyIsland ? [files] : files.length === 0 ? [] : await islandGroups(root, files);
-  const reuse = options.reuse ?? true;
+  const reuse = (options.reuse ?? true) && options.coverage !== true;
   const cache = {
     environment: reuse ? await environmentDigest(root) : '',
     digestOf: inputDigester(),

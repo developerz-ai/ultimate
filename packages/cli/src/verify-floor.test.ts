@@ -26,6 +26,7 @@ import {
   VERIFY_FLOOR_FILE,
   vanishedSuiteFinding,
 } from './verify-floor';
+import { judgeUnrun, STRICT_UNRUN_CODE, strictUnrunFinding } from './verify-strict';
 
 const DECLARED = ['unit', 'contract', 'job', 'e2e'] as const;
 
@@ -397,6 +398,79 @@ describe('rollingSince', () => {
       expect(floor.rollingSince).toBeUndefined();
       expect(floor.problems[0]).toContain('"rollingSince"');
       expect(floorProblemFindings(floor)[0]?.fix).toContain('"rollingSince"');
+    }
+  });
+});
+
+describe('strict: every step runs, or carries a written why', () => {
+  test('strict and skip read through, and absent is off', () => {
+    const floor = parse('{"steps":["unit"],"strict":true,"skip":{"e2e":"no browser surface"}}');
+    expect(floor.strict).toBe(true);
+    expect(floor.skip).toEqual({ e2e: 'no browser surface' });
+    expect(floor.problems).toEqual([]);
+    const off = parse('{"steps":[]}');
+    expect(off.strict).toBeUndefined();
+    expect(off.skip).toBeUndefined();
+  });
+
+  test('a strict floor missing a step fails it without its why, and passes it with one', () => {
+    const bare = parse('{"steps":["unit"],"strict":true}');
+    const red = judgeUnrun(bare, 'e2e', 'no *.e2e.test.ts file', floorRequires(bare, 'e2e'));
+    expect(red.map((finding) => finding.code)).toEqual([STRICT_UNRUN_CODE]);
+    expect(red[0]?.cause).toContain('no *.e2e.test.ts file');
+    expect(red[0]?.fix).toContain('"skip": { "e2e": "<why>" }');
+    const excused = parse('{"steps":["unit"],"strict":true,"skip":{"e2e":"JSON API only"}}');
+    expect(judgeUnrun(excused, 'e2e', 'r', false)).toEqual([]);
+  });
+
+  test('not strict: a missing step is never red — the run warns instead', () => {
+    expect(judgeUnrun(parse('{"steps":[]}'), 'e2e', 'r', false)).toEqual([]);
+    expect(judgeUnrun(undefined, 'e2e', 'r', false)).toEqual([]);
+  });
+
+  test('strict never judges a step the floor requires twice: that is the vanished suite', () => {
+    const floor = parse('{"steps":["e2e"],"strict":true}');
+    expect(judgeUnrun(floor, 'e2e', 'r', floorRequires(floor, 'e2e'))).toEqual([]);
+  });
+
+  test('a strict fix runs verbatim: a shipped command first, the edit behind the #', () => {
+    const fix = strictUnrunFinding('live', 'r').fix;
+    expect(fix.startsWith('x verify --only live --json')).toBe(true);
+    expect(fixProblem(fix)).toBeUndefined();
+  });
+
+  test('a bad strict or skip is a problem whose fix names its own key', () => {
+    const cases = [
+      ['"strict":"yes"', '"strict"'],
+      ['"skip":["e2e"]', '"skip"'],
+      ['"skip":{"e2e":"  "}', 'no written why'],
+      ['"skip":{"nope":"x"}', 'nope'],
+      ['"skip":{"unit":"x"}', 'requires'],
+    ] as const;
+    for (const [body, said] of cases) {
+      const floor = parse(`{"steps":["unit"],${body}}`);
+      expect(floor.problems.join('\n')).toContain(said);
+      const fix = floorProblemFindings(floor)[0]?.fix ?? '';
+      expect(fix).toContain(body.startsWith('"strict"') ? '"strict"' : '"skip"');
+      expect(fixProblem(fix)).toBeUndefined();
+    }
+  });
+});
+
+describe('guardBaseline: a per-guard count that may only fall', () => {
+  test('a count per guard reads through, and absent is none', () => {
+    expect(parse('{"steps":[],"guardBaseline":{"no-eval":3}}').guardBaseline).toEqual({
+      'no-eval': 3,
+    });
+    expect(parse('{"steps":[]}').guardBaseline).toBeUndefined();
+  });
+
+  test('anything else is a problem, whose fix repairs that key', () => {
+    for (const bad of ['[]', '{"no-eval":-1}', '{"no-eval":1.5}', '{"../x":1}']) {
+      const floor = parse(`{"steps":[],"guardBaseline":${bad}}`);
+      expect(floor.guardBaseline).toBeUndefined();
+      expect(floor.problems[0]).toContain('"guardBaseline"');
+      expect(floorProblemFindings(floor)[0]?.fix).toContain('"guardBaseline"');
     }
   });
 });

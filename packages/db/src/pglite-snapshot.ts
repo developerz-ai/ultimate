@@ -108,7 +108,12 @@ export async function readSnapshot(file: string, key: string): Promise<Blob | un
  * Best effort: a cache that cannot be written (a read-only checkout, a full disk) costs the next
  * boot an `initdb`, which is what it cost before there was a cache.
  */
-export async function writeSnapshot(file: string, key: string, blob: Blob): Promise<void> {
+export async function writeSnapshot(
+  file: string,
+  key: string,
+  blob: Blob,
+  keepPrevious = 1,
+): Promise<void> {
   memo.set(key, blob);
   const body = new Uint8Array(await blob.arrayBuffer());
   const temp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -121,12 +126,14 @@ export async function writeSnapshot(file: string, key: string, blob: Blob): Prom
   }
   // One file per PGlite version, and nothing else ever removes an old version's (#738): keep this
   // one and the newest previous one, which a second checkout on the older PGlite may be reading.
+  // A caller-keyed cache (`pglite-data-snapshot.ts`) keeps its own count in a directory of its own.
   // A reader loads the whole file in one read and takes a missing one as a miss, so no lock.
   await evictCacheFiles({
     dir: dirname(file),
     current: basename(file),
     matches: isSnapshot,
     temporary: isSnapshotTemp,
+    keepPrevious,
   });
 }
 

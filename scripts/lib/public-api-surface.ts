@@ -17,8 +17,12 @@ export type Surface =
 export function symbolsOf(texts: Readonly<Record<string, string>>): Record<string, ApiSymbol> {
   const out: Record<string, ApiSymbol> = {};
   for (const [name, text] of Object.entries(texts)) {
-    const shape = shapeOf(text);
-    out[name] = shape === undefined ? { hash: digest(text) } : { hash: digest(text), shape };
+    // `inherits` lines are the parents' text: shape only, so a parent's edit is never the child's.
+    const own = text
+      .split('\n')
+      .filter((line) => !line.startsWith('inherits '))
+      .join('\n');
+    out[name] = { hash: digest(own), shape: shapeOf(text) };
   }
   return out;
 }

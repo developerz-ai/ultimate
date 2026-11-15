@@ -125,6 +125,10 @@ ${SETUP_STEPS}
         run: |
           docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
           cat ${TEST_ENV_PATH} >> "$GITHUB_ENV"
+      # ubuntu-latest ships Chrome, and the \`e2e\` step finds it. Required here, so a runner that
+      # has none (a \`CI_RUNNER\` label) is red with the command that locates one — never a skip.
+      - if: contains(matrix.only, 'e2e')
+        run: echo "E2E_BROWSER_REQUIRED=1" >> "$GITHUB_ENV"
       # Under $RUNNER_TEMP, never in the checkout, where \`lint\` would walk the open file.
       - env:
           PART: \${{ matrix.part }}

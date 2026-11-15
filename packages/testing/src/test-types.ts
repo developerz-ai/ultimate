@@ -8,6 +8,8 @@ import { TestEvalThresholdError } from './errors';
 import type { FixtureBody } from './fixtures';
 import { runWithFixtures } from './fixtures';
 import { paced } from './test-pace';
+import type { TestService } from './test-types-services';
+import { serviceSkipReason } from './test-types-services';
 
 export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as const;
 
@@ -28,7 +30,22 @@ export interface TestOptions {
    * (`paced`). Absent is the run's default, which `x verify` paces the same way.
    */
   readonly timeoutMs?: number;
+  /**
+   * The real servers this test needs, by name (`TEST_SERVICE_ENV`: `postgres` is
+   * `TEST_DATABASE_URL`). Every one set, the test runs; one unset, it is SKIPPED with the service,
+   * its variable and the command that starts it in its reported name — the declaration a live
+   * suite's `describe.skipIf(!Bun.env.TEST_DATABASE_URL)` spelled by hand, on every registrar.
+   */
+  readonly needs?: readonly TestService[];
 }
+
+/** The skip a test whose declared services are unset becomes, or `false` when it may run. */
+const skippedFor = (type: TestType, name: string, options: TestOptions | undefined): boolean => {
+  const reason = serviceSkipReason(options?.needs ?? [], Bun.env);
+  if (reason === undefined) return false;
+  test.skip(testName(type, `${name} (${reason})`), () => undefined);
+  return true;
+};
 
 /**
  * One typed registrar. The body is `test`'s own (`FixtureBody`): it is handed the fixture bag and
@@ -39,6 +56,7 @@ export interface TestOptions {
 const typed =
   (type: TestType) =>
   (name: string, body: FixtureBody, options?: TestOptions): void => {
+    if (skippedFor(type, name, options)) return;
     test(
       testName(type, name),
       () => runWithFixtures(body),
@@ -162,6 +180,7 @@ export const resetE2eDriver = (): void => {
 };
 
 export const e2eTest = (name: string, body: E2eBody, options?: E2eTestOptions): void => {
+  if (skippedFor('e2e', name, options)) return;
   if (e2eDriver === undefined) {
     test.skip(
       testName('e2e', `${name} (no browser driver: x build --target static && x e2e)`),
@@ -193,6 +212,7 @@ export function evalTest<TInput, TOutput>(
   name: string,
   options: EvalOptions<TInput, TOutput>,
 ): void {
+  if (skippedFor('eval', name, options)) return;
   test(
     testName('eval', name),
     async () => {

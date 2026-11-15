@@ -30,7 +30,7 @@ describe('readKind', () => {
   // A factory with no generator is a decision on the record (`generate-factories.ts`): asked for by
   // name, the refusal says it, rather than reading as a typo of some generator.
   test('a factory no generator writes is refused with the reason it has none', () => {
-    for (const raw of ['llm', 'agent-job', 'agentJob', 'export-rows']) {
+    for (const raw of ['llm', 'agent-job', 'agentJob', 'rollup']) {
       const thrown = thrownBy(() => readKind(raw));
       expect([raw, thrown.code]).toEqual([raw, 'X_CLI_UNKNOWN_COMMAND']);
       expect(thrown.cause).toContain('has no generator: ');

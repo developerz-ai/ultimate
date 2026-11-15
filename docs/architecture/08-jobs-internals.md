@@ -81,7 +81,7 @@ export interface JobDriver {
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
-Because `steps` is a driver member, step persistence works identically on both. **Postgres is the default durable driver; `redisJobDriver()` is the second** (`As of 2026-10`): one Lua script per operation over `Bun.redis`, held to `jobDriverConformance` like the other two, with no `introspect`, `backfills` or `leases`. There is no NATS jobs driver: the all-throw stubs were deleted in 25.0.0, and with them the drain body and its `--to` targets. `x jobs drain` is a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`) — running it is `X_NOT_IMPLEMENTED`: there is nowhere to drain to. A driver is chosen by the `jobs` adapter port and nothing else: `jobs:` in `apps/<app>/runtime.ts`, else `postgresJobDriver` over `DATABASE_URL`, installed by the boot through `installJobDriver` (`@ultimat3/jobs/adapter`; [`wiki/Adapters.md`](../../wiki/Adapters.md#jobs)).
+Because `steps` is a driver member, step persistence works identically on both. **Postgres is the default durable driver; `redisJobDriver()` is the second** (`As of 2026-10`): one Lua script per operation over `Bun.redis`, held to `jobDriverConformance` like the other two, with no `introspect`, `backfills` or `leases`. There is no NATS jobs driver: the all-throw stubs were deleted in 25.0.0, and with them the drain body and its `--to` targets. `x jobs` has no `drain` `As of 2026-11-15` — it left the registry ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)): there is nowhere to drain to. A driver is chosen by the `jobs` adapter port and nothing else: `jobs:` in `apps/<app>/runtime.ts`, else `postgresJobDriver` over `DATABASE_URL`, installed by the boot through `installJobDriver` (`@ultimat3/jobs/adapter`; [`wiki/Adapters.md`](../../wiki/Adapters.md#jobs)).
 
 ## The pg claim loop
 
@@ -334,7 +334,7 @@ await onboardOrg.enqueue({ org: { ...30 fields } });  // ❌ a record
 
 | Consequence of a payload-as-record | Detail |
 |---|---|
-| Draining or migrating the queue loses business facts | moving rows between drivers must be a boring operation, the day a second durable driver ships — `x jobs drain` is planned until then |
+| Draining or migrating the queue loses business facts | moving rows between drivers must be a boring operation, the day a second durable driver ships — until then `x jobs` has no `drain` verb |
 | A stale payload overwrites newer state on retry | the job re-applies values captured minutes ago |
 | The truth is unqueryable | "which orgs are mid-onboarding" needs a table, not a queue scan |
 | Step results are not business state either | they are a replay memo with a retention window; if a fact must survive, write it in a step |

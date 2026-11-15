@@ -9,11 +9,39 @@ import { S3_GATEWAY_IMAGE } from './pinned-images';
 export const TEST_COMPOSE_PATH = 'docker/docker-compose.test.yml';
 export const TEST_ENV_PATH = 'docker/test-services.env';
 
-/** Host ports, one place: the compose file publishes them and the env file names them. */
+/** Each service's band start: the dev stack's port plus 50000, so both stacks run at once. */
 export const TEST_PORTS = { postgres: 55432, redis: 56379, nats: 54222, s3: 59000 } as const;
+
+/** How wide each band is: the bands stay disjoint, and two apps collide 1 time in 500. */
+export const TEST_PORT_SPREAD = 500;
+
+type TestPorts = { readonly [K in keyof typeof TEST_PORTS]: number };
+
+/** FNV-1a over the app's name: stable across machines and runs, no dependency. */
+const offsetOf = (name: string): number => {
+  let hash = 0x811c9dc5;
+  for (const char of name) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0;
+  return hash % TEST_PORT_SPREAD;
+};
+
+/**
+ * This app's host ports, one place: the compose file publishes them and the env file names them.
+ * One fixed set made two scaffolds on one machine share 55432, so the second app's live suites
+ * dialled the first app's container; the app's name now picks its offset into each band.
+ */
+export const testPorts = (app: NameSet): TestPorts => {
+  const offset = offsetOf(app.kebab);
+  return {
+    postgres: TEST_PORTS.postgres + offset,
+    redis: TEST_PORTS.redis + offset,
+    nats: TEST_PORTS.nats + offset,
+    s3: TEST_PORTS.s3 + offset,
+  };
+};
 
 const composeTest = (
   app: NameSet,
+  ports: TestPorts = testPorts(app),
 ): string => `# The services the test suites run against — in RAM, and silent.
 #
 #   docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
@@ -22,7 +50,8 @@ const composeTest = (
 #
 # \`--wait\` returns once every healthcheck passes. CI runs the same lines (.github/workflows/ci.yml).
 # None of it is required: with no TEST_* variable set the unit suite runs on the in-memory driver,
-# and a suite that needs a real server skips. Ports are the dev stack's plus 50000, so both run.
+# and a suite that needs a real server skips. Ports are this app's own (its name picks
+# them), above the dev stack's, so both stacks — and two apps — run at once.
 #
 # Three rules, on every service:
 #
@@ -71,7 +100,7 @@ services:
         -c min_wal_size=32MB
         -c max_wal_size=256MB
     tmpfs: [/var/lib/postgresql]
-    ports: ['127.0.0.1:${TEST_PORTS.postgres}:5432']
+    ports: ['127.0.0.1:${ports.postgres}:5432']
     healthcheck:
       # TCP, never the socket: the entrypoint's temporary init server listens on the socket only.
       test: ['CMD-SHELL', 'pg_isready -U ${app.kebab} -h 127.0.0.1 -p 5432']
@@ -84,7 +113,7 @@ services:
     image: redis:8-alpine
     command: ['redis-server', '--save', '', '--appendonly', 'no', '--loglevel', 'nothing']
     tmpfs: [/data]
-    ports: ['127.0.0.1:${TEST_PORTS.redis}:6379']
+    ports: ['127.0.0.1:${ports.redis}:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 1s
@@ -97,7 +126,7 @@ services:
     image: nats:2-alpine
     command: ['-js', '-sd', '/data', '-m', '8222', '-l', '/dev/null']
     tmpfs: [/data]
-    ports: ['127.0.0.1:${TEST_PORTS.nats}:4222']
+    ports: ['127.0.0.1:${ports.nats}:4222']
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8222/healthz']
       interval: 1s
@@ -117,7 +146,7 @@ services:
       ROOT_ACCESS_KEY: ${app.kebab}
       ROOT_SECRET_KEY: ${app.kebab}-test
     tmpfs: [/data/${app.kebab}-test]
-    ports: ['127.0.0.1:${TEST_PORTS.s3}:9000']
+    ports: ['127.0.0.1:${ports.s3}:9000']
     healthcheck:
       test: ['CMD', 'nc', '-z', '127.0.0.1', '9000']
       interval: 1s
@@ -127,13 +156,14 @@ services:
 
 const testEnv = (
   app: NameSet,
+  ports: TestPorts = testPorts(app),
 ): string => `# Where the suites find the services ${TEST_COMPOSE_PATH} starts — the one place these URLs are
 # written. A laptop sources it (\`set -a; . ${TEST_ENV_PATH}; set +a\`); CI appends it to $GITHUB_ENV.
 # TEST_DATABASE_URL is what @ultimat3/testing clones one database per test worker from.
-TEST_DATABASE_URL=postgres://${app.kebab}:${app.kebab}-test@127.0.0.1:${TEST_PORTS.postgres}/postgres
-TEST_REDIS_URL=redis://127.0.0.1:${TEST_PORTS.redis}
-TEST_NATS_URL=nats://127.0.0.1:${TEST_PORTS.nats}
-TEST_S3_URL=http://${app.kebab}:${app.kebab}-test@127.0.0.1:${TEST_PORTS.s3}/${app.kebab}-test
+TEST_DATABASE_URL=postgres://${app.kebab}:${app.kebab}-test@127.0.0.1:${ports.postgres}/postgres
+TEST_REDIS_URL=redis://127.0.0.1:${ports.redis}
+TEST_NATS_URL=nats://127.0.0.1:${ports.nats}
+TEST_S3_URL=http://${app.kebab}:${app.kebab}-test@127.0.0.1:${ports.s3}/${app.kebab}-test
 `;
 
 /** The test stack and its env file. */

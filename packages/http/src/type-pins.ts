@@ -4,6 +4,7 @@
 // regression is a build error, the only enforcement that counts (axiom 3).
 
 import type { Ctx } from '@ultimat3/core';
+import type { AppHttpConfig } from './app-config';
 import type { HttpConfig, HttpConfigInput } from './config';
 import type { RequestContext } from './context';
 import type { AuthzDecision } from './hooks';
@@ -85,3 +86,10 @@ export type _EveryHttpConfigKeyIsSettable = Assert<
  * `assertInRequest` exists to prove one way at runtime.
  */
 export type _RequestContextIsACtx = Assert<RequestContext extends Ctx ? true : false>;
+
+/**
+ * The listener's certificate is a fact about the PROCESS (`TLS_CERT`/`TLS_KEY`, `x dev --tls`), so
+ * an app cannot declare it through `configureHttp()` — a second way to serve TLS would be read by
+ * nothing the boot hands it.
+ */
+export type _TlsIsBootOwned = Assert<'tls' extends keyof AppHttpConfig ? false : true>;

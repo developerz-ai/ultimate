@@ -27,9 +27,10 @@ import { machineLease } from './test-slots';
 import type { WorkerPlan } from './test-workers';
 import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
 import { runCovered } from './verify-coverage-run';
-import { withE2eApp } from './verify-e2e';
+import { judgeE2eBrowser, withE2eApp } from './verify-e2e';
 import { factoryFindings } from './verify-factories';
 import { readVerifyFloor } from './verify-floor';
+import { withTestServices } from './verify-live';
 import type { MachinePace } from './verify-pace';
 import { DECLARED_PACE, defaultTimeoutArgs, pacedMs, paceEnv } from './verify-pace';
 import { seedFindings } from './verify-seeds';
@@ -244,11 +245,17 @@ const runSerial = async (
   const result =
     type === 'e2e'
       ? await withE2eApp(
-          { root: ctx.root, isApp: isApp(ctx.root), command, env: envOverrides },
+          {
+            root: ctx.root,
+            isApp: isApp(ctx.root),
+            command,
+            env: envOverrides,
+            hostEnv: ctx.env ?? Bun.env,
+          },
           exec,
         )
       : await exec({ command, env: envOverrides });
-  return {
+  const outcome: StepOutcome = {
     ...fromExec(result, {
       code: 'X_TEST_FAILED',
       cause: `one or more ${type} tests failed`,
@@ -257,6 +264,15 @@ const runSerial = async (
     workers: 1,
     tests: countsOf([result]),
   };
+  // A floored e2e step that found no browser says which browser to install, never only "re-run".
+  return type === 'e2e'
+    ? await judgeE2eBrowser({
+        root: ctx.root,
+        isApp: isApp(ctx.root),
+        outcome,
+        env: ctx.env ?? Bun.env,
+      })
+    : outcome;
 };
 
 /**
@@ -484,5 +500,11 @@ const stepFor = (type: TestType): VerifyStep => {
   };
 };
 
+/** One test type's step BEFORE the live wrap: what `verify-live.test.ts` wraps over its own probe. */
+export const bareTestStep = stepFor;
+
 /** In cost order: unit needs nothing, e2e needs a build. */
-export const TEST_STEPS: readonly VerifyStep[] = TEST_TYPES.map(stepFor);
+// The live step brings up the app's own test database when none answers (`verify-live.ts`).
+export const TEST_STEPS: readonly VerifyStep[] = TEST_TYPES.map(stepFor).map((step) =>
+  step.name === 'live' ? withTestServices(step) : step,
+);

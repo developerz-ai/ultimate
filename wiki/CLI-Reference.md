@@ -32,7 +32,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x stop [--timeout 30s]` | stop this checkout's `x dev` (the pid its `.x/dev.lock` names, nothing else) and return once the next `x dev` can boot | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
-| `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill, diagnostics | shipped |
+| `x db <sub>` | gen, migrate, reset, seed, branch, backfill, diagnostics | shipped |
 | `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]] \| --changed [--base <ref>] [--dirty]] [--workers N] [--isolate]` · `x verify merge <part.json…>` · `x verify plan [--parts n]` | the gate — 21 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example\|init]` | validate the process env against `envSchema`, regenerate `.env.example` from it, or write `.env.production` (`init --production`) | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
@@ -47,10 +47,10 @@ x version              # CLI version
 | `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
-| `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue · `drain` is **planned** | shipped |
+| `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue · `drain` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
-| `x exercise [<name>] [--seed n]` | run every action, query and job once on generated rows, with no test written; the gate's `exercise` step | shipped |
+| `x exercise [<name>] [--seed n] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's `web` and `worker` roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy or each role signalled, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
@@ -66,13 +66,14 @@ x version              # CLI version
 | `x docs "<question>"` | framework docs and this wiki, offline, from the install — the first lookup | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate, the section to read | shipped |
-| `x token create\|list\|revoke` | MCP and API tokens in the app's `x_api_keys`: issue one with exact scopes (plaintext shown once), list an owner's, revoke one · `grant` is **planned** | shipped |
+| `x token create\|list\|revoke` | MCP and API tokens in the app's `x_api_keys`: issue one with exact scopes (plaintext shown once), list an owner's, revoke one · `grant` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x config show [--section <key>]` | the resolved `app.config.ts`, defaults merged, credentials redacted | shipped |
-| `x logs tail [--lines n] [--role <role>]` | the last lines of `.x/dev.log` or `.x/logs/<role>.log` — the `logs.tail` MCP tool's file and reader | shipped |
-| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` is **planned** | shipped |
+| `x logs tail [--lines n] [--role <role>]` | the last lines of `.x/dev.log`, or one role's (its `.x/logs/<role>.log`, else its lines of the dev log) — the `logs.tail` MCP tool's reader | shipped |
+| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#not-built-yet)) | shipped |
 | `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
+| `x profile <route> [--runs 20] [--top 10]` | a CPU profile of rendering one route in this process: the hottest functions, file and line | shipped |
 | `x branch` | copy-on-write branch environments | planned |
-| `x status` | connected-client build-ID distribution, role health | planned |
+| `x status [--url <origin>] [--samples n]` | the build each live worker runs (`x_job_workers`), and the build, status and role each sampled origin's `/readyz` answers | shipped |
 | `x ai` | eval, cache stats, reindex | planned |
 | `x money add-currency` | extend the currency table | planned |
 
@@ -142,12 +143,14 @@ in the summary and `mcp` in `--json`; an app exporting several prints one line p
 `--json` lists them all in `mcpPaths`, endpoint #0 first.
 
 ```bash
-x dev [--port 3000] [--role web,worker] [--once] [--json]
+x dev [--port 3000] [--host 0.0.0.0] [--tls] [--role web,worker] [--once] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--port` | string | `3000` | HTTP port. The `sync` role listens on `--port + 1` |
+| `--host` | string | `localhost` | the interface every socket binds — web, `sync`, metrics: one decision. `localhost` or an IP literal (`0.0.0.0`, `::`, `192.168.1.5`, `[::1]`); a hostname or a typo is `X_CLI_BAD_FLAG`. `HOST` is not read here (the container's variable must not widen a dev shell). A wildcard is reported as `http://localhost:<port>`; `--json` carries `host` |
+| `--tls` | boolean | `false` | the web listener serves https with a generated self-signed ECDSA certificate (no openssl, no dependency), cached in `.x/tls/` — `cert.pem`, `key.pem` (0600) — and regenerated when its names change or within 7 days of its 90-day end. It carries `localhost`, `127.0.0.1`, `::1` and a specific `--host` address. The summary prints the path; `--json` carries `tls.certPath` (`null` without the flag). Trust it once: `curl --cacert .x/tls/cert.pem`, or the OS keychain. No HSTS in dev — a browser pins it per host, every localhost port at once. The `sync` port and the metrics endpoint stay plaintext |
 | `--role` | string | `web,sync,worker,scheduler` | comma-separated roles to run in this process |
 | `--once` | boolean | `false` | boot, report, exit — for smoke tests and CI |
 
@@ -165,6 +168,13 @@ importing them IS the registration. What those modules registered is then served
 
 A module that will not import becomes a finding on the result rather than a dead process, so the
 dev loop stays reachable while something is broken.
+
+**`/_x` stays loopback-only whatever `--host` binds, `As of 2026-11`:** a non-loopback `Host` is
+`X_DEV_HOST_REFUSED` (421), and a non-loopback peer naming a loopback `Host` is
+`X_DEV_PEER_REFUSED` (403) — the peer as the pipeline resolves it (`TRUSTED_PROXY_HOPS` honoured,
+so a terminator in front forwards the real client's address). Bound to one specific non-loopback
+address, nothing loopback listens: the summary prints `introspect none` and `--json`'s
+`introspect` is `null`. Over `--tls` the same two checks hold.
 
 **What it watches is decided before a descriptor is taken, and the ignore set is your own
 `.gitignore`, `As of 2026-09-06`.** `x dev` walks the app root and opens one non-recursive watcher
@@ -317,6 +327,7 @@ Errors: `X_DEV_STOP_TIMEOUT`, `X_CLI_BAD_FLAG` (a `--timeout` that is not a posi
 ```bash
 x g resource|action|mutator|backfill|job|route|policy|entity|query|task <name> [--feature f]
 x g cron-job|purge|webhook-receiver <name> [--feature f]   # a primitive factory's one call + tests
+x g export-rows|import-rows <name> --feature f   # the slice's table through storage + tests
 x g island <name> [--at <dir>]              # a client component on an otherwise static page
 x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen, guarded by construction
 x g guard <name>                            # a convention this app enforces, as a build error
@@ -355,7 +366,14 @@ The boot guard is generated, app-owned: `apps/web/runtime.ts` calls `assertSignI
 | `x g purge <name>` | `jobs/<name>.ts`, `<name>.job.test.ts`, `<name>.test.ts`, `tasks/<name>-hourly.ts` | `purge({ name, entities: 'declared' })` — the sweep for every `retain` the schema declares (`X_ENTITY_RETAIN_UNSWEPT` without one), fired on `DEFAULT_PURGE_CRON` |
 | `x g webhook-receiver <name>` | `jobs/<name>.ts`, `<name>.test.ts`, and the job's entry in `apps/web/exercise.ts` (a draw cannot sign an event, so `x exercise` queues a verified-shape one) | `webhookReceiver()` at `/hooks/<name>`: the exact bytes `verifyBodyHmac`-checked under `<NAME>_WEBHOOK_SECRET` (comma-separated, so a rotation keeps the old one live), the event read out of the signed body, queued, then acknowledged; an unreadable event is the app's own `X_<NAME>_UNREADABLE` |
 
-Every other factory, and why no generator writes it (`exportRows`, `importRows`, `rollup`, `webhook`, `llm`, `agentJob`, …): `FACTORY_GENERATORS` in `packages/cli/src/generate-factories.ts`, held complete against `PRIMITIVE_FACTORIES` by its test.
+**`x g export-rows` · `x g import-rows`** (`As of 2026-11`) are the two factory generators that DO read a table: the slice's own scaffolded one (`db.<plural>`, `title`, `price`), read off its `entity.ts` like `x g backfill`. A `--feature` with no `entity.ts` is `X_FEATURE_REQUIRED`; one whose entity is shaped otherwise is `X_ROWS_SLICE_ENTITY`, fix a `x g job` to declare the call in by hand. Both write `jobs/<name>.ts`, `<name>.job.test.ts` and `<name>.test.ts` (the pass run in process against a memory disk), and read storage through `disk()` — `@ultimat3/storage`, in a new app's dependencies.
+
+| Generator | What the declaration holds |
+|---|---|
+| `x g export-rows <name> --feature f` | `exportRows({ input: { orgId, exportId }, tenant: ({ orgId }) => orgId, source: db.<plural>.where({ orgId }), format: 'csv', columns, row, sink: () => disk() })` — one org's rows, Money as minor units + currency, dates as UTC instants, parts under `exports/<name>/<orgId>/<exportId>/` |
+| `x g import-rows <name> --feature f` | `importRows({ input: { orgId, key }, tenant, source: () => disk(), schema, handle })` — `handle` is `upsertAll(…, { onConflict: ['id'], onMatch: 'nothing' })`, so a replayed page writes nothing twice and never another org's row; refused rows by line under `imports/<name>/<orgId>/errors` |
+
+Every other factory, and why no generator writes it (`rollup`, `webhook`, `llm`, `agentJob`, …): `FACTORY_GENERATORS` in `packages/cli/src/generate-factories.ts`, held complete against `PRIMITIVE_FACTORIES` by its test.
 
 Alias: `x generate`.
 
@@ -450,6 +468,7 @@ lands in `apps/admin/app/admin/pages/` without `--at` — beside the declaration
 | `x g job` · `x g task` · `x g backfill` | `<name>.job.test.ts` | `job` |
 | `x g cron-job` · `x g purge` | `<name>.job.test.ts` **and** `<name>.test.ts` | `job`, `unit` |
 | `x g webhook-receiver` | `<name>.test.ts` | `unit` |
+| `x g export-rows` · `x g import-rows` | `<name>.job.test.ts` **and** `<name>.test.ts` | `job`, `unit` |
 | `x g query` (not live) · `x g entity` · `x g policy` · `x g route` | `<name>.test.ts` | `unit` |
 
 `--force` writes the new name and does not touch a file under the old one, because the old name is not in its output list. Delete the orphan by hand.
@@ -459,7 +478,7 @@ The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which 
 ## x db
 
 ```bash
-x db gen "add publish_at" | migrate | reset | studio
+x db gen "add publish_at" | migrate | reset
      | seed [<name>] [--tier reference|dev] [--dry-run] [--json]
      | branch list | branch create <name> | branch delete <name>
      | backfill --list [--name n] [--status s] [--limit n] [--json]
@@ -474,7 +493,6 @@ x db gen "add publish_at" | migrate | reset | studio
 | `migrate` | apply pending migrations, verify the result, then rewrite the schema dump | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit. Then, `x db migrate` only: the dump is regenerated as `gen` does, and the database is reopened to report any trigger, function, view, type or sequence no migration creates (`unexpected-object`, also `X_DB_DRIFT`). `--json` carries the same `data.schemaDump` |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `seed [<name>]` | apply the app's seeds — every one this environment takes, or the one named | **replayable**: a second run writes nothing and raises nothing, on Postgres as well as in memory. One transaction per seed, so one bad fixture graph cannot roll back the seeds that already landed. `--dry-run` reports what each would write and writes nothing |
-| `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
 | `branch list` | every **managed** branch of this database: name, location, created-at, size | managed means this framework made it — external, a database carrying `createBranch()`'s `comment on database` marker; embedded, a `pgdata-<name>` directory. A branch cloned by the pre-1.2.x `psql` shell-out carries no marker, so it is absent here and `delete` refuses it → [Known gaps](Known-Gaps). `size` reads `unknown` on the embedded database — measuring it is a full directory walk. The delete path only touches what this lists |
 | `branch create <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating. An existing name is `X_BRANCH_EXISTS`, never an overwrite |
 | `branch delete <name>` | delete that branch database (PGlite: its `pgdata-<name>` directory) | a name `list` does not show is refused with `X_DB_BRANCH_FAILED` naming what it *would* have touched — that is the whole guard, and it is why there is no `--force` |
@@ -612,7 +630,7 @@ pre-1.2.0 layout, and reading it as one would drop every table the pair exists t
 
 Errors, seed: `X_DECLARATION_UNKNOWN` (no seed of that name — the cause lists the ones there are), `X_CLI_BAD_FLAG` (an unknown `--tier`, one name declared twice, or a `dev` seed reached under `production` with no consent), and whatever the seed itself threw, reported per seed with the file it came from.
 
-Errors, schema: `X_DB_DRIFT`, `X_SCHEMA_DUMP_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
+Errors, schema: `X_DB_DRIFT`, `X_SCHEMA_DUMP_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `studio` left `x db` `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)).
 
 Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is not a refusal — the sweep simply has not run), `X_BACKFILL_UNKNOWN`, `X_BACKFILL_ENVIRONMENT`, `X_BACKFILL_MIGRATION_PENDING`, `X_BACKFILL_APPLIED`, `X_BACKFILL_RUNNING`. All six are `@ultimat3/jobs`', carry a one-line runnable `fix:`, and are what a non-zero exit from these shapes means — full wording in [Error codes → Backfills](Error-Codes#backfills). `X_BACKFILL_STALLED` is the seventh and never reaches this command: it is raised by the pass, on a worker, so it surfaces through `x jobs show <id>`.
 
@@ -674,6 +692,9 @@ below on `--workers` and batching describe 22.6 and earlier where they differ.
 | `stepTimeoutMs` | `{ "<step>": milliseconds }` — a step's own deadline. Default 8 minutes for the six suites, 5 for every other step; past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes are killed |
 | `exercise` | `{ "unprovenMax"?: <0–1>, "statementsMax"?: <whole ≥ 1> }` — what the `exercise` step's pass may leave unproven, and statements per call (`X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_STATEMENTS_OVER_BUDGET`); absent, each is a warning line → [`x exercise`](#x-exercise), `As of 31.16.0` |
 | `isolate` · `typecheckBin` · `agentsMdMaxBytes` | a fresh global per test file · the `tsc`-compatible binary · the `AGENTS.md` byte budget |
+| `strict` | `true`: every one of the 21 steps runs a check or carries a `skip` why — an unexcused one is red, `X_VERIFY_STRICT_UNRUN`. Absent or `false`: a warning line and `data.unwaived` name the steps that ran none. `As of 2026-11-15`; the default flips to `true` on `next` |
+| `skip` | `{ "<step>": "<why>" }` — the written reason a step runs no check in this repo: a step the gate runs, not one `steps` lists, a non-empty reason. A why over a step that ran is a warning on that step (`drop its entry`) |
+| `guardBaseline` | `{ "<guard>": n }` — a `guards/<guard>.ts` may still report `n` findings: up to `n` they are notices on `boundaries`, above it red (`X_GUARD_OVER_BASELINE`), under it red too, naming the lower number (`X_GUARD_BASELINE_STALE`) — the baseline only falls. A baseline for a guard the app no longer has is stale; a report-only guard (`severity: 'warning'`) is never judged |
 
 Either render prints one line per finished step on **stderr** as each finishes — under `--json`
 `{"step":"lint","ok":true,"ms":21987}`, otherwise (`As of 31.22`) `✓ lint 22.0s`, `○ seo 0.0s` for a
@@ -703,6 +724,11 @@ every reader sees:
 `--json` carries the same fact twice: `steps[].skipped` per step, and `data.skipped` as the list of
 names beside `data.failed`. `all {n} steps passed` is printed only when nothing was skipped.
 
+Every step that ran no check — a skip, a vanished suite, a strict refusal — is printed under the
+table as `skipped: <step> — <reason>` (`no *.e2e.test.ts file in this tree`, `found 3 test(s) and
+every one skipped itself`) and carried in `data.skipReasons` as `{ "<step>": "<reason>" }`,
+`As of 2026-11-15`.
+
 `x.verify.json` ratchets those skips. Hand-written, committed at the repo root, read by the gate
 and written by nothing:
 
@@ -715,6 +741,18 @@ check is a deleted suite — reported as **failed**, not skipped, with `X_VERIFY
 the two edits that resolve it. A repo with no such file is not ratcheted, and a name the gate does
 not run is refused by the `manifest` step (`X_CONFIG_INVALID`) rather than silently covering
 nothing. Removing a line is allowed; it just has to be a diff somebody reviews.
+
+**`live` starts its own test database, `As of 2026-11-15`.** When `x.verify.json` holds `live`
+(or `--only` names it) and nothing answers at `docker/test-services.env`'s `TEST_DATABASE_URL`, the
+step runs `docker compose -f docker/docker-compose.test.yml up -d --wait` — the stack `x new` wrote
+— and hands that env file's values to the suites, for every key the shell left unset. Already
+listening but not sourced: the values are handed over and nothing is started. A `TEST_DATABASE_URL`
+that is not the env file's is your own server, and is never probed or second-guessed. The stack is
+**left running** (RAM only; the next run reuses it) and the step's warning says so, with the stop
+line, `docker compose -f docker/docker-compose.test.yml down`. No Docker, or a start that fails: a
+warning carrying `X_TEST_SERVICES_UNAVAILABLE` and the start command as its fix, and the suites run
+exactly as before — a floor whose every live test then skipped is still `X_VERIFY_SUITE_VANISHED`.
+`packages/cli/src/verify-live.ts` decides when; `verify-services.ts` probes and starts.
 
 `--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` run as
 `bun test --parallel=N`, each worker with its own database; `live` and `e2e` are serial by
@@ -986,6 +1024,7 @@ health probe at once.
 | `ROLE` | `web` | one of `web`, `sync`, `worker`, `scheduler`, `migrate`, `replicator`. **There is no `all`** |
 | `PORT` | `3000` | empty or whitespace falls back to the default; anything else must be an integer in 0–65535 (`0` is legal — an ephemeral port) |
 | `HOST` | `0.0.0.0` | the interface the `web` and `sync` roles bind, and the metrics endpoint with them — one decision. Empty or whitespace falls back to the default. `HOST=127.0.0.1` inside a container is **unreachable through `docker run -p`** — the proxy connects to the container's bridge address, never its loopback — and reachable only where the container shares the host's network namespace (`--network host`) or through a sidecar and `ssh -L` inside it. That is the exposure an app which admits one implicit actor without a login wants, and until 2026-09-07 such an app could not run in a container at all. `runRole({ …, hostname: '127.0.0.1' })` overrides the variable, the way `port` overrides `PORT`, for an app that must never trust the deployment to set it |
+| `TLS_CERT` / `TLS_KEY` | unset | paths of a PEM certificate and its PEM private key, read once at boot by the `web` role, whose listener then serves TLS (a direct TLS socket counts as https: HSTS goes out with no proxy header). Both or neither, `X_CONFIG_INVALID` otherwise: one alone or a path that reads nothing is refused before any service starts, a file that is not PEM of the right kind when the listener is built. Unset — the default — the ingress terminates TLS. `sync` and the metrics endpoint stay plaintext |
 
 | Failure | Code | Fix as printed |
 |---|---|---|
@@ -1210,7 +1249,7 @@ whatever its bearer token was issued.
 | `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
 | `tests.run` | `x test [--filter]` itself — the shell's files, batches and environment, so it agrees with `x test`; structured results — an error outside any test (`1 error` beside `0 fail`) or a non-zero exit is a failure, never `failed: 0` | `dev:test` |
 | `verify.run` | `x verify` itself, so it agrees with the shell; `only: [steps]` is `--only` (not a gate run); structured per-step result | `dev:test` |
-| `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
+| `logs.tail` | last N log lines, optionally for one role: its `.x/logs/<role>.log` when one was written, else the `.x/dev.log` lines whose `role` field names it (`As of 2026-11-15`; a line written outside any request or job names none) | `dev:logs` |
 | `requests.statements` | the running `x dev`'s per-request statement ledger: SQL count, repeated statements and N+1 verdicts per recent request, or one `requestId`; `limit` default 10, maximum 50. No `x dev` running: `X_NOT_IMPLEMENTED` naming it (`As of 31.22`) | `dev:logs` |
 | `graph.query` | `{ node }`: what a change to a file or primitive reaches (`x impact`); `{ from, to }`: the edges linking two nodes (`x graph --from --to`) | `dev:read` |
 | `ui.shot` | photograph one route at a named viewport, light or dark; PNG path plus verdict. Launches a browser | `dev:test` |
@@ -1231,7 +1270,7 @@ Never exposed in `ROLE=web`. Errors split by when they fire:
 | boot — configuring an MCP surface with `defineAppMcp` | `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE` | the call throws; no server starts |
 | runtime — one request | `X_MCP_TOOL_UNKNOWN`, `X_INPUT_INVALID` (an `isError` result), `X_MCP_SCOPE_DENIED`, `X_MCP_QUERY_REJECTED`, `X_MCP_NOT_BRANCH_DB`, `X_MCP_PROTOCOL` | that call is refused; the server keeps serving |
 
-A tool this caller may not see is absent from `tools/list` and answers ToolNotFound, never Forbidden. `x token grant <scope>` takes effect on the next connection — scopes are fixed for the life of one. Full model: [MCP and AI](MCP-And-AI).
+A tool this caller may not see is absent from `tools/list` and answers ToolNotFound, never Forbidden. A wider token — `x token create --scopes <a>,<b> --json`, then `x token revoke <old-id>` — takes effect on the next connection: scopes are fixed for the life of one. Full model: [MCP and AI](MCP-And-AI).
 
 ## x doctor
 
@@ -1350,7 +1389,6 @@ x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|resolve-s
 | `resolve-step <id> <step>` | answer a `once` step whose outcome is unknown (`X_STEP_OUTCOME_UNKNOWN`): `--ran --output '<json>'` records it `completed` — a replay returns that JSON, default `null` — and `--not-ran` records it `cleared`, so the next run calls it again. Exactly one of the two. Refused on a running job, or a step that did not start-and-not-complete (`X_STEP_NOT_RESOLVABLE`). Answers the job's trace; then `x jobs retry <id>` |
 | `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
 | `resume <queue>` | undo it |
-| `drain` | **planned**, `As of 25.0.0`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs list --json`. Postgres is the one durable job driver, so there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method — a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back — and 25.0.0 deleted both stubs and the unreachable drain body. 25.0.0 also deleted the `--to` and `--dry-run` flags: the parser refuses them as unknown |
 
 `show`, `retry`, `cancel`, `delete` and `promote` each take **one id positional**, `resolve-step` an id and a step name; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `list` only. A bare `x jobs` is `list`. One verb each, no alias: `ls` and `rm` are `X_CLI_UNKNOWN_COMMAND` since 26.0.0.
 
@@ -1398,7 +1436,7 @@ Errors: `X_DECLARATION_UNKNOWN` (with the nearest name as its fix), `X_CLI_BAD_F
 ## x exercise
 
 ```bash
-x exercise [<name>] [--seed n] [--json]
+x exercise [<name>] [--seed n] [--shard i/n] [--json]
 ```
 
 Every action, query and job the app registers, run **once** against generated rows, with no test
@@ -1470,6 +1508,55 @@ floor key opts a page read in yet.
 had no effect has vacuous proofs — a sweep of nothing is `flat`. One warning line names the first
 five, `X_EXERCISE_EMPTY_REACH … — fix: edit exercise.ts: give each an input that reaches its work, or
 { off: '<why>' }`. A warning, not red, on a whole-pass run only.
+
+**Route entries** (`As of 2026-11-15`). What a page needs that a seeded id and a role cannot give it
+is `defineExercise`'s second argument, keyed by the URL pattern `x routes` prints:
+
+```ts
+import type { Actor } from '@ultimat3/core';
+import { defineExercise } from '@ultimat3/testing';
+
+declare const author: Actor; // a signed-in actor the policy allows
+declare function asMember(seated: Actor | null): Promise<Actor | null>;
+declare function ownThread(): Promise<{ id: string }>;
+declare function consentQuery(): Promise<string>;
+
+export const exercise = defineExercise(
+  { publishPost: { actor: author } },
+  {
+    routes: {
+      '/posts/board': { actor: asMember }, // (seated) => the actor the authenticator resolves: its facts
+      '/messages/:id': { params: ownThread }, // computed in the load's own request, as its actor
+      '/oauth/consent': { search: consentQuery }, // the query string a load reads off `url`
+      '/about': { empty: 'renders a static page: no row' },
+      '/admin': { off: 'measured by its own e2e test' },
+    },
+  },
+);
+```
+
+`params`, `search` and an `actor` function run inside the load's request before the observed call,
+so their statements are never the load's; a function that throws leaves the load `unreached` with
+`its exercise.ts <field> threw`. `statements: { max, why }` moves its ceiling. A blank `off`, `empty`
+or `why` is `X_CONTRACT_EXERCISE_UNDECLARED`; a pattern no route with a `load` has is
+`X_DECLARATION_UNKNOWN` before a row is written. A load that reads the app's own typed client
+(`queries.orgPosts(…)` over `APP_URL`) is answered **in process** by the app's API, as the actor the
+load runs as — `APP_URL` is set to `http://localhost:3000` when the env names none — so its
+statements are counted and swept like the page's own. A route load reached with no statement and no
+effect is its own `· X_EXERCISE_EMPTY_REACH` line, its fix the `empty` entry to paste; a primitive's
+entry takes `empty: '<why>'` too, and a record whose entry gives one carries it as `empty`.
+
+**Push is an effect** (`As of 2026-11-15`). Every actor holds one stand-in Web Push device in the
+pass, as the memory mail driver accepts every address, so a notifier's `webPush()` encrypts, signs
+and sends to the captured push service, and the record carries `{ kind: 'push', host, count }`. A
+pusher that sends nothing leaves no effect: its job is an empty reach, not a delivered push.
+
+**`--shard i/n`** (`As of 2026-11-15`) runs the i-th of n disjoint slices of the pass — primitives,
+then routes, by their position in the registry — on its own scratch database, and writes
+`.x/exercise.<i>-of-<n>.json` (never `.x/exercise.json`). Run the n slices as n processes. Each
+slice's findings are its own; the static findings and the subject proof are slice 1's; the whole-pass
+floor (`unprovenMax`, its warning line) is judged only unsharded. Beside a `<name>`, or not i/n,
+`X_VERIFY_SHARD_INVALID`, fix `x exercise --shard 1/2 --json`.
 
 Errors: `X_CONTRACT_EXERCISE_UNREACHED`, `X_CONTRACT_EXERCISE_UNDECLARED`, `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`, `X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_EXERCISE_SEED_FAILED`, `X_STATEMENTS_OVER_BUDGET`; warning lines only: `X_EXERCISE_EMPTY_REACH`.
 
@@ -1656,6 +1743,7 @@ A dry run refuses exactly what the real run would, then stops before step 4. It 
 | `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
 | `agentsMd` | `link`: `AGENTS.md` was byte-identical to `CLAUDE.md` and the hop makes it a relative symlink to it · `linked`: already one · `differs`: two different files, left alone; merge what only `AGENTS.md` says into `CLAUDE.md`, then `ln -sf CLAUDE.md AGENTS.md` · `none`: one of the two is missing · `null`: no hop planned |
 | `guards` | `{ reported, missing[], differs[], installed[], withheld[] }` from the hop's own `x doctor`. `As of 31.16.0` each missing shipped guard is written from the installed release's template and kept when `boundaries` finds nothing more with it on disk: `installed[]` names it. One the tree already breaks is taken back out: `withheld[]` is `{ name, add, findings }` (`findings: null` when the count could not be measured) and `missing[]` still lists it. `differs[]` — the app's edit or an older copy — is never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
+| `guards.baselined` | `[{ name, findings }]`, absent when empty, `As of 2026-11-15`: a guard the tree breaks, kept anyway — its measured count merged into `x.verify.json` as `"guardBaseline": { "<name>": n }` (beside the app's keys; a baseline the app already wrote for it, or a floor that is not a JSON object, is never touched) and kept only when the installed CLI's `boundaries` then finds no more than before. Also in `installed[]`. `findings: null` stays withheld |
 | `coverage` | a hop that moved the Bun floor re-measures unit coverage (`x verify --only unit`); only when that measurement is `X_COVERAGE_BELOW_FLOOR` is the `x.verify.json` `coverage` floor moved to it, the number that fell alone, with a dated `why`: `{ file, measured, from, to, why }`. `null` when nothing moved |
 | `exerciseFloor` | `{ file, written }`: the `exercise` keys (`unprovenMax`, `statementsMax` ≥ 100) the hop's own `x exercise` measured, written into an `x.verify.json` that stated none, so the hop stays green and the floor only falls. A key the app already wrote is never touched; `null` when nothing was written |
 | `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
@@ -1989,9 +2077,20 @@ For each violation involving the file it reports the offending edge, the full ch
 | `create --scopes <a,b> [--user <id>] [--org <id>] [--env dev\|stage\|prod] [--days n]` | issues one key carrying exactly those scopes (a wildcard is `X_CONFIG_INVALID`). `--env` unsaid is the environment's label: `ULTIMATE_ENV` (else `NODE_ENV`) production → `prod`, staging → `stage`, else `dev`; an unreadable `ULTIMATE_ENV` reads as `prod`. `--user` cuts its scopes to what that user may do and stops it when the user is disabled. The plaintext is printed **once** — in the human lines, or `data.token` under `--json` — and never in the summary; only its SHA-256 is stored |
 | `list --owner <id>` | the keys of a user or org, as `describeApiKey` answers them: no hash, no secret. A key issued with neither is listed by nobody and revoked by its id |
 | `revoke <id>` | revokes it; an unknown or already-revoked id answers `revoked: false`, exit 0 — neither is a key that works |
-| `grant` | **planned**: a key's scopes are fixed when issued. Issue a wider one and revoke the old |
 
 Every flag is read before the database opens: a refusal costs no boot.
+
+## x status
+
+`As of 2026-11-15`. `x status [--url <origin>[,<origin>…]] [--samples n] [--json]` — what the running deployment is, from what it already records. A read, exit 0 whatever it finds: whether one build is fully out is [`x deploy verify`](#x-deploy-verify)'s question.
+
+| Half | Read from | `--json` |
+|---|---|---|
+| workers | every live row of `x_job_workers`, through the queue `x jobs list` opens (`DATABASE_URL`, else the embedded database) | `data.workers`: `count`, `draining`, `byBuild` (a row from before the build column is `unknown`), `rows[]` |
+| origins | `--url`: `--samples` (default 5, 1–50) `GET /readyz` per origin, each on its own connection, so a load balancer chooses again | `data.origins[]`: `origin`, `samples`, `byBuild` (`x-ultimate-build`), `byStatus` (`unreachable` when nothing answered), `unstamped` (a 2xx with no build), `roles` (named by a role's health port) |
+| unrecorded | — | `data.unrecorded`: `web`, `sync`, `scheduler`, `replicator` — no fleet-wide record holds their build; name each one's health origin in `--url` ([Known gaps](Known-Gaps#not-built-yet)) |
+
+`--url` takes bare http(s) origins only — a path, query or credentials is `X_CLI_BAD_FLAG`, as is a `--samples` outside 1–50. Both are refused before any request or connection.
 
 ## x config
 
@@ -1999,7 +2098,7 @@ Every flag is read before the database opens: a refusal costs no boot.
 
 ## x logs
 
-`As of 2026-11`. `x logs tail [--lines n] [--role <role>]` — the last `n` lines (default 100, at most 10,000) of `.x/dev.log`, which `x dev` tees, or of `.x/logs/<role>.log`. The same file, path rule and end-first reader as the `logs.tail` MCP tool. A `--role` that is not a runtime role is `X_CLI_BAD_FLAG` before any path is built; no log yet exits `X_NOT_IMPLEMENTED` with `x dev` as the fix.
+`As of 2026-11`. `x logs tail [--lines n] [--role <role>]` — the last `n` lines (default 100, at most 10,000) of `.x/dev.log`, which `x dev` tees; with `--role`, that role's `.x/logs/<role>.log` when one was written, else the dev log's lines whose `role` field names it (`As of 2026-11-15`). The `logs.tail` MCP tool's reader (`mcp-host-logs.ts`), so both answer the same lines. A `--role` that is not a runtime role is `X_CLI_BAD_FLAG` before any path is built; no dev log yet is `X_DEV_LOG_ABSENT`, fix `x dev`.
 
 ## x cache
 
@@ -2010,28 +2109,43 @@ Every flag is read before the database opens: a refusal costs no boot.
 | `graph` (default) | per tag: the actions whose `invalidates` name it, the queries cached under it and the routes revalidated by it, read off the manifest. `data.neverEvicted` lists the tags something reads and no action invalidates — fresh only until their TTL |
 | `bust <tag>` | boots the app's declared tiers and bus as a role does (`startServices`), then `invalidateTags`: shared tiers dropped, the edge purged, every replica told. With an in-process bus (no `NATS_URL`, no `REDIS_URL`) the summary says no running server heard it. A tier that failed is `X_CACHE_DRIVER_UNAVAILABLE`, exit 1; an undeclared tag is `X_CACHE_TAG_UNKNOWN` |
 | `clear` | the same bust over every declared tag. An entry cached under no tag waits for its TTL |
-| `stats` | **planned**: hit rates live in the serving processes — the `/_x` cache panel reads them there |
 
 ## x explain
 
 `As of 2026-11`. `x explain <query> [--input '<json>'] [--org <id>]` — the query run once on the app's dev database (rows discarded; its policy is not asked, as `explainQuery`'s is not), every statement it **sent** captured off `db.statement` and planned by `sweepPlans`: the oracle the `exercise` step judges with. A read no declared index serves is `X_QUERY_UNINDEXED` / `X_QUERY_SORT_UNSERVED` with the `indexes:` entry as its fix, exit 1. A query over a tenant-scoped entity needs `--org`, else `X_CLI_BAD_FLAG`. Tables the dev database lacks are listed as not planned — run `x db migrate` first. An external `DATABASE_URL` where `ULTIMATE_ENV` (else `NODE_ENV`) resolves production — or `ULTIMATE_ENV` is unreadable — is refused before anything opens, `X_EXPLAIN_PRODUCTION_DATABASE`: the query would be sent for real with its policy skipped. Plan on the embedded database, or on a staging restore under `ULTIMATE_ENV=staging`.
 
+## x profile
+
+`As of 2026-11`. `x profile <route> [--runs 20] [--top 10] [--json]` — the app booted in this
+process (`x dev`'s boot, web role, an ephemeral port, the same `.x/dev.lock` claim — so a running
+`x dev` on the checkout is `X_DEV_ALREADY_RUNNING`), the route requested once to warm it, then
+`--runs` more through the pipeline's in-process dispatch under JavaScriptCore's sampling profiler
+(`bun:jsc`, 100 µs). Reports the `--top` hottest functions by self samples:
+
+| `--json` field | Meaning |
+|---|---|
+| `route`, `status`, `runs` | what was rendered, the warm-up's status, how many requests were sampled |
+| `samples`, `intervalMicros` | samples taken and the sampling interval |
+| `hottest[]` | `{ name, file, line, self, total, selfPercent }` — `file` root-relative for the app's own, `native` for a frame with no source; `total` counts samples with the function anywhere on the stack |
+
+A route answering `>= 400` is profiled and reported red, `X_PROFILE_ROUTE_FAILED` (fix: `x routes
+--json`). An absolute URL, a missing route or a `--runs` outside 1–10000 is `X_CLI_BAD_FLAG`.
+
 ## Planned commands
 
 Specified in the design docs, not yet implemented. Every one is in the command registry: calling it exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts and only one of them is true.
 
-The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement: `x db studio`, `x jobs drain`, `x token grant` and `x cache stats`. Each stays in its command's subcommand list, so the parser reaches it and `x help <command>` lists it.
+The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement — and is empty `As of 2026-11-15`: `x db`'s `studio`, `x jobs`'s `drain`, `x token`'s `grant` and `x cache`'s `stats` left the registry, each with its reason in [Known gaps](Known-Gaps), and the parser now refuses each with `X_CLI_UNKNOWN_COMMAND` — exit 1, as `X_NOT_IMPLEMENTED` was.
 
 | Command | Purpose | `fix:` today |
 |---|---|---|
 | `x branch [<name>\|delete <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch list --json` — the database half: `list`, `create <name>`, `delete <name>` |
-| `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
 | `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x errors explain X_CURRENCY_UNKNOWN --json` — extend it in code: `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot. Shipped `As of 2026-08`, and it is what this command promised |
 
-**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x status --follow --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
+**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x branch --follow --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
 
-`x token`, `x config`, `x logs` and `x cache` left this table `As of 2026-11` (plan 101-full-stack-efficiency-sweeps U5); each has its section above.
+`x token`, `x config`, `x logs` and `x cache` left this table `As of 2026-11` (plan 101-full-stack-efficiency-sweeps U5), `x status` `As of 2026-11-15`; each has its section above.
 
 ## Names that moved
 

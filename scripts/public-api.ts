@@ -76,6 +76,12 @@ function breakFinding(one: ApiBreak, lock: ApiLock, version: string, source: str
   };
 }
 
+/** Whether any entry was recorded without a shape — re-baselined from the tags until written. */
+const shapeless = (entries: ApiSnapshot): boolean =>
+  Object.values(entries).some((names) =>
+    Object.values(names).some((one) => one.shape === undefined),
+  );
+
 async function readLock(root: string): Promise<ApiLock | string | undefined> {
   const file = Bun.file(`${root}/${LOCK_PATH}`);
   if (!(await file.exists())) return undefined;
@@ -122,7 +128,7 @@ export async function publicApiReport(
     );
   }
   const migrated =
-    lock?.format === 1
+    lock !== undefined && (lock.format === 1 || shapeless(lock.entries))
       ? await migrateLock(root, lock, packages, options.tags, options.tsc)
       : undefined;
   const baseline: ApiSnapshot = migrated?.entries ?? lock?.entries ?? tree;

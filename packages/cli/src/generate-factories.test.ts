@@ -39,10 +39,10 @@ describe('unit · x g · one row per primitive factory', () => {
     }
   });
 
-  test('the four factories x g writes, by name', () => {
+  test('the six factories x g writes, by name', () => {
     expect(
       FACTORY_GENERATORS.filter((row) => 'generator' in row).map((row) => row.factory),
-    ).toEqual(['backfill', 'cronJob', 'purge', 'webhookReceiver']);
+    ).toEqual(['backfill', 'cronJob', 'exportRows', 'importRows', 'purge', 'webhookReceiver']);
   });
 
   // A draw cannot sign a vendor event, and `payload` is free JSON the handler trusts verified: the

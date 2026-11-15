@@ -18,7 +18,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **An app declares its half of `HttpConfig` through `configureHttp()`**, and the boot lays its own
   facts over it. `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>` — derived, so a
   boot-owned key (`port`, `hostname`, `dev`, `buildId`, `signInPath`, `trustProxy`,
-  `trustedProxyHops`, `rateLimit.scope`) is a type error where an app writes it. `mergeHttpConfig`
+  `trustedProxyHops`, `tls`, `rateLimit.scope`) is a type error where an app writes it. `mergeHttpConfig`
   merges `security.csp.extend` per directive. `type-pins.ts` refuses a key on `HttpConfig` missing
   from `HttpConfigInput`.
 - **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role); the deleted
@@ -29,7 +29,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A `security.csp.extend` entry must emit only the directive it names**
   (`X_CSP_DIRECTIVE_INVALID`); `buildCsp` builds through a `Map`.
 - **The security headers are built once per `(SecurityConfig, https)`** (`responseSecurityHeaders`, a
-  `WeakMap`); a config is never mutated after `defineHttpConfig`. HSTS only when `ctx.https` is affirmed.
+  `WeakMap`); a config is never mutated after `defineHttpConfig`. HSTS only when `ctx.https` is affirmed (a direct `tls` listener affirms it).
 - **A `content-security-policy` the handler set is kept**: the `response` stage APPENDS the app's
   policy beside it (two policies, both enforced), so a handler can narrow — `sandbox` on a served
   upload — and never widen. Every other security header is set over the handler's (`stages-csp.test.ts`).
@@ -245,6 +245,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `health-disclosure.ts` | WHO `/healthz` and `/readyz` tell the detail to: `healthDetailPeers`, its screen, the trusted-proxy half. Body rule and peer match are core's |
 | `bearer-mount.ts` | a second door onto existing routes: `Authorization: Bearer` on a prefix, the scope cut, the per-token allowance |
 | `request-facts.ts` | `RequestFacts`, any token resolver's frozen 2nd arg; address = `ctx.ip` |
+| `config-tls.ts` | the listener's own certificate: both PEMs or neither |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 | `compress.ts` | the `compress` stage's rule: which answers leave coded |
 | `compress-precode.ts` | the immutable-asset precoder: background br/zstd/gzip once per key, `pick` by `accept-encoding` |

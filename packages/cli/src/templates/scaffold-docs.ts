@@ -86,13 +86,14 @@ branch whose test cannot fail is worse than an uncovered one, because it reads a
 \`exclude\` entry under \`coverage\` is for code a unit test cannot execute — an island's
 browser-only mount, a container entry point — carries its \`why\`, and is printed by \`bunx x doctor\`.
 
-Every test the scaffold and the generators write is the idiom to copy. All of them run on the
-\`unit\` step — in process, on the in-memory driver, with no database, browser or server.
+Every test the scaffold and the generators write is the idiom to copy. A \`*.live.test.ts\` runs
+on a real Postgres, a \`*.e2e.test.ts\` in a real browser; the rest on \`unit\`, in memory.
 
 A suite that needs a real server reads it from \`docker/test-services.env\`: Postgres 18, Redis, NATS
-and S3 from \`docker/docker-compose.test.yml\`, in RAM, with durability and logging off — CI starts
-it before \`bun run verify\`, a laptop with \`docker compose -f docker/docker-compose.test.yml up -d
---wait\` then \`set -a; . docker/test-services.env; set +a\`. A resource a test opens is held with
+and S3 from \`docker/docker-compose.test.yml\`, in RAM, with durability and logging off.
+\`bun run verify\` starts it itself when nothing answers at \`TEST_DATABASE_URL\` and Docker is
+there; by hand it is \`docker compose -f docker/docker-compose.test.yml up -d --wait\` then
+\`set -a; . docker/test-services.env; set +a\`. A resource a test opens is held with
 \`await using\` — \`await using db = await acquireWorkerDatabase()\` drops its database however
 the test ends:
 
@@ -151,7 +152,8 @@ bun run dev     # all roles in one process, embedded Postgres, /_x mounted
 bun run verify  # the gate: typecheck, lint, boundaries, tests, drift, budgets (it builds to weigh)
 \`\`\`
 
-Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them:
+Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them.
+\`bun run verify\` starts them when nothing answers and Docker is there; by hand:
 
 \`\`\`sh
 docker compose -f docker/docker-compose.test.yml up -d --wait

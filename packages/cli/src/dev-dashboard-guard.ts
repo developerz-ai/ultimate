@@ -1,8 +1,14 @@
-// The doors in front of `/_x` that a browser can knock on. `x dev` binds loopback, but a page the
-// developer has open can still reach it: by DNS rebinding (a hostile name that resolves to
-// 127.0.0.1, read back same-origin) and by a cross-site request to the SQL panel.
+// The doors in front of `/_x`. `x dev` binds loopback by default, but a page the developer has
+// open can still reach it: by DNS rebinding (a hostile name that resolves to 127.0.0.1, read back
+// same-origin) and by a cross-site request to the SQL panel. Bound wider (`--host`), a LAN peer
+// can knock too, naming a loopback Host itself — so the peer's own address is asked as well.
 
-import { proveSameOrigin, renderFixShellArg, UltimateError } from '@ultimat3/core';
+import {
+  peerAddressClass,
+  proveSameOrigin,
+  renderFixShellArg,
+  UltimateError,
+} from '@ultimat3/core';
 import type { UltimateRequest } from '@ultimat3/http';
 import { csrfBlocked, HttpError, jsonResponse, selfOrigin } from '@ultimat3/http';
 import { t } from '@ultimat3/schema';
@@ -20,24 +26,55 @@ export class DevHostRefusedError extends UltimateError {
   }
 }
 
+/**
+ * A `/_x` request from a peer that is not this machine — `x dev --host` bound a wider interface,
+ * and `/_x` (the app's SQL, outbox and spans) stays loopback-only whatever it bound. The fix dials
+ * the same server through loopback, which a wildcard bind answers on too.
+ */
+export class DevPeerRefusedError extends UltimateError {
+  constructor(input: { devUrl: string }) {
+    const port = URL.parse(input.devUrl)?.port ?? '';
+    const loopback = `http://localhost${port === '' ? '' : `:${port}`}/_x`;
+    super({
+      code: 'X_DEV_PEER_REFUSED',
+      cause:
+        'a /_x request came from a peer address that is not loopback — x dev was bound past loopback with --host, and the dev dashboard answers this machine only',
+      fix: `curl -sS -H 'accept: application/json' ${renderFixShellArg(loopback, 'http://localhost:3000/_x')}   # on the machine x dev runs on; x dev --host 0.0.0.0 keeps loopback bound`,
+    });
+  }
+}
+
+/**
+ * The caller's address as the pipeline resolved it — the socket's, or the trusted hop's when
+ * `TRUSTED_PROXY_HOPS` says a terminator sits in front. `null` is no socket at all: an in-process
+ * `pipeline.fetch()`, which is this process calling itself.
+ */
+const peerIsLocal = (request: UltimateRequest): boolean =>
+  request.ctx.ip === null || peerAddressClass(request.ctx.ip) === 'loopback';
+
 /** The Host as sent, else the one the URL was built from — Bun builds it from the header. */
 const hostnameOf = (request: UltimateRequest): string | undefined => {
   const header = request.header('host') ?? request.url.host;
   return URL.parse(`http://${header}`)?.hostname;
 };
 
+const refusal = (error: UltimateError, status: number): Response =>
+  jsonResponse(
+    { ok: false, error: { code: error.code, cause: error.cause, fix: error.fix } },
+    { status },
+  );
+
 /**
  * `421 Misdirected Request` for a Host that is not this machine, on every `/_x` route. The status
- * says "not this server", which is the truth: a rebound name was never meant to reach it.
+ * says "not this server", which is the truth: a rebound name was never meant to reach it. Then
+ * `403` for a peer that is not this machine — the Host was right, the caller is not allowed.
  */
 export function hostRefusal(request: UltimateRequest, devUrl: string): Response | undefined {
   const hostname = hostnameOf(request);
-  if (hostname !== undefined && isLoopbackHostname(hostname)) return undefined;
-  const error = new DevHostRefusedError({ devUrl });
-  return jsonResponse(
-    { ok: false, error: { code: error.code, cause: error.cause, fix: error.fix } },
-    { status: 421 },
-  );
+  if (hostname === undefined || !isLoopbackHostname(hostname)) {
+    return refusal(new DevHostRefusedError({ devUrl }), 421);
+  }
+  return peerIsLocal(request) ? undefined : refusal(new DevPeerRefusedError({ devUrl }), 403);
 }
 
 /**

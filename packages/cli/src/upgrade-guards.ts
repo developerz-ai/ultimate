@@ -9,6 +9,7 @@ import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { t } from '@ultimat3/schema';
 import type { ExecResult } from './exec';
 import { documentIn } from './upgrade-document';
+import { restoreFloor, writeGuardBaseline } from './upgrade-guards-baseline';
 
 const GENERATED = t.object({
   data: t.optional(t.object({ files: t.optional(t.array(t.string)) })),
@@ -28,9 +29,20 @@ export interface WithheldGuard {
   readonly findings: number | null;
 }
 
+/** A guard the tree breaks, installed anyway at its measured count (`guardBaseline`). */
+export interface BaselinedGuard {
+  readonly name: string;
+  readonly findings: number;
+}
+
 export interface GuardInstall {
   readonly installed: readonly string[];
   readonly withheld: readonly WithheldGuard[];
+  /**
+   * Also in `installed`: kept because `x.verify.json` now holds it at this many findings. Absent
+   * when none, so a hop that baselined nothing reports exactly what it always did.
+   */
+  readonly baselined?: readonly BaselinedGuard[];
 }
 
 /** Runs the installed CLI with these arguments in the app root. */
@@ -122,7 +134,9 @@ export async function installMissingGuards(input: {
     findings: null,
   });
   const base = await boundariesCount(cli);
-  if (base === undefined) return { installed: [], withheld: missing.map(unmeasured) };
+  if (base === undefined) {
+    return { installed: [], withheld: missing.map(unmeasured) };
+  }
 
   const written = new Map<string, Generated>();
   const withheld: WithheldGuard[] = [];
@@ -140,6 +154,7 @@ export async function installMissingGuards(input: {
   // Newest first, so each artifact ends at the bytes it held before the first run.
   for (const run of [...written.values()].reverse()) await rollback(root, run);
   const installed: string[] = [];
+  const baselined: BaselinedGuard[] = [];
   let held = base;
   for (const guard of missing.filter(({ name }) => written.has(name))) {
     const run = await generate(cli, root, guard.name);
@@ -149,10 +164,30 @@ export async function installMissingGuards(input: {
       held = count;
       continue;
     }
+    // Measured and over: held at its own count, kept only if this CLI's `boundaries` then finds
+    // no more than before — a release that ignores `guardBaseline` leaves it withheld, as it was.
+    if (run !== undefined && count !== undefined) {
+      const findings = count - held;
+      const floor = await writeGuardBaseline(root, guard.name, findings);
+      if (floor !== undefined) {
+        const recount = await boundariesCount(cli);
+        if (recount !== undefined && recount <= held) {
+          installed.push(guard.name);
+          baselined.push({ name: guard.name, findings });
+          held = recount;
+          continue;
+        }
+        await restoreFloor(root, floor.prior);
+      }
+    }
     await rollback(root, run);
     withheld.push({ ...guard, findings: count === undefined ? null : count - held });
   }
-  return { installed, withheld: sortByName(withheld) };
+  return {
+    installed,
+    withheld: sortByName(withheld),
+    ...(baselined.length === 0 ? {} : { baselined }),
+  };
 }
 
 const sortByName = (list: readonly WithheldGuard[]): readonly WithheldGuard[] =>

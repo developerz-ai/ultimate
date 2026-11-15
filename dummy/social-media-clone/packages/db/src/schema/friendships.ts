@@ -34,8 +34,17 @@ export const friendships = entity('friendships', {
      */
     invariant('friendship_responded_coherent', iff(c.status.eq('pending'), c.respondedAt.isNull())),
   ],
-  // "Who wants to be my friend" — the inbox, which reads by addressee, not by requester.
-  indexes: [{ on: ['addresseeId', 'status'] }],
+  indexes: [
+    // "Who wants to be my friend" — the inbox, which reads by addressee, not by requester.
+    { on: ['addresseeId', 'status'] },
+    /**
+     * /friends' two newest-first pages (`friends/repo.ts`), one per direction: the side's id, then
+     * `createdAt desc` and the rest of the key as the tiebreak, all descending, so the bounded read
+     * walks the index instead of sorting every row of the side (`X_QUERY_SORT_UNSERVED`).
+     */
+    { on: ['addresseeId', 'createdAt', 'requesterId'], order: 'desc' },
+    { on: ['requesterId', 'createdAt', 'addresseeId'], order: 'desc' },
+  ],
 });
 
 export type Friendship = typeof friendships.$row;

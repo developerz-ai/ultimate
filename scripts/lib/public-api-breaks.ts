@@ -97,7 +97,8 @@ export function declaredBreak(changelog: Changelog, version: string, name: strin
 
 /**
  * The lock `--write` writes: the tree — compatible changes and declared breaks recorded — except an
- * undeclared break, which keeps what the baseline held so it goes on reporting.
+ * undeclared break, which keeps what the baseline held so it goes on reporting. Every symbol it
+ * writes has a shape (`public-api-breaks.test.ts` holds it to that).
  */
 export function nextLock(
   baseline: ApiSnapshot | undefined,
@@ -108,8 +109,14 @@ export function nextLock(
   const entries = new Map<string, Record<string, ApiSymbol>>();
   for (const [specifier, names] of Object.entries(tree)) entries.set(specifier, { ...names });
   for (const one of undeclared) {
-    const held = own(own(baseline, one.specifier), one.name);
-    if (held === undefined) continue;
+    const recorded = own(own(baseline, one.specifier), one.name);
+    if (recorded === undefined) continue;
+    // Never written shapeless: a held entry whose shape no tag supplied is marked so, and a later
+    // run need not go back to the tags for it (`publicApiReport` re-baselines a shapeless lock).
+    const held: ApiSymbol =
+      recorded.shape === undefined
+        ? { hash: recorded.hash, shape: { kind: 'unrecorded' } }
+        : recorded;
     entries.set(one.specifier, { ...(entries.get(one.specifier) ?? {}), [one.name]: held });
   }
   return { format: LOCK_FORMAT, version, entries: Object.fromEntries(entries) };

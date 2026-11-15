@@ -12,6 +12,7 @@ import type { DevServer } from './cmd-dev';
 import { startDev } from './cmd-dev';
 import { DEV_FIXTURE_FILES as FILES, resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
+import type { ListenerTls } from './serve-env-tls';
 
 /**
  * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
@@ -46,7 +47,10 @@ const freePort = (): number => {
  * `@ultimat3/*` imports resolve through the framework's own tsconfig paths; a dot-prefixed `base`
  * keeps it out of every workspace glob. Each file passes its own `base`.
  */
-export function bootDevFixture(base: string): BootedDev {
+export function bootDevFixture(
+  base: string,
+  options: { hostname?: string; tls?: ListenerTls } = {},
+): BootedDev {
   const root = processRoot(join(import.meta.dir, '..', base));
   const metricsPort = freePort();
   let server: DevServer | undefined;
@@ -60,6 +64,7 @@ export function bootDevFixture(base: string): BootedDev {
     server = await startDev({
       root,
       port: 0,
+      ...options,
       env: { METRICS_PORT: String(metricsPort), BUILD_ID: 'stamped-7' },
       roles: ['web', 'sync', 'worker', 'scheduler'],
     });

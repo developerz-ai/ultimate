@@ -3,7 +3,9 @@
 // documents and the offline fallback, no island, no app UI. `/admin` stays: it is the operator's
 // console. The PWA block stays too: a page `x g` writes into this app is tested offline.
 
+import { VERIFY_FLOOR_FILE } from '../../verify-floor';
 import type { GeneratedFile, NameSet } from '../naming';
+import { verifyFloor } from '../scaffold-verify-floor';
 import { apiKeyFiles } from './api-keys';
 import type { ShapeEdit, ShapeOverlay } from './overlay';
 import { claudeRows, shapeLines } from './shared-edits';
@@ -97,5 +99,7 @@ export const apiShape: ShapeOverlay = {
     ...apiKeyFiles(),
     { path: 'apps/web/api/index.ts', contents: apiIndex(app) },
     { path: 'apps/web/api/index.test.ts', contents: apiIndexTest() },
+    // No page, so no browser suite: `e2e` is excused with its why rather than required of nothing.
+    { path: VERIFY_FLOOR_FILE, contents: verifyFloor({ jobs: true, pages: false }) },
   ],
 };

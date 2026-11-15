@@ -6,7 +6,7 @@ import type { CommandSpec } from './parse';
 export const exerciseSpec: CommandSpec = {
   name: 'exercise',
   summary: 'run every action, query and job once on generated rows, with no test written',
-  usage: 'x exercise [<name>] [--seed n] [--json]',
+  usage: 'x exercise [<name>] [--seed n] [--shard i/n] [--json]',
   requiresApp: true,
   flags: [
     {
@@ -14,6 +14,12 @@ export const exerciseSpec: CommandSpec = {
       type: 'string',
       summary:
         'the integer the seed graph and every generated input are drawn from; same seed, same pass',
+    },
+    {
+      name: 'shard',
+      type: 'string',
+      summary:
+        'i/n: run the i-th of n disjoint slices of the pass, written to .x/exercise.<i>-of-<n>.json; the floor is judged unsharded',
     },
   ],
 };

@@ -395,6 +395,8 @@ const READS_SLICE: ReadonlySet<Generator> = new Set([
   'mutator',
   'query',
   'backfill',
+  'export-rows',
+  'import-rows',
 ]);
 
 /**

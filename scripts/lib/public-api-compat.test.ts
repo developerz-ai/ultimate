@@ -1,5 +1,6 @@
 // Which changes to a declaration every caller survives: an optional member, an optional trailing
-// parameter, a parameter that accepts more. Everything else — and anything unknown — is a break.
+// parameter, a parameter that accepts more, a literal set that grew, a read-only value or class that
+// gained members, a local that changed compatibly. Everything else — and anything unknown — breaks.
 
 import { describe, expect, test } from 'bun:test';
 import type { ApiSymbol } from './public-api-compat';
@@ -118,6 +119,17 @@ describe('public-api-compat · functions', () => {
     );
   });
 
+  test('a function type alias is a function: an optional object property is compatible', () => {
+    const before =
+      'type Build = ( root : string , o ? : { readonly only ? : string ; } ) => Promise < B >';
+    expect(
+      verdict(before, before.replace('only ? : string ;', 'only ? : string ; c ? : boolean ;')),
+    ).toBe('compatible: parameter 2 accepts more properties');
+    expect(verdict(before, before.replace('Promise < B >', 'B'))).toBe(
+      'break: its return type changed',
+    );
+  });
+
   test('a const arrow type is a function: an optional trailing parameter is compatible', () => {
     const before = 'const make : < T > ( seed : T ) => T';
     expect(verdict(before, 'const make : < T > ( seed : T , salt ? : string ) => T')).toBe(
@@ -133,24 +145,169 @@ describe('public-api-compat · functions', () => {
   });
 });
 
-describe('public-api-compat · no shape, no judgement', () => {
-  test('a class, a union alias or overloads change as a break', () => {
-    expect(verdict('class A { x : 1 ; }', 'class A { x : 1 ; y ? : 2 ; }')).toContain('break');
-    expect(verdict('type Mode = "a" | "b"', 'type Mode = "a" | "b" | "c"')).toContain('break');
-    const overloads = 'function f ( a : 1 ) : void\nfunction f ( a : 2 ) : void';
-    expect(verdict(overloads, `${overloads}\nfunction f ( a : 3 ) : void`)).toContain('break');
+describe('public-api-compat · literal sets', () => {
+  test('a literal union that only grew is compatible; one that lost a literal is a break', () => {
+    expect(verdict('type Mode = "a" | "b"', 'type Mode = "a" | "b" | "c"')).toBe(
+      'compatible: 1 literal(s) added — an exhaustive switch over it gains a case',
+    );
+    expect(verdict('type Mode = "a" | "b"', 'type Mode = "a"')).toBe(
+      'break: 1 literal(s) were removed from the set',
+    );
   });
 
-  test('a recorded bare hash (a format-1 lock) judges any change a break', () => {
+  test('`keyof typeof` a local object is the set of its keys', () => {
+    const codes = (keys: string) => `type Code = keyof typeof T\nlocal const T : { ${keys} }`;
+    const before = codes('readonly A : "x" ;');
+    expect(verdict(before, codes('readonly A : "x" ; readonly B : "y" ;'))).toContain(
+      'compatible: 1 literal(s) added',
+    );
+    expect(verdict(before, codes('readonly A : "retitled" ;'))).toBe(
+      'compatible: literals reordered only',
+    );
+    expect(verdict(before, codes('readonly B : "y" ;'))).toContain('break: 1 literal(s)');
+  });
+
+  test('a readonly literal tuple that gained a row is compatible, one that lost one is not', () => {
+    const before = 'const NAMES : readonly [ "a" , "b" ]';
+    expect(verdict(before, 'const NAMES : readonly [ "a" , "z" , "b" ]')).toContain('compatible');
+    expect(verdict(before, 'const NAMES : readonly [ "a" ]')).toContain('break');
+  });
+});
+
+describe('public-api-compat · values and classes, read by callers', () => {
+  test('a const object that gained a member, required or not, is compatible', () => {
+    const before = 'const S : { readonly A : 404 ; }';
+    expect(verdict(before, 'const S : { readonly A : 404 ; readonly B : 409 ; }')).toBe(
+      'compatible: `B` added to a value callers only read',
+    );
+    expect(verdict(before, 'const S : { readonly A : 500 ; }')).toBe(
+      'break: member `A` changed its type',
+    );
+    expect(verdict(before, 'const S : { }')).toBe('break: member `A` was removed');
+  });
+
+  const ERR = 'class E extends B { readonly a : 1 ; constructor ( init : { m : string ; } ) ; }';
+
+  test('a class that gained members and an optional constructor property is compatible', () => {
+    const after = ERR.replace('readonly a : 1 ;', 'readonly a : 1 ; readonly b : 2 ;').replace(
+      'm : string ;',
+      'm : string ; f ? : number ;',
+    );
+    expect(verdict(ERR, after)).toBe(
+      'compatible: `b` added to a value callers only read; constructor: parameter 1 accepts more properties',
+    );
+  });
+
+  test('a class whose constructor needs more, or that lost a member, is a break', () => {
+    expect(verdict(ERR, ERR.replace('m : string ;', 'm : string ; f : number ;'))).toBe(
+      'break: its constructor: parameter 1 gained required property `f`',
+    );
+    expect(verdict(ERR, ERR.replace(' readonly a : 1 ;', ''))).toBe(
+      'break: member `a` was removed',
+    );
+  });
+});
+
+describe('public-api-compat · object-literal parameters', () => {
+  const OPEN = 'function open ( o : { a : string ; } ) : void';
+
+  test('a new optional property is compatible; a new required or a removed one is a break', () => {
+    expect(verdict(OPEN, OPEN.replace('a : string ;', 'a : string ; b ? : 1 ;'))).toBe(
+      'compatible: parameter 1 accepts more properties',
+    );
+    expect(verdict(OPEN, OPEN.replace('a : string ;', 'a : string ; b : 1 ;'))).toBe(
+      'break: parameter 1 gained required property `b`',
+    );
+    expect(verdict(OPEN, OPEN.replace('a : string ;', 'b ? : 1 ;'))).toBe(
+      'break: parameter 1 property `a` was removed',
+    );
+  });
+});
+
+describe('public-api-compat · declarations', () => {
+  const SPEC = 'type S = F & ( { a : 1 ; } | { b : 1 ; } )';
+
+  test('a local interface that gained an optional member is compatible', () => {
+    expect(
+      verdict(
+        `${SPEC}\nlocal interface F { c : 1 ; }`,
+        `${SPEC}\nlocal interface F { c : 1 ; d ? : 2 ; }`,
+      ),
+    ).toBe('compatible: local `F`: optional `d` added');
+  });
+
+  test('a local that needs more, or a changed own text, is a break', () => {
+    const before = `${SPEC}\nlocal interface F { c : 1 ; }`;
+    expect(verdict(before, `${SPEC}\nlocal interface F { c : 1 ; d : 2 ; }`)).toBe(
+      'break: the local type `F` it names: required member `d` was added',
+    );
+    expect(verdict(before, before.replace('b : 1', 'b : 2'))).toContain(
+      'break: its type declaration changed',
+    );
+  });
+
+  test('a removed overload, and a change of kind, are breaks', () => {
+    const overloads = 'function f ( a : 1 ) : void\nfunction f ( a : 2 ) : void';
+    expect(verdict(overloads, 'function f ( a : 1 ) : void')).toContain('break');
+    expect(verdict('type S = { a : 1 ; }', 'function S ( ) : void')).toContain('break');
+  });
+
+  test('a recorded bare hash, or an unrecorded shape, judges any change a break', () => {
     const after = symbol(OPTIONS.replace('; }', '; readonly label ? : string ; }'));
-    expect(classify({ hash: symbol(OPTIONS).hash }, after)).toEqual({
+    const why = 'its declaration changed, and the lock holds no shape to judge the change by';
+    expect(classify({ hash: symbol(OPTIONS).hash }, after)).toEqual({ kind: 'break', why });
+    expect(classify({ hash: symbol(OPTIONS).hash, shape: { kind: 'unrecorded' } }, after)).toEqual({
       kind: 'break',
-      why: 'its declaration changed, and the lock holds no shape to judge the change by',
+      why,
     });
   });
+});
 
-  test('a change of kind is a break', () => {
-    expect(verdict('type S = { a : 1 ; }', 'function S ( ) : void')).toContain('break');
+describe('public-api-compat · inherited members', () => {
+  const BEFORE = 'interface Target extends Arm { readonly browser : B ; }';
+  const PARENT = 'inherits interface Arm { readonly page : P ; readonly clock : C ; }';
+
+  test('a member its `extends` parent already requires, re-declared the same, is no new requirement', () => {
+    const after = `${BEFORE.replace('{', '{ readonly page : P ;')}\n${PARENT}`;
+    expect(verdict(`${BEFORE}\n${PARENT}`, after)).toBe(
+      'compatible: `page` re-declared as its parent `Arm` requires it',
+    );
+  });
+
+  test('re-declared with another type, or required and in no parent, is still a break', () => {
+    expect(verdict(BEFORE, `${BEFORE.replace('{', '{ readonly page : Q ;')}\n${PARENT}`)).toBe(
+      'break: required member `page` was added',
+    );
+    expect(verdict(BEFORE, BEFORE.replace('{', '{ readonly page : P ;'))).toBe(
+      'break: required member `page` was added',
+    );
+  });
+});
+
+describe('public-api-compat · overloads', () => {
+  const MAP = 'function map < T > ( items : readonly T [ ] , o : O ) : Promise < T [ ] >';
+  const ALL =
+    'function map < T > ( items : readonly T [ ] , o : O & { settle : "all" ; } ) : Promise < S [ ] >';
+
+  test('a function that gained overloads, its old call shape still matched, is compatible', () => {
+    expect(verdict(MAP, `${ALL}\n${MAP}`)).toBe(
+      'compatible: every recorded call shape still matches an overload with the same return',
+    );
+  });
+
+  test('an old call shape matched only by an overload with a widened return is a break', () => {
+    const widened = MAP.replace('Promise < T [ ] >', 'Promise < T [ ] | S [ ] >');
+    expect(verdict(MAP, `${ALL}\n${widened}`)).toBe(
+      'break: the recorded call shape matches no overload with the same return — closest: its return type changed',
+    );
+  });
+
+  test('an overload removed from a set is a break; one added is compatible', () => {
+    const two = `${ALL}\n${MAP}`;
+    expect(verdict(two, MAP)).toContain('break: the recorded call shape');
+    expect(verdict(two, `${two}\nfunction map ( ) : void`)).toBe(
+      'compatible: every recorded call shape still matches an overload with the same return',
+    );
   });
 });
 

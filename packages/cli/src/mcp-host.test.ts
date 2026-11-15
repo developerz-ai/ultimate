@@ -436,10 +436,19 @@ const noRunner: Runner = (command) => {
 };
 
 describe('unit · the lazily booted services', () => {
+  // Work that arrives after the host shut down — core's X_DRAINING, never "not implemented":
+  // nothing is missing from this build, the host is on its way out.
   test('a tool call after close() is refused instead of booting a database nobody stops', async () => {
     const lazy = lazyServices({ root: '/tmp/nonexistent-app', env: {}, runner: noRunner });
     await lazy.close();
-    expect(() => lazy.running()).toThrow(/X_NOT_IMPLEMENTED/);
+    let refused: unknown;
+    try {
+      await lazy.running();
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeUltimateError('X_DRAINING');
+    expect((refused as { fix: string }).fix).toStartWith('x mcp serve');
   });
 
   test('close() is idempotent, so both transports may call it on the way out', async () => {

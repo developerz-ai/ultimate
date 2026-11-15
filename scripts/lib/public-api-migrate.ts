@@ -1,7 +1,8 @@
-// A format-1 lock holds hashes only, so no change against it can be classified. Re-baseline it from
-// the release tags: emit each tag's surface, newest first from the lock's own version, and adopt a
-// tag's shape for every symbol whose hash it reproduces. A symbol no tag reproduces keeps its bare
-// hash — any change to it stays a break. Once: `--write` then commits format 2.
+// A lock entry with no shape — all of a format-1 lock, or a format-2 entry written before every
+// declaration had one — cannot be classified. Re-baseline it from the release tags: emit each tag's
+// surface, newest first from the lock's own version, and adopt a tag's shape for every symbol whose
+// hash it reproduces. One no tag reproduces stays bare — any change to it a break — and `--write`
+// marks it `unrecorded`, so the tags are read once.
 
 // why: Bun has no recursive mkdir/remove or symlink of its own; node:fs/promises is the only way.
 import { mkdir, rm, symlink, unlink } from 'node:fs/promises';
@@ -26,13 +27,26 @@ export interface Migrated {
   readonly unresolved: number;
 }
 
-/** `v<version>` and the release tags before it, newest first; none when the tag is not fetched. */
+/**
+ * `v<version>` and the release tags before it, newest first. A checkout that has not fetched that
+ * tag starts at the newest tag below it: the shapes a symbol's hash is matched against are older,
+ * never newer, than the lock's version.
+ */
+export function tagsBelow(tags: readonly string[], version: string): readonly string[] {
+  const start = tags.findIndex(
+    (tag) => /^v\d+\.\d+\.\d+$/.test(tag) && Bun.semver.order(tag.slice(1), version) <= 0,
+  );
+  return start === -1 ? [] : tags.slice(start, start + MIGRATION_TAG_DEPTH);
+}
+
+/** The release tags `tagsBelow` picks, read from git; none when git answers nothing. */
 export async function tagsFrom(root: string, version: string): Promise<readonly string[]> {
   const listed = await run(['git', 'tag', '--list', 'v*', '--sort=-v:refname'], { cwd: root });
   if (!listed.ok) return [];
-  const tags = listed.output.split('\n').map((line) => line.trim());
-  const start = tags.indexOf(`v${version}`);
-  return start === -1 ? [] : tags.slice(start, start + MIGRATION_TAG_DEPTH);
+  return tagsBelow(
+    listed.output.split('\n').map((line) => line.trim()),
+    version,
+  );
 }
 
 /** `tag`'s surface: its `packages/` and `tsconfig.base.json` emitted with this tree's modules. */

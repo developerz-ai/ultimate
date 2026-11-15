@@ -8,6 +8,8 @@ declare module '@babel/core' {
     readonly filename?: string;
     readonly babelrc?: boolean;
     readonly configFile?: boolean;
+    /** Keep each output line at its source line number — a coverage build's only. */
+    readonly retainLines?: boolean;
     readonly parserOpts?: { readonly plugins?: readonly string[] };
     /** `[preset, options]` pairs. The preset itself is opaque here — it is never called. */
     readonly presets?: readonly (readonly [unknown, unknown])[];

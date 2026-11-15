@@ -21,6 +21,8 @@ export interface BuiltOutput {
   readonly file?: string;
   /** Emitted code, the debug-id comment already removed. */
   readonly code: string;
+  /** Its external source map, kept only by a coverage build (`mountIsland` records it). */
+  readonly map?: string;
 }
 
 export interface LinkedFile {
@@ -33,6 +35,8 @@ export interface LinkedFile {
   readonly code: string;
   /** Final basenames of the outputs this one imports, statically or by `import()`, direct only. */
   readonly imports: readonly string[];
+  /** The output's map, unchanged: a renamed specifier stays on its line, so the lines still hold. */
+  readonly map?: string;
 }
 
 /** The final basename a shared chunk is served under — beside every entry, under one base path. */
@@ -83,6 +87,7 @@ export function linkOutputs(outputs: readonly BuiltOutput[]): readonly LinkedFil
       identity: contentHash(code),
       code,
       imports: [...new Set(imports)].sort(),
+      ...(output.map === undefined ? {} : { map: output.map }),
     };
     visiting.delete(output.path);
     linked.set(output.path, done);

@@ -89,6 +89,9 @@ export const humanLines = (input: {
       ? [msg(agentsMd === 'link' ? 'cli.upgrade.agentsMd.link' : 'cli.upgrade.agentsMd.differs')]
       : []),
     ...(gate?.guards.installed ?? []).map((name) => msg('cli.upgrade.guardInstalled', { name })),
+    ...(gate?.guards.baselined ?? []).map((guard) =>
+      msg('cli.upgrade.guardBaselined', { name: guard.name, count: guard.findings }),
+    ),
     ...(gate?.guards.withheld ?? []).map((guard) =>
       guard.findings === null
         ? msg('cli.upgrade.guardUnmeasured', { fix: guard.add })

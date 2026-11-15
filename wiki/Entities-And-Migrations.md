@@ -1357,7 +1357,7 @@ of 2026-11:
 | Generate | `x db gen "add publish_at"` | diffs entities vs migrations, writes a named, ordered migration + its `down` |
 | Apply (dev) | `x db migrate` | runs pending migrations against the dev DB; live queries resubscribe |
 | Check | `x db migrate --json` | the live schema against the ledger it just wrote; exits non-zero on a difference |
-| Inspect | `x db studio` | tables, columns, indexes, FKs, generated SQL — also the `/_x` **Schema** panel |
+| Inspect | `x dev`, then the `/_x` **Schema** panel | tables, columns, indexes, FKs, generated SQL |
 | Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned migration lock while another version's migration is in flight, then applies. The wait is bounded at 60s (`As of 2026-08`) — past that it exits non-zero with `X_MIGRATE_CONCURRENT` instead of hanging the rollout |
 | Test template | automatic | migrate + seed once into `myapp_test_tpl`, then clone per worker |
 

@@ -1,4 +1,4 @@
-// The command surface of `x jobs`: the spec, the planned `drain`, and what `run()` actually
+// The command surface of `x jobs`: the spec and what `run()` actually
 // renders. Driven through an ambient `memoryJobDriver()` so `withJobDriver` reuses it instead of
 // booting a queue — a real driver, real claim/ack semantics, no database and no app to load.
 
@@ -7,7 +7,7 @@ import type { JobDriver } from '@ultimat3/jobs';
 import { memoryJobDriver, resetJobs } from '@ultimat3/jobs';
 import { resetJobDriver } from '@ultimat3/jobs/adapter';
 import { JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
-import { appRoot, contextFor, enqueue, runJobs } from './cmd-jobs-fixture';
+import { enqueue, runJobs } from './cmd-jobs-fixture';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 
@@ -28,7 +28,6 @@ describe('unit · x jobs spec', () => {
       'resolve-step',
       'pause',
       'resume',
-      'drain',
     ]);
     expect(jobsCommand.spec.subcommands).toBe(JOBS_SUBCOMMANDS);
     expect(jobsCommand.spec.name).toBe('jobs');
@@ -276,67 +275,5 @@ describe('unit · x jobs cancel', () => {
   });
 });
 
-// The `redis` target was an `X_NOT_IMPLEMENTED` stub on every method, so a drain onto it LEASED the
-// whole batch off the production queue for `DRAIN_LEASE_MS` (5 min), failed every enqueue and
-// nacked it back — five minutes in which no source worker could claim a job, for a command that
-// could never move one. `drain` is a planned subcommand until a durable second driver ships, and
-// 25.0.0 deleted the stub and its `--to`/`--dry-run` flags: the parser refuses them as unknown.
-describe('unit · x jobs drain is planned', () => {
-  test('drain refuses before leasing', async () => {
-    const memory = memoryJobDriver();
-    const id = await enqueue(memory, 'send-email');
-    let claims = 0;
-    const counted: JobDriver = {
-      ...memory,
-      claim: (options) => {
-        claims += 1;
-        return memory.claim(options);
-      },
-    };
-
-    const thrown: unknown = await runJobs(counted, {
-      subcommand: 'drain',
-      flags: {},
-    }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-
-    expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
-    expect((thrown as { cause?: string }).cause).toBe(
-      'x jobs drain is not implemented in this build',
-    );
-    expect(claims).toBe(0);
-    const row = await memory.introspect?.job(id);
-    expect(row?.state).toBe('ready');
-    expect(row?.attempt).toBe(0);
-  });
-
-  // ORDERING: the planned answer needs no server, so a box whose database is down must get it
-  // rather than the boot failure of a queue the command would never have used.
-  test('the planned answer arrives with no ambient driver, before any queue is booted', async () => {
-    resetJobDriver();
-    const thrown: unknown = await jobsCommand
-      .run(
-        contextFor(appRoot(), {
-          subcommand: 'drain',
-          flags: {},
-          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none' },
-        }),
-      )
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-
-    expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
-  });
-
-  test("its fix is the planned table's, a command this build ships", async () => {
-    const thrown: unknown = await runJobs(memoryJobDriver(), { subcommand: 'drain' }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    expect((thrown as { fix?: string }).fix).toStartWith('x jobs list');
-  });
-});
+// `x jobs drain` left the registry (`cmd-planned-removed.test.ts`): the parser refuses it before
+// any `run`, so nothing is leased and no queue boots.

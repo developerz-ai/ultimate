@@ -11,7 +11,7 @@ import type { RateLimitConfig } from './rate-limit';
  * The keys the BOOT owns, and the reason this type is an `Omit` rather than a hand-written list of
  * what an app may say. Each of these is a fact about the PROCESS — the port it was told to bind,
  * the build it serves, whether it is `x dev`, how many proxies the deployment puts in front of it,
- * `auth.signInPath` from `app.config.ts` — so a value an app wrote for one of them would be
+ * `auth.signInPath` from `app.config.ts`, the certificate it was handed (`TLS_CERT`/`TLS_KEY`, `x dev --tls`) — so a value an app wrote for one of them would be
  * overwritten at every boot: a switch with no wire, which is the defect this whole surface exists
  * to remove. Refused at the type level, which is the build error that enforces it.
  */
@@ -22,7 +22,8 @@ export type BootOwnedHttpKey =
   | 'buildId'
   | 'signInPath'
   | 'trustProxy'
-  | 'trustedProxyHops';
+  | 'trustedProxyHops'
+  | 'tls';
 
 /**
  * What an app declares. `rateLimit.scope` is boot-owned for the same reason as the keys above:

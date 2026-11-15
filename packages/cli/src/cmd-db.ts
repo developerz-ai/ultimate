@@ -20,7 +20,6 @@ import { runBackfillCommand } from './cmd-db-backfill';
 import { runBranchCommand } from './cmd-db-branch';
 import { runRecountCommand } from './cmd-db-recount';
 import { DB_SUBCOMMANDS, dbSpec } from './cmd-db-spec';
-import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { runDiagnostics } from './db-diagnostics';
 import { stepFinding } from './db-finding';
@@ -68,7 +67,6 @@ export const dbCommand: CliCommand = {
     if (sub === 'migrate') return runMigrate(ctx, root, msg('cli.db.migrate.applied'));
     if (sub === 'reset') return runReset(ctx, root);
     if (sub === 'seed') return runSeed(ctx, root);
-    if (sub === 'studio') throw plannedSubcommand('db', 'studio');
     if (sub === 'backfill') return runBackfillCommand(ctx, root);
     if (sub === 'branch') return runBranchCommand(ctx, root);
     if (sub === 'diagnostics') return runDiagnostics(ctx, root);

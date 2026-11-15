@@ -4,8 +4,10 @@
 
 import { memberOf } from '@postly/core';
 import { db, members } from '@postly/db';
+import { memberId, orgId } from '@postly/domain';
 import { type SoftAuthenticator, softAuthenticator } from '@ultimat3/auth/soft-authenticator';
 import {
+  type Actor,
   assert,
   blankRaster,
   encodeImage,
@@ -62,6 +64,17 @@ async function linkedUser(userId: string) {
     });
   }
   return party;
+}
+
+/**
+ * The actor a signed-in request carries here: the seated member, with the `member` and `org` facts
+ * `app/auth/authenticator.ts` resolves at the request boundary — every `app/` page reads them
+ * through `useActor()`. Read inside the load's own request, so the member is the route's tenant's.
+ */
+async function asMember(seated: Actor | null): Promise<Actor | null> {
+  if (seated === null || seated.orgId === undefined) return seated;
+  const { postlyActor } = await import('./shared/actor');
+  return postlyActor(await useContext().orgs.actingFor(orgId(seated.orgId), memberId(seated.id)));
 }
 
 /** A fresh software passkey registered onto `userId` through Postly's own `passkeyLogin`. */
@@ -362,5 +375,18 @@ export const exercise = defineExercise(
     'posts.review': { off: NO_GATEWAY },
     printPost: { off: NO_BROWSER },
   },
-  { actor: members },
+  {
+    actor: members,
+    // Every `app/` page reads the member it renders for: the facts the authenticator resolves.
+    routes: {
+      '/posts/:id': { actor: asMember },
+      '/posts/board': { actor: asMember },
+      '/posts/new': {
+        actor: asMember,
+        empty: 'the editor reads only the actor and the last refused submission: no row',
+      },
+      '/runs': { actor: asMember },
+      '/runs/health': { actor: asMember },
+    },
+  },
 );

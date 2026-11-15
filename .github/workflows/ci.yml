@@ -737,11 +737,21 @@ jobs:
             flags: ''
     env:
       APP: ${{ matrix.app }}
+      # Every scaffold's floor holds `e2e` (templates/scaffold-verify-floor.ts): ubuntu-latest ships
+      # Chrome, so a browser that is not found is red with the command that locates one — never a
+      # green skip. `live` needs no step here: `x verify` starts the app's own
+      # docker/docker-compose.test.yml when nothing answers at TEST_DATABASE_URL.
+      E2E_BROWSER_REQUIRED: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      # The browser the e2e step drives, named rather than probed, and refused here when absent.
+      - name: Chrome, for the e2e step
+        run: |
+          test -x /usr/bin/google-chrome
+          echo "CHROME_PATH=/usr/bin/google-chrome" >> "$GITHUB_ENV"
       - name: x new ${{ matrix.app }} ${{ matrix.flags }}
         env:
           FLAGS: ${{ matrix.flags }}
@@ -776,8 +786,13 @@ jobs:
       #
       # It prints per-step wall time for both commands and for all 20 gate steps, so the run is its
       # own measurement rather than something a PR body claims.
-      - name: bun run setup && bun run verify, first pass, no waiver
-        run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
+      #
+      # `scaffold-smoke-steps.ts` is that gate plus one question read off the same `--json`
+      # document: every step RAN a check (a suite step `tests.ran > 0`) unless the app's own
+      # x.verify.json excuses it in `skip` with a written why. Its summary is the line to read:
+      # `21 of 21 steps ran a check`, or the count and the excused steps by name.
+      - name: bun run setup && bun run verify, first pass, no waiver, every step ran a check
+        run: bun run scripts/scaffold-smoke-steps.ts "$RUNNER_TEMP/$APP"
       # The generator sweep, over an app whose first run has already happened. All thirteen exit 0
       # even when what they emit cannot resolve an import, so this step is not the catch: the gate
       # below is, over the files they wrote — `TS2307: Cannot find module '../repo'` was invisible
@@ -799,8 +814,8 @@ jobs:
       # migration the generators earned (which is also what makes its own documented "idempotent,
       # safe to re-run" a measurement), and `bun run verify` gates 13 generators' output with the same
       # no-waiver rule.
-      - name: bun run setup && bun run verify, over every generator's output
-        run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
+      - name: bun run setup && bun run verify, over every generator's output, every step ran a check
+        run: bun run scripts/scaffold-smoke-steps.ts "$RUNNER_TEMP/$APP"
       # The one step here that opens a socket. Everything above typechecks and gates the files
       # `x g resource` wrote; none of it would notice an admin that mounted nothing, or mounted for
       # everybody. This boots the app as its developer does (`x dev`, embedded Postgres), creates a

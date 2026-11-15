@@ -1,6 +1,6 @@
-// `x g query` and `x g backfill` read a table, so a slice with no `entity.ts` is refused rather than
-// handed one. `x g query order` wrote 14 files and `next: x db gen "create orders"`: a read asked
-// for and a table delivered. Only `x g entity` and `x g resource` create a feature's data.
+// `x g query`, `backfill`, `export-rows` and `import-rows` read a table, so a slice with no
+// `entity.ts` is refused rather than handed one: `x g query order` wrote 14 files and `next: x db
+// gen "create orders"`. Only `x g entity` and `x g resource` create a feature's data.
 
 import { existsSync } from 'node:fs'; // why: a synchronous file probe, as the slice's own guard.
 import { UltimateError } from '@ultimat3/core';
@@ -11,7 +11,12 @@ import { containedPath } from './generate-write';
 import { quoteArg } from './shell-quote';
 
 /** The generators whose whole body reads a table the slice declares. */
-const READS_A_TABLE: ReadonlySet<Generator> = new Set<Generator>(['query', 'backfill']);
+const READS_A_TABLE: ReadonlySet<Generator> = new Set<Generator>([
+  'query',
+  'backfill',
+  'export-rows',
+  'import-rows',
+]);
 
 /** Declared beside its one thrower: `errors.ts` sits at its 500-line ceiling. */
 export class FeatureRequiredError extends UltimateError {

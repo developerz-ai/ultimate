@@ -10,15 +10,17 @@ import { requireAppRoot } from './app-root';
 import { devSpec } from './cmd-dev-spec';
 import type { CliCommand, CommandContext } from './command';
 import { startDev } from './dev-boot';
+import { dashboardUrl, devHostFor } from './dev-host';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { teeDevLog } from './dev-log';
 import { devPortFor } from './dev-port';
 import { childRestart } from './dev-supervisor';
+import { certificateNames, devCertificate } from './dev-tls';
 import { holdUntilShutdown } from './hold';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
-import { DEV_BINDING, selectRoles } from './role-start';
+import { selectRoles } from './role-start';
 import { describeServices, reportedUrls, resolveServices } from './runtime-bindings';
 import { liveFeedLabel } from './runtime-live-feed';
 import { cdnLabel, describeCdn, describeMail, mailLabel } from './runtime-services';
@@ -36,6 +38,7 @@ export const devCommand: CliCommand = {
     // Validated, not `parseInt`'d: `x dev --port abc` handed `NaN` to `Bun.serve`, which binds an
     // arbitrary port — a dev server reachable at an address nothing printed.
     const port = devPortFor(ctx.args, ctx.env);
+    const hostname = devHostFor(ctx.args);
     const roles = selectRoles(flagString(ctx.args, 'role'));
     // BEFORE anything boots. Both failures this catches were reachable and both reported the wrong
     // thing: a taken port surfaced as X_CLI_UNEXPECTED wrapping "Is port 3000 in use?" with a `fix:`
@@ -48,7 +51,7 @@ export const devCommand: CliCommand = {
       port,
       // The address the web role will actually bind, never a wider one: probing `0.0.0.0` would
       // refuse a boot that a neighbour on one LAN interface does not actually block.
-      hostname: DEV_BINDING.hostname,
+      hostname,
       embeddedDb: services.db.mode === 'embedded',
     });
     // The directory is CLAIMED from here down, so a boot that throws has to give it back — the
@@ -57,10 +60,25 @@ export const devCommand: CliCommand = {
     // Before the boot, so its own lines are in it: `logs.tail` reads this file, and a dev server
     // that never wrote it answered every agent with X_NOT_IMPLEMENTED.
     const untee = teeDevLog(services.stateDir);
+    // Generated before the boot, inside the claim: the pair is cached in the state directory.
+    const tls =
+      ctx.args.flags.get('tls') === true
+        ? await devCertificate({
+            stateDir: services.stateDir,
+            names: certificateNames(hostname),
+            now: new Date(),
+          }).catch((error: unknown) => {
+            release();
+            untee();
+            throw error;
+          })
+        : undefined;
     const restart = childRestart(root, ctx.env);
     const server = await startDev({
       root,
       port,
+      hostname,
+      ...(tls === undefined ? {} : { tls: { cert: tls.cert, key: tls.key } }),
       roles,
       env: ctx.env,
       onReload: (file, durationMs) => {
@@ -75,6 +93,8 @@ export const devCommand: CliCommand = {
     });
     // A restart retires this worker before it drains, so a save never cancels a running job.
     restart.adopt(server.running.worker);
+    // A specific non-loopback bind has no loopback listener, and `/_x` answers loopback only.
+    const introspect = dashboardUrl(server.url);
     const result: CommandResult = {
       ok: server.findings.length === 0,
       command: 'dev',
@@ -90,6 +110,9 @@ export const devCommand: CliCommand = {
       // renderers have drifted and only one of them can be scripted against.
       data: {
         url: server.url,
+        host: hostname,
+        // Where the generated certificate is, to trust it (`curl --cacert`, the OS keychain).
+        tls: tls === undefined ? null : { certPath: tls.certPath },
         roles: [...server.roles],
         sync: server.running.syncUrl,
         // The scrape target, on its own port for every role: what an operator points a Prometheus
@@ -114,7 +137,7 @@ export const devCommand: CliCommand = {
         liveFeed: server.running.liveFeed,
         buildId: server.buildId,
         manifest: join(root, MANIFEST_FILENAME),
-        introspect: `${server.url}/_x`,
+        introspect,
         panels: [...server.panels],
         mcp: server.mcp,
         mcpPaths: [...server.mcpPaths],
@@ -126,7 +149,10 @@ export const devCommand: CliCommand = {
         msg('cli.dev.roles', { roles: server.roles.join(', ') }),
         msg('cli.dev.panels', { panels: server.panels.join(', ') }),
         msg('cli.dev.manifest', { path: join(root, MANIFEST_FILENAME) }),
-        msg('cli.dev.introspect', { url: `${server.url}/_x` }),
+        ...(tls === undefined ? [] : [msg('cli.dev.tls', { path: tls.certPath })]),
+        introspect === null
+          ? msg('cli.dev.introspectUnreachable', { url: server.url })
+          : msg('cli.dev.introspect', { url: introspect }),
         // Only when something was mounted: the unmounted case has already said why, once, as a
         // warning with a fix, and a summary line reading `mcp none` would be a second copy of it.
         // One line per endpoint, so an app serving customers, staff and affiliates sees all three.

@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { logTailPath, tailLines } from './mcp-host';
+import { lineRole, logTailPath, tailLines } from './mcp-host';
 
 describe('unit · logs.tail', () => {
   const sized = (text: string, padding: number, read: number[]) => ({
@@ -43,5 +43,24 @@ describe('unit · logs.tail', () => {
         expect.objectContaining({ code: 'X_CLI_BAD_FLAG' }),
       );
     }
+  });
+
+  test('a filtered tail keeps widening until it has n matching lines', async () => {
+    const read: number[] = [];
+    // The two worker lines sit before 200 KB of web lines: the first 64 KB window holds none.
+    const web = `${JSON.stringify({ msg: 'w', role: 'web' })}\n`.repeat(8_000);
+    const text = `${JSON.stringify({ msg: 'a', role: 'worker' })}\n${JSON.stringify({ msg: 'b', role: 'worker' })}\n${web}`;
+    const tail = await tailLines(sized(text, 0, read), 2, (line) => lineRole(line) === 'worker');
+    expect(tail.map((line) => JSON.parse(line).msg)).toEqual(['a', 'b']);
+    expect(read.length).toBeGreaterThan(1);
+  });
+
+  test('a line’s role is its JSON role field, and only a real role', () => {
+    expect(lineRole('{"msg":"x","role":"worker"}')).toBe('worker');
+    expect(lineRole('{"msg":"x"}')).toBeUndefined();
+    expect(lineRole('{"role":7}')).toBeUndefined();
+    expect(lineRole('{"role":"../x"}')).toBeUndefined();
+    expect(lineRole('not json')).toBeUndefined();
+    expect(lineRole('null')).toBeUndefined();
   });
 });

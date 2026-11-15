@@ -19,9 +19,11 @@
 
 // why: Bun ships no recursive delete and no path-join primitive; the lcov parts live under `.x/`.
 import { rm } from 'node:fs/promises';
-// why: Bun ships no path-join primitive.
-import { dirname, join } from 'node:path';
-import { ISOLATED_ENV } from '@ultimat3/testing';
+// why: Bun ships no path API; `posix.basename` names the module an island chunk was imported by.
+import { dirname, join, posix } from 'node:path';
+import { ISLAND_COVERAGE_ENV, ISOLATED_ENV } from '@ultimat3/testing';
+import type { ChunkPart } from './coverage-island';
+import { ISLAND_MAPS_DIR, readChunkMaps, withIslandChunks } from './coverage-island';
 import type { CoverageMap } from './coverage-lcov';
 import { fileCoverageOf, mergeCoverage, parseLcov } from './coverage-lcov';
 import type { ExecResult, Runner } from './exec';
@@ -170,15 +172,30 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
           options.pace,
           options.timings !== undefined,
         ),
-        { cwd: options.root, env: { ...overrides, ULTIMATE_TEST_WORKER: String(slot) } },
+        {
+          cwd: options.root,
+          env: {
+            ...overrides,
+            ULTIMATE_TEST_WORKER: String(slot),
+            // Where `mountIsland` records each chunk's source map, so the chunk's lines can be
+            // credited to the island source rather than to a temp file the cut below drops.
+            [ISLAND_COVERAGE_ENV]: join(base, String(index), ISLAND_MAPS_DIR),
+          },
+        },
       );
     }
   };
-  let maps: CoverageMap[];
+  let parts: SlicePart[];
+  let coverage: CoverageMap;
   let measured: Record<string, number> = {};
   try {
     await Promise.all(Array.from({ length: width }, (_, slot) => worker(slot)));
-    maps = await Promise.all(slices.map((_, index) => readPart(join(base, String(index)))));
+    parts = await Promise.all(slices.map((_, index) => readPart(join(base, String(index)))));
+    coverage = await withIslandChunks(
+      options.root,
+      mergeCoverage(parts.map((part) => part.own)),
+      parts,
+    );
     if (options.timings !== undefined) {
       const reports = await Promise.all(
         slices.map((_, index) => readReport(join(base, String(index)))),
@@ -224,7 +241,7 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
     tests: countsOf(results),
     ...(first === undefined ? {} : { output }),
     ...(Object.keys(measured).length === 0 ? {} : { slowest: slowestOf(measured, options.files) }),
-    coverage: mergeCoverage(maps),
+    coverage,
   };
 }
 
@@ -234,17 +251,31 @@ const readReport = (dir: string): Promise<string> =>
     .text()
     .catch(() => '');
 
+/** One slice's lcov: its own tree's records, and what the island chunks need to be credited. */
+interface SlicePart extends ChunkPart {
+  readonly own: CoverageMap;
+}
+
 /**
  * One slice's lcov as a map, kept to the app's own tree: a slice loads a thousand framework files
  * for every hundred of the app's, and none of those is what the floor measures. No file is no
  * coverage — the slice died before writing it, and its exit code already says so.
+ *
+ * The chunk records ride beside it: `mountIsland` imports an island chunk from a temp file, so
+ * its record names no app path, and its lines are credited back to the sources its recorded map
+ * names once every slice is folded (`coverage-island.ts`).
  */
-async function readPart(dir: string): Promise<CoverageMap> {
+async function readPart(dir: string): Promise<SlicePart> {
   const file = Bun.file(join(dir, 'lcov.info'));
-  if (!(await file.exists())) return {};
-  return Object.fromEntries(
-    parseLcov(await file.text())
+  if (!(await file.exists())) return { own: {}, records: [], maps: new Map() };
+  const records = parseLcov(await file.text());
+  const own = Object.fromEntries(
+    records
       .filter((record) => /^(?:apps|packages)\//.test(record.file))
       .map((record) => [record.file, fileCoverageOf(record)]),
   );
+  const maps = await readChunkMaps(dir);
+  // Only the chunks are kept past this slice: every slice's whole record list is the corpus again.
+  const chunks = records.filter((record) => maps.has(posix.basename(record.file)));
+  return { own, records: chunks, maps };
 }

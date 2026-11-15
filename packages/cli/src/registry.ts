@@ -27,6 +27,7 @@ import { explainSpec } from './cmd-explain-spec';
 import { fixSpec } from './cmd-fix-spec';
 import { generateSpec } from './cmd-generate-spec';
 import { graphSpec } from './cmd-graph-spec';
+import { profileSpec } from './cmd-profile-spec';
 // Registered here, not by whichever command body happens to load: `dispatch` renders a CLI code's
 // title for a refusal raised before any body is imported.
 import './error-codes';
@@ -47,6 +48,7 @@ import { reproSpec } from './cmd-repro-spec';
 import { routesSpec } from './cmd-routes-spec';
 import { secretsSpec } from './cmd-secrets-spec';
 import { shotSpec } from './cmd-shot-spec';
+import { statusSpec } from './cmd-status-spec';
 import { stopSpec } from './cmd-stop-spec';
 import { tasksSpec } from './cmd-tasks-spec';
 import { testSpec } from './cmd-test-spec';
@@ -135,6 +137,8 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(logsSpec, async () => (await import('./cmd-logs')).logsCommand),
   lazy(cacheSpec, async () => (await import('./cmd-cache')).cacheCommand),
   lazy(explainSpec, async () => (await import('./cmd-explain')).explainCommand),
+  lazy(profileSpec, async () => (await import('./cmd-profile')).profileCommand),
+  lazy(statusSpec, async () => (await import('./cmd-status')).statusCommand),
 ];
 
 /**

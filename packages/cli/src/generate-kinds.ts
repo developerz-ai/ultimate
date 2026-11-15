@@ -19,11 +19,13 @@ export const GENERATORS = [
   'action',
   'mutator',
   'backfill',
-  // Three primitive factories, each its one call in the feature's `jobs/`. Which factories have a
+  // Five primitive factories, each its one call in the feature's `jobs/`. Which factories have a
   // generator, and why the rest have none, is `FACTORY_GENERATORS` (`generate-factories.ts`).
   'cron-job',
   'purge',
   'webhook-receiver',
+  'export-rows',
+  'import-rows',
   'job',
   'route',
   'policy',
@@ -291,6 +293,8 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   'cron-job': 'nightly-report',
   purge: 'purge-retained',
   'webhook-receiver': 'billing-events',
+  'export-rows': 'export-posts --feature post',
+  'import-rows': 'import-posts --feature post',
   job: 'send-digest',
   route: 'posts',
   policy: 'post',

@@ -69,6 +69,7 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | One seed writer | `entitySeedWriter({ entities, client \| driver })` (`seed-writer.ts`) writes through each entity's own repository; `snapshot` is required; `entity` loads on the first write, so the barrel stays entity-free |
 | Factory values are DECLARED | `seed-graph-values.ts` for `factoriesFor` and `seedGraph`: default, enum, kind, pattern, `$meta.schema` — never the name † |
 | e2e without a driver | `e2eTest` becomes `test.skip`; the gate reports the step SKIPPED (or `X_VERIFY_SUITE_VANISHED` when `x.verify.json` requires it), never passed |
+| A server is DECLARED, never probed by hand | `{ needs: ['postgres' \| 'redis' \| 'nats'] }` on every typed registrar (`test-types-services.ts`, `TEST_SERVICE_ENV`): unset `TEST_*_URL` is a `test.skip` whose name carries the variable and the start command, never a hand-rolled runner or `describe.skipIf` |
 | The seam has an inverse | `resetE2eDriver()`: `useE2eDriver` writes MODULE scope, so a file that installs a browser undoes it |
 | Built vs declared | `clock` `mail` `network` `runJobs` `statements` `subscribe` are built in-process; `page` `budget` `signIn` `deploy` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`). |
 | `page` HAS a driver; `budget`, `signIn`, `deploy` do not | `installE2eDriver({ page, baseUrl })` registers `page` only. Byte counts, a sign-in route and a new build id are facts no page port can answer; a no-op would read as proof |
@@ -108,6 +109,7 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | A port's contract is shared examples | one suite per port on `@ultimat3/testing/conformance`: `behavesLike(<port>Conformance, () => yours)`, each with a broken adapter that must fail † |
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s; `testing → cli` fails `bun run boundaries` |
 | `mountIsland` AWAITS `mount` | `IslandEntry['mount']` returns `unknown`, not `void`, and the call is awaited |
+| An island chunk counts for its source | under `ISLAND_COVERAGE_ENV` (`runCovered` sets it) `mountIsland` asks the builder for `coverage: true` and records each chunk's `map` (`fixture-island-coverage.ts`); the CLI credits the chunk's lines to the `.island.tsx` |
 | Dispose STOPS the island, then restores the globals | when `mount` resolved to a function, `[Symbol.dispose]` calls it BEFORE `restore()` |
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. Full rule: `docs/history/testing.md` |
 | The micro-DOM records and does not pretend | records `style`/`classList`; the box is 0 until written; `ResizeObserver` never fires itself † |

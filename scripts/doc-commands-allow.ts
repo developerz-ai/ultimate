@@ -220,4 +220,21 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     kind: 'absent',
     why: 'the sentence says the CLI has no `x app add`, which is why the desktop directory stays empty',
   },
+  // The 25.0.0 rows record what a script running `x jobs drain --to …` met, and what it then
+  // answered while planned. `drain` left the registry 2026-11-15 (wiki/Known-Gaps.md): the rows are
+  // history a pinned reader still needs to recognise the verb by.
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x jobs drain',
+    kind: 'absent',
+    why: 'the 25.0.0 migration rows name the verb a script ran so it is recognised; x jobs has had no drain since 2026-11-15',
+  },
+  // The record of how `PLANNED_SUBCOMMANDS` began: `x db studio` was its first entry. Dated
+  // history — the subcommand left the registry 2026-11-15, and rewriting the record would lose why.
+  {
+    path: 'docs/history/cli.md',
+    cites: 'x db studio',
+    kind: 'absent',
+    why: 'the record says `x db studio` was the planned table first entry; it left the registry on 2026-11-15',
+  },
 ];

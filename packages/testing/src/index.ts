@@ -248,6 +248,7 @@ export type {
   SharedChunkLike,
 } from './fixture-island';
 export { mountIsland } from './fixture-island';
+export { ISLAND_COVERAGE_ENV } from './fixture-island-coverage';
 export type {
   JobDrainAs,
   JobEnqueueAs,
@@ -487,3 +488,5 @@ export {
   unitTest,
   useE2eDriver,
 } from './test-types';
+export type { TestService } from './test-types-services';
+export { TEST_SERVICE_ENV, TEST_SERVICES_START } from './test-types-services';

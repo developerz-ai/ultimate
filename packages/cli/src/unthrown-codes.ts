@@ -12,7 +12,7 @@ export const UNTHROWN_CODES_FILE = 'packages/cli/src/unthrown-codes.ts';
  * `X_ERROR_CODE_UNTHROWN_STALE`.
  */
 export const UNTHROWN_CODES: ReadonlySet<string> = new Set([
-  // `x db studio` is planned and unreleased; it exits X_NOT_IMPLEMENTED.
+  // `studio` left `x db` (2026-11-15, wiki/Known-Gaps.md): nothing runs that could fail.
   'X_DB_STUDIO_FAILED',
   // 21.0.0: there is no LiveClient to register (X_REALTIME_UNINSTALLED replaced it).
   'X_LIVE_CLIENT_MISSING',
