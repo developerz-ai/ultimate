@@ -16,7 +16,6 @@ import {
   renderedChanges,
   renderedFiles,
   renderLockText,
-  renderScaffold,
 } from './template-codemods-render';
 
 const dirs: string[] = [];
