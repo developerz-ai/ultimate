@@ -239,20 +239,29 @@ describe('cdpE2eTab', () => {
     const page = tabOn(connection);
     await page.press('Tab');
     await page.press('a');
+    await page.press('Enter');
+    await page.press('7');
     const keys = calls
       .filter((call) => call.method === 'Input.dispatchKeyEvent')
       .map((call) => [
         call.params['type'],
         call.params['key'],
+        call.params['code'],
         call.params['windowsVirtualKeyCode'],
         call.params['text'],
         call.sessionId,
       ]);
+    // A key that types sends `keyDown` WITH its text, as a keyboard does: Chrome raises the
+    // character event from it, and a focused submit button submits on Enter (`'\r'`) only then.
     expect(keys).toEqual([
-      ['rawKeyDown', 'Tab', 9, undefined, 'session-1'],
-      ['keyUp', 'Tab', 9, undefined, 'session-1'],
-      ['keyDown', 'a', 65, 'a', 'session-1'],
-      ['keyUp', 'a', 65, undefined, 'session-1'],
+      ['rawKeyDown', 'Tab', 'Tab', 9, undefined, 'session-1'],
+      ['keyUp', 'Tab', 'Tab', 9, undefined, 'session-1'],
+      ['keyDown', 'a', 'KeyA', 65, 'a', 'session-1'],
+      ['keyUp', 'a', 'KeyA', 65, undefined, 'session-1'],
+      ['keyDown', 'Enter', 'Enter', 13, '\r', 'session-1'],
+      ['keyUp', 'Enter', 'Enter', 13, undefined, 'session-1'],
+      ['keyDown', '7', 'Digit7', 55, '7', 'session-1'],
+      ['keyUp', '7', 'Digit7', 55, undefined, 'session-1'],
     ]);
     const thrown = await page.press('Hyper').catch((error: unknown) => error);
     expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');

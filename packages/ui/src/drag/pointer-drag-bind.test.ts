@@ -20,7 +20,10 @@ const world = () => {
   restore = installGlobals({ document: doc, window: win });
   const handle = new FakeElement('button');
   const captured: number[] = [];
-  Object.assign(handle, { setPointerCapture: (id: number) => captured.push(id) });
+  Object.assign(handle, {
+    setPointerCapture: (id: number) => captured.push(id),
+    hasPointerCapture: (id: number) => captured.includes(id),
+  });
   const calls: string[] = [];
   const handlers: DragHandlers = {
     start: (p) => calls.push(`start ${p.x},${p.y}`),
@@ -121,6 +124,20 @@ describe('bindPointerDrag', () => {
       },
     });
     w.handle.dispatch('lostpointercapture', pointer(0, 30));
+    expect(w.calls).toEqual(['start 0,0', 'move 0,30', 'cancel']);
+  });
+
+  test('a take-back the browser ignores in SILENCE (no button down any more) still cancels', () => {
+    // `setPointerCapture` neither throws nor captures for an active pointer with no button pressed:
+    // a lost capture processed just before `pointerup` left the tracker `dragging` until the next
+    // press. Only `hasPointerCapture` says whether the take-back held.
+    const w = world();
+    Object.assign(w.handle, { isConnected: true });
+    w.handle.dispatch('pointerdown', pointer(0, 0));
+    w.handle.dispatch('pointermove', pointer(0, 30));
+    Object.assign(w.handle, { setPointerCapture: () => undefined, hasPointerCapture: () => false });
+    w.handle.dispatch('lostpointercapture', pointer(0, 30));
+    w.handle.dispatch('pointermove', pointer(0, 60));
     expect(w.calls).toEqual(['start 0,0', 'move 0,30', 'cancel']);
   });
 

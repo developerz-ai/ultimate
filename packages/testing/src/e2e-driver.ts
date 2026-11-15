@@ -36,9 +36,9 @@ const refuse =
 
 /**
  * `offline()`/`online()` FORWARD, `As of 2026-08-27`, to `ScrapePage.offline()`
- * (`page-over-target.ts`), which reaches `CdpPageLike.setOfflineMode` — REQUIRED on that port
- * since 2026-11 (`packages/scraping/src/cdp-port.ts`), so every scraping driver answers it and none
- * refuses it coded. Issue #390 recorded a real browser check as out of reach on a refusal that
+ * (`page-over-target.ts`), which reaches `CdpPageLike.setOfflineMode` — checked when the session
+ * opens (scraping's `cdp-complete.ts`), so a driver that lacks it is refused there, never at the
+ * first `offline()`. Issue #390 recorded a real browser check as out of reach on a refusal that
  * was never true (#351).
  *
  * Optional on `E2eBrowserPage` all the same: this port is the shape of somebody ELSE's object, and

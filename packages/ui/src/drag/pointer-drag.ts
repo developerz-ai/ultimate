@@ -164,13 +164,14 @@ export function bindPointerDrag(handle: HTMLElement, handlers: DragHandlers): ()
   const onUp = (event: PointerEvent): void => tracker.up(pointOf(event));
   const onCancel = (): void => tracker.cancel();
   // A capture is released when its node MOVES, and a sort preview moves the dragged row into the
-  // list under the pointer: still in the document and mid-press, the capture is taken back. Only a
-  // pointer that is gone (the take-back throws) or a node that left the document cancels.
+  // list under the pointer: still in the document and mid-press, the capture is taken back. Held
+  // only if `hasPointerCapture` says so — with no button down the take-back is a SILENT no-op, and
+  // the release goes elsewhere — else the drag cancels, as for a gone pointer (it throws).
   const onLost = (event: PointerEvent): void => {
     if (tracker.phase() !== 'idle' && handle.isConnected) {
       try {
         handle.setPointerCapture(event.pointerId);
-        return;
+        if (handle.hasPointerCapture(event.pointerId)) return;
       } catch {
         // The pointer ended between the release and now: nothing to hold, so the drag is over.
       }

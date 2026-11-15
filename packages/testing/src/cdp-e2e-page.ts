@@ -122,6 +122,24 @@ export const PRESS_KEYS: Readonly<Record<string, number>> = {
 const charCode = (key: string): number | undefined =>
   key.length === 1 && /[a-z0-9]/i.test(key) ? key.toUpperCase().charCodeAt(0) : undefined;
 
+/**
+ * The text a key TYPES, as puppeteer's key table has it. A key with text goes down as `keyDown`
+ * carrying it, so Chrome raises the character event — what makes Enter submit a focused button's
+ * form. A key with none (Tab, the arrows) goes down as `rawKeyDown`.
+ */
+const typedText = (key: string): string | undefined =>
+  key === 'Enter' ? '\r' : key.length === 1 ? key : undefined;
+
+/** `KeyboardEvent.code`: `KeyA`, `Digit7`, `Space`; a named key is its own code. */
+const keyCodeName = (key: string): string =>
+  key === ' '
+    ? 'Space'
+    : /^[a-z]$/i.test(key)
+      ? `Key${key.toUpperCase()}`
+      : /^[0-9]$/.test(key)
+        ? `Digit${key}`
+        : key;
+
 export interface CdpE2eTabOptions {
   readonly connection: CdpConnection;
   /** The attached tab's flattened session — every page call carries it. */
@@ -383,8 +401,8 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
           detail: `not a key press() knows: one of ${Object.keys(PRESS_KEYS).join(', ')}, or one letter or digit`,
         });
       }
-      const text = key.length === 1 ? key : undefined;
-      const common = { key, code: key === ' ' ? 'Space' : key, windowsVirtualKeyCode: code };
+      const text = typedText(key);
+      const common = { key, code: keyCodeName(key), windowsVirtualKeyCode: code };
       await send(
         'Input.dispatchKeyEvent',
         {
