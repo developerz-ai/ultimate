@@ -15,13 +15,7 @@ import {
   listenUnsupported,
 } from './listen';
 import { PGLITE_INSTANT_PARSERS } from './pg-instant';
-import {
-  dataSnapshotFor,
-  markRestored,
-  type PgliteDataSnapshot,
-  saveDataSnapshot,
-  wasRestored,
-} from './pglite-data-snapshot';
+import type { PgliteDataSnapshot } from './pglite-data-snapshot';
 import { linkPgliteExtensions, type PgliteExtensionLoader } from './pglite-extensions';
 import { PGLITE_PACKAGE } from './pglite-package';
 import {
@@ -185,11 +179,19 @@ async function restore(
   }
 }
 
+// Loaded only by a boot that names a `dataSnapshot` (`x exercise`): every role's boot evaluates
+// this file, and a snapshot is never theirs.
+const snapshots = () => import('./pglite-data-snapshot');
+
 /** `options.dataSnapshot` under the installed PGlite, read only for an in-memory boot. */
-const dataSnapshotOf = (options: PgliteOptions) =>
-  dataSnapshotFor(options.dataSnapshot, (options.dataDir ?? PGLITE_MEMORY) === PGLITE_MEMORY, () =>
-    (options.version ?? pgliteVersion)(),
-  );
+const dataSnapshotOf = async (options: PgliteOptions) =>
+  options.dataSnapshot === undefined
+    ? undefined
+    : (await snapshots()).dataSnapshotFor(
+        options.dataSnapshot,
+        (options.dataDir ?? PGLITE_MEMORY) === PGLITE_MEMORY,
+        () => (options.version ?? pgliteVersion)(),
+      );
 
 /** Boots one embedded Postgres. Costs seconds — `pgliteClient` calls it exactly once. */
 export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<PgliteDriver> {
@@ -221,7 +223,7 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   if (data !== undefined) {
     const restored = await restore(PGlite, base, data.file, data.key);
     if (restored !== undefined) {
-      markRestored(restored);
+      (await snapshots()).markRestored(restored);
       return restored;
     }
   }
@@ -268,10 +270,13 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
 export interface PgliteClient extends ReservableClient, ListeningClient {
   /** Pay the boot up front. `x dev` calls it so the first request is not the slow one. */
   ping(): Promise<void>;
-  /** Whether this boot restored `options.dataSnapshot`: its state is the caller's already. */
-  restoredDataSnapshot(): Promise<boolean>;
+  /**
+   * Whether this boot restored `options.dataSnapshot`: its state is the caller's already. Optional
+   * so a client written against 31.26 still implements the interface; `pglite()` always has it.
+   */
+  restoredDataSnapshot?(): Promise<boolean>;
   /** The data directory, written under `options.dataSnapshot`'s key; `false` when not written. */
-  saveDataSnapshot(): Promise<boolean>;
+  saveDataSnapshot?(): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -432,13 +437,18 @@ export function pgliteClient(options: PgliteOptions = {}): PgliteClient {
       await connect();
     },
     async restoredDataSnapshot(): Promise<boolean> {
-      return wasRestored(await connect());
+      const driver = await connect();
+      return options.dataSnapshot !== undefined && (await snapshots()).wasRestored(driver);
     },
     async saveDataSnapshot(): Promise<boolean> {
       const driver = await connect();
       // A turn of its own: the dump is the session's whole state, never one mid-transaction.
       return turns.run(async () =>
-        saveDataSnapshot(driver, await dataSnapshotOf(options), options.dataSnapshot?.keep),
+        (await snapshots()).saveDataSnapshot(
+          driver,
+          await dataSnapshotOf(options),
+          options.dataSnapshot?.keep,
+        ),
       );
     },
     async close(): Promise<void> {

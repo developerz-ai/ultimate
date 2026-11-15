@@ -87,13 +87,16 @@ export function floorSteps(suites: FloorSuites): {
  * a place to put code that merely has no test yet.
  */
 export const SCAFFOLD_COVERAGE_EXCLUDE: readonly CoverageExclude[] = [
-  // Still excluded, measured 2026-11-15: a coverage build now credits an island's chunk to its
-  // source, and with this entry dropped a fresh `x new` measured 90.7% lines (post-form.island.tsx
-  // 74 of 97 uncovered, theme-toggle.island.tsx 27 of 36) and `--no-example` 94.6%, under the
-  // 95% floor. It goes when the scaffolded island tests mount enough of each to clear it.
+  // Still excluded, measured 2026-11-15, and not for want of tests: each island's test already
+  // clicks, types, submits and fails it. Without this entry a fresh `x new` measured 90.7% lines
+  // (post-form.island.tsx 74 of 97 uncovered, theme-toggle.island.tsx 27 of 36) and `--no-example`
+  // 94.6%. A file reached only through its chunk weighs every non-blank line (`withChunkLines`,
+  // coverage-remap.ts) — imports, types and JSX included — and the map can credit none of those:
+  // theme-toggle's chunk credits 9 lines, every one of its mount body. It goes when that weighs
+  // only the lines the chunk maps.
   {
     glob: 'apps/**/*.island.tsx',
-    why: 'an island runs in a browser, and the scaffolded island tests mount its initial state only — the rest of its lines are its interactions, held by guards/island-without-states.ts and photographed by x shot --island',
+    why: 'an island runs from its built chunk, and coverage credits only the lines that chunk maps back — its imports, types and JSX weigh but can never count; its tests click, type and submit it, and x shot --island photographs every state',
   },
   {
     glob: 'apps/*/server.ts',

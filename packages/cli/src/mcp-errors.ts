@@ -409,7 +409,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_GUARD_OVER_BASELINE: 'x verify --only boundaries --json',
   X_GUARD_BASELINE_STALE: 'x verify --only boundaries --json',
   X_DEV_LOG_ABSENT: 'x dev',
-  X_DEV_PEER_REFUSED: 'curl -sS -H \'accept: application/json\' http://localhost:3000/_x',
+  X_DEV_PEER_REFUSED: "curl -sS -H 'accept: application/json' http://localhost:3000/_x",
   X_PROFILE_ROUTE_FAILED: 'x routes --json',
   X_ROWS_SLICE_ENTITY: 'x g job <name> --feature <f>',
 };

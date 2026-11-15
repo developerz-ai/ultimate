@@ -482,7 +482,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_ASSET_RETAIN_UNDECLARED: "A served build keeps no earlier build's assets",
   X_DEV_DATA_UNOPENABLE: 'x dev set aside an embedded data directory that would not open',
   X_TEST_SERVICES_UNAVAILABLE:
-    'the live step\'s test database is not reachable and could not be started',
+    "the live step's test database is not reachable and could not be started",
   X_VERIFY_E2E_BROWSER_MISSING: 'a floored e2e step found no browser to drive',
   X_VERIFY_STRICT_UNRUN: 'x.verify.json is strict and a step ran no check with no written why',
   X_GUARD_OVER_BASELINE: 'a guard reports more findings than its x.verify.json baseline allows',
@@ -490,7 +490,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_DEV_LOG_ABSENT: 'the dev log does not exist yet',
   X_DEV_PEER_REFUSED: 'a /_x request came from a non-loopback peer',
   X_PROFILE_ROUTE_FAILED: 'the profiled route answered an error',
-  X_ROWS_SLICE_ENTITY: 'the slice\'s entity is not the scaffolded table',
+  X_ROWS_SLICE_ENTITY: "the slice's entity is not the scaffolded table",
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

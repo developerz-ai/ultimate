@@ -26,8 +26,9 @@ const gate = (baselined: NonNullable<HopGate['guards']['baselined']>): HopGate =
   verify: { ok: true, summary: 's', failed: [], findings: [] },
 });
 
+const then = 'next';
 const linesFor = (g: HopGate) =>
-  humanLines({ hop, writes: NO_WRITES, gate: g, scripts: [], then: 'next', typescript: [] });
+  humanLines({ hop, writes: NO_WRITES, gate: g, scripts: [], then, typescript: [] });
 
 describe('unit · a baselined guard is said on the terminal', () => {
   test('one line per baselined guard, naming its count', () => {

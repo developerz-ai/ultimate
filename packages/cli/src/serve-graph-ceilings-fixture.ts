@@ -319,8 +319,12 @@
  * and `db/src/{table-autovacuum,table-storage-drift}.ts` (declared autovacuum, drift split out).
  * raised 973 → 974, measured 974 (2026-11-15, same sweep, review fix): `jobs/src/limiter-frame.ts`,
  * the worker's visibility timeout, heartbeat and schedule handed to the limiter gate around a run.
+ * raised 974 → 976, measured 976 (2026-11-15, plan 101b sweep 4): `http/src/config-tls.ts` (a
+ * listener's own certificate, both PEMs or neither, screened where the config resolves) and
+ * `http/src/local-caller.ts` (the one rule every dev-only disclosure asks). `db`'s data snapshot
+ * stays behind an `await import()`: only `x exercise` names one.
  */
-export const MIGRATE_CEILING = 974;
+export const MIGRATE_CEILING = 976;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

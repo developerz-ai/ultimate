@@ -25,7 +25,19 @@ export const preparedSnapshotDir = (stateDir: string): string => join(stateDir, 
 
 /** A Postgres template's name for `key`: a prefix this module alone creates and drops. */
 const TEMPLATE_PREFIX = 'x_scratch_tpl_';
-export const templateNameFor = (key: string): string => `${TEMPLATE_PREFIX}${key.slice(0, 24)}`;
+/** Hex characters of the key a template's name carries. */
+const KEY_CHARS = 24;
+/** Exactly a template name, as a regular expression: never LIKE, whose `_` is any character. */
+const TEMPLATE_NAME = `^${TEMPLATE_PREFIX}[0-9a-f]{${String(KEY_CHARS)}}$`;
+export const templateNameFor = (key: string): string =>
+  `${TEMPLATE_PREFIX}${key.slice(0, KEY_CHARS)}`;
+/** Where a template is built before it is renamed into place: a name eviction never matches. */
+const buildNameFor = (key: string): string =>
+  `x_scratch_bld_${key.slice(0, KEY_CHARS)}_${String(process.pid)}`;
+
+/** The advisory lock a template is built and cloned under: `lockSql`'s key, `hashtext(name)`. */
+const unlockSql = (template: string): string =>
+  `select pg_advisory_unlock(hashtext('${template}'))`;
 
 async function withPreparedPglite<T>(
   engine: Extract<ReplayEngine, { kind: 'embedded' }>,
@@ -43,10 +55,10 @@ async function withPreparedPglite<T>(
     },
   });
   try {
-    if (!(await client.restoredDataSnapshot())) {
+    if (!(await client.restoredDataSnapshot?.())) {
       await preparation.prepare(client);
       // After the preparation and before any row of the caller's: what is kept is the schema.
-      await client.saveDataSnapshot();
+      await client.saveDataSnapshot?.();
     }
     return await work(client);
   } finally {
@@ -57,7 +69,7 @@ async function withPreparedPglite<T>(
 /**
  * The template for `key` on the server, built once: into a database of its own name, renamed into
  * place only when prepared — so a run killed mid-migration leaves no template that reads as ready.
- * Older templates past `PREPARED_KEEP` are dropped. Under the template's advisory lock throughout.
+ * Older templates past `PREPARED_KEEP` are evicted (`evictTemplates`). Under the template's lock.
  */
 async function ensureTemplate(
   admin: Pick<DbClient, 'one' | 'query' | 'execute'>,
@@ -68,7 +80,7 @@ async function ensureTemplate(
   const template = templateNameFor(preparation.key);
   const found = await admin.one(sql`select 1 as hit from pg_database where datname = ${template}`);
   if (found !== null) return template;
-  const building = `${template}_b${String(process.pid)}`;
+  const building = buildNameFor(preparation.key);
   await admin.execute(raw(dropSql(building)));
   await admin.execute(raw(templateSql(building)));
   const target = new URL(adminUrl);
@@ -80,13 +92,34 @@ async function ensureTemplate(
     await client.close();
   }
   await admin.execute(raw(`alter database "${building}" rename to "${template}"`));
+  await evictTemplates(admin, template);
+  return template;
+}
+
+/**
+ * Every template of this module's exact name shape past the newest `PREPARED_KEEP`, dropped — each
+ * only if its own advisory lock is free: a process cloning it holds that lock, so a template in use
+ * is skipped, never dropped under a clone. A build in progress has another name and is never seen.
+ */
+async function evictTemplates(
+  admin: Pick<DbClient, 'one' | 'query' | 'execute'>,
+  current: string,
+): Promise<void> {
+  const { dropSql } = await import('@ultimat3/testing');
   const stale = await admin.query<{ datname: string }>(
-    sql`select datname from pg_database where datname like ${`${TEMPLATE_PREFIX}%`} and datname <> ${template} order by oid desc`,
+    sql`select datname from pg_database where datname ~ ${TEMPLATE_NAME} and datname <> ${current} order by oid desc`,
   );
   for (const { datname } of stale.slice(PREPARED_KEEP)) {
-    await admin.execute(raw(dropSql(datname)));
+    const free = await admin.one<{ held: boolean }>(
+      sql`select pg_try_advisory_lock(hashtext(${datname})) as held`,
+    );
+    if (free?.held !== true) continue;
+    try {
+      await admin.execute(raw(dropSql(datname)));
+    } finally {
+      await admin.execute(raw(unlockSql(datname)));
+    }
   }
-  return template;
 }
 
 async function withPreparedPostgres<T>(
@@ -108,8 +141,7 @@ async function withPreparedPostgres<T>(
         await ensureTemplate(session, adminUrl, preparation);
         await session.execute(raw(cloneSql(template, database)));
       } finally {
-        // `lockSql`'s inverse, which the testing barrel does not export: the same `hashtext` key.
-        await session.execute(raw(`select pg_advisory_unlock(hashtext('${template}'))`));
+        await session.execute(raw(unlockSql(template)));
       }
     }
     const target = new URL(adminUrl);

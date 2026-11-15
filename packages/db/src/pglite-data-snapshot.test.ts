@@ -37,18 +37,18 @@ describe('unit · pglite data snapshot', () => {
   test('a miss boots empty and writes; the same key restores the state; a hit is not rewritten', async () => {
     const first = clientFor('m1');
     try {
-      expect(await first.restoredDataSnapshot()).toBe(false);
+      expect(await first.restoredDataSnapshot?.()).toBe(false);
       await first.execute(raw('create table notes (id int primary key)'));
-      expect(await first.saveDataSnapshot()).toBe(true);
+      expect(await first.saveDataSnapshot?.()).toBe(true);
     } finally {
       await first.close();
     }
     // A fresh process would read the file; this one's memo holds the same bytes, verified once.
     const second = clientFor('m1');
     try {
-      expect(await second.restoredDataSnapshot()).toBe(true);
+      expect(await second.restoredDataSnapshot?.()).toBe(true);
       expect(await tableExists(second)).toBe(true);
-      expect(await second.saveDataSnapshot()).toBe(false);
+      expect(await second.saveDataSnapshot?.()).toBe(false);
     } finally {
       await second.close();
     }
@@ -57,7 +57,7 @@ describe('unit · pglite data snapshot', () => {
   test('another key — a new migration — misses: the state is not the old one', async () => {
     const other = clientFor('m2');
     try {
-      expect(await other.restoredDataSnapshot()).toBe(false);
+      expect(await other.restoredDataSnapshot?.()).toBe(false);
       expect(await tableExists(other)).toBe(false);
     } finally {
       await other.close();
@@ -69,7 +69,7 @@ describe('unit · pglite data snapshot', () => {
       const client = clientFor(key, 0);
       try {
         await client.ping();
-        expect(await client.saveDataSnapshot()).toBe(true);
+        expect(await client.saveDataSnapshot?.()).toBe(true);
       } finally {
         await client.close();
       }

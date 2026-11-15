@@ -14,13 +14,19 @@ const hasPostgres = typeof url === 'string' && url.length > 0;
 const run = crypto.randomUUID().replaceAll('-', '');
 const keyA = `a${run}`;
 const keyB = `b${run}`;
+const evictors = ['c', 'd', 'e'].map((head) => `${head}${run}`);
+/** Matches `x_scratch_tpl_%` under LIKE (`_` is any character) and is no template of ours. */
+const decoy = `xAscratchBtplC${run.slice(0, 24)}`;
+/** A template another process is cloning right now: it holds the template's advisory lock. */
+const cloning = templateNameFor(`f${run}`);
 
 describe.skipIf(!hasPostgres)('withPreparedScratch · a real Postgres', () => {
   const admin = postgresClient({ url: url ?? '' });
 
   afterAll(async () => {
-    for (const key of [keyA, keyB]) {
-      await admin.execute(raw(`drop database if exists "${templateNameFor(key)}" with (force)`));
+    const names = [...[keyA, keyB, ...evictors].map(templateNameFor), decoy, cloning];
+    for (const name of names) {
+      await admin.execute(raw(`drop database if exists "${name}" with (force)`));
     }
     await admin.close();
   });
@@ -63,4 +69,21 @@ describe.skipIf(!hasPostgres)('withPreparedScratch · a real Postgres', () => {
     );
     expect(left).toEqual([]);
   }, 60_000);
+
+  test('eviction drops only its own templates, and never one another process holds', async () => {
+    // Older than every template below, so each is past the newest kept when eviction runs.
+    await admin.execute(raw(`create database "${decoy}"`));
+    await admin.execute(raw(`create database "${cloning}"`));
+    using holder = await admin.reserve();
+    await holder.execute(raw(`select pg_advisory_lock(hashtext('${cloning}'))`));
+    try {
+      for (const key of evictors) expect((await once(key)).prepared).toBe(1);
+    } finally {
+      await holder.execute(raw(`select pg_advisory_unlock(hashtext('${cloning}'))`));
+    }
+    const left = await admin.query<{ datname: string }>(
+      sql`select datname from pg_database where datname in (${decoy}, ${cloning}) order by 1`,
+    );
+    expect(left.map((row) => row.datname).sort()).toEqual([cloning, decoy].sort());
+  }, 120_000);
 });

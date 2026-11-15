@@ -269,5 +269,11 @@
  * raised 1718 → 1720, measured 1720 (2026-11-15, same sweep, review fixes): `jobs/src/limiter-frame.ts`
  * (on `MIGRATE_CEILING`) and `auth/src/member-invite-marks.ts` (the `joined`/`revoked` marks that
  * make a racing revoke win).
+ * raised 1720 → 1726, measured 1726 (2026-11-15, plan 101b sweep 4, metafile walk against origin/main):
+ * the two on `MIGRATE_CEILING` (`http/src/config-tls.ts`, `http/src/local-caller.ts`), plus
+ * `cli/src/serve-env-tls.ts` (`TLS_CERT`/`TLS_KEY`, read before any service starts),
+ * `render/src/route-path.ts` (file path → URL, split out of `registry.ts` at its 500-line ceiling)
+ * and `cli/src/messages-{floor,status}.ts` (the strict floor's and `x status`'s catalog keys,
+ * spread into `messages.ts`).
  */
-export const WEB_ROLE_CEILING = 1720;
+export const WEB_ROLE_CEILING = 1726;
