@@ -215,6 +215,18 @@ describe(`unit · ${SCHEMA_WAIT_ENV}`, () => {
     expect(schemaWaitMsFromEnv({ [SCHEMA_WAIT_ENV]: '90000' })).toBe(90_000);
   });
 
+  test('the refusal fix is literal text naming the variable and its default', () => {
+    let refused: unknown;
+    try {
+      schemaWaitMsFromEnv({ [SCHEMA_WAIT_ENV]: 'soon' });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toMatchObject({
+      fix: expect.stringContaining(`${SCHEMA_WAIT_ENV}=${String(DEFAULT_SCHEMA_WAIT_MS)} `),
+    });
+  });
+
   test('anything else is X_CONFIG_INVALID, never a NaN deadline', () => {
     for (const bad of ['5m', '-1', '1.5', '0x10', '1e3']) {
       expect(() => schemaWaitMsFromEnv({ [SCHEMA_WAIT_ENV]: bad })).toThrow(

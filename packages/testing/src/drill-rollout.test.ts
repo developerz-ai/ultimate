@@ -61,16 +61,22 @@ function standIn(script: Script) {
   return { fleet, order, probe };
 }
 
-const run = (fleet: DrillFleet, probe: (url: string) => Promise<number | null>) =>
-  runRollout({
+/** A virtual monotonic clock per run: a sleep advances it and returns, so nothing waits for real. */
+const run = (fleet: DrillFleet, probe: (url: string) => Promise<number | null>) => {
+  let clock = 0;
+  return runRollout({
     drill,
     fleet,
     budgets,
     readyTimeoutMs: 1_000,
     holdMs: 1,
     probe,
-    sleep: () => Bun.sleep(1),
+    now: () => clock,
+    sleep: async (ms) => {
+      clock += ms;
+    },
   });
+};
 
 describe('runRollout', () => {
   test('every role waits, migrate runs, every role then answers: held', async () => {

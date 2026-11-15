@@ -224,10 +224,10 @@ too bloated differs per app. `checkDb()` stays the readiness probe `/readyz` rea
 
 ## Server health gauges
 
-`As of 2026-11`. `startPgStatsGauges(executor, intervalMs?)` samples the Postgres server every
-`PG_STATS_INTERVAL_MS` (15 s) — at once, one round at a time, unref'd — and returns an async stop
+`As of 2026-11`. `startPostgresStatsGauges(executor, intervalMs?)` samples the Postgres server every
+`POSTGRES_STATS_INTERVAL_MS` (15 s) — at once, one round at a time, unref'd — and returns an async stop
 that awaits the round in flight (release it before the pool closes);
-`pgStatsSampler(executor).sample()` is one round. Run by ONE role (the scheduler): these are server
+`postgresStatsSampler(executor).sample()` is one round. Run by ONE role (the scheduler): these are server
 facts, and every pod reading them would multiply the load for the same numbers.
 
 | Series | What it is |

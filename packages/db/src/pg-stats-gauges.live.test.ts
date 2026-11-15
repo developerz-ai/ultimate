@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { collectMetrics } from '@ultimat3/core';
-import { pgStatsSampler } from './pg-stats-gauges';
+import { postgresStatsSampler } from './pg-stats-gauges';
 import { PG_SERVER_STATS_SQL, PG_SLOT_STATS_SQL } from './pg-stats-sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -36,11 +36,11 @@ describe.skipIf(url === undefined)('live · the Postgres stats statements', () =
         expect({ [key]: typeof row[key] }).toEqual({ [key]: 'number' });
       }
       await holder.begin(async (tx) => {
+        // `xact_start` is fixed here and the sample reads `now()` later: any positive age is seen.
         await tx`select 1`;
-        await Bun.sleep(1_100);
-        await pgStatsSampler(executorOn(sampler)).sample();
+        await postgresStatsSampler(executorOn(sampler)).sample();
       });
-      expect(value('db_longest_transaction_seconds')).toBeGreaterThanOrEqual(1);
+      expect(value('db_longest_transaction_seconds')).toBeGreaterThan(0);
       expect(value('db_server_connections')).toBeGreaterThanOrEqual(2);
       expect(value('db_server_max_connections')).toBeGreaterThan(0);
     } finally {
@@ -76,7 +76,7 @@ describe.skipIf(replicationUrl === undefined)('live · a logical slot`s retained
     const slot = `x_stats_probe_${process.pid}`;
     try {
       await sql.unsafe(`select pg_create_logical_replication_slot('${slot}', 'pgoutput')`);
-      const sampler = pgStatsSampler(executorOn(sql));
+      const sampler = postgresStatsSampler(executorOn(sql));
       await sampler.sample();
       const rows = await sql.unsafe(PG_SLOT_STATS_SQL);
       expect(rows.map((row: { slot: string }) => row.slot)).toContain(slot);

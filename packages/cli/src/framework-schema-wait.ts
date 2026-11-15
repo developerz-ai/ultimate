@@ -32,7 +32,9 @@ export class SchemaWaitInvalidError extends UltimateError {
     super({
       code: 'X_CONFIG_INVALID',
       cause: `${SCHEMA_WAIT_ENV} is "${value}"; it is the whole number of milliseconds a serving role waits for the migrate step to bring the schema to its build, 0 to refuse at once`,
-      fix: `docker run -e ${SCHEMA_WAIT_ENV}=${String(DEFAULT_SCHEMA_WAIT_MS)} <image>   # or unset it for the default`,
+      // Literal: a spliced value in a command position is what the fix-shell-arg ratchet refuses.
+      // `framework-schema-wait.test.ts` holds it equal to the two constants.
+      fix: 'docker run -e ULTIMATE_SCHEMA_WAIT_MS=300000 <image>   # or unset it for the default',
       meta: { key: SCHEMA_WAIT_ENV },
     });
   }

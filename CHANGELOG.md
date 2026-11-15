@@ -21,8 +21,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ### Added
 
 - `@ultimat3/cli`: `ULTIMATE_SCHEMA_WAIT_MS`; codes `X_APP_MIGRATIONS_UNAPPLIED`; codemods `migrate-job-ordered` and `helm-alerts-deploy` carry an existing app's chart, `docker/README.md`, alert rules and dashboard across `x upgrade`.
-- `@ultimat3/db`: `startPgStatsGauges()` / `pgStatsSampler()` publish `db_server_connections`, `db_server_max_connections`, `db_longest_transaction_seconds`, `db_autovacuum_backlog_ratio` and `db_replication_slot_retained_bytes{slot}`; the scheduler role samples them on an external database.
-- `@ultimat3/db`: `db_stats_sample_ok` (1 when the last sample landed) and the chart's `UltimateDbStatsStale` alert, so a failing sampler is visible instead of freezing the values the other rules read; `startPgStatsGauges()`' stop is async and awaits the round in flight.
+- `@ultimat3/db`: `startPostgresStatsGauges()` / `postgresStatsSampler()` publish `db_server_connections`, `db_server_max_connections`, `db_longest_transaction_seconds`, `db_autovacuum_backlog_ratio` and `db_replication_slot_retained_bytes{slot}`; the scheduler role samples them on an external database.
+- `@ultimat3/db`: `db_stats_sample_ok` (1 when the last sample landed) and the chart's `UltimateDbStatsStale` alert, so a failing sampler is visible instead of freezing the values the other rules read; `startPostgresStatsGauges()`' stop is async and awaits the round in flight.
 - The chart's migrate Job carries `ttlSecondsAfterFinished` (`migrate.ttlSecondsAfterFinished`, default 86400), so finished Jobs are collected under an applier that ignores hooks.
 - `@ultimat3/core`: `recordFrameworkSchema()` publishes `framework_schema_applied` and `framework_schema_major_skew`, recorded on every schema check.
 - `@ultimat3/testing`: `startDrillFleet({ beforeMigrate })` and `runRollout`; the `roll-before-migrate` drill.

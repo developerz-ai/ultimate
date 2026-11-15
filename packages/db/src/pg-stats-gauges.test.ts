@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { collectMetrics, installLogSink } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
-import { pgStatsSampler, startPgStatsGauges } from './pg-stats-gauges';
+import { postgresStatsSampler, startPostgresStatsGauges } from './pg-stats-gauges';
 import { PG_SERVER_STATS_SQL, PG_SLOT_STATS_SQL } from './pg-stats-sql';
 
 const points = (name: string) =>
@@ -48,7 +48,7 @@ describe('unit · the Postgres stats gauges', () => {
       server: [SERVER],
       slots: [{ slot: 'ultimate_live', retained_bytes: 4096 }],
     });
-    await pgStatsSampler(pg).sample();
+    await postgresStatsSampler(pg).sample();
     expect([
       value('db_server_connections'),
       value('db_server_max_connections'),
@@ -62,7 +62,7 @@ describe('unit · the Postgres stats gauges', () => {
 
   test('a slot that is gone reads 0 on the next round, not its last size forever', async () => {
     const answer: Answer = { server: [SERVER], slots: [{ slot: 'gone_slot', retained_bytes: 9 }] };
-    const sampler = pgStatsSampler(executor(answer));
+    const sampler = postgresStatsSampler(executor(answer));
     await sampler.sample();
     expect(value('db_replication_slot_retained_bytes', 'gone_slot')).toBe(9);
     answer.slots = [];
@@ -71,9 +71,9 @@ describe('unit · the Postgres stats gauges', () => {
   });
 
   test('a value that is not a finite number writes nothing on its gauge', async () => {
-    const sampler = pgStatsSampler(executor({ server: [SERVER], slots: [] }));
+    const sampler = postgresStatsSampler(executor({ server: [SERVER], slots: [] }));
     await sampler.sample();
-    await pgStatsSampler(
+    await postgresStatsSampler(
       executor({ server: [{ ...SERVER, connections: '17', max_connections: null }], slots: [] }),
     ).sample();
     expect([value('db_server_connections'), value('db_server_max_connections')]).toEqual([42, 100]);
@@ -85,7 +85,7 @@ describe('unit · the Postgres stats gauges', () => {
       lines.push(line);
     });
     let fail = true;
-    const sampler = pgStatsSampler({
+    const sampler = postgresStatsSampler({
       async query<R>(text: string): Promise<readonly R[]> {
         if (fail) throw dbUnavailable('connection refused');
         return (text === PG_SERVER_STATS_SQL ? [SERVER] : []) as unknown as readonly R[];
@@ -103,7 +103,7 @@ describe('unit · the Postgres stats gauges', () => {
 
   test('db_stats_sample_ok says whether the last round landed, so frozen values are visible', async () => {
     let fail = false;
-    const sampler = pgStatsSampler({
+    const sampler = postgresStatsSampler({
       async query<R>(text: string): Promise<readonly R[]> {
         if (fail) throw dbUnavailable('connection refused');
         return (text === PG_SERVER_STATS_SQL ? [SERVER] : []) as unknown as readonly R[];
@@ -121,8 +121,8 @@ describe('unit · the Postgres stats gauges', () => {
 
   test('started, it samples at once and stops when asked', async () => {
     const pg = executor({ server: [SERVER], slots: [] });
-    const stop = startPgStatsGauges(pg, 60_000);
-    await Bun.sleep(0);
+    const stop = startPostgresStatsGauges(pg, 60_000);
+    await Promise.resolve();
     await stop();
     expect(pg.statements).toEqual([PG_SERVER_STATS_SQL, PG_SLOT_STATS_SQL]);
   });
@@ -133,7 +133,7 @@ describe('unit · the Postgres stats gauges', () => {
       release = resolve;
     });
     let settled = false;
-    const stop = startPgStatsGauges({
+    const stop = startPostgresStatsGauges({
       async query<R>(text: string): Promise<readonly R[]> {
         await gate;
         if (text === PG_SLOT_STATS_SQL) settled = true;
@@ -144,7 +144,8 @@ describe('unit · the Postgres stats gauges', () => {
     const stopping = stop().then(() => {
       stopped = true;
     });
-    await Bun.sleep(5);
+    // Every pending reaction runs first; the round is held on `gate`, so the stop cannot settle.
+    for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
     expect(stopped).toBe(false);
     release();
     await stopping;

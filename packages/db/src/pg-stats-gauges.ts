@@ -8,7 +8,7 @@ import { gauge, logger, renderThrowable } from '@ultimat3/core';
 import { PG_SERVER_STATS_SQL, PG_SLOT_STATS_SQL } from './pg-stats-sql';
 
 /** A scrape reads every ~15s; sampling faster costs the server reads nobody sees. */
-export const PG_STATS_INTERVAL_MS = 15_000;
+export const POSTGRES_STATS_INTERVAL_MS = 15_000;
 
 interface Gauges {
   readonly connections: Gauge;
@@ -65,12 +65,12 @@ const recordIf = (target: Gauge, value: number | undefined, attributes = {}): vo
   if (value !== undefined) target.record(value, attributes);
 };
 
-export interface PgStatsSampler {
+export interface PostgresStatsSampler {
   /** One round. Never rejects: a database that cannot be measured is logged, once per streak. */
   sample(): Promise<void>;
 }
 
-export function pgStatsSampler(executor: PgExecutor): PgStatsSampler {
+export function postgresStatsSampler(executor: PgExecutor): PostgresStatsSampler {
   // The slots the last round published: a dropped slot reads 0, never its last size forever.
   let published: ReadonlySet<string> = new Set();
   let failing = false;
@@ -109,11 +109,11 @@ export function pgStatsSampler(executor: PgExecutor): PgStatsSampler {
  * async and awaits the round in flight: release it BEFORE the pool closes, or that round's query
  * meets a closing pool and logs `db.stats.sample-failed` on every shutdown.
  */
-export function startPgStatsGauges(
+export function startPostgresStatsGauges(
   executor: PgExecutor,
-  intervalMs: number = PG_STATS_INTERVAL_MS,
+  intervalMs: number = POSTGRES_STATS_INTERVAL_MS,
 ): () => Promise<void> {
-  const sampler = pgStatsSampler(executor);
+  const sampler = postgresStatsSampler(executor);
   let inFlight: Promise<void> | undefined;
   const tick = (): void => {
     if (inFlight !== undefined) return;

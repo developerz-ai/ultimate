@@ -12,16 +12,13 @@ const streamOf = (chunks: readonly string[]): ReadableStream<Uint8Array> =>
     },
   });
 
-/** Every queued chunk read: the readers run in the background. */
-const settled = () => Bun.sleep(5);
-
 describe('tailOf', () => {
   test('a line split across chunks counts once; an unterminated last line counts', async () => {
     const output = tailOf(
       [streamOf(['boot\n{"code":"X_SC', 'HEMA"}\nnext\n', 'X_SCHEMA'])],
       'X_SCHEMA',
     );
-    await settled();
+    await output.ended();
     expect(output.watched()).toBe(2);
     expect(output.log()).toBe('boot\n{"code":"X_SCHEMA"}\nnext\nX_SCHEMA');
   });
@@ -32,14 +29,14 @@ describe('tailOf', () => {
       [streamOf(['X_SCHEMA wait\n', noise]), streamOf(['X_SCHEMA\n'])],
       'X_SCHEMA',
     );
-    await settled();
+    await output.ended();
     expect(output.watched()).toBe(2);
     expect(output.log().length).toBe(8_000);
   });
 
   test('no watch counts nothing', async () => {
     const output = tailOf([streamOf(['X_SCHEMA\n'])]);
-    await settled();
+    await output.ended();
     expect(output.watched()).toBe(0);
   });
 });

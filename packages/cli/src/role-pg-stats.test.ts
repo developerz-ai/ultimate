@@ -1,70 +1,46 @@
 // The scheduler samples the Postgres server's own health — on a real server only: the embedded
 // database is one process's private copy, and its "connections" and "slots" describe no fleet.
+// The sampler itself (its interval, its round in flight) is `@ultimat3/db`'s, tested there.
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { startRolePgStats } from './role-pg-stats';
 
-function counting() {
-  const sent: string[] = [];
-  const executor: PgExecutor = {
-    query: async <R>(text: string) => {
-      sent.push(text);
-      return [] as R[];
+const executor: PgExecutor = { query: async <R>() => [] as R[] };
+
+/** A sampler starter that records what it was handed and returns a stop the test can identify. */
+function recordingStarter() {
+  const started: PgExecutor[] = [];
+  const stop = async (): Promise<void> => {};
+  return {
+    started,
+    stop,
+    start: (handed: PgExecutor): (() => Promise<void>) => {
+      started.push(handed);
+      return stop;
     },
   };
-  return { sent, executor };
 }
 
 describe('unit · the scheduler pg stats sampler', () => {
-  test('on an external database it samples at once, again per interval, and stops on stop()', async () => {
-    const { sent, executor } = counting();
-    const stop = startRolePgStats(['scheduler'], 'external', executor, 20);
-    expect(stop).not.toBeNull();
-    await Bun.sleep(5);
-    const first = sent.length;
-    expect(first).toBeGreaterThan(0);
-    await Bun.sleep(50);
-    const later = sent.length;
-    expect(later).toBeGreaterThan(first);
-    await stop?.();
-    await Bun.sleep(50);
-    expect(sent.length).toBe(later);
+  test('a scheduler on an external database starts it on the executor it was handed', () => {
+    const starter = recordingStarter();
+    const stop = startRolePgStats(['scheduler'], 'external', executor, starter.start);
+    expect(starter.started).toEqual([executor]);
+    // The sampler's own stop, never a wrapper: it awaits the round in flight, and a wrapper that
+    // dropped that promise let the role's unwind close the pool under a sampling query.
+    expect(stop).toBe(starter.stop);
   });
 
-  test('on the embedded database it starts nothing', async () => {
-    const { sent, executor } = counting();
-    expect(startRolePgStats(['scheduler'], 'embedded', executor, 20)).toBeNull();
-    await Bun.sleep(30);
-    expect(sent).toEqual([]);
+  test('on the embedded database it starts nothing', () => {
+    const starter = recordingStarter();
+    expect(startRolePgStats(['scheduler'], 'embedded', executor, starter.start)).toBeNull();
+    expect(starter.started).toEqual([]);
   });
 
   test('a process with no scheduler role starts nothing', () => {
-    const { executor } = counting();
-    expect(startRolePgStats(['web', 'worker'], 'external', executor, 20)).toBeNull();
-  });
-
-  test('stop() waits out the sampling round in flight, so the pool never closes under it', async () => {
-    let release: (() => void) | undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const executor: PgExecutor = {
-      query: async <R>() => {
-        await held;
-        return [] as R[];
-      },
-    };
-    const stop = startRolePgStats(['scheduler'], 'external', executor, 60_000);
-    if (stop === null) return expect.unreachable('the scheduler started the sampler');
-    let stopped = false;
-    const stopping = stop().then(() => {
-      stopped = true;
-    });
-    await Bun.sleep(10);
-    expect(stopped).toBe(false);
-    release?.();
-    await stopping;
-    expect(stopped).toBe(true);
+    const starter = recordingStarter();
+    expect(startRolePgStats(['web', 'worker'], 'external', executor, starter.start)).toBeNull();
+    expect(starter.started).toEqual([]);
   });
 });
