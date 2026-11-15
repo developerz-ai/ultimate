@@ -77,7 +77,7 @@ pr:
   # `non_goals` line above (security audit, 2026-10-14): with no branch protection and no publish
   # reviewer, an auto-merged workflow edit would run beside the job holding `id-token: write`.
   # Whether an author is outside is the platform's read of their real repo permission, never
-  # `author_association` (developerz.ai #6363).
+  # `author_association`.
   auto_merge_scope: any
   require_review: true
   # No `human_merge` lane: the owner's ruling is no human in the loop (2026-10-14). The risk is
