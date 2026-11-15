@@ -36,7 +36,9 @@ function spin(n: number): number {
 describe('unit · x profile <route>', () => {
   test('the hottest function of a CPU-bound render is named, with its file and line', async () => {
     const profile = await profileRoute({
-      fetch: async () => new Response(String(spin(24))),
+      // Large enough to dominate the profile once the JIT has warmed it: a warmed spin(24) ran in
+      // ~13 ms under `--rerun-each 5`, and the promise machinery around it out-sampled it.
+      fetch: async () => new Response(String(spin(29))),
       path: '/',
       runs: 10,
       top: 5,

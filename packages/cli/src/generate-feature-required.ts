@@ -11,7 +11,7 @@ import { containedPath } from './generate-write';
 import { quoteArg } from './shell-quote';
 
 /** The generators whose whole body reads a table the slice declares. */
-const READS_A_TABLE: ReadonlySet<Generator> = new Set<Generator>([
+export const READS_A_TABLE: ReadonlySet<Generator> = new Set<Generator>([
   'query',
   'backfill',
   'export-rows',

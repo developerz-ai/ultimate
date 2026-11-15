@@ -102,7 +102,7 @@ describe('firstRunPlan', () => {
   // named before the step that writes it would be the sweep's own red.
   test('a read runs into the resource slice, after the step that writes it', () => {
     const names = firstRunPlan().map((step) => step.name);
-    for (const kind of ['query', 'backfill']) {
+    for (const kind of ['query', 'backfill', 'export-rows', 'import-rows']) {
       const step = firstRunPlan().find((one) => one.name === `g ${kind}`);
       expect(step?.args).toContain('--feature');
       expect(step?.args).toContain(generatorName('resource'));
