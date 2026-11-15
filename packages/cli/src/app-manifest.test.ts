@@ -18,6 +18,8 @@ import { clearChannels } from '@ultimat3/realtime';
 import { clearRoutes } from '@ultimat3/render';
 import { loadApp, resetAppLoad } from './app-load';
 import { appManifest } from './app-manifest';
+import { BUILT_IN_GUARD_PACKAGE } from './guards-built-in-codes';
+import { SHIPPED_GUARD_NAMES, shippedGuardCode } from './guards-shipped-names';
 import { processRoot } from './process-root-fixture';
 import type { ThrownShape } from './thrown-by-fixture';
 
@@ -215,11 +217,22 @@ describe('unit · x manifest', () => {
   // declares its codes where it throws them published a manifest claiming it had none.
   test('error codes are every one the source declares, tagged with its workspace', async () => {
     const { manifest } = await appManifest(ROOT);
-    expect(manifest.errorCodes).toEqual([
+    const own = manifest.errorCodes.filter((fact) => fact.package !== BUILT_IN_GUARD_PACKAGE);
+    expect(own).toEqual([
       { code: 'X_ORG_NOT_FOUND', package: 'apps/web' },
       { code: 'X_POST_NOT_FOUND', package: 'apps/web' },
       { code: 'X_DB_TENANT_MISSING', package: 'packages/domain' },
     ]);
+  });
+
+  // A shipped guard the app runs built in raises a code its gate emits, as a vendored copy's did:
+  // listed, owned by the CLI, so deleting the copies (`vendored-guards`) removes no code.
+  test('error codes include every shipped guard the app runs built in', async () => {
+    const { manifest } = await appManifest(ROOT);
+    const builtIn = manifest.errorCodes.filter((fact) => fact.package === BUILT_IN_GUARD_PACKAGE);
+    expect(builtIn.map(({ code }) => code).sort()).toEqual(
+      SHIPPED_GUARD_NAMES.map(shippedGuardCode).sort(),
+    );
   });
 
   // `loadApp` sorts by code and the manifest re-sorts by workspace, so the two orders differ on

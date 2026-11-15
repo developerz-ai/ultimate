@@ -23,11 +23,11 @@ calls. A change outside that set is a collision — report it, do not make it.
 | Animate transform and opacity | nothing else composites: a `top`, a `width` or a `box-shadow` costs a layout pass every frame, and `transition: all` animates properties nobody chose. `tokens.duration()` / `tokens.easing()` are the values |
 | An island declares its states | a sibling `<name>.island.states.ts`, so `bunx x shot --island <name> --json` can photograph the failures nobody can click to |
 
-Every one of the last five is a build error, not a preference — `guards/` holds them and `bunx x verify`'s
-`boundaries` step runs them. Read the guard rather than guessing at the rule.
+Every one of the last five is a build error, not a preference — a guard the framework ships, run by
+`bunx x verify`'s `boundaries` step. Read the guard's finding rather than guessing at the rule.
 
 Inspect before you change: `bunx x routes --json`, `bunx x i18n check` for catalog gaps, and
 `bunx x shot <route> --json` when you need to see what you built.
 
-Checks: `bun test <path>/page.test.ts`, `bunx biome check --write <paths>`, and `bun run typecheck`
+Checks: `bun test <path>/page.test.ts`, `bunx @biomejs/biome check --write <paths>`, and `bun run typecheck`
 once when you are otherwise done. Never `bunx x verify` — that belongs to whoever coordinates you.

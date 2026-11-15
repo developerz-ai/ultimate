@@ -22,7 +22,8 @@ bun run dev     # all roles in one process, embedded Postgres, /_x mounted
 bun run verify  # the gate: typecheck, lint, boundaries, tests, drift, budgets (it builds to weigh)
 ```
 
-Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them:
+Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them.
+`bun run verify` starts them when nothing answers and Docker is there; by hand:
 
 ```sh
 docker compose -f docker/docker-compose.test.yml up -d --wait
@@ -48,5 +49,5 @@ with `X_DB_DRIFT`, and that is the fix it names.
 | `x.manifest.json` | generated facts: routes, actions, jobs, policies |
 | `.mcp.json` | MCP client config: the dev tools, `bunx @ultimat3/cli mcp serve --transport stdio` |
 | `apps/web/mcp.ts` | the app's own `POST /mcp`: exposed actions, behind a bearer token |
-| `.github/workflows/ci.yml` | `bun run setup` then `bun run verify`, on push and pull request |
+| `.github/workflows/ci.yml` | on push and pull request: `bun run verify plan` cuts the gate into parts, each runner runs `bun run setup` then its `bun run verify --only …`, and `bun run verify merge` folds them into the one verdict |
 | `.github/workflows/image.yml` | after a green `ci` on the default branch: `docker/Dockerfile` to `ghcr.io`, tagged `sha-<7>`, always on `ubuntu-latest` (bash and Docker). `ci.yml` runs on `vars.CI_RUNNER`, default `ubuntu-latest` |

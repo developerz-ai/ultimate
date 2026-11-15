@@ -25,6 +25,22 @@ Thin wrapper over `x new` — same templates, same flags, no second code path.
 | `--force` | write into a directory that already exists |
 | `--json` | machine-readable output |
 
+## Opening a repro bundle
+
+```sh
+bunx create-ultimate repro bundle-req1.json --framework ../ultimate
+```
+
+A bug's `x repro <id> --bundle` file, opened into a scratch app `repro-<id>/`: the `x new` scaffold
+(no example slice), the test under `repro/` importing the scratch app's db package, the bundle as
+`repro/bundle.json`. **A bundle is untrusted input** — an issue attachment from anyone: only its
+`subject` is read, checked field by field, and the test is rendered from it; the bundle's own
+`reproducer` text is never written or run. With a framework checkout — `--framework <path>`, or the one cwd is inside —
+every `@ultimat3/*` is a `file:` override onto its source. `repro` with no file is still an app named
+`repro`. A file that is no `x-repro-bundle/1` bundle is `X_REPRO_BUNDLE_INVALID`; a directory that exists is `X_CLI_BAD_FLAG`.
+It takes `--dir` (the parent, default cwd), `--framework` (the checkout to link; none found → the
+registry) and `--json` — kept out of the table above, which is `x new`'s flags and nothing else.
+
 What you get: `apps/web/{site,app,api,shared}`, `apps/admin` with MCP on, `apps/{mobile,desktop}`
 placeholders, `packages/{domain,db,i18n,ui,mcp}`, `bin/`, `docker/`, `app.config.ts` — a landing
 page at 0kb JS, a streaming authed dashboard, a seeded database and `x verify` green.

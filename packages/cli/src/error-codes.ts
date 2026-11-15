@@ -237,6 +237,9 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_DEV_PEER_REFUSED',
   'X_PROFILE_ROUTE_FAILED',
   'X_ROWS_SLICE_ENTITY',
+  'X_GUARD_BUILT_IN',
+  'X_REPRO_BUNDLE_INVALID',
+  'X_UPGRADE_LOCKED',
 ] as const;
 
 /**
@@ -462,6 +465,9 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_DEV_PEER_REFUSED: 'a /_x request came from a non-loopback peer',
   X_PROFILE_ROUTE_FAILED: 'the profiled route answered an error',
   X_ROWS_SLICE_ENTITY: "the slice's entity is not the scaffolded table",
+  X_GUARD_BUILT_IN: 'x g guard named a shipped guard',
+  X_REPRO_BUNDLE_INVALID: 'the file is not a repro bundle this version can open',
+  X_UPGRADE_LOCKED: 'another x upgrade holds this app',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

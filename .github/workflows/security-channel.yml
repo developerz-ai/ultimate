@@ -4,8 +4,13 @@
 # private channel. Nothing in the tree can see a setting, so this asks GitHub daily and opens one
 # `security-channel` issue when it is off.
 #
+# The second job is the channel's other direction: an advisory that lands against a dependency a
+# published `@ultimat3/*` package declares (or one that dependency pulls in) raises the range in a
+# pull request, so an app installs the patched version with no `overrides` of its own. An advisory
+# no raised floor closes opens a `security-advisory` issue naming the `bun update` an app runs.
+#
 # NOT a step of `x verify`, for `registry-audit.yml`'s reason: green may not depend on the network.
-# The endpoint is public for a public repository, so the job's own read token suffices.
+# The endpoints are public for a public repository, so the job's own token suffices.
 
 name: security-channel
 
@@ -15,9 +20,9 @@ on:
     - cron: '43 7 * * *'
   workflow_dispatch:
 
-# Reads one setting and may open an issue. No checkout, no install: nothing to run but `gh`.
-permissions:
-  issues: write
+# Nothing at the top: each job holds exactly what it does, so the channel check — which checks out
+# nothing — never carries the advisory job's `contents: write`.
+permissions: {}
 
 concurrency:
   group: security-channel
@@ -25,6 +30,9 @@ concurrency:
 
 jobs:
   check:
+    # Reads one setting and may open an issue. No checkout, no install: nothing to run but `gh`.
+    permissions:
+      issues: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -52,3 +60,97 @@ jobs:
             gh issue create --label security-channel --title "security: the private vulnerability channel is closed" --body "$body"
           fi
           exit 1
+
+  floors:
+    # `contents: write` + `pull-requests: write`: the branch and the pull request with the raised
+    # ranges, as bench.yml opens one. `issues: write`: the alarm for an advisory no floor closes. No
+    # `id-token`: this job can never publish, only propose; a release ships the raise.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    runs-on: ubuntu-latest
+    # One packument and one advisory query per dependency, a few dozen in all, measured well under a
+    # minute; the bound is for a hung registry, which would otherwise hold the runner six hours.
+    timeout-minutes: 10
+    steps:
+      # `persist-credentials: false`: the setup's install runs dependency scripts, and the token must
+      # not sit in .git/config while they do. The push passes it explicitly, as bench.yml's does.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - name: raise every published range an advisory lands in
+        id: floors
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # `pipefail`: without it `tee` decides the exit status and a red audit reads green.
+        shell: bash
+        run: |
+          set -o pipefail
+          bun run scripts/advisory-floors.ts --write --json | tee floors.json
+        # Not swallowed: the steps below key on this outcome and the last one fails the run.
+        continue-on-error: true
+
+      # No `env:` here, deliberately: this is the one step that re-resolves dependencies, and a
+      # package the raise pulls in must never run beside the write token. `--lockfile-only` writes
+      # bun.lock without installing; `--ignore-scripts` runs no lifecycle script even so.
+      - name: refresh the lockfile for the raised ranges, with no token
+        id: lock
+        if: steps.floors.outcome == 'failure'
+        run: |
+          if git diff --quiet -- packages; then
+            echo 'raised=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The lockfile follows the manifests in the same commit: ci.yml installs frozen.
+          bun install --lockfile-only --ignore-scripts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c 'security/advisory-floors'
+          git add packages/*/package.json bun.lock
+          git commit -m 'fix(deps): raise the ranges an advisory lands in'
+          echo 'raised=true' >> "$GITHUB_OUTPUT"
+
+      # The token, and nothing that runs a dependency: git and gh only.
+      - name: open a pull request with the raised ranges
+        if: steps.lock.outputs.raised == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH='security/advisory-floors'
+          # One branch, force-pushed: tomorrow's run refreshes today's pull request, never a second.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          body="$(jq -r '"**" + .summary + "**\n\n" + ([.data.raises[] | "- `" + .manifest + "` " + .field + "." + .name + ": `" + .from + "` -> `" + .to + "` (" + ([.advisories[].advisory] | unique | join(", ")) + ")"] | join("\n")) + "\n\nThe root `package.json`, the scaffold pin and the tracked apps may pin the old version: CI on this branch names them."' floors.json)"
+          existing="$(gh pr list --head "$BRANCH" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh pr comment "$existing" --body "$body"
+          elif ! gh pr create --head "$BRANCH" --title 'fix(deps): raise the ranges an advisory lands in' --body "$body"; then
+            # The refusal bench.yml documents: Actions may not create pull requests in this
+            # repository until its settings allow it, and no `permissions:` key grants that.
+            echo "::error::no pull request for ${BRANCH} (pushed): this run needs GitHub Actions allowed to create pull requests. Until then open it by hand: gh pr create --head ${BRANCH} --fill"
+            exit 1
+          fi
+
+      - name: open an issue for an advisory no raised range closes
+        if: steps.floors.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="$(jq -r '[.findings[] | select(.code != "X_ADVISORY_RANGE_OPEN") | "- `" + .code + "` " + (.at // "") + " — " + .cause + "\n  - fix: `" + .fix + "`"] | join("\n")' floors.json)"
+          if [ -z "$body" ]; then exit 0; fi
+          # Label create-first, as the job above provisions its own.
+          if ! err="$(gh label create security-advisory --color d73a4a --description 'an advisory a published range cannot close' 2>&1)"; then
+            gh api "repos/${GITHUB_REPOSITORY}/labels/security-advisory" >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
+          fi
+          existing="$(gh issue list --label security-advisory --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --label security-advisory --title 'security: an advisory a published range cannot close' --body "$body"
+          fi
+
+      - name: fail the run so the badge is honest
+        if: steps.floors.outcome == 'failure'
+        run: exit 1

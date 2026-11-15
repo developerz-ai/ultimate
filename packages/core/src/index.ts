@@ -536,6 +536,7 @@ export type {
   StartSpanOptions,
   StatementAttribution,
   StorageEvent,
+  StorageMultipartEvent,
   TelemetryOptions,
   TimedEvent,
 } from './exports/observability';
@@ -990,7 +991,7 @@ export { singleFlight } from './single-flight';
 export { ambientClock, noWaitClock } from './sleep-clock';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
 export type { StoreMode } from './store-mode';
-export { storeMode } from './store-mode';
+export { storeMode, withStoreMode } from './store-mode';
 export { THEME_STORAGE_KEY } from './theme-storage';
 export { timingSafeEqual } from './timing-safe-equal';
 export type { ToolDescriptionSource } from './tool-description';

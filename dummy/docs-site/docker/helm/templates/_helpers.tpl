@@ -156,7 +156,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     periodSeconds: 5
     {{- end }}
   livenessProbe:
-    httpGet: { path: /metrics, port: metrics }
+    httpGet: { path: /healthz, port: metrics }
     periodSeconds: 15
     failureThreshold: 4
   {{- /*

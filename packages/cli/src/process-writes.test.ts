@@ -13,12 +13,14 @@ const SRC = import.meta.dir;
 
 /**
  * Shipped source only. `templates/` is excluded because a template's strings are the APP's code,
- * emitted into a scaffold — never a write this process makes.
+ * emitted into a scaffold — never a write this process makes; a codemod's stock-text module
+ * (`codemods/*-stock.ts`, `codemods/*-3122.ts`) is the same text at an older release.
  */
 const shippedSources = (): readonly string[] =>
   [...new Bun.Glob('**/*.ts').scanSync({ cwd: SRC, absolute: false })]
     .filter((path) => !path.endsWith('.test.ts') && !path.endsWith('.d.ts'))
     .filter((path) => !path.startsWith('templates/'))
+    .filter((path) => !/^codemods\/[a-z0-9-]+-(?:stock|\d{4})\.ts$/.test(path))
     .sort();
 
 const DIRECT_WRITE = /\bprocess\s*\.\s*(?:stdout|stderr)\s*\.\s*write\b/;

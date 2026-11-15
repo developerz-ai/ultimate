@@ -51,14 +51,14 @@ async function main(): Promise<void> {
   if (root === undefined) return;
   // This checkout's own biome first: the pinned version, and no network on a fresh machine.
   const local = join(import.meta.dir, '..', '..', 'node_modules', '.bin', 'biome');
-  const biome = (await Bun.file(local).exists()) ? [local] : ['bunx', 'biome'];
+  const biome = (await Bun.file(local).exists()) ? [local] : ['bunx', '@biomejs/biome'];
   const said: string[] = [];
   for (const check of checksFor(relative(root, file))) {
     if (check === 'format') {
       const result = run([...biome, 'check', '--write', '--no-errors-on-unmatched', file], root);
       if (!result.ok)
         said.push(
-          `${tail(result.out, 30)}\nfix what it names, then: bunx biome check --write ${file}`,
+          `${tail(result.out, 30)}\nfix what it names, then: bunx @biomejs/biome check --write ${file}`,
         );
     } else {
       const result = run(['bun', 'run', 'boundaries'], root);

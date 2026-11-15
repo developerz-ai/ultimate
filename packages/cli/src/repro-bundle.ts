@@ -10,6 +10,7 @@ import { inspectJob } from '@ultimat3/jobs';
 import type { JobFailure } from '@ultimat3/testing';
 import { ReproCaptureOffError, ReproUnknownError } from './repro-errors';
 import { jobFailureOf } from './repro-job';
+import { parseReproSubject } from './repro-parse';
 
 export type ReproSubject =
   | { readonly kind: 'job'; readonly failure: JobFailure }
@@ -18,27 +19,18 @@ export type ReproSubject =
 /** A uuid in any spelling `x_jobs.id` accepts — `cmd-jobs.ts`' rule, so no statement is wasted. */
 const JOB_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
 
-const isBundle = (value: unknown): value is FailureBundle =>
-  isJsonObject(value) &&
-  typeof value['name'] === 'string' &&
-  (value['primitive'] === 'action' || value['primitive'] === 'query') &&
-  Array.isArray(value['reads']);
-
-const isJobFailure = (value: unknown): value is JobFailure =>
-  isJsonObject(value) &&
-  typeof value['jobId'] === 'string' &&
-  typeof value['name'] === 'string' &&
-  Array.isArray(value['steps']);
-
-/** `--from <file>`: a bundle `x repro <id> --json` printed (`data.bundle` or `data.failure`), or one bare. */
+/** `--from <file>`: what `x repro <id> --json` printed (`data.bundle`/`data.failure`), a repro bundle, or bare. */
 export async function subjectFromFile(path: string): Promise<ReproSubject> {
   const file = Bun.file(path);
   if (!(await file.exists())) throw new ReproUnknownError({ id: path });
   const parsed: unknown = await file.json();
   const data = isJsonObject(parsed) && isJsonObject(parsed['data']) ? parsed['data'] : parsed;
-  const inner = isJsonObject(data) ? (data['bundle'] ?? data['failure'] ?? data) : data;
-  if (isBundle(inner)) return { kind: 'request', bundle: inner };
-  if (isJobFailure(inner)) return { kind: 'job', failure: inner };
+  // `subject` is a repro bundle's (`x repro --bundle`): the redacted failure, read back as-is.
+  const inner = isJsonObject(data)
+    ? (data['bundle'] ?? data['failure'] ?? data['subject'] ?? data)
+    : data;
+  const subject = parseReproSubject(inner);
+  if (subject !== undefined) return subject;
   throw new ReproUnknownError({ id: path });
 }
 

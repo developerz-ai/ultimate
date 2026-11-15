@@ -29,7 +29,7 @@ const settings = (): string => `{
       "Bash(bun run typecheck)",
       "Bash(bun run lint)",
       "Bash(bun run verify:*)",
-      "Bash(bunx biome check:*)",
+      "Bash(bunx @biomejs/biome check:*)",
       "Bash(bunx x verify:*)",
       "Bash(bunx x test:*)",
       "Bash(bunx x doctor:*)",
@@ -124,7 +124,7 @@ framework's.
 
 ## The hook
 
-One \`PostToolUse\` hook, \`${HOOK_PATH}\`: \`bunx biome check --write\` on the file that was just
+One \`PostToolUse\` hook, \`${HOOK_PATH}\`: the installed \`biome check --write\` on the file that was just
 edited, named by the JSON the harness sends on stdin. **\`--write\` means it rewrites that file in
 place** — the same safe fixes \`biome check --write .\` would make repo-wide, but your working tree
 does change after every agent edit. Scoped to one file, so it costs milliseconds, and it settles

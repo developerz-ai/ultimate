@@ -23,7 +23,7 @@ const CI_WORKFLOW_NAME = 'ci';
  * instead: GitHub owns the runner and the tag together. Same rule the framework's own
  * `.github/actions/setup/action.yml` states, and the same SHA.
  */
-const SETUP_BUN = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0';
+export const SETUP_BUN = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0';
 
 /** The plan job's one command: the app's `verify` script, so the CLI it asks is the one installed. */
 export const PLAN_COMMAND = `bun run verify plan --parts ${String(DEFAULT_PLAN_PARTS)} --json`;

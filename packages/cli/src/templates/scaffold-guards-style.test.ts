@@ -1,7 +1,6 @@
-// What holds the seven stylesheet guards to the framework that ships them. A guard is a file an
-// app owns, so nothing else checks these four things: that the scales a guard embeds are the
-// token package's, that the framework's OWN sheets pass the rules it hands to apps, that both
-// tracked apps carry exactly what `x new` writes, and that `x g guard <name>` reaches each one.
+// What holds the seven stylesheet guards to the framework that ships them: that the scales a guard
+// embeds are the token package's, that the framework's OWN sheets pass the rules it hands to apps,
+// that no tracked app holds an edited copy, and that `x g guard <name>` refuses each one.
 
 import { describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API; `mkdtemp`/`rm` own a throwaway root's lifetime.
@@ -15,7 +14,12 @@ import { guardSources } from '../guard-sources';
 import type { Guard } from '../guards';
 import type { Finding } from '../output';
 import { guardFiles } from './guard';
-import { SHIPPED_GUARD_NAMES, scaffoldGuardFiles, shippedGuardFiles } from './scaffold-guards';
+import {
+  SHIPPED_GUARD_NAMES,
+  shippedGuardFiles,
+  shippedGuardSource,
+  shippedGuardSources,
+} from './scaffold-guards';
 
 const REPO = Bun.fileURLToPath(new URL('../../../..', import.meta.url)).replace(/[\\/]$/, '');
 const TOKENS = `${REPO}/packages/ui/src/tokens`;
@@ -29,8 +33,8 @@ async function withEmitted<T>(
 ): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'x-guard-style-'));
   try {
-    for (const file of scaffoldGuardFiles()) {
-      if (!file.path.endsWith('.test.ts')) await Bun.write(join(root, file.path), file.contents);
+    for (const name of SHIPPED_GUARD_NAMES) {
+      await Bun.write(join(root, `guards/${name}.ts`), shippedGuardSource(name) ?? '');
     }
     return await body((name) => import(join(root, `guards/${name}.ts`)));
   } finally {
@@ -144,38 +148,37 @@ describe('unit · shipped guards · the framework passes the rules it ships', ()
   });
 });
 
-describe('unit · shipped guards · both tracked apps carry the set `x new` writes', () => {
-  for (const app of ['examples/dummy', 'dummy/social-media-clone']) {
-    test(`${app}/guards is byte-identical to the templates`, async () => {
+describe('unit · shipped guards · no tracked app holds an edited copy', () => {
+  for (const app of ['examples/dummy', 'dummy/social-media-clone', 'dummy/docs-site']) {
+    test(`${app}/guards holds a shipped guard only as a current form, or not at all`, async () => {
       const drifted: string[] = [];
-      for (const file of scaffoldGuardFiles()) {
-        const onDisk = Bun.file(`${REPO}/${app}/${file.path}`);
-        if (!(await onDisk.exists())) drifted.push(`${file.path}: absent`);
-        else if ((await onDisk.text()) !== file.contents) drifted.push(`${file.path}: differs`);
+      for (const name of SHIPPED_GUARD_NAMES) {
+        const onDisk = Bun.file(`${REPO}/${app}/guards/${name}.ts`);
+        if (!(await onDisk.exists())) continue;
+        const text = await onDisk.text();
+        if (!shippedGuardSources(name).includes(text)) drifted.push(`guards/${name}.ts`);
       }
-      // A guard edited in place is a rule this app and `x new` disagree about: the repair goes in
-      // the template and comes back through `x g guard <name> --force`.
+      // Shipped guards run built in; a copy is migrated by `x upgrade` (codemods/vendored-guards),
+      // and an edited one would be a rule this repository and the framework disagree about.
       expect(drifted).toEqual([]);
     });
   }
 });
 
-describe('unit · x g guard · a shipped name is the shipped guard', () => {
-  test('every shipped name is reachable, and writes exactly what `x new` writes for it', () => {
-    expect(SHIPPED_GUARD_NAMES).toHaveLength(25);
+describe('unit · x g guard · a shipped name is refused: it already runs', () => {
+  // One way to get a shipped guard — installing the framework. A copy would run in its place.
+  test('every shipped name is refused with X_GUARD_BUILT_IN, and writes nothing', () => {
+    expect(SHIPPED_GUARD_NAMES).toHaveLength(26);
     for (const name of SHIPPED_GUARD_NAMES) {
-      const written = generate({ kind: 'guard', name });
-      expect(written).toEqual(shippedGuardFiles(name) ?? []);
-      expect(written.map((file) => file.path)).toEqual([
-        `guards/${name}.ts`,
-        `guards/${name}.test.ts`,
-      ]);
+      expect(() => generate({ kind: 'guard', name })).toThrow(
+        expect.objectContaining({ code: 'X_GUARD_BUILT_IN' }),
+      );
     }
   });
 
   test('the name is read the way every generator reads one', () => {
-    expect(generate({ kind: 'guard', name: 'RawLength' })).toEqual(
-      shippedGuardFiles('raw-length') ?? [],
+    expect(() => generate({ kind: 'guard', name: 'RawLength' })).toThrow(
+      expect.objectContaining({ code: 'X_GUARD_BUILT_IN' }),
     );
   });
 

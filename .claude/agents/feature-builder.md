@@ -57,7 +57,7 @@ live next to source as `<file>.test.ts`; the opt-in suites use `.contract.`/`.li
 
 Run lint and tests **narrowed to your own files** — `bun test ./<path>` (the `./` matters: a bare
 `packages/<pkg>` is a substring filter that also runs `examples/dummy/packages/<pkg>` under the
-wrong config), `bunx biome check <paths>`. `bun run typecheck` **once, when otherwise done, under the run's lock** — `mkdir -p
+wrong config), `bunx @biomejs/biome check <paths>`. `bun run typecheck` **once, when otherwise done, under the run's lock** — `mkdir -p
 node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` (the brief
 names `<run>`). `tsc -b` writes `.tsbuildinfo` and `dist/` for every workspace; two unserialised
 runs produce errors that belong to neither.

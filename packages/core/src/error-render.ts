@@ -111,7 +111,8 @@ export function renderCauseValue(value: unknown): string {
  * `\u2028` and `\u2029` are included because they terminate a line for a JavaScript parser and
  * for several log viewers, while `String.prototype.split('\n')` never sees them.
  *
- * The set is every C0 control, DEL, and `\u2028`/`\u2029`. Line breaks are the structural half —
+ * The set is every C0 control, DEL, every C1 control (`\u009b` is a one-byte CSI), and
+ * `\u2028`/`\u2029`. Line breaks are the structural half —
  * they add a line to a line-oriented format — and the rest ride along because a terminal reads them
  * as commands of its own: a raw `\u001b` in a cause is an ANSI escape, so a value could repaint the
  * screen, hide the line above it or move the cursor over what a reader had already been shown.
@@ -121,7 +122,7 @@ export function renderCauseValue(value: unknown): string {
  */
 export function singleLine(text: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
-  return text.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, (char) => {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, (char) => {
     const known = Object.hasOwn(CONTROL_ESCAPES, char) ? CONTROL_ESCAPES[char] : undefined;
     if (known !== undefined) return known;
     return `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;

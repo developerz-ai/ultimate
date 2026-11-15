@@ -17,16 +17,25 @@ The mechanisms are of three shapes, and knowing which one you hit tells you wher
 | Shape | Where it fires | Example |
 |---|---|---|
 | a **type** in `@ultimat3/ui` | `x verify`'s `typecheck` step | `AsyncRegionProps.empty` is required |
-| a **guard** in your app's `guards/` | `x verify`'s `boundaries` step | `guards/focus-visible.ts` |
+| a **guard**, shipped or in your app's `guards/` | `x verify`'s `boundaries` step | `focus-visible` |
 | a **test** in the framework | `x verify`'s `unit` step | `packages/ui/src/tokens/contrast.test.ts` |
 
-Guards are yours: `x new` writes every name in `SHIPPED_GUARD_NAMES`
-(`packages/cli/src/templates/scaffold-guards.ts`), the directory is the registration, and deleting
-a file deletes the rule. Add one with `x g guard <name>` — a name the framework ships a guard under writes
-that guard, any other name writes a blank one — and `x doctor` lists the shipped ones an app does
-not hold. Each raises an app-owned `X_*` code derived from
-its own filename — `guards/focus-visible.ts` raises `X_FOCUS_VISIBLE` — so a finding says which
-convention broke, not which framework subsystem noticed.
+Shipped guards run from the installed framework, never from a copy: every name in
+`SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) runs on `boundaries`, so a
+fixed guard reaches the app on its next install. `As of 2026-11`.
+
+| You want | Do |
+|---|---|
+| a shipped guard to report only, gate, or not run | a row in `guards/shipped.json`: `{ "severity": { "raw-fetch": "warning" } }` — `"error"`, `"warning"` or `"off"` |
+| a shipped guard held at its current count while the tree is brought under it | `"guardBaseline": { "raw-fetch": 3 }` in `x.verify.json` — the count only falls |
+| a rule of your own | `x g guard <name>`: `guards/<name>.ts` and its test, discovered, never registered |
+| off vendored copies (an app whose `guards/` holds them) | `x upgrade` — the `vendored-guards` codemod deletes each identical copy; a severity edit becomes a row; any other edit is kept as `guards/app-<name>.ts`, the shipped one `"off"`, with the reason and the diff |
+
+`guards/shipped.json` present is the opt-in: absent, the app is legacy — a copy it holds runs in
+place of the shipped guard (`X_GUARD_VENDORED`, a warning, fix `x upgrade`), and a shipped guard it
+holds no copy of reports only. Each raises an `X_*` code derived from its name — `focus-visible`
+raises `X_FOCUS_VISIBLE` — so a finding says which convention broke, not which framework subsystem
+noticed.
 
 ## Loading, empty, error
 

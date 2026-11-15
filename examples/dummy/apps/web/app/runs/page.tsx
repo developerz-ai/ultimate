@@ -187,7 +187,11 @@ export const config = defineRoute({
   // measured: 248388 B (2026-11-15, plan 101 sweep 3; x build --target static) — why: the run
   // console +144 B (129,623 B), the ui catalog's pointer-capture take-back in its drag and the
   // named scroll region a Table now carries. Raised 242.5kb → 242.6kb.
-  budget: { js: '242.6kb' },
+  // measured: 248429 B (2026-11-15, plan 101b sweep 5; x build --target static, against 248,388
+  // before) — why: the run console +34 B (129,657 B), solid-js 1.9.17 → 1.9.18 (+27 B in every
+  // chunk that bundles Solid), the release that closes the seroval advisories for every app.
+  // Raised 242.6kb → 242.7kb.
+  budget: { js: '242.7kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

@@ -1,0 +1,69 @@
+name: upgrade-fixtures
+
+# Does `x upgrade` carry an app its author never touched to this commit with zero hand edits? One
+# matrix row per past release (`FIXTURE_VERSIONS` in `scripts/upgrade-fixtures.ts`): that release's
+# own `x new` from npm, set up and committed, hopped to this checkout — packed and served as if
+# published — by this checkout's `x upgrade`, and judged by the gate the hop runs. Every file the
+# hop leaves to a human is a finding (plan 101, slice 08).
+#
+# Its own workflow, never a `ci` job, for three measured reasons (2026-11-15): each row installs
+# past releases from npm, so a registry hiccup would redden a PR that touched nothing it reads; the
+# rows cost ~3.5 min each beside a gate held under 5; and a `ci` job is required by construction
+# (`scripts/ci-workflow-shape*.test.ts`), so a slice still in progress would block every merge.
+# On a PR or push touching what a hop reads, weekly for npm-side drift, and by hand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/cli/src/templates/**'
+      - 'packages/cli/src/codemods/**'
+      - 'packages/cli/src/cmd-upgrade*'
+      - 'packages/cli/src/upgrade-*'
+      - 'packages/cli/src/guards*'
+      - 'scripts/upgrade-fixtures*'
+      - '.github/workflows/upgrade-fixtures.yml'
+  pull_request:
+    paths:
+      - 'packages/cli/src/templates/**'
+      - 'packages/cli/src/codemods/**'
+      - 'packages/cli/src/cmd-upgrade*'
+      - 'packages/cli/src/upgrade-*'
+      - 'packages/cli/src/guards*'
+      - 'scripts/upgrade-fixtures*'
+      - '.github/workflows/upgrade-fixtures.yml'
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: upgrade-fixtures-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  hop:
+    name: upgrade-fixtures (${{ matrix.version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['31.4.0', '31.15.0', '31.20.0', '31.22.0']
+    env:
+      VERSION: ${{ matrix.version }}
+      # The same refusal `scaffold-smoke` holds: a fixture floored on `e2e` with no browser is red.
+      E2E_BROWSER_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Chrome, for the e2e step
+        run: |
+          test -x /usr/bin/google-chrome
+          echo "CHROME_PATH=/usr/bin/google-chrome" >> "$GITHUB_ENV"
+      - name: x new at ${{ matrix.version }}, x upgrade to this commit, the hop's gate
+        run: bun run scripts/upgrade-fixtures.ts --versions "$VERSION"

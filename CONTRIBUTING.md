@@ -98,7 +98,7 @@ needs a reviewer, not a convenience.
 | `--json` | every command, every script, every error |
 
 Style: single quotes, semicolons, 2-space indent, 100-column lines, trailing commas. Biome owns
-all of it — do not argue with the formatter, run `bunx biome check --write .`.
+all of it — do not argue with the formatter, run `bunx @biomejs/biome check --write .`.
 
 A new error code is one command, which writes the registration, its `wiki/Error-Codes.md` row and
 its HTTP status decision together (tier ≤ 4 takes exactly one of `--status`/`--off-socket`, tier 5

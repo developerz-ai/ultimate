@@ -79,7 +79,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CLI_UNEXPECTED: 'x doctor --json',
   // `-p .`: an app root has no `references`, so the gate's own step runs this form (#450).
   X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
-  X_LINT_FAILED: 'bunx biome check .',
+  X_LINT_FAILED: 'bunx @biomejs/biome check .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run verify --json   # every finding carries its own new-package.ts command',
@@ -393,6 +393,16 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PROFILE_ROUTE_FAILED: 'x routes --json',
   X_ROWS_SLICE_ENTITY:
     'x help g --json   # then generate a job with the name and feature the finding names, and declare exportRows/importRows in it over the table that entity.ts declares',
+  X_SUPERSEDED_WORKAROUND:
+    'x doctor --json   # each finding names the file, the release that retired the workaround and its replacement',
+  X_GUARD_VENDORED: 'x upgrade --json',
+  X_GUARD_BUILT_IN:
+    'x verify --only boundaries --json   # set its severity in guards/shipped.json, or generate an app guard under another name',
+  X_REPRO_BUNDLE_INVALID:
+    'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
+  X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
+  X_UPGRADE_CODEMODS_PENDING: 'x upgrade --json',
+  X_UPGRADE_LOCKED: 'cat .x/upgrade.lock',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -188,7 +188,7 @@ async function format(): Promise<void> {
   if (result.exitCode !== 0) {
     throw runtimeMissingError(
       'a successful `biome format` over the generated glyphs',
-      'bunx biome format --write packages/ui/src/icons/glyphs',
+      'bunx @biomejs/biome format --write packages/ui/src/icons/glyphs',
     );
   }
 }

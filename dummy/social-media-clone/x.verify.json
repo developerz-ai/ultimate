@@ -21,6 +21,10 @@
     "seo",
     "exercise"
   ],
+  "skip": {
+    "roadmap": "a framework-repository step: it checks docs/idea/14-roadmap.md, which only the Ultimate monorepo ships"
+  },
+  "strict": true,
   "rollingSince": "20261009144006_credentials_and_sessions_move_to_the_framework_auth_tables",
   "coverage": {
     "lines": 75,

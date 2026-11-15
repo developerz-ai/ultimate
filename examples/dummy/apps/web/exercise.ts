@@ -101,6 +101,24 @@ async function orgPostId(): Promise<string> {
   return post.id;
 }
 
+/**
+ * The acting member's avatar, attached through Postly's own step: what `memberAvatar` signs a URL
+ * for, at a size its render width is cut from — so the call writes that variant, as the first
+ * render after an upload does.
+ */
+async function attachedAvatar(): Promise<void> {
+  const member = memberOf(useContext().actor);
+  assert(
+    member !== null,
+    'the exercise actor is no Postly member',
+    'edit apps/web/exercise.ts — memberAvatar: { actor: owner }',
+  );
+  const { attachAvatar } = await import('./app/orgs/avatar-attach');
+  const key = pendingKey(member.orgId, `${crypto.randomUUID()}.png`);
+  await disk().put(key, encodeImage(blankRaster(192, 192)), { contentType: 'image/png' });
+  await attachAvatar({ orgId: member.orgId, memberId: member.memberId, key });
+}
+
 /** The one file `posts.import` reads, as `posts.export` writes its first line. */
 const CSV_HEADER = new TextEncoder().encode(
   'id,slug,title,status,likeCount,publishedAt,createdAt\n',
@@ -191,6 +209,7 @@ export const exercise = defineExercise(
     // The payload is what `verify` read out of the signed bytes; the draw's JSON `null` is not one.
     'billing.events': {
       actor: null,
+      empty: 'answers the verified event as its result: Postly keeps no billing state to write',
       input: (drawn) => ({
         ...drawn,
         payload: { id: 'evt_exercise', type: 'invoice.paid', invoice: 'in_exercise' },
@@ -224,6 +243,15 @@ export const exercise = defineExercise(
       },
     },
 
+    // The draw's `orgId` is the meter's `null` — counted for no org, nobody to tell — so the org's
+    // half, the `quotaAlert` it enqueues, never ran: a warning for a seeded org reaches it.
+    postsQuotaWarning: {
+      input: async (drawn) => {
+        const [org] = await db.orgs.limit(1).all();
+        return { ...drawn, orgId: org?.id ?? null };
+      },
+    },
+
     answerPrompt: { off: 'answers a prompt a live run is waiting on; only runs.sync writes one' },
     cancelRun: { off: 'cancels the queued job behind a run; the seed writes the run row alone' },
     confirmAgentPublish: {
@@ -241,10 +269,18 @@ export const exercise = defineExercise(
     },
     // The draw's `sample` type and filename are refused by the upload policy before it signs.
     grantAvatarUpload: {
+      empty: 'signs a PUT URL for a pending/ key: nothing is stored until the browser sends it',
       input: (drawn) => ({ ...drawn, filename: 'me.png', contentType: 'image/png', size: 1024 }),
     },
     grantPostsImport: {
       input: (drawn) => ({ ...drawn, filename: 'p.csv', contentType: 'text/csv', size: 1024 }),
+    },
+    // The variant the URL is for is made and kept on the first ask: a member who has an avatar.
+    memberAvatar: {
+      input: async (drawn) => {
+        await attachedAvatar();
+        return drawn;
+      },
     },
     // What the grant's URL would have received: a real PNG under the ACTING member's org's
     // `pending/`, the one place `promoteAttachment` takes an upload from.
@@ -280,15 +316,18 @@ export const exercise = defineExercise(
     warmAvatar: {
       input: async (drawn) => {
         const key = `org/${String(drawn['orgId'])}/member/exercise/avatar/a.png`;
-        await disk().put(key, encodeImage(blankRaster(8, 8)), { contentType: 'image/png' });
+        // As wide as the narrowest width the job warms: a smaller source is skipped, never upscaled.
+        await disk().put(key, encodeImage(blankRaster(48, 48)), { contentType: 'image/png' });
         return { ...drawn, key };
       },
     },
     // The session calls act on a session grantPostsImport opened, which no draw names.
     signPostsImportPart: {
+      empty: 'signs one part URL for an open session: the part lands when the client PUTs it',
       input: async (drawn) => ({ ...drawn, ...(await importSession(drawn)), partNumber: 1 }),
     },
     listPostsImportParts: {
+      empty: 'lists the parts already on the disk: a storage read, no row and no write',
       input: async (drawn) => ({ ...drawn, ...(await importSession(drawn)) }),
     },
     abortPostsImport: { input: async (drawn) => ({ ...drawn, ...(await importSession(drawn)) }) },
@@ -298,14 +337,25 @@ export const exercise = defineExercise(
         return { ...drawn, ...session, parts: [{ partNumber: 1 }] };
       },
     },
-    // The file the import reads is the CSV `posts.export` writes; header only, it restores none.
+    // The file the import reads is the CSV `posts.export` writes, one post of it: authored by a
+    // member of the org it restores into, its slug its own (`post_slug_unique` spans every org).
     'posts.import': {
+      actor: owner,
       input: async (drawn) => {
         const orgId = String(drawn['orgId']);
         const importId = crypto.randomUUID();
         const key = `org/${orgId}/imports/posts/${importId}/posts.csv`;
-        await disk().put(key, CSV_HEADER, { contentType: 'text/csv' });
-        return { ...drawn, orgId, importId, key };
+        // The seated owner, a member of the org the job restores into: the import's author.
+        const author = memberOf(useContext().actor);
+        assert(
+          author !== null && author.orgId === orgId,
+          `the exercise owner is no member of org ${orgId}`,
+          "edit apps/web/exercise.ts — 'posts.import': { off: '<why>' }",
+        );
+        const row = `${crypto.randomUUID()},imported-${importId},Imported,draft,0,,2026-01-01T00:00:00.000Z\n`;
+        const file = new Uint8Array([...CSV_HEADER, ...new TextEncoder().encode(row)]);
+        await disk().put(key, file, { contentType: 'text/csv' });
+        return { ...drawn, orgId, importId, authorId: author.memberId, key };
       },
     },
     // A device token is a provider's alphabet the draw does not produce: an iOS one is hex.
@@ -368,6 +418,12 @@ export const exercise = defineExercise(
         const options = await passkeys.erasure.options({ userId, input: request });
         return { ...drawn, approval: await device.get(options) };
       },
+    },
+    // Postly has no tracker: the issue is one structured log line an operator's alerting reads.
+    openErrorIssue: { empty: 'logs the new error group for alerting: no row, mail or object' },
+    'posts.imports.purge': {
+      empty:
+        'deletes import files a week old: the pass wrote its files now, and a put cannot age one',
     },
     keepDraftReview: { off: NO_GATEWAY },
     reviewDraft: { off: NO_GATEWAY },

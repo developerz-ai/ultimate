@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { planNewApp } from '../cmd-new';
 import { guardFindings, guardPaths } from '../guards';
 import type { Finding } from '../output';
-import { scaffoldGuardFiles } from './scaffold-guards';
+import { SHIPPED_GUARD_NAMES, scaffoldGuardFiles } from './scaffold-guards';
 import { linkUi } from './shipped-guard-fixture';
 
 /**
@@ -49,51 +49,51 @@ async function findingsWith(files: Readonly<Record<string, string>>): Promise<re
 
 const codes = (findings: readonly Finding[]): readonly string[] => findings.map((f) => f.code);
 
-/** Every guard `x new` writes, spelled out: a twenty-sixth arriving unannounced fails here. */
-const TWENTY_FIVE: readonly string[] = [
-  'guards/animated-layout-property.ts',
-  'guards/bare-error.ts',
-  'guards/error-declared.ts',
-  'guards/focus-visible.ts',
-  'guards/image-dimensions.ts',
-  'guards/island-mount-clears.ts',
-  'guards/island-without-states.ts',
-  'guards/native-confirm.ts',
-  'guards/raw-breakpoint.ts',
-  'guards/raw-colour.ts',
-  'guards/raw-fetch.ts',
-  'guards/raw-interval.ts',
-  'guards/raw-length.ts',
-  'guards/raw-motion.ts',
-  'guards/raw-shadow.ts',
-  'guards/raw-z-index.ts',
-  'guards/repo-await-in-loop.ts',
-  'guards/repo-raw-sql.ts',
-  'guards/repo-unbounded.ts',
-  'guards/semantic-interactive.ts',
-  'guards/unbounded-fanout.ts',
-  'guards/undeclared-custom-property.ts',
-  'guards/undefined-style-class.ts',
-  'guards/untranslated-string.ts',
-  'guards/unzoned-date.ts',
+/** Every guard the framework ships, spelled out: a twenty-seventh arriving unannounced fails here. */
+const TWENTY_SIX: readonly string[] = [
+  'animated-layout-property',
+  'bare-error',
+  'error-declared',
+  'focus-visible',
+  'image-dimensions',
+  'island-mount-clears',
+  'island-without-states',
+  'native-confirm',
+  'raw-breakpoint',
+  'raw-colour',
+  'raw-fetch',
+  'raw-interval',
+  'raw-length',
+  'raw-motion',
+  'raw-shadow',
+  'raw-z-index',
+  'repo-await-in-loop',
+  'repo-raw-sql',
+  'repo-unbounded',
+  'runtime-pin',
+  'semantic-interactive',
+  'unbounded-fanout',
+  'undeclared-custom-property',
+  'undefined-style-class',
+  'untranslated-string',
+  'unzoned-date',
 ];
 
 describe('unit · x new · the guards it ships', () => {
-  test('every guard is a file the gate discovers, and each has its own test', () => {
-    const paths = scaffoldGuardFiles().map((file) => file.path);
-    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([...TWENTY_FIVE]);
-    for (const rule of paths.filter((path) => !path.endsWith('.test.ts'))) {
-      expect(paths).toContain(rule.replace(/\.ts$/, '.test.ts'));
-    }
+  // Built in, never copied: `x new` writes no guard, only the file that opts the app into them —
+  // so a fix to a shipped guard reaches the app on its next install, with no hand edit.
+  test('guards/ holds no copy of a shipped guard, only guards/shipped.json', () => {
+    expect(SHIPPED_GUARD_NAMES).toEqual([...TWENTY_SIX]);
+    expect(scaffoldGuardFiles().map((file) => file.path)).toEqual(['guards/shipped.json']);
   });
 
-  // The seam, not a string: `guardPaths` is what the `boundaries` step enumerates, and a guard the
-  // scaffold writes into a directory the gate does not read is a rule that does not exist.
-  test('the gate enumerates every one of them and never their tests', async () => {
+  // The seam, not a string: what the `boundaries` step runs over a scaffold is every shipped guard,
+  // gating — proven below by the scaffold tripping each — and none of them from the app's tree.
+  test('the gate finds no guard file in the scaffold to run in place of a shipped one', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'x-guards-'));
     try {
       await scaffoldInto(dir);
-      expect(await guardPaths(dir)).toEqual([...TWENTY_FIVE]);
+      expect(await guardPaths(dir)).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

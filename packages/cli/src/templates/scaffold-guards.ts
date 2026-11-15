@@ -1,4 +1,4 @@
-// The `guards/` directory `x new` writes, and the one list that names every guard in it.
+// The one list that names every guard the framework ships, and what `x new` writes into `guards/`.
 //
 // `x new` shipped ZERO guards while the `AGENTS.md` it writes stated nine non-negotiables — five of
 // which nothing enforced, each measured green on `x verify` in a scaffolded app. The mechanism was
@@ -29,6 +29,7 @@
 // until the apps are clean of it, and a `.all()` that says no bound — failing the gate in an app
 // scaffolded from 31.23 on, while an older app keeps the report-only copy it was given.
 
+import { SHIPPED_GUARD_NAMES as NAMES, type ShippedGuardName } from '../guards-shipped-names';
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
 import { errorDeclaredGuardFiles } from './guard-error-declared';
@@ -48,6 +49,7 @@ import { rawZIndexGuardFiles } from './guard-raw-z-index';
 import { repoAwaitInLoopGuardFiles } from './guard-repo-await-in-loop';
 import { repoRawSqlGuardFiles } from './guard-repo-raw-sql';
 import { repoUnboundedGuardFiles } from './guard-repo-unbounded';
+import { runtimePinGuardFiles } from './guard-runtime-pin';
 import { semanticInteractiveGuardFiles } from './guard-semantic-interactive';
 import { unboundedFanoutGuardFiles } from './guard-unbounded-fanout';
 import { undeclaredCustomPropertyGuardFiles } from './guard-undeclared-custom-property';
@@ -57,48 +59,49 @@ import { unzonedDateGuardFiles } from './guard-unzoned-date';
 import type { GeneratedFile } from './naming';
 
 /**
- * Every guard the framework ships, by the name its file carries — the ONE list. `x new` writes all
- * of them (`scaffoldGuardFiles`), `x g guard <name>` writes the one it is asked for by name
- * (`shippedGuardFiles`), and `x doctor` names the ones an app does not have. Sorted, so the three
- * agree on an order. A new shipped guard is one module beside these and one row here.
+ * Every guard the framework ships, keyed by the ONE list of names (`guards-shipped-names.ts`, a
+ * leaf the serving graph may read): a `Record`, so tsc refuses a name without its module and a
+ * module without its name. The `boundaries` step runs each from the installed framework; a new
+ * shipped guard is one module beside these, one name there and one row here.
  */
-const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = [
-  ['animated-layout-property', animatedLayoutPropertyGuardFiles],
-  ['bare-error', bareErrorGuardFiles],
-  ['error-declared', errorDeclaredGuardFiles],
-  ['focus-visible', focusVisibleGuardFiles],
-  ['image-dimensions', imageDimensionsGuardFiles],
-  ['island-mount-clears', islandMountClearsGuardFiles],
-  ['island-without-states', islandWithoutStatesGuardFiles],
-  ['native-confirm', nativeConfirmGuardFiles],
-  ['raw-breakpoint', rawBreakpointGuardFiles],
-  ['raw-colour', rawColourGuardFiles],
-  ['raw-fetch', rawFetchGuardFiles],
-  ['raw-interval', rawIntervalGuardFiles],
-  ['raw-length', rawLengthGuardFiles],
-  ['raw-motion', rawMotionGuardFiles],
-  ['raw-shadow', rawShadowGuardFiles],
-  ['raw-z-index', rawZIndexGuardFiles],
-  ['repo-await-in-loop', repoAwaitInLoopGuardFiles],
-  ['repo-raw-sql', repoRawSqlGuardFiles],
-  ['repo-unbounded', () => repoUnboundedGuardFiles('error')],
-  ['semantic-interactive', semanticInteractiveGuardFiles],
-  ['unbounded-fanout', unboundedFanoutGuardFiles],
-  ['undeclared-custom-property', undeclaredCustomPropertyGuardFiles],
-  ['undefined-style-class', undefinedStyleClassGuardFiles],
-  ['untranslated-string', untranslatedStringGuardFiles],
-  ['unzoned-date', unzonedDateGuardFiles],
-];
+const SHIPPED: Readonly<Record<ShippedGuardName, () => readonly GeneratedFile[]>> = {
+  'animated-layout-property': animatedLayoutPropertyGuardFiles,
+  'bare-error': bareErrorGuardFiles,
+  'error-declared': errorDeclaredGuardFiles,
+  'focus-visible': focusVisibleGuardFiles,
+  'image-dimensions': imageDimensionsGuardFiles,
+  'island-mount-clears': islandMountClearsGuardFiles,
+  'island-without-states': islandWithoutStatesGuardFiles,
+  'native-confirm': nativeConfirmGuardFiles,
+  'raw-breakpoint': rawBreakpointGuardFiles,
+  'raw-colour': rawColourGuardFiles,
+  'raw-fetch': rawFetchGuardFiles,
+  'raw-interval': rawIntervalGuardFiles,
+  'raw-length': rawLengthGuardFiles,
+  'raw-motion': rawMotionGuardFiles,
+  'raw-shadow': rawShadowGuardFiles,
+  'raw-z-index': rawZIndexGuardFiles,
+  'repo-await-in-loop': repoAwaitInLoopGuardFiles,
+  'repo-raw-sql': repoRawSqlGuardFiles,
+  'repo-unbounded': () => repoUnboundedGuardFiles('error'),
+  'runtime-pin': runtimePinGuardFiles,
+  'semantic-interactive': semanticInteractiveGuardFiles,
+  'unbounded-fanout': unboundedFanoutGuardFiles,
+  'undeclared-custom-property': undeclaredCustomPropertyGuardFiles,
+  'undefined-style-class': undefinedStyleClassGuardFiles,
+  'untranslated-string': untranslatedStringGuardFiles,
+  'unzoned-date': unzonedDateGuardFiles,
+};
 
 /** The names, in the order every list of them is shown. */
-export const SHIPPED_GUARD_NAMES: readonly string[] = SHIPPED.map(([name]) => name);
+export const SHIPPED_GUARD_NAMES: readonly string[] = NAMES;
 
 /**
  * The shipped guard of that name with its test, or `undefined` when the name is not one — which
  * is an app's own convention, and `x g guard` then writes the blank template instead.
  */
 export const shippedGuardFiles = (name: string): readonly GeneratedFile[] | undefined =>
-  SHIPPED.find(([shipped]) => shipped === name)?.[1]();
+  (Object.hasOwn(SHIPPED, name) ? SHIPPED[name as ShippedGuardName] : undefined)?.();
 
 /**
  * The current text of a shipped guard's rule file (`guards/<name>.ts`), or `undefined` when the
@@ -134,10 +137,41 @@ export const shippedGuardSources = (name: string): readonly string[] => {
   return typeof earlier?.contents === 'string' ? [current, earlier.contents] : [current];
 };
 
+/** A rule-file text a shipped guard has been emitted as, and how that form reports. */
+export interface ShippedGuardForm {
+  readonly source: string;
+  readonly severity: 'error' | 'warning';
+}
+
+/** `severity: 'warning',` on a line of its own: the one spelling a shipped template emits. */
+const REPORT_ONLY = /^\s*severity:\s*'warning',\s*$/m;
+
+/** Whether a guard's rule-file text reports only. */
+export const reportOnlyForm = (source: string): boolean => REPORT_ONLY.test(source);
+
 /**
- * Every guard `x new` ships, each with its test. One module per guard, because an app deletes a
- * rule it does not want by deleting one file — and a guard the app then writes for itself is
- * `x g guard <name>`, the same shape.
+ * Every current form of a shipped guard with its severity, the template first — what the
+ * `vendored-guards` codemod matches an app's copy against. Empty when the name was never shipped.
  */
-export const scaffoldGuardFiles = (): readonly GeneratedFile[] =>
-  SHIPPED.flatMap(([, files]) => files());
+export const shippedGuardForms = (name: string): readonly ShippedGuardForm[] =>
+  shippedGuardSources(name).map((source) => ({
+    source,
+    severity: reportOnlyForm(source) ? 'warning' : 'error',
+  }));
+
+/** The current text of a shipped guard's test (`guards/<name>.test.ts`), or `undefined`. */
+export const shippedGuardTest = (name: string): string | undefined => {
+  const contents = shippedGuardFiles(name)?.find(
+    (file) => file.path === `guards/${name}.test.ts`,
+  )?.contents;
+  return typeof contents === 'string' ? contents : undefined;
+};
+
+/**
+ * What `x new` writes into `guards/`: no guard at all — every shipped one runs from the installed
+ * framework (`guards-built-in.ts`) — only `guards/shipped.json`, whose presence opts the app into
+ * that and whose rows are its severities. The app's own guards join it from `x g guard <name>`.
+ */
+export const scaffoldGuardFiles = (): readonly GeneratedFile[] => [
+  { path: 'guards/shipped.json', contents: '{\n  "severity": {}\n}\n' },
+];

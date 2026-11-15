@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 40
-current_focus: "Sweep 4 (07 gate truth + carried 2026/11/11 X3/X5/U1/U6/U11) on feat/sweep-4-gate-truth; sweep 3 shipped as 31.26.0 (#1145, #1146), registry audit 31/31 attested. 05 production 7-day scan check is owed by slice 30."
+percent: 53
+current_focus: "Sweep 5 (08) merged-pending: x upgrade carries 31.4/31.15/31.20/31.22 scaffolds to HEAD with no hand edit (scripts/upgrade-fixtures.ts); 08's first Done-when line is judged by sweep R's adopter PRs. Next: sweep 6 (09 deploy contract). 05 production 7-day scan check is owed by slice 30."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -40,13 +40,13 @@ slices:
   - file: 07-gate-truth.md
     tier: 5
     sweep: "4"
-    status: in_progress
-    percent: 50
+    status: complete
+    percent: 100
   - file: 08-upgrade-without-hands.md
     tier: 5
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
   - file: 09-deploy-contract.md
     tier: 5
     sweep: "6"

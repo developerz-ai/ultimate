@@ -55,7 +55,7 @@ describe('after-edit formats the file named on stdin', () => {
     });
     expect(code).toBe(2);
     expect(stderr).toContain('noDebugger');
-    expect(stderr).toContain(`bunx biome check --write ${root}/b.ts`);
+    expect(stderr).toContain(`bunx @biomejs/biome check --write ${root}/b.ts`);
   });
 
   test('no path on stdin, or a path in no repository: nothing runs, exit 0', async () => {

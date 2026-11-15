@@ -9,3 +9,4 @@ packages/*/dist/
 /coverage/
 playwright-report/
 test-results/
+repro/bundle-*.json

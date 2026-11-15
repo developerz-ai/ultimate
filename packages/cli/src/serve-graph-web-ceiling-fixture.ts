@@ -275,5 +275,7 @@
  * `render/src/route-path.ts` (file path → URL, split out of `registry.ts` at its 500-line ceiling)
  * and `cli/src/messages-{floor,status}.ts` (the strict floor's and `x status`'s catalog keys,
  * spread into `messages.ts`).
+ * raised 1726 → 1727, measured 1727 (2026-11-15, plan 101b sweep 5): the one module the serving
+ * role gained, `storage/src/storage-instrument-multipart.ts` (`SERVING_ROLE_CEILING`).
  */
-export const WEB_ROLE_CEILING = 1726;
+export const WEB_ROLE_CEILING = 1727;

@@ -17,7 +17,7 @@
 3. U3: a table `{ pattern, shippedIn, replacement }`; `x doctor` and `x upgrade` report each hit with the fix. Seed it with the `'ssr'` downgrade and the `x token` note; every feature release that retires a known workaround adds a row (guarded by the changelog check).
 4. U4: ship the runtime-pin guard; `x upgrade` migrates older apps to the digest pin the scaffold already writes.
 5. U5: the framework's own packages depend on patched ranges so an app needs no `overrides`; `security-channel.yml` raises the range when an advisory lands.
-6. U6: `x repro --bundle` writes a redacted, self-contained archive (framework version, schema, the failing input, no row contents beyond the reproducer); the bug template asks for it; `create-ultimate repro` opens it. The maintainer's triage brief ([`12`](12-maintainer-loop.md) M2) starts from the bundle.
+6. U6: `x repro --bundle` writes a redacted, self-contained archive (framework version, schema, the failing input; every non-key value stood in by default, `--include-rows` opts in); the bug template asks for it; `create-ultimate repro` opens it. The maintainer's triage brief ([`12`](12-maintainer-loop.md) M2) starts from the bundle.
 
 ## Tests
 - Fixture apps at 31.4, 31.15, 31.20 and 31.22 (their scaffold output, generated in the test): `x upgrade` to HEAD leaves `x verify` green with zero hand edits.

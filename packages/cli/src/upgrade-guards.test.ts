@@ -9,7 +9,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { fsCodemodApp } from './codemods/engine-fs';
+import { codemod as vendoredGuards } from './codemods/vendored-guards';
 import type { ExecResult } from './exec';
+import { SHIPPED_GUARD_CONFIG } from './guards-built-in';
+import { shippedGuardSource } from './templates/scaffold-guards';
 import { installMissingGuards } from './upgrade-guards';
 
 const dirs: string[] = [];
@@ -130,5 +134,28 @@ describe('unit · installMissingGuards rollback', () => {
     });
     expect(await Bun.file(join(root, 'openapi.json')).exists()).toBe(false);
     expect(await Bun.file(join(root, 'x.manifest.json')).text()).toBe(MANIFEST);
+  });
+});
+
+// Guards run built in now; `x upgrade` carries a vendored tree across with the `vendored-guards`
+// codemod, on the app's real disk. What an author changed survives it, as config or as their file.
+describe('unit · x upgrade · a locally edited guard is preserved, never overwritten', () => {
+  test('a severity edit becomes a config row; any other edit is kept byte for byte', async () => {
+    const root = await app();
+    const shipped = shippedGuardSource('raw-colour') ?? '';
+    const reportOnly = shipped.replace(
+      'export const guard: Guard = {\n',
+      "export const guard: Guard = {\n  severity: 'warning',\n",
+    );
+    const edited = `${shippedGuardSource('raw-fetch') ?? ''}// our vendor client is exempt\n`;
+    expect(reportOnly).not.toBe(shipped);
+    await Bun.write(join(root, 'guards/raw-colour.ts'), reportOnly);
+    await Bun.write(join(root, 'guards/raw-fetch.ts'), edited);
+    const result = await vendoredGuards.run(fsCodemodApp(root));
+    expect(await Bun.file(join(root, 'guards/raw-colour.ts')).exists()).toBe(false);
+    expect(await Bun.file(join(root, 'guards/app-raw-fetch.ts')).text()).toBe(edited);
+    const config = JSON.parse(await Bun.file(join(root, SHIPPED_GUARD_CONFIG)).text());
+    expect(config.severity).toMatchObject({ 'raw-colour': 'warning', 'raw-fetch': 'off' });
+    expect(result.skipped.map((skip) => skip.path)).toEqual(['guards/app-raw-fetch.ts']);
   });
 });

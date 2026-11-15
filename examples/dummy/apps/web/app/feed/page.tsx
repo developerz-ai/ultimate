@@ -220,7 +220,11 @@ export const config = defineRoute({
   // 209.7kb → 209.8kb.
   // measured: 214926 B (2026-11-14, plan 101 sweep 1; x build --target static, against 214,767
   // at origin/main) — why: the feed island +159 B (96,161 B), two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`). Raised 209.8kb → 209.9kb.
-  budget: { js: '209.9kb' },
+  // measured: 214953 B (2026-11-15, plan 101b sweep 5; x build --target static, against 214,926
+  // before) — why: solid-js 1.9.17 → 1.9.18 (+27 B in every island chunk that bundles Solid), the
+  // release that requires seroval ~1.6.11 and so closes the seroval advisories for every app.
+  // Raised 209.9kb → 210kb.
+  budget: { js: '210kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

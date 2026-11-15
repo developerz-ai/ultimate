@@ -1,0 +1,135 @@
+// The edit every template codemod makes: exact snippets of the old template swapped for the new
+// ones. All there: applied, the app's other edits kept. All done: nothing. Anything else is the
+// app's own file, reported with the template's change as a diff and never overwritten.
+
+import { describe, expect, test } from 'bun:test';
+import { memoryCodemodApp } from './codemod';
+import type { SnippetEdit } from './engine-edits';
+import { editSnippets, writeIfAbsent } from './engine-edits';
+
+const EDITS = [
+  { from: 'return token;', to: 'return token ?? null;' },
+  { from: "import { a } from 'x';", to: "import { a, b } from 'x';" },
+] as const;
+
+const OLD = "import { a } from 'x';\n// the app's own line\nreturn token;\n";
+const NEW = "import { a, b } from 'x';\n// the app's own line\nreturn token ?? null;\n";
+
+describe('unit · codemod edits, snippets', () => {
+  test('every old snippet there: each is swapped and the rest of the file is kept', async () => {
+    const app = memoryCodemodApp({ 'a.ts': OLD });
+    expect(await editSnippets(app, 'a.ts', EDITS)).toEqual({ changed: ['a.ts'], skipped: [] });
+    expect(app.files['a.ts']).toBe(NEW);
+  });
+
+  test('already carried across is nothing to do, and no file is nothing to do', async () => {
+    const app = memoryCodemodApp({ 'a.ts': NEW });
+    expect(await editSnippets(app, 'a.ts', EDITS)).toEqual({ changed: [], skipped: [] });
+    expect(await editSnippets(app, 'gone.ts', EDITS)).toEqual({ changed: [], skipped: [] });
+    expect(app.files).toEqual({ 'a.ts': NEW });
+  });
+
+  test('half carried across finishes the other half', async () => {
+    const app = memoryCodemodApp({ 'a.ts': OLD.replace('return token;', 'return token ?? null;') });
+    expect((await editSnippets(app, 'a.ts', EDITS)).changed).toEqual(['a.ts']);
+    expect(app.files['a.ts']).toBe(NEW);
+  });
+
+  test('a snippet the app rewrote leaves the file untouched and reports the change as a diff', async () => {
+    const edited = OLD.replace('return token;', 'return token || undefined;');
+    const app = memoryCodemodApp({ 'a.ts': edited });
+    const result = await editSnippets(app, 'a.ts', EDITS);
+    expect(app.files['a.ts']).toBe(edited);
+    expect(result.changed).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]?.path).toBe('a.ts');
+    expect(result.skipped[0]?.reason).toContain('return token;');
+    expect(result.skipped[0]?.diff).toContain('-return token;');
+    expect(result.skipped[0]?.diff).toContain('+return token ?? null;');
+  });
+});
+
+describe('unit · codemod edits, a removal and an insert', () => {
+  test('a removal, whose new text sits inside its old, is applied once', async () => {
+    const edit = { from: 'keep\ngone\n', to: 'keep\n' };
+    const app = memoryCodemodApp({ 'a.toml': 'keep\ngone\n' });
+    expect((await editSnippets(app, 'a.toml', [edit])).changed).toEqual(['a.toml']);
+    expect(app.files['a.toml']).toBe('keep\n');
+    expect((await editSnippets(app, 'a.toml', [edit])).changed).toEqual([]);
+  });
+
+  test('a removal already made is done, whatever new text sits around it — never a skip', async () => {
+    const edit = { from: 'keep\ngone', to: 'keep' };
+    const app = memoryCodemodApp({ 'a.toml': 'mine\n' });
+    expect(await editSnippets(app, 'a.toml', [edit])).toEqual({ changed: [], skipped: [] });
+  });
+
+  test('an insert beside a line that stays is applied once, never again', async () => {
+    const edit = { from: 'row a', to: 'row a\nrow b' };
+    const app = memoryCodemodApp({ 'a.md': 'row a\n' });
+    await editSnippets(app, 'a.md', [edit]);
+    expect(await editSnippets(app, 'a.md', [edit])).toEqual({ changed: [], skipped: [] });
+    expect(app.files['a.md']).toBe('row a\nrow b\n');
+  });
+});
+
+describe('unit · codemod edits, a Windows checkout', () => {
+  test('CRLF and a BOM: matched as LF text, written back with both', async () => {
+    // Snippets spanning lines, as most template edits do.
+    const lines: readonly SnippetEdit[] = [
+      {
+        from: "import { a } from 'x';\n// the app's",
+        to: "import { a, b } from 'x';\n// the app's",
+      },
+      { from: 'own line\nreturn token;', to: 'own line\nreturn token ?? null;' },
+    ];
+    const crlf = `\uFEFF${OLD.replaceAll('\n', '\r\n')}`;
+    const app = memoryCodemodApp({ 'a.ts': crlf });
+    expect((await editSnippets(app, 'a.ts', lines)).changed).toEqual(['a.ts']);
+    expect(app.files['a.ts']).toBe(`\uFEFF${NEW.replaceAll('\n', '\r\n')}`);
+    expect(await editSnippets(app, 'a.ts', lines)).toEqual({ changed: [], skipped: [] });
+  });
+});
+
+describe('unit · codemod edits, an ambiguous snippet', () => {
+  // Which of two the template meant is not decidable from the text: replacing the first would
+  // be a guess written into the app, so the file is left and the choice is the author's.
+  test('old text found twice is refused, with the reason, and the file untouched', async () => {
+    const twice = `${OLD}${OLD}`;
+    const app = memoryCodemodApp({ 'a.ts': twice });
+    const result = await editSnippets(app, 'a.ts', EDITS);
+    expect(app.files['a.ts']).toBe(twice);
+    expect(result.changed).toEqual([]);
+    expect(result.skipped[0]?.reason).toContain('2 places');
+  });
+});
+
+describe('unit · codemod edits, optional prose', () => {
+  const WITH_COMMENT = [...EDITS, { from: '// old words', to: '// new words', optional: true }];
+
+  test('a comment the app reworded is no reason to skip the code', async () => {
+    const app = memoryCodemodApp({ 'a.ts': OLD });
+    expect((await editSnippets(app, 'a.ts', WITH_COMMENT)).changed).toEqual(['a.ts']);
+    expect(app.files['a.ts']).toBe(NEW);
+  });
+
+  test('a comment still as the template wrote it is carried across too', async () => {
+    const app = memoryCodemodApp({ 'a.ts': `// old words\n${OLD}` });
+    await editSnippets(app, 'a.ts', WITH_COMMENT);
+    expect(app.files['a.ts']).toBe(`// new words\n${NEW}`);
+  });
+
+  test('only the reworded comment left over is nothing to do', async () => {
+    const app = memoryCodemodApp({ 'a.ts': NEW });
+    expect(await editSnippets(app, 'a.ts', WITH_COMMENT)).toEqual({ changed: [], skipped: [] });
+  });
+});
+
+describe('unit · codemod edits, a file the template added', () => {
+  test('absent: written; present, whatever it holds: the app’s, left alone', async () => {
+    const app = memoryCodemodApp({ 'kept.ts': 'mine\n' });
+    expect(await writeIfAbsent(app, 'new.ts', 'x\n')).toEqual({ changed: ['new.ts'], skipped: [] });
+    expect(await writeIfAbsent(app, 'kept.ts', 'x\n')).toEqual({ changed: [], skipped: [] });
+    expect(app.files).toEqual({ 'kept.ts': 'mine\n', 'new.ts': 'x\n' });
+  });
+});

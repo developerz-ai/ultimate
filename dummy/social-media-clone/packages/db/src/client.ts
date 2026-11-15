@@ -5,7 +5,7 @@
 // component importing it is X_BOUNDARY_VIOLATION, because that is how N+1 queries end up inside a
 // <head> computation and how SQL ends up where no policy guards it.
 
-import { EnvMissingError, isLocal, storeMode } from '@ultimat3/core';
+import { EnvMissingError, isLocal, resolveEnvironment, storeMode } from '@ultimat3/core';
 import { type Driver, database, memoryDriver, postgresDriver, testDriver } from '@ultimat3/entity';
 import { blocks } from './schema/blocks';
 import { comments } from './schema/comments';
@@ -22,8 +22,18 @@ import { users } from './schema/users';
 /** The one binding that decides where rows live — here, in `x dev`, and in `ROLE=migrate`. */
 const DATABASE_URL = 'DATABASE_URL';
 
-/** Whether rows live in Postgres here — the one reading of `DATABASE_URL`, the auth slice's too. */
+/**
+ * Whether rows live in Postgres here — the one reading of `DATABASE_URL`, the auth slice's too. Or a
+ * TEST process that declared its stores the database (core's `withStoreMode`): `x exercise` runs as
+ * `test` on a migrated scratch database it installed, and a store left in memory there made every
+ * reach writing it prove nothing. `bun test` declares nothing; `x dev` is not `test`, so its
+ * embedded store is unchanged.
+ */
 export const storesInPostgres = (env: Readonly<Record<string, string | undefined>>): boolean =>
+  namesDatabase(env) || (resolveEnvironment({ env }) === 'test' && storeMode(env) === 'database');
+
+/** `DATABASE_URL` set and not blank — `.env.development` ships it empty. */
+const namesDatabase = (env: Readonly<Record<string, string | undefined>>): boolean =>
   (env[DATABASE_URL] ?? '') !== '';
 
 /**
@@ -48,7 +58,10 @@ export const storesInPostgres = (env: Readonly<Record<string, string | undefined
  * database with `setDbClient`, then that database, decided per call. `x dev` keeps `memoryDriver()`.
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver => {
-  if (storesInPostgres(env)) return postgresDriver();
+  // `DATABASE_URL`, never `storesInPostgres`: the app seeds at import (`apps/web/api/index.ts`),
+  // before `x exercise` installs its scratch client, and `testDriver()` below follows that client
+  // once it is installed — the declared mode's database, reached without a URL.
+  if (namesDatabase(env)) return postgresDriver();
   if (!isLocal({ env })) {
     throw new EnvMissingError({
       cause: `${DATABASE_URL} is unset, so every row this process writes would live in its own memory and be lost on the next restart — and this is not a development environment`,
@@ -56,7 +69,9 @@ export const selectDriver = (env: Readonly<Record<string, string | undefined>>):
       meta: { key: DATABASE_URL },
     });
   }
-  return storeMode(env) === 'memory' ? testDriver() : memoryDriver();
+  // Keyed on the environment, as the comment above says — never `storeMode`, whose `database` is
+  // `x dev`'s embedded PGlite in core's vocabulary and a declared scratch database under the pass.
+  return resolveEnvironment({ env }) === 'test' ? testDriver() : memoryDriver();
 };
 
 export const driver = selectDriver(Bun.env);

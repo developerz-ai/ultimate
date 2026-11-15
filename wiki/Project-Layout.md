@@ -20,10 +20,10 @@ myapp/
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
   bin/                    # setup, dev, check — thin wrappers over `x`
-  guards/                 # one rule per file, DISCOVERED not registered — `x verify` runs
-                          #   each inside its `boundaries` step. `x new` writes every
-                          #   name in SHIPPED_GUARD_NAMES (packages/cli/src/templates/
-                          #   scaffold-guards.ts); `x doctor` lists the ones missing
+  guards/                 # the app's own rules, one per file, DISCOVERED not registered —
+                          #   `x verify` runs each inside its `boundaries` step, beside every
+                          #   shipped guard (built in, never copied). shipped.json: a
+                          #   severity per shipped guard; `x new` writes it empty
   docker/                 # Dockerfile, Dockerfile.dockerignore, both compose files, and
                           #   helm/ — the chart, 8 files. All written by `x new`
   app.config.ts           # the one config file

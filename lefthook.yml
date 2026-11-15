@@ -1,7 +1,7 @@
 pre-commit:
   commands:
     biome:
-      run: bunx biome check --no-errors-on-unmatched --staged
+      run: bunx @biomejs/biome check --no-errors-on-unmatched --staged
       stage_fixed: true
       skip: [merge, rebase]
 

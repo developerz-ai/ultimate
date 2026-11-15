@@ -1,11 +1,12 @@
-// A hop's gate, run by the CLI the hop just installed: manifest, doctor, the missing guards and a
-// Bun-floor hop's coverage (`upgrade-guards.ts`, `upgrade-coverage.ts`), exercise, verify. Never in
-// this process: the installed CLI knows the installed framework (`local-cli.ts`) and may be majors
-// older, so each answer is read as a foreign document, and one that will not parse is never green.
+// A hop's gate, run by the CLI the hop just installed: codemods, manifest, doctor, missing guards,
+// a Bun-floor hop's coverage, exercise, verify (`upgrade-gate-codemods.ts`, `upgrade-guards.ts`).
+// Never in this process: the installed CLI may be majors older, so each answer is read as a
+// foreign document (`local-cli.ts`), and one that will not parse is never green.
 
 // why: Bun exposes no path-join primitive; the installed bin is assembled from the app root.
 import { join } from 'node:path';
 import { t } from '@ultimat3/schema';
+import { supersededFindings } from './doctor-superseded';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
 import { exerciseReportStamp } from './exercise-floor-report';
@@ -15,9 +16,11 @@ import { rebaselineCoverage, statedCoverage } from './upgrade-coverage';
 import { documentIn } from './upgrade-document';
 import type { HopExerciseFloor } from './upgrade-exercise-floor';
 import { ratchetExerciseFloor } from './upgrade-exercise-floor';
+import { applyHopCodemods } from './upgrade-gate-codemods';
 import type { BaselinedGuard, WithheldGuard } from './upgrade-guards';
 import { installMissingGuards } from './upgrade-guards';
 import { parseJson } from './upgrade-registry';
+import type { HopCodemods } from './upgrade-report-codemods';
 
 // Where it always was: `verify-exercise.ts` and `verify-budgets-build.ts` read it from here.
 export { documentIn } from './upgrade-document';
@@ -120,6 +123,10 @@ export interface HopExercise {
 }
 
 export interface HopGate {
+  /** The codemods the hop applied before anything below judged the tree; null when none were asked. */
+  readonly codemods?: HopCodemods | null;
+  /** Workarounds the hop's framework made unnecessary, read after the codemods: warnings, never red. */
+  readonly superseded?: readonly GateFinding[];
   readonly manifest: { readonly ok: boolean; readonly findings: readonly GateFinding[] };
   /**
    * The installed `x doctor`'s `data.warnings[]`: never red on this major, the next one's red —
@@ -225,7 +232,14 @@ const readGuards = (doctor: DoctorDocument['data']): HopGuards => {
   };
 };
 
-export type HopStage = 'manifest' | 'doctor' | 'guards' | 'coverage' | 'exercise' | 'verify';
+export type HopStage =
+  | 'codemods'
+  | 'manifest'
+  | 'doctor'
+  | 'guards'
+  | 'coverage'
+  | 'exercise'
+  | 'verify';
 
 /**
  * The gate, in order, each stage told apart by `onStage` so a long gate is not a long silence.
@@ -238,10 +252,18 @@ export async function runHopGate(input: {
   readonly onStage: (stage: HopStage) => void;
   /** Present when the hop moved the Bun floor: what the coverage rebaseline's `why` says. */
   readonly bunMoved?: CoverageRebaseline;
+  /** The span whose codemods run first, so every later stage judges the carried-across tree. */
+  readonly codemods?: { readonly from: string; readonly to: string };
 }): Promise<HopGate> {
   const { runner, root, onStage } = input;
   const installed = (args: readonly string[]): Promise<ExecResult> =>
     runner([process.execPath, join(root, LOCAL_CLI_BIN), ...args], { cwd: root });
+  let codemods: HopCodemods | null = null;
+  if (input.codemods !== undefined) {
+    onStage('codemods');
+    codemods = await applyHopCodemods({ runner, root, ...input.codemods });
+  }
+  const superseded = (await supersededFindings(root)).map(pick);
   onStage('manifest');
   const manifest = readManifest(await installed(['manifest', '--json']));
   onStage('doctor');
@@ -273,7 +295,17 @@ export async function runHopGate(input: {
   const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
   const verify = readVerify(await installed(['verify', '--json']));
-  return { manifest, doctorWarnings, guards, coverage, exercise, exerciseFloor, verify };
+  return {
+    codemods,
+    superseded,
+    manifest,
+    doctorWarnings,
+    guards,
+    coverage,
+    exercise,
+    exerciseFloor,
+    verify,
+  };
 }
 
 /** What a repository with no app can still be asked, in the order an author would run them. */

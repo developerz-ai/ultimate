@@ -448,10 +448,13 @@ describe('singleLine', () => {
     expect(singleLine('a\fb')).toBe(String.raw`a\fb`);
   });
 
+  // C1 too: U+009B is a one-byte CSI a terminal obeys; U+00A0 is printable and stays.
   test('a control with no named spelling takes the backslash-u form', () => {
     expect(singleLine('a\x00b')).toBe('a\\u0000b');
     expect(singleLine('a\x1bb')).toBe('a\\u001bb');
     expect(singleLine('a\x7fb')).toBe('a\\u007fb');
+    expect(singleLine('a\u009b2Jb')).toBe('a\\u009b2Jb');
+    expect(singleLine('a\u00a0b')).toBe('a\u00a0b');
   });
 
   test('U+2028 and U+2029 are escaped — splitting on a newline never sees them', () => {

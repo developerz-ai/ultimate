@@ -22,7 +22,8 @@ import { LOCAL_CLI_BIN } from '../src/local-cli';
 const FROM = '29.4.0';
 /** What this checkout is stamped as in the fixture registry, whatever it really is. */
 const TO = '30.0.0';
-const GUARD = 'guards/bare-error.ts';
+/** The app's own guard: since 31.28.0 a shipped guard runs built in, so `x new` writes no copy. */
+const GUARD = 'guards/own-line.ts';
 const REPO = join(import.meta.dir, '../../..');
 const BIN = join(REPO, 'packages/cli/src/bin.ts');
 
@@ -155,7 +156,8 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
     await pinAll(TO);
     await must(inApp([process.execPath, 'install']));
     await must(inApp([process.execPath, 'run', 'setup']));
-    // …then an author's own edit to a guard, and the pins walked back to the old release.
+    // …then an author's own guard, edited, and the pins walked back to the old release.
+    await must(inApp([process.execPath, BIN, 'g', 'guard', 'own-line']));
     await Bun.write(
       join(app, GUARD),
       `${await Bun.file(join(app, GUARD)).text()}// this app's own line\n`,
@@ -213,12 +215,10 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
     expect(pins).not.toContain(`"${FROM}"`);
     expect(pins).toContain(`"@ultimat3/cli": "${TO}"`);
 
-    // The local guard edit survives, is offered, and nothing was committed.
+    // The app's own guard, edited, survives the hop byte for byte, and nothing was committed.
     expect((await must(inApp(['git', 'diff', '--', 'guards/']))).stdout).toBe('');
+    expect(await Bun.file(join(app, GUARD)).text()).toEndWith("// this app's own line\n");
     expect(report.data.guards.reported).toBe(true);
-    expect(report.data.guards.differs.map((guard: { name: string }) => guard.name)).toContain(
-      'bare-error',
-    );
     expect((await must(inApp(['git', 'rev-list', '--count', 'HEAD']))).stdout.trim()).toBe('2');
 
     // The gate really ran, and a scaffold one hop on is green. `budgets` alone may be red: nothing in

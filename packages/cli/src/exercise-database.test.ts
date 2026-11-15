@@ -2,7 +2,7 @@
 // refused before any database is opened.
 
 import { describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, storeMode } from '@ultimat3/core';
 import {
   captureDeterminism,
   DEFAULT_NOW,
@@ -37,6 +37,20 @@ describe('unit · the exercise environment', () => {
     expect(codeOf(() => exerciseEnvironment({ NODE_ENV: 'staging' }))).toBe(
       'X_CONTRACT_EXERCISE_ENVIRONMENT',
     );
+  });
+});
+
+describe('unit · the exercise stores', () => {
+  // A test process ON a migrated scratch database: a store an app picks at load by `storeMode`
+  // (api keys, push devices, MCP confirmations) sat in memory, and every reach writing it sent no
+  // statement. The pass declares `database`; the environment stays `test`; after it, `memory`.
+  test('storeMode answers database inside the pass, and memory again after it', async () => {
+    const inside = await withExerciseProcess(import.meta.dir, {}, async () => ({
+      mode: storeMode(Bun.env),
+      env: process.env['ULTIMATE_ENV'],
+    }));
+    expect(inside).toEqual({ mode: 'database', env: 'test' });
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
   });
 });
 

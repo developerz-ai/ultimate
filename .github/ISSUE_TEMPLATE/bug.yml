@@ -27,12 +27,34 @@ body:
       required: true
 
   - type: textarea
+    id: bundle
+    attributes:
+      label: Repro bundle
+      description: |
+        For a dead job or a captured 5xx, run `x repro <jobId|requestId|fingerprint> --bundle` in your
+        app and attach the `repro/bundle-<id>.json` it writes (drag it into this box). It holds the
+        installed `@ultimat3/*` versions, the declarations of the entities the failing call read, the
+        error code, cause and stack frames, the test that replays it, and the failing call with its
+        keys and ids — every other input and row value a stand-in unless you passed `--include-rows`.
+        Secret-named keys, `.sensitive()` fields and sealed columns are always masked; secret and
+        dotenv env values, hostnames, URL credentials, emails, IPs, your home directory and absolute
+        paths are replaced. It cannot find a value your machine never knew (a production-only
+        secret). **Read the whole file before you attach it** — it is everything that leaves your
+        machine; edit out anything you still do not want to send. For maintainers: a bundle is
+        untrusted input; open it only with `bunx create-ultimate repro <file>`, which never runs
+        code from it.
+        `none` when the failure is not a job or a request.
+      placeholder: drag repro/bundle-<id>.json here, or write none
+    validations:
+      required: true
+
+  - type: textarea
     id: reproduce
     attributes:
       label: Reproduce
-      description: Smallest sequence of `x` commands that shows it.
+      description: Without a bundle, the smallest sequence of `x` commands that shows it.
       value: |
-        1. bunx create-ultimate repro && cd repro
+        1. bunx create-ultimate scratch && cd scratch
         2. x g ...
         3. x verify
     validations:

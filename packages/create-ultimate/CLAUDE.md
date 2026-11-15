@@ -5,7 +5,7 @@ Unlisted — sits above tier 5, may import anything below it. Its only real impo
 
 | Rule | Detail |
 |---|---|
-| Scope | argv in, `dispatch({ argv: ['new', ...] })` out. Nothing else. |
+| Scope | argv in, `dispatch({ argv: ['new', ...] })` out — and `repro <bundle.json>` (`repro.ts`): `writeNewApp`, then the bundle's reproducer and `file:` overrides written. Nothing else. |
 | Templates | none here — they live in `@ultimat3/cli/templates` |
 | Prompts | never; every choice is a flag with a default |
 

@@ -3,7 +3,7 @@
 // while every repository read the embedded Postgres. One answer, decided once.
 
 import { describe, expect, test } from 'bun:test';
-import { STORE_MODES, storeMode } from './store-mode';
+import { STORE_MODES, storeMode, withStoreMode } from './store-mode';
 
 describe('storeMode', () => {
   test('`bun test` is memory: no database client is installed there', () => {
@@ -32,5 +32,73 @@ describe('storeMode', () => {
 
   test('names exactly two modes', () => {
     expect(STORE_MODES).toEqual(['memory', 'database']);
+  });
+
+  // `x exercise` is a test process ON a migrated scratch database: an app store chosen at module
+  // load by `storeMode` sat in memory there, so a reach writing an api key or a device token sent
+  // no statement and its proofs proved nothing. The pass declares the mode; the env stays `test`.
+  test('a declared mode answers for the length of the work, then the environment again', async () => {
+    const env = { NODE_ENV: 'test' };
+    const seen = await withStoreMode('database', async () => {
+      await Promise.resolve();
+      return storeMode(env);
+    });
+    expect(seen).toBe('database');
+    expect(storeMode(env)).toBe('memory');
+  });
+
+  test('a work that throws still hands the environment its answer back', async () => {
+    const refusal = { refused: true };
+    const thrown = await withStoreMode('database', () => Promise.reject(refusal)).catch(
+      (error: unknown) => error,
+    );
+    expect(thrown).toBe(refusal);
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
+  });
+
+  test('nested declarations restore the outer one', async () => {
+    await withStoreMode('database', async () => {
+      await withStoreMode('memory', async () => {
+        expect(storeMode({})).toBe('memory');
+      });
+      expect(storeMode({ NODE_ENV: 'test' })).toBe('database');
+    });
+  });
+
+  // Two declarations in flight that are not nested restored out of order: A set database, B set
+  // memory, A ended and put back nothing, B ended and put back A's — the process stayed `database`
+  // after both returned. One process has one answer, so the second is refused while the first runs.
+  test('a declaration that overlaps another, not inside it, is refused; the first is unharmed', async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = withStoreMode('database', async () => {
+      await held;
+      return storeMode({ NODE_ENV: 'test' });
+    });
+    const second = await withStoreMode('memory', async () => 'ran').catch(
+      (error: unknown) => error,
+    );
+    expect(second).toMatchObject({ code: 'X_INVARIANT' });
+    release();
+    expect(await first).toBe('database');
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
+  });
+
+  test('two nested declarations side by side inside one are refused too', async () => {
+    await withStoreMode('database', async () => {
+      let release = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const one = withStoreMode('memory', () => held);
+      const two = await withStoreMode('memory', async () => 'ran').catch((error: unknown) => error);
+      expect(two).toMatchObject({ code: 'X_INVARIANT' });
+      release();
+      await one;
+      expect(storeMode({ NODE_ENV: 'test' })).toBe('database');
+    });
+    expect(storeMode({ NODE_ENV: 'test' })).toBe('memory');
   });
 });

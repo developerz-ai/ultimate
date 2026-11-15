@@ -9,6 +9,23 @@ import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import type { GateFinding, HopGate, RepoScript } from './upgrade-gate';
 import type { UpgradeHop, UpgradePin } from './upgrade-plan';
 import { pinMoves } from './upgrade-plan';
+import type { HopCodemods } from './upgrade-report-codemods';
+import { codemodLines } from './upgrade-report-codemods';
+
+/** A dry run's codemod preview and superseded scan; a hop's come from its gate. */
+interface Previewed {
+  readonly codemods?: HopCodemods;
+  readonly superseded?: readonly GateFinding[];
+}
+
+const supersededLines = (findings: readonly GateFinding[]): readonly string[] =>
+  findings.map((finding) =>
+    msg('cli.upgrade.superseded', {
+      at: finding.at === undefined ? '' : ` (${finding.at})`,
+      cause: finding.cause,
+      fix: finding.fix,
+    }),
+  );
 
 export interface PlannedWrites {
   /** Absolute path to final text; a manifest holding both a pin and a floor is written once. */
@@ -63,16 +80,18 @@ const findingLines = (findings: readonly GateFinding[]): readonly string[] =>
   ]);
 
 /** The terminal's form of the report: the url first, then each finding's `fix:`. */
-export const humanLines = (input: {
-  readonly hop: UpgradeHop;
-  readonly writes: PlannedWrites;
-  readonly gate: HopGate | undefined;
-  readonly scripts: readonly RepoScript[];
-  readonly then: string;
-  readonly agentsMd?: AgentsLinkState;
-  /** Manifests whose TypeScript lags the scaffold's: by hand, the hop never moves a compiler. */
-  readonly typescript: readonly TypescriptLag[];
-}): readonly string[] => {
+export const humanLines = (
+  input: {
+    readonly hop: UpgradeHop;
+    readonly writes: PlannedWrites;
+    readonly gate: HopGate | undefined;
+    readonly scripts: readonly RepoScript[];
+    readonly then: string;
+    readonly agentsMd?: AgentsLinkState;
+    /** Manifests whose TypeScript lags the scaffold's: by hand, the hop never moves a compiler. */
+    readonly typescript: readonly TypescriptLag[];
+  } & Previewed,
+): readonly string[] => {
   const { hop, writes, gate, scripts, then, agentsMd, typescript } = input;
   return [
     ...(hop.section === null
@@ -88,6 +107,8 @@ export const humanLines = (input: {
     ...(agentsMd === 'link' || agentsMd === 'differs'
       ? [msg(agentsMd === 'link' ? 'cli.upgrade.agentsMd.link' : 'cli.upgrade.agentsMd.differs')]
       : []),
+    ...codemodLines(input.codemods ?? gate?.codemods ?? null),
+    ...supersededLines(input.superseded ?? gate?.superseded ?? []),
     ...(gate?.guards.installed ?? []).map((name) => msg('cli.upgrade.guardInstalled', { name })),
     ...(gate?.guards.baselined ?? []).map((guard) =>
       msg('cli.upgrade.guardBaselined', { name: guard.name, count: guard.findings }),
@@ -140,23 +161,25 @@ export const humanLines = (input: {
 const asJson = (value: unknown): JsonValue => value as JsonValue;
 
 /** The one shape every outcome reports: `--json` and the terminal project this and nothing else. */
-export const report = (input: {
-  readonly hop: UpgradeHop;
-  readonly done: boolean;
-  readonly dryRun: boolean;
-  readonly pins: readonly UpgradePin[];
-  readonly bunFrom: string | null;
-  readonly bunTo: string | null;
-  readonly writes: PlannedWrites;
-  readonly app: boolean;
-  readonly gate: HopGate | undefined;
-  readonly scripts: readonly RepoScript[];
-  readonly then: string;
-  /** What the hop does to `AGENTS.md` (`upgrade-agents-link.ts`); absent when no hop is planned. */
-  readonly agentsMd?: AgentsLinkState;
-  /** `typescript-floor.ts`'s lags — reported on every outcome, an at-target app's included. */
-  readonly typescript: readonly TypescriptLag[];
-}): JsonValue => {
+export const report = (
+  input: {
+    readonly hop: UpgradeHop;
+    readonly done: boolean;
+    readonly dryRun: boolean;
+    readonly pins: readonly UpgradePin[];
+    readonly bunFrom: string | null;
+    readonly bunTo: string | null;
+    readonly writes: PlannedWrites;
+    readonly app: boolean;
+    readonly gate: HopGate | undefined;
+    readonly scripts: readonly RepoScript[];
+    readonly then: string;
+    /** What the hop does to `AGENTS.md` (`upgrade-agents-link.ts`); absent when no hop is planned. */
+    readonly agentsMd?: AgentsLinkState;
+    /** `typescript-floor.ts`'s lags — reported on every outcome, an at-target app's included. */
+    readonly typescript: readonly TypescriptLag[];
+  } & Previewed,
+): JsonValue => {
   const { hop, done, dryRun, pins, bunFrom, bunTo, writes, app, gate, scripts, then } = input;
   return asJson({
     from: hop.from,
@@ -175,6 +198,8 @@ export const report = (input: {
     bun: { from: bunFrom, to: bunTo, edited: writes.edited, manual: writes.manual },
     typescript: input.typescript,
     agentsMd: input.agentsMd ?? null,
+    codemods: input.codemods ?? gate?.codemods ?? null,
+    superseded: input.superseded ?? gate?.superseded ?? [],
     guards: gate?.guards ?? null,
     coverage: gate?.coverage ?? null,
     manifest: gate?.manifest ?? null,

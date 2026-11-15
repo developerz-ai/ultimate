@@ -63,7 +63,8 @@ export function releaseOf(version: string): Triple | undefined {
 
 const tripleOf = (version: string): Triple => releaseOf(version) ?? [0, 0, 0];
 
-const compareVersions = (a: string, b: string): number => {
+/** Release order over plain `major.minor.patch`; anything else sorts as `0.0.0`. */
+export const compareVersions = (a: string, b: string): number => {
   const left = tripleOf(a);
   const right = tripleOf(b);
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];

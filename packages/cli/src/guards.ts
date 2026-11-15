@@ -1,24 +1,39 @@
 // An app's own convention, made into a build error (axiom 3). A file in `guards/` exports one
-// `guard`; the gate discovers the directory and runs each one inside the `boundaries` step. The
-// framework decides what a guard IS — a function returning findings, held to the error contract —
-// and nothing about what a guard may check.
+// `guard`; the gate discovers the directory and runs each one inside the `boundaries` step, beside
+// every guard the framework ships (`guards-built-in.ts`). The framework decides what a guard IS —
+// a function returning findings, held to the error contract — and nothing about what it checks.
 
-// Bun ships no equivalent for either: `existsSync` answers whether this app has a guards
-// directory, `join` builds the host-separator path, and `pathToFileURL` is the only spelling of an
-// absolute path `import()` accepts on every host.
-import { existsSync } from 'node:fs';
+// Bun ships no equivalent for either: `join` builds the host-separator path, and `pathToFileURL` is
+// the only spelling of an absolute path `import()` accepts on every host.
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import { type GuardSources, guardSources } from './guard-sources';
+import {
+  type BuiltInMode,
+  planBuiltIns,
+  readShippedConfig,
+  shippedConfigFindings,
+  vendoredPath,
+} from './guards-built-in';
+import { materializeGuard } from './guards-materialize';
+import { GUARD_DIR, guardDirState, guardPaths } from './guards-paths';
+
+/** The app's guard directory and its files, defined in the leaf the manifest projection reads. */
+export { GUARD_DIR, guardPaths } from './guards-paths';
+
+import { vendoredCopy, vendoredFinding } from './guards-vendored';
 import type { Finding } from './output';
 import { readVerifyFloor } from './verify-floor';
 import type { GuardBaseline } from './verify-guard-baseline';
-import { judgeGuardBaseline, orphanedBaselineFindings } from './verify-guard-baseline';
+import { guardNameOf, judgeGuardBaseline, orphanedBaselineFindings } from './verify-guard-baseline';
 
-/** The directory IS the registration. An app-side list is a list an app can forget to add to. */
-export const GUARD_DIR = 'guards';
+const compareNames = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** A built-in sorts where its copy in `guards/` would have: the order an app always saw. */
+const sortKey = (run: GuardRun): string =>
+  run.mode === undefined ? run.path : `${GUARD_DIR}/${guardNameOf(run.path)}.ts`;
 
 export interface Guard {
   /** What this app refuses, in one line. It names the rule when the guard itself is the problem. */
@@ -100,23 +115,6 @@ function findingOf(value: Record<string, unknown>, at: string): Finding {
   };
 }
 
-/**
- * Every guard file, app-root-relative and sorted, so two machines report the same findings in the
- * same order. A `*.test.ts` beside a guard is its test, never a second guard — the generator emits
- * one, and importing it would run the suite inside the gate.
- */
-export async function guardPaths(root: string): Promise<readonly string[]> {
-  const dir = join(root, GUARD_DIR);
-  if (!existsSync(dir)) return [];
-  const paths: string[] = [];
-  for await (const entry of new Bun.Glob('*.{ts,tsx}').scan({ cwd: dir, absolute: false })) {
-    const path = entry.split('\\').join('/');
-    if (/\.(?:test|d)\.tsx?$/.test(path)) continue;
-    paths.push(`${GUARD_DIR}/${path}`);
-  }
-  return paths.sort();
-}
-
 const failed = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FAILED',
   cause,
@@ -149,6 +147,15 @@ const notAGuard = (path: string, exported: unknown): Finding => {
   );
 };
 
+/** A file where `guards/` belongs: no crash, and not silence — the app's own rules are not running. */
+const notADirectory: Finding = {
+  code: 'X_GUARD_INVALID',
+  cause: `${GUARD_DIR} is not a directory, so none of this app's own guards can run beside the shipped ones`,
+  fix: `mv ${GUARD_DIR} ${GUARD_DIR}.txt && mkdir ${GUARD_DIR} && x verify --only boundaries --json   # ${GUARD_DIR}/ is the directory the gate discovers; a rule of yours goes in it as ${GUARD_DIR}/<name>.ts`,
+  docs: ERROR_DOCS_URL,
+  at: GUARD_DIR,
+};
+
 const findingInvalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FINDING_INVALID',
   cause: `${path} returned a finding that is not one: ${cause}`,
@@ -169,16 +176,39 @@ export interface GuardReport {
 
 const refused = (finding: Finding): GuardReport => ({ findings: [finding], warnings: [] });
 
+/** A guard to run: what findings name it by, and the module that holds it. */
+interface GuardRun {
+  /** App-root-relative for the app's own; `@ultimat3/cli/guards/<name>.ts` for a built-in. */
+  readonly path: string;
+  /** The absolute module path `import()` reads; for a built-in, under `.x/cache/guards/`. */
+  readonly file: string;
+  /** A built-in's mode (`guards-built-in.ts`); absent for the app's own guard. */
+  readonly mode?: BuiltInMode;
+}
+
 /** One guard: import it, run it, and hold what it returns to the contract. Never throws. */
 async function runGuard(
   root: string,
-  path: string,
+  run: GuardRun,
+  sources: GuardSources,
+  baseline: GuardBaseline | undefined,
+): Promise<GuardReport> {
+  const report = await runGuardModule(root, run, sources, baseline);
+  // A legacy app never had this built-in gate it: everything it says is a warning on `main`.
+  return run.mode === 'legacy'
+    ? { findings: [], warnings: [...report.findings, ...report.warnings] }
+    : report;
+}
+
+async function runGuardModule(
+  root: string,
+  { path, file, mode }: GuardRun,
   sources: GuardSources,
   baseline: GuardBaseline | undefined,
 ): Promise<GuardReport> {
   let loaded: unknown;
   try {
-    loaded = await import(pathToFileURL(join(root, path)).href);
+    loaded = await import(pathToFileURL(file).href);
   } catch (error) {
     return refused(failed(path, `${path} could not be imported: ${messageOf(error)}`));
   }
@@ -209,7 +239,9 @@ async function runGuard(
       broken.push(findingInvalid(path, `it could not be read: ${messageOf(error)}`));
     }
   }
-  if (exported.severity === 'warning') return { findings: broken, warnings: held };
+  // The app's row (`guards/shipped.json`) over a built-in's own severity, either way.
+  const reportOnly = mode === 'warning' || (mode !== 'error' && exported.severity === 'warning');
+  if (reportOnly) return { findings: broken, warnings: held };
   // A gating guard under its `guardBaseline` (`verify-guard-baseline.ts`): a broken finding is
   // never counted against it — the contract fails either way.
   const judged = judgeGuardBaseline(path, held, baseline);
@@ -235,12 +267,36 @@ export const guardReport = async (
   // judges the same committed counts, and a floor problem is the `manifest` step's to report.
   const baseline = (await readVerifyFloor(root))?.guardBaseline;
   const paths = await guardPaths(root);
-  for (const path of paths) {
-    const report = await runGuard(root, path, sources, baseline);
+  const config = await readShippedConfig(root);
+  const { builtIn, vendored } = planBuiltIns(paths, config.severity);
+  const runs: GuardRun[] = paths.map((path) => ({ path, file: join(root, path) }));
+  for (const guard of builtIn) {
+    runs.push({
+      path: guard.display,
+      file: await materializeGuard(root, guard.name),
+      mode: guard.mode,
+    });
+  }
+  // By guard name, so an app holding every shipped copy reports in the order it always did.
+  runs.sort((a, b) => compareNames(sortKey(a), sortKey(b)));
+  for (const run of runs) {
+    const report = await runGuard(root, run, sources, baseline);
     findings.push(...report.findings);
     warnings.push(...report.warnings);
   }
-  findings.push(...orphanedBaselineFindings(paths, baseline));
+  findings.push(...shippedConfigFindings(config.problems));
+  if (guardDirState(root) === 'other') findings.push(notADirectory);
+  findings.push(
+    ...orphanedBaselineFindings(
+      runs.map((run) => run.path),
+      baseline,
+    ),
+  );
+  for (const name of vendored) {
+    const path = vendoredPath(paths, name) ?? `${GUARD_DIR}/${name}.ts`;
+    const source = await Bun.file(join(root, path)).text();
+    warnings.push(vendoredFinding(vendoredCopy(name, path, source)));
+  }
   return { findings, warnings };
 };
 

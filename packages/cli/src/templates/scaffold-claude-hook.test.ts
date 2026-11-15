@@ -19,12 +19,14 @@ const dirs: string[] = [];
 const contentsOf = (files: readonly GeneratedFile[], path: string): string =>
   String(files.find((file) => file.path === path)?.contents ?? '');
 
-/** An app root with the scaffold's biome.json, its hook, and `bunx biome` resolvable offline. */
-async function appDir(): Promise<string> {
+/** An app root with the scaffold's biome.json, its hook, and — unless `installed: false` — biome. */
+async function appDir(installed = true): Promise<string> {
   const root = mkdtempSync(`${tmpdir()}/scaffold-hook-`);
   dirs.push(root);
-  mkdirSync(`${root}/node_modules/.bin`, { recursive: true });
-  symlinkSync(BIOME, `${root}/node_modules/.bin/biome`);
+  if (installed) {
+    mkdirSync(`${root}/node_modules/.bin`, { recursive: true });
+    symlinkSync(BIOME, `${root}/node_modules/.bin/biome`);
+  }
   const repo = repoFiles(app, '0.0.0', false);
   for (const path of ['biome.json', '.gitignore'])
     await Bun.write(`${root}/${path}`, contentsOf(repo, path));
@@ -34,7 +36,7 @@ async function appDir(): Promise<string> {
 }
 
 function hook(root: string, file: string): { readonly code: number; readonly stderr: string } {
-  const env = { ...Bun.env };
+  const env: Record<string, string | undefined> = { ...Bun.env, CLAUDE_PROJECT_DIR: root };
   delete env['CLAUDE_FILE_PATHS'];
   const proc = Bun.spawnSync(['bun', `${root}/${HOOK_PATH}`], {
     cwd: root,
@@ -65,7 +67,22 @@ describe('unit · the scaffolded format hook', () => {
     const { code, stderr } = hook(root, `${root}/b.ts`);
     expect(code).toBe(2);
     expect(stderr).toContain('noDefaultExport');
-    expect(stderr).toContain(`bunx biome check --write ${root}/b.ts`);
+    expect(stderr).toContain(`bunx @biomejs/biome check --write ${root}/b.ts`);
+  });
+
+  // `bunx biome` on a checkout with no install fetched the unrelated npm package `biome` and ran
+  // it on every edit. The hook runs the app's own binary or nothing, and never asks the network.
+  test('with no biome installed it runs nothing, changes nothing and names the install', async () => {
+    const root = await appDir(false);
+    await Bun.write(`${root}/a.ts`, 'export const a = "x"\n');
+    const { code, stderr } = hook(root, `${root}/a.ts`);
+    expect({ code, stderr: stderr.trim() }).toEqual({
+      code: 0,
+      stderr:
+        'format-edited: no node_modules/.bin/biome in this app, nothing formatted — bun install',
+    });
+    expect(await Bun.file(`${root}/a.ts`).text()).toBe('export const a = "x"\n');
+    expect(contentsOf(claudeFiles(app), HOOK_PATH)).not.toContain("'bunx'");
   });
 
   test("the hook itself is clean under the app's own biome.json", async () => {

@@ -44,7 +44,7 @@ Hive for **search** (a broad sweep wanting conclusions) or **scale** (path-separ
 
 | | Agent (per iteration) | Coordinator (once, at the end) |
 |---|---|---|
-| lint | `bunx biome check <its files>` | `bun run lint` |
+| lint | `bunx @biomejs/biome check <its files>` | `bun run lint` |
 | tests | `bun test ./packages/<pkg>/src/<file>.test.ts`, `-t '<name>'` only with a path — always the `./` | part of `verify` |
 | typecheck | once when done: `mkdir -p node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` | part of `verify` |
 | boundaries | only if it added a cross-package import: `bun run boundaries` | part of `verify` |

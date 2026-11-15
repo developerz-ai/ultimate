@@ -51,6 +51,7 @@ off(); // the unsubscribe; calling it twice is a no-op
 | `outbound.request` | `vendor`, `method`, `host`, `status?` (absent when no answer came) | `outbound.<vendor>` (client) | `outbound()`, `@ultimat3/core/outbound` |
 | `mail.deliver` | `transport`, `recipients` (a COUNT — no address rides an event) | client | `@ultimat3/mail` |
 | `storage.put` `.get` `.stat` `.copy` `.delete` `.list` | `disk`, `key`, `bytes?` | client | every disk `defineStorage` resolves |
+| `storage.multipart` | `disk`, `key`, `op` (`create` · `part` · `complete` · `abort`), `bytes?` (the part's, or the assembled object's) — signing a part URL or listing parts is no event | client | a resolved disk's `multipart` capability |
 | `cache.hit` · `cache.miss` · `cache.invalidate` · `cache.tier_failure` | tier + key · tags, busted, errors · the failure | `cache.invalidate` (internal) | `@ultimat3/cache` |
 | `span.end` | a `ReadableSpan` — SAMPLED spans only | — | core's tracer |
 | `log.record` | `at`, `level`, `message`, `fields` — after redaction | — | core's process logger |

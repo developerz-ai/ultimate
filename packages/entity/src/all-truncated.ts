@@ -67,7 +67,7 @@ export function reportTruncatedAll(
     pageSize: DEFAULT_PAGE_SIZE,
     ...(site === undefined ? {} : { at: site }),
     cause: `${entity}.….all()${where} answered its first ${DEFAULT_PAGE_SIZE} rows and dropped the cursor to the rest`,
-    fix: `${entity}.….inBatches(1000) to visit every row, one page per statement — or .limit(${DEFAULT_PAGE_SIZE}) on the chain to state that one page is meant; x g guard repo-unbounded finds every such read in a repo.ts`,
+    fix: `${entity}.….inBatches(1000) to visit every row, one page per statement — or .limit(${DEFAULT_PAGE_SIZE}) on the chain to state that one page is meant; the built-in repo-unbounded guard lists every such read: x verify --only boundaries --json`,
   });
 }
 

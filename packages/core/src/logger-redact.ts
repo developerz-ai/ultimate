@@ -62,7 +62,10 @@ const redactedKeys = new Set<string>([
  * snake and the header spelling. It names what BEARS a credential and nothing wider, because a
  * redacted field is one an operator cannot correlate on:
  *
- * - `password` / `passphrase` anywhere — no ordinary field carries the word.
+ * - `password` / `passphrase` ANYWHERE — `password1`, `new_password2`, `passwordConfirm` are all
+ *   plaintext — except the named metadata: a `has`/`is` prefix, and a `policy`, `minLength`,
+ *   `maxLength`, `length`, `changedAt` or `set` suffix. `pass` / `pwd` as a service's credential
+ *   (`SMTP_PASS`, `dbPwd`, `pgpass`); the shell's own `PWD` / `OLDPWD` stay readable.
  * - `secret` as the LAST word (`mfaSecret`, `webhookSecret`, `appSecrets`, `secretAccessKey`), so
  *   `clientSecretEnv` and `secretsPath` — a variable name and a path — stay readable.
  * - a `token` is a bearer UNLESS its qualifier says it is not: fail closed, with the exceptions
@@ -84,6 +87,7 @@ const redactedKeys = new Set<string>([
  *   `credentialId`, `jwtIssuer`, `cookieName`, `privateKeyId` name a credential, not hold one.
  * - card verification codes (`cvv`, `cvc2`) as a suffix, and a `pin` only as the WHOLE word
  *   behind an owner qualifier — three letters inside `spinner`, `shipping` or `pinned` are not one.
+ *   Any other owner (`ADMIN_PIN`, `adminPin`) is `SEGMENT`'s, below; a `passcode` as a suffix.
  *
  * Built from constant alternatives with no nested quantifier, so there is no input it backtracks on.
  */
@@ -96,11 +100,17 @@ const verdicts = new Map<string, boolean>();
 /** Exported for its own work-count test only (`logger-redact.test.ts`); never on the barrel. */
 export const CREDENTIAL_NAME = new RegExp(
   [
-    'passw(?:or)?d|passphrase',
-    'secrets?$',
-    '(?:api|private|signing|encryption|master|hmac|secrets?|access|retired)keys?$|accesskeyid$',
+    '(?<!^(?:has|is))passw(?:or)?d(?!(?:policy|minlength|maxlength|length|changedat|set)$)|passphrase',
+    'passcodes?(?:hash(?:es)?)?$|(?<!^(?:old)?)pwd$',
+    '^(?:db|pg|smtp|mail|redis|mysql|ldap|ftp|sftp|proxy|admin|root|user|api|imap|amqp|mongo)?pass$',
+    'secrets?$|secretkeybase$',
+    '(?:api|private|signing|encryption|master|hmac|secrets?|access|retired|tls|ssl|client|license|app|stripe)keys?$|accesskeyid$',
     '(?:token|key)hash(?:es)?$',
-    '(?<!idempotency|page|continuation|cursor|sync)token$',
+    '(?<!idempotency|page|continuation|cursor|sync|next|resume|start|cancellation)token$',
+    'authorization$|authheader$|^auth$|^npmconfigauth$',
+    '^session$|sessid$',
+    '(?:totp|mfa|otp)seeds?$',
+    'codeverifier$|clientassertion$|samlresponse$|webhookurls?$',
     '(?:access|refresh|id|session|reset|bearer|auth|api|csrf|xsrf|captcha|card|verification|invite|magic|magiclink|device|push|workload|oauth)tokens$',
     'authconfig$|connectionstring$|dsn$',
     '(?:database|db|redis|replication|nats|smtp|amqp|mongo)ur[li]s?$',
@@ -112,6 +122,41 @@ export const CREDENTIAL_NAME = new RegExp(
     '^(?:card|atm|security|account|user|wallet)?pin(?:code|number)?(?:hash(?:es)?)?$',
   ].join('|'),
 );
+
+/**
+ * A short credential word by SEGMENT, which the joined form above cannot see: `ADMIN_PIN` and
+ * `adminPin` are `adminpin`, and no list of owners is complete. Asked of the key split at camel
+ * humps, `_`, `-` and `.` (`admin_pin`, `connect_sid`), so each word matches only whole and last:
+ * a `pin` (or before `code` / `number` / `hash`), a `pass`, a session `sid`, a personal access
+ * token `pat` — and `spinner`, `mapping`, `pinned`, `bypass`, `sidebar` and `pattern` stay readable.
+ */
+const SEGMENT = /(?:^|_)(?:pin(?:_(?:code|number))?(?:_hash(?:es)?)?|pass(?:_hash)?|sid|pat)$/;
+
+/**
+ * An env-spelled `*_KEY` (`STRIPE_KEY`, `SENDGRID_KEY`) is key material whatever the provider: a
+ * provider list is never complete. Only SCREAMING_SNAKE, because a camel `fooKey` in app data is a
+ * lookup far more often than a credential (`cacheKey`, `sortKey`), and those stay on the joined
+ * list's qualifiers instead. The lookups an env var does name keep their reading.
+ */
+const ENV_KEY = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_KEYS?$/;
+const LOOKUP_KEY =
+  /(?:^|_)(?:CACHE|IDEMPOTENCY|PARTITION|PRIMARY|FOREIGN|SORT|I18N|ROUTING|DEDUPE|SHARD|LOOKUP|OBJECT)_KEYS?$/;
+const isEnvKeyMaterial = (key: string): boolean => ENV_KEY.test(key) && !LOOKUP_KEY.test(key);
+
+/** How much of a key's end the segment rules read. */
+const SEGMENT_WINDOW = 64;
+
+/** `adminPin` / `ADMIN_PIN` / `PINCode` / `admin-pin` → `admin_pin` / `pin_code`: one word per segment. */
+const segmented = (key: string): string =>
+  // The TAIL only: every segment rule ends at `$` and spans under 20 characters, and a key is caller
+  // data — the camel-hump pass over 20,000 capitals took 1.2 s. 64 keeps every word whole.
+  key
+    .slice(-SEGMENT_WINDOW)
+    // A lookahead, not `([A-Z]+)([A-Z][a-z])`: the same split, with nothing to backtrack over.
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1_')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-.]/g, '_')
+    .toLowerCase();
 
 /** Mark keys as secret everywhere. `defineEnv()` calls this for every `secret: true` var. */
 export function redactKeys(keys: Iterable<string>): void {
@@ -155,7 +200,11 @@ export function isRedactedKey(key: string): boolean {
   const known = verdicts.get(key);
   if (known !== undefined) return known;
   const lower = key.toLowerCase();
-  const verdict = redactedKeys.has(lower) || CREDENTIAL_NAME.test(lower.replace(/[_-]/g, ''));
+  const verdict =
+    redactedKeys.has(lower) ||
+    CREDENTIAL_NAME.test(lower.replace(/[_-]/g, '')) ||
+    SEGMENT.test(segmented(key)) ||
+    isEnvKeyMaterial(key);
   // Insertion order is age, so the first key is the oldest: FIFO, no bookkeeping per hit. Bounded
   // because a key is caller data — a request body's own keys reach `redactFields`.
   if (verdicts.size >= REDACTION_MEMO_SIZE) verdicts.delete(verdicts.keys().next().value ?? '');

@@ -369,6 +369,15 @@ records the advisory under the heading and owes `Security-Exception: <id>` in th
 Every section from 30.0.0 opens with `### Highlights` (at most five bullets), which is the Release
 body with the Upgrading anchor and a link to the full section.
 
+**A feature that retires a workaround says so, and adds its row.** Apps keep what they wrote while
+the framework lacked something (`render: 'ssr'` "until a hole marker ships"). The release note
+carries `retires the workaround` followed by the row id in backticks, on its line under `### Added`
+or `### Changed`; the row goes into `SUPERSEDED_WORKAROUNDS` (`packages/cli/src/superseded.ts`) with
+`shippedIn` set to that release and an example in `doctor-superseded.test.ts`. `x doctor` and
+`x upgrade` then warn every app still holding it (`X_SUPERSEDED_WORKAROUND`). A marker with no id,
+an id with no row, or a row naming another release is `X_DOC_WORKAROUND_UNTABLED`
+(`bun run scripts/changelog-check.ts --json`).
+
 **Branches and dist-tags.** `main` ships minors and patches under `latest`; `next` holds the breaks
 and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (no script cuts it; `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts` refuses any other `release/*` name, `X_RELEASE_BRANCH_NAME`). A bump PR
 merged to `release/<major>.x` is released exactly as on `main` (`release-tag.yml` runs on both), and

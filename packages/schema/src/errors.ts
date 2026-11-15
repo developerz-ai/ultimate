@@ -19,7 +19,7 @@ import { formatIssues } from './standard';
  * validation, which is the request body.
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
-const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 // Null-prototype, so `ESCAPES[char]` cannot answer an `Object.prototype` member no matter what
 // `CONTROL` matched. The domain argument — a key is exactly one control character, and no
 // prototype member has a single-character name — was true and is no longer load-bearing; a table

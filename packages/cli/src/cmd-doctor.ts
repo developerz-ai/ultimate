@@ -5,14 +5,16 @@
 import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL } from '@ultimat3/core';
 import { REQUIRED_BUN, versionAtLeast } from './app-root';
 import { doctorSpec } from './cmd-doctor-spec';
+import { pendingCodemodFindings } from './codemods/pending';
 import type { CliCommand, CommandContext } from './command';
+import { advisoryFloorFindings } from './doctor-advisory-floors';
 import { appUrlFindings } from './doctor-app-url';
 import { authStorageFindings } from './doctor-auth';
 import { browserProbe, browserWarnings, withBrowserReport } from './doctor-browser';
 import { chartAlertsProbe, NOTHING_MISSING, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
-import { missingGuardWarnings, shippedGuardsProbe, withGuardListing } from './doctor-guards';
+import { shippedGuardsProbe, vendoredGuardWarnings, withGuardListing } from './doctor-guards';
 import { offlineFallbackFinding } from './doctor-offline';
 import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
 import { doctorPort, portFindings } from './doctor-port';
@@ -21,11 +23,13 @@ import { probeFor } from './doctor-probe';
 import { redundantIndexesProbe, withRedundantIndexes } from './doctor-redundant-indexes';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import { sealedKeyFindings } from './doctor-sealed';
+import { supersededFindings } from './doctor-superseded';
 import { typescriptFindings } from './doctor-typescript';
 import { doctorWarnings, withDoctorWarnings } from './doctor-warnings';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import { cliVersion } from './registry';
 import { quoteArg } from './shell-quote';
 
 // `src/index.ts` publishes the seam from here; its declaration lives in `doctor-probe.ts`.
@@ -184,12 +188,16 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
     pooler,
   );
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
-  // A missing shipped guard among them (`X_SHIPPED_GUARD_MISSING`): a warning, so exit stays.
+  // A copy of a shipped guard among them (`X_GUARD_VENDORED`): a warning, so exit stays.
   const browser = await browserProbe(probe.root);
   return withDoctorWarnings(withBrowserReport(reminded, browser), [
     ...(await doctorWarnings(probe)),
-    ...missingGuardWarnings(guardEntries),
+    ...vendoredGuardWarnings(guardEntries),
     ...browserWarnings(browser),
+    ...(probe.root === undefined ? [] : await supersededFindings(probe.root)),
+    ...(probe.root === undefined ? [] : await advisoryFloorFindings(probe.root)),
+    // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.
+    ...(probe.root === undefined ? [] : await pendingCodemodFindings(probe.root, cliVersion())),
   ]);
 }
 

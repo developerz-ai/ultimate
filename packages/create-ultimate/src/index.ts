@@ -1,8 +1,9 @@
-// The whole package: turn `create-ultimate <name> [flags]` into `x new <name> [flags]`. No
-// templates, no prompts, no second code path — this exists only so `bunx create-ultimate` works
-// before @ultimat3/cli is installed.
+// The whole package: `create-ultimate <name> [flags]` is `x new <name> [flags]` — no templates, no
+// prompts, no second scaffolder — and `create-ultimate repro <bundle.json>` opens a bug's
+// `x repro --bundle` file into a scratch app built by that same scaffolder (`repro.ts`).
 
-import { dispatch } from '@ultimat3/cli';
+import { dispatch, exitCodeFor, findingFrom, render } from '@ultimat3/cli';
+import { openRepro } from './repro';
 
 export interface CreateAppOptions {
   readonly argv: readonly string[];
@@ -10,7 +11,24 @@ export interface CreateAppOptions {
   readonly write: (line: string) => void;
 }
 
+/** `repro` followed by a file is a bundle to open; `repro` alone stays an app named `repro`. */
+const opensBundle = (argv: readonly string[]): boolean =>
+  argv[0] === 'repro' && argv[1] !== undefined && !argv[1].startsWith('-');
+
+async function openBundle(options: CreateAppOptions): Promise<number> {
+  const json = options.argv.includes('--json') || options.argv.includes('-j');
+  const result = await openRepro(options.argv, options.cwd).catch((error: unknown) => ({
+    ok: false,
+    command: 'repro',
+    summary: findingFrom(error).cause,
+    findings: [findingFrom(error)],
+  }));
+  options.write(render(result, json));
+  return exitCodeFor(result);
+}
+
 export async function createApp(options: CreateAppOptions): Promise<number> {
+  if (opensBundle(options.argv)) return openBundle(options);
   return dispatch({
     argv: ['new', ...options.argv],
     // What the caller actually typed, so every `fix:` `x new` would have written names a command

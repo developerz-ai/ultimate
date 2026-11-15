@@ -6,6 +6,7 @@ import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { importErrorKey } from '@ultimat3/jobs';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
+import { postExcerpts } from '../backfills/post-excerpts';
 import { importPosts } from './import-posts';
 
 const orgId = '00000000-0000-4000-8000-00000000a001';
@@ -67,6 +68,19 @@ describe(testName('unit', 'importPosts'), () => {
     const text = new TextDecoder().decode(report.bytes);
     expect(text).toContain('"line":3');
     expect(text).not.toContain('not-a-uuid');
+  });
+
+  // A restored post has no body to cut an excerpt from: `postExcerpts` left it blank, `count()`
+  // still matched it, and every pass after any import ended X_BACKFILL_STALLED.
+  test('an import leaves the excerpt sweep nothing it cannot finish', async ({ runJobs }) => {
+    const key = `org/${orgId}/imports/posts/sweep.csv`;
+    await upload(key, [`${restoredId},restored,Restored,draft,0,,2026-11-01T00:00:00.000Z`]);
+    await runJobs(importPosts, { orgId, importId, authorId, key });
+    const trace = await runJobs(postExcerpts, {});
+    const run = trace.executions.find((one) => one.job === postExcerpts.name);
+    expect([run?.outcome, run?.error]).toEqual(['completed', undefined]);
+    const [restored] = await inOrg(orgId, () => db.posts.all());
+    expect(restored).toMatchObject({ id: restoredId, excerpt: '', body: '' });
   });
 
   test('a key under another org is refused before any row is read', async ({ runJobs }) => {

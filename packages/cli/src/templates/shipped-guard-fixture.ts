@@ -1,8 +1,9 @@
-// TEST-ONLY. One shipped guard, written to a throwaway app root beside the files a case needs,
-// and run through the seam `x verify`'s `boundaries` step calls. Shared by the seven stylesheet
-// guards' tests: each asks the same question — does THIS guard, as emitted, refuse this tree —
-// and a whole `x new` scaffold per case (166 files) is what made the older guard suites slow.
+// TEST-ONLY. One shipped guard, run BUILT IN — as every app runs it — over a throwaway root holding
+// a case's files and a `guards/shipped.json` turning every other one off, through the seam the
+// `boundaries` step calls. Shared by the guard suites: a whole `x new` scaffold per case (166
+// files) is what made the older ones slow.
 
+import { expect } from 'bun:test';
 // why: Bun ships no temp-directory, symlink or mkdir API; `node:fs/promises` is the only one.
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -10,8 +11,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
 import { type GuardReport, guardReport } from '../guards';
+import { SHIPPED_GUARD_CONFIG } from '../guards-built-in';
 import type { Finding } from '../output';
-import { shippedGuardFiles } from './scaffold-guards';
+import { SHIPPED_GUARD_NAMES } from './scaffold-guards';
 
 /** This repo's `@ultimat3/ui`, for a tree whose stylesheets `@use '@ultimat3/ui/tokens'`. */
 const UI_PACKAGE = Bun.fileURLToPath(new URL('../../../ui', import.meta.url));
@@ -34,9 +36,10 @@ export async function shippedGuardReport(
 ): Promise<GuardReport> {
   const root = await mkdtemp(join(tmpdir(), `x-guard-${name}-`));
   try {
-    for (const file of shippedGuardFiles(name) ?? []) {
-      if (!file.path.endsWith('.test.ts')) await Bun.write(join(root, file.path), file.contents);
-    }
+    if (!SHIPPED_GUARD_NAMES.includes(name)) expect.unreachable(`${name} is not a shipped guard`);
+    const others = SHIPPED_GUARD_NAMES.filter((other) => other !== name);
+    const severity = Object.fromEntries(others.map((other) => [other, 'off']));
+    await Bun.write(join(root, SHIPPED_GUARD_CONFIG), JSON.stringify({ severity }));
     for (const [path, contents] of Object.entries(files)) {
       await Bun.write(join(root, path), contents);
     }

@@ -153,7 +153,7 @@ Default answer: **no**. Bun's natives (`Bun.sql`, `Bun.redis`, `Bun.s3`, WS, tes
 
 ## Formatting
 
-Biome owns it. Single quotes, semicolons, 2-space indent, 100 columns, trailing commas, organized imports. `bun run lint:fix` before committing: the pre-commit hook runs `bunx biome check --staged`, which reports and does **not** fix — without `--write` Biome answers `No fixes applied` and the commit is refused. Don't hand-format and don't argue with the formatter.
+Biome owns it. Single quotes, semicolons, 2-space indent, 100 columns, trailing commas, organized imports. `bun run lint:fix` before committing: the pre-commit hook runs `bunx @biomejs/biome check --staged`, which reports and does **not** fix — without `--write` Biome answers `No fixes applied` and the commit is refused. Don't hand-format and don't argue with the formatter.
 
 ## Docs you write
 
