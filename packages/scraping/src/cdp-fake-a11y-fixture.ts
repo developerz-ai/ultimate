@@ -104,7 +104,10 @@ export function fakeAxSession(
     },
   };
   return {
-    send: (method, params) => Promise.resolve(answers[method]?.(params) ?? {}),
+    send: (method, params) =>
+      Promise.resolve(
+        (Object.hasOwn(answers, method) ? answers[method] : undefined)?.(params) ?? {},
+      ),
     detach: () => {
       onDetach();
       return Promise.resolve();

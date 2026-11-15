@@ -3,8 +3,8 @@
 // condition, the init scripts, the socket and request log. Launching is `cdp-launch.ts` and the
 // wire is `cdp-connection.ts`.
 //
-// FIVE methods, which is the whole reason this exists next to `@ultimat3/scraping` rather than
-// through it: `ScrapePage` is a full scraping surface whose intended implementation is
+// A handful of methods — and a real finger (`touchDrag`) and key (`press`) — which is why this sits
+// next to `@ultimat3/scraping` rather than going through it: `ScrapePage` is a full scraping surface whose intended implementation is
 // `puppeteer-core`, and an e2e driver needs none of it.
 
 import type { CdpConnection } from '@ultimat3/scraping/cdp';
@@ -376,7 +376,7 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       await touch('touchEnd', []);
     },
     async press(key: string): Promise<void> {
-      const code = PRESS_KEYS[key] ?? charCode(key);
+      const code = (Object.hasOwn(PRESS_KEYS, key) ? PRESS_KEYS[key] : undefined) ?? charCode(key);
       if (code === undefined) {
         throw new CdpCallFailedError({
           method: `press(${key})`,

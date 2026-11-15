@@ -123,6 +123,10 @@ export const FACTORY_GENERATORS: readonly FactoryGenerator[] = [
     none: 'one signed delivery to an endpoint the app stores, with its ledger; deferred (plan 101 U6) until x g plants the endpoint table and the ledger it needs',
   },
   { factory: 'webhookReceiver', generator: 'webhook-receiver' },
+  {
+    factory: 'inboundMail',
+    none: 'a receiver over a provider the app has an account with — which provider, its secret and where a message goes are choices x g cannot read off the disk; the wiki Mail page has the one call to paste',
+  },
 ];
 
 /** `x g llm` or `x g agent-job`: the factory a word names, when it is one no generator writes. */
