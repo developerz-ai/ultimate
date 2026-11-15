@@ -149,18 +149,20 @@ describe('unit · the drain each role runs', () => {
  */
 describe('unit · the exporter is started before the app is imported', () => {
   test("a span from an app's import-time close hook is delivered", async () => {
-    await rm(ROOT, { recursive: true, force: true });
+    // A root of this run's own: `import()` evaluates an app module once per PROCESS, so a rerun
+    // over the same path registers no close hook after `resetLifecycle()` and emits no span.
+    const root = join(ROOT, `otlp-${Bun.randomUUIDv7()}`);
     await Bun.write(
-      join(ROOT, 'package.json'),
+      join(root, 'package.json'),
       JSON.stringify({ name: 'serve-otlp-fixture', version: '1.0.0' }),
     );
     await Bun.write(
-      join(ROOT, 'app.config.ts'),
+      join(root, 'app.config.ts'),
       "import { defineConfig } from '@ultimat3/core';\n" +
         "export const config = defineConfig({ name: 'serve-otlp-fixture' });\n",
     );
     await Bun.write(
-      join(ROOT, 'apps/web/api/index.ts'),
+      join(root, 'apps/web/api/index.ts'),
       "import { onShutdown, withSpan } from '@ultimat3/core';\n" +
         "onShutdown('app-teardown', () => withSpan('span-from-app-teardown', async () => 0), { phase: 'close' });\n",
     );
@@ -173,10 +175,10 @@ describe('unit · the exporter is started before the app is imported', () => {
     }) as typeof globalThis.fetch;
     const env = {
       NODE_ENV: 'test',
-      ULTIMATE_STATE_DIR: join(ROOT, '.x'),
+      ULTIMATE_STATE_DIR: join(root, '.x'),
       OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318',
     };
-    const worker = await serveApp({ root: ROOT, env, role: 'worker', port: 0, metricsPort: 0 });
+    const worker = await serveApp({ root, env, role: 'worker', port: 0, metricsPort: 0 });
     try {
       await drain('SIGTERM');
       expect(bodies.join('')).toContain('span-from-app-teardown');
@@ -185,6 +187,7 @@ describe('unit · the exporter is started before the app is imported', () => {
       globalThis.fetch = real;
       resetTelemetry();
       resetLifecycle();
+      await rm(root, { recursive: true, force: true });
     }
   }, 120_000);
 });
