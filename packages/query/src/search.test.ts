@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   configureCursorSigning,
   ctxOf,
   encodeCursor,
+  resetCursorSigning,
   UltimateError,
   userActor,
 } from '@ultimat3/core';
@@ -15,6 +16,10 @@ import { runQuery } from './read';
 import { registerQuery, resetQueries } from './registry';
 import type { SearchChain } from './search';
 import { search } from './search';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 interface Post {
   readonly id: string;

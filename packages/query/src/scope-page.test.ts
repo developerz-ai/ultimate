@@ -1,8 +1,8 @@
 // Single responsibility: a rule STRICTER than its scope never strands a row past the page — the
 // cursor and `hasMore` come from the rows the source read, and a dropped row is refilled, bounded.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, ctxOf, userActor } from '@ultimat3/core';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { configureCursorSigning, ctxOf, resetCursorSigning, userActor } from '@ultimat3/core';
 import type { Actor as PolicyActor, ScopeCondition } from '@ultimat3/policy';
 import { can, scoped } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -15,6 +15,10 @@ import { resetQueries } from './registry';
 import { matchesFilters } from './shape';
 import type { RowWindow } from './source';
 import { from, isAfterKey } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 interface Row {
   readonly id: string;

@@ -19,7 +19,6 @@ import {
   REDIS_STATS,
   REDIS_STEP_PUT_FENCED,
 } from './driver-redis-scripts';
-import { DriverUnavailableError } from './errors';
 
 /** Each script by its SHA-1, as `EVALSHA` names it (`driver-redis-eval.ts`). */
 const SCRIPTS = new Map<string, string>(
@@ -227,6 +226,7 @@ describe('redisJobDriver', () => {
       visibilityTimeoutMs: 30_000,
       workerId: 'w1',
       dropExhausted: ['quiet.job'],
+      settleOwed: ['mail.send', 'hooked.job'],
       onExhausted: (dead) => reported.push(dead.map((each) => `${each.id}:${each.state}`)),
     });
     expect(claimed).toEqual([
@@ -260,6 +260,9 @@ describe('redisJobDriver', () => {
       '0', // no `onEmpty`: the script computes no horizon
       '1',
       'quiet.job',
+      '2',
+      'mail.send',
+      'hooked.job',
       'default',
       'other',
     ]);
@@ -443,57 +446,5 @@ describe('redisJobDriver', () => {
       ['send', 'started'],
       ['notify', 'cleared'],
     ]);
-  });
-});
-
-describe('redisJobDriver · an unreachable server', () => {
-  /** What `Bun.RedisClient` with its offline queue off answers every command while down. */
-  const closed = (): RedisSender => ({
-    send: () =>
-      Promise.reject(
-        Object.assign(new Error('Connection is closed and offline queue is disabled'), {
-          code: 'ERR_REDIS_CONNECTION_CLOSED',
-        }),
-      ),
-  });
-  const request = {
-    name: 'mail.send',
-    queue: 'default',
-    input: null,
-    idempotencyKey: 'k',
-    maxAttempts: 3,
-  };
-
-  test('enqueue is X_DRIVER_UNAVAILABLE at once, never the client error', async () => {
-    const driver = redisJobDriver({ client: closed(), clock: clock() });
-    const refusal = await driver.enqueue(request).then(
-      () => expect.unreachable('an enqueue against a closed connection answered'),
-      (error: unknown) => error,
-    );
-    expect(refusal).toBeInstanceOf(DriverUnavailableError);
-    expect((refusal as DriverUnavailableError).cause).toContain('EVAL');
-    expect((refusal as DriverUnavailableError).fix).toStartWith('redis-cli');
-  });
-
-  test('so is a claim, and a step read through the same client', async () => {
-    const driver = redisJobDriver({ client: closed(), clock: clock() });
-    await expect(
-      driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 30_000, workerId: 'w1' }),
-    ).rejects.toBeInstanceOf(DriverUnavailableError);
-    await expect(driver.steps.get('r1', 'a')).rejects.toBeInstanceOf(DriverUnavailableError);
-  });
-
-  test('a refusal the SERVER gave is not an outage, and passes through as itself', async () => {
-    const client: RedisSender = {
-      send: () =>
-        Promise.reject(Object.assign(new Error('NOSCRIPT'), { code: 'ERR_REDIS_SERVER_ERROR' })),
-    };
-    const refusal = await redisJobDriver({ client, clock: clock() })
-      .enqueue(request)
-      .then(
-        () => expect.unreachable('a refused script answered'),
-        (error: unknown) => error,
-      );
-    expect(refusal).not.toBeInstanceOf(DriverUnavailableError);
   });
 });

@@ -92,8 +92,9 @@ export class LiveQueryRegistry {
    * The `sync` node calls this when the change stream skips a sequence: over core NATS a fanout is
    * at-most-once, and a node that missed eleven changes during a reconnect otherwise holds a window
    * whose lsn never moved, subscribers whose cursors never moved, and therefore nothing that would
-   * ever ask for a re-snapshot. The repair lands on the next change to each query — which is the
-   * event that proves the query is moving at all.
+   * ever ask for a re-snapshot. The repair lands on the next change the node hears (every stale
+   * window is its target), or at once when the stream said so with no change behind it — a bus
+   * reconnect or a replicator resync calls `repairMarked()` (`sync-bus-handlers.ts`).
    *
    * `entity` — the RELATION, as on `ChangeEvent.table` — narrows it to the windows that read it:
    * a filtered write (`updateWhere`/`deleteWhere`) names its table but no row, and staling every

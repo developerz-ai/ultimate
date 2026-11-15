@@ -22,6 +22,13 @@ export interface ScheduledFire {
 export interface SchedulerState {
   /** Epoch ms of the last occurrence this task was dispatched for. */
   lastFiredAt(taskName: string): Promise<number | undefined>;
+  /**
+   * Every named task's watermark in ONE read; a task never armed is absent. What a round asks
+   * when it knows nothing yet — a leader newly elected, a scheduler just booted — where it was a
+   * `lastFiredAt` per task: 43 sequential scans of a one-page table per cold round. Optional so a
+   * store written before it still type-checks; `readWatermarks` asks such a store per task.
+   */
+  watermarks?(taskNames: readonly string[]): Promise<ReadonlyMap<string, number>>;
   /** Move the watermark WITHOUT firing: arming a task first seen, or dropping missed occurrences. */
   markFired(taskName: string, occurrenceMs: number): Promise<void>;
   /**
@@ -58,10 +65,34 @@ export async function fireThroughDriver(
   return results;
 }
 
+/** The watermarks of `taskNames`, in one read where the store states one (`watermarks`). */
+export async function readWatermarks(
+  state: SchedulerState,
+  taskNames: readonly string[],
+): Promise<ReadonlyMap<string, number>> {
+  if (taskNames.length === 0) return new Map();
+  if (state.watermarks !== undefined) return state.watermarks(taskNames);
+  const found = new Map<string, number>();
+  for (const name of taskNames) {
+    const last = await state.lastFiredAt(name);
+    if (last !== undefined) found.set(name, last);
+  }
+  return found;
+}
+
 export function memorySchedulerState(): SchedulerState {
   const fired = new Map<string, number>();
   const state: SchedulerState = {
     lastFiredAt: (taskName) => Promise.resolve(fired.get(taskName)),
+    watermarks: (taskNames) =>
+      Promise.resolve(
+        new Map(
+          taskNames.flatMap((name) => {
+            const last = fired.get(name);
+            return last === undefined ? [] : [[name, last] as const];
+          }),
+        ),
+      ),
     markFired(taskName, occurrenceMs) {
       // Forward only, as `SQL_SCHEDULER_STATE_MARK`'s `greatest` is: a mark never rewinds.
       fired.set(taskName, Math.max(fired.get(taskName) ?? occurrenceMs, occurrenceMs));

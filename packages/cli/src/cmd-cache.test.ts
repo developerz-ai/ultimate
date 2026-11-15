@@ -4,7 +4,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and Bun.write is async in this synchronous fixture helper.
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -31,6 +31,10 @@ const appRoot = (): string => {
   madeDirs.push(dir);
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   writeFileSync(join(dir, 'package.json'), '{"name":"fixture","version":"0.1.0"}\n');
+  // One module, so the load reads an app rather than X_APP_EMPTY — which `loadApp` decides from
+  // the PROCESS's registries, so it held here only while an earlier file's primitives were left.
+  mkdirSync(join(dir, 'apps/web/shared'), { recursive: true });
+  writeFileSync(join(dir, 'apps/web/shared/tokens.ts'), 'export const tokens = {};\n');
   return dir;
 };
 
@@ -77,6 +81,8 @@ describe('unit · x cache bust and clear', () => {
     const result = await command.run(ctxFor(appRoot(), ['cache', 'bust', 'post:42']));
     expect(asked).toEqual([['post:42']]);
     expect(closed()).toBe(1);
+    // The findings first: on a shared worker a red `ok` alone named no cause.
+    expect(result.findings ?? []).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.data).toMatchObject({
       tags: ['post:42'],

@@ -206,7 +206,7 @@ describe('the pg step store', () => {
     await store?.list('run-1');
     await store?.del('run-1', 'charge');
     await store?.clear('run-1');
-    expect(executor.calls[0]?.sql).toContain('where run_id = $1 order by started_at');
+    expect(executor.calls[0]?.sql).toContain('where run_id = $1 order by x_job_steps.started_at');
     expect(executor.calls[1]?.sql).toContain(
       'delete from x_job_steps where run_id = $1 and name = $2',
     );
@@ -392,7 +392,9 @@ describe('the pg driver`s introspection', () => {
   test('deadLetters reads the dead state newest-first, defaulting to 100', async () => {
     const executor = executorFor({ 'from x_jobs': [row({ state: 'dead' })] });
     const dead = await driverWith(executor).introspect?.deadLetters();
-    expect(executor.calls[0]?.sql).toContain("where state = 'dead' order by updated_at desc");
+    expect(executor.calls[0]?.sql).toContain(
+      "where state = 'dead' order by x_jobs.updated_at desc",
+    );
     expect(executor.calls[0]?.params).toEqual([100]);
     expect(dead?.[0]?.state).toBe('dead');
   });

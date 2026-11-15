@@ -3,7 +3,7 @@
 // module declares at MODULE scope evaluates once per `bun test` process — a neighbour's clear is
 // permanent and there is no second evaluation left to redo it.
 //
-// SIX registries, out of roughly nine that publish a `clear*`/`reset*`. The missing ones and what
+// SEVEN registries, out of roughly nine that publish a `clear*`/`reset*`. The missing ones and what
 // each still needs are tabulated in `registry-leak-guard.ts` beside `RegistrySample` — every one of
 // them needs a RESTORE in its owning package first, the way `restorePermissions` / `restoreRoles`
 // were added to `@ultimat3/policy` for the two rows below.
@@ -25,8 +25,8 @@ import {
   registeredLocales,
   resetCatalogs,
 } from '@ultimat3/i18n';
-import type { TaskHandle } from '@ultimat3/jobs';
-import { registeredTasks, restoreTasks } from '@ultimat3/jobs';
+import type { AnyJobHandle, TaskHandle } from '@ultimat3/jobs';
+import { registeredJobs, registeredTasks, restoreJobs, restoreTasks } from '@ultimat3/jobs';
 import type { RoleMap } from '@ultimat3/policy';
 import {
   knownPermissions,
@@ -57,6 +57,13 @@ export interface ProcessRegistrySnapshot {
    * fired in every later file's `appManifest` round — 14 framework failures, measured.
    */
   readonly tasks: readonly TaskHandle[];
+  /**
+   * Jobs, for the tasks' reason read the other way: `job()` runs at module scope (`sendMailJob`),
+   * and `job.test.ts` `resetJobs()` in every `beforeEach` — so on a shared worker every later file
+   * lost the jobs its cached imports had declared, and a fixture app with no module of its own
+   * read as X_APP_EMPTY (`@ultimat3/cli`'s `loadApp` counts the process's registries).
+   */
+  readonly jobs: readonly AnyJobHandle[];
   /** `defineCatalogs()` calls so far — see `@ultimat3/i18n`'s `catalogDeclarationCount`. */
   readonly catalogDeclarations: number;
   /**
@@ -77,6 +84,7 @@ export function captureProcessRegistries(): ProcessRegistrySnapshot {
     roles: roleDefinitions(),
     roleSites: roleDeclarationSites(),
     tasks: registeredTasks(),
+    jobs: registeredJobs(),
     catalogDeclarations: catalogDeclarationCount(),
     measurementActor: declaredMeasurementActor(),
   };
@@ -92,11 +100,22 @@ export function restoreProcessRegistries(snapshot: ProcessRegistrySnapshot): voi
   // a partial call can never widen `supported` back.
   configureLocales(snapshot.locales);
   restoreCatalogs(snapshot.catalogs);
-  restorePermissions(snapshot.permissions, snapshot.permissionSites);
-  restoreRoles(snapshot.roles, snapshot.roleSites);
+  restorePolicyRegistries(snapshot);
   restoreTasks(snapshot.tasks);
+  restoreJobs(snapshot.jobs);
   if (snapshot.measurementActor === undefined) resetMeasurementActor();
   else defineMeasurementActor(snapshot.measurementActor);
+}
+
+/** The permission set and the role map alone, each with its declaration sites. */
+export function restorePolicyRegistries(
+  snapshot: Pick<
+    ProcessRegistrySnapshot,
+    'permissions' | 'permissionSites' | 'roles' | 'roleSites'
+  >,
+): void {
+  restorePermissions(snapshot.permissions, snapshot.permissionSites);
+  restoreRoles(snapshot.roles, snapshot.roleSites);
 }
 
 /**
@@ -154,6 +173,8 @@ export function mergeSnapshots(
   }
   const tasks = new Map(older.tasks.map((handle) => [handle.name, handle] as const));
   for (const handle of newer.tasks) tasks.set(handle.name, handle);
+  const jobs = new Map(older.jobs.map((handle) => [handle.name, handle] as const));
+  for (const handle of newer.jobs) jobs.set(handle.name, handle);
   return {
     locales: newer.locales,
     catalogs: [...catalogs],
@@ -162,6 +183,7 @@ export function mergeSnapshots(
     roles: { ...older.roles, ...newer.roles },
     roleSites: { ...older.roleSites, ...newer.roleSites },
     tasks: [...tasks.values()],
+    jobs: [...jobs.values()],
     catalogDeclarations: Math.max(older.catalogDeclarations, newer.catalogDeclarations),
     // Last declaration wins, as `defineMeasurementActor` itself has it; "none" never erases one.
     measurementActor: newer.measurementActor ?? older.measurementActor,

@@ -54,6 +54,14 @@ export function diffJobs(
         detail: 'concurrency changed; runs already in flight keep the slots they hold',
       });
     }
+    // A limiter paces runs, as a cap does: no enqueuer or queued payload depends on it.
+    if (canonicalJson(job.limiter ?? null) !== canonicalJson(next.limiter ?? null)) {
+      changes.push({
+        kind: 'internal',
+        path: `${path}.limiter`,
+        detail: 'limiter changed; runs already admitted keep what they spent',
+      });
+    }
     if ((job.onSettled ?? false) !== (next.onSettled ?? false)) {
       changes.push({
         kind: 'internal',

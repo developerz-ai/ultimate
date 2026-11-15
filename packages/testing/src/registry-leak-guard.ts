@@ -5,13 +5,19 @@
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
+import { configureLocales } from '@ultimat3/i18n';
+import { captureAdminMounts, restoreAdminMounts } from './admin-mount-boundary';
 import { isAppRoot } from './app-root';
+import { captureDriverStores, restoreDriverStores } from './driver-store-boundary';
 import { RegistryLeakError } from './errors';
 import { runBoundaryHooks, runFileBoundary } from './file-boundary';
+import { type ImportGraph, importGraphReader } from './import-graph';
+import { ownEnvironment } from './registry-environment';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
 import {
   captureProcessRegistries,
   mergeSnapshots,
+  restorePolicyRegistries,
   restoreProcessRegistries,
 } from './registry-snapshot';
 import { rerunDeclarations } from './rerun-declarations';
@@ -34,14 +40,14 @@ import { frameworkDeclarationRegistries } from './rerun-registries';
  * "Idiomatic to leave filled" says nothing about a file that calls `clear*()`/`reset*()` and takes
  * a module-scope declaration from every file after it — a module evaluates once per process, so the
  * next file's own `import` is a cache hit that declares nothing. That is what `registry-snapshot.ts`
- * repairs, and it repairs SIX registries out of the set that has one:
+ * repairs, and it repairs SEVEN registries out of the set that has one:
  *
  *   | registry | reset export | owner | in the snapshot? |
  *   |---|---|---|---|
  *   | locales / catalogs | `resetCatalogs` | `@ultimat3/i18n` | yes |
  *   | permissions / roles | `restorePermissions` / `restoreRoles` | `@ultimat3/policy` | yes |
  *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
- *   | jobs | `resetJobs` / `restoreJobs` | `@ultimat3/jobs` | **no** — isolated per test |
+ *   | jobs | `resetJobs` / `restoreJobs` | `@ultimat3/jobs` | yes (2026-11) |
  *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
  *   | measurement actor | `resetMeasurementActor` | `@ultimat3/core` | yes |
  *   | actions | `resetActions` | `@ultimat3/action` | **no** |
@@ -109,7 +115,10 @@ const repoRelative = (path: string): string => {
  */
 const BASELINE_HOOK = '__ultimateRegistryLeakBaseline';
 
-/** Appended: the baseline is the file's whole module scope, its body's declarations included. */
+/**
+ * Appended: the TAG baseline is the file's whole module scope, its body's declarations included.
+ * The RESTORE baseline is not — it is taken at `BODY_START_HOOK`, below.
+ */
 const SAMPLE_BASELINE = `\n;globalThis[${JSON.stringify(BASELINE_HOOK)}]?.();\n`;
 
 /**
@@ -117,6 +126,14 @@ const SAMPLE_BASELINE = `\n;globalThis[${JSON.stringify(BASELINE_HOOK)}]?.();\n`
  * and before its body (measured on Bun 1.4.4) — the start of the window in which the BODY declares
  * (`rerun-declarations.ts`). On line 1 with no newline, so every line number a stack trace or a
  * coverage report names is the file's own.
+ *
+ * It is also where the RESTORE snapshot is taken, and why there rather than after the body: the
+ * imports are the file's environment — a cached module never declares again, so what it declared
+ * has to outlive the file — but a `.test.ts` body is imported by no other file, so nothing it
+ * declared is anyone's cache hit. Sampled after the body (until 2026-11), every test file's
+ * module-scope `definePermissions()` / `defineRoles()` was folded into what each later file on the
+ * worker inherited: strict permission checking switched on for files that declared nothing, and
+ * `X_ROLE_REDEFINED` in the next file that defined the same role its own way.
  */
 const BODY_START_HOOK = '__ultimateBodyStart';
 const SAMPLE_BODY_START = `;globalThis[${JSON.stringify(BODY_START_HOOK)}]?.();`;
@@ -146,8 +163,10 @@ export function installRegistryLeakGuard(): void {
   let current:
     | {
         readonly file: string;
-        readonly before: RegistrySample;
+        /** Unset until the body ends: a body that threw is restored, never judged for tags. */
+        before: RegistrySample | undefined;
         readonly snapshot: ProcessRegistrySnapshot;
+        readonly admins: ReturnType<typeof captureAdminMounts>;
       }
     | undefined;
   const leaks: RegistryLeak[] = [];
@@ -157,14 +176,30 @@ export function installRegistryLeakGuard(): void {
   const pristineLocales = JSON.stringify(captureProcessRegistries().locales);
   const inApp = isAppRoot();
   const reruns = rerunDeclarations(frameworkDeclarationRegistries);
+  // The preload's own declarations are every file's: no test file's graph reaches the preload.
+  const atPreload = captureProcessRegistries();
+  const preloadNames = {
+    permissions: new Set(atPreload.permissions),
+    roles: new Set(Object.keys(atPreload.roles)),
+  };
+  // What the last boundary put back: a name live at a body's start and absent here was declared
+  // by a module THIS file's load evaluated for the first time — its own, whatever the graph says.
+  let lastBoundary = atPreload;
+  const preloadStores = captureDriverStores();
+  const graphOf = importGraphReader();
+  let graph: ImportGraph | undefined;
 
   const close = (): void => {
     if (current === undefined) return;
-    const leak = leakBetween(current.file, current.before, sampleRegistries());
+    const leak =
+      current.before === undefined
+        ? undefined
+        : leakBetween(current.file, current.before, sampleRegistries());
     if (leak !== undefined) leaks.push(leak);
     // The repair, at the only point it is safe: the file is over and the next one has not
     // evaluated yet, so what goes back is exactly what that file inherited — module-scope
-    // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys.
+    // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys —
+    // and the file's own BODY excluded (`BODY_START_HOOK`).
     //
     // In an APP, declarations are put back as a UNION with what the process holds now (22.7,
     // shared worker): an app module a test imported lazily declared its permissions and roles once,
@@ -189,22 +224,69 @@ export function installRegistryLeakGuard(): void {
       ...merged,
       locales: declaredLazily ? live.locales : current.snapshot.locales,
       tasks: current.snapshot.tasks,
+      jobs: current.snapshot.jobs,
     };
     restoreProcessRegistries(restored);
+    // To the PRELOAD's notes, never the body's start: a store is noted as its driver is built,
+    // and a fixture module that builds one at import noted it for every later file on the worker —
+    // whose drift step then read its fixture app as "a store that owns its own schema".
+    restoreDriverStores(preloadStores);
+    restoreAdminMounts(current.admins);
     accumulated = mergeSnapshots(accumulated, restored);
+    lastBoundary = restored;
     current = undefined;
   };
 
-  // Called by the statement appended below, once per test file, from that file's own module scope:
-  // everything the file's MODULE graph registered is its environment — importing an app module is
-  // how an app declares its tags — and everything after this point is the file's own to undo.
-  hookHost[BODY_START_HOOK] = () => reruns.bodyStart();
+  // The framework repository's files, on a shared worker, start from THEIR graph's policy
+  // declarations (`registry-environment.ts`), put in place before the body runs. An app keeps the
+  // union: its tests reach app modules through `loadApp()`, which no static graph shows.
+  const narrowed = (
+    live: ProcessRegistrySnapshot,
+    inherited: ProcessRegistrySnapshot,
+  ): ProcessRegistrySnapshot => {
+    if (inApp || graph === undefined) return inherited;
+    const fresh = (names: readonly string[], before: readonly string[]): Set<string> =>
+      new Set(names.filter((name) => !before.includes(name)));
+    const kept = {
+      permissions: new Set([
+        ...preloadNames.permissions,
+        ...fresh(live.permissions, lastBoundary.permissions),
+      ]),
+      roles: new Set([
+        ...preloadNames.roles,
+        ...fresh(Object.keys(live.roles), Object.keys(lastBoundary.roles)),
+      ]),
+    };
+    // The locale config likewise: an earlier file's import that narrowed it (an app's
+    // `defineCatalogs()`) is no environment of this one — unless THIS load moved it.
+    const movedNow = JSON.stringify(live.locales) !== JSON.stringify(lastBoundary.locales);
+    const locales = movedNow ? live.locales : atPreload.locales;
+    const own = { ...inherited, ...ownEnvironment(inherited, graph, kept), locales };
+    restorePolicyRegistries(own);
+    configureLocales(locales);
+    return own;
+  };
+
+  // Both called from the file's own source, once per test file. At the body's START everything
+  // the file's IMPORT graph registered is its environment, and is what the boundary restores to.
+  // At the body's END everything the module scope registered is the TAG baseline — importing an
+  // app module is how an app declares its tags — and everything after it is the file's to undo.
+  hookHost[BODY_START_HOOK] = () => {
+    reruns.bodyStart();
+    if (pending === undefined) return;
+    const live = captureProcessRegistries();
+    accumulated = mergeSnapshots(accumulated, live);
+    current = {
+      file: pending,
+      before: undefined,
+      snapshot: narrowed(live, accumulated),
+      admins: captureAdminMounts(),
+    };
+    pending = undefined;
+  };
   hookHost[BASELINE_HOOK] = () => {
     reruns.bodyEnd();
-    if (pending === undefined) return;
-    accumulated = mergeSnapshots(accumulated, captureProcessRegistries());
-    current = { file: pending, before: sampleRegistries(), snapshot: accumulated };
-    pending = undefined;
+    if (current !== undefined && current.before === undefined) current.before = sampleRegistries();
   };
 
   // The only signal Bun gives a preload for "a new test file starts": its hooks carry no file. A
@@ -225,6 +307,8 @@ export function installRegistryLeakGuard(): void {
         runFileBoundary();
         close();
         pending = repoRelative(args.path);
+        // Read before the file evaluates — a body-start hook is synchronous and this is not.
+        graph = inApp ? undefined : await graphOf(args.path);
         // `loading` closes the previous file's window first (`fileEnd`).
         reruns.loading(args.path);
         return {

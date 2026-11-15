@@ -98,6 +98,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/http": "^${version}",
     "@ultimat3/i18n": "^${version}",
     "@ultimat3/jobs": "^${version}",
+    "@ultimat3/mail": "^${version}",
     "@ultimat3/mcp": "^${version}",
     "@ultimat3/money": "^${version}",
     "@ultimat3/policy": "^${version}",

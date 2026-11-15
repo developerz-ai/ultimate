@@ -45,18 +45,18 @@ there is one environment, and it hides the object a reviewer needs to see.
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
-| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue demand (`queue_demand`, held plus due), an `External` metric | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
-| `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
+| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue demand (`queue_demand`, held plus due), an `External` metric | liveness on `/healthz`, readiness on `/readyz`, both `:9090` |
+| `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/healthz`, readiness on `/readyz`, both `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
-| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz?deep=1`, both `:9090` |
+| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/healthz`, readiness on `/readyz?deep=1`, both `:9090` |
 
 **Probes follow the role, because the roles do not agree on what they open.** `web` and `sync`
 construct a server and get `/readyz` + `/healthz` on it. `worker`, `scheduler` and `replicator`
 construct none — their only socket is the metrics listener
 ([`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts)), which answers
 `METRICS_PATH`, `/healthz` and `/readyz` (the verdict only, never the check names) — so they get a
-liveness probe on `/metrics` and a readiness probe on `/readyz` of the same port (`As of
-2026-10-05`): 503 until the role has started, and again from the first instant of a drain. Without
+liveness probe on `/healthz` — the loops' heartbeats, 503 once one stops stamping, where `/metrics` answers 200 for as long as the listener is up — and a readiness probe on `/readyz` of the same port (`As of
+2026-11`): 503 until the role has started, and again from the first instant of a drain. Without
 it a worker pod was Ready the moment its scrape port bound, so a rollout could replace every old
 worker with new ones that crashed later in boot. The replicator reads `/readyz?deep=1` — deep, so an app's `readiness: 'process'` cannot report a stopped stream as ready. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
 probe meaningless; leaving them with no probe is how a wedged worker was never restarted.

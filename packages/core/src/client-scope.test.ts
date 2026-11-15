@@ -1,13 +1,18 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ClientScope } from './client-scope';
 import { onRescope, rescope } from './client-scope';
 import { scopeChanged } from './client-scope-error';
 import { generationFence, isSuperseded } from './generation-fence';
 import { pageClient } from './record-sink';
 
-afterEach(() => {
+// Before as well as after: the page client lives on a global symbol, and on a shared worker an
+// earlier file's (`@ultimat3/realtime`'s page suites) arrived here at epoch 8 — the epochs below
+// are counted from a fresh page.
+const freshPage = (): void => {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.client'));
-});
+};
+beforeEach(freshPage);
+afterEach(freshPage);
 
 describe('rescope', () => {
   test('a principal change bumps the epoch and notifies once, synchronously, with both scopes', () => {

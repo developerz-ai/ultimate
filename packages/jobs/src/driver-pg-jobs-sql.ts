@@ -51,6 +51,12 @@ const LIST_MATCH = `($1::text is null or queue = $1)
  * which would skip or repeat its millisecond-mates. A cursor row deleted mid-walk falls back to
  * the millisecond after it: rows of that one millisecond may then repeat, and none is skipped.
  *
+ * The order is QUALIFIED, `x_jobs.created_at`: a bare `created_at` names the epoch-ms OUTPUT column
+ * `JOB_ROW_COLUMNS` projects, which no index serves — every page was a sequential scan and a sort of
+ * the whole queue — and which rounds away the microseconds the keyset compares, so of two rows in
+ * one millisecond the page could answer the later and the cursor then excluded the earlier for good
+ * (`driver-pg-list-order.live.test.ts`, `statement-plans.live.test.ts`).
+ *
  * `LIST_MATCH`'s parameters, plus $4 limit, $8 cursor createdAt (ms), $9 cursor id.
  */
 export const SQL_JOB_LIST = `
@@ -64,7 +70,7 @@ select ${JOB_ROW_COLUMNS}
          ),
          $9::uuid
        ))
- order by created_at desc, id desc
+ order by x_jobs.created_at desc, x_jobs.id desc
  limit $4
 `.trim();
 
@@ -72,11 +78,13 @@ select ${JOB_ROW_COLUMNS}
  * The page BEFORE a cursor: the `limit` rows nearest it on the newer side — read oldest first so
  * `limit` keeps the nearest, then turned newest first like every page. The same parameters as
  * `SQL_JOB_LIST`, $8/$9 being the first row of the page the reader is leaving. A cursor row
- * deleted meanwhile falls back to its millisecond: a row of it may repeat, none is skipped.
+ * deleted meanwhile falls back to its millisecond: a row of it may repeat, none is skipped. Both
+ * orders read the column, never the epoch-ms output of its name (`SQL_JOB_LIST`): the inner one off
+ * `x_jobs.created_at`, the outer off `seek_at`, the same instant carried out of the page unprojected.
  */
 export const SQL_JOB_LIST_BEFORE = `
 select ${JOB_ROW_NAMES} from (
-  select ${JOB_ROW_COLUMNS}
+  select ${JOB_ROW_COLUMNS}, x_jobs.created_at as seek_at
     from x_jobs
    where ${LIST_MATCH}
      and (created_at, id) > (
@@ -86,15 +94,16 @@ select ${JOB_ROW_NAMES} from (
            ),
            $9::uuid
          )
-   order by created_at asc, id asc
+   order by x_jobs.created_at asc, x_jobs.id asc
    limit $4
 ) page
- order by created_at desc, id desc
+ order by page.seek_at desc, page.id desc
 `.trim();
 
+/** Newest first off `x_jobs_ended_idx`: the column, qualified, for the reason `SQL_JOB_LIST` gives. */
 export const SQL_JOB_DEAD_LETTERS = `
 select ${JOB_ROW_COLUMNS}
-  from x_jobs where state = 'dead' order by updated_at desc limit $1
+  from x_jobs where state = 'dead' order by x_jobs.updated_at desc limit $1
 `.trim();
 
 /**

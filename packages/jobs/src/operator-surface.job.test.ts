@@ -211,9 +211,11 @@ describe('the operator surface on the pg driver', () => {
       leader: postgresLeaseLeader({ executor: counting, holder: 'idle-node' }),
       tasks,
     });
-    // Arming: one watermark read and one write a task, the lease, and the first counter fold.
+    // Arming: ONE watermark read for all 35 tasks and one write each, the lease, and the first
+    // counter fold. Was 70-odd: a read per task as well.
     await scheduler.tick();
-    expect(statements).toBeGreaterThan(70);
+    expect(statements).toBeGreaterThanOrEqual(36);
+    expect(statements).toBeLessThan(70);
     statements = 0;
 
     for (let second = 0; second < 60; second += 1) {

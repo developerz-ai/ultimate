@@ -261,7 +261,8 @@ export interface JobIntrospection {
    * `completed` with `output`, so a replay returns it; not `ran` writes `cleared`, so the next run
    * calls `fn` again. ONE write, fenced to a job no worker holds and a step that `started` or
    * `failed`; anything else is `X_STEP_NOT_RESOLVABLE`, an unknown id `X_JOB_NOT_FOUND`. Optional,
-   * as `cancel` is: a driver may keep no step records an operator can reach.
+   * as `cancel` is, for a hand-rolled surface only: the pg and memory drivers implement it, and
+   * without it `resolveJobStep` is `X_JOB_INTROSPECTION_UNSUPPORTED`. Required waits on `next`.
    */
   resolveStep?(jobId: string, step: string, resolution: StepResolution): Promise<StepRecord>;
   /** A paused queue is never claimed, by any worker; enqueues still land. Idempotent. */

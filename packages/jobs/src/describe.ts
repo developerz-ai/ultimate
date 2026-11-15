@@ -4,6 +4,7 @@
 
 import { toJsonSchema } from '@ultimat3/schema';
 import type { WhenBusy } from './concurrency';
+import type { JobLimiter } from './limiter';
 import type { BackoffStrategy, RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
 
@@ -32,6 +33,14 @@ export interface JobDescriptor {
   readonly concurrency: JobConcurrencyDescriptor | null;
   /** Whether the job declares an `onSettled` hook — what is told how each run ended. */
   readonly onSettled: boolean;
+  /** The named budget it spends (`job({ limiter })`), or `null` — fleet-wide, shared by name. */
+  readonly limiter: JobLimiterDescriptor | null;
+}
+
+export interface JobLimiterDescriptor {
+  readonly name: string;
+  readonly rate: { readonly limit: number; readonly windowMs: number } | null;
+  readonly concurrency: number | null;
 }
 
 export interface JobConcurrencyDescriptor {
@@ -60,6 +69,8 @@ export interface DescribableJob {
   readonly concurrency: number | undefined;
   readonly whenBusy: WhenBusy | undefined;
   readonly declaresOnSettled: boolean;
+  /** `JobHandle.limiter`. Optional: a structural caller that spends none need not spell it. */
+  readonly limiter?: JobLimiter | undefined;
 }
 
 export function describeJob(handle: DescribableJob): JobDescriptor {
@@ -84,6 +95,17 @@ export function describeJob(handle: DescribableJob): JobDescriptor {
             whenBusy: handle.whenBusy ?? null,
           },
     onSettled: handle.declaresOnSettled,
+    limiter:
+      handle.limiter === undefined
+        ? null
+        : {
+            name: handle.limiter.name,
+            rate:
+              handle.limiter.rate === undefined
+                ? null
+                : { limit: handle.limiter.rate.limit, windowMs: handle.limiter.rate.windowMs },
+            concurrency: handle.limiter.concurrency ?? null,
+          },
   };
 }
 

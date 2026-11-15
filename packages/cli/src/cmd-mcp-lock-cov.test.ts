@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
 import { isUltimateError } from '@ultimat3/core';
+import { declaredMcpServers } from '@ultimat3/mcp';
 import { mcpLock } from './cmd-mcp-lock';
 import { mcpSpec } from './cmd-mcp-spec';
 import type { CommandContext } from './command';
@@ -50,7 +51,14 @@ describe('x mcp lock', () => {
   test('a name nothing declares is X_MCP_REMOTE_TOOL_CHANGED listing the declared ones', async () => {
     const got = await refusal(ctxOf('github'));
     expect(got.code).toBe('X_MCP_REMOTE_TOOL_CHANGED');
-    expect(got.cause).toContain('no mcpTools({ name: github }) is declared (declared: none)');
+    // The declared set is process state `@ultimat3/mcp` publishes no reset for: on a shared worker
+    // an earlier file's `mcpTools({ name: 'docs' })` is still declared, so the list is read, not
+    // assumed empty. `github` is in it nowhere, which is the refusal under test.
+    const declared = [...declaredMcpServers().keys()];
+    expect(declared).not.toContain('github');
+    expect(got.cause).toContain(
+      `no mcpTools({ name: github }) is declared (declared: ${declared.join(', ') || 'none'})`,
+    );
     expect(await Bun.file(join(root, 'tools.lock.json')).exists()).toBe(false);
   });
 });

@@ -156,6 +156,11 @@ select (extract(epoch from last_fired_at) * 1000)::bigint as last_fired_at
  * `greatest` and not a plain assignment: the watermark only ever moves FORWARD. Two rounds that
  * overlapped across a rolling restart would otherwise let the older one rewind it, and every
  * occurrence between the two values fires a second time.
+ *
+ * The `where` writes nothing when the watermark would not move, and `greatest` stays as the forward
+ * rule read at a glance: a `do update` whose `greatest` kept the old value still wrote a row
+ * version, a dead tuple per task per round on a table of a few dozen rows
+ * (`driver-pg-scheduler-mark.live.test.ts`). `updated_at` is when it last MOVED.
  */
 export const SQL_SCHEDULER_STATE_MARK = `
 insert into x_scheduler_state (task_name, last_fired_at, updated_at)
@@ -163,6 +168,7 @@ values ($1, to_timestamp($2 / 1000.0), now())
 on conflict (task_name) do update
    set last_fired_at = greatest(x_scheduler_state.last_fired_at, excluded.last_fired_at),
        updated_at    = now()
+ where x_scheduler_state.last_fired_at < excluded.last_fired_at
 `.trim();
 
 /**
@@ -313,13 +319,18 @@ select id, payload, floor(extract(epoch from published_at) * 1000)::bigint as pu
  limit 1
 `.trim();
 
+/**
+ * Oldest first, id as the tiebreak.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
+ */
 export const SQL_EVENT_LIST = `
 select id, name, payload, correlation_key,
        (extract(epoch from published_at) * 1000)::bigint as published_at,
        (extract(epoch from expires_at)   * 1000)::bigint as expires_at
   from x_job_events
  where ($1::text is null or name = $1)
- order by published_at
+ order by x_job_events.published_at, x_job_events.id
  limit $2
 `.trim();
 
@@ -350,6 +361,8 @@ select run_id, name, status, output, attempts, error,
  * them, without a type map — handed `toStepRecord` a date string, `Number()` made it `NaN`, and
  * `x jobs show` printed one per step. Every other statement in this file asks Postgres to do the
  * conversion; this is that rule applied to the one statement that had opted out of it.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
  */
 export const SQL_STEP_LIST = `
 select run_id, name, status, output, attempts, error,
@@ -357,7 +370,7 @@ select run_id, name, status, output, attempts, error,
        (extract(epoch from completed_at) * 1000)::bigint as completed_at,
        (extract(epoch from wake_at)      * 1000)::bigint as wake_at,
        event, correlation_key
-  from x_job_steps where run_id = $1 order by started_at
+  from x_job_steps where run_id = $1 order by x_job_steps.started_at
 `.trim();
 
 /**
@@ -433,6 +446,8 @@ update x_backfills
  * null test is what tells Postgres the parameter's type, and `::text` there pins it to text for
  * the comparison below it — `uuid = text` has no operator, so every call failed, filtered or not.
  * Nothing hand-types this value; it arrives from a job record the same database wrote.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
  */
 export const SQL_BACKFILL_LIST = `
 select run_id, name, checksum, status, app_version, rows_processed, last_cursor,
@@ -442,6 +457,6 @@ select run_id, name, checksum, status, app_version, rows_processed, last_cursor,
  where ($1::text is null or name = $1)
    and ($2::text is null or status = $2)
    and ($3::uuid is null or run_id = $3)
- order by started_at desc
+ order by x_backfills.started_at desc
  limit $4
 `.trim();

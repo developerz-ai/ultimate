@@ -20,6 +20,7 @@ import { assertSliceToRead } from './generate-feature-required';
 import { DEFAULT_APP, generate, sliceDir } from './generate-files';
 import { followUpEdits } from './generate-follow-ups';
 import { formatWritten } from './generate-format-written';
+import { runInvite } from './generate-invite';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { refusePluralTable } from './generate-plural';
@@ -79,6 +80,9 @@ export const generateCommand: CliCommand = {
     refuseChartAlertsFlags(kind, ctx.args);
     // One sign-in per app, named by a flag rather than a `<name>`, and edits no other kind makes.
     if (kind === 'sign-in') return await runSignIn(ctx, root);
+    // One invite per app, no `<name>`: the files are `templates/invite.ts`'s, the edits beside them
+    // the same follow-ups every generator makes.
+    if (kind === 'invite') return await runInvite(ctx, root);
     // One chart per app, named by its `Chart.yaml`: the same shape, for the same reason.
     if (isChartGenerator(kind)) return await runChartAlerts(ctx, root, kind);
     // A workspace, not a slice: no feature, no surface, no follow-up edit (`generate-workspace.ts`).

@@ -228,6 +228,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
       assertClaimQueues('redis', claimOptions);
       assertClaimBounds('redis', claimOptions);
       const drop = claimOptions.dropExhausted ?? [];
+      const owes = claimOptions.settleOwed ?? [];
       const reply = await run(REDIS_CLAIM, [
         nowMs(clock),
         claimOptions.limit,
@@ -236,6 +237,8 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
         claimOptions.onEmpty === undefined ? '0' : '1',
         drop.length,
         ...drop,
+        owes.length,
+        ...owes,
         ...claimOptions.queues,
       ]);
       const claimed: ClaimedJob[] = [];

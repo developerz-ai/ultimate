@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError, NotImplementedError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { isStorageError } from './errors';
 import { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
+
+// `defineStorage` is process state: left defined, the next file on a shared worker reads this
+// file's disks as its app's (`exercise-services.test.ts`: "an app that defined no storage").
+afterAll(() => resetStorage());
 
 /** A driver stub: `defineStorage` must not touch the file system or a socket to resolve a name. */
 function stubDriver(name: string): StorageDriver {

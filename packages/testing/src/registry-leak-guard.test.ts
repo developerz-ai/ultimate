@@ -5,15 +5,10 @@
 // files in a child process and reading what it reports.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` by necessity, all four: Bun writes files (`Bun.write` even creates the parent) but
-// exposes no primitive that MAKES a uniquely named directory, no recursive REMOVE, no temp-dir
-// location and no path join. The fixtures must live outside the checkout — a `.test.ts` inside it
-// would be collected by the repo's own `bun test` — so a real temp dir is the requirement, and
-// leaving one behind per run is not an option.
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { RegistryLeakError } from './errors';
+import { runFixtures } from './registry-guard-run-fixture';
 import { leakBetween, type RegistrySample, sampleRegistries } from './registry-leak-guard';
 
 const sample = (tags: readonly string[], tiers: readonly string[]): RegistrySample => ({
@@ -115,7 +110,6 @@ describe('RegistryLeakError', () => {
 });
 
 const SRC = import.meta.dir;
-const PRELOAD = join(SRC, 'preload.ts');
 const CACHE = join(SRC, '..', '..', 'cache', 'src', 'index.ts');
 const I18N = join(SRC, '..', '..', 'i18n', 'src', 'index.ts');
 const POLICY = join(SRC, '..', '..', 'policy', 'src', 'index.ts');
@@ -164,33 +158,6 @@ test('everything the beforeAll set up works', () => {
   expect(knownTags()).toContain('bootfixture');
 });
 `;
-
-/** One real `bun test`, its own temp dir: the cross-file half is only observable in a child. */
-const runFixtures = async (
-  files: Readonly<Record<string, string>>,
-): Promise<{ readonly output: string; readonly exitCode: number }> => {
-  const dir = await mkdtemp(join(tmpdir(), 'x-leak-guard-'));
-  try {
-    for (const [name, source] of Object.entries(files)) await Bun.write(join(dir, name), source);
-    // Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so
-    // a child that does not come back is a worker the test timeout cannot end.
-    const run = Bun.spawn({
-      cmd: ['bun', 'test', '--preload', PRELOAD, '.'],
-      cwd: dir,
-      env: { ...process.env, ULTIMATE_TEST_ALLOW_NET: '1' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(run.stdout).text(),
-      new Response(run.stderr).text(),
-      run.exited,
-    ]);
-    return { output: `${stdout}${stderr}`, exitCode };
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-};
 
 describe('the guard, across files, in one process', () => {
   test('a run whose files all pass still fails, naming the file that leaked', async () => {

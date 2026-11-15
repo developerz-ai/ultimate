@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
-import { pauseQueue, promoteJob, removeJob, resumeQueue } from './inspect-operator';
+import { pauseQueue, promoteJob, removeJob, resolveJobStep, resumeQueue } from './inspect-operator';
 
 const enqueued = async (driver: JobDriver, runAt?: number) =>
   (
@@ -45,7 +45,31 @@ describe('the operator verbs', () => {
     const { introspect: _none, ...bare } = memoryJobDriver();
     const outcome = await pauseQueue(bare, 'mail').catch((error: unknown) => error);
     expect(outcome).toBeInstanceOf(UltimateError);
-    expect((outcome as UltimateError).code).toBe('X_NOT_IMPLEMENTED');
+    expect((outcome as UltimateError).code).toBe('X_JOB_INTROSPECTION_UNSUPPORTED');
     expect((outcome as UltimateError).cause).toContain('"memory"');
+  });
+
+  // `resolveStep` stays optional on the public type (required waits on `next`), so a hand-rolled
+  // surface without it reaches the guard: refused by name, never X_NOT_IMPLEMENTED.
+  test('a surface with no resolveStep refuses the verb, naming the member', async () => {
+    const full = memoryJobDriver();
+    const operator = full.introspect;
+    if (operator === undefined) return expect.unreachable('the memory driver ships introspect');
+    const { resolveStep: _none, ...surface } = operator;
+    const driver: JobDriver = { ...full, introspect: surface };
+    const outcome = await Promise.resolve()
+      .then(() => resolveJobStep(driver, 'job-1', 'send', { ran: false }))
+      .catch((error: unknown) => error);
+    expect(outcome).toBeInstanceOf(UltimateError);
+    expect((outcome as UltimateError).code).toBe('X_JOB_INTROSPECTION_UNSUPPORTED');
+    expect((outcome as UltimateError).cause).toContain('"memory" jobs driver\'s operator surface');
+    expect((outcome as UltimateError).cause).toContain('resolveStep');
+    expect((outcome as UltimateError).fix).toEndWith(
+      'x jobs resolve-step <id> <step> --ran --output <json>',
+    );
+  });
+
+  test('the memory surface implements resolveStep', () => {
+    expect(typeof memoryJobDriver().introspect?.resolveStep).toBe('function');
   });
 });

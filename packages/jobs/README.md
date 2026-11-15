@@ -52,7 +52,7 @@ Four mechanisms an app used to rebuild around the queue, each one field `As of 2
 | Ask | Spelling | What happens |
 |---|---|---|
 | debounce | `enqueue(input, { onConflict: 'replace', runAt })` | a row of the job still WAITING (`ready`/`delayed`) under the same idempotency key takes the new `input` and `runAt` in one statement per driver (`SQL_ENQUEUE_REPLACE`); a running or suspended holder is past replacing. Answered `deduped: true` with the holder's ids either way. The holder takes the newer request's `expiresAt` too, or loses its own when the newer names none. Fenced by request order (`x_jobs.debounced_id`, the request's uuidV7): a replace no newer than the input a row of the key holds — live or finished — moves nothing and starts no run, so an outbox row published again after a relay crash never puts old input back |
-| expiry | `enqueue(input, { expiresAt })` | epoch ms past which the work is worthless: the claim that finds the row waiting after then settles it `failed`, `lastError` `JOB_EXPIRED` (`'expired'`), and reports it beside the burials (`ClaimOptions.onExhausted`), so its `onSettled` hears `dropped` — at most once, as the claim records no debt. Only a row never claimed (`attempt` 0) expires: a started run — a retry waiting out its backoff included — is never expired. `x jobs retry` clears it. Lazy: no index, no sweep |
+| expiry | `enqueue(input, { expiresAt })` | epoch ms past which the work is worthless: the claim that finds the row waiting after then settles it `failed`, `lastError` `JOB_EXPIRED` (`'expired'`), and reports it beside the burials (`ClaimOptions.onExhausted`), so its `onSettled` hears `dropped` — at least once: the claim records the debt in the same write. Only a row never claimed (`attempt` 0) expires: a started run — a retry waiting out its backoff included — is never expired. `x jobs retry` clears it. Lazy: no index, no sweep |
 | back-pressure | `job({ maxPending })` | an enqueue onto a queue already holding that many `ready`/`delayed` rows is `X_JOB_BACKLOG_FULL`, a 429 (`JobBacklogFullError`); a batch that would cross it is refused whole. One capped count first (`JobDriver.backlog`), plus the rows the caller's own transaction already staged for that queue (a key staged twice counts once). An enqueue that adds no row — a dedupe, or a replace onto the key's live holder (`JobDriver.holds`, asked only once full) — is never refused. Soft across producers: concurrent ones can overshoot by their number, and committed rows the relay has not published yet are not counted. A driver without `backlog` refuses a job declaring it at enqueue (`X_INVARIANT`) |
 | a long body | `run({ lease })` | `lease.renew()` renews now and answers whether the attempt still holds the row — `false` once the lease is lost or the attempt's settle is sent; `lease.lost()`; `lease.signal` aborts on either. Call `renew()` between the chunks of a section longer than the visibility timeout — the renewal timer cannot fire inside it. A lock that outlives one job is `withLock()` |
 
@@ -1269,9 +1269,10 @@ has the request's. A `client` handed in keeps its own behaviour and still gets t
 
 The pg SQL lives verbatim in `src/driver-pg-*sql.ts` (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …)
 so an agent debugging a stuck queue can read and run the exact statement. The barrel exports
-only what another package runs: `SQL_JOBS_TABLE` (the install) and `JOBS_TABLE_STORAGE` (`x_jobs`
-at fillfactor 80, the room a lease renewal's HOT update needs — `x db migrate` reports drift off
-it) — 25.0.0 took the rest
+only what another package runs: `SQL_JOBS_TABLE` (the install), `JOBS_TABLE_STORAGE` (`x_jobs`
+at fillfactor 80, the room a lease renewal's HOT update needs) and `JOBS_STORAGE` (that one plus
+the autovacuum triggers of `x_outbox`, `x_job_workers` and `x_scheduler_state`, small tables
+Postgres' defaults leave mostly dead) — `x db migrate` reports drift off each — 25.0.0 took the rest
 off, `SQL_CLAIM` and `SQL_OUTBOX_RELEASE` included (their array-parameter proofs are this package's
 `driver-pg-array.live.test.ts`).
 
@@ -1362,6 +1363,10 @@ that connection goes back to it, so every node reads itself as leader. The lease
 expiry and needs no connection affinity. `acquire()` is also the renewal, called every round, which
 is how a demoted node finds out.
 
+What a round costs the watermark table: nothing while idle (the leader remembers each watermark),
+ONE `watermarks(names)` read on a cold round — a boot or a new leader — and one fenced fire per
+occurrence. A hand-written `SchedulerState` without `watermarks` is asked `lastFiredAt` per task.
+
 ```ts
 import { type AnyJobHandle, task } from '@ultimat3/jobs';
 
@@ -1436,6 +1441,19 @@ The rest. An idle loop's claim (`SQL_CLAIM_IDLE`, `SQL_OUTBOX_CLAIM_IDLE`) answe
 | a resumed queue | `resumeQueue` announces the queue; a paused queue's rows are never a due time |
 
 A busy loop sends the plain claim: the horizon arm is planned on every call (~0.5 ms), so it is asked for only once a pass has come back empty.
+
+### Loop liveness
+
+A process that answers is not a loop that turns. Each long-running loop holds a `loopHeartbeat(name, { tickMs, periodic? })` while it runs: stamped on every timer fire (a rest slice too), held open by every pass. `staleLoops()` lists the running loops past their bound — `livenessBoundMs(tickMs)` = `LIVENESS_TICK_MULTIPLE` (3) ticks, never under `LIVENESS_FLOOR_MS` (120 s, twice `IDLE_REST_MAX_MS`, so a resting worker is never killed for resting). The cli's `/healthz` on `METRICS_PORT` answers 503 on any (`packages/cli/src/runtime-liveness.ts`).
+
+| Loop | Heartbeat | Tick | Wedge it catches |
+|---|---|---|---|
+| `worker` claim loop (`worker-loop.ts`) | `jobWorker`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim that never returns (`held`), a timer never re-armed (`silent`) |
+| outbox relay (`outbox-relay.ts`) | `outboxRelay`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim or publish that never returns (`held`), a timer never re-armed (`silent`) |
+| scheduler dispatch (`scheduler.ts`) | `jobs.scheduler`, periodic | `tickIntervalMs` (1 s) | a round whose lease or fire never answers (`held`), a timer never re-armed (`silent`) |
+| `replicator` (cli `role-replicator.ts`) | `realtime.replicator`, event-driven | 10 s, the feed's status interval | a change whose publish never returns (`held`); a quiet feed is healthy |
+
+A stopped or draining loop is not judged: `stop()` releases its heartbeat.
 
 ### The wake
 
@@ -1532,12 +1550,13 @@ terminal dead letter appends its verdict to `lastError` so `x jobs show` explain
 
 ## Limits
 
-Two layers, and the difference matters:
+Three layers, and the difference matters:
 
 | Layer | Scope | Where |
 |---|---|---|
 | `LimitConfig` — `perTenant`, `perQueue`, `global`, `ratePerTenant` | **this process only** | `limits.ts`, three `Map`s in one heap |
-| `job.concurrency` | **the fleet** | `JobDriver.leases` over `x_job_leases` |
+| `job.concurrency` | **the fleet**, one job | `JobDriver.leases` over `x_job_leases` |
+| `job({ limiter })` — `limiter(name, { rate, concurrency })` | **the fleet**, every job naming it | `JobDriver.leases` over `x_job_leases`, keys `limiter:<name>:rate` / `:concurrency` |
 
 `LimitConfig` is the fast path and is multiplied by your replica count: `perTenant: 2` on twenty
 pods is forty concurrent runs, and `ratePerTenant`'s window is in memory, so a rolling restart
@@ -1552,6 +1571,57 @@ cannot hold the cap, so `jobWorker().start()` **refuses to boot**
 
 Over any cap the claim is handed straight back without burning an attempt — one org's 50k-row
 import cannot starve the fleet.
+
+### A named budget: `limiter()`
+
+```ts
+// jobs/vendor-limiter.ts — declared ONCE, imported by every job that calls the vendor
+import { job, limiter, t } from '@ultimat3/jobs';
+
+export const vendorApi = limiter('vendor-api', { rate: { limit: 10, windowMs: 1_000 }, concurrency: 4 });
+
+declare const vendor: { sync(id: string): Promise<void>; refund(id: string): Promise<void> };
+const Invoice = t.object({ orgId: t.uuid, invoiceId: t.string });
+
+export const syncInvoice = job({
+  input: Invoice,
+  idempotencyKey: ({ invoiceId }) => `sync:${invoiceId}`,
+  tenant: ({ orgId }) => orgId,
+  retry: { attempts: 5, backoff: 'exponential' },
+  limiter: vendorApi, // the same value in every job that calls the vendor
+  async run({ input, step }) {
+    await step.run('sync', () => vendor.sync(input.invoiceId));
+  },
+});
+
+export const refundCharge = job({
+  input: Invoice,
+  idempotencyKey: ({ invoiceId }) => `refund:${invoiceId}`,
+  tenant: ({ orgId }) => orgId,
+  retry: { attempts: 5, backoff: 'exponential' },
+  limiter: vendorApi,
+  async run({ input, step }) {
+    await step.run('refund', () => vendor.refund(input.invoiceId));
+  },
+});
+```
+
+| Rule | Enforced by |
+|---|---|
+| `rate`: at most `limit` starts in ANY `windowMs`, fleet-wide — a sliding window, no burst past it | one `x_job_leases` row per start, TTL the window, never released (`limiter-gate.ts`) |
+| `concurrency`: at most this many runs holding the limiter at once, fleet-wide | one row per held slot, renewed while the body runs, released when it ends, reclaimed by TTL after a SIGKILL — the worker's visibility timeout, renewed on its heartbeat interval through `WorkerOptions.schedule` (`limiter-frame.ts`), as `job.concurrency`'s slot is |
+| a run over either is **deferred, uncounted** | the gate throws `X_RATE_LIMITED` with `retryAfterSeconds` (when the oldest start lapses; 1 s for a full concurrency cap) — `executeJob`'s `rateLimitDeferralMs`, so a backlog waits and is never dead-lettered for waiting |
+| the per-process fast path refuses a concurrency this heap alone already fills, with no round trip | `limits.ts`' `concurrencyLimiter({ perQueue })`, keyed by the limiter's name. Never the rate: a window is time, and the store keeps its own |
+| whole numbers ≥ 1, `rate.limit` ≤ `MAX_LIMITER_RATE` (1,000), `concurrency` ≤ `MAX_LIMITER_CONCURRENCY` (1,000) — each grant probes that many slots, and past 2^31 Postgres refuses the probe outright — a name of `[a-z0-9._-]`, one set of numbers per name | `X_JOB_DECLARATION_INVALID` at `limiter()`; a value `limiter()` did not build (identity, not shape) at `job()` |
+| a driver with no `leases` | `X_JOB_CONCURRENCY_UNENFORCEABLE` — `jobWorker().start()` refuses to boot (`assertConcurrencyEnforceable`); the gate refuses the run too, for a body run outside a worker. Never a per-process budget |
+| `describe().limiter` | `{ name, rate: { limit, windowMs } \| null, concurrency \| null }`, or `null` for a job that spends none |
+
+The gate wraps the BODY, so a refusal happens before the first `step.run` and replays nothing.
+A start is an entry before any step completed or suspended: a resume after
+`step.sleep`/`waitForEvent`, or a retry past a completed step, spends no rate (the claim's step
+list says so; outside a worker the step store is read). A retry whose steps only `failed` (or a
+`once` step only `started`) has done no work, and spends again. A slot lost mid-run (its renewal
+answered "not yours") is logged `jobs.limiter.slot-lost`, not cancelled.
 
 ### The process cap: `maxInFlight`
 
@@ -1804,7 +1874,7 @@ export const syncAccountWatched = job({
 | the same, the body returned `undefined`, and the worker died before its hook returned — re-driven by the scheduler leader | `completed` | `redriven: true`, `reason: 'lost'`, `input`, `result: undefined` — the value it returned | `done` |
 | any ending below, its worker dead before the hook returned — re-driven | the same `outcome` | the same fields read off the row, plus `redriven: true`, `reason: 'lost'` | the same |
 | failed for good, parked in the dead-letter queue | `dead-lettered` | `input` (or `undefined`: the stored payload no longer parses), `error`, `code` | `dead` |
-| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker, at most once: the claim records no debt | `dead` |
+| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker beside its claim pass — never inside it, so a `'5m'` hook cannot hold the loop past its liveness bound, and a stop waits the telling out — and only while the hook still ends inside the debt's grace — a row past it is left to the re-drive, never told by both at once; the claim records the debt in the burial's write, so a burier that dies first is re-driven | `dead` |
 | failed for good on `retry.deadLetter: false` | `dropped` | the same | `failed` |
 | `whenBusy: 'fail'` over a busy key — the body never ran | `refused` | the same, `code: 'X_JOB_KEY_BUSY'` | `failed` |
 
@@ -1818,7 +1888,7 @@ export const syncAccountWatched = job({
 | Guarantee | Stated plainly |
 |---|---|
 | when | AFTER the row is settled, by the worker whose settle landed, under the job's declared tenant; `settled.ctx` is that context |
-| how often | **at least once** per ending a worker settles, across a crash — but at most once for a completion whose body **returned a value**, since a result is never stored and a re-drive could not hand it over (at least once for those too is planned for `next`), and for a row the claim settles itself (a final-attempt burial, an expiry: `claim-exhausted.ts` records no debt). The settle records the debt in its own write (`x_jobs.settle_owed`); the hook's return pays it, its last failed try too. A debt older than `onSettledTimeout` × 3 (`SETTLE_GRACE_FACTOR`) is a dead worker's: the scheduler leader re-drives it, ≤ 50 a pass, every minute after a find and every 5 min after none, with `redriven: true, reason: 'lost'`. A pass starts no hook it could not finish inside the grace its take bought (`onSettledTimeout` × 2 into the pass) and stops between rows once its node stops leading or drains — a drain hands the lock back first; the rest stay owed for the next pass. Every driver records it; a custom driver without `settleDebt` runs the hook at most once |
+| how often | **at least once** per ending a worker settles, across a crash — but at most once for a completion whose body **returned a value**, since a result is never stored and a re-drive could not hand it over (at least once for those too is planned for `next`). The settle records the debt in its own write (`x_jobs.settle_owed`) — the claim too, for a row it settles itself (a final-attempt burial, an expiry), named by `ClaimOptions.settleOwed` (`burialPolicy()`); the hook's return pays it, its last failed try too. A debt older than `onSettledTimeout` × 3 (`SETTLE_GRACE_FACTOR`) is a dead worker's: the scheduler leader re-drives it, ≤ 50 a pass, every minute after a find and every 5 min after none, with `redriven: true, reason: 'lost'`. A pass starts no hook it could not finish inside the grace its take bought (`onSettledTimeout` × 2 into the pass) and stops between rows once its node stops leading or drains — a drain hands the lock back first; the rest stay owed for the next pass. Every driver records it; a custom driver without `settleDebt` runs the hook at most once |
 | inside one process | `ON_SETTLED_ATTEMPTS` (3) tries, back to back. A hook that threw halfway is run again from the top, so write it idempotent |
 | a hook that keeps throwing | logged `jobs.on-settled.failed` and reported as `X_JOB_ON_SETTLED_FAILED`. The row, the outcome, the counters and `JobExecution` are untouched |
 | `result` | the value itself, in the worker's process — never stored, never serialised. `JobExecution.result` carries the same value to a caller driving a run by hand |
@@ -1829,6 +1899,11 @@ export const syncAccountWatched = job({
 `inspectQueues`, `inspectJob` (per-step trace, the redacted `input`, the failure's `stack`, the
 last `progress`), `inspectDeadLetters`, `retryFromStep`, `cancelJob`, `removeJob`, `promoteJob`,
 `pauseQueue`, `resumeQueue`, `inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
+
+Every one but `inspectQueues` and `inspectManifest` passes `requireIntrospection(driver)`: the
+driver's `introspect`, or `JobIntrospectionUnsupportedError` (`X_JOB_INTROSPECTION_UNSUPPORTED`)
+naming it — the redis driver ships none (no pause, registry or counters), the pg and memory drivers
+every member. `/_x` reads its operator surface through the same guard.
 
 `inspectJob`'s `input` masks every `.sensitive()` field of the job's own `input:` schema, then every
 `redactKeys` key. A job this process has not registered — its declaration deleted or renamed —
@@ -1915,12 +1990,16 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `JobDuplicateError` | `X_JOB_DUPLICATE` | `src/errors.ts` |
 | `JobKeyBusyError` | `X_JOB_KEY_BUSY` | `src/errors-concurrency.ts` |
 | `JobNotCancellableError` | `X_JOB_NOT_CANCELLABLE` | `src/errors.ts` |
+| `JobIntrospectionUnsupportedError` | `X_JOB_INTROSPECTION_UNSUPPORTED` | `src/inspect-unsupported.ts` |
 | `JobNotFoundError` | `X_JOB_NOT_FOUND` | `src/errors-requeue.ts` |
 | `JobNotRequeueableError` (`./adapter`) | `X_JOB_NOT_REQUEUEABLE` | `src/errors-requeue.ts` |
 | `JobRowStatusUnknownError` (`./adapter`) | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
 | `JobTenantMismatchError` | `X_JOB_TENANT_MISMATCH` | `src/errors-tenant.ts` |
 | `JobTimeoutError` | `X_JOB_TIMEOUT` | `src/errors.ts` |
 | `LeaseLostError` | `X_JOB_LEASE_LOST` | `src/errors.ts` |
+| `LimiterDeclarationInvalidError` (not exported) | `X_JOB_DECLARATION_INVALID` | `src/limiter-errors.ts` |
+| `LimiterRefusedError` (not exported) | `X_RATE_LIMITED` | `src/limiter-errors.ts` |
+| `LimiterUnenforceableError` (not exported) | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `src/limiter-errors.ts` |
 
 ## Boundary
 

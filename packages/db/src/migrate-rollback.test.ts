@@ -2,7 +2,7 @@
 // the newer build applied. The pre-upgrade migrate Job must let that rollback through — apply
 // nothing, say what it found — and still refuse every ledger that is not a rollback.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import { type RecordingClient, recordingClient } from './fake';
 import { type LedgerRow, type Migration, migrate, migrationChecksum } from './migrate';
@@ -35,7 +35,9 @@ let client: RecordingClient;
 beforeEach(() => {
   client = recordingClient();
   setDbClient(client);
-});
+}); // The ambient client is process state: left installed, the next file on a shared worker
+// starts with this file's fake as its `db()`.
+afterEach(() => setDbClient(undefined));
 
 const conflictOf = async (run: () => Promise<unknown>): Promise<string> => {
   try {

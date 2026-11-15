@@ -30,3 +30,12 @@ Paths are in that repository; locate by its own README.
 
 ## Done when
 - The `evidence` brief runs unattended; I10 is granted or recorded as the one manual step in [`90`](90-owner-decisions.md) OD5.
+
+## Carried from sweep 2 (2026-11-14): realtime R2, owed a production count
+Over 24 h covering the day's rollouts (8–11 expected), through I3's log path once it lands (`bun run scripts/obs/logs.ts --app <app> --since 24h --json`), else LogQL with a read-scoped token:
+| Signal | Where | Target |
+|---|---|---|
+| `starting logical decoding for slot` | Postgres server log | one per replicator rollout, none between |
+| `could not receive data from client: Connection reset by peer` on the replication connection | Postgres server log | 0 for a replicator's own clean shutdown |
+| `replicator.stream_ended`, `replicator.restart_failed`, `replicator.handover_unpublished` | replicator app log | 0 outside crashes |
+| `live.change_gap`, `live.bus_reconnected` | sync nodes | each rollout chained cleanly |

@@ -3,7 +3,7 @@
 // an author hand-keeps in sync WILL drift, and a stale one grants REPLICA IDENTITY FULL to the
 // wrong table while leaving the right one unpatchable, so the cross-check is the half under test.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -11,6 +11,10 @@ import { toLiveQuery } from './live';
 import { describeQuery, query } from './query';
 import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
+
+// The last test registers `liveFeed` outside any block that resets: left registered, the next
+// file on a shared worker generated a migration for a `posts` subscription its app never declared.
+afterAll(() => resetQueries());
 
 interface Post {
   readonly id: string;

@@ -3,21 +3,13 @@
 // know whether the job is gone or was never theirs to remove. Apart from `inspect.ts`, which is
 // the read side.
 
-import { NotImplementedError } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from './driver';
 import { JobNotPromotableError } from './errors-operator';
-import type { JobIntrospection, PausedName, StepResolution } from './introspection';
+import { JobIntrospectionUnsupportedError, requireIntrospection } from './inspect-unsupported';
+import type { PausedName, StepResolution } from './introspection';
 import type { StepRecord } from './steps-store';
 
-function operatorOf(driver: JobDriver): JobIntrospection {
-  if (driver.introspect === undefined) {
-    throw new NotImplementedError({
-      cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — the pg driver implements introspect — then: x jobs list --json',
-    });
-  }
-  return driver.introspect;
-}
+const operatorOf = requireIntrospection;
 
 /** `undefined` for an id nobody queued; `X_JOB_NOT_REMOVABLE` for one a worker holds. */
 export function removeJob(driver: JobDriver, jobId: string): Promise<JobRecord | undefined> {
@@ -51,7 +43,7 @@ export async function resumeQueue(
 
 /**
  * A person's answer to `X_STEP_OUTCOME_UNKNOWN`: the resolved record. Then `x jobs retry <id>`.
- * A driver with no `resolveStep` is refused as one with no operator surface at all.
+ * A hand-rolled surface with no `resolveStep` is refused by the same code as one with no surface.
  */
 export function resolveJobStep(
   driver: JobDriver,
@@ -61,10 +53,7 @@ export function resolveJobStep(
 ): Promise<StepRecord> {
   const operator = operatorOf(driver);
   if (operator.resolveStep === undefined) {
-    throw new NotImplementedError({
-      cause: `the "${driver.name}" jobs driver keeps no step records an operator can resolve: its introspect has no resolveStep`,
-      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — the pg and memory drivers implement resolveStep — then x jobs resolve-step <id> <step> --ran --output <json>',
-    });
+    throw new JobIntrospectionUnsupportedError({ driver: driver.name, member: 'resolveStep' });
   }
   return operator.resolveStep(jobId, step, resolution);
 }

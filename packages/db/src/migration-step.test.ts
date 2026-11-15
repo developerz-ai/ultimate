@@ -4,7 +4,7 @@
 // statement earns in a migration that would run inside a transaction. A real engine applying all
 // of it is `concurrent-index-embedded.test.ts`.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import { type RecordingClient, recordingClient } from './fake';
 import { type Migration, migrate, rollback } from './migrate';
@@ -26,7 +26,9 @@ let client: RecordingClient;
 beforeEach(() => {
   client = recordingClient();
   setDbClient(client);
-});
+}); // The ambient client is process state: left installed, the next file on a shared worker
+// starts with this file's fake as its `db()`.
+afterEach(() => setDbClient(undefined));
 
 const position = (match: string): number => client.texts.findIndex((text) => text.includes(match));
 

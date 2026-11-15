@@ -11,8 +11,9 @@ export const generateSpec: CommandSpec = {
   // Projected from `GENERATORS`, never restated: the literal that used to live here had already
   // drifted — it omitted `backfill` — and a usage line that can disagree with the list it
   // describes is exactly the second source of truth axiom 2 forbids.
-  // `sign-in` and the two chart generators take no `<name>`, so each is spelled in its own clause.
-  usage: `x g ${GENERATORS.filter((kind) => kind !== 'sign-in' && !kind.startsWith('chart-')).join('|')} <name> [--feature f] · x g sign-in --password|--oidc <provider> · x g chart-alerts|chart-dashboard [--print]`,
+  // `sign-in`, `invite` and the two chart generators take no `<name>`, so each is spelled in its
+  // own clause.
+  usage: `x g ${GENERATORS.filter((kind) => kind !== 'sign-in' && kind !== 'invite' && !kind.startsWith('chart-')).join('|')} <name> [--feature f] · x g sign-in --password|--oidc <provider> · x g invite · x g chart-alerts|chart-dashboard [--print]`,
   // Declared from the SAME constant `readKind` validates against: without it `fix-command.ts`
   // has no set to judge the word after `x g`, and two shipped `@ultimat3/admin` fix lines said
   // `x g migration` — a generator that has never existed — straight through the `errors` gate.

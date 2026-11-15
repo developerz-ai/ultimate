@@ -19,4 +19,4 @@ create table "x_outbox" (
   "on_conflict" text,
   "expires_at" timestamp with time zone,
   constraint "x_outbox_pkey" PRIMARY KEY (id)
-);
+) with (autovacuum_vacuum_threshold=100, autovacuum_vacuum_scale_factor=0.02, autovacuum_analyze_threshold=100, autovacuum_analyze_scale_factor=0.02);

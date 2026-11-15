@@ -1,12 +1,16 @@
 // The boot's half of core's `bootWarning`: the booting roles and the per-build marker store are
 // installed once, the store writes the retained-assets marker layout, and the release restores.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { bootWarning, resetBootWarnings } from '@ultimat3/core';
-import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
+import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { retainedPrefix } from './retained-assets-layout';
 import { warnedPrefix } from './retained-assets-warned';
 import { installRoleBootWarnings, retainedBuildOnce } from './runtime-boot-warnings';
+
+// `defineStorage` is process state: left defined, the next file on a shared worker reads this
+// file's disks as its app's (`exercise-services.test.ts`: "an app that defined no storage").
+afterAll(() => resetStorage());
 
 afterEach(resetBootWarnings);
 

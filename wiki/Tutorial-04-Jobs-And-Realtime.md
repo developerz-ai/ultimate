@@ -252,7 +252,7 @@ The same run logs `sync reachable` with the node on `ws://localhost:3101/_x/sync
 
 **Delivery.** A second run, 10,000 clients and a probe every 200ms, counting gaps in each client's received sequence: **1,666,882 channel patches received, 0 observed sequence gaps** ([`10k-restart-seq.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/10k-restart-seq.json)). A first-patch timer cannot see a lost patch, which is why the second run exists — `As of 2026-08` it is the only one with delivery accounting. It says nothing about 50,000, and its zero is a lower bound: a gap needs a received frame on each side of it, so "no client observed a loss" is the claim, not "nothing was lost" ([Realtime](Realtime)).
 
-Both are per-node recovery — neither run crossed NATS, so neither is a multi-node result nor a throughput figure. Detail and limits: [Realtime](Realtime).
+Both are per-node recovery — neither run crossed NATS, so neither is a multi-node result nor a throughput figure. What *is* proven across nodes (delivery, ordering, resume, gap repair over a real bus) and what is still unmeasured (throughput, socket capacity): [Realtime](Realtime#across-nodes-over-a-real-bus). Detail and limits: [Realtime](Realtime).
 
 Realtime tier 3 (local-first) shipped in 21.0.0, and it is declared on the **entity**, not the query: `entity(name, { persist: true })`, default `false`, keeps its records in IndexedDB beside the one outbox ([Realtime](Realtime#tier-3-shipped-in-2100)). `persist` is not a `query()` field — writing it there is a `TS2353` excess property.
 

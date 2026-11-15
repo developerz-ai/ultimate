@@ -10,6 +10,7 @@ import {
   renderThrowable,
 } from '@ultimat3/core';
 import { describeEntities } from '@ultimat3/entity';
+import { loopHeartbeat } from '@ultimat3/jobs';
 import { ReplicatorSlotHeldError } from '@ultimat3/realtime';
 import type { Replicator, ReplicatorOptions, Transport } from '@ultimat3/realtime/server';
 import {
@@ -107,6 +108,13 @@ const noEntitiesRefusal = (dev: boolean): BadFlagError | ConfigInvalidError =>
         meta: { role: 'replicator' },
       });
 
+/**
+ * The replicator's tick for its heartbeat: the feed's status interval (10 s), the longest a live
+ * walsender stays silent. Event-driven — a quiet feed is healthy — so only a change held open past
+ * the bound (`livenessBoundMs`) is a wedge: a publish that never returns.
+ */
+const REPLICATOR_TICK_MS = 10_000;
+
 /** The name `/readyz` reports the replicator under. */
 export const REPLICATOR_READINESS_CHECK = 'replicator';
 
@@ -174,10 +182,15 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   const selection = selectChangeFeed(options.env, { entities });
   const slot = selection.slot ?? '';
   const key = replicatorLockKey(slot);
+  const heartbeat = loopHeartbeat('realtime.replicator', {
+    tickMs: REPLICATOR_TICK_MS,
+    periodic: false,
+  });
   const replicator = (options.create ?? changeFeedReplicator)({
     feed: selection.feed,
     transport: options.transport,
     lock: selection.lock,
+    heartbeat,
   });
   // `start()` answers `false` for the one condition that is not this process's fault: another
   // process holds the lock. A dev boot has nothing to fail over to, so it is terminal there, with
@@ -186,10 +199,18 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   // terminated the old holder, so every rollout stalled (`replicator.ts`'s header: the loser stays
   // up, unready).
   let cancelStandby = (): void => undefined;
-  if (!(await replicator.start())) {
-    if (options.dev) throw new ReplicatorSlotHeldError({ key });
-    logger.warn('replicator.standby', { key, detail: 'another process holds the slot' });
-    cancelStandby = standBy(replicator, key);
+  // Started BEFORE the feed: a change the feed delivers while it starts opens a pass, and a start
+  // after it would clear that pass. Judged by `/healthz` on the scrape port (`runtime-liveness.ts`).
+  heartbeat.start();
+  try {
+    if (!(await replicator.start())) {
+      if (options.dev) throw new ReplicatorSlotHeldError({ key });
+      logger.warn('replicator.standby', { key, detail: 'another process holds the slot' });
+      cancelStandby = standBy(replicator, key);
+    }
+  } catch (error) {
+    heartbeat.stop();
+    throw error;
   }
   const unregister = watchReplicatorReadiness(replicator);
   return {
@@ -201,6 +222,7 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
       // ask for a slot after the role that wanted it has gone.
       cancelStandby();
       unregister();
+      heartbeat.stop();
       await replicator.stop();
     },
   };

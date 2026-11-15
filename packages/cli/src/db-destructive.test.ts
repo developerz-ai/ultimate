@@ -165,6 +165,9 @@ describe('unit · the rail is wired into `x verify`', () => {
   test('the `drift` step reports an undeclared drop', async () => {
     const root = await appWith({ '0002_drop.sql': 'drop table "post";\n' });
     await Bun.write(join(root, APP_CONFIG_FILE), "export const config = { name: 'fixture' };\n");
+    // One module, so the load reads an app rather than X_APP_EMPTY — which `loadApp` decides from
+    // the PROCESS's registries, so it held here only while an earlier file's primitives were left.
+    await Bun.write(join(root, 'apps/web/shared/tokens.ts'), 'export const tokens = {};\n');
 
     const drift = VERIFY_STEPS.find((step) => step.name === 'drift');
     expect(await drift?.applies?.({ root, runner: async () => ({}) as never })).toBe(true);

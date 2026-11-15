@@ -2,7 +2,7 @@
 // stylesheet and every modulepreload — through the real page handler, in every buffered mode and
 // in a stream's first flush. A CDN turns it into a 103 Early Hint.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, h, island, registerRoute } from '@ultimat3/render';
@@ -21,10 +21,14 @@ const resolve: IslandResolve = Object.assign(
 );
 const Counter = island({ src: './counter.island.tsx' });
 
-afterEach(() => {
+// Before as well as after: the stylesheet registry is process state, and on a shared worker an
+// earlier file's loaded sheet was the first `<link>` of every document here.
+const emptyRegistries = (): void => {
   clearRoutes();
   clearStylesheets();
-});
+};
+beforeEach(emptyRegistries);
+afterEach(emptyRegistries);
 
 const page = (file: string, render: RenderMode, body: () => unknown): void => {
   registerRoute({

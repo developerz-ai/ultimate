@@ -105,7 +105,7 @@ describe('an idle scheduler', () => {
     expect(statements / 60).toBeLessThan(1);
   });
 
-  test('a restarted scheduler reads each watermark once, then resolves no cron and asks no store', async () => {
+  test('a restarted scheduler reads every watermark in one read, then resolves no cron and asks no store', async () => {
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
     const tasks = nightlyTasks();
     const shared = memorySchedulerState();
@@ -139,8 +139,8 @@ describe('an idle scheduler', () => {
       tasks,
     });
     await scheduler.tick();
-    // One read a task, and no write: nothing needed arming.
-    expect(reads).toBe(TASKS);
+    // ONE read for every task (`watermarks`), and no write: nothing needed arming. Was one a task.
+    expect(reads).toBe(1);
     reads = 0;
     resolutions = 0;
 

@@ -1,10 +1,12 @@
 // What every `JobDriver` records for `onSettled` (J11): a settle that ENDS a run of a job with a
 // hook owes it, the hook's return clears the debt under that claim, and a debt a crash left is
-// taken once per grace. A driver with no `settleDebt` runs the hook at most once, and fails here.
+// taken once per grace — and a row the CLAIM settles (a final-attempt burial, an expiry) owes it
+// too, named by `ClaimOptions.settleOwed`. A driver with no `settleDebt` fails here.
+//
 // Type-only imports: the barrel never loads `@ultimat3/jobs`.
 
 import { expect } from 'bun:test';
-import type { JobDriver, SettleDebt } from '@ultimat3/jobs';
+import type { JobDriver, JobRecord, SettleDebt } from '@ultimat3/jobs';
 import type { JobDriverCheck } from './job-driver-checks';
 
 let minted = 0;
@@ -91,6 +93,63 @@ export const SETTLE_DEBT_CHECKS: readonly JobDriverCheck[] = [
       const plain = await claimedRow(driver, at, 'plain');
       expect(await driver.ack(plain.id, plain.by)).toBe(true);
       expect(await lost(debt, at.name)).toEqual([]);
+    },
+  },
+  {
+    name: 'a row the claim buries or expires owes onSettled when settleOwed names its job',
+    async run(driver) {
+      const debt = debtOf(driver);
+      const hooked = scope();
+      const plain = scope();
+      // A final attempt whose lease lapsed (0 ms), for each job; and an expired row of the hooked.
+      const lapsing = async (at: typeof hooked): Promise<string> => {
+        const { id } = await driver.enqueue({
+          name: at.name,
+          queue: at.queue,
+          input: {},
+          idempotencyKey: 'lapsing',
+          maxAttempts: 1,
+        });
+        const taken = await driver.claim({
+          queues: [at.queue],
+          limit: 1,
+          visibilityTimeoutMs: 0,
+          workerId: 'w-gone',
+        });
+        expect(taken.map((row) => row.id)).toEqual([id]);
+        return id;
+      };
+      const dead = await lapsing(hooked);
+      const unowed = await lapsing(plain);
+      const expired = await driver.enqueue({
+        name: hooked.name,
+        queue: hooked.queue,
+        input: {},
+        idempotencyKey: 'expired',
+        maxAttempts: 3,
+        expiresAt: 1,
+      });
+      const buried: JobRecord[] = [];
+      for (const at of [hooked, plain]) {
+        const handed = await driver.claim({
+          queues: [at.queue],
+          limit: 10,
+          visibilityTimeoutMs: 30_000,
+          workerId: 'w-burier',
+          settleOwed: [hooked.name],
+          onExhausted: (rows) => buried.push(...rows),
+        });
+        expect(handed).toEqual([]);
+      }
+      expect(buried.map((row) => row.id).sort()).toEqual([dead, expired.id, unowed].sort());
+      // Recorded by the claim's own write: a burier that dies now leaves it for the leader.
+      expect([...(await lost(debt, hooked.name))].sort()).toEqual([dead, expired.id].sort());
+      expect(await lost(debt, plain.name)).toEqual([]);
+      // Paid under the claim the buried row carries — the one the burier was handed.
+      for (const row of buried.filter((each) => each.name === hooked.name)) {
+        expect(await debt.clear(row.id, row.claim ?? 0)).toBe(true);
+      }
+      expect(await lost(debt, hooked.name)).toEqual([]);
     },
   },
 ];

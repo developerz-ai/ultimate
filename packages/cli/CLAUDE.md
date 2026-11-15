@@ -109,6 +109,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one per generator otherwise. See history |
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
 | `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes |
+| `generate-invite*.ts`, `templates/invite*.ts` | `x g invite`: no name; three actions + two pages over `defineMemberInvite` |
 | `generate-format-written.ts` | the app's Biome over the TypeScript a run created, best effort; `lint` judges |
 | `templates/scaffold-mcp-{json,endpoint,admin}.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing MCP endpoints ‡ |
 
@@ -150,7 +151,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
 | `page-speculation.ts` | Speculation Rules for documents WITHOUT the router (`navigation.speculation`): an allow-list of pure-read pages ‡ |
 | `static-document.ts` | a served `static` page: `304` on `If-None-Match`; container keeps the document (never `x dev`) † |
-| `island-{bundle,groups,outputs,build-pool,group-cache,cache-inputs,store,sources,runtime}.ts` / `island-realtime*.ts` / `solid-loader.ts` | islands, named by their final bytes (#1075): one `Bun.build` per route group — islands on exactly the same routes split together, every other alone; groups read from `page.tsx` sources, known before rendering (`islands.sharedChunks` = one group). A group's output is reused from `.x/cache/islands/` while every file it read (Sass partials too), directory listing it resolved in and lockfile/tsconfig/`package.json` hash unchanged (`reuse: false` for a determinism test). `islands.vendorSolid` (`island-vendor.ts`, off: regressed every tracked app) builds Solid once (`vendor-solid.<hash>.js`) for every island; `island-link-check.ts` refuses a merged bundle whose import names bind nothing (#1075's smoke) † |
+| `island-{bundle,groups,outputs,build-pool,group-cache,cache-inputs,store,sources,runtime}.ts` / `island-realtime*.ts` / `solid-loader.ts` | islands, named by their final bytes (#1075): one `Bun.build` per route group, reused from `.x/cache/islands/` while every input is unchanged; `island-link-check.ts` refuses a merged bundle whose import names bind nothing † |
 | `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`) |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store; a boot that built anything logs `X_IMAGE_NOT_PREBUILT` † |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, watcher, reload, lock, port |

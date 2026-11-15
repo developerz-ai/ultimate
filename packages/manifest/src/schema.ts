@@ -327,6 +327,15 @@ export interface JobFact {
   };
   /** Present, and `true`, only when the job declares an `onSettled` hook. */
   readonly onSettled?: true;
+  /**
+   * The named fleet budget it spends (`job({ limiter })`), present only when it declares one:
+   * `rate` per `windowMs`, `concurrency` at once, either `null` when the limiter caps nothing there.
+   */
+  readonly limiter?: {
+    readonly name: string;
+    readonly rate: { readonly limit: number; readonly windowMs: number } | null;
+    readonly concurrency: number | null;
+  };
 }
 
 /**

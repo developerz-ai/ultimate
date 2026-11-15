@@ -97,7 +97,9 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   outside the lane, against the live window.
 - **`desynced` is a mark with a reader**: the next delivery re-snapshots out of the shared window,
   then clears it; `result.refill` is checked BEFORE the mark. A quiet query's three other readers
-  (drain, a landed read, `repairMarked`): `docs/history/realtime.md` (2026-11-09).
+  (drain, a landed read, `repairMarked`): `docs/history/realtime.md` (2026-11-09). A bus
+  reconnect or a replicator resync runs `repairMarked` AT ONCE: no change follows either
+  (`sync-bus-repair.test.ts`).
 - **A change the window already holds is refused** (`change.lsn <= entry.lsn`, `staleChanges`).
   **A gap is detected** (`producer` + `seq`; `SeqGapDetector.#chain`, `replicator-handover.ts`). †
 - **`stop()` reads the walsender's goodbye before `Terminate`** (`pg-replication-goodbye.ts`). †

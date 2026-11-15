@@ -289,13 +289,13 @@ export class JobNotCancellableError extends UltimateError {
   }
 }
 
-/** The driver has no `introspect.cancel` — a hand-rolled driver that ships no introspection. */
+/** The driver's `introspect` has no `cancel` — a hand-rolled one; pg and memory both implement it. */
 export class CancelUnsupportedError extends UltimateError {
   constructor(input: { driver: string }) {
     super({
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
-      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
+      fix: 'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — the pg and memory drivers implement introspect.cancel — then: x jobs cancel <id> --json',
     });
   }
 }

@@ -24,7 +24,7 @@ import {
 } from '@ultimat3/auth/schema';
 import { FAILURES_TABLE, SQL_FAILURES_TABLE, type TableStorage } from '@ultimat3/db';
 import { RATE_LIMIT_STORAGE, SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
-import { JOBS_TABLE_STORAGE, SQL_JOBS_TABLE } from '@ultimat3/jobs';
+import { JOBS_STORAGE, SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
 import {
   PUSH_DEVICES_TABLE,
@@ -82,9 +82,10 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
       'x_job_counters',
     ]),
     ddl: Object.freeze([SQL_JOBS_TABLE]),
-    // Fillfactor 80: the room a lease renewal's HOT update needs. Drift is what reports a hand
-    // `alter table x_jobs reset (fillfactor)` — the apply never rewrites a table it made.
-    storage: Object.freeze([JOBS_TABLE_STORAGE]),
+    // x_jobs at fillfactor 80, the room a lease renewal's HOT update needs, and the small hot
+    // tables' autovacuum triggers. Drift is what reports a hand `alter table … reset (…)` between
+    // two boots; the next apply converges it.
+    storage: JOBS_STORAGE,
   }),
   Object.freeze({
     pkg: '@ultimat3/action',

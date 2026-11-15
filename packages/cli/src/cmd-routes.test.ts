@@ -61,6 +61,14 @@ afterAll(() => {
   restorePermissions(ambientPermissions, ambientSites);
 });
 
+// Every expectation here is a table of exactly what this file registered. The action and query
+// registries are process state no file boundary restores, and an earlier file on a shared worker
+// (`pagination-id-type.test.ts`'s `bigFeed`) left its reads registered — so each test starts empty.
+beforeEach(() => {
+  resetActions();
+  resetQueries();
+});
+
 const contextFor = (argv: readonly string[]): CommandContext => ({
   args: parseArgs(argv, SPECS),
   cwd: root,

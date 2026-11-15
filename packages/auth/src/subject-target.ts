@@ -46,8 +46,14 @@ const SQL_USER = `select id::text as id, email, email_verified_at::text as email
   array_to_string(roles, ',') as roles, created_at::text as created_at
   from x_users where id = $1::uuid`;
 const SQL_API_KEYS = 'delete from x_api_keys where user_id = $1::uuid';
-const SQL_VERIFICATIONS = `delete from x_verifications
-  where identifier = (select email from x_users where id = $1::uuid)`;
+// The address as an identifier, and as the last member of a `defineMemberInvite` key
+// (`["<orgId>","<email>"]`, `JSON.stringify`): matched by exact suffix, never `like` — an `_` in an
+// address is a `like` wildcard, and would erase someone else's invite.
+const SQL_VERIFICATIONS = `delete from x_verifications v
+  using (select email, to_json(email)::text as quoted from x_users where id = $1::uuid) subject
+  where v.identifier = subject.email
+     or (left(v.identifier, 2) = '["'
+         and right(v.identifier, length(subject.quoted) + 2) = ',' || subject.quoted || ']')`;
 // Sessions and accounts reference the user `on delete cascade` (`tables.ts`): one statement.
 const SQL_USER_DELETE = 'delete from x_users where id = $1::uuid returning id';
 

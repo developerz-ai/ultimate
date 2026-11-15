@@ -16,9 +16,12 @@ import { describeJob } from './describe';
 import type { EnqueueResult } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { IdempotencyRequiredError, JobNameTakenError } from './errors';
+import { JobConcurrencyInvalidError } from './errors-concurrency';
 import { JobDeclarationInvalidError, missingJobFields } from './errors-declaration';
 import type { EnqueueManyOptions } from './job-enqueue-many';
 import { instrumentedEnqueue } from './job-instrument';
+import { isLimiter } from './limiter';
+import { limiterGateFor } from './limiter-gate';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
@@ -102,6 +105,16 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
   // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing, and the job
   // is permanently unrunnable with no log line. Refused where it is written, plain or keyed.
   const concurrency = resolveConcurrency(name, definition.concurrency);
+  // A look-alike from generated code or JS reaches no gate, so the budget would be spent by nobody.
+  if (definition.limiter !== undefined && !isLimiter(definition.limiter)) {
+    throw new JobConcurrencyInvalidError({
+      job: name,
+      field: 'limiter',
+      declared: definition.limiter,
+      why: 'which limiter() did not build',
+      edit: "limiter: stripeLimiter — the value limiter('stripe', { rate, concurrency }) returned, imported",
+    });
+  }
 
   const stepTimeoutMs =
     definition.stepTimeout === undefined
@@ -156,6 +169,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     retry: { ...DEFAULT_RETRY, ...definition.retry },
     concurrency: concurrency.limit,
     whenBusy: concurrency.whenBusy,
+    limiter: definition.limiter,
     maxPending,
     timeoutMs:
       definition.timeout === undefined
@@ -186,8 +200,12 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     concurrencyKeyFor(input: I): string | undefined {
       return concurrency.keyFor(handle.name, input);
     },
+    // A declared `limiter` gates the BODY, so its refusal takes `executeJob`'s uncounted
+    // `X_RATE_LIMITED` deferral; `handle.name`, read per run, because registration renames.
     run(args: JobRunArgs<I>): Promise<unknown> {
-      return definition.run(args);
+      const declared = definition.limiter;
+      if (declared === undefined) return definition.run(args);
+      return limiterGateFor(declared).run(handle.name, args.runId, () => definition.run(args));
     },
     declaresOnSettled: typeof definition.onSettled === 'function',
     onSettled(settled: JobSettled<unknown>): Promise<void> {

@@ -2,10 +2,13 @@
 // the type the RPC client is shaped from. A drop, a silent overwrite or an unregistered export
 // slipping into the map would all ship as a client method the server never mounts.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  hasPrimitiveRegistrar,
   type ModuleRegistrar,
+  PRIMITIVE_KINDS,
   type PrimitiveKind,
+  primitiveRegistrar,
   type RegisteredPrimitive,
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
@@ -52,6 +55,17 @@ function recordingRegistrar(kind: PrimitiveKind): { seen: string[]; registrar: M
 
 const recordingQueryRegistrar = (): { seen: string[]; registrar: ModuleRegistrar } =>
   recordingRegistrar('query');
+
+// The registrars are announced ONCE, as each owning package is imported: cleared here and left,
+// every later file on a shared worker is X_REGISTRAR_MISSING (`prerender-actor.test.ts`, every
+// `x build` measurement). What this file found goes back after it.
+const announced = PRIMITIVE_KINDS.filter(hasPrimitiveRegistrar).map(
+  (kind) => [kind, primitiveRegistrar(kind)] as const,
+);
+afterAll(() => {
+  resetPrimitiveRegistrars();
+  for (const [kind, registrar] of announced) registerPrimitiveRegistrar(kind, registrar);
+});
 
 beforeEach(() => {
   resetActions();

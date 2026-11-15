@@ -2,7 +2,7 @@
 // fleet-wide rate-limit store, the Web Push runtime) installed for the pass, so a primitive that
 // reads one runs instead of needing `{ off }` — and each handed back as found.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import { defineConfig, isUltimateError } from '@ultimat3/core';
 import { installedRateLimitStore } from '@ultimat3/http';
@@ -40,6 +40,11 @@ const pushApp = (): AppConfig =>
       },
     },
   });
+
+// Before as well as after: storage is process state, and on a shared worker an app module an
+// earlier file imported had defined its own for good — "an app that defined no storage" is this
+// file's premise, so it starts from none.
+beforeEach(() => resetStorage());
 
 afterEach(() => {
   resetStorage();

@@ -12,7 +12,7 @@
 // and an odd quote count means a `;` sits inside an open literal. `driver-pg-sql.test.ts` pins
 // both, plus the shape of every chunk the split yields.
 
-import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
+import { type TableAutovacuum, type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
 
 /**
  * `fillfactor = 80`: room on each page for a row's next version, so a lease renewal (`SQL_HEARTBEAT`)
@@ -22,6 +22,42 @@ import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
  * churn, which on a queue is days.
  */
 export const JOBS_TABLE_STORAGE: TableStorage = tableStorage('x_jobs', { fillfactor: 80 });
+
+/** A table bounded by what it names (tasks, live workers): a fixed count of dead rows triggers. */
+const BOUNDED: TableAutovacuum = {
+  vacuumThreshold: 20,
+  vacuumScaleFactor: 0,
+  analyzeThreshold: 20,
+  analyzeScaleFactor: 0,
+};
+
+/*
+ * The small, hot tables' autovacuum triggers. Postgres waits for 50 dead rows plus 20% of the table:
+ * more dead rows than `x_scheduler_state` (a row per task, rewritten every fire) or `x_job_workers`
+ * (a row per worker, rewritten every heartbeat) hold live ones, so every read of them stepped over a
+ * table mostly dead (25% dead on a 43-row table, production 2026-11-14). `x_outbox` keeps published
+ * rows for the retention window and is read through a partial index of the few unpublished ones,
+ * which every stage, claim and mark churns: 2% of the table, not 20%. `tableDdl` re-applies each on
+ * every boot, and drift (`x db migrate`) reports a hand reset in between.
+ */
+const OUTBOX_STORAGE = tableStorage('x_outbox', {
+  autovacuum: {
+    vacuumThreshold: 100,
+    vacuumScaleFactor: 0.02,
+    analyzeThreshold: 100,
+    analyzeScaleFactor: 0.02,
+  },
+});
+const SCHEDULER_STATE_STORAGE = tableStorage('x_scheduler_state', { autovacuum: BOUNDED });
+const WORKERS_STORAGE = tableStorage('x_job_workers', { autovacuum: BOUNDED });
+
+/** Every storage declaration `SQL_JOBS_TABLE` renders, for the framework schema's drift check. */
+export const JOBS_STORAGE: readonly TableStorage[] = Object.freeze([
+  JOBS_TABLE_STORAGE,
+  OUTBOX_STORAGE,
+  SCHEDULER_STATE_STORAGE,
+  WORKERS_STORAGE,
+]);
 
 export const SQL_JOBS_TABLE = `
 ${tableDdl(
@@ -118,7 +154,9 @@ create index if not exists x_backfills_name_idx on x_backfills (name, started_at
 
 -- The transactional outbox. Staged by the SAME connection as the callers business rows, so it
 -- commits or vanishes with them. The relay publishes what committed.
-create table if not exists x_outbox (
+${tableDdl(
+  OUTBOX_STORAGE,
+  `
   id              uuid primary key,
   job             text        not null,
   queue           text        not null default 'default',
@@ -130,8 +168,8 @@ create table if not exists x_outbox (
   tenant_id       text,
   traceparent     text,
   enqueued_by     text,
-  published_at    timestamptz
-);
+  published_at    timestamptz`,
+)}
 
 create index if not exists x_outbox_unpublished_idx
   on x_outbox (staged_at) where published_at is null;
@@ -165,11 +203,13 @@ alter table x_outbox add column if not exists expires_at timestamptz;
 -- The scheduler watermark. Without a durable one a redeployed scheduler has no idea what the
 -- pod it replaced already fired, so runRound takes the arming branch and every occurrence
 -- between the two processes is dropped with nothing logged.
-create table if not exists x_scheduler_state (
+${tableDdl(
+  SCHEDULER_STATE_STORAGE,
+  `
   task_name     text primary key,
   last_fired_at timestamptz not null,
-  updated_at    timestamptz not null default now()
-);
+  updated_at    timestamptz not null default now()`,
+)}
 
 -- The last occurrence that DISPATCHED, and when. Apart from the watermark, which arming a task or
 -- skipping missed occurrences also moves: an operator asking when a task last ran is asking about
@@ -253,7 +293,9 @@ alter table x_jobs add column if not exists expires_at timestamptz;
 -- The keyset a paged listing seeks by. Newest first, id as the tiebreak, so a page is an index
 -- range and never a sort of the whole table. Not a copy of the primary key order to drop: every
 -- immediate enqueue asks it which rows its queue created in the current wake slot (notifyJobReady
--- in driver-pg-wake-sql.ts), and without it that question is a scan of x_jobs per enqueue.
+-- in driver-pg-wake-sql.ts), and without it that question is a scan of x_jobs per enqueue. Kept
+-- after an audit of every statement (statement-plans.live.test.ts fails on an index nothing reads):
+-- the paged list had ordered by the epoch output column of the same name and never used it.
 create index if not exists x_jobs_created_idx on x_jobs (created_at desc, id desc);
 
 -- The ended half of the retention sweep, and the dead-letter list. Partial over the three terminal
@@ -325,7 +367,9 @@ create table if not exists x_job_pauses (
 -- The worker registry. One row per live worker, rewritten on its heartbeat and expired by time
 -- like a lease: a killed worker announces nothing and its row stops being read. Never cleaned up
 -- by anything that has to be running.
-create table if not exists x_job_workers (
+${tableDdl(
+  WORKERS_STORAGE,
+  `
   id           text primary key,
   host         text        not null,
   queues       jsonb       not null,
@@ -333,8 +377,8 @@ create table if not exists x_job_workers (
   in_flight    jsonb       not null,
   started_at   timestamptz not null,
   heartbeat_at timestamptz not null default now(),
-  expires_at   timestamptz not null
-);
+  expires_at   timestamptz not null`,
+)}
 
 -- When the worker began draining (a retire, a SIGTERM, a stop) - set by its first draining
 -- announce and kept by every later one, null while it serves. A queue-demand autoscaler leaves the

@@ -3,8 +3,8 @@
 // can push the cursor down instead of serving the same N rows on every page. Before it was
 // called with nothing: rows past its window were unreachable and page two came back short.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, ctxOf, userActor } from '@ultimat3/core';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { configureCursorSigning, ctxOf, resetCursorSigning, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { paginate } from './pagination';
@@ -12,6 +12,10 @@ import { query } from './query';
 import { resetQueries } from './registry';
 import type { RowWindow } from './source';
 import { from, isAfterKey } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 interface Post {
   readonly id: string;

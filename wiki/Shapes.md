@@ -57,7 +57,8 @@ its output: `--dry-run` lists those runs under `data.generate`.
 | `bun run setup && bun run verify` green on the first pass, then again over every generator | `scaffold-smoke` in `.github/workflows/ci.yml`, one row per shape — `scripts/ci-workflow-shape.test.ts` refuses a shape with no row |
 
 `As of 2026-11-06`. Five shapes are planned (`saas` and `agent` beside these three); a shape is
-listed here, and accepted by `--shape`, only once its row gates green. `saas` waits on a member
-invite and a billing seam no slice has landed; `agent` on a model and provider an app names by
+listed here, and accepted by `--shape`, only once its row gates green. `saas` waits on a billing
+seam no slice has landed — its member invite ships, as `defineMemberInvite` and `x g invite`
+([Auth](Auth#member-invites), `As of 2026-11-14`); `agent` on a model and provider an app names by
 environment alone, which no shipped seam takes without a provider SDK or a model row the scaffold
 would have to invent.

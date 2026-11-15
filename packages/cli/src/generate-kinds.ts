@@ -34,6 +34,8 @@ export const GENERATORS = [
   'admin:page',
   'guard',
   'sign-in',
+  // The member invite over `defineMemberInvite`: one per app, no `<name>` (`generate-invite.ts`).
+  'invite',
   'chart-alerts',
   'chart-dashboard',
   'app',
@@ -300,6 +302,8 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   guard: 'migration-safety',
   // Sign-in takes no name: its "example" is the flag that picks a shape, so the line still runs.
   'sign-in': '--password',
+  // No name and no flag: the example is the bare command, and `--json` keeps the line runnable.
+  invite: '--json',
   // No name either: an app has one chart. `--print` runs with or without one.
   'chart-alerts': '--print',
   'chart-dashboard': '--print',

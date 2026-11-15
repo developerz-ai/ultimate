@@ -2,6 +2,7 @@
 // bare strings, and this is the only thing between an undeclared one and an HTTP 500.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { resetActions } from '@ultimat3/action';
 import {
   clearPermissions,
   clearRoles,
@@ -14,6 +15,8 @@ import {
   roleDeclarationSites,
   roleDefinitions,
 } from '@ultimat3/policy';
+import { resetQueries } from '@ultimat3/query';
+import { clearChannels } from '@ultimat3/realtime';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { defineStorage, localDriver, resetStorage } from '@ultimat3/storage';
 import { grantedReferences, permissionFindings, policyFindings } from './app-permissions';
@@ -44,6 +47,11 @@ beforeEach(() => {
   // what makes the step ask for `storage:read` — every case below starts from an app that stores
   // nothing unless it says otherwise.
   resetStorage();
+  // The step reads every gated primitive, not only routes: an earlier file's `publishPost` action
+  // (`post:publish`) was this file's first ungranted requirement on a shared worker.
+  resetActions();
+  resetQueries();
+  clearChannels();
 });
 
 afterEach(() => {

@@ -13,6 +13,7 @@ const snap = (over: Partial<ProcessRegistrySnapshot>): ProcessRegistrySnapshot =
   roles: {},
   roleSites: {},
   tasks: [],
+  jobs: [],
   catalogDeclarations: 0,
   measurementActor: undefined,
   ...over,
@@ -24,7 +25,7 @@ describe('unit · merged registry snapshots', () => {
     expect(mergeSnapshots(undefined, newer)).toBe(newer);
   });
 
-  test('permissions, roles, catalogs and tasks are unions; the newer wins a conflict', () => {
+  test('permissions, roles, catalogs, tasks and jobs are unions; the newer wins a conflict', () => {
     const task = (name: string) => ({ name }) as never;
     const merged = mergeSnapshots(
       snap({
@@ -32,6 +33,7 @@ describe('unit · merged registry snapshots', () => {
         roles: { admin: { grants: ['a:read'] } } as never,
         catalogs: [['en', { hello: 'Hello' }]] as never,
         tasks: [task('nightly')],
+        jobs: [task('sendMail'), task('shared')],
         catalogDeclarations: 2,
       }),
       snap({
@@ -39,6 +41,7 @@ describe('unit · merged registry snapshots', () => {
         roles: { admin: { grants: ['b:write'] } } as never,
         catalogs: [['en', { bye: 'Bye' }]] as never,
         tasks: [task('hourly')],
+        jobs: [task('shared')],
         catalogDeclarations: 1,
       }),
     );
@@ -46,6 +49,7 @@ describe('unit · merged registry snapshots', () => {
     expect(merged.roles).toEqual({ admin: { grants: ['b:write'] } } as never);
     expect(merged.catalogs).toEqual([['en', { hello: 'Hello', bye: 'Bye' }]] as never);
     expect(merged.tasks.map((t) => t.name).sort()).toEqual(['hourly', 'nightly']);
+    expect(merged.jobs.map((j) => j.name).sort()).toEqual(['sendMail', 'shared']);
     expect(merged.catalogDeclarations).toBe(2);
   });
 

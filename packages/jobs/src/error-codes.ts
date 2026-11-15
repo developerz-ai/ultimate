@@ -77,14 +77,17 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_LEDGER_POSTING_CONFLICT',
   'X_JOB_BACKLOG_FULL',
   'X_STEP_OUTPUT_TOO_LARGE',
+  'X_JOB_INTROSPECTION_UNSUPPORTED',
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. The first is thrown as
- * core's own `NotImplementedError` (`inspect.ts`), the other two by
- * `JobAbortedError` and `JobDrainedError` below; jobs keeps no title for any of the three, because the copy this file used to hold was a second title that nothing would have failed
- * on once core's changed. Listed here all the same, so `JobErrorCode` can name every code a job
- * can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
+ * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. The last two are thrown
+ * by `JobAbortedError` and `JobDrainedError`; jobs keeps no title for any of them, because a second
+ * title is one nothing fails on once core's changes. Listed so `JobErrorCode` names every code a
+ * job can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
+ * `X_NOT_IMPLEMENTED` is no longer thrown here (`inspect-no-stub.test.ts`; a driver with no operator
+ * surface is `X_JOB_INTROSPECTION_UNSUPPORTED`) and stays listed only because dropping it narrows
+ * the exported `JOB_ERROR_CODES`: that removal waits on `next`.
  */
 export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED', 'X_DRAINING'] as const;
 
@@ -171,6 +174,7 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_LEDGER_POSTING_CONFLICT: 'a ledger posting key is already stored with other entries',
   X_JOB_BACKLOG_FULL: "an enqueue past the job's declared maxPending backlog was refused",
   X_STEP_OUTPUT_TOO_LARGE: 'a step returned more bytes than a step output may hold',
+  X_JOB_INTROSPECTION_UNSUPPORTED: 'the jobs driver has no operator surface',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws

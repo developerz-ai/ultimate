@@ -12,8 +12,11 @@ import type { SettleBy, SettleDebt } from './driver-settle';
 export const SETTLED_STATES: ReadonlySet<JobState> = new Set<JobState>(['done', 'dead', 'failed']);
 
 export interface MemorySettleDebt extends SettleDebt {
-  /** A settle under `by` just left `jobId` in `state`: record the debt when one is owed. */
-  settled(jobId: string, by: SettleBy, state: JobState): void;
+  /**
+   * A settle — or a claim's burial — just left `jobId` in `state`: record the debt when one is
+   * owed. The claim the debt is fenced on is the row's own, so only `owesSettle` is read.
+   */
+  settled(jobId: string, by: Pick<SettleBy, 'owesSettle'>, state: JobState): void;
   /** `SQL_JOB_REQUEUE`'s `settle_owed = false`: a retried row owes nothing for its old run. */
   forget(jobId: string): void;
 }
@@ -34,7 +37,12 @@ export function memorySettleDebt(
       owed.delete(jobId);
     },
     clear(jobId, claim) {
-      if (!owed.has(jobId) || jobs.get(jobId)?.claim !== claim) return Promise.resolve(false);
+      const row = jobs.get(jobId);
+      // A row never claimed (an expiry the claim buried) carries no claim: it is the 0th, as
+      // `x_jobs.claims` defaults to 0.
+      if (!owed.has(jobId) || row === undefined || (row.claim ?? 0) !== claim) {
+        return Promise.resolve(false);
+      }
       owed.delete(jobId);
       return Promise.resolve(true);
     },

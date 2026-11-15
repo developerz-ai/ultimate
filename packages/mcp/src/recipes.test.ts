@@ -7,6 +7,7 @@ import {
   agentActor,
   ctxOf,
   errorCodeSnapshot,
+  listErrorCodes,
   registerErrorCodes,
   runWithContext,
   UltimateError,
@@ -16,7 +17,7 @@ import { defineAppMcp } from './app-tools';
 import { asFrameworkError } from './framework-error';
 import { assertRecipeLinks, resetServedRecipes, servedRecipes } from './recipe-links';
 import type { McpRecipe } from './recipes';
-import { renderRecipe } from './recipes';
+import { recipeNameOf, renderRecipe } from './recipes';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 
@@ -215,8 +216,15 @@ describe('recipes: scopes', () => {
 
 describe('recipes: an error that links to one', () => {
   test('a declared link no endpoint serves is X_MCP_RECIPE_UNKNOWN at load', () => {
+    // The code registry is process state, and a module evaluates once: a file that loaded an app
+    // earlier on this worker left that app's codes — and their recipe links — registered for good.
+    // Those links are this test's environment, served as such; the link it declares is its subject.
+    const inherited = listErrorCodes().flatMap((entry) => recipeNameOf(entry.docs) ?? []);
+    const served = (): ReadonlySet<string> => new Set([...servedRecipes(), ...inherited]);
     defineAppMcp({ tools, recipes: [creditNote] });
-    expect(() => assertRecipeLinks(servedRecipes())).not.toThrow();
+    // The seam itself, read without the inherited links: this endpoint serves the recipe.
+    expect([...servedRecipes()]).toContain(creditNote.name);
+    expect(() => assertRecipeLinks(served())).not.toThrow();
     // The code is this test's: taken back after it, so a second load of this file declares it again.
     const restoreCodes = errorCodeSnapshot();
     try {
@@ -225,8 +233,9 @@ describe('recipes: an error that links to one', () => {
       });
       // Served by the first endpoint: a second endpoint without it does not break the link.
       defineAppMcp({ tools: { findInvoice: tools.findInvoice }, recipes: [] });
-      expect(() => assertRecipeLinks(servedRecipes())).not.toThrow();
-      expect(() => assertRecipeLinks(new Set(['other']))).toThrow(
+      expect([...servedRecipes()]).toContain(creditNote.name);
+      expect(() => assertRecipeLinks(served())).not.toThrow();
+      expect(() => assertRecipeLinks(new Set(['other', ...inherited]))).toThrow(
         expect.objectContaining({ code: 'X_MCP_RECIPE_UNKNOWN' }),
       );
     } finally {

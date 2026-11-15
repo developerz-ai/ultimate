@@ -15,6 +15,7 @@ const executor: PgExecutor = {
 };
 const ME = '00000000-0000-7000-8000-000000000a01';
 const YOU = '00000000-0000-7000-8000-000000000a02';
+const UNDERSCORE = '00000000-0000-7000-8000-000000000a03';
 
 const count = async (sql: string): Promise<number> =>
   Number((await client.query<{ n: number | string }>(raw(sql)))[0]?.n ?? 0);
@@ -42,6 +43,22 @@ beforeAll(async () => {
       [`v-${email}`, email],
     );
   }
+  // An invite's key carries the address last. The erased subject holds an `_` (a `like` wildcard),
+  // and `mx@x.test` — somebody else, who never signed up — is what `like 'm_@x.test'` would also
+  // match: only the exact-suffix query leaves it.
+  await executor.query(
+    `insert into x_users (id, email, password_hash, mfa_secret) values ($1, 'm_@x.test', 'argon', 'x1.k')`,
+    [UNDERSCORE],
+  );
+  for (const [id, identifier] of [
+    ['i-underscore', JSON.stringify(['00000000-0000-7000-8000-0000000000aa', 'm_@x.test'])],
+    ['i-lookalike', JSON.stringify(['00000000-0000-7000-8000-0000000000aa', 'mx@x.test'])],
+  ] as const) {
+    await executor.query(
+      `insert into x_verifications (id, purpose, identifier, token_hash, expires_at) values ($1, 'member-invite', $2, 'h', now())`,
+      [id, identifier],
+    );
+  }
 }, PGLITE_BOOT_MS);
 
 afterAll(async () => {
@@ -67,10 +84,22 @@ describe('authSubjectTarget', () => {
     expect(
       await count(`select count(*) as n from x_verifications where identifier = 'me@x.test'`),
     ).toBe(0);
-    expect(await count('select count(*) as n from x_users')).toBe(1);
-    expect(await count('select count(*) as n from x_verifications')).toBe(1);
+    expect(await count('select count(*) as n from x_users')).toBe(2);
+    // YOU's pending verification and both invite rows are somebody else's.
+    expect(await count('select count(*) as n from x_verifications')).toBe(3);
     // A replay finds nothing left: the batch loop ends on a short answer.
     expect(await target.erase(ref, 10)).toBe(0);
+  });
+
+  test("erases the subject's invites by exact key, never a `like` match on its `_`", async () => {
+    const underscore = { key: 'member-3', row: { userId: UNDERSCORE } };
+    expect(await target.erase(underscore, 10)).toBe(1);
+    expect(await count(`select count(*) as n from x_verifications where id = 'i-underscore'`)).toBe(
+      0,
+    );
+    expect(await count(`select count(*) as n from x_verifications where id = 'i-lookalike'`)).toBe(
+      1,
+    );
   });
 
   test('a subject with no identity touches nothing', async () => {

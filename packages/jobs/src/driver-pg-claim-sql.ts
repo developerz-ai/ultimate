@@ -81,7 +81,8 @@ select ${CLAIM_ROW_NAMES.replace(/[a-z_]+/g, 'null')}, null, (${HORIZON})
  * job that kills its worker took one per visibility timeout and never reached the dead letters.
  * `claimed_by` is cleared with the lease, so the body that stalled rather than died cannot settle
  * the row it lost. A buried row spends a slot of `$2`: the pass after it claims what it displaced.
- * `$5` names the jobs declaring `retry.deadLetter: false`: their rows are buried `failed`.
+ * `$5` names the jobs declaring `retry.deadLetter: false`: their rows are buried `failed`. `$6`
+ * names the jobs declaring `onSettled`: a burial of theirs owes the hook in this write (J11).
  * A waiting row past its `expires_at` (`EnqueueRequest.expiresAt`) is buried too — `exhausted`,
  * and `expired` says why: settled `failed` with `JOB_EXPIRED` and reported with the others. Lazy
  * on purpose: decided only for a row the claim already picked, so it costs no index and no sweep.
@@ -164,6 +165,7 @@ with open as (
                                  when p.exhausted then '${LEASE_LAPSED_FINAL_ATTEMPT}'
                                  else j.last_error end,
          last_error_stack = case when p.exhausted then null else j.last_error_stack end,
+         settle_owed      = p.exhausted and j.name = any($6::text[]),
          updated_at       = now()
     from picked p
    where j.id = p.id
@@ -224,6 +226,7 @@ export async function pgClaim(
       claimOptions.workerId,
       claimOptions.visibilityTimeoutMs,
       claimOptions.dropExhausted ?? [],
+      claimOptions.settleOwed ?? [],
     ],
   );
   const at = nowMs(clock);

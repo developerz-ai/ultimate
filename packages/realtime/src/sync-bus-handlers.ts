@@ -148,10 +148,17 @@ function desync(bus: SyncBus, table: string, replicated = true): void {
   logger.warn('live.change_gap', { table, desynced: marked, channelGaps });
 }
 
-/** Every window and every records topic re-read, the producer history forgotten, said once. */
+/**
+ * Every window and every records topic re-read, the producer history forgotten, said once. The
+ * windows are repaired NOW: a reconnect and a resync arrive with no change behind them, and a quiet
+ * query that moved during the outage has no later change to be repaired by — its page showed the
+ * rows from before the outage until the idle sweep (`multi-node.live.test.ts`). A gap seen on a
+ * message needs no kick: that message's delivery reaches every stale window (`targets`).
+ */
 function resyncAll(bus: SyncBus, event: string, fields: Record<string, string>): void {
   bus.gaps.forget();
   const marked = bus.registry.invalidate();
   const channelGaps = bus.hub.invalidate();
   logger.warn(event, { ...fields, desynced: marked, channelGaps });
+  if (marked > 0) detach(bus.registry.repairMarked(), 'live.repair', event);
 }

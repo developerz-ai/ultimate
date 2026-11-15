@@ -64,7 +64,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
   test('SQL_CLAIM executes — the loop every ROLE=worker container runs', async () => {
     expect(SQL_CLAIM).toContain('unnest($1::text[])');
     expect(SQL_CLAIM).toContain('any($5::text[])');
-    const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000, []]);
+    const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000, [], []]);
     expect(rows).toEqual([]);
   });
 
@@ -92,6 +92,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
         `w-match-${RUN}`,
         30_000,
         [],
+        [],
       ]);
       expect(claimed?.map((row) => row.id)).toEqual([ID]);
     } finally {
@@ -114,6 +115,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
         `w-miss-${RUN}`,
         30_000,
         [],
+        [],
       ]);
       expect(claimed).toEqual([]);
     } finally {
@@ -123,8 +125,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
 
   // The statement's SECOND array, `$5`: the job names a burial drops (`retry.deadLetter: false`).
   // Two rows whose lease lapsed on their final attempt, one named in the array and one not — an
-  // encoder that bound it as a wildcard, or as nothing, gets one of the two states wrong.
-  test('the names array decides how an exhausted row is buried: failed when named, dead when not', async () => {
+  // encoder that bound it as a wildcard, or as nothing, gets one of the two states wrong. The
+  // THIRD, `$6`, names the jobs whose burial owes `onSettled`: the KEPT one here, so a wildcard
+  // owes both and nothing owes neither.
+  test('the names arrays decide how an exhausted row is buried and whether its hook is owed', async () => {
     const lapsed = (id: string, name: string): Promise<unknown> | undefined =>
       executor?.query(
         `insert into x_jobs
@@ -143,10 +147,21 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
         `w-bury-${RUN}`,
         30_000,
         [DROPPED_JOB, 'never-queued'],
+        [KEPT_JOB, 'never-queued'],
       ]);
       const states = new Map(rows?.map((row) => [row.id, row.state]));
       expect(states.get(ID)).toBe('failed');
       expect(states.get(MISS_ID)).toBe('dead');
+      const owed = await executor?.query<{ id: string; settle_owed: boolean }>(
+        'select id, settle_owed from x_jobs where id = any($1::uuid[])',
+        [[ID, MISS_ID]],
+      );
+      expect(new Map(owed?.map((row) => [row.id, row.settle_owed]))).toEqual(
+        new Map([
+          [ID, false],
+          [MISS_ID, true],
+        ]),
+      );
     } finally {
       await executor?.query('delete from x_jobs where id = any($1::uuid[])', [[ID, MISS_ID]]);
       // The burial counts itself in the same statement: those two rows are this run's as well.

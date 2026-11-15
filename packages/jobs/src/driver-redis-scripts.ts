@@ -148,12 +148,14 @@ return out
 
 /**
  * `SQL_CLAIM`. `ARGV`: namespace, now, limit, visibility ms, worker, `'1'` to answer the horizon
- * (`SQL_CLAIM_IDLE`), the count of `dropExhausted` names, those names, then the queues.
+ * (`SQL_CLAIM_IDLE`), the count of `dropExhausted` names, those names, the count of `settleOwed`
+ * names, those names, then the queues.
  * Candidates are every due row of each queue — ready, delayed, suspended, or running past its
  * lease — at most `limit` from each source, ordered by `runAt` and cut at `limit`. A running row
  * on its final attempt is BURIED (`dead`, or `failed` for a dropped name) and never handed out;
  * a waiting row never claimed (`attempt` 0) past its `expiresAt` is settled `failed` with
- * `JOB_EXPIRED` and answered the same.
+ * `JOB_EXPIRED` and answered the same. Either burial of a `settleOwed` name owes its `onSettled`
+ * in the same script (`owed`, `driver-redis-settle.ts`), as `SQL_CLAIM`'s `$6` does.
  * Answers `{ 'c', HGETALL…, HVALS steps… }` per claimed row, `{ 'b', HGETALL… }` per buried one;
  * with nothing taken and the horizon asked, ONE `{ 'h', ms until the first waiting row's runAt or
  * held lease's visibleAt }`, `{ 'h' }` when no row waits or is held.
@@ -168,7 +170,14 @@ local horizon = ARGV[6] == '1'
 local dropCount = tonumber(ARGV[7])
 local drop = {}
 for i = 1, dropCount do drop[ARGV[7 + i]] = true end
-local first = 8 + dropCount
+local owesCount = tonumber(ARGV[8 + dropCount])
+local owes = {}
+for i = 1, owesCount do owes[ARGV[8 + dropCount + i]] = true end
+local first = 9 + dropCount + owesCount
+local function bury(id, name)
+  if owes[name] then redis.call('ZADD', P .. ':owed', now, id)
+  else redis.call('ZREM', P .. ':owed', id) end
+end
 local candidates = {}
 if limit > 0 then
   for i = first, #ARGV do
@@ -205,6 +214,7 @@ for i = 1, math.min(limit, #candidates) do
     redis.call('HSET', job, 'state', 'failed', 'lastError', '${JOB_EXPIRED}', 'updatedAt', ARGV[2])
     redis.call('ZADD', P .. ':failed:' .. queue, now, id)
     redis.call('HDEL', P .. ':idem', row[7])
+    bury(id, name)
     table.insert(out, { 'b', redis.call('HGETALL', job) })
   elseif state == 'running' and attempt >= maxAttempts then
     local final = 'dead'
@@ -215,6 +225,7 @@ for i = 1, math.min(limit, #candidates) do
       'updatedAt', ARGV[2])
     redis.call('ZADD', P .. ':' .. final .. ':' .. queue, now, id)
     redis.call('HDEL', P .. ':idem', row[7])
+    bury(id, name)
     table.insert(out, { 'b', redis.call('HGETALL', job) })
   else
     redis.call('ZREM', P .. ':wait:' .. queue, id)

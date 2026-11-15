@@ -7,4 +7,4 @@ create table "x_scheduler_state" (
   "fired_occurrence_at" timestamp with time zone,
   "fired_at" timestamp with time zone,
   constraint "x_scheduler_state_pkey" PRIMARY KEY (task_name)
-);
+) with (autovacuum_vacuum_threshold=20, autovacuum_vacuum_scale_factor=0, autovacuum_analyze_threshold=20, autovacuum_analyze_scale_factor=0);

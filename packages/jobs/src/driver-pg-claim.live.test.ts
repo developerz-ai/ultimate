@@ -154,7 +154,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the claim buries a poison row
     await executor.query('analyze x_jobs', []);
     const answer = await executor.query<{ 'QUERY PLAN': unknown }>(
       `explain (format json) ${SQL_CLAIM}`,
-      [['q0', 'q1', 'q2'], 8, 'w-plan', TTL_MS, []],
+      [['q0', 'q1', 'q2'], 8, 'w-plan', TTL_MS, [], []],
     );
     const plan = answer.flatMap((line) => line['QUERY PLAN']);
     const text = JSON.stringify(plan);

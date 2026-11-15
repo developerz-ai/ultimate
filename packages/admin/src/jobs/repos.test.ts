@@ -2,8 +2,16 @@
 // a count, a row by key — and the door to the queue refusing a process that installed none.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError, NotImplementedError } from '@ultimat3/core';
-import { type JobDriver, MAX_JOB_PAGE, memoryJobDriver } from '@ultimat3/jobs';
+import { isUltimateError } from '@ultimat3/core';
+import {
+  type JobDriver,
+  JobIntrospectionUnsupportedError,
+  MAX_JOB_PAGE,
+  memoryJobDriver,
+  registeredJobs,
+  resetJobs,
+  restoreJobs,
+} from '@ultimat3/jobs';
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import type { AdminRow } from '../registry';
 import { fleetRepo, queueRepo, taskRepo, workerRepo } from './fleet-repo';
@@ -13,12 +21,19 @@ import { jobsOperator } from './operator';
 
 let seeded: Seeded;
 
+// The queues listed are the ones the REGISTERED jobs name, and the registry is process state: on a
+// shared worker an earlier file's import of the reference app left its `digest` job declared for
+// good. Only this file's jobs is the premise, so it is stated, and what was there goes back.
+const inherited = registeredJobs();
+
 beforeAll(async () => {
+  resetJobs();
   seeded = await seedQueue();
 });
 
 afterAll(() => {
   resetJobDriver();
+  restoreJobs(inherited);
 });
 
 const rows: readonly AdminRow[] = [
@@ -259,8 +274,8 @@ describe('jobsOperator', () => {
     expect(codeOf()).toBe('X_DRIVER_UNAVAILABLE');
     const { introspect: _dropped, ...bare } = seeded.driver;
     installJobDriver(bare as JobDriver);
-    expect(codeOf()).toBe('X_NOT_IMPLEMENTED');
-    expect(caught).toBeInstanceOf(NotImplementedError);
+    expect(codeOf()).toBe('X_JOB_INTROSPECTION_UNSUPPORTED');
+    expect(caught).toBeInstanceOf(JobIntrospectionUnsupportedError);
     installJobDriver(seeded.driver);
     expect(jobsOperator().driver).toBe(seeded.driver);
   });

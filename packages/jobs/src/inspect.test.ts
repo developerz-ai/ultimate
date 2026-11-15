@@ -9,6 +9,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver } from './adapter';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
+import { redisJobDriver } from './driver-redis';
 import {
   inspectDeadLetters,
   inspectJob,
@@ -16,6 +17,7 @@ import {
   inspectQueues,
   retryFromStep,
 } from './inspect';
+import { JobIntrospectionUnsupportedError } from './inspect-unsupported';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetTasks } from './task';
@@ -156,9 +158,12 @@ function driverWithoutIntrospect(): JobDriver {
 }
 
 const INTROSPECT_FIX =
-  'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — only the pg driver implements introspect — then: x jobs list --json';
+  'postgresJobDriver({ executor })   # jobs: in apps/<app>/runtime.ts, or drop that field and the boot builds it over DATABASE_URL — the pg and memory drivers implement introspect — then: x jobs list --json';
 
-async function expectIntrospectionRequired(call: () => Promise<unknown>): Promise<void> {
+async function expectIntrospectionRequired(
+  call: () => Promise<unknown>,
+  driverName = 'memory',
+): Promise<void> {
   let thrown: unknown;
   try {
     await call();
@@ -167,28 +172,46 @@ async function expectIntrospectionRequired(call: () => Promise<unknown>): Promis
   }
   // Captured, then asserted — inside the `catch` a call that resolved would run no assertion at
   // all, and the guard under test is exactly the thing that must not silently let one through.
-  expect(thrown).toBeInstanceOf(NotImplementedError);
+  // A capability the installed driver lacks, not a stub the framework owes: never X_NOT_IMPLEMENTED.
+  expect(thrown).toBeInstanceOf(JobIntrospectionUnsupportedError);
+  expect(thrown).not.toBeInstanceOf(NotImplementedError);
   const ultimateError = thrown as UltimateError;
-  expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');
-  expect(ultimateError.cause).toContain('introspection for the "memory" jobs driver');
+  expect(ultimateError.code).toBe('X_JOB_INTROSPECTION_UNSUPPORTED');
+  expect(ultimateError.cause).toContain(`the "${driverName}" jobs driver has no operator surface`);
   expect(ultimateError.fix).toBe(INTROSPECT_FIX);
 }
 
 describe('the introspect-missing guard, shared by every read-side function', () => {
-  test('inspectJob throws X_NOT_IMPLEMENTED naming the driver', async () => {
+  test('inspectJob throws X_JOB_INTROSPECTION_UNSUPPORTED naming the driver', async () => {
     await expectIntrospectionRequired(() => inspectJob(driverWithoutIntrospect(), 'job-1'));
   });
 
-  test('inspectJobList throws X_NOT_IMPLEMENTED naming the driver', async () => {
+  test('inspectJobList throws X_JOB_INTROSPECTION_UNSUPPORTED naming the driver', async () => {
     await expectIntrospectionRequired(() => inspectJobList(driverWithoutIntrospect()));
   });
 
-  test('inspectDeadLetters throws X_NOT_IMPLEMENTED naming the driver', async () => {
+  test('inspectDeadLetters throws X_JOB_INTROSPECTION_UNSUPPORTED naming the driver', async () => {
     await expectIntrospectionRequired(() => inspectDeadLetters(driverWithoutIntrospect()));
   });
 
-  test('retryFromStep throws X_NOT_IMPLEMENTED naming the driver', async () => {
+  test('retryFromStep throws X_JOB_INTROSPECTION_UNSUPPORTED naming the driver', async () => {
     await expectIntrospectionRequired(() => retryFromStep(driverWithoutIntrospect(), 'job-1'));
+  });
+
+  // The shipped driver the guard exists for: redis keeps no pause, registry or counters, so it
+  // ships no `introspect`. Refused before a single command reaches the server.
+  test('the redis driver is refused by name, before any command is sent', async () => {
+    let sent = 0;
+    const driver = redisJobDriver({
+      client: {
+        send: () => {
+          sent += 1;
+          return Promise.resolve(null);
+        },
+      },
+    });
+    await expectIntrospectionRequired(() => inspectJob(driver, 'job-1'), 'redis');
+    expect(sent).toBe(0);
   });
 });
 

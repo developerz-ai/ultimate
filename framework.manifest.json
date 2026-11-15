@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "da4c664dd81ab013020641de682542236a8649cb4d14d0a1deedb560e0af4471",
+  "buildId": "3d68a546ada372bd329a6933347181aa6935d5c5f032fdf799a7cf380578f4c7",
   "tiers": {
     "0": [
       "core",
@@ -2806,6 +2806,11 @@
     },
     {
       "code": "X_JOB_EVENT_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/error-codes.ts"
+    },
+    {
+      "code": "X_JOB_INTROSPECTION_UNSUPPORTED",
       "owner": "jobs",
       "at": "packages/jobs/src/error-codes.ts"
     },

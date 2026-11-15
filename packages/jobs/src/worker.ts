@@ -13,13 +13,13 @@ import {
   renderThrowable,
   uuidV7,
 } from '@ultimat3/core';
-import { announceExhausted } from './claim-exhausted';
+import { burialPolicy, burialTeller } from './claim-exhausted';
 import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobExecution } from './execute-result';
-import { registeredJobs } from './job';
+import { limiterFrameOf, withLimiterFrame } from './limiter-frame';
 import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
 import { tickStreak } from './tick-streak';
@@ -81,6 +81,7 @@ export function jobWorker(options: WorkerOptions): Worker {
    * `inFlight` waited on a set the round it was racing had not finished filling.
    */
   const rounds = new Set<Promise<unknown>>();
+  const teller = burialTeller(); // a burial's tellings, beside the passes (`claim-exhausted.ts`)
   /**
    * The drain, as every run hears it: composed into each `ctx.signal` (`worker-run.ts`), aborted
    * with a `JobDrainedError` at the CUT-OFF (`worker-drain-cutoff.ts`), never at SIGTERM itself.
@@ -117,22 +118,26 @@ export function jobWorker(options: WorkerOptions): Worker {
 
   /** One claimed job, run under its lease, its slot and its span. `worker-run.ts` owns the wiring. */
   const runClaimed = (claimed: ClaimedJob, refusal?: unknown): Promise<JobExecution> =>
-    runClaimedJob({
-      driver: options.driver,
-      claimed,
-      ...(refusal === undefined ? {} : { refusal }),
-      context: options.context,
-      fleetSlots,
-      workerId,
-      visibilityTimeoutMs,
-      heartbeatIntervalMs,
-      pollIntervalMs,
-      drain: drainSignal.signal,
-      ...(options.clock === undefined ? {} : { clock: options.clock }),
-      ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
-      ...(options.events === undefined ? {} : { events: options.events }),
-    });
-
+    // A `limiter()` gate in the body renews on THIS worker's numbers, as `fleetSlots` does.
+    withLimiterFrame(
+      limiterFrameOf(claimed, visibilityTimeoutMs, heartbeatIntervalMs, options),
+      () =>
+        runClaimedJob({
+          driver: options.driver,
+          claimed,
+          ...(refusal === undefined ? {} : { refusal }),
+          context: options.context,
+          fleetSlots,
+          workerId,
+          visibilityTimeoutMs,
+          heartbeatIntervalMs,
+          pollIntervalMs,
+          drain: drainSignal.signal,
+          ...(options.clock === undefined ? {} : { clock: options.clock }),
+          ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
+          ...(options.events === undefined ? {} : { events: options.events }),
+        }),
+    );
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
 
   /**
@@ -150,27 +155,18 @@ export function jobWorker(options: WorkerOptions): Worker {
     // and the turn). It re-reads `claiming()` per ask: a `stop()` mid-pass stops claiming now.
     const claimOne = async (ask: ClaimAsk): Promise<ClaimAnswer> => {
       const admitted = new Map<string, number>();
-      // A lease that lapsed on a row's final attempt is settled by the claim itself and handed to
-      // `onExhausted`, never out as work: this round is the only thing that can count it, log it
-      // and tell the job. `dropExhausted` is the policy the row does not carry.
+      // A final attempt's lapsed lease is settled by the claim itself, handed to `onExhausted` and
+      // told by this round alone; `burialPolicy()` is what the row does not carry.
       const buried: JobRecord[] = [];
       const claimed = await options.driver.claim({
         ...ask,
         visibilityTimeoutMs,
         workerId,
-        dropExhausted: registeredJobs()
-          .filter((handle) => handle.retry.deadLetter === false)
-          .map((handle) => handle.name),
+        ...burialPolicy(),
         onExhausted: (dead) => buried.push(...dead),
         ...(loop.wantsDue() ? { onEmpty: loop.nextDue } : {}), // idle: rest until the next is due
       });
-      if (claimed.length > 0) found = true;
-      if (buried.length > 0) {
-        found = true;
-        tally.buried(
-          await announceExhausted({ exhausted: buried, workerId, context: options.context }),
-        );
-      }
+      if (claimed.length > 0 || buried.length > 0) found = true;
 
       for (const [index, job] of claimed.entries()) {
         const queue = job.queue;
@@ -257,6 +253,8 @@ export function jobWorker(options: WorkerOptions): Worker {
           },
         );
       }
+      // Told beside the pass, after the rows this claim handed over are running: never awaited here.
+      void teller.tell({ ...options, exhausted: buried, workerId }, tally.buried);
       if (fillsAsk(admitted, ask.limit)) full = true;
       return admitted;
     };
@@ -293,6 +291,7 @@ export function jobWorker(options: WorkerOptions): Worker {
   /** One claim+run round: the pass, then the jobs THIS pass started — never the whole pool. */
   const tick = async (): Promise<readonly JobExecution[]> => {
     const settled = await Promise.allSettled(await round());
+    await Promise.all(teller.inFlight()); // and the burials' tellings, which never reject
     return settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
   };
 
@@ -364,7 +363,8 @@ export function jobWorker(options: WorkerOptions): Worker {
       // snapshot: the cut-off's hand-back empties the set under bodies still running, and that
       // ends this wait. What a late round started is handed back below, before the close.
       const rounded = await settleAllBy([...rounds], budget);
-      const drained = (await settleAllBy([inFlight.empty()], budget)) && rounded;
+      const waits = [inFlight.empty(), ...teller.inFlight()]; // tellings too, a late round's included
+      const drained = (await settleAllBy(waits, budget)) && rounded;
       if (!drained) {
         logger.warn('jobs.worker.drain-abandoned', {
           workerId,

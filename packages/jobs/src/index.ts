@@ -129,7 +129,7 @@ export { postgresJobDriver, postgresLeader } from './driver-pg';
 // notify), and the storage it renders, which that install's drift check reads. The rest are this
 // package's internals, read where they are defined, and tested there too — the array-parameter
 // proofs are `driver-pg-array.live.test.ts` (25.0.0).
-export { JOBS_TABLE_STORAGE } from './driver-pg-ddl';
+export { JOBS_STORAGE, JOBS_TABLE_STORAGE } from './driver-pg-ddl';
 export { SQL_JOBS_TABLE } from './driver-pg-sql';
 export { JobBacklogFullError } from './enqueue-backlog';
 export { signalEnqueued, signalStaged } from './enqueue-signal';
@@ -201,6 +201,7 @@ export {
   resolveJobStep,
   resumeQueue,
 } from './inspect-operator';
+export { JobIntrospectionUnsupportedError, requireIntrospection } from './inspect-unsupported';
 export type {
   BulkFilter,
   BulkResult,
@@ -246,10 +247,20 @@ export type { LedgerDefinition, LedgerEntry, LedgerPosting } from './ledger';
 export { assertBalancedPosting, ledger, ledgerLines } from './ledger';
 export type { EntityLedgerBookOptions, LedgerBook, LedgerLine } from './ledger-book';
 export { entityLedgerBook } from './ledger-book';
+export type { JobLimiter, LimiterOptions } from './limiter';
+export { limiter, MAX_LIMITER_CONCURRENCY, MAX_LIMITER_RATE } from './limiter';
 export type { Lease, LimitConfig, Limiter, LimitSnapshot, RateLimit } from './limits';
 export { concurrencyLimiter, NO_TENANT } from './limits';
 export type { HeldLock, WithLockOptions } from './lock';
 export { withLock } from './lock';
+export type { LoopHeartbeat, LoopHeartbeatOptions, StaleLoop } from './loop-heartbeat';
+export {
+  LIVENESS_FLOOR_MS,
+  LIVENESS_TICK_MULTIPLE,
+  livenessBoundMs,
+  loopHeartbeat,
+  staleLoops,
+} from './loop-heartbeat';
 export { queueDemand, recordQueueDemand } from './metrics';
 export type {
   EnqueueOptions,

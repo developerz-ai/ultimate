@@ -239,6 +239,7 @@ export {
   parseEnvelope,
   SeqGapDetector,
 } from './replicator-envelope';
+export type { PassHeartbeat } from './replicator-heartbeat';
 export {
   actorIdOf,
   CLOSE,

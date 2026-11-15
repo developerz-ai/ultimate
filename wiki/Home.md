@@ -17,7 +17,7 @@ No Docker and no service: embedded Postgres, in-process NATS, local storage, a s
 | an agent writes most of your code: one way per task, `--json` everywhere, every error a code, a cause and a `fix:` command | you need Node.js or Deno: Bun only |
 | you want authz written once: one `policy` guards HTTP, live queries, jobs, MCP and admin | your database is not Postgres, or your UI is not SolidJS |
 | you want jobs, realtime, auth, mail, storage, i18n, SEO, admin and MCP decided and gated | you deploy to Vercel functions, Lambda or Workers: containers only |
-| the app may grow: the same code from one PaaS process to Kubernetes | you want a plugin API (an app wraps a primitive instead), or multi-node realtime proven today ([Known gaps](Known-Gaps)) |
+| the app may grow: the same code from one PaaS process to Kubernetes | you want a plugin API (an app wraps a primitive instead), or realtime throughput and socket capacity measured across nodes today — delivery, ordering and resume across nodes are proven, the rates are not ([Realtime](Realtime#across-nodes-over-a-real-bus)) |
 
 ## Is it for a project this size
 

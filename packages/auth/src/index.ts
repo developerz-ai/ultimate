@@ -173,6 +173,15 @@ export { boundedKdfGate, kdfGate } from './kdf-gate';
 export { purgeAuthLimits } from './limiter-install';
 export type { HandleDirectory } from './login-identity';
 export { normaliseHandle } from './login-identity';
+export type {
+  AcceptInviteInput,
+  DefineMemberInviteInput,
+  InviteMemberInput,
+  MemberInviteFlow,
+  RevokedInvite,
+  RevokeInviteInput,
+} from './member-invite';
+export { defineMemberInvite } from './member-invite';
 export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,

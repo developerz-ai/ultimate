@@ -189,6 +189,8 @@ delete from x_job_workers where id = $1
 /**
  * Live rows only, and the lapsed ones go in the same statement: a killed worker is never read
  * again, and nothing else has to be running for its row to leave.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
  */
 export const SQL_WORKERS = `
 with lapsed as (
@@ -200,17 +202,19 @@ select id, host, queues, concurrency, in_flight, build,
        (extract(epoch from draining_at)  * 1000)::bigint as draining_at
   from x_job_workers
  where expires_at > now()
- order by started_at, id
+ order by x_job_workers.started_at, x_job_workers.id
 `.trim();
 
 const COUNTER_COLUMNS = `done, retried, failed, dead, duration_ms`;
+
+// The counter reads order by the qualified columns too, for the reason `SQL_WORKERS` gives.
 
 export const SQL_COUNTERS = `
 select job, bucket_ms, (extract(epoch from bucket_start) * 1000)::bigint as bucket_start,
        ${COUNTER_COLUMNS}
   from x_job_counters
  where job = $1 and bucket_start >= to_timestamp($2::bigint / 1000.0)
- order by bucket_start, bucket_ms
+ order by x_job_counters.bucket_start, x_job_counters.bucket_ms
 `.trim();
 
 /** `SQL_COUNTERS` over a name list: $1 is a `text[]`, one bind whatever its length. */
@@ -219,7 +223,7 @@ select job, bucket_ms, (extract(epoch from bucket_start) * 1000)::bigint as buck
        ${COUNTER_COLUMNS}
   from x_job_counters
  where job = any($1::text[]) and bucket_start >= to_timestamp($2::bigint / 1000.0)
- order by bucket_start, bucket_ms, job collate "C"
+ order by x_job_counters.bucket_start, x_job_counters.bucket_ms, x_job_counters.job collate "C"
 `.trim();
 
 export const SQL_COUNTER_TOTALS = `

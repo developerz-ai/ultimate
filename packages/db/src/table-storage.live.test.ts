@@ -5,7 +5,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { raw } from './sql';
-import { readTableStorageDrift, tableDdl, tableStorage } from './table-storage';
+import { tableDdl, tableStorage } from './table-storage';
+import { readTableStorageDrift } from './table-storage-drift';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -71,5 +72,22 @@ describe.skipIf(!hasPostgres)('tableStorage on Postgres', () => {
     const absent = tableStorage('x_table_storage_absent', { unlogged: true });
     const drift = await readTableStorageDrift(client, [absent]);
     expect(drift.map((difference) => difference.parameter)).toEqual(['table']);
+  });
+
+  test('autovacuum: applied, reported after a hand reset, converged by the next apply', async () => {
+    const tiny = tableStorage('x_table_storage_probe', {
+      autovacuum: { vacuumThreshold: 20, vacuumScaleFactor: 0 },
+    });
+    await apply(tableDdl(tiny, 'key text primary key, n int not null'));
+    expect(await readTableStorageDrift(client, [tiny])).toEqual([]);
+    await client.execute(
+      raw('alter table x_table_storage_probe reset (autovacuum_vacuum_threshold)'),
+    );
+    const drift = await readTableStorageDrift(client, [tiny]);
+    expect(drift.map((difference) => difference.parameter)).toEqual([
+      'autovacuum_vacuum_threshold',
+    ]);
+    await apply(tableDdl(tiny, 'key text primary key, n int not null'));
+    expect(await readTableStorageDrift(client, [tiny])).toEqual([]);
   });
 });

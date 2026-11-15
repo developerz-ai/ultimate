@@ -3,7 +3,7 @@
 // Both exist because a deploy that hangs is worse than a deploy that fails: the pod stays
 // `Running`, the logs stay empty, and `backoffLimit` never fires.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { renderThrowable } from '@ultimat3/core';
 import { type DbClient, setDbClient } from './client';
 import { expectedQueryLoopReason } from './expected-loop';
@@ -39,7 +39,9 @@ let client: RecordingClient;
 beforeEach(() => {
   client = recordingClient();
   setDbClient(client);
-});
+}); // The ambient client is process state: left installed, the next file on a shared worker
+// starts with this file's fake as its `db()`.
+afterEach(() => setDbClient(undefined));
 
 describe('the migration lock is bounded, not waited on', () => {
   /** A client whose lock answers `false` for the first `n` polls, then `true`. */
