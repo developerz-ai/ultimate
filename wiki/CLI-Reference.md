@@ -371,7 +371,7 @@ The boot guard is generated, app-owned: `apps/web/runtime.ts` calls `assertSignI
 | Generator | What the declaration holds |
 |---|---|
 | `x g export-rows <name> --feature f` | `exportRows({ input: { orgId, exportId }, tenant: ({ orgId }) => orgId, source: db.<plural>.where({ orgId }), format: 'csv', columns, row, sink: () => disk() })` — one org's rows, Money as minor units + currency, dates as UTC instants, parts under `exports/<name>/<orgId>/<exportId>/` |
-| `x g import-rows <name> --feature f` | `importRows({ input: { orgId, key }, tenant, source: () => disk(), schema, handle })` — `handle` is `upsertAll(…, { onConflict: ['id'], onMatch: 'nothing' })`, so a replayed page writes nothing twice and never another org's row; refused rows by line under `imports/<name>/<orgId>/errors` |
+| `x g import-rows <name> --feature f` | `importRows({ input: { orgId, key }, tenant, source: () => disk(), schema, handle })` — the input refines `key` onto `imports/<name>/<orgId>/` (`key-in-own-org`, no `..`), so an import never reads another org's upload and the run's dedupe key is per org; `handle` is `upsertAll(…, { onConflict: ['id'], onMatch: 'nothing' })`, so a replayed page writes nothing twice and never another org's row; refused rows by line under `imports/<name>/<orgId>/errors` |
 
 Every other factory, and why no generator writes it (`rollup`, `webhook`, `llm`, `agentJob`, …): `FACTORY_GENERATORS` in `packages/cli/src/generate-factories.ts`, held complete against `PRIMITIVE_FACTORIES` by its test.
 
