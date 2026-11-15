@@ -401,13 +401,18 @@ describe('a test file’s body, in one process', () => {
  * later file's set: a file that declared nothing found a 12-name set and its `can('cases:create')`
  * was X_PERMISSION_UNKNOWN, or a role an unrelated app module defined was its X_ROLE_REDEFINED.
  */
-const envDeclare = (name: string): string => `import { defineRoles, definePermissions } from '${POLICY}';
+const envDeclare = (
+  name: string,
+): string => `import { defineRoles, definePermissions } from '${POLICY}';
 
 export const permissions = definePermissions(['env:${name}']);
 defineRoles({ env${name}: { grants: ['env:${name}'] } });
 `;
 
-const envReader = (imports: string, expected: readonly string[]): string => `import { expect, test } from 'bun:test';
+const envReader = (
+  imports: string,
+  expected: readonly string[],
+): string => `import { expect, test } from 'bun:test';
 import { knownPermissions, roleDefinitions } from '${POLICY}';
 ${imports}
 

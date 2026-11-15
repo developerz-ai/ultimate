@@ -54,8 +54,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
   (`claimOf(claimed)`); read `heartbeat` as `held === false`. †
 - **A driver's semantics are pinned beside the pg statement** (`driver-parity*.test.ts`);
   `driver-*-fixture.ts` scenarios run on memory AND Postgres.
-- **The claim BURIES a lease that lapsed on the final attempt** (`dead`/`failed`, and owes a
-  hooked job's `onSettled`, per `burialPolicy()`); `announceExhausted` tells and pays. †
+- **The claim BURIES a lease that lapsed on the final attempt** (`dead`/`failed`, owing a
+  hooked job's `onSettled`: `burialPolicy()`); `announceExhausted` tells and pays. †
 - **`cancel` is fenced on `LIVE_STATES`.** **`requeue`** refuses (`X_JOB_NOT_FOUND`, not requeueable,
   duplicate), then ONE statement. **`enqueue` inserts twice at most.** **`BulkResult.remaining` is
   what a second call would move.**
@@ -108,7 +108,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
   teardown's wait is bounded on SIGTERM (`drain-wait.ts`), unbounded on `stop()`; one teardown, joined.
 - **A deploy lets a running job FINISH**: SIGTERM only stops claiming; `X_DRAINING` at
   `deadlineAt − margin`; settles `interrupted`. †
-- **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`).
+- **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`) — which is how `job({ limiter })`
+  defers: the gate throws it before the body, never at claim.
 - **The drain waits out the claim round it races** — `tick()` registers its round in `rounds`
   synchronously with its guard.
 - **A fleet slot is HELD, not owned**: a lost one CANCELS the run (`X_JOB_SLOT_LOST`). †
@@ -231,6 +232,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `scheduler-known.ts` / `scheduler-dispatch.ts` | what the leader remembers of each watermark (an idle round reads nothing, a cold one ONE `watermarks` read); one occurrence fired |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
+| `limiter.ts` / `limiter-gate.ts` / `limiter-errors.ts` | `limiter(name, { rate, concurrency })`, a named fleet budget: the declaration; the gate `job({ limiter })` runs its body through (fast path, `limiter:<name>:*` lease rows, `X_RATE_LIMITED` refusal); its three refusals, all borrowed shipped codes |
 | `events.ts` / `-cursor.ts` | memory bus; the wait cursor, both buses |
 | `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume, resolve-step |

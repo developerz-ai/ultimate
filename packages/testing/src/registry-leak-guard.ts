@@ -8,10 +8,13 @@ import { knownTags, registeredTiers } from '@ultimat3/cache';
 import { isAppRoot } from './app-root';
 import { RegistryLeakError } from './errors';
 import { runBoundaryHooks, runFileBoundary } from './file-boundary';
+import { type ImportGraph, importGraphReader } from './import-graph';
+import { ownEnvironment } from './registry-environment';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
 import {
   captureProcessRegistries,
   mergeSnapshots,
+  restorePolicyRegistries,
   restoreProcessRegistries,
 } from './registry-snapshot';
 import { rerunDeclarations } from './rerun-declarations';
@@ -169,6 +172,17 @@ export function installRegistryLeakGuard(): void {
   const pristineLocales = JSON.stringify(captureProcessRegistries().locales);
   const inApp = isAppRoot();
   const reruns = rerunDeclarations(frameworkDeclarationRegistries);
+  // The preload's own declarations are every file's: no test file's graph reaches the preload.
+  const atPreload = captureProcessRegistries();
+  const preloadNames = {
+    permissions: new Set(atPreload.permissions),
+    roles: new Set(Object.keys(atPreload.roles)),
+  };
+  // What the last boundary put back: a name live at a body's start and absent here was declared
+  // by a module THIS file's load evaluated for the first time — its own, whatever the graph says.
+  let lastBoundary = atPreload;
+  const graphOf = importGraphReader();
+  let graph: ImportGraph | undefined;
 
   const close = (): void => {
     if (current === undefined) return;
@@ -208,7 +222,33 @@ export function installRegistryLeakGuard(): void {
     };
     restoreProcessRegistries(restored);
     accumulated = mergeSnapshots(accumulated, restored);
+    lastBoundary = restored;
     current = undefined;
+  };
+
+  // The framework repository's files, on a shared worker, start from THEIR graph's policy
+  // declarations (`registry-environment.ts`), put in place before the body runs. An app keeps the
+  // union: its tests reach app modules through `loadApp()`, which no static graph shows.
+  const narrowed = (
+    live: ProcessRegistrySnapshot,
+    inherited: ProcessRegistrySnapshot,
+  ): ProcessRegistrySnapshot => {
+    if (inApp || graph === undefined) return inherited;
+    const fresh = (names: readonly string[], before: readonly string[]): Set<string> =>
+      new Set(names.filter((name) => !before.includes(name)));
+    const kept = {
+      permissions: new Set([
+        ...preloadNames.permissions,
+        ...fresh(live.permissions, lastBoundary.permissions),
+      ]),
+      roles: new Set([
+        ...preloadNames.roles,
+        ...fresh(Object.keys(live.roles), Object.keys(lastBoundary.roles)),
+      ]),
+    };
+    const own = { ...inherited, ...ownEnvironment(inherited, graph, kept) };
+    restorePolicyRegistries(own);
+    return own;
   };
 
   // Both called from the file's own source, once per test file. At the body's START everything
@@ -218,8 +258,9 @@ export function installRegistryLeakGuard(): void {
   hookHost[BODY_START_HOOK] = () => {
     reruns.bodyStart();
     if (pending === undefined) return;
-    accumulated = mergeSnapshots(accumulated, captureProcessRegistries());
-    current = { file: pending, before: undefined, snapshot: accumulated };
+    const live = captureProcessRegistries();
+    accumulated = mergeSnapshots(accumulated, live);
+    current = { file: pending, before: undefined, snapshot: narrowed(live, accumulated) };
     pending = undefined;
   };
   hookHost[BASELINE_HOOK] = () => {
@@ -245,6 +286,8 @@ export function installRegistryLeakGuard(): void {
         runFileBoundary();
         close();
         pending = repoRelative(args.path);
+        // Read before the file evaluates — a body-start hook is synchronous and this is not.
+        graph = inApp ? undefined : await graphOf(args.path);
         // `loading` closes the previous file's window first (`fileEnd`).
         reruns.loading(args.path);
         return {

@@ -156,6 +156,10 @@ select (extract(epoch from last_fired_at) * 1000)::bigint as last_fired_at
  * `greatest` and not a plain assignment: the watermark only ever moves FORWARD. Two rounds that
  * overlapped across a rolling restart would otherwise let the older one rewind it, and every
  * occurrence between the two values fires a second time.
+ *
+ * The `where` writes nothing when the watermark would not move (the `greatest` stays as the forward
+ * rule read at a glance): a `do update` whose `greatest` kept the old value still wrote a row version, a dead tuple per task per round on a table of a few
+ * dozen rows (`driver-pg-scheduler-mark.live.test.ts`). `updated_at` is when it last MOVED.
  */
 export const SQL_SCHEDULER_STATE_MARK = `
 insert into x_scheduler_state (task_name, last_fired_at, updated_at)
@@ -163,6 +167,7 @@ values ($1, to_timestamp($2 / 1000.0), now())
 on conflict (task_name) do update
    set last_fired_at = greatest(x_scheduler_state.last_fired_at, excluded.last_fired_at),
        updated_at    = now()
+ where x_scheduler_state.last_fired_at < excluded.last_fired_at
 `.trim();
 
 /**

@@ -26,6 +26,7 @@ import { nowMs } from './clock';
 import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
+import { loopHeartbeat } from './loop-heartbeat';
 import type { DispatchedOccurrence } from './scheduler-dispatch';
 import { dispatchOccurrence } from './scheduler-dispatch';
 import { taskMemory } from './scheduler-known';
@@ -331,12 +332,16 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
    */
   // A restart fails every round until it ends: one line opens the streak, one closes it.
   const tickFailures = tickStreak('scheduler');
+  // Liveness: a round held open past the bound — a lease or fire that never answers — is a wedge.
+  const heartbeat = loopHeartbeat('jobs.scheduler', { tickMs: tickIntervalMs });
   const schedule = (): void => {
     timer = setTimeout(() => {
+      const leave = heartbeat.enter();
       void tick()
         .then(tickFailures.onPassed)
         .catch(tickFailures.onError)
         .finally(() => {
+          leave();
           if (state === 'running') schedule();
         });
     }, tickIntervalMs);
@@ -350,6 +355,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
   const stopDispatching = (): void => {
     if (state === 'stopped') return;
     state = 'draining';
+    heartbeat.stop();
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
   };
@@ -427,6 +433,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
       tickFailures.onStart();
+      heartbeat.start();
       // TWO hooks, for the two phases. `accept` stops dispatching and returns — an occurrence
       // enqueued during the drain is work nothing in this process is left to run, and every hook
       // behind this one still has the whole budget. `close` waits the round out and hands the

@@ -92,11 +92,21 @@ export function restoreProcessRegistries(snapshot: ProcessRegistrySnapshot): voi
   // a partial call can never widen `supported` back.
   configureLocales(snapshot.locales);
   restoreCatalogs(snapshot.catalogs);
-  restorePermissions(snapshot.permissions, snapshot.permissionSites);
-  restoreRoles(snapshot.roles, snapshot.roleSites);
+  restorePolicyRegistries(snapshot);
   restoreTasks(snapshot.tasks);
   if (snapshot.measurementActor === undefined) resetMeasurementActor();
   else defineMeasurementActor(snapshot.measurementActor);
+}
+
+/** The permission set and the role map alone, each with its declaration sites. */
+export function restorePolicyRegistries(
+  snapshot: Pick<
+    ProcessRegistrySnapshot,
+    'permissions' | 'permissionSites' | 'roles' | 'roleSites'
+  >,
+): void {
+  restorePermissions(snapshot.permissions, snapshot.permissionSites);
+  restoreRoles(snapshot.roles, snapshot.roleSites);
 }
 
 /**

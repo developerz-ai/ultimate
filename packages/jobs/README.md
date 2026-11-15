@@ -1448,6 +1448,7 @@ A process that answers is not a loop that turns. Each long-running loop holds a 
 | Loop | Heartbeat | Tick | Wedge it catches |
 |---|---|---|---|
 | `worker` claim loop (`worker-loop.ts`) | `jobWorker`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim that never returns (`held`), a timer never re-armed (`silent`) |
+| outbox relay (`outbox-relay.ts`) | `outboxRelay`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim or publish that never returns (`held`), a timer never re-armed (`silent`) |
 | `replicator` (cli `role-replicator.ts`) | `realtime.replicator`, event-driven | 10 s, the feed's status interval | a change whose publish never returns (`held`); a quiet feed is healthy |
 
 A stopped or draining loop is not judged: `stop()` releases its heartbeat.
@@ -1547,12 +1548,13 @@ terminal dead letter appends its verdict to `lastError` so `x jobs show` explain
 
 ## Limits
 
-Two layers, and the difference matters:
+Three layers, and the difference matters:
 
 | Layer | Scope | Where |
 |---|---|---|
 | `LimitConfig` — `perTenant`, `perQueue`, `global`, `ratePerTenant` | **this process only** | `limits.ts`, three `Map`s in one heap |
-| `job.concurrency` | **the fleet** | `JobDriver.leases` over `x_job_leases` |
+| `job.concurrency` | **the fleet**, one job | `JobDriver.leases` over `x_job_leases` |
+| `job({ limiter })` — `limiter(name, { rate, concurrency })` | **the fleet**, every job naming it | `JobDriver.leases` over `x_job_leases`, keys `limiter:<name>:rate` / `:concurrency` |
 
 `LimitConfig` is the fast path and is multiplied by your replica count: `perTenant: 2` on twenty
 pods is forty concurrent runs, and `ratePerTenant`'s window is in memory, so a rolling restart
@@ -1567,6 +1569,29 @@ cannot hold the cap, so `jobWorker().start()` **refuses to boot**
 
 Over any cap the claim is handed straight back without burning an attempt — one org's 50k-row
 import cannot starve the fleet.
+
+### A named budget: `limiter()`
+
+```ts
+// jobs/vendor-limiter.ts — declared ONCE, imported by every job that calls the vendor
+export const vendorApi = limiter('vendor-api', { rate: { limit: 10, windowMs: 1_000 }, concurrency: 4 });
+
+export const syncInvoice = job({ /* … */ limiter: vendorApi, async run({ input, step }) { /* … */ } });
+export const refundCharge = job({ /* … */ limiter: vendorApi, async run({ input, step }) { /* … */ } });
+```
+
+| Rule | Enforced by |
+|---|---|
+| `rate`: at most `limit` starts in ANY `windowMs`, fleet-wide — a sliding window, no burst past it | one `x_job_leases` row per start, TTL the window, never released (`limiter-gate.ts`) |
+| `concurrency`: at most this many runs holding the limiter at once, fleet-wide | one row per held slot, renewed while the body runs, released when it ends, reclaimed by TTL (the visibility timeout) after a SIGKILL |
+| a run over either is **deferred, uncounted** | the gate throws `X_RATE_LIMITED` with `retryAfterSeconds` (when the oldest start lapses; 1 s for a full concurrency cap) — `executeJob`'s `rateLimitDeferralMs`, so a backlog waits and is never dead-lettered for waiting |
+| the per-process fast path refuses a concurrency this heap alone already fills, with no round trip | `limits.ts`' `concurrencyLimiter({ perQueue })`, keyed by the limiter's name. Never the rate: a window is time, and the store keeps its own |
+| whole numbers ≥ 1, `rate.limit` ≤ `MAX_LIMITER_RATE` (1,000), a name of `[a-z0-9._-]`, one set of numbers per name | `X_JOB_DECLARATION_INVALID` at `limiter()`; a non-`limiter()` value at `job()` |
+| a driver with no `leases` | `X_JOB_CONCURRENCY_UNENFORCEABLE` when the run starts (a counted failure) — never a per-process budget |
+
+The gate wraps the BODY, so a refusal happens before the first `step.run` and replays nothing.
+Every attempt is a start: a retried run spends the rate again. A slot lost mid-run (its renewal
+answered "not yours") is logged `jobs.limiter.slot-lost`, not cancelled.
 
 ### The process cap: `maxInFlight`
 
@@ -1942,6 +1967,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `JobTenantMismatchError` | `X_JOB_TENANT_MISMATCH` | `src/errors-tenant.ts` |
 | `JobTimeoutError` | `X_JOB_TIMEOUT` | `src/errors.ts` |
 | `LeaseLostError` | `X_JOB_LEASE_LOST` | `src/errors.ts` |
+| `LimiterDeclarationInvalidError` (not exported) | `X_JOB_DECLARATION_INVALID` | `src/limiter-errors.ts` |
+| `LimiterRefusedError` (not exported) | `X_RATE_LIMITED` | `src/limiter-errors.ts` |
+| `LimiterUnenforceableError` (not exported) | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `src/limiter-errors.ts` |
 
 ## Boundary
 

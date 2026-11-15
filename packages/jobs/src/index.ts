@@ -247,6 +247,8 @@ export type { LedgerDefinition, LedgerEntry, LedgerPosting } from './ledger';
 export { assertBalancedPosting, ledger, ledgerLines } from './ledger';
 export type { EntityLedgerBookOptions, LedgerBook, LedgerLine } from './ledger-book';
 export { entityLedgerBook } from './ledger-book';
+export type { JobLimiter, LimiterOptions } from './limiter';
+export { limiter, MAX_LIMITER_RATE } from './limiter';
 export type { Lease, LimitConfig, Limiter, LimitSnapshot, RateLimit } from './limits';
 export { concurrencyLimiter, NO_TENANT } from './limits';
 export type { HeldLock, WithLockOptions } from './lock';
