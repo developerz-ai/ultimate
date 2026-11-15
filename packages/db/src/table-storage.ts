@@ -1,8 +1,8 @@
-// Single responsibility: a framework-owned table's storage parameters (`fillfactor`, `unlogged`, the
-// autovacuum triggers of `table-autovacuum.ts`) as
-// ONE declared value — rendered into its `create table`, re-applied to an existing table by
-// idempotent `alter`s at framework-schema apply, and compared against `pg_class` by drift. Before
-// it, framework DDL was fixed strings and nothing could state either parameter.
+// Single responsibility: a framework-owned table's storage parameters (`fillfactor`, `unlogged`,
+// `table-autovacuum.ts`' triggers) as ONE declared value — rendered into its `create table`,
+// re-applied by idempotent `alter`s at framework-schema apply, compared against `pg_class` by drift.
+//
+// Before it, framework DDL was fixed strings and nothing could state either parameter.
 //
 // The API, as a framework package uses it (`@ultimat3/http`'s `x_rate_limit`, `@ultimat3/jobs`):
 //

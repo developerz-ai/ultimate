@@ -25,9 +25,9 @@ export const LOG_LEVEL_PINS: Readonly<Record<string, LogLevelPin>> = {
       'why: `server.ts` writes `ultimate <role> listening` and `ultimate <role> stopped`, once per boot and once per stop — lifecycle.',
   },
   jobs: {
-    count: 10,
+    count: 9,
     reason:
-      'why: lifecycle — `scheduler.ts` started/draining and already-fired (another node fired the occurrence first, a rare handoff), `worker.ts` started/draining/drain-signalled; rare outcomes — `execute.ts` attempt interrupted/rate_limited, `heartbeat.ts` lease cancelled, `worker-key-busy.ts` attempt refused (review: a hot key refuses every attempt).',
+      'why: lifecycle — `scheduler.ts` started/draining, `scheduler-dispatch.ts` already-fired (another node fired the occurrence first, a rare handoff), `worker.ts` started/draining/drain-signalled; rare outcomes — `execute.ts` attempt interrupted/rate_limited, `heartbeat.ts` lease cancelled, `worker-key-busy.ts` attempt refused (review: a hot key refuses every attempt).',
   },
   mail: {
     count: 1,

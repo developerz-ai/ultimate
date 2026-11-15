@@ -197,6 +197,7 @@ describe('the postgres auth limiter', () => {
       table: 'x_auth_lockouts',
       fillfactor: undefined,
       unlogged: false,
+      autovacuum: undefined,
     });
     expect(SQL_AUTH_LIMIT_TABLES).not.toContain('create unlogged table');
     expect(SQL_AUTH_LIMIT_TABLES).toContain('alter table x_auth_lockouts set logged;');

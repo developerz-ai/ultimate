@@ -2,6 +2,7 @@
 // replicator publishing it onto a real bus, `sync` nodes each on its own bus connection and its own
 // `Bun.serve` port, and pages dialling them over real websockets through `LiveClient`. What a page
 // was sent is recorded off the wire, so loss and duplication are read from frames, not from state.
+//
 // A `-fixture.ts` file is test material and is excluded from the package tarball.
 
 import { frozenClock } from '@ultimat3/core';

@@ -59,8 +59,17 @@ describe('jobs', () => {
   });
 
   test('a limiter declared, edited or removed is internal — an unchanged one is no change', () => {
-    const named = { name: 'vendor', rate: { limit: 10, windowMs: 1_000 }, concurrency: null };
-    const at = (limiter?: typeof named) =>
+    type Named = {
+      name: string;
+      rate: { limit: number; windowMs: number } | null;
+      concurrency: number | null;
+    };
+    const named: Named = {
+      name: 'vendor',
+      rate: { limit: 10, windowMs: 1_000 },
+      concurrency: null,
+    };
+    const at = (limiter?: Named) =>
       fixtureManifest({ jobs: job(limiter === undefined ? {} : { limiter }) });
     const changed = (before: ReturnType<typeof at>, after: ReturnType<typeof at>) =>
       paths(before, after).internal.map((c) => c.path);

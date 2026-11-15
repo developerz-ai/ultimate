@@ -1575,10 +1575,34 @@ import cannot starve the fleet.
 
 ```ts
 // jobs/vendor-limiter.ts — declared ONCE, imported by every job that calls the vendor
+import { job, limiter, t } from '@ultimat3/jobs';
+
 export const vendorApi = limiter('vendor-api', { rate: { limit: 10, windowMs: 1_000 }, concurrency: 4 });
 
-export const syncInvoice = job({ /* … */ limiter: vendorApi, async run({ input, step }) { /* … */ } });
-export const refundCharge = job({ /* … */ limiter: vendorApi, async run({ input, step }) { /* … */ } });
+declare const vendor: { sync(id: string): Promise<void>; refund(id: string): Promise<void> };
+const Invoice = t.object({ orgId: t.uuid, invoiceId: t.string });
+
+export const syncInvoice = job({
+  input: Invoice,
+  idempotencyKey: ({ invoiceId }) => `sync:${invoiceId}`,
+  tenant: ({ orgId }) => orgId,
+  retry: { attempts: 5, backoff: 'exponential' },
+  limiter: vendorApi, // the same value in every job that calls the vendor
+  async run({ input, step }) {
+    await step.run('sync', () => vendor.sync(input.invoiceId));
+  },
+});
+
+export const refundCharge = job({
+  input: Invoice,
+  idempotencyKey: ({ invoiceId }) => `refund:${invoiceId}`,
+  tenant: ({ orgId }) => orgId,
+  retry: { attempts: 5, backoff: 'exponential' },
+  limiter: vendorApi,
+  async run({ input, step }) {
+    await step.run('refund', () => vendor.refund(input.invoiceId));
+  },
+});
 ```
 
 | Rule | Enforced by |

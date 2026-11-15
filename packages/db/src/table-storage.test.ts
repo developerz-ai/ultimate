@@ -195,14 +195,16 @@ describe('autovacuum', () => {
       options: 'autovacuum_vacuum_threshold=100, autovacuum_analyze_threshold=100',
     };
     expect(tableStorageDrift(OUTBOX, live)).toEqual(
-      ['autovacuum_vacuum_scale_factor', 'autovacuum_analyze_scale_factor'].map((parameter) => ({
-        table: 'x_outbox',
-        parameter,
-        declared: '0.02',
-        live: 'default',
-        statement: `${SET};`,
-        fix: `psql "$DATABASE_URL" -c '${SET};'   # then x db migrate, which re-checks`,
-      })),
+      (['autovacuum_vacuum_scale_factor', 'autovacuum_analyze_scale_factor'] as const).map(
+        (parameter) => ({
+          table: 'x_outbox',
+          parameter,
+          declared: '0.02',
+          live: 'default',
+          statement: `${SET};`,
+          fix: `psql "$DATABASE_URL" -c '${SET};'   # then x db migrate, which re-checks`,
+        }),
+      ),
     );
   });
 
@@ -223,7 +225,9 @@ describe('autovacuum', () => {
     ['a key inherited from Object.prototype', { constructor: 1 }],
     ['another inherited key', { toString: 5 }],
   ])('refuses %s', (_label, autovacuum) => {
-    expect(() => tableStorage('x_t', { autovacuum })).toThrow(DbError);
+    // Typed loosely on purpose: a JavaScript caller, or a spread of parsed config, reaches here.
+    const options = { autovacuum } as unknown as Parameters<typeof tableStorage>[1];
+    expect(() => tableStorage('x_t', options)).toThrow(DbError);
   });
 
   test('the bounds themselves are accepted', () => {

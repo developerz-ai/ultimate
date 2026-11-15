@@ -4078,7 +4078,7 @@
       "subsetTranslator": {"hash":"c62815a0173bc4aa","shape":{"kind":"function","head":"73e1a350","params":["87fa7e3a"],"returns":"e6fe8ee2"}}
     },
     "@ultimat3/jobs": {
-      "AnnounceExhaustedOptions": {"hash":"c1d6fbab883d57ae","shape":{"kind":"members","head":"478e9859","members":{"context":"745b9a17","driver":"?6ff5be79","exhausted":"d4058bb8","workerId":"1fb0a448"}}},
+      "AnnounceExhaustedOptions": {"hash":"7f2c8112b5ac45a2","shape":{"kind":"members","head":"478e9859","members":{"clock":"?5a6c9eb0","context":"745b9a17","driver":"?6ff5be79","exhausted":"d4058bb8","workerId":"1fb0a448"}}},
       "AnyJobHandle": {"hash":"6cc4286ad7471165"},
       "BACKFILL_STATES": {"hash":"415e3781959290d9"},
       "BACKFILL_STATUSES": {"hash":"394f27f095631eef"},
@@ -4237,6 +4237,7 @@
       "MAX_BULK_ROWS": {"hash":"fb38df244cb10bb5"},
       "MAX_ENQUEUE_BATCH": {"hash":"43bda9dee1466a4c"},
       "MAX_JOB_PAGE": {"hash":"942a97e9fce55674"},
+      "MAX_LIMITER_CONCURRENCY": {"hash":"e83a296f676816bd"},
       "MAX_LIMITER_RATE": {"hash":"2fd9b08b5bae8f5d"},
       "MAX_TASK_FIRES": {"hash":"475e601791bcda7f"},
       "MAX_TRACE_NAMES": {"hash":"7a30febef2f7765e"},

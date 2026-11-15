@@ -30,9 +30,8 @@ describe('unit · replicator heartbeat', () => {
   test('heldBy opens a pass per change and closes it however the handler ends', async () => {
     const beat = counting();
     const ok = heldBy(beat, async () => undefined);
-    const bad = heldBy(beat, async () => {
-      throw new TypeError('refused');
-    });
+    // The handler's failure is the subject's input, handed over rather than thrown.
+    const bad = heldBy(beat, () => Promise.reject(new TypeError('refused')));
     await ok(change(1));
     await expect(bad(change(2))).rejects.toThrow('refused');
     expect(beat).toMatchObject({ open: 0, entered: 2 });

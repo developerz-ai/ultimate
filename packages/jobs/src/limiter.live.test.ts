@@ -78,6 +78,13 @@ const tightestSpan = (starts: readonly Start[], limit: number): number => {
   return tightest;
 };
 
+// File scope, not inside the skipped block: Bun evaluates a skipped file's module body, and the
+// jobs and limiters it declares would otherwise leak into every later file in the process.
+afterAll(() => {
+  resetJobs();
+  resetLimiters();
+});
+
 describe.skipIf(!hasPostgres)('live · postgres · a named limiter across replicas', () => {
   let admin: PostgresClient;
   const clients: PostgresClient[] = [];

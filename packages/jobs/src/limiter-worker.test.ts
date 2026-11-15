@@ -208,9 +208,10 @@ describe('a run retried after its first step failed', () => {
       retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: 'none' },
       limiter: limiter('vendor', { rate: { limit: 1, windowMs: 3_600_000 } }),
       async run({ step }) {
+        // The subject's input, handed over rather than thrown: the vendor's failure.
         await step.run('call', () => {
           calls += 1;
-          throw new TypeError('the vendor answered 500');
+          return Promise.reject(new TypeError('the vendor answered 500'));
         });
       },
     });

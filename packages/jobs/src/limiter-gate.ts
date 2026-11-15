@@ -1,8 +1,9 @@
 // Spending a named `limiter()` around one run's body: a concurrency slot held for the run and a
-// rate stamp held for the window, both rows in the installed driver's `LeaseStore` — so the budget
-// holds across every replica — behind `limits.ts`' per-process fast path, which refuses without a
-// round trip what this process alone already proves is over. A refusal is `X_RATE_LIMITED`, which
-// `executeJob` defers with the attempt uncounted.
+// rate stamp held for the window, both rows in the installed driver's `LeaseStore`, so the budget
+// holds across every replica. A refusal is `X_RATE_LIMITED`, deferred with the attempt uncounted.
+//
+// In front sits `limits.ts`' per-process fast path, refusing with no round trip what this process
+// alone already proves is over.
 
 import type { Clock } from '@ultimat3/core';
 import { liveClock, logger, renderThrowable } from '@ultimat3/core';

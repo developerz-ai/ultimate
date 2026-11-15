@@ -246,6 +246,7 @@ describe('what counts as a re-entry', () => {
     name: 'call',
     status,
     startedAt: 0,
+    attempts: 1,
   });
 
   test('only a step that did its work: completed, sleeping, waiting — never failed, started, cleared', () => {
