@@ -600,6 +600,7 @@
         "@ultimat3/schema": "31.24.0",
         "@ultimat3/seo": "31.24.0",
         "sass": "1.106.1",
+        "source-map-js": "^1.2.2",
       },
     },
     "packages/schema": {

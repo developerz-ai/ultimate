@@ -75,4 +75,8 @@ export const DEPENDENCY_ALLOWLIST: Readonly<Record<string, { readonly reason: st
   'packages/render/package.json#dependencies#sass': {
     reason: 'The render package compiles its own Sass design tokens.',
   },
+  'packages/render/package.json#dependencies#source-map-js': {
+    reason:
+      'Not new third-party code and never imported here: a range floor over the copy sass already pulls in (GHSA-68fv-2mgg-jv7q), so a consumer of the published package cannot resolve 1.2.1.',
+  },
 };

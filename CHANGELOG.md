@@ -10,7 +10,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+- Security: `@ultimat3/render` declares `source-map-js` at `^1.2.2`, so a consumer of the published package can no longer resolve the vulnerable 1.2.1 ([GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)). A range floor over the copy `sass` already pulls in — `sass` declares it, never loads it — adding no package to the graph. The framework's own lockfile has resolved 1.2.2 since 31.13.1, so this release moves the consumer floor, not the tree.
 
 ## Releases
 

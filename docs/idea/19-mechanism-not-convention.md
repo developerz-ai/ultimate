@@ -133,7 +133,10 @@ Across all 31 published packages the only third-party runtime dependencies are *
 (`@ultimat3/realtime`) and **`sass`** (`@ultimat3/render`), both at a driver/transport seam, and
 **`@babel/core`** + **`babel-preset-solid`** (`@ultimat3/cli`, the tier-5 build tool: Solid's
 reactivity is a compile-time contract the island bundler runs) — all under
-[`18-build-vs-wrap.md`](./18-build-vs-wrap.md)'s criterion. Verified `As of 2026-10`:
+[`18-build-vs-wrap.md`](./18-build-vs-wrap.md)'s criterion. One more name is DECLARED and never
+imported: **`source-map-js`** (`@ultimat3/render`), a **range floor** over `sass`'s own
+`>=0.6.2 <2.0.0` (GHSA-68fv-2mgg-jv7q), so a consumer of the published package cannot resolve
+1.2.1. Verified `As of 2026-11`:
 
 ```sh
 jq -r '(.dependencies // {}) | keys[]' packages/*/package.json | grep -v '^@ultimat3/' | sort -u
@@ -141,6 +144,7 @@ jq -r '(.dependencies // {}) | keys[]' packages/*/package.json | grep -v '^@ulti
 # babel-preset-solid
 # nats
 # sass
+# source-map-js
 ```
 
 So `bun add @ultimat3/money` is a reasonable thing to do in a project that is not an Ultimate app at
