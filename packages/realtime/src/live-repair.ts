@@ -3,6 +3,7 @@
 // mark. Split from `live-query.ts` at its size ceiling: the registry owns the tables, this owns
 // what a repair does with them.
 
+import { mapBounded } from '@ultimat3/core';
 import type { LiveEntries } from './live-entries';
 import { type FanoutDeps, repairSubscriber, repairWindow } from './live-fanout';
 import type { SyncSocket } from './socket';
@@ -31,14 +32,23 @@ export async function repairSocket(
   return (await Promise.all(repairs)).filter(Boolean).length;
 }
 
+/**
+ * How many windows one sweep re-reads at once. A bus reconnect reaches every node together, and
+ * each sweeps every window: unbounded, N windows × M nodes queued on the pool past the read deadline
+ * and re-staled the windows they were repairing.
+ */
+export const REPAIR_WIDTH = 8;
+
 /** The node's sweep: every window owing a mark, each in its lane, one read a window at most. */
 export async function repairEveryWindow(fanout: FanoutDeps, entries: LiveEntries): Promise<number> {
-  const lanes = [...entries.values()].map((entry) =>
-    entry.lock.run(() => repairWindow(fanout, entry)),
+  const lanes = await mapBounded(
+    [...entries.values()],
+    (entry) => entry.lock.run(() => repairWindow(fanout, entry)),
+    { width: REPAIR_WIDTH, settle: 'all' },
   );
   let sent = 0;
   let failure: { readonly error: unknown } | null = null;
-  for (const lane of await Promise.allSettled(lanes)) {
+  for (const lane of lanes) {
     if (lane.status === 'fulfilled') sent += lane.value;
     else failure ??= { error: lane.reason };
   }
