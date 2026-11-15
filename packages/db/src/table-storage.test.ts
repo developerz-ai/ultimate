@@ -96,6 +96,10 @@ describe('tableStorageDrift', () => {
     expect(tableStorageDrift(HOT, { unlogged: true, options: 'fillfactor=70' })).toEqual([]);
   });
 
+  test('a fillfactor written with a leading zero is the number it states', () => {
+    expect(tableStorageDrift(HOT, { unlogged: true, options: 'fillfactor=070' })).toEqual([]);
+  });
+
   test('a fillfactor among other options is found', () => {
     const live = { unlogged: true, options: 'autovacuum_enabled=false, fillfactor=70' };
     expect(tableStorageDrift(HOT, live)).toEqual([]);
@@ -216,6 +220,8 @@ describe('autovacuum', () => {
     ['a negative scale factor', { vacuumScaleFactor: -0.1 }],
     ['a scale factor over 100', { analyzeScaleFactor: 101 }],
     ['an infinite scale factor', { vacuumScaleFactor: Number.POSITIVE_INFINITY }],
+    ['a key inherited from Object.prototype', { constructor: 1 }],
+    ['another inherited key', { toString: 5 }],
   ])('refuses %s', (_label, autovacuum) => {
     expect(() => tableStorage('x_t', { autovacuum })).toThrow(DbError);
   });

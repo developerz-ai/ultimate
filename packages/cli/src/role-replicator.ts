@@ -199,13 +199,20 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   // terminated the old holder, so every rollout stalled (`replicator.ts`'s header: the loser stays
   // up, unready).
   let cancelStandby = (): void => undefined;
-  if (!(await replicator.start())) {
-    if (options.dev) throw new ReplicatorSlotHeldError({ key });
-    logger.warn('replicator.standby', { key, detail: 'another process holds the slot' });
-    cancelStandby = standBy(replicator, key);
+  // Started BEFORE the feed: a change the feed delivers while it starts opens a pass, and a start
+  // after it would clear that pass. Judged by `/healthz` on the scrape port (`runtime-liveness.ts`).
+  heartbeat.start();
+  try {
+    if (!(await replicator.start())) {
+      if (options.dev) throw new ReplicatorSlotHeldError({ key });
+      logger.warn('replicator.standby', { key, detail: 'another process holds the slot' });
+      cancelStandby = standBy(replicator, key);
+    }
+  } catch (error) {
+    heartbeat.stop();
+    throw error;
   }
   const unregister = watchReplicatorReadiness(replicator);
-  heartbeat.start(); // judged by `/healthz` on the scrape port (`runtime-liveness.ts`)
   return {
     replicator,
     slot,

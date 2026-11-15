@@ -67,7 +67,8 @@ export function tableStorageDrift(
     });
   }
   const fillfactor = reloption(live.options, 'fillfactor');
-  if (storage.fillfactor !== undefined && String(storage.fillfactor) !== fillfactor) {
+  // A number, as below: a hand-written `fillfactor = 080` is held as that text.
+  if (storage.fillfactor !== undefined && Number(fillfactor ?? Number.NaN) !== storage.fillfactor) {
     differences.push({
       table,
       parameter: 'fillfactor',

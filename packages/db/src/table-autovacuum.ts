@@ -32,7 +32,8 @@ const INT4_MAX = 2 ** 31 - 1;
  */
 export function autovacuumProblem(autovacuum: TableAutovacuum): string | undefined {
   for (const [key, value] of Object.entries(autovacuum)) {
-    if (!(key in PARAMETERS)) return `autovacuum.${key} is not a parameter this declaration knows`;
+    if (!Object.hasOwn(PARAMETERS, key))
+      return `autovacuum.${key} is not a parameter this declaration knows`;
     if (typeof value !== 'number') return `autovacuum.${key} is not a number`;
     const threshold = key.endsWith('Threshold');
     const fits = threshold

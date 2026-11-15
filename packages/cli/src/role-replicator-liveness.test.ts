@@ -33,13 +33,18 @@ afterEach(() => {
   resetLifecycle();
 });
 
-const holder = (): {
+const holder = (
+  onStart: (options: ReplicatorOptions) => void = () => undefined,
+): {
   create: (options: ReplicatorOptions) => Replicator;
   seen: () => ReplicatorOptions;
 } => {
   let seen: ReplicatorOptions | undefined;
   const replicator: Replicator = {
-    start: async () => true,
+    start: async () => {
+      if (seen !== undefined) onStart(seen);
+      return true;
+    },
     stop: async () => undefined,
     running: true,
     lastLsn: () => null,
@@ -79,5 +84,26 @@ describe('unit · replicator liveness', () => {
       await transport.close();
     }
     expect(livenessPayload().status).toBe(200);
+  });
+
+  test('a pass the feed opens while it starts is still judged', async () => {
+    // The feed may deliver a backlog before `start()` resolves; a heartbeat started after it
+    // cleared that pass, so a publish hung there was never seen.
+    const fake = holder((options) => options.heartbeat?.enter());
+    const transport = new InProcessTransport();
+    const running = await startReplicator({
+      services,
+      env: { DATABASE_URL: services.db.url },
+      transport,
+      dev: false,
+      create: fake.create,
+    });
+    try {
+      jest.advanceTimersByTime(LIVENESS_FLOOR_MS + 1);
+      expect(staleLoops().map((loop) => loop.name)).toEqual(['realtime.replicator']);
+    } finally {
+      await running.stop();
+      await transport.close();
+    }
   });
 });
