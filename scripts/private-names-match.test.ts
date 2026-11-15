@@ -75,6 +75,8 @@ describe('private-names-match · a private repository', () => {
   test.each([
     'the vault (#12)',
     'vault 2232',
+    'vault #tag',
+    'vault #',
     'vault-tools #3',
     'vaults #3',
     'xvault #3',
