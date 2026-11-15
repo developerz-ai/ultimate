@@ -56,6 +56,11 @@ describe('withIslandChunks', () => {
   });
 
   test('a slice that recorded no map reads as no maps', async () => {
-    expect((await readChunkMaps(join(tmpdir(), 'ultimate-no-such-slice'))).size).toBe(0);
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-coverage-no-maps-'));
+    try {
+      expect((await readChunkMaps(join(root, 'part'))).size).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

@@ -15,15 +15,19 @@ import {
   listenUnsupported,
 } from './listen';
 import { PGLITE_INSTANT_PARSERS } from './pg-instant';
-import type { PgliteDataSnapshot } from './pglite-data-snapshot';
 import { linkPgliteExtensions, type PgliteExtensionLoader } from './pglite-extensions';
 import { PGLITE_PACKAGE } from './pglite-package';
 import {
+  dataSnapshotFor,
   discardSnapshot,
+  markRestored,
+  type PgliteDataSnapshot,
   pgliteVersion,
   readSnapshot,
+  saveDataSnapshot,
   snapshotFile,
   snapshotKey,
+  wasRestored,
   writeSnapshot,
 } from './pglite-snapshot';
 import { createTurnQueue } from './pglite-turns';
@@ -95,7 +99,7 @@ export interface PgliteOptions {
   /** Swap how the installed PGlite version is read. Tests use it; `undefined` disables caching. */
   readonly version?: (() => Promise<string | undefined>) | undefined;
   /**
-   * A caller-keyed snapshot of the WHOLE data directory (`pglite-data-snapshot.ts`): restored at
+   * A caller-keyed snapshot of the WHOLE data directory (`pglite-snapshot.ts`): restored at
    * boot when its file holds that key, written by `saveDataSnapshot()`. Read only for `memory://`.
    */
   readonly dataSnapshot?: PgliteDataSnapshot | undefined;
@@ -179,15 +183,11 @@ async function restore(
   }
 }
 
-// Loaded only by a boot that names a `dataSnapshot` (`x exercise`): every role's boot evaluates
-// this file, and a snapshot is never theirs.
-const snapshots = () => import('./pglite-data-snapshot');
-
 /** `options.dataSnapshot` under the installed PGlite, read only for an in-memory boot. */
 const dataSnapshotOf = async (options: PgliteOptions) =>
   options.dataSnapshot === undefined
     ? undefined
-    : (await snapshots()).dataSnapshotFor(
+    : dataSnapshotFor(
         options.dataSnapshot,
         (options.dataDir ?? PGLITE_MEMORY) === PGLITE_MEMORY,
         () => (options.version ?? pgliteVersion)(),
@@ -223,7 +223,7 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   if (data !== undefined) {
     const restored = await restore(PGlite, base, data.file, data.key);
     if (restored !== undefined) {
-      (await snapshots()).markRestored(restored);
+      markRestored(restored);
       return restored;
     }
   }
@@ -438,17 +438,13 @@ export function pgliteClient(options: PgliteOptions = {}): PgliteClient {
     },
     async restoredDataSnapshot(): Promise<boolean> {
       const driver = await connect();
-      return options.dataSnapshot !== undefined && (await snapshots()).wasRestored(driver);
+      return options.dataSnapshot !== undefined && wasRestored(driver);
     },
     async saveDataSnapshot(): Promise<boolean> {
       const driver = await connect();
       // A turn of its own: the dump is the session's whole state, never one mid-transaction.
       return turns.run(async () =>
-        (await snapshots()).saveDataSnapshot(
-          driver,
-          await dataSnapshotOf(options),
-          options.dataSnapshot?.keep,
-        ),
+        saveDataSnapshot(driver, await dataSnapshotOf(options), options.dataSnapshot?.keep),
       );
     },
     async close(): Promise<void> {

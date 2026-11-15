@@ -3,6 +3,7 @@
 // `docker/docker-compose.test.yml`, cut to what an app has. Ports sit apart from the dev stack's
 // so both can run at once; `ci.yml` starts this file before `bun run verify`.
 
+import { fnv1a } from '@ultimat3/core';
 import type { GeneratedFile, NameSet } from './naming';
 import { S3_GATEWAY_IMAGE } from './pinned-images';
 
@@ -17,20 +18,14 @@ export const TEST_PORT_SPREAD = 500;
 
 type TestPorts = { readonly [K in keyof typeof TEST_PORTS]: number };
 
-/** FNV-1a over the app's name: stable across machines and runs, no dependency. */
-const offsetOf = (name: string): number => {
-  let hash = 0x811c9dc5;
-  for (const char of name) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0;
-  return hash % TEST_PORT_SPREAD;
-};
-
 /**
  * This app's host ports, one place: the compose file publishes them and the env file names them.
  * One fixed set made two scaffolds on one machine share 55432, so the second app's live suites
  * dialled the first app's container; the app's name now picks its offset into each band.
  */
 export const testPorts = (app: NameSet): TestPorts => {
-  const offset = offsetOf(app.kebab);
+  // FNV-1a over the app's name: stable across machines and runs.
+  const offset = fnv1a(app.kebab) % TEST_PORT_SPREAD;
   return {
     postgres: TEST_PORTS.postgres + offset,
     redis: TEST_PORTS.redis + offset,

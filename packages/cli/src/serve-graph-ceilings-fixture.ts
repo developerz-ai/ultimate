@@ -321,8 +321,9 @@
  * the worker's visibility timeout, heartbeat and schedule handed to the limiter gate around a run.
  * raised 974 → 976, measured 976 (2026-11-15, plan 101b sweep 4): `http/src/config-tls.ts` (a
  * listener's own certificate, both PEMs or neither, screened where the config resolves) and
- * `http/src/local-caller.ts` (the one rule every dev-only disclosure asks). `db`'s data snapshot
- * stays behind an `await import()`: only `x exercise` names one.
+ * `http/src/local-caller.ts` (the one rule every dev-only disclosure asks). `db`'s caller-keyed data
+ * snapshot lives in `pglite-snapshot.ts`, already on this graph — never behind an `await import()`,
+ * which wrapped 24 modules of the browser rpc chunk in lazy-init code (+740 B).
  */
 export const MIGRATE_CEILING = 976;
 

@@ -100,6 +100,14 @@ describe('unit · the scaffolded test stack is fast and silent', () => {
     const shop = testPorts(names('shop'));
     const ledger = testPorts(names('ledger-demo'));
     expect(testPorts(names('shop'))).toEqual(shop);
+    // Pinned: dummy/docs-site's committed stack was generated from these, so a change to the
+    // derivation is a regenerate of every tracked app's stack, never a silent move.
+    expect(testPorts(names('docs-site'))).toEqual({
+      postgres: 55838,
+      redis: 56785,
+      nats: 54628,
+      s3: 59406,
+    });
     expect(shop.postgres).not.toBe(ledger.postgres);
     for (const ports of [shop, ledger]) {
       for (const key of Object.keys(TEST_PORTS) as (keyof typeof TEST_PORTS)[]) {

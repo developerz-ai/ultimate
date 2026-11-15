@@ -4,12 +4,13 @@
 
 // why: Bun ships no directory-exists probe (`Bun.file` answers files only).
 import { existsSync } from 'node:fs';
-// why: Bun ships no path API; `posix` names a module, `resolve`/`relative` key a map's sources.
-import { join, posix, relative, resolve, sep } from 'node:path';
+// why: Bun ships no path API; `posix` names a module, `resolve` places a map's sources.
+import { join, posix, resolve, sep } from 'node:path';
 import type { CoverageMap, FileCoverage, LcovRecord } from './coverage-lcov';
 import type { ChunkLines, ChunkMap } from './coverage-remap';
 import { chunkLines, withChunkLines } from './coverage-remap';
 import { readSource } from './coverage-source';
+import { posixRelative } from './posix-path';
 
 /** The subdirectory of a slice's coverage directory its island maps land in. */
 export const ISLAND_MAPS_DIR = 'islands';
@@ -66,7 +67,7 @@ export async function readChunkMaps(dir: string): Promise<ReadonlyMap<string, Ch
 const appKey =
   (root: string) =>
   (absolute: string): string | undefined => {
-    const key = relative(root, absolute).split(sep).join('/');
+    const key = posixRelative(root, absolute);
     return /^(?:apps|packages)\//.test(key) && !key.includes('/node_modules/') ? key : undefined;
   };
 
