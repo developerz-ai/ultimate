@@ -1,20 +1,12 @@
 // No-op bodies for the verbs `CdpPageLike` and `CdpBrowserLike` REQUIRE, for a test double that is
 // about something else — interception, redaction, a wedge. Spread them in; override one.
 //
-// They exist because the port stopped letting a launcher omit a verb `cdpTarget` forwards to
-// (2026-11-15), and twenty hand-built pages each restating seven no-ops is a copy that drifts.
+// They exist because `cdpTarget` takes a `CompleteCdpPage` (2026-11-15), and twenty hand-built
+// pages each restating seven no-ops is a copy that drifts.
 
-import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
+import type { CdpBrowserVerb, CdpPageVerb, CompleteCdpBrowser, CompleteCdpPage } from './cdp-port';
 
-type PageVerbs = Pick<
-  CdpPageLike,
-  | 'keyboard'
-  | 'focus'
-  | 'evaluateOnNewDocument'
-  | 'createCDPSession'
-  | 'setOfflineMode'
-  | 'emulateMediaFeatures'
->;
+type PageVerbs = Pick<CompleteCdpPage, CdpPageVerb>;
 
 export function stubPageVerbs(): PageVerbs {
   return {
@@ -33,6 +25,6 @@ export function stubPageVerbs(): PageVerbs {
 }
 
 /** An empty jar that accepts what it is given — a browser the test never reads cookies from. */
-export function stubCookieJar(): Pick<CdpBrowserLike, 'cookies' | 'setCookie'> {
+export function stubCookieJar(): Pick<CompleteCdpBrowser, CdpBrowserVerb> {
   return { cookies: () => Promise.resolve([]), setCookie: () => Promise.resolve() };
 }

@@ -9,8 +9,9 @@ import { axNodesFor } from './cdp-a11y';
 import { frameDocument } from './cdp-a11y-frame';
 import type { CdpArmInit } from './cdp-arm';
 import { arm, armBrowser } from './cdp-arm';
+import { completeSession } from './cdp-complete';
 import { downloadCatcher } from './cdp-download';
-import type { CdpFrameLike, CompleteCdpBrowser, CompleteCdpPage } from './cdp-port';
+import type { CdpBrowserLike, CdpFrameLike, CdpPageLike } from './cdp-port';
 import {
   clearExpression,
   focusExpression,
@@ -95,9 +96,13 @@ const isStructuralRefusal = (thrown: unknown): boolean =>
  * `driver-parity.test.ts` exists to refuse. `DEFAULT_RING_CAPACITY` is the one bound.
  */
 export interface CdpTargetInit extends CdpArmInit {
-  /** Proven complete when the session opened (`cdp-complete.ts`): every verb below is there. */
-  readonly page: CompleteCdpPage;
-  readonly browser: CompleteCdpBrowser;
+  /**
+   * Any launcher's page and browser — checked here, before anything is armed, for every verb the
+   * target forwards to (`cdp-complete.ts`): a missing one is `X_SCRAPE_LAUNCHER_INCOMPLETE` now,
+   * never a refusal at the call.
+   */
+  readonly page: CdpPageLike;
+  readonly browser: CdpBrowserLike;
   /**
    * Why the session was ended from OUTSIDE the call, if it was — the fired wedge guard's reason.
    * A thunk, because the guard is built after the target. Read before a failure is re-labelled:
@@ -107,7 +112,10 @@ export interface CdpTargetInit extends CdpArmInit {
   readonly ended?: (() => unknown) | undefined;
 }
 
-export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
+export async function cdpTarget(given: CdpTargetInit): Promise<ScrapeTarget> {
+  // First, before a listener or an interception is armed on a page that cannot serve the target.
+  const complete = completeSession(CDP_DRIVER, given.browser, given.page);
+  const init = { ...given, ...complete };
   const console_ = boundedRing<ConsoleLine>();
   const network = boundedRing<NetworkEntry>();
   const pageErrors = boundedRing<PageError>();

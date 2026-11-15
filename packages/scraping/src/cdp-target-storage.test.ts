@@ -15,7 +15,10 @@ import type { SessionSnapshot } from './session-state';
 const ORIGIN = 'https://shop.test';
 
 /** A page on `ORIGIN` that RUNS each evaluated expression against its own `localStorage`. */
-const storagePage = (): { readonly page: CdpPageLike; readonly stored: Map<string, string> } => {
+const storagePage = (): {
+  readonly page: CdpPageLike;
+  readonly stored: Map<string, string>;
+} => {
   const stored = new Map<string, string>();
   const localStorage = { setItem: (key: string, value: string) => stored.set(key, value) };
   const page: CdpPageLike = {

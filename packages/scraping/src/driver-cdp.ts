@@ -12,7 +12,6 @@
 
 import type { Logger } from '@ultimat3/core';
 import type { MoneyValue } from '@ultimat3/schema';
-import { completeSession } from './cdp-complete';
 import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
 import type { CdpResolver } from './cdp-resolver';
 import { acquireCdp } from './cdp-resolver';
@@ -92,13 +91,9 @@ async function opened(
   ended: () => unknown,
 ): Promise<ScrapeTarget> {
   try {
-    // Checked HERE, the first moment a page exists: a launcher missing a verb the target forwards
-    // to is refused before any verb runs, and the rollback below closes the browser it launched.
-    const { page, browser: complete } = completeSession(
-      CDP_DRIVER,
-      browser,
-      await browser.newPage(),
-    );
+    // `cdpTarget` checks the page and browser for every verb it forwards to before arming anything;
+    // a refusal there lands in the rollback below, which closes the browser this launched.
+    const page = await browser.newPage();
     if (wiring.authenticate && wiring.proxy !== undefined) {
       // Before the first navigation, and through its owner: the challenge arrives with the first
       // request, and `--proxy-server` was deliberately handed the exit WITHOUT its userinfo.
@@ -115,7 +110,7 @@ async function opened(
     }
     const target = await cdpTarget({
       page,
-      browser: complete,
+      browser,
       rules: init.rules,
       clock: init.clock,
       // Through an exit the EXIT resolves names, so the browser leg's DNS screen stands down — the

@@ -1,17 +1,16 @@
 // Every port method, callable on every target that declares it — the build error behind "a port
 // method one target cannot honour is a second path". The call tables are keyed by the port's own
-// members, so a member added to `ScrapeTarget` or `ScrapeFrameTarget` without a row here does not
-// compile, and a row whose target refuses (`X_NOT_IMPLEMENTED` or anything else) fails the run.
+// members, so a member added to `ScrapeTarget` without a row here does not compile, and a row whose
+// target refuses (`X_NOT_IMPLEMENTED` or anything else) fails the run — on a page and on a frame.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { fakeCdpBrowser } from './cdp-fake-fixture';
-import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
+import type { CdpBrowserLike, CdpPageLike, CompleteCdpBrowser, CompleteCdpPage } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { htmlTarget } from './html-target';
-import type { ScrapeFrame } from './page';
 import type { PageRecording } from './recording';
-import type { ScrapeFrameTarget, ScrapeTarget } from './target';
+import type { ScrapeTarget } from './target';
 
 const URL_A = 'https://shop.test/search';
 const HTML_A = `<html><body>
@@ -53,7 +52,13 @@ const cdp = async (): Promise<Subject> => {
   const browser = fakeCdpBrowser({
     url: 'about:blank',
     html: HTML_A,
-    frames: { login: { url: 'https://shop.test/login', html: FRAME_HTML } },
+    frames: {
+      login: {
+        url: 'https://shop.test/login',
+        html: FRAME_HTML,
+        accessibility: { '#user': [{ role: 'textbox', name: '', ignored: false }] },
+      },
+    },
     accessibility: { '#go': [{ role: 'button', name: 'Run search', ignored: false }] },
   });
   const target = await cdpTarget({
@@ -76,27 +81,45 @@ const cdp = async (): Promise<Subject> => {
   };
 };
 
-type FrameCalls = { readonly [K in keyof ScrapeFrameTarget]: (t: ScrapeFrameTarget) => unknown };
+/** The members that address a DOCUMENT — the ones a frame target answers from its own. */
+type DocumentVerb =
+  | 'url'
+  | 'content'
+  | 'query'
+  | 'click'
+  | 'type'
+  | 'clear'
+  | 'select'
+  | 'evaluate'
+  | 'press'
+  | 'focus'
+  | 'accessibility'
+  | 'frames';
+type DocumentCalls = { readonly [K in DocumentVerb]: (t: ScrapeTarget) => unknown };
 type PageCalls = {
-  readonly [K in Exclude<keyof ScrapeTarget, keyof ScrapeFrameTarget>]: (
+  readonly [K in Exclude<keyof ScrapeTarget, DocumentVerb>]: (
     t: ScrapeTarget,
     subject: Subject,
   ) => unknown;
 };
 
-const FRAME_CALLS: FrameCalls = {
+/** The document members against one element of that document, and the role it must read as. */
+const documentCalls = (selector: string, role: string): DocumentCalls => ({
   url: (t) => t.url(),
   content: (t) => t.content(),
-  query: (t) => t.query('#user'),
-  click: (t) => t.click('#user'),
-  type: (t) => t.type('#user', 'ada'),
-  clear: (t) => t.clear('#user'),
-  select: (t) => t.select('#user', ['ada']),
+  query: (t) => t.query(selector),
+  click: (t) => t.click(selector),
+  type: (t) => t.type(selector, 'ada'),
+  clear: (t) => t.clear(selector),
+  select: (t) => t.select(selector, ['ada']),
   evaluate: (t) => t.evaluate('1 + 1'),
   press: (t) => t.press('Enter'),
-  focus: (t) => t.focus('#user'),
+  focus: (t) => t.focus(selector),
+  accessibility: async (t) => {
+    expect(await t.accessibility(selector, 5)).toMatchObject([{ role }]);
+  },
   frames: (t) => t.frames(),
-};
+});
 
 /** The page-wide members, in an order a session can run them in: `close` is last. */
 const PAGE_CALLS: PageCalls = {
@@ -105,9 +128,6 @@ const PAGE_CALLS: PageCalls = {
   network: (t) => t.network.entries(),
   pageErrors: (t) => t.pageErrors.entries(),
   goto: (t) => t.goto(URL_A, { timeoutMs: 1_000 }),
-  accessibility: async (t) => {
-    expect(await t.accessibility('#go', 5)).toMatchObject([{ role: 'button', name: 'Run search' }]);
-  },
   setOfflineMode: async (t) => {
     await t.setOfflineMode(true);
     await t.setOfflineMode(false);
@@ -152,20 +172,23 @@ const refusals = async <T, C extends Record<string, (t: T, s: Subject) => unknow
 const subjects = async (): Promise<readonly Subject[]> => [html(), await cdp()];
 
 describe('unit · every ScrapeTarget member answers on every target', () => {
-  test('the page-wide members', async () => {
+  test('the page-wide members, after the document members on the page itself', async () => {
     for (const subject of await subjects()) {
+      await subject.target.goto(URL_A, { timeoutMs: 1_000 });
+      const onPage = documentCalls('#go', 'button');
+      expect(await refusals(onPage, subject.target, subject), subject.name).toEqual([]);
       expect(await refusals(PAGE_CALLS, subject.target, subject), subject.name).toEqual([]);
     }
   });
 
-  test("the frame members, on the page and on a frame's own target", async () => {
+  test("the document members, on a frame's own target — accessibility included", async () => {
     for (const subject of await subjects()) {
       await subject.target.goto(URL_A, { timeoutMs: 1_000 });
       const [frame] = await subject.target.frames();
       if (frame === undefined) throw expect.unreachable(`${subject.name} answered no frame`);
-      // On the page too: `ScrapeTarget` extends the frame verbs, and the page answers them for its
-      // own document (`#q` there, `#user` in the frame — both are typed into the same way).
-      expect(await refusals(FRAME_CALLS, frame.target, subject), subject.name).toEqual([]);
+      // `#user` exists only in the frame, so a verb that reached the PARENT document fails here.
+      const inFrame = documentCalls('#user', 'textbox');
+      expect(await refusals(inFrame, frame.target, subject), subject.name).toEqual([]);
     }
   });
 });
@@ -173,22 +196,22 @@ describe('unit · every ScrapeTarget member answers on every target', () => {
 /** True when `K` is a required member of `T` — absent from `T` is a compile error at the call. */
 type IsRequired<T, K extends keyof T> = Record<never, never> extends Pick<T, K> ? false : true;
 
-describe('unit · the narrowing is the type, not a runtime refusal', () => {
-  test('a frame has no page-wide verb, and the CDP port requires every verb it forwards to', () => {
-    // @ts-expect-error — a frame target has no accessibility read; asking does not compile
-    const frameAx: ScrapeFrameTarget['accessibility'] = undefined;
-    // @ts-expect-error — nor does the public frame handle
-    const handleAx: ScrapeFrame['accessibility'] = undefined;
-    const required: readonly true[] = [
-      true satisfies IsRequired<CdpPageLike, 'keyboard'>,
-      true satisfies IsRequired<CdpPageLike, 'focus'>,
-      true satisfies IsRequired<CdpPageLike, 'createCDPSession'>,
-      true satisfies IsRequired<CdpPageLike, 'setOfflineMode'>,
-      true satisfies IsRequired<CdpPageLike, 'emulateMediaFeatures'>,
-      true satisfies IsRequired<CdpPageLike, 'evaluateOnNewDocument'>,
-      true satisfies IsRequired<CdpBrowserLike, 'cookies'>,
-      true satisfies IsRequired<CdpBrowserLike, 'setCookie'>,
+describe('unit · the launcher port: optional for an app, complete for the built-ins', () => {
+  test('CdpPageLike leaves each verb optional; the Complete types require every one', () => {
+    const checks: readonly boolean[] = [
+      // Optional, so a launcher written against 31.x still compiles — and is checked at open.
+      false satisfies IsRequired<CdpPageLike, 'keyboard'>,
+      false satisfies IsRequired<CdpPageLike, 'setOfflineMode'>,
+      false satisfies IsRequired<CdpBrowserLike, 'cookies'>,
+      true satisfies IsRequired<CompleteCdpPage, 'keyboard'>,
+      true satisfies IsRequired<CompleteCdpPage, 'focus'>,
+      true satisfies IsRequired<CompleteCdpPage, 'createCDPSession'>,
+      true satisfies IsRequired<CompleteCdpPage, 'setOfflineMode'>,
+      true satisfies IsRequired<CompleteCdpPage, 'emulateMediaFeatures'>,
+      true satisfies IsRequired<CompleteCdpPage, 'evaluateOnNewDocument'>,
+      true satisfies IsRequired<CompleteCdpBrowser, 'cookies'>,
+      true satisfies IsRequired<CompleteCdpBrowser, 'setCookie'>,
     ];
-    expect([frameAx, handleAx, required.length]).toEqual([undefined, undefined, 8]);
+    expect(checks.length).toBe(11);
   });
 });

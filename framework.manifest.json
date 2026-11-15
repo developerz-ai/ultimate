@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f64c37e118c309485fae81f6bf3dffae976b6ff24d643c8888ce391d68661653",
+  "buildId": "887916fc909d40be2f2e7f7c4fdf711d528ba92f0e6f6cbf84fe596104b7b177",
   "tiers": {
     "0": [
       "core",
@@ -4980,6 +4980,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_FRAME_OUT_OF_PROCESS",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_HOST_BLOCKED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
@@ -4996,6 +5001,11 @@
     },
     {
       "code": "X_SCRAPE_LAUNCH_ARGS_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_LAUNCHER_INCOMPLETE",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

@@ -73,3 +73,42 @@ at 5 by accident, this package is at 5 on purpose.
   redacted, deliberately: any other error's `cause`/`meta` URL, a value shorter than
   `MIN_REDACTABLE_LENGTH` (a 3-character PIN is a substring of ordinary prose), and pixels — which
   is why a typed secret TAINTS the page and captures are refused outright.
+
+## The port made complete — 2026-11-15 (plan 101-finished, slice 06 S1)
+
+Thirteen `NotImplementedError` refusals sat on the port: eleven in `cdp-target.ts`, two in
+`html-target.ts`. A port method one driver cannot honour is a second path, so each was implemented
+or moved to a check that runs before any verb. `port-complete.test.ts` now calls every
+`ScrapeTarget` member on the offline and the browser driver, on a page and on a frame.
+
+**The offline drivers answer `accessibility()`; they used to refuse.** The refusal's reason was
+"a fake that read `role=` off the markup would pass a test against a `<div onclick>`". That holds
+for reading the attribute ALONE, not for the HTML-AAM mapping: an explicit `role`, else the
+element's implicit one, and the name in accname order (`aria-labelledby`, `aria-label`,
+`<label for>`, `alt`, content, `title`, `placeholder`). A `<div onclick>` maps to no role and no
+name there too, so the finding survives. What the mapping cannot see is CSS and script — the
+divergence, stated in `html-a11y.ts` and on the wiki. One measured difference: Chrome 157 reports
+`generic` for a plain `<div>`, where the mapping answers `''`; both say "not a control".
+
+**`download()` takes the file off the WIRE.** Measured on Chrome 157: the browser-level `Fetch`
+domain, paused at the Response stage for `Document` requests, hands over the body
+(`Fetch.getResponseBody`) BEFORE Chrome decides to download it; `Browser.downloadWillBegin` then
+names it by URL. So the body is captured for any document response that is an attachment or not a
+page (`<a download>` sends no `Content-Disposition`), held bounded, and paired by URL. Chrome's own
+copy is `deny`ed. The rejected design — `Browser.setDownloadBehavior` to a directory — reads a file
+off the BROWSER's disk, which on `remoteBrowser()` is somebody else's. A script-made `blob:`
+download has no network leg and is read through the page's own `fetch`.
+
+**A launcher's missing method is refused at session OPEN, not at the call.** The first cut made
+the methods required in `CdpPageLike`; that breaks compile for a launcher written against 31.x, and
+breaks wait on `next`. So the port type stays optional, `cdp-complete.ts` checks every forwarded
+verb when `cdpTarget` is built (`X_SCRAPE_LAUNCHER_INCOMPLETE`, terminal, every missing member
+named), and `CompleteLauncher` is the required shape the built-in launchers are declared as.
+
+**A frame reads its own accessibility tree.** Measured on Chrome 157: `Page.getFrameTree` gives
+the frame id, `DOM.getFrameOwner` its `<iframe>`, `DOM.describeNode({ pierce: true })` its
+`contentDocument`, pushed to a node id the query is scoped to. A cross-site frame under site
+isolation is in another renderer: absent from the page session's tree, and its target cannot be
+reached through the library's session shape. It is refused as `X_SCRAPE_FRAME_OUT_OF_PROCESS`;
+`--disable-site-isolation-trials` keeps such a frame in process (measured). An earlier cut removed
+the method from `ScrapeFrame` instead — a compile break, withdrawn for the reason above.

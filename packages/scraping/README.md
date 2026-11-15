@@ -302,9 +302,11 @@ let "a like taken offline is queued" pass against an app that was online for the
 
 **No page verb is `X_NOT_IMPLEMENTED` on any driver.** `download()` takes the bytes off the wire
 (`cdp-download.ts`, local and remote alike); `accessibility()` offline is the HTML-AAM mapping of
-the markup (`html-a11y.ts`) and lives on `ScrapePage` only — `ScrapeFrame` and `ScrapeFrameTarget`
-(`FrameRef.target`) carry no page-wide verb. `CdpPageLike`/`CdpBrowserLike` require every verb the
-target forwards to. `port-complete.test.ts` calls every port member on every driver.
+the markup (`html-a11y.ts`), and on a frame handle it reads the frame's document on every driver
+(`cdp-a11y-frame.ts`; a cross-site frame under site isolation is `X_SCRAPE_FRAME_OUT_OF_PROCESS`).
+A launcher missing a verb the target forwards to is `X_SCRAPE_LAUNCHER_INCOMPLETE` when the session
+opens (`cdp-complete.ts`); `CompleteLauncher` types a launcher that has them all.
+`port-complete.test.ts` calls every port member on every driver, on a page and on a frame.
 
 **`page.colorScheme()` sets the INPUT to a theme decision, never its outcome.** An attribute on the
 document — `data-theme`, `class="dark"` — is the outcome, and the component owns it: one that
@@ -502,9 +504,8 @@ interface MyOptions {
   readonly endpoint: string;
 }
 
-// Implement `ScrapeTarget` — every member, all driver-blind; a frame is a `ScrapeFrameTarget` —
-// and the vocabulary above it, actionability and frame re-resolution included, comes from
-// `pageOverTarget` unchanged.
+// Implement `ScrapeTarget` — every member, all driver-blind — and the vocabulary above it,
+// actionability and frame re-resolution included, comes from `pageOverTarget` unchanged.
 declare function myTarget(options: MyOptions, init: SessionInit): Promise<ScrapeTarget>;
 declare function myHttp(target: ScrapeTarget, init: SessionInit): ScrapeHttp;
 

@@ -1,6 +1,6 @@
 // `press`, `focus` and `accessibility` on the real driver's target, over a hand-built CDP page.
-// A launcher missing any of the three no longer reaches here: `CdpPageLike` requires each, and
-// `port-complete.test.ts` pins that as a type. What is left is how each verb reaches the browser.
+// A launcher missing any of the three never reaches here: it is refused when the session opens
+// (`cdp-complete.test.ts`). What is left is how each verb reaches the browser.
 //
 // Its own file because `cdp-target.test.ts` is at the 500-line ceiling.
 
