@@ -57,3 +57,16 @@ test('the memo is bounded: past its size the oldest verdict is asked again, not 
   isRedactedKey('memoBoundFirst');
   expect(regex.calls()).toBe(1);
 });
+
+test('a hostile key costs linear time: a request body names its own keys', () => {
+  // 20,000 capitals then one non-match took 1.2 s through the segment split's camel-hump pass.
+  const keys = [`${'A'.repeat(20_000)}_KEYX`, `${'A'.repeat(20_000)}b`, `${'aB'.repeat(10_000)}x`];
+  const started = performance.now();
+  for (const key of keys) isRedactedKey(key);
+  expect(performance.now() - started).toBeLessThan(100);
+});
+
+test('a long key still ends in its credential word: the tail decides, the cut is no word start', () => {
+  expect(isRedactedKey(`${'x'.repeat(200)}AdminPin`)).toBe(true);
+  expect(isRedactedKey(`${'x'.repeat(61)}pin`)).toBe(false);
+});

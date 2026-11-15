@@ -143,9 +143,15 @@ const LOOKUP_KEY =
   /(?:^|_)(?:CACHE|IDEMPOTENCY|PARTITION|PRIMARY|FOREIGN|SORT|I18N|ROUTING|DEDUPE|SHARD|LOOKUP|OBJECT)_KEYS?$/;
 const isEnvKeyMaterial = (key: string): boolean => ENV_KEY.test(key) && !LOOKUP_KEY.test(key);
 
+/** How much of a key's end the segment rules read. */
+const SEGMENT_WINDOW = 64;
+
 /** `adminPin` / `ADMIN_PIN` / `PINCode` / `admin-pin` → `admin_pin` / `pin_code`: one word per segment. */
 const segmented = (key: string): string =>
+  // The TAIL only: every segment rule ends at `$` and spans under 20 characters, and a key is caller
+  // data — the camel-hump pass over 20,000 capitals took 1.2 s. 64 keeps every word whole.
   key
+    .slice(-SEGMENT_WINDOW)
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/[-.]/g, '_')
