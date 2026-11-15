@@ -508,12 +508,13 @@ The framework depends on none of this; it is the operations manual for the app y
 | [`docs/ops/04-datastores.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/04-datastores.md) | sizing Postgres, NATS and object storage for a given rung |
 | [`docs/ops/05-disaster-recovery.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/05-disaster-recovery.md) | backups, PITR, restore drills, replication-slot recovery |
 | [`docs/ops/06-runbooks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md) | symptom → page → action, per role |
+| [`docs/ops/07-deploy-contract.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/07-deploy-contract.md) | what a deploy guarantees: order, a role over a schema that is behind, drain, the skew window, rollback, each failure's alert |
 
 Two design-only companions — **specification, not shipped behaviour**: [`docs/idea/16-app-targets.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/16-app-targets.md) (three targets, one backend, two view layers) and [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md) (why the app code is identical at rung 0 and rung 4).
 
 ## Rollback
 
-Redeploy the previous image tag. Inside an `assets.retain` window (below) a rollback 404s nobody mid-session; without one, a tab holding the other build's document reloads.
+Redeploy the previous image tag: `x deploy --image <previous> --json`. `helm rollback` runs the older build's migrate first only onto a revision a 31.29+ chart rendered (a `pre-rollback` hook; Helm runs the target revision's hooks); onto an older one it skips the checks below → [Kubernetes migrations](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md#migrations). Inside an `assets.retain` window (below) a rollback 404s nobody mid-session; without one, a tab holding the other build's document reloads.
 
 The older image's migrate role decides whether the schema allows it (`As of 2026-11`). Over ledger rows the newer build applied it applies nothing and logs them (`ahead`). Over a row the newer build RECORDED as destructive (`x_migrations.destructive`, written at apply) it refuses before anything serves:
 

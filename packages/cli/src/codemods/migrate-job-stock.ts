@@ -1,0 +1,41 @@
+// `docker/helm/templates/migrate-job.yaml` as `x new` wrote it through 31.28.x — a Helm hook alone,
+// under one fixed name — kept byte for byte (the chart's name as `<APP>`), so a template still
+// exactly that is recognised and replaced whole, and an edited one is not.
+
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: Helm's own {{ … }}, never a JS template
+
+export const MIGRATE_JOB_31_28_LINES: readonly string[] = [
+  '{{/*',
+  'The release phase, as a pre-install / pre-upgrade hook: ROLE=migrate applies every pending',
+  'migration under an advisory lock and exits, before any serving role starts. Same image, same entry',
+  'point — there is no second migration engine and no toolchain in the container.',
+  '*/}}',
+  '{{- if .Values.migrate.enabled }}',
+  'apiVersion: batch/v1',
+  'kind: Job',
+  'metadata:',
+  '  name: {{ include "<APP>.fullname" . }}-migrate',
+  '  labels:',
+  '    {{- include "<APP>.labels" . | nindent 4 }}',
+  '    app.kubernetes.io/component: migrate',
+  '  annotations:',
+  '    helm.sh/hook: pre-install,pre-upgrade',
+  '    helm.sh/hook-weight: "-5"',
+  '    helm.sh/hook-delete-policy: before-hook-creation',
+  'spec:',
+  '  backoffLimit: {{ .Values.migrate.backoffLimit }}',
+  '  template:',
+  '    metadata:',
+  '      labels:',
+  '        {{- include "<APP>.labels" . | nindent 8 }}',
+  '        app.kubernetes.io/component: migrate',
+  '    spec:',
+  '      restartPolicy: Never',
+  '      automountServiceAccountToken: false',
+  '      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}',
+  '      containers:',
+  '        {{- include "<APP>.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}',
+  '      volumes:',
+  '        {{- include "<APP>.tmpVolume" . | nindent 8 }}',
+  '{{- end }}',
+];

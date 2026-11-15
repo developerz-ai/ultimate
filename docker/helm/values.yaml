@@ -194,7 +194,8 @@ drain:
 # Deployment. Catches a role that passes its first probe and crashes seconds later.
 minReadySeconds: 10
 
-# Pre-deploy hook. Runs to completion before any serving role starts.
+# The release phase: one Job, run to completion before any serving role starts — under helm, Argo CD
+# or an applier that ignores both (templates/migrate-job.yaml says how each orders it).
 migrate:
   enabled: true
   backoffLimit: 1

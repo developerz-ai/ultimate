@@ -222,6 +222,25 @@ too bloated differs per app. `checkDb()` stays the readiness probe `/readyz` rea
 | `activity` | `queryVisible: false` (and `query: null`) for a session another role owns when this one lacks `pg_read_all_stats` |
 | Who sees what | whoever runs it sees the SQL text (redacted) of **every session on the app's database role**, and of every role when that role holds `pg_read_all_stats` or is a superuser: other users' requests, background jobs, `psql` sessions. Literals are `?`, statement shape and identifiers are not. Run it with the credentials of someone allowed to see that |
 
+## Server health gauges
+
+`As of 2026-11`. `startPgStatsGauges(executor, intervalMs?)` samples the Postgres server every
+`PG_STATS_INTERVAL_MS` (15 s) — at once, one round at a time, unref'd — and returns the stop;
+`pgStatsSampler(executor).sample()` is one round. Run by ONE role (the scheduler): these are server
+facts, and every pod reading them would multiply the load for the same numbers.
+
+| Series | What it is |
+|---|---|
+| `db_server_connections` / `db_server_max_connections` | client backends on the whole server, against its `max_connections` |
+| `db_longest_transaction_seconds` | this database's oldest open transaction this role can see (`pg_read_all_stats` widens it), 0 when none |
+| `db_autovacuum_backlog_ratio` | the worst table's dead tuples over its autovacuum trigger (global settings): above 1 it is due |
+| `db_replication_slot_retained_bytes{slot}` | the WAL each of this database's logical slots holds on the primary; a dropped slot reads 0 |
+
+Two constant catalog statements per round, no user table, no lock. A failed round never rejects
+and logs `db.stats.sample-failed` once per streak; a value the driver did not send as a finite
+number leaves the gauge at its last good value. The gauges are declared on the first sample, so a
+process that samples nothing exposes none. The chart's alert rules read all five.
+
 ## Index access methods
 
 `btree` is the default and is never written out; `gin` is what makes `@>` / `<@` / `&&` / `?` on a

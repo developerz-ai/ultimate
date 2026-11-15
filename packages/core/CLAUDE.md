@@ -147,6 +147,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 | `recordJob` | `@ultimat3/jobs` `worker.ts`, the outcome branch inside `tick()` (`JOB_OUTCOME_LABELS` drops `suspended`) |
 | `recordLeaseLost` | `@ultimat3/jobs` `heartbeat.ts`, once per lapsed lease |
 | `recordBreakerTransition` | `breaker.ts`, on every state change |
+| `recordFrameworkSchema` | `@ultimat3/cli`'s framework-schema verdict (`schema-metrics.ts`) |
 
 - **One bus, `instrument.ts`**: every observer is a `subscribe()` — OTLP spans (`span.end`, sampled
   only), logs (`log.record`), metrics. No `set*Observer`/`set*Sink`/`recent*()` slot

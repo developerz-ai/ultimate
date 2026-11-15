@@ -139,6 +139,30 @@ The rule that prevents the second row is in [`01-kubernetes.md`](./01-kubernetes
 release, contract in the next.** It is `X_MIGRATION_ROLLING_UNSAFE`, not a runbook step, because by
 the time you are reading a runbook it is already too late.
 
+**`helm rollback` runs these checks only onto a revision a 31.29+ chart rendered** (its Job is a
+`pre-rollback` hook, and Helm runs the target revision's hooks); onto an older one it skips them, so
+roll back with `x deploy --image <previous> --json` ([deploy contract](./07-deploy-contract.md#rollback),
+[`01-kubernetes.md`](./01-kubernetes.md#migrations)). **Lands in this sweep** (31.29 chart).
+
+## A role refuses an unapplied schema
+
+`X_FRAMEWORK_SCHEMA_UNAPPLIED` on a `web`, `sync`, `worker`, `scheduler` or `replicator` boot: the
+stamp `ROLE=migrate` leaves on `x_jobs` does not name this build's framework schema hash. The role
+runs no DDL; it waits for the migrate step ([deploy contract](./07-deploy-contract.md#a-role-over-a-schema-that-is-behind)).
+`As of 2026-11` the role exits at once and the platform restarts it, so it shows as restarts or
+`CrashLoopBackOff`. **Lands in this sweep:** it waits up to `ULTIMATE_SCHEMA_WAIT_MS` first, logs
+one line, and the code's `meta.waitedMs` says how long. Alert:
+[UltimateSchemaUnapplied](#ultimateschemaunapplied); a fleet across a major,
+[UltimateVersionSkew](#ultimateversionskew).
+
+| Situation | Do |
+|---|---|
+| a rollout is in progress and its migrate Job is still running | nothing: the roles serve once it finishes (`kubectl get jobs -l app.kubernetes.io/component=migrate`) |
+| the migrate Job failed | [a migration failed mid-deploy](#a-migration-failed-mid-deploy) — fix the migration, the roles follow |
+| no migrate ran: an applier that drops Helm hooks, a compose `up` without the `run --rm migrate` step, a PaaS with no release phase | run it once against the same database: `x db migrate --json`, or the image with `ROLE=migrate`. Then wire the order: [deploy contract](./07-deploy-contract.md#order-migrate-before-roles) |
+| the cause names a newer major as the newest applied build | an old-major role over a database a newer release migrated: roll forward to that release (`x deploy --image <newer> --json`), never migrate the old one over it |
+| `ultimate framework major skew` in the logs, no refusal | a fleet across a major mid-rollout or mid-rollback; it serves. Finish the rollout: `kubectl rollout status deployment --selector app.kubernetes.io/component=web` |
+
 ## A credential leaked
 
 | # | Step |
@@ -204,7 +228,8 @@ since, until the disk fills and the **database** stops.
 | The disk is nearly full now | dropping the slot frees the WAL at the next checkpoint. That is the emergency brake; the replicator creates a fresh slot on its next start |
 
 Watch `pg_replication_slots` (`active`, `confirmed_flush_lsn` against the current WAL position) from
-postgres itself — the app emits no series for it.
+postgres itself, or from `db_replication_slot_retained_bytes{slot}`, which the scheduler samples
+every 15 s and [UltimateReplicationSlotRetention](#ultimatereplicationslotretention) alerts on.
 
 ## `X_SHUTDOWN_TIMEOUT` in the logs on every deploy
 
@@ -239,6 +264,12 @@ Postgres takes the read load while the shared tier is gone: single-flight still 
 `docker/helm/templates/alert-rules.yaml` (and the chart `x new` writes) links each rule's
 `runbook_url` here. Every rule is scoped to one release in one namespace; `alerts.rules.<alert>` in
 `values.yaml` overrides its `threshold`, `for`, `severity` or turns it off with `enabled: false`.
+
+The Postgres rules read gauges ONE role samples, the scheduler, every 15 s
+(`startPgStatsGauges`, `packages/db/src/pg-stats-gauges.ts`): with no scheduler running they have
+no series and never fire. The schema rules read `framework_schema_applied` and
+`framework_schema_major_skew`, which each serving role sets from its own stamp check
+(`packages/core/src/schema-metrics.ts`).
 
 ### UltimateQueueStalled
 
@@ -315,3 +346,68 @@ A scrape target of one role (`app_kubernetes_io_component`) reads `up == 0` for 
 gone, crash-looping, or its `metrics` port is fenced off. List the role's pods with
 `kubectl get pods -l app.kubernetes.io/component=<role>`; a Running pod still down is
 `networkPolicy.metricsFrom` not admitting the Prometheus namespace.
+
+### UltimateRequestLatency
+
+The release-wide p95 of `http_request_duration_seconds` above 1 s for 10 m. A floor the app
+overrides (`alerts.rules.UltimateRequestLatency.threshold`), not a per-route target: the chart
+dashboard's per-route panel says which route moved. One route: its statement or its downstream
+(`x db diagnostics --json`, `data.slowQueries` when `pg_stat_statements` is installed). Every route
+at once: the pool, the database or CPU — read [UltimatePoolSaturated](#ultimatepoolsaturated) and
+[UltimateEventLoopLag](#ultimateeventlooplag) first. A rise with a rollout:
+[roll back the image](#roll-back-a-bad-image).
+
+### UltimateConnectionsNearMax
+
+`db_server_connections` above 80 % of `db_server_max_connections` for 10 m: the next pod to start
+is refused `53300`. Every pod opens up to its role's pool (`DATABASE_POOL_MAX`), so the ceiling is
+pods × pool ([connection arithmetic](04-datastores.md#connection-arithmetic)). Lower
+`DATABASE_POOL_MAX`, cap the HPA's `maxReplicas`, or put a pooler in front
+([Deployment](../../wiki/Deployment.md#through-a-connection-pooler)); raise `max_connections` only
+with the memory for it.
+
+### UltimateLongTransaction
+
+`db_longest_transaction_seconds` above 300 for 5 m: a transaction that holds locks a migration
+waits on and stops vacuum reclaiming every row newer than it. `x db diagnostics --json`:
+`data.activity.rows[]` lists sessions oldest transaction first, `data.blockers.rows[]` what each
+blocks. End it with `psql "$DATABASE_URL" -c 'select pg_terminate_backend(<pid>)'`, then find the
+code that left it open.
+
+### UltimateAutovacuumLag
+
+`db_autovacuum_backlog_ratio` above 2 for 30 m: the worst table's dead tuples exceed twice the
+count that triggers its autovacuum. Not "autovacuum has not run" — it ran and is not keeping up,
+or cannot reclaim. `x db diagnostics --json`: `data.deadTuples.rows[]` names the table, its `dead`
+count and `autovacuumAgeSeconds`. A [long transaction](#ultimatelongtransaction) is the usual
+cause, since vacuum cannot pass it; otherwise lower that table's `autovacuum_vacuum_scale_factor`.
+
+### UltimateReplicationSlotRetention
+
+`db_replication_slot_retained_bytes` above 1 GiB on one `slot` for 15 m: its consumer is down,
+crash-looping or pointed at another database, and the disk fills behind it. Follow
+[the replication slot is accumulating WAL](#the-replication-slot-is-accumulating-wal).
+
+### UltimateSchemaUnapplied
+
+`framework_schema_applied == 0` on a role for 10 m, **critical**: its pods are waiting on, or
+refused, a database its build's framework schema was never applied to
+(`X_FRAMEWORK_SCHEMA_UNAPPLIED`). Follow
+[a role refuses an unapplied schema](#a-role-refuses-an-unapplied-schema).
+
+### UltimateVersionSkew
+
+`framework_schema_major_skew` above 0 for 30 m: a role serves a build whose major differs from
+the newest build that applied the framework schema, and the log carries
+`ultimate framework major skew`. Mid-rollout it clears on its own; 30 m later it is a rollout that
+stalled or a rollback left half done. `kubectl rollout status deployment --selector
+app.kubernetes.io/component=<role>` for each role; finish the rollout, or
+[roll back](#roll-back-a-bad-image) every role to one build.
+
+### UltimateVolumeNearFull
+
+A PersistentVolumeClaim in the release's namespace over 85 % of its capacity
+(`kubelet_volume_stats_used_bytes` ÷ `kubelet_volume_stats_capacity_bytes`) for 15 m. A database
+volume: the WAL first ([UltimateReplicationSlotRetention](#ultimatereplicationslotretention)),
+then table bloat ([UltimateAutovacuumLag](#ultimateautovacuumlag)). Grow the claim before it
+fills: a full Postgres volume stops every write.

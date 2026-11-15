@@ -1,10 +1,10 @@
-// `x drill [<name>] [--list] [--budget-ms n]` — the app's web and worker roles as real processes on
-// real services, each fault in `@ultimat3/testing`'s drill table played through a proxy or a
-// signal, red on any framework contract that does not hold. CLI wiring only: the table, the fleet
+// `x drill [<name>] [--list] [--budget-ms n]` — the app's roles as real processes on real services,
+// each fault in `@ultimat3/testing`'s drill table played through a proxy, a signal or the rollout
+// order, red on any framework contract that does not hold. CLI wiring only: the table, the fleet
 // and the verdict are testing's. Not a gate step: it needs Postgres, and `x verify` needs nothing.
 
 import type { AppConfig } from '@ultimat3/core';
-import { DRAIN_DEADLINE_DEFAULT_MS, MAX_TIMER_MS } from '@ultimat3/core';
+import { DRAIN_DEADLINE_DEFAULT_MS, frameworkVersion, MAX_TIMER_MS } from '@ultimat3/core';
 import type {
   Drill,
   DrillConfig,
@@ -23,12 +23,14 @@ import {
   drillRoles,
   drillServices,
   runDrill,
+  runRollout,
   startDrillFleet,
 } from '@ultimat3/testing';
 import { loadAppConfig } from './app-config-load';
 import { requireAppRoot } from './app-root';
 import { drillSpec } from './cmd-drill-spec';
 import type { CliCommand, CommandContext } from './command';
+import { behindStampSql } from './drill-schema-behind';
 import { drillSyncLane } from './drill-sync-lane';
 import { drillTargets } from './drill-targets';
 import { UnknownCommandError } from './errors';
@@ -74,12 +76,15 @@ const drillConfigOf = (config: AppConfig | undefined): DrillConfig =>
         readiness: config.health.readiness,
       };
 
+const faultJson = (fault: Drill['fault']): JsonValue => {
+  if (fault.kind === 'service') return { service: fault.service };
+  if (fault.kind === 'signal') return { role: fault.role, signal: fault.signal };
+  return { order: 'roles-before-migrate', waitCode: fault.waitCode };
+};
+
 const listing = (drill: Drill): JsonValue => ({
   name: drill.name,
-  fault:
-    drill.fault.kind === 'service'
-      ? { service: drill.fault.service }
-      : { role: drill.fault.role, signal: drill.fault.signal },
+  fault: faultJson(drill.fault),
   holds: [...drill.holds],
 });
 
@@ -174,15 +179,24 @@ export const drillCommand: CliCommand = {
     const { targets, skipped } = await drillTargets(root);
     const reports: DrillReport[] = [];
     for (const { drill, services } of planned) {
+      const { fault } = drill;
+      // The rollout order: the stamp is this package's to write, so the rewind is handed in.
+      const order =
+        fault.kind === 'order'
+          ? { rewind: behindStampSql(frameworkVersion()), watch: fault.waitCode }
+          : undefined;
       const fleet = await startDrillFleet({
         root,
         services,
         roles: drillRoles(drill),
         readyTimeoutMs: READY_TIMEOUT_MS,
+        beforeMigrate: order,
       });
       reports.push(
         await withDrillFleet(fleet, bunDrillSql, (sql) =>
-          runDrill({ drill, fleet, budgets, targets, sql, sync: drillSyncLane(fleet) }),
+          order === undefined
+            ? runDrill({ drill, fleet, budgets, targets, sql, sync: drillSyncLane(fleet) })
+            : runRollout({ drill, fleet, budgets, readyTimeoutMs: READY_TIMEOUT_MS }),
         ),
       );
     }

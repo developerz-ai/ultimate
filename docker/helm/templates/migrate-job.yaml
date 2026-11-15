@@ -1,6 +1,27 @@
 {{/*
-Pre-install / pre-upgrade hook: ROLE=migrate runs to completion before any serving role starts,
-and refuses to run concurrently with a different version.
+ROLE=migrate runs to completion before any serving role starts, and refuses to run concurrently
+with a different version. ONE Job, ordered by whichever applier renders it:
+
+  helm (and Flux's helm-controller)  a pre-install / pre-upgrade / pre-rollback hook: no role is
+                                     touched until it has succeeded. On a rollback it is the OLDER
+                                     build's migrate, which refuses a ledger a newer build left
+                                     destructive rows in (X_MIGRATION_ROLLBACK_DESTRUCTIVE) before
+                                     any role is rolled back onto it
+  Argo CD                            a Sync hook in wave -1. Its own annotation wins over the Helm
+                                     one Argo would otherwise map to PreSync — the phase that runs
+                                     before EVERY wave, so a database the same sync creates was
+                                     waited on forever. Put that database and the Secret the Job
+                                     reads in wave -2 or lower; every role sits in wave 0
+  an applier that ignores both       an ordinary object, applied beside the roles. Its name is its
+  (kubectl apply, a rendered tree)   spec's hash, so a new image is a new Job rather than an
+                                     immutable-field refusal of the whole apply; the roles wait for
+                                     the stamp it leaves, unready, and `maxUnavailable: 0` keeps
+                                     the old pods serving meanwhile
+
+No init container on any role: a per-pod migrate is the second mechanism, run once per pod, and it
+only ever ordered the Deployment that carried it (docs/ops/01-kubernetes.md#migrations).
+Deleted once it succeeds (`hook-succeeded`, which Argo CD honours too); a failed one stays for
+`kubectl logs` until the next attempt replaces it.
 */}}
 {{- if .Values.migrate.enabled }}
 {{/*
@@ -28,38 +49,48 @@ metadata:
     {{- include "ultimate.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
   annotations:
-    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook: pre-install,pre-upgrade,pre-rollback
     helm.sh/hook-weight: "-10"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-2"
 automountServiceAccountToken: false
 ---
 {{- end }}
+{{- $pod := include "ultimate.migratePod" . }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "ultimate.fullname" . }}-migrate
+  {{- /* 46 + "-migrate-" + 8 = 63, the ceiling of the `job-name` label every pod of it carries. */}}
+  name: {{ printf "%s-migrate-%s" (include "ultimate.fullname" . | trunc 46 | trimSuffix "-") ($pod | sha256sum | trunc 8) }}
   labels:
     {{- include "ultimate.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
   annotations:
-    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook: pre-install,pre-upgrade,pre-rollback
     helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   template:
-    metadata:
-      labels:
-        {{- include "ultimate.labels" . | nindent 8 }}
-        app.kubernetes.io/component: migrate
-    spec:
-      restartPolicy: Never
-      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "ultimate.fullname" . }}-migrate{{ else }}{{ include "ultimate.serviceAccountName" . }}{{ end }}
-      # Same reason as the Deployments: ROLE=migrate applies SQL and exits, and calls no API server.
-      automountServiceAccountToken: false
-      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      containers:
-        {{- include "ultimate.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}
-      volumes:
-        {{- include "ultimate.tmpVolume" . | nindent 8 }}
+    {{- $pod | nindent 4 }}
 {{- end }}
+
+{{- define "ultimate.migratePod" -}}
+metadata:
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ if .Values.serviceAccount.create }}{{ include "ultimate.fullname" . }}-migrate{{ else }}{{ include "ultimate.serviceAccountName" . }}{{ end }}
+  # Same reason as the Deployments: ROLE=migrate applies SQL and exits, and calls no API server.
+  automountServiceAccountToken: false
+  securityContext: {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    {{- include "ultimate.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 4 }}
+  volumes:
+    {{- include "ultimate.tmpVolume" . | nindent 4 }}
+{{- end -}}

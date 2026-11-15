@@ -15,13 +15,14 @@ const config = {
 };
 
 describe('DRILLS', () => {
-  test('the eight drills, once each', () => {
+  test('the nine drills, once each', () => {
     expect([...DRILL_NAMES].sort()).toEqual([
       'nats-down',
       'pg-blackhole',
       'pg-restart',
       'pg-slow',
       'redis-down',
+      'roll-before-migrate',
       'web-sigterm',
       'worker-sigkill',
       'worker-sigterm',
@@ -53,6 +54,14 @@ describe('DRILLS', () => {
       'web',
       'worker',
     ]);
+  });
+
+  test('roll-before-migrate starts every role Postgres alone serves, and faults no service', () => {
+    const drill = drillNamed('roll-before-migrate') ?? expect.unreachable();
+    expect(drillRoles(drill)).toEqual(['web', 'worker', 'scheduler']);
+    expect(drillService(drill)).toBeUndefined();
+    if (drill.fault.kind !== 'order') expect.unreachable();
+    expect(drill.fault.waitCode).toBe('X_FRAMEWORK_SCHEMA_UNAPPLIED');
   });
 
   test('drillService names the faulted service, or nothing for a signal', () => {

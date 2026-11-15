@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "052d86bf3bb96dcc3a9c6a78245ef322aece2b4c6410dd375405948a557e25f3",
+  "buildId": "33ce2a2e700dc3c85c46712920e6f2ada6dc528511354e762c78e5f8518c6eb9",
   "tiers": {
     "0": [
       "core",
@@ -573,6 +573,11 @@
       "code": "X_APP_IMPORT_UNRESOLVED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_APP_MIGRATIONS_UNAPPLIED",
+      "owner": "cli",
+      "at": "packages/cli/src/app-migrations-verdict.ts"
     },
     {
       "code": "X_APP_MODULE_LOAD_FAILED",

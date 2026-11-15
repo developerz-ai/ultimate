@@ -432,6 +432,156 @@
           "legendFormat": "{{app_kubernetes_io_component}}"
         }
       ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Postgres: client connections against max_connections",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 104,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(db_server_connections{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"})",
+          "legendFormat": "connections"
+        },
+        {
+          "refId": "B",
+          "expr": "max(db_server_max_connections{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"})",
+          "legendFormat": "max_connections"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Postgres: longest open transaction",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 112,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(db_longest_transaction_seconds{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"})",
+          "legendFormat": "longest"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Postgres: autovacuum backlog, the worst table (1 = due)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 120,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(db_autovacuum_backlog_ratio{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"})",
+          "legendFormat": "dead / trigger"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Postgres: WAL retained, by replication slot",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 128,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (slot) (db_replication_slot_retained_bytes{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"})",
+          "legendFormat": "{{slot}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Framework schema: unapplied and major skew, by role",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 136,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (app_kubernetes_io_component) (framework_schema_applied{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"} == 0)",
+          "legendFormat": "unapplied {{app_kubernetes_io_component}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (app_kubernetes_io_component) (framework_schema_major_skew{namespace=\"$namespace\",app_kubernetes_io_instance=\"$release\"})",
+          "legendFormat": "skew {{app_kubernetes_io_component}}"
+        }
+      ]
     }
   ]
 }

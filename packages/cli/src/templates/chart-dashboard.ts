@@ -2,140 +2,11 @@
 // pool, jobs, realtime and the process, over the series the framework declares. One column of
 // full-width panels, so a phone reads it as it is. The JSON and its ConfigMap are generated here;
 // `docker/helm/` holds these bytes for the chart named `ultimate`.
+import { DASHBOARD_PANELS, type DashboardPanel } from './chart-dashboard-panels';
 import type { GeneratedFile, NameSet } from './naming';
 
-export interface DashboardTarget {
-  readonly expr: string;
-  /** Grafana's legend template, `{{label}}` interpolated per series. */
-  readonly legend: string;
-}
-
-export interface DashboardPanel {
-  readonly title: string;
-  /** Grafana's unit id: `reqps`, `s`, `bytes`, `percentunit`, `short`. */
-  readonly unit: string;
-  readonly targets: readonly DashboardTarget[];
-}
-
-/** One release in one namespace — the two labels the ServiceMonitor puts on every series. */
-const SCOPE = 'namespace="$namespace",app_kubernetes_io_instance="$release"';
-const RATE = '[$__rate_interval]';
-
-const s = (name: string, extra?: string): string =>
-  `${name}{${extra === undefined ? SCOPE : `${SCOPE},${extra}`}}`;
-
-const p = (q: number, name: string, by: string): string =>
-  `histogram_quantile(${String(q)}, sum by (${by}, le) (rate(${s(`${name}_bucket`)}${RATE})))`;
-
-export const DASHBOARD_PANELS: readonly DashboardPanel[] = [
-  {
-    title: 'Requests per second, by status class',
-    unit: 'reqps',
-    targets: [
-      { expr: `sum by (status) (rate(${s('http_requests_total')}${RATE}))`, legend: '{{status}}' },
-    ],
-  },
-  {
-    title: 'Latency p95, by route',
-    unit: 's',
-    targets: [{ expr: p(0.95, 'http_request_duration_seconds', 'route'), legend: '{{route}}' }],
-  },
-  {
-    title: '5xx share of requests',
-    unit: 'percentunit',
-    targets: [
-      {
-        expr: `sum(rate(${s('http_requests_total', 'status="5xx"')}${RATE})) / sum(rate(${s('http_requests_total')}${RATE}))`,
-        legend: '5xx',
-      },
-    ],
-  },
-  {
-    title: 'Statement p95, by operation',
-    unit: 's',
-    targets: [
-      {
-        expr: p(0.95, 'db_client_operation_duration_seconds', 'db_operation_name'),
-        legend: 'p95 {{db_operation_name}}',
-      },
-    ],
-  },
-  {
-    title: 'Database pool, by pod',
-    unit: 'short',
-    targets: [
-      { expr: `sum by (pod) (${s('db_pool_in_use')})`, legend: 'in use {{pod}}' },
-      { expr: `sum by (pod) (${s('db_pool_waiting')})`, legend: 'waiting {{pod}}' },
-      { expr: `sum by (pod) (${s('db_pool_max')})`, legend: 'max {{pod}}' },
-    ],
-  },
-  {
-    title: 'Jobs per second, by queue and outcome',
-    unit: 'short',
-    targets: [
-      {
-        expr: `sum by (queue, outcome) (rate(${s('jobs_total')}${RATE}))`,
-        legend: '{{queue}} {{outcome}}',
-      },
-    ],
-  },
-  {
-    title: 'Queue: oldest ready job and dead letters',
-    unit: 's',
-    targets: [
-      { expr: `max by (queue) (${s('queue_oldest_ready_seconds')})`, legend: 'oldest {{queue}}' },
-      { expr: `max by (queue) (${s('queue_dead_jobs')})`, legend: 'dead {{queue}}' },
-    ],
-  },
-  {
-    title: 'Job duration p95, by queue',
-    unit: 's',
-    targets: [{ expr: p(0.95, 'job_duration_seconds', 'queue'), legend: '{{queue}}' }],
-  },
-  {
-    title: 'Realtime: connections and dropped frames',
-    unit: 'short',
-    targets: [
-      { expr: `sum by (pod) (${s('connections')})`, legend: 'connections {{pod}}' },
-      {
-        expr: `sum(rate(${s('channel_frames_dropped_total')}${RATE}))`,
-        legend: 'frames dropped/s',
-      },
-    ],
-  },
-  {
-    title: 'Memory: RSS over the container limit, by pod',
-    unit: 'percentunit',
-    targets: [
-      {
-        expr: `max by (pod) (${s('process_resident_memory_bytes')} / ${s('process_memory_limit_bytes')})`,
-        legend: '{{pod}}',
-      },
-    ],
-  },
-  {
-    title: 'CPU seconds per second, by pod',
-    unit: 'short',
-    targets: [
-      { expr: `sum by (pod) (rate(${s('process_cpu_seconds_total')}${RATE}))`, legend: '{{pod}}' },
-    ],
-  },
-  {
-    title: 'Event-loop lag p99, by pod',
-    unit: 's',
-    targets: [{ expr: p(0.99, 'process_event_loop_lag_seconds', 'pod'), legend: '{{pod}}' }],
-  },
-  {
-    title: 'Restarts in the last hour, by role',
-    unit: 'short',
-    targets: [
-      {
-        expr: `sum by (app_kubernetes_io_component) (changes(${s('process_start_time_seconds')}[1h]))`,
-        legend: '{{app_kubernetes_io_component}}',
-      },
-    ],
-  },
-];
+export type { DashboardPanel, DashboardTarget } from './chart-dashboard-panels';
+export { DASHBOARD_PANELS } from './chart-dashboard-panels';
 
 /** The stable uid a provisioned dashboard keeps across upgrades, so a bookmark survives. */
 export const DASHBOARD_UID = 'ultimate-app';
@@ -156,8 +27,11 @@ const variable = (name: string, query: string) => ({
 
 const PANEL_HEIGHT = 8;
 
-/** The dashboard as Grafana's JSON model, two-space indented, one trailing newline. */
-export function dashboardJson(): string {
+/**
+ * The dashboard as Grafana's JSON model, two-space indented, one trailing newline. `panels` is a
+ * seam for a codemod's test, which re-renders an older release's panel list.
+ */
+export function dashboardJson(panels: readonly DashboardPanel[] = DASHBOARD_PANELS): string {
   const model = {
     uid: DASHBOARD_UID,
     title: 'Ultimate app',
@@ -176,7 +50,7 @@ export function dashboardJson(): string {
         ),
       ],
     },
-    panels: DASHBOARD_PANELS.map((panel, index) => ({
+    panels: panels.map((panel, index) => ({
       id: index + 1,
       type: 'timeseries',
       title: panel.title,

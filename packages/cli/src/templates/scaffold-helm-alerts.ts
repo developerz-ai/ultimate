@@ -19,6 +19,7 @@ const matchers = (own: string, extra?: string): string =>
 export const K8S_SCOPE: AlertScope = {
   series: (name, extra) =>
     `${name}{${matchers('namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"', extra)}}`,
+  namespaced: (name) => `${name}{namespace="{{ $.Release.Namespace }}"}`,
   by: 'namespace, app_kubernetes_io_instance',
   component: 'app_kubernetes_io_component',
   // The operator's own target label: one pod, whichever role it runs.
@@ -32,6 +33,8 @@ const plainScope = (own: string, objective: number): AlertScope => ({
     const inner = matchers(own, extra);
     return inner === '' ? name : `${name}{${inner}}`;
   },
+  // Outside Kubernetes no kubelet is scraped: the bare name matches what the loader has, if anything.
+  namespaced: (name) => name,
   by: 'job',
   component: 'instance',
   target: 'instance',

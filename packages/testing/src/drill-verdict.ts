@@ -3,6 +3,9 @@
 // violates it without a service running. A property with no evidence is red too: a drill that
 // measured nothing is the vacuous pass this file exists to refuse.
 
+import type { DrillRolloutEvidence } from './drill-rollout-verdict';
+import { judgeOneWaitLine, judgeRolesWait, judgeServesAfterMigrate } from './drill-rollout-verdict';
+
 /** Every property a drill may state. The table (`drills.ts`) picks; this file judges. */
 export type DrillProperty =
   | 'requests-coded'
@@ -14,7 +17,10 @@ export type DrillProperty =
   | 'jobs-terminal'
   | 'jobs-once'
   | 'role-exits'
-  | 'sync-resumes';
+  | 'sync-resumes'
+  | 'roles-wait'
+  | 'serves-after-migrate'
+  | 'one-wait-line';
 
 /** The thresholds, each derived from the app's config (`drillBudgets`), never typed per drill. */
 export interface DrillBudgets {
@@ -58,6 +64,8 @@ export interface DrillEvidence {
   /** The signalled role: ms from the signal to its exit, `null` when it never exited. */
   readonly exit: { readonly role: string; readonly afterMs: number | null } | undefined;
   readonly sync: { readonly reconnected: boolean; readonly gaps: number } | undefined;
+  /** The rollout-order drill's roles (`drill-rollout.ts`); absent for every other drill. */
+  readonly rollout?: DrillRolloutEvidence | undefined;
 }
 
 export interface DrillFailure {
@@ -203,6 +211,9 @@ const JUDGES: ReadonlyMap<DrillProperty, Judge> = new Map<DrillProperty, Judge>(
         : fail('sync-resumes', expected, `${String(sync.gaps)} sequence gap(s)`);
     },
   ],
+  ['roles-wait', judgeRolesWait],
+  ['serves-after-migrate', judgeServesAfterMigrate],
+  ['one-wait-line', judgeOneWaitLine],
 ]);
 
 /**

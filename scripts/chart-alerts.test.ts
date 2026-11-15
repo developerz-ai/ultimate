@@ -37,8 +37,15 @@ const PROMQL_WORDS = new Set([
   'bool',
 ]);
 
-/** `up` is Prometheus' own, written per target by the scraper rather than declared by a package. */
-const SCRAPER_SERIES = new Set(['up']);
+/**
+ * `up` is Prometheus' own, written per target by the scraper; the `kubelet_volume_stats_*` pair is
+ * the kubelet's, per claim. Neither is declared by a package.
+ */
+const SCRAPER_SERIES = new Set([
+  'up',
+  'kubelet_volume_stats_used_bytes',
+  'kubelet_volume_stats_capacity_bytes',
+]);
 
 /** The identifiers an expression reads as series: matchers, ranges and `by (…)` lists dropped. */
 function seriesOf(expr: string): readonly string[] {

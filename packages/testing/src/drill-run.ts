@@ -66,6 +66,8 @@ async function play(
     await proxy.set({ kind: 'pass' });
     return { clearedMs: now(), exit: undefined };
   }
+  // The rollout order is `runRollout`'s to play; here it measures nothing, so it is red.
+  if (fault.kind === 'order') return { clearedMs: undefined, exit: undefined };
   const role = fleet.roles.get(fault.role);
   if (role === undefined) return { clearedMs: undefined, exit: undefined };
   const signalled = now();

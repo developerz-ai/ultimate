@@ -31,6 +31,7 @@ const healthy: DrillEvidence = {
   jobs: { ran: 3, stuck: 0, doubled: 0 },
   exit: { role: 'worker', afterMs: 800 },
   sync: { reconnected: true, gaps: 0 },
+  rollout: { roles: [{ role: 'web', exit: null, ready: true, waitLines: 1, logTail: '' }] },
 };
 
 const failsOn = (

@@ -359,9 +359,21 @@ burn-rate rules read `alerts.objective` (percent, default 99.9; the chart refuse
 | `UltimateEventLoopLag` | p99 `process_event_loop_lag_seconds` on a pod | 0.5 s, for 10m, warning |
 | `UltimateMemoryNearLimit` | `process_resident_memory_bytes` ÷ `process_memory_limit_bytes` on a pod | 90%, for 10m, warning |
 | `UltimateTargetDown` | `up == 0` for any role's scrape target | for 5m, critical |
+| `UltimateRequestLatency` | release-wide p95 of `http_request_duration_seconds` — a floor, not a per-route target | 1 s, for 10m, warning |
+| `UltimateConnectionsNearMax` | `db_server_connections` ÷ `db_server_max_connections` | 80%, for 10m, warning |
+| `UltimateLongTransaction` | `db_longest_transaction_seconds` | 300 s, for 5m, warning |
+| `UltimateAutovacuumLag` | `db_autovacuum_backlog_ratio`: the worst table's dead tuples ÷ its autovacuum trigger | 2, for 30m, warning |
+| `UltimateReplicationSlotRetention` | `db_replication_slot_retained_bytes`, per `slot` | 1 GiB, for 15m, warning |
+| `UltimateSchemaUnapplied` | `framework_schema_applied == 0` on any pod of a role | for 10m, critical |
+| `UltimateVersionSkew` | `framework_schema_major_skew` above zero | for 30m, warning |
+| `UltimateVolumeNearFull` | `kubelet_volume_stats_used_bytes` ÷ `kubelet_volume_stats_capacity_bytes`, per claim in the release's namespace | 85%, for 15m, warning |
 
-The burn-rate mechanism ships; the objective is the app's value. A latency target is business, so
-none ships: write it beside the chart's. `process_memory_limit_bytes` is the cgroup `memory.max`,
+The burn-rate mechanism ships; the objective is the app's value. A latency target is business:
+`UltimateRequestLatency` is a release-wide floor that catches a whole build gone slow, and a
+per-route objective is the app's rule, written beside the chart's. The `db_server_*`,
+`db_longest_transaction_seconds`, `db_autovacuum_backlog_ratio` and
+`db_replication_slot_retained_bytes` gauges are sampled by the scheduler role alone, every 15 s
+(`packages/db/src/pg-stats-gauges.ts`): no scheduler, no series, and those rules never fire. `process_memory_limit_bytes` is the cgroup `memory.max`,
 absent on an unbounded pod, so that rule never fires there.
 
 **The chart ships one dashboard**, off by default: `dashboard.enabled: true` renders

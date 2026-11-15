@@ -70,6 +70,21 @@ describe('unit · the chart dashboard', () => {
     }
   });
 
+  test('the Postgres server and the framework schema each have a panel', () => {
+    const exprs = DASHBOARD_PANELS.flatMap((panel) => panel.targets.map((t) => t.expr)).join('\n');
+    for (const series of [
+      'db_server_connections',
+      'db_server_max_connections',
+      'db_longest_transaction_seconds',
+      'db_autovacuum_backlog_ratio',
+      'db_replication_slot_retained_bytes',
+      'framework_schema_applied',
+      'framework_schema_major_skew',
+    ]) {
+      expect(exprs).toContain(`${series}{`);
+    }
+  });
+
   test('the ConfigMap is opt-in and ships the JSON untemplated', () => {
     const template = String(
       helmDashboardFiles(names('ultimate')).find((file) => file.path.endsWith('.yaml'))?.contents,

@@ -16,8 +16,10 @@ import { codemod as docsIslandRows } from './docs-island-rows';
 import { codemod as docsShippedGuards } from './docs-shipped-guards';
 import { codemod as docsTestServices } from './docs-test-services';
 import { codemod as formatEditedHook } from './format-edited-hook';
+import { codemod as helmAlertsDeploy } from './helm-alerts-deploy';
 import { codemod as helmAlertsObjective } from './helm-alerts-objective';
 import { codemod as metricsProbeHealthz } from './metrics-probe-healthz';
+import { codemod as migrateJobOrdered } from './migrate-job-ordered';
 import { codemod as reproGitignore } from './repro-gitignore';
 import { codemod as runtimePin } from './runtime-pin';
 import { codemod as solidFloor } from './solid-floor';
@@ -53,4 +55,6 @@ export const CODEMODS: readonly Codemod[] = [
   solidFloor,
   vendoredGuards,
   verifyFloorSteps,
+  helmAlertsDeploy,
+  migrateJobOrdered,
 ];
