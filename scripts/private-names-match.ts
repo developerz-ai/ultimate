@@ -76,12 +76,17 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
 /**
  * One matcher per repository entry: `owner/name` bounded on both sides, so `owner/name-tools`
  * and `xowner/name` pass, while `owner/name#12`, `owner/name.git` and a URL's path all match.
+ * So does the bare tracker reference a prose line writes without the owner, `name #12` or
+ * `name#12`: the number points into the same private tracker. A bare name with no number stays a
+ * word (`the vault`), and another owner's path in front (`other/name #12`) is that owner's.
  */
 export function repositoryMatchers(repositories: readonly string[]): readonly RegExp[] {
-  return repositories.map(
-    (entry) =>
-      new RegExp(`(?<![a-z0-9._-])${escapeRegExp(entry)}(?:\\.git)?(?![a-z0-9_-]|\\.[a-z0-9])`),
-  );
+  return repositories.map((entry) => {
+    const path = `(?<![a-z0-9._-])${escapeRegExp(entry)}(?:\\.git)?(?![a-z0-9_-]|\\.[a-z0-9])`;
+    const name = entry.slice(entry.indexOf('/') + 1);
+    const tracker = `(?<![a-z0-9._/-])${escapeRegExp(name)} ?#\\d`;
+    return new RegExp(`${path}|${tracker}`);
+  });
 }
 
 /** What one line carries, first found: the setup mode, then a repository, then an adopter name. */

@@ -219,7 +219,7 @@ slices:
     sweep: "18"
     status: complete
     percent: 100
-    notes: "F1–F8 done: F2 infrastructure #2233 (merge 9815ab284, 18.6-system-trixie digest-pinned, cluster healthy, no unsupported-OS lines, demo 200, dumps green); F4 as GLITCHTIP_READ_TOKEN; F6/F7 for adopter E; F7 demo reset on ultimate_social 2026-11-10 22:46:44 UTC (469 → 1)"
+    notes: "F1–F8 done: F2 merged in the infrastructure repository (18.6-system-trixie digest-pinned, cluster healthy, no unsupported-OS lines, demo 200, dumps green); F4 as GLITCHTIP_READ_TOKEN; F6/F7 for adopter E; F7 demo reset on ultimate_social 2026-11-10 22:46:44 UTC (469 → 1)"
   - file: 90-owner-steps.md
     tier: 5
     sweep: "18"
