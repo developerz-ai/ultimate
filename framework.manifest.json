@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "108b80db586c1946b755a5d29c59b7cbdc4dc59f4ebbab4f5b758160b7cd10a4",
+  "buildId": "0098cd355e339f96bfc226ece0866621e9b943a1b4e1e6b8d340feb41b3382fc",
   "tiers": {
     "0": [
       "core",
@@ -403,6 +403,31 @@
       "code": "X_ADOPTION_CLAIM_UNGENERATED",
       "owner": "scripts",
       "at": "scripts/adoption-claims.ts"
+    },
+    {
+      "code": "X_ADVISORY_FLOOR_UNMET",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ADVISORY_MANIFEST_MOVED",
+      "owner": "scripts",
+      "at": "scripts/lib/advisory-floors.ts"
+    },
+    {
+      "code": "X_ADVISORY_RANGE_OPEN",
+      "owner": "scripts",
+      "at": "scripts/advisory-floors.ts"
+    },
+    {
+      "code": "X_ADVISORY_UNFLOORABLE",
+      "owner": "scripts",
+      "at": "scripts/advisory-floors.ts"
+    },
+    {
+      "code": "X_ADVISORY_UNREACHABLE",
+      "owner": "scripts",
+      "at": "scripts/advisory-floors.ts"
     },
     {
       "code": "X_AGENT_CONTEXT_EXHAUSTED",
@@ -1850,6 +1875,11 @@
       "at": "scripts/doc-unreleased.ts"
     },
     {
+      "code": "X_DOC_WORKAROUND_UNTABLED",
+      "owner": "scripts",
+      "at": "scripts/changelog-check-workarounds.ts"
+    },
+    {
       "code": "X_DOCKERFILE_DEPS_DRIFT",
       "owner": "scripts",
       "at": "scripts/dockerfile-template.ts"
@@ -2510,6 +2540,11 @@
       "at": "packages/cli/src/error-codes-verify.ts"
     },
     {
+      "code": "X_GUARD_BUILT_IN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_GUARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2533,6 +2568,11 @@
       "code": "X_GUARD_OVER_BASELINE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-verify.ts"
+    },
+    {
+      "code": "X_GUARD_VENDORED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_GUARDS_DOC_DRIFT",
@@ -4720,6 +4760,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_REPRO_BUNDLE_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_REPRO_CAPTURE_OFF",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-tooling.ts"
@@ -5845,6 +5890,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_SUPERSEDED_WORKAROUND",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_SURFACE_BOUNDARY",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
@@ -5863,6 +5913,11 @@
       "code": "X_TELEMETRY_SAMPLER_ARG_INVALID",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_TEMPLATE_CODEMOD_MISSING",
+      "owner": "scripts",
+      "at": "scripts/template-codemods.ts"
     },
     {
       "code": "X_TENANCY_ACTOR_MISMATCH",
@@ -6418,6 +6473,21 @@
       "code": "X_UPGRADE_DIRTY_TREE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_FIXTURE_HAND_STEP",
+      "owner": "scripts",
+      "at": "scripts/upgrade-fixtures-findings.ts"
+    },
+    {
+      "code": "X_UPGRADE_FIXTURE_RED",
+      "owner": "scripts",
+      "at": "scripts/upgrade-fixtures-findings.ts"
+    },
+    {
+      "code": "X_UPGRADE_FIXTURE_UNBUILT",
+      "owner": "scripts",
+      "at": "scripts/upgrade-fixtures-findings.ts"
     },
     {
       "code": "X_UPGRADE_GATE_UNREADABLE",

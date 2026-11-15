@@ -40,9 +40,11 @@ test('memoising changed no verdict: the first answer and every later one agree',
 });
 
 test('redactKeys() overrules a verdict already memoised as readable', () => {
-  expect(isRedactedKey('memoLateCustomerRef')).toBe(false);
-  redactKeys(['memoLateCustomerRef']);
-  expect(isRedactedKey('memoLateCustomerRef')).toBe(true);
+  // A fresh name per run: `redactKeys` is process-wide, and a rerun in one process must start readable.
+  const key = `memoLateCustomerRef${crypto.randomUUID().replaceAll('-', '')}`;
+  expect(isRedactedKey(key)).toBe(false);
+  redactKeys([key]);
+  expect(isRedactedKey(key)).toBe(true);
 });
 
 test('the memo is bounded: past its size the oldest verdict is asked again, not kept forever', () => {

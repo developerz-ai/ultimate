@@ -393,6 +393,14 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PROFILE_ROUTE_FAILED: 'x routes --json',
   X_ROWS_SLICE_ENTITY:
     'x help g --json   # then generate a job with the name and feature the finding names, and declare exportRows/importRows in it over the table that entity.ts declares',
+  X_SUPERSEDED_WORKAROUND:
+    'x doctor --json   # each finding names the file, the release that retired the workaround and its replacement',
+  X_GUARD_VENDORED: 'x upgrade --json',
+  X_GUARD_BUILT_IN:
+    'x verify --only boundaries --json   # set its severity in guards/shipped.json, or generate an app guard under another name',
+  X_REPRO_BUNDLE_INVALID:
+    'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
+  X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

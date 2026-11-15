@@ -9,12 +9,18 @@ import { codemod as formatEditedHook } from './format-edited-hook';
 import { codemod as reproGitignore } from './repro-gitignore';
 import { codemod as runtimePin } from './runtime-pin';
 import { codemod as solidFloor } from './solid-floor';
+import { codemod as testPorts } from './test-ports';
+import { codemod as testSuites } from './test-suites';
 import { codemod as vendoredGuards } from './vendored-guards';
+import { codemod as verifyFloorSkips } from './verify-floor-skips';
 
 export const CODEMODS: readonly Codemod[] = [
   chartDashboard,
   authenticatorSessionRefusal,
   formatEditedHook,
+  testPorts,
+  testSuites,
+  verifyFloorSkips,
   reproGitignore,
   runtimePin,
   solidFloor,
