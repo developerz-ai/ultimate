@@ -240,6 +240,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GUARD_BUILT_IN',
   'X_REPRO_BUNDLE_INVALID',
   'X_UPGRADE_LOCKED',
+  'X_APP_MIGRATIONS_UNAPPLIED',
 ] as const;
 
 /**
@@ -468,6 +469,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_GUARD_BUILT_IN: 'x g guard named a shipped guard',
   X_REPRO_BUNDLE_INVALID: 'the file is not a repro bundle this version can open',
   X_UPGRADE_LOCKED: 'another x upgrade holds this app',
+  X_APP_MIGRATIONS_UNAPPLIED:
+    'a serving role booted over a database missing migrations this build ships',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

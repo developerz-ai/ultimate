@@ -319,5 +319,8 @@
  * raised 1528 → 1529, measured 1529 (2026-11-15, plan 101b sweep 5, metafile walk against the
  * sweep-4 release): `storage/src/storage-instrument-multipart.ts` (a multipart session's four
  * changing calls as `storage.multipart`, so `x exercise` sees an upload's effect).
+ * raised 1529 → 1534, measured 1534 (2026-11-15, plan 101b sweep 6): the three on `MIGRATE_CEILING`,
+ * plus `cli/src/serve-boot-probe.ts` (web and sync answer `/healthz` 200 and `/readyz` 503 on their own
+ * port while the schema wait runs) and `cli/src/role-pg-stats.ts` (the scheduler's gauge sampler).
  */
-export const SERVING_ROLE_CEILING = 1529;
+export const SERVING_ROLE_CEILING = 1534;

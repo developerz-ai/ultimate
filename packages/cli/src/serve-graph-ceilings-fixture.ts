@@ -324,8 +324,11 @@
  * `http/src/local-caller.ts` (the one rule every dev-only disclosure asks). `db`'s caller-keyed data
  * snapshot lives in `pglite-snapshot.ts`, already on this graph — never behind an `await import()`,
  * which wrapped 24 modules of the browser rpc chunk in lazy-init code (+740 B).
+ * raised 976 → 979, measured 979 (2026-11-15, plan 101b sweep 6, metafile walk): `core/src/schema-metrics.ts` (`framework_schema_*`, the schema alerts' gauges) and
+ * `db/src/pg-stats-{gauges,sql}.ts` (the Postgres server gauges the deploy-contract alerts read),
+ * both reached through their package barrels.
  */
-export const MIGRATE_CEILING = 976;
+export const MIGRATE_CEILING = 979;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

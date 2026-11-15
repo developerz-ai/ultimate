@@ -277,5 +277,7 @@
  * spread into `messages.ts`).
  * raised 1726 → 1727, measured 1727 (2026-11-15, plan 101b sweep 5): the one module the serving
  * role gained, `storage/src/storage-instrument-multipart.ts` (`SERVING_ROLE_CEILING`).
+ * raised 1727 → 1732, measured 1732 (2026-11-15, plan 101b sweep 6): the five on
+ * `SERVING_ROLE_CEILING`.
  */
-export const WEB_ROLE_CEILING = 1727;
+export const WEB_ROLE_CEILING = 1732;
