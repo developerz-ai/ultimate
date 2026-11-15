@@ -15,7 +15,9 @@ import { job, resetJobs } from './job';
 import { memoryLeaseStore } from './leases';
 import type { JobLimiter } from './limiter';
 import { limiter, resetLimiters } from './limiter';
+import { limiterFrameOf } from './limiter-frame';
 import { LIMITER_CONCURRENCY_RETRY_SECONDS, limiterGate, limiterLeaseKey } from './limiter-gate';
+import type { StepRecord, StepStatus } from './steps-store';
 import { assertConcurrencyEnforceable } from './worker-fleet-slots';
 
 const clock = frozenClock('2026-11-14T00:00:00Z');
@@ -235,5 +237,46 @@ describe('a job declaring a limiter', () => {
       rate: { limit: 5, windowMs: 1_000 },
       concurrency: 2,
     });
+  });
+});
+
+describe('what counts as a re-entry', () => {
+  const record = (status: StepStatus): StepRecord => ({
+    runId: 'run-1',
+    name: 'call',
+    status,
+    startedAt: 0,
+  });
+
+  test('only a step that did its work: completed, sleeping, waiting — never failed, started, cleared', () => {
+    const frame = (status: StepStatus) =>
+      limiterFrameOf({ steps: [record(status)] }, 5_000, 1_000, {}).reentered;
+    expect(['completed', 'sleeping', 'waiting'].map((s) => frame(s as StepStatus))).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(['failed', 'started', 'cleared'].map((s) => frame(s as StepStatus))).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(limiterFrameOf({}, 5_000, 1_000, {}).reentered).toBeUndefined();
+  });
+
+  test('the step-store fallback reads the same rule: a failed first step spends the rate again', async () => {
+    const store = memoryLeaseStore({ clock });
+    const listed: StepRecord[] = [record('failed')];
+    const gate = limiterGate(limiter('vendor', { rate: { limit: 1, windowMs: 60_000 } }), {
+      leases: () => ({ store, driver: 'memory' }),
+      clock,
+      steps: () => ({ list: async () => listed }) as never,
+    });
+    await gate.run('send', 'run-1', async () => undefined);
+    expect((await refusalOf(gate.run('send', 'run-1', async () => undefined)))?.code).toBe(
+      'X_RATE_LIMITED',
+    );
+    listed[0] = record('completed');
+    expect(await gate.run('send', 'run-1', async () => 'resumed')).toBe('resumed');
   });
 });

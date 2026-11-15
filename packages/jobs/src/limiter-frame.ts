@@ -11,7 +11,7 @@ export interface LimiterRunFrame {
   readonly renewIntervalMs: number;
   readonly schedule: IntervalScheduler | undefined;
   /**
-   * Whether the claimed run already persisted a step — a resume after `step.sleep` or
+   * Whether the claimed run already did work (`didWork`) — a resume after `step.sleep` or
    * `waitForEvent`, or a retry past a completed step — read off the claim's own step list.
    * `undefined` when the driver handed none: the gate then asks the step store.
    */
@@ -30,7 +30,7 @@ export function withLimiterFrame<T>(value: LimiterRunFrame, fn: () => T): T {
  * as the renewal, its `schedule`, and whether the claim's own step list says the run re-entered.
  */
 export function limiterFrameOf(
-  claimed: { readonly steps?: readonly unknown[] | undefined },
+  claimed: { readonly steps?: readonly { readonly status: string }[] | undefined },
   ttlMs: number,
   renewIntervalMs: number,
   worker: { readonly schedule?: IntervalScheduler | undefined },
@@ -39,8 +39,20 @@ export function limiterFrameOf(
     ttlMs,
     renewIntervalMs,
     schedule: worker.schedule,
-    reentered: claimed.steps === undefined ? undefined : claimed.steps.length > 0,
+    reentered: claimed.steps === undefined ? undefined : didWork(claimed.steps),
   };
+}
+
+/**
+ * The statuses that prove the run got past its start: a step that completed, or one the run is
+ * suspended on. Never `failed` (a step that threw — an HTTP 500 retried is a fresh start, or
+ * every retry would skip the rate), `started` (a `once` step's outcome is unknown) or `cleared`.
+ */
+const WORK_DONE: ReadonlySet<string> = new Set(['completed', 'sleeping', 'waiting']);
+
+/** Whether any of a run's step records proves it already did work — the one re-entry rule. */
+export function didWork(steps: readonly { readonly status: string }[]): boolean {
+  return steps.some((step) => WORK_DONE.has(step.status));
 }
 
 /** The frame of the run in progress, or `undefined` outside a worker (a test calling a body). */

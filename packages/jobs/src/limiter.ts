@@ -9,8 +9,9 @@ import type { RateLimit } from './limits';
 export interface LimiterOptions {
   /**
    * At most `limit` STARTS in ANY `windowMs`, fleet-wide — a sliding window, never a burst past it.
-   * A start is a run's entry with no step persisted yet: a resume after `step.sleep` or
-   * `waitForEvent`, or a retry past a completed step, spends none (`limiter-gate.ts`).
+   * A start is a run's entry before any step completed or suspended: a resume after `step.sleep`
+   * or `waitForEvent`, or a retry past a completed step, spends none — a retry after a FAILED
+   * first step spends again (`didWork`, `limiter-frame.ts`).
    */
   readonly rate?: RateLimit;
   /** At most this many runs holding the limiter at once, fleet-wide. */
@@ -31,11 +32,21 @@ export interface JobLimiter {
  */
 export const MAX_LIMITER_RATE = 1_000;
 
+/**
+ * The most runs one limiter may hold at once, for the same reason: a grant probes the free slots
+ * (`generate_series(0, concurrency - 1)`), 294 ms at a million and `integer out of range` past
+ * 2^31 — a failure that is not `X_RATE_LIMITED`, so every run dead-letters on it.
+ */
+export const MAX_LIMITER_CONCURRENCY = 1_000;
+
 /** A limiter name keys lease rows and appears in `x jobs show`: an id, never a payload. */
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
 
 const whole = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+
+/** Every value `limiter()` returned — identity, as `isJobHandle` proves `job()` built a handle. */
+const built = new WeakSet<object>();
 
 /** What every declaration of a name agreed on, per process: two answers are a refusal. */
 const declared = new Map<string, string>();
@@ -63,8 +74,12 @@ export function limiter(name: string, options: LimiterOptions): JobLimiter {
   if (rate === undefined && concurrency === undefined) {
     refuse('neither rate nor concurrency', options, 'so it limits nothing');
   }
-  if (concurrency !== undefined && !whole(concurrency)) {
-    refuse('concurrency', concurrency, 'and it counts runs: a whole number of at least 1');
+  if (concurrency !== undefined && (!whole(concurrency) || concurrency > MAX_LIMITER_CONCURRENCY)) {
+    refuse(
+      'concurrency',
+      concurrency,
+      `and it counts runs: a whole number from 1 to ${MAX_LIMITER_CONCURRENCY}`,
+    );
   }
   if (rate !== undefined) {
     if (!whole(rate.limit) || rate.limit > MAX_LIMITER_RATE) {
@@ -103,7 +118,16 @@ export function limiter(name: string, options: LimiterOptions): JobLimiter {
     );
   }
   declared.set(name, fingerprint(value));
+  built.add(value);
   return value;
+}
+
+/**
+ * Proof `limiter()` built `value`: a hand-written `{ kind: 'limiter', concurrency: 0 }` never
+ * passed the checks above, so `job({ limiter })` refuses it rather than defer its runs forever.
+ */
+export function isLimiter(value: unknown): value is JobLimiter {
+  return typeof value === 'object' && value !== null && built.has(value);
 }
 
 /** Test seam: forget every declared name, as `resetJobs()` forgets every job. */

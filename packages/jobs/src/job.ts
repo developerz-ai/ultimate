@@ -20,6 +20,7 @@ import { JobConcurrencyInvalidError } from './errors-concurrency';
 import { JobDeclarationInvalidError, missingJobFields } from './errors-declaration';
 import type { EnqueueManyOptions } from './job-enqueue-many';
 import { instrumentedEnqueue } from './job-instrument';
+import { isLimiter } from './limiter';
 import { limiterGateFor } from './limiter-gate';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
@@ -105,7 +106,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
   // is permanently unrunnable with no log line. Refused where it is written, plain or keyed.
   const concurrency = resolveConcurrency(name, definition.concurrency);
   // A look-alike from generated code or JS reaches no gate, so the budget would be spent by nobody.
-  if (definition.limiter !== undefined && definition.limiter.kind !== 'limiter') {
+  if (definition.limiter !== undefined && !isLimiter(definition.limiter)) {
     throw new JobConcurrencyInvalidError({
       job: name,
       field: 'limiter',

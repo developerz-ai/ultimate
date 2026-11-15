@@ -12,7 +12,7 @@ import type { HeldLease, LeaseStore } from './leases';
 import type { JobLimiter } from './limiter';
 import type { LimiterRefusal } from './limiter-errors';
 import { LimiterRefusedError, LimiterUnenforceableError } from './limiter-errors';
-import { limiterFrame } from './limiter-frame';
+import { didWork, limiterFrame } from './limiter-frame';
 import type { Limiter } from './limits';
 import { concurrencyLimiter } from './limits';
 import { type IntervalScheduler, type RenewalTimer, startRenewalTimer } from './renewal-timer';
@@ -137,7 +137,7 @@ export function limiterGate(limiter: JobLimiter, options: LimiterGateOptions): L
     };
   };
   /**
-   * A rate counts STARTS, and a run that already persisted a step has started: a resume after
+   * A rate counts STARTS, and a run that already did work (`didWork`) has started: a resume after
    * `step.sleep`/`waitForEvent`, or a retry past a completed step, spends none. The worker's claim
    * says so for free; without one, the step store is asked (one read, rate-limited runs only).
    */
@@ -145,7 +145,7 @@ export function limiterGate(limiter: JobLimiter, options: LimiterGateOptions): L
     const said = limiterFrame()?.reentered;
     if (said !== undefined) return said;
     const store = options.steps?.();
-    return store === undefined ? false : (await store.list(runId)).length > 0;
+    return store === undefined ? false : didWork(await store.list(runId));
   };
   // The fast path: this process's own count can only be at or below the fleet's, so a refusal
   // here is always one the fleet would make too. Keyed by the limiter's name as its one "queue".

@@ -6,7 +6,7 @@ import { isUltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { job, resetJobs } from './job';
 import type { LimiterOptions } from './limiter';
-import { limiter, MAX_LIMITER_RATE, resetLimiters } from './limiter';
+import { limiter, MAX_LIMITER_CONCURRENCY, MAX_LIMITER_RATE, resetLimiters } from './limiter';
 
 const codeOf = (fn: () => unknown): string | undefined => {
   try {
@@ -40,6 +40,8 @@ describe('limiter()', () => {
     ['concurrency 0', 'vendor', { concurrency: 0 }],
     ['concurrency 1.5', 'vendor', { concurrency: 1.5 }],
     ['concurrency NaN', 'vendor', { concurrency: Number.NaN }],
+    ['concurrency past the ceiling', 'vendor', { concurrency: MAX_LIMITER_CONCURRENCY + 1 }],
+    ['concurrency past a Postgres int', 'vendor', { concurrency: 3e9 }],
     ['rate.limit 0', 'vendor', { rate: { limit: 0, windowMs: 1_000 } }],
     [
       'rate.limit past the ceiling',
@@ -80,5 +82,26 @@ describe('limiter()', () => {
         }),
       ),
     ).toBe('X_JOB_DECLARATION_INVALID');
+  });
+
+  test('job({ limiter }) refuses a hand-built value that spells kind "limiter"', () => {
+    const forged = { kind: 'limiter', name: 'vendor', rate: undefined, concurrency: 0 } as never;
+    expect(
+      codeOf(() =>
+        job({
+          tenant: 'none',
+          input: t.object({}),
+          idempotencyKey: () => 'k',
+          retry: { attempts: 1 },
+          limiter: forged,
+          run: async () => undefined,
+        }),
+      ),
+    ).toBe('X_JOB_DECLARATION_INVALID');
+  });
+
+  test('the ceiling on concurrency is the rate ceiling: 1,000', () => {
+    expect(MAX_LIMITER_CONCURRENCY).toBe(1_000);
+    expect(codeOf(() => limiter('wide', { concurrency: MAX_LIMITER_CONCURRENCY }))).toBeUndefined();
   });
 });

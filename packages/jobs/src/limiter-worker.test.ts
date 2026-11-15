@@ -195,3 +195,35 @@ describe('a run re-entered after step.sleep', () => {
     }
   });
 });
+
+describe('a run retried after its first step failed', () => {
+  test('has done no work: the retry spends the rate like a fresh run', async () => {
+    const { worker, uninstall } = setup();
+    let calls = 0;
+    const flaky = job({
+      name: 'limited-flaky',
+      tenant: 'none',
+      input: t.object({}),
+      idempotencyKey: () => 'flaky',
+      retry: { attempts: 5, backoff: 'fixed', delay: 0, jitter: 'none' },
+      limiter: limiter('vendor', { rate: { limit: 1, windowMs: 3_600_000 } }),
+      async run({ step }) {
+        await step.run('call', () => {
+          calls += 1;
+          throw new TypeError('the vendor answered 500');
+        });
+      },
+    });
+    try {
+      await flaky.enqueue({});
+      expect((await worker.tick()).map((one) => one.outcome)).toEqual(['retried']);
+      // The failed step left a `failed` record; the retry is still a start and the window is spent.
+      await worker.tick();
+      await worker.tick();
+      expect(calls).toBe(1);
+    } finally {
+      await worker.stop('test-end');
+      uninstall();
+    }
+  });
+});

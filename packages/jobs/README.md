@@ -1587,14 +1587,15 @@ export const refundCharge = job({ /* … */ limiter: vendorApi, async run({ inpu
 | `concurrency`: at most this many runs holding the limiter at once, fleet-wide | one row per held slot, renewed while the body runs, released when it ends, reclaimed by TTL after a SIGKILL — the worker's visibility timeout, renewed on its heartbeat interval through `WorkerOptions.schedule` (`limiter-frame.ts`), as `job.concurrency`'s slot is |
 | a run over either is **deferred, uncounted** | the gate throws `X_RATE_LIMITED` with `retryAfterSeconds` (when the oldest start lapses; 1 s for a full concurrency cap) — `executeJob`'s `rateLimitDeferralMs`, so a backlog waits and is never dead-lettered for waiting |
 | the per-process fast path refuses a concurrency this heap alone already fills, with no round trip | `limits.ts`' `concurrencyLimiter({ perQueue })`, keyed by the limiter's name. Never the rate: a window is time, and the store keeps its own |
-| whole numbers ≥ 1, `rate.limit` ≤ `MAX_LIMITER_RATE` (1,000), a name of `[a-z0-9._-]`, one set of numbers per name | `X_JOB_DECLARATION_INVALID` at `limiter()`; a non-`limiter()` value at `job()` |
+| whole numbers ≥ 1, `rate.limit` ≤ `MAX_LIMITER_RATE` (1,000), `concurrency` ≤ `MAX_LIMITER_CONCURRENCY` (1,000) — each grant probes that many slots, and past 2^31 Postgres refuses the probe outright — a name of `[a-z0-9._-]`, one set of numbers per name | `X_JOB_DECLARATION_INVALID` at `limiter()`; a value `limiter()` did not build (identity, not shape) at `job()` |
 | a driver with no `leases` | `X_JOB_CONCURRENCY_UNENFORCEABLE` — `jobWorker().start()` refuses to boot (`assertConcurrencyEnforceable`); the gate refuses the run too, for a body run outside a worker. Never a per-process budget |
 | `describe().limiter` | `{ name, rate: { limit, windowMs } \| null, concurrency \| null }`, or `null` for a job that spends none |
 
 The gate wraps the BODY, so a refusal happens before the first `step.run` and replays nothing.
-A start is an entry with no step persisted yet: a resume after `step.sleep`/`waitForEvent`, or a
-retry past a completed step, spends no rate (the claim's step list says so; outside a worker the
-step store is read). A retry before its first step spends again. A slot lost mid-run (its renewal
+A start is an entry before any step completed or suspended: a resume after
+`step.sleep`/`waitForEvent`, or a retry past a completed step, spends no rate (the claim's step
+list says so; outside a worker the step store is read). A retry whose steps only `failed` (or a
+`once` step only `started`) has done no work, and spends again. A slot lost mid-run (its renewal
 answered "not yours") is logged `jobs.limiter.slot-lost`, not cancelled.
 
 ### The process cap: `maxInFlight`
