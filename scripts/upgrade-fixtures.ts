@@ -20,7 +20,7 @@ import { strangerEnvAt } from './lib/stranger-env';
 import type { FixtureRun } from './upgrade-fixtures-findings';
 import { fixtureFindings, fixtureLines } from './upgrade-fixtures-findings';
 import { packHead, purgeLoopbackEntries } from './upgrade-fixtures-registry';
-import { runFixture } from './upgrade-fixtures-run';
+import { runFixture, scaffoldHead } from './upgrade-fixtures-run';
 
 const SCRIPT = 'upgrade-fixtures';
 
@@ -96,6 +96,7 @@ if (import.meta.main) {
   const env = strangerEnvAt(root);
   const { packed, findings: packFindings } = await packHead(root, join(cacheDir, 'pack'));
   const runs: FixtureRun[] = [];
+  const headScaffold = packFindings.length === 0 ? await scaffoldHead(root, env) : undefined;
   if (packFindings.length === 0) {
     for (const version of versions) {
       const one = await runFixture({
@@ -107,6 +108,7 @@ if (import.meta.main) {
         env,
         before: flagBool(args, 'before'),
         verify: flagBool(args, 'verify'),
+        headScaffold,
       });
       runs.push(one);
       if (!keep) rmSync(dirname(one.dir), { recursive: true, force: true });

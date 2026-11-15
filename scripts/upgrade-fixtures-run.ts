@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
+import { driftOf, readTree } from './upgrade-fixtures-drift';
 import type { FixtureRun, FixtureStage } from './upgrade-fixtures-findings';
 import type { PackedPackage } from './upgrade-fixtures-packument';
 import { scopeLine } from './upgrade-fixtures-packument';
@@ -33,6 +34,8 @@ export interface FixtureInput {
   readonly env: Readonly<Record<string, string>>;
   readonly before: boolean;
   readonly verify: boolean;
+  /** HEAD's own `x new` of the same name (`scaffoldHead`), which the hopped app is compared to. */
+  readonly headScaffold: ReadonlyMap<string, string> | undefined;
 }
 
 const GIT = ['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid'];
@@ -106,6 +109,32 @@ async function gate(dir: string, env: Readonly<Record<string, string>>) {
   };
 }
 
+/** HEAD's own `x new` output for the fixture's name, read into memory; undefined when it fails. */
+export async function scaffoldHead(
+  root: string,
+  env: Readonly<Record<string, string>>,
+): Promise<ReadonlyMap<string, string> | undefined> {
+  const parent = mkdtempSync(join(tmpdir(), 'upgrade-fixture-head-'));
+  try {
+    const result = await run(
+      [
+        process.execPath,
+        join(root, 'packages', 'cli', 'src', 'bin.ts'),
+        'new',
+        FIXTURE_APP,
+        '--dir',
+        parent,
+        '--no-git',
+        '--json',
+      ],
+      { cwd: parent, env, timeoutMs: LONG_RUN_TIMEOUT_MS },
+    );
+    return result.ok ? await readTree(join(parent, FIXTURE_APP)) : undefined;
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+}
+
 /** Builds the fixture at `version` and hops it to HEAD; every outcome is returned, none thrown. */
 export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
   const started = performance.now();
@@ -127,6 +156,7 @@ export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
     before: null,
     wrote: [],
     after: null,
+    drift: null,
     ms: elapsed(),
     stages,
   });
@@ -185,6 +215,8 @@ export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
     const wrote = await porcelain(dir, env);
     const after = input.verify ? await gate(dir, env) : null;
     if (after !== null) lap('after');
+    const drift =
+      input.headScaffold === undefined ? null : driftOf(input.headScaffold, await readTree(dir));
     return {
       version: input.version,
       dir,
@@ -192,6 +224,7 @@ export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
       ...(reading === undefined ? { hopOutput: hop.output.slice(-800) } : { hop: reading }),
       wrote,
       after,
+      drift,
       ms: elapsed(),
       stages,
     };

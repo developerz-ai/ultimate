@@ -36,6 +36,7 @@ const fixture = (hop: unknown, extra: Partial<FixtureRun> = {}): FixtureRun => {
     ...(reading === undefined ? {} : { hop: reading }),
     wrote: ['package.json', 'bun.lock'],
     after: null,
+    drift: null,
     ms: 1000,
     stages: { hop: 1000 },
     ...extra,
@@ -100,10 +101,18 @@ describe('a hop', () => {
       guards: {
         differs: [{ name: 'bare-error', refresh: 'x g guard bare-error --force' }],
         missing: [{ name: 'repo-unbounded', add: 'x g guard repo-unbounded' }],
+        installed: ['unbounded-fanout'],
       },
       bun: { manual: [{ path: 'docker/Dockerfile', why: 'a digest pins a floating tag' }] },
       doctorWarnings: [
         { code: 'X_VERIFY_STEP_UNFLOORED', cause: 'e2e', fix: 'x', at: 'x.verify.json' },
+        // Raised before the hop installed it: answered, so never owed.
+        {
+          code: 'X_SHIPPED_GUARD_MISSING',
+          cause: 'absent',
+          fix: 'x',
+          at: 'guards/unbounded-fanout.ts',
+        },
       ],
     });
     const steps = readHop(owed)?.handSteps ?? [];

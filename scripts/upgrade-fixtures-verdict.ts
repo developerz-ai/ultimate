@@ -126,7 +126,11 @@ export const handStepsOf = (data: Rec, codemods: readonly CodemodOutcome[] | nul
       required: false,
     });
   }
+  // The doctor ran before the hop installed what it could: a warning about a guard the hop then
+  // wrote is answered, not owed.
+  const installed = new Set(texts(guards['installed']).map((name) => `guards/${name}.ts`));
   for (const warning of records(data['doctorWarnings'])) {
+    if (installed.has(text(warning['at']) ?? '')) continue;
     steps.push({
       path: text(warning['at']) ?? '(x doctor)',
       source: 'doctor',

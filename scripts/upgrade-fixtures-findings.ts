@@ -3,6 +3,7 @@
 // is green and still left a file to a human — the plan's bar is zero hand edits, so that is red too.
 
 import type { Finding } from './lib/log';
+import type { ScaffoldDrift } from './upgrade-fixtures-drift';
 import type { HandStep, HopReading } from './upgrade-fixtures-verdict';
 
 /** The command that reproduces one version's fixture, end to end. */
@@ -26,6 +27,8 @@ export interface FixtureRun {
   readonly wrote: readonly string[];
   /** A standalone `bun run verify --json` after the hop (`--verify`); null when not run. */
   readonly after: { readonly green: boolean; readonly summary: string } | null;
+  /** The hopped app against HEAD's own scaffold: informational, never a finding on its own. */
+  readonly drift: ScaffoldDrift | null;
   readonly ms: number;
   /** Wall time per stage reached — scaffold, setup, before, hop, after — in milliseconds. */
   readonly stages: Readonly<Record<string, number>>;
@@ -110,5 +113,11 @@ export const fixtureLines = (run: FixtureRun): readonly string[] => {
     );
   }
   if (run.after !== null) lines.push(`    standalone x verify: ${run.after.summary}`);
+  if (run.drift !== null) {
+    const { missing, differs, extra } = run.drift;
+    lines.push(
+      `    against HEAD's x new: ${String(missing.length)} missing, ${String(differs.length)} differ, ${String(extra.length)} extra`,
+    );
+  }
   return lines;
 };
