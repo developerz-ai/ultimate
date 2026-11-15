@@ -231,11 +231,11 @@ body ceiling is `maxBodyBytes` (default 1 MiB).
 | `InboundMessage` field | |
 |---|---|
 | `eventId` | the provider's message id: the dedupe key, and the attachment folder (hashed) |
-| `recipients` | the verified envelope — Bcc included; `tenant(recipients)` picks the org from these |
+| `recipients` | from the provider's signed payload, never a header: SES's SMTP envelope (Bcc included); Resend's `to` (not documented as the envelope — route only on your receiving domain). `tenant(recipients)` picks the org |
 | `from` · `to` · `cc` · `replyTo` | `{ address, name }`, RFC 2047 decoded |
 | `subject` · `date` · `messageId` · `headers` | decoded; `headers` ordered, `Received` repeats |
-| `text` · `html` | the inline bodies, charset-decoded |
-| `attachments` | `stored: true` + `key`/`contentType`/`checksum`, or `stored: false` + `refusal` (storage's code, or `'disabled'`) |
+| `text` · `html` | the inline bodies, charset-decoded. `html`, `filename` and `contentId` are sender-controlled and unsanitised: never render `html` on your origin |
+| `attachments` | `stored: true` + `key`/`contentType`/`checksum`, or `stored: false` + `refusal` (storage's code, `X_MAIL_INBOUND_MALFORMED` for a part whose transfer encoding did not decode, `'verdict'` for an SES virus FAIL, or `'disabled'`) |
 | `verdicts` | SES spam/virus/SPF/DKIM/DMARC, as SES spells them; deciding on them is the app's |
 
 | Bound (`limits`) | Default | Over it |
@@ -245,8 +245,10 @@ body ceiling is `maxBodyBytes` (default 1 MiB).
 Attachments go through storage's `validateUpload` (size, allowlist, magic-byte sniff) and `put`, at
 `<prefix>/<sha256(eventId)>/<index>` (`org/<id>/…` when tenanted), so a retry rewrites the same
 keys. Default allowlist `INBOUND_ATTACHMENT_TYPES`: images, documents, `text/plain`, `text/csv` —
-never HTML or SVG. A file the policy refuses arrives `stored: false`; the message still arrives.
-`attachments: false` stores nothing. Unscanned: run the app's `uploadScanner` over `key` if you
+never HTML or SVG. A file the policy refuses, or one that does not decode, arrives `stored: false`;
+the message still arrives. A part with no `Content-Type` that is a file is `application/octet-stream`.
+`attachments: false` stores nothing. An SES virus verdict of `FAIL` stores none either (`refusal:
+'verdict'`) unless `attachments: { keepOnVirusFail: true }`. Unscanned: run the app's `uploadScanner` over `key` if you
 need a verdict.
 
 ## No framework mails

@@ -4,15 +4,15 @@
 
 import { inboundMalformed } from './mime-parse-errors';
 
-const CHUNK = 8192;
+const UTF16 = new TextDecoder('utf-16le');
 
-/** Bytes → one char per byte (U+0000–U+00FF). Never `TextDecoder('latin1')`: that is windows-1252. */
+/**
+ * Bytes → one char per byte (U+0000–U+00FF), natively: each byte widened to a UTF-16 code unit
+ * and decoded in one call. Never `TextDecoder('latin1')` (that is windows-1252), and never a
+ * `fromCharCode` loop — that took half a second per MiB.
+ */
 export function binaryOf(bytes: Uint8Array): string {
-  let out = '';
-  for (let at = 0; at < bytes.byteLength; at += CHUNK) {
-    out += String.fromCharCode(...bytes.subarray(at, at + CHUNK));
-  }
-  return out;
+  return UTF16.decode(new Uint16Array(bytes));
 }
 
 /** The inverse of `binaryOf`: every char is below 256 by construction. */
@@ -38,24 +38,45 @@ function base64(binary: string): Uint8Array {
 
 const HEX_PAIR = /^[0-9A-Fa-f]{2}$/;
 
+const isBlank = (code: number): boolean => code === 0x20 || code === 0x09;
+
+/**
+ * Transport padding (spaces/tabs before a line break) dropped, in ONE pass. Never a regex like
+ * `/[\t ]+(?=\r?\n)/g`: with no newline after a long run it retries from every space, which is
+ * quadratic — 100 KB of spaces held the event loop for 50 s.
+ */
+function trimLineEnds(binary: string): string {
+  const lines = binary.split('\n');
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index] ?? '';
+    const cr = line.endsWith('\r') ? 1 : 0;
+    let end = line.length - cr;
+    while (end > 0 && isBlank(line.charCodeAt(end - 1))) end -= 1;
+    lines[index] = line.slice(0, end) + (cr === 1 ? '\r' : '');
+  }
+  return lines.join('\n');
+}
+
 /** RFC 2045 §6.7. A stray `=` is kept literally, as the RFC recommends a robust decoder does. */
 function quotedPrintable(binary: string): Uint8Array {
-  const out: number[] = [];
-  const text = binary.replace(/[\t ]+(?=\r?\n)/g, '');
+  const text = trimLineEnds(binary);
+  // Decoding only shrinks: the output never outgrows the input.
+  const out = new Uint8Array(text.length);
+  let length = 0;
   for (let at = 0; at < text.length; at += 1) {
     const char = text.charCodeAt(at);
     if (char !== 0x3d) {
-      out.push(char);
+      out[length++] = char;
       continue;
     }
     if (text.startsWith('\r\n', at + 1)) at += 2;
     else if (text[at + 1] === '\n') at += 1;
     else if (HEX_PAIR.test(text.slice(at + 1, at + 3))) {
-      out.push(Number.parseInt(text.slice(at + 1, at + 3), 16));
+      out[length++] = Number.parseInt(text.slice(at + 1, at + 3), 16);
       at += 2;
-    } else out.push(char);
+    } else out[length++] = char;
   }
-  return Uint8Array.from(out);
+  return out.slice(0, length);
 }
 
 /** A part's body, decoded by its declared Content-Transfer-Encoding (absent is 7bit). */

@@ -43,7 +43,6 @@ const webhook = t.object({
     .object({
       email_id: t.string,
       to: t.array(t.string),
-      received_for: t.array(t.string).optional(),
     })
     .optional(),
 });
@@ -105,10 +104,11 @@ export function resendInbound(options: ResendInboundOptions): InboundProvider {
       if (data === undefined || !EMAIL_ID.test(data.email_id)) {
         throw deliveryEventInvalid('resend', 'notification');
       }
-      const forwarded = data.received_for ?? [];
       const row: InboundRow = {
         provider: 'resend',
-        recipients: forwarded.length > 0 ? forwarded : data.to,
+        // Resend's own `to`. Never `received_for`: Resend documents it as read from the message's
+        // `Received` headers, which the sender writes — routing a tenant on it is the sender's call.
+        recipients: data.to,
         emailId: data.email_id,
       };
       return { eventId: data.email_id, row };

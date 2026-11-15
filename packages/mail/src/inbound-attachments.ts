@@ -45,6 +45,8 @@ export interface StoreAttachmentsInput {
   readonly options: InboundAttachmentOptions | false;
   readonly eventId: string;
   readonly orgId: string | undefined;
+  /** Store none, each refused with this: the provider's virus verdict was FAIL (`'verdict'`). */
+  readonly withheld?: string | undefined;
 }
 
 export async function storeAttachments(
@@ -58,8 +60,9 @@ export async function storeAttachments(
     contentId: attachment.contentId,
     inline: attachment.inline,
   });
-  if (options === false) {
-    return input.attachments.map((a) => ({ ...base(a), stored: false, refusal: 'disabled' }));
+  if (options === false || input.withheld !== undefined) {
+    const why = options === false ? 'disabled' : (input.withheld ?? 'disabled');
+    return input.attachments.map((a) => ({ ...base(a), stored: false, refusal: a.refusal ?? why }));
   }
   if (input.attachments.length === 0) return [];
   const target = options.disk?.() ?? defaultDisk();
@@ -68,6 +71,11 @@ export async function storeAttachments(
   const folder = folderOf(input.eventId);
   const out: InboundAttachment[] = [];
   for (const [index, attachment] of input.attachments.entries()) {
+    // A part whose transfer encoding did not decode has no bytes to store: its refusal travels.
+    if (attachment.refusal !== undefined) {
+      out.push({ ...base(attachment), stored: false, refusal: attachment.refusal });
+      continue;
+    }
     const key =
       input.orgId === undefined
         ? `${prefix}/${folder}/${index}`

@@ -13,7 +13,7 @@ import type {
 import { type MimeLimits, parseMime } from './mime-parse';
 import { parseAddressList } from './mime-parse-address';
 import { inboundMalformed } from './mime-parse-errors';
-import { headerOf } from './mime-parse-headers';
+import { headerOf, rawHeaderOf } from './mime-parse-headers';
 
 const rowSchema = t.discriminatedUnion(
   'provider',
@@ -48,22 +48,29 @@ export async function readInbound(input: ReadInboundInput): Promise<InboundMessa
   const row: InboundRow = parsedRow.value;
   const raw = await input.provider.mime(row, input.limits.maxBytes);
   const parsed = parseMime(raw, input.limits);
+  const infected =
+    row.provider === 'ses' &&
+    row.verdicts['virus'] === 'FAIL' &&
+    (input.attachments === false || input.attachments.keepOnVirusFail !== true);
   const attachments = await storeAttachments({
     attachments: parsed.attachments,
     options: input.attachments,
     eventId: input.eventId,
     orgId: input.orgId,
+    withheld: infected ? 'verdict' : undefined,
   });
   const header = (name: string) => headerOf(parsed.headers, name);
+  // Address lists are split on the RAW header: a decoded comma in a name is text.
+  const addresses = (name: string) => parseAddressList(rawHeaderOf(parsed.headers, name));
   return {
     provider: row.provider,
     eventId: input.eventId,
     recipients: row.recipients,
     messageId: header('message-id'),
-    from: parseAddressList(header('from'))[0],
-    to: parseAddressList(header('to')),
-    cc: parseAddressList(header('cc')),
-    replyTo: parseAddressList(header('reply-to')),
+    from: addresses('from')[0],
+    to: addresses('to'),
+    cc: addresses('cc'),
+    replyTo: addresses('reply-to'),
     subject: header('subject') ?? '',
     date: dateOf(header('date')),
     text: parsed.text,

@@ -174,6 +174,52 @@ describe('inboundMail — SES posts the whole message', () => {
     ]);
   });
 
+  test('a sender whose encoded name holds a comma is one sender, named in full', async () => {
+    const renamed = MULTIPART.replace(
+      'From: Ada Lovelace <ada@sender.test>',
+      'From: =?UTF-8?Q?Lovelace=2C_Ada?= <ada@sender.test>',
+    );
+    const door = queued(await sesDoor(base64Of(renamed)));
+    const message = await read(ses(), door, { attachments: false });
+    expect(message.from).toEqual({ address: 'ada@sender.test', name: 'Lovelace, Ada' });
+  });
+
+  test('an attachment whose encoding does not decode arrives refused; the message still lands', async () => {
+    const broken = MULTIPART.replace(
+      'Content-Transfer-Encoding: base64\r\n',
+      'Content-Transfer-Encoding: x-uuencode\r\n',
+    );
+    const door = queued(await sesDoor(base64Of(broken)));
+    const disk = memoryStorageDriver();
+    const message = await read(ses(), door, { attachments: { disk: () => disk } });
+    expect(message.text).toBe('Please find the invoice attached.');
+    expect(message.attachments[0]).toMatchObject({
+      filename: 'invoice.pdf',
+      stored: false,
+      refusal: 'X_MAIL_INBOUND_MALFORMED',
+    });
+  });
+
+  test('a virus verdict of FAIL stores no attachment unless the receiver keeps them', async () => {
+    const payload = sesReceived(base64Of(MULTIPART));
+    payload.receipt.virusVerdict = { status: 'FAIL' };
+    const door = queued(
+      await ses().door(inboundOf(snsBody(await sesNotification(signer, payload)))),
+    );
+    const disk = memoryStorageDriver();
+    const withheld = await read(ses(), door, { attachments: { disk: () => disk } });
+    expect(withheld.verdicts['virus']).toBe('FAIL');
+    expect(withheld.attachments.map((a) => (a.stored ? 'stored' : a.refusal))).toEqual([
+      'verdict',
+      'verdict',
+    ]);
+    expect(disk.objects().size).toBe(0);
+    const kept = await read(ses(), door, {
+      attachments: { disk: () => disk, keepOnVirusFail: true },
+    });
+    expect(kept.attachments[0]).toMatchObject({ stored: true });
+  });
+
   test('a notification with no content is refused, coded', async () => {
     const error = await refusal(sesDoor(undefined));
     expect(error.code).toBe('X_MAIL_INBOUND_MALFORMED');
@@ -244,6 +290,21 @@ describe('inboundMail — Resend posts metadata; the job downloads the raw MIME'
     expect(message.text).toBe('Please find the invoice attached.');
     expect(message.attachments[0]).toMatchObject({ stored: true, contentType: 'application/pdf' });
     expect(calls.map((call) => call.auth)).toEqual(['Bearer re_test_key', null]);
+  });
+
+  test('recipients are Resend’s `to`, never `received_for` — that one is read from Received headers', async () => {
+    const { provider } = resend(MULTIPART);
+    const body = JSON.stringify({
+      ...RESEND_RECEIVED,
+      data: { ...RESEND_RECEIVED.data, received_for: ['victim-org@app.test'] },
+    });
+    const headers = {
+      'svix-id': 'msg_3',
+      'svix-timestamp': '1791288000',
+      'svix-signature': await svixSignature('msg_3', '1791288000', body),
+    };
+    const door = queued(await provider.door(inboundOf(body, headers)));
+    expect(door.row.recipients).toEqual(['support@app.test']);
   });
 
   test('a raw download past maxBytes is X_MAIL_INBOUND_TOO_LARGE', async () => {

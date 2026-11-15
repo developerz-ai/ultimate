@@ -246,6 +246,9 @@
   SES's door IS `sesEventReceiver.receive` (signature + subscription protocol), then the same bytes
   are read for `Message`; Resend's is `verifySvix`. A forgery is `X_MAIL_EVENT_UNVERIFIED`. The job
   parses the MIME, never the door; every parse/bound refusal is `X_MAIL_INBOUND_MALFORMED`/`_TOO_LARGE`.
+- **The inbound parser is linear in sender bytes**: scan by index, never a regex with overlapping or
+  lookahead-retried quantifiers over a sender's value. `mime-parse-redos.test.ts` holds each shape
+  that was quadratic or exponential (50 KB of spaces froze a worker 11 s) to a time bound.
 
 ## Commands
 

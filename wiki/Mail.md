@@ -146,8 +146,16 @@ export const supportInbox = inboundMail({
 | `limits.maxAttachments` · `maxHeaderBytes` | 20 · 64 KiB | the same |
 | unreadable MIME | — | `X_MAIL_INBOUND_MALFORMED` (`meta.problem`), terminal |
 
+**Sender-controlled, unsanitised:** `html`, every `filename`, every `contentId`, `subject`, the
+address names. Never render `html` on the app's origin (a sandboxed frame, or text); never use a
+`filename` as a path. `recipients` comes from the provider's signed payload, never a header: SES's
+is the SMTP envelope; Resend's is its `to`, not documented as the envelope — route only on your
+own receiving domain. An SES virus verdict of `FAIL` stores no attachment (`refusal: 'verdict'`)
+unless `attachments: { keepOnVirusFail: true }`.
+
 An attachment the upload policy refuses (HTML, SVG, a type the sniff contradicts) arrives
-`stored: false` with storage's code; the message is still delivered. `attachments: { disk, policy,
+`stored: false` with storage's code — or `X_MAIL_INBOUND_MALFORMED` when its transfer encoding does
+not decode; the message is still delivered (only an undecodable text or HTML BODY refuses it). `attachments: { disk, policy,
 prefix }` overrides each part; `attachments: false` stores nothing. SES's spam/virus/SPF/DKIM/DMARC
 verdicts ride on `message.verdicts` — what to do about a `FAIL` is the app's decision.
 

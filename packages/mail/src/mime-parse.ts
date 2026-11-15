@@ -3,6 +3,7 @@
 // depth, attachments and each header section. Every refusal is coded (`mime-parse-errors.ts`).
 // In-tree, no dependency: the bar in docs/idea/18-build-vs-wrap.md is not met by a walk this size.
 
+import { isUltimateError } from '@ultimat3/core';
 import { binaryOf, decodeCharset, decodeTransfer } from './mime-parse-decode';
 import { inboundMalformed, inboundTooLarge } from './mime-parse-errors';
 import {
@@ -10,6 +11,7 @@ import {
   headerOf,
   parseHeaderSection,
   parseStructured,
+  rawHeaderOf,
 } from './mime-parse-headers';
 
 export interface MimeLimits {
@@ -34,11 +36,14 @@ export const DEFAULT_MIME_LIMITS: MimeLimits = Object.freeze({
 
 export interface MimeAttachment {
   readonly filename: string | undefined;
-  /** As declared, lower-cased, parameters dropped; `application/octet-stream` when absent. */
+  /** As declared, lower-cased, parameters dropped; `application/octet-stream` when undeclared. */
   readonly contentType: string;
   readonly contentId: string | undefined;
   readonly inline: boolean;
+  /** Empty when `refusal` is set. */
   readonly bytes: Uint8Array;
+  /** `X_MAIL_INBOUND_MALFORMED` when this part's transfer encoding did not decode. */
+  readonly refusal?: string | undefined;
 }
 
 export interface ParsedMime {
@@ -91,17 +96,31 @@ function bodyParts(body: string, boundary: string): string[] {
   return parts;
 }
 
-function leaf(walk: Walk, headers: readonly HeaderField[], body: string, type: string): void {
-  const contentType = parseStructured(headerOf(headers, 'content-type'));
-  const disposition = parseStructured(headerOf(headers, 'content-disposition'));
-  const bytes = decodeTransfer(body, headerOf(headers, 'content-transfer-encoding'));
+/** A non-body part's bytes, or the refusal its transfer encoding earned — never the message's. */
+function attachmentBytes(body: string, encoding: string | undefined) {
+  try {
+    return { bytes: decodeTransfer(body, encoding) };
+  } catch (error) {
+    if (!isUltimateError(error)) throw error;
+    return { bytes: new Uint8Array(0), refusal: error.code };
+  }
+}
+
+function leaf(walk: Walk, headers: readonly HeaderField[], body: string): void {
+  const contentType = parseStructured(rawHeaderOf(headers, 'content-type'));
+  const disposition = parseStructured(rawHeaderOf(headers, 'content-disposition'));
+  const encoding = headerOf(headers, 'content-transfer-encoding');
+  // RFC 2045 §5.2: no Content-Type (or one with no slash) is text/plain — for a BODY.
+  const declared = contentType.value.includes('/') ? contentType.value : undefined;
+  const type = declared ?? 'text/plain';
   const filename = disposition.params.get('filename') ?? contentType.params.get('name');
   const isBody =
     disposition.value !== 'attachment' &&
     filename === undefined &&
     (type === 'text/plain' || type === 'text/html');
   if (isBody) {
-    const text = decodeCharset(bytes, contentType.params.get('charset'));
+    // A body that cannot be decoded is the message unread: that one stays a refusal.
+    const text = decodeCharset(decodeTransfer(body, encoding), contentType.params.get('charset'));
     // Split bodies (a client's text, image, text) are read as one, in order.
     if (type === 'text/plain') walk.text = (walk.text ?? '') + text;
     else walk.html = (walk.html ?? '') + text;
@@ -113,10 +132,11 @@ function leaf(walk: Walk, headers: readonly HeaderField[], body: string, type: s
   const contentId = headerOf(headers, 'content-id')?.replace(/^<|>$/g, '');
   walk.attachments.push({
     filename,
-    contentType: type,
+    // An undeclared FILE is opaque bytes: as text/plain it would pass a text allowlist unsniffed.
+    contentType: declared ?? 'application/octet-stream',
     contentId: contentId === '' ? undefined : contentId,
     inline: disposition.value === 'inline',
-    bytes,
+    ...attachmentBytes(body, encoding),
   });
 }
 
@@ -125,11 +145,9 @@ function entity(walk: Walk, raw: string, depth: number): readonly HeaderField[] 
   if (walk.parts > walk.limits.maxParts) throw inboundTooLarge('maxParts', walk.limits.maxParts);
   const { head, body } = split(raw);
   const headers = parseHeaderSection(head, walk.limits.maxHeaderBytes);
-  const contentType = parseStructured(headerOf(headers, 'content-type'));
-  // RFC 2045 §5.2: no Content-Type is text/plain; a value with no slash is no type at all.
-  const type = contentType.value.includes('/') ? contentType.value : 'text/plain';
-  if (!type.startsWith('multipart/')) {
-    leaf(walk, headers, body, contentType.value === '' ? 'text/plain' : type);
+  const contentType = parseStructured(rawHeaderOf(headers, 'content-type'));
+  if (!contentType.value.startsWith('multipart/')) {
+    leaf(walk, headers, body);
     return headers;
   }
   if (depth >= walk.limits.maxDepth) throw inboundTooLarge('maxDepth', walk.limits.maxDepth);
