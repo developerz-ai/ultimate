@@ -3,13 +3,11 @@
 // `guards/` holds its own rules and `guards/shipped.json` — a severity per shipped guard, never a
 // copy of one — so a fixed guard reaches every app on its next install, with no hand edit.
 
-// why: Bun ships no rename and no path joiner; the materialised module is written then renamed so
-// a concurrent gate run never imports half a file.
-import { rename } from 'node:fs/promises';
+// why: Bun ships no path joiner; `guards/shipped.json` sits under the app root.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { SHIPPED_GUARD_NAMES, type ShippedGuardName } from './guards-shipped-names';
 import type { Finding } from './output';
-import { SHIPPED_GUARD_NAMES, shippedGuardSource } from './templates/scaffold-guards';
 
 /** The app's one file about shipped guards. Its presence is the opt-in: absent, an app is legacy. */
 export const SHIPPED_GUARD_CONFIG = 'guards/shipped.json';
@@ -90,7 +88,7 @@ export async function readShippedConfig(
 export type BuiltInMode = 'default' | 'error' | 'warning' | 'legacy';
 
 export interface BuiltInGuard {
-  readonly name: string;
+  readonly name: ShippedGuardName;
   /** What a finding names as its source when the guard does not say: the package, not a file. */
   readonly display: string;
   readonly mode: BuiltInMode;
@@ -122,22 +120,6 @@ export function planBuiltIns(
     builtIn.push({ name, display: `${BUILT_IN_GUARD_PREFIX}/${name}.ts`, mode });
   }
   return { builtIn, vendored };
-}
-
-/**
- * The built-in's module on disk, under the app's ignored `.x/cache/` (never a shared temp dir,
- * where another user could plant the file first), named by its text's hash: a newer install is a
- * new path, so a long-lived process never imports a stale copy from its module cache.
- */
-export async function materializeGuard(root: string, name: string): Promise<string> {
-  const source = shippedGuardSource(name) ?? '';
-  const path = join(root, '.x', 'cache', 'guards', `${name}-${Bun.hash(source).toString(36)}.ts`);
-  const file = Bun.file(path);
-  if ((await file.exists()) && (await file.text()) === source) return path;
-  const temp = `${path}.${String(process.pid)}.tmp`;
-  await Bun.write(temp, source);
-  await rename(temp, path);
-  return path;
 }
 
 /** The config's own problems: red, because a row the gate cannot read covers nothing. */

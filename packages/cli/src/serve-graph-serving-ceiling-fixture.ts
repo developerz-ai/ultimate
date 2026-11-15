@@ -316,5 +316,8 @@
  * `render/src/route-path.ts` (file path → URL, split out of `registry.ts` at its 500-line ceiling)
  * and `cli/src/messages-{floor,status}.ts` (the strict floor's and `x status`'s catalog keys,
  * spread into `messages.ts`).
+ * raised 1528 → 1529, measured 1529 (2026-11-15, plan 101b sweep 5, metafile walk against the
+ * sweep-4 release): `storage/src/storage-instrument-multipart.ts` (a multipart session's four
+ * changing calls as `storage.multipart`, so `x exercise` sees an upload's effect).
  */
-export const SERVING_ROLE_CEILING = 1528;
+export const SERVING_ROLE_CEILING = 1529;

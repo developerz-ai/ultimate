@@ -12,11 +12,11 @@ import { join } from 'node:path';
 import { guardReport } from './guards';
 import {
   GUARD_VENDORED_CODE,
-  materializeGuard,
   parseShippedConfig,
   planBuiltIns,
   SHIPPED_GUARD_CONFIG,
 } from './guards-built-in';
+import { materializeGuard } from './guards-materialize';
 import { SHIPPED_GUARD_NAMES, shippedGuardSource } from './templates/scaffold-guards';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 

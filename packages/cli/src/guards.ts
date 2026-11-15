@@ -3,10 +3,8 @@
 // every guard the framework ships (`guards-built-in.ts`). The framework decides what a guard IS —
 // a function returning findings, held to the error contract — and nothing about what it checks.
 
-// Bun ships no equivalent for either: `existsSync` answers whether this app has a guards
-// directory, `join` builds the host-separator path, and `pathToFileURL` is the only spelling of an
-// absolute path `import()` accepts on every host.
-import { existsSync } from 'node:fs';
+// Bun ships no equivalent for either: `join` builds the host-separator path, and `pathToFileURL` is
+// the only spelling of an absolute path `import()` accepts on every host.
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';
@@ -14,12 +12,17 @@ import { fixProblem } from './error-contract';
 import { type GuardSources, guardSources } from './guard-sources';
 import {
   type BuiltInMode,
-  materializeGuard,
   planBuiltIns,
   readShippedConfig,
   shippedConfigFindings,
   vendoredPath,
 } from './guards-built-in';
+import { materializeGuard } from './guards-materialize';
+import { GUARD_DIR, guardPaths } from './guards-paths';
+
+/** The app's guard directory and its files, defined in the leaf the manifest projection reads. */
+export { GUARD_DIR, guardPaths } from './guards-paths';
+
 import { vendoredCopy, vendoredFinding } from './guards-vendored';
 import type { Finding } from './output';
 import { readVerifyFloor } from './verify-floor';
@@ -31,9 +34,6 @@ const compareNames = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 :
 /** A built-in sorts where its copy in `guards/` would have: the order an app always saw. */
 const sortKey = (run: GuardRun): string =>
   run.mode === undefined ? run.path : `${GUARD_DIR}/${guardNameOf(run.path)}.ts`;
-
-/** The directory IS the registration. An app-side list is a list an app can forget to add to. */
-export const GUARD_DIR = 'guards';
 
 export interface Guard {
   /** What this app refuses, in one line. It names the rule when the guard itself is the problem. */
@@ -113,23 +113,6 @@ function findingOf(value: Record<string, unknown>, at: string): Finding {
     ...(typeof docs === 'string' ? { docs } : {}),
     at: typeof located === 'string' && located !== '' ? located : at,
   };
-}
-
-/**
- * Every guard file, app-root-relative and sorted, so two machines report the same findings in the
- * same order. A `*.test.ts` beside a guard is its test, never a second guard — the generator emits
- * one, and importing it would run the suite inside the gate.
- */
-export async function guardPaths(root: string): Promise<readonly string[]> {
-  const dir = join(root, GUARD_DIR);
-  if (!existsSync(dir)) return [];
-  const paths: string[] = [];
-  for await (const entry of new Bun.Glob('*.{ts,tsx}').scan({ cwd: dir, absolute: false })) {
-    const path = entry.split('\\').join('/');
-    if (/\.(?:test|d)\.tsx?$/.test(path)) continue;
-    paths.push(`${GUARD_DIR}/${path}`);
-  }
-  return paths.sort();
 }
 
 const failed = (path: string, cause: string): Finding => ({

@@ -44,6 +44,9 @@ const RUNTIME_JOBS: Readonly<Record<string, unknown>> = { sendMailJob };
 /** Load the app, then describe it. Every command that needs facts goes through here. */
 export async function appManifest(root: string): Promise<AppManifest> {
   const loaded = await loadApp(root);
+  // At its point of use: every serving role evaluates this module, and the guard projection is
+  // facts for the file, never a boot dependency (`serve-graph.test.ts`' ceilings).
+  const { builtInGuardCodes, withBuiltInGuardCodes } = await import('./guards-built-in-codes');
   // Through the registrar `defineApi` uses (`define-api.ts`): the declared name wins, and the
   // same handle seated twice is one registration, so a second build of one tree is unchanged.
   primitiveRegistrar('job')(RUNTIME_JOBS);
@@ -57,7 +60,9 @@ export async function appManifest(root: string): Promise<AppManifest> {
       // imported every app module, so each `defineCatalogs()` has run and registered its locales.
       // Counting catalog files instead would be a second answer, wrong the day the two disagree.
       locales: registeredLocales(),
-      errorCodes: loaded.errorCodes,
+      // The shipped guards this app runs built in raise codes its gate emits, as a vendored copy's
+      // did: listed, so moving the guard into the framework removes no code from the contract.
+      errorCodes: withBuiltInGuardCodes(loaded.errorCodes, await builtInGuardCodes(root)),
     }),
   );
   return { manifest, findings: loaded.findings };
