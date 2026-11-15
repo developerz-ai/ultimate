@@ -420,7 +420,10 @@ export { memoryWebhookLedger } from './webhook-ledger';
 export { webhookReceiver, webhookReceiverRoutes } from './webhook-receiver';
 export { WEBHOOK_EVENT_ID_PATTERN } from './webhook-receiver-errors';
 export type {
+  ReceivedEvent,
   ReceivedEventFacts,
+  WebhookHandleArgs,
+  WebhookInbound,
   WebhookReceiver,
   WebhookReceiverDefinition,
   WebhookReceiverInput,

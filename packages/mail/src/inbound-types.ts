@@ -3,15 +3,14 @@
 // the declaration. Apart from the factory so each file keeps one job.
 
 import type { Ctx } from '@ultimat3/core';
-import type { WebhookReceiverDefinition } from '@ultimat3/jobs';
+import type { WebhookHandleArgs, WebhookInbound, WebhookReceiverDefinition } from '@ultimat3/jobs';
 import type { StorageDriver, UploadPolicy } from '@ultimat3/storage';
 import type { MimeLimits } from './mime-parse';
 import type { InboundAddress } from './mime-parse-address';
 import type { HeaderField } from './mime-parse-headers';
 
-/** What jobs' `verify` is handed, read off the definition (jobs exports no name for it). */
-export type WebhookInbound = Parameters<WebhookReceiverDefinition['verify']>[0];
-type HandleArgs = Parameters<WebhookReceiverDefinition['handle']>[0];
+/** What jobs' `verify` is handed: the request's exact bytes and headers. */
+export type { WebhookInbound };
 
 export type InboundProviderName = 'ses' | 'resend';
 
@@ -121,7 +120,7 @@ export interface InboundHandleArgs {
   readonly message: InboundMessage;
   readonly orgId: string | undefined;
   readonly ctx: Ctx;
-  readonly step: HandleArgs['step'];
+  readonly step: WebhookHandleArgs['step'];
   readonly attempt: number;
 }
 
