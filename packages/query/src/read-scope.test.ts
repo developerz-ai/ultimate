@@ -4,7 +4,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isolateTiers, lruTier, registerTier, resetTiers } from '@ultimat3/cache';
-import { configureCursorSigning, ctxOf, userActor } from '@ultimat3/core';
+import { configureCursorSigning, ctxOf, resetCursorSigning, userActor } from '@ultimat3/core';
 import type { Actor as PolicyActor, ScopeCondition } from '@ultimat3/policy';
 import { can, scoped } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -15,6 +15,10 @@ import { resetQueries } from './registry';
 import { matchesFilters } from './shape';
 import type { RowWindow, SqlSource } from './source';
 import { from, isAfterKey } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 interface Row {
   readonly id: string;

@@ -202,7 +202,7 @@ describe('the shipped SQL', () => {
   });
 
   test('list is newest first and reads epoch milliseconds', () => {
-    expect(SQL_BACKFILL_LIST).toContain('order by started_at desc');
+    expect(SQL_BACKFILL_LIST).toContain('order by x_backfills.started_at desc');
     expect(SQL_BACKFILL_LIST).toContain('(extract(epoch from started_at)   * 1000)::bigint');
   });
 });

@@ -97,6 +97,13 @@ describe('unit · framework schema', () => {
     expect(jobs).toMatchObject({ fillfactor: 80 });
   });
 
+  test('the small hot jobs tables declare their autovacuum, so drift reports a hand reset', () => {
+    const storage = frameworkTableStorage();
+    for (const table of ['x_outbox', 'x_job_workers', 'x_scheduler_state']) {
+      expect(storage.find((each) => each.table === table)?.autovacuum).toBeDefined();
+    }
+  });
+
   test('no table is created by two rows, so no row can be deleted as a duplicate', () => {
     const names = frameworkTableNames();
     expect([...new Set(names)].length).toBe(names.length);

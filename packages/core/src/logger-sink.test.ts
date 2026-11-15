@@ -1,7 +1,7 @@
 // Where a line with no writer of its own goes: the installed sink (test seam) or the process's
 // streams. Split from `logger.test.ts`, which tests what a line says; this file tests where it lands.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 // why: `node:process`, and unavoidable: `defaultWriter` writes to this process's own stdout/stderr, so
 // proving which of the two a line lands on means intercepting those exact writers.
 import process from 'node:process';
@@ -15,6 +15,11 @@ import { installLogSink, setLogStream, structuredLogger } from './logger';
  * own JSON to fd 1, so `json.load` on the output of a command whose whole contract is `--json`
  * raised on the second object.
  */
+// The stream is process-wide state, and `@ultimat3/cli`'s `dispatch` sets it on every call and
+// never puts it back: any earlier file on a shared worker that dispatched `--json` left `stderr`.
+// "stdout by default" is this file's premise, so it states it rather than inheriting it.
+beforeEach(() => setLogStream('stdout'));
+
 describe('logger · the sink', () => {
   test('a default-writer line goes to the sink instead of the streams, with its level', () => {
     const got: [string, string][] = [];

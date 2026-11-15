@@ -230,3 +230,7 @@ the ONE reader of an app's theme: `export const brand` in `apps/web/shared/theme
 ## `guards.ts` / `guard-sources.ts`
 
 an app's `guards/*.ts`, discovered, run on `boundaries`, held to the error contract; every `check(root, sources)` shares ONE walk, read and Sass compile per file (`GuardSources`)
+
+## `island-{bundle,groups,outputs,build-pool,group-cache,cache-inputs,store,sources,runtime}.ts` / `island-realtime*.ts` / `solid-loader.ts` (moved 2026-11-15)
+
+- islands, named by their final bytes (#1075): one `Bun.build` per route group — islands on exactly the same routes split together, every other alone; groups read from `page.tsx` sources, known before rendering (`islands.sharedChunks` = one group). A group's output is reused from `.x/cache/islands/` while every file it read (Sass partials too), directory listing it resolved in and lockfile/tsconfig/`package.json` hash unchanged (`reuse: false` for a determinism test). `islands.vendorSolid` (`island-vendor.ts`, off: regressed every tracked app) builds Solid once (`vendor-solid.<hash>.js`) for every island; `island-link-check.ts` refuses a merged bundle whose import names bind nothing (#1075's smoke)

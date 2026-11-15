@@ -189,6 +189,8 @@ delete from x_job_workers where id = $1
 /**
  * Live rows only, and the lapsed ones go in the same statement: a killed worker is never read
  * again, and nothing else has to be running for its row to leave.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
  */
 export const SQL_WORKERS = `
 with lapsed as (
@@ -204,6 +206,8 @@ select id, host, queues, concurrency, in_flight, build,
 `.trim();
 
 const COUNTER_COLUMNS = `done, retried, failed, dead, duration_ms`;
+
+// The counter reads order by the qualified columns too, for the reason `SQL_WORKERS` gives.
 
 export const SQL_COUNTERS = `
 select job, bucket_ms, (extract(epoch from bucket_start) * 1000)::bigint as bucket_start,

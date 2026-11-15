@@ -3,8 +3,14 @@
 // of a read ordered by each of them — because a key that decodes as the wrong TYPE compares as a
 // string against a number and blanks the page rather than failing.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, ctxOf, isUltimateError, userActor } from '@ultimat3/core';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  configureCursorSigning,
+  ctxOf,
+  isUltimateError,
+  resetCursorSigning,
+  userActor,
+} from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -13,6 +19,10 @@ import { paginate } from './pagination';
 import { query } from './query';
 import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 // `@ultimat3/policy`'s `Actor`, not core's: `permissions` is a direct grant, which is the field

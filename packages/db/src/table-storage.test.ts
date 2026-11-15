@@ -3,7 +3,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { DbError } from './errors';
-import { storageAlters, tableDdl, tableStorage, tableStorageDrift } from './table-storage';
+import { storageAlters, tableDdl, tableStorage } from './table-storage';
+import { tableStorageDrift } from './table-storage-drift';
 
 const HOT = tableStorage('x_rate_limit', { fillfactor: 70, unlogged: true });
 
@@ -137,5 +138,96 @@ describe('tableStorageDrift', () => {
         fix: 'x db migrate',
       },
     ]);
+  });
+});
+
+describe('autovacuum', () => {
+  const OUTBOX = tableStorage('x_outbox', {
+    autovacuum: {
+      vacuumThreshold: 100,
+      vacuumScaleFactor: 0.02,
+      analyzeThreshold: 100,
+      analyzeScaleFactor: 0.02,
+    },
+  });
+  const SET =
+    'alter table x_outbox set (autovacuum_vacuum_threshold = 100, autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_threshold = 100, autovacuum_analyze_scale_factor = 0.02)';
+  const LIVE =
+    'autovacuum_vacuum_threshold=100, autovacuum_vacuum_scale_factor=0.02, autovacuum_analyze_threshold=100, autovacuum_analyze_scale_factor=0.02';
+
+  test('is created with the table and re-applied by one alter', () => {
+    expect(tableDdl(OUTBOX, 'id uuid primary key')).toBe(
+      [
+        'create table if not exists x_outbox (',
+        'id uuid primary key',
+        ') with (autovacuum_vacuum_threshold = 100, autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_threshold = 100, autovacuum_analyze_scale_factor = 0.02);',
+        `${SET};`,
+      ].join('\n'),
+    );
+  });
+
+  test('beside a fillfactor, both reach the create and each keeps its own alter', () => {
+    const both = tableStorage('x_t', { fillfactor: 80, autovacuum: { vacuumThreshold: 20 } });
+    expect(tableDdl(both, 'id int')).toBe(
+      [
+        'create table if not exists x_t (',
+        'id int',
+        ') with (fillfactor = 80, autovacuum_vacuum_threshold = 20);',
+        'alter table x_t set (fillfactor = 80);',
+        'alter table x_t set (autovacuum_vacuum_threshold = 20);',
+      ].join('\n'),
+    );
+  });
+
+  test('a table holding the declaration is clean, whatever else its options carry', () => {
+    expect(
+      tableStorageDrift(OUTBOX, { unlogged: false, options: `fillfactor=90, ${LIVE}` }),
+    ).toEqual([]);
+  });
+
+  test('a hand reset is one difference per parameter, each converged by the alter', () => {
+    const live = {
+      unlogged: false,
+      options: 'autovacuum_vacuum_threshold=100, autovacuum_analyze_threshold=100',
+    };
+    expect(tableStorageDrift(OUTBOX, live)).toEqual(
+      ['autovacuum_vacuum_scale_factor', 'autovacuum_analyze_scale_factor'].map((parameter) => ({
+        table: 'x_outbox',
+        parameter,
+        declared: '0.02',
+        live: 'default',
+        statement: `${SET};`,
+        fix: `psql "$DATABASE_URL" -c '${SET};'   # then x db migrate, which re-checks`,
+      })),
+    );
+  });
+
+  test('a changed value is reported with what the table holds', () => {
+    const live = { unlogged: false, options: LIVE.replace('threshold=100,', 'threshold=50,') };
+    expect(tableStorageDrift(OUTBOX, live)).toMatchObject([
+      { parameter: 'autovacuum_vacuum_threshold', declared: '100', live: '50' },
+    ]);
+  });
+
+  test.each([
+    ['a fractional threshold', { vacuumThreshold: 1.5 }],
+    ['a negative threshold', { analyzeThreshold: -1 }],
+    ['a threshold past int4', { vacuumThreshold: 2 ** 31 }],
+    ['a negative scale factor', { vacuumScaleFactor: -0.1 }],
+    ['a scale factor over 100', { analyzeScaleFactor: 101 }],
+    ['an infinite scale factor', { vacuumScaleFactor: Number.POSITIVE_INFINITY }],
+  ])('refuses %s', (_label, autovacuum) => {
+    expect(() => tableStorage('x_t', { autovacuum })).toThrow(DbError);
+  });
+
+  test('the bounds themselves are accepted', () => {
+    const edge = tableStorage('x_t', {
+      autovacuum: { vacuumThreshold: 0, vacuumScaleFactor: 100, analyzeScaleFactor: 0 },
+    });
+    expect(edge.autovacuum).toEqual({
+      vacuumThreshold: 0,
+      vacuumScaleFactor: 100,
+      analyzeScaleFactor: 0,
+    });
   });
 });

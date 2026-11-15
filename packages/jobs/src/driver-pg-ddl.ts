@@ -12,7 +12,7 @@
 // and an odd quote count means a `;` sits inside an open literal. `driver-pg-sql.test.ts` pins
 // both, plus the shape of every chunk the split yields.
 
-import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
+import { type TableAutovacuum, type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
 
 /**
  * `fillfactor = 80`: room on each page for a row's next version, so a lease renewal (`SQL_HEARTBEAT`)
@@ -23,55 +23,41 @@ import { type TableStorage, tableDdl, tableStorage } from '@ultimat3/db';
  */
 export const JOBS_TABLE_STORAGE: TableStorage = tableStorage('x_jobs', { fillfactor: 80 });
 
-/** One table's autovacuum triggers, as Postgres' own storage parameter names. */
-export interface AutovacuumParameters {
-  readonly autovacuum_vacuum_threshold: number;
-  readonly autovacuum_vacuum_scale_factor: number;
-  readonly autovacuum_analyze_threshold: number;
-  readonly autovacuum_analyze_scale_factor: number;
-}
-
 /** A table bounded by what it names (tasks, live workers): a fixed count of dead rows triggers. */
-const BOUNDED: AutovacuumParameters = {
-  autovacuum_vacuum_threshold: 20,
-  autovacuum_vacuum_scale_factor: 0,
-  autovacuum_analyze_threshold: 20,
-  autovacuum_analyze_scale_factor: 0,
+const BOUNDED: TableAutovacuum = {
+  vacuumThreshold: 20,
+  vacuumScaleFactor: 0,
+  analyzeThreshold: 20,
+  analyzeScaleFactor: 0,
 };
 
-/**
+/*
  * The small, hot tables' autovacuum triggers. Postgres waits for 50 dead rows plus 20% of the table:
  * more dead rows than `x_scheduler_state` (a row per task, rewritten every fire) or `x_job_workers`
  * (a row per worker, rewritten every heartbeat) hold live ones, so every read of them stepped over a
  * table mostly dead (25% dead on a 43-row table, production 2026-11-14). `x_outbox` keeps published
  * rows for the retention window and is read through a partial index of the few unpublished ones,
- * which every stage, claim and mark churns: 2% of the table, not 20%.
- *
- * Applied by `alter table ... set` at the end of `SQL_JOBS_TABLE`, every apply, so a table an earlier
- * boot made reaches it and a hand `reset` is undone by the next boot. Not part of `tableStorage()`
- * (`@ultimat3/db`), which states only fillfactor and persistence: drift does not report a reset
- * between two boots.
+ * which every stage, claim and mark churns: 2% of the table, not 20%. `tableDdl` re-applies each on
+ * every boot, and drift (`x db migrate`) reports a hand reset in between.
  */
-export const HOT_TABLE_AUTOVACUUM: Readonly<Record<string, AutovacuumParameters>> = {
-  x_outbox: {
-    autovacuum_vacuum_threshold: 100,
-    autovacuum_vacuum_scale_factor: 0.02,
-    autovacuum_analyze_threshold: 100,
-    autovacuum_analyze_scale_factor: 0.02,
+const OUTBOX_STORAGE = tableStorage('x_outbox', {
+  autovacuum: {
+    vacuumThreshold: 100,
+    vacuumScaleFactor: 0.02,
+    analyzeThreshold: 100,
+    analyzeScaleFactor: 0.02,
   },
-  x_job_workers: BOUNDED,
-  x_scheduler_state: BOUNDED,
-};
+});
+const SCHEDULER_STATE_STORAGE = tableStorage('x_scheduler_state', { autovacuum: BOUNDED });
+const WORKERS_STORAGE = tableStorage('x_job_workers', { autovacuum: BOUNDED });
 
-const autovacuumAlters = (): string =>
-  Object.entries(HOT_TABLE_AUTOVACUUM)
-    .map(
-      ([table, parameters]) =>
-        `alter table ${table} set (${Object.entries(parameters)
-          .map(([name, value]) => `${name} = ${String(value)}`)
-          .join(', ')});`,
-    )
-    .join('\n\n');
+/** Every storage declaration `SQL_JOBS_TABLE` renders, for the framework schema's drift check. */
+export const JOBS_STORAGE: readonly TableStorage[] = Object.freeze([
+  JOBS_TABLE_STORAGE,
+  OUTBOX_STORAGE,
+  SCHEDULER_STATE_STORAGE,
+  WORKERS_STORAGE,
+]);
 
 export const SQL_JOBS_TABLE = `
 ${tableDdl(
@@ -168,7 +154,9 @@ create index if not exists x_backfills_name_idx on x_backfills (name, started_at
 
 -- The transactional outbox. Staged by the SAME connection as the callers business rows, so it
 -- commits or vanishes with them. The relay publishes what committed.
-create table if not exists x_outbox (
+${tableDdl(
+  OUTBOX_STORAGE,
+  `
   id              uuid primary key,
   job             text        not null,
   queue           text        not null default 'default',
@@ -180,8 +168,8 @@ create table if not exists x_outbox (
   tenant_id       text,
   traceparent     text,
   enqueued_by     text,
-  published_at    timestamptz
-);
+  published_at    timestamptz`,
+)}
 
 create index if not exists x_outbox_unpublished_idx
   on x_outbox (staged_at) where published_at is null;
@@ -215,11 +203,13 @@ alter table x_outbox add column if not exists expires_at timestamptz;
 -- The scheduler watermark. Without a durable one a redeployed scheduler has no idea what the
 -- pod it replaced already fired, so runRound takes the arming branch and every occurrence
 -- between the two processes is dropped with nothing logged.
-create table if not exists x_scheduler_state (
+${tableDdl(
+  SCHEDULER_STATE_STORAGE,
+  `
   task_name     text primary key,
   last_fired_at timestamptz not null,
-  updated_at    timestamptz not null default now()
-);
+  updated_at    timestamptz not null default now()`,
+)}
 
 -- The last occurrence that DISPATCHED, and when. Apart from the watermark, which arming a task or
 -- skipping missed occurrences also moves: an operator asking when a task last ran is asking about
@@ -377,7 +367,9 @@ create table if not exists x_job_pauses (
 -- The worker registry. One row per live worker, rewritten on its heartbeat and expired by time
 -- like a lease: a killed worker announces nothing and its row stops being read. Never cleaned up
 -- by anything that has to be running.
-create table if not exists x_job_workers (
+${tableDdl(
+  WORKERS_STORAGE,
+  `
   id           text primary key,
   host         text        not null,
   queues       jsonb       not null,
@@ -385,8 +377,8 @@ create table if not exists x_job_workers (
   in_flight    jsonb       not null,
   started_at   timestamptz not null,
   heartbeat_at timestamptz not null default now(),
-  expires_at   timestamptz not null
-);
+  expires_at   timestamptz not null`,
+)}
 
 -- When the worker began draining (a retire, a SIGTERM, a stop) - set by its first draining
 -- announce and kept by every later one, null while it serves. A queue-demand autoscaler leaves the
@@ -414,7 +406,4 @@ create table if not exists x_job_counters (
 );
 
 create index if not exists x_job_counters_age_idx on x_job_counters (bucket_ms, bucket_start);
-
--- The small hot tables vacuum on a count of dead rows, not a fifth of each (HOT_TABLE_AUTOVACUUM).
-${autovacuumAlters()}
 `.trim();

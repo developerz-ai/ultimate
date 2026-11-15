@@ -206,7 +206,7 @@ describe('the pg step store', () => {
     await store?.list('run-1');
     await store?.del('run-1', 'charge');
     await store?.clear('run-1');
-    expect(executor.calls[0]?.sql).toContain('where run_id = $1 order by started_at');
+    expect(executor.calls[0]?.sql).toContain('where run_id = $1 order by x_job_steps.started_at');
     expect(executor.calls[1]?.sql).toContain(
       'delete from x_job_steps where run_id = $1 and name = $2',
     );

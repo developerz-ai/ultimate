@@ -5,7 +5,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Page } from '@ultimat3/core';
-import { configureCursorSigning, ctxOf, userActor } from '@ultimat3/core';
+import { configureCursorSigning, ctxOf, resetCursorSigning, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, memoryRepo, text, uuid } from '@ultimat3/entity';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -13,6 +13,10 @@ import { paginate } from './pagination';
 import { query } from './query';
 import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 const ctx = ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['notes:read'] } });

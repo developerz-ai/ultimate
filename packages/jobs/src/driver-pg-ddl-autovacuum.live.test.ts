@@ -1,18 +1,19 @@
-// The small hot tables' autovacuum parameters, as the catalog holds them after `SQL_JOBS_TABLE` is
-// applied — to a fresh database, and again to one an operator reset by hand: the install point
-// re-converges every boot. Postgres' defaults (50 rows + 20% of the table) wait out more dead rows
-// than a 43-row `x_scheduler_state` holds live ones (25% dead, production 2026-11-14).
-// Skips unless `TEST_DATABASE_URL`.
+// The small hot tables' autovacuum triggers against a real catalog, declared once (`JOBS_STORAGE`,
+// `tableStorage()`): a fresh `SQL_JOBS_TABLE` apply holds them, a hand reset is DRIFT with the
+// statement that undoes it, and the next apply converges it. Postgres' defaults (50 rows + 20% of
+// the table) wait out more dead rows than a 43-row `x_scheduler_state` holds live ones (25% dead,
+// production 2026-11-14). Skips unless `TEST_DATABASE_URL`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
-import { HOT_TABLE_AUTOVACUUM, SQL_JOBS_TABLE } from './driver-pg-ddl';
+import { dbExecutor, postgresClient, raw, readTableStorageDrift } from '@ultimat3/db';
+import { JOBS_STORAGE, SQL_JOBS_TABLE } from './driver-pg-ddl';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
 const PROBE_DB = probeDatabaseName('x_jobs_ddl_autovacuum_live');
+const HOT = ['x_job_workers', 'x_outbox', 'x_scheduler_state'];
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? 'postgres://localhost/postgres');
@@ -29,26 +30,6 @@ describe.skipIf(!hasPostgres)('live · postgres · the small hot tables vacuum e
       if (statement.trim().length > 0) await client.execute(raw(statement));
     }
   };
-
-  /** Each table's `reloptions`, as `name=value` strings sorted. */
-  const options = async (): Promise<Record<string, readonly string[]>> => {
-    const rows = await client.query<{ relname: string; reloptions: readonly string[] | null }>({
-      text: `select relname, reloptions from pg_class
-              where relkind = 'r' and relname = any($1::text[])`,
-      values: [Object.keys(HOT_TABLE_AUTOVACUUM)],
-    });
-    return Object.fromEntries(rows.map((row) => [row.relname, [...(row.reloptions ?? [])].sort()]));
-  };
-
-  const declared = (): Record<string, readonly string[]> =>
-    Object.fromEntries(
-      Object.entries(HOT_TABLE_AUTOVACUUM).map(([table, parameters]) => [
-        table,
-        Object.entries(parameters)
-          .map(([name, value]) => `${name}=${String(value)}`)
-          .sort(),
-      ]),
-    );
 
   beforeAll(async () => {
     admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
@@ -67,35 +48,36 @@ describe.skipIf(!hasPostgres)('live · postgres · the small hot tables vacuum e
     await admin.close();
   });
 
-  test('the three tables are declared, each with a vacuum and an analyze trigger', () => {
-    expect(Object.keys(HOT_TABLE_AUTOVACUUM).sort()).toEqual([
-      'x_job_workers',
-      'x_outbox',
-      'x_scheduler_state',
-    ]);
-    for (const parameters of Object.values(HOT_TABLE_AUTOVACUUM)) {
-      expect(Object.keys(parameters).sort()).toEqual([
-        'autovacuum_analyze_scale_factor',
-        'autovacuum_analyze_threshold',
-        'autovacuum_vacuum_scale_factor',
-        'autovacuum_vacuum_threshold',
+  test('each hot table declares a vacuum and an analyze trigger', () => {
+    const declared = JOBS_STORAGE.filter((storage) => storage.autovacuum !== undefined);
+    expect(declared.map((storage) => storage.table).sort()).toEqual(HOT);
+    for (const { autovacuum } of declared) {
+      expect(Object.keys(autovacuum ?? {}).sort()).toEqual([
+        'analyzeScaleFactor',
+        'analyzeThreshold',
+        'vacuumScaleFactor',
+        'vacuumThreshold',
       ]);
     }
   });
 
-  test('a fresh install holds the declaration', async () => {
+  test('a fresh install holds every declaration', async () => {
     await apply();
-    expect(await options()).toEqual(declared());
+    expect(await readTableStorageDrift(client, JOBS_STORAGE)).toEqual([]);
   });
 
-  test('a hand reset is undone by the next apply', async () => {
+  test('a hand reset is drift, and the next apply undoes it', async () => {
     await client.execute(
       raw(
         'alter table x_scheduler_state reset (autovacuum_vacuum_threshold, autovacuum_vacuum_scale_factor)',
       ),
     );
-    expect((await options())['x_scheduler_state']).not.toEqual(declared()['x_scheduler_state']);
+    const drift = await readTableStorageDrift(client, JOBS_STORAGE);
+    expect(drift.map(({ table, parameter }) => `${table}.${parameter}`)).toEqual([
+      'x_scheduler_state.autovacuum_vacuum_threshold',
+      'x_scheduler_state.autovacuum_vacuum_scale_factor',
+    ]);
     await apply();
-    expect(await options()).toEqual(declared());
+    expect(await readTableStorageDrift(client, JOBS_STORAGE)).toEqual([]);
   });
 });

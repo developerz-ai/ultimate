@@ -319,6 +319,11 @@ select id, payload, floor(extract(epoch from published_at) * 1000)::bigint as pu
  limit 1
 `.trim();
 
+/**
+ * Oldest first, id as the tiebreak.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
+ */
 export const SQL_EVENT_LIST = `
 select id, name, payload, correlation_key,
        (extract(epoch from published_at) * 1000)::bigint as published_at,
@@ -356,6 +361,8 @@ select run_id, name, status, output, attempts, error,
  * them, without a type map — handed `toStepRecord` a date string, `Number()` made it `NaN`, and
  * `x jobs show` printed one per step. Every other statement in this file asks Postgres to do the
  * conversion; this is that rule applied to the one statement that had opted out of it.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
  */
 export const SQL_STEP_LIST = `
 select run_id, name, status, output, attempts, error,
@@ -439,6 +446,8 @@ update x_backfills
  * null test is what tells Postgres the parameter's type, and `::text` there pins it to text for
  * the comparison below it — `uuid = text` has no operator, so every call failed, filtered or not.
  * Nothing hand-types this value; it arrives from a job record the same database wrote.
+ * Ordered by the QUALIFIED column: a bare name binds to the epoch-ms output of the same name, and
+ * rows of one millisecond then tie (`driver-pg-sort-column.live.test.ts`).
  */
 export const SQL_BACKFILL_LIST = `
 select run_id, name, checksum, status, app_version, rows_processed, last_cursor,

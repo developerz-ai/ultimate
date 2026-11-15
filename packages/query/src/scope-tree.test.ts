@@ -4,7 +4,13 @@
 // hop — the read is refused rather than served unscoped.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, ctxOf, isUltimateError, userActor } from '@ultimat3/core';
+import {
+  configureCursorSigning,
+  ctxOf,
+  isUltimateError,
+  resetCursorSigning,
+  userActor,
+} from '@ultimat3/core';
 import { recordingClient, setDbClient } from '@ultimat3/db';
 import { clearRegistry, database, entity, postgresDriver, text, uuid } from '@ultimat3/entity';
 import type { Actor as PolicyActor, ScopeNode } from '@ultimat3/policy';
@@ -15,6 +21,10 @@ import { runQuery, sourceFor } from './read';
 import { resetQueries } from './registry';
 import type { RowWindow } from './source';
 import { from } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 interface Row {
   readonly id: string;

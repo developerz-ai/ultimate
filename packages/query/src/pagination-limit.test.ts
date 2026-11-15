@@ -2,12 +2,13 @@
 // replace it outright, so `?_first=10000` walked a "top 3" to the end of the table. The bound has
 // to hold on page one, on every later page, and on a source that cannot push the seek down.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   CursorInvalidError,
   configureCursorSigning,
   ctxOf,
   encodeCursor,
+  resetCursorSigning,
   userActor,
 } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
@@ -19,6 +20,10 @@ import { query, queryHash } from './query';
 import { registerQuery, resetQueries } from './registry';
 import type { SqlSource } from './source';
 import { from } from './source';
+
+// The signing secret is process state: configured here and left, the next file on a shared
+// worker no longer signs with the dev key, and `dev-secrets.test.ts`'s refusal never fires.
+afterAll(() => resetCursorSigning());
 
 interface Score {
   readonly id: string;

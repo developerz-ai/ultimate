@@ -129,7 +129,7 @@ export { postgresJobDriver, postgresLeader } from './driver-pg';
 // notify), and the storage it renders, which that install's drift check reads. The rest are this
 // package's internals, read where they are defined, and tested there too — the array-parameter
 // proofs are `driver-pg-array.live.test.ts` (25.0.0).
-export { JOBS_TABLE_STORAGE } from './driver-pg-ddl';
+export { JOBS_STORAGE, JOBS_TABLE_STORAGE } from './driver-pg-ddl';
 export { SQL_JOBS_TABLE } from './driver-pg-sql';
 export { JobBacklogFullError } from './enqueue-backlog';
 export { signalEnqueued, signalStaged } from './enqueue-signal';

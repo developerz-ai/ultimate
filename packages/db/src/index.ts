@@ -281,19 +281,11 @@ export type { StatementBoundOptions } from './statement-bound';
 export { withStatementTimeout } from './statement-bound';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { statementsOf } from './statement-split';
-export type {
-  LiveTableStorage,
-  TableStorage,
-  TableStorageDifference,
-  TableStorageOptions,
-} from './table-storage';
-export {
-  readTableStorageDrift,
-  storageAlters,
-  tableDdl,
-  tableStorage,
-  tableStorageDrift,
-} from './table-storage';
+export type { AutovacuumParameter, TableAutovacuum } from './table-autovacuum';
+export type { TableStorage, TableStorageOptions } from './table-storage';
+export { storageAlters, tableDdl, tableStorage } from './table-storage';
+export type { LiveTableStorage, TableStorageDifference } from './table-storage-drift';
+export { readTableStorageDrift, tableStorageDrift } from './table-storage-drift';
 export {
   completeTransaction,
   currentTx,
