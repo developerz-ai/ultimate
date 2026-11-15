@@ -439,3 +439,58 @@ describe('a test file’s environment, in one process', () => {
     expect(exitCode).toBe(0);
   }, 30_000);
 });
+
+const ENTITY_ADAPTER = join(SRC, '..', '..', 'entity', 'src', 'adapter.ts');
+
+/**
+ * `x verify`'s drift step skips its schema rails for an app whose only noted driver is a custom
+ * one, and the record is process-wide: one file's `defineDriver()` made every later file's fixture
+ * app read as non-SQL. Identical but for the name, so either order proves it.
+ */
+const storeNoter = (name: string): string => `import { expect, test } from 'bun:test';
+import { driverStores, noteDriverStore } from '${ENTITY_ADAPTER}';
+
+test('${name} sees only the store it noted', () => {
+  noteDriverStore('custom', '${name}');
+  expect(driverStores().custom).toEqual(['${name}']);
+});
+`;
+
+describe('the noted driver stores, in one process', () => {
+  test('a store one file built is not a store the next file built', async () => {
+    const { output, exitCode } = await runFixtures({
+      'one.test.ts': storeNoter('one'),
+      'two.test.ts': storeNoter('two'),
+    });
+
+    expect(output).toContain('2 pass');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+});
+
+const ADMIN_MOUNTS_MODULE = join(SRC, '..', '..', 'admin', 'src', 'mounts.ts');
+
+/**
+ * Through `@ultimat3/admin`'s own `mounts.ts`, so the symbol this package restates is held to the
+ * one admin keeps its mounts on: a drifted string would leave the second file seeing the first's.
+ */
+const mounter = (name: string): string => `import { expect, test } from 'bun:test';
+import { adminMounts, registerAdminMount } from '${ADMIN_MOUNTS_MODULE}';
+
+test('${name} sees only the admin it mounted', () => {
+  registerAdminMount({ basePath: '/${name}' } as never);
+  expect(adminMounts().map((app) => app.basePath)).toEqual(['/${name}']);
+});
+`;
+
+describe('the mounted admins, in one process', () => {
+  test('an admin one file mounted is not mounted in the next', async () => {
+    const { output, exitCode } = await runFixtures({
+      'one.test.ts': mounter('one'),
+      'two.test.ts': mounter('two'),
+    });
+
+    expect(output).toContain('2 pass');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+});

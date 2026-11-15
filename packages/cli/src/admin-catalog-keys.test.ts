@@ -2,7 +2,7 @@
 // the admin, so a resource, a field, a section, a scope, a computed column or an action whose label
 // is missing is a finding before an operator sees `⟦admin.orgs.title⟧`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { clearAdminMounts, defineAdmin } from '@ultimat3/admin';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { clearRoutes } from '@ultimat3/render';
@@ -10,15 +10,6 @@ import { mountedAdminKeys } from './admin-catalog-keys';
 
 const orgs = entity('cli_keys_orgs', {
   columns: { id: uuid().primaryKey(), name: text({ max: 80 }), plan: text({ max: 20 }) },
-});
-
-// The mount registry is process state no file boundary restores (`@ultimat3/testing` cannot import
-// `@ultimat3/admin`), and ~50 admin suites `defineAdmin()` without clearing it: on a shared worker
-// their admins were still mounted here and their keys joined this one's. "Only this admin is
-// mounted" is this file's premise, so it states it.
-beforeAll(() => {
-  clearAdminMounts();
-  clearRoutes();
 });
 
 afterAll(() => {

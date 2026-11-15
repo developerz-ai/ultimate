@@ -5,7 +5,9 @@
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
+import { captureAdminMounts, restoreAdminMounts } from './admin-mount-boundary';
 import { isAppRoot } from './app-root';
+import { captureDriverStores, restoreDriverStores } from './driver-store-boundary';
 import { RegistryLeakError } from './errors';
 import { runBoundaryHooks, runFileBoundary } from './file-boundary';
 import { type ImportGraph, importGraphReader } from './import-graph';
@@ -163,6 +165,8 @@ export function installRegistryLeakGuard(): void {
         /** Unset until the body ends: a body that threw is restored, never judged for tags. */
         before: RegistrySample | undefined;
         readonly snapshot: ProcessRegistrySnapshot;
+        readonly stores: ReturnType<typeof captureDriverStores>;
+        readonly admins: ReturnType<typeof captureAdminMounts>;
       }
     | undefined;
   const leaks: RegistryLeak[] = [];
@@ -221,6 +225,8 @@ export function installRegistryLeakGuard(): void {
       tasks: current.snapshot.tasks,
     };
     restoreProcessRegistries(restored);
+    restoreDriverStores(current.stores);
+    restoreAdminMounts(current.admins);
     accumulated = mergeSnapshots(accumulated, restored);
     lastBoundary = restored;
     current = undefined;
@@ -260,7 +266,13 @@ export function installRegistryLeakGuard(): void {
     if (pending === undefined) return;
     const live = captureProcessRegistries();
     accumulated = mergeSnapshots(accumulated, live);
-    current = { file: pending, before: undefined, snapshot: narrowed(live, accumulated) };
+    current = {
+      file: pending,
+      before: undefined,
+      snapshot: narrowed(live, accumulated),
+      stores: captureDriverStores(),
+      admins: captureAdminMounts(),
+    };
     pending = undefined;
   };
   hookHost[BASELINE_HOOK] = () => {

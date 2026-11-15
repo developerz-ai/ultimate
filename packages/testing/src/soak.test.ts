@@ -33,7 +33,10 @@ describe('soak()', () => {
     expect(caught).toBeInstanceOf(SoakHeapGrowthError);
     expect(isUltimateError(caught) && caught.code).toBe('X_TEST_SOAK_HEAP_GROWTH');
     const growth = isUltimateError(caught) ? caught.meta?.['growthBytes'] : undefined;
-    expect(typeof growth === 'number' && growth > 3_000 * 4_096).toBe(true);
+    // Half the payload, not all of it: on a shared worker the collector also returns what EARLIER
+    // files left, which offsets the reading — under `isolate: false` this real ~12 MiB leak was
+    // refused (over the bound) yet read below its full payload. Half is still six times the bound.
+    expect(typeof growth === 'number' && growth > (3_000 * 4_096) / 2).toBe(true);
   });
 
   test('a handler that keeps nothing passes, and every status is counted', async () => {

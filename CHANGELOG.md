@@ -10,7 +10,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- `limiter(name, { rate, concurrency })` is a named fleet budget every job naming it spends (`job({ limiter })`); a run over it is deferred, never dead-lettered.
+- `x g invite` writes an org member-invite flow over the new `defineMemberInvite` from `@ultimat3/auth`: three actions, two pages, `member:invite` granted to `admin`.
+- Each long-running loop (job worker, outbox relay, replicator) holds a heartbeat; `/healthz` on `METRICS_PORT` answers 503 when one stops turning.
+- A row the claim buries on its final attempt now owes its `onSettled` like every other ending: at least once across a crash.
+
+### Added
+
+- `@ultimat3/jobs`: `limiter()`, `job({ limiter })`, `JOBS_STORAGE`, `loopHeartbeat`, `staleLoops`, `JobIntrospectionUnsupportedError` (`X_JOB_INTROSPECTION_UNSUPPORTED`, 501, for the redis driver's missing operator surface).
+- `@ultimat3/auth`: `defineMemberInvite`. `@ultimat3/cli`: `x g invite`; `x new` declares `@ultimat3/mail`.
+- `@ultimat3/db`: `tableStorage(table, { autovacuum })`, checked by drift.
+- `x.manifest.json`: `jobs[].limiter`, classified `internal`.
+
+### Changed
+
+- The scheduler leader remembers each watermark: an idle round reads nothing, a cold round reads them once.
+- `x_outbox`, `x_job_workers` and `x_scheduler_state` vacuum on small dead-row counts, declared through `tableStorage()`.
+
+### Fixed
+
+- Job steps, events, backfills and workers list in true order: their statements sorted by the epoch-ms output column, so rows written in one millisecond came back in scan order; the job list's keyset skip shares the cause.
+- Realtime gap repair no longer drops a repair marked during a resync.
+- Registry state leaking between test files under `isolate: false` is caught at its source file.
 
 ## Releases
 
