@@ -30,9 +30,8 @@ import type { ThrownShape } from './thrown-by-fixture';
 const EVALUATIONS = Symbol.for('ultimate.test.app-manifest.evaluations');
 const counter = globalThis as unknown as Record<symbol, number | undefined>;
 counter[EVALUATIONS] = (counter[EVALUATIONS] ?? 0) + 1;
-const ROOT = join(
-  processRoot(join(import.meta.dir, '..', '.app-fixture')),
-  `eval-${counter[EVALUATIONS]}`,
+const ROOT = processRoot(
+  join(import.meta.dir, '..', '.app-fixture', `eval-${counter[EVALUATIONS]}`),
 );
 
 const FILES: Readonly<Record<string, string>> = {
