@@ -151,8 +151,8 @@ export function guardRefreshFinding(gap: GuardRefreshGap): Finding {
     cause: `${GUARD_REFRESH_PAGE} names no row for ${missing.length} shipped guard template(s) that changed in ${rangeName(change)}: ${missing.join(', ')} — every app runs the new rule on its next install and may meet findings it never had, while an app still holding a copy in guards/ keeps the old one until x upgrade migrates it`,
     fix:
       change.to === undefined
-        ? `git diff --name-only ${quoteArg(`v${change.from}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, what it now reports, x upgrade and ${target}; rerun: bun run changelog-check --json`
-        : `git diff --name-only ${quoteArg(`v${change.from}`)} ${quoteArg(`v${change.to}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, what it now reports, x upgrade and ${target}; rerun: bun run changelog-check --json`,
+        ? `git diff --name-only ${quoteArg(`v${change.from}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, what it now reports, and that the upgrade command migrates a copy to ${target}; rerun: bun run changelog-check --json`
+        : `git diff --name-only ${quoteArg(`v${change.from}`)} ${quoteArg(`v${change.to}`)} -- packages/cli/src/templates/   # then a row in wiki/Upgrading.md naming each guard the cause lists, what it now reports, and that the upgrade command migrates a copy to ${target}; rerun: bun run changelog-check --json`,
     at: GUARD_REFRESH_PAGE,
   };
 }

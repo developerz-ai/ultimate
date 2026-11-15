@@ -4,12 +4,13 @@
 // points the scope at loopback is excluded from git, so the hop sees the tree its author committed.
 
 // why: Bun has no recursive copy, mkdtemp, mkdir or remove; the fixture tree is managed here.
-import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
+import { adoptInto } from './upgrade-fixtures-cache';
 import { driftOf, readTree } from './upgrade-fixtures-drift';
 import type { FixtureRun, FixtureStage } from './upgrade-fixtures-findings';
 import type { PackedPackage } from './upgrade-fixtures-packument';
@@ -67,8 +68,8 @@ async function scaffold(input: FixtureInput): Promise<string | { output: string 
     if (!result.ok) return { output: result.output };
     rmSync(join(parent, FIXTURE_APP, '.git'), { recursive: true, force: true });
     mkdirSync(join(input.cacheDir, 'scaffold', input.version), { recursive: true });
-    renameSync(join(parent, FIXTURE_APP), cached);
-    return cached;
+    // Another run may have cached this release meanwhile: its copy is used, never overwritten.
+    return adoptInto(join(parent, FIXTURE_APP), cached);
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

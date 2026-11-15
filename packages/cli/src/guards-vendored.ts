@@ -4,7 +4,7 @@
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { unifiedDiff } from './codemods/engine-diff';
-import { GUARD_VENDORED_CODE, SHIPPED_GUARD_CONFIG } from './guards-built-in';
+import { SHIPPED_GUARD_CONFIG } from './guards-built-in';
 import type { Finding } from './output';
 import { RELEASED_GUARD_FORMS } from './templates/guard-released-forms';
 import { shippedGuardForms, shippedGuardSource } from './templates/scaffold-guards';
@@ -63,7 +63,7 @@ export function resolvingEdit({ name, path, identical }: VendoredCopy): string {
 
 /** One warning per copy: a copy runs in place of the installed guard and never receives a fix. */
 export const vendoredFinding = (copy: VendoredCopy): Finding => ({
-  code: GUARD_VENDORED_CODE,
+  code: 'X_GUARD_VENDORED',
   cause: copy.identical
     ? `${copy.path} is an unedited copy of the shipped ${copy.name} guard, which the framework now runs built in: the copy runs in its place, so a fix to it never reaches this app`
     : `${copy.path} is an edited copy of the shipped ${copy.name} guard: it runs in place of the one the framework now runs built in, so a fix to it never reaches this app, and your edit is not yet your own guard`,

@@ -22,15 +22,21 @@ import { typescriptLags } from './typescript-floor';
 import { applyAgentsLink, planAgentsLink } from './upgrade-agents-link';
 import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import { editBunSites, floorOf, isBunSite } from './upgrade-bun-floor';
+import { requireCleanTree } from './upgrade-clean-tree';
 import { repoScripts, runHopGate, runRepoScripts } from './upgrade-gate';
-import { atTargetCodemods, previewCodemods } from './upgrade-gate-codemods';
+import { atTargetCodemods, EVERY_RELEASE, previewCodemods } from './upgrade-gate-codemods';
+import { acquireUpgradeLock } from './upgrade-lock';
 import { readManifests, readPins, rewritePins } from './upgrade-pins';
+import type { UpgradeHop } from './upgrade-plan';
 import { planHop, releaseOf } from './upgrade-plan';
 import { publishedVersions, releaseBunRange } from './upgrade-registry';
 import type { PlannedWrites } from './upgrade-report';
 import { humanLines, NO_WRITES, report, thenLine } from './upgrade-report';
 import { codemodLines } from './upgrade-report-codemods';
 import { findUpgradeRoot } from './upgrade-root';
+import { stopChildrenOnSignal, tagRunner, upgradeTag } from './upgrade-signals';
+import type { UnfinishedHop } from './upgrade-unfinished';
+import { clearUnfinished, readUnfinished, writeUnfinished } from './upgrade-unfinished';
 import { elapsedLabel, HEARTBEAT_MS } from './verify-progress';
 import { writeErrorLine } from './write-line';
 
@@ -44,28 +50,6 @@ const readTarget = (ctx: CommandContext): string | undefined => {
     fix: 'bun pm view @ultimat3/cli versions --json   # then: x upgrade --to <one of them> --json',
   });
 };
-
-/** The repository's root, or the refusal: git is the only record of where the walk stands. */
-async function requireCleanTree(runner: Runner, root: string): Promise<string> {
-  const top = await runner(['git', 'rev-parse', '--show-toplevel'], { cwd: root });
-  if (!top.ok) {
-    throw new UltimateError({
-      code: 'X_UPGRADE_DIRTY_TREE',
-      cause: `${root} is not a git repository, and a hop has to be one commit you can review or undo`,
-      fix: 'git init && git add -A && git commit -m "before x upgrade"   # then: x upgrade --json',
-    });
-  }
-  const status = await runner(['git', 'status', '--porcelain'], { cwd: root });
-  const changes = status.stdout.split('\n').filter((line) => line.trim().length > 0);
-  if (!status.ok || changes.length > 0) {
-    throw new UltimateError({
-      code: 'X_UPGRADE_DIRTY_TREE',
-      cause: `${String(changes.length)} uncommitted change(s), and a hop has to be one reviewable commit: ${changes.slice(0, 5).join('; ')}`,
-      fix: 'git status --short   # then commit or stash, and re-run: x upgrade --json',
-    });
-  }
-  return top.stdout.trim();
-}
 
 /** Everything the hop would write, decided before any of it is. `--dry-run` stops here. */
 async function planWrites(input: {
@@ -149,6 +133,16 @@ async function withHeartbeat<T>(
   }
 }
 
+/** The recorded hop this run finishes: its pins are at target and it is the hop that wrote them. */
+const resumable = (
+  unfinished: UnfinishedHop | undefined,
+  planned: UpgradeHop,
+  dryRun: boolean,
+): UnfinishedHop | undefined =>
+  unfinished !== undefined && planned.atTarget && !dryRun && unfinished.to === planned.to
+    ? unfinished
+    : undefined;
+
 /** `YYYY-MM-DD` in UTC: the day a rebaselined floor's `why` names. */
 const utcDay = (at: Date): string => at.toISOString().slice(0, 10);
 
@@ -156,22 +150,32 @@ export const createUpgradeCommand = (
   write: (line: string) => void,
   /** The clock a rebaselined coverage floor is dated by; a test pins it. */
   now: () => Date = () => new Date(),
-): CliCommand => ({
-  spec: upgradeSpec,
-  async run(ctx: CommandContext): Promise<CommandResult> {
-    if (ctx.args.subcommand === 'codemods') return runUpgradeCodemods(ctx);
-    const { dir: root, app } = await findUpgradeRoot(ctx.cwd);
-    const to = readTarget(ctx);
+): CliCommand => {
+  /** One hop, under the lock and the signal handlers `run` holds around it. */
+  async function runHop(
+    ctx: CommandContext,
+    root: string,
+    app: boolean,
+    to: string | undefined,
+  ): Promise<CommandResult> {
     const dryRun = flagBool(ctx.args, 'dry-run');
-    const top = await requireCleanTree(ctx.runner, root);
+    const unfinished = await readUnfinished(root);
+    const top = await requireCleanTree(ctx.runner, root, unfinished);
     const manifests = await readManifests(root);
     const pins = readPins(manifests);
     // Reported, never written: a compiler is the app's to move, and the line names the command.
     const typescript = typescriptLags(manifests);
     const versions = await publishedVersions(ctx.runner, root);
-    const hop = planHop({ pins, versions, ...(to === undefined ? {} : { to }) });
+    const planned = planHop({ pins, versions, ...(to === undefined ? {} : { to }) });
+    // Pins at target with a hop recorded as unfinished: that hop wrote them and never reached its
+    // gate. It is finished now — install, then the whole gate, every codemod (each skips a file it
+    // already carried) — rather than answered done.
+    const resume = resumable(unfinished, planned, dryRun);
+    const hop = resume === undefined ? planned : { ...planned, from: resume.from, atTarget: false };
 
     if (hop.atTarget) {
+      // A record for some other target is a hop since undone (`git stash`): nothing left to finish.
+      if (unfinished !== undefined && !dryRun) await clearUnfinished(root);
       const then = thenLine({ hop, dryRun, app, gate: undefined, scripts: [] });
       const carried = app
         ? await atTargetCodemods({ runner: ctx.runner, root, to: hop.to, dryRun })
@@ -204,7 +208,10 @@ export const createUpgradeCommand = (
       });
     }
 
-    const bunRange = await releaseBunRange(ctx.runner, root, hop.to);
+    const bunRange =
+      resume === undefined
+        ? await releaseBunRange(ctx.runner, root, hop.to)
+        : (resume.bunTo ?? undefined);
     const floor = floorOf(bunRange);
     // Before any write: the CLI this hop installs refuses this Bun on its first line, so the pins
     // would land and every later step would report the same `X_BUN_VERSION` as a hop gone red.
@@ -220,7 +227,10 @@ export const createUpgradeCommand = (
       manifests,
     });
     const held = manifests.find((manifest) => manifest.file === 'package.json')?.text ?? '';
-    const bunFrom = /"engines"\s*:\s*\{[^}]*?"bun"\s*:\s*"([^"]*)"/.exec(held)?.[1] ?? null;
+    const bunFrom =
+      resume === undefined
+        ? (/"engines"\s*:\s*\{[^}]*?"bun"\s*:\s*"([^"]*)"/.exec(held)?.[1] ?? null)
+        : resume.bunFrom;
     const agentsMd = await planAgentsLink(root);
     const shared = {
       hop,
@@ -262,6 +272,14 @@ export const createUpgradeCommand = (
       });
     }
 
+    // From the first pin written until the gate returns: a stopped hop is told apart from a done one.
+    await writeUnfinished(root, {
+      from: hop.from,
+      to: hop.to,
+      bunFrom,
+      bunTo: bunRange ?? null,
+      startedAt: resume?.startedAt ?? now().toISOString(),
+    });
     await Promise.all(
       [...writes.files].map(async ([path, text]) => {
         await Bun.write(path, text);
@@ -290,16 +308,19 @@ export const createUpgradeCommand = (
         runner: ctx.runner,
         root,
         onStage: stageReached,
-        codemods: { from: hop.from, to: hop.to },
+        codemods: { from: resume === undefined ? hop.from : EVERY_RELEASE, to: hop.to },
         ...(bunMoved === undefined ? {} : { bunMoved }),
       });
       return { gate: hopGate, scripts: [] };
     });
+    await clearUnfinished(root);
 
     const redScripts = scripts.filter((script) => script.ok !== true).map((script) => script.name);
     // With no script, nothing was checked, and that is never a green.
     const done =
-      gate !== undefined ? gate.verify.ok : scripts.length > 0 && redScripts.length === 0;
+      gate !== undefined
+        ? gate.verify.ok && gate.codemods?.failure === undefined
+        : scripts.length > 0 && redScripts.length === 0;
     const then = thenLine({ hop, dryRun: false, app, gate, scripts });
     const extra = {
       data: report({ ...shared, done, dryRun: false, gate, scripts, then }),
@@ -323,7 +344,29 @@ export const createUpgradeCommand = (
           msg('cli.upgrade.noApp.red', { ...span, names: redScripts.join(', ') }),
           extra,
         );
-  },
-});
+  }
+
+  return {
+    spec: upgradeSpec,
+    async run(ctx: CommandContext): Promise<CommandResult> {
+      if (ctx.args.subcommand === 'codemods') return runUpgradeCodemods(ctx);
+      const { dir: root, app } = await findUpgradeRoot(ctx.cwd);
+      const to = readTarget(ctx);
+      // One hop per app at a time, and a stopped hop stops its children: every spawn below is
+      // tagged, and SIGINT/SIGTERM kill that tree and release the lock before the signal lands.
+      const release = acquireUpgradeLock(root);
+      const tag = upgradeTag();
+      const pids = new Set<number>();
+      const undoSignals = stopChildrenOnSignal({ tag, pids, cleanup: release });
+      try {
+        const runner = tagRunner(ctx.runner, tag, ctx.env, pids);
+        return await runHop({ ...ctx, runner }, root, app, to);
+      } finally {
+        undoSignals();
+        release();
+      }
+    },
+  };
+};
 
 export const upgradeCommand: CliCommand = createUpgradeCommand(writeErrorLine);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "364002dbd9c805efe693186c065b3e1b19e14c7575d554ca58497260f28020a8",
+  "buildId": "3b3633d78b496ab108f252806cc5efc38f74324f6e76599d2c4fab58fd965ff7",
   "tiers": {
     "0": [
       "core",
@@ -407,7 +407,7 @@
     {
       "code": "X_ADVISORY_FLOOR_UNMET",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_ADVISORY_MANIFEST_MOVED",
@@ -2577,7 +2577,7 @@
     {
       "code": "X_GUARD_VENDORED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_GUARDS_DOC_DRIFT",
@@ -5897,7 +5897,7 @@
     {
       "code": "X_SUPERSEDED_WORKAROUND",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_SURFACE_BOUNDARY",
@@ -6477,7 +6477,7 @@
     {
       "code": "X_UPGRADE_CODEMODS_PENDING",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-doctor.ts"
     },
     {
       "code": "X_UPGRADE_DIRTY_TREE",
@@ -6517,7 +6517,7 @@
     {
       "code": "X_UPGRADE_LOCKED",
       "owner": "cli",
-      "at": "packages/cli/src/upgrade-lock.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_UPGRADE_MIXED_PINS",

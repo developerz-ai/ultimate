@@ -66,7 +66,6 @@ export async function packHead(
   dest: string,
   target: string,
 ): Promise<{ readonly packed: readonly PackedPackage[]; readonly findings: readonly Finding[] }> {
-  rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   const packed: PackedPackage[] = [];
   const findings: Finding[] = [];
@@ -187,21 +186,4 @@ export function serveScope(mode: ScopeMode, cacheDir: string): ScopeRegistry {
     },
   });
   return { url: `${server.url.origin}${prefix}/`, stop: () => void server.stop(true) };
-}
-
-/**
- * Removes the scope's loopback-registry entries from a Bun install cache: Bun keys an entry on the
- * registry host, so each HEAD pack lands beside npm's and would only ever be dead weight there.
- */
-export function purgeLoopbackEntries(installCache: string): readonly string[] {
-  const scopeDir = join(installCache, SCOPE);
-  let entries: readonly string[];
-  try {
-    entries = readdirSync(scopeDir);
-  } catch {
-    return [];
-  }
-  const loopback = entries.filter((entry) => entry.includes('@@127.0.0.1__'));
-  for (const entry of loopback) rmSync(join(scopeDir, entry), { recursive: true, force: true });
-  return loopback;
 }

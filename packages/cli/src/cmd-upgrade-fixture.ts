@@ -192,6 +192,8 @@ interface Script {
   /** The installed `x upgrade codemods`' stdout and exit code; default: none ran. */
   readonly codemods?: string;
   readonly codemodsCode?: number;
+  /** Files the installed `x upgrade codemods` writes, whatever its report says. */
+  readonly codemodsWrite?: Readonly<Record<string, string>>;
 }
 
 /** What an installed CLI with the engine answers when no codemod lies in the span. */
@@ -276,6 +278,9 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
       case 'x doctor':
         return answer(command, script.doctor ?? DOCTOR);
       case 'x upgrade':
+        for (const [path, text] of Object.entries(script.codemodsWrite ?? {})) {
+          await Bun.write(join(options.cwd, path), text);
+        }
         return answer(command, script.codemods ?? codemodsDocument(), script.codemodsCode ?? 0);
       case 'x exercise':
         return answer(command, script.exercise ?? EXERCISE_GREEN, script.exerciseCode ?? 0);

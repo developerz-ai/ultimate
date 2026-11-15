@@ -7,8 +7,10 @@
 //   bun run scripts/upgrade-fixtures.ts [--versions 31.4.0,31.15.0] [--root <checkout>] [--before]
 //     [--verify] [--keep] [--json]
 
-// why: Bun has no recursive remove; a fixture tree is removed once judged unless --keep.
-import { rmSync } from 'node:fs';
+// why: Bun has no mkdtemp or recursive remove; a fixture tree is removed once judged unless --keep.
+import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { dirname, join } from 'node:path';
 import { flagBool, flagList, flagString, parseScriptArgs } from './lib/args';
@@ -17,10 +19,11 @@ import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { strangerEnvAt } from './lib/stranger-env';
+import { loopbackEntries, purgeLoopbackEntries } from './upgrade-fixtures-cache';
 import type { FixtureRun } from './upgrade-fixtures-findings';
 import { fixtureFindings, fixtureLines } from './upgrade-fixtures-findings';
 import { nextMinor } from './upgrade-fixtures-packument';
-import { packHead, purgeLoopbackEntries } from './upgrade-fixtures-registry';
+import { packHead } from './upgrade-fixtures-registry';
 import { runFixture, scaffoldHead } from './upgrade-fixtures-run';
 
 const SCRIPT = 'upgrade-fixtures';
@@ -98,11 +101,19 @@ if (import.meta.main) {
   const target = nextMinor(headVersion) ?? headVersion;
   // The fixtures run code this checkout did not write: an allowlisted env, a throwaway home.
   const env = strangerEnvAt(root);
-  const { packed, findings: packFindings } = await packHead(root, join(cacheDir, 'pack'), target);
+  const installCache = env['BUN_INSTALL_CACHE_DIR'];
+  // Taken before the first server starts: the entries this run's servers add are the ones it removes.
+  const before = new Set(installCache === undefined ? [] : loopbackEntries(installCache));
+  // One pack directory per run, so two runs never pack over each other's tarballs.
+  const packDir = mkdtempSync(join(tmpdir(), 'upgrade-fixtures-pack-'));
   const runs: FixtureRun[] = [];
-  const headScaffold = packFindings.length === 0 ? await scaffoldHead(root, env) : undefined;
-  if (packFindings.length === 0) {
-    for (const version of versions) {
+  let packFindings: readonly Finding[] = [];
+  try {
+    const head = await packHead(root, packDir, target);
+    packFindings = head.findings;
+    const { packed } = head;
+    const headScaffold = packFindings.length === 0 ? await scaffoldHead(root, env) : undefined;
+    for (const version of packFindings.length === 0 ? versions : []) {
       const one = await runFixture({
         root,
         version,
@@ -117,9 +128,10 @@ if (import.meta.main) {
       runs.push(one);
       if (!keep) rmSync(dirname(one.dir), { recursive: true, force: true });
     }
+  } finally {
+    rmSync(packDir, { recursive: true, force: true });
+    if (installCache !== undefined) purgeLoopbackEntries(installCache, before);
   }
-  const installCache = env['BUN_INSTALL_CACHE_DIR'];
-  if (installCache !== undefined) purgeLoopbackEntries(installCache);
   const findings: Finding[] = [...packFindings, ...runs.flatMap(fixtureFindings)];
   const green = runs.filter((one) => fixtureFindings(one).length === 0).length;
   report(

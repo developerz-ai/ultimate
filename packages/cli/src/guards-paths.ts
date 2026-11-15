@@ -2,9 +2,9 @@
 // (`guards.ts`), `x doctor` and the manifest's error-code projection, the last on the serving
 // roles' graph — so nothing here imports a template or a runner.
 
-// Bun ships no equivalent for either: `statSync` answers what `guards` is in this app, `join`
-// builds the host-separator path.
+// why: Bun has no synchronous stat — `statSync` answers whether `guards` is a directory.
 import { statSync } from 'node:fs';
+// why: Bun has no path-join primitive, and the path must carry the host's separator.
 import { join } from 'node:path';
 
 /** The directory IS the registration. An app-side list is a list an app can forget to add to. */

@@ -105,7 +105,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} answers for ${row.template}, which is no scaffold-owned template: a row for nothing excuses nothing`,
-        fix: `bun run scripts/template-codemods.ts --json   # after removing the ${row.template} row from ${ROWS_FILE}, or naming the template as it is`,
+        fix: `edit ${ROWS_FILE} — remove the ${row.template} row, or name the template as it is; then bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     } else if ('codemod' in row) {
@@ -114,7 +114,7 @@ export function templateCodemodGaps(input: {
         findings.push({
           code: CODE,
           cause: `${ROWS_FILE} carries ${row.template} by codemod ${row.codemod} since ${row.since}, and packages/cli/src/codemods/index.ts lists ${listed === undefined ? 'no codemod of that id' : `it since ${listed.since}`}`,
-          fix: `bun test ./packages/cli/src/codemods/index.test.ts   # after listing packages/cli/src/codemods/${row.codemod}.ts in index.ts with since ${row.since}, or correcting the row in ${ROWS_FILE}`,
+          fix: `edit packages/cli/src/codemods/index.ts — list ${row.codemod} there with since ${row.since}, or correct its row in ${ROWS_FILE}; then bun test ./packages/cli/src/codemods/index.test.ts`,
           at: ROWS_FILE,
         });
       }
@@ -122,7 +122,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} excuses ${row.template} with "${row.none}", which says no reason an app needs no codemod`,
-        fix: `bun run scripts/template-codemods.ts --json   # after writing in the ${row.template} row's none: why an app that keeps the old file is not broken by it`,
+        fix: `edit ${ROWS_FILE} — write in the ${row.template} row's none why an app that keeps the old file is not broken by it; then bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     }

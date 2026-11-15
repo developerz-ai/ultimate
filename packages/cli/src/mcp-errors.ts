@@ -402,6 +402,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
   X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
   X_UPGRADE_CODEMODS_PENDING: 'x upgrade --json',
+  X_UPGRADE_LOCKED: 'ps -p <pid>',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
