@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { AdvisoryFetch } from './advisory-floors';
-import { advisoryFloorsResult, declarationsOf, loadWorld } from './advisory-floors';
+import {
+  ADVISORY_API,
+  ADVISORY_FETCH_WIDTH,
+  advisoryFloorsResult,
+  declarationsOf,
+  loadWorld,
+} from './advisory-floors';
 import type { Declaration } from './lib/advisory-floors';
 
 // The shell around `lib/advisory-floors.ts`: which declarations it audits, what it asks the two
@@ -126,5 +132,84 @@ describe('advisoryFloorsResult', () => {
     const result = advisoryFloorsResult([solidPeer], loaded);
     expect(result.ok).toBe(false);
     expect(result.findings?.map((f) => f.code)).toContain('X_ADVISORY_UNREACHABLE');
+  });
+});
+
+describe('loadWorld, against the advisory API', () => {
+  const linked = (body: unknown, next: string | undefined): Response =>
+    new Response(JSON.stringify(body), {
+      headers: {
+        'content-type': 'application/json',
+        ...(next === undefined ? {} : { link: `<${next}>; rel="next", <${next}>; rel="last"` }),
+      },
+    });
+
+  test('follows rel="next": an advisory on the second page is still read', async () => {
+    const page2 = `${ADVISORY_API}?ecosystem=npm&per_page=100&affects=seroval&page=2`;
+    const paged: AdvisoryFetch = async (url, init) => {
+      if (url === page2) return json(ADVISORIES['seroval']);
+      if (url.startsWith(ADVISORY_API) && url.includes('affects=seroval')) return linked([], page2);
+      return fetcher(url, init);
+    };
+    const result = advisoryFloorsResult(
+      [solidPeer],
+      await loadWorld([solidPeer], paged, undefined),
+    );
+    expect(result.raises.map((r) => r.to)).toEqual(['^1.9.18']);
+  });
+
+  test('a next page on another host is never followed with the token: the range is unjudged', async () => {
+    const asked: string[] = [];
+    const elsewhere: AdvisoryFetch = async (url, init) => {
+      asked.push(url);
+      if (url.startsWith(ADVISORY_API) && url.includes('affects=seroval')) {
+        return linked([], 'https://evil.example/advisories?page=2');
+      }
+      return fetcher(url, init);
+    };
+    const result = advisoryFloorsResult(
+      [solidPeer],
+      await loadWorld([solidPeer], elsewhere, 'token'),
+    );
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_UNREACHABLE']);
+    expect(asked.some((url) => url.startsWith('https://evil.example'))).toBe(false);
+  });
+
+  test('a list with pages past the cap is unjudged, never read as complete', async () => {
+    let page = 0;
+    const endless: AdvisoryFetch = async (url, init) => {
+      if (url.startsWith(ADVISORY_API) && url.includes('affects=seroval')) {
+        page += 1;
+        return linked([], `${ADVISORY_API}?ecosystem=npm&affects=seroval&page=${page + 1}`);
+      }
+      return fetcher(url, init);
+    };
+    const result = advisoryFloorsResult(
+      [solidPeer],
+      await loadWorld([solidPeer], endless, undefined),
+    );
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_UNREACHABLE']);
+  });
+
+  test(`never more than ${ADVISORY_FETCH_WIDTH} packages in flight at once`, async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const slow: AdvisoryFetch = async (url) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Promise.resolve();
+      await Promise.resolve();
+      inFlight -= 1;
+      return url.startsWith(ADVISORY_API) ? json([]) : json({ versions: { '1.0.0': {} } });
+    };
+    const many: Declaration[] = Array.from({ length: ADVISORY_FETCH_WIDTH * 4 }, (_, i) => ({
+      ...solidPeer,
+      name: `pkg-${i}`,
+      range: '^1.0.0',
+    }));
+    await loadWorld(many, slow, undefined);
+    // Two requests per package: its packument and its advisories, asked together.
+    expect(peak).toBeLessThanOrEqual(ADVISORY_FETCH_WIDTH * 2);
+    expect(peak).toBeGreaterThan(1);
   });
 });

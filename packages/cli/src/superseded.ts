@@ -72,8 +72,9 @@ export const SUPERSEDED_WORKAROUNDS: readonly SupersededWorkaround[] = [
     id: 'dev-no-tls',
     pattern: {
       comment: [
-        /\bx dev\b/,
-        /\b(?:no|lacks|has no|does not|doesn't|cannot|can't|won't)\s+(?:\S+\s+){0,3}?`?(?:tls|https|--tls|--host|ipv6)\b/i,
+        // One sentence, a few words apart: `x dev`, then a whole-word negation, then what it lacks.
+        // "Start it with `x dev`. In production nothing terminates TLS" is two sentences.
+        /\bx dev`?\s+(?:[^\s.]+\s+){0,3}?\b(?:no|lacks|does not|doesn't|cannot|can't|won't)\s+(?:[^\s.]+\s+){0,3}?`?(?:tls|https|--tls|--host|ipv6)\b/i,
       ],
     },
     shippedIn: '31.27.0',

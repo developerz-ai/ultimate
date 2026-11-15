@@ -49,6 +49,9 @@ export const ADVISORY_FLOORS: readonly AdvisoryFloor[] = [
 /** The floor the codemod raises an app's `solid-js` to. */
 export const SOLID_FLOOR = ADVISORY_FLOORS[0]?.floor ?? '1.9.18';
 
+/** A registry release: what `Bun.semver.order` can compare. */
+const RELEASE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?$/;
+
 /** Every version `bun.lock` resolves for `name`, nested `parent/name` entries included. */
 function resolvedVersions(packages: Readonly<Record<string, unknown>>, name: string): string[] {
   return Object.entries(packages).flatMap(([key, entry]) => {
@@ -85,7 +88,11 @@ export async function advisoryFloorFindings(
   if (packages === undefined) return [];
   const transitive = floors.filter((f) => f.via === 'transitive').map((f) => quoteArg(f.name));
   return floors.flatMap((row) => {
+    // A git, tarball or `file:` head is no release on npm's line, so no advisory range reads it:
+    // skipped rather than ordered, because `Bun.semver.order` throws on it and would take every
+    // other `x doctor` check down with this warning.
     const below = resolvedVersions(packages, row.name)
+      .filter((version) => RELEASE.test(version))
       .filter((version) => Bun.semver.order(version, row.floor) < 0)
       .sort((a, b) => Bun.semver.order(a, b));
     const lowest = below[0];

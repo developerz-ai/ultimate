@@ -74,7 +74,7 @@ jobs:
     # minute; the bound is for a hung registry, which would otherwise hold the runner six hours.
     timeout-minutes: 10
     steps:
-      # `persist-credentials: false`: `bun install` below runs dependency scripts, and the token must
+      # `persist-credentials: false`: the setup's install runs dependency scripts, and the token must
       # not sit in .git/config while they do. The push passes it explicitly, as bench.yml's does.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -93,20 +93,33 @@ jobs:
         # Not swallowed: the steps below key on this outcome and the last one fails the run.
         continue-on-error: true
 
-      - name: open a pull request with the raised ranges
+      # No `env:` here, deliberately: this is the one step that re-resolves dependencies, and a
+      # package the raise pulls in must never run beside the write token. `--lockfile-only` writes
+      # bun.lock without installing; `--ignore-scripts` runs no lifecycle script even so.
+      - name: refresh the lockfile for the raised ranges, with no token
+        id: lock
         if: steps.floors.outcome == 'failure'
+        run: |
+          if git diff --quiet -- packages; then
+            echo 'raised=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The lockfile follows the manifests in the same commit: ci.yml installs frozen.
+          bun install --lockfile-only --ignore-scripts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c 'security/advisory-floors'
+          git add packages/*/package.json bun.lock
+          git commit -m 'fix(deps): raise the ranges an advisory lands in'
+          echo 'raised=true' >> "$GITHUB_OUTPUT"
+
+      # The token, and nothing that runs a dependency: git and gh only.
+      - name: open a pull request with the raised ranges
+        if: steps.lock.outputs.raised == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if git diff --quiet -- packages; then exit 0; fi
-          # The lockfile follows the manifests in the same commit: ci.yml installs frozen.
-          bun install
           BRANCH='security/advisory-floors'
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git switch -c "$BRANCH"
-          git add packages/*/package.json bun.lock
-          git commit -m 'fix(deps): raise the ranges an advisory lands in'
           # One branch, force-pushed: tomorrow's run refreshes today's pull request, never a second.
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
           body="$(jq -r '"**" + .summary + "**\n\n" + ([.data.raises[] | "- `" + .manifest + "` " + .field + "." + .name + ": `" + .from + "` -> `" + .to + "` (" + ([.advisories[].advisory] | unique | join(", ")) + ")"] | join("\n")) + "\n\nThe root `package.json`, the scaffold pin and the tracked apps may pin the old version: CI on this branch names them."' floors.json)"

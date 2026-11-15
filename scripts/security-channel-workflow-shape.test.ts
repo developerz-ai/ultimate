@@ -16,6 +16,7 @@ interface Step {
   readonly uses?: string;
   readonly run?: string;
   readonly with?: Readonly<Record<string, unknown>>;
+  readonly env?: Readonly<Record<string, unknown>>;
 }
 
 interface Workflow {
@@ -87,10 +88,18 @@ function floorsGaps(workflow: Workflow): readonly string[] {
   ) {
     gaps.push('floors-pipefail');
   }
-  const install = shell.indexOf('bun install');
+  const install = shell.indexOf('bun install --lockfile-only --ignore-scripts');
   const add = shell.indexOf('git add');
   if (install === -1 || add === -1 || install > add || !/git add [^\n]*bun\.lock/.test(shell)) {
     gaps.push('floors-lockfile');
+  }
+  // A re-resolved dependency's install script must never see the write token: the step that
+  // installs holds no env at all, and the step that holds the token never installs.
+  const installs = steps.filter((step) => /\bbun (?:install|i|add)\b/.test(step.run ?? ''));
+  if (installs.some((step) => step.env !== undefined)) gaps.push('floors-install-token');
+  const pushes = steps.filter((step) => /git push|gh pr /.test(step.run ?? ''));
+  if (pushes.length === 0 || pushes.some((step) => /\bbun\b/.test(step.run ?? ''))) {
+    gaps.push('floors-push-runs-bun');
   }
   if (/npm publish|bun publish/.test(shell)) gaps.push('floors-publish');
   const label = shell.indexOf('gh label create security-advisory');
@@ -203,11 +212,39 @@ describe('a mutated copy goes red on the rule it breaks', () => {
     ).toContain('floors-lockfile');
   });
 
-  test('the advisory job publishes', () => {
+  test('the install that re-resolves the raised ranges carries the write token', () => {
+    const install = '          bun install --lockfile-only --ignore-scripts\n';
+    const step = real.slice(0, real.indexOf(install));
+    const head = step.lastIndexOf('      - name:');
+    const named = real.slice(head, real.indexOf('\n', head) + 1);
+    const tokened = real.replace(
+      named,
+      `${named}        env:\n          GH_TOKEN: \${{ github.token }}\n`,
+    );
+    expect(tokened).not.toBe(real);
+    expect(shapeGaps(tokened)).toContain('floors-install-token');
+  });
+
+  test('install scripts run: the lockfile refresh drops --ignore-scripts', () => {
+    expect(
+      shapeGaps(mutate('bun install --lockfile-only --ignore-scripts', 'bun install')),
+    ).toContain('floors-lockfile');
+  });
+
+  test('the step holding the token installs again', () => {
     expect(
       shapeGaps(
-        mutate('          bun install\n', '          bun install\n          npm publish -ws\n'),
+        mutate(
+          "          BRANCH='security/advisory-floors'\n          # One branch",
+          "          BRANCH='security/advisory-floors'\n          bun install\n          # One branch",
+        ),
       ),
+    ).toContain('floors-push-runs-bun');
+  });
+
+  test('the advisory job publishes', () => {
+    expect(
+      shapeGaps(mutate('          git push', '          npm publish -ws\n          git push')),
     ).toContain('floors-publish');
   });
 

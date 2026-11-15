@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Does any published `@ultimat3/*` package declare a dependency range that admits a version an npm
 // advisory names — the dependency's own, or one it pulls in? When a raised floor closes it,
 // `--write` raises it in place, so an app installs a patched tree with no `overrides` of its own.
@@ -8,8 +9,9 @@
 //
 //   bun run scripts/advisory-floors.ts [--write] [--json]
 
-// why: the LEAF module, never the `@ultimat3/cli` barrel, for registry-audit.ts's reason.
 import { quoteArg } from '../packages/cli/src/shell-quote';
+// why: the LEAF modules, never the `@ultimat3/*` barrels, for registry-audit.ts's reason.
+import { mapBounded } from '../packages/core/src/map-bounded';
 import type {
   Advisory,
   Declaration,
@@ -30,6 +32,11 @@ const SCRIPT = 'advisory-floors';
 export const ADVISORY_API = 'https://api.github.com/advisories';
 const REGISTRY = 'https://registry.npmjs.org';
 const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * Packages asked about at once, two requests each. The advisory API allows a token 5,000 requests
+ * an hour and a few dozen are asked in all: the bound is politeness and a flat socket count.
+ */
+export const ADVISORY_FETCH_WIDTH = 6;
 const FIELDS = ['dependencies', 'peerDependencies'] as const;
 
 /** The seam: tests drive fixtures, a test that resolves the network is a flake. */
@@ -58,13 +65,25 @@ export interface LoadedWorld {
   readonly unreachable: ReadonlySet<string>;
 }
 
-async function getJson(url: string, fetcher: AdvisoryFetch, token: string | undefined) {
-  const headers: Record<string, string> = url.startsWith(REGISTRY)
-    ? { accept: 'application/vnd.npm.install-v1+json' }
-    : {
+interface Answer {
+  readonly body: unknown;
+  /** `Link: <…>; rel="next"`, when the API has another page. */
+  readonly next: string | undefined;
+}
+
+/** The GitHub token rides to the advisory API only — never the registry, never a `Link` elsewhere. */
+async function getJson(
+  url: string,
+  fetcher: AdvisoryFetch,
+  token: string | undefined,
+): Promise<Answer | undefined> {
+  const github = url.startsWith(`${ADVISORY_API}?`);
+  const headers: Record<string, string> = github
+    ? {
         accept: 'application/vnd.github+json',
         ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
-      };
+      }
+    : { accept: 'application/vnd.npm.install-v1+json' };
   try {
     const response = await fetcher(url, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -72,11 +91,38 @@ async function getJson(url: string, fetcher: AdvisoryFetch, token: string | unde
     });
     if (!response.ok) return undefined;
     const body: unknown = await response.json();
-    return body;
+    const next = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get('link') ?? '')?.[1];
+    return { body, next };
   } catch {
     // Not swallowed: `undefined` lands the package in `unreachable`, which is a finding.
     return undefined;
   }
+}
+
+/** More pages than any package has had; past it the answer is unjudged, never a short list. */
+const MAX_ADVISORY_PAGES = 10;
+
+/**
+ * Every advisory page for `name`, following `rel="next"`. A page that does not answer, a `next`
+ * off the advisory API, or more than `MAX_ADVISORY_PAGES` is `undefined`: a list read in part is
+ * not a list with nothing more in it.
+ */
+async function advisoryPages(
+  name: string,
+  fetcher: AdvisoryFetch,
+  token: string | undefined,
+): Promise<unknown[] | undefined> {
+  const all: unknown[] = [];
+  let url: string | undefined =
+    `${ADVISORY_API}?ecosystem=npm&per_page=100&affects=${encodeURIComponent(name)}`;
+  for (let page = 0; page < MAX_ADVISORY_PAGES && url !== undefined; page += 1) {
+    if (!url.startsWith(`${ADVISORY_API}?`)) return undefined;
+    const answer: Answer | undefined = await getJson(url, fetcher, token);
+    if (answer === undefined || !Array.isArray(answer.body)) return undefined;
+    all.push(...answer.body);
+    url = answer.next;
+  }
+  return url === undefined ? all : undefined;
 }
 
 function factsOf(body: unknown): PackageFacts | undefined {
@@ -106,14 +152,10 @@ export async function loadWorld(
     if (facts.has(name) || unreachable.has(name)) return;
     const [packument, found] = await Promise.all([
       getJson(`${REGISTRY}/${name.replace('/', '%2f')}`, fetcher, token),
-      getJson(
-        `${ADVISORY_API}?ecosystem=npm&per_page=100&affects=${encodeURIComponent(name)}`,
-        fetcher,
-        token,
-      ),
+      advisoryPages(name, fetcher, token),
     ]);
-    const read = factsOf(packument);
-    if (read === undefined || !Array.isArray(found)) {
+    const read = factsOf(packument?.body);
+    if (read === undefined || found === undefined) {
       unreachable.add(name);
       return;
     }
@@ -121,13 +163,13 @@ export async function loadWorld(
     advisories.set(name, parseAdvisories(name, found));
   };
   const direct = [...new Set(declarations.map((d) => d.name))];
-  await Promise.all(direct.map(load));
+  await mapBounded(direct, load, { width: ADVISORY_FETCH_WIDTH });
   const transitive = new Set(
     direct.flatMap((name) =>
       Object.values(facts.get(name)?.dependencies ?? {}).flatMap((deps) => Object.keys(deps)),
     ),
   );
-  await Promise.all([...transitive].map(load));
+  await mapBounded([...transitive], load, { width: ADVISORY_FETCH_WIDTH });
   const world: World = {
     facts: (name) => facts.get(name),
     advisories: (name) => advisories.get(name) ?? [],

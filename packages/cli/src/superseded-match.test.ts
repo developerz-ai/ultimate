@@ -121,6 +121,21 @@ describe('unit · dev-no-tls', () => {
     expect(ids('bin/serve-https.ts', text)).toEqual(['dev-no-tls']);
   });
 
+  test('x dev cannot serve https on the LAN: the terminator it stood in for', () => {
+    const text = '// x dev cannot serve https on the LAN, so this terminates TLS.\nBun.serve({});';
+    expect(ids('bin/serve-https.ts', text)).toEqual(['dev-no-tls']);
+  });
+
+  test('a true statement about production, a sentence after x dev, is not one', () => {
+    const text =
+      'Start it with `x dev`. In production the container does not terminate TLS itself: put Caddy in front.';
+    expect(ids('README.md', text)).toEqual([]);
+  });
+
+  test('a negation is a whole word: casino https is not one', () => {
+    expect(ids('a.ts', '// x dev serves the casino https page\nf();')).toEqual([]);
+  });
+
   test('a note using x dev --tls is not one', () => {
     expect(ids('a.ts', '// x dev --tls serves this over https\nexport const a = 1;')).toEqual([]);
   });

@@ -73,6 +73,18 @@ describe('unit · x doctor advisory floors', () => {
     expect(findings[0]?.at).toBe('bun.lock');
   });
 
+  test('a git or tarball head is no version to order: skipped, never a crash of x doctor', async () => {
+    const root = await app(
+      lock({
+        'solid-js': 'solid-js@github:solidjs/solid#4b0c3d1',
+        'source-map-js': 'source-map-js@https://example.test/source-map-js.tgz',
+        'sass/source-map-js': 'source-map-js@1.2.1',
+      }),
+    );
+    const findings = await advisoryFloorFindings(root);
+    expect(findings.map((f) => f.cause)).toEqual([expect.stringContaining('source-map-js 1.2.1')]);
+  });
+
   test('no lockfile, or one that does not parse, is no finding: install has not run', async () => {
     expect(await advisoryFloorFindings(await app(undefined))).toEqual([]);
     expect(await advisoryFloorFindings(await app('{ not json'))).toEqual([]);
