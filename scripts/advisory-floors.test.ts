@@ -172,7 +172,7 @@ describe('loadWorld, against the advisory API', () => {
       await loadWorld([solidPeer], elsewhere, 'token'),
     );
     expect(result.findings?.map((f) => f.code)).toEqual(['X_ADVISORY_UNREACHABLE']);
-    expect(asked.some((url) => url.startsWith('https://evil.example'))).toBe(false);
+    expect(asked.some((url) => new URL(url).hostname === 'evil.example')).toBe(false);
   });
 
   test('a list with pages past the cap is unjudged, never read as complete', async () => {

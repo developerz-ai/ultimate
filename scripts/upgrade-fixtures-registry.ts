@@ -127,7 +127,7 @@ export async function packHead(
 async function upstreamPackument(name: string, cacheDir: string): Promise<unknown> {
   const cached = Bun.file(join(cacheDir, `${encodeURIComponent(name)}.json`));
   try {
-    const response = await fetch(`${UPSTREAM}/${name.replace('/', '%2f')}`, {
+    const response = await fetch(`${UPSTREAM}/${name.replaceAll('/', '%2f')}`, {
       signal: AbortSignal.timeout(30_000),
     });
     if (response.ok) {

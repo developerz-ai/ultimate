@@ -152,7 +152,8 @@ const segmented = (key: string): string =>
   // data — the camel-hump pass over 20,000 capitals took 1.2 s. 64 keeps every word whole.
   key
     .slice(-SEGMENT_WINDOW)
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    // A lookahead, not `([A-Z]+)([A-Z][a-z])`: the same split, with nothing to backtrack over.
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1_')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/[-.]/g, '_')
     .toLowerCase();

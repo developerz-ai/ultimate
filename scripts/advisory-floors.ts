@@ -151,7 +151,7 @@ export async function loadWorld(
   const load = async (name: string): Promise<void> => {
     if (facts.has(name) || unreachable.has(name)) return;
     const [packument, found] = await Promise.all([
-      getJson(`${REGISTRY}/${name.replace('/', '%2f')}`, fetcher, token),
+      getJson(`${REGISTRY}/${name.replaceAll('/', '%2f')}`, fetcher, token),
       advisoryPages(name, fetcher, token),
     ]);
     const read = factsOf(packument?.body);
