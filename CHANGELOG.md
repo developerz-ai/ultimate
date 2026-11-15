@@ -35,7 +35,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - Job steps, events, backfills and workers list in true order: their statements sorted by the epoch-ms output column, so rows written in one millisecond came back in scan order; the job list's keyset skip shares the cause.
 - After a bus reconnect or a replicator resync, a quiet live query is re-read at once; it showed the rows from before the outage until the idle sweep (proved on two sync nodes, `multi-node.live.test.ts`).
-- Registry state leaking between test files under `isolate: false` is caught at its source file.
+- `@ultimat3/testing`'s registry-leak guard restores at the start of each file's module body and scopes permissions and roles to that file's own imports, so one file's `definePermissions()` no longer reaches every later file in a process.
 - A row the claim buries is told by its burier only inside the re-drive's grace; past it the row is left owed for the leader, so no `onSettled` runs twice, and the claimed rows of that pass start first.
 - A bus reconnect re-reads at most 8 live-query windows at a time per node (`REPAIR_WIDTH`), not every window at once.
 - `authSubjectTarget`'s erase also removes the subject's member invites, matched by exact key suffix.
