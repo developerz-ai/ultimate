@@ -204,7 +204,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
-| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80, exported for the framework schema's drift check), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`; today `HOT_TABLE_AUTOVACUUM`), applied by `SQL_JOBS_TABLE`. Its comments carry no `;` and no `'` |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80, exported for the framework schema's drift check), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`) as `tableStorage()` declarations in `JOBS_STORAGE`, which drift checks. Its comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled` |
 | `retry.ts` | the dead-letter decision; this package's option names over core's `backoffDelay`, no curve |

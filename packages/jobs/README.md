@@ -1269,9 +1269,10 @@ has the request's. A `client` handed in keeps its own behaviour and still gets t
 
 The pg SQL lives verbatim in `src/driver-pg-*sql.ts` (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …)
 so an agent debugging a stuck queue can read and run the exact statement. The barrel exports
-only what another package runs: `SQL_JOBS_TABLE` (the install) and `JOBS_TABLE_STORAGE` (`x_jobs`
-at fillfactor 80, the room a lease renewal's HOT update needs — `x db migrate` reports drift off
-it) — 25.0.0 took the rest
+only what another package runs: `SQL_JOBS_TABLE` (the install), `JOBS_TABLE_STORAGE` (`x_jobs`
+at fillfactor 80, the room a lease renewal's HOT update needs) and `JOBS_STORAGE` (that one plus
+the autovacuum triggers of `x_outbox`, `x_job_workers` and `x_scheduler_state`, small tables
+Postgres' defaults leave mostly dead) — `x db migrate` reports drift off each — 25.0.0 took the rest
 off, `SQL_CLAIM` and `SQL_OUTBOX_RELEASE` included (their array-parameter proofs are this package's
 `driver-pg-array.live.test.ts`).
 
