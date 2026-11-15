@@ -79,13 +79,24 @@ const bytesOf = (body: string, base64: boolean): Uint8Array =>
     : new TextEncoder().encode(body);
 
 /**
+ * `url` as a JavaScript string literal. The page minted it, so it is the page's text: JSON's
+ * escaping plus `<` and the two line separators, which are the characters a literal pasted into
+ * code may not carry raw — each can only sit inside the string, so `\u` always means an escape.
+ */
+const literalOf = (text: string): string =>
+  JSON.stringify(text)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029');
+
+/**
  * A `blob:` or `data:` download never touches the network, so no pause carried it. The page that
  * minted the URL can still read it: `fetch` in the page, base64 out, chunked so a large file does
  * not overflow `String.fromCharCode`'s argument list. Its size is read BEFORE its bytes, and one
  * over the cap answers `null` — the page's own memory, never the worker's, holds it.
  */
 export const blobReadExpression = (url: string, maxBytes: number): string =>
-  `(async () => { const r = await fetch(${JSON.stringify(url)}); const blob = await r.blob(); if (blob.size > ${String(maxBytes)}) return null; const b = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768)); return btoa(s); })()`;
+  `(async () => { const r = await fetch(${literalOf(url)}); const blob = await r.blob(); if (blob.size > ${String(maxBytes)}) return null; const b = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768)); return btoa(s); })()`;
 
 /**
  * Insertion order is age, so the first key is the one to drop: at most `MAX_HELD_DOWNLOADS`

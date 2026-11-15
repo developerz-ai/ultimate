@@ -4,7 +4,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { downloadCandidate, downloadCatcher, MAX_HELD_DOWNLOADS } from './cdp-download';
+import {
+  blobReadExpression,
+  downloadCandidate,
+  downloadCatcher,
+  MAX_HELD_DOWNLOADS,
+} from './cdp-download';
 import { type FakeCdpPageInit, fakeCdpBrowser } from './cdp-fake-fixture';
 import type { CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
@@ -273,5 +278,22 @@ describe('unit · a file is stamped when it BEGAN, not when its bytes arrived', 
     answer(btoa('old'));
     await Promise.resolve();
     expect(await codeOf(catcher.next(100, URL_A))).toBe('X_SCRAPE_DOWNLOAD_TIMEOUT');
+  });
+});
+
+describe('unit · a blob URL the page minted stays one string in the read it is pasted into', () => {
+  test('quotes, a closing tag and both line separators reach fetch as the very text', async () => {
+    const url = `blob:https://x.test/\u2028\u2029'"\`$\{1}</script>\\`;
+    const expression = blobReadExpression(url, 1);
+    expect(expression).not.toMatch(/[\u2028\u2029]|<\/script/);
+    const asked: unknown[] = [];
+    const fetch = (target: unknown) => {
+      asked.push(target);
+      return Promise.resolve({ blob: () => Promise.resolve({ size: 2 }) });
+    };
+    // The page's own evaluation, with `fetch` stood in: the expression is code, so it is run.
+    const run = new Function('fetch', `return ${expression};`) as (stub: typeof fetch) => unknown;
+    expect(await run(fetch)).toBeNull();
+    expect(asked).toEqual([url]);
   });
 });
