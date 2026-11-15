@@ -1,7 +1,7 @@
 // The `input`s apps/web/exercise.ts binds for the storage and push primitives, run outside the pass:
 // each must hand its primitive a value the primitive really takes — an upload session the posts
 // import actions resume, a key inside the org the job runs for, a subscription a browser would send.
-import { userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { memoryJobDriver } from '@ultimat3/jobs';
 import { installJobDriver } from '@ultimat3/jobs/adapter';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
@@ -13,6 +13,7 @@ import { listPostsImportParts } from './app/posts/actions/list-posts-import-part
 import { signPostsImportPart } from './app/posts/actions/sign-posts-import-part';
 import { importIdOf, isPostsImportKey } from './app/posts/import-upload';
 import { exercise } from './exercise';
+import { postlyActor } from './shared/actor';
 
 const ORG = '00000000-0000-4000-8000-00000000e101';
 const admin = userActor({
@@ -106,7 +107,31 @@ unitTest(
     const png = (await disk().get(String(avatar['key']))).bytes;
     expect([...png.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
 
-    const imported = await inputOf('posts.import');
+    // The pass seats the entry's owner, a member of the drawn org: the import's author is read off it.
+    const owner = postlyActor({
+      member: {
+        id: '00000000-0000-4000-8000-00000000e103',
+        orgId: ORG,
+        email: 'owner@acme.example',
+        name: 'Owner',
+        role: 'owner',
+        tz: 'UTC',
+        locale: 'en',
+        theme: 'system',
+        digestOptIn: false,
+      },
+      org: {
+        id: ORG,
+        slug: 'acme',
+        name: 'Acme',
+        planCode: 'team',
+        billingCurrency: 'USD',
+        seats: 10,
+        seatsUsed: 1,
+      },
+    });
+    const imported = await runWithContext(ctxOf({ actor: owner }), () => inputOf('posts.import'));
+    expect(imported['authorId']).toBe('00000000-0000-4000-8000-00000000e103');
     const key = String(imported['key']);
     expect(isPostsImportKey(key)).toBe(true);
     // The promoted file's key, as `completePostsImport` enqueues it: under its own import's prefix.

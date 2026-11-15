@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 47
-current_focus: "Sweep 5 (08 upgrades without hand edits) on feat/sweep-5-upgrade-without-hands; sweep 4 shipped as 31.27.0 (#1149, #1150). 05 production 7-day scan check is owed by slice 30."
+percent: 53
+current_focus: "Sweep 5 (08) merged-pending: x upgrade carries 31.4/31.15/31.20/31.22 scaffolds to HEAD with no hand edit (scripts/upgrade-fixtures.ts); 08's first Done-when line is judged by sweep R's adopter PRs. Next: sweep 6 (09 deploy contract). 05 production 7-day scan check is owed by slice 30."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -46,7 +46,7 @@ slices:
     tier: 5
     sweep: "5"
     status: in_progress
-    percent: 10
+    percent: 90
   - file: 09-deploy-contract.md
     tier: 5
     sweep: "6"
