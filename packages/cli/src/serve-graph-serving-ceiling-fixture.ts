@@ -304,5 +304,8 @@
  * raised 1507 → 1508, measured 1508 (2026-11-14, same sweep): `jobs/src/tick-streak.ts`, the one
  * `jobs.<loop>.tick-failed` / `-recovered` streak the scheduler, worker and relay share, split out
  * so `scheduler.ts` and `worker.ts` stay under the file ceiling.
+ * raised 1508 → 1520, measured 1520 (2026-11-15, plan 101b sweep 2, metafile walk against origin/main):
+ * the ten on `MIGRATE_CEILING`, plus `realtime/src/replicator-heartbeat.ts` (the replicator's loop
+ * heartbeat) and `auth/src/member-invite.ts` (`defineMemberInvite` on the auth barrel).
  */
-export const SERVING_ROLE_CEILING = 1508;
+export const SERVING_ROLE_CEILING = 1520;
