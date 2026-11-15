@@ -76,14 +76,17 @@ export {
   setFrozenClock,
   withFrozenClock,
 } from './determinism';
-// `x drill` (plan 101 / 40): the eight fault drills, the fleet they run on, the verdict over evidence.
+// `x drill` (plan 101 / 40): the nine fault drills, the fleet they run on, the verdict over evidence.
 export type { DrillConfig, DrillTiming } from './drill-budgets';
 export { drillBudgets } from './drill-budgets';
 export { DrillFailedError, DrillServiceMissingError } from './drill-errors';
-export type { DrillFleet, DrillRoleProcess, DrillServiceUrls } from './drill-fleet';
+export type { DrillFleet, DrillRoleProcess, DrillRollout, DrillServiceUrls } from './drill-fleet';
 export { startDrillFleet } from './drill-fleet';
 export { bunDrillSql } from './drill-jobs';
 export type { DrillTarget } from './drill-load';
+export type { DrillRolloutOptions } from './drill-rollout';
+export { runRollout } from './drill-rollout';
+export type { DrillRolloutEvidence, DrillRolloutRole } from './drill-rollout-verdict';
 export type { DrillReport } from './drill-run';
 export { runDrill } from './drill-run';
 export type { DrillDeclarations } from './drill-services';

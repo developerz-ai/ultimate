@@ -273,8 +273,8 @@ Skew handling during a rolling deploy:
 
 | Request from build A while build B is current | Response |
 |---|---|
-| Asset within retention (N deploys, default 10, or 7d — whichever is longer) | serve it |
-| Asset outside retention | `410 Gone` + `X-Ultimate-Build-Current`; the SW serves the fallback and flips `AppUpdateAvailable` |
+| Asset of a build inside `assets.retain`'s `builds` | served from the shared disk (`withRetainedAssets`, `packages/cli/src/retained-assets-read.ts:125`). Opt-in: `builds` has no default (`packages/core/src/config-assets.ts:11`); with no `assets.retain` a pod serves only the files it built. `As of 2026-11` |
+| Asset outside retention | the asset route's own `404` (`packages/cli/src/retained-assets-read.ts:137` returns it when the disk has no copy). No `410`, no `X-Ultimate-Build-Current`: neither appears in `packages/`. `As of 2026-11` |
 | Action / query with a compatible contract | execute normally |
 | Action / query whose input schema changed incompatibly | `X_BUILD_SKEW` with a `fix:` line |
 | WS handshake | accepted, then an `update-available` frame → signal flips; **the socket is not killed**. The skew is the client's build (`?build=` on the dial, or the `hello` frame's `buildId` — read on every beat, and the latest is the record) against the node's, so a client learns of a deploy on the socket it opens against the new node — never on one already open |
@@ -282,9 +282,9 @@ Skew handling during a rolling deploy:
 
 | Rule | Reason |
 |---|---|
-| `ROLE=migrate` must exit 0 before new `web`/`sync` start | a `web` replica whose build ID does not match the applied migration reports not-ready |
+| `ROLE=migrate` must exit 0 before new `web`/`sync` start | a serving role reads the framework stamp and the app's `x_migrations` ledger in one boot read (`verifySchema`, `packages/cli/src/framework-schema-verify.ts`). Behind on either, it waits unready — `web` and `sync` answer `/healthz` 200 and `/readyz` 503 on their own port (`packages/cli/src/serve-boot-probe.ts`) — for up to `ULTIMATE_SCHEMA_WAIT_MS`, then exits `X_FRAMEWORK_SCHEMA_UNAPPLIED` / `X_APP_MIGRATIONS_UNAPPLIED`. A stamp from a newer major refuses at once. `As of 2026-11`. [Deploy contract](../ops/07-deploy-contract.md#a-role-over-a-schema-that-is-behind) |
 | Migrations are additive across one deploy | old and new code run simultaneously during a rollout; a destructive change needs two deploys |
-| Skew is observable | `x status --json` reports the build-ID distribution of connected clients |
+| Skew is observable, server side | `x status --url <origin> --json` reports the build each serving process answers `/readyz` with and the build each live worker runs (`x status --help`, `As of 2026-11`). The build distribution of connected clients is the `/_x` live panel's in dev; outside dev it has no aggregate ([Known gaps](../../wiki/Known-Gaps.md#not-built-yet)) |
 | No forced reload, at all | **`As of 2026-08` the framework force-reloads nothing, and no longer pretends to.** `x deploy --critical` was deleted in 4.0.0 (it recorded the intent in the plan JSON and nothing acted on it); 9.0.0 deleted the other half — `updateSignal`, `updatePolicy` and the three `AppUpdateAvailable` fields no producer emitted. Not deferred: **unwireable**, because the two runtimes that hold both build ids sit BELOW `pwa` in the tier table (`http` 2, `sync` 3, `pwa` 4) and imports only go down, so any caller would have inverted a tier or written a third copy of skew detection. Notification ships and is complete — the worker posts `{ type: 'AppUpdateAvailable', to }` and `useConnection().updateAvailable` reads it |
 
 ## Codes

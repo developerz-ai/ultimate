@@ -184,4 +184,74 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.28.0',
     codemod: 'format-edited-hook',
   },
+  {
+    template: 'docker/helm/templates/alert-rules.yaml',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'docker/helm/dashboards/ultimate-app.json',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-alerts.ts',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-alert-rules.ts',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-alert-deploy.ts',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'packages/cli/src/templates/chart-dashboard.ts',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'packages/cli/src/templates/chart-dashboard-panels.ts',
+    since: '31.29.0',
+    codemod: 'helm-alerts-deploy',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-migrate.ts',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-templates.ts',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-container.ts',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'docker/helm/templates/migrate-job.yaml',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm.ts',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'docker/helm/values.yaml',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'docker/README.md',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
 ];

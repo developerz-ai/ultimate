@@ -18,7 +18,8 @@ import { postgresClient, raw } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
 import { listBackfills } from './db-backfill';
 import { applyFrameworkSchema } from './framework-schema';
-import { applyLockedSchema, verifySchema } from './framework-schema-apply';
+import { applyLockedSchema } from './framework-schema-apply';
+import { verifySchema } from './framework-schema-verify';
 import { withJobDriver } from './jobs-driver';
 import { serveApp } from './serve';
 
@@ -198,7 +199,7 @@ describeLive('live · the framework schema beside an open transaction', () => {
       await applyLockedSchema(db);
       const release = await holdOpenTransaction();
       try {
-        const { ms, error } = await elapsed(() => verifySchema(db));
+        const { ms, error } = await elapsed(() => verifySchema(db, { deadlineMs: 0 }));
         expect(error).toBeUndefined();
         expect(ms).toBeLessThan(2_000);
       } finally {
@@ -230,11 +231,11 @@ describeLive('live · the framework schema beside an open transaction', () => {
     async () => {
       const db = client as PostgresClient;
       await applyFrameworkSchema((statement) => db.execute(raw(statement)));
-      await expect(verifySchema(db)).rejects.toMatchObject({
+      await expect(verifySchema(db, { deadlineMs: 0 })).rejects.toMatchObject({
         code: 'X_FRAMEWORK_SCHEMA_UNAPPLIED',
       });
       await applyLockedSchema(db);
-      await verifySchema(db);
+      await verifySchema(db, { deadlineMs: 0 });
     },
     TIMEOUT_MS,
   );
@@ -254,7 +255,14 @@ describeLive('live · the framework schema beside an open transaction', () => {
       try {
         const outcome = await serveApp({
           root,
-          env: { NODE_ENV: 'test', DATABASE_URL: probeUrl(), ULTIMATE_STATE_DIR: `${root}/.x` },
+          // `0`: refused on the first read, as before the wait existed — the wait is
+          // `framework-schema-wait.test.ts`'s and `serve-boot-wait.live.test.ts`'s subject.
+          env: {
+            NODE_ENV: 'test',
+            DATABASE_URL: probeUrl(),
+            ULTIMATE_STATE_DIR: `${root}/.x`,
+            ULTIMATE_SCHEMA_WAIT_MS: '0',
+          },
           role: 'worker',
           port: 0,
           metricsPort: 0,

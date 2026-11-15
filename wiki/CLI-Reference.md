@@ -51,7 +51,7 @@ x version              # CLI version
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x exercise [<name>] [--seed n] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
-| `x drill [<name>] [--list] [--budget-ms n]` | the app's `web` and `worker` roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy or each role signalled, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
+| `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy, each role signalled, or every role started before `ROLE=migrate`, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
@@ -1597,6 +1597,17 @@ sampled throughout.
 | `worker-sigkill` | `SIGKILL` the worker, then a fresh one | `jobs-terminal`, `jobs-once`, `requests-coded` |
 | `worker-sigterm` | `SIGTERM` the worker, then a fresh one | `role-exits`, `jobs-terminal`, `jobs-once` |
 | `web-sigterm` | `SIGTERM` the web role under load | `requests-ok`, `role-exits` |
+| `roll-before-migrate` | the roles started before `ROLE=migrate`, on a schema stamped by an older build | `roles-wait`, `serves-after-migrate`, `one-wait-line` |
+
+`roll-before-migrate`, `As of 2026-11-15`, is the rollout order a deploy cannot always hold: no
+proxy and no load. The scratch database is migrated, its framework stamp (`x_jobs`' table comment)
+is rewound to name only an older build, then `web`, `worker` and `scheduler` start on it without
+waiting for readiness. Once each has logged its wait (or exited), they are held 3 s and
+`ROLE=migrate` runs again. Each must stay up (`roles-wait`: an exit is a crash-loop), log exactly
+one line naming `X_FRAMEWORK_SCHEMA_UNAPPLIED` (`one-wait-line`), and answer `/readyz` 200 once
+migrate has run (`serves-after-migrate`). `ULTIMATE_SCHEMA_WAIT_MS` is inherited: `0` — refuse at
+once — turns it red. Its evidence is `evidence.rollout.roles[]`, each
+`{ role, exit, ready, waitLines, logTail }`.
 
 Thresholds come from the app: the request deadline (`@ultimat3/http`'s default, 30 s, because
 `configureHttp` is runtime code the CLI does not run), `drain.deadlineMs` plus

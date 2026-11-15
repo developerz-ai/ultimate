@@ -1559,6 +1559,7 @@ Two sets override the table, in `failures.ts`:
 | `X_ADVISORY_FLOOR_UNMET` | a resolved dependency is below its advisory floor | bun.lock resolves a package below the first release past its published advisories | `bun update source-map-js immutable` |
 | `X_UPGRADE_CODEMODS_PENDING` | files an older x upgrade left for codemods | an x upgrade driven by a CLI older than the codemod engine installed this release but applied none of its codemods, so scaffold files are still in their older form | `x upgrade --json` |
 | `X_UPGRADE_LOCKED` | another x upgrade holds this app | a second x upgrade started while one held .x/upgrade.lock, or the lock could not be claimed because .x/ is not writable | `ps -p <pid>` |
+| `X_APP_MIGRATIONS_UNAPPLIED` | a serving role booted over a database missing migrations this build ships | this build ships migrations the database has not applied, so serving would fail on the first statement naming a column they add: the migrate step must run first | `x db migrate --json` |
 
 ## Reserved codes
 

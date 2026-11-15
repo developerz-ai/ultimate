@@ -192,6 +192,12 @@ export {
   lockHeavyStatements,
   migrationLockHeavy,
 } from './migration-lock-lint';
+export type { PostgresStatsSampler } from './pg-stats-gauges';
+export {
+  POSTGRES_STATS_INTERVAL_MS,
+  postgresStatsSampler,
+  startPostgresStatsGauges,
+} from './pg-stats-gauges';
 export type {
   PgliteClient,
   PgliteDriver,

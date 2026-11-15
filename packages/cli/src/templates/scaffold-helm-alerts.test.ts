@@ -72,3 +72,80 @@ describe('unit · the saturation rules ship as defaults', () => {
     expect(expr).toContain(K8S_SCOPE.target);
   });
 });
+
+describe('unit · the deploy-contract rules (plan 101, 09 D4)', () => {
+  test.each([
+    ['UltimateRequestLatency', 'http_request_duration_seconds_bucket'],
+    ['UltimateConnectionsNearMax', 'db_server_max_connections'],
+    ['UltimateLongTransaction', 'db_longest_transaction_seconds'],
+    ['UltimateAutovacuumLag', 'db_autovacuum_backlog_ratio'],
+    ['UltimateReplicationSlotRetention', 'db_replication_slot_retained_bytes'],
+    ['UltimateSchemaUnapplied', 'framework_schema_applied'],
+    ['UltimateVersionSkew', 'framework_schema_major_skew'],
+    ['UltimateDbStatsStale', 'db_stats_sample_ok'],
+  ])('%s reads %s, scoped to the release', (alert, series) => {
+    expect(byName(alert).expr(K8S_SCOPE)).toContain(
+      `${series}{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance=`,
+    );
+  });
+
+  test('latency is the p95 over the whole release, never per route', () => {
+    const expr = byName('UltimateRequestLatency').expr(K8S_SCOPE);
+    expect(expr).toStartWith(
+      'histogram_quantile(0.95, sum by (namespace, app_kubernetes_io_instance, le)',
+    );
+    expect(expr).not.toContain('route');
+  });
+
+  test('a slot is its own alert; a volume is a claim in the release`s namespace', () => {
+    expect(byName('UltimateReplicationSlotRetention').expr(K8S_SCOPE)).toContain(', slot)');
+    const volume = byName('UltimateVolumeNearFull').expr(K8S_SCOPE);
+    expect(volume).toContain(
+      'kubelet_volume_stats_used_bytes{namespace="{{ $.Release.Namespace }}"}',
+    );
+    expect(volume).toContain('by (namespace, persistentvolumeclaim)');
+  });
+
+  test('a schema no migrate applied pages; a skewed fleet only warns', () => {
+    expect(byName('UltimateSchemaUnapplied').severity).toBe('critical');
+    expect(byName('UltimateVersionSkew').severity).toBe('warning');
+  });
+});
+
+describe('unit · every rule says how loud it is and where its runbook is', () => {
+  /** The rendered template, one block per rule. */
+  const blocks = (): readonly string[] => template().split('        - alert: ').slice(1);
+
+  test('one rendered block per rule, each with a severity and a runbook_url', () => {
+    expect(blocks().length).toBe(CHART_ALERTS.length);
+    for (const block of blocks()) {
+      const name = block.slice(0, block.indexOf('\n'));
+      expect({
+        [name]: /severity: \{\{ \$r\.severity \| default "(warning|critical)" \}\}/.test(block),
+      }).toEqual({
+        [name]: true,
+      });
+      expect(block).toContain(`runbook_url: {{ printf "%s#${name.toLowerCase()}" $base | quote }}`);
+    }
+  });
+
+  test('the plain groups carry both on every rule too', () => {
+    const groups = alertRuleGroups('job="app"');
+    const count = (needle: string) => groups.split(needle).length - 1;
+    expect([count('severity: '), count('runbook_url: ')]).toEqual([
+      CHART_ALERTS.length,
+      CHART_ALERTS.length,
+    ]);
+  });
+
+  test('a rule over job runs never pages: a retried job is an expected outcome', () => {
+    const overJobs = CHART_ALERTS.filter((rule) => /\bjobs?_\w+\{/.test(rule.expr(K8S_SCOPE)));
+    expect(overJobs.map((rule) => rule.alert)).toContain('UltimateJobFailures');
+    expect(overJobs.filter((rule) => rule.severity === 'critical').map((r) => r.alert)).toEqual([]);
+  });
+
+  test('anchors are unique, so no two rules land on one runbook entry', () => {
+    const anchors = CHART_ALERTS.map((rule) => rule.anchor);
+    expect(new Set(anchors).size).toBe(anchors.length);
+  });
+});

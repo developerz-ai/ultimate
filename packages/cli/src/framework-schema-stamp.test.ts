@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_SCHEMA } from './framework-schema';
 import {
+  aheadByMajor,
   FrameworkSchemaUnappliedError,
   frameworkSchemaHash,
   nextStamp,
@@ -75,5 +76,32 @@ describe('unit · the framework schema stamp', () => {
     expect(new FrameworkSchemaUnappliedError({ mine: v24, newest: undefined }).cause).toContain(
       'carries no stamp',
     );
+  });
+
+  test('ahead by a major only when the newest build has a numerically higher major', () => {
+    expect(aheadByMajor(v25, v24)).toBe(true);
+    expect(aheadByMajor(v24b, v24)).toBe(false);
+    expect(aheadByMajor(v24, v25)).toBe(false);
+    expect(aheadByMajor(undefined, v24)).toBe(false);
+    // Numeric, not lexical: '9' sorts after '10' as a string.
+    expect(
+      aheadByMajor(
+        { version: '10.0.0', schema: 'dddddddddddddddd' },
+        { version: '9.1.0', schema: 'eeeeeeeeeeeeeeee' },
+      ),
+    ).toBe(true);
+  });
+
+  test('a refusal after a wait names the wait and the variable that bounds it', () => {
+    const error = new FrameworkSchemaUnappliedError({ mine: v24, newest: v24b, waitedMs: 300_000 });
+    expect(error.cause).toContain('waited 300000ms');
+    expect(error.cause).toContain('ULTIMATE_SCHEMA_WAIT_MS');
+    expect(error.meta?.['waitedMs']).toBe(300_000);
+  });
+
+  test('a refusal ahead by a major says it did not wait', () => {
+    const error = new FrameworkSchemaUnappliedError({ mine: v24, newest: v25 });
+    expect(error.cause).toContain('newer major');
+    expect(error.meta?.['aheadByMajor']).toBe(true);
   });
 });

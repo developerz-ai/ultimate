@@ -10,9 +10,9 @@ export type DrillService = 'postgres' | 'redis' | 'nats';
 
 /**
  * A role the fleet runs as its own process (`ROLE`, `apps/web/server.ts`); `sync` only for a drill
- * whose sync client needs a node to dial.
+ * whose sync client needs a node to dial, `scheduler` only for the rollout-order drill.
  */
-export type DrillRole = 'web' | 'worker' | 'sync';
+export type DrillRole = 'web' | 'worker' | 'sync' | 'scheduler';
 
 export type DrillName =
   | 'pg-blackhole'
@@ -22,9 +22,14 @@ export type DrillName =
   | 'nats-down'
   | 'worker-sigkill'
   | 'worker-sigterm'
-  | 'web-sigterm';
+  | 'web-sigterm'
+  | 'roll-before-migrate';
 
-/** The fault itself: a proxy mode per phase, or a signal to one role's process. */
+/**
+ * The fault itself: a proxy mode per phase, a signal to one role's process, or the rollout order —
+ * the roles started before this release's migrate, on a schema an older build stamped, each to say
+ * so in one line naming `waitCode` (`drill-rollout.ts`).
+ */
 export type DrillFault =
   | {
       readonly kind: 'service';
@@ -32,7 +37,8 @@ export type DrillFault =
       /** Played in order, each for one phase; `pass` follows, and recovery is timed from it. */
       readonly phases: (budgets: DrillBudgets) => readonly FaultMode[];
     }
-  | { readonly kind: 'signal'; readonly role: DrillRole; readonly signal: 'SIGKILL' | 'SIGTERM' };
+  | { readonly kind: 'signal'; readonly role: DrillRole; readonly signal: 'SIGKILL' | 'SIGTERM' }
+  | { readonly kind: 'order'; readonly waitCode: string };
 
 export interface Drill {
   readonly name: DrillName;
@@ -92,6 +98,11 @@ export const DRILLS: readonly Drill[] = [
     fault: { kind: 'signal', role: 'web', signal: 'SIGTERM' },
     holds: ['requests-ok', 'role-exits'],
   },
+  {
+    name: 'roll-before-migrate',
+    fault: { kind: 'order', waitCode: 'X_FRAMEWORK_SCHEMA_UNAPPLIED' },
+    holds: ['roles-wait', 'serves-after-migrate', 'one-wait-line'],
+  },
 ];
 
 export const DRILL_NAMES: readonly DrillName[] = DRILLS.map((drill) => drill.name);
@@ -100,9 +111,14 @@ export const DRILL_NAMES: readonly DrillName[] = DRILLS.map((drill) => drill.nam
 export const drillNamed = (name: string): Drill | undefined =>
   DRILLS.find((drill) => drill.name === name);
 
-/** The roles a drill's fleet runs: a sync client needs the sync node it dials. */
-export const drillRoles = (drill: Drill): readonly DrillRole[] =>
-  drill.holds.includes('sync-resumes') ? ['web', 'worker', 'sync'] : ['web', 'worker'];
+/**
+ * The roles a drill's fleet runs: a sync client needs the sync node it dials; the rollout order is
+ * played on every role Postgres alone serves (`replicator` needs a logical server, `sync` a bus).
+ */
+export const drillRoles = (drill: Drill): readonly DrillRole[] => {
+  if (drill.fault.kind === 'order') return ['web', 'worker', 'scheduler'];
+  return drill.holds.includes('sync-resumes') ? ['web', 'worker', 'sync'] : ['web', 'worker'];
+};
 
 /** The service a drill needs running, when it needs one beyond Postgres. */
 export const drillService = (drill: Drill): DrillService | undefined =>

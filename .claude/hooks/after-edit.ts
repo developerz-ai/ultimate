@@ -16,6 +16,9 @@ const BOUND_MS = 9_000;
 /** The checks an edit to `path` (relative to the repository root) selects, in run order. */
 export function checksFor(path: string): readonly Check[] {
   const posix = path.split('\\').join('/');
+  // A run file under node_modules/ is git-ignored scratch (briefs, PR bodies, caches): formatting it
+  // proves nothing, and under a loaded machine Biome's bound turned every such edit into a refusal.
+  if (/(?:^|\/)node_modules\//.test(posix)) return [];
   return /^packages\/[^/]+\//.test(posix) ? ['format', 'boundaries'] : ['format'];
 }
 

@@ -1,7 +1,7 @@
 // A drill's fleet: the app's `web` and `worker` roles as separate processes (`apps/web/server.ts`
 // under `ROLE`), on a scratch database it creates and drops, each dialling Postgres, Redis and
 // NATS through a fault proxy of its own. The proxies are what the drill switches; the roles are
-// what it signals. Nothing here judges — `drill-run.ts` does.
+// what it signals; `beforeMigrate` starts the roles ahead of migrate instead. Nothing here judges.
 
 // why: Bun ships no temp-directory primitive or recursive remove; `tmpdir()` is node:os's alone.
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — the state dir is joined, not concatenated.
 import { join } from 'node:path';
+import { tailOf } from './drill-output';
 import { probeStatus } from './drill-probe';
 import type { DrillRole, DrillService } from './drills';
 import { E2eAppFailedError } from './e2e-errors';
@@ -33,6 +34,22 @@ export interface DrillFleetOptions {
   readonly readyTimeoutMs: number;
   /** Extra environment for every role. */
   readonly env?: Readonly<Record<string, string>> | undefined;
+  /**
+   * The rollout-order drill: after the first migrate, `rewind` runs on the scratch database (the
+   * caller's statement — the stamp is the CLI's to write), and the roles start WITHOUT waiting for
+   * readiness, each line of their output naming `watch` counted. The fleet then has a `rollout`.
+   */
+  readonly beforeMigrate?: { readonly rewind: string; readonly watch: string } | undefined;
+}
+
+/** What a fleet started `beforeMigrate` adds: this release's migrate, and what each role did. */
+export interface DrillRollout {
+  /** `ROLE=migrate` on the direct URL; resolves once it exited 0, else the refusal is thrown. */
+  migrate(): Promise<void>;
+  /** The role's exit code, or `null` while its process runs. */
+  exitCode(role: DrillRole): number | null;
+  /** Output lines naming the fleet's `watch`, counted as they streamed — never cut by a tail. */
+  watched(role: DrillRole): number;
 }
 
 export interface DrillRoleProcess {
@@ -55,11 +72,12 @@ export interface DrillFleet {
   readonly databaseUrl: string;
   readonly proxies: ReadonlyMap<DrillService, FaultProxy>;
   readonly roles: ReadonlyMap<DrillRole, DrillRoleProcess>;
+  /** Present when started with `beforeMigrate`. */
+  readonly rollout?: DrillRollout | undefined;
   stop(): Promise<void>;
 }
 
 const SERVER = 'apps/web/server.ts';
-const TAIL_CHARS = 8_000;
 const KILL_GRACE_MS = 5_000;
 
 /** This process's environment minus every binding the fleet sets itself, and minus `NODE_ENV`. */
@@ -73,19 +91,6 @@ const inheritedEnv = (): Record<string, string | undefined> => {
   } = Bun.env;
   return rest;
 };
-
-function tailOf(child: Bun.Subprocess<'ignore', 'pipe', 'pipe'>): () => string {
-  let text = '';
-  for (const stream of [child.stdout, child.stderr]) {
-    void (async () => {
-      const decoder = new TextDecoder();
-      for await (const chunk of stream) {
-        text = (text + decoder.decode(chunk, { stream: true })).slice(-TAIL_CHARS);
-      }
-    })().catch(() => undefined);
-  }
-  return () => text;
-}
 
 const refuse = (step: string, output: string): E2eAppFailedError =>
   new E2eAppFailedError({
@@ -175,16 +180,24 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
       return child;
     };
     // The release phase on the DIRECT url: migrations are not what any drill faults.
-    const migrate = spawnRole({ ROLE: 'migrate', DATABASE_URL: database.url });
-    const migrateLog = tailOf(migrate);
-    // Bounded like a role's readiness: a wedged migration is a refusal, and the `catch` below
-    // SIGKILLs it — it is still in `children`.
-    const migrated = await Promise.race([
-      migrate.exited,
-      Bun.sleep(options.readyTimeoutMs).then(() => null),
-    ]);
-    if (migrated !== 0) throw refuse('ROLE=migrate', migrateLog());
-    children.delete(migrate);
+    const migrate = async (): Promise<void> => {
+      const job = spawnRole({ ROLE: 'migrate', DATABASE_URL: database.url });
+      const output = tailOf([job.stdout, job.stderr]);
+      // Bounded like a role's readiness: a wedged migration is a refusal, and `stop` SIGKILLs
+      // it — it is still in `children`.
+      const migrated = await Promise.race([
+        job.exited,
+        Bun.sleep(options.readyTimeoutMs).then(() => null),
+      ]);
+      if (migrated !== 0) throw refuse('ROLE=migrate', output.log());
+      children.delete(job);
+    };
+    await migrate();
+    const before = options.beforeMigrate;
+    if (before !== undefined) {
+      const direct = new Bun.SQL(database.url);
+      await direct.unsafe(before.rewind).finally(() => direct.close());
+    }
 
     const taken: number[] = [...[...proxies.values()].map((proxy) => proxy.port)];
     const take = (): number => {
@@ -193,6 +206,8 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
       return port;
     };
     let webBase = '';
+    // Each role's CURRENT process, read through: what the rollout reports on.
+    const outputs = new Map<DrillRole, { exitCode(): number | null; watched(): number }>();
     for (const role of options.roles) {
       const port = take();
       // The sync node listens on PORT + 1 (`syncPortFor`): held too, so no other role is handed it.
@@ -209,16 +224,18 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
       const readyz =
         role === 'web' ? `${origin}/readyz` : `http://127.0.0.1:${String(metricsPort)}/readyz`;
       let child = spawnRole(env);
-      let log = tailOf(child);
+      let output = tailOf([child.stdout, child.stderr], before?.watch);
       const boot = async (): Promise<void> => {
         const ready = await waitReady(
           readyz,
           options.readyTimeoutMs,
           () => child.exitCode === null,
         );
-        if (!ready) throw refuse(`ROLE=${role} never answered ${readyz}`, log());
+        if (!ready) throw refuse(`ROLE=${role} never answered ${readyz}`, output.log());
       };
-      await boot();
+      // Before migrate, a role is not ready by design: what it does instead is the drill's evidence.
+      if (before === undefined) await boot();
+      outputs.set(role, { exitCode: () => child.exitCode, watched: () => output.watched() });
       roles.set(role, {
         role,
         origin,
@@ -228,13 +245,21 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
         async respawn() {
           children.delete(child);
           child = spawnRole(env);
-          log = tailOf(child);
+          output = tailOf([child.stdout, child.stderr], before?.watch);
           await boot();
         },
-        log: () => log(),
+        log: () => output.log(),
       });
     }
-    return { base: webBase, databaseUrl: database.url, proxies, roles, stop };
+    const rollout: DrillRollout | undefined =
+      before === undefined
+        ? undefined
+        : {
+            migrate,
+            exitCode: (role) => outputs.get(role)?.exitCode() ?? null,
+            watched: (role) => outputs.get(role)?.watched() ?? 0,
+          };
+    return { base: webBase, databaseUrl: database.url, proxies, roles, rollout, stop };
   } catch (error) {
     await stop();
     throw error;

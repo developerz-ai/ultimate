@@ -58,11 +58,16 @@ const refusal = async (ctx: CommandContext): Promise<unknown> =>
   );
 
 describe('x drill', () => {
-  test('--list names all eight drills and runs nothing', async () => {
+  test('--list names all nine drills, roll-before-migrate among them, and runs nothing', async () => {
     const result = await drillCommand.run(contextFor([], [['list', true]]));
     expect(result.ok).toBe(true);
     const data = result.data as { drills: { name: string; holds: string[] }[] };
-    expect(data.drills.map((drill) => drill.name)).toHaveLength(8);
+    expect(data.drills.map((drill) => drill.name)).toHaveLength(9);
+    expect(data.drills.find((drill) => drill.name === 'roll-before-migrate')?.holds).toEqual([
+      'roles-wait',
+      'serves-after-migrate',
+      'one-wait-line',
+    ]);
     expect(data.drills.find((drill) => drill.name === 'pg-blackhole')?.holds).toContain(
       'requests-coded',
     );
@@ -79,6 +84,14 @@ describe('x drill', () => {
       'X_DRILL_SERVICE_MISSING',
     );
     expect(await refusal(contextFor([]))).toBeUltimateError('X_DRILL_SERVICE_MISSING');
+    const rolled = await refusal(contextFor(['roll-before-migrate']));
+    expect(rolled).toBeUltimateError('X_DRILL_SERVICE_MISSING');
+    expect(String(Reflect.get(rolled as object, 'cause'))).toContain('TEST_DATABASE_URL');
+  });
+
+  test('an unknown drill is refused with roll-before-migrate in the list', async () => {
+    const error = await refusal(contextFor(['roll-nope']));
+    expect(String(Reflect.get(error as object, 'cause'))).toContain('roll-before-migrate');
   });
 
   test('redis-down on an app whose cache names no redis tier is refused', async () => {

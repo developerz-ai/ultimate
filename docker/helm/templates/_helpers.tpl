@@ -131,7 +131,7 @@ in values.yaml, where the two numbers would drift.
   them would have been the mirror-image bug: a port the role never opens, which is exactly what made
   sync's readiness probe meaningless.
 
-  Liveness for all three on `/metrics`. Readiness for all three on `/readyz` of the same listener
+  Liveness for all three on `/healthz` of the scrape listener (why, below). Readiness on `/readyz` of it
   (packages/cli/src/metrics-endpoint.ts), which answers 503 until `startRoles` has started the
   role (`markReady()` in packages/cli/src/role-start.ts) and again from the first instant of a
   drain. Without it a worker or scheduler pod was Ready the moment its scrape port bound — before

@@ -191,6 +191,7 @@ minReadySeconds: 10
 migrate:
   enabled: true
   backoffLimit: 1
+  ttlSecondsAfterFinished: 86400   # a finished Job, and its logs, are collected after a day
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 512Mi }

@@ -1,11 +1,16 @@
 // The rule table every Ultimate chart's alerts are written from, renderer-neutral. Only mechanism
 // ships (axiom 8): a stalled queue, a dead letter, a lost lease, a dropped frame, error-budget burn,
-// job failures, pool, loop and memory saturation, a dead target. A latency target is the app's.
+// job failures, pool, loop and memory saturation, a dead target — and `DEPLOY_ALERTS`' rest. A
+// latency OBJECTIVE is the app's: the shipped latency rule is a generous floor it overrides.
+
+import { DEPLOY_ALERTS } from './scaffold-helm-alert-deploy';
 
 /** How an expression names a series and groups its result, per renderer. */
 export interface AlertScope {
   /** `name{matchers}` — the scope's own matchers, then `extra`. */
   readonly series: (name: string, extra?: string) => string;
+  /** `name{namespace}` — a series the release does not emit (the kubelet's), scoped to its namespace. */
+  readonly namespaced: (name: string) => string;
   /** The labels every rule groups by, so one release (or one job) fires one alert. */
   readonly by: string;
   /** The label naming a scrape target's role. */
@@ -157,4 +162,5 @@ export const CHART_ALERTS: readonly ChartAlert[] = [
     severity: 'critical',
     summary: 'A role has a scrape target that is down',
   }),
+  ...DEPLOY_ALERTS,
 ];

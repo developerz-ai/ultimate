@@ -1311,7 +1311,8 @@ jobs:
     needs: [tested, changes]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-latest
-    # A runaway kill-switch, not a budget: three drills plus setup is about three minutes.
+    # A runaway kill-switch, not a budget: four drills plus setup is about three and a half
+    # minutes (roll-before-migrate measured 10 s locally, 2026-11-15).
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1330,10 +1331,12 @@ jobs:
           [ "$(cat "$RUNNER_TEMP/services.exit" 2>/dev/null)" = 0 ] \
             || { docker compose -f docker/docker-compose.test.yml ps -a; exit 1; }
           grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
-      - name: x drill pg-blackhole, worker-sigkill, web-sigterm on examples/dummy
+      # roll-before-migrate: the serving roles started on a database whose framework stamp is an
+      # older build's, then ROLE=migrate — each must wait, say so once, and serve, never crash-loop.
+      - name: x drill pg-blackhole, worker-sigkill, web-sigterm, roll-before-migrate on examples/dummy
         run: |
           status=0
-          for drill in pg-blackhole worker-sigkill web-sigterm; do
+          for drill in pg-blackhole worker-sigkill web-sigterm roll-before-migrate; do
             doc="$RUNNER_TEMP/drill-${drill}.json"
             bun run x -- drill "$drill" --cwd examples/dummy --json > "$doc" || status=1
             jq -r '.summary, (.findings[]? | "  \(.code)\n    cause: \(.cause)\n    fix:   \(.fix)")' "$doc" \

@@ -1,0 +1,21 @@
+// The scheduler's sampler of the Postgres server's own health (`@ultimat3/db`'s pg stats gauges):
+// one role samples, because these are server facts every pod would read the same of. A real
+// server only — the embedded database is one process's private copy and describes no fleet.
+
+import type { PgExecutor, Role } from '@ultimat3/core';
+import { startPostgresStatsGauges } from '@ultimat3/db';
+import type { ServiceMode } from './runtime-bindings';
+
+/** The stop, for the role's unwind list; `null` when nothing was started. */
+export function startRolePgStats(
+  roles: readonly Role[],
+  mode: ServiceMode,
+  executor: PgExecutor,
+  /** `@ultimat3/db`'s sampler, its own interval; a test hands a recorder, so no timer runs. */
+  start: (executor: PgExecutor) => () => Promise<void> = startPostgresStatsGauges,
+): (() => Promise<void>) | null {
+  if (!roles.includes('scheduler') || mode !== 'external') return null;
+  // The stop itself, never wrapped: it awaits the round in flight, and a wrapper that dropped
+  // that promise let the role's unwind close the pool under a sampling query.
+  return start(executor);
+}

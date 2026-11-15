@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 53
-current_focus: "Sweep 5 (08) merged-pending: x upgrade carries 31.4/31.15/31.20/31.22 scaffolds to HEAD with no hand edit (scripts/upgrade-fixtures.ts); 08's first Done-when line is judged by sweep R's adopter PRs. Next: sweep 6 (09 deploy contract). 05 production 7-day scan check is owed by slice 30."
+percent: 58
+current_focus: "Sweep 6 (09 deploy contract) on feat/sweep-6-deploy-contract; sweep 5 shipped as 31.28.0 (#1151, #1153). 08 and 09 each close on sweep R: 08 when adopter upgrade PRs are x upgrade alone, 09 when a demo rollout shows zero restarts (30 I5). Next: sweep 7 (10 test determinism)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -46,12 +46,12 @@ slices:
     tier: 5
     sweep: "5"
     status: in_progress
-    percent: 90
+    percent: 95
   - file: 09-deploy-contract.md
     tier: 5
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
   - file: 10-test-determinism.md
     tier: 5
     sweep: "7"

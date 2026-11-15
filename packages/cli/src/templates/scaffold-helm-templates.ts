@@ -6,6 +6,7 @@ import { helmDashboardFiles } from './chart-dashboard';
 import type { GeneratedFile, NameSet } from './naming';
 import { helmMonitoringFiles } from './scaffold-helm-alerts';
 import { helmFenceFiles } from './scaffold-helm-fences';
+import { helmMigrateFile } from './scaffold-helm-migrate';
 
 const helpers = (
   app: NameSet,
@@ -325,41 +326,6 @@ spec:
 {{- end }}
 `;
 
-const migrateJob = (app: NameSet): string => `{{/*
-The release phase, as a pre-install / pre-upgrade hook: ROLE=migrate applies every pending
-migration under an advisory lock and exits, before any serving role starts. Same image, same entry
-point — there is no second migration engine and no toolchain in the container.
-*/}}
-{{- if .Values.migrate.enabled }}
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: {{ include "${app.kebab}.fullname" . }}-migrate
-  labels:
-    {{- include "${app.kebab}.labels" . | nindent 4 }}
-    app.kubernetes.io/component: migrate
-  annotations:
-    helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-weight: "-5"
-    helm.sh/hook-delete-policy: before-hook-creation
-spec:
-  backoffLimit: {{ .Values.migrate.backoffLimit }}
-  template:
-    metadata:
-      labels:
-        {{- include "${app.kebab}.labels" . | nindent 8 }}
-        app.kubernetes.io/component: migrate
-    spec:
-      restartPolicy: Never
-      automountServiceAccountToken: false
-      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      containers:
-        {{- include "${app.kebab}.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}
-      volumes:
-        {{- include "${app.kebab}.tmpVolume" . | nindent 8 }}
-{{- end }}
-`;
-
 const ingress = (
   app: NameSet,
 ): string => `{{/* Standard ingress, no vendor edge primitives. Off by default: the host is yours to name. */}}
@@ -467,7 +433,7 @@ export function helmTemplateFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'docker/helm/templates/_helpers.tpl', contents: helpers(app) },
     { path: 'docker/helm/templates/deployments.yaml', contents: deployments(app) },
     { path: 'docker/helm/templates/service.yaml', contents: service(app) },
-    { path: 'docker/helm/templates/migrate-job.yaml', contents: migrateJob(app) },
+    helmMigrateFile(app),
     { path: 'docker/helm/templates/ingress.yaml', contents: ingress(app) },
     { path: 'docker/helm/templates/hpa.yaml', contents: hpa(app) },
     ...helmFenceFiles(app),

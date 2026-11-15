@@ -86,7 +86,7 @@ that no longer matches an applied migration stops the release instead of corrupt
 | Render | `preDeployCommand: ROLE=migrate bun apps/web/server.ts` |
 | Fly.io | `[deploy] release_command = "bun apps/web/server.ts"` with `ROLE=migrate` |
 | Railway | a pre-deploy command running the same |
-| Kubernetes | an `initContainer` or a `Job` on the same image with `ROLE=migrate` |
+| Kubernetes | the chart's one `migrate` Job on the same image (`docker/helm`), ordered before every role — never a per-pod `initContainer` |
 | Compose | the `migrate` service; every other role waits on `service_completed_successfully` |
 
 There is no `x db migrate` in that list on purpose: it is the developer's command and it needs the

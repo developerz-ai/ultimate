@@ -76,4 +76,10 @@ describe('which narrow checks an edit selects', () => {
     expect(checksFor('docs/idea/02-primitives.md')).toEqual(['format']);
     expect(checksFor('scripts/verify.ts')).toEqual(['format']);
   });
+
+  test('a run file under node_modules/ (git-ignored, e.g. node_modules/.cache) is checked by nothing', () => {
+    expect(checksFor('node_modules/.cache/s6/pr-body.md')).toEqual([]);
+    expect(checksFor('packages/cli/node_modules/x/index.ts')).toEqual([]);
+    expect(checksFor('node_modules\\.cache\\notes.md')).toEqual([]);
+  });
 });

@@ -961,6 +961,8 @@ export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES, SURFACES } from '
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export type { OriginEvidence } from './same-origin';
 export { type OriginVerdict, proveSameOrigin } from './same-origin';
+export type { FrameworkSchemaSample } from './schema-metrics';
+export { recordFrameworkSchema } from './schema-metrics';
 export type { SealOptions, SealPurposeOptions } from './seal';
 export { isSealed, open, openText, seal, sealAll, sealedKeyId } from './seal';
 export { SealInvalidError, SealKeyMissingError, SealKeyUnknownError } from './seal-errors';

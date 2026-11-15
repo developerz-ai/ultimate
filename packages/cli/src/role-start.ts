@@ -38,6 +38,7 @@ import {
   startMetricsEndpoint,
   whenMetricsPortTaken,
 } from './metrics-endpoint';
+import { startRolePgStats } from './role-pg-stats';
 import { rolesUnderRealtime } from './role-realtime';
 import { startReplicator } from './role-replicator';
 import { type DeviceMount, hostDeviceSockets } from './role-start-devices';
@@ -429,6 +430,9 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       : null;
     scheduler?.start();
     if (scheduler !== null) started.push(() => scheduler.stop());
+    // The server's own health, sampled beside the scheduler on the primary's executor.
+    const pgStats = startRolePgStats(selected, options.runtime.services.db.mode, executor);
+    if (pgStats !== null) started.push(pgStats);
 
     // Last, and only after the transport it publishes to exists: a replicator started ahead of the
     // sync node would decode changes with nothing subscribed to receive them, and the slot it

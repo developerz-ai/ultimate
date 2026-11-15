@@ -103,12 +103,13 @@ pays for the control plane.
 | [`03-observability.md`](./03-observability.md) | what to scrape, what to alert on, what Ultimate does not emit yet |
 | [`04-datastores.md`](./04-datastores.md) | Postgres, Dragonfly and NATS in production — real sizing, real failure modes |
 | [`05-disaster-recovery.md`](./05-disaster-recovery.md) | backups you can restore, and the key without which they are noise |
-| [`06-runbooks.md`](./06-runbooks.md) | rollback, stuck deploys, image-pull failures, a leaked credential |
+| [`06-runbooks.md`](./06-runbooks.md) | rollback, stuck deploys, image-pull failures, a leaked credential, and one entry per chart alert |
+| [`07-deploy-contract.md`](./07-deploy-contract.md) | what a deploy guarantees: migrate before roles, a role over a schema that is behind, drain, the skew window, rollback, each failure's alert and runbook |
 
 Rehearse a runbook's failure before it is needed: `x drill <name> --json` (`x drill --list --json`
-for the eight) boots the app's roles on a scratch database with the test services up and plays one
+names each) boots the app's roles on a scratch database with the test services up and plays one
 fault — a blackholed or restarting Postgres, a dead Redis or NATS, a killed or drained worker, a
-drained web role — red on any framework contract that did not hold, each finding with its `X_*`
+drained web role, the roles started before migrate — red on any framework contract that did not hold, each finding with its `X_*`
 code. One node per role on one host: a multi-node bus, a real standby, S3 and a CDN are not drilled
 ([Known gaps](../../wiki/Known-Gaps.md)).
 
@@ -121,14 +122,14 @@ code. One node per role on one host: a multi-node bus, a real standby, S3 and a 
 | the chart `x new` writes you (`docker/helm/` in the app) | runs every pod as `runAsUser`/`runAsGroup`/`fsGroup: 1000`, the same `RUNTIME_UID` its Dockerfile's `USER` reads, so the two cannot drift (`As of 2026-10`). **This repo's** chart runs `65532`, distroless `nonroot` — correct for its own image only. Copy neither number into the other |
 | `x build --target binary` | a **launcher**, not a self-contained app (`As of 2026-10`): `bun build --compile` with `--compile-autoload-package-json`, `--compile-autoload-tsconfig` and `--external '@ultimat3/*'` (`binaryArgs`, [`cmd-build.ts`](../../packages/cli/src/cmd-build.ts)). Started inside the app tree it imports `app.config.ts` and `apps/*` off disk, so it needs that tree — `package.json`, `tsconfig.json`, and `node_modules` beside it. It needs no Bun installed: the runtime is compiled in. `docker/Dockerfile`'s `/app/x` is a different, self-contained compile of the CLI |
 | `.github/workflows/image.yml` `x new` writes you | after a green `ci` on the default branch (a `push`, never a fork's pull request), builds the app's `docker/Dockerfile` and pushes `ghcr.io/<owner>/<repo>:sha-<7>` and `:<full sha>` — never `latest` — with `GITHUB_TOKEN` alone. Always `runs-on: ubuntu-latest` (it needs bash and a Docker daemon), even when `ci.yml` runs on `vars.CI_RUNNER`. It deploys nothing: the digest is the handoff ([`image.yml.ts`](../../packages/cli/src/templates/github/image.yml.ts)) |
-| [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) | one service per role, `migrate` gates `web` via `service_completed_successfully`; `web` and `sync` at `replicas: 1`, `worker` free |
+| [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) | one service per role, every serving role and `backfill` gated on `migrate` via `service_completed_successfully` (`As of 2026-11`); `web` and `sync` at `replicas: 1`, `worker` free |
 | [`docker/helm/`](../../docker/helm/) | per-role Deployments with a `startupProbe`, per-role HPAs, a `pre-install,pre-upgrade` migrate Job running as its own hook-created ServiceAccount (so a first `helm install` cannot wait on an account Helm has not made yet), an optional Ingress |
-| `/healthz` and `/readyz` on `web` and `sync` | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts). `worker`, `scheduler` and `replicator` open no HTTP socket; their only port is `/metrics` ([`01-kubernetes.md`](./01-kubernetes.md)) |
+| `/healthz` and `/readyz` on `web` and `sync` | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts). `worker`, `scheduler` and `replicator` open no app port; their one listener, `METRICS_PORT`, answers `/metrics`, `/healthz` (the loops' heartbeats) and `/readyz` (`packages/cli/src/metrics-endpoint.ts`, `As of 2026-11`) |
 | SIGTERM drain on every role | shipped — see [`../architecture/13-topology-runtime.md`](../architecture/13-topology-runtime.md) |
 | OTel-shaped tracing | **shipped, and exportable** — `otlpSpanExporter()` speaks OTLP/HTTP JSON to `OTEL_EXPORTER_OTLP_ENDPOINT`, head-based sampling included. The default stays a no-op, so nothing leaves the process until you wire it. gRPC `:4317` is refused; use the collector's `:4318`. No logs signal |
 | `/metrics` on any role | **shipped** — `METRICS_PATH` on `METRICS_PORT` (default 9090), never the app port. The chart declares the `metrics` containerPort on every role but `migrate`, publishes it on the Service, and ships a ServiceMonitor and a PrometheusRule of mechanism alerts, each rendered wherever the cluster serves the operator's kind (`serviceMonitor.enabled` / `alerts.enabled`: `auto`), so a cluster without the operator still installs; `x g chart-alerts` backfills an older app chart |
 | a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target `rps` and `connections` as `Pods` metrics and `queue_demand` as an `External` one (every serving worker publishes the same number, so it is one series for the fleet — expose it as `max by (queue)`, never `sum`), and turning scraped series into those is the cluster's job, not the framework's |
-| `x logs` | listed as **planned** in `x --help` |
+| `x logs` | `x logs tail [--role <role>]` reads the **dev** log (`.x/logs/`, the `logs.tail` MCP tool's reader), `As of 2026-11`. A deployed role's logs are the platform's: `kubectl logs`, `docker compose logs` |
 
 That adapter row is load-bearing for [`03-observability.md`](./03-observability.md): the app emits
 the three signals and the chart exposes them, but an HPA with no metrics adapter behind it still

@@ -173,4 +173,100 @@ spec:
             summary: "A role has a scrape target that is down"
             runbook_url: {{ printf "%s#ultimatetargetdown" $base | quote }}
         {{- end }}
+        {{- $r := index $rules "UltimateRequestLatency" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateRequestLatency
+          expr: >-
+            histogram_quantile(0.95, sum by (namespace, app_kubernetes_io_instance, le) (rate(http_request_duration_seconds_bucket{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[5m]))) > {{ ternary $r.threshold 1 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "10m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "The p95 of request duration is above the threshold, in seconds"
+            runbook_url: {{ printf "%s#ultimaterequestlatency" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateConnectionsNearMax" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateConnectionsNearMax
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance) (db_server_connections{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"} / db_server_max_connections{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 0.8 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "10m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "The Postgres server's open connections are near its max_connections"
+            runbook_url: {{ printf "%s#ultimateconnectionsnearmax" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateLongTransaction" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateLongTransaction
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance) (db_longest_transaction_seconds{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 300 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A transaction has been open longer than the threshold, holding back vacuum and locks"
+            runbook_url: {{ printf "%s#ultimatelongtransaction" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateAutovacuumLag" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateAutovacuumLag
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance) (db_autovacuum_backlog_ratio{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 2 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "30m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A table holds more dead tuples than its autovacuum trigger, and is not being vacuumed"
+            runbook_url: {{ printf "%s#ultimateautovacuumlag" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateReplicationSlotRetention" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateReplicationSlotRetention
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance, slot) (db_replication_slot_retained_bytes{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 1073741824 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "15m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A replication slot holds more WAL on the primary than the threshold, in bytes"
+            runbook_url: {{ printf "%s#ultimatereplicationslotretention" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateSchemaUnapplied" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateSchemaUnapplied
+          expr: >-
+            count by (namespace, app_kubernetes_io_instance, app_kubernetes_io_component) (framework_schema_applied{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"} == 0) > 0
+          for: {{ $r.for | default "10m" }}
+          labels:
+            severity: {{ $r.severity | default "critical" }}
+          annotations:
+            summary: "A role is waiting: its build's framework schema or app migrations are not applied (x db migrate)"
+            runbook_url: {{ printf "%s#ultimateschemaunapplied" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateVersionSkew" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateVersionSkew
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance) (framework_schema_major_skew{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > 0
+          for: {{ $r.for | default "30m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "Roles run a different major than the newest applied framework schema"
+            runbook_url: {{ printf "%s#ultimateversionskew" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateVolumeNearFull" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateVolumeNearFull
+          expr: >-
+            max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="{{ $.Release.Namespace }}"} / kubelet_volume_stats_capacity_bytes{namespace="{{ $.Release.Namespace }}"}) > {{ ternary $r.threshold 0.85 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "15m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A persistent volume in the release's namespace is fuller than the threshold"
+            runbook_url: {{ printf "%s#ultimatevolumenearfull" $base | quote }}
+        {{- end }}
 {{- end }}

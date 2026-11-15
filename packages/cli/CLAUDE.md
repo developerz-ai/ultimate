@@ -135,6 +135,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `NATS_URL` |
 | `runtime-queue.ts` / `runtime-services.ts` / `runtime-bus.ts` | db + queue; every other accessor; the bus |
 | `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables, applied in one locked transaction † |
+| `framework-schema-verify.ts` / `-wait.ts` / `app-migrations-verdict.ts` / `serve-boot-probe.ts` | a serving role behind its schema (stamp or app ledger) WAITS, `ULTIMATE_SCHEMA_WAIT_MS`, probe port up; a newer major refuses at once |
 | `runtime-isr.ts` | the ISR controller both boots serve through, attached to `invalidateTags` (`attachedIsr`) † |
 | `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings: unsealed MFA secrets, a per-process idempotency store † |
 | `app-config-load.ts` | the ONE reader of `app.config.ts` (`loadAppConfig`) † |

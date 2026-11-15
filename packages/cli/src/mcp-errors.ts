@@ -403,6 +403,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
   X_UPGRADE_CODEMODS_PENDING: 'x upgrade --json',
   X_UPGRADE_LOCKED: 'cat .x/upgrade.lock',
+  X_APP_MIGRATIONS_UNAPPLIED: 'x db migrate --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
