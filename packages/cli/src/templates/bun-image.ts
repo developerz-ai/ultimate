@@ -27,3 +27,22 @@ export const SCAFFOLD_BUN_IMAGE: BunImage = {
   digest,
   ref: `oven/bun:${series}-${variant}@${digest}`,
 };
+
+/**
+ * Every digest a released scaffold's Dockerfile built on, by the exact Bun it was read from. The
+ * `FROM` tag names only the series, so this is how the framework reads back the patch of an image
+ * it wrote itself; any other digest was chosen or moved by the app. A bump moves the current row
+ * here as an earlier one.
+ */
+const DIGEST_PATCHES: Readonly<Record<string, string>> = {
+  // 27.10.3
+  'sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f': '1.4.2',
+  // 28.0.0
+  'sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373': '1.4.3',
+  // 29.0.0 onward
+  [digest]: REQUIRED_BUN,
+};
+
+/** The Bun patch a scaffold-written digest holds, or undefined for one no scaffold wrote. */
+export const scaffoldDigestPatch = (sha: string): string | undefined =>
+  Object.hasOwn(DIGEST_PATCHES, sha) ? DIGEST_PATCHES[sha] : undefined;

@@ -4,6 +4,8 @@
 // lowered, a second run changing nothing, and a digest kept and listed rather than edited.
 
 import { describe, expect, test } from 'bun:test';
+import { REQUIRED_BUN } from './app-root';
+import { SCAFFOLD_BUN_IMAGE } from './templates/bun-image';
 import { editBunSites, floorOf, isBunSite } from './upgrade-bun-floor';
 
 const FLOOR = '1.4.4';
@@ -125,6 +127,15 @@ describe('unit · editBunSites', () => {
     expect(result.manual).toHaveLength(1);
     expect(result.manual[0]).toMatchObject({ path: 'docker/Dockerfile', line: 1, text: line });
     expect(result.manual[0]?.why).toContain('digest');
+  });
+
+  test('the digest a scaffold wrote is read as its known patch, never asked of a human', () => {
+    const line = `FROM ${SCAFFOLD_BUN_IMAGE.ref} AS deps`;
+    expect(editBunSites('docker/Dockerfile', `${line}\n`, REQUIRED_BUN)).toEqual({
+      text: `${line}\n`,
+      edited: [],
+      manual: [],
+    });
   });
 
   test('a build-arg tag is listed: only the Dockerfile author knows its value', () => {

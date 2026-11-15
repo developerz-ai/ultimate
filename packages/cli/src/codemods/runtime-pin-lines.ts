@@ -3,7 +3,7 @@
 // choice — which is never edited, only reported with the line the scaffold would have written.
 
 import { REQUIRED_BUN } from '../app-root';
-import type { BunImage } from '../templates/bun-image';
+import { type BunImage, scaffoldDigestPatch } from '../templates/bun-image';
 import { SETUP_BUN } from '../templates/github/ci.yml';
 
 export type LineVerdict =
@@ -13,17 +13,6 @@ export type LineVerdict =
   | { readonly kind: 'foreign'; readonly to: string; readonly why: string };
 
 const KEEP: LineVerdict = { kind: 'keep' };
-
-/**
- * Every digest a released scaffold wrote before the current one, by the patch it was read from
- * (27.10.3 and 28.0.0). An app holding one of these took it from `x new`, so moving it is the
- * template's change; any other digest was chosen or moved since — Dependabot's docker ecosystem
- * does — and is the app's.
- */
-const EARLIER_DIGESTS: ReadonlySet<string> = new Set([
-  'sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f', // 1.4.2
-  'sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373', // 1.4.3
-]);
 
 const FROM = /^(\s*FROM\s+(?:--\S+\s+)*)(oven\/bun:([^\s@]+)(?:@(sha256:[0-9a-f]{64}))?)/i;
 const TAG = /^(\d+\.\d+(?:\.\d+)?)(-[\w.-]+)?$/;
@@ -66,7 +55,8 @@ export function dockerfileLine(line: string, image: BunImage): LineVerdict {
       : KEEP;
   }
   if (digest === image.digest) return KEEP;
-  if (digest !== undefined && !EARLIER_DIGESTS.has(digest)) {
+  // A digest no scaffold wrote was chosen or moved since — Dependabot's docker ecosystem does.
+  if (digest !== undefined && scaffoldDigestPatch(digest) === undefined) {
     return order < 0
       ? foreign(`oven/bun:${tag} is pinned by a digest x new never wrote, below Bun ${image.patch}`)
       : KEEP;

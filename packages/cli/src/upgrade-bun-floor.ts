@@ -4,6 +4,7 @@
 
 // why: Bun exposes no basename primitive.
 import { basename } from 'node:path';
+import { scaffoldDigestPatch } from './templates/bun-image';
 
 export interface BunEdit {
   readonly path: string;
@@ -181,6 +182,9 @@ function editLine(input: {
   const parts = TAG.exec(tag);
   const version = parts?.[1];
   if (digest !== undefined) {
+    // A digest `x new` wrote holds a patch the framework knows, so the line says enough after all.
+    const known = scaffoldDigestPatch(digest.slice(1));
+    if (known !== undefined && !isBelow(known, floor)) return line;
     const inspect = `by hand (docker buildx imagetools inspect oven/bun:${floor}-alpine)`;
     if (version === undefined || isBelow(version, floor)) {
       return listed(
