@@ -11,16 +11,27 @@ import { caught } from './auth-fixture';
 import { defineMemberInvite, type MemberInviteFlow } from './member-invite';
 import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import { createSession } from './session';
+import { verificationPurposeNames } from './verification-purposes';
 import type { MailSender } from './verify';
 
 const START = 1_700_000_000_000;
 const TTL = 60_000;
 
-/** Every flow needs its own purpose name: the registry is process-wide and refuses a repeat. */
+/**
+ * Every flow needs its own purpose name: the registry is process-wide and refuses a repeat, and it
+ * outlives this module — `--rerun-each` evaluates the file again over the same registry, so a
+ * counter alone restarts at a name already taken. Skip any name the registry already holds.
+ */
 let flows = 0;
+const freshName = (prefix: string): string => {
+  const taken = new Set(verificationPurposeNames());
+  let name = `${prefix}-${++flows}`;
+  while (taken.has(name)) name = `${prefix}-${++flows}`;
+  return name;
+};
 const flow = (): MemberInviteFlow =>
   defineMemberInvite({
-    name: `member-invite-test-${++flows}`,
+    name: freshName('member-invite-test'),
     template: 'auth.member-invite',
     ttlMs: TTL,
   });
@@ -383,7 +394,7 @@ describe('defineMemberInvite — one refusal per purpose', () => {
   test('a disabled account is refused in the very words a bad token is, under any name', async () => {
     const w = await world([['ada', null]]);
     const f = defineMemberInvite({
-      name: `team-invite-${++flows}`,
+      name: freshName('team-invite'),
       template: 'auth.team-invite',
       ttlMs: TTL,
     });
@@ -418,7 +429,7 @@ describe('defineMemberInvite — input', () => {
   });
 
   test('a second flow under one purpose name is refused at declaration', () => {
-    const name = `member-invite-dup-${++flows}`;
+    const name = freshName('member-invite-dup');
     defineMemberInvite({ name, template: 'auth.member-invite', ttlMs: TTL });
     expect(() => defineMemberInvite({ name, template: 'auth.member-invite', ttlMs: TTL })).toThrow(
       expect.objectContaining({ code: 'X_VERIFICATION_PURPOSE_INVALID' }),

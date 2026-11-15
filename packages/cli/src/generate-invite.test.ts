@@ -66,6 +66,17 @@ describe('unit · x g invite', () => {
     }
   });
 
+  test("the flow's module imports the app's catalog, so its mail never renders raw keys", () => {
+    // `defineCatalogs()` runs on import of the app's i18n module; a mail sent where nothing else
+    // imported it (a worker, the generated test) rendered `⟦key⟧` and was refused, X_MAIL_KEY_MISSING.
+    const module = (catalogModule?: string) =>
+      generate({ kind: 'invite', name: 'invite', ...(catalogModule ? { catalogModule } : {}) })
+        .find((file) => file.path === 'apps/web/app/auth/invite.ts')
+        ?.contents.toString() ?? expect.unreachable('no invite.ts planned');
+    expect(module('@shop/i18n')).toContain("import '@shop/i18n';");
+    expect(module()).not.toContain("import '@");
+  });
+
   test('a run grants the permission, declares mail and turns each action off in the pass', async () => {
     const planned = await run('g', 'invite', '--dry-run');
     const ran = await run('g', 'invite');

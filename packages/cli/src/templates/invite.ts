@@ -26,11 +26,22 @@ export interface InviteTemplateOptions {
 export const INVITES_PATH = '/auth/invites';
 export const INVITE_ACCEPT_PATH = `${INVITES_PATH}/accept`;
 
-const moduleSource =
-  (): string => `// The member invite: one declaration of the flow, the mail it sends and the link it carries.
+/**
+ * The app's catalog module, imported for its effect: \`defineCatalogs()\` runs on import, and the
+ * mail resolves its keys against what is registered when it renders. Nothing else this file pulls
+ * in is guaranteed to have imported it — a mail sent from a worker or a test rendered raw keys.
+ */
+const catalogImport = (module: string | undefined): string =>
+  module === undefined
+    ? ''
+    : `// Registers the app's catalog: the mail below renders its keys against it.\nimport '${module}';\n`;
+
+const moduleSource = (
+  module: string | undefined,
+): string => `// The member invite: one declaration of the flow, the mail it sends and the link it carries.
 // \`defineMemberInvite\` binds each link to ONE org and ONE address, single-use and expiring; the
 // actions beside this file are the app's policy over it.
-import { defineMemberInvite, type MailSender } from '@ultimat3/auth';
+${catalogImport(module)}import { defineMemberInvite, type MailSender } from '@ultimat3/auth';
 import { EnvMissingError } from '@ultimat3/core';
 import { setRedirect, useRequestHeader } from '@ultimat3/http';
 import { blocks, defineMail, send, t } from '@ultimat3/mail';
@@ -229,7 +240,7 @@ const off = (name: string, why: string) => ({ name, value: `{ off: '${why}' }` }
 export function inviteFiles(options: InviteTemplateOptions): readonly GeneratedFile[] {
   const module = options.catalogModule;
   return [
-    { path: `${AUTH_DIR}/invite.ts`, contents: moduleSource() },
+    { path: `${AUTH_DIR}/invite.ts`, contents: moduleSource(module) },
     { path: `${AUTH_DIR}/invite.test.ts`, contents: inviteModuleTest() },
     { path: `${AUTH_DIR}/policy.ts`, contents: policySource() },
     {
