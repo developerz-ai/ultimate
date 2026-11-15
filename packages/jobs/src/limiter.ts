@@ -7,7 +7,11 @@ import { LimiterDeclarationInvalidError } from './limiter-errors';
 import type { RateLimit } from './limits';
 
 export interface LimiterOptions {
-  /** At most `limit` starts in ANY `windowMs`, fleet-wide — a sliding window, never a burst past it. */
+  /**
+   * At most `limit` STARTS in ANY `windowMs`, fleet-wide — a sliding window, never a burst past it.
+   * A start is a run's entry with no step persisted yet: a resume after `step.sleep` or
+   * `waitForEvent`, or a retry past a completed step, spends none (`limiter-gate.ts`).
+   */
   readonly rate?: RateLimit;
   /** At most this many runs holding the limiter at once, fleet-wide. */
   readonly concurrency?: number;

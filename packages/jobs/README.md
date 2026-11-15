@@ -1584,7 +1584,7 @@ export const refundCharge = job({ /* … */ limiter: vendorApi, async run({ inpu
 | Rule | Enforced by |
 |---|---|
 | `rate`: at most `limit` starts in ANY `windowMs`, fleet-wide — a sliding window, no burst past it | one `x_job_leases` row per start, TTL the window, never released (`limiter-gate.ts`) |
-| `concurrency`: at most this many runs holding the limiter at once, fleet-wide | one row per held slot, renewed while the body runs, released when it ends, reclaimed by TTL (the visibility timeout) after a SIGKILL |
+| `concurrency`: at most this many runs holding the limiter at once, fleet-wide | one row per held slot, renewed while the body runs, released when it ends, reclaimed by TTL after a SIGKILL — the worker's visibility timeout, renewed on its heartbeat interval through `WorkerOptions.schedule` (`limiter-frame.ts`), as `job.concurrency`'s slot is |
 | a run over either is **deferred, uncounted** | the gate throws `X_RATE_LIMITED` with `retryAfterSeconds` (when the oldest start lapses; 1 s for a full concurrency cap) — `executeJob`'s `rateLimitDeferralMs`, so a backlog waits and is never dead-lettered for waiting |
 | the per-process fast path refuses a concurrency this heap alone already fills, with no round trip | `limits.ts`' `concurrencyLimiter({ perQueue })`, keyed by the limiter's name. Never the rate: a window is time, and the store keeps its own |
 | whole numbers ≥ 1, `rate.limit` ≤ `MAX_LIMITER_RATE` (1,000), a name of `[a-z0-9._-]`, one set of numbers per name | `X_JOB_DECLARATION_INVALID` at `limiter()`; a non-`limiter()` value at `job()` |
@@ -1592,7 +1592,9 @@ export const refundCharge = job({ /* … */ limiter: vendorApi, async run({ inpu
 | `describe().limiter` | `{ name, rate: { limit, windowMs } \| null, concurrency \| null }`, or `null` for a job that spends none |
 
 The gate wraps the BODY, so a refusal happens before the first `step.run` and replays nothing.
-Every attempt is a start: a retried run spends the rate again. A slot lost mid-run (its renewal
+A start is an entry with no step persisted yet: a resume after `step.sleep`/`waitForEvent`, or a
+retry past a completed step, spends no rate (the claim's step list says so; outside a worker the
+step store is read). A retry before its first step spends again. A slot lost mid-run (its renewal
 answered "not yours") is logged `jobs.limiter.slot-lost`, not cancelled.
 
 ### The process cap: `maxInFlight`
@@ -1846,7 +1848,7 @@ export const syncAccountWatched = job({
 | the same, the body returned `undefined`, and the worker died before its hook returned — re-driven by the scheduler leader | `completed` | `redriven: true`, `reason: 'lost'`, `input`, `result: undefined` — the value it returned | `done` |
 | any ending below, its worker dead before the hook returned — re-driven | the same `outcome` | the same fields read off the row, plus `redriven: true`, `reason: 'lost'` | the same |
 | failed for good, parked in the dead-letter queue | `dead-lettered` | `input` (or `undefined`: the stored payload no longer parses), `error`, `code` | `dead` |
-| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker; the claim records the debt in the burial's write, so a burier that dies first is re-driven | `dead` |
+| its lease lapsed on the final attempt and the claim buried it — every worker that took it died | `dead-lettered` | `input`, `error` (`LEASE_LAPSED_FINAL_ATTEMPT`), `code: undefined` — nothing was thrown. Told by the burying worker, after the rows the same claim handed it are running, and only while the hook still ends inside the debt's grace — a row past it is left to the re-drive, never told by both at once; the claim records the debt in the burial's write, so a burier that dies first is re-driven | `dead` |
 | failed for good on `retry.deadLetter: false` | `dropped` | the same | `failed` |
 | `whenBusy: 'fail'` over a busy key — the body never ran | `refused` | the same, `code: 'X_JOB_KEY_BUSY'` | `failed` |
 

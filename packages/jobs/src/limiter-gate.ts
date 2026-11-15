@@ -12,19 +12,27 @@ import type { HeldLease, LeaseStore } from './leases';
 import type { JobLimiter } from './limiter';
 import type { LimiterRefusal } from './limiter-errors';
 import { LimiterRefusedError, LimiterUnenforceableError } from './limiter-errors';
+import { limiterFrame } from './limiter-frame';
 import type { Limiter } from './limits';
 import { concurrencyLimiter } from './limits';
 import { type IntervalScheduler, type RenewalTimer, startRenewalTimer } from './renewal-timer';
+import type { StepStore } from './steps-store';
 
 export interface LimiterGateOptions {
   /** The store every replica counts in; `undefined` is a driver that has none. */
   readonly leases: () => { readonly store: LeaseStore | undefined; readonly driver: string };
   /** What a rate stamp dates its expiry by, for a refusal's Retry-After. Default: `liveClock`. */
   readonly clock?: Clock;
-  /** How long a held concurrency slot survives its process. Default: the visibility timeout. */
+  /**
+   * How long a held concurrency slot survives its process, how often it renews, and on what.
+   * Each defaults to the running worker's (`limiter-frame.ts`: its visibility timeout, its
+   * heartbeat interval, `WorkerOptions.schedule`), then to the visibility-timeout default.
+   */
   readonly ttlMs?: number;
   readonly renewIntervalMs?: number;
   readonly schedule?: IntervalScheduler;
+  /** Asked whether a run is a re-entry when no worker frame says so. Absent: never a re-entry. */
+  readonly steps?: () => StepStore | undefined;
 }
 
 export interface LimiterGate {
@@ -117,8 +125,28 @@ function renewSlot(store: LeaseStore, held: HeldLease, options: RenewOptions): R
 
 export function limiterGate(limiter: JobLimiter, options: LimiterGateOptions): LimiterGate {
   const clock = options.clock ?? liveClock;
-  const ttlMs = options.ttlMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
-  const renewIntervalMs = options.renewIntervalMs ?? Math.max(1, Math.floor(ttlMs / 3));
+  /** Read per run: the worker's numbers belong to the run in progress, not to the gate. */
+  const timings = () => {
+    const frame = limiterFrame();
+    const ttlMs = options.ttlMs ?? frame?.ttlMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
+    return {
+      ttlMs,
+      renewIntervalMs:
+        options.renewIntervalMs ?? frame?.renewIntervalMs ?? Math.max(1, Math.floor(ttlMs / 3)),
+      schedule: options.schedule ?? frame?.schedule,
+    };
+  };
+  /**
+   * A rate counts STARTS, and a run that already persisted a step has started: a resume after
+   * `step.sleep`/`waitForEvent`, or a retry past a completed step, spends none. The worker's claim
+   * says so for free; without one, the step store is asked (one read, rate-limited runs only).
+   */
+  const reentered = async (runId: string): Promise<boolean> => {
+    const said = limiterFrame()?.reentered;
+    if (said !== undefined) return said;
+    const store = options.steps?.();
+    return store === undefined ? false : (await store.list(runId)).length > 0;
+  };
   // The fast path: this process's own count can only be at or below the fleet's, so a refusal
   // here is always one the fleet would make too. Keyed by the limiter's name as its one "queue".
   // CONCURRENCY only: a rate window is TIME, and the store keeps its own (Postgres' `now()`, or
@@ -151,6 +179,7 @@ export function limiterGate(limiter: JobLimiter, options: LimiterGateOptions): L
         throw refused(job, 'concurrency', LIMITER_CONCURRENCY_RETRY_SECONDS);
       }
 
+      const { ttlMs, renewIntervalMs, schedule } = timings();
       let slot: HeldLease | undefined;
       try {
         if (limiter.concurrency !== undefined) {
@@ -166,7 +195,7 @@ export function limiterGate(limiter: JobLimiter, options: LimiterGateOptions): L
           }
           slot = taken.lease;
         }
-        if (limiter.rate !== undefined) {
+        if (limiter.rate !== undefined && !(await reentered(runId))) {
           const at = nowMs(clock);
           // Never released: a start stays counted for its whole window, and the TTL is the window.
           const taken = await grant(
@@ -198,7 +227,7 @@ export function limiterGate(limiter: JobLimiter, options: LimiterGateOptions): L
           : renewSlot(store, slot, {
               ttlMs,
               renewIntervalMs,
-              schedule: options.schedule,
+              schedule,
               runId,
               job,
               limiter: limiter.name,
@@ -228,6 +257,7 @@ export function limiterGateFor(limiter: JobLimiter): LimiterGate {
         const driver = jobDriver();
         return { store: driver?.leases, driver: driver?.name ?? 'none' };
       },
+      steps: () => jobDriver()?.steps,
     });
     gates.set(limiter, gate);
   }

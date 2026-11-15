@@ -19,6 +19,7 @@ import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobExecution } from './execute-result';
+import { limiterFrameOf, withLimiterFrame } from './limiter-frame';
 import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
 import { tickStreak } from './tick-streak';
@@ -116,22 +117,26 @@ export function jobWorker(options: WorkerOptions): Worker {
 
   /** One claimed job, run under its lease, its slot and its span. `worker-run.ts` owns the wiring. */
   const runClaimed = (claimed: ClaimedJob, refusal?: unknown): Promise<JobExecution> =>
-    runClaimedJob({
-      driver: options.driver,
-      claimed,
-      ...(refusal === undefined ? {} : { refusal }),
-      context: options.context,
-      fleetSlots,
-      workerId,
-      visibilityTimeoutMs,
-      heartbeatIntervalMs,
-      pollIntervalMs,
-      drain: drainSignal.signal,
-      ...(options.clock === undefined ? {} : { clock: options.clock }),
-      ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
-      ...(options.events === undefined ? {} : { events: options.events }),
-    });
-
+    // A `limiter()` gate in the body renews on THIS worker's numbers, as `fleetSlots` does.
+    withLimiterFrame(
+      limiterFrameOf(claimed, visibilityTimeoutMs, heartbeatIntervalMs, options),
+      () =>
+        runClaimedJob({
+          driver: options.driver,
+          claimed,
+          ...(refusal === undefined ? {} : { refusal }),
+          context: options.context,
+          fleetSlots,
+          workerId,
+          visibilityTimeoutMs,
+          heartbeatIntervalMs,
+          pollIntervalMs,
+          drain: drainSignal.signal,
+          ...(options.clock === undefined ? {} : { clock: options.clock }),
+          ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
+          ...(options.events === undefined ? {} : { events: options.events }),
+        }),
+    );
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
 
   /**
@@ -160,11 +165,7 @@ export function jobWorker(options: WorkerOptions): Worker {
         onExhausted: (dead) => buried.push(...dead),
         ...(loop.wantsDue() ? { onEmpty: loop.nextDue } : {}), // idle: rest until the next is due
       });
-      if (claimed.length > 0) found = true;
-      if (buried.length > 0) {
-        found = true;
-        tally.buried(await announceExhausted({ ...options, exhausted: buried, workerId }));
-      }
+      if (claimed.length > 0 || buried.length > 0) found = true;
 
       for (const [index, job] of claimed.entries()) {
         const queue = job.queue;
@@ -250,6 +251,11 @@ export function jobWorker(options: WorkerOptions): Worker {
             });
           },
         );
+      }
+      // Told AFTER the rows this claim handed over are running, so their leases renew meanwhile; each
+      // telling is bounded inside its debt's grace (`claim-exhausted.ts`).
+      if (buried.length > 0) {
+        tally.buried(await announceExhausted({ ...options, exhausted: buried, workerId }));
       }
       if (fillsAsk(admitted, ask.limit)) full = true;
       return admitted;
