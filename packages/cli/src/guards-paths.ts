@@ -2,9 +2,9 @@
 // (`guards.ts`), `x doctor` and the manifest's error-code projection, the last on the serving
 // roles' graph — so nothing here imports a template or a runner.
 
-// Bun ships no equivalent for either: `existsSync` answers whether this app has a guards
-// directory, `join` builds the host-separator path.
-import { existsSync } from 'node:fs';
+// Bun ships no equivalent for either: `statSync` answers what `guards` is in this app, `join`
+// builds the host-separator path.
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** The directory IS the registration. An app-side list is a list an app can forget to add to. */
@@ -17,7 +17,9 @@ export const GUARD_DIR = 'guards';
  */
 export async function guardPaths(root: string): Promise<readonly string[]> {
   const dir = join(root, GUARD_DIR);
-  if (!existsSync(dir)) return [];
+  // A FILE named `guards` holds no guards — never ENOTDIR out of the gate or `x doctor`; the gate
+  // reports it (`guardDirIsFile`), so the author's rules are not silently absent.
+  if (guardDirState(root) !== 'directory') return [];
   const paths: string[] = [];
   for await (const entry of new Bun.Glob('*.{ts,tsx}').scan({ cwd: dir, absolute: false })) {
     const path = entry.split('\\').join('/');
@@ -25,4 +27,11 @@ export async function guardPaths(root: string): Promise<readonly string[]> {
     paths.push(`${GUARD_DIR}/${path}`);
   }
   return paths.sort();
+}
+
+/** What `guards` is in this app: the directory, nothing, or something else in its place. */
+export function guardDirState(root: string): 'directory' | 'absent' | 'other' {
+  const stat = statSync(join(root, GUARD_DIR), { throwIfNoEntry: false });
+  if (stat === undefined) return 'absent';
+  return stat.isDirectory() ? 'directory' : 'other';
 }

@@ -11,11 +11,11 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { guardFormHash } from '../../packages/cli/src/guards-vendored';
 import { reportOnlyForm } from '../../packages/cli/src/templates/scaffold-guards';
+import { ENTRY, extractTemplates, gitTreeSource, SCRATCH } from './guard-refresh-archive';
 import { git } from './release-due-git';
 import { repoRoot } from './run';
 
 export const FORMS_FILE = 'packages/cli/src/templates/guard-released-forms.ts';
-const TEMPLATES = 'packages/cli/src/templates';
 /** The first release whose scaffold shipped guards as copies; earlier ones shipped none. */
 const FIRST = 'v31.0.0';
 
@@ -64,17 +64,17 @@ export async function releasedForms(
 ): Promise<{ readonly forms: Forms; readonly tests: TestForms }> {
   const forms: Forms = {};
   const tests: TestForms = {};
-  const scratch = join(root, 'node_modules/.cache/guard-released-forms');
+  const scratch = join(root, SCRATCH);
   rmSync(scratch, { recursive: true, force: true });
   try {
     for (const tag of await releaseTags(root)) {
       const dir = join(scratch, tag);
       mkdirSync(dir, { recursive: true });
-      const archive = Bun.spawnSync(['git', 'archive', tag, TEMPLATES], { cwd: root });
-      Bun.spawnSync(['tar', '-x', '-C', dir], { stdin: archive.stdout });
-      await collect(forms, tests, join(dir, TEMPLATES, 'scaffold-guards.ts'));
+      // The templates and every module their guard graph imports outside them, exit codes checked.
+      await extractTemplates(gitTreeSource(root, tag), dir);
+      await collect(forms, tests, join(dir, ENTRY));
     }
-    await collect(forms, tests, join(root, TEMPLATES, 'scaffold-guards.ts'));
+    await collect(forms, tests, join(root, ENTRY));
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

@@ -18,7 +18,7 @@ import {
   vendoredPath,
 } from './guards-built-in';
 import { materializeGuard } from './guards-materialize';
-import { GUARD_DIR, guardPaths } from './guards-paths';
+import { GUARD_DIR, guardDirState, guardPaths } from './guards-paths';
 
 /** The app's guard directory and its files, defined in the leaf the manifest projection reads. */
 export { GUARD_DIR, guardPaths } from './guards-paths';
@@ -145,6 +145,15 @@ const notAGuard = (path: string, exported: unknown): Finding => {
       ? `${path} exports a \`guard\` whose severity is ${shown(severity)} — 'warning' (report only) is the one, or none to fail the gate`
       : `${path} exports a \`guard\` with no summary and no check()`,
   );
+};
+
+/** A file where `guards/` belongs: no crash, and not silence — the app's own rules are not running. */
+const notADirectory: Finding = {
+  code: 'X_GUARD_INVALID',
+  cause: `${GUARD_DIR} is not a directory, so none of this app's own guards can run beside the shipped ones`,
+  fix: `mv ${GUARD_DIR} ${GUARD_DIR}.txt && mkdir ${GUARD_DIR} && x verify --only boundaries --json   # ${GUARD_DIR}/ is the directory the gate discovers; a rule of yours goes in it as ${GUARD_DIR}/<name>.ts`,
+  docs: ERROR_DOCS_URL,
+  at: GUARD_DIR,
 };
 
 const findingInvalid = (path: string, cause: string): Finding => ({
@@ -276,6 +285,7 @@ export const guardReport = async (
     warnings.push(...report.warnings);
   }
   findings.push(...shippedConfigFindings(config.problems));
+  if (guardDirState(root) === 'other') findings.push(notADirectory);
   findings.push(
     ...orphanedBaselineFindings(
       runs.map((run) => run.path),
