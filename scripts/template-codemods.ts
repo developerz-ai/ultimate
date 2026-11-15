@@ -62,7 +62,7 @@ export async function scaffoldOwnedTemplates(root: string): Promise<readonly str
     const dir = file.slice(0, file.lastIndexOf('/') + 1);
     for (const { path } of transpiler.scanImports(await Bun.file(`${root}/${file}`).text())) {
       if (!path.startsWith('.')) continue;
-      const base = new URL(path, `file:///${dir}`).pathname.slice(1);
+      const base = Bun.fileURLToPath(new URL(path, Bun.pathToFileURL(`/${dir}`))).slice(1);
       for (const candidate of [`${base}.ts`, `${base}/index.ts`, base]) {
         if (!candidate.endsWith('.ts') || !candidate.startsWith(`${TEMPLATE_DIR}/`)) continue;
         if (await Bun.file(`${root}/${candidate}`).exists()) {

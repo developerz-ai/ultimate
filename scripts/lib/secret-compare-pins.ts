@@ -439,4 +439,28 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'Two npm semver strings off one PublishState row: the version this tree stamps, against the tag npm serves by default. Neither is a credential, and both are public in the packument.',
   },
+  'packages/cli/src/codemods/runtime-pin-lines.ts: digest === image.digest': {
+    // why: new 2026-11-15 (31.28.0) with the runtime-pin codemod.
+    count: 1,
+    reason:
+      "Two Docker image digests: the one on an app's FROM line and one a released scaffold wrote. Both are public content addresses of oven/bun images, never a credential.",
+  },
+  'packages/cli/src/codemods/vendored-guards.ts: !(known ?? []).includes(guardFormHash(test))': {
+    // why: new 2026-11-15 (31.28.0) with the vendored-guards codemod.
+    count: 1,
+    reason:
+      "A content hash of an app's guard test file against the hashes of every released template: public text from this repository's tags, never a credential.",
+  },
+  'packages/cli/src/guards-vendored.ts: known === hash': {
+    // why: new 2026-11-15 (31.28.0) with the per-copy vendored-guard finding.
+    count: 1,
+    reason:
+      "A content hash of an app's guard copy against a released template's hash: public text from this repository's tags, never a credential.",
+  },
+  'scripts/template-codemods.ts: !candidate.startsWith(` TEMPLATE_DIR `)': {
+    // why: new 2026-11-15 (31.28.0) with the template import-closure walk.
+    count: 1,
+    reason:
+      'A repository-relative import path tested for the templates directory prefix: a path in this tree, never a credential.',
+  },
 };

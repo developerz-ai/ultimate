@@ -58,7 +58,7 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...internal('cli', 'ULTIMATE_SEED_TIER', 'ULTIMATE_STATE_DIR', 'ULTIMATE_BUILD_CAPTURE'),
   ...internal('cli', 'ULTIMATE_DEV_CHILD', 'ULTIMATE_DEV_SUPERVISOR_PID', 'X_ENV'),
   ...internal('cli', 'ULTIMATE_KEEP_GLOBAL_CLI', 'ULTIMATE_VERIFY_STEP', 'CI_RUNNER'),
-  ...host('cli', 'CI', 'GITHUB_SHA', 'GITHUB_BASE_REF', 'EDITOR', 'VISUAL'),
+  ...host('cli', 'CI', 'GITHUB_SHA', 'GITHUB_BASE_REF', 'EDITOR', 'VISUAL', 'HOME', 'USERPROFILE'),
   ...contract('core', 'ULTIMATE_ENV', 'ROLE', 'BUILD_ID', 'APP_VERSION', 'LOG_LEVEL'),
   ...contract('core', 'ULTIMATE_CURSOR_SECRET', 'ULTIMATE_SECRETS_KEY'),
   ...contract('core', 'ULTIMATE_SECRETS_RETIRED_KEYS', 'METRICS_INTERVAL_MS'),

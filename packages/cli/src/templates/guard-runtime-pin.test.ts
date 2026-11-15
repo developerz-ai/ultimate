@@ -174,6 +174,7 @@ describe('unit · shipped guard · runtime-pin', () => {
       }
       const run = Bun.spawnSync(['bun', 'test', './guards/runtime-pin.test.ts'], {
         cwd: root,
+        timeout: 60_000,
         stdout: 'pipe',
         stderr: 'pipe',
       });

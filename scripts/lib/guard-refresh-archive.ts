@@ -8,6 +8,9 @@ import { dirname, join, posix } from 'node:path';
 import { quoteArg } from '../../packages/cli/src/shell-quote';
 import { ScriptError } from './script-error';
 
+/** One archive, extract or listing of a tag: local work, never a fetch — a minute is generous. */
+const GIT_TIMEOUT_MS = 60_000;
+
 export const TEMPLATES = 'packages/cli/src/templates';
 
 /**
@@ -40,14 +43,20 @@ export function gitTreeSource(root: string, ref: string): TreeSource {
   return {
     ref,
     extract(paths, dir) {
-      const archive = Bun.spawnSync(['git', 'archive', ref, '--', ...paths], { cwd: root });
+      const archive = Bun.spawnSync(['git', 'archive', ref, '--', ...paths], {
+        cwd: root,
+        timeout: GIT_TIMEOUT_MS,
+      });
       if (archive.exitCode !== 0) {
         throw failed(
           ref,
           `git archive exited ${String(archive.exitCode)}: ${firstLine(archive.stderr)}`,
         );
       }
-      const tar = Bun.spawnSync(['tar', '-x', '-C', dir], { stdin: archive.stdout });
+      const tar = Bun.spawnSync(['tar', '-x', '-C', dir], {
+        stdin: archive.stdout,
+        timeout: GIT_TIMEOUT_MS,
+      });
       if (tar.exitCode !== 0) {
         throw failed(ref, `tar exited ${String(tar.exitCode)}: ${firstLine(tar.stderr)}`);
       }
@@ -55,6 +64,7 @@ export function gitTreeSource(root: string, ref: string): TreeSource {
     present(candidates) {
       const listed = Bun.spawnSync(['git', 'ls-tree', '--name-only', ref, '--', ...candidates], {
         cwd: root,
+        timeout: GIT_TIMEOUT_MS,
       });
       if (listed.exitCode !== 0) {
         throw failed(

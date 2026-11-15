@@ -211,8 +211,10 @@ describe('unit · every code shipped source hands a reader is registered', () =>
     for await (const path of new Bun.Glob('packages/*/src/**/*.ts').scan({ cwd: REPO_ROOT })) {
       if (path.endsWith('.test.ts') || path.endsWith('.d.ts')) continue;
       // An emitted template is the APP's source: its codes are the app's, held by the app's own
-      // `error-declared` guard — never something this package hands a reader.
+      // `error-declared` guard — never something this package hands a reader. A codemod's snippets
+      // are the same text at two releases (`from`, `to`), so the same holds for them.
       if (path.startsWith('packages/cli/src/templates/')) continue;
+      if (path.startsWith('packages/cli/src/codemods/') && !path.includes('/engine')) continue;
       const text = stripComments(await Bun.file(join(REPO_ROOT, path)).text());
       // A code ends on a word, never on `_`: `'X_OUTBOUND_'` is a prefix a reader matches, not a code.
       for (const match of text.matchAll(/(['"`])(X_[A-Z0-9]+(?:_[A-Z0-9]+)*)\1/g)) {

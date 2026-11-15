@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { Glob } from 'bun';
+import { SHIPPED_GUARD_NAMES, shippedGuardCode } from '../packages/cli/src/guards-shipped-names';
 
 const ROOT = `${import.meta.dir}/..`;
 
@@ -52,9 +53,12 @@ async function read(pattern: string, cwd: string): Promise<{ path: string; text:
   return files;
 }
 
-/** Codes the tracked apps raise or guard with: written as a string literal in their sources. */
+/**
+ * Codes the tracked apps raise or guard with: a string literal in their sources, or a shipped
+ * guard's code — since 31.28.0 those run built in, so an app's `guards/` no longer holds them.
+ */
 async function appCodes(): Promise<Set<string>> {
-  const codes = new Set<string>();
+  const codes = new Set<string>(SHIPPED_GUARD_NAMES.map(shippedGuardCode));
   for (const app of ['examples/dummy', 'dummy/social-media-clone', 'dummy/docs-site']) {
     for (const { text } of await read('{apps,guards,packages}/**/*.{ts,tsx}', `${ROOT}/${app}`)) {
       for (const m of text.matchAll(/['"`](X_[A-Z0-9_]+)['"`]/g)) codes.add(m[1] ?? '');

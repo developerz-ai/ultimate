@@ -5,12 +5,16 @@
 import { subscribe } from '@ultimat3/core';
 import type { ExerciseEffect } from './exercise-report';
 
-/** The verbs that change what a disk holds; a get, stat or list leaves it as it was. */
-const WRITES = ['put', 'copy', 'delete'] as const;
+/** The verbs that change what a disk holds, each by its event; a get, stat or list leaves it be. */
+const WRITES = [
+  ['put', 'storage.put'],
+  ['copy', 'storage.copy'],
+  ['delete', 'storage.delete'],
+] as const;
 
 /** A write's effect `op`: the verb, or `multipart.<op>` for a change to an upload session. */
 export type StorageWrite =
-  | (typeof WRITES)[number]
+  | (typeof WRITES)[number][0]
   | `multipart.${'create' | 'part' | 'complete' | 'abort'}`;
 
 interface WriteEvent {
@@ -40,7 +44,7 @@ export function roomStorage(owns: () => boolean): RoomStorage {
       kept.set(key, known);
     };
   const offs = [
-    ...WRITES.map((verb) => subscribe(`storage.${verb}`, keep(verb))),
+    ...WRITES.map(([verb, event]) => subscribe(event, keep(verb))),
     subscribe('storage.multipart', (event) => keep(`multipart.${event.payload.op}`)(event)),
   ];
   return {

@@ -51,6 +51,8 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
   // why: that name is a declared identifier or the fixed label `replica identity full`, never input.
   // why: +2 — framework-env.ts splices CURSOR_SECRET_KEY and STORAGE_SIGNING_SECRET_KEY, two
   // module constants naming env keys, into `export <KEY>="$(openssl rand -hex 32)"`; never runtime data.
+  // why: 72 → 77 (31.28.0) — cmd-repro.ts' two already pass renderFixShellArg inside a conditional
+  // the count cannot see into; guards.ts' three splice GUARD_DIR, the module constant `guards`.
   cli: {
     count: 77,
     reason:
@@ -124,6 +126,8 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
   // rewrite landed, so the tree holds one more site than origin/main measured, not new debt.
   // why: `dir` is the app directory this process itself scaffolded — the finding's own `at:` —
   // never a request, a file's text or the network; the sentence the row's prose already states.
+  // why: 24 → 27 (31.28.0) — the upgrade-fixtures harness: a cache dir under this checkout, a
+  // mkdtemp dir this run made, and FIXTURE_VERSIONS, a module constant of release numbers.
   scripts: {
     count: 27,
     reason:

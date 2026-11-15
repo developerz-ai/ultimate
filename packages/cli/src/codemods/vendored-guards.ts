@@ -110,7 +110,7 @@ async function run(app: CodemodApp, tables: ReleasedTables): Promise<CodemodResu
     const own = shippedGuardForms(name)[0]?.severity ?? 'error';
     if (path === undefined) {
       // A legacy app never had this guard gate it: it keeps reporting only, until the author says.
-      if (configText === undefined && own === 'error' && rows[name] === undefined) {
+      if (configText === undefined && own === 'error' && !Object.hasOwn(rows, name)) {
         rows[name] = 'warning';
       }
       continue;
@@ -122,7 +122,7 @@ async function run(app: CodemodApp, tables: ReleasedTables): Promise<CodemodResu
     if (verdict.kind === 'delete') {
       await app.remove(path);
       changed.push(path);
-      if (verdict.severity !== own && rows[name] === undefined) rows[name] = verdict.severity;
+      if (verdict.severity !== own && !Object.hasOwn(rows, name)) rows[name] = verdict.severity;
       if (test !== undefined) {
         await app.remove(testPath);
         changed.push(testPath);

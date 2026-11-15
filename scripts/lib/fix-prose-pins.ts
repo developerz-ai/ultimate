@@ -42,7 +42,9 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   // which no command in this repo performs, so the line cannot open with a command — the sibling
   // findings that edit the changelog are already inside this number. 172 → 171 at the changelog
   // split (31.3.0): the duplicate-version refusal in `lib/release-changelog.ts` opens with its command.
-  scripts: 167,
+  // why: 167 → 170 (31.28.0) — template-codemods.ts' three fixes lead with the edit to
+  // template-codemods-rows.ts or codemods/index.ts, as fix-sequence requires; `edit` is no command.
+  scripts: 170,
   seo: 13,
   storage: 24,
   testing: 25,

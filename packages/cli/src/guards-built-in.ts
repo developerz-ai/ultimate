@@ -114,7 +114,8 @@ export function planBuiltIns(
       vendored.push(name);
       continue;
     }
-    const row = severity?.[name];
+    const row =
+      severity !== undefined && Object.hasOwn(severity, name) ? severity[name] : undefined;
     if (row === 'off') continue;
     const mode: BuiltInMode = severity === undefined ? 'legacy' : (row ?? 'default');
     builtIn.push({ name, display: `${BUILT_IN_GUARD_PREFIX}/${name}.ts`, mode });
