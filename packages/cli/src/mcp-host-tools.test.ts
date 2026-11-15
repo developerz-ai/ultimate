@@ -255,7 +255,10 @@ describe('verify.run is the gate, run through the injected runner', () => {
     expect(isError).toBe(true);
 
     const failed = report.steps.filter((step) => !step.ok);
-    expect(failed.map((step) => step.name)).toEqual(['manifest']);
+    // Any other red step prints its own detail: on a shared worker the cause is process state.
+    expect(failed.map((step) => (step.name === 'manifest' ? step.name : step))).toEqual([
+      'manifest',
+    ]);
     // The step's OWN finding, not a generic sentence: this is the only text the agent gets back
     // for a red step, so it has to name a file the manifest step could not read. The fixture
     // deletes `x.manifest.json` above and ships no `AGENTS.md`, and both are findings of this one
