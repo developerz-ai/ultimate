@@ -23,7 +23,17 @@ import type { ThrownShape } from './thrown-by-fixture';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
-const ROOT = processRoot(join(import.meta.dir, '..', '.app-fixture'));
+// One directory per EVALUATION of this file, not per process: `--rerun-each` evaluates it again in
+// the same process, Bun serves the fixture's modules from its cache by path, and the app's
+// `defineCatalogs()` then never ran again after `resetCatalogs()`. The count lives on `globalThis`,
+// which outlives the module.
+const EVALUATIONS = Symbol.for('ultimate.test.app-manifest.evaluations');
+const counter = globalThis as unknown as Record<symbol, number | undefined>;
+counter[EVALUATIONS] = (counter[EVALUATIONS] ?? 0) + 1;
+const ROOT = join(
+  processRoot(join(import.meta.dir, '..', '.app-fixture')),
+  `eval-${counter[EVALUATIONS]}`,
+);
 
 const FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'fixture-app', version: '2.1.0' }),
