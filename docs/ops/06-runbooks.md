@@ -415,7 +415,7 @@ a timeout is the database itself.
 
 `framework_schema_applied == 0` on a role for 10 m, **critical**: its pods are waiting on, or
 refused, a database missing its build's framework schema (`X_FRAMEWORK_SCHEMA_UNAPPLIED`) or the
-app migrations it ships (`X_APP_MIGRATIONS_UNAPPLIED`): `x db status --json`, then `x db migrate`.
+app migrations it ships (`X_APP_MIGRATIONS_UNAPPLIED`): run `x db migrate --json` against that database.
 Follow
 [a role refuses an unapplied schema](#a-role-refuses-an-unapplied-schema).
 
