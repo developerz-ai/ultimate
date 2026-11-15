@@ -1,7 +1,7 @@
 // The one declaration, read by both runners: the value `defineExercise()` returns is what an
 // action's and a query's `.contract({ exercise })` take, and each reads its own entry from it.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import type { ExerciseDeclarations } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import { EXERCISE_RUNS } from '@ultimat3/core';
@@ -11,7 +11,12 @@ import { from, query } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineExercise } from './define-exercise';
 
-definePermissions(['note:write', 'note:read']);
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['note:write', 'note:read']);
+});
 const ADA = testActor('ada', { permissions: ['note:write', 'note:read'] }).actor;
 const Input = t.object({ title: t.string.min(1).max(40) });
 

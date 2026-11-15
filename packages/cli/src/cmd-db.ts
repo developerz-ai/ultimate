@@ -105,6 +105,7 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       name,
       allowDestructive: flagBool(ctx.args, 'allow-destructive'),
       rollingUnsafe: flagBool(ctx.args, 'rolling-unsafe'),
+      dropRedundant: flagBool(ctx.args, 'drop-redundant'),
     });
   } catch (error) {
     return {

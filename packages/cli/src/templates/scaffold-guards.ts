@@ -25,8 +25,9 @@
 // about the TAB: an island polls with `visibleInterval()`, which a hidden tab and a lost session stop.
 // One is about the QUESTION: a destructive act asks through `ConfirmDialog`, never `confirm(`.
 // One is about the POOL: a database call per row runs through `mapBounded`, never all at once.
-// Two more are about the REPO, REPORT ONLY (`severity: 'warning'`) until the apps are clean of
-// them: an `await` per turn of a loop, and a `.all()` that says no bound.
+// Two more are about the REPO: an `await` per turn of a loop, REPORT ONLY (`severity: 'warning'`)
+// until the apps are clean of it, and a `.all()` that says no bound — failing the gate in an app
+// scaffolded from 31.23 on, while an older app keeps the report-only copy it was given.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
@@ -80,7 +81,7 @@ const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = 
   ['raw-z-index', rawZIndexGuardFiles],
   ['repo-await-in-loop', repoAwaitInLoopGuardFiles],
   ['repo-raw-sql', repoRawSqlGuardFiles],
-  ['repo-unbounded', repoUnboundedGuardFiles],
+  ['repo-unbounded', () => repoUnboundedGuardFiles('error')],
   ['semantic-interactive', semanticInteractiveGuardFiles],
   ['unbounded-fanout', unboundedFanoutGuardFiles],
   ['undeclared-custom-property', undeclaredCustomPropertyGuardFiles],
@@ -109,6 +110,28 @@ export const shippedGuardSource = (name: string): string | undefined => {
   )?.contents;
   // A guard is source text; bytes would be a template bug, and comparing them as text would hide it.
   return typeof contents === 'string' ? contents : undefined;
+};
+
+/**
+ * A shipped guard's earlier form that still counts as current for an app holding it: the template
+ * moved for NEW apps only. `repo-unbounded` became failing in 31.23; an app scaffolded before keeps
+ * its report-only copy, and `x doctor` must not call that copy stale.
+ */
+const ALSO_CURRENT: Readonly<Record<string, () => readonly GeneratedFile[]>> = {
+  'repo-unbounded': () => repoUnboundedGuardFiles('warning'),
+};
+
+/**
+ * Every rule-file text that reads as current for a shipped guard — the template first, then any
+ * earlier form an existing app is allowed to keep. Empty when the name was never shipped.
+ */
+export const shippedGuardSources = (name: string): readonly string[] => {
+  const current = shippedGuardSource(name);
+  if (current === undefined) return [];
+  const earlier = (Object.hasOwn(ALSO_CURRENT, name) ? ALSO_CURRENT[name] : undefined)?.().find(
+    (file) => file.path === `guards/${name}.ts`,
+  );
+  return typeof earlier?.contents === 'string' ? [current, earlier.contents] : [current];
 };
 
 /**

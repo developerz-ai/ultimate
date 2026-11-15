@@ -3,7 +3,13 @@
 // binds, so before `/readyz` can say ready — and hand back the reader the asset routes miss into.
 
 import type { AppConfig, AssetsRetainConfig } from '@ultimat3/core';
-import { ConfigInvalidError, logger, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import {
+  bootWarning,
+  ConfigInvalidError,
+  logger,
+  renderFixLiteral,
+  UltimateError,
+} from '@ultimat3/core';
 import type { Storage } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
 import type { BuildAsset, PublishReport, RetainLog } from './retained-assets';
@@ -11,7 +17,7 @@ import { publishBuildAssets } from './retained-assets';
 import { retainedPrefix } from './retained-assets-layout';
 import type { RetainedAssets } from './retained-assets-read';
 import { retainedAssets } from './retained-assets-read';
-import { warnOncePerBuild } from './retained-assets-warned';
+import { retainedBuildOnce } from './runtime-boot-warnings';
 import { siteAssetTable } from './site-assets';
 import type { StyleBundle } from './style-bundle';
 import type { FrameworkScript } from './worker-bundle';
@@ -83,11 +89,9 @@ const LOCAL_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test'])
 
 /** This file is the web role's boot alone (`serve-web.ts`): the role half of the warned key. */
 const WEB_ROLE = 'web';
-
 /**
- * Once per build id for the web role, not per boot: the marker sits on the app's default disk,
- * the one place every pod of a deploy may share (`warnOncePerBuild`). With no `app.config.ts`
- * there is no app name to scope it by, so that boot says it every time.
+ * Once per build id for the web role, not per boot (`retainedBuildOnce`). With no `app.config.ts`
+ * there is no app name to scope the marker by, so that boot says it every time.
  */
 async function warnUndeclared(input: RetainBootInput): Promise<void> {
   if (LOCAL_ENVIRONMENTS.has(input.environment) || buildAssetsOf(input).length === 0) return;
@@ -95,17 +99,26 @@ async function warnUndeclared(input: RetainBootInput): Promise<void> {
     environment: input.environment,
     disks: input.storage.diskNames,
   });
-  const warn = (): void =>
-    (input.log ?? logger).warn(warning.format(), { code: warning.code, ...warning.meta });
-  if (input.config === undefined) return warn();
-  await warnOncePerBuild(
+  await bootWarning(
     {
-      disk: () => input.storage.disk(),
-      prefix: retainedPrefix(input.config.name, input.environment),
-      role: WEB_ROLE,
-      buildId: input.buildId,
+      code: warning.code,
+      roles: [WEB_ROLE],
+      once: input.config === undefined ? undefined : 'build',
+      message: warning.format(),
+      fields: warning.meta,
     },
-    warn,
+    {
+      roles: [WEB_ROLE],
+      log: input.log ?? logger,
+      buildOnce:
+        input.config === undefined
+          ? undefined
+          : retainedBuildOnce({
+              storage: input.storage,
+              prefix: retainedPrefix(input.config.name, input.environment),
+              buildId: input.buildId,
+            }),
+    },
   );
 }
 

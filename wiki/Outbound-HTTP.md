@@ -45,6 +45,45 @@ Required, a decision per call.
 | `'named'` | a host the app names in code or config: a vendor API, a sidecar | dialled as written |
 | `'public'` | a URL a tenant or a user supplied | https only outside a local environment, no URL credentials, every address the name answers must be public, the connection pinned to the approved address with `tls.serverName`. Refusal: `X_OUTBOUND_HOST_BLOCKED` |
 
+**Writing your own public-dial guard is the bug this option exists to prevent.** A URL a tenant
+supplied (a webhook, an avatar, a feed) is `dial: 'public'`: resolve, classify every address, pin,
+re-screen each redirect. All of it is in this one option.
+
+## `proxy`: send the call through an HTTP proxy
+
+| Form | What happens |
+|---|---|
+| `proxy: 'http://user:pass@proxy:3128'` (or a `URL`) | every hop goes through it: `CONNECT` for `https:`, an absolute-form request for `http:` |
+| `proxy: { url, headers }` | the same, `headers` sent on the `CONNECT` (`proxy-authorization: Bearer …`) |
+| `proxy: (target) => … \| undefined` | asked once per hop with that hop's NAMED url (never the pinned address); `undefined` dials the hop direct. May be async, and is bounded by `deadlineMs` |
+
+- **Beside `dial: 'public'`, the screen still runs FIRST.** A refused host never reaches the proxy or
+  your resolver; an approved one is tunnelled to the screened ADDRESS (`CONNECT 93.184.216.34:443`),
+  so the proxy resolves nothing itself. `tls.serverName` survives the tunnel: the certificate is
+  still proven against the name (measured on Bun 1.4.4, `outbound-proxy-tunnel.test.ts`).
+- **The proxy is the app's own choice**, like a `'named'` host: it is not screened.
+- `http:` and `https:` proxies only. Anything else, or a resolver that throws, is
+  `X_OUTBOUND_PROXY_INVALID` before a byte, never retried.
+- **The proxy's credential is in no cause, log line, span or event**: URL userinfo is cut from a
+  transport's message (`//…@`), and the proxy is never recorded.
+- With no `proxy`, Bun's own `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` still apply, as for any `fetch`.
+- **Which proxy, and rotating them, is app code** (axiom 8): a resolver over your own inventory.
+
+```ts
+import { outbound } from '@ultimat3/core/outbound';
+
+declare const url: string;
+const proxies = ['http://u:p@egress-a:3128', 'http://u:p@egress-b:3128'];
+let next = 0;
+await outbound({
+  url,
+  vendor: 'feed',
+  dial: 'public',
+  deadlineMs: 10_000,
+  proxy: () => proxies[next++ % proxies.length],
+});
+```
+
 `screenDial(url, { resolve, allowPrivate })` is the screen alone, for a transport that keeps its own
 codes: `@ultimat3/jobs`' webhook target and `@ultimat3/scraping`'s wildcard leg call it.
 
@@ -62,6 +101,7 @@ codes: `@ultimat3/jobs`' webhook target and `@ultimat3/scraping`'s wildcard leg 
 | `X_OUTBOUND_REDIRECTED` | terminal | a 3xx under `redirect: 'error'`, or more than 5 hops (`meta.location`, no query) |
 | `X_OUTBOUND_RETRY_UNSAFE` | terminal | `retry` on POST or PATCH without `idempotent: true` |
 | `X_OUTBOUND_BODY_INVALID` | terminal | `answer.json(schema)` refused the body (`meta.issues`) |
+| `X_OUTBOUND_PROXY_INVALID` | terminal | `proxy` is not an `http:`/`https:` URL, or its resolver threw (`meta.reason`, never the URL) |
 
 **A 401 is `X_OUTBOUND_REFUSED` with `meta.status: 401`.** There is no refresh hook: the app's own
 wrapper refreshes its token and calls again. Token storage and single-flight stay the app's.

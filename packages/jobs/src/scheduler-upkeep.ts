@@ -4,7 +4,7 @@
 // hooks of up to `onSettledTimeout` each must not hold every task's dispatch behind them.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { isUltimateError, logger, renderThrowable } from '@ultimat3/core';
+import { failureFields, logger } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { redriveLostSettles } from './settle-redrive';
 
@@ -20,18 +20,6 @@ export const SETTLE_REDRIVE_INTERVAL_MS = 60_000;
  * most its grace plus this, and an idle queue pays 12 statements an hour for the guarantee.
  */
 export const SETTLE_REDRIVE_IDLE_INTERVAL_MS = 300_000;
-
-/**
- * A round that failed, as log fields. `message` alone throws away the half of an `UltimateError`
- * that makes it actionable — the operator reading `jobs.scheduler.tick-failed` at 3am needs the
- * stable code to search on and the `fix:` to run, not a sentence.
- */
-export function failureFields(error: unknown): Record<string, unknown> {
-  const message = renderThrowable(error);
-  return isUltimateError(error)
-    ? { error: message, code: error.code, cause: error.cause, fix: error.fix }
-    : { error: message };
-}
 
 export interface LeaderUpkeep {
   /** The leader's turn at `at`: whatever is due runs; the re-drive is started, not awaited. */

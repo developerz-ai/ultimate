@@ -1,12 +1,16 @@
 // `x db recount <entity>.<column>`: the counters `countedIn` declares, compared with the truth and
 // — with `--write` — set to it. A counter drifts only when its trigger was missing or disabled
-// (`X_LIFECYCLE_TRIGGER_MISSING`); this is the repair, and the dry run is the report.
+// (`X_LIFECYCLE_TRIGGER_MISSING`); this is the repair, and the dry run is the report. The parent is
+// walked in key-range windows, one transaction each, so a big table never holds one long lock.
 
+import { finiteCount } from '@ultimat3/core';
+import type { CounterDescriptionLike, DbClient } from '@ultimat3/db';
 import {
   CROSS_TENANT_SETTING,
-  raw,
-  recountDriftSql,
-  recountSql,
+  recountBatchSql,
+  recountDriftBatchSql,
+  recountLockSql,
+  recountWindowSql,
   setLocal,
   withTransaction,
 } from '@ultimat3/db';
@@ -27,10 +31,73 @@ import { quoteArg } from './shell-quote';
 /** Rows of drift a report lists; the count is always whole. */
 const SHOWN = 50;
 
+/**
+ * Parent rows per window. Each window is one transaction: its row locks are held only while its
+ * own statements run, so writers to the rest of the table never wait on the whole sweep.
+ */
+export const RECOUNT_BATCH = 1_000;
+
 interface DriftRow {
   readonly key: string;
   readonly stored: number;
   readonly actual: number;
+}
+
+export interface RecountReport {
+  /** Windows walked, each its own transaction. */
+  readonly batches: number;
+  readonly drifted: number;
+  /** The first `SHOWN` drifted rows, in key order. */
+  readonly rows: readonly DriftRow[];
+}
+
+/**
+ * The sweep: windows of `batch` parent keys in key order. Each transaction locks its window's
+ * parent rows, then reads their drift and, with `write`, repairs it; cross-tenant, because a counter is every tenant's and under
+ * forced row security an unset tenant would match no row. A dry run writes nothing.
+ *
+ * Batched directly rather than through `@ultimat3/jobs`' `backfill()`: that factory DECLARES a job
+ * at module scope for a worker to run, and this is one operator command over a counter named at
+ * run time — no queue, no worker, no ledger row to leave behind.
+ */
+export async function recountInBatches(
+  client: DbClient,
+  parent: string,
+  counter: CounterDescriptionLike,
+  options: { readonly write: boolean; readonly batch?: number },
+): Promise<RecountReport> {
+  const size = finiteCount('x db recount', 'batch', options.batch ?? RECOUNT_BATCH, 1);
+  const rows: DriftRow[] = [];
+  let drifted = 0;
+  let batches = 0;
+  let after: string | null = null;
+  for (;;) {
+    const from: string | null = after;
+    const last: string | null = await withTransaction(
+      async (tx): Promise<string | null> => {
+        await setLocal(tx, { [CROSS_TENANT_SETTING]: 'on' });
+        const [window] = await tx.query<{ last: string | null }>(
+          recountWindowSql(parent, counter, from, size),
+        );
+        const end: string | null = window?.last ?? null;
+        if (end === null) return null;
+        // Lock first, read after: the drift read and the repair then each see every writer that
+        // held one of these rows (`recountLockSql`).
+        await tx.query(recountLockSql(parent, counter, from, end));
+        const found = await tx.query<DriftRow>(recountDriftBatchSql(parent, counter, from, end));
+        if (options.write && found.length > 0) {
+          await tx.execute(recountBatchSql(parent, counter, from, end));
+        }
+        drifted += found.length;
+        rows.push(...found.slice(0, SHOWN - rows.length));
+        return end;
+      },
+      { client },
+    );
+    if (last === null) return { batches, drifted, rows };
+    batches += 1;
+    after = last;
+  }
 }
 
 const refuse = (target: string, reason: string): never => {
@@ -88,44 +155,34 @@ async function recount(ctx: CommandContext, root: string): Promise<CommandResult
   }
   const started = startDb(services, ctx.env);
   try {
-    // One transaction, cross-tenant: a counter is every tenant's, and under forced row security an
-    // unset tenant would match no row.
-    const drift = await withTransaction(
-      async (tx) => {
-        await setLocal(tx, { [CROSS_TENANT_SETTING]: 'on' });
-        const rows = await tx.query<DriftRow>(raw(recountDriftSql(parent.$table, counter)));
-        if (write && rows.length > 0) await tx.execute(raw(recountSql(parent.$table, counter)));
-        return rows;
-      },
-      { client: started.client },
-    );
+    const report = await recountInBatches(started.client, parent.$table, counter, { write });
+    const drift = report.rows;
     return {
-      ok: findings.length === 0 && (write || drift.length === 0),
+      ok: findings.length === 0 && (write || report.drifted === 0),
       command: 'db',
       summary: msg(write ? 'cli.db.recount.repaired' : 'cli.db.recount.drift', {
         target,
-        count: drift.length,
+        count: report.drifted,
       }),
       findings: [
         ...findings,
-        ...(write || drift.length === 0
+        ...(write || report.drifted === 0
           ? []
           : [
               {
                 code: 'X_LIFECYCLE_TRIGGER_MISSING',
-                cause: `${drift.length} row(s) of ${parent.$table} hold a ${counter.column} that is not the count of ${counter.table} rows pointing at them`,
+                cause: `${report.drifted} row(s) of ${parent.$table} hold a ${counter.column} that is not the count of ${counter.table} rows pointing at them`,
                 fix: `x db recount ${quoteArg(target)} --write --json`,
               },
             ]),
       ],
-      lines: drift
-        .slice(0, SHOWN)
-        .map((row) => `  ${row.key}  stored ${row.stored}  actual ${row.actual}`),
+      lines: drift.map((row) => `  ${row.key}  stored ${row.stored}  actual ${row.actual}`),
       data: {
         target,
         write,
-        drifted: drift.length,
-        rows: drift.slice(0, SHOWN).map((row) => ({ ...row })),
+        drifted: report.drifted,
+        batches: report.batches,
+        rows: drift.map((row) => ({ ...row })),
       },
     };
   } finally {

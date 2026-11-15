@@ -77,7 +77,12 @@ export const config = defineRoute({
   // raised 108.6kb → 108.8kb. measured: 111323 B (2026-11-12, plan 101 sweep 11; x build --target
   // static, against 111,181) — why: the board island 77,359 → 77,501 (+142 B), `mountOver` from
   // `@ultimat3/render/client`: a render that throws puts the server's board back, not a blank box.
-  budget: { js: '108.8kb' },
+  // measured: 112703 B (2026-11-14, plan 101 sweep 1; x build --target static, against 111,323
+  // at origin/main) — why: the board island +1,380 B (78,881 B): `defineError` takes `problemMeta`
+  // and `publicCause` in the code's one declaration (the meta key rule, the app meta table and the
+  // public-cause set, refused all-or-nothing; +1,221 B), and two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`) (+159 B). Raised
+  // 108.8kb → 110.1kb.
+  budget: { js: '110.1kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

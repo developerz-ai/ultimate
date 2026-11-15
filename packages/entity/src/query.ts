@@ -14,6 +14,7 @@ import { searchUndeclared } from './feature-errors';
 import { latestByRows, type ReadLatest } from './latest-by';
 import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
+import { nodePredicate, type PredicateNode, type ScopedNode } from './predicate-node';
 import { preloaded, type RelatedTables } from './preload';
 import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
 import {
@@ -70,6 +71,14 @@ export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys>
     op: Operator,
     value: unknown,
   ): ReadBuilder<Row, S>;
+  /**
+   * One predicate TREE, AND-ed with the rest of the chain: an `or` group, or a `via` hop —
+   * `{ via: { column: 'authorId', entity: 'friendships', target: 'friendId' }, where: [...] }` is
+   * `author_id in (select friend_id from friendships where …)`. One statement either way, and a
+   * hop's subselect runs under its target's tenant and soft delete as a read of it would. A leaf is
+   * `andWhere`'s three arguments as an object; at most `MAX_PREDICATE_DEPTH` levels deep.
+   */
+  andWhereNode(node: PredicateNode<Row> | ScopedNode): ReadBuilder<Row, S>;
   /**
    * Full-text search over the entity's generated `tsvector` — every `.searchable()` column at
    * once, one GIN index, one predicate. `posts.where({ orgId }).search(input.q).limit(20).page()`.
@@ -276,6 +285,8 @@ const builder = <Source, Row>(
 
     andWhere: (column: string, op: Operator, value?: unknown) =>
       next({ where: [...state.where, checkedPredicate(entity.$name, column, op, value)] }),
+
+    andWhereNode: (node) => next({ where: [...state.where, nodePredicate(entity.$name, node)] }),
 
     // Refused HERE as well as at the statement, because this is the line the author wrote: a chain
     // over an entity that declares nothing searchable can never produce a match, and the repair is

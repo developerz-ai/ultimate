@@ -4,6 +4,12 @@
 
 import { renderCauseValue } from './error-render';
 import { isUltimateError } from './errors';
+import {
+  addValueMatchers,
+  type RedactValueMatcher,
+  redactedStrings,
+  redactedValue,
+} from './redact-values';
 import { isSecret, REDACTED } from './secret';
 
 /** What a `Date` this file cannot render says instead — the line survives, the value is named. */
@@ -116,7 +122,20 @@ export function redactKeys(keys: Iterable<string>): void {
   generation += 1;
 }
 
-/** Bumped by every `redactKeys` call. A snapshot redacted at an older generation is stale. */
+/**
+ * Mark VALUES as secret everywhere: every match of each `pattern` becomes its `replace`, in every
+ * string a log line, the monitor envelope or an error's rendering carries. The key list cannot see
+ * an account number inside a message; this can. Each pattern needs `g`; one repeating a group
+ * that holds a repeating quantifier, `y`, or an empty match is refused (`X_REDACT_PATTERN_UNSAFE`)
+ * and the whole list with it. Call once at boot, beside `defineEnv`. The framework registers none.
+ */
+export function redactValues(list: readonly RedactValueMatcher[]): void {
+  addValueMatchers(list);
+  // Same reason as `redactKeys`: a logger's fields bound before this call must be walked again.
+  generation += 1;
+}
+
+/** Bumped by every `redactKeys` / `redactValues` call. A snapshot redacted at an older generation is stale. */
 let generation = 0;
 
 /** The current redaction generation: one integer compare is the whole cost of staying current. */
@@ -167,6 +186,7 @@ function serialiseValue(value: unknown, depth: number): unknown {
 function serialise(value: unknown, depth: number): unknown {
   // `JSON.stringify` raises a `TypeError` on a bigint, so the whole line died for one field.
   if (typeof value === 'bigint') return renderCauseValue(value);
+  if (typeof value === 'string') return redactedValue(value);
   if (value === null || typeof value !== 'object') return value;
   // Before every other branch: a `Secret` is redacted by VALUE, so it stays redacted under a key
   // nobody listed — `{ dsn: secret(url) }` is the leak key-name redaction cannot see.
@@ -176,8 +196,8 @@ function serialise(value: unknown, depth: number): unknown {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? INVALID_DATE : value.toISOString();
   }
-  if (isUltimateError(value)) return value.toJSON();
-  if (value instanceof Error) return { name: value.name, message: value.message };
+  if (isUltimateError(value)) return redactedStrings(value.toJSON());
+  if (value instanceof Error) return { name: value.name, message: redactedValue(value.message) };
   if (depth >= 6) return '[depth-limit]';
   if (Array.isArray(value)) return value.map((item) => serialiseValue(item, depth + 1));
   const source = value as Record<string, unknown>;

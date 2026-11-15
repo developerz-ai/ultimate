@@ -1090,6 +1090,7 @@ only what came back and what changed.
 | `public` | the policy admits an anonymous caller with an empty input: read half skipped, write half kept | no |
 | `public` | a **job** whose B leg opened `crossTenant(reason, fn)` and whose input carried none of A's marks — a declared sweep, `sendDigest` fanning out one delivery per org. The reason is quoted in the verdict; read half skipped, write half kept | no |
 | `public` | a **job** declaring `tenant: 'none'` whose input carried none of A's marks — a nightly cleanup across every org, input `{ occurrenceMs }`. No org and no id B chose reaches its run, so B's run is A's run: write half skipped (no snapshots taken), read half kept. Handed one of A's ids, crossed as ever. Both this and a declared sweep: both reasons, `; `-joined | no |
+| `global` | a **query** every statement of whose A call was a repository read of an `entity({ global: '<why>' })` table, `As of 2026-11-14` — a plan catalog. There is no row of A's to hand back, so the reasons are quoted in the verdict; the legs are still searched and the write half kept. One other entity (a policy's membership read included) or one hand-written statement, and it is the `unproven` below | no |
 | `unproven` | a query whose A answer held none of A's marks: B's empty answer proves nothing | no |
 | `proven` | otherwise | no |
 

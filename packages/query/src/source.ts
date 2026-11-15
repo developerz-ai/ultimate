@@ -5,10 +5,13 @@
  * answer these four questions.
  */
 
+import type { ScopedNode } from '@ultimat3/entity';
 import { compareByKind } from '@ultimat3/entity';
+import type { ScopeNode } from '@ultimat3/policy';
 import type { KindOf } from './column-kinds';
 import { kindsOf } from './column-kinds';
 import { QueryColumnUnselectedError } from './errors';
+import { hasVia, matchesNode, nodeClause } from './scope-tree';
 import type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
 import { compareRows, isNull, matchesFilters, totalOrder } from './shape';
 import { columnOf } from './stable';
@@ -46,13 +49,20 @@ export interface SqlSource<TRow> {
  * `order` the order actually served (the declared keys, then `id` once paged), `filters` every
  * `.where()`/`.compare()` on the chain. The builder re-applies all four over what comes back, so
  * a provider may honour any of them or none — but one that honours `limit` must also honour
- * `after`, `order` and `filters`, or the cut lands before the rows it was meant to keep.
+ * `after`, `order`, `filters` and `nodes`, or the cut lands before the rows it was meant to keep.
+ *
+ * `nodes` is a scoped policy's TREE (`or` groups, `via` hops), in `@ultimat3/entity`'s predicate
+ * shape: a repository provider hands each to its chain as `.andWhereNode(node)` and the whole scope
+ * is one statement. The builder re-applies a node in memory only when no `via` is under it — a hop
+ * needs its target's rows, which only the provider's statement reads.
  */
 export interface RowWindow {
   readonly after: SeekKey | null;
   readonly limit: number | null;
   readonly order: readonly OrderKey[];
   readonly filters: readonly Filter[];
+  /** Scope trees (`or` / `via`) a provider must apply with `.andWhereNode()`; absent when none. */
+  readonly nodes?: readonly ScopedNode[];
 }
 
 /**
@@ -88,6 +98,8 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     private readonly unsupported: readonly string[],
     /** Set by `seek()` and `total()` — the only reads that pay for the id tiebreak. */
     private readonly totalized: boolean = false,
+    /** A scope's `or`/`via` nodes (`whereNode`), AND-ed with the filters. */
+    private readonly nodes: readonly ScopeNode[] = [],
   ) {}
 
   /**
@@ -105,6 +117,24 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
 
   compare(column: string, op: FilterOp, value: unknown): Builder<TRow> {
     return this.derive({ filters: [...this.filters, { column, op, value }] });
+  }
+
+  /**
+   * One scope node — an `or` group or a `via` hop — AND-ed with the rest. Composed from a
+   * `scoped()` policy (`scope-compose.ts`); handed to a provider on `RowWindow.nodes`.
+   */
+  whereNode(node: ScopeNode): Builder<TRow> {
+    return this.derive({ nodes: [...this.nodes, node] });
+  }
+
+  /** Whether a node needs the provider: a `via` no row can answer, and a list cannot push down. */
+  get needsProvider(): boolean {
+    return this.nodes.some(hasVia);
+  }
+
+  /** Whether the rows come from a function — the only source a node can be pushed into. */
+  get provides(): boolean {
+    return typeof this.rows === 'function';
   }
 
   orderBy(column: string, direction: 'asc' | 'desc' = 'asc'): Builder<TRow> {
@@ -143,7 +173,8 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
       filters: this.filters,
       orderBy: this.order,
       limit: this.rowLimit,
-      unsupported: this.unsupported,
+      // A tree has no place in the matcher's flat shape: a live read over one fails loudly.
+      unsupported: this.nodes.length === 0 ? this.unsupported : [...this.unsupported, 'scope-tree'],
     };
   }
 
@@ -151,6 +182,8 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     const params: unknown[] = [];
     const slot = slotter(params);
     const clauses = this.filters.map((filter) => filterClause(filter, slot));
+    for (const node of this.nodes)
+      clauses.push(nodeClause(node, (filter) => filterClause(filter, slot)));
     if (this.after !== null) clauses.push(this.seekClause(this.after, slot));
     const where = clauses.length > 0 ? ` where ${clauses.join(' and ')}` : '';
     const keys = this.servedOrder();
@@ -168,12 +201,19 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
             limit: this.rowLimit,
             order: keys,
             filters: this.filters,
+            // The one place a scope node becomes a `ScopedNode`: typed against the policy's row where
+            // `scoped()` declared it, and entity's `PredicateNode` structurally (`scope.ts`).
+            nodes: this.nodes as readonly ScopeNode[] as readonly ScopedNode[],
           })
         : this.rows;
     this.assertCarried(source);
     const kindOf = kindsOf(this.entity);
     // Idempotent over a window the provider already cut: filter, sort, seek and slice again.
-    let result = source.filter((row) => matchesFilters(row, this.filters, kindOf));
+    let result = source.filter(
+      (row) =>
+        matchesFilters(row, this.filters, kindOf) &&
+        this.nodes.every((node) => hasVia(node) || matchesNode(row, node, kindOf)),
+    );
     if (keys.length > 0) {
       result = [...result].sort((a, b) => compareRows(a, b, keys, kindOf));
     }
@@ -255,6 +295,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
       patch.after === undefined ? this.after : patch.after,
       patch.unsupported ?? this.unsupported,
       patch.totalized ?? this.totalized,
+      patch.nodes ?? this.nodes,
     );
   }
 }
@@ -343,6 +384,7 @@ interface BuilderState {
   readonly after: SeekKey | null;
   readonly unsupported: readonly string[];
   readonly totalized: boolean;
+  readonly nodes: readonly ScopeNode[];
 }
 
 /**

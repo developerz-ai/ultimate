@@ -170,8 +170,8 @@ reads the command next to the failure instead of a stack trace.
 | jobs | `executeJob`'s failure path | a dead letter (or a drop) once, as `error`. A retry is **not** reported — the queue recovers from it, and a tracker opens an issue per event (`As of 2026-11-14`): it is counted on `jobs_retried_total{job,code}` instead. A job whose first failure is worth a human declares `retry: { report: 'every-attempt' }`, and its retries are reported as `warning`. `x jobs retry <id>` re-enters the same path; `jobs` has no `run` subcommand |
 | realtime | the sync node's frame handler and its detached presence writes | everything that is not a client fault (`X_TOPIC_FORBIDDEN`, `X_SUBSCRIPTION_LIMIT`, `X_PROTOCOL_VERSION`, `X_LIVE_QUERY_UNKNOWN`, `X_CURSOR_STALE`, `X_REBASE_CONFLICT`, `X_FORBIDDEN`, `X_UNAUTHENTICATED`) |
 
-A loop that fails every tick — a database restart — logs a streak, not a line per tick: one
-`error` line when it opens, one `info` line with `failures` (the count) when a tick passes again.
+A loop that fails every tick — a database restart — logs a streak, not a line per tick (core's
+`failureStreak`): one `error` line (`warn` where the table says so) when it opens, one `info` line with `failures` (the count) when a tick passes again.
 A failure with a different cause (another `X_*` code, or another message when uncoded) is logged
 again, its line carrying the streak it ends as `previous: { code \| error, failures }`. A restarted
 loop starts with no streak.
@@ -182,6 +182,9 @@ loop starts with no streak.
 | the worker's claim pass | `jobs.worker.tick-failed` | `jobs.worker.tick-recovered` |
 | the outbox relay's pass | `jobs.outbox.tick-failed` | `jobs.outbox.tick-recovered` |
 | a `LISTEN` session's re-dial | `db.listen.redial_failed` (`warn`) | `db.listen.redialed` |
+| the worker wake's subscribe | `jobs.wake.listen-failed` (`warn`) | `jobs.wake.listen-recovered` |
+| the worker wake's probe | `jobs.wake.probe-failed` (`warn`) | `jobs.wake.probe-recovered` |
+| publishing the cache busts a bus outage deferred | `cache.broadcast.deferred-failed` (`warn`) | `cache.broadcast.deferred-recovered` |
 
 The default reporter is a **no-op**, so an unconfigured app and every test pay nothing and page
 nobody. There is no `x serve` command — a container runs the scaffolded `apps/web/server.ts`,

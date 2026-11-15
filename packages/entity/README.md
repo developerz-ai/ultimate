@@ -486,6 +486,69 @@ never an empty result. The `fix` names the operator meant: `>`→`gt`, `>=`→`g
 `<=`→`lte`, `=`→`eq`, `!=`/`<>`→`neq`. `isOperator(value)` is the same test, for an op read off
 the wire.
 
+## A predicate tree: `andWhereNode`
+
+`andWhereNode(node)` (`As of 2026-11`) adds one predicate TREE to a chain, AND-ed with the rest —
+the one way to say `or`, an `and` inside it, or a relation hop. One statement either way.
+
+| Node (`PredicateNode<Row>`) | Compiles to |
+|---|---|
+| `{ column, op, value? }` | a leaf, exactly `andWhere(column, op, value)` |
+| `{ or: [...] }` | `( … or … )`; `[]` is `1 = 0` |
+| `{ and: [...] }` | `( … and … )`; `[]` is `true` |
+| `{ via: { column, entity, target }, where: [...] }` | `"column" in (select "target" from <entity's table> where …)` |
+
+```ts
+import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    authorId: uuid(),
+    audience: text({ max: 10 }),
+    publishedAt: timestamp().defaultNow(),
+    deletedAt: timestamp().nullable(),
+  },
+});
+entity('friendships', {
+  columns: { id: uuid().primaryKey(), userId: uuid(), friendId: uuid() },
+});
+const db = database({ posts });
+declare const me: string;
+
+await db.posts
+  .where({ deletedAt: null })
+  .andWhereNode({
+    or: [
+      { column: 'authorId', op: 'eq', value: me },
+      { column: 'audience', op: 'eq', value: 'public' },
+      {
+        via: { column: 'authorId', entity: 'friendships', target: 'friendId' },
+        where: [{ column: 'userId', op: 'eq', value: me }],
+      },
+    ],
+  })
+  .orderBy('publishedAt', 'desc')
+  .limit(20)
+  .all();
+```
+
+- **A hop is planned through its TARGET's tenant guard** (`via-scope.ts`, in `readPlan`): the
+  acting actor's tenant and the target's soft delete apply inside the subselect; outside a request
+  its `where` must name the tenant (`X_TENANCY_UNSCOPED`). An untenanted target behind a tenanted
+  source must declare `shared:` or `global:`. A hop value no `readPlan` scoped is refused by both
+  drivers.
+- `entity` is a registered entity NAME; `column`, `target` and every inner column must be declared
+  and not sealed; at most `MAX_PREDICATE_DEPTH` (4) levels. Each refusal is
+  `X_ENTITY_PREDICATE_NODE_INVALID`, on the chain line.
+- Leaf columns are typed by the row at the top and inside every group; a hop's inner level is the
+  target's and takes any string. A `ScopedNode` — what `@ultimat3/query` hands a provider on
+  `RowWindow.nodes` — is accepted as is.
+- Memory resolves a hop to an `in` list from its other tables (`memory-via.ts`); Postgres runs the
+  subselect. `entityDriverConformance`'s `TREE_CHECKS` hold both, tenancy included.
+- A `defineDriver` store takes a tree only under `predicate:or` / `predicate:via`, else
+  `X_DRIVER_UNSUPPORTED` before the store is called; nothing in process can judge a hop row by row.
+
 ## Filtering inside a json() or arrayOf() column
 
 ```ts
@@ -913,6 +976,7 @@ Three declarations, each a trigger or a purge target `x db gen` and `purge()` co
 | `retain: { after: '90d', on: 'createdAt' }` | `purge({ entities: 'declared' })` (`@ultimat3/jobs`) deletes older rows in batches, across tenants. The window is required; `on` is an indexed `timestamp()` (`X_ENTITY_RETAIN_UNINDEXED`); never beside `appendOnly` (`X_ENTITY_RETAIN_INVALID`). `$retain` is the checked declaration. `x verify` refuses one no purge covers (`X_ENTITY_RETAIN_UNSWEPT`) |
 | `history: true` · `{ retain: { after }, ignore: ['likeCount', 'updatedAt'] }` | `<table>_history`, a registered entity (`$history`; it carries `$historyOf`), written by trigger with a before and after image of every change — `updateWhere`, cascades and raw SQL included. A change to `ignore`d columns alone (typed: the entity's own columns) records nothing, as a counter's does; a name that is no column is `X_INVARIANT_VIOLATED`. Its repository refuses every rewrite (`X_ENTITY_APPEND_ONLY`), the table too, except a retention sweep's delete |
 | `references(() => posts.id, { countedIn: () => posts.likeCount })` | the child's trigger keeps the parent's `integer()` equal to its row count, in the write's transaction; a soft-deleted child is not counted. Declared on the key because the child already names its parent: a thunk on the parent naming the child would make each declaration the other's type. `X_ENTITY_COUNTS_INVALID` when the target is no integer or the key points at no single primary key |
+| `countedIn: { to: () => posts.upCount, where: (): Expr => whereColumns(likes).kind.eq('up') }` | the same counter, counting only the child rows the predicate holds over (a NULL operand is not counted, as a SQL `where`). The predicate is the invariant language over the CHILD, built from `whereColumns(<child>)` — typed by the child's columns; the `(): Expr` return type is required, since the child names itself in its own declaration (TS7022 without it) — and compiled once into the trigger's condition, its `update of` list and the recount's truth. A predicate with no SQL (a function) is `X_ENTITY_COUNTS_INVALID`. `countsRow(counter, row)` is the same verdict for a row in hand. The memory driver applies the same verdict |
 
 Memory parity: the memory driver records history and moves counters in its repository (`memory-lifecycle.ts`); `history.test.ts` and `counter.test.ts` are the parity tables.
 

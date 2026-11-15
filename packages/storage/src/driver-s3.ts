@@ -42,7 +42,6 @@ import { readS3Range } from './driver-s3-range';
 import { regionMismatch } from './driver-s3-region';
 import { settleLostPut } from './driver-s3-settle';
 import type { S3FetchLike, S3Refusal } from './driver-s3-signed';
-import { refuseUnsupportedPut } from './driver-s3-sse';
 import { streamS3Pinned } from './driver-s3-stream';
 import {
   checksumMismatch,
@@ -221,7 +220,6 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
-      refuseUnsupportedPut(options.bucket, putOptions);
       assertPutOptions(DRIVER_NAME, putOptions);
       assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
       // Buffered on purpose: size and checksum must be known before the object exists — so this

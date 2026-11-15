@@ -288,7 +288,9 @@ jobs:
   # THE PARTS, sized from the per-step wall times the parts printed on main (run 37101906027,
   # 2026-10-03, 4-core runners):
   #
-  #   unit-N   79-90 s per shard         the one step worth splitting; `--shard i/n` is a pure
+  #   unit-N   200-276 s of `unit` per   (2026-11-14, run 43562415694, at 3 workers and no timings;
+  #            shard, + contract, job    the gate job's `env` and timings cache below address both)
+  #            the one step worth splitting; `--shard i/n` is a pure
   #            + contract, job           function of the sorted file list, so 2/3 is the same files
   #                                      on every runner and reproduces locally with the same flags.
   #                                      `contract` and `job` are split the same way, a third each
@@ -354,8 +356,19 @@ jobs:
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
-    # A runaway kill-switch, not a budget: the slowest part is ~2 minutes.
+    # A runaway kill-switch, not a budget: the slowest part was 320-338 s on main 2026-11-14 (runs
+    # 43542607182, 43562415694, `unit` at three workers, no timings).
     timeout-minutes: 10
+    # One test worker per core. The default budget is a QUARTER of the machine (`test-workers.ts`),
+    # sized for a laptop that also runs an editor and another agent's gate: on this 4-core 16 GB
+    # runner it planned 3 workers ("3 workers (budget 3.9 GB)") and left a core to Postgres and
+    # nothing else. The runner is the part's alone. 5 GiB is 4 x `WORKER_BYTES` (1.25 GiB), so the
+    # cores bound the width and never the memory; the tree peaks near 4 GB of 16. `packages (1/3)`
+    # has run `cli` — the heaviest files in the corpus — at 4 isolated workers on this runner since
+    # 2026-11-05. Only the parallel suites read it: `live` and `e2e` are one process whatever it says.
+    # `scripts/ci-workflow-shape-unit-speed.test.ts` holds the plan it gives to one worker per core.
+    env:
+      ULTIMATE_TEST_MEMORY_BUDGET: 5g
     strategy:
       fail-fast: false
       # The tested job's `x verify plan` step, never a list typed here.
@@ -412,6 +425,20 @@ jobs:
           [ "$(cat "$RUNNER_TEMP/services.exit" 2>/dev/null)" = 0 ] \
             || { docker compose -f docker/docker-compose.test.yml ps -a; exit 1; }
           grep -E "^(${URLS})=" docker/test-services.env >> "$GITHUB_ENV"
+      # Last run's per-file durations, merged from every unit part by `verify` below. The gate
+      # hands Bun `--timings=.x/test-timings.json` (`test-shards.ts`), and Bun starts a batch's
+      # slowest files first from it — but a checkout has no `.x/`, so every batch here began in
+      # sorted order and waited on whichever slow file (`scripts/*` sorts last) started late.
+      # Modelled on unit-2's 1289 files and their measured durations: 18 batches at 3 workers lose
+      # ~46 s to those tails, ~5 s longest-first. ORDER only: which files a shard and a batch hold
+      # stays a pure function of the sorted list, so a stale or missing entry costs time, never a
+      # verdict, and the key never matches — the newest `test-timings-*` is always the one restored.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: contains(matrix.only, 'unit')
+        with:
+          path: .x/test-timings.json
+          key: test-timings-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: test-timings-
       # The part's `--json` document is the artifact `verify` merges, so it is written to a file
       # and uploaded below — never `cat` into the log. A red part's document carries the suite's
       # output and runs past a megabyte on ONE line, and the Actions log dropped that line and every
@@ -474,6 +501,17 @@ jobs:
           path: ${{ runner.temp }}/parts/${{ matrix.part }}.attempt-${{ github.run_attempt }}.json
           if-no-files-found: error
           retention-days: 7
+      # This part's durations, for `verify` to merge into the next run's cache. Red parts too: a
+      # duration measures the clock, not the verdict. A part that wrote none uploads nothing.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && contains(matrix.only, 'unit') }}
+        with:
+          name: test-timings-${{ matrix.part }}-attempt-${{ github.run_attempt }}
+          path: .x/test-timings.json
+          # `.x/` is a dot-directory, and upload-artifact skips those unless told (v4.4 onwards).
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 1
 
   # THE VERDICT. Green here means shippable, and this is the only job that says so: it folds every
   # part back into one gate result with `x verify merge`, which is green only when the parts are
@@ -505,6 +543,33 @@ jobs:
           pattern: verify-part-*
           path: ${{ runner.temp }}/parts
           merge-multiple: true
+      # The unit parts' timings, one directory per part, merged into the cache the next run's unit
+      # parts restore (`gate`, above). Each part holds a third of the corpus measured now and the rest
+      # as last run restored it; either is a fine estimate, so a plain union in any order serves.
+      # Before the verdict, so a red one still saves: the timings are not the verdict.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: test-timings-*
+          path: ${{ runner.temp }}/timings
+      - name: merge the unit parts' test timings
+        id: timings
+        run: |
+          # One directory per artifact under a pattern; the flat path too, should one ever land there.
+          files=()
+          for f in "$RUNNER_TEMP"/timings/test-timings.json "$RUNNER_TEMP"/timings/*/test-timings.json; do
+            [ -f "$f" ] && files+=("$f")
+          done
+          if [ "${#files[@]}" -eq 0 ]; then echo "no unit part wrote timings: nothing to merge"; exit 0; fi
+          mkdir -p .x
+          jq -s '{version: (map(.version) | map(select(. != null)) | first), files: (map(.files // {}) | add)}' \
+            "${files[@]}" > .x/test-timings.json
+          echo "merged $(jq '.files | length' .x/test-timings.json) file durations from ${#files[@]} part(s)"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.timings.outputs.merged == 'true'
+        with:
+          path: .x/test-timings.json
+          key: test-timings-${{ github.run_id }}-${{ github.run_attempt }}
       # The human render, not `--json`: this is the one table a person reads to learn what the
       # gate said, with every finding from every part under the step that raised it — in the log.
       #

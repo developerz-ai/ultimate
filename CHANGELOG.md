@@ -10,7 +10,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- A policy `scope` takes `or`, `and` and `via` (a hop into another entity, `col in (select …)`), compiled to one statement and tenant-scoped inside every hop — `andWhereNode()` on the chain; a custom driver declares `predicate:or` / `predicate:via` or is refused.
+- Every error-tracker event, boot line and `target_info` names its `framework_version`; `redactValues([...])` scrubs app-declared secret shapes from logs, error-tracker events, failure captures and trace spans.
+- `outbound({ proxy })` sends a call through an HTTP CONNECT proxy, after the public-dial screen; `mapBounded(…, { settle: 'all' })` returns every outcome.
+- Keyset paging over nullable keys (`nullable: true`, `nulls: 'first' | 'last'`); `x db gen --drop-redundant` drops the indexes an entity's own indexes already cover; `countedIn: { to, where }` counts only matching children; `x db recount` repairs in locked batches.
+- `entity({ global: '<why>' })` declares a table every tenant reads; a read touching only such tables is `global`, not `unproven`, in `x exercise`.
+
+### Added
+
+- `@ultimat3/entity`: `PredicateNode`, `andWhereNode()`, `MAX_PREDICATE_DEPTH`, `entity({ global })`, `countedIn: { to, where }`; driver capabilities `predicate:or`, `predicate:via`. `X_ENTITY_PREDICATE_NODE_INVALID`, `X_ENTITY_ALL_TRUNCATED` (a dev/test warning in 31.x).
+- `@ultimat3/policy`: `ScopeNode` (`ScopeOr`, `ScopeAnd`, `ScopeVia`). `@ultimat3/query`: `RowWindow.nodes` (optional).
+- `@ultimat3/core`: `redactValues`, `failureStreak`, `failureFields`, `bootWarning` (+ `installBootWarnings` on `./adapter`), `parentContext`; `defineError({ problemMeta, publicCause })`; `outbound({ proxy })`; `mapBounded(…, { settle: 'all' })`. `X_REDACT_PATTERN_UNSAFE`, `X_OUTBOUND_PROXY_INVALID`.
+- `@ultimat3/db`: keyset `nullable` / `nulls`. `@ultimat3/cache`: `memoPerRequest(...).forget(...args)`.
+- `@ultimat3/cli`: `x db gen --drop-redundant`; `x doctor` lists redundant indexes.
+
+### Changed
+
+- One failure streak in core: the job loops, the LISTEN redial, the queue wake and the cache broadcast reconnect each log once when failing starts (again when its cause changes) and once on recovery.
+- `x db recount` runs in windows of 1,000 parent keys, each locking its rows before it reads, so a concurrent write is never overwritten.
+- New apps scaffold `repo-unbounded` as a failing guard; `x g guard error-declared` prints one `defineError(...)` call per class.
+- Storage: S3 sends `serverSideEncryption` on the signed PUT; local and memory refuse it with `X_INVARIANT` (no `NotImplementedError` left).
+- The social demo's feed and profile read exactly their page (no over-fetch); the signed-in feed is one posts statement.
+- CI: unit parts plan one test worker per core and start the slowest files first from the previous run's timings.
+
+### Fixed
+
+- The test network seal judges a proxied `fetch` by its proxy too.
 
 ## Releases
 

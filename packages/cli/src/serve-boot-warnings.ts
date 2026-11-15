@@ -1,8 +1,9 @@
-// The roles each boot warning concerns, in one table, and the step that runs the post-load ones for
-// the booting role alone. Production logged the same warnings in all five roles on every boot — a
-// warning a role cannot act on is noise that buries the one it can.
+// The roles each FRAMEWORK boot warning concerns, in one table, and the step that runs the
+// post-load ones for the booting role alone. The role rule is core's `bootWarning`'s
+// (`bootRolesConcerned`) — one answer for these and for an app's own role-scoped boot line.
 
 import type { Role } from '@ultimat3/core';
+import { bootRolesConcerned } from '@ultimat3/core';
 
 /** Every warning a container boot can say. A new one does not compile until it names its roles. */
 export type BootWarning =
@@ -32,13 +33,13 @@ export const BOOT_WARNINGS: ReadonlyMap<BootWarning, readonly Role[]> = new Map(
   Object.entries(DECLARED) as [BootWarning, readonly Role[]][],
 );
 
-/** Whether `warning` is one `role` can act on. An unknown warning concerns nobody. */
-export const bootWarningConcerns = (warning: BootWarning, role: Role): boolean =>
-  BOOT_WARNINGS.get(warning)?.includes(role) ?? false;
-
 /** Whether any of `roles` — `x dev` runs several in one process — can act on `warning`. */
 export const bootWarningConcernsAny = (warning: BootWarning, roles: readonly Role[]): boolean =>
-  roles.some((role) => bootWarningConcerns(warning, role));
+  bootRolesConcerned(BOOT_WARNINGS.get(warning) ?? [], roles);
+
+/** Whether `warning` is one `role` can act on. An unknown warning concerns nobody. */
+export const bootWarningConcerns = (warning: BootWarning, role: Role): boolean =>
+  bootWarningConcernsAny(warning, [role]);
 
 /** The post-load probes: each logs its own line and answers whether it had anything to say. */
 export interface BootWarningProbes {

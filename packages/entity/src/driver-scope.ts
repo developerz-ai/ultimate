@@ -7,8 +7,9 @@ import type { DriverCapability, DriverDefinition, DriverRepo } from './driver-ki
 import { outOfScope, structuralPredicates } from './driver-rows';
 import type { RawFor } from './driver-write-scope';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
+import { isGroup, orMembers, viaValue } from './predicate-node';
 import type { Tx } from './repo';
-import type { QueryPlan } from './tenancy';
+import type { Predicate, QueryPlan } from './tenancy';
 
 export interface DriverScope<Row> {
   readonly definition: DriverDefinition;
@@ -25,6 +26,22 @@ export interface DriverScope<Row> {
   /** Every row a store returned, refused whole if one is out of the plan's scope. */
   checked(operation: string, plan: QueryPlan, rows: readonly Row[]): readonly Row[];
 }
+
+/** The node ops a level holds, through every `or` group and into every `via`. */
+const treeOps = (where: readonly Predicate[], found = new Set<string>()): ReadonlySet<string> => {
+  for (const predicate of where) {
+    if (isGroup(predicate)) {
+      // An `and` group is no capability of its own — the plan is a conjunction already — but an
+      // `or` or a `via` under it is.
+      if (predicate.op === 'or') found.add('or');
+      treeOps(orMembers(predicate), found);
+    } else if (predicate.op === 'via') {
+      found.add('via');
+      treeOps(viaValue(predicate).where, found);
+    }
+  }
+  return found;
+};
 
 export const driverScope = <Row>(
   definition: DriverDefinition,
@@ -52,6 +69,11 @@ export const driverScope = <Row>(
     },
     storePlan(operation, plan, includeDeleted = false) {
       if (plan.where.some((predicate) => predicate.op === 'matches')) need(operation, 'matches');
+      // Every node at any depth, refused before the store sees it: a store handed a tree it then
+      // ignores while honouring the page bound serves the short page the tree exists to end.
+      const nodes = treeOps(plan.where);
+      if (nodes.has('or')) need(operation, 'predicate:or');
+      if (nodes.has('via')) need(operation, 'predicate:via');
       const hidden =
         entity.$softDelete && !includeDeleted
           ? [{ column: SOFT_DELETE_COLUMN, op: 'is-null' as const }]

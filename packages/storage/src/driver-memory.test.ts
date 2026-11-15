@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no `tmpdir()`.
 import { tmpdir } from 'node:os';
-import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/core';
+import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { sha256Base64 } from './driver';
 import { localDriver } from './driver-local';
@@ -116,10 +116,18 @@ describe('the memory disk answers as the local disk does', () => {
         await codeOf(() =>
           driver.put('a.txt', bytes('x'), { serverSideEncryption: { algorithm: 'AES256' } }),
         ),
-      ]).toEqual([name, 'X_NOT_IMPLEMENTED']);
-      await expect(
-        driver.put('a.txt', bytes('x'), { serverSideEncryption: { algorithm: 'AES256' } }),
-      ).rejects.toBeInstanceOf(NotImplementedError);
+      ]).toEqual([name, 'X_INVARIANT']);
+      // A stream can carry it to s3; a disk of plain bytes refuses it streamed too.
+      expect([
+        name,
+        await codeOf(() =>
+          driver.putStream('a.txt', new Blob(['x']).stream(), {
+            maxBytes: 8,
+            serverSideEncryption: { algorithm: 'AES256' },
+          }),
+        ),
+      ]).toEqual([name, 'X_INVARIANT']);
+      expect([name, await driver.exists('a.txt')]).toEqual([name, false]);
     }
   });
 

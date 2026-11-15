@@ -107,3 +107,55 @@ describe('memoPerRequest', () => {
     });
   });
 });
+
+describe('memoPerRequest(...).forget', () => {
+  test('drops that key in this ctx: the next call runs fn again, other keys stay held', async () => {
+    const spy = counted((id: string) => ({ id }));
+    const load = memoPerRequest(spy.fn, (id) => id);
+
+    await runWithContext(ctxOf(), async () => {
+      load('a');
+      load('b');
+      load.forget('a');
+      load('a');
+      load('b');
+    });
+    expect(spy.calls).toEqual([['a'], ['b'], ['a']]);
+  });
+
+  test('gives the forgotten entry its bytes back', async () => {
+    const load = memoPerRequest(
+      (id: string) => 'x'.repeat(10_000) + id,
+      (id) => id,
+    );
+
+    await runWithContext(ctxOf(), async () => {
+      load('a');
+      const held = memoBytes();
+      load('b');
+      expect(memoBytes()).toBeGreaterThan(held);
+      load.forget('b');
+      expect(memoBytes()).toBe(held);
+      load.forget('a');
+      expect(memoBytes()).toBe(0);
+    });
+  });
+
+  test('forgets only its own key space, and is a no-op outside a ctx', async () => {
+    const a = counted(() => 'a');
+    const b = counted(() => 'b');
+    const loadA = memoPerRequest(a.fn, () => 'k');
+    const loadB = memoPerRequest(b.fn, () => 'k');
+
+    loadA.forget();
+    await runWithContext(ctxOf(), async () => {
+      loadA();
+      loadB();
+      loadA.forget();
+      loadA();
+      loadB();
+    });
+    expect(a.calls).toHaveLength(2);
+    expect(b.calls).toHaveLength(1);
+  });
+});

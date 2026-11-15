@@ -119,10 +119,10 @@ arguments, so no predicate is ever consulted and the tree alone decides. `true` 
 ## Scope — the rule's SQL projection
 
 `scoped(policy, scope)` (`As of 2026-11`) attaches `scope(actor) → where` to a policy: the
-conjunction a read hands the database, in the entity chain's predicate shape (`{ column, op,
-value }`), so the visible rows arrive as one page an index can serve — not a JS filter over an
-over-fetch that leaves a viewer with many hidden rows a short page. One definition, two
-projections. The policy decides exactly as before; the JS rule stays the authority.
+predicate a read hands the database, in the entity chain's shape, so the visible rows arrive as ONE
+statement's page — not a JS filter over an over-fetch that leaves a viewer with many hidden rows a
+short page. One definition, two projections. The policy decides exactly as before; the JS rule stays
+the authority and still runs on every row returned.
 
 ```ts
 import type { Actor } from '@ultimat3/core';
@@ -133,24 +133,54 @@ const postRule = can('post:read');
 
 export const seePost = scoped(postRule, (actor) =>
   actor === null
-    ? [{ column: 'audience', op: 'eq', value: 'public' }, { column: 'deletedAt', op: 'is-null' }]
-    : [{ column: 'orgId', op: 'eq', value: actor.orgId }],
+    ? [{ column: 'audience', op: 'eq', value: 'public' }]
+    : [
+        {
+          or: [
+            { column: 'authorId', op: 'eq', value: actor.id },
+            { column: 'audience', op: 'eq', value: 'public' },
+            {
+              and: [
+                { column: 'audience', op: 'eq', value: 'friends' },
+                {
+                  via: { column: 'authorId', entity: 'friendships', target: 'friendId' },
+                  where: [{ column: 'userId', op: 'eq', value: actor.id }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
 );
-policyScope(seePost, actor); // the frozen where, or `undefined` for a policy nobody scoped
+policyScope(seePost, actor); // the tree, frozen at every depth, or `undefined` for none
 ```
 
-| Answer | Means |
+| Node (`ScopeNode`) | Means |
+|---|---|
+| `{ column, op, value? }` | a condition. `op` is one of `eq neq in gt gte lt lte is-null is-not-null` |
+| `{ or: [...] }` | any member holds; `[]` holds for no row |
+| `{ and: [...] }` | every member holds — an `or` arm that needs two conditions |
+| `{ via: { column, entity, target }, where: [...] }` | `column in (select target from entity where …)`: `entity` by name, its tenant and soft delete applied inside |
+
+| `policyScope` answers | Means |
 |---|---|
 | `undefined` | no scope declared: nothing is handed down |
 | `[]` | every row (an admin) — an empty conjunction |
-| `[…]` | every condition must hold. `op` is one of `eq neq in gt gte lt lte is-null is-not-null` |
+| `[…]` | every top-level node must hold. At most four levels deep (`X_ENTITY_PREDICATE_NODE_INVALID`) |
 
+- **One statement.** A repository read takes the tree with `@ultimat3/entity`'s
+  `.andWhereNode(node)`; a `query` read composes it and hands it to the provider on
+  `RowWindow.nodes`. A `via` is a subselect, never a second round trip.
+- **Refused, never guessed** (`X_QUERY_SCOPE_UNCOMPOSABLE`): an `or`/`via` scope on a LIVE read (the
+  matcher patches a flat shape) and a `via` over `from()` given a list of rows.
+- **A `via` cannot cross tenants.** Its subselect is planned through the target's own tenant guard;
+  an untenanted target behind a tenanted source must declare `shared:` or `global:` (`X_TENANCY_UNSCOPED`).
 - **A scope belongs to the clause it is declared on.** `and`/`or`/`not` over a scoped policy carry
   none: the conjunction of children's scopes is not the scope of `or`. Scope the outermost policy.
 - **Not tenancy.** Tenant isolation is the entity layer's (`where({ orgId })`, the tenancy guard);
   a scope narrows what one actor sees inside it and never replaces it.
-- Composing it into a read is `@ultimat3/query`'s; a scope that disagrees with its rule on the
-  exercise seed is to be a finding (`X_POLICY_SCOPE_MISMATCH`, registered with its raiser).
+- A scope that disagrees with its rule on the exercise seed is to be a finding
+  (`X_POLICY_SCOPE_MISMATCH`, registered with its raiser).
 
 ## Four surfaces, four adapters, one rule
 

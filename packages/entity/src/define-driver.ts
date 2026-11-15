@@ -39,6 +39,8 @@ const MEMBER: Readonly<Record<DriverCapability, keyof DriverRepo<unknown> | 'tra
   series: 'series',
   upsert: 'upsert',
   matches: 'select',
+  'predicate:or': 'select',
+  'predicate:via': 'select',
   'aggregate:countBy': 'countBy',
   'aggregate:sum': 'aggregate',
   'aggregate:avg': 'aggregate',

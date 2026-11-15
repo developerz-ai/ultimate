@@ -216,3 +216,158 @@ describe('keyset() arguments', () => {
     );
   });
 });
+
+// A nullable key: declared, placed (`asc nulls last`, `desc nulls first` unless said otherwise —
+// the entity driver's defaults), carried in the cursor as present/absent, seeked by the or-chain.
+describe('keyset() nullable keys', () => {
+  const published = (direction: 'asc' | 'desc', nulls?: 'first' | 'last'): KeysetKey => ({
+    column: raw('p.published_at'),
+    kind: 'timestamptz',
+    direction,
+    nullable: true,
+    ...(nulls === undefined ? {} : { nulls }),
+  });
+  const cursorAt = (keys: readonly KeysetKey[], value: string | null): string =>
+    keyset({ scope: 'feed', keys, after: null, limit: 1 }).page([
+      { _keyset_0: value, _keyset_1: '00000000-0000-7000-8000-000000000001' },
+      { _keyset_0: value, _keyset_1: '00000000-0000-7000-8000-000000000002' },
+    ]).nextCursor ?? expect.unreachable('a full page carries a cursor');
+
+  test('the order writes null placement down: desc nulls first, asc nulls last', () => {
+    const desc = keyset({
+      scope: 'feed',
+      keys: [published('desc'), id('desc')],
+      after: null,
+      limit: 1,
+    });
+    expect(desc.orderBy.text).toBe('p.published_at desc nulls first, p.id desc');
+    const asc = keyset({
+      scope: 'feed',
+      keys: [published('asc'), id('asc')],
+      after: null,
+      limit: 1,
+    });
+    expect(asc.orderBy.text).toBe('p.published_at asc nulls last, p.id asc');
+    const flipped = keyset({
+      scope: 'feed',
+      keys: [published('desc', 'last'), id('desc')],
+      after: null,
+      limit: 1,
+    });
+    expect(flipped.orderBy.text).toBe('p.published_at desc nulls last, p.id desc');
+  });
+
+  test('a null on a declared key pages instead of refusing', () => {
+    const keys = [published('desc'), id('desc')];
+    expect(cursorAt(keys, null).length).toBeGreaterThan(0);
+  });
+
+  test('desc nulls first, from a null position: every value follows, then the null tiebreak', () => {
+    const keys = [published('desc'), id('desc')];
+    const page = keyset({ scope: 'feed', keys, after: cursorAt(keys, null), limit: 1 });
+    expect(page.where.text).toBe(
+      '(p.published_at is not null or (p.published_at is null and p.id < $1::uuid))',
+    );
+    expect(page.where.values).toEqual(['00000000-0000-7000-8000-000000000001']);
+  });
+
+  test('asc nulls last, from a value: the larger values, the nulls, then the tiebreak', () => {
+    const keys = [published('asc'), id('asc')];
+    const page = keyset({
+      scope: 'feed',
+      keys,
+      after: cursorAt(keys, '2026-01-01 00:00:00+00'),
+      limit: 1,
+    });
+    expect(page.where.text).toBe(
+      '(p.published_at > $1::timestamptz or p.published_at is null or (p.published_at = $2::timestamptz and p.id > $3::uuid))',
+    );
+    expect(page.where.values).toEqual([
+      '2026-01-01 00:00:00+00',
+      '2026-01-01 00:00:00+00',
+      '00000000-0000-7000-8000-000000000001',
+    ]);
+  });
+
+  test('asc nulls last, from a null position: only the null tiebreak is left', () => {
+    const keys = [published('asc'), id('asc')];
+    const page = keyset({ scope: 'feed', keys, after: cursorAt(keys, null), limit: 1 });
+    expect(page.where.text).toBe('(p.published_at is null and p.id > $1::uuid)');
+  });
+
+  test('desc nulls last, from a value: the smaller values, then the nulls', () => {
+    const keys = [published('desc', 'last'), id('desc')];
+    const page = keyset({
+      scope: 'feed',
+      keys,
+      after: cursorAt(keys, '2026-01-01 00:00:00+00'),
+      limit: 1,
+    });
+    expect(page.where.text).toBe(
+      '(p.published_at < $1::timestamptz or p.published_at is null or (p.published_at = $2::timestamptz and p.id < $3::uuid))',
+    );
+  });
+
+  test('asc nulls first, from a value: no null follows a value', () => {
+    const keys = [published('asc', 'first'), id('asc')];
+    const page = keyset({
+      scope: 'feed',
+      keys,
+      after: cursorAt(keys, '2026-01-01 00:00:00+00'),
+      limit: 1,
+    });
+    expect(page.where.text).toBe(
+      '(p.published_at > $1::timestamptz or (p.published_at = $2::timestamptz and p.id > $3::uuid))',
+    );
+  });
+
+  test('a present text value spelling the null tag is still a value', () => {
+    const keys: KeysetKey[] = [
+      { column: raw('p.label'), kind: 'text', direction: 'asc', nullable: true },
+      id('asc'),
+    ];
+    const page = keyset({ scope: 'feed', keys, after: cursorAt(keys, '~'), limit: 1 });
+    expect(page.where.values[0]).toBe('~');
+    expect(page.where.text).not.toContain('is null and');
+  });
+
+  test('null placement is part of the signed scope', () => {
+    const cursor = cursorAt([published('desc'), id('desc')], null);
+    const run = () =>
+      keyset({
+        scope: 'feed',
+        keys: [published('desc', 'last'), id('desc')],
+        after: cursor,
+        limit: 1,
+      });
+    expect(codeOf(run)).toBe('X_CURSOR_INVALID');
+  });
+
+  test('a nullable final tiebreak is refused before any row is read', () => {
+    const run = () =>
+      keyset({ scope: 'feed', keys: [at('desc'), published('desc')], after: null, limit: 1 });
+    expect(codeOf(run)).toBe('X_KEYSET_NULL_KEY');
+  });
+
+  test('a null on the undeclared key beside a declared one is still refused', () => {
+    const keys = [published('desc'), id('desc')];
+    const run = () =>
+      keyset({ scope: 'feed', keys, after: null, limit: 5 }).page([
+        { _keyset_0: null, _keyset_1: null },
+      ]);
+    expect(codeOf(run)).toBe('X_KEYSET_NULL_KEY');
+  });
+
+  test('nulls without nullable, or outside the two words, is refused', () => {
+    const undeclared = { ...at('desc'), nulls: 'last' } as KeysetKey;
+    expect(
+      codeOf(() =>
+        keyset({ scope: 'feed', keys: [undeclared, id('desc')], after: null, limit: 1 }),
+      ),
+    ).toBe('X_INVARIANT');
+    const bad = { ...published('desc'), nulls: 'LAST; drop' } as unknown as KeysetKey;
+    expect(
+      codeOf(() => keyset({ scope: 'feed', keys: [bad, id('desc')], after: null, limit: 1 })),
+    ).toBe('X_INVARIANT');
+  });
+});

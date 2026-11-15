@@ -8,10 +8,10 @@
 import { assert, logger, onShutdown } from '@ultimat3/core';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import { onStaged, signalEnqueued, wakeIsLive } from './enqueue-signal';
-import { failureStreak } from './failure-streak';
 import { createIdleBackoff, REST_SLICE_MS, restAfter } from './idle-backoff';
 import type { OutboxDeps } from './outbox';
 import { publishClaimed } from './outbox-relay-publish';
+import { tickStreak } from './tick-streak';
 
 export interface RelayOptions extends OutboxDeps {
   readonly batchSize?: number;
@@ -248,7 +248,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
         timer.unref?.();
       };
       // A restart fails every pass until it ends: one line opens the streak, one closes it.
-      const tickFailures = failureStreak('jobs.outbox.tick-failed', 'jobs.outbox.tick-recovered');
+      const tickFailures = tickStreak('outbox');
       const relayPass = (): void => {
         // Re-read on every pass: "stop claiming" means this timer too, and a callback already on
         // the event loop when the timer was cleared must not open a claim behind the drain.
@@ -263,12 +263,12 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
         // and the `markPublished` behind it are one pass, and a teardown that returned between
         // them closed the database under the row it was about to mark.
         pass = tick()
-          .then(() => tickFailures.passed())
+          .then(tickFailures.onPassed)
           .catch((error: unknown) => {
             // A failed pass is not an idle one: try again at the floor.
             delayMs = backoff.next(true);
             resting = false;
-            tickFailures.failed(error);
+            tickFailures.onError(error);
           })
           .finally(() => {
             running = false;

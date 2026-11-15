@@ -92,6 +92,8 @@ const CORE_CODE_TITLES = {
   X_CONTRACT_EXERCISE_ENVIRONMENT: 'a contract exercise was asked to run in a deployed environment',
   X_CONTRACT_EXERCISE_UNSCOPED: 'a contract exercise could not roll back its writes',
   X_IMAGE_RASTER_BUDGET: 'a synchronous raster transform is over the web role pixel budget',
+  X_REDACT_PATTERN_UNSAFE: 'a redactValues() pattern is refused at registration',
+  X_OUTBOUND_PROXY_INVALID: 'an outbound HTTP call was given a proxy it cannot use',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

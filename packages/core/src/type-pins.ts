@@ -18,6 +18,7 @@ import type { CtxPatch } from './context';
 import type { Page } from './cursor-page';
 import type { ErrorReporter, ErrorReportingOptions } from './error-reporter';
 import type { SentryReporterHooks, SentryReporterOptions } from './error-reporter-sentry-hooks';
+import { mapBounded } from './map-bounded';
 import type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -282,3 +283,17 @@ export const _HooksSpreadIntoOptions = (hooks: SentryReporterHooks): SentryRepor
   dsn: 'https://public@o0.ingest.sentry.io/0',
   ...hooks,
 });
+
+/**
+ * `mapBounded`'s two answers, by `settle`: the default is `R[]` (fail-fast), `settle: 'all'` is
+ * `PromiseSettledResult<R>[]`. Swapped overloads, or either widened to the union, would hand a
+ * fail-fast caller outcome objects it never unwraps. Real calls, so overload resolution is pinned.
+ */
+const settleAll = (items: readonly string[]) =>
+  mapBounded(items, (item) => item.length, { width: 2, settle: 'all' });
+const settleFirst = (items: readonly string[]) =>
+  mapBounded(items, (item) => item.length, { width: 2 });
+type _SettleAllAnswersOutcomes = Assert<
+  Exact<Awaited<ReturnType<typeof settleAll>>, PromiseSettledResult<number>[]>
+>;
+type _DefaultAnswersValues = Assert<Exact<Awaited<ReturnType<typeof settleFirst>>, number[]>>;

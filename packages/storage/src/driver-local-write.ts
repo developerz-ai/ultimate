@@ -5,25 +5,25 @@
 // why: Bun has no `rename` and no `mkdir` — `Bun.write` creates parents and replaces in place,
 // which is exactly the non-atomic write this file exists to stop. Delete both the day Bun ships them.
 import { mkdir, rename } from 'node:fs/promises';
-import { NotImplementedError, renderFixShellArg, stringField } from '@ultimat3/core';
+import { assert, renderFixShellArg, stringField } from '@ultimat3/core';
 import type { PutOptions } from './driver';
 import type { Sidecar } from './driver-local-sidecar';
 import { isStorageError, keyConflict, putFailed } from './errors';
 import { META_DIR } from './path';
 
 /**
- * A POSIX file is not encrypted at rest by this driver, and recording the request in the sidecar
- * would answer a security review with a field the disk never honoured. Refused on the DEV disk
- * too, and deliberately: a `put()` that succeeds locally and throws in production is a gap an app
- * meets on the worst day, and both drivers refusing is one rule instead of two.
+ * A file under one root (or a byte array in a Map) is not encrypted at rest by the disk, and
+ * recording the request would answer a security review with a field the disk never honoured — so
+ * the option is refused as every other put option a disk cannot take is (`assertPutOptions`,
+ * `X_INVARIANT`), on the local AND the memory disk. The s3 disk sends it
+ * (`x-amz-server-side-encryption`, `driver-s3-sse.ts`).
  */
-export function refuseUnsupportedPut(putOptions?: PutOptions): void {
-  if (putOptions?.serverSideEncryption === undefined) return;
-  throw new NotImplementedError({
-    cause:
-      'server-side encryption on the local driver (it writes plain files under one root) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule, or a LUKS/FileVault volume under root',
-    fix: 'put(key, body)',
-  });
+export function refuseUnsupportedPut(driver: string, putOptions?: PutOptions): void {
+  assert(
+    putOptions?.serverSideEncryption === undefined,
+    `put() on the ${driver} disk was given serverSideEncryption, and this disk stores plain bytes — it cannot encrypt one object at rest`,
+    `put(key, body) without serverSideEncryption on the ${driver} disk — or put to an s3Driver({ bucket }) disk, which sends it as x-amz-server-side-encryption; encrypt the volume itself (LUKS/FileVault) for a local root`,
+  );
 }
 
 /** Inside `.meta/`, so the listing's one filter already keeps a staged file out of the keys. */

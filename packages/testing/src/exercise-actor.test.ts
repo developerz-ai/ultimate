@@ -2,17 +2,20 @@
 // predicate cannot pass on an empty input, refusal by design needs nobody to hold it, a job's
 // worker is nobody, and an actor named as a row takes a seeded row's id.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import type { NamedActor } from '@ultimat3/policy';
 import { can, definePermissions, testActor } from '@ultimat3/policy';
 import { asSeededRow, chooseActor } from './exercise-actor';
 import { testName } from './test-types';
 
-// Declared here, never left to another file: the permission set is one per process, and once
-// any file declares one, `can()` refuses a name nobody declared (X_PERMISSION_UNKNOWN) — so in
-// one process, which file was imported first decided whether this one loaded.
-definePermissions(['exa:write', 'exa:admin']);
+// Declared in `beforeAll`, never at module scope: a worker runs many files in one process, and the
+// registry guard keeps what a file's MODULE scope declared for every later file on that worker —
+// one file's names then turned strict checking on for files that declare none
+// (X_PERMISSION_UNKNOWN). Declared here, they are this file's own, undone at its end.
+beforeAll(() => {
+  definePermissions(['exa:write', 'exa:admin']);
+});
 
 const grants = (tenant: string): readonly NamedActor[] => [
   { name: 'anonymous', actor: null },

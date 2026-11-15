@@ -155,4 +155,6 @@ export const TIER_2_ERROR_STATUS = {
   X_ENTITY_STALE: 409,
   // @ultimat3/entity — a write or declaration breaks the declared version lock
   X_ENTITY_VERSION_INVALID: 500,
+  // @ultimat3/entity — a predicate tree (andWhereNode, a policy scope) no driver can answer
+  X_ENTITY_PREDICATE_NODE_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

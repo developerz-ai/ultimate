@@ -22,7 +22,7 @@ export interface ClaimLoopOptions {
   /** One pass. It reports what it found through `passed()`, so a manual `tick()` counts too. */
   readonly round: () => Promise<unknown>;
   readonly onError: (error: unknown) => void;
-  /** A pass came back: what closes a streak `onError` opened (`failure-streak.ts`). */
+  /** A pass came back: what closes a streak `onError` opened (core's `failureStreak`). */
   readonly onPassed?: () => void;
   /** The loop (re)started: a streak a stopped run left open is forgotten. */
   readonly onStart?: () => void;

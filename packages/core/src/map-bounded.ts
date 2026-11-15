@@ -1,5 +1,6 @@
 // Single responsibility: a concurrent map with a stated width — results in input order, the first
-// rejection (or the caller's abort) stops every item not yet started and tells the in-flight ones.
+// rejection (or the caller's abort) stops every item not yet started and tells the in-flight ones;
+// under `settle: 'all'` a rejection is that item's outcome and only the caller's abort stops it.
 
 import { renderThrowable } from './error-render';
 import { UltimateError } from './errors';
@@ -13,6 +14,12 @@ export interface MapBoundedOptions {
   readonly width: number;
   /** The deadline or the caller going away. Aborting stops every item not yet started. */
   readonly signal?: AbortSignal | undefined;
+  /**
+   * `'first'` (the default) rejects with the first failure, as `Promise.all`. `'all'` answers every
+   * item's `PromiseSettledResult` in input order, as `Promise.allSettled`: a rejection is recorded
+   * and frees its slot for the next item; only `signal` stops the map.
+   */
+  readonly settle?: 'first' | 'all' | undefined;
 }
 
 /**
@@ -22,22 +29,36 @@ export interface MapBoundedOptions {
  *
  * Rejects AT ONCE with the first failure, as `Promise.all` does: a sibling that ignores its signal
  * cannot hold the answer hostage. A later sibling's rejection is swallowed, never unhandled.
+ *
+ * `settle: 'all'` is `Promise.allSettled` with the same width: every outcome, in input order, and
+ * `fn`'s signal aborts only with `options.signal` — which still rejects the map with `X_ABORTED`.
  */
 export async function mapBounded<T, R>(
   items: readonly T[],
   fn: (item: T, index: number, signal: AbortSignal) => R | Promise<R>,
+  options: MapBoundedOptions & { readonly settle: 'all' },
+): Promise<PromiseSettledResult<R>[]>;
+export async function mapBounded<T, R>(
+  items: readonly T[],
+  fn: (item: T, index: number, signal: AbortSignal) => R | Promise<R>,
+  options: MapBoundedOptions & { readonly settle?: 'first' | undefined },
+): Promise<R[]>;
+export async function mapBounded<T, R>(
+  items: readonly T[],
+  fn: (item: T, index: number, signal: AbortSignal) => R | Promise<R>,
   options: MapBoundedOptions,
-): Promise<R[]> {
+): Promise<R[] | PromiseSettledResult<R>[]> {
   const width = finiteCount('mapBounded', 'width', options.width, 1);
   const outer = options.signal;
   if (outer?.aborted) throw aborted(outer.reason, 0, items.length);
-  const results = new Array<R>(items.length);
-  if (items.length === 0) return results;
+  const all = options.settle === 'all';
+  const results = new Array<R | PromiseSettledResult<R>>(items.length);
+  if (items.length === 0) return [];
 
   const controller = new AbortController();
   let next = 0;
   let completed = 0;
-  return new Promise<R[]>((resolve, reject) => {
+  return new Promise<R[] | PromiseSettledResult<R>[]>((resolve, reject) => {
     const fail = (error: unknown): void => {
       if (controller.signal.aborted) return;
       outer?.removeEventListener('abort', onAbort);
@@ -47,26 +68,34 @@ export async function mapBounded<T, R>(
     const onAbort = (): void => fail(aborted(outer?.reason, completed, items.length));
     outer?.addEventListener('abort', onAbort, { once: true });
 
-    // No abort check here: `pull` runs only in the synchronous first loop or past the success
-    // branch's own check, so an aborted map never reaches it.
+    const done = (index: number, outcome: R | PromiseSettledResult<R>): void => {
+      if (controller.signal.aborted) return;
+      results[index] = outcome;
+      completed += 1;
+      if (completed === items.length) {
+        outer?.removeEventListener('abort', onAbort);
+        // Every slot is written once `completed` reaches the length.
+        resolve(results as R[] | PromiseSettledResult<R>[]);
+        return;
+      }
+      pull();
+    };
+    // No abort check here: `pull` runs only in the synchronous first loop or past `done`'s own
+    // check, so an aborted map never reaches it.
     const pull = (): void => {
       if (next >= items.length) return;
       const index = next++;
       // `.then` rather than a direct call: a SYNCHRONOUS throw in `fn` becomes this item's
       // rejection instead of escaping the runner that pulled it.
-      Promise.resolve()
-        .then(() => fn(items[index] as T, index, controller.signal))
-        .then((value) => {
-          if (controller.signal.aborted) return;
-          results[index] = value;
-          completed += 1;
-          if (completed === items.length) {
-            outer?.removeEventListener('abort', onAbort);
-            resolve(results);
-            return;
-          }
-          pull();
-        }, fail);
+      const run = Promise.resolve().then(() => fn(items[index] as T, index, controller.signal));
+      if (all) {
+        run.then(
+          (value) => done(index, { status: 'fulfilled', value }),
+          (reason: unknown) => done(index, { status: 'rejected', reason }),
+        );
+      } else {
+        run.then((value) => done(index, value), fail);
+      }
     };
     for (let slot = 0; slot < Math.min(width, items.length); slot += 1) pull();
   });

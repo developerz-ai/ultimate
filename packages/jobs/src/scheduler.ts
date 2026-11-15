@@ -21,13 +21,12 @@
 // over the same `lastFiredAt`.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { ctxOf, finiteOption, logger, onShutdown } from '@ultimat3/core';
+import { ctxOf, failureFields, finiteOption, logger, onShutdown } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { DrainBudget } from './drain-wait';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import { signalEnqueued } from './enqueue-signal';
-import { failureStreak } from './failure-streak';
 import { instrumentedFire } from './job-instrument';
 import { enqueuedAttempts } from './retry';
 import type { LeaderElection } from './scheduler-leader';
@@ -35,9 +34,10 @@ import { soleLeader } from './scheduler-leader';
 import { defaultCronResolver, latestOccurrence, occurrencesIn } from './scheduler-occurrences';
 import type { SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
-import { failureFields, leaderUpkeep } from './scheduler-upkeep';
+import { leaderUpkeep } from './scheduler-upkeep';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
+import { tickStreak } from './tick-streak';
 
 /** Resolves the next fire time. Injected so scheduling logic is testable without a cron impl. */
 export type CronResolver = (cron: string, options: { tz: string; from: Date }) => Date;
@@ -375,12 +375,12 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
    * few ms of drift between rounds moves nothing.
    */
   // A restart fails every round until it ends: one line opens the streak, one closes it.
-  const tickFailures = failureStreak('jobs.scheduler.tick-failed', 'jobs.scheduler.tick-recovered');
+  const tickFailures = tickStreak('scheduler');
   const schedule = (): void => {
     timer = setTimeout(() => {
       void tick()
-        .then(() => tickFailures.passed())
-        .catch((error: unknown) => tickFailures.failed(error))
+        .then(tickFailures.onPassed)
+        .catch(tickFailures.onError)
         .finally(() => {
           if (state === 'running') schedule();
         });
@@ -471,7 +471,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       // about to release, and stack a second shutdown hook on the one still running.
       if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
-      tickFailures.reset();
+      tickFailures.onStart();
       // TWO hooks, for the two phases. `accept` stops dispatching and returns — an occurrence
       // enqueued during the drain is work nothing in this process is left to run, and every hook
       // behind this one still has the whole budget. `close` waits the round out and hands the

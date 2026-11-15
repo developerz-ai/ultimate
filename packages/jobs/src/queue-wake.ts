@@ -6,7 +6,7 @@
 // PROVEN: the loops raise their idle ceiling only while it is.
 
 import type { PgExecutor, Random } from '@ultimat3/core';
-import { backoffDelay, finiteOption, logger, renderThrowable } from '@ultimat3/core';
+import { backoffDelay, failureStreak, finiteOption, logger } from '@ultimat3/core';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { setWakeLive, signalEnqueued, signalStaged } from './enqueue-signal';
 
@@ -82,6 +82,17 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
   /** A channel was (re-)established while a probe was in flight: that probe may predate it. */
   let reprobe = false;
   let reportedUnverified = false;
+  // A database restart refuses every retry until it ends: one line per cause, one when it lands.
+  const probeFailures = failureStreak({
+    event: 'jobs.wake.probe-failed',
+    recoveredEvent: 'jobs.wake.probe-recovered',
+    level: 'warn',
+  });
+  const listenFailures = failureStreak({
+    event: 'jobs.wake.listen-failed',
+    recoveredEvent: 'jobs.wake.listen-recovered',
+    level: 'warn',
+  });
 
   const later = (attempt: number, run: () => void): void => {
     cancelTimer?.();
@@ -119,6 +130,7 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
     void Promise.all(CHANNELS.map((channel) => options.executor.query(SQL_WAKE, [channel, ''])))
       .then(() => {
         probing = false;
+        probeFailures.passed();
         if (reprobe) {
           reprobe = false;
           probe(1);
@@ -139,7 +151,7 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
       .catch((error: unknown) => {
         probing = false;
         reprobe = false;
-        logger.warn('jobs.wake.probe-failed', { attempt, error: renderThrowable(error) });
+        probeFailures.failed(error, { attempt });
         later(attempt, () => probe(attempt + 1));
       });
   };
@@ -189,12 +201,13 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
         return;
       }
       subscribed = true;
+      listenFailures.passed();
       established();
     } catch (error) {
       await release();
       subscribed = false;
       if (stopped) return;
-      logger.warn('jobs.wake.listen-failed', { attempt, error: renderThrowable(error) });
+      listenFailures.failed(error, { attempt });
       later(attempt, () => {
         void dial(attempt + 1);
       });

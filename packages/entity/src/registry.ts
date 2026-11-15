@@ -180,6 +180,8 @@ export interface EntityDescription {
   readonly retired?: readonly string[] | undefined;
   /** `entity({ shared: '<why>' })`: why a row referencing a tenant's belongs to no tenant. */
   readonly shared?: string | undefined;
+  /** `entity({ global: '<why>' })`: why a row referencing no tenant's is every tenant's alike. */
+  readonly global?: string | undefined;
   /** `entity({ scan: '<why>' })`: why the plan sweep may see this table scanned. */
   readonly scan?: string | undefined;
   /** `entity({ readOnly: '<why>' })`: why the app never writes the table; every write refused. */

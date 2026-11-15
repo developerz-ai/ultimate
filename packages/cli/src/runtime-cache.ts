@@ -29,6 +29,7 @@ import type { AppConfig, CacheTierName } from '@ultimat3/core';
 import {
   backoffDelay,
   defineConfig,
+  failureStreak,
   finiteCount,
   isOutageMilestone,
   logger,
@@ -290,15 +291,23 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
     // delete too; this is the sender's half, and does not depend on hearing its own publish.)
     await purgeEdgeAgain(batch);
   };
+  // A flapping bus refuses the settle of every reconnect: one line per cause, one when it lands.
+  const settleFailures = failureStreak({
+    event: 'cache.broadcast.deferred-failed',
+    recoveredEvent: 'cache.broadcast.deferred-recovered',
+    level: 'warn',
+  });
   // ONE settle at a time. It is asked for by every reconnect and after every accepted publish,
   // and two that overlapped both published the same batch (and the same flush-all). A call that
   // arrives mid-run asks for one more pass instead, which finds whatever the run did not carry.
+  // The outcome is reported HERE, once per run: a joiner that reported it too counted one refused
+  // settle once per reconnect that joined it. Never rejects — what is unpublished stays owed.
   let settling: Promise<void> | undefined;
   let again = false;
-  const settle = (): Promise<void> => {
+  const settleQuietly = (): void => {
     if (settling !== undefined) {
       again = true;
-      return settling;
+      return;
     }
     settling = (async (): Promise<void> => {
       try {
@@ -306,17 +315,14 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
           again = false;
           await settleOnce();
         } while (again);
+        settleFailures.passed();
+      } catch (error) {
+        settleFailures.failed(error);
       } finally {
         again = false;
         settling = undefined;
       }
     })();
-    return settling;
-  };
-  const settleQuietly = (): void => {
-    void settle().catch((error: unknown) => {
-      logger.warn('cache.broadcast.deferred-failed', { error: broadcastErrorText(error) });
-    });
   };
 
   registerInvalidationBroadcast(async (wireTags) => {

@@ -37,7 +37,7 @@ export {
 export type { DecimalOptions } from './columns-data';
 export { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 export type { Counter } from './counter';
-export { countersOf, describeCounter } from './counter';
+export { countersOf, countsRow, describeCounter, whereColumns } from './counter';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
 export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
@@ -121,6 +121,16 @@ export { postgresDriver, postgresRepo } from './pg-driver';
 export { decodeRow } from './pg-row';
 export { postgresTransactor } from './pg-transactor';
 export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
+export type {
+  NodeColumn,
+  PredicateAnd,
+  PredicateLeaf,
+  PredicateNode,
+  PredicateOr,
+  PredicateVia,
+  ScopedNode,
+} from './predicate-node';
+export { MAX_PREDICATE_DEPTH } from './predicate-node';
 export type { RelatedTable, RelatedTables } from './preload';
 export type { PreloadOptions } from './preload-ceiling';
 export { MAX_PRELOADED_ROWS } from './preload-ceiling';
@@ -254,6 +264,7 @@ export type {
   ColumnKind,
   ColumnMap,
   ColumnMeta,
+  CountedIn,
   EnumeratedColumn,
   IdOf,
   IndexDef,

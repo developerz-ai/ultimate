@@ -172,9 +172,9 @@ describe('localDriver', () => {
         serverSideEncryption: { algorithm: 'AES256' },
       }),
     );
-    expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
-    // A pasteable call, the explanation in the cause.
-    expect((caught as { fix: string }).fix).toBe('put(key, body)');
+    // The disk's own refusal of a put option it cannot honour — never "not implemented yet".
+    expect(caught).toBeUltimateError('X_INVARIANT');
+    expect((caught as { fix: string }).fix).toContain('s3Driver');
     // Both drivers refuse: a put that works in dev and throws in production is two rules.
     expect(await Bun.file(`${root}/org/org-1/s.txt`).exists()).toBe(false);
   });

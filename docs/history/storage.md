@@ -259,6 +259,11 @@ Verbatim from [`packages/storage/CLAUDE.md`](../../packages/storage/CLAUDE.md), 
   not encrypted at all. Refusing on the dev disk too is deliberate: a `put()` that works in `x dev`
   and throws in production is two rules. Bucket lifecycle (the app sweeps with `expire.ts`), storage classes and replication stay out
   entirely — bucket-side, terraform's, axiom 7.
+- **2026-11-14: s3 now SENDS `serverSideEncryption`; local and memory refuse it as `X_INVARIANT`.**
+  The refusal above ended once the s3 disk had core's `signAwsRequest`: an SSE put rides the signed
+  PUT (`x-amz-server-side-encryption`, `-aws-kms-key-id`; `driver-s3-sse.ts`), screened before a
+  byte moves. Local and memory still store plain bytes, so they refuse with the put-option refusal
+  `assertPutOptions` makes (`X_INVARIANT`), never `X_NOT_IMPLEMENTED` — no driver raises that now.
 - **No `region` signs for `auto`.** R2 wants that; AWS and a gateway that checks the scope answer
   `AuthorizationHeaderMalformed … expecting "<region>"`. `put`/`copy`/`list`/`delete` ask
   `regionMismatch()` BEFORE their own verdict, so the code is `X_CONFIG_INVALID` and the fix is the

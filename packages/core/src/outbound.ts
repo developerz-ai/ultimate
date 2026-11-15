@@ -86,6 +86,7 @@ function prepare(request: OutboundRequest, deps: OutboundDeps): AttemptCall {
     local: isLocal({ env: deps.env, fallback: 'production' }),
     fetch: send,
     resolve: deps.resolve,
+    proxy: request.proxy,
     endsAt: now() + deadlineMs,
     deadlineMs,
     idleMs: finiteCount('outbound()', 'idleMs', request.idleMs ?? OUTBOUND_IDLE_MS, 1),

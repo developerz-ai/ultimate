@@ -15,7 +15,14 @@
 // The public-cause predicate and both of its tables are `@ultimat3/core`'s (`public-cause.ts`): the
 // MCP error data and the agent `tool_result` ask the question this package's problem document
 // does. This file only WRITES the app half — a reader imports `hasPublicCause` from core.
-import { registerPublicCause, renderCauseValue, resetPublicCauses } from '@ultimat3/core';
+import {
+  declaredProblemMeta,
+  problemMetaRefusal,
+  recordProblemMeta,
+  registerPublicCause,
+  resetDeclaredProblemMeta,
+  resetPublicCauses,
+} from '@ultimat3/core';
 import { ERROR_STATUS } from './error-map';
 import { problemMetaInvalid } from './errors';
 import { FRAMEWORK_PROBLEM_META } from './problem-meta-framework';
@@ -40,42 +47,16 @@ export type ProblemMeta = Readonly<Record<string, ProblemMetaValue>>;
  */
 export const MAX_PROBLEM_META_BYTES = 4096;
 
-/**
- * A key is spelled the way a code's `meta` key is spelled in source. `issues` and `issuesTruncated`
- * are refused by name because each already has a top-level home (`ProblemDocument.issues`, parsed
- * and bounded on its own terms, and the mark that qualifies it), and a second copy under `meta` is
- * two places for a client to read one fact.
- * `__proto__` is refused because `JSON.parse` on the receiving side mints it as a real own key.
- */
-const KEY = /^[A-Za-z_$][\w$]*$/;
-const RESERVED_KEYS: ReadonlySet<string> = new Set(['issues', 'issuesTruncated', '__proto__']);
-
-/**
- * Why `key` may not ride a document, or `undefined` when it may. The one rule for both halves: an
- * app's `registerProblemMeta` throws on it, and the framework's table is held to it by a test.
- */
-export function metaKeyRefusal(key: unknown): string | undefined {
-  if (typeof key !== 'string' || !KEY.test(key))
-    return `${renderCauseValue(key)} is not a meta key`;
-  if (key === 'issues' || key === 'issuesTruncated') {
-    return `\`${key}\` already rides at the top level of the document`;
-  }
-  if (RESERVED_KEYS.has(key)) return `\`${key}\` is not a key a document may carry`;
-  return undefined;
-}
-
-/** Per app-owned code, the `meta` keys its documents carry. A `Map`, for `APP_ERROR_STATUS`'s reason. */
-const DECLARED = new Map<string, readonly string[]>();
-
 /** Per code: the `meta` keys, a public cause, or both. A bare list is the keys alone. */
 export type ProblemMetaDeclaration =
   | readonly string[]
   | { readonly keys?: readonly string[] | undefined; readonly publicCause?: boolean | undefined };
 
-const sameKeys = (left: readonly string[], right: readonly string[]): boolean =>
-  left.length === right.length && left.every((key, at) => key === right[at]);
-
 /**
+ * The LOWER-LEVEL call: an app code declared with `defineError` takes the same facts in its one
+ * declaration (`problemMeta: [...]`, `publicCause: true`), written to the same core table. This
+ * stays for a code whose class is not `defineError`'s.
+ *
  * Declare, per code, which `meta` keys the problem document carries — and, for a 5xx, whether its
  * `cause` may be shown at all (`{ publicCause: true }`; hidden by default). Call it once at boot, in
  * the module that declares the codes — beside `registerErrorStatus`, and BOTH are needed: a code
@@ -108,25 +89,16 @@ export const registerProblemMeta = (
       registerPublicCause(code);
       continue;
     }
-    if (keys.length === 0) {
-      throw problemMetaInvalid(code, 'the key list is empty — omit the code instead');
-    }
-    for (const key of keys) {
-      const refusal = metaKeyRefusal(key);
-      if (refusal !== undefined) throw problemMetaInvalid(code, refusal);
-    }
-    const existing = DECLARED.get(code);
-    if (existing !== undefined && !sameKeys(existing, keys)) {
-      throw problemMetaInvalid(code, `already declared as [${existing.join(', ')}] by this app`);
-    }
-    DECLARED.set(code, [...keys]);
+    const refusal = problemMetaRefusal(code, keys);
+    if (refusal !== undefined) throw problemMetaInvalid(code, refusal);
+    recordProblemMeta(code, keys);
     if (publicCause) registerPublicCause(code);
   }
 };
 
 /** Test seam. Production registers once at boot and never unregisters. */
 export const resetProblemMeta = (): void => {
-  DECLARED.clear();
+  resetDeclaredProblemMeta();
   resetPublicCauses();
 };
 
@@ -135,7 +107,7 @@ export const resetProblemMeta = (): void => {
  * (`problem-meta-framework.ts`) first, then the app's. Every other framework code answers nothing.
  */
 export const problemMetaKeysFor = (code: string): readonly string[] | undefined =>
-  FRAMEWORK_PROBLEM_META.get(code) ?? DECLARED.get(code);
+  FRAMEWORK_PROBLEM_META.get(code) ?? declaredProblemMeta(code);
 
 /**
  * A code this package's table maps is the framework's. A `Set` of the table's own keys, for the

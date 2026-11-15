@@ -3,7 +3,15 @@
 // without services.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { DESCENDING, firstPagePlan, seedKeysetTable, walkKeyset } from './keyset-walk-fixture';
+import {
+  DESCENDING,
+  firstPagePlan,
+  NULLABLE_ORDERS,
+  seedKeysetTable,
+  seedNullableTable,
+  walkKeyset,
+  walkNullable,
+} from './keyset-walk-fixture';
 import { pgliteClient } from './pglite';
 
 const PGLITE_BOOT_MS = 30_000;
@@ -13,6 +21,7 @@ describe('keyset() · the real embedded database', () => {
 
   beforeAll(async () => {
     await seedKeysetTable(client, 5_000);
+    await seedNullableTable(client);
   }, PGLITE_BOOT_MS);
 
   afterAll(async () => {
@@ -34,4 +43,13 @@ describe('keyset() · the real embedded database', () => {
     expect(plan).toContain('Index');
     expect(plan).not.toContain('Sort');
   });
+
+  test.each(NULLABLE_ORDERS)(
+    'a nullable key, %s nulls %s, visits every row exactly once at every page size',
+    async (direction, nulls, expected) => {
+      for (const limit of [1, 2, 4]) {
+        expect(await walkNullable(client, direction, nulls, limit)).toEqual(expected);
+      }
+    },
+  );
 });

@@ -1,7 +1,7 @@
-// The tenant proof, one primitive at a time: tenant B calls with A's ids before A's own call and
-// again after it, and the call is crossed if anything of A's — a canary, an id B was not handed —
-// came back in the output or an effect, or if one of A's rows changed. Order B, A, B: a deleting
-// action would leave B nothing to reach, and the second B catches a cache entry A filled.
+// The tenant proof, one primitive at a time: tenant B calls with A's ids before and after A's own
+// call; crossed if anything of A's (a canary, an id B was not handed) comes back or one of A's rows
+// changes. B, A, B: a deleting action would leave B nothing, the second B catches A's cache fill. A
+// read touching only `entity({ global })` entities has no row of A's: `global`, not unproven.
 
 import type { Actor } from '@ultimat3/core';
 import type { Policy } from '@ultimat3/policy';
@@ -85,10 +85,74 @@ export interface TenantAttack {
    * so the write half's premise, B choosing A's row, cannot hold: skipped (`tenantlessReason`).
    */
   readonly tenantless: boolean;
+  /** Entity name → its `entity({ global })` reason, from `globalEntities`. Absent: none declared. */
+  readonly globals?: ReadonlyMap<string, string> | undefined;
   attack(leg: TenantLeg): Promise<LegAnswer>;
-  /** A's positive control: today's exercise of the primitive, and what A's last answer was. */
-  control(): Promise<{ readonly record: ExerciseRecord; readonly output: unknown }>;
+  /**
+   * A's positive control: today's exercise of the primitive, and what A's last answer was. `reads`
+   * is every entity its calls' statements were attributed to (`readsOf`); `null`, one was not.
+   */
+  control(): Promise<ControlAnswer>;
   snapshot(rows: readonly SeedRow[]): Promise<readonly (string | null)[]>;
+}
+
+/** What A's control answered, and the entities its statements touched. */
+export interface ControlAnswer {
+  readonly record: ExerciseRecord;
+  readonly output: unknown;
+  readonly reads?: readonly string[] | null | undefined;
+}
+
+type Described = { readonly $name: string; $describe(): { readonly global?: string | undefined } };
+
+/** One map per pass's entity list: the proof runs once per primitive, the list never changes. */
+const globalsByList = new WeakMap<readonly Described[], ReadonlyMap<string, string>>();
+
+/** Each entity's `entity({ global })` reason, by name; an entity without one is not in it. */
+export function globalEntities(entities: readonly Described[]): ReadonlyMap<string, string> {
+  const known = globalsByList.get(entities);
+  if (known !== undefined) return known;
+  const globals = new Map<string, string>();
+  for (const entity of entities) {
+    const reason = entity.$describe().global;
+    if (reason !== undefined) globals.set(entity.$name, reason);
+  }
+  globalsByList.set(entities, globals);
+  return globals;
+}
+
+/**
+ * Every entity a primitive's calls touched, first seen first; `null` when any call sent a statement
+ * no repository attributed — hand-written SQL reads tables nobody can name, so nothing is global.
+ */
+export function readsOf(
+  calls: readonly { readonly reads?: readonly string[] | null | undefined }[],
+): readonly string[] | null {
+  const seen = new Set<string>();
+  for (const call of calls) {
+    if (call.reads === null || call.reads === undefined) return null;
+    for (const entity of call.reads) seen.add(entity);
+  }
+  return [...seen];
+}
+
+/**
+ * Why a read is `global`, or `undefined`: it touched at least one entity and every one is declared
+ * global. One tenant entity — a policy's membership lookup included — or an unknown read is not.
+ */
+export function globalReason(
+  reads: readonly string[] | null | undefined,
+  globals: ReadonlyMap<string, string> | undefined,
+): string | undefined {
+  if (reads === null || reads === undefined || reads.length === 0 || globals === undefined) {
+    return undefined;
+  }
+  const reasons = reads.map((entity) => {
+    const reason = globals.get(entity);
+    return reason === undefined ? undefined : `${entity}: ${reason}`;
+  });
+  if (reasons.some((reason) => reason === undefined)) return undefined;
+  return `every entity this read touched is declared global (${reasons.join('; ')}), so no row of A's can come back: the legs still searched, write half kept`;
 }
 
 /** A's rows whose digest moved across one B leg — changed, or gone. */
@@ -153,7 +217,7 @@ export function tenantlessReason(
 
 const verdictOf = (
   plan: TenantAttack,
-  control: { readonly record: ExerciseRecord; readonly output: unknown },
+  control: ControlAnswer,
   findings: readonly TenantFinding[],
   skipped: readonly string[],
 ): TenantProof => {
@@ -167,6 +231,8 @@ const verdictOf = (
   }
   if (plan.public !== undefined) return { verdict: 'public', reason: plan.public };
   if (skipped.length > 0) return { verdict: 'public', reason: skipped.join('; ') };
+  const global = plan.read ? globalReason(control.reads, plan.globals) : undefined;
+  if (global !== undefined) return { verdict: 'global', reason: global };
   // Every mark of A's, handed ones included: A was handed its own ids, and reading them is the point.
   if (plan.read && findTaint(control.output, 'output', plan.taint.marks).length === 0) {
     return {

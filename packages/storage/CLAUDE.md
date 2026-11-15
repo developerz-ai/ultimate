@@ -44,7 +44,7 @@ A rule marked `†` has its full text in [`docs/history/storage-rules.md`](../..
 | `multipart.ts` / `driver-s3-multipart*.ts` / `driver-s3-put-stream.ts` | part arithmetic + `MultipartCapability`; the six signed calls + s3's capability; the pump |
 | `grant-multipart.ts` / `upload-client-multipart.ts` / `accept-part.ts` / `multipart-staged.ts` | uploads in parts: server calls, browser, local part PUT, local/memory sessions |
 | `expire.ts` | `expireObjects`, `abortStaleUploads`, `objectPurgeTarget` |
-| `driver-local-stream.ts` / `driver-s3-sse.ts` / `errors-stream.ts` | the staged local stream; the s3 SSE refusal; the stream codes |
+| `driver-local-stream.ts` / `driver-s3-sse.ts` / `errors-stream.ts` | the staged local stream; `serverSideEncryption` as s3's signed-PUT headers; the stream codes |
 | `driver-s3-settle.ts` | a lost Complete/PUT answer, settled by a stat (size + S3's etag of the bytes sent: MD5, or MD5-of-part-MD5s `-N`), then for multipart by an abort (204 = was open, nothing stored; 404 = completed, stat again). Neither settles: `X_STORAGE_WRITE_OUTCOME_UNKNOWN`, never `X_STORAGE_PUT_FAILED`. Plain `put()` settles the same way (`settleLostPut`); `isAnswered` (coded, or Bun's `S3Error`) is what counts as the provider answering |
 | `range.ts` | `get(key, { range })`: screen + `servedRange` (`errors-range.ts`); s3's one-GET read is `driver-s3-range.ts` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars; listing is `driver-local-list.ts` (`Bun.Glob`, cursor, `listFailed`), removal `driver-local-remove.ts` (a refused unlink vs one already gone) |
@@ -121,7 +121,7 @@ Gotchas:
   `X_STORAGE_LIST_FAILED`, whose `fix` the DRIVER supplies.
 - **`head()` and `list()` NEVER read an object's bytes** — an unknowable etag is `''`, as on s3.
   `get()` hashes bytes it holds; `copy()` passes `hash: true`, so no sidecar records `etag: ''`.
-- **s3 `put()` with `metadata`/`cacheControl`/`retention`/`legalHold` is ONE signed PUT** (core's
+- **s3 `put()` with `metadata`/`cacheControl`/`serverSideEncryption`/`retention`/`legalHold` is ONE signed PUT** (core's
   `signAwsRequest`; Bun's `write` takes no header); a plain `put()` stays on Bun. Reads stay Bun's
   HEAD, so s3 `get()` reports neither field — pinned in `driver-parity.test.ts`.
 - **Object Lock: local/memory REFUSE delete/overwrite/copy-onto** (`X_STORAGE_OBJECT_LOCKED`);
@@ -142,7 +142,11 @@ Gotchas:
   `NotFound`/`ENOENT` or a 404), local on `ENOENT`; else `X_STORAGE_DELETE_FAILED`, fix per driver.
 - **`toBytes` takes a `ByteLimit`, and there is no unbounded variant**; one default,
   `DEFAULT_MAX_UPLOAD_BYTES` (`upload.ts`). †
-- **`serverSideEncryption` is declared and refused by BOTH drivers.** Full rule: `docs/history/storage.md`.
+- **`serverSideEncryption` is SENT by s3 and refused by local/memory** (`As of 2026-11`): s3 puts it on
+  the signed PUT or a `putStream`'s multipart Create (`x-amz-server-side-encryption`, `-aws-kms-key-id`;
+  `sseHeaders`), local and memory
+  refuse it as `X_INVARIANT` (`refuseUnsupportedPut` in `driver-local-write.ts`) — plain bytes are
+  not encrypted at rest. No driver raises `X_NOT_IMPLEMENTED`; it stays borrowed (public type).
 - **The `uploadScanner` port is the ONE scan path** (`As of 31.0.0`; the `quarantine: true` segment
   and `releaseQuarantine` are retired). An out-of-band decision — a review, an async vendor scan —
   is the verdict `hold`, keyed by `(ScanInput.pendingKey, ScanInput.revision)` — the etag, or the bytes' sha256 (31.3; `pendingKey` alone cleared a rewrite): `X_STORAGE_QUARANTINED` (409), upload

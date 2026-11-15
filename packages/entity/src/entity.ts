@@ -74,6 +74,12 @@ export interface EntityInit<C extends ColumnMap> {
    */
   readonly shared?: string;
   /**
+   * Why an entity with no tenant column, referencing no tenant-owned one, is the same for every
+   * tenant — a plan catalog, a stream cursor. A read touching only global entities is the exercise's
+   * `global` verdict, not `unproven`. Never beside `shared`; blank is refused.
+   */
+  readonly global?: string;
+  /**
    * Why this table may be read by a sequential scan: a closed catalog that stays a handful of rows.
    * Without it `x verify`'s exercise step reports a statement no index serves (`X_QUERY_UNINDEXED`)
    * and a reference column no index leads with; blank is refused.
@@ -245,7 +251,7 @@ export const entity = <const C extends ColumnMap>(
   // does not rename its table — was not, so an entity NAME closed the identifier in the same way a
   // column name could: `entity('t" (x int); drop table u; --')` emitted that `drop table` verbatim.
   const table = assertTableName(name, init.table ?? name);
-  assertShared(name, table, init.shared, tenantColumn);
+  assertShared(name, table, { shared: init.shared, global: init.global }, tenantColumn);
   assertScan(name, init.scan);
   for (const [property, column] of entries) bindColumn(column, name, property, tenant, table);
   const cacheTag = `entity:${name}`;
@@ -374,6 +380,7 @@ export const entity = <const C extends ColumnMap>(
       appendOnly,
       retired: init.retired,
       shared: init.shared,
+      global: init.global,
       scan: init.scan,
       readOnly: init.readOnly,
       view: viewQuery,

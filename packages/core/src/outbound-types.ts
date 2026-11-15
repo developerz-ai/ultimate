@@ -20,10 +20,37 @@ export type OutboundBody =
   | URLSearchParams
   | FormData;
 
-/** What one hop is sent with. `tls.serverName` is the name a PINNED connection proves. */
+/** A proxy as Bun's `fetch` takes it: an `http:`/`https:` URL, with the `CONNECT` headers. */
+export interface OutboundProxyInit {
+  readonly url: string;
+  readonly headers?: Readonly<Record<string, string>> | undefined;
+}
+
+/**
+ * What one hop is sent with. `tls.serverName` is the name a PINNED connection proves; it applies
+ * to the target inside a proxy's tunnel, never to the proxy (Bun 1.4.4, measured).
+ */
 export type OutboundInit = RequestInit & {
   readonly tls?: { readonly serverName?: string } | undefined;
+  readonly proxy?: OutboundProxyInit | undefined;
 };
+
+/** One proxy: its URL (credentials may ride it), or the URL and the headers its `CONNECT` sends. */
+export type OutboundProxyTarget =
+  | string
+  | URL
+  | {
+      readonly url: string | URL;
+      readonly headers?: Readonly<Record<string, string>> | undefined;
+    };
+
+/**
+ * A proxy for every hop, or a resolver asked once per hop with the hop's NAMED url (never the
+ * pinned address) — `undefined` dials that hop direct. Which proxy, and rotating them, is the app's.
+ */
+export type OutboundProxy =
+  | OutboundProxyTarget
+  | ((target: URL) => OutboundProxyTarget | undefined | Promise<OutboundProxyTarget | undefined>);
 
 /** "Just the call", the seam `MailFetch` already is. Its `init` always carries the signal. */
 export type OutboundFetch = (url: string, init: OutboundInit) => Promise<Response>;
@@ -61,6 +88,12 @@ export interface OutboundRequest {
   readonly signal?: AbortSignal | undefined;
   /** Recorded once per call, after the retries: a 503 retried away is not a failure. */
   readonly breaker?: Breaker | undefined;
+  /**
+   * Send each hop through an HTTP proxy (`CONNECT` for `https:`). Under `dial: 'public'` the screen
+   * still runs first and the tunnel is opened to the approved ADDRESS, the certificate still proven
+   * against the name; the proxy itself is the app's own choice, like a `'named'` host.
+   */
+  readonly proxy?: OutboundProxy | undefined;
 }
 
 export interface OutboundDeps {

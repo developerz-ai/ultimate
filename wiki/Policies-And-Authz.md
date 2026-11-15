@@ -119,17 +119,17 @@ The matrix runs **outside a request**: no input, no row. A rule that reads eithe
 ## Scope — a policy's database filter
 
 `scoped(policy, scope)` attaches `scope(actor) → where` to a policy, `As of 2026-11`: the
-conjunction a read hands the database, so the visible rows arrive as one index-served page rather
-than a JS filter over an over-fetch that leaves a viewer a short page. The policy decides exactly as
-before; the JS rule stays the authority.
+predicate a read hands the database, so the visible rows arrive as ONE statement's page rather than
+a JS filter over an over-fetch that leaves a viewer a short page. The policy decides exactly as
+before; the JS rule stays the authority and still runs on every row returned.
 
 ```ts
 import type { Actor, Policy } from '@ultimat3/policy';
 import { policyScope, scoped } from '@ultimat3/policy';
 
 interface Post {
-  readonly orgId: string;
-  readonly audience: 'public' | 'members';
+  readonly authorId: string;
+  readonly audience: 'public' | 'friends';
 }
 declare const postRule: Policy<unknown, Post>;
 declare const actor: Actor | null;
@@ -137,34 +137,64 @@ declare const actor: Actor | null;
 export const seePost = scoped(postRule, (who) =>
   who === null
     ? [{ column: 'audience', op: 'eq', value: 'public' }]
-    : [{ column: 'orgId', op: 'eq', value: who.orgId }],
+    : [
+        {
+          or: [
+            { column: 'authorId', op: 'eq', value: who.id },
+            { column: 'audience', op: 'eq', value: 'public' },
+            {
+              and: [
+                { column: 'audience', op: 'eq', value: 'friends' },
+                {
+                  via: { column: 'authorId', entity: 'friendships', target: 'friendId' },
+                  where: [{ column: 'userId', op: 'eq', value: who.id }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
 );
-policyScope(seePost, actor); // the frozen conditions, or undefined for an unscoped policy
+policyScope(seePost, actor); // the tree, frozen at every depth, or undefined for an unscoped policy
 ```
+
+| Node | Means |
+|---|---|
+| `{ column, op, value? }` | a condition. `column` is typed by the policy's row; `op` is one of `eq` `neq` `in` `gt` `gte` `lt` `lte` `is-null` `is-not-null`; `value` is always bound |
+| `{ or: [...] }` | any member holds; `[]` holds for no row |
+| `{ and: [...] }` | every member holds — the arm of an `or` that needs two conditions |
+| `{ via: { column, entity, target }, where: [...] }` | `column in (select target from entity where …)`; `entity` is a registered entity NAME |
 
 | `policyScope(policy, actor)` answers | Means |
 |---|---|
 | `undefined` | no scope declared: nothing is handed down |
 | `[]` | every row (an admin): the empty conjunction |
-| `[{ column, op, value? }, …]` | every condition must hold — AND only, there is no `or`. `column` is typed by the policy's row; `op` is one of `eq` `neq` `in` `gt` `gte` `lt` `lte` `is-null` `is-not-null`; `value` is always bound |
+| `[node, …]` | every top-level node must hold; at most four levels deep (`X_ENTITY_PREDICATE_NODE_INVALID`) |
 
+- **One statement.** `@ultimat3/entity`'s `.andWhereNode(node)` takes the tree on a repository
+  chain — `db.posts.where({ deletedAt: null }).andWhereNode(node)` — and compiles it into the one
+  select, a `via` as a subselect.
+- **A `via` cannot cross tenants.** Its subselect is planned through the TARGET's tenant guard, the
+  acting actor's tenant and the target's soft delete applied inside; outside a request its `where`
+  must name the tenant, as a read of that table must. An untenanted target behind a tenanted source
+  must declare `shared:` or `global:`, else `X_TENANCY_UNSCOPED`.
+- **A query read composes it**, `As of 31.11.0`: a `query({ policy: seePost, sql })` whose `sql`
+  returns `from()` gets each condition as a filter and each `or`/`and`/`via` node on
+  `RowWindow.nodes`, which a repository provider hands to `.andWhereNode(node)` —
+  [Queries: a scoped policy narrows the read](Queries-And-Live-Queries#a-scoped-policy-narrows-the-read).
+  Refused (`X_QUERY_SCOPE_UNCOMPOSABLE`), never served unscoped: another `SqlSource`, a tree on a live
+  read (the matcher patches a flat shape), and a `via` over `from()` given a list of rows.
+- **A custom store** (`defineDriver`) takes a tree only when it declares `predicate:or` /
+  `predicate:via`; otherwise `X_DRIVER_UNSUPPORTED`, before the store is called.
 - **The scope belongs to the clause it is declared on.** `and`/`or`/`not` over a scoped policy
   carry none: the conjunction of children's scopes is not the scope of `or`. Scope the outermost
   policy.
 - **Tenant scoping is not scope.** Tenancy stays the entity layer's (the tenant predicate every
   repository applies, [below](#tenancy)); a scope narrows what one actor sees inside a tenant and
   never replaces it.
-- **A query read composes it**, `As of 31.11.0`: a `query({ policy: seePost, sql })` whose `sql`
-  returns `from()` gets each condition as a filter before the page is cut, and still runs the rule
-  on every row — [Queries: a scoped policy narrows the read](Queries-And-Live-Queries#a-scoped-policy-narrows-the-read).
-  Another `SqlSource` is `X_QUERY_SCOPE_UNCOMPOSABLE`. An action, or a repository read outside a
-  query, composes nothing: there `policyScope` is the read an app composes itself, e.g.
-  `db.posts.where({ orgId })` plus each condition as `andWhere`.
-- **AND-only, by decision** (2026-11, `packages/policy/src/scope.ts`). A scope lands as query
-  filters, so it reaches the live matcher's shape, every provider's `RowWindow.filters` and the
-  entity chain, each a conjunction; an `or` group would widen all of them at once. A rule whose
-  visibility is a disjunction (a friend OR the author OR public, minus a block set) stays unscoped
-  and keeps the JS rule over what it reads.
+- **`or` and `via` by decision** (2026-11, reversing the AND-only decision of earlier that month,
+  `packages/policy/src/scope.ts`): apps whose visibility is a disjunction over a graph over-fetched a
+  feed and ORed in JS — the short page `scope` exists to end.
 - **Planned, not shipped:** a finding for a scope that admits other rows than its rule on the
   exercise seed (`X_POLICY_SCOPE_MISMATCH`, not registered yet). Until then, a scope wider than its
   rule costs rows the rule then drops — a short page again — and a narrower one hides rows the rule
@@ -203,6 +233,7 @@ X_ENTITY_TENANT_UNDECLARED: a child of a tenant-owned table has no tenant
 |---|---|
 | `orgId: uuid().tenant()`, then `x db gen '<table> tenant'` | the rows belong to an org. A table that already holds rows backfills the column: `x g backfill <name> --feature <slice>` |
 | `entity('<name>', { shared: '<why>' })` | the rows belong to no org — a price list, a catalog. A blank reason is refused at `entity()`; a `shared` entity is not walked through ([Entities](Entities-And-Migrations#shape)) |
+| `entity('<name>', { global: '<why>' })` | the rows belong to no org and reference none — a plan catalog, a stream cursor. Not a fix for this finding: a table that hangs off a tenant's row is `shared` or tenant-owned, so a `global` one with such a reference is still reported. It turns a read over it from `unproven` into `global` ([below](#the-dynamic-tenant-proof)) |
 
 Reported in the `exercise` step, not `policy`: the policy step asks whether a permission exists. Source: `packages/cli/src/exercise-static.ts`.
 
@@ -231,6 +262,7 @@ X_TENANT_LEAK: another tenant's row reached a call's output or effect
 | `public` | the policy admits an anonymous caller: what it returns, anyone may read. The read half is skipped; a crossed **write** is still red |
 | `public`, as a declared sweep | a job that reads every org on purpose says so with `crossTenant(reason, fn)`, and its input names no org's rows. The proof sees the scope and quotes the reason; the read half is skipped, a crossed **write** is still red. The same scope in an action or a query, or in a job handed A's id, is still `X_TENANT_LEAK` |
 | `public`, as a tenantless job | a job declaring `tenant: 'none'` whose input names none of A's rows — a nightly cleanup across every org, input `{ occurrenceMs }`. No org and no id of B's choosing reaches its run, so B's run is A's run: what it writes it writes for every enqueuer. The **write** half is skipped, the read half kept. Handed one of A's ids it is crossed as ever; an action or a query handed no id still crosses, since B's org runs it |
+| `global` | a query whose every statement read an `entity('<name>', { global: '<why>' })` table — a plan catalog the same for every org. No row of A's exists to come back, so the reasons are quoted; a crossed **write** is still red. One other entity, or one hand-written statement, and it stays `unproven` |
 | `unproven` | A's own call was not reached (that record is already red as `X_CONTRACT_EXERCISE_UNREACHED`), or a query answered A none of A's rows — B's empty answer then proves nothing |
 
 B holds the role A held, minus `tenancy:cross`. **Not checked**: a `route` `load` and a `task`

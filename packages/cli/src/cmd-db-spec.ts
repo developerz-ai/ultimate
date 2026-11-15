@@ -20,7 +20,7 @@ export const dbSpec: CommandSpec = {
   name: 'db',
   summary: 'gen, migrate, reset, seed, studio, branch, backfill, diagnostics, recount',
   usage:
-    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write]',
+    'x db gen "add publish_at" [--drop-redundant] | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write]',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it
@@ -117,6 +117,14 @@ export const dbSpec: CommandSpec = {
       name: 'allow-destructive',
       type: 'boolean',
       summary: 'let x db gen emit a drop whose down cannot restore the rows',
+    },
+    // Opt-in, never a default: an index the framework added unasked that another index already
+    // leads with (`x doctor` lists them) is dropped concurrently, in a migration you review.
+    {
+      name: 'drop-redundant',
+      type: 'boolean',
+      summary: 'gen: drop each implicit index another index already leads with, concurrently',
+      subcommands: ['gen'],
     },
     // Declared because `X_MIGRATION_ROLLING_UNSAFE`'s own fix line names it.
     {

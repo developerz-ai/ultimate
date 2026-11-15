@@ -3,6 +3,7 @@
 // `REDACTED` and LISTED by path, so `x repro` can say which fields it had to invent.
 
 import { isRedactedKey } from './logger';
+import { redactedValue } from './redact-values';
 import { isSecret, REDACTED } from './secret';
 
 /** Deep enough for any input that is a request and not a document; past it the subtree is cut. */
@@ -21,6 +22,8 @@ function walk(value: unknown, at: string, depth: number, masked: string[]): unkn
     masked.push(at === '' ? '(the value)' : at);
     return REDACTED;
   }
+  // A bundle is replayed by `x repro` and shown in the dashboard: the app's value patterns apply.
+  if (typeof value === 'string') return redactedValue(value);
   if (value === null || typeof value !== 'object') return value;
   if (value instanceof Date) return value.toISOString();
   if (depth >= MAX_DEPTH) return '[depth-limit]';

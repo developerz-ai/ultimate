@@ -10,8 +10,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { declaredSchema, generateMigration, snapshotJson } from '@ultimat3/db';
-import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
+import { clearRegistry, entity, registeredEntities, text, timestamp, uuid } from '@ultimat3/entity';
 import { generateAppMigration, migrationSql, unrenderedJson, unrenderedLines } from './db-generate';
+import { redundantIndexesProbe } from './doctor-redundant-indexes';
 import { checkSourceDrift, schemaHash } from './drift';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 
@@ -327,3 +328,84 @@ test('the same list is structured under --json, field for field', () => {
 // from `meta.default !== undefined` and spreads the value beside it, so the flag never arrives
 // without an expression — and a test whose mutation (`unrendered: []`) it cannot notice is not a
 // test. The threading is a build error instead: `GeneratedFiles.unrendered` is required.
+
+// `--drop-redundant`: a join table's foreign-key index the primary key already leads with is
+// described (so plain `x db gen` drops nothing) and listed as covered. Asked for, it is dropped in
+// the concurrent follow-up — and stays dropped: the next plain generation does not build it again.
+test('--drop-redundant drops a covered index once, and plain generation never rebuilds it', async () => {
+  const dir = tempRoot();
+  try {
+    clearRegistry();
+    const tags = entity('db_gen_redundant_tags', { columns: { id: uuid().primaryKey() } });
+    entity('db_gen_redundant_links', {
+      columns: {
+        tagId: uuid().references(() => tags.id),
+        otherId: uuid(),
+      },
+      primaryKey: ['tagId', 'otherId'],
+    });
+    const covered = 'db_gen_redundant_links_tag_id_idx';
+    // The test clock is frozen, so ids share one stamp and sort by name: a < b < c.
+    const first = await generateAppMigration(dir, { name: 'a initial' });
+    expect(first.migration?.up).toContain(covered);
+
+    // Never by default: the same registry, no flag, generates no migration.
+    expect((await generateAppMigration(dir, { name: 'b plain' })).migration).toBeUndefined();
+
+    const dropped = await generateAppMigration(dir, {
+      name: 'c drop redundant',
+      dropRedundant: true,
+    });
+    // A diff that is ONLY a concurrent drop is that one non-transactional migration.
+    expect(dropped.migration?.up).toContain('-- transaction: false');
+    expect(dropped.migration?.up).toContain(`drop index concurrently if exists "${covered}"`);
+    const migrations = await readMigrations(dir);
+    const indexes = declaredSchema(migrations)?.tables.flatMap((table) =>
+      table.indexes.map((index) => index.name),
+    );
+    expect(indexes).not.toContain(covered);
+
+    const again = await generateAppMigration(dir, { name: 'd plain again' });
+    expect(again.migration).toBeUndefined();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    clearRegistry();
+    registerFixtureEntity();
+  }
+});
+
+// Absent from the newest snapshot is not the same as dropped: a covered index declared on a table
+// that already exists has never been built. Plain generation builds it; only a migration that
+// held it and then dropped it excuses it.
+test('a covered index newly declared on an existing table is built by plain generation', async () => {
+  const dir = tempRoot();
+  const declare = (withLink: boolean): void => {
+    clearRegistry();
+    const tags = entity('db_gen_late_tags', { columns: { id: uuid().primaryKey() } });
+    entity('db_gen_late_links', {
+      columns: {
+        tagId: withLink ? uuid().references(() => tags.id) : uuid(),
+        otherId: uuid(),
+      },
+      primaryKey: ['tagId', 'otherId'],
+    });
+  };
+  try {
+    declare(false);
+    await generateAppMigration(dir, { name: 'a initial' });
+    declare(true);
+    const linked = await generateAppMigration(dir, { name: 'b link' });
+    expect(linked.migration?.up).toContain('db_gen_late_links_tag_id_idx');
+    // …and, now built, `x doctor` lists it until `--drop-redundant` drops it.
+    const current = declaredSchema(await readMigrations(dir)) ?? { tables: [] };
+    const listed = await redundantIndexesProbe(dir, async () => ({
+      entries: registeredEntities(),
+      current,
+    }));
+    expect(listed?.map((each) => each.name)).toEqual(['db_gen_late_links_tag_id_idx']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    clearRegistry();
+    registerFixtureEntity();
+  }
+});

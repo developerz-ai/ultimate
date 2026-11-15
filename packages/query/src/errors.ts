@@ -370,16 +370,26 @@ export class QuerySingleInvalidError extends UltimateError {
 }
 
 /**
- * A `scoped()` policy guards a read whose `sql` answered a hand-written `SqlSource`, which has no
- * way to take a predicate. Refused rather than served unscoped: the page would be cut BEFORE the
- * rule drops the rows the scope was there to keep out, which is the short page `scope` exists to end.
+ * A `scoped()` policy's scope has nowhere to go, refused rather than served unscoped: the page would
+ * be cut BEFORE the rule drops the rows the scope was there to keep out, which is the short page
+ * `scope` exists to end. `source`: `sql` answered a hand-written `SqlSource`, which cannot take a
+ * predicate. `live`: an `or`/`via` scope on a live read, whose matcher patches from a flat shape.
+ * `rows`: a `via` scope over `from()` given a list of rows, which has no statement to push it into.
  */
 export class QueryScopeUncomposableError extends UltimateError {
-  constructor(name: string) {
+  constructor(name: string, reason: 'source' | 'live' | 'rows' = 'source') {
+    const cause = {
+      source: `query "${name}" has a scoped policy and its sql returns a source that is not from(), so the scope has nowhere to go`,
+      live: `query "${name}" is read live and its scoped policy hands down an or/via tree, which the live matcher's flat shape cannot patch — a paged read serves it in one statement`,
+      rows: `query "${name}" has a scope with a via hop and its sql reads from() over a list of rows, which has no statement to run the hop in`,
+    }[reason];
     super({
       code: 'X_QUERY_SCOPE_UNCOMPOSABLE',
-      cause: `query "${name}" has a scoped policy and its sql returns a source that is not from(), so the scope has nowhere to go`,
-      fix: `sql: (input) => from<Row>('<table>', (window) => repo.window(window))  # in query "${name}" — or drop scoped() from its policy`,
+      cause,
+      fix:
+        reason === 'live'
+          ? `${name}.page(input, { first })   # read it paged, not live — or scope its policy with conditions only: an or/via tree is served by a statement, never by the matcher`
+          : `sql: (input) => from<Row>('<table>', (window) => repo.window(window))  # in query "${name}": the provider applies window.nodes with .andWhereNode(node) — or drop scoped() from its policy`,
     });
   }
 }

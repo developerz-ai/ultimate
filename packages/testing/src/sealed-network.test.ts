@@ -229,3 +229,55 @@ describe(testName('unit', 'sealed network — sockets, not only fetch'), () => {
     }
   });
 });
+
+describe(testName('unit', 'sealed network · a proxied fetch'), () => {
+  /** A self origin whose request, sent through a proxy, would leave this machine at the proxy. */
+  const target = 'http://127.0.0.1:59322/v1';
+  const proxied = (proxy: unknown): Promise<{ code?: string; cause?: string } | undefined> => {
+    const release = markListening('http://127.0.0.1:59322');
+    return fetch(target, { proxy } as RequestInit)
+      .then(
+        () => undefined,
+        (error: unknown) => error as { code?: string; cause?: string },
+      )
+      .finally(release);
+  };
+
+  test.each([
+    ['a string', 'http://user:s3cret@proxy.example.com:3128'],
+    ['a URL', new URL('http://user:s3cret@proxy.example.com:3128')],
+    ['an object', { url: 'http://user:s3cret@proxy.example.com:3128', headers: {} }],
+  ])(
+    'a remote proxy given as %s is refused like a remote dial, its credential unprinted',
+    async (_label, proxy) => {
+      const refusal = await proxied(proxy);
+      expect(refusal?.code).toBe('X_TEST_NETWORK_SEALED');
+      expect(refusal?.cause).toContain('proxy.example.com:3128');
+      expect(JSON.stringify(refusal)).not.toContain('s3cret');
+    },
+  );
+
+  test('an allowed proxy host is judged allowed, not sealed', async () => {
+    allowHost('proxy.example.invalid:1');
+    // Nothing answers there (`.invalid` never resolves); whatever it fails with, it is not the seal.
+    expect((await proxied('http://proxy.example.invalid:1'))?.code).not.toBe(
+      'X_TEST_NETWORK_SEALED',
+    );
+  });
+
+  test('a loopback proxy is this machine: the request goes through it', async () => {
+    const proxy = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (request) => new Response(`via proxy ${request.url}`),
+    });
+    const release = markListening('http://127.0.0.1:59322');
+    try {
+      const response = await fetch(target, { proxy: proxy.url.origin } as RequestInit);
+      expect(await response.text()).toBe(`via proxy ${target}`);
+    } finally {
+      release();
+      proxy.stop(true);
+    }
+  });
+});

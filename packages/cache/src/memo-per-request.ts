@@ -2,7 +2,18 @@
 // and byte bound as `memoTier` — one mechanism, a second entry point, so an app stops writing its
 // own WeakMap-on-ctx wrapper. Outside a ctx it calls straight through.
 
-import { holdValue, storeFor } from './memo-store';
+import { holdValue, removeEntry, storeFor } from './memo-store';
+
+/** A request-memoized function, and the one way to drop what it holds for some arguments. */
+export interface MemoizedPerRequest<A extends readonly unknown[], R> {
+  (...args: A): R;
+  /**
+   * Drop what this ctx holds for `args` — the same arguments the call takes, so the key is still
+   * derived in one place — and give its bytes back to the bound. The next call runs `fn` again.
+   * A no-op outside a ctx, or for arguments nothing is held for.
+   */
+  forget(...args: A): void;
+}
 
 /** Wrapper identities: two wrappers handed the same key string must not answer for each other. */
 let wrappers = 0;
@@ -20,11 +31,11 @@ let wrappers = 0;
 export function memoPerRequest<A extends readonly unknown[], R>(
   fn: (...args: A) => R,
   key: (...args: A) => string,
-): (...args: A) => R {
+): MemoizedPerRequest<A, R> {
   wrappers += 1;
   const namespace = `\u0000memo:${wrappers}\u0000`;
 
-  return (...args: A): R => {
+  const memoized = (...args: A): R => {
     const store = storeFor(true);
     if (store === undefined) return fn(...args);
     const slot = namespace + key(...args);
@@ -34,4 +45,10 @@ export function memoPerRequest<A extends readonly unknown[], R>(
     holdValue(store, slot, value);
     return value;
   };
+  return Object.assign(memoized, {
+    forget(...args: A): void {
+      const store = storeFor(false);
+      if (store !== undefined) removeEntry(store, namespace + key(...args));
+    },
+  });
 }

@@ -17,6 +17,7 @@ import { holdsJsonNull } from './json-null';
 import { likeMatches } from './like';
 import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import { operatorUnknown } from './operator';
+import { orMembers, predicateNodeInvalid } from './predicate-node';
 import type { Predicate } from './tenancy';
 import { isTextContains, textContainsMatches } from './text-contains';
 import type { ColumnKind } from './types';
@@ -140,6 +141,18 @@ export const matchesPredicate = <Row>(
   // `searchInMemory` — and `valueAt(row, '$search')` would answer `undefined`, which every
   // comparison below reads as NULL and silently turns into "no rows".
   if (predicate.op === 'matches') throw searchInMemory(entity.$name);
+  // A group holds when any member does; no member is no row, as Postgres' `1 = 0` answers.
+  if (predicate.op === 'or') {
+    return orMembers(predicate).some((member) => matchesPredicate(entity, row, member));
+  }
+  if (predicate.op === 'and') {
+    return orMembers(predicate).every((member) => matchesPredicate(entity, row, member));
+  }
+  // A hop needs the target's rows, which one row does not carry: the memory driver resolves it to
+  // an `in` list first (`memory-via.ts`), and a store held in process cannot answer one at all.
+  if (predicate.op === 'via') {
+    throw predicateNodeInvalid(entity.$name, 'a via hop cannot be judged row by row in process');
+  }
   // The column's declared kind, resolved once — `price.minor` included, which is the path a money
   // predicate and a money sort key both name.
   const kind = kindOf(entity, predicate.column);

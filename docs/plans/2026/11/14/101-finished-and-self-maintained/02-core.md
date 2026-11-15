@@ -29,3 +29,9 @@
 ## Done when
 - A production event from either deployed app shows `framework_version` in the tracker.
 - The two adopters' scrubbing and triage wrappers have a one-line replacement named in their slices ([`46`](46-adopter-g.md), [`44`](44-adopter-e.md)).
+
+## Corrections (2026-11-14, found while executing)
+- C1: the version reader already existed (`core/src/version.ts` `frameworkVersion()`); the boot line is `cli/src/serve.ts`, and the label rides `target_info` + the OTLP resource rather than a new gauge.
+- C2: no breadcrumbs are sent, so none are redacted; failure capture had its own walk and needed the value pass too.
+- C5: the boot wiring is `cli/src/role-start.ts` (`installRoleBootWarnings`); no framework warning moved, since each would change its log line.
+- C7: a limiter already existed twice (`outageLog`, jobs' `failureStreak`); C7 became "unify into core's `failureStreak`, adopt at the remaining sites".

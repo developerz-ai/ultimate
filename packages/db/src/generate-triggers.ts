@@ -4,11 +4,10 @@
 
 import type { EntityDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
-import { counterTrigger, recountSql } from './generate-counter';
+import { counterTrigger } from './generate-counter';
 import { historyTriggers } from './generate-history';
 import type { SchemaDescription, TableDescription, TriggerRecord } from './introspect';
 import { findTable } from './introspect';
-import { CROSS_TENANT_SETTING } from './row-security';
 import { identifier } from './sql';
 
 /** Every declared lifecycle trigger, by the table it sits on, in declaration order. */
@@ -45,20 +44,27 @@ const same = (left: TriggerRecord, right: TriggerRecord): boolean =>
  * row, and the recount would update nothing in silence.
  */
 function recounts(
-  entities: readonly EntityDescriptionLike[],
+  declared: ReadonlyMap<string, readonly TriggerRecord[]>,
   added: ReadonlySet<string>,
 ): string[] {
   const out: string[] = [];
-  for (const entity of entities) {
-    for (const counter of entity.counts ?? []) {
-      const trigger = counterTrigger(entity.table, counter);
-      if (!added.has(`${counter.table}.${trigger.name}`)) continue;
-      out.push(`select set_config('${CROSS_TENANT_SETTING}', 'on', true);`);
-      out.push(recountSql(entity.table, counter));
+  for (const [table, triggers] of declared) {
+    for (const trigger of triggers) {
+      if (added.has(`${table}.${trigger.name}`)) out.push(...(trigger.recount ?? []));
     }
   }
   return out;
 }
+
+/**
+ * `down`'s reinstall of a recorded trigger, pushed for the final reversal: the recount it recorded
+ * (a counter's, under ITS predicate) runs after the reinstall, so a rolled-back `where` leaves the
+ * counts the old trigger keeps. A record without one reinstalls only, as before 31.23.
+ */
+const reinstall = (recorded: TriggerRecord): readonly string[] => [
+  ...[...(recorded.recount ?? [])].reverse(),
+  ...[...recorded.install].reverse(),
+];
 
 /**
  * Both directions, after every table exists. Declared and not recorded (or recorded with other
@@ -82,7 +88,7 @@ export function triggerPlan(
       plan.up.push(...trigger.install);
       // `down` is reversed whole: pushed in apply order, reversed back into it.
       if (before === undefined) plan.down.push(dropSql(table, trigger.name));
-      else plan.down.push(...[...before.install].reverse());
+      else plan.down.push(...reinstall(before));
       added.add(`${table}.${trigger.name}`);
     }
   }
@@ -92,10 +98,10 @@ export function triggerPlan(
     for (const recorded of table.triggers ?? []) {
       if (wanted.some((each) => each.name === recorded.name)) continue;
       plan.up.push(dropSql(table.name, recorded.name));
-      plan.down.push(...[...recorded.install].reverse());
+      plan.down.push(...reinstall(recorded));
     }
   }
-  plan.up.push(...recounts(entities, added));
+  plan.up.push(...recounts(declared, added));
 }
 
 /** The snapshot, each table carrying the triggers declared on it — absent where there are none. */

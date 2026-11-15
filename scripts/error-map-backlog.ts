@@ -45,6 +45,8 @@ export const OFF_SOCKET: Pins = {
     // This one: outside `test`, no rolled-back transaction would undo the writes
     // (`assertExerciseScoped`, fed `rollbackAvailable()` by `action`'s `exercise.ts`).
     'X_CONTRACT_EXERCISE_UNSCOPED',
+    'X_REDACT_PATTERN_UNSAFE',
+    'X_OUTBOUND_PROXY_INVALID',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
   // by `new LruCache(...)` and `memorySemanticCache(...)`, which a boot builds once.
@@ -114,6 +116,7 @@ export const OFF_SOCKET: Pins = {
     'X_ENTITY_COUNTS_INVALID',
     'X_DRIVER_CAPABILITY_MISSING',
     'X_ENTITY_PARTITION_INVALID',
+    'X_ENTITY_ALL_TRUNCATED',
   ],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],

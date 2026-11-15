@@ -12,9 +12,12 @@ import { searchUndeclared } from './feature-errors';
 import { microsToIso, seekAlias } from './instant';
 import { operatorUnknown } from './operator';
 import { allColumns, arrayLiteral, columnsOf, physicalName } from './pg-row';
+import { orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
+import { viaTarget } from './predicate-screen';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { isTextContains, textContainsSql } from './text-contains';
 import type { ColumnKind } from './types';
+import { isScopedVia } from './via-scope';
 
 /** Nothing matches. `in ()` is a syntax error in Postgres, so an empty set needs a constant. */
 const NEVER = sql`1 = 0`;
@@ -74,9 +77,12 @@ const nullTestPath = <Row>(entity: EntityCore<Row>, predicate: Predicate): strin
 };
 
 const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
-  // BEFORE the column is resolved: a `matches` predicate names `SEARCH_PROPERTY`, which is not a
-  // column and must never be looked up as one.
+  // BEFORE the column is resolved: a `matches` predicate names `SEARCH_PROPERTY`, and an `or` group
+  // `OR_PROPERTY` — neither is a column, and neither must ever be looked up as one.
   if (predicate.op === 'matches') return searchSql(entity, predicate);
+  if (predicate.op === 'or') return orSql(entity, predicate);
+  if (predicate.op === 'and') return andSql(entity, predicate);
+  if (predicate.op === 'via') return viaSql(entity, predicate);
   const column = columnRef(entity, nullTestPath(entity, predicate));
   const value = predicate.value;
   switch (predicate.op) {
@@ -326,6 +332,41 @@ export const predicatesSql = <Row>(
         where.map((predicate) => predicateSql(entity, predicate)),
         ' and ',
       );
+
+/** `( a or b … )`, each member compiled as any predicate is. No member is no row, never every row. */
+const orSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+  const members = orMembers(predicate).map((member) => predicateSql(entity, member));
+  return members.length === 0 ? NEVER : sql`(${join(members, ' or ')})`;
+};
+
+/**
+ * `"col" in (select "target" from "table" where …)` — one statement, the hop inlined as a semi-join
+ * the planner can drive from either side. Only a hop `readPlan` scoped is compiled: its inner where
+ * already carries the target's tenant, and the target's soft delete is applied here as a top-level
+ * read of it would be. `null` in the target column never matches, as `in` already answers.
+ */
+const viaSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+  if (!isScopedVia(predicate.value)) {
+    throw predicateNodeInvalid(
+      entity.$name,
+      'a via hop reached the driver without readPlan scoping it',
+    );
+  }
+  const target = viaTarget(entity as EntityCore, predicate);
+  const hop = viaValue(predicate);
+  const parts = hop.where.map((inner) => predicateSql(target, inner));
+  if (target.$softDelete) {
+    parts.push(sql`${identifier(physicalName(target, SOFT_DELETE_COLUMN))} is null`);
+  }
+  const where = parts.length === 0 ? sql`true` : join(parts, ' and ');
+  return sql`${columnRef(entity, predicate.column)} in (select ${columnRef(target, hop.target)} from ${identifier(target.$table)} where ${where})`;
+};
+
+/** `( a and b … )`; no member holds for every row, as an empty conjunction does. */
+const andSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+  const members = orMembers(predicate).map((member) => predicateSql(entity, member));
+  return members.length === 0 ? sql`true` : sql`(${join(members, ' and ')})`;
+};
 
 export const conditions = <Row>(
   entity: EntityCore<Row>,

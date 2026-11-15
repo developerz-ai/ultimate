@@ -15,6 +15,7 @@ import {
   tryOtlpEndpoint,
   unixNano,
 } from './otlp';
+import { frameworkVersion } from './version';
 
 const codeOf = (fn: () => unknown): string => {
   try {
@@ -166,6 +167,7 @@ describe('otlpResource', () => {
       attributes: [
         { key: 'service.name', value: { stringValue: 'web' } },
         { key: 'service.version', value: { stringValue: '1.2.0' } },
+        { key: 'framework.version', value: { stringValue: frameworkVersion() } },
       ],
     });
   });

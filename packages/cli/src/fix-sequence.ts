@@ -71,7 +71,6 @@ export const FIX_SEQUENCE_BASELINE: ReadonlyMap<string, number> = new Map([
   ['packages/db/src/lifecycle-errors.ts', 1],
   ['packages/db/src/primary-key.ts', 1],
   ['packages/docs-source/src/errors.ts', 4],
-  ['packages/entity/src/counter.ts', 1],
   ['packages/entity/src/partition.ts', 1],
   ['packages/entity/src/retain.ts', 1],
   ['packages/jobs/src/subject-errors.ts', 1],

@@ -192,6 +192,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
 | `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
 | `outbox-relay.ts` | the relay: the poll timer, one pass, and its TWO shutdown hooks |
+| `tick-streak.ts` | `tickStreak(loop)`: the scheduler's, worker's and relay's failures as one streak per cause (core's `failureStreak`), `jobs.<loop>.tick-failed` / `-recovered`, as claim-loop hooks |
 | `outbox-pg.ts` | `postgresOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
 | `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
@@ -211,7 +212,6 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
 | `execute-report.ts` | a failed attempt's visibility: a dead letter to the tracker, a retry to `jobs_retried_total` (tracker only under `retry.report: 'every-attempt'`) |
-| `failure-streak.ts` | a polling loop's failures as a streak: one line opens it, one closes it with the count (scheduler, worker, relay) |
 | `execute.ts` (+`-result.ts`) / `run-deadline.ts` | `executeJob`: one claimed job run and settled; its deadline: cancel, then fail |
 | `heartbeat.ts` / `job-lease.ts` | one claimed job's lease: the renewal interval and the loss it reports; `args.lease`, the body's view of it |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |

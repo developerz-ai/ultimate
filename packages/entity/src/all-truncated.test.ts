@@ -5,7 +5,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { InstrumentEventMap } from '@ultimat3/core';
 import { resetInstrumentation, subscribe } from '@ultimat3/core';
-import { ALL_TRUNCATED, reportTruncatedAll } from './all-truncated';
+import { ALL_TRUNCATED, reportTruncatedAll, resetTruncatedSites } from './all-truncated';
 import { text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -25,13 +25,19 @@ const heard = (): LogRecordEvent[] => {
   return seen;
 };
 
+afterEach(() => resetTruncatedSites());
+
 describe('reportTruncatedAll', () => {
   test('a dropped cursor in development warns, naming the entity and both ways out', () => {
     const seen = heard();
     reportTruncatedAll('posts', 'cursor-2', false, { ULTIMATE_ENV: 'development' });
     expect(seen).toHaveLength(1);
     expect(seen[0]?.level).toBe('warn');
-    expect(seen[0]?.fields).toMatchObject({ entity: 'posts', pageSize: DEFAULT_PAGE_SIZE });
+    expect(seen[0]?.fields).toMatchObject({
+      code: 'X_ENTITY_ALL_TRUNCATED',
+      entity: 'posts',
+      pageSize: DEFAULT_PAGE_SIZE,
+    });
     expect(String(seen[0]?.fields['fix'])).toContain('.inBatches(');
     expect(String(seen[0]?.fields['fix'])).toContain('.limit(');
   });
@@ -39,6 +45,14 @@ describe('reportTruncatedAll', () => {
   test('test warns as development does', () => {
     const seen = heard();
     reportTruncatedAll('posts', 'cursor-2', false, { ULTIMATE_ENV: 'test' });
+    expect(seen).toHaveLength(1);
+  });
+
+  test('one site warns once, however often it runs', () => {
+    const seen = heard();
+    for (let turn = 0; turn < 3; turn += 1) {
+      reportTruncatedAll('posts', 'cursor-2', false, { ULTIMATE_ENV: 'test' });
+    }
     expect(seen).toHaveLength(1);
   });
 
@@ -68,6 +82,9 @@ describe('.all() on a chain', () => {
     const seen = heard();
     expect(await db.notes.where({}).all()).toHaveLength(DEFAULT_PAGE_SIZE);
     expect(seen.map((record) => record.fields['entity'])).toEqual(['truncated_notes']);
+    // The caller's line — this file — never a frame inside the entity package's own chain.
+    expect(String(seen[0]?.fields['at'])).toMatch(/all-truncated\.test\.ts:\d+:\d+$/);
+    expect(String(seen[0]?.fields['cause'])).toContain(String(seen[0]?.fields['at']));
     await db.notes.where({}).limit(10).all();
     expect(seen).toHaveLength(1);
   });

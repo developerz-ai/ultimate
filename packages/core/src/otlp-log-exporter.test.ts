@@ -9,6 +9,7 @@ import { otlpEndpoint } from './otlp';
 import { otlpLogExporter, otlpLogsRequest } from './otlp-log-exporter';
 import { alwaysOnSampler } from './sampler';
 import { configureTelemetry, resetTelemetry, withSpan } from './telemetry';
+import { frameworkVersion } from './version';
 
 afterEach(() => {
   resetInstrumentation();
@@ -53,6 +54,7 @@ describe('otlpLogsRequest', () => {
             attributes: [
               { key: 'service.name', value: { stringValue: 'web' } },
               { key: 'service.version', value: { stringValue: '1.2.0' } },
+              { key: 'framework.version', value: { stringValue: frameworkVersion() } },
             ],
           },
           scopeLogs: [

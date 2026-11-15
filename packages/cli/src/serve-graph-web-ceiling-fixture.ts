@@ -258,5 +258,10 @@
  * new jobs files on `MIGRATE_CEILING` and `cli/src/retained-assets-warned.ts` (the undeclared-retain
  * warning once per build, not per boot), reached through `retained-assets-boot.ts`. No existing
  * module newly reached.
+ * raised 1696 → 1705, measured 1705 (2026-11-14, plan 101b sweep 1, metafile walk against
+ * origin/main): the same new modules as `SERVING_ROLE_CEILING`; `jobs/src/failure-streak.ts` left.
+ * raised 1705 → 1706, measured 1706 (2026-11-14, same sweep): `jobs/src/tick-streak.ts`, the one
+ * `jobs.<loop>.tick-failed` / `-recovered` streak the scheduler, worker and relay share, split out
+ * so `scheduler.ts` and `worker.ts` stay under the file ceiling.
  */
-export const WEB_ROLE_CEILING = 1696;
+export const WEB_ROLE_CEILING = 1706;

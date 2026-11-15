@@ -10,7 +10,6 @@ import {
   type Clock,
   finiteCount,
   isUltimateError,
-  NotImplementedError,
   type Page,
   pageOf,
   systemClock,
@@ -37,6 +36,7 @@ import {
   toBytes,
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
+import { refuseUnsupportedPut } from './driver-local-write';
 import { keyInTheWay } from './driver-memory-conflict';
 import { memoryPartStore } from './driver-memory-multipart';
 import { checksumMismatch, getTooLarge, keyConflict, objectNotFound, putFailed } from './errors';
@@ -204,15 +204,9 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
 
       async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
         const safe = assertSafeKey(key);
-        // The same refusal both shipped disks make: a `put()` that succeeds in a test and throws in
-        // production is a gap an app meets on the worst day.
-        if (putOptions?.serverSideEncryption !== undefined) {
-          throw new NotImplementedError({
-            cause:
-              'server-side encryption on the memory driver (it holds bytes in a Map) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule',
-            fix: 'put(key, body)',
-          });
-        }
+        // The local disk's refusal: neither stores encrypted bytes, and the memory disk stands in
+        // for the local one in tests.
+        refuseUnsupportedPut(DRIVER_NAME, putOptions);
         assertPutOptions(DRIVER_NAME, putOptions);
         assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
         const bytes = await toBytes(body, {
@@ -236,6 +230,7 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
       ): Promise<StorageObject> {
         const safe = assertSafeKey(key);
         const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+        refuseUnsupportedPut(DRIVER_NAME, streamOptions);
         refuseOverwrite(safe, 'overwrite');
         const chunks: Uint8Array[] = [];
         const limit = streamLimit(DRIVER_NAME, safe, maxBytes);

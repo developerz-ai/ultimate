@@ -45,12 +45,9 @@ export interface StorageObject extends StorageListEntry {
 }
 
 /**
- * Encryption at rest, per object. Declared so the gap is visible at the type level: an engineer
- * asked "can you prove which key encrypted this object?" must meet the answer at the call site,
- * not by reading the driver. NO driver honours it yet — `Bun.S3Client` exposes `acl`,
- * `storageClass` and `type` and nothing for `x-amz-server-side-encryption*`, and a POSIX file is
- * not encrypted at all — so both drivers refuse a `put()` carrying one (`X_NOT_IMPLEMENTED`) with
- * the out-of-band bucket-default command in the `fix`. A typed refusal beats a silent absence.
+ * Encryption at rest, per object. The s3 disk SENDS it, as `x-amz-server-side-encryption*` on the
+ * signed PUT (`driver-s3-sse.ts`); the local and memory disks store plain bytes and REFUSE it
+ * (`X_INVARIANT`, `refuseUnsupportedPut`) rather than record a claim the disk never honoured.
  */
 export interface ServerSideEncryption {
   readonly algorithm: 'AES256' | 'aws:kms';
@@ -69,7 +66,7 @@ export interface PutOptions extends ObjectLockOptions {
   readonly metadata?: Readonly<Record<string, string>> | undefined;
   /** base64 SHA-256 of the body. Supplied means verified: a mismatch is a rejected write. */
   readonly checksum?: string | undefined;
-  /** Refused by every shipped driver — see `ServerSideEncryption`. */
+  /** Sent by s3, refused by local and memory — see `ServerSideEncryption`. */
   readonly serverSideEncryption?: ServerSideEncryption | undefined;
 }
 

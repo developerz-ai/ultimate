@@ -6,7 +6,7 @@
 // already do — and say nothing about the two joins this driver adds: an `entity.row` subscriber hearing
 // a committed write, and `liveQueryDefinition` turning a declared query into something subscribable.
 
-import { afterEach, beforeEach, test as bunTest, describe, expect } from 'bun:test';
+import { afterEach, beforeAll, beforeEach, test as bunTest, describe, expect } from 'bun:test';
 import { type Actor, ctxOf, resetInstrumentation, runWithContext, userActor } from '@ultimat3/core';
 import { database, defaultDriver, entity, text, uuid } from '@ultimat3/entity';
 import { can, definePermissions, defineRoles } from '@ultimat3/policy';
@@ -34,8 +34,13 @@ const db = database({ notes });
 // A real permission and a real role, because the whole point of the driver is that the
 // per-subscriber gate runs — a stub policy would make every one of these tests pass with the gate
 // removed.
-definePermissions(['note:read']);
-defineRoles({ member: { grants: ['note:read'] } });
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['note:read']);
+  defineRoles({ member: { grants: ['note:read'] } });
+});
 
 /** Tenant-scoped and bounded, which `live: true` requires — an unbounded live query is a leak. */
 const liveNotes = query({

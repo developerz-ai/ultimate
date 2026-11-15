@@ -9,7 +9,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { GUARD_DIR, guardPaths } from './guards';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-import { SHIPPED_GUARD_NAMES, shippedGuardSource } from './templates/scaffold-guards';
+import { SHIPPED_GUARD_NAMES, shippedGuardSources } from './templates/scaffold-guards';
 
 export interface MissingGuard {
   readonly name: string;
@@ -72,8 +72,10 @@ export function differingShippedGuards(held: readonly HeldGuard[]): readonly Dif
   const differing: DifferingGuard[] = [];
   for (const { path, source } of held) {
     const name = path.slice(`${GUARD_DIR}/`.length).replace(/\.tsx?$/, '');
-    const template = shippedGuardSource(name);
-    if (template === undefined || sameText(source, template)) continue;
+    // An earlier form a shipped guard still accepts (`shippedGuardSources`) is current too.
+    const templates = shippedGuardSources(name);
+    if (templates.length === 0 || templates.some((template) => sameText(source, template)))
+      continue;
     differing.push({ name, refresh: `x g guard ${name} --force` });
   }
   return differing;

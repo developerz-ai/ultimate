@@ -212,6 +212,12 @@ export interface TableDescription {
 export interface TriggerRecord {
   readonly name: string;
   readonly install: readonly string[];
+  /**
+   * A counter trigger's recount under ITS OWN predicate (`generate-counter.ts`): what `down` runs
+   * after reinstalling this record, so the counts follow the trigger that keeps them. Snapshot-only;
+   * absent on every other trigger and on a counter recorded before 31.23 (that `down` recounts nothing).
+   */
+  readonly recount?: readonly string[] | undefined;
 }
 
 /**

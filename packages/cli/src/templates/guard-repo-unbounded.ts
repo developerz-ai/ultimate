@@ -1,17 +1,22 @@
-// The `repo-unbounded` guard `x new` ships, REPORT ONLY: a handle chain in a `repo.ts` ending in
-// `.all()` with no `.limit(n)` answers the handle's default page and drops the cursor to the rest —
-// neither every row nor a page the caller chose. Pairs with entity's `entity.all.truncated` event.
+// The `repo-unbounded` guard `x new` ships: a handle chain in a `repo.ts` ending in `.all()` with no
+// `.limit(n)` answers the handle's default page and drops the cursor to the rest — neither every
+// row nor a page the caller chose. Pairs with entity's `X_ENTITY_ALL_TRUNCATED` warning. A new app
+// gets it FAILING the gate; `'warning'` renders the report-only form apps scaffolded earlier hold.
 
 import { guardCode } from './guard';
 import { repoUnboundedTest } from './guard-repo-unbounded-test';
 import type { GeneratedFile } from './naming';
 
+/** How the emitted guard reports: failing `boundaries`, or listing on it (`severity: 'warning'`). */
+export type RepoUnboundedSeverity = 'error' | 'warning';
+
 /** Derived from the guard's name, never a literal: an `X_*` literal here is a FRAMEWORK code. */
 const NAME = 'repo-unbounded';
 const CODE = guardCode(NAME);
 
-const source =
-  (): string => `// repo-unbounded: a repo.ts read says how many rows it wants, never a bare \`.all()\`.
+const source = (
+  severity: RepoUnboundedSeverity,
+): string => `// repo-unbounded: a repo.ts read says how many rows it wants, never a bare \`.all()\`.
 // \`x verify\` discovers every file in \`guards/\` and runs its \`guard\` inside the \`boundaries\`
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
@@ -20,8 +25,11 @@ const source =
 // only from a missing row. Read: a \`db.<table>…all()\` or \`tx.<table>…all()\` chain with no
 // \`.limit(\`, \`.page(\`, \`.keyset(\` or \`.one(\` in it, in \`{apps,packages}/**/repo{,-*}.ts\`, never a
 // test. Admitted: a \`// why:\` on the chain's first line or the line above it, naming the bound.
-// REPORT ONLY (\`severity: 'warning'\`): its findings list on \`boundaries\`, never fail it.
-
+${
+  severity === 'warning'
+    ? "// REPORT ONLY (`severity: 'warning'`): its findings list on `boundaries`, never fail it.\n"
+    : ''
+}
 import type { Finding, Guard } from '@ultimat3/cli';
 
 /** The app owns the codes its own conventions raise — this one is named for the guard. */
@@ -179,9 +187,11 @@ export function unboundedReads(files: readonly RepoFile[]): readonly Finding[] {
 
 export const guard: Guard = {
   summary: 'a repo.ts read says how many rows it wants: no .all() without a .limit(n)',
-  // REPORT ONLY: findings are warnings on the \`boundaries\` step. Delete this line to enforce it.
-  severity: 'warning',
-  async check(_root, sources) {
+${
+  severity === 'warning'
+    ? "  // REPORT ONLY: findings are warnings on the `boundaries` step. Delete this line to enforce it.\n  severity: 'warning',\n"
+    : ''
+}  async check(_root, sources) {
     // The run's ONE read of these files: \`repo-raw-sql\` asks for the same glob, so they share it.
     const repos = await sources.files('{apps,packages}/**/repo{,-*}.ts');
     const read = repos.filter((file) => !file.path.endsWith('.test.ts'));
@@ -190,8 +200,14 @@ export const guard: Guard = {
 };
 `;
 
-/** `guards/repo-unbounded.ts` and its test. No index, no registry — the directory registers it. */
-export const repoUnboundedGuardFiles = (): readonly GeneratedFile[] => [
-  { path: `guards/${NAME}.ts`, contents: source() },
+/**
+ * `guards/repo-unbounded.ts` and its test. No index, no registry — the directory registers it.
+ * `'error'` is what `x new` and `x g guard` write; `'warning'` is the form shipped before, which an
+ * existing app keeps until it deletes the severity line itself.
+ */
+export const repoUnboundedGuardFiles = (
+  severity: RepoUnboundedSeverity = 'error',
+): readonly GeneratedFile[] => [
+  { path: `guards/${NAME}.ts`, contents: source(severity) },
   { path: `guards/${NAME}.test.ts`, contents: repoUnboundedTest(CODE) },
 ];

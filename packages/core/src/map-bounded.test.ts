@@ -160,4 +160,116 @@ describe('mapBounded', () => {
     expect(caught.cause).toContain('mapBounded width');
     expect(calls).toBe(0);
   });
+
+  describe("settle: 'all'", () => {
+    test('answers every outcome in input order; a rejection pulls the next item', async () => {
+      const boom = new TypeError('item 1 failed');
+      const gates = Array.from({ length: 4 }, () => deferred<string>());
+      const started: number[] = [];
+      const run = mapBounded(
+        gates,
+        (gate, index) => {
+          started.push(index);
+          return gate.promise;
+        },
+        { width: 2, settle: 'all' },
+      );
+      await settle();
+      expect(started).toEqual([0, 1]);
+      gates[1]?.reject(boom);
+      await settle();
+      expect(started).toEqual([0, 1, 2]);
+      gates[3]?.resolve('v3');
+      gates[2]?.resolve('v2');
+      await settle();
+      gates[0]?.resolve('v0');
+      expect(await run).toEqual([
+        { status: 'fulfilled', value: 'v0' },
+        { status: 'rejected', reason: boom },
+        { status: 'fulfilled', value: 'v2' },
+        { status: 'fulfilled', value: 'v3' },
+      ]);
+    });
+
+    test('honours width while failures free slots, and never aborts a sibling', async () => {
+      let inFlight = 0;
+      let peak = 0;
+      const signals: AbortSignal[] = [];
+      const failed = new RangeError('a multiple of three, or four');
+      const outcomes = await mapBounded(
+        Array.from({ length: 9 }, (_, index) => index),
+        async (item, _index, signal) => {
+          signals.push(signal);
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await settle();
+          inFlight -= 1;
+          if (item % 3 === 0 || item === 4) throw failed;
+          return item * 10;
+        },
+        { width: 3, settle: 'all' },
+      );
+      expect(peak).toBe(3);
+      expect(outcomes.map((outcome) => outcome.status)).toEqual([
+        'rejected',
+        'fulfilled',
+        'fulfilled',
+        'rejected',
+        'rejected',
+        'fulfilled',
+        'rejected',
+        'fulfilled',
+        'fulfilled',
+      ]);
+      expect(signals.some((signal) => signal.aborted)).toBe(false);
+    });
+
+    test('a synchronous throw is recorded as that item, not an escape', async () => {
+      const boom = new RangeError('sync');
+      const outcomes = await mapBounded(
+        [1, 2],
+        (item) => {
+          if (item === 1) throw boom;
+          return item;
+        },
+        { width: 1, settle: 'all' },
+      );
+      expect(outcomes).toEqual([
+        { status: 'rejected', reason: boom },
+        { status: 'fulfilled', value: 2 },
+      ]);
+    });
+
+    test("the caller's signal still aborts everything, as X_ABORTED", async () => {
+      const caller = new AbortController();
+      const started: number[] = [];
+      const gates = Array.from({ length: 4 }, () => deferred<number>());
+      let inner: AbortSignal | undefined;
+      const run = mapBounded(
+        gates,
+        (gate, index, signal) => {
+          started.push(index);
+          inner = signal;
+          return gate.promise;
+        },
+        { width: 1, signal: caller.signal, settle: 'all' },
+      );
+      gates[0]?.reject(new TypeError('first failed'));
+      await settle();
+      expect(started).toEqual([0, 1]);
+      caller.abort(new Error('deadline'));
+      const caught = await rejection(run);
+      if (!isUltimateError(caught)) return expect.unreachable('the abort was not coded');
+      expect(caught.code).toBe('X_ABORTED');
+      expect(caught.cause).toContain('1 of 4');
+      expect(inner?.aborted).toBe(true);
+      gates[1]?.resolve(1);
+      await settle();
+      expect(started).toEqual([0, 1]);
+    });
+
+    test('an empty list answers []', async () => {
+      expect(await mapBounded([], () => 1, { width: 2, settle: 'all' })).toEqual([]);
+    });
+  });
 });

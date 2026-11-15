@@ -2,15 +2,10 @@
 // framework code, a 4xx refusal addressed to the caller, keys an app's declaration could also
 // carry, and none whose name says secret. What `toProblem` does with them is the second describe.
 import { afterEach, describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
+import { metaKeyRefusal, UltimateError } from '@ultimat3/core';
 import { toProblem } from './error-facts';
 import { ERROR_STATUS } from './error-map';
-import {
-  metaKeyRefusal,
-  problemMetaKeysFor,
-  registerProblemMeta,
-  resetProblemMeta,
-} from './problem-meta';
+import { problemMetaKeysFor, registerProblemMeta, resetProblemMeta } from './problem-meta';
 import { FRAMEWORK_PROBLEM_META } from './problem-meta-framework';
 
 /** A name that says what it holds is not a caller's: credentials, internals, raw input. */

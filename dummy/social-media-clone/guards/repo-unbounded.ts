@@ -7,7 +7,6 @@
 // only from a missing row. Read: a `db.<table>…all()` or `tx.<table>…all()` chain with no
 // `.limit(`, `.page(`, `.keyset(` or `.one(` in it, in `{apps,packages}/**/repo{,-*}.ts`, never a
 // test. Admitted: a `// why:` on the chain's first line or the line above it, naming the bound.
-// REPORT ONLY (`severity: 'warning'`): its findings list on `boundaries`, never fail it.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -166,8 +165,6 @@ export function unboundedReads(files: readonly RepoFile[]): readonly Finding[] {
 
 export const guard: Guard = {
   summary: 'a repo.ts read says how many rows it wants: no .all() without a .limit(n)',
-  // REPORT ONLY: findings are warnings on the `boundaries` step. Delete this line to enforce it.
-  severity: 'warning',
   async check(_root, sources) {
     // The run's ONE read of these files: `repo-raw-sql` asks for the same glob, so they share it.
     const repos = await sources.files('{apps,packages}/**/repo{,-*}.ts');

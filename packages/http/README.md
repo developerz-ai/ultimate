@@ -602,6 +602,11 @@ that wants a key on the wire declares it, per code, beside the status — and bo
 are needed, because a code with no status is an unclassified 5xx whose `meta` is blanked with
 its `cause`:
 
+An app code declared with `defineError` (`@ultimat3/core/page`) takes both in its one call —
+`status: 409, problemMeta: ['sessionId', 'title', 'state']`, `publicCause: true` — written to the
+same table. `registerProblemMeta` is the lower-level call, for a code whose class is not
+`defineError`'s:
+
 ```ts
 import { registerErrorStatus, registerProblemMeta } from '@ultimat3/http';
 

@@ -297,5 +297,12 @@
  * raised 1494 → 1496, measured 1496 (2026-11-14, plan 101b sweep 0, the test's own walk): the
  * same two new jobs files as `MIGRATE_CEILING` — `execute-report.ts` and `failure-streak.ts`. No
  * existing module newly reached.
+ * raised 1496 → 1507, measured 1507 (2026-11-14, plan 101b sweep 1, metafile walk against
+ * origin/main): the nine on `MIGRATE_CEILING`, plus `cli/src/runtime-boot-warnings.ts` (installs
+ * the app's boot warnings for the selected roles) and `query/src/scope-tree.ts` (a scope tree as a
+ * query filter); `jobs/src/failure-streak.ts` left.
+ * raised 1507 → 1508, measured 1508 (2026-11-14, same sweep): `jobs/src/tick-streak.ts`, the one
+ * `jobs.<loop>.tick-failed` / `-recovered` streak the scheduler, worker and relay share, split out
+ * so `scheduler.ts` and `worker.ts` stay under the file ceiling.
  */
-export const SERVING_ROLE_CEILING = 1496;
+export const SERVING_ROLE_CEILING = 1508;

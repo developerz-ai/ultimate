@@ -6,6 +6,7 @@
 // A column carries its TypeScript type in `$parse`, which is what lets the row type be derived
 // from the column set instead of being written a second time as a hand-maintained schema.
 
+import type { Expr } from './expr';
 import type { PersonalDataKind } from './personal-data-kind';
 
 /**
@@ -69,8 +70,21 @@ export interface ReferenceOptions {
    * on the key, because the child already names its parent — a thunk on the parent naming the child
    * would make the two declarations each other's type and neither could be inferred.
    */
-  readonly countedIn?: () => AnyColumn;
+  readonly countedIn?: CountedIn;
 }
+
+/**
+ * What `countedIn` names: the parent integer alone, or with a `where` — a predicate over THIS
+ * (child) row, in the invariant language, so only the rows it holds over are counted. A thunk like
+ * `to`, resolved once both modules evaluated: `where: (): Expr => whereColumns(likes).kind.eq('up')` —
+ * the `: Expr` is required, or TypeScript reads the entity naming itself in its own initializer
+ * as a cycle (TS7022).
+ * Compiled once into the trigger's condition and the recount's truth; the memory driver evaluates
+ * the same `Expr`. A NULL operand is not counted, as a SQL `where` decides it.
+ */
+export type CountedIn =
+  | (() => AnyColumn)
+  | { readonly to: () => AnyColumn; readonly where?: (() => Expr) | undefined };
 
 /**
  * The single value a money column puts on the row. Two physical columns back it.
@@ -188,7 +202,7 @@ export interface ColumnMeta {
    * `references(() => posts.id, { countedIn: () => posts.likeCount })`: the parent integer the
    * database keeps equal to the number of rows pointing there. `counter.ts` reads it.
    */
-  readonly countedIn?: () => AnyColumn;
+  readonly countedIn?: CountedIn;
   /**
    * `json(schema)`'s schema, beside the `$parse` that validates through it, so a reader that must
    * PRODUCE a storable value (`@ultimat3/testing`'s seed values) draws from the declaration rather

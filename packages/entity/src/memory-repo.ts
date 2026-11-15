@@ -32,6 +32,7 @@ import { afterCursor } from './memory-seek';
 import { StoredRows, uniqueIndex, uniqueViolation } from './memory-unique';
 import { judgeUpdate, mergedRow } from './memory-update';
 import { memoryUpsertAll } from './memory-upsert';
+import { registerMemoryScan, resolveMemoryVias } from './memory-via';
 import { assertPageBytes } from './page-bytes';
 import { idPlan, readPlan, singleKeyOf } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions } from './repo';
@@ -78,6 +79,7 @@ export const memoryRepo = <Row>(
   // Every unique key kept as rows move, so a single write is judged by its own keys, never a scan.
   const rows = new StoredRows<Row>(entity);
   for (const row of seed) rows.set(storeKey(row), row);
+  registerMemoryScan(tables, entity.$name, () => rows.values());
   tables.set(entity.$name, {
     entity: entity as EntityCore,
     // By the primary key when that is what is asked, which is nearly every reference.
@@ -126,12 +128,16 @@ export const memoryRepo = <Row>(
       args.includeDeleted === true ||
       field(row, SOFT_DELETE_COLUMN) === null ||
       field(row, SOFT_DELETE_COLUMN) === undefined;
+  // A `via` hop is answered from the driver's other tables first (`memory-via.ts`), once per plan.
   const matchesPlan = (plan: QueryPlan, row: Row): boolean =>
-    plan.where.every((predicate) => matchesPredicate(entity, row, predicate));
+    resolveMemoryVias(entity, plan, tables).where.every((predicate) =>
+      matchesPredicate(entity, row, predicate),
+    );
 
   const rowsOf = (plan: QueryPlan, args: FindManyArgs): Row[] => {
+    const resolved = resolveMemoryVias(entity, plan, tables);
     return [...rows.values()]
-      .filter((row) => matchesPlan(plan, row))
+      .filter((row) => matchesPlan(resolved, row))
       .filter(visibleTo(args))
       .sort((left, right) => {
         for (const entry of plan.orderBy) {
@@ -219,11 +225,7 @@ export const memoryRepo = <Row>(
       entity.$softDelete &&
       field(current, SOFT_DELETE_COLUMN) !== null &&
       field(current, SOFT_DELETE_COLUMN) !== undefined;
-    if (
-      current === undefined ||
-      hidden ||
-      !plan.where.every((predicate) => matchesPredicate(entity, current, predicate))
-    ) {
+    if (current === undefined || hidden || !matchesPlan(plan, current)) {
       throw notFound(entity.$name, id);
     }
     return current;

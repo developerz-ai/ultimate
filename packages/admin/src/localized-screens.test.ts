@@ -38,11 +38,15 @@ const parts = entity('admin_locale_parts', {
   columns: { id: uuid().primaryKey(), title: text({ max: 80 }), stock: integer() },
 });
 const db = database({ parts }, { driver: memoryDriver() });
-const admin = defineAdmin({ entities: [parts], db });
+// Built in `beforeAll`, never at module scope: `defineAdmin()` declares permissions, and the
+// registry guard keeps what a file's MODULE scope declared for every later file on a shared worker
+// — strict checking switched on for files that declare none. Here it is this file's own.
+let admin: ReturnType<typeof defineAdmin>;
 const BASE = '/admin/admin_locale_parts';
 let rowId = '';
 
 beforeAll(async () => {
+  admin = defineAdmin({ entities: [parts], db });
   configureLocales({ supported: ['en', 'es'], fallback: 'en' });
   installJobDriver(memoryJobDriver());
   defineRoles({

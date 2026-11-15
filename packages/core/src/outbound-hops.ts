@@ -1,13 +1,14 @@
-// Single responsibility: one attempt's hops — dial the URL as `dial` says (screened and pinned, or
-// as named), and under `redirect: 'follow'` take each 3xx by hand, re-screening the next address
-// and dropping credentials at an origin change. The platform's own `follow` dials a hop itself,
+// Single responsibility: one attempt's hops — dial as `dial` says (screened and pinned, or named),
+// under `redirect: 'follow'` take each 3xx by hand, re-screening and dropping credentials at an
+// origin change, and choose a proxy per hop AFTER the screen. The platform's own `follow` dials
 // unscreened: measured, a default redirect from a screened name reached loopback.
 
 import type { DialResolve } from './outbound-dial';
 import { publicUrlRefusal, screenDial } from './outbound-dial';
 import type { OutboundSite } from './outbound-errors';
 import { outboundHostBlocked, outboundRedirected, outboundUnreachable } from './outbound-errors';
-import type { OutboundBody, OutboundFetch, OutboundInit } from './outbound-types';
+import { proxyFor } from './outbound-proxy';
+import type { OutboundBody, OutboundFetch, OutboundInit, OutboundProxy } from './outbound-types';
 import { OUTBOUND_MAX_REDIRECTS } from './outbound-types';
 
 export interface HopCall {
@@ -22,6 +23,7 @@ export interface HopCall {
   readonly local: boolean;
   readonly fetch: OutboundFetch;
   readonly resolve: DialResolve | undefined;
+  readonly proxy: OutboundProxy | undefined;
 }
 
 /**
@@ -90,6 +92,11 @@ export async function sendHops(call: HopCall, signal: AbortSignal): Promise<Resp
   let headers: Record<string, string> = { ...call.headers };
   for (let hop = 0; ; hop += 1) {
     const target = await targetFor(call, url, hop);
+    // After the screen, by the NAMED url: a refused host never reaches the app's resolver, and the
+    // proxy is handed the approved address (`target.url`), so it resolves nothing itself. No
+    // proxy, no await: a call without one keeps the microtask order its timer tests pin.
+    const proxy =
+      call.proxy === undefined ? undefined : await proxyFor(call.site, call.proxy, url, signal);
     const init: OutboundInit = {
       method,
       // Last: a pinned request is reached AS the name that was screened.
@@ -104,6 +111,7 @@ export async function sendHops(call: HopCall, signal: AbortSignal): Promise<Resp
             },
       ...(body === undefined ? {} : { body }),
       ...(target.serverName === undefined ? {} : { tls: { serverName: target.serverName } }),
+      ...(proxy === undefined ? {} : { proxy }),
       signal,
       redirect: 'manual',
     };

@@ -21,6 +21,11 @@ export const DRIVER_CAPABILITIES = [
   'series',
   'upsert',
   'matches',
+  // A predicate TREE (`predicate-node.ts`) in `plan.where`: an `or` group, a `via` hop. A store
+  // that declares `via` answers `col in (select … )` natively — the hop's inner where already
+  // carries the target's tenant; nothing in process can judge one row by row.
+  'predicate:or',
+  'predicate:via',
   'aggregate:countBy',
   'aggregate:sum',
   'aggregate:avg',

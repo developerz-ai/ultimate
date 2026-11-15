@@ -1,7 +1,7 @@
 // An input-only `defineExercise` entry (`{ input }`, no `actor`): it typechecks, the pass keeps
 // the actor it would have picked, and the input is still bound — and awaited as that actor.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import type { NamedActor } from '@ultimat3/policy';
 import { can, definePermissions, testActor } from '@ultimat3/policy';
 import type { ExerciseOverride } from './define-exercise';
@@ -9,7 +9,12 @@ import { chooseActor, exerciseActorId } from './exercise-actor';
 import { isAsyncInput, overrideInput } from './exercise-override-input';
 import { testName } from './test-types';
 
-definePermissions(['exn:write']);
+// Declared in `beforeAll`, never at module scope: the registry guard keeps what a file's MODULE
+// scope declared for every later file on a shared worker; here it is this file's own, undone at
+// its end.
+beforeAll(() => {
+  definePermissions(['exn:write']);
+});
 
 const grants = (tenant: string): readonly NamedActor[] => [
   { name: 'anonymous', actor: null },

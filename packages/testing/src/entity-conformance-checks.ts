@@ -17,6 +17,7 @@ import { MEASURE_CHECKS } from './entity-conformance-measures';
 import { PAGE_BYTE_CHECKS } from './entity-conformance-page-bytes';
 import { READ_CHECKS } from './entity-conformance-reads';
 import { TENANCY_CHECKS } from './entity-conformance-tenancy';
+import { TREE_CHECKS } from './entity-conformance-tree';
 import { UNRETURNED_CHECKS } from './entity-conformance-unreturned';
 import { UPDATE_MANY_CHECKS } from './entity-conformance-update-many';
 import { VALUE_CHECKS } from './entity-conformance-values';
@@ -38,6 +39,7 @@ export const ENTITY_DRIVER_CHECKS: readonly EntityDriverCheck[] = [
   ...MEASURE_CHECKS,
   ...CONTAINS_CHECKS,
   ...TENANCY_CHECKS,
+  ...TREE_CHECKS,
   ...BATCH_CHECKS,
   ...LATEST_BY_CHECKS,
   ...LOCK_CHECKS,

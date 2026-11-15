@@ -218,7 +218,9 @@ export const config = defineRoute({
   // — why: the feed island +142 B (96,064 B), `mountOver` from `@ultimat3/render/client`: a render
   // that throws puts the server's loading shell back instead of leaving a blank box. Raised
   // 209.7kb → 209.8kb.
-  budget: { js: '209.8kb' },
+  // measured: 214926 B (2026-11-14, plan 101 sweep 1; x build --target static, against 214,767
+  // at origin/main) — why: the feed island +159 B (96,161 B), two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`). Raised 209.8kb → 209.9kb.
+  budget: { js: '209.9kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

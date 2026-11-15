@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { METRICS_PATH } from '@ultimat3/core';
+import { frameworkVersion, METRICS_PATH } from '@ultimat3/core';
 // The package specifier, because `cli -> testing` is now a DECLARED sideways edge
 // (scripts/lib/tiers.ts). It used to be `../../testing/src/sealed-network` with a comment saying
 // the checker refused the real one — but a relative path is the same import wearing a costume, and
@@ -224,6 +224,8 @@ describe('the scaffolded production entry is a runnable artifact', () => {
         expect(started).not.toContain('0.0.0.0');
         // Where the bus is, on the same line: `nats(connecting)` here is a served pod with NATS down.
         expect(started).toContain('"bus":"in-process"');
+        // Which framework release booted, on the line an operator greps first.
+        expect(started).toContain(`"frameworkVersion":"${frameworkVersion()}"`);
         allowHost(`127.0.0.1:${port}`);
         expect((await fetch(`http://127.0.0.1:${port}/readyz`)).status).toBe(200);
         child.kill('SIGTERM');

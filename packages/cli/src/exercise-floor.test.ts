@@ -41,6 +41,18 @@ describe('unit · unprovenTally', () => {
     expect(tally.figure).toBe(0.75);
   });
 
+  test('a global or public tenant verdict is a proof taken, never counted unproven', () => {
+    const tally = unprovenTally([
+      reached('plans', {
+        tenant: { verdict: 'global', reason: 'plans: the catalog every org reads' },
+      }),
+      reached('blog', {
+        tenant: { verdict: 'public', reason: 'post:read-public admits anonymous' },
+      }),
+    ]);
+    expect(tally).toEqual({ reached: 2, unproven: [], figure: 0 });
+  });
+
   test('the figure rounds UP, so a written figure holds the run it came from', () => {
     const tally = unprovenTally([unproven('a'), reached('b'), reached('c')]);
     expect(tally.figure).toBe(0.3334);

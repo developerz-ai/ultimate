@@ -73,7 +73,16 @@ export {
   roleDefinitions,
   rolesGranting,
 } from './roles';
-export type { PolicyScope, ScopeColumn, ScopeCondition, ScopeOperator } from './scope';
+export type {
+  PolicyScope,
+  ScopeAnd,
+  ScopeColumn,
+  ScopeCondition,
+  ScopeNode,
+  ScopeOperator,
+  ScopeOr,
+  ScopeVia,
+} from './scope';
 export { policyScope, scoped } from './scope';
 export type {
   DenialStatus,

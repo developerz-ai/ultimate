@@ -7,6 +7,8 @@ export type { AdapterSlot } from './adapter-slot';
 export { adapterSlot } from './adapter-slot';
 export type { AuditRecord, AuditSink } from './audit';
 export { installAuditSink, resetAuditSink } from './audit';
+/** The boot's context for `bootWarning`: its roles and per-build store. cli's `startRoles` alone. */
+export { installBootWarnings } from './boot-warning';
 export type { Clock, FrozenClock, SleepClock } from './clock';
 
 export type { ErrorReport, ErrorReporter } from './error-reporter';

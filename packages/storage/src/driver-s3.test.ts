@@ -443,31 +443,17 @@ describe('an explicitly null s3 bound is refused, never defaulted', () => {
 // the prefix and the bucket are screened where they enter the `aws s3api` command a fix: hands
 // the reader to paste.
 describe('a refusal fix never splices a key, a prefix or a bucket into the shell', () => {
-  // The KMS key id is the caller's own `put()` option, and it rides inside the single-quoted JSON of
-  // `aws s3api put-bucket-encryption`. Only a `'` is live there; JSON needs `"` and `\\` escaped.
-  const sseFix = async (kmsKeyId: string | undefined): Promise<string> => {
+  // The KMS key id is the caller's own `put()` option. It travels as a header now, never inside a
+  // command: a refusal about it names it in the cause (rendered) and keeps the fix a placeholder.
+  test('a refused KMS key id never reaches the fix', async () => {
     const driver = s3Driver({ bucket: 'b', client: new FakeS3Client() });
     const refused = (await catchError(() =>
       driver.put('org/org-1/a.txt', bytesOf('c'), {
-        serverSideEncryption: { algorithm: 'aws:kms', kmsKeyId },
+        serverSideEncryption: { algorithm: 'AES256', kmsKeyId: "x' $(touch pwned) '" },
       }),
     )) as StorageError;
-    return refused.fix;
-  };
-
-  test('a KMS key id carrying a quote or $(…) never leaves its JSON string', async () => {
-    const fix = await sseFix("arn:aws:kms:eu-west-1:1:key/x' $(touch pwned) '");
-    expect(fix).not.toContain('$(touch');
-    expect(fix).toContain('"KMSMasterKeyID":"<key-arn>"');
-    expect(fix.split("'").length).toBe(3);
-  });
-
-  test('a JSON-hostile key id is escaped, and an ordinary one travels verbatim', async () => {
-    expect(await sseFix('arn:aws:kms:eu-west-1:1:key/abc')).toContain(
-      '"KMSMasterKeyID":"arn:aws:kms:eu-west-1:1:key/abc"',
-    );
-    expect(await sseFix('k"ey')).toContain(String.raw`"KMSMasterKeyID":"k\"ey"`);
-    expect(await sseFix(undefined)).toContain('"KMSMasterKeyID":"<key-arn>"');
+    expect(refused).toBeUltimateError('X_INVARIANT');
+    expect(refused.fix).not.toContain('$(touch');
   });
 
   test('a refused delete screens the key', async () => {

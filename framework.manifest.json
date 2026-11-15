@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "11609885cd1a01a01539bf72f4be8dfae46c93277e964e599fcb0ab150df9fab",
+  "buildId": "b7c41f4c56a62851a610b524daa01b9a34d7149c5a5de471171034baa6c7444b",
   "tiers": {
     "0": [
       "core",
@@ -1935,6 +1935,11 @@
       "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
+      "code": "X_ENTITY_ALL_TRUNCATED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
       "code": "X_ENTITY_APPEND_ONLY",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
@@ -1961,6 +1966,11 @@
     },
     {
       "code": "X_ENTITY_PARTITION_INVALID",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_PREDICATE_NODE_INVALID",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },
@@ -3885,6 +3895,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_OUTBOUND_PROXY_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
       "code": "X_OUTBOUND_REDIRECTED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -4503,6 +4518,11 @@
       "code": "X_RECORD_REJECTED",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_REDACT_PATTERN_UNSAFE",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_REFERENCE_APP_NO_FLOOR",

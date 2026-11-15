@@ -210,7 +210,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
       async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
         const safe = safeKey(key);
-        refuseUnsupportedPut(putOptions);
+        refuseUnsupportedPut(DRIVER_NAME, putOptions);
         assertPutOptions(DRIVER_NAME, putOptions);
         assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
         const bytes = await toBytes(body, {
@@ -255,6 +255,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       ): Promise<StorageObject> {
         const safe = safeKey(key);
         const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+        refuseUnsupportedPut(DRIVER_NAME, streamOptions);
         const input = { root, key: safe, disk: registered, body, maxBytes, clock };
         return putLocalStream(input, streamOptions, (then) =>
           oneAtATime(safe, async () => {

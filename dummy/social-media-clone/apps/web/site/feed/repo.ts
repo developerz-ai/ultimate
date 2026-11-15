@@ -3,6 +3,7 @@
 // is X_BOUNDARY_ROUTE_TO_DB.
 
 import { db, type Post } from '@social-media-clone/db';
+import type { PredicateNode } from '@ultimat3/entity';
 
 /**
  * What the feed renders — DERIVED from the entity, never re-declared. Writing the fields out by
@@ -13,20 +14,22 @@ import { db, type Post } from '@social-media-clone/db';
 export type FeedPost = Post;
 
 /**
- * One page of the feed, newest first.
+ * One page of the feed, newest first: exactly the rows `visible` admits — predicate TREES the
+ * service builds from `canSeePost` (`andWhereNode`), so a page of `limit` is `limit` rows however
+ * much of the table is hidden, and ONE statement whatever the tree holds. The service still runs the
+ * rule over every row; this file only asks.
  *
  * Ordered by `(publishedAt desc, id)` and bounded, and the tail key is not decoration: a live
  * matcher decides a row's position from the sort keys alone, so `publishedAt` on its own is a
  * partial order and two posts written in the same millisecond can swap between evaluations —
  * which makes a bounded page silently drop or repeat one at its boundary.
- *
- * Visibility is NOT filtered here. `canSeePost` decides it per row, in `service.ts`, because the
- * answer depends on the viewer's friend and block sets rather than on anything in the row. A
- * `where` clause here would be a second, weaker copy of that rule.
  */
-export const feedPage = (limit: number): Promise<readonly FeedPost[]> =>
-  db.posts
-    .where({ deletedAt: null })
+export const feedPage = (
+  limit: number,
+  visible: readonly PredicateNode<FeedPost>[],
+): Promise<readonly FeedPost[]> =>
+  visible
+    .reduce((chain, node) => chain.andWhereNode(node), db.posts.where({ deletedAt: null }))
     .orderBy('publishedAt', 'desc')
     .orderBy('id')
     .limit(limit)
@@ -34,7 +37,7 @@ export const feedPage = (limit: number): Promise<readonly FeedPost[]> =>
 
 export const byId = (id: string): Promise<FeedPost | null> => db.posts.where({ id }).one();
 
-/** Ceiling on one feed's author lookup. A page over-fetches 3x, so this is far above any page. */
+/** Ceiling on one feed's author lookup: one author per row at most, so far above any page. */
 const AUTHORS_MAX = 200;
 
 /**

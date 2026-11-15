@@ -59,6 +59,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | an X.509 certificate's public key | `der.ts` (`x509Spki(der)`) | the ONE DER walk to the `subjectPublicKeyInfo` Web Crypto imports: auth's SAML key and mail's SNS key both read it; trailing bytes refused |
 | the ONE keyed hash | `hmac.ts` (`hmac(alg, key, data, encoding?)`) | `bun run keyed-hasher` (`X_KEYED_HASHER`) † |
 | this process's job | `roles.ts` (`ROLE`) | |
+| a role-scoped boot line | `boot-warning.ts` (`bootWarning`) | `once: 'build'` asks the store the boot installs (`installBootWarnings`, `./adapter`); none installed is once per process |
 | `allowHosts` | `host-rules.ts` | a wildcard admits no inward literal, no `localhost`/`*.localhost`; exact rules do |
 | which surface a route lives on, how it renders, caches offline and hydrates | `route-vocabulary.ts` (`SURFACES`, `RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it; `@ultimat3/render` re-exports the `Surface` type only, never `SURFACES` (`X_HELPER_COPY`) |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments |
@@ -74,7 +75,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | N callers on one key | `single-flight.ts` | identity-checked eviction, optional injected deadline, optional injected `signal`: a live joiner re-leads after its leader's abort. Reads no context |
 | a lazy boot or load, once per process | `retry-memo.ts` (`retryMemo`) | a rejection is never the memo's answer; never `x ??= start()` for a promise |
 | how many at once | `flight-gate.ts` | hand-over on release, refusal past `maxQueued`, injectable `overflow:` refusal |
-| a fan-out with a bound | `map-bounded.ts` (`mapBounded`) | `width` REQUIRED, no default; input order; first rejection aborts the rest via the signal. Never a hand-rolled worker pool |
+| a fan-out with a bound | `map-bounded.ts` (`mapBounded`) | `width` REQUIRED, no default; input order; first rejection aborts the rest via the signal, or `settle: 'all'` for every outcome. Never a hand-rolled worker pool |
 | whether an answer still applies | `generation-fence.ts` | `X_SUPERSEDED` / `isSuperseded` |
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
 | how long this request has left | `request-budget.ts` (`Ctx.deadlineAt`) | http's `startDeadline` writes the instant, `traceHeaders()` the header † |
@@ -88,8 +89,10 @@ top-level `UltimateError` use in `error-codes.ts`.
 | the audit record + one sink | `audit.ts` | `action` + `query` read `getAuditSink()`; the boot installs (`installAuditSink`, `./adapter`); `AUDIT_RECORD_FIELDS` pins both |
 | gate shapes | `gate-shapes.ts` | shared by `action` and `query`: the audit outcome, the rate-limit subject/scope/limit. One copy, never one per primitive |
 | is this `unknown` a keyed record? | `json-object.ts` (`isJsonObject`) | narrows a shape; does not certify provenance |
-| may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
+| may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. written by `defineError({ publicCause })` and http's `registerProblemMeta` — `registerPublicCause` is never an app's door |
+| which `meta` keys a document carries | `problem-meta-declared.ts` | the app table + `metaKeyRefusal`; on `./page` through `defineError` |
 | is this field a credential? | `logger-redact.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it; verdict memoised per key, 4,096, cleared by `redactKeys` |
+| is this VALUE a credential? | `redact-values.ts` (`redactedValue`) | the app's `redactValues()` matchers, screened at registration (`X_REDACT_PATTERN_UNSAFE`); `serialise` and `captureValue` apply it to every string leaf, the logger to `msg`, Sentry to the exception value, a span to its exception event and status. Ships no pattern |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one, greppable, way out |
 | an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` | refuse a non-tag (`X_LOCALE_INVALID`), key canonically, bound the cache — one file † |
 | the text direction of a locale | `locale-direction.ts` (`directionOf`, `isRtl`, `Direction`) | import from here, never `@ultimat3/i18n`; here so `@ultimat3/ui` skips the i18n barrel |

@@ -103,13 +103,14 @@ export type {
 export { INSTRUMENT_EVENTS } from '../instrument-events';
 export { SEMCONV, SEMCONV_METRICS, SEMCONV_VALUES } from '../instrument-semconv';
 export { callerStack, captureStatementStacks, resetStatementStacks } from '../instrument-stacks';
-export type { LogFields, Logger, LoggerOptions, LogLevel } from '../logger';
+export type { LogFields, Logger, LoggerOptions, LogLevel, RedactValueMatcher } from '../logger';
 export {
   isRedactedKey,
   LOG_LEVELS,
   logger,
   REDACTED,
   redactKeys,
+  redactValues,
   setLoggerContextFields,
   setLogStream,
   structuredLogger,
@@ -174,6 +175,7 @@ export type { OtlpMetricExporter, OtlpMetricExporterOptions } from '../otlp-metr
 export { otlpMetricExporter, otlpMetricsRequest } from '../otlp-metric-exporter';
 export type { OtlpSpanExporter, OtlpSpanExporterOptions } from '../otlp-span-exporter';
 export { otlpSpanExporter, otlpTraceRequest } from '../otlp-span-exporter';
+export { RedactPatternUnsafeError } from '../redact-values';
 export type { RequestSample } from '../runtime-metrics';
 export {
   connections,

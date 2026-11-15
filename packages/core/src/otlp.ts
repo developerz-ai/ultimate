@@ -8,6 +8,7 @@ import { renderFixShellArg } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { otlpEndpointLabel } from './otlp-post';
 import type { AttributeValue, SpanResource } from './telemetry';
+import { frameworkVersion } from './version';
 
 export class OtlpEndpointInvalidError extends UltimateError {
   static readonly code = 'X_OTLP_ENDPOINT_INVALID';
@@ -274,6 +275,9 @@ export function otlpResource(resource: SpanResource): {
     attributes: otlpAttributes({
       'service.name': resource.serviceName,
       'service.version': resource.serviceVersion,
+      // Which framework release emitted the signal. Mapped to Prometheus it is `target_info`'s
+      // `framework_version` label (`metrics-text.ts`): one fact, the same name on every signal.
+      'framework.version': frameworkVersion(),
     }),
   };
 }

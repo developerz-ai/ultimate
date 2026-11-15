@@ -302,8 +302,17 @@
  * `jobs/src/failure-streak.ts` (one line opens a polling loop's failure streak, one closes it),
  * both reached through `execute.ts`/`scheduler.ts` on the jobs barrel. Two new files; no existing
  * module newly reached.
+ * raised 954 → 962, measured 962 (2026-11-14, plan 101b sweep 1, metafile walk against origin/main):
+ * nine new modules — `core/src/{redact-values,boot-warning,problem-meta-declared,outbound-proxy}.ts` (value redaction,
+ * role-scoped boot warnings, `defineError` problem meta, the outbound proxy), `db/src/{keyset-seek,
+ * keyset-position}.ts` (nullable keyset keys) and `entity/src/{predicate-node,via-scope,memory-via}.ts`
+ * (the predicate tree a policy scope's `or`/`via` compiles to), each through its package barrel;
+ * `jobs/src/failure-streak.ts` left (moved into core's `outage-log.ts`).
+ * raised 962 → 963, measured 963 (2026-11-14, same sweep): `jobs/src/tick-streak.ts`, the one
+ * `jobs.<loop>.tick-failed` / `-recovered` streak the scheduler, worker and relay share, split out
+ * so `scheduler.ts` and `worker.ts` stay under the file ceiling.
  */
-export const MIGRATE_CEILING = 954;
+export const MIGRATE_CEILING = 963;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

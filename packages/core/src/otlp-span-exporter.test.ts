@@ -3,6 +3,7 @@ import { isUltimateError } from './errors';
 import { OTLP_ENDPOINT_KEY } from './otlp';
 import { otlpSpanExporter, otlpTraceRequest } from './otlp-span-exporter';
 import type { AttributeValue, ReadableSpan } from './telemetry';
+import { frameworkVersion } from './version';
 
 const RESOURCE = { serviceName: 'web', serviceVersion: '1.2.0' };
 
@@ -189,6 +190,7 @@ describe('otlpTraceRequest', () => {
             attributes: [
               { key: 'service.name', value: { stringValue: 'web' } },
               { key: 'service.version', value: { stringValue: '1.2.0' } },
+              { key: 'framework.version', value: { stringValue: frameworkVersion() } },
             ],
           },
           scopeSpans: [

@@ -10,7 +10,7 @@ import { allow, and, can, not, or, policyPermissions } from './policy';
 import { admitsAnonymous } from './policy-anonymous';
 import { decideBeforeInput } from './pre-input';
 import { clearRoles, defineRoles } from './roles';
-import { policyScope, type ScopeCondition, scoped } from './scope';
+import { policyScope, type ScopeCondition, type ScopeNode, scoped } from './scope';
 import { testActor } from './test-kit';
 
 interface Post {
@@ -114,5 +114,56 @@ describe('scoped(policy, scope)', () => {
     expect(scopedPolicy.label).toBe(plain.label);
     expect(policyPermissions(scopedPolicy)).toEqual(policyPermissions(plain));
     expect(admitsAnonymous(scopedPolicy)).toBe(admitsAnonymous(plain));
+  });
+});
+
+describe('a scope tree: or groups and via hops', () => {
+  interface Feed {
+    readonly authorId: string;
+    readonly audience: 'public' | 'friends';
+  }
+  /** Mine, or public, or a friend's: one disjunction over a graph, handed down whole. */
+  const feed = (): Policy<unknown, Feed> =>
+    scoped(allow<unknown, Feed>('feed'), (actor): readonly ScopeNode<Feed>[] =>
+      actor === null
+        ? [{ column: 'audience', op: 'eq', value: 'public' }]
+        : [
+            {
+              or: [
+                { column: 'authorId', op: 'eq', value: actor.id },
+                { column: 'audience', op: 'eq', value: 'public' },
+                {
+                  via: { column: 'authorId', entity: 'friendships', target: 'friendId' },
+                  where: [{ column: 'userId', op: 'eq', value: actor.id }],
+                },
+              ],
+            },
+          ],
+    );
+
+  test('an or group is handed down as written, its hop with it', () => {
+    expect(policyScope(feed(), member())).toEqual([
+      {
+        or: [
+          { column: 'authorId', op: 'eq', value: 'm1' },
+          { column: 'audience', op: 'eq', value: 'public' },
+          {
+            via: { column: 'authorId', entity: 'friendships', target: 'friendId' },
+            where: [{ column: 'userId', op: 'eq', value: 'm1' }],
+          },
+        ],
+      },
+    ]);
+  });
+
+  test('frozen at every depth: no node of an or, a via or its where can be edited', () => {
+    const [group] = policyScope(feed(), member()) ?? [];
+    const members = group !== undefined && 'or' in group ? group.or : [];
+    const hop = members[2];
+    expect(Object.isFrozen(group)).toBe(true);
+    expect(Object.isFrozen(members)).toBe(true);
+    expect(members.every((node) => Object.isFrozen(node))).toBe(true);
+    expect(hop !== undefined && 'via' in hop && Object.isFrozen(hop.via)).toBe(true);
+    expect(hop !== undefined && 'via' in hop && Object.isFrozen(hop.where[0])).toBe(true);
   });
 });
