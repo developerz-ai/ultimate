@@ -26,7 +26,8 @@ export interface RunMeter {
   /** The run's bill, or `undefined` when no provider call was ever started. */
   billed(): Billed | undefined;
   /**
-   * What runs UNDERNEATH this one were billed — a tool that itself calls `llm()` or an `agent()`.
+   * What was billed at ANOTHER model's price, added and never re-priced: runs underneath this one —
+   * a tool that itself calls `llm()` or an `agent()` — and answers a `fallbackModels` model gave.
    * Their failures are read by the model as tool results and never thrown here, so this is the
    * only way that spend reaches the run that caused it.
    */
@@ -105,20 +106,28 @@ export function runMeter(): RunMeter {
       try {
         const result = await work;
         unsettled -= 1;
-        calls += 1;
-        own = addUsage(own, result);
-        parent?.report(billedCall(result.usage, result.costExact ?? result.cost));
+        if (fellOverTo(result)) {
+          // Answered by a `fallbackModels` model: billed at ITS price, apart — `own` is re-priced
+          // as one model, and summing a fallback's tokens into it charged them at the primary's.
+          report(billedCall(result.usage, result.costExact ?? result.cost));
+        } else {
+          calls += 1;
+          own = addUsage(own, result);
+          parent?.report(billedCall(result.usage, result.costExact ?? result.cost));
+        }
         // A `fallbackModels` chain's failed models were attempts too: each counted, never free.
         fellOver(result.fallbacks);
         return result;
       } catch (error) {
         // The provider answered and billed, then the answer could not be used: settled after all.
         const bill = billedOf(error);
+        // A `fallbackModels` chain: every model it asked is an attempt, not the one call this
+        // looked like — the earlier ones here, the one that threw below (unless the error IS the
+        // chain's, every model declared-failed, and already counted whole).
         const chain = attemptsOf(error);
-        if (chain !== undefined) {
-          // A whole chain failed: one attempt per model, not the one call this looked like.
+        fellOver(chain?.attempts);
+        if (chain?.whole === true) {
           unsettled -= 1;
-          fellOver(chain);
         } else if (bill !== undefined) {
           unsettled -= 1;
           absorb(error);
@@ -171,6 +180,9 @@ export async function meteredRun<T>(
     throw meter.fail(error);
   }
 }
+
+/** Answered on a fallback, not the model asked for. */
+const fellOverTo = (result: GenerateResult): boolean => (result.fallbacks?.length ?? 0) > 0;
 
 /** One started call that never reported usage: counted, never priced. */
 const UNSETTLED_CALL: Billed = {

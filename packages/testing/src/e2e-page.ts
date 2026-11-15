@@ -22,14 +22,14 @@ export interface E2eBrowserPage {
   click(selector: string): Promise<void>;
   /**
    * The browser's own network condition, which `E2eFixtures.offline()`/`online()` forward to.
-   * `ScrapePage` has it (`page-over-target.ts`), reaching `CdpPageLike.setOfflineMode` through
-   * `cdp-target.ts`'s guard.
+   * `ScrapePage` has it (`page-over-target.ts`), over `CdpPageLike.setOfflineMode` — required on
+   * that port, so every scraping driver answers it.
    *
-   * OPTIONAL for the reason the four above are structural: this port is the shape of somebody
+   * OPTIONAL here for the reason the four above are structural: this port is the shape of somebody
    * ELSE's object, and requiring it would cost every six-line double a type error for a capability
-   * a test that never goes offline does not need. Absent, `e2e-driver.ts` keeps refusing by name —
-   * a coded refusal, never a silent no-op, because an `offline()` that did nothing would let the
-   * app's ONLINE page pass an offline test.
+   * a test that never goes offline does not need. Absent, `e2e-driver.ts` refuses by name — a coded
+   * refusal, never a silent no-op, because an `offline()` that did nothing would let the app's
+   * ONLINE page pass an offline test.
    */
   offline?(enabled: boolean): Promise<void>;
   /**

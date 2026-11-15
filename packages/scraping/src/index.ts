@@ -182,7 +182,6 @@ export type {
   QueryOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
-  ScrapeFrameTarget,
   ScrapeTarget,
 } from './target';
 export { urlSecretValues } from './url-secrets';

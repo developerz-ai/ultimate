@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3d68a546ada372bd329a6933347181aa6935d5c5f032fdf799a7cf380578f4c7",
+  "buildId": "f64c37e118c309485fae81f6bf3dffae976b6ff24d643c8888ce391d68661653",
   "tiers": {
     "0": [
       "core",
@@ -3156,6 +3156,16 @@
     },
     {
       "code": "X_MAIL_HEADER_INVALID",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_INBOUND_MALFORMED",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_INBOUND_TOO_LARGE",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
     },

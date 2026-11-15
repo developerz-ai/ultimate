@@ -204,6 +204,60 @@ describe('cdpE2eTab', () => {
     expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
   });
 
+  test('touchDrag is one finger: touch on once, a start, every step, an end — trusted input', async () => {
+    const { connection, calls } = fakeConnection();
+    const page = tabOn(connection);
+    await page.touchDrag({ x: 10, y: 20 }, { x: 50, y: 100 }, 4);
+    await page.touchDrag({ x: 0, y: 0 }, { x: 0, y: 8 }, 1);
+    const emulation = calls.filter((call) => call.method === 'Emulation.setTouchEmulationEnabled');
+    expect(emulation.map((call) => [call.params['enabled'], call.sessionId])).toEqual([
+      [true, 'session-1'],
+    ]);
+    const touches = calls
+      .filter((call) => call.method === 'Input.dispatchTouchEvent')
+      .map((call) => [
+        call.params['type'],
+        (call.params['touchPoints'] as readonly { x: number; y: number }[]).map((p) => [p.x, p.y]),
+      ]);
+    expect(touches.slice(0, 6)).toEqual([
+      ['touchStart', [[10, 20]]],
+      ['touchMove', [[20, 40]]],
+      ['touchMove', [[30, 60]]],
+      ['touchMove', [[40, 80]]],
+      ['touchMove', [[50, 100]]],
+      ['touchEnd', []],
+    ]);
+    expect(touches).toHaveLength(9);
+    const thrown = await page
+      .touchDrag({ x: 0, y: 0 }, { x: 1, y: 1 }, 0)
+      .catch((error: unknown) => error);
+    expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+  });
+
+  test('press sends a key down and up the way a keyboard does; an unknown name refuses', async () => {
+    const { connection, calls } = fakeConnection();
+    const page = tabOn(connection);
+    await page.press('Tab');
+    await page.press('a');
+    const keys = calls
+      .filter((call) => call.method === 'Input.dispatchKeyEvent')
+      .map((call) => [
+        call.params['type'],
+        call.params['key'],
+        call.params['windowsVirtualKeyCode'],
+        call.params['text'],
+        call.sessionId,
+      ]);
+    expect(keys).toEqual([
+      ['rawKeyDown', 'Tab', 9, undefined, 'session-1'],
+      ['keyUp', 'Tab', 9, undefined, 'session-1'],
+      ['keyDown', 'a', 65, 'a', 'session-1'],
+      ['keyUp', 'a', 65, undefined, 'session-1'],
+    ]);
+    const thrown = await page.press('Hyper').catch((error: unknown) => error);
+    expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+  });
+
   test('waitFor refuses by name when the expression never holds', async () => {
     const { connection } = fakeConnection({
       'Runtime.evaluate:Boolean(window.ready)': value(false),

@@ -46,6 +46,12 @@ interface RecipeModule {
   readonly resetServedRecipes: () => void;
   readonly noteServedRecipes: (names: readonly string[]) => void;
 }
+/** `@ultimat3/storage`'s registry, restated: `testing` does not depend on the package. */
+interface StorageModule {
+  readonly definedStorage: () => unknown;
+  readonly resetStorage: () => void;
+}
+
 interface RemoteModule {
   readonly declaredMcpServers: () => ReadonlyMap<string, unknown>;
   readonly restoreDeclaredMcpServers: (servers: ReadonlyMap<string, unknown>) => void;
@@ -83,6 +89,10 @@ const hooksModule = (): HooksModule | undefined => {
   return path === undefined ? undefined : (require(path) as HooksModule);
 };
 
+const STORAGE_SHAPE = ['definedStorage', 'defineStorage', 'resetStorage'] as const;
+const storageModule = (): StorageModule | undefined =>
+  cachedModule<StorageModule>('/storage/src/storage.ts', STORAGE_SHAPE);
+
 const RECIPE_SHAPE = ['servedRecipes', 'resetServedRecipes', 'noteServedRecipes'] as const;
 const REMOTE_SHAPE = ['declaredMcpServers', 'restoreDeclaredMcpServers'] as const;
 const recipeModule = (): RecipeModule | undefined =>
@@ -112,6 +122,21 @@ export const DECLARATION_TABLES: readonly DeclarationTable[] = [
       if (authenticate === undefined) return module.resetAuthenticator();
       const options: AuthenticatorOptions = ttl === undefined ? {} : { credentialTtlMs: ttl };
       module.configureAuthenticator(authenticate, options);
+    },
+  },
+  {
+    // A slot with a reset and no setter: a body that installed storage over NONE is undone; one
+    // that replaced an inherited registry cannot be put back and is left (no exact writer exists).
+    // One file's `defineStorage({ disks: { assets } })` was every later boot's `appDeclared()`.
+    owner: '@ultimat3/storage/storage.ts',
+    capture: () => {
+      const module = storageModule();
+      return module === undefined ? undefined : { storage: module.definedStorage() };
+    },
+    restore: (snapshot) => {
+      const module = storageModule();
+      if (module === undefined) return;
+      if ((snapshot as { readonly storage: unknown }).storage === undefined) module.resetStorage();
     },
   },
   {

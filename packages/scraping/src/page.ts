@@ -71,6 +71,15 @@ export interface ScrapeFrame {
    */
   press(chord: string): Promise<void>;
   /**
+   * What a screen reader is told about each match — role and name after ARIA and label
+   * association, which `query()` cannot answer from attributes. At most `options.max` (default
+   * `DEFAULT_ACCESSIBILITY_MAX`) nodes, in document order, read from THIS handle's document — a
+   * frame handle reads the frame's. A browser answers what it computed; the offline drivers answer
+   * the HTML-AAM mapping of the markup (`html-a11y.ts`), never `role=` read alone: a `<div onclick>`
+   * maps to no role and no name on every driver, and that IS the finding.
+   */
+  accessibility(selector: string, options?: AccessibilityOptions): Promise<readonly AxNode[]>;
+  /**
    * Every match, as SNAPSHOTS — `visible`, `enabled` and (on a driver with a layout engine) the
    * box and hit-target, which `values()` projects away.
    *
@@ -135,16 +144,6 @@ export interface ScrapePage extends ScrapeFrame {
    * every driver, so a run body never branches on which one it has.
    */
   activity(): void;
-  /**
-   * What a screen reader is told about each match — role and name after ARIA and label
-   * association, which `query()` cannot answer from attributes. At most `options.max` (default
-   * `DEFAULT_ACCESSIBILITY_MAX`) nodes, in document order. A browser answers what it computed; the
-   * offline drivers answer the HTML-AAM mapping of the markup (`html-a11y.ts`), never `role=` read
-   * alone: a `<div onclick>` maps to no role and no name on every driver, and that IS the finding.
-   * On the PAGE only — the read is addressed by the top document's nodes, so a `ScrapeFrame` has
-   * no such method and asking one does not compile.
-   */
-  accessibility(selector: string, options?: AccessibilityOptions): Promise<readonly AxNode[]>;
   /**
    * Cut the BROWSER's network, or restore it — what a PWA's offline behaviour has to be tested
    * against. Never a resolved no-op: the browser driver sets the browser's own condition, and the

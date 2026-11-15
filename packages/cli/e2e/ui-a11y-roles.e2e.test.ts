@@ -1,9 +1,9 @@
 // The roles the rendered audit deferred (2026/11/11 slice 15 T3), read off CHROME's own
 // accessibility tree over the catalog components that carry them: every listbox, option, menuitem
 // and treeitem has a name, and it is its own (a tree branch is not named by its children, an
-// option not by its description); a Table's scroll stop is a region named by its caption; and Tab
-// from an open Menu closes it with focus back on its trigger. Skips with no Chrome, unless
-// E2E_BROWSER_REQUIRED=1. Command: bun test ./packages/cli/e2e/ui-a11y-roles.e2e.test.ts
+// option not by its description); a Table's scroll stop is a region named by its caption; and a
+// real Tab from an open Menu closes it and moves on past its trigger, a real Escape back onto it.
+// Skips with no Chrome, unless E2E_BROWSER_REQUIRED=1. Command: bun test ./packages/cli/e2e/ui-a11y-roles.e2e.test.ts
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { findChrome } from '@ultimat3/scraping/cdp';
 import type { AxTreeNode, E2eBrowser } from '@ultimat3/testing';
@@ -210,27 +210,27 @@ describe.skipIf(chrome === undefined && !required)('deferred a11y roles in Chrom
     HOOK_TIMEOUT_MS,
   );
 
-  // Escape too: the trigger was rebuilt on every open, so the node focus went back to was gone.
-  for (const key of ['Tab', 'Escape'] as const) {
+  // REAL key presses (`press`), so the browser's own Tab runs. Escape lands on the trigger; Tab
+  // closes the menu and moves on PAST the trigger, to the next stop in the page — the APG menu
+  // button. Both landed on <body> while the trigger was rebuilt on every open.
+  for (const [key, lands] of [
+    ['Escape', 'trigger'],
+    ['Tab', 'after'],
+  ] as const) {
     test(
-      `${key} from an open menu closes it and hands focus back to its trigger`,
+      `${key} from an open menu closes it, and focus lands on #${lands}`,
       async () => {
         await open(OPEN_MENU);
-        const after = JSON.parse(
-          String(
-            await page().evaluate(`(async () => {
-            const item = document.querySelector('[role="menuitem"]');
-            item.focus();
-            item.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }));
-            await new Promise((resolve) => requestAnimationFrame(resolve));
-            return JSON.stringify({
-              menu: document.querySelector('[role="menu"]') !== null,
-              focus: document.activeElement && document.activeElement.id,
-            });
-          })()`),
-          ),
-        ) as { menu: boolean; focus: string };
-        expect(after).toEqual({ menu: false, focus: 'trigger' });
+        await page().evaluate(`document.querySelector('[role="menuitem"]').focus()`);
+        await page().press(key);
+        await page().waitFor(
+          `document.querySelector('[role="menu"]') === null`,
+          `the menu to close on ${key}`,
+          MOUNT_MS,
+        );
+        expect(await page().evaluate('document.activeElement && document.activeElement.id')).toBe(
+          lands,
+        );
       },
       HOOK_TIMEOUT_MS,
     );

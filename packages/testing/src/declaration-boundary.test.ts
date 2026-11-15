@@ -48,7 +48,27 @@ test('${name} starts anonymous and leaves an authenticator configured', () => {
 });
 `;
 
+const STORAGE = join(PACKAGES, 'storage', 'src', 'index.ts');
+
+const storageDefiner = (name: string): string => `import { expect, test } from 'bun:test';
+import { definedStorage, defineStorage, memoryStorageDriver } from '${STORAGE}';
+
+test('${name} starts with no storage and leaves one defined', () => {
+  expect(definedStorage()).toBeUndefined();
+  defineStorage({ disks: { ${name}: memoryStorageDriver({ name: '${name}' }) } });
+});
+`;
+
 describe('module-scope declaration tables, in one process', () => {
+  test('storage one file defined over none is gone before the next file starts', async () => {
+    const { output, exitCode } = await runFixtures({
+      'one.test.ts': storageDefiner('one'),
+      'two.test.ts': storageDefiner('two'),
+    });
+    expect(output).toContain('2 pass');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
   test('an authenticator one file configured is gone before the next file starts', async () => {
     const { output, exitCode } = await runFixtures({
       'one.test.ts': authenticatorSetter('one'),

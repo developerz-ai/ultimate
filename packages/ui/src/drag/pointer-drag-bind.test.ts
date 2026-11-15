@@ -95,6 +95,35 @@ describe('bindPointerDrag', () => {
     });
   }
 
+  test('a capture lost to a MOVE (the row re-parented into another list) is taken back, not a cancel', () => {
+    // Measured with a real finger (`ui-drag-touch.e2e.test.ts`): the preview moves the dragged row
+    // into the column under the finger, the browser releases the capture of a node that moved, and
+    // the drag cancelled half way across the board.
+    const w = world();
+    Object.assign(w.handle, { isConnected: true });
+    w.handle.dispatch('pointerdown', pointer(0, 0));
+    w.handle.dispatch('pointermove', pointer(0, 30));
+    w.handle.dispatch('lostpointercapture', pointer(0, 30));
+    w.handle.dispatch('pointermove', pointer(0, 60));
+    w.handle.dispatch('pointerup', pointer(0, 70));
+    expect(w.captured).toEqual([7, 7]);
+    expect(w.calls).toEqual(['start 0,0', 'move 0,30', 'move 0,60', 'drop 0,70']);
+  });
+
+  test('a lost capture that cannot be taken back (the pointer is gone) still cancels', () => {
+    const w = world();
+    Object.assign(w.handle, { isConnected: true });
+    w.handle.dispatch('pointerdown', pointer(0, 0));
+    w.handle.dispatch('pointermove', pointer(0, 30));
+    Object.assign(w.handle, {
+      setPointerCapture: () => {
+        throw new DOMException('No active pointer with the given id is found.', 'NotFoundError');
+      },
+    });
+    w.handle.dispatch('lostpointercapture', pointer(0, 30));
+    expect(w.calls).toEqual(['start 0,0', 'move 0,30', 'cancel']);
+  });
+
   test('a key other than Escape, or Escape with no drag, cancels nothing', () => {
     const w = world();
     w.doc.dispatch('keydown', { key: 'Escape' });

@@ -240,7 +240,8 @@ them: [Testing](Testing#seeing-what-you-built).
 | A drag is Pointer Events with capture from a handle; never HTML5 drag events | `drag/pointer-drag.ts` is the one gesture; `ui-drag.e2e.test.ts` (keyboard, pointer, rtl) |
 | A drop is a request: `onMove` once, the row held until it settles, a rejection restores and is announced | `sort-controller.test.ts`, `drag-interaction.test.ts` |
 | Reordering works by keyboard alone and with scripting off | Space/arrows/Esc in `drag-interaction.test.ts`; the per-row `<form>` in `posts/board/page.test.ts` |
-| Only the handle and a separator refuse the browser's pan, so a phone page still scrolls from a card's body | computed `touch-action` and a body drag that never lifts, in `ui-drag-touch.e2e.test.ts` |
+| Only the handle and a separator refuse the browser's pan, so a phone page still scrolls from a card's body | a REAL finger (`E2eTab.touchDrag`) in `ui-drag-touch.e2e.test.ts`: the handle moves a card across columns, the separator resizes, a body drag scrolls and is cancelled with no lift |
+| A drag survives its row moving lists under the pointer | `pointer-drag.ts` takes back a capture the move released; `pointer-drag-bind.test.ts`, and the finger drag above |
 | A business rule on a drop is `canDrop`, never a fork | **judgement** — the one seam the components take |
 | Text a model or member wrote renders as a tree, never HTML; only http/https/mailto/relative links | `viewers-no-html.test.ts`, `markdown-parse.test.ts`, no alert under CSP in `ui-viewers.e2e.test.ts` |
 | A remote image in a body is a link to its alt unless `resolveImage` reserves its box | `viewers.test.ts` |

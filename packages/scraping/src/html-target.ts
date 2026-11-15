@@ -31,7 +31,6 @@ import type {
   PdfOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
-  ScrapeFrameTarget,
   ScrapeTarget,
 } from './target';
 
@@ -283,20 +282,21 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   };
 
   /**
-   * A frame target: `ScrapeFrameTarget`'s verbs, every one pointed at this frame's DOCUMENT. It
-   * was built by spreading the parent's, and a verb nobody overrode silently acted on the parent;
-   * the narrow type leaves nothing to inherit, so every verb is listed here.
+   * A frame target: the parent's, with every verb that touches a DOCUMENT re-pointed at this
+   * frame's. `...base` is what makes the spread dangerous — a verb nobody overrides silently acts
+   * on the parent — so the document verbs are listed here even where the body is one line.
    *
    * `click` navigates NOTHING, and that is a real limit rather than an oversight: a
    * `PageRecording.frames` entry is one static document, so there is no second frame document for
    * a click to land on. What it must never do is navigate the PARENT, which is what inheriting
-   * `base.click` did — `driver-parity-frames.test.ts` pins that on all three drivers. `evaluate`
-   * is the parent's: the recording format keys evaluations per PAGE, so a frame has no map of its
-   * own to read. `press` is the parent's for the browser's reason — one keyboard.
+   * `base.click` did — `driver-parity-frames.test.ts` pins that on all three drivers. `evaluate` and
+   * `download` stay the parent's: the recording format keys evaluations and downloads per PAGE,
+   * so a frame has no map of its own to read.
    */
-  const frameTarget = (html: string, url: string, key: string): ScrapeFrameTarget => {
+  const frameTarget = (html: string, url: string, key: string): ScrapeTarget => {
     const document: OfflineDocument = { html: () => html, overlay: overlayFor(key) };
     return {
+      ...base,
       url: () => url,
       content: () => Promise.resolve(html),
       query: (selector) => queryIn(document, selector),
@@ -316,8 +316,11 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
         const element = await atIn(document, selector, 0);
         if (element === undefined) throw fixtureMissing(`${url} ${selector}`, init.source);
       },
-      evaluate: (expression) => base.evaluate(expression),
-      press: (chord) => base.press(chord),
+      // The frame's OWN markup, for `click`'s reason: the parent's would describe the wrong form.
+      async accessibility(selector: string, max: number): Promise<readonly AxNode[]> {
+        live();
+        return await htmlAccessibility(html, selector, max);
+      },
       frames: () => Promise.resolve([]),
     };
   };

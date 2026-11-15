@@ -32,7 +32,6 @@ import type {
   QueryOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
-  ScrapeFrameTarget,
   ScrapeTarget,
 } from './target';
 import { ROOT_SELECTOR } from './target';
@@ -62,7 +61,7 @@ interface PageState {
   tainted: boolean;
 }
 
-type Resolve = () => Promise<ScrapeFrameTarget>;
+type Resolve = () => Promise<ScrapeTarget>;
 
 /** Every operation resolves its target through this, so every operation reports activity. */
 const watched = (resolve: Resolve, ctx: PageContext): Resolve => {
@@ -157,6 +156,18 @@ function frameOver(
     async press(chord): Promise<void> {
       await (await resolve()).press(chord);
     },
+    // Through `resolve()`, so a FRAME handle reads the frame's own document.
+    async accessibility(selector, options?: AccessibilityOptions): Promise<readonly AxNode[]> {
+      // Screened, never `??`-defaulted alone: `NaN` is not nullish, and `slice(0, NaN)` is
+      // `slice(0, 0)` — an empty answer that reads as "nothing matched" (`finiteCount`, core).
+      const max = finiteCount(
+        'page.accessibility()',
+        'max',
+        options?.max ?? DEFAULT_ACCESSIBILITY_MAX,
+        1,
+      );
+      return await (await resolve()).accessibility(selector, max);
+    },
     // Resolved through `resolve()` like every other verb, which is what makes a FRAME's `query`
     // read the frame's document: `resolve` is `resolveChild` there, and both drivers override
     // `query` on the frame target. A forward that reached for a captured page target instead
@@ -187,7 +198,7 @@ function frameOver(
       // The resolver, not the frame. Every call through the returned handle runs this again, so
       // a handle taken before a re-navigation addresses the CURRENT frame with that name and
       // never a detached one — the trap `frameLocator`-style handles set for every caller.
-      const resolveChild = async (): Promise<ScrapeFrameTarget> => {
+      const resolveChild = async (): Promise<ScrapeTarget> => {
         const budget = deadline(ctx.clock, ctx.defaultTimeoutMs);
         for (;;) {
           const parent = await resolve();
@@ -289,18 +300,6 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     // `async`, for `offline()`'s reason.
     async prepare(expression: string): Promise<void> {
       await reported().prepare(expression);
-    },
-    // The PAGE's only: the read is addressed by the top document's nodes (`ScrapeTarget`).
-    async accessibility(selector, options?: AccessibilityOptions): Promise<readonly AxNode[]> {
-      // Screened, never `??`-defaulted alone: `NaN` is not nullish, and `slice(0, NaN)` is
-      // `slice(0, 0)` — an empty answer that reads as "nothing matched" (`finiteCount`, core).
-      const max = finiteCount(
-        'page.accessibility()',
-        'max',
-        options?.max ?? DEFAULT_ACCESSIBILITY_MAX,
-        1,
-      );
-      return await reported().accessibility(selector, max);
     },
     cookies: (): Promise<readonly ScrapeCookie[]> => reported().cookies(),
     session: () => reported().session(),

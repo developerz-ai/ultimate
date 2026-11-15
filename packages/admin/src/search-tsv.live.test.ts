@@ -1,7 +1,7 @@
 // The admin search box against a real Postgres, over an entity that declares `.searchable()`: the
 // statement it sends is the handle's own full-text read, the planner serves its `@@` from the
-// declared GIN index past `FLOOR_ROWS` (never a Seq Scan), the rows are the ones a tenant-scoped,
-// row-scoped search may see — and the one plan that is not the GIN's is pinned as measured.
+// declared GIN index past `FLOOR_ROWS` (never a Seq Scan) when the sort is no btree's, and the
+// rows are the ones a tenant-scoped, row-scoped search may see. Skips without TEST_DATABASE_URL.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
@@ -121,7 +121,7 @@ describe.skipIf(!hasPostgres)('live · postgres · admin search over search_tsv'
     });
 
   /** The admin's OWN full-text statement, explained with its own binds — never a lookalike. */
-  const vectorPlan = async (defaultSort?: AdminSort): Promise<string> => {
+  const vectorPlan = async (defaultSort: AdminSort): Promise<string> => {
     sent.length = 0;
     await as(ORG_A, () =>
       adminSearch({
@@ -175,19 +175,6 @@ describe.skipIf(!hasPostgres)('live · postgres · admin search over search_tsv'
     expect(gin?.name).toBeDefined();
     expect(plan).toContain(gin?.name ?? '');
     expect(plan).toContain('Bitmap Index Scan');
-    expect(plan).not.toContain('Seq Scan');
-  });
-
-  test('sorted by the key alone, the planner walks the (tenant, id) btree instead: pinned', async () => {
-    // A MEASURED FACT, pinned so the day it changes this test says so. `order by id desc limit 5`
-    // is exactly what the `(org_id, id)` btree serves, and `@@`'s selectivity estimate (0.5% of
-    // the table for a term the statistics do not hold) makes walking it look cheap; for a rare
-    // term it reads the whole tenant (139 ms against the GIN's 11 ms on 200,000 rows). Every
-    // handle read ends in the primary key, so only a relevance order — an expression no btree
-    // serves — takes this choice off the planner; that is entity's, deferred with ranking.
-    const plan = await vectorPlan();
-    expect(plan).toContain('Index Scan Backward');
-    expect(plan).toContain('Filter: (search_tsv @@');
     expect(plan).not.toContain('Seq Scan');
   });
 });

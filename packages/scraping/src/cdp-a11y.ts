@@ -4,9 +4,9 @@
 // drivers' HTML-AAM mapping (`html-a11y.ts`) cannot see. A `<div onclick>` answers no role and no
 // name, which is the finding; a fake reading `role=` off the markup alone would miss it.
 //
-// Four protocol calls per read, each parsed with a schema and never cast: the answers are
-// somebody else's wire shapes, and a build that renames a field must refuse loudly
-// (`X_VALIDATION_FAILED`, which `cdp-target.ts`'s `guard()` passes through unlabelled).
+// Four protocol calls per read, four more to find a frame's document, each parsed with a schema
+// and never cast: the answers are somebody else's wire shapes, and a build that renames a field
+// must refuse loudly (`X_VALIDATION_FAILED`, which `cdp-target.ts`'s `guard()` passes through).
 
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
@@ -92,22 +92,32 @@ const toAxNode = (raw: unknown): AxNode => {
 };
 
 /**
- * The accessibility node of every element `selector` matches, in document order, at most `max`.
+ * The node a read is scoped to — the top document, or a frame's (`cdp-a11y-frame.ts`). Asked
+ * AFTER `DOM.getDocument`, which is what makes the session's node ids exist at all.
+ */
+export type AxRoot = (session: CdpSessionLike, document: number) => Promise<number>;
+
+/**
+ * The accessibility node of every element `selector` matches, in document order, at most `max`,
+ * under `root` — the page's document unless a frame's is given.
  *
  * The session is the CALLER's: `cdp-target.ts` creates it and detaches it in a `finally`, so a
- * throw from any of the four calls — a selector the browser refuses, a build whose answer does
- * not parse — never leaves a session attached behind the page. `max` is screened by the caller
- * too (`finiteCount`); here it is only a bound on the per-node round trips.
+ * throw from any call — a selector the browser refuses, a build whose answer does not parse —
+ * never leaves a session attached behind the page. `max` is screened by the caller too
+ * (`finiteCount`); here it is only a bound on the per-node round trips.
  */
 export async function axNodesFor(
   session: CdpSessionLike,
   selector: string,
   max: number,
+  root?: AxRoot,
 ): Promise<readonly AxNode[]> {
   const document = parse(documentSchema, await session.send('DOM.getDocument', { depth: 0 }));
+  const scope =
+    root === undefined ? document.root.nodeId : await root(session, document.root.nodeId);
   const { nodeIds } = parse(
     nodeIdsSchema,
-    await session.send('DOM.querySelectorAll', { nodeId: document.root.nodeId, selector }),
+    await session.send('DOM.querySelectorAll', { nodeId: scope, selector }),
   );
   const out: AxNode[] = [];
   for (const nodeId of nodeIds.slice(0, max)) {

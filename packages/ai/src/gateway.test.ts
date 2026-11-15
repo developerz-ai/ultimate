@@ -468,7 +468,7 @@ describe('model fallback', () => {
     expect(result.provider).toBe('second-host');
     expect(result.fallbacks?.map((f) => [f.model, f.reason])).toEqual([[PRIMARY, 'overloaded']]);
     // The meter: the answer priced, the failed attempt counted — never silently free.
-    expect(meter.billed()).toMatchObject({ calls: 1, unsettled: 1, cost: result.cost });
+    expect(meter.billed()).toMatchObject({ calls: 1, unsettled: 1, cost: result.costExact });
     // The ledger: the first reservation given back, the second booked at what it cost.
     expect(store.spent('actor:u1')).toBe(totalTokens(result.usage));
   });

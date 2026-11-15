@@ -488,7 +488,11 @@ serves — so a whole word and a prefix ("ali" → "Alice") both find the row. A
 statements per resource, resources read four at a time, the row scope on every one. Hits are in
 the resource's `defaultSort`, not ranked. A custom `repo:` opts in with `search(query)`
 (`AdminRepo.search`, optional); the memory driver refuses a vector match (`X_SEARCH_IN_MEMORY`),
-so there `contains` alone answers.
+so there `contains` alone answers. As of 2026-11 the GIN index serves the vector read only when the
+`defaultSort` is a column no btree covers: every handle read ends in the primary key, so a sort by
+`id` (or an indexed column) with a limit walks that btree and filters `@@` row by row — 139 ms
+tenanted, 283 ms untenanted, against the GIN's 11 ms, on 200,000 rows. The fix is a relevance
+order (`ts_rank`), which no btree serves: deferred with ranking (plan 101-finished slice 06 U2).
 
 ## AI-first
 

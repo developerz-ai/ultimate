@@ -163,6 +163,20 @@ export function bindPointerDrag(handle: HTMLElement, handlers: DragHandlers): ()
   };
   const onUp = (event: PointerEvent): void => tracker.up(pointOf(event));
   const onCancel = (): void => tracker.cancel();
+  // A capture is released when its node MOVES, and a sort preview moves the dragged row into the
+  // list under the pointer: still in the document and mid-press, the capture is taken back. Only a
+  // pointer that is gone (the take-back throws) or a node that left the document cancels.
+  const onLost = (event: PointerEvent): void => {
+    if (tracker.phase() !== 'idle' && handle.isConnected) {
+      try {
+        handle.setPointerCapture(event.pointerId);
+        return;
+      } catch {
+        // The pointer ended between the release and now: nothing to hold, so the drag is over.
+      }
+    }
+    tracker.cancel();
+  };
   const onKey = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && tracker.phase() === 'dragging') tracker.cancel();
   };
@@ -170,7 +184,7 @@ export function bindPointerDrag(handle: HTMLElement, handlers: DragHandlers): ()
   handle.addEventListener('pointermove', onMove);
   handle.addEventListener('pointerup', onUp);
   handle.addEventListener('pointercancel', onCancel);
-  handle.addEventListener('lostpointercapture', onCancel);
+  handle.addEventListener('lostpointercapture', onLost);
   document.addEventListener('keydown', onKey);
   window.addEventListener('blur', onCancel);
   return () => {
@@ -178,7 +192,7 @@ export function bindPointerDrag(handle: HTMLElement, handlers: DragHandlers): ()
     handle.removeEventListener('pointermove', onMove);
     handle.removeEventListener('pointerup', onUp);
     handle.removeEventListener('pointercancel', onCancel);
-    handle.removeEventListener('lostpointercapture', onCancel);
+    handle.removeEventListener('lostpointercapture', onLost);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('blur', onCancel);
   };

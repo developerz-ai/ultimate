@@ -6,10 +6,11 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
 import { browserRecord } from './browser-record';
 import { axNodesFor } from './cdp-a11y';
+import { frameDocument } from './cdp-a11y-frame';
 import type { CdpArmInit } from './cdp-arm';
 import { arm, armBrowser } from './cdp-arm';
 import { downloadCatcher } from './cdp-download';
-import type { CdpBrowserLike, CdpFrameLike } from './cdp-port';
+import type { CdpFrameLike, CompleteCdpBrowser, CompleteCdpPage } from './cdp-port';
 import {
   clearExpression,
   focusExpression,
@@ -31,7 +32,6 @@ import type {
   PdfOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
-  ScrapeFrameTarget,
   ScrapeTarget,
 } from './target';
 
@@ -61,8 +61,10 @@ const cookieSchema = t.array(
  * It was re-labelled `X_SCRAPE_BROWSER_UNREACHABLE`, which `errors.ts` registers `retryable`, so it
  * spent the whole retry policy — five browser launches, five arrivals at a login — while telling
  * the operator the browser went away about a browser that was answering perfectly.
- * `X_NOT_IMPLEMENTED` sat here too until 2026-11-15, for this file's refusals of a launcher that
- * lacked a method; `CdpPageLike` now requires every one, so nothing here raises it.
+ * `X_SCRAPE_FRAME_OUT_OF_PROCESS` passes too, for the same reason: site isolation laid the page out
+ * that way, and attempt five lays it out the same. `X_NOT_IMPLEMENTED` sat here until 2026-11-15,
+ * for refusals of a launcher missing a method; that is now checked when the session opens
+ * (`cdp-complete.ts`), so nothing here raises it.
  *
  * Every OTHER coded error stays wrapped, deliberately. `thrown instanceof UltimateError` is the
  * naive version of this check and it is wrong: an `X_SCRAPE_TIMEOUT` raised while the socket was
@@ -76,7 +78,10 @@ const cookieSchema = t.array(
  *
  * `isUltimateError`, not `instanceof`: the brand survives a duplicated module instance.
  */
-const PASSED_THROUGH_CODES: ReadonlySet<string> = new Set(['X_VALIDATION_FAILED']);
+const PASSED_THROUGH_CODES: ReadonlySet<string> = new Set([
+  'X_VALIDATION_FAILED',
+  'X_SCRAPE_FRAME_OUT_OF_PROCESS',
+]);
 
 const isStructuralRefusal = (thrown: unknown): boolean =>
   isUltimateError(thrown) && PASSED_THROUGH_CODES.has(thrown.code);
@@ -90,7 +95,9 @@ const isStructuralRefusal = (thrown: unknown): boolean =>
  * `driver-parity.test.ts` exists to refuse. `DEFAULT_RING_CAPACITY` is the one bound.
  */
 export interface CdpTargetInit extends CdpArmInit {
-  readonly browser: CdpBrowserLike;
+  /** Proven complete when the session opened (`cdp-complete.ts`): every verb below is there. */
+  readonly page: CompleteCdpPage;
+  readonly browser: CompleteCdpBrowser;
   /**
    * Why the session was ended from OUTSIDE the call, if it was — the fired wedge guard's reason.
    * A thunk, because the guard is built after the target. Read before a failure is re-labelled:
@@ -157,9 +164,10 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     }
   };
 
-  // The FRAME's verbs and nothing else: `ScrapeFrameTarget` has no page-wide member, so nothing
-  // here can answer for the parent document by being inherited from it.
-  const frameTarget = (frame: CdpFrameLike, parent: ScrapeTarget): ScrapeFrameTarget => ({
+  // The parent's, with every verb that addresses a DOCUMENT re-pointed at the frame's — the
+  // spread is why each of those must be listed, or it silently acts on the parent.
+  const frameTarget = (frame: CdpFrameLike, parent: ScrapeTarget): ScrapeTarget => ({
+    ...parent,
     url: () => frame.url(),
     content: () => guard('content', () => frame.content()),
     query: (selector, options) =>
@@ -191,14 +199,30 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('focus', async () => {
         await frame.evaluate(focusExpression(selector));
       }),
+    // The FRAME's document, through the page's own session: `Accessibility.getPartialAXTree` is
+    // addressed by node, and `cdp-a11y-frame.ts` finds the frame's document node to scope the
+    // query to. Twins — same name, same URL — are told apart by their place in the library's list.
+    accessibility: (selector, max) =>
+      guard('accessibility', async () => {
+        const twins = init.page
+          .frames()
+          .filter((other) => other.name() === frame.name() && other.url() === frame.url());
+        const address = { name: frame.name(), url: frame.url(), ordinal: twins.indexOf(frame) };
+        const session = await init.page.createCDPSession();
+        try {
+          return await axNodesFor(session, selector, max, frameDocument(CDP_DRIVER, address));
+        } finally {
+          await session.detach();
+        }
+      }),
   });
 
   const target: ScrapeTarget = {
     driver: CDP_DRIVER,
     console: console_,
     network,
-    // The PAGE's alone: an exception is the page's, and a per-frame ring would hide a throw from an
-    // iframe behind whichever handle the caller held — so no frame target carries one.
+    // Shared with every frame target below, through the spread: an exception is the PAGE's, and a
+    // per-frame ring would hide a throw from an iframe behind whichever handle the caller held.
     pageErrors,
     url: () => init.page.url(),
     goto: (url: string, options: GotoOptions) =>

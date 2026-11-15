@@ -75,7 +75,7 @@ export const SCRAPE_FRAME_CHECKS: readonly ScrapeDriverCheck[] = [
     },
   },
   {
-    name: 'accessibility() answers the computed role and name, or is refused X_NOT_IMPLEMENTED',
+    name: 'accessibility() answers the computed role and name, on every driver',
     async run({ page }) {
       await page.goto(SCRAPE_CONFORMANCE_URLS.search);
       // Screened before any driver is asked, whichever kind this is.
@@ -83,12 +83,6 @@ export const SCRAPE_FRAME_CHECKS: readonly ScrapeDriverCheck[] = [
         'X_INVARIANT',
       );
       expect(await codeOf(() => page.accessibility('#go', { max: 0 }))).toBe('X_INVARIANT');
-      const refused = await codeOf(() => page.accessibility('#go'));
-      if (refused !== undefined) {
-        // An offline driver refuses rather than reading `role=` off the markup and inventing one.
-        expect(refused).toBe('X_NOT_IMPLEMENTED');
-        return;
-      }
       expect(await page.accessibility('#go')).toMatchObject([
         { role: 'button', name: 'Run search' },
       ]);

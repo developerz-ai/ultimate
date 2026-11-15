@@ -668,7 +668,8 @@ Long or multi-call chains are `job`s with steps, so a model call that fails on s
 ### Model fallback: `fallbackModels`
 
 **A second model is asked only when the first fails with a declared class, and only because the
-declaration named it.** `As of 2026-11`.
+declaration named it** — on `llm()`, on `agent()` (every turn walks the chain; a run's own
+`model()` pick is left out of it), or on a raw `GenerateRequest`. `As of 2026-11`.
 
 ```ts
 import { definePrompt, llm, t } from '@ultimat3/ai';
@@ -705,7 +706,8 @@ for that model ran out, and only when **every** failure had a class.
 
 | Rule | Detail |
 |---|---|
-| billed per attempt | each model reserves its own estimate and settles on its own; the run meter (`meteredRun`, `meta.billed`) counts a failed model as an `unsettled` attempt, never as free |
+| billed per attempt | each model reserves its own estimate and settles on its own; the run meter (`meteredRun`, `meta.billed`) counts a failed model as an `unsettled` attempt, never as free — also when the chain's last model fails outside the class and that error is thrown as it stands |
+| priced per model | a fallback's answer is billed at its own model's rate, never folded into the primary's; `onCall` / `onTurn` name the model that answered |
 | one trace | the caller's span is the one parent; each model is an `ai.model.attempt` child with `gen_ai.request.model`, `ultimate.llm.fallback.index` and, on failure, `ultimate.llm.fallback.reason`. A call with no chain opens none |
 | visible | `GenerateResult.fallbacks` lists each failed model, its class and cause |
 | streams | fall over only before the first chunk reaches the reader; after it, the failure is thrown as it stands |
@@ -724,7 +726,7 @@ key by key before any request.** The keys are the wire's own names. `As of 2026-
 | `openai` | `frequency_penalty`, `presence_penalty` (-2 to 2), `top_p` (0 to 1), `user`, `parallel_tool_calls`, `service_tier` (`'auto'`, `'default'`, `'flex'`, `'priority'`) |
 
 An unknown wire, an unknown key, a wrong type or an out-of-range number is `X_AI_REQUEST_INVALID`:
-at declaration on `llm()`, in the gateway for a raw `generate`/`stream`, and in each body builder for
+at declaration on `llm()` and `agent()`, in the gateway for a raw `generate`/`stream`, and in each body builder for
 a direct provider call. Each provider sends its own wire's bag only, so one request may carry both
 when its `fallbackModels` cross formats. The bag is part of the response cache key. A key the
 framework sets itself (`temperature`, `seed`, `max_tokens`, `tools`, …) is not in the table.

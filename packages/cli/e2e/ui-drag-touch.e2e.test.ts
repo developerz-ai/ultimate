@@ -1,9 +1,10 @@
-// `Board` and `SplitPane` under a FINGER in a real Chrome, with the components' real stylesheets:
-// the handle and the separator are the only `touch-action: none` boxes, which is what leaves the
-// page scrollable from a card's body, and a touch dragged on a card's body never lifts it. A drag
-// carried by a finger needs TRUSTED touch input (`Input.dispatchTouchEvent`): a page-dispatched
-// touch PointerEvent names no active pointer, so `setPointerCapture` refuses it. Skips with no
-// Chrome, unless E2E_BROWSER_REQUIRED=1. Command: bun test ./packages/cli/e2e/ui-drag-touch.e2e.test.ts
+// `Board` and `SplitPane` under a REAL finger in Chrome (`touchDrag`: `Input.dispatchTouchEvent`,
+// trusted, hit-tested, `touch-action` honoured), with the components' real stylesheets: a finger
+// on a card's handle carries it across columns through one `onMove`; a finger on the separator
+// resizes the split; a finger dragged on a card's BODY scrolls the page, the browser cancels the
+// pointer, and the row is never lifted — because the handle and the separator are the only
+// `touch-action: none` boxes. Skips with no Chrome, unless E2E_BROWSER_REQUIRED=1.
+// Command: bun test ./packages/cli/e2e/ui-drag-touch.e2e.test.ts
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ import { fixtureAppRoot } from '../src/templates/island-fixture';
 const FILE = 'apps/web/site/drag-touch.island.tsx';
 const UI = join(import.meta.dir, '..', '..', 'ui', 'src');
 
-/** Two columns and a split; every `onMove` recorded. */
+/** Two columns, a split and a tall tail to scroll into; every `onMove` and resize recorded. */
 const ISLAND = `import {
   createContext, createEffect, createMemo, createRoot, createSignal, onCleanup, useContext,
 } from 'solid-js';
@@ -36,7 +37,9 @@ const w = window as unknown as Record<string, unknown>;
 export function mount(el: HTMLElement): void {
   setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot });
   const moves: unknown[] = [];
+  const sizes: number[] = [];
   w.__moves = moves;
+  w.__sizes = sizes;
   render(
     () => (
       <UiProvider locale="en">
@@ -51,8 +54,10 @@ export function mount(el: HTMLElement): void {
           onMove={(move: unknown) => { moves.push(move); }}
         />
         <div style="width: 900px">
-          <SplitPane start={<p>log</p>} end={<p>detail</p>} defaultValue={40} />
+          <SplitPane start={<p>log</p>} end={<p>detail</p>} defaultValue={40} min={20} max={80}
+            onResize={(percent: number) => sizes.push(percent)} />
         </div>
+        <div style="height: 3000px">tail</div>
       </UiProvider>
     ),
     el,
@@ -75,6 +80,8 @@ const documentFor = (url: string, css: string): string => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>touch</title>
 <meta name="viewport" content="width=device-width"><style>${css}</style><script>
 window.__errors = [];
+window.__cancels = [];
+addEventListener('pointercancel', (event) => window.__cancels.push(event.pointerType), true);
 addEventListener('error', (event) => window.__errors.push(String(event.message)));
 addEventListener('unhandledrejection', (event) => window.__errors.push(String(event.reason)));
 </script></head><body><div id="root"></div><script type="module">
@@ -84,30 +91,38 @@ import(${JSON.stringify(url)})
   .finally(() => { window.__done = true; });
 </script></body></html>`;
 
-/**
- * One finger on a card's BODY (pointer id 2, never the mouse's always-active id 1), dragged in five
- * frames to the second column and released. Answers the recorded moves and the row's lift midway.
- */
-const BODY_DRAG = `(async () => {
-  const start = document.querySelector('li[data-sort-key="a"] .title');
-  const a = start.getBoundingClientRect();
-  const r = document.querySelectorAll('section[role="group"]')[1].getBoundingClientRect();
-  const b = { x: r.left + r.width / 2, y: r.top + 20 };
-  const at = (x, y, type) => start.dispatchEvent(new PointerEvent(type, {
-    pointerId: 2, pointerType: 'touch', isPrimary: true, button: type === 'pointermove' ? -1 : 0,
-    buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: y, bubbles: true, cancelable: true,
-  }));
-  const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2;
-  at(x0, y0, 'pointerdown');
-  for (let step = 1; step <= 5; step += 1) {
-    at(x0 + ((b.x - x0) * step) / 5, y0 + ((b.y - y0) * step) / 5, 'pointermove');
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-  }
-  const lifted = document.querySelector('li[data-sort-key="a"]').getAttribute('data-lifted');
-  at(b.x, b.y, 'pointerup');
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  return JSON.stringify({ moves: window.__moves, lifted, errors: window.__errors });
+/** A viewport point, the shape `touchDrag` takes. */
+interface TouchPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Where a finger lands: the centre of the first element `selector` matches, in the viewport. */
+const centreOf = (selector: string): string => `(() => {
+  const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+  return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 })()`;
+
+/** What a gesture left behind: the requests, the lift, the split, the scroll, the cancels. */
+const OUTCOME = `JSON.stringify({
+  moves: window.__moves.map((move) => [move.id, move.toGroup]),
+  sizes: window.__sizes,
+  lifted: document.querySelector('li[data-sort-key="a"]').getAttribute('data-lifted'),
+  column: document.querySelector('li[data-sort-key="a"]').closest('section').getAttribute('aria-label'),
+  scrolled: scrollY > 0,
+  cancels: window.__cancels,
+  errors: window.__errors,
+})`;
+
+interface Outcome {
+  readonly moves: readonly (readonly string[])[];
+  readonly sizes: readonly number[];
+  readonly lifted: string | null;
+  readonly column: string;
+  readonly scrolled: boolean;
+  readonly cancels: readonly string[];
+  readonly errors: readonly string[];
+}
 
 const chrome = await findChrome(process.env);
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
@@ -121,10 +136,19 @@ describe.skipIf(chrome === undefined && !required)('Board and SplitPane under to
   let browser: E2eBrowser | undefined;
   let base = '';
 
-  const run = async (expression: string): Promise<Record<string, unknown>> => {
-    await browser?.page.goto(base);
-    await browser?.page.waitFor('window.__done === true', 'the island to mount', MOUNT_MS);
-    return JSON.parse(String(await browser?.page.evaluate(expression))) as Record<string, unknown>;
+  const page = () => browser?.page ?? expect.unreachable('no browser');
+  const read = async <T>(expression: string): Promise<T> =>
+    JSON.parse(String(await page().evaluate(expression))) as T;
+  const visit = async (): Promise<void> => {
+    await page().goto(base);
+    await page().waitFor('window.__done === true', 'the island to mount', MOUNT_MS);
+  };
+  /** A finger from `from`'s centre to `to`, then the outcome once the page has settled. */
+  const finger = async (from: string, to: (start: TouchPoint) => Promise<TouchPoint>) => {
+    const start = await read<TouchPoint>(centreOf(from));
+    await page().touchDrag(start, await to(start), 8);
+    await page().waitFor('new Promise((r) => requestAnimationFrame(() => r(true)))', 'a frame');
+    return read<Outcome>(OUTCOME);
   };
 
   beforeAll(async () => {
@@ -160,9 +184,52 @@ describe.skipIf(chrome === undefined && !required)('Board and SplitPane under to
   }, E2E_BROWSER_OPEN_MS);
 
   test(
-    'a finger dragged on a card BODY never lifts it: the gesture belongs to the handle',
+    'a finger on the handle carries a card across columns: one request, the row settled',
     async () => {
-      expect(await run(BODY_DRAG)).toEqual({ moves: [], lifted: null, errors: [] });
+      await visit();
+      // Past the middle of the board: the preview re-parents the row into the second column,
+      // which released the capture and cancelled the drag before `pointer-drag.ts` took it back.
+      const out = await finger('[data-sort-handle="a"]', () =>
+        read<TouchPoint>(centreOf('section[role="group"]:nth-of-type(2)')),
+      );
+      expect(out.errors).toEqual([]);
+      expect(out.moves).toEqual([['a', 'doing']]);
+      expect(out.lifted).toBeNull();
+      expect(out.cancels).toEqual([]);
+    },
+    HOOK_TIMEOUT_MS,
+  );
+
+  test(
+    'a finger on the separator resizes the split, and the release keeps it',
+    async () => {
+      await visit();
+      const out = await finger('[role="separator"]', async (start) => {
+        const box = await read<{ left: number; width: number }>(
+          `(() => { const r = document.querySelector('[role="separator"]').parentElement.getBoundingClientRect(); return JSON.stringify({ left: r.left, width: r.width }); })()`,
+        );
+        return { x: box.left + box.width * 0.7, y: start.y };
+      });
+      expect(out.errors).toEqual([]);
+      expect(out.sizes.at(-1)).toBe(70);
+      expect(out.cancels).toEqual([]);
+    },
+    HOOK_TIMEOUT_MS,
+  );
+
+  test(
+    'a finger dragged up a card BODY scrolls the page: the pointer is cancelled, the row never lifts',
+    async () => {
+      await visit();
+      const out = await finger('li[data-sort-key="a"] .title', async (start) => ({
+        x: start.x,
+        y: Math.max(1, start.y - 300),
+      }));
+      expect(out.scrolled).toBe(true);
+      expect(out.cancels).toContain('touch');
+      expect(out.lifted).toBeNull();
+      expect(out.moves).toEqual([]);
+      expect(out.column).toBe('To do');
     },
     HOOK_TIMEOUT_MS,
   );
@@ -170,7 +237,8 @@ describe.skipIf(chrome === undefined && !required)('Board and SplitPane under to
   test(
     'only the handle and the separator refuse the browser pan, so the page scrolls from a card',
     async () => {
-      const actions = await run(`JSON.stringify({
+      await visit();
+      const actions = await read<Record<string, string>>(`JSON.stringify({
           handle: getComputedStyle(document.querySelector('[data-sort-handle="a"]')).touchAction,
           body: getComputedStyle(document.querySelector('li[data-sort-key="a"] .title')).touchAction,
           row: getComputedStyle(document.querySelector('li[data-sort-key="a"]')).touchAction,

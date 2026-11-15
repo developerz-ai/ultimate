@@ -141,6 +141,50 @@ describe('a whole chain failing', () => {
   });
 });
 
+describe('a chain ending on an undeclared failure', () => {
+  test('the last error is thrown as it stands, and the meter and trace still count every model', async () => {
+    resetTelemetry();
+    const spans: ReadableSpan[] = [];
+    subscribe('span.end', (event) => spans.push(event.payload));
+    const calls: string[] = [];
+    const gateway = gatewayOf(host(PRIMARY, calls, 529), host(SECOND, calls, 400));
+    const meter = runMeter();
+    const failure = await meter.call(gateway.generate(ask)).catch((error: unknown) => error);
+
+    expect(calls).toEqual([PRIMARY, SECOND]);
+    // As it stands: the second model's own verdict, not a chain-wide one naming both.
+    expect(String((failure as { cause?: unknown }).cause)).toContain(`"${SECOND}"`);
+    expect(String((failure as { cause?: unknown }).cause)).not.toContain('→');
+    expect(meter.billed()).toMatchObject({ calls: 0, unsettled: 2 });
+    expect(
+      spans
+        .filter((span) => span.name === 'ai.model.attempt')
+        .map((span) => span.attributes['gen_ai.request.model']),
+    ).toEqual([PRIMARY, SECOND]);
+  });
+
+  test('the same for a stream whose second model refuses before its first chunk', async () => {
+    const calls: string[] = [];
+    const refusing: Provider = {
+      ...host(SECOND, calls),
+      // biome-ignore lint/correctness/useYield: the failure happens before the first chunk
+      async *stream(): AsyncIterable<StreamChunk> {
+        calls.push(SECOND);
+        throw down(400);
+      },
+    };
+    const meter = runMeter();
+    const turn = async (): Promise<never> => {
+      for await (const _chunk of gatewayOf(host(PRIMARY, calls, 'before'), refusing).stream(ask)) {
+        // refused before any chunk
+      }
+      return expect.unreachable('the stream answered');
+    };
+    await expect(meter.call(turn())).rejects.toMatchObject({ status: 400 });
+    expect(meter.billed()).toMatchObject({ calls: 0, unsettled: 2 });
+  });
+});
+
 describe('the chain is screened before any call', () => {
   test('an unregistered fallback model is X_AI_MODEL_UNKNOWN, nothing sent', async () => {
     const calls: string[] = [];

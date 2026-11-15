@@ -99,8 +99,7 @@ export interface FrameRef {
   readonly url: string;
   /** The `<iframe>` selector in the PARENT document, when the driver can tell. */
   readonly selector?: string | undefined;
-  /** The FRAME's verbs only: a page-wide verb on it does not compile, never the parent's answer. */
-  readonly target: ScrapeFrameTarget;
+  readonly target: ScrapeTarget;
 }
 
 export interface GotoOptions {
@@ -131,14 +130,32 @@ export type CaptureOptions = CaptureFraming;
 export type PdfOptions = CaptureOptions & PdfLayout;
 
 /**
- * The verbs a FRAME's own document answers — the half of the port a frame target implements. A
- * frame target used to be the whole `ScrapeTarget`, built by spreading the parent's, so every
- * page-wide verb nobody overrode (a capture, the cookie jar, the accessibility read) answered for
- * the PARENT document through a frame handle, or was refused there at runtime. Narrowed instead:
- * `FrameRef.target` is this type, and asking a frame for a page-wide verb does not compile.
+ * The port. Every member is something a browser genuinely does and nothing a scraper's vocabulary
+ * should be re-deriving per driver. NO COUNT: this comment said "Twelve methods" while the
+ * interface carried seventeen, and a number in prose is wrong the moment the next member lands.
+ * `ScrapeTarget` itself is the list.
+ *
+ * No member here is refused by any target in this package (`port-complete.test.ts` calls every one
+ * on every driver): a member one target cannot honour is a second path, and the answer to it is
+ * implementing it there, never `X_NOT_IMPLEMENTED` at runtime. A FRAME target implements every
+ * member too: the verbs addressing a document read the frame's own, and the rest are the page's.
  */
-export interface ScrapeFrameTarget {
+export interface ScrapeTarget {
+  /** `puppeteer` | `fixture` | `fake`. Appears in every error cause raised against it. */
+  readonly driver: string;
+  readonly console: ConsoleRing;
+  readonly network: NetworkRing;
+  /**
+   * REQUIRED, and empty is a legitimate answer. A driver with no JS engine has no uncaught
+   * exception to report and answers an empty ring; an optional member would instead let a driver
+   * be silent about errors it CAN see, which is precisely the blind spot this ring closes — and
+   * `ScrapePage.pageErrors()` would then be a method that answers nothing on an unknown subset of
+   * drivers. A third-party driver added before 2026-08-21 gets a type error naming this field,
+   * which is the whole enforcement.
+   */
+  readonly pageErrors: PageErrorRing;
   url(): string;
+  goto(url: string, options: GotoOptions): Promise<void>;
   /** Serialised HTML of THIS target — the document for a page, the subtree for a frame. */
   content(): Promise<string>;
   query(selector: string, options?: QueryOptions): Promise<readonly ElementSnapshot[]>;
@@ -161,49 +178,20 @@ export interface ScrapeFrameTarget {
   /**
    * A key chord — `'Meta+K'`, `'Escape'`, `'Shift+Tab'` — pressed on whatever holds focus. The
    * PAGE's keyboard, on a frame target too: a browser has one keyboard, and the focused element
-   * is what decides which document hears it. REQUIRED, and `CdpPageLike.keyboard` is required
-   * too: a launcher without one does not compile. A driver with no keyboard still PARSES the
-   * chord (`key-chord.ts`) and then resolves — the refusal an offline driver can give is the one
-   * it does give.
+   * is what decides which document hears it. REQUIRED; a launcher whose page has no `keyboard`
+   * is refused when the session opens (`cdp-complete.ts`). A driver with no keyboard still PARSES
+   * the chord (`key-chord.ts`) and then resolves — the refusal an offline driver can give is the
+   * one it does give.
    */
   press(chord: string): Promise<void>;
   /** Moves focus to the first match. Refused when nothing matches. */
   focus(selector: string): Promise<void>;
-  frames(): Promise<readonly FrameRef[]>;
-}
-
-/**
- * The port. Every member is something a browser genuinely does and nothing a scraper's vocabulary
- * should be re-deriving per driver. NO COUNT: this comment said "Twelve methods" while the
- * interface carried seventeen, and a number in prose is wrong the moment the next member lands.
- * `ScrapeTarget` itself is the list — the frame verbs it extends, then the page-wide ones.
- *
- * No member here is refused by any target in this package (`port-complete.test.ts` calls every one
- * on every driver): a member one target cannot honour is a second path, and the answer to it is
- * implementing it there or narrowing the type, never `X_NOT_IMPLEMENTED` at runtime.
- */
-export interface ScrapeTarget extends ScrapeFrameTarget {
-  /** `puppeteer` | `fixture` | `fake`. Appears in every error cause raised against it. */
-  readonly driver: string;
-  readonly console: ConsoleRing;
-  readonly network: NetworkRing;
   /**
-   * REQUIRED, and empty is a legitimate answer. A driver with no JS engine has no uncaught
-   * exception to report and answers an empty ring; an optional member would instead let a driver
-   * be silent about errors it CAN see, which is precisely the blind spot this ring closes — and
-   * `ScrapePage.pageErrors()` would then be a method that answers nothing on an unknown subset of
-   * drivers. A third-party driver added before 2026-08-21 gets a type error naming this field,
-   * which is the whole enforcement.
-   */
-  readonly pageErrors: PageErrorRing;
-  goto(url: string, options: GotoOptions): Promise<void>;
-  /**
-   * The accessibility node of every match, bounded by `max` — what a screen reader is told. A
-   * browser answers what it COMPUTED (`cdp-a11y.ts`); the offline drivers answer the HTML-AAM
-   * mapping of the markup (`html-a11y.ts`) — ARIA, the element's implicit role, label association
-   * — and never `role=` alone: a `<div onclick>` maps to no role and no name on both, which is
-   * the finding. PAGE-WIDE, not a frame verb: the CDP read is addressed by the top document's node
-   * ids, so a frame handle has no accessibility read to offer and does not compile asking for one.
+   * The accessibility node of every match, bounded by `max` — what a screen reader is told, about
+   * THIS target's document: a frame target reads the frame's. A browser answers what it COMPUTED
+   * (`cdp-a11y.ts`); the offline drivers answer the HTML-AAM mapping of the markup (`html-a11y.ts`)
+   * — ARIA, the element's implicit role, label association — and never `role=` alone: a
+   * `<div onclick>` maps to no role and no name on both, which is the finding.
    */
   accessibility(selector: string, max: number): Promise<readonly AxNode[]>;
   /**
@@ -224,8 +212,8 @@ export interface ScrapeTarget extends ScrapeFrameTarget {
    * attribute on mount, so a harness that set it is silently overruled and every theme converges
    * on one picture — measured, and byte-identical, in issue #338.
    *
-   * REQUIRED, and `CdpPageLike.emulateMediaFeatures` is required too: a launcher without the
-   * method does not compile, rather than refusing at the call.
+   * REQUIRED; a launcher without `emulateMediaFeatures` is refused when the session opens
+   * (`cdp-complete.ts`), never at the call.
    *
    * A DRIVER WITH NO CSS ENGINE ACCEPTS IT, which is the one place this parts company with
    * `setOfflineMode`, and the line between them is which side of a capture the verb is on. An
@@ -238,8 +226,7 @@ export interface ScrapeTarget extends ScrapeFrameTarget {
   setColorScheme(scheme: ColorScheme): Promise<void>;
   /**
    * A script every document this target navigates to runs BEFORE its own — the browser's
-   * `evaluateOnNewDocument`. REQUIRED, and `CdpPageLike.evaluateOnNewDocument` is required too:
-   * a launcher without the method does not compile.
+   * `evaluateOnNewDocument`. REQUIRED; a launcher without it is refused when the session opens.
    *
    * A DRIVER WITH NO JS ENGINE ACCEPTS IT, for `setColorScheme`'s reason: the offline drivers
    * execute nothing, so there is no document script for the expression to run ahead of and no
@@ -257,6 +244,7 @@ export interface ScrapeTarget extends ScrapeFrameTarget {
    * so it answers the same on a launched browser and on a remote one whose disk is not ours.
    */
   download(options: { readonly timeoutMs: number }): Promise<ScrapeDownloadFile>;
+  frames(): Promise<readonly FrameRef[]>;
   /**
    * Everything that makes this client THIS client: cookies, storage, the headers the site now
    * expects, the user agent. It is the browser-to-HTTP handoff, and it is the thing a session

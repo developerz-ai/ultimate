@@ -143,9 +143,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   (`chunksRead()` false: JSON, MCP, `.job()`) it is the ordinary call, repair turn included.
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
   `vars()` is `X_AI_PROMPT_SECRET` regardless.
-- **Across models ONLY by a declared `fallbackModels`, on `MODEL_FALLBACK_ON`**: billed per
-  attempt, a span per model, a stream before its first chunk only. `GenerateResult.provider` is
-  stamped by the gateway; server-side `fallbacks` never sent. Media generation: absent (OD8).
+- **Across models ONLY by a declared `fallbackModels` (`llm()`, `agent()`), on
+  `MODEL_FALLBACK_ON`**: billed per attempt, a span per model, a stream before its first chunk.
+  Server-side `fallbacks` never sent. Media: absent (OD8). Full rule: `docs/history/ai.md`.
 - **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks every fence closer
   a fenced value wrote, in the ASSEMBLED prompt — never deletes, never touches a template's own.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's

@@ -113,6 +113,19 @@ export function modelChain(
   return chain;
 }
 
+/**
+ * What a DECLARATION's chain adds to a request on `model`: the chain without `model` itself — a
+ * run's own pick (`agent()`'s `model()`, `llm()`'s resolution) may be one of its fallbacks, and is
+ * then simply not asked twice. Nothing when no fallback is left.
+ */
+export function declaredFallbacks(
+  model: ModelId,
+  fallbackModels: readonly ModelId[] | undefined,
+): { readonly fallbackModels?: readonly ModelId[] } {
+  const rest = (fallbackModels ?? []).filter((one) => one !== model);
+  return rest.length === 0 ? {} : { fallbackModels: rest };
+}
+
 const fellOverAs = (model: ModelId, reason: ModelFallbackClass, error: unknown): ModelFallback => {
   const billed = billedOf(error);
   return {
@@ -160,7 +173,7 @@ export async function generateOverModels(
       return fellOver.length === 0 ? result : { ...result, fallbacks: fellOver };
     } catch (error) {
       const reason = fallbackClassOf(error);
-      if (reason === undefined) throw error;
+      if (reason === undefined) throw withEarlier(error, fellOver);
       fellOver.push(fellOverAs(model, reason, error));
       if (index === chain.length - 1) throw exhausted(chain, fellOver);
     }
@@ -201,7 +214,7 @@ export async function* streamOverModels(
     } catch (error) {
       span.recordError(error);
       const reason = delivered ? undefined : fallbackClassOf(error);
-      if (reason === undefined) throw error;
+      if (reason === undefined) throw withEarlier(error, fellOver);
       span.setAttribute('ultimate.llm.fallback.reason', reason);
       fellOver.push(fellOverAs(model, reason, error));
       if (index === chain.length - 1) throw exhausted(chain, fellOver);
@@ -211,7 +224,32 @@ export async function* streamOverModels(
   }
 }
 
-/** The model attempts a thrown chain failure stands for — `undefined` for any other throw (one). */
-export function attemptsOf(error: unknown): readonly ModelFallback[] | undefined {
-  return error instanceof AiProviderUnavailableError ? error.fellOver : undefined;
+/**
+ * The earlier failed models of a chain whose LAST model failed outside the declared class: the
+ * error is thrown as it stands, so the attempts ride beside it — a `WeakMap`, never a write onto a
+ * value an app's `Provider` built (it may be frozen, or not an object at all).
+ */
+const earlier = new WeakMap<object, readonly ModelFallback[]>();
+
+const withEarlier = (error: unknown, fellOver: readonly ModelFallback[]): unknown => {
+  if (fellOver.length > 0 && typeof error === 'object' && error !== null) {
+    earlier.set(error, [...fellOver]);
+  }
+  return error;
+};
+
+/**
+ * The model attempts a thrown chain failure stands for, for the run meter. `whole`: the error IS
+ * the chain's (every model failed declared) and counts as nothing more; otherwise the attempts are
+ * the models before the one that threw, which the meter counts as it counts any throw.
+ */
+export function attemptsOf(
+  error: unknown,
+): { readonly attempts: readonly ModelFallback[]; readonly whole: boolean } | undefined {
+  if (error instanceof AiProviderUnavailableError && error.fellOver !== undefined) {
+    return { attempts: error.fellOver, whole: true };
+  }
+  if (typeof error !== 'object' || error === null) return undefined;
+  const before = earlier.get(error);
+  return before === undefined ? undefined : { attempts: before, whole: false };
 }

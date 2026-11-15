@@ -35,10 +35,12 @@ export function llmReport(span: Span, model: string, meter: RunMeter): LlmReport
   return {
     meter: watched,
     settle({ cacheHit, error }) {
-      // The RUN's usage — every attempt, repair turns included — not the last answer's.
+      // The RUN's usage — every attempt, repair turns and fallback answers included — not the last
+      // answer's. `below` is a fallback model's answers: an `llm()` runs nothing underneath it.
       const usage = meter.total()?.usage;
-      const inputTokens = usage?.inputTokens ?? 0;
-      const outputTokens = usage?.outputTokens ?? 0;
+      const apart = meter.below()?.usage;
+      const inputTokens = (usage?.inputTokens ?? 0) + (apart?.inputTokens ?? 0);
+      const outputTokens = (usage?.outputTokens ?? 0) + (apart?.outputTokens ?? 0);
       span.setAttributes({
         [SEMCONV.genAiProviderName]: provider,
         [SEMCONV.genAiResponseModel]: answeredBy,

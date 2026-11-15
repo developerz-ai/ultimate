@@ -61,3 +61,11 @@ export function runTotal(
     costExact: addMoney(base.costExact, below.cost),
   };
 }
+
+/**
+ * The model a run's OWN usage is priced on after `result`: the one the call asked for. A turn that
+ * fell over to a `fallbackModels` model answered at that model's price, billed apart
+ * (`RunMeter.below`), so it must not re-price the rest.
+ */
+export const pricedOn = (result: GenerateResult): ModelId =>
+  result.fallbacks?.[0]?.model ?? result.model;
