@@ -19,6 +19,7 @@ import { ScriptError } from './lib/script-error';
 import { strangerEnvAt } from './lib/stranger-env';
 import type { FixtureRun } from './upgrade-fixtures-findings';
 import { fixtureFindings, fixtureLines } from './upgrade-fixtures-findings';
+import { nextMinor } from './upgrade-fixtures-packument';
 import { packHead, purgeLoopbackEntries } from './upgrade-fixtures-registry';
 import { runFixture, scaffoldHead } from './upgrade-fixtures-run';
 
@@ -92,9 +93,12 @@ if (import.meta.main) {
       args.json,
     );
   }
+  // HEAD as the release that will ship it: codemods are registered `since` that version, and a hop
+  // to the stamped one would skip them all. `headVersionOf` admitted a release, so this is one too.
+  const target = nextMinor(headVersion) ?? headVersion;
   // The fixtures run code this checkout did not write: an allowlisted env, a throwaway home.
   const env = strangerEnvAt(root);
-  const { packed, findings: packFindings } = await packHead(root, join(cacheDir, 'pack'));
+  const { packed, findings: packFindings } = await packHead(root, join(cacheDir, 'pack'), target);
   const runs: FixtureRun[] = [];
   const headScaffold = packFindings.length === 0 ? await scaffoldHead(root, env) : undefined;
   if (packFindings.length === 0) {
@@ -102,7 +106,7 @@ if (import.meta.main) {
       const one = await runFixture({
         root,
         version,
-        head: headVersion,
+        head: target,
         packed,
         cacheDir,
         env,
@@ -122,10 +126,10 @@ if (import.meta.main) {
     {
       ok: findings.length === 0 && runs.length === versions.length,
       script: SCRIPT,
-      summary: `${String(green)} of ${String(versions.length)} fixture(s) reach ${headVersion} with no hand edit`,
+      summary: `${String(green)} of ${String(versions.length)} fixture(s) reach ${target} (HEAD, stamped ${headVersion}) with no hand edit`,
       findings,
       lines: runs.flatMap(fixtureLines),
-      data: { head: headVersion, kept: keep, fixtures: runs },
+      data: { head: target, stamped: headVersion, kept: keep, fixtures: runs },
     },
     args.json,
   );

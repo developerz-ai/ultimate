@@ -89,3 +89,41 @@ export const scopeLine = (url: string): string => `${SCOPE}:registry=${url}\n`;
 /** The tarball file name `bun pm pack` writes for a package: `@ultimat3/core@1.0.0` → `ultimat3-core-1.0.0.tgz`. */
 export const tarballName = (name: string, version: string): string =>
   `${name.replace(/^@/, '').replace('/', '-')}-${version}.tgz`;
+
+/**
+ * The release HEAD is served as: the next minor after the version its workspaces carry. A codemod
+ * is registered `since` the release that will ship it — the next one — and the engine runs those
+ * with `from < since <= to`, so a hop to the stamped version would skip every one written since.
+ */
+export const nextMinor = (version: string): string | undefined => {
+  const match = /^(\d+)\.(\d+)\.\d+$/.exec(version);
+  return match === null ? undefined : `${match[1]}.${String(Number(match[2]) + 1)}.0`;
+};
+
+/**
+ * A packed manifest restamped from `from` to `to`: its own version, and every `@ultimat3/*`
+ * dependency pinned at `from` — the lockstep pins a release rewrites — moved with it.
+ */
+export const retargetManifest = (
+  manifest: Readonly<Record<string, unknown>>,
+  from: string,
+  to: string,
+): Record<string, unknown> => {
+  const out: Record<string, unknown> = { ...manifest, version: to };
+  for (const field of [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+  ]) {
+    const deps = manifest[field];
+    if (typeof deps !== 'object' || deps === null || Array.isArray(deps)) continue;
+    out[field] = Object.fromEntries(
+      Object.entries(deps).map(([name, range]) => [
+        name,
+        name.startsWith(`${SCOPE}/`) && range === from ? to : range,
+      ]),
+    );
+  }
+  return out;
+};

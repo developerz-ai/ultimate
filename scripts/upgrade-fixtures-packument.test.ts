@@ -5,7 +5,9 @@ import { describe, expect, test } from 'bun:test';
 import type { PackedPackage } from './upgrade-fixtures-packument';
 import {
   asOf,
+  nextMinor,
   packageOfPath,
+  retargetManifest,
   scopeLine,
   tarballName,
   withHead,
@@ -82,5 +84,30 @@ describe('the scope', () => {
   test('the .npmrc line moves the scope alone, and the tarball name is the one bun pm pack writes', () => {
     expect(scopeLine('http://127.0.0.1:9/a/')).toBe('@ultimat3:registry=http://127.0.0.1:9/a/\n');
     expect(tarballName('@ultimat3/core', '31.27.0')).toBe('ultimat3-core-31.27.0.tgz');
+  });
+});
+
+describe('HEAD as the next release', () => {
+  test('the next minor of the stamped version, so a codemod `since` it is inside the hop', () => {
+    expect(nextMinor('31.27.0')).toBe('31.28.0');
+    expect(nextMinor('31.27.3')).toBe('31.28.0');
+    expect(nextMinor('9.99.0')).toBe('9.100.0');
+    expect(nextMinor('31.27')).toBeUndefined();
+    expect(nextMinor('32.0.0-rc.1')).toBeUndefined();
+  });
+
+  test('restamping moves the version and the lockstep @ultimat3 pins, nothing else', () => {
+    const packed = {
+      name: '@ultimat3/action',
+      version: '31.27.0',
+      dependencies: { '@ultimat3/core': '31.27.0', '@ultimat3/http': '^30.0.0', seroval: '1.3.2' },
+      peerDependencies: { 'solid-js': '31.27.0' },
+    };
+    expect(retargetManifest(packed, '31.27.0', '31.28.0')).toEqual({
+      name: '@ultimat3/action',
+      version: '31.28.0',
+      dependencies: { '@ultimat3/core': '31.28.0', '@ultimat3/http': '^30.0.0', seroval: '1.3.2' },
+      peerDependencies: { 'solid-js': '31.27.0' },
+    });
   });
 });

@@ -6,11 +6,18 @@
 // why: Bun has no directory listing, mkdir or recursive remove; the pack dir and cache are managed here.
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Finding } from './lib/log';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
 import type { PackedPackage } from './upgrade-fixtures-packument';
-import { asOf, packageOfPath, SCOPE, tarballName, withHead } from './upgrade-fixtures-packument';
+import {
+  asOf,
+  packageOfPath,
+  retargetManifest,
+  SCOPE,
+  tarballName,
+  withHead,
+} from './upgrade-fixtures-packument';
 
 export const UPSTREAM = 'https://registry.npmjs.org';
 
@@ -23,10 +30,41 @@ const integrityOf = async (file: string): Promise<string> => {
   return `sha512-${hasher.digest('base64')}`;
 };
 
-/** Every publishable `@ultimat3/*` workspace under `root/packages`, packed into `dest`. */
+/**
+ * A packed tarball restamped as release `to`: unpacked, its `package.json` rewritten
+ * (`retargetManifest`), packed again under the name `bun pm pack` would give that release. The
+ * system `tar`, which every runner ships: Bun has no archive API.
+ */
+async function restamp(
+  file: string,
+  manifest: Readonly<Record<string, unknown>>,
+  from: string,
+  to: string,
+  name: string,
+): Promise<{ readonly file: string; readonly manifest: Record<string, unknown> } | string> {
+  const work = `${file}.d`;
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  const untar = await run(['tar', '-xzf', file, '-C', work], { cwd: work });
+  if (!untar.ok) return untar.output;
+  const restamped = retargetManifest(manifest, from, to);
+  await Bun.write(join(work, 'package', 'package.json'), `${JSON.stringify(restamped, null, 2)}\n`);
+  const out = join(dirname(file), tarballName(name, to));
+  const tar = await run(['tar', '-czf', out, '-C', work, 'package'], { cwd: work });
+  rmSync(work, { recursive: true, force: true });
+  if (!tar.ok) return tar.output;
+  rmSync(file, { force: true });
+  return { file: out, manifest: restamped };
+}
+
+/**
+ * Every publishable `@ultimat3/*` workspace under `root/packages`, packed into `dest` and served as
+ * release `target` (the next minor, `nextMinor`) — the packs restamped when it differs.
+ */
 export async function packHead(
   root: string,
   dest: string,
+  target: string,
 ): Promise<{ readonly packed: readonly PackedPackage[]; readonly findings: readonly Finding[] }> {
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
@@ -56,7 +94,32 @@ export async function packHead(
       });
       continue;
     }
-    packed.push({ name, version, manifest, file, integrity: await integrityOf(file) });
+    // The tarball's own manifest, not the workspace's: `bun pm pack` rewrites `workspace:` ranges.
+    const packedManifest = await run(['tar', '-xzOf', file, 'package/package.json'], {
+      cwd: dest,
+    });
+    const shipped: unknown = packedManifest.ok ? JSON.parse(packedManifest.output) : manifest;
+    const base = isRecord(shipped) ? shipped : manifest;
+    const stamped =
+      target === version
+        ? { file, manifest: base }
+        : await restamp(file, base, version, target, name);
+    if (typeof stamped === 'string') {
+      findings.push({
+        code: 'X_UPGRADE_FIXTURE_UNBUILT',
+        cause: `${name} could not be restamped as ${target}: ${stamped.slice(-400)}`,
+        fix: `tar -tzf ${file}`,
+        at: `packages/${dir}/package.json`,
+      });
+      continue;
+    }
+    packed.push({
+      name,
+      version: target,
+      manifest: stamped.manifest,
+      file: stamped.file,
+      integrity: await integrityOf(stamped.file),
+    });
   }
   return { packed, findings };
 }
