@@ -65,6 +65,24 @@ describe('private-names-match · a private repository', () => {
     expect(lineHit(line, [], REPOS)).toBeUndefined();
   });
 
+  test.each(['merged: vault #2232, #2234', 'tracked as vault#1633', '(ops.site #4).'])(
+    '%s is refused: a bare tracker reference is the same private tracker',
+    (line) => {
+      expect(lineHit(line, [], REPOS)?.kind).toBe('repository');
+    },
+  );
+
+  test.each([
+    'the vault (#12)',
+    'vault 2232',
+    'vault-tools #3',
+    'vaults #3',
+    'xvault #3',
+    'other-co/vault #12',
+  ])('%s passes: no number, another name, or another owner', (line) => {
+    expect(lineHit(line, [], REPOS)).toBeUndefined();
+  });
+
   test('the entry index is 1-based among repositories', () => {
     expect(lineHit('quimtel/ops.site', [], REPOS)).toEqual({ kind: 'repository', index: 2 });
   });
