@@ -57,7 +57,10 @@ describe('x graph', () => {
     // The IMPORT edges, read from this fixture's files. Declared edges come from the process's
     // registries, and `@ultimat3/realtime`'s channel registry publishes no restore: on a shared
     // worker an earlier file's `channel('org-posts')` is still declared and draws its own edges.
-    const data = result.data as { edges: readonly { provenance: string }[]; opaque: unknown };
+    const data = result.data as {
+      edges: readonly { from: string; to: string; rel: string; provenance: string }[];
+      opaque: unknown;
+    };
     expect(data.edges.filter((edge) => edge.provenance === 'import')).toEqual([
       { from: A, to: B, rel: 'imports', provenance: 'import' },
       { from: 'test:apps/web/lib/b.test.ts', to: B, rel: 'imports', provenance: 'import' },

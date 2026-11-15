@@ -37,7 +37,8 @@ export interface TableStorage {
   readonly table: string;
   readonly fillfactor: number | undefined;
   readonly unlogged: boolean | undefined;
-  readonly autovacuum: TableAutovacuum | undefined;
+  /** Optional, so a `TableStorage` written before 31.25 still compiles. */
+  readonly autovacuum?: TableAutovacuum | undefined;
 }
 
 /**
