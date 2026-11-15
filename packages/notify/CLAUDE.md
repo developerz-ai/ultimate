@@ -196,4 +196,4 @@ boot installs notify stores** — this file said it did not until 2026-08-27, wh
 outlived its fact.
 
 Commands: `bun test ./packages/notify/`, `bun run boundaries`,
-`bunx biome check packages/notify`.
+`bunx @biomejs/biome check packages/notify`.

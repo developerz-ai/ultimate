@@ -6,7 +6,7 @@
       "Bash(bun run typecheck)",
       "Bash(bun run lint)",
       "Bash(bun run verify:*)",
-      "Bash(bunx biome check:*)",
+      "Bash(bunx @biomejs/biome check:*)",
       "Bash(bunx x verify:*)",
       "Bash(bunx x test:*)",
       "Bash(bunx x doctor:*)",

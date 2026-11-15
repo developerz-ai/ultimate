@@ -1,11 +1,13 @@
-// 31.22.0: the PostToolUse format hook read `$CLAUDE_FILE_PATHS`, which the harness never sets, so
-// it formatted nothing. Now `.claude/hooks/format-edited.ts` reads the edited path from stdin;
-// `settings.json` runs it, and the read-only commands the app's docs name stop prompting.
+// The PostToolUse format hook, carried twice. 31.22.0: it read `$CLAUDE_FILE_PATHS`, which the
+// harness never sets; now `.claude/hooks/format-edited.ts` reads the path from stdin. 31.28.0: that
+// script ran `bunx biome`, which with no install fetches an unrelated npm package; now it runs the
+// app's own `node_modules/.bin/biome` or nothing, and the docs name `@biomejs/biome`.
 
 import { claudeHookFile, HOOK_PATH } from '../templates/scaffold-claude-hook';
 import type { Codemod } from './codemod';
 import type { SnippetEdit } from './engine-edits';
 import { editSnippets, mergeResults, writeIfAbsent } from './engine-edits';
+import { HOOK_SCRIPT_3122 } from './format-edited-hook-3122';
 
 const SETTINGS = '.claude/settings.json';
 const README = '.claude/README.md';
@@ -84,27 +86,67 @@ const README_EDITS: readonly SnippetEdit[] = [
   },
 ];
 
+/** The stock script `x new` wrote from 31.22.0, whole: an app that edited it keeps its own. */
+const script = claudeHookFile().contents;
+const HOOK_SCRIPT: SnippetEdit = {
+  from: HOOK_SCRIPT_3122,
+  to: typeof script === 'string' ? script : HOOK_SCRIPT_3122,
+};
+
+/** `bunx biome` names whatever npm calls `biome`; `@biomejs/biome` is the formatter. */
+const BIOME_ALLOW: SnippetEdit = {
+  from: '      "Bash(bunx biome check:*)",',
+  to: '      "Bash(bunx @biomejs/biome check:*)",',
+  optional: true,
+};
+const README_BIOME: SnippetEdit = {
+  from: `One \`PostToolUse\` hook, \`${HOOK_PATH}\`: \`bunx biome check --write\` on the file that was just`,
+  to: `One \`PostToolUse\` hook, \`${HOOK_PATH}\`: the installed \`biome check --write\` on the file that was just`,
+  optional: true,
+};
+const LINT_LINE: SnippetEdit = {
+  from: '`bunx biome check --write <paths>`',
+  to: '`bunx @biomejs/biome check --write <paths>`',
+  optional: true,
+};
+const DOCS = [
+  '.claude/agents/data.md',
+  '.claude/agents/server.md',
+  '.claude/agents/web.md',
+  '.claude/commands/feature.md',
+] as const;
+
+/** The 31.28.0 edits alone, per file, in run order: what a 31.22-to-31.27 app is carried by. */
+export const BIOME_EDITS: Readonly<Record<string, readonly SnippetEdit[]>> = {
+  [SETTINGS]: [BIOME_ALLOW],
+  [HOOK_PATH]: [HOOK_SCRIPT],
+  [README]: [README_BIOME],
+  ...Object.fromEntries(DOCS.map((path) => [path, [LINT_LINE]])),
+};
+
 /** Each file's edits: what the codemod runs, and what its test runs backwards. */
 export const FORMAT_HOOK_EDITS = {
-  [SETTINGS]: [ALLOWED, HOOK],
-  [README]: README_EDITS,
+  [SETTINGS]: [ALLOWED, HOOK, BIOME_ALLOW],
+  [README]: [...README_EDITS, README_BIOME],
 } as const;
 
 export const codemod: Codemod = {
   id: 'format-edited-hook',
-  since: '31.22.0',
-  summary: `.claude/settings.json runs ${HOOK_PATH}, which reads the edited file from stdin: the old hook formatted nothing`,
+  since: '31.28.0',
+  summary: `.claude/settings.json runs ${HOOK_PATH}, which reads the edited file from stdin and runs the app's own biome, never bunx biome`,
   async run(app) {
-    const settings = await editSnippets(app, SETTINGS, [ALLOWED, HOOK]);
+    const settings = await editSnippets(app, SETTINGS, FORMAT_HOOK_EDITS[SETTINGS]);
     // The script only where settings.json runs it: an app that dropped the hook keeps none.
     const runsIt = ((await app.read(SETTINGS)) ?? '').includes(HOOK_PATH);
-    const script = claudeHookFile().contents;
-    return mergeResults([
+    const results = [
       settings,
       runsIt && typeof script === 'string'
         ? await writeIfAbsent(app, HOOK_PATH, script)
         : { changed: [], skipped: [] },
-      await editSnippets(app, README, README_EDITS),
-    ]);
+      await editSnippets(app, HOOK_PATH, [HOOK_SCRIPT]),
+      await editSnippets(app, README, FORMAT_HOOK_EDITS[README]),
+    ];
+    for (const path of DOCS) results.push(await editSnippets(app, path, [LINT_LINE]));
+    return mergeResults(results);
   },
 };

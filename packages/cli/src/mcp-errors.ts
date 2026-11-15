@@ -79,7 +79,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CLI_UNEXPECTED: 'x doctor --json',
   // `-p .`: an app root has no `references`, so the gate's own step runs this form (#450).
   X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
-  X_LINT_FAILED: 'bunx biome check .',
+  X_LINT_FAILED: 'bunx @biomejs/biome check .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run verify --json   # every finding carries its own new-package.ts command',

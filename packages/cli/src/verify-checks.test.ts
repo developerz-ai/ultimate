@@ -55,7 +55,7 @@ describe('the lint step', () => {
     expect(finding?.cause).toContain('bad.ts:1 lint/correctness/noUnusedVariables');
     // `--write` cannot repair it, so the fix does not claim it can.
     expect(finding?.fix).toStartWith(
-      'bunx biome check bad.ts   # lint/correctness/noUnusedVariables: edit bad.ts:1,',
+      'bunx @biomejs/biome check bad.ts   # lint/correctness/noUnusedVariables: edit bad.ts:1,',
     );
     expect(finding?.fix).not.toContain('--write');
   });
@@ -64,8 +64,8 @@ describe('the lint step', () => {
     await Bun.write(join(root, 'bad.ts'), 'export const used   =   2\n');
     const outcome = await check();
     const fix = outcome.findings[0]?.fix ?? '';
-    expect(fix).toBe('bunx biome check --write bad.ts');
-    const argv = fix.replace('bunx biome', BIOME).split(' ');
+    expect(fix).toBe('bunx @biomejs/biome check --write bad.ts');
+    const argv = fix.replace('bunx @biomejs/biome', BIOME).split(' ');
     await exec(argv, { cwd: root });
     expect((await check()).ok).toBe(true);
   });
@@ -102,7 +102,7 @@ describe('a report that is not one', () => {
   ])('%s keeps one finding pointing at the command, with what biome said', (stdout) => {
     const outcome = lintOutcome(red(stdout));
     expect(outcome.ok).toBe(false);
-    expect(outcome.findings[0]?.fix).toBe('bunx biome check .');
+    expect(outcome.findings[0]?.fix).toBe('bunx @biomejs/biome check .');
     expect(outcome.output).toContain('bad config');
   });
 
@@ -123,8 +123,8 @@ describe('a report that is not one', () => {
     });
     const findings = lintFindings(report) ?? [];
     expect(findings.map((one) => one.fix)).toEqual([
-      'bunx biome check --write a.ts c.ts',
-      'bunx biome check b.ts   # lint/style/useConst: edit b.ts:4, m',
+      'bunx @biomejs/biome check --write a.ts c.ts',
+      'bunx @biomejs/biome check b.ts   # lint/style/useConst: edit b.ts:4, m',
     ]);
     expect(findings[0]?.cause).toBe(
       'a.ts:1 format: m; c.ts:1 assist/source/organizeImports: m; a.ts:9 format: m',
@@ -139,7 +139,7 @@ describe('a report that is not one', () => {
         { severity: 'error', category: 'format', message: 'm', location: { path: 'a;id.ts' } },
       ],
     });
-    expect(lintFindings(report)?.[0]?.fix).toBe("bunx biome check --write 'a;id.ts'");
+    expect(lintFindings(report)?.[0]?.fix).toBe("bunx @biomejs/biome check --write 'a;id.ts'");
   });
 });
 

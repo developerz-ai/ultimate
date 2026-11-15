@@ -100,7 +100,7 @@ While you iterate, narrow the *feedback*, not the gate:
 | one test by name | \`bun test -t '<name>'\` |
 | a whole type | \`bunx x test unit\` · \`bunx x test contract\` · \`bunx x test e2e\` |
 | one gate step | \`bunx x verify --only <step> --json\` — \`NOT A GATE RUN\` |
-| lint the files you touched | \`bunx biome check --write <paths>\` |
+| lint the files you touched | \`bunx @biomejs/biome check --write <paths>\` |
 | types, once, when otherwise done | \`bun run typecheck\` |
 | a broken environment | \`bunx x doctor\` |
 

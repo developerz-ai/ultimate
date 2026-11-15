@@ -164,4 +164,24 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.28.0',
     codemod: 'verify-floor-steps',
   },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-hook.ts',
+    since: '31.28.0',
+    codemod: 'format-edited-hook',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude.ts',
+    since: '31.28.0',
+    codemod: 'format-edited-hook',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-agents.ts',
+    since: '31.28.0',
+    codemod: 'format-edited-hook',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-commands.ts',
+    since: '31.28.0',
+    codemod: 'format-edited-hook',
+  },
 ];

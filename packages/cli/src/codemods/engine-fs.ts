@@ -1,42 +1,88 @@
 // The `CodemodApp` over a real app root: posix paths relative to it in and out, refused when they
-// resolve outside it. A glob skips `node_modules/` and `.git/`, which no scaffold-owned file is in.
+// resolve outside it — lexically or through a symlink. A glob skips `node_modules/` and `.git/`,
+// which no scaffold-owned file is in.
 
-// why: Bun has no file-removal primitive; `rm` with `force` makes a removal of nothing no error.
-import { rm } from 'node:fs/promises';
+// why: Bun has no file-removal, rename, lstat or realpath primitive; `rm` with `force` makes a
+// removal of nothing no error, `rename` lands a write whole, and only `realpath` answers where a
+// symlinked component really points.
+import { lstat, realpath, rename, rm } from 'node:fs/promises';
 // why: Bun exposes no path-resolve primitive; containment is decided on the resolved path.
-import { resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { ScaffoldPathEscapeError } from '../errors';
 import type { CodemodApp } from './codemod';
 
 const SKIPPED = /^(?:node_modules|\.git)\//;
 
-const contained = (root: string, path: string): string => {
+const FIX =
+  'x upgrade codemods --from 0.0.0 --dry-run --json   # names the codemod that asked for the path; report it with that output';
+
+const inside = (base: string, target: string): boolean => target.startsWith(`${base}${sep}`);
+
+/** Nothing at this path (or a file where a directory was named): keep walking up. */
+const absent = (error: unknown): boolean => {
+  const code = typeof error === 'object' && error !== null ? Reflect.get(error, 'code') : undefined;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+};
+
+/**
+ * The absolute path, once it is inside the root twice over: lexically, and after following every
+ * symlink on the way — the deepest component that exists is resolved, and must land under the
+ * root's own real path. A dangling link resolves nowhere, so it is refused rather than followed.
+ */
+async function contained(root: string, path: string): Promise<string> {
   const base = resolve(root);
   const target = resolve(base, path);
-  if (target === base || !target.startsWith(`${base}${sep}`)) {
-    throw new ScaffoldPathEscapeError({
-      path,
-      dir: base,
-      fix: 'x upgrade codemods --from 0.0.0 --dry-run --json   # names the codemod that asked for the path; report it with that output',
-    });
+  const refuse = (): never => {
+    throw new ScaffoldPathEscapeError({ path, dir: base, fix: FIX });
+  };
+  if (target === base || !inside(base, target)) refuse();
+  const realBase = await realpath(base);
+  for (let probe = target; probe !== base; probe = dirname(probe)) {
+    const exists = await lstat(probe).then(
+      () => true,
+      (error: unknown) => (absent(error) ? false : Promise.reject(error)),
+    );
+    if (!exists) continue;
+    const real = await realpath(probe).catch(refuse);
+    if (real !== realBase && !inside(realBase, real)) refuse();
+    break;
   }
   return target;
-};
+}
+
+/**
+ * `source` at `target`, whole or not at all: written beside it under a unique name, then renamed
+ * over it — a crash leaves the old file or the new one, never half of one, and no stray temp.
+ */
+export async function landFile(
+  target: string,
+  source: string,
+  move: (from: string, to: string) => Promise<void> = rename,
+): Promise<void> {
+  const temp = `${target}.x-codemod-${String(process.pid)}-${crypto.randomUUID()}.tmp`;
+  await Bun.write(temp, source);
+  try {
+    await move(temp, target);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
+}
 
 export function fsCodemodApp(root: string): CodemodApp {
   return {
     root,
     async read(path) {
-      const file = Bun.file(contained(root, path));
+      const file = Bun.file(await contained(root, path));
       return (await file.exists()) ? await file.text() : undefined;
     },
     async write(path, source) {
-      await Bun.write(contained(root, path), source);
+      await landFile(await contained(root, path), source);
     },
     async remove(path) {
-      await rm(contained(root, path), { force: true });
+      await rm(await contained(root, path), { force: true });
     },
-    exists: (path) => Bun.file(contained(root, path)).exists(),
+    exists: async (path) => Bun.file(await contained(root, path)).exists(),
     async glob(pattern) {
       const paths: string[] = [];
       for await (const path of new Bun.Glob(pattern).scan({ cwd: root, dot: true })) {

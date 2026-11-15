@@ -75,8 +75,9 @@ bun run verify --json   # the same, machine-readable
 ```
 
 `bun run verify` is `bunx x verify`, the whole gate: its `budgets` step builds what it weighs when
-`.x/build-stats.json` is missing or older than the source. CI runs this same script —
-`.github/workflows/ci.yml` is `bun run setup` and then `bun run verify`, nothing else.
+`.x/build-stats.json` is missing or older than the source. CI runs this same script, cut into
+parts — `.github/workflows/ci.yml` asks `bun run verify plan` for them, runs `bun run setup` and
+each part's `bun run verify --only …`, and `bun run verify merge` is the verdict.
 
 Red is instructions, not a verdict: **every finding carries an executable `fix:` — run it verbatim
 before improvising**, and `bunx x errors explain <CODE>` expands any code it names. Never narrow the gate
@@ -91,13 +92,13 @@ While you iterate, narrow the *feedback*, not the gate:
 | one test by name | `bun test -t '<name>'` |
 | a whole type | `bunx x test unit` · `bunx x test contract` · `bunx x test e2e` |
 | one gate step | `bun run verify --only <step>` — feedback, not the verdict |
-| lint the files you touched | `bunx biome check --write <paths>` |
+| lint the files you touched | `bunx @biomejs/biome check --write <paths>` |
 | types, once, when otherwise done | `bun run typecheck` |
 | a broken environment | `bunx x doctor` |
 
 ## 5. Hard rules
 
-Never a bare `throw new Error` — declare each code once with `defineError` from `@ultimat3/core`:
+Never a bare `throw new Error` — declare each code once with `defineError` from `@ultimat3/core/page`:
 a stable code, a title, a status, a cause and a runnable `fix:`.
 No `any`; use `unknown` and parse. Named exports only. `import type` for types.
 Tests next to the source as `<file>.test.ts`, failure case first — a test that cannot fail is not a

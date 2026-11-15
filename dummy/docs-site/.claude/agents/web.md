@@ -29,5 +29,5 @@ Every one of the last five is a build error, not a preference — a guard the fr
 Inspect before you change: `bunx x routes --json`, `bunx x i18n check` for catalog gaps, and
 `bunx x shot <route> --json` when you need to see what you built.
 
-Checks: `bun test <path>/page.test.ts`, `bunx biome check --write <paths>`, and `bun run typecheck`
+Checks: `bun test <path>/page.test.ts`, `bunx @biomejs/biome check --write <paths>`, and `bun run typecheck`
 once when you are otherwise done. Never `bunx x verify` — that belongs to whoever coordinates you.

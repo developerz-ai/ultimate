@@ -64,7 +64,7 @@ const editFinding = (diagnostic: Diagnostic): Finding => {
   return {
     code: 'X_LINT_FAILED',
     cause: `${place} ${category}: ${message}`,
-    fix: `bunx biome check ${quoteArg(path)}   # ${category}: edit ${commentSafe(place)}, ${commentSafe(message)}`,
+    fix: `bunx @biomejs/biome check ${quoteArg(path)}   # ${category}: edit ${commentSafe(place)}, ${commentSafe(message)}`,
     docs: ERROR_DOCS_URL,
     at: path,
   };
@@ -78,7 +78,7 @@ const writeFinding = (diagnostics: readonly Diagnostic[]): Finding => {
     code: 'X_LINT_FAILED',
     cause: places.join('; '),
     // Each path through `quoteArg`, joined after: one command, every file one argument.
-    fix: ['bunx biome check --write', ...paths.map(quoteArg)].join(' '),
+    fix: ['bunx @biomejs/biome check --write', ...paths.map(quoteArg)].join(' '),
     docs: ERROR_DOCS_URL,
     ...(paths.length === 1 ? { at: paths[0] } : {}),
   };
@@ -119,7 +119,7 @@ export function lintOutcome(result: ExecResult): StepOutcome {
       {
         code: 'X_LINT_FAILED',
         cause: 'biome exited red and reported no diagnostic to read',
-        fix: 'bunx biome check .',
+        fix: 'bunx @biomejs/biome check .',
         docs: ERROR_DOCS_URL,
       },
     ],

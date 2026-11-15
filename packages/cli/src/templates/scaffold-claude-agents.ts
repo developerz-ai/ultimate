@@ -81,7 +81,7 @@ feature slice. Nothing else. A change outside that set is a collision — report
 
 Inspect before you change: \`bunx x entities list\`, \`bunx x entities show <name>\`, both with \`--json\`.
 
-Checks: \`bun test <path>/entity.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
+Checks: \`bun test <path>/entity.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and \`bun run typecheck\`
 once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
@@ -108,7 +108,7 @@ renders. A change outside that set is a collision — report it, do not make it.
 Inspect before you change: \`bunx x actions show <name>\`, \`bunx x queries show <name>\`, \`bunx x jobs list\`,
 \`bunx x tasks list\`, \`bunx x policy explain <subject>\` — every one takes \`--json\`.
 
-Checks: \`bun test <path>/<file>.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
+Checks: \`bun test <path>/<file>.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and \`bun run typecheck\`
 once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
@@ -143,7 +143,7 @@ Every one of the last five is a build error, not a preference — a guard the fr
 Inspect before you change: \`bunx x routes --json\`, \`bunx x i18n check\` for catalog gaps, and
 \`bunx x shot <route> --json\` when you need to see what you built.
 
-Checks: \`bun test <path>/page.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
+Checks: \`bun test <path>/page.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and \`bun run typecheck\`
 once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 

@@ -43,7 +43,7 @@ framework's.
 
 ## The hook
 
-One `PostToolUse` hook, `.claude/hooks/format-edited.ts`: `bunx biome check --write` on the file that was just
+One `PostToolUse` hook, `.claude/hooks/format-edited.ts`: the installed `biome check --write` on the file that was just
 edited, named by the JSON the harness sends on stdin. **`--write` means it rewrites that file in
 place** — the same safe fixes `biome check --write .` would make repo-wide, but your working tree
 does change after every agent edit. Scoped to one file, so it costs milliseconds, and it settles

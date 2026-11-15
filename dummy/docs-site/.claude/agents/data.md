@@ -19,5 +19,5 @@ feature slice. Nothing else. A change outside that set is a collision — report
 
 Inspect before you change: `bunx x entities list`, `bunx x entities show <name>`, both with `--json`.
 
-Checks: `bun test <path>/entity.test.ts`, `bunx biome check --write <paths>`, and `bun run typecheck`
+Checks: `bun test <path>/entity.test.ts`, `bunx @biomejs/biome check --write <paths>`, and `bun run typecheck`
 once when you are otherwise done. Never `bunx x verify` — that belongs to whoever coordinates you.
