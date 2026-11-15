@@ -325,7 +325,7 @@ select id, name, payload, correlation_key,
        (extract(epoch from expires_at)   * 1000)::bigint as expires_at
   from x_job_events
  where ($1::text is null or name = $1)
- order by published_at
+ order by x_job_events.published_at, x_job_events.id
  limit $2
 `.trim();
 
@@ -363,7 +363,7 @@ select run_id, name, status, output, attempts, error,
        (extract(epoch from completed_at) * 1000)::bigint as completed_at,
        (extract(epoch from wake_at)      * 1000)::bigint as wake_at,
        event, correlation_key
-  from x_job_steps where run_id = $1 order by started_at
+  from x_job_steps where run_id = $1 order by x_job_steps.started_at
 `.trim();
 
 /**
@@ -448,6 +448,6 @@ select run_id, name, checksum, status, app_version, rows_processed, last_cursor,
  where ($1::text is null or name = $1)
    and ($2::text is null or status = $2)
    and ($3::uuid is null or run_id = $3)
- order by started_at desc
+ order by x_backfills.started_at desc
  limit $4
 `.trim();

@@ -2,7 +2,7 @@
 // it refuses to re-run, and what a budget that is not a whole count does before anything opens.
 // Its own file because `transaction.test.ts` is at the 500-line ceiling.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import { type DbError, driverError } from './errors';
 import { type RecordingClient, recordingClient } from './fake';
@@ -13,7 +13,9 @@ let client: RecordingClient;
 beforeEach(() => {
   client = recordingClient();
   setDbClient(client);
-});
+}); // The ambient client is process state: left installed, the next file on a shared worker
+// starts with this file's fake as its `db()`.
+afterEach(() => setDbClient(undefined));
 
 describe('retry', () => {
   /** A driver failure as the funnel produces one: typed, with the server's SQLSTATE underneath. */

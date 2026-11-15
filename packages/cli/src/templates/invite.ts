@@ -13,6 +13,7 @@ import {
 } from './invite-tests';
 import { catalogPath } from './locales';
 import type { GeneratedFile } from './naming';
+import { authModule } from './scaffold-auth';
 import { AUTH_DIR } from './sign-in-shared';
 
 export interface InviteTemplateOptions {
@@ -235,6 +236,8 @@ export function inviteFiles(options: InviteTemplateOptions): readonly GeneratedF
       contents: invitePageTest(module, 'accept'),
     },
     { path: `${AUTH_DIR}/invites/page.module.scss`, contents: STYLE },
+    // Every action above imports `../auth`; an app from before `x new` wrote it gets it here.
+    { path: `${AUTH_DIR}/auth.ts`, contents: authModule(), merge: 'if-absent' },
     ...options.locales.map((locale) => ({
       path: catalogPath(locale),
       contents: catalogJson(INVITE_CATALOG),

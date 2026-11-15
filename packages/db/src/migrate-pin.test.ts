@@ -3,7 +3,7 @@
 // Split from `migrate.test.ts` for the file-size ceiling; `migrate-lock.test.ts` is the lock's
 // other half, how long a migrator waits for it and what a statement's own lock wait is bounded to.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type DbClient, type DbConnection, type ReservableClient, setDbClient } from './client';
 import { expectedQueryLoopReason } from './expected-loop';
 import { type RecordingClient, recordingClient } from './fake';
@@ -31,7 +31,9 @@ let client: RecordingClient;
 beforeEach(() => {
   client = recordingClient();
   setDbClient(client);
-});
+}); // The ambient client is process state: left installed, the next file on a shared worker
+// starts with this file's fake as its `db()`.
+afterEach(() => setDbClient(undefined));
 
 const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
 

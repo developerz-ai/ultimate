@@ -259,6 +259,15 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
           }),
       // The same rule: only a job that declares the hook carries the key.
       ...(job.onSettled ? { onSettled: true as const } : {}),
+      ...(job.limiter === null
+        ? {}
+        : {
+            limiter: {
+              name: job.limiter.name,
+              rate: job.limiter.rate,
+              concurrency: job.limiter.concurrency,
+            },
+          }),
     })),
     // Field by field, for the reason above: `kind` is the declaration's tag, not a fact.
     consumers: registeredConsumers().map((consumer) => ({

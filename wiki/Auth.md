@@ -238,7 +238,8 @@ are the app's `policy` and the app's wrapper action.
 
 The flow is functions, not actions: `@ultimat3/auth` is tier 2 and cannot import
 `@ultimat3/action`. Wrap each call in the app's own `action()` with the app's policy — the shape
-`x g sign-in` writes for `login()`. Proof: `bun test ./packages/auth/src/member-invite.test.ts`,
+`x g sign-in` writes for `login()`; `x g invite` writes those three actions, their policy and the two pages
+([CLI reference](CLI-Reference#x-g)). Proof: `bun test ./packages/auth/src/member-invite.test.ts`,
 including a seeded property test that an invite for tenant X never yields membership in Y.
 
 ## Authorization server

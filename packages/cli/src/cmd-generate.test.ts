@@ -363,7 +363,9 @@ describe('unit · the command surface an agent reads', () => {
   });
 
   test('every generator has a runnable example name, so no fix can carry a placeholder', async () => {
-    for (const kind of GENERATORS) {
+    // `x g invite` takes no name and no flag, so its bare form is the whole command, not a refusal
+    // — and run here it would write into the reference app. `generate-invite.test.ts` holds it.
+    for (const kind of GENERATORS.filter((one) => one !== 'invite')) {
       const failure = (await generateCommand.run(ctxFor(['g', kind])).then(
         () => undefined,
         (error: unknown) => error,

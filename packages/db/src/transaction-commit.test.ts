@@ -2,14 +2,16 @@
 // durable. The dev row observer reported a write the moment the repository made it, so a live
 // query saw a row its transaction then rolled back.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import { recordingClient } from './fake';
 import { withTransaction } from './transaction';
 
 beforeEach(() => {
   setDbClient(recordingClient());
-});
+}); // The ambient client is process state: left installed, the next file on a shared worker
+// starts with this file's fake as its `db()`.
+afterEach(() => setDbClient(undefined));
 
 describe('onCommit', () => {
   test('fires after COMMIT, in registration order, and not before', async () => {
