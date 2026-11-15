@@ -3,6 +3,7 @@
 // database outlives its run.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { probeDatabaseName } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import { postgresClient, raw, sql } from '@ultimat3/db';
 import { templateNameFor, withPreparedScratch } from './db-replay-engine-prepared';
@@ -15,10 +16,12 @@ const run = crypto.randomUUID().replaceAll('-', '');
 const keyA = `a${run}`;
 const keyB = `b${run}`;
 const evictors = ['c', 'd', 'e'].map((head) => `${head}${run}`);
-/** Matches `x_scratch_tpl_%` under LIKE (`_` is any character) and is no template of ours. */
-const decoy = `xAscratchBtplC${run.slice(0, 24)}`;
+/** `xascratchbtplc_…` matches `x_scratch_tpl_%` under LIKE (`_` is any character): no template. */
+const decoy = probeDatabaseName('xascratchbtplc');
 /** A template another process is cloning right now: it holds the template's advisory lock. */
-const cloning = templateNameFor(`f${run}`);
+const cloning = templateNameFor(
+  new Bun.CryptoHasher('sha256').update(probeDatabaseName('cloning')).digest('hex'),
+);
 
 describe.skipIf(!hasPostgres)('withPreparedScratch · a real Postgres', () => {
   const admin = postgresClient({ url: url ?? '' });

@@ -373,7 +373,8 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       'apps/web/app/posts/actions.contract.test.ts': 1,
       // Hop 8: the pages that render a post.
       'apps/web/app/posts/[id]/page.tsx': 3,
-      'apps/web/app/posts/[id]/page.test.ts': 4,
+      // Five since 2026-11-15: the erased-author test renders the page off the same view too.
+      'apps/web/app/posts/[id]/page.test.ts': 5,
       'apps/web/site/blog/[slug]/page.tsx': 3,
       'apps/web/site/blog/page.tsx': 1,
       // Hop 9: the live feed's row names the field, and the island renders it.

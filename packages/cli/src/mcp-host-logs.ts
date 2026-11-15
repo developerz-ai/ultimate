@@ -4,7 +4,7 @@
 
 // why: Bun exposes no path API; the dev log and a per-role log are joined under the state dir.
 import { join } from 'node:path';
-import { isRole, ROLES, UltimateError } from '@ultimat3/core';
+import { isRole, ROLES, stringField, UltimateError } from '@ultimat3/core';
 import { DEV_LOG_FILENAME } from './dev-log';
 import { BadFlagError } from './errors';
 
@@ -75,8 +75,9 @@ export function lineRole(line: string): string | undefined {
   } catch {
     return undefined;
   }
-  if (typeof parsed !== 'object' || parsed === null || !('role' in parsed)) return undefined;
-  return typeof parsed.role === 'string' && isRole(parsed.role) ? parsed.role : undefined;
+  // `stringField`, the total read: a parsed line is a stranger's object, never `in`-guarded then read.
+  const role = stringField(parsed, 'role');
+  return role !== undefined && isRole(role) ? role : undefined;
 }
 
 /** A log on disk: its size and byte ranges, or nothing. `Bun.file` unless a test hands one in. */

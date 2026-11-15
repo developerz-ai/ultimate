@@ -83,21 +83,10 @@ export function floorSteps(suites: FloorSuites): {
 
 /**
  * What a unit test cannot execute in a scaffolded app, each with its reason — `x doctor` prints
- * them. Entry points and islands only: a file here is a file the floor does not see, so the list is not
+ * them. Entry points only: a file here is a file the floor does not see, so the list is not
  * a place to put code that merely has no test yet.
  */
 export const SCAFFOLD_COVERAGE_EXCLUDE: readonly CoverageExclude[] = [
-  // Still excluded, measured 2026-11-15, and not for want of tests: each island's test already
-  // clicks, types, submits and fails it. Without this entry a fresh `x new` measured 90.7% lines
-  // (post-form.island.tsx 74 of 97 uncovered, theme-toggle.island.tsx 27 of 36) and `--no-example`
-  // 94.6%. A file reached only through its chunk weighs every non-blank line (`withChunkLines`,
-  // coverage-remap.ts) — imports, types and JSX included — and the map can credit none of those:
-  // theme-toggle's chunk credits 9 lines, every one of its mount body. It goes when that weighs
-  // only the lines the chunk maps.
-  {
-    glob: 'apps/**/*.island.tsx',
-    why: 'an island runs from its built chunk, and coverage credits only the lines that chunk maps back — its imports, types and JSX weigh but can never count; its tests click, type and submit it, and x shot --island photographs every state',
-  },
   {
     glob: 'apps/*/server.ts',
     why: 'the container entry point: it boots the roles and lives as long as the process — bun run dev and the image exercise it',

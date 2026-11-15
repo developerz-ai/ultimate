@@ -34,7 +34,18 @@ describe('unit · x g reads the slice it writes into', () => {
       for (const kind of GENERATORS) {
         if ((await readSliceFile(root, kind, SLICE, 'entity.ts')) !== undefined) reads.push(kind);
       }
-      expect(reads.sort()).toEqual(['action', 'backfill', 'job', 'mutator', 'query', 'task']);
+      // `export-rows` and `import-rows` too: each moves the slice's own scaffolded table, and is
+      // refused (X_ROWS_SLICE_ENTITY) when the entity on disk is shaped otherwise.
+      expect(reads.sort()).toEqual([
+        'action',
+        'backfill',
+        'export-rows',
+        'import-rows',
+        'job',
+        'mutator',
+        'query',
+        'task',
+      ]);
       expect(await readSliceFile(root, 'query', SLICE, 'repo.ts')).toContain(
         'export async function',
       );

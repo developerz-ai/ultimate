@@ -8,16 +8,16 @@ import type { Env } from './runtime-bindings';
 
 export type ListenerTls = NonNullable<HttpConfigInput['tls']>;
 
-export const TLS_CERT_KEY = 'TLS_CERT';
-export const TLS_KEY_KEY = 'TLS_KEY';
+export const TLS_CERT_ENV = 'TLS_CERT';
+export const TLS_KEY_ENV = 'TLS_KEY';
 
 /** `X_CONFIG_INVALID`, http's own code for a listener it cannot build. Never the file's bytes. */
 export class ListenerTlsInvalidError extends UltimateError {
   constructor(input: { name: string; reason: string }) {
     super({
       code: 'X_CONFIG_INVALID',
-      cause: `${input.name} ${input.reason}; the web role serves TLS with ${TLS_CERT_KEY} and ${TLS_KEY_KEY} together — two PEM file paths — or with neither`,
-      fix: `docker run -e ${TLS_CERT_KEY}=/run/secrets/tls.crt -e ${TLS_KEY_KEY}=/run/secrets/tls.key <image>   # or unset both and terminate TLS at the ingress`,
+      cause: `${input.name} ${input.reason}; the web role serves TLS with ${TLS_CERT_ENV} and ${TLS_KEY_ENV} together — two PEM file paths — or with neither`,
+      fix: `docker run -e TLS_CERT=/run/secrets/tls.crt -e TLS_KEY=/run/secrets/tls.key <image>   # or unset both and terminate TLS at the ingress`,
       meta: { key: input.name },
     });
   }
@@ -42,16 +42,16 @@ async function readPem(name: string, path: string): Promise<string> {
 
 /** The pair, read; `undefined` when neither is set. `defineHttpConfig` judges the PEM itself. */
 export async function tlsFromEnv(env: Env): Promise<ListenerTls | undefined> {
-  const certPath = setValue(env, TLS_CERT_KEY);
-  const keyPath = setValue(env, TLS_KEY_KEY);
+  const certPath = setValue(env, TLS_CERT_ENV);
+  const keyPath = setValue(env, TLS_KEY_ENV);
   if (certPath === undefined && keyPath === undefined) return undefined;
   if (certPath === undefined || keyPath === undefined) {
-    const missing = certPath === undefined ? TLS_CERT_KEY : TLS_KEY_KEY;
-    const present = missing === TLS_CERT_KEY ? TLS_KEY_KEY : TLS_CERT_KEY;
+    const [missing, present] =
+      certPath === undefined ? [TLS_CERT_ENV, TLS_KEY_ENV] : [TLS_KEY_ENV, TLS_CERT_ENV];
     throw new ListenerTlsInvalidError({
       name: missing,
       reason: `is unset while ${present} is set`,
     });
   }
-  return { cert: await readPem(TLS_CERT_KEY, certPath), key: await readPem(TLS_KEY_KEY, keyPath) };
+  return { cert: await readPem(TLS_CERT_ENV, certPath), key: await readPem(TLS_KEY_ENV, keyPath) };
 }

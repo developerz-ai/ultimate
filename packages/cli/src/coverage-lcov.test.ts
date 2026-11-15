@@ -155,3 +155,29 @@ test('percent: two decimals, and nothing found is zero rather than a pass', () =
   expect(percent(0, 0)).toBe(0);
   expect(percent(5, 5)).toBe(100);
 });
+
+describe('a chunk-only record', () => {
+  const chunk = { hit: [2, 6], miss: [7], funcsFound: 0, funcsHit: 0, chunkOnly: true as const };
+
+  test('crosses --json marked, and an unmarked record stays direct', () => {
+    const wire = encodeCoverage({
+      'a.ts': chunk,
+      'b.ts': { hit: [1], miss: [], funcsFound: 1, funcsHit: 1 },
+    });
+    expect(wire['a.ts']?.c).toBe(1);
+    expect(wire['b.ts']?.c).toBeUndefined();
+    const back = decodeCoverage(wire);
+    expect(back?.['a.ts']?.chunkOnly).toBe(true);
+    expect(back?.['b.ts']?.chunkOnly).toBeUndefined();
+  });
+
+  test('folded with only its kind, it stays chunk-only', () => {
+    expect(mergeFileCoverage([chunk, { ...chunk, hit: [7], miss: [2, 6] }])).toEqual({
+      hit: [2, 6, 7],
+      miss: [],
+      funcsFound: 0,
+      funcsHit: 0,
+      chunkOnly: true,
+    });
+  });
+});

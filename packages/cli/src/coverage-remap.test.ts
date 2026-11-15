@@ -88,21 +88,35 @@ describe('withChunkLines', () => {
   const base = { hit: [1, 5], miss: [2, 6, 7], funcsFound: 2, funcsHit: 0 };
 
   test('loaded directly: misses the chunk ran turn hit, and the line set never grows', () => {
-    const merged = withChunkLines(base, { hit: new Set([6, 7, 40]), miss: new Set() }, SOURCE);
+    const merged = withChunkLines(base, { hit: new Set([6, 7, 40]), miss: new Set() });
     expect(merged).toEqual({ hit: [1, 5, 6, 7], miss: [2], funcsFound: 2, funcsHit: 0 });
   });
 
   test('loaded directly and the chunk ran nothing new: the record is unchanged', () => {
-    expect(withChunkLines(base, { hit: new Set([1]), miss: new Set([2]) }, SOURCE)).toBe(base);
+    expect(withChunkLines(base, { hit: new Set([1]), miss: new Set([2]) })).toBe(base);
   });
 
-  test('not loaded directly: every code line counts, and functions are left to a direct record', () => {
-    const lines = { hit: new Set([2, 6]), miss: new Set([7]) };
-    expect(withChunkLines(undefined, lines, SOURCE)).toEqual({
+  test('not loaded directly: weighed by the lines the chunk maps, never by its text lines', () => {
+    // An import, a type, a brace and a JSX line are no line the map can credit, so they are no
+    // line at all — as Bun counts a source it loaded. A half-driven island reads its real half.
+    const half = { hit: new Set([2, 6]), miss: new Set([7, 3]) };
+    expect(withChunkLines(undefined, half)).toEqual({
       hit: [2, 6],
-      miss: [1, 3, 5, 7, 8],
+      miss: [3, 7],
       funcsFound: 0,
       funcsHit: 0,
+      chunkOnly: true,
+    });
+  });
+
+  test('not loaded directly and fully driven: every mapped line hit, nothing missed', () => {
+    const full = { hit: new Set([7, 2, 6]), miss: new Set<number>() };
+    expect(withChunkLines(undefined, full)).toEqual({
+      hit: [2, 6, 7],
+      miss: [],
+      funcsFound: 0,
+      funcsHit: 0,
+      chunkOnly: true,
     });
   });
 });

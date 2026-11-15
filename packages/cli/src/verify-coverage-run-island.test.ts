@@ -83,8 +83,9 @@ describe('runCovered over a mounted island', () => {
       const island = run.coverage[ISLAND];
       if (island === undefined) expect.unreachable('the mount credited nothing to the island');
       expect(island.hit).toEqual(expect.arrayContaining([2, 6, 7]));
-      // Still a whole file's line set — never a record of only the lines that ran.
-      expect(island.miss.length + island.hit.length).toBeGreaterThanOrEqual(6);
+      // Every line the chunk maps ran — `label` and `mount` both — so a fully driven island reads
+      // 100%: the import-free, type-free source has no line the map could not name.
+      expect(island.miss).toEqual([]);
       expect(island.funcsHit).toBe(0);
       // No temp chunk path reaches the app's map.
       expect(Object.keys(run.coverage).every((file) => /^(apps|packages)\//.test(file))).toBe(true);

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
 import { verifyCommand } from './cmd-verify';
+import { encodeCoverage, mergeCoverage } from './coverage-lcov';
 import { renderJson } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
@@ -239,6 +240,34 @@ describe('unit · reading a part', () => {
     const bad = thrownBy(() => parsePart('p.json', doc({ unit: { facts: { 'a.ts': 7 } } })));
     expect(bad.code).toBe('X_VERIFY_MERGE_INPUT');
     expect(bad.cause).toContain('carries coverage for "unit"');
+  });
+
+  test('a shard that only mounted an island never drops the misses of one that loaded it', () => {
+    const doc = (facts: unknown): string =>
+      JSON.stringify({ command: 'verify', steps: [], data: { coverage: { unit: { facts } } } });
+    // Shard A only mounted the island: the chunk's map names lines 2 and 6, and both ran.
+    const mounted = encodeCoverage({
+      'x.island.tsx': { hit: [2, 6], miss: [], funcsFound: 0, funcsHit: 0, chunkOnly: true },
+    });
+    // Shard B loaded the source directly: line 6 missed, and 9 and 12 — lines no map names.
+    const loaded = encodeCoverage({
+      'x.island.tsx': { hit: [1, 2], miss: [6, 9, 12], funcsFound: 3, funcsHit: 1 },
+    });
+    const a = parsePart('a.json', doc(mounted)).coverage?.['unit'];
+    const b = parsePart('b.json', doc(loaded)).coverage?.['unit'];
+    if (a === undefined || b === undefined) expect.unreachable('both parts carry unit facts');
+    // Either order: the direct line set wins, and the chunk only turns its misses into hits.
+    for (const maps of [
+      [a, b],
+      [b, a],
+    ]) {
+      expect(mergeCoverage(maps)['x.island.tsx']).toEqual({
+        hit: [1, 2, 6],
+        miss: [9, 12],
+        funcsFound: 3,
+        funcsHit: 1,
+      });
+    }
   });
 
   test('errors outside any test are summed across shards with the counts', () => {

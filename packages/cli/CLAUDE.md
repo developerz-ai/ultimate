@@ -22,7 +22,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `--json` | every command; `dispatch.ts` sets core's log stream to stderr under it. Same data as the human render |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult`. `ok()` / `failed()` write `ok` after the `extra` spread — the verdict cannot be overturned |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`); the release runs inside the drain's own deadline |
-| Test execution | `test-shards.ts`'s `testArgs` — one `bun test --parallel=N` per pass (`test-passes.ts`); `live`/`e2e` run serially (`SERIAL_TYPES`, `test-workers.ts`) |
+| Test execution | `test-shards.ts`'s `testArgs` — one `bun test --parallel=N` per pass (`test-passes.ts`); `live`/`e2e` run serially (`SERIAL_TYPES`, `test-workers.ts`); a file's type and each step's argv: `verify-test-command.ts` |
 | Numeric flags | `flag-number.ts` — one reader for `--port` / `--workers` / `--shard` |
 | Shell quoting | `shell-quote.ts`'s `quoteArg` for every value pasted into a `fix:` or a reproduce line |
 | Missing input | `MissingPositionalError`; a bare subcommand needs a declared `defaultSubcommand` (`MissingSubcommandError`) ‡ |
@@ -31,7 +31,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | App root | `CommandSpec.requiresApp`, enforced by `dispatch.ts` before `run` |
 | Declared flags | every flag a command declares is read in this package's source — `flag-reads.test.ts` (`X_CLI_FLAG_UNREAD`) |
 | Planned commands | `PLANNED_COMMANDS` / `PLANNED_SUBCOMMANDS` (`cmd-planned.ts`): in the registry, exit `X_NOT_IMPLEMENTED` with a fix naming a shipped command |
-| Errors | codes + titles in `error-codes.ts`, a runnable line per code in `mcp-errors.ts` (typed over `CliErrorCode`), classes in `errors.ts` or beside their one thrower when `errors.ts` is at its ceiling. Never a bare `Error` |
+| Errors | codes + titles in `error-codes.ts`, a runnable line per code in `mcp-errors.ts` (typed over `CliErrorCode`); a family at the ceiling moves to `error-codes-<family>.ts` / `mcp-errors-<family>.ts` (`-verify`: the gate's floor, run and split); classes in `errors.ts` or beside their one thrower when `errors.ts` is at its ceiling. Never a bare `Error` |
 | Subprocesses | only through `exec.ts`'s injectable `Runner`; `gh` through `ctx.runner` with a required `fix` |
 | Templates | `templates/*.ts` return strings, pre-formatted for Biome (`wrap.ts`'s `wrapList` / `wrapImport` / `sortSpecifiers`); no fixture files on disk |
 | Strings | rendered output through `messages.ts` (missing key renders `⟦key⟧`) ‡ |

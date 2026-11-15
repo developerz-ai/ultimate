@@ -1408,7 +1408,7 @@ Declared, never hand-rolled: `{ needs: [...] }` on any typed registrar (`unitTes
 `liveTest`, `jobTest`, `e2eTest`, `evalTest`) names the services the test talks to. Each is read
 from the variable `docker/test-services.env` publishes it under — set, the test runs; unset or
 blank, it is **skipped**, and its reported name carries the service, the variable and the command
-that starts them. No adopter writes a Postgres runner or a `describe.skipIf` of their own.
+that starts them. An app needs no Postgres runner or `describe.skipIf` of its own.
 
 | `needs` | Variable |
 |---|---|

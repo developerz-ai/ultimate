@@ -2,7 +2,13 @@
 // connection, uncached, a redirect tallied rather than followed — the status, the build header, the
 // role a health port names. One reader, so the two commands cannot sample the fleet differently.
 
-import { BUILD_ID_HEADER, isRole, readWithinLimit, renderThrowable } from '@ultimat3/core';
+import {
+  BUILD_ID_HEADER,
+  isRole,
+  readWithinLimit,
+  renderThrowable,
+  stringField,
+} from '@ultimat3/core';
 
 export interface ReadyzAnswer {
   /** `null`: nothing answered — refused, reset or timed out. */
@@ -47,8 +53,9 @@ async function roleOf(response: Response): Promise<string | null> {
   } catch {
     return null;
   }
-  if (typeof body !== 'object' || body === null || !('role' in body)) return null;
-  return typeof body.role === 'string' && isRole(body.role) ? body.role : null;
+  // `stringField`, the total read: a parsed stranger's object is never `in`-guarded then read.
+  const role = stringField(body, 'role');
+  return role !== undefined && isRole(role) ? role : null;
 }
 
 /**

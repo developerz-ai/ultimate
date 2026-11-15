@@ -2,7 +2,6 @@
 // chunk's own source map. Pure: the sidecar text, the record and the files on disk come in, and
 // per-source line facts go out. `coverage-island.ts` does the reading.
 
-import { stripComments } from '@ultimat3/core';
 import type { FileCoverage, LcovRecord } from './coverage-lcov';
 
 /** One chunk's map as `mountIsland` recorded it: the build's cwd, its `sources` and their text. */
@@ -118,17 +117,15 @@ export function chunkLines(
  * into hits. Functions keep the direct record's counts: Bun's lcov names no function, so which of
  * the chunk's functions belong to this file is unknowable, and the direct count is a lower bound.
  *
- * Not loaded directly anywhere: every non-blank, non-comment line of `source` is a line, hit where
- * the chunk ran it — the heavy line set an unloaded file weighs (`unloadedWeight`). Functions are
- * `0 / 0`, NOT the unloaded estimate: shards fold by taking the best function count any of them
- * reached (`mergeFileCoverage`), so an estimate here beside a shard that loaded the file directly
+ * Not loaded directly anywhere: weighed by the lines the chunk MAPS — its executable lines, as Bun
+ * would have counted them had it loaded the source — hit where the chunk ran them. Never by text
+ * lines: an import, a type or a JSX line is no line a map can credit, so weighing them read a fully
+ * driven island at 9 of 36 lines (the scaffold's theme toggle). Functions are `0 / 0`, NOT the
+ * unloaded estimate: shards fold by taking the best function count any of them reached
+ * (`mergeFileCoverage`), so an estimate here beside a shard that loaded the file directly
  * replaced its real denominator — measured on `examples/dummy`, functions fell 67.0% → 63.4%.
  */
-export function withChunkLines(
-  base: FileCoverage | undefined,
-  lines: ChunkLines,
-  source: string,
-): FileCoverage {
+export function withChunkLines(base: FileCoverage | undefined, lines: ChunkLines): FileCoverage {
   if (base !== undefined) {
     const turned = base.miss.filter((line) => lines.hit.has(line));
     if (turned.length === 0) return base;
@@ -138,12 +135,12 @@ export function withChunkLines(
       miss: base.miss.filter((line) => !lines.hit.has(line)),
     };
   }
-  const hit: number[] = [];
-  const miss: number[] = [];
-  stripComments(source)
-    .split('\n')
-    .forEach((text, index) => {
-      if (text.trim() !== '') (lines.hit.has(index + 1) ? hit : miss).push(index + 1);
-    });
-  return { hit, miss, funcsFound: 0, funcsHit: 0 };
+  const byLine = (a: number, b: number): number => a - b;
+  return {
+    hit: [...lines.hit].sort(byLine),
+    miss: [...lines.miss].filter((line) => !lines.hit.has(line)).sort(byLine),
+    funcsFound: 0,
+    funcsHit: 0,
+    chunkOnly: true,
+  };
 }

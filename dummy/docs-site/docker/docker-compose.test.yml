@@ -6,7 +6,8 @@
 #
 # `--wait` returns once every healthcheck passes. CI runs the same lines (.github/workflows/ci.yml).
 # None of it is required: with no TEST_* variable set the unit suite runs on the in-memory driver,
-# and a suite that needs a real server skips. Ports are the dev stack's plus 50000, so both run.
+# and a suite that needs a real server skips. Ports are this app's own (its name picks
+# them), above the dev stack's, so both stacks — and two apps — run at once.
 #
 # Three rules, on every service:
 #
@@ -55,7 +56,7 @@ services:
         -c min_wal_size=32MB
         -c max_wal_size=256MB
     tmpfs: [/var/lib/postgresql]
-    ports: ['127.0.0.1:55432:5432']
+    ports: ['127.0.0.1:55838:5432']
     healthcheck:
       # TCP, never the socket: the entrypoint's temporary init server listens on the socket only.
       test: ['CMD-SHELL', 'pg_isready -U docs-site -h 127.0.0.1 -p 5432']
@@ -68,7 +69,7 @@ services:
     image: redis:8-alpine
     command: ['redis-server', '--save', '', '--appendonly', 'no', '--loglevel', 'nothing']
     tmpfs: [/data]
-    ports: ['127.0.0.1:56379:6379']
+    ports: ['127.0.0.1:56785:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 1s
@@ -81,7 +82,7 @@ services:
     image: nats:2-alpine
     command: ['-js', '-sd', '/data', '-m', '8222', '-l', '/dev/null']
     tmpfs: [/data]
-    ports: ['127.0.0.1:54222:4222']
+    ports: ['127.0.0.1:54628:4222']
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8222/healthz']
       interval: 1s
@@ -101,7 +102,7 @@ services:
       ROOT_ACCESS_KEY: docs-site
       ROOT_SECRET_KEY: docs-site-test
     tmpfs: [/data/docs-site-test]
-    ports: ['127.0.0.1:59000:9000']
+    ports: ['127.0.0.1:59406:9000']
     healthcheck:
       test: ['CMD', 'nc', '-z', '127.0.0.1', '9000']
       interval: 1s

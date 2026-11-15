@@ -8,6 +8,7 @@ import type { CliErrorCode } from './error-codes';
 import { CLI_ERROR_CODES } from './error-codes';
 import { codeFixes, codeFixScan } from './error-fixes';
 import { SHOT_FIXES } from './mcp-errors-shot';
+import { VERIFY_FIXES } from './mcp-errors-verify';
 
 /**
  * One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build.
@@ -41,18 +42,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ENV_EXAMPLE_DRIFT: 'x env example --json',
   X_TEST_NO_FILES: 'x test --json   # from the repo root, or pass --cwd to it',
   X_TEST_BUDGET_INVALID: 'ULTIMATE_TEST_MEMORY_BUDGET=3g x verify --json',
-  X_VERIFY_SHARD_INVALID: 'x verify --only unit --shard 1/4 --json',
-  X_VERIFY_MERGE_INCOMPLETE:
-    'x verify merge parts/*.json --json   # after every CI job uploaded its part',
-  X_VERIFY_MERGE_INPUT: 'x verify --only unit --json > part.json   # one document per part',
-  X_VERIFY_STEP_TIMEOUT:
-    'x verify --only unit --json   # reproduce the step alone; one that needs longer states it under "stepTimeoutMs" in x.verify.json',
-  X_COVERAGE_BELOW_FLOOR:
-    'x verify --only unit --json   # names the ten files losing the most lines; cover the worst with a test beside it',
-  X_COVERAGE_FLOOR_UNSTATED:
-    'x verify --only unit --json   # the finding carries the measured numbers and the "coverage" line to add to x.verify.json',
-  X_COVERAGE_FLOOR_STALE:
-    'x verify --only unit --json   # the finding carries the measured numbers; raise "coverage" in x.verify.json to them',
   // Unthrown since `--worker` was deleted, and kept only because this record is typed over every
   // registered code: `--shard i/n` is the one way to rerun a slice.
   X_TEST_SHARD_FAILED: 'x verify --only unit --shard 1/2 --json',
@@ -73,6 +62,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x i18n check --json   # the finding names both copies and the package.json to pin',
   // `x shot` and the `ui.*` tools: their own family, in `mcp-errors-shot.ts`.
   ...SHOT_FIXES,
+  // The gate's floor, run and split: their own family, in `mcp-errors-verify.ts`.
+  ...VERIFY_FIXES,
   X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
   X_GH_NOT_AUTHENTICATED: 'gh auth login',
   X_GH_COMMAND_FAILED: 'x ci --json   # the finding carries the gh invocation that failed',
@@ -90,11 +81,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
   X_LINT_FAILED: 'bunx biome check .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
-  // The same two edits `vanishedSuiteFinding` names, verbatim, so both surfaces of this code hand
-  // an agent one instruction. Neither edit is scripted here on purpose: a command that rewrites
-  // x.verify.json is the gate editing its own ratchet, which is the false green the floor closes.
-  X_VERIFY_SUITE_VANISHED:
-    'x verify --json   # restore the suite, or drop its name from x.verify.json in the commit that says why',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run verify --json   # every finding carries its own new-package.ts command',
   // NOT `bunx tsc -b`: an unreferenced package is one `tsc -b` skips by definition, so it exits 0
@@ -350,8 +336,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'export CHROME_PATH=/usr/bin/google-chrome   # any Chrome, Chromium or Edge binary; or drop og.capture from the route; the gate build passes --no-capture and needs none',
   X_IMAGE_SOURCE_UNREADABLE:
     "x build --target static --json   # lists the export; put the file under apps/web/site/assets/ and pass asset('assets/<file>') as src, or give an absolute https:// URL",
-  X_VERIFY_SKIPS_OVER_CEILING:
-    'x test unit --json   # then set what the skipped tests need, or raise skipCeiling in x.verify.json with the reason in the diff',
   X_ASSET_VARIANT_UNDECLARED:
     "responsiveImage({ src: asset('assets/hero.png'), width, height, alt })   # no widths/formats override for a site asset; an upload under /media answers any width",
   X_NEW_SHAPE_GENERATE_FAILED:
@@ -402,16 +386,13 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only drift --json   # each X_DB_INDEX_UNDECLARED warning names the index: its DROP INDEX CONCURRENTLY IF EXISTS "<name>"; goes in a new hand-written migration (-- transaction: false), or declare it in the entity\'s indexes: [...] and x db gen "<change>"',
   X_SHIPPED_GUARD_MISSING:
     "x doctor --json   # each X_SHIPPED_GUARD_MISSING warning's fix is the command that writes its guard, then x verify --only boundaries --json",
-  X_TEST_SERVICES_UNAVAILABLE: 'docker compose -f docker/docker-compose.test.yml up -d --wait',
-  X_VERIFY_E2E_BROWSER_MISSING:
-    'curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo apt-get install -y /tmp/google-chrome.deb',
-  X_VERIFY_STRICT_UNRUN: 'x verify --only <step> --json',
-  X_GUARD_OVER_BASELINE: 'x verify --only boundaries --json',
-  X_GUARD_BASELINE_STALE: 'x verify --only boundaries --json',
-  X_DEV_LOG_ABSENT: 'x dev',
-  X_DEV_PEER_REFUSED: "curl -sS -H 'accept: application/json' http://localhost:3000/_x",
+  X_DEV_LOG_ABSENT:
+    'x dev --json   # x dev writes the dev log as it boots; then: x logs tail --json',
+  X_DEV_PEER_REFUSED:
+    'x doctor --json   # /_x answers a loopback peer only: open it on the machine x dev runs on, or forward the port with ssh -L',
   X_PROFILE_ROUTE_FAILED: 'x routes --json',
-  X_ROWS_SLICE_ENTITY: 'x g job <name> --feature <f>',
+  X_ROWS_SLICE_ENTITY:
+    'x help g --json   # then x g job with the name and --feature the finding names, and declare exportRows/importRows in it over the table that entity.ts declares',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

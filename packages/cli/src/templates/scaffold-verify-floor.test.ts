@@ -9,6 +9,7 @@ import { belongsToType } from '../test-select';
 import { parseVerifyFloor, VERIFY_FLOOR_FILE } from '../verify-floor';
 import { VERIFY_STEP_NAMES } from '../verify-step';
 import { readStrict } from '../verify-strict';
+import { SCAFFOLD_COVERAGE_EXCLUDE } from './scaffold-verify-floor';
 
 const variants = [
   { name: 'x new', files: planNewApp({ name: 'demo-app', example: true }) },
@@ -69,5 +70,13 @@ describe('unit · x new · the floor names every gate step', () => {
     for (const variant of variants) {
       expect(floorOf(variant.files).strict.skip?.['roadmap']).toContain('docs/idea/14-roadmap.md');
     }
+  });
+});
+
+describe('unit · x new · islands count in the coverage floor', () => {
+  test('no scaffolded floor excludes an island: a mounted chunk credits its own source', () => {
+    expect(SCAFFOLD_COVERAGE_EXCLUDE.map((entry) => entry.glob)).not.toContain(
+      'apps/**/*.island.tsx',
+    );
   });
 });

@@ -114,7 +114,7 @@ export async function withIslandChunks(
       hit: lines.hit,
       miss: new Set([...lines.miss].filter((line) => !lines.hit.has(line))),
     };
-    out[key] = withChunkLines(merged[key], settled, source);
+    out[key] = withChunkLines(merged[key], settled);
   }
   return out;
 }
