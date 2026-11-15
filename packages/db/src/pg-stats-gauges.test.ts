@@ -101,11 +101,53 @@ describe('unit · the Postgres stats gauges', () => {
     expect(lines.filter((line) => line.includes('db.stats.sample-failed')).length).toBe(2);
   });
 
+  test('db_stats_sample_ok says whether the last round landed, so frozen values are visible', async () => {
+    let fail = false;
+    const sampler = pgStatsSampler({
+      async query<R>(text: string): Promise<readonly R[]> {
+        if (fail) throw dbUnavailable('connection refused');
+        return (text === PG_SERVER_STATS_SQL ? [SERVER] : []) as unknown as readonly R[];
+      },
+    });
+    await sampler.sample();
+    expect(value('db_stats_sample_ok')).toBe(1);
+    fail = true;
+    await sampler.sample();
+    expect(value('db_stats_sample_ok')).toBe(0);
+    fail = false;
+    await sampler.sample();
+    expect(value('db_stats_sample_ok')).toBe(1);
+  });
+
   test('started, it samples at once and stops when asked', async () => {
     const pg = executor({ server: [SERVER], slots: [] });
     const stop = startPgStatsGauges(pg, 60_000);
     await Bun.sleep(0);
-    stop();
+    await stop();
     expect(pg.statements).toEqual([PG_SERVER_STATS_SQL, PG_SLOT_STATS_SQL]);
+  });
+
+  test('stop waits out the round in flight, so it never runs against a closing pool', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let settled = false;
+    const stop = startPgStatsGauges({
+      async query<R>(text: string): Promise<readonly R[]> {
+        await gate;
+        if (text === PG_SLOT_STATS_SQL) settled = true;
+        return (text === PG_SERVER_STATS_SQL ? [SERVER] : []) as unknown as readonly R[];
+      },
+    });
+    let stopped = false;
+    const stopping = stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(5);
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect([stopped, settled]).toEqual([true, true]);
   });
 });

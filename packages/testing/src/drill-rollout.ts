@@ -21,6 +21,8 @@ export interface DrillRolloutOptions {
   readonly holdMs?: number | undefined;
   readonly probe?: ((url: string) => Promise<number | null>) | undefined;
   readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+  /** A monotonic clock, in ms: what every wait's bound is measured on. */
+  readonly now?: (() => number) | undefined;
 }
 
 const POLL_MS = 250;
@@ -41,10 +43,13 @@ const NOTHING: Omit<DrillEvidence, 'rollout'> = {
 export async function runRollout(options: DrillRolloutOptions): Promise<DrillReport> {
   const { drill, fleet, budgets } = options;
   const sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
+  const now = options.now ?? (() => performance.now());
   const probe = options.probe ?? ((url: string) => probeStatus(url, PROBE_BOUND_MS));
   const boundMs = finiteCount('runRollout', 'readyTimeoutMs', options.readyTimeoutMs, 1);
+  // Elapsed on the clock, never a count of polls: a probe may itself take `PROBE_BOUND_MS`.
   const until = async (done: () => boolean | Promise<boolean>): Promise<void> => {
-    for (let waited = 0; waited < boundMs; waited += POLL_MS) {
+    const end = now() + boundMs;
+    while (now() < end) {
       if (await done()) return;
       await sleep(POLL_MS);
     }

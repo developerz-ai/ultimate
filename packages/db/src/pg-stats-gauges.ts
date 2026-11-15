@@ -16,6 +16,7 @@ interface Gauges {
   readonly longestTransaction: Gauge;
   readonly autovacuumBacklog: Gauge;
   readonly slotRetained: Gauge;
+  readonly sampleOk: Gauge;
 }
 
 let declared: Gauges | undefined;
@@ -42,6 +43,13 @@ function gauges(): Gauges {
     slotRetained: gauge('db_replication_slot_retained_bytes', {
       unit: 'By',
       description: "WAL the primary keeps for one of this database's logical replication slots",
+    }),
+    // A failed round leaves every value above at its last good number — a long transaction that
+    // began after the sampler died would read as none. This is what says the numbers are stale.
+    sampleOk: gauge('db_stats_sample_ok', {
+      unit: '1',
+      description:
+        'Whether the last Postgres stats round landed: 1, or 0 when the values are stale',
     }),
   };
   return declared;
@@ -84,8 +92,10 @@ export function pgStatsSampler(executor: PgExecutor): PgStatsSampler {
         }
         for (const slot of published) if (!seen.has(slot)) g.slotRetained.record(0, { slot });
         published = seen;
+        g.sampleOk.record(1);
         failing = false;
       } catch (error) {
+        gauges().sampleOk.record(0);
         if (failing) return;
         failing = true;
         logger.warn('db.stats.sample-failed', { error: renderThrowable(error) });
@@ -94,22 +104,28 @@ export function pgStatsSampler(executor: PgExecutor): PgStatsSampler {
   };
 }
 
-/** Samples now and every `intervalMs`, one round at a time; returns the stop. Unref'd. */
+/**
+ * Samples now and every `intervalMs`, one round at a time; returns the stop. Unref'd. The stop is
+ * async and awaits the round in flight: release it BEFORE the pool closes, or that round's query
+ * meets a closing pool and logs `db.stats.sample-failed` on every shutdown.
+ */
 export function startPgStatsGauges(
   executor: PgExecutor,
   intervalMs: number = PG_STATS_INTERVAL_MS,
-): () => void {
+): () => Promise<void> {
   const sampler = pgStatsSampler(executor);
-  let running = false;
+  let inFlight: Promise<void> | undefined;
   const tick = (): void => {
-    if (running) return;
-    running = true;
-    void sampler.sample().finally(() => {
-      running = false;
+    if (inFlight !== undefined) return;
+    inFlight = sampler.sample().finally(() => {
+      inFlight = undefined;
     });
   };
   tick();
   const timer = setInterval(tick, intervalMs);
   timer.unref();
-  return () => clearInterval(timer);
+  return async () => {
+    clearInterval(timer);
+    await inFlight;
+  };
 }

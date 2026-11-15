@@ -240,6 +240,16 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     codemod: 'migrate-job-ordered',
   },
   {
+    template: 'packages/cli/src/templates/scaffold-helm.ts',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
+    template: 'docker/helm/values.yaml',
+    since: '31.29.0',
+    codemod: 'migrate-job-ordered',
+  },
+  {
     template: 'docker/README.md',
     since: '31.29.0',
     codemod: 'migrate-job-ordered',

@@ -233,6 +233,18 @@ spec:
             summary: "A replication slot holds more WAL on the primary than the threshold, in bytes"
             runbook_url: {{ printf "%s#ultimatereplicationslotretention" $base | quote }}
         {{- end }}
+        {{- $r := index $rules "UltimateDbStatsStale" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateDbStatsStale
+          expr: >-
+            count by (namespace, app_kubernetes_io_instance) (db_stats_sample_ok{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"} == 0) > 0
+          for: {{ $r.for | default "15m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "The Postgres stats sampler is failing: the connection, transaction, autovacuum and slot values are stale"
+            runbook_url: {{ printf "%s#ultimatedbstatsstale" $base | quote }}
+        {{- end }}
         {{- $r := index $rules "UltimateSchemaUnapplied" | default dict }}
         {{- if ne (toString $r.enabled) "false" }}
         - alert: UltimateSchemaUnapplied

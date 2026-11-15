@@ -65,6 +65,16 @@ export const DEPLOY_ALERTS: readonly ChartAlert[] = [
     summary: 'A replication slot holds more WAL on the primary than the threshold, in bytes',
   }),
   rule({
+    alert: 'UltimateDbStatsStale',
+    // The four rules above read gauges a failed round leaves at their last value: without this, a
+    // dead sampler keeps every one of them quiet.
+    expr: (s) => `count by (${s.by}) (${s.series('db_stats_sample_ok')} == 0) > 0`,
+    for: '15m',
+    severity: 'warning',
+    summary:
+      'The Postgres stats sampler is failing: the connection, transaction, autovacuum and slot values are stale',
+  }),
+  rule({
     alert: 'UltimateSchemaUnapplied',
     expr: (s) =>
       `count by (${s.by}, ${s.component}) (${s.series('framework_schema_applied')} == 0) > 0`,

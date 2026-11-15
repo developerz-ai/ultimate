@@ -82,6 +82,7 @@ describe('unit · the deploy-contract rules (plan 101, 09 D4)', () => {
     ['UltimateReplicationSlotRetention', 'db_replication_slot_retained_bytes'],
     ['UltimateSchemaUnapplied', 'framework_schema_applied'],
     ['UltimateVersionSkew', 'framework_schema_major_skew'],
+    ['UltimateDbStatsStale', 'db_stats_sample_ok'],
   ])('%s reads %s, scoped to the release', (alert, series) => {
     expect(byName(alert).expr(K8S_SCOPE)).toContain(
       `${series}{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance=`,

@@ -142,16 +142,16 @@ the time you are reading a runbook it is already too late.
 **`helm rollback` runs these checks only onto a revision a 31.29+ chart rendered** (its Job is a
 `pre-rollback` hook, and Helm runs the target revision's hooks); onto an older one it skips them, so
 roll back with `x deploy --image <previous> --json` ([deploy contract](./07-deploy-contract.md#rollback),
-[`01-kubernetes.md`](./01-kubernetes.md#migrations)). **Lands in this sweep** (31.29 chart).
+[`01-kubernetes.md`](./01-kubernetes.md#migrations)).
 
 ## A role refuses an unapplied schema
 
-`X_FRAMEWORK_SCHEMA_UNAPPLIED` on a `web`, `sync`, `worker`, `scheduler` or `replicator` boot: the
-stamp `ROLE=migrate` leaves on `x_jobs` does not name this build's framework schema hash. The role
-runs no DDL; it waits for the migrate step ([deploy contract](./07-deploy-contract.md#a-role-over-a-schema-that-is-behind)).
-`As of 2026-11` the role exits at once and the platform restarts it, so it shows as restarts or
-`CrashLoopBackOff`. **Lands in this sweep:** it waits up to `ULTIMATE_SCHEMA_WAIT_MS` first, logs
-one line, and the code's `meta.waitedMs` says how long. Alert:
+`X_FRAMEWORK_SCHEMA_UNAPPLIED` or `X_APP_MIGRATIONS_UNAPPLIED` on a `web`, `sync`, `worker`,
+`scheduler` or `replicator` boot: the framework stamp on `x_jobs` lacks this build's hash, or the
+`x_migrations` ledger lacks a migration it ships. The role runs no DDL. It waits for the migrate
+step, unready, with one `ultimate schema waiting` line, for up to `ULTIMATE_SCHEMA_WAIT_MS` (default
+300000), then exits with the code — `meta.waitedMs` says how long — and the platform restarts it
+([deploy contract](./07-deploy-contract.md#a-role-over-a-schema-that-is-behind)). Alert:
 [UltimateSchemaUnapplied](#ultimateschemaunapplied); a fleet across a major,
 [UltimateVersionSkew](#ultimateversionskew).
 
@@ -160,7 +160,8 @@ one line, and the code's `meta.waitedMs` says how long. Alert:
 | a rollout is in progress and its migrate Job is still running | nothing: the roles serve once it finishes (`kubectl get jobs -l app.kubernetes.io/component=migrate`) |
 | the migrate Job failed | [a migration failed mid-deploy](#a-migration-failed-mid-deploy) — fix the migration, the roles follow |
 | no migrate ran: an applier that drops Helm hooks, a compose `up` without the `run --rm migrate` step, a PaaS with no release phase | run it once against the same database: `x db migrate --json`, or the image with `ROLE=migrate`. Then wire the order: [deploy contract](./07-deploy-contract.md#order-migrate-before-roles) |
-| the cause names a newer major as the newest applied build | an old-major role over a database a newer release migrated: roll forward to that release (`x deploy --image <newer> --json`), never migrate the old one over it |
+| the cause names a newer major as the newest applied build | refused at once, no wait: an old-major role over a database a newer release migrated. Roll forward to that release (`x deploy --image <newer> --json`), never migrate the old one over it |
+| a migrate Job that is merely slow, past the wait | raise `ULTIMATE_SCHEMA_WAIT_MS` on the serving roles; `0` turns the wait off and refuses at once |
 | rehearsing it | `x drill roll-before-migrate --json` plays this failure on a scratch database for `web`, `worker` and `scheduler` ([deploy contract](./07-deploy-contract.md#failures-their-alert-and-their-runbook)) |
 | `ultimate framework major skew` in the logs, no refusal | a fleet across a major mid-rollout or mid-rollback; it serves. Finish the rollout: `kubectl rollout status deployment --selector app.kubernetes.io/component=web` |
 
@@ -267,8 +268,8 @@ Postgres takes the read load while the shared tier is gone: single-flight still 
 `values.yaml` overrides its `threshold`, `for`, `severity` or turns it off with `enabled: false`.
 
 The Postgres rules read gauges ONE role samples, the scheduler, every 15 s
-(`startPgStatsGauges`, `packages/db/src/pg-stats-gauges.ts`): with no scheduler running they have
-no series and never fire. The schema rules read `framework_schema_applied` and
+(`startRolePgStats`, `packages/cli/src/role-pg-stats.ts`), and only over an external database:
+with no scheduler running they have no series and never fire. The schema rules read `framework_schema_applied` and
 `framework_schema_major_skew`, which each serving role sets from its own stamp check
 (`packages/core/src/schema-metrics.ts`).
 
@@ -375,6 +376,18 @@ waits on and stops vacuum reclaiming every row newer than it. `x db diagnostics 
 blocks. End it with `psql "$DATABASE_URL" -c 'select pg_terminate_backend(<pid>)'`, then find the
 code that left it open.
 
+**Grant the scheduler's database role the right to see every session**, or this rule is blind to the
+transactions that matter most:
+
+```sql
+GRANT pg_read_all_stats TO <app role>;   -- or pg_monitor, which includes it
+```
+
+Without it Postgres hides another role's `xact_start` in `pg_stat_activity`, so the gauge reads only
+the app role's own transactions: a superuser or DBA session, or a separate migrate role, holding a
+transaction open reads `0` (`PG_SERVER_STATS_SQL`, `packages/db/src/pg-stats-sql.ts`). It counts this
+database's sessions only. `x db diagnostics` reads `pg_stat_activity` under the same rule.
+
 ### UltimateAutovacuumLag
 
 `db_autovacuum_backlog_ratio` above 2 for 30 m: the worst table's dead tuples exceed twice the
@@ -388,6 +401,15 @@ cause, since vacuum cannot pass it; otherwise lower that table's `autovacuum_vac
 `db_replication_slot_retained_bytes` above 1 GiB on one `slot` for 15 m: its consumer is down,
 crash-looping or pointed at another database, and the disk fills behind it. Follow
 [the replication slot is accumulating WAL](#the-replication-slot-is-accumulating-wal).
+
+### UltimateDbStatsStale
+
+`db_stats_sample_ok == 0` for 15 m: the scheduler's Postgres stats sample keeps failing, so the
+four rules above it — connections, long transactions, autovacuum, slot retention — read the last
+good values and stay quiet. Each failed round logs `db.stats.sample-failed` with the cause on the
+scheduler: `kubectl logs -l app.kubernetes.io/component=scheduler`. A permission error on a
+statistics view is the role's grants (see [UltimateLongTransaction](#ultimatelongtransaction));
+a timeout is the database itself.
 
 ### UltimateSchemaUnapplied
 

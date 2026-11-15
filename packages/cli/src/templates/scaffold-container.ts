@@ -288,7 +288,7 @@ somebody else's repository is a command that cannot run. \`--image\` sets \`imag
 | Object | Per | Note |
 |---|---|---|
 | Deployment + Service | enabled role | one image, \`ROLE\` and the port are the only difference |
-| Job | release | \`ROLE=migrate\`, run to completion first: a \`pre-install,pre-upgrade,pre-rollback\` hook, an Argo CD \`Sync\` hook in wave -1, and named by its spec so any other applier gets a new Job per image |
+| Job | release | \`ROLE=migrate\`, run to completion first: a \`pre-install,pre-upgrade,pre-rollback\` hook, an Argo CD \`Sync\` hook in wave -1, and named by its image so any other applier gets a new Job per image |
 | Ingress | release | off by default; routes \`/_x/sync\` to sync and \`/\` to web |
 | HorizontalPodAutoscaler | role, opt-in | rps, websocket connections, queue depth — never CPU |
 | ServiceMonitor | release | scrapes \`/metrics\` on \`metricsPort\`, every serving role |

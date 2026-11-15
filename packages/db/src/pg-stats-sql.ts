@@ -7,7 +7,8 @@
  * database's own; without `pg_read_all_stats` another role's `xact_start` reads null, so it is the
  * longest this role can see. The autovacuum backlog is the worst table's dead tuples over the count
  * that triggers its autovacuum (global settings; a per-table override is not read): above 1 the
- * table is due, and staying above it means autovacuum is not keeping up.
+ * table is due, and staying above it means autovacuum is not keeping up. A trigger of 0 (threshold
+ * 0 over an empty table) is skipped by `nullif`: float8 `0 / 0` raises and took the round with it.
  */
 export const PG_SERVER_STATS_SQL = `select
   (select count(*) from pg_stat_activity where backend_type = 'client backend')::int as connections,
@@ -15,8 +16,8 @@ export const PG_SERVER_STATS_SQL = `select
   coalesce((select extract(epoch from max(now() - xact_start)) from pg_stat_activity
     where datname = current_database() and backend_type = 'client backend'
       and xact_start is not null and pid <> pg_backend_pid()), 0)::float8 as longest_transaction_seconds,
-  coalesce((select max(s.n_dead_tup / (current_setting('autovacuum_vacuum_threshold')::float8
-      + current_setting('autovacuum_vacuum_scale_factor')::float8 * greatest(c.reltuples, 0)))
+  coalesce((select max(s.n_dead_tup / nullif(current_setting('autovacuum_vacuum_threshold')::float8
+      + current_setting('autovacuum_vacuum_scale_factor')::float8 * greatest(c.reltuples, 0), 0))
     from pg_stat_user_tables s join pg_class c on c.oid = s.relid), 0)::float8 as autovacuum_backlog_ratio`;
 
 /**

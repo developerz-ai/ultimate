@@ -17,7 +17,8 @@ function gauges(): SchemaGauges {
   declared ??= {
     applied: gauge('framework_schema_applied', {
       unit: '1',
-      description: "1 when this build's framework schema is applied to the database, else 0",
+      description:
+        "1 when this build's schema is applied: the framework stamp and every app migration it ships. 0 while a role waits for the migrate step",
     }),
     majorSkew: gauge('framework_schema_major_skew', {
       unit: '1',

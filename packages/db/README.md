@@ -225,7 +225,8 @@ too bloated differs per app. `checkDb()` stays the readiness probe `/readyz` rea
 ## Server health gauges
 
 `As of 2026-11`. `startPgStatsGauges(executor, intervalMs?)` samples the Postgres server every
-`PG_STATS_INTERVAL_MS` (15 s) — at once, one round at a time, unref'd — and returns the stop;
+`PG_STATS_INTERVAL_MS` (15 s) — at once, one round at a time, unref'd — and returns an async stop
+that awaits the round in flight (release it before the pool closes);
 `pgStatsSampler(executor).sample()` is one round. Run by ONE role (the scheduler): these are server
 facts, and every pod reading them would multiply the load for the same numbers.
 
@@ -235,11 +236,13 @@ facts, and every pod reading them would multiply the load for the same numbers.
 | `db_longest_transaction_seconds` | this database's oldest open transaction this role can see (`pg_read_all_stats` widens it), 0 when none |
 | `db_autovacuum_backlog_ratio` | the worst table's dead tuples over its autovacuum trigger (global settings): above 1 it is due |
 | `db_replication_slot_retained_bytes{slot}` | the WAL each of this database's logical slots holds on the primary; a dropped slot reads 0 |
+| `db_stats_sample_ok` | 1 when the last round landed, 0 when it failed and every value above is stale |
 
 Two constant catalog statements per round, no user table, no lock. A failed round never rejects
 and logs `db.stats.sample-failed` once per streak; a value the driver did not send as a finite
 number leaves the gauge at its last good value. The gauges are declared on the first sample, so a
-process that samples nothing exposes none. The chart's alert rules read all five.
+process that samples nothing exposes none. The chart's alert rules read all six; a
+zero autovacuum trigger (threshold 0 over an empty table) is skipped, never a division by zero.
 
 ## Index access methods
 

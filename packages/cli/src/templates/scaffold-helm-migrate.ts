@@ -21,23 +21,31 @@ and no toolchain in the container. ONE Job, ordered by whichever applier renders
                                      before EVERY wave, so a database the same sync creates was
                                      waited on forever. Put that database and the Secret the Job
                                      reads in wave -2 or lower; every role sits in wave 0
-  an applier that ignores both       an ordinary object, applied beside the roles. Its name is its
-  (kubectl apply, a rendered tree)   spec's hash, so a new image is a new Job rather than an
-                                     immutable-field refusal of the whole apply; the roles wait for
-                                     the stamp it leaves, unready, and maxUnavailable: 0 keeps the
-                                     old pods serving meanwhile
+  an applier that ignores both       an ordinary object, applied beside the roles. Its name hashes
+  (kubectl apply, a rendered tree)   the image, the migrate block and the chart version, so a new
+                                     image is a new Job rather than an immutable-field refusal of
+                                     the whole apply (an env change alone is still refused: change
+                                     migrate.*, or delete the Job); the roles wait for the stamp it
+                                     leaves, unready, and maxUnavailable: 0 keeps the old pods
+                                     serving meanwhile
 
 No init container on any role: a per-pod migrate is a second mechanism, run once per pod, and it
 only ever ordered the Deployment that carried it. Deleted once it succeeds (hook-succeeded, which
-Argo CD honours too); a failed one stays for kubectl logs until the next attempt replaces it.
+Argo CD honours too); a failed one stays for kubectl logs until migrate.ttlSecondsAfterFinished (a day)
+collects it. A retry of the same image replaces it sooner; a new image's Job has another name and
+never does.
 */}}
 {{- if .Values.migrate.enabled }}
-{{- $pod := include "${app.kebab}.migratePod" . }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  {{- /* 46 + "-migrate-" + 8 = 63, the ceiling of the job-name label every pod of it carries. */}}
-  name: {{ printf "%s-migrate-%s" (include "${app.kebab}.fullname" . | trunc 46 | trimSuffix "-") ($pod | sha256sum | trunc 8) }}
+  {{- /*
+  The name hashes what should make a new Job — the image, the migrate block and the chart version —
+  and NEVER the rendered pod: an inline env value would be guessable from 32 bits of its hash.
+  46 + "-migrate-" + 8 = 63, the ceiling of the job-name label every pod of it carries.
+  */}}
+  {{- $inputs := printf "%s|%s|%s" (include "${app.kebab}.image" .) (toYaml .Values.migrate) .Chart.Version }}
+  name: {{ printf "%s-migrate-%s" (include "${app.kebab}.fullname" . | trunc 46 | trimSuffix "-") ($inputs | sha256sum | trunc 8) }}
   labels:
     {{- include "${app.kebab}.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
@@ -49,24 +57,26 @@ metadata:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
+  {{- /*
+  Collected a day after it finishes unless migrate.ttlSecondsAfterFinished says otherwise: the one
+  cleanup an applier that ignores hooks gets. Such an applier that reconciles re-creates a collected
+  Job on its next pass, which re-runs a migrate with nothing to apply.
+  */}}
+  ttlSecondsAfterFinished: {{ ternary .Values.migrate.ttlSecondsAfterFinished 86400 (hasKey .Values.migrate "ttlSecondsAfterFinished") | int }}
   template:
-    {{- $pod | nindent 4 }}
+    metadata:
+      labels:
+        {{- include "${app.kebab}.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        {{- include "${app.kebab}.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}
+      volumes:
+        {{- include "${app.kebab}.tmpVolume" . | nindent 8 }}
 {{- end }}
-
-{{- define "${app.kebab}.migratePod" -}}
-metadata:
-  labels:
-    {{- include "${app.kebab}.labels" . | nindent 4 }}
-    app.kubernetes.io/component: migrate
-spec:
-  restartPolicy: Never
-  automountServiceAccountToken: false
-  securityContext: {{- toYaml .Values.podSecurityContext | nindent 4 }}
-  containers:
-    {{- include "${app.kebab}.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 4 }}
-  volumes:
-    {{- include "${app.kebab}.tmpVolume" . | nindent 4 }}
-{{- end -}}
 `;
 
 /** The chart's migrate Job, as `x new` writes it. */

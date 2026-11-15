@@ -1,5 +1,5 @@
 // 31.29.0: the chart's migrate Job orders every rollout under any applier — a Helm hook, an Argo CD
-// Sync hook in wave -1 (no longer the PreSync Argo mapped the Helm hook to), and named by its spec
+// Sync hook in wave -1 (no longer the PreSync Argo mapped the Helm hook to), and named by its image
 // so an applier that ignores hooks gets a new Job per image. The Job, still exactly the old
 // template, is replaced whole; `docker/README.md`'s two rows move where they stand.
 
@@ -14,6 +14,20 @@ import { editSnippets, mergeResults, readText } from './engine-edits';
 import { MIGRATE_JOB_31_28_LINES } from './migrate-job-stock';
 
 const README = 'docker/README.md';
+const VALUES = 'docker/helm/values.yaml';
+
+/** The TTL's own line; absent, the template collects after the same day, so it is optional. */
+export const MIGRATE_VALUES_EDITS: readonly SnippetEdit[] = [
+  {
+    from: 'migrate:\n  enabled: true\n  backoffLimit: 1\n',
+    to: 'migrate:\n  enabled: true\n  backoffLimit: 1\n  ttlSecondsAfterFinished: 86400   # a finished Job, and its logs, are collected after a day\n',
+    optional: true,
+  },
+];
+
+/** What no file shows: the cluster still holds the Job the old fixed name made. */
+const ORPHAN =
+  'a cluster deployed from the old chart keeps its fixed-name Job: kubectl delete job <release>-migrate, once';
 
 export const MIGRATE_README_EDITS: readonly SnippetEdit[] = [
   {
@@ -23,7 +37,7 @@ export const MIGRATE_README_EDITS: readonly SnippetEdit[] = [
   },
   {
     from: '| Job | release | `ROLE=migrate`, a `pre-install,pre-upgrade` hook — it runs to completion first |',
-    to: '| Job | release | `ROLE=migrate`, run to completion first: a `pre-install,pre-upgrade,pre-rollback` hook, an Argo CD `Sync` hook in wave -1, and named by its spec so any other applier gets a new Job per image |',
+    to: '| Job | release | `ROLE=migrate`, run to completion first: a `pre-install,pre-upgrade,pre-rollback` hook, an Argo CD `Sync` hook in wave -1, and named by its image so any other applier gets a new Job per image |',
     optional: true,
   },
 ];
@@ -45,8 +59,7 @@ async function job(app: CodemodApp, chart: string): Promise<CodemodResult> {
     skipped: [
       {
         path: MIGRATE_JOB_PATH,
-        reason:
-          "the app's migrate Job is its own, so the ordering annotations and the spec-derived name were not written: the diff is the template's change, to make by hand",
+        reason: `the app's migrate Job is its own, so the ordering annotations, the image-derived name and the TTL were not written: the diff is the template's change, to make by hand; ${ORPHAN}`,
         diff: unifiedDiff(MIGRATE_JOB_PATH, stock, next),
       },
     ],
@@ -56,12 +69,13 @@ async function job(app: CodemodApp, chart: string): Promise<CodemodResult> {
 export const codemod: Codemod = {
   id: 'migrate-job-ordered',
   since: '31.29.0',
-  summary: `${MIGRATE_JOB_PATH} orders every rollout under helm, Argo CD and a hook-blind applier alike`,
+  summary: `${MIGRATE_JOB_PATH} orders every rollout under helm, Argo CD and a hook-blind applier alike, and is collected a day after it finishes; ${ORPHAN}`,
   async run(app) {
     const chart = chartName((await readText(app, CHART_FILE))?.text ?? '');
     return mergeResults([
       chart === undefined ? NOTHING : await job(app, chart),
       await editSnippets(app, README, MIGRATE_README_EDITS),
+      await editSnippets(app, VALUES, MIGRATE_VALUES_EDITS),
     ]);
   },
 };

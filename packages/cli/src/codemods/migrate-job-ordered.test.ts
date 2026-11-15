@@ -1,13 +1,14 @@
 // The migrate-job-ordered codemod over a chart `x new` wrote through 31.28: the Job still exactly
-// the old template is replaced by today's (an Argo CD Sync hook, named by its spec); an edited one
+// the old template is replaced by today's (an Argo CD Sync hook, named by its image); an edited one
 // is left whole and reported with the change as a diff; a second run changes nothing.
 
 import { describe, expect, test } from 'bun:test';
 import { names } from '../templates/naming';
 import { containerFiles } from '../templates/scaffold-container';
+import { helmFiles } from '../templates/scaffold-helm';
 import { helmMigrateFile, MIGRATE_JOB_PATH } from '../templates/scaffold-helm-migrate';
 import { memoryCodemodApp } from './codemod';
-import { codemod, MIGRATE_README_EDITS } from './migrate-job-ordered';
+import { codemod, MIGRATE_README_EDITS, MIGRATE_VALUES_EDITS } from './migrate-job-ordered';
 import { MIGRATE_JOB_31_28_LINES } from './migrate-job-stock';
 
 const README = 'docker/README.md';
@@ -19,10 +20,14 @@ const stock = (chart: string): string =>
 
 const today = (chart: string): string => String(helmMigrateFile(names(chart)).contents);
 
+const VALUES = 'docker/helm/values.yaml';
+const OLD_VALUES = 'migrate:\n  enabled: true\n  backoffLimit: 1\n  resources: {}\n';
+
 const app = (job: string, chart = 'shop') =>
   memoryCodemodApp({
     'docker/helm/Chart.yaml': `apiVersion: v2\nname: ${chart}\nversion: 0.1.0\n`,
     [MIGRATE_JOB_PATH]: job,
+    [VALUES]: OLD_VALUES,
     [README]: `| Platform | Where |\n|---|---|\n${OLD_ROW}\n`,
   });
 
@@ -31,7 +36,8 @@ describe('unit · migrate-job-ordered', () => {
     const shop = app(stock('shop'));
     const result = await codemod.run(shop);
     expect(result.skipped).toEqual([]);
-    expect(result.changed.sort()).toEqual([README, MIGRATE_JOB_PATH].sort());
+    expect(result.changed.sort()).toEqual([README, MIGRATE_JOB_PATH, VALUES].sort());
+    expect(shop.files[VALUES]).toContain('  ttlSecondsAfterFinished: 86400');
     expect(shop.files[MIGRATE_JOB_PATH]).toBe(today('shop'));
     expect(shop.files[MIGRATE_JOB_PATH]).toContain('argocd.argoproj.io/hook: Sync');
     expect(shop.files[README]).not.toContain('initContainer` or a');
@@ -42,6 +48,15 @@ describe('unit · migrate-job-ordered', () => {
       containerFiles(names('shop')).find((file) => file.path === README)?.contents ?? '',
     );
     for (const edit of MIGRATE_README_EDITS) expect(readme).toContain(edit.to);
+  });
+
+  test('the values line lands as x new writes it today', () => {
+    const values = String(helmFiles(names('shop')).find((file) => file.path === VALUES)?.contents);
+    for (const edit of MIGRATE_VALUES_EDITS) expect(values).toContain(edit.to);
+  });
+
+  test('the summary names the fixed-name Job a cluster keeps from before', () => {
+    expect(codemod.summary).toContain('kubectl delete job <release>-migrate');
   });
 
   test('a second run changes nothing', async () => {

@@ -98,6 +98,34 @@ describe('runRollout', () => {
     expect(report.verdict.failures.map((failure) => failure.property)).toEqual(['one-wait-line']);
   });
 
+  test('the readiness bound is time, not sleeps: a probe that takes its whole bound counts', async () => {
+    const { fleet } = standIn({});
+    // A virtual monotonic clock: every sleep and every probe advances it by what it would take.
+    let clock = 0;
+    let probes = 0;
+    const report = await runRollout({
+      drill,
+      fleet,
+      budgets,
+      readyTimeoutMs: 2_000,
+      holdMs: 1,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      probe: async () => {
+        probes += 1;
+        clock += 1_000;
+        return 503;
+      },
+    });
+    expect(report.verdict.failures.map((failure) => failure.property)).toEqual([
+      'serves-after-migrate',
+    ]);
+    // Inside 2,000 ms a 1,000 ms probe and a 250 ms poll fit twice per role, never eight times.
+    expect(probes).toBeLessThanOrEqual(3 * 2);
+  });
+
   test('a fleet started without the rollout handle measured nothing: red, not a pass', async () => {
     const { fleet, probe } = standIn({});
     const { rollout: _rollout, ...bare } = fleet;

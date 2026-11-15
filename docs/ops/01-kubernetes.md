@@ -47,7 +47,7 @@ there is one environment, and it hides the object a reviewer needs to see.
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
 | `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue demand (`queue_demand`, held plus due), an `External` metric | liveness on `/healthz`, readiness on `/readyz`, both `:9090` |
 | `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/healthz`, readiness on `/readyz`, both `:9090` |
-| `migrate` | Job, run-once before any serving role — named by its spec's hash | 1 | none |
+| `migrate` | Job, run-once before any serving role — named by a hash of its image, `migrate` values and chart version | 1 | none |
 | `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/healthz`, readiness on `/readyz?deep=1`, both `:9090` |
 
 **Probes follow the role, because the roles do not agree on what they open.** `web` and `sync`
@@ -190,7 +190,7 @@ applier, `As of 31.29.0`:
 |---|---|---|
 | `helm` (and Flux's helm-controller) | `helm.sh/hook: pre-install,pre-upgrade,pre-rollback` | untouched until the Job succeeds; a failed Job fails the release |
 | Argo CD | `argocd.argoproj.io/hook: Sync`, `sync-wave: "-1"` — Argo's own annotation wins over the Helm one it would map to `PreSync` | in wave 0, applied once the Job completes. The database and the Secret the Job reads go in wave `-2` or lower |
-| an applier that ignores both (`kubectl apply`, a rendered tree, Flux's kustomize-controller) | nothing: an ordinary object beside the roles. Its name is `<release>-migrate-<hash of its pod spec>`, so a new image is a new Job, never an immutable-field refusal that fails the whole apply | waits on the schema stamp the Job leaves, not Ready meanwhile; `maxUnavailable: 0` keeps the old pods serving |
+| an applier that ignores both (`kubectl apply`, a rendered tree, Flux's kustomize-controller) | nothing: an ordinary object beside the roles. Its name is `<release>-migrate-<hash of the image, the migrate values and the chart version>`, so a new image is a new Job, never an immutable-field refusal that fails the whole apply | waits on the schema stamp the Job leaves, not Ready meanwhile; `maxUnavailable: 0` keeps the old pods serving |
 
 **`helm rollback` runs the OLDER build's migrate first** (`pre-rollback`): it applies nothing, and
 refuses a ledger a newer build left destructive rows in (`X_MIGRATION_ROLLBACK_DESTRUCTIVE`), so
@@ -199,7 +199,12 @@ revision rendered by a 31.29+ chart: the hooks that run are the target revision'
 hook-blind applier get the same check from the Sync hook / the new Job the older render names.
 
 A successful Job is deleted (`hook-succeeded`, which Argo honours too); a failed one stays for
-`kubectl logs job/<name>` until the next attempt replaces it. An app upgraded from a chart before
+`kubectl logs job/<name>` until `migrate.ttlSecondsAfterFinished` (default `86400`, a day) collects
+it — the one cleanup an applier that ignores hooks gets. A retry of the same image replaces it
+sooner; a new image's Job has another name and never does. The name hashes the image, the
+`migrate` block and the chart version, never `env` (a value there is not guessable from the name):
+under an applier that ignores hooks an `env` change alone is refused as an immutable-field change
+until the Job is deleted. An app upgraded from a chart before
 31.29 keeps one stale `<release>-migrate` Job: `kubectl delete job <release>-migrate` once.
 
 **A demo rollout that crash-looped** (30.9 → 31.13.1, eight times): its manifests were a

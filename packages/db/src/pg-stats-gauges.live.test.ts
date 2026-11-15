@@ -48,6 +48,26 @@ describe.skipIf(url === undefined)('live · the Postgres stats statements', () =
       await sampler.end();
     }
   });
+
+  test('a zero autovacuum trigger on an empty table answers, never a division by zero', async () => {
+    // The server's settings are not ours to change, so the statement reads zeros in their place:
+    // `autovacuum_vacuum_threshold = 0` over a table of no rows is a divisor of 0.
+    const zeroed = PG_SERVER_STATS_SQL.replace(
+      "current_setting('autovacuum_vacuum_threshold')",
+      "'0'",
+    ).replace("current_setting('autovacuum_vacuum_scale_factor')", "'0'");
+    expect(zeroed).not.toBe(PG_SERVER_STATS_SQL);
+    const sql = new Bun.SQL(url ?? '', { max: 1 });
+    const table = `x_stats_probe_${process.pid}`;
+    try {
+      await sql.unsafe(`create table if not exists ${table} (id int)`);
+      const [row] = await sql.unsafe(zeroed);
+      expect(typeof row.autovacuum_backlog_ratio).toBe('number');
+    } finally {
+      await sql.unsafe(`drop table if exists ${table}`);
+      await sql.end();
+    }
+  });
 });
 
 describe.skipIf(replicationUrl === undefined)('live · a logical slot`s retained WAL', () => {

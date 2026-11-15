@@ -1,7 +1,7 @@
 // The deploy order, in both charts — the framework's (`docker/helm/`) and the one `x new` writes:
 // the migrate Job runs before any role under plain Helm (a pre-install/pre-upgrade hook), under
 // Argo CD (a Sync hook in a wave before the roles'), and is still a valid ordinary object for an
-// applier that ignores both — its name follows its spec, so a new image is a new Job, never an
+// applier that ignores both — its name follows its image, so a new image is a new Job, never an
 // immutable-field refusal. Rendered with `helm template` when a helm binary is on PATH (CI's
 // ubuntu runners ship one); the template assertions need none.
 
@@ -125,7 +125,7 @@ describe.skipIf(HELM === null)('unit · the migrate Job orders every rollout, re
   });
 
   test.each(CHARTS)(
-    '%s: the Job is named by its spec — a new image is a new Job',
+    '%s: the Job is named by its image — a new image is a new Job',
     async (_, chart) => {
       const first = migrateJob(await render(chart)).metadata.name;
       const again = migrateJob(await render(chart)).metadata.name;
@@ -135,6 +135,31 @@ describe.skipIf(HELM === null)('unit · the migrate Job orders every rollout, re
       expect(again).toBe(first);
       expect(next).not.toBe(first);
       expect(next.length).toBeLessThanOrEqual(63);
+    },
+  );
+
+  test.each(CHARTS)(
+    '%s: the name hashes no env value — an inline secret is never an oracle',
+    async (_, chart) => {
+      const name = async (value: string) =>
+        migrateJob(await render(chart, ['--set-string', `env.SOME_TOKEN=${value}`])).metadata.name;
+      expect(await name('aaaa')).toBe(await name('bbbb'));
+      const resized = migrateJob(
+        await render(chart, ['--set-string', 'migrate.resources.limits.memory=1Gi']),
+      ).metadata.name;
+      expect(resized).not.toBe(await name('aaaa'));
+    },
+  );
+
+  test.each(CHARTS)(
+    '%s: a finished Job is collected after a day, or after migrate.ttlSecondsAfterFinished',
+    async (_, chart) => {
+      const ttl = async (extra: readonly string[]) =>
+        (migrateJob(await render(chart, extra)).spec as { ttlSecondsAfterFinished?: number })
+          .ttlSecondsAfterFinished;
+      expect(await ttl([])).toBe(86400);
+      expect(await ttl(['--set', 'migrate.ttlSecondsAfterFinished=600'])).toBe(600);
+      expect(await ttl(['--set', 'migrate.ttlSecondsAfterFinished=0'])).toBe(0);
     },
   );
 
