@@ -106,6 +106,19 @@ describe('codemod · runtime-pin', () => {
     expect(app.files['.github/workflows/ci.yml']).toBe(workflow(`'${REQUIRED_BUN}'`));
   });
 
+  test('a CRLF workflow and Dockerfile (a Windows checkout) are judged, carried, and keep CRLF', async () => {
+    const crlf = (text: string): string => text.replaceAll('\n', '\r\n');
+    const app = memoryCodemodApp({
+      'package.json': manifest(`>=${REQUIRED_BUN}`),
+      '.github/workflows/ci.yml': crlf(workflow(`'${REQUIRED_BUN}'`, 'oven-sh/setup-bun@v2')),
+      'docker/Dockerfile': crlf('FROM oven/bun:1.3-alpine AS deps\n'),
+    });
+    const result = await codemod.run(app);
+    expect(result.skipped).toEqual([]);
+    expect(app.files['.github/workflows/ci.yml']).toBe(crlf(workflow(`'${REQUIRED_BUN}'`)));
+    expect(app.files['docker/Dockerfile']).toBe(crlf(`FROM ${SCAFFOLD_BUN_IMAGE.ref} AS deps\n`));
+  });
+
   test('an app-chosen image is left whole and reported with the diff it would have taken', async () => {
     const edited = [
       `FROM oven/bun:1.4-alpine@${OLD_DIGEST} AS deps`,

@@ -23,6 +23,13 @@ export interface CodemodsReport {
   readonly applied: readonly CodemodOutcome[];
 }
 
+/**
+ * Release order on the `major.minor.patch` triple: a prerelease (`32.0.0-next.1`) is its release,
+ * which carries every codemod `since` it — `compareVersions` alone reads it as 0.0.0.
+ */
+const compareRelease = (a: string, b: string): number =>
+  compareVersions(a.split('-')[0] ?? a, b.split('-')[0] ?? b);
+
 /** The codemods a hop from `from` to `to` owes, in the order they run. */
 export function pendingCodemods(
   codemods: readonly Codemod[],
@@ -32,16 +39,30 @@ export function pendingCodemods(
   return codemods
     .filter(
       (codemod) =>
-        compareVersions(codemod.since, from) > 0 && compareVersions(codemod.since, to) <= 0,
+        compareRelease(codemod.since, from) > 0 && compareRelease(codemod.since, to) <= 0,
     )
-    .sort((a, b) => compareVersions(a.since, b.since) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    .sort((a, b) => compareRelease(a.since, b.since) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /** A path's staged state: its new text, or null for removed. */
 type Staged = Map<string, string | null>;
 
+/** The bytes the run first saw at each path it touched (undefined: no file): what a flush checks. */
+type Seen = Map<string, string | undefined>;
+
 /** `base` as `layers` leave it: the newest layer that names a path answers for it. */
-function stagedView(base: CodemodApp, layers: readonly Staged[], top: Staged): CodemodApp {
+function stagedView(
+  base: CodemodApp,
+  layers: readonly Staged[],
+  top: Staged,
+  seen: Seen,
+): CodemodApp {
+  const baseRead = async (path: string): Promise<string | undefined> => {
+    if (seen.has(path)) return seen.get(path);
+    const text = await base.read(path);
+    seen.set(path, text);
+    return text;
+  };
   const lookup = (path: string): string | null | undefined => {
     for (const layer of [top, ...[...layers].reverse()]) {
       if (layer.has(path)) return layer.get(path);
@@ -51,16 +72,18 @@ function stagedView(base: CodemodApp, layers: readonly Staged[], top: Staged): C
   const read = async (path: string): Promise<string | undefined> => {
     const staged = lookup(path);
     if (staged === null) return undefined;
-    return staged ?? (await base.read(path));
+    return staged ?? (await baseRead(path));
   };
   return {
     root: base.root,
     read,
     exists: async (path) => (await read(path)) !== undefined,
     write: async (path, source) => {
+      await baseRead(path);
       top.set(path, source);
     },
     remove: async (path) => {
+      await baseRead(path);
       top.set(path, null);
     },
     glob: async (pattern) => {
@@ -98,13 +121,14 @@ export async function runCodemods(input: {
 }): Promise<CodemodsReport> {
   const { app, from, to, dryRun } = input;
   const layers: Staged[] = [];
+  const seen: Seen = new Map();
   const applied: CodemodOutcome[] = [];
   for (const codemod of pendingCodemods(input.codemods, from, to)) {
     const top: Staged = new Map();
-    const before = stagedView(app, layers, new Map());
+    const before = stagedView(app, layers, new Map(), seen);
     const head = { id: codemod.id, since: codemod.since, summary: codemod.summary };
     try {
-      const result = await codemod.run(stagedView(app, layers, top));
+      const result = await codemod.run(stagedView(app, layers, top, seen));
       const changed = await changedBy(top, before);
       layers.push(top);
       applied.push({ ...head, changed, skipped: result.skipped });
@@ -114,14 +138,54 @@ export async function runCodemods(input: {
       applied.push({ ...head, changed: [], skipped: [{ path: '.', reason }] });
     }
   }
-  if (!dryRun) {
-    const final = new Map<string, string | null>();
-    for (const layer of layers) for (const [path, text] of layer) final.set(path, text);
-    for (const [path, text] of final) {
-      const held = await app.read(path);
-      if (text === null && held !== undefined) await app.remove(path);
-      else if (text !== null && text !== held) await app.write(path, text);
-    }
-  }
+  if (dryRun) return { from, to, dryRun, applied };
+  const final = new Map<string, string | null>();
+  for (const layer of layers) for (const [path, text] of layer) final.set(path, text);
+  const moved = await movedSince(app, final, seen);
+  if (moved.length > 0) return { from, to, dryRun, applied: refused(applied, moved) };
+  await flush(app, final);
   return { from, to, dryRun, applied };
+}
+
+/** The staged paths whose bytes on disk are no longer the ones the run read. */
+async function movedSince(
+  app: CodemodApp,
+  final: ReadonlyMap<string, string | null>,
+  seen: Seen,
+): Promise<readonly string[]> {
+  const moved: string[] = [];
+  for (const path of final.keys()) {
+    if (seen.has(path) && (await app.read(path)) !== seen.get(path)) moved.push(path);
+  }
+  return moved;
+}
+
+/** Nothing lands: each moved file is said, on the codemod that would have written it. */
+function refused(
+  applied: readonly CodemodOutcome[],
+  moved: readonly string[],
+): readonly CodemodOutcome[] {
+  const reason =
+    'changed on disk while the codemods ran, so no file was written: rerun x upgrade codemods on the tree as it is now';
+  return applied.map((one) => ({
+    ...one,
+    changed: [],
+    skipped: [
+      ...one.skipped,
+      ...one.changed.filter((path) => moved.includes(path)).map((path) => ({ path, reason })),
+    ],
+  }));
+}
+
+/**
+ * Writes first, removals after: interrupted between them, the tree holds both the old evidence and
+ * the new file — never neither, which a rerun would read as a different app.
+ */
+async function flush(app: CodemodApp, final: ReadonlyMap<string, string | null>): Promise<void> {
+  for (const [path, text] of final) {
+    if (text !== null && text !== (await app.read(path))) await app.write(path, text);
+  }
+  for (const [path, text] of final) {
+    if (text === null && (await app.read(path)) !== undefined) await app.remove(path);
+  }
 }

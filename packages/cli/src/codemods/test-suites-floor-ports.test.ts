@@ -181,6 +181,17 @@ describe('unit · codemod test-ports', () => {
     expect(result.changed).toEqual([TEST_ENV_PATH]);
   });
 
+  test('a CRLF pair (a Windows checkout) moves too, and keeps CRLF', async () => {
+    const crlf = (text: string): string => text.replaceAll('\n', '\r\n');
+    const app = memoryCodemodApp({
+      [TEST_ENV_PATH]: crlf(OLD_ENV),
+      [TEST_COMPOSE_PATH]: crlf(oldCompose()),
+    });
+    expect((await testPorts.run(app)).changed).toEqual([TEST_COMPOSE_PATH, TEST_ENV_PATH]);
+    expect(app.files[TEST_ENV_PATH]).toBe(crlf(env));
+    expect(app.files[TEST_COMPOSE_PATH]).toBe(crlf(compose));
+  });
+
   test('no env file naming the app is nothing to do', async () => {
     expect(await testPorts.run(memoryCodemodApp({}))).toEqual({ changed: [], skipped: [] });
   });

@@ -8,8 +8,8 @@ import { names } from '../templates/naming';
 import { appName } from './agents-dev-mcp';
 import { CI_31_15_LINES } from './ci-e2e-browser-stock';
 import type { Codemod, CodemodApp, CodemodResult } from './codemod';
-import type { SnippetEdit } from './engine-edits';
-import { editSnippets } from './engine-edits';
+import type { FileText, SnippetEdit } from './engine-edits';
+import { editSnippets, readText } from './engine-edits';
 
 const CI = CI_WORKFLOW_PATH;
 
@@ -40,14 +40,14 @@ export const CI_E2E_EDITS: readonly SnippetEdit[] = [
 const pinless = (text: string): string => text.replace(/^(\s*bun-version:).*$/gm, '$1');
 
 /** Today's workflow, when the app's is still the 31.4–31.15 one-job workflow exactly. */
-async function wholeFile(app: CodemodApp, held: string): Promise<CodemodResult | undefined> {
-  const name = appName((await app.read('package.json')) ?? '');
+async function wholeFile(app: CodemodApp, held: FileText): Promise<CodemodResult | undefined> {
+  const name = appName((await readText(app, 'package.json'))?.text ?? '');
   if (name === undefined) return undefined;
   const stock = CI_31_15_LINES.map((line) => line.replace('<APP>', name)).join('\n');
-  if (pinless(held) !== pinless(stock)) return undefined;
+  if (pinless(held.text) !== pinless(stock)) return undefined;
   const today = githubFiles(names(name)).find((file) => file.path === CI)?.contents;
   if (typeof today !== 'string') return undefined;
-  await app.write(CI, today);
+  await app.write(CI, held.restore(today));
   return { changed: [CI], skipped: [] };
 }
 
@@ -56,7 +56,7 @@ export const codemod: Codemod = {
   since: '31.27.0',
   summary: `${CI}: the part that runs e2e requires a browser, so a runner with none is red, never skipped`,
   async run(app) {
-    const held = await app.read(CI);
+    const held = await readText(app, CI);
     if (held === undefined) return { changed: [], skipped: [] };
     return (await wholeFile(app, held)) ?? editSnippets(app, CI, CI_E2E_EDITS);
   },

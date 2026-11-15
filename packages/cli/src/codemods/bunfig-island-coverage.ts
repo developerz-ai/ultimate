@@ -19,9 +19,9 @@ export const BUNFIG_EDITS: readonly SnippetEdit[] = [
       "# emit one), so the row can only ever be noise — the island's own .island.tsx is not what it",
       '# describes. Ignoring it removes the phantom; it hides no line any test was covering.',
       'coveragePathIgnorePatterns = ["**/*.mjs"]',
-      '',
     ].join('\n'),
-    to: `${PRELOAD}\n`,
+    // No newline at either end: a bunfig.toml whose last line is the ignore still matches.
+    to: PRELOAD,
   },
 ];
 

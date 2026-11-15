@@ -13,6 +13,7 @@ import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
 import { cliVersion } from './registry';
+import { manifestSnapshot, reinstallIfMoved } from './upgrade-gate-codemods-install';
 import { releaseOf } from './upgrade-plan';
 import { codemodCounts, codemodLines } from './upgrade-report-codemods';
 
@@ -44,13 +45,19 @@ export async function runUpgradeCodemods(ctx: CommandContext): Promise<CommandRe
   }
   const to = release(ctx, 'to') ?? cliVersion();
   const dryRun = flagBool(ctx.args, 'dry-run');
-  const report = await runCodemods({
+  const before = await manifestSnapshot(root);
+  const ran = await runCodemods({
     app: fsCodemodApp(root),
     codemods: CODEMODS,
     from,
     to,
     dryRun,
   });
+  // A codemod that moved a package.json owes the install, by hand as on a hop.
+  const report =
+    !dryRun && (await reinstallIfMoved({ runner: ctx.runner, root, to, before }))
+      ? { ...ran, reinstalled: true as const }
+      : ran;
   const counts = codemodCounts(report);
   return ok(
     'upgrade',

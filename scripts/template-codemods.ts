@@ -4,7 +4,7 @@
 // (`scripts/template-codemods-rows.ts`): an app keeps what `x new` wrote, and only a codemod moves it.
 // A clone that cannot reach the tag (shallow, tagless) is a notice, never a false red.
 //
-//   bun run scripts/template-codemods.ts [--json]
+//   bun run scripts/template-codemods.ts [--write] [--json]   (--write: re-lock what x new renders)
 
 // why: the LEAF modules, never the `@ultimat3/cli` barrel — the import deprecation-window.ts makes.
 import { CODEMODS } from '../packages/cli/src/codemods';
@@ -20,6 +20,12 @@ import { report } from './lib/log';
 import { git } from './lib/release-due-git';
 import { repoRoot } from './lib/run';
 import { remoteTagProbe, type TagProbe } from './registry-audit';
+import {
+  RENDER_LOCK_FILE,
+  renderCheck,
+  renderLockText,
+  renderScaffold,
+} from './template-codemods-render';
 import { TEMPLATE_CODEMOD_ROWS, type TemplateCodemodRow } from './template-codemods-rows';
 
 const SCRIPT = 'template-codemods';
@@ -135,6 +141,8 @@ export interface TemplateCodemodsOptions {
   readonly probe?: TagProbe;
   readonly changelog?: Changelog;
   readonly rows?: readonly TemplateCodemodRow[];
+  /** What `x new` renders now; the real render unless a test names one. */
+  readonly rendered?: Readonly<Record<string, string>>;
 }
 
 const boundedGit: GitRunner = (command, { cwd }) => git(command.slice(1), cwd);
@@ -179,29 +187,54 @@ export async function templateCodemodFindings(
       notice: `not judged: git could not diff ${TEMPLATE_DIR}/ against ${tag} in this clone — git fetch --no-tags origin ${quoteArg(`+refs/tags/${tag}:refs/tags/${tag}`)} && bun run scripts/template-codemods.ts --json`,
     };
   }
+  // What `x new` renders, against the tag's lock: a change made outside `templates/` counts too.
+  const rendered = await renderCheck({
+    root,
+    tag,
+    show: async (ref) => {
+      const shown = await runner(['git', 'show', ref], { cwd: root });
+      return shown.ok ? shown.output : undefined;
+    },
+    ...(options.rendered === undefined ? {} : { now: options.rendered }),
+  });
+  const findings = templateCodemodGaps({
+    latest: bounds.latest,
+    changed: [...lines(diff.output), ...lines(untracked.output), ...rendered.changed],
+    owned: [...(await scaffoldOwnedTemplates(root)), ...rendered.paths],
+    rows: options.rows ?? TEMPLATE_CODEMOD_ROWS,
+    codemods: CODEMODS,
+  });
+  const stale: readonly Finding[] = rendered.stale
+    ? [
+        {
+          code: CODE,
+          cause: `${RENDER_LOCK_FILE} is not what x new renders now, so the next release could not tell what this one changed in an app's files`,
+          fix: 'bun run scripts/template-codemods.ts --write   # then commit the lock beside the change',
+          at: RENDER_LOCK_FILE,
+        },
+      ]
+    : [];
   return {
-    findings: templateCodemodGaps({
-      latest: bounds.latest,
-      changed: [...lines(diff.output), ...lines(untracked.output)],
-      owned: await scaffoldOwnedTemplates(root),
-      rows: options.rows ?? TEMPLATE_CODEMOD_ROWS,
-      codemods: CODEMODS,
-    }),
+    findings: [...findings, ...stale],
+    ...(rendered.notice === undefined ? {} : { notice: rendered.notice }),
   };
 }
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
+  if (args.flags.has('write')) {
+    await Bun.write(`${repoRoot()}/${RENDER_LOCK_FILE}`, renderLockText(renderScaffold()));
+  }
   const { findings, notice } = await templateCodemodFindings(repoRoot());
   report(
     {
       ok: findings.length === 0,
       script: SCRIPT,
       summary:
-        notice ??
-        (findings.length === 0
-          ? 'every scaffold-owned template changed since the last release has its codemod or its reason'
-          : `${findings.length} scaffold-owned template change(s) with no codemod`),
+        findings.length > 0
+          ? `${findings.length} scaffold-owned template change(s) with no codemod`
+          : (notice ??
+            'every scaffold-owned template changed since the last release has its codemod or its reason'),
       findings,
       ...(notice === undefined ? {} : { data: { notice } }),
     },

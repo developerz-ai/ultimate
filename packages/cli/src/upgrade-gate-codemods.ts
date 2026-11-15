@@ -4,7 +4,6 @@
 
 // why: Bun exposes no path-join primitive; the installed bin is assembled from the app root.
 import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { CODEMODS } from './codemods';
 import type { CodemodsReport } from './codemods/engine';
@@ -12,10 +11,10 @@ import { runCodemods } from './codemods/engine';
 import { fsCodemodApp } from './codemods/engine-fs';
 import { supersededFindings } from './doctor-superseded';
 import type { ExecResult, Runner } from './exec';
-import { execOutput } from './exec';
 import { LOCAL_CLI_BIN } from './local-cli';
 import type { Finding } from './output';
 import { documentIn } from './upgrade-document';
+import { manifestSnapshot, reinstallIfMoved } from './upgrade-gate-codemods-install';
 import type { HopCodemods } from './upgrade-report-codemods';
 
 const SKIP = t.object({ path: t.string, reason: t.string, diff: t.optional(t.string) });
@@ -44,22 +43,28 @@ export function readCodemods(result: ExecResult): CodemodsReport | undefined {
   return (parsed.value as { readonly data: { readonly codemods: CodemodsReport } }).data.codemods;
 }
 
-/** A codemod moved a dependency: the lockfile and node_modules follow before anything reads them. */
-const MANIFEST = /(?:^|\/)package\.json$/;
+/**
+ * The codes an installed CLI with no `x upgrade codemods` answers: an unknown flag or subcommand,
+ * an unknown command. Only those leave the span to this CLI; any other failure is the hop's.
+ */
+const NO_SUBCOMMAND = new Set(['X_CLI_BAD_FLAG', 'X_CLI_UNKNOWN_COMMAND', 'X_NOT_IMPLEMENTED']);
 
-async function reinstall(runner: Runner, root: string, to: string): Promise<void> {
-  const result = await runner([process.execPath, 'install'], { cwd: root });
-  if (result.ok) return;
-  throw new UltimateError({
-    code: 'X_UPGRADE_INSTALL_FAILED',
-    cause: `bun install exited ${String(result.code)} after the ${to} codemods moved a package.json: ${execOutput(result).slice(-800) || 'no output'}`,
-    fix: 'git diff -- "*package.json"   # the codemods\' edits; fix what the cause names, then: bun install && x upgrade --json',
-  });
+const FAILURE = t.object({
+  findings: t.array(t.object({ code: t.string, cause: t.string, fix: t.string })),
+});
+
+/** The installed CLI's own failure, when it is one: undefined when it simply lacks the subcommand. */
+function failureOf(result: ExecResult): HopCodemods['failure'] {
+  const parsed = FAILURE.safeParse(documentIn(result.stdout));
+  if (parsed.issues !== undefined) return undefined;
+  const [first] = (parsed.value as { readonly findings: NonNullable<HopCodemods['failure']>[] })
+    .findings;
+  return first === undefined || NO_SUBCOMMAND.has(first.code) ? undefined : first;
 }
 
 /**
- * The span's codemods, by the installed CLI (or this one, when that one has none), then a second
- * `bun install` when any of them changed a `package.json` — `reinstalled: true` says so.
+ * The span's codemods, by the installed CLI (or this one, only when that one lacks the
+ * subcommand), then a second `bun install` when any `package.json` moved — `reinstalled: true`.
  */
 export async function applyHopCodemods(input: {
   readonly runner: Runner;
@@ -68,22 +73,26 @@ export async function applyHopCodemods(input: {
   readonly to: string;
 }): Promise<HopCodemods> {
   const { runner, root, from, to } = input;
-  const answered = readCodemods(
-    await runner(
-      [
-        process.execPath,
-        join(root, LOCAL_CLI_BIN),
-        'upgrade',
-        'codemods',
-        '--from',
-        from,
-        '--to',
-        to,
-        '--json',
-      ],
-      { cwd: root },
-    ),
+  const before = await manifestSnapshot(root);
+  const result = await runner(
+    [
+      process.execPath,
+      join(root, LOCAL_CLI_BIN),
+      'upgrade',
+      'codemods',
+      '--from',
+      from,
+      '--to',
+      to,
+      '--json',
+    ],
+    { cwd: root },
   );
+  const answered = readCodemods(result);
+  const failure = answered === undefined ? failureOf(result) : undefined;
+  if (failure !== undefined) {
+    return { from, to, dryRun: false, applied: [], source: 'installed', failure };
+  }
   const report: HopCodemods =
     answered !== undefined
       ? { ...answered, source: 'installed' }
@@ -97,9 +106,9 @@ export async function applyHopCodemods(input: {
           })),
           source: 'driver',
         };
-  if (!report.applied.some((one) => one.changed.some((path) => MANIFEST.test(path)))) return report;
-  await reinstall(runner, root, to);
-  return { ...report, reinstalled: true };
+  return (await reinstallIfMoved({ runner, root, to, before }))
+    ? { ...report, reinstalled: true }
+    : report;
 }
 
 /**

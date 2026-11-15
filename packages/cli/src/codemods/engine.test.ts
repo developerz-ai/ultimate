@@ -35,6 +35,11 @@ describe('unit · codemod engine', () => {
     expect(ids).toEqual(['z-first', 'a-late', 'b-late', 'at-to']);
   });
 
+  test('a prerelease target is its release: 32.0.0-next.1 owes every codemod up to 32.0.0', () => {
+    const ids = pendingCodemods(ALL, '31.15.0', '32.0.0-next.1').map((codemod) => codemod.id);
+    expect(ids).toEqual(['z-first', 'a-late', 'b-late', 'at-to', 'too-new']);
+  });
+
   test('versions compare numerically, never as text', () => {
     const ids = pendingCodemods(
       [appender('nine', '31.9.0'), appender('ten', '31.10.0')],

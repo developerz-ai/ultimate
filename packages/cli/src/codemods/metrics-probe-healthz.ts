@@ -15,18 +15,15 @@ const probe = (path: string): string =>
 export const METRICS_PROBE_EDITS: Readonly<Record<string, readonly SnippetEdit[]>> = {
   [COMPOSE]: [
     {
-      from: [
-        '# gated on it never starts. Probes follow the role here, exactly as they do in `docker/helm`.',
-        'x-metrics-probe: &metrics-probe',
-        probe('/metrics'),
-      ].join('\n'),
+      from: '# gated on it never starts. Probes follow the role here, exactly as they do in `docker/helm`.',
       to: [
         '# gated on it never starts. Probes follow the role here, exactly as they do in `docker/helm`:',
         "# `/healthz`, the one path on the scrape listener that reads the loops' heartbeats.",
-        'x-metrics-probe: &metrics-probe',
-        probe('/healthz'),
       ].join('\n'),
+      optional: true,
     },
+    // The probe itself, apart from the prose above it: a reworded comment keeps no stale probe.
+    { from: probe('/metrics'), to: probe('/healthz') },
   ],
   [HELPERS]: [
     {

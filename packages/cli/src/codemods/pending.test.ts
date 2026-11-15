@@ -41,6 +41,13 @@ describe('unit · codemods still owed', () => {
     expect(await Bun.file(join(dir, 'a.txt')).text()).toBe('old\n');
   });
 
+  test('a prerelease CLI owes what its release owes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-codemods-pending-'));
+    dirs.push(dir);
+    await Bun.write(join(dir, 'a.txt'), 'old\n');
+    expect(await pendingCodemodFindings(dir, '31.28.0-next.1', [fix])).toHaveLength(1);
+  });
+
   test('applied, or past this CLI’s release, is nothing owed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'x-codemods-pending-'));
     dirs.push(dir);

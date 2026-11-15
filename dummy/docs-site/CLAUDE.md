@@ -3,8 +3,7 @@
 Human-authored, short, stable — one file under two names, `AGENTS.md` being a symlink to it.
 Facts live in `x.manifest.json`; this file holds only what an agent cannot infer from the code.
 
-Every row below names what refuses it. A rule with nothing in the last column is a rule that does
-not exist — five of these had an empty column and were each measured green on `bunx x verify`.
+Every row below names what refuses it. A rule with nothing in the last column does not exist.
 
 There is no global `x`: every command here is `bunx x …`, the CLI this app installs.
 
@@ -27,7 +26,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | `bun run verify` — `bunx x verify`, which builds what its `budgets` step weighs. Green means shippable; never merge red. CI runs the same two commands as your terminal: `bun run setup && bun run verify` | the gate itself, and `.github/workflows/ci.yml` on every push and pull request; `.github/workflows/image.yml` publishes only a commit it passed |
+| One gate | `bun run verify` — `bunx x verify`, which builds what its `budgets` step weighs. Green means shippable; never merge red. CI runs the same gate, cut into parts: `bun run verify plan --json` names them, each runner runs `bun run setup && bun run verify --only <steps>`, and `bun run verify merge` is the verdict | the gate itself, and `.github/workflows/ci.yml` on every push and pull request; `.github/workflows/image.yml` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under `apps/` and `packages/`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | `X_COVERAGE_BELOW_FLOOR` on the `unit` step; `coverage` in `x.verify.json` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: `bunx x g resource`, `bunx x g action`, `bunx x g route` | review |
 | Surfaces | `site/` is 0kb JS and may not import `app/`; `shared/` is a leaf | `X_BOUNDARY_SITE_TO_APP` |
@@ -99,10 +98,6 @@ Money is the one row with no guard, deliberately: a float has no static signatur
 see, and the type already fires — measured, `price: 19.99` in a seed is
 `TS2322: Type 'number' is not assignable to type 'MoneyInput'`. A guard that pretended to check
 it would be worse than the type that really does.
-
-`bun run verify` is `bunx x verify`, the whole gate: its `budgets` step runs
-`bunx x build --target static` itself when `.x/build-stats.json` is missing or older than the
-source, so nothing has to be built first.
 
 Commands: `bun run setup`, `bun run dev`, `bun run verify`, `bunx x g <primitive>`,
 `bunx x g guard <name>`, `bunx x db branch create <name>`, `bunx x doctor`. `setup` is

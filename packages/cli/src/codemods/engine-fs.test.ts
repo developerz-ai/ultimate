@@ -2,13 +2,13 @@
 // write, a removal of nothing is no error, no path outside the root, no `node_modules` in a glob.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
 // why: Bun has no mkdtemp, no recursive remove and no symlink.
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { UltimateError } from '@ultimat3/core';
 import { fsCodemodApp, landFile } from './engine-fs';
 
 const dirs: string[] = [];
@@ -43,7 +43,9 @@ describe('unit · codemod engine, the real filesystem', () => {
     await app.write('a/b.ts', 'one\n');
     await app.write('a/b.ts', 'two\n');
     expect(await Bun.file(join(dir, 'a/b.ts')).text()).toBe('two\n');
-    expect(await Array.fromAsync(new Bun.Glob('a/*').scan({ cwd: dir, dot: true }))).toEqual(['a/b.ts']);
+    expect(await Array.fromAsync(new Bun.Glob('a/*').scan({ cwd: dir, dot: true }))).toEqual([
+      'a/b.ts',
+    ]);
   });
 
   test('a rename that fails leaves the old file whole and no temp file behind', async () => {
@@ -52,9 +54,13 @@ describe('unit · codemod engine, the real filesystem', () => {
     const failing = async (): Promise<void> => {
       throw new UltimateError({ code: 'X_PLANTED_FAILURE', cause: 'EXDEV', fix: 'x verify' });
     };
-    await expect(landFile(join(dir, 'a.json'), '{"new":true}\n', failing)).rejects.toMatchObject({ code: 'X_PLANTED_FAILURE' });
+    await expect(landFile(join(dir, 'a.json'), '{"new":true}\n', failing)).rejects.toMatchObject({
+      code: 'X_PLANTED_FAILURE',
+    });
     expect(await Bun.file(join(dir, 'a.json')).text()).toBe('{"old":true}\n');
-    expect(await Array.fromAsync(new Bun.Glob('*').scan({ cwd: dir, dot: true }))).toEqual(['a.json']);
+    expect(await Array.fromAsync(new Bun.Glob('*').scan({ cwd: dir, dot: true }))).toEqual([
+      'a.json',
+    ]);
   });
 
   test('a glob answers sorted posix paths, dot directories included, node_modules never', async () => {

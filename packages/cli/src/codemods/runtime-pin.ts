@@ -8,7 +8,7 @@ import { SCAFFOLD_BUN_IMAGE } from '../templates/bun-image';
 import { editBunSites } from '../upgrade-bun-floor';
 import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import { unifiedDiff } from './engine-diff';
-import { mergeResults } from './engine-edits';
+import { mergeResults, readText } from './engine-edits';
 import { dockerfileLine, type LineVerdict, recordedLine, workflowLine } from './runtime-pin-lines';
 
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
@@ -40,8 +40,10 @@ async function migrateLines(
   judge: (line: string) => LineVerdict,
   carried: (lines: readonly string[]) => readonly string[] = (lines) => lines,
 ): Promise<CodemodResult> {
-  const source = await app.read(path);
-  if (source === undefined) return NOTHING;
+  // LF lines with no BOM: a CRLF line's `\r` would defeat each `$`-anchored pin pattern.
+  const file = await readText(app, path);
+  if (file === undefined) return NOTHING;
+  const source = file.text;
   const lines = source.split('\n');
   const verdicts = lines.map(judge);
   const foreign: string[] = [];
@@ -58,7 +60,7 @@ async function migrateLines(
     return { changed: [], skipped: [{ path, reason, ...(diff === '' ? {} : { diff }) }] };
   }
   if (text === source) return NOTHING;
-  await app.write(path, text);
+  await app.write(path, file.restore(text));
   return { changed: [path], skipped: [] };
 }
 

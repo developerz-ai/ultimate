@@ -5,7 +5,7 @@
 import type { Codemod } from './codemod';
 import { unifiedDiff } from './engine-diff';
 import type { SnippetEdit } from './engine-edits';
-import { editSnippets } from './engine-edits';
+import { editSnippets, fileText } from './engine-edits';
 
 const BIOME = 'biome.json';
 
@@ -38,6 +38,9 @@ export const codemod: Codemod = {
     const held = await app.read(BIOME);
     if (held === undefined || held.includes('"noDefaultExport"'))
       return { changed: [], skipped: [] };
+    // Not the file x new wrote (a monorepo child extending the repo's): its rules are the app's.
+    const text = fileText(held).text;
+    if (BIOME_EDITS.some((edit) => !text.includes(edit.from))) return { changed: [], skipped: [] };
     const blocking = await defaultExports(app);
     if (blocking.length === 0) return editSnippets(app, BIOME, BIOME_EDITS);
     const wanted = BIOME_EDITS.reduce((text, edit) => text.replace(edit.from, () => edit.to), held);

@@ -13,7 +13,7 @@ import {
 } from '../templates/scaffold-test-services';
 import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import { unifiedDiff } from './engine-diff';
-import { mergeResults } from './engine-edits';
+import { mergeResults, readText } from './engine-edits';
 
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
 
@@ -48,11 +48,11 @@ async function move(
   today: string,
   name: NameSet,
 ): Promise<CodemodResult> {
-  const held = await app.read(path);
-  if (held === undefined || held === today) return NOTHING;
+  const file = await readText(app, path);
+  if (file === undefined || file.text === today) return NOTHING;
   const old = before(today, name);
-  if (held === old) {
-    await app.write(path, today);
+  if (file.text === old) {
+    await app.write(path, file.restore(today));
     return { changed: [path], skipped: [] };
   }
   return {
@@ -73,7 +73,7 @@ export const codemod: Codemod = {
   since: '31.27.0',
   summary: `${TEST_COMPOSE_PATH} and ${TEST_ENV_PATH} publish this app's own test ports, so two apps on one machine run at once`,
   async run(app) {
-    const kebab = appName((await app.read(TEST_ENV_PATH)) ?? '');
+    const kebab = appName((await readText(app, TEST_ENV_PATH))?.text ?? '');
     if (kebab === undefined) return NOTHING;
     const name = names(kebab);
     const results: CodemodResult[] = [];

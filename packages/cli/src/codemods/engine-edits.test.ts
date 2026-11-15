@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { memoryCodemodApp } from './codemod';
+import type { SnippetEdit } from './engine-edits';
 import { editSnippets, writeIfAbsent } from './engine-edits';
 
 const EDITS = [
@@ -57,12 +58,49 @@ describe('unit · codemod edits, a removal and an insert', () => {
     expect((await editSnippets(app, 'a.toml', [edit])).changed).toEqual([]);
   });
 
+  test('a removal already made is done, whatever new text sits around it — never a skip', async () => {
+    const edit = { from: 'keep\ngone', to: 'keep' };
+    const app = memoryCodemodApp({ 'a.toml': 'mine\n' });
+    expect(await editSnippets(app, 'a.toml', [edit])).toEqual({ changed: [], skipped: [] });
+  });
+
   test('an insert beside a line that stays is applied once, never again', async () => {
     const edit = { from: 'row a', to: 'row a\nrow b' };
     const app = memoryCodemodApp({ 'a.md': 'row a\n' });
     await editSnippets(app, 'a.md', [edit]);
     expect(await editSnippets(app, 'a.md', [edit])).toEqual({ changed: [], skipped: [] });
     expect(app.files['a.md']).toBe('row a\nrow b\n');
+  });
+});
+
+describe('unit · codemod edits, a Windows checkout', () => {
+  test('CRLF and a BOM: matched as LF text, written back with both', async () => {
+    // Snippets spanning lines, as most template edits do.
+    const lines: readonly SnippetEdit[] = [
+      {
+        from: "import { a } from 'x';\n// the app's",
+        to: "import { a, b } from 'x';\n// the app's",
+      },
+      { from: 'own line\nreturn token;', to: 'own line\nreturn token ?? null;' },
+    ];
+    const crlf = `\uFEFF${OLD.replaceAll('\n', '\r\n')}`;
+    const app = memoryCodemodApp({ 'a.ts': crlf });
+    expect((await editSnippets(app, 'a.ts', lines)).changed).toEqual(['a.ts']);
+    expect(app.files['a.ts']).toBe(`\uFEFF${NEW.replaceAll('\n', '\r\n')}`);
+    expect(await editSnippets(app, 'a.ts', lines)).toEqual({ changed: [], skipped: [] });
+  });
+});
+
+describe('unit · codemod edits, an ambiguous snippet', () => {
+  // Which of two the template meant is not decidable from the text: replacing the first would
+  // be a guess written into the app, so the file is left and the choice is the author's.
+  test('old text found twice is refused, with the reason, and the file untouched', async () => {
+    const twice = `${OLD}${OLD}`;
+    const app = memoryCodemodApp({ 'a.ts': twice });
+    const result = await editSnippets(app, 'a.ts', EDITS);
+    expect(app.files['a.ts']).toBe(twice);
+    expect(result.changed).toEqual([]);
+    expect(result.skipped[0]?.reason).toContain('2 places');
   });
 });
 

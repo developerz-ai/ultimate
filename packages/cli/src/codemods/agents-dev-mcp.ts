@@ -5,7 +5,7 @@
 import { stringField } from '@ultimat3/core';
 import type { Codemod } from './codemod';
 import type { SnippetEdit } from './engine-edits';
-import { editSnippets, mergeResults } from './engine-edits';
+import { editSnippets, mergeResults, readText } from './engine-edits';
 
 /** Each agent and the `tools:` line `x new` gave it. */
 export const AGENT_TOOLS: Readonly<Record<string, string>> = {
@@ -33,7 +33,7 @@ export const codemod: Codemod = {
   summary:
     ".claude/agents/*.md may call the app's dev MCP server: mcp__<app>__* on each tools: line",
   async run(app) {
-    const name = appName((await app.read('package.json')) ?? '');
+    const name = appName((await readText(app, 'package.json'))?.text ?? '');
     if (name === undefined) return { changed: [], skipped: [] };
     const results = [];
     for (const [path, tools] of Object.entries(AGENT_TOOLS)) {

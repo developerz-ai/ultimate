@@ -11,6 +11,8 @@ export interface HopCodemods extends CodemodsReport {
   readonly source: CodemodSource;
   /** Present when a codemod changed a `package.json` and the hop ran `bun install` again. */
   readonly reinstalled?: true;
+  /** The installed CLI's codemods run failed: nothing applied, and the hop is not done. */
+  readonly failure?: { readonly code: string; readonly cause: string; readonly fix: string };
 }
 
 export const codemodCounts = (
@@ -22,6 +24,9 @@ export const codemodCounts = (
 });
 
 export function codemodLines(report: CodemodsReport | HopCodemods | null): readonly string[] {
+  if (report !== null && 'failure' in report && report.failure !== undefined) {
+    return [msg('cli.upgrade.codemods.failed', { ...report.failure })];
+  }
   if (report === null || report.applied.length === 0) return [];
   return [
     ...('source' in report && report.source === 'driver'

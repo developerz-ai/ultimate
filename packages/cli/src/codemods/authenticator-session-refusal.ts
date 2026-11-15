@@ -4,7 +4,7 @@
 
 import type { Codemod, CodemodApp } from './codemod';
 import type { SnippetEdit } from './engine-edits';
-import { editSnippets, mergeResults } from './engine-edits';
+import { editSnippets, mergeResults, readText } from './engine-edits';
 
 const SOURCE = 'apps/web/app/auth/authenticator.ts';
 const TEST = 'apps/web/app/auth/authenticator.test.ts';
@@ -199,6 +199,12 @@ export const codemod: Codemod = {
   summary:
     'apps/web/app/auth/authenticator.ts answers a stale, revoked or forged session cookie null instead of throwing (and its test says so)',
   async run(app) {
+    // The scaffold's file names `sessionAuthenticator`; one that does not is the app's own, and
+    // one that already answers `isSessionRefusal` has been carried across, by hand or otherwise.
+    const source = (await readText(app, SOURCE))?.text ?? '';
+    if (!source.includes('sessionAuthenticator') || source.includes('isSessionRefusal')) {
+      return { changed: [], skipped: [] };
+    }
     const signIn = await isSignIn(app);
     return mergeResults([
       await editSnippets(app, SOURCE, signIn ? SIGN_IN : SCAFFOLD),

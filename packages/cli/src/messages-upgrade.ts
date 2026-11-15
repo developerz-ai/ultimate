@@ -67,6 +67,8 @@ export const UPGRADE_MESSAGES = {
     'codemod {id} ({since}): {changed} changed, {skipped} left for you — {summary}',
   'cli.upgrade.codemod.changed': '  changed: {path}',
   'cli.upgrade.codemod.skipped': '  left for you: {path} — {reason}',
+  'cli.upgrade.codemods.failed':
+    'codemods not applied: the installed CLI answered {code}: {cause} — fix: {fix}',
   'cli.upgrade.codemods.fromDriver':
     'the installed CLI applies no codemods of its own, so this CLI applied its list',
   // `upgrade-report.ts`: a workaround the hop's framework made unnecessary (`doctor-superseded.ts`).

@@ -7,8 +7,9 @@ import { names } from '../templates/naming';
 import { helmMonitoringFiles } from '../templates/scaffold-helm-alerts';
 import { chartName } from './chart-dashboard';
 import type { Codemod, CodemodApp, CodemodResult } from './codemod';
+import { unifiedDiff } from './engine-diff';
 import type { SnippetEdit } from './engine-edits';
-import { editSnippets, mergeResults } from './engine-edits';
+import { editSnippets, mergeResults, readText } from './engine-edits';
 import { ALERT_RULES_31_15_LINES } from './helm-alerts-stock';
 
 const RULES = 'docker/helm/templates/alert-rules.yaml';
@@ -61,15 +62,32 @@ export const HELM_VALUES_EDITS: readonly SnippetEdit[] = [
   },
 ];
 
-/** Today's rules template, when the app's is still the pre-31.18 one exactly. */
+/**
+ * Today's rules template, when the app's is still the pre-31.18 one exactly; one of the app's own
+ * (neither that nor today's) is reported with the template's change as a diff.
+ */
 async function rules(app: CodemodApp, chart: string): Promise<CodemodResult> {
-  const held = await app.read(RULES);
+  const file = await readText(app, RULES);
+  const today = helmMonitoringFiles(names(chart)).find((one) => one.path === RULES)?.contents;
+  if (file === undefined || typeof today !== 'string' || file.text === today) {
+    return { changed: [], skipped: [] };
+  }
   const stock = ALERT_RULES_31_15_LINES.map((line) => line.replaceAll('<APP>', chart)).join('\n');
-  if (held !== stock) return { changed: [], skipped: [] };
-  const today = helmMonitoringFiles(names(chart)).find((file) => file.path === RULES)?.contents;
-  if (typeof today !== 'string') return { changed: [], skipped: [] };
-  await app.write(RULES, today);
-  return { changed: [RULES], skipped: [] };
+  if (file.text === stock) {
+    await app.write(RULES, file.restore(today));
+    return { changed: [RULES], skipped: [] };
+  }
+  return {
+    changed: [],
+    skipped: [
+      {
+        path: RULES,
+        reason:
+          "the chart holds alert rules of its own, so the burn-rate rules were not written: the diff is the template's change, to make by hand",
+        diff: unifiedDiff(RULES, stock, today),
+      },
+    ],
+  };
 }
 
 export const codemod: Codemod = {
@@ -77,7 +95,7 @@ export const codemod: Codemod = {
   since: '31.18.0',
   summary: `${RULES} gains the burn-rate rules, ${VALUES_FILE} alerts.objective and the measured memory requests`,
   async run(app) {
-    const chart = chartName((await app.read(CHART_FILE)) ?? '');
+    const chart = chartName((await readText(app, CHART_FILE))?.text ?? '');
     if (chart === undefined) return { changed: [], skipped: [] };
     return mergeResults([
       await rules(app, chart),

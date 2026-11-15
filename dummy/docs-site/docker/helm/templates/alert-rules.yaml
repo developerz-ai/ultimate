@@ -1,7 +1,8 @@
 {{/*
 The alert rules for this release's own series, written from @ultimat3/cli's rule table. Each rule
 reads alerts.rules.<alert> for threshold, for, severity and enabled; its runbook_url is
-alerts.runbookBase plus the rule's anchor. Rendered by capability, like servicemonitor.yaml.
+alerts.runbookBase plus the rule's anchor; the burn-rate rules read alerts.objective (percent).
+Rendered by capability, like servicemonitor.yaml.
 */}}
 {{- $cfg := .Values.alerts | default dict }}
 {{- $mode := toString (ternary $cfg.enabled "auto" (hasKey $cfg "enabled")) }}
@@ -9,6 +10,10 @@ alerts.runbookBase plus the rule's anchor. Rendered by capability, like servicem
 {{- fail (printf "alerts.enabled is %q — set it to auto (render when the cluster serves monitoring.coreos.com/v1/PrometheusRule), true or false" $mode) }}
 {{- end }}
 {{- if or (eq $mode "true") (and (eq $mode "auto") (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule")) }}
+{{- $objective := float64 (ternary $cfg.objective 99.9 (hasKey $cfg "objective")) }}
+{{- if not (and (gt $objective 0.0) (lt $objective 100.0)) }}
+{{- fail (printf "alerts.objective is %v — set it to the percent of requests answered without a 5xx, above 0 and below 100, e.g. 99.9" $objective) }}
+{{- end }}
 {{- $rules := $cfg.rules | default dict }}
 {{- $base := $cfg.runbookBase | default "https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md" }}
 apiVersion: monitoring.coreos.com/v1
@@ -83,6 +88,78 @@ spec:
           annotations:
             summary: "The share of requests answered 5xx is above the threshold"
             runbook_url: {{ printf "%s#ultimateservererrors" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateErrorBudgetFastBurn" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateErrorBudgetFastBurn
+          expr: >-
+            (sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}",status="5xx"}[1h])) / sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[1h]))) > {{ ternary $r.threshold 14.4 (hasKey $r "threshold") }} * (1 - {{ $objective }} / 100) and (sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}",status="5xx"}[5m])) / sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[5m]))) > {{ ternary $r.threshold 14.4 (hasKey $r "threshold") }} * (1 - {{ $objective }} / 100)
+          for: {{ $r.for | default "2m" }}
+          labels:
+            severity: {{ $r.severity | default "critical" }}
+          annotations:
+            summary: "The error budget is burning fast enough to spend 2% of a 30-day budget in an hour"
+            runbook_url: {{ printf "%s#ultimateerrorbudgetfastburn" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateErrorBudgetSlowBurn" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateErrorBudgetSlowBurn
+          expr: >-
+            (sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}",status="5xx"}[6h])) / sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[6h]))) > {{ ternary $r.threshold 6 (hasKey $r "threshold") }} * (1 - {{ $objective }} / 100) and (sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}",status="5xx"}[30m])) / sum by (namespace, app_kubernetes_io_instance) (rate(http_requests_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[30m]))) > {{ ternary $r.threshold 6 (hasKey $r "threshold") }} * (1 - {{ $objective }} / 100)
+          for: {{ $r.for | default "15m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "The error budget is burning fast enough to spend 5% of a 30-day budget in six hours"
+            runbook_url: {{ printf "%s#ultimateerrorbudgetslowburn" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateJobFailures" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateJobFailures
+          expr: >-
+            sum by (namespace, app_kubernetes_io_instance, queue) (rate(jobs_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}",outcome=~"failed|dead"}[15m])) / sum by (namespace, app_kubernetes_io_instance, queue) (rate(jobs_total{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[15m])) > {{ ternary $r.threshold 0.1 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "15m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "The share of a queue's job runs that fail is above the threshold"
+            runbook_url: {{ printf "%s#ultimatejobfailures" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimatePoolSaturated" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimatePoolSaturated
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance, pod) (db_pool_waiting{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 0 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "5m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "Statements are queuing for a database connection: the pool is at its ceiling"
+            runbook_url: {{ printf "%s#ultimatepoolsaturated" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateEventLoopLag" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateEventLoopLag
+          expr: >-
+            histogram_quantile(0.99, sum by (namespace, app_kubernetes_io_instance, pod, le) (rate(process_event_loop_lag_seconds_bucket{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}[5m]))) > {{ ternary $r.threshold 0.5 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "10m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A process runs its timers late: the event loop is blocked or the pod is starved"
+            runbook_url: {{ printf "%s#ultimateeventlooplag" $base | quote }}
+        {{- end }}
+        {{- $r := index $rules "UltimateMemoryNearLimit" | default dict }}
+        {{- if ne (toString $r.enabled) "false" }}
+        - alert: UltimateMemoryNearLimit
+          expr: >-
+            max by (namespace, app_kubernetes_io_instance, pod) (process_resident_memory_bytes{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"} / process_memory_limit_bytes{namespace="{{ $.Release.Namespace }}",app_kubernetes_io_instance="{{ $.Release.Name }}"}) > {{ ternary $r.threshold 0.9 (hasKey $r "threshold") }}
+          for: {{ $r.for | default "10m" }}
+          labels:
+            severity: {{ $r.severity | default "warning" }}
+          annotations:
+            summary: "A process holds more of its container's memory limit than the threshold"
+            runbook_url: {{ printf "%s#ultimatememorynearlimit" $base | quote }}
         {{- end }}
         {{- $r := index $rules "UltimateTargetDown" | default dict }}
         {{- if ne (toString $r.enabled) "false" }}

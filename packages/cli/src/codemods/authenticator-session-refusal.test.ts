@@ -76,6 +76,20 @@ describe('unit · codemod authenticator-session-refusal', () => {
     expect(result.skipped[0]?.diff).toContain('+      if (isSessionRefusal(error)) return null;');
   });
 
+  test('an authenticator of the app’s own, or one already answering refusals null, is no hand step', async () => {
+    const own = memoryCodemodApp({
+      [SOURCE]:
+        "import { configureAuthenticator } from '@ultimat3/http';\nconfigureAuthenticator(mine);\n",
+      [TEST]: "import { defineAuth } from '@ultimat3/auth';\n",
+    });
+    expect(await codemod.run(own)).toEqual({ changed: [], skipped: [] });
+    const carried = memoryCodemodApp({
+      [SOURCE]:
+        '// edited\nexport const sessionAuthenticator = 1; // isSessionRefusal(error) handled\n',
+    });
+    expect(await codemod.run(carried)).toEqual({ changed: [], skipped: [] });
+  });
+
   test('an app with no authenticator is nothing to do', async () => {
     expect(await codemod.run(memoryCodemodApp({}))).toEqual({ changed: [], skipped: [] });
   });

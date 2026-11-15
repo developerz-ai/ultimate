@@ -109,7 +109,7 @@ describe('unit · template-codemods, the owned set', () => {
 
 /** A git that holds the given tags and answers `diff` with `changed`; or cannot diff at all. */
 const fakeGit =
-  (tags: readonly string[], changed: string | null): GitRunner =>
+  (tags: readonly string[], changed: string | null, shown?: string): GitRunner =>
   async (command) => {
     const args = command.slice(1);
     const answer = (ok: boolean, output = '') => ({
@@ -127,8 +127,12 @@ const fakeGit =
     if (args[0] === 'fetch') return answer(false);
     if (args[0] === 'diff') return changed === null ? answer(false) : answer(true, changed);
     if (args[0] === 'ls-files') return answer(true, '');
+    if (args[0] === 'show' && shown !== undefined) return answer(true, shown);
     return answer(false);
   };
+
+/** A render the tag's lock agrees with: no rendered change, so only the template diff speaks. */
+const SAME = { 'bare:README.md': 'same' };
 
 const CHANGELOG = parseChangelog(
   '## [Unreleased]\n\nx\n\n## 31.27.0 - 2026-11-14\n\nx\n\n## 31.26.0 - 2026-11-13\n\nx\n',
@@ -157,13 +161,48 @@ describe('unit · template-codemods, a clone that cannot answer', () => {
 
   test('a reachable tag and a changed template with no row is the finding, not a notice', async () => {
     const outcome = await templateCodemodFindings(repoRoot(), {
-      runner: fakeGit(['v31.27.0', 'v31.26.0'], `${AUTH}\n`),
+      runner: fakeGit(['v31.27.0', 'v31.26.0'], `${AUTH}\n`, JSON.stringify(SAME)),
       probe: async () => true,
       changelog: CHANGELOG,
       rows: [],
+      rendered: SAME,
     });
     expect(outcome.notice).toBeUndefined();
-    expect(outcome.findings.map((finding) => finding.at)).toEqual([AUTH]);
+    expect(outcome.findings.map((finding) => finding.at)).toContain(AUTH);
+  });
+});
+
+describe('unit · template-codemods, a change outside templates/', () => {
+  // `DEFAULT_PLAN_PARTS` lives in verify-plan.ts and is printed into ci.yml: no template file
+  // changed, yet what x new writes did — the rendered lock is what sees it.
+  const NOW = { 'bare:.github/workflows/ci.yml': 'new', 'bare:README.md': 'same' };
+  const BASE = JSON.stringify({ 'bare:.github/workflows/ci.yml': 'old', 'bare:README.md': 'same' });
+
+  test('a rendered file that moved since the tag needs its own row, named by its path', async () => {
+    const outcome = await templateCodemodFindings(repoRoot(), {
+      runner: fakeGit(['v31.27.0', 'v31.26.0'], '', BASE),
+      probe: async () => true,
+      changelog: CHANGELOG,
+      rows: [],
+      rendered: NOW,
+    });
+    expect(outcome.findings.map((finding) => finding.at)).toContain('.github/workflows/ci.yml');
+    const answered = await templateCodemodFindings(repoRoot(), {
+      runner: fakeGit(['v31.27.0', 'v31.26.0'], '', BASE),
+      probe: async () => true,
+      changelog: CHANGELOG,
+      rows: [
+        {
+          template: '.github/workflows/ci.yml',
+          since: '31.28.0',
+          none: 'the parts count moved; an old workflow still runs the whole gate',
+        },
+      ],
+      rendered: NOW,
+    });
+    expect(answered.findings.map((finding) => finding.at)).not.toContain(
+      '.github/workflows/ci.yml',
+    );
   });
 });
 
